@@ -1,0 +1,4015 @@
+{
+  "Count": 1009,
+  "Updated": "2023-11-16T21:41:54.483888449-05:00",
+  "Packages": [
+    {
+      "Ecosystem": "npm",
+      "Name": "lodash",
+      "Versions": [
+        "4.17.21",
+        "3.10.1",
+        "4.17.20",
+        "2.4.2",
+        "4.17.15"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "tslib",
+      "Versions": [
+        "2.6.2",
+        "1.14.1",
+        "1.10.0",
+        "2.3.1",
+        "2.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "prop-types",
+      "Versions": [
+        "15.8.1",
+        "15.7.2",
+        "15.6.2",
+        "15.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "moment",
+      "Versions": [
+        "2.29.4",
+        "2.24.0",
+        "2.29.1",
+        "2.22.2",
+        "2.20.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/runtime",
+      "Versions": [
+        "7.23.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "classnames",
+      "Versions": [
+        "2.3.2",
+        "2.2.6",
+        "2.3.1",
+        "2.2.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "express",
+      "Versions": [
+        "4.18.2",
+        "4.17.1",
+        "4.16.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react",
+      "Versions": [
+        "16.14.0",
+        "17.0.2",
+        "18.2.0",
+        "15.7.0",
+        "0.14.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "uuid",
+      "Versions": [
+        "8.3.2",
+        "3.4.0",
+        "9.0.1",
+        "7.0.3",
+        "3.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "chalk",
+      "Versions": [
+        "4.1.2",
+        "2.4.2",
+        "1.1.3",
+        "3.0.0",
+        "5.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "core-js",
+      "Versions": [
+        "3.33.2",
+        "2.6.12",
+        "2.4.1",
+        "3.30.2",
+        "3.6.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "vue",
+      "Versions": [
+        "2.7.15",
+        "3.3.7",
+        "1.0.28",
+        "2.6.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "request",
+      "Versions": [
+        "2.88.2",
+        "2.88.0",
+        "2.81.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-dom",
+      "Versions": [
+        "16.14.0",
+        "17.0.2",
+        "18.2.0",
+        "15.7.0",
+        "16.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "debug",
+      "Versions": [
+        "4.3.4",
+        "2.6.9",
+        "3.2.7",
+        "4.1.1",
+        "2.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "node-fetch",
+      "Versions": [
+        "2.7.0",
+        "3.3.2",
+        "2.6.7",
+        "1.7.3",
+        "2.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/core",
+      "Versions": [
+        "7.23.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "axios",
+      "Versions": [
+        "0.21.4",
+        "0.19.2",
+        "1.6.0",
+        "0.18.1",
+        "0.27.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "glob",
+      "Versions": [
+        "7.2.3",
+        "8.1.0",
+        "5.0.15",
+        "10.3.10",
+        "7.1.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "reflect-metadata",
+      "Versions": [
+        "0.1.13",
+        "0.1.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "commander",
+      "Versions": [
+        "2.20.3",
+        "9.5.0",
+        "8.3.0",
+        "6.2.1",
+        "5.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "typescript",
+      "Versions": [
+        "4.9.5",
+        "3.9.10",
+        "5.2.2",
+        "2.9.2",
+        "4.7.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "jsonwebtoken",
+      "Versions": [
+        "8.5.1",
+        "9.0.2",
+        "9.0.0",
+        "7.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "semver",
+      "Versions": [
+        "7.5.4",
+        "5.7.2",
+        "6.3.1",
+        "6.3.0",
+        "7.3.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "date-fns",
+      "Versions": [
+        "2.30.0",
+        "1.30.1",
+        "2.29.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "bluebird",
+      "Versions": [
+        "3.7.2",
+        "2.11.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "body-parser",
+      "Versions": [
+        "1.20.2",
+        "1.19.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "qs",
+      "Versions": [
+        "6.11.2",
+        "6.11.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "dayjs",
+      "Versions": [
+        "1.11.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/preset-env",
+      "Versions": [
+        "7.23.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "fs-extra",
+      "Versions": [
+        "10.1.0",
+        "8.1.0",
+        "9.1.0",
+        "7.0.1",
+        "11.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "minimist",
+      "Versions": [
+        "1.2.8",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lodash-es",
+      "Versions": [
+        "4.17.21"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "aws-sdk",
+      "Versions": [
+        "2.1488.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-runtime",
+      "Versions": [
+        "6.26.0",
+        "5.8.38"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "styled-components",
+      "Versions": [
+        "5.3.11",
+        "4.4.1",
+        "3.4.10",
+        "4.3.2",
+        "6.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "mkdirp",
+      "Versions": [
+        "0.5.6",
+        "1.0.4",
+        "0.5.1",
+        "0.3.5",
+        "3.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@emotion/react",
+      "Versions": [
+        "11.11.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "colors",
+      "Versions": [
+        "1.4.0",
+        "0.6.2",
+        "1.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "jquery",
+      "Versions": [
+        "3.7.1",
+        "2.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "cors",
+      "Versions": [
+        "2.8.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "rimraf",
+      "Versions": [
+        "3.0.2",
+        "2.7.1",
+        "5.0.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@emotion/styled",
+      "Versions": [
+        "11.11.0",
+        "10.3.0",
+        "10.0.27"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/lodash",
+      "Versions": [
+        "4.14.200"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "chokidar",
+      "Versions": [
+        "3.5.3",
+        "1.7.0",
+        "2.1.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "vue-router",
+      "Versions": [
+        "3.6.5",
+        "4.2.5",
+        "2.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/express",
+      "Versions": [
+        "4.17.20"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "js-yaml",
+      "Versions": [
+        "3.14.1",
+        "4.1.0",
+        "3.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "rxjs",
+      "Versions": [
+        "6.6.7",
+        "7.8.1",
+        "5.5.12",
+        "6.6.3",
+        "6.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@material-ui/core",
+      "Versions": [
+        "4.12.4",
+        "3.9.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "winston",
+      "Versions": [
+        "3.11.0",
+        "2.4.7",
+        "3.2.1",
+        "3.3.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "prettier",
+      "Versions": [
+        "2.8.8",
+        "1.19.1",
+        "3.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "eslint-plugin-import",
+      "Versions": [
+        "2.29.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-loader",
+      "Versions": [
+        "8.3.0",
+        "7.1.5",
+        "6.4.1",
+        "9.1.3",
+        "8.0.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "webpack",
+      "Versions": [
+        "4.47.0",
+        "5.89.0",
+        "3.12.0",
+        "2.7.0",
+        "1.15.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-router-dom",
+      "Versions": [
+        "5.3.4",
+        "6.18.0",
+        "4.3.1",
+        "5.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "underscore",
+      "Versions": [
+        "1.13.6",
+        "1.8.3",
+        "1.5.2",
+        "1.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "redux",
+      "Versions": [
+        "4.2.1",
+        "3.7.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/preset-react",
+      "Versions": [
+        "7.22.15"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "shelljs",
+      "Versions": [
+        "0.8.5",
+        "0.7.8",
+        "0.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "handlebars",
+      "Versions": [
+        "4.7.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "vuex",
+      "Versions": [
+        "3.6.2",
+        "4.1.0",
+        "2.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "eslint-plugin-react",
+      "Versions": [
+        "7.33.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "yargs",
+      "Versions": [
+        "17.7.2",
+        "15.4.1",
+        "16.2.0",
+        "12.0.5",
+        "13.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "element-ui",
+      "Versions": [
+        "2.15.14"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "globby",
+      "Versions": [
+        "11.1.0",
+        "10.0.2",
+        "6.1.0",
+        "13.2.2",
+        "8.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "dotenv",
+      "Versions": [
+        "8.6.0",
+        "16.3.1",
+        "10.0.0",
+        "4.0.0",
+        "6.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "deepmerge",
+      "Versions": [
+        "4.3.1",
+        "1.5.2",
+        "4.2.2",
+        "2.2.1",
+        "3.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/plugin-proposal-class-properties",
+      "Versions": [
+        "7.18.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "mime-types",
+      "Versions": [
+        "2.1.35"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "node-sass",
+      "Versions": [
+        "4.14.1",
+        "5.0.0",
+        "3.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "path",
+      "Versions": [
+        "0.12.7"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@material-ui/icons",
+      "Versions": [
+        "4.11.3",
+        "3.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "md5",
+      "Versions": [
+        "2.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "compression",
+      "Versions": [
+        "1.7.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "inquirer",
+      "Versions": [
+        "8.2.6",
+        "7.3.3",
+        "6.5.2",
+        "9.2.11",
+        "3.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "inherits",
+      "Versions": [
+        "2.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "sass",
+      "Versions": [
+        "1.69.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/preset-typescript",
+      "Versions": [
+        "7.23.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "clsx",
+      "Versions": [
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "cross-fetch",
+      "Versions": [
+        "3.1.8",
+        "3.1.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "execa",
+      "Versions": [
+        "5.1.1",
+        "4.1.0",
+        "1.0.0",
+        "3.4.0",
+        "6.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ajv",
+      "Versions": [
+        "6.12.6",
+        "8.12.0",
+        "5.5.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "moment-timezone",
+      "Versions": [
+        "0.5.43"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "cross-spawn",
+      "Versions": [
+        "7.0.3",
+        "6.0.5",
+        "5.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lodash.get",
+      "Versions": [
+        "4.4.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "crypto-js",
+      "Versions": [
+        "4.2.0",
+        "3.3.0",
+        "4.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-core",
+      "Versions": [
+        "6.26.3",
+        "6.26.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "cookie-parser",
+      "Versions": [
+        "1.4.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "graphql-tag",
+      "Versions": [
+        "2.12.6",
+        "2.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ethers",
+      "Versions": [
+        "5.7.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-polyfill",
+      "Versions": [
+        "6.26.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lodash.debounce",
+      "Versions": [
+        "4.0.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/plugin-transform-runtime",
+      "Versions": [
+        "7.23.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ws",
+      "Versions": [
+        "7.5.9",
+        "8.14.2",
+        "6.2.2",
+        "5.2.3",
+        "1.1.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-transition-group",
+      "Versions": [
+        "4.4.5",
+        "2.9.0",
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@testing-library/jest-dom",
+      "Versions": [
+        "5.17.0",
+        "4.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "prompts",
+      "Versions": [
+        "2.4.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "postcss",
+      "Versions": [
+        "8.4.31",
+        "7.0.39",
+        "5.2.18",
+        "6.0.23"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/polyfill",
+      "Versions": [
+        "7.12.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "cross-env",
+      "Versions": [
+        "7.0.3",
+        "5.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@popperjs/core",
+      "Versions": [
+        "2.11.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "graphql",
+      "Versions": [
+        "15.8.0",
+        "14.7.0",
+        "16.8.1",
+        "16.6.0",
+        "0.13.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "js-cookie",
+      "Versions": [
+        "2.2.1",
+        "3.0.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ejs",
+      "Versions": [
+        "3.1.9",
+        "2.7.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lodash.clonedeep",
+      "Versions": [
+        "4.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "resize-observer-polyfill",
+      "Versions": [
+        "1.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "invariant",
+      "Versions": [
+        "2.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "object-assign",
+      "Versions": [
+        "4.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-redux",
+      "Versions": [
+        "7.2.9",
+        "5.1.2",
+        "8.1.3",
+        "6.0.1",
+        "4.4.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/cli",
+      "Versions": [
+        "7.23.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "minimatch",
+      "Versions": [
+        "3.1.2",
+        "3.0.4",
+        "5.1.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-use",
+      "Versions": [
+        "17.4.0",
+        "15.3.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lodash.throttle",
+      "Versions": [
+        "4.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/jsonwebtoken",
+      "Versions": [
+        "8.5.9",
+        "9.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "morgan",
+      "Versions": [
+        "1.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "xml2js",
+      "Versions": [
+        "0.4.23"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ora",
+      "Versions": [
+        "5.4.1",
+        "4.1.1",
+        "3.4.0",
+        "6.3.1",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lodash.merge",
+      "Versions": [
+        "4.6.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "fast-glob",
+      "Versions": [
+        "3.3.1",
+        "3.2.12"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "form-data",
+      "Versions": [
+        "4.0.0",
+        "3.0.1",
+        "2.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "regenerator-runtime",
+      "Versions": [
+        "0.13.11",
+        "0.12.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "source-map-support",
+      "Versions": [
+        "0.5.21",
+        "0.4.18"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "async",
+      "Versions": [
+        "2.6.4",
+        "3.2.5",
+        "1.5.2",
+        "0.9.2",
+        "0.2.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "zod",
+      "Versions": [
+        "3.22.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "isomorphic-fetch",
+      "Versions": [
+        "2.2.1",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@mui/material",
+      "Versions": [
+        "5.14.16"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "express-validator",
+      "Versions": [
+        "6.15.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "tencentcloud-sdk-nodejs-common",
+      "Versions": [
+        "4.0.722",
+        "1.1.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "bignumber.js",
+      "Versions": [
+        "9.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "resolve",
+      "Versions": [
+        "1.22.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "eslint-plugin-jsx-a11y",
+      "Versions": [
+        "6.8.0",
+        "5.1.1",
+        "6.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "postcss-loader",
+      "Versions": [
+        "3.0.0",
+        "2.1.6",
+        "6.2.1",
+        "4.3.0",
+        "7.3.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/runtime-corejs3",
+      "Versions": [
+        "7.23.2",
+        "7.21.0",
+        "7.16.7",
+        "7.21.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "redux-thunk",
+      "Versions": [
+        "2.4.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/cookie-session",
+      "Versions": [
+        "2.0.46"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/react",
+      "Versions": [
+        "16.14.50",
+        "18.2.35",
+        "17.0.69"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "file-saver",
+      "Versions": [
+        "2.0.5",
+        "1.3.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "eslint-plugin-react-hooks",
+      "Versions": [
+        "4.6.0",
+        "1.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-preset-es2015",
+      "Versions": [
+        "6.24.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "nanoid",
+      "Versions": [
+        "3.3.7",
+        "4.0.2",
+        "2.1.11",
+        "3.3.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "events",
+      "Versions": [
+        "3.3.0",
+        "1.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "pluralize",
+      "Versions": [
+        "8.0.0",
+        "7.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "bootstrap",
+      "Versions": [
+        "4.6.2",
+        "5.3.2",
+        "3.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "koa",
+      "Versions": [
+        "2.14.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lodash.isequal",
+      "Versions": [
+        "4.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "graceful-fs",
+      "Versions": [
+        "4.2.11"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "buffer",
+      "Versions": [
+        "6.0.3",
+        "5.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "pg",
+      "Versions": [
+        "8.11.3",
+        "7.18.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "mysql",
+      "Versions": [
+        "2.18.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "slash",
+      "Versions": [
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "vuedraggable",
+      "Versions": [
+        "2.24.3",
+        "4.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "antd",
+      "Versions": [
+        "4.24.14",
+        "3.26.20",
+        "5.11.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "immutable",
+      "Versions": [
+        "3.8.2",
+        "4.3.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "file-loader",
+      "Versions": [
+        "6.2.0",
+        "1.1.11",
+        "4.3.0",
+        "3.0.1",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ts-node",
+      "Versions": [
+        "10.9.1",
+        "8.10.2",
+        "9.1.1",
+        "7.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "chai",
+      "Versions": [
+        "4.3.10",
+        "3.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@fortawesome/free-solid-svg-icons",
+      "Versions": [
+        "5.15.4",
+        "6.4.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/types",
+      "Versions": [
+        "7.23.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "query-string",
+      "Versions": [
+        "6.14.1",
+        "7.1.3",
+        "5.1.1",
+        "4.3.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "q",
+      "Versions": [
+        "1.5.1",
+        "1.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/plugin-syntax-dynamic-import",
+      "Versions": [
+        "7.8.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@fortawesome/fontawesome-svg-core",
+      "Versions": [
+        "1.2.36",
+        "6.4.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "history",
+      "Versions": [
+        "4.10.1",
+        "5.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "request-promise",
+      "Versions": [
+        "4.2.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "svelte",
+      "Versions": [
+        "3.59.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "eslint-config-prettier",
+      "Versions": [
+        "8.10.0",
+        "6.15.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-eslint",
+      "Versions": [
+        "10.1.0",
+        "7.2.3",
+        "8.2.6",
+        "10.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "styled-system",
+      "Versions": [
+        "5.1.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/parser",
+      "Versions": [
+        "7.23.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "figlet",
+      "Versions": [
+        "1.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "prismjs",
+      "Versions": [
+        "1.29.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-preset-env",
+      "Versions": [
+        "1.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "global",
+      "Versions": [
+        "4.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-color",
+      "Versions": [
+        "2.19.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "esm",
+      "Versions": [
+        "3.2.25"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "es6-promise",
+      "Versions": [
+        "4.2.8",
+        "3.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "url-join",
+      "Versions": [
+        "4.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lit-element",
+      "Versions": [
+        "2.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/register",
+      "Versions": [
+        "7.22.15"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "less",
+      "Versions": [
+        "3.13.1",
+        "2.7.3",
+        "4.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "joi",
+      "Versions": [
+        "17.11.0",
+        "14.3.1",
+        "13.7.0",
+        "10.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/node",
+      "Versions": [
+        "14.18.63",
+        "12.20.55",
+        "16.18.60",
+        "20.8.10",
+        "18.18.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "tinycolor2",
+      "Versions": [
+        "1.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "once",
+      "Versions": [
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "shortid",
+      "Versions": [
+        "2.2.16"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "eslint",
+      "Versions": [
+        "7.32.0",
+        "8.53.0",
+        "6.8.0",
+        "5.16.0",
+        "4.19.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "popper.js",
+      "Versions": [
+        "1.16.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "web-vitals",
+      "Versions": [
+        "2.1.4",
+        "1.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "strip-ansi",
+      "Versions": [
+        "6.0.1",
+        "3.0.1",
+        "5.2.0",
+        "6.0.0",
+        "4.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "path-to-regexp",
+      "Versions": [
+        "6.2.1",
+        "1.8.0",
+        "2.4.0",
+        "3.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "font-awesome",
+      "Versions": [
+        "4.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "google-protobuf",
+      "Versions": [
+        "3.21.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "copy-to-clipboard",
+      "Versions": [
+        "3.3.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@emotion/core",
+      "Versions": [
+        "10.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@typescript-eslint/parser",
+      "Versions": [
+        "5.62.0",
+        "4.33.0",
+        "2.34.0",
+        "6.9.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "hoist-non-react-statics",
+      "Versions": [
+        "3.3.2",
+        "2.5.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "fast-deep-equal",
+      "Versions": [
+        "3.1.3",
+        "2.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "bcryptjs",
+      "Versions": [
+        "2.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "webpack-dev-server",
+      "Versions": [
+        "3.11.3",
+        "4.15.1",
+        "2.11.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-preset-react",
+      "Versions": [
+        "6.24.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/traverse",
+      "Versions": [
+        "7.23.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-modal",
+      "Versions": [
+        "3.16.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "mongoose",
+      "Versions": [
+        "5.13.21",
+        "6.12.2",
+        "4.13.21",
+        "7.6.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/plugin-proposal-decorators",
+      "Versions": [
+        "7.23.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "gulp",
+      "Versions": [
+        "3.9.1",
+        "4.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "yup",
+      "Versions": [
+        "0.32.11",
+        "0.29.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@typescript-eslint/eslint-plugin",
+      "Versions": [
+        "5.62.0",
+        "4.33.0",
+        "2.34.0",
+        "6.9.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-popper",
+      "Versions": [
+        "2.3.0",
+        "1.3.11"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lit",
+      "Versions": [
+        "2.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "sirv-cli",
+      "Versions": [
+        "1.0.14"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-icons",
+      "Versions": [
+        "4.11.0",
+        "3.11.0",
+        "2.2.7"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "numeral",
+      "Versions": [
+        "2.0.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "jszip",
+      "Versions": [
+        "3.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-scripts",
+      "Versions": [
+        "5.0.1",
+        "4.0.3",
+        "5.0.0",
+        "3.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "autoprefixer",
+      "Versions": [
+        "9.8.8",
+        "10.4.16",
+        "6.7.7",
+        "7.2.6",
+        "8.6.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "express-session",
+      "Versions": [
+        "1.17.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "jwt-decode",
+      "Versions": [
+        "2.2.0",
+        "3.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "node-nats-streaming",
+      "Versions": [
+        "0.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-window",
+      "Versions": [
+        "1.8.9"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "url",
+      "Versions": [
+        "0.11.3",
+        "0.11.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "json5",
+      "Versions": [
+        "2.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "change-case",
+      "Versions": [
+        "4.1.2",
+        "3.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ramda",
+      "Versions": [
+        "0.27.2",
+        "0.26.1",
+        "0.25.0",
+        "0.28.0",
+        "0.24.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "color",
+      "Versions": [
+        "3.2.1",
+        "4.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@testing-library/user-event",
+      "Versions": [
+        "13.5.0",
+        "12.8.3",
+        "7.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "nodemailer",
+      "Versions": [
+        "6.9.7",
+        "4.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "url-loader",
+      "Versions": [
+        "4.1.1",
+        "1.1.2",
+        "0.5.9",
+        "0.6.2",
+        "2.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@fortawesome/react-fontawesome",
+      "Versions": [
+        "0.1.19",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ncp",
+      "Versions": [
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "yaml",
+      "Versions": [
+        "1.10.2",
+        "2.3.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "constructs",
+      "Versions": [
+        "3.4.344",
+        "10.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "cookie-session",
+      "Versions": [
+        "1.4.0",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "eventemitter3",
+      "Versions": [
+        "4.0.7",
+        "3.1.2",
+        "5.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/react-dom",
+      "Versions": [
+        "16.9.21",
+        "17.0.22",
+        "18.2.14"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@mui/icons-material",
+      "Versions": [
+        "5.14.16"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lru-cache",
+      "Versions": [
+        "6.0.0",
+        "4.1.5",
+        "5.1.1",
+        "7.18.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "fp-ts",
+      "Versions": [
+        "2.16.1",
+        "2.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "hammerjs",
+      "Versions": [
+        "2.0.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "open",
+      "Versions": [
+        "8.4.2",
+        "7.4.2",
+        "0.0.5",
+        "6.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "progress",
+      "Versions": [
+        "2.0.3",
+        "1.1.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/uuid",
+      "Versions": [
+        "8.3.4",
+        "3.4.12"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@ant-design/icons",
+      "Versions": [
+        "4.8.1",
+        "5.2.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "mime",
+      "Versions": [
+        "2.6.0",
+        "3.0.0",
+        "1.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "co",
+      "Versions": [
+        "4.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/gapi.client",
+      "Versions": [
+        "1.0.7"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "webpack-merge",
+      "Versions": [
+        "4.2.2",
+        "5.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "node-uuid",
+      "Versions": [
+        "1.4.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "mongodb",
+      "Versions": [
+        "3.7.4",
+        "4.17.1",
+        "2.2.36"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "sortablejs",
+      "Versions": [
+        "1.15.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@oclif/command",
+      "Versions": [
+        "1.8.36"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/plugin-proposal-object-rest-spread",
+      "Versions": [
+        "7.20.7"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-hook-form",
+      "Versions": [
+        "7.48.2",
+        "6.15.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@polymer/polymer",
+      "Versions": [
+        "3.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "atob",
+      "Versions": [
+        "2.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-intl",
+      "Versions": [
+        "5.25.1",
+        "2.9.0",
+        "3.12.1",
+        "6.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "slugify",
+      "Versions": [
+        "1.6.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "escape-html",
+      "Versions": [
+        "1.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/plugin-proposal-optional-chaining",
+      "Versions": [
+        "7.21.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "auto-bind",
+      "Versions": [
+        "4.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "html-webpack-plugin",
+      "Versions": [
+        "3.2.0",
+        "5.5.3",
+        "2.30.1",
+        "4.5.2",
+        "2.29.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@aws-crypto/sha256-js",
+      "Versions": [
+        "3.0.0",
+        "2.0.0",
+        "1.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "btoa",
+      "Versions": [
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "style-loader",
+      "Versions": [
+        "0.23.1",
+        "1.3.0",
+        "3.3.3",
+        "2.0.0",
+        "0.13.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "whatwg-fetch",
+      "Versions": [
+        "3.6.19",
+        "2.0.4",
+        "2.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "strip-indent",
+      "Versions": [
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "safe-buffer",
+      "Versions": [
+        "5.2.1",
+        "5.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@oclif/config",
+      "Versions": [
+        "1.18.17"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-helmet",
+      "Versions": [
+        "6.1.0",
+        "5.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "formik",
+      "Versions": [
+        "2.4.5",
+        "1.5.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "webpack-cli",
+      "Versions": [
+        "3.3.12",
+        "4.10.0",
+        "5.1.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "bn.js",
+      "Versions": [
+        "5.2.1",
+        "4.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "terminal-link",
+      "Versions": [
+        "2.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@testing-library/react",
+      "Versions": [
+        "13.4.0",
+        "11.2.7",
+        "12.1.5",
+        "9.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@aws-crypto/sha256-browser",
+      "Versions": [
+        "3.0.0",
+        "2.0.0",
+        "1.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "through2",
+      "Versions": [
+        "2.0.5",
+        "3.0.2",
+        "0.6.5",
+        "4.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "nprogress",
+      "Versions": [
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ember-cli-babel",
+      "Versions": [
+        "7.26.11",
+        "5.2.8",
+        "6.18.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "url-parse",
+      "Versions": [
+        "1.5.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "polished",
+      "Versions": [
+        "4.2.2",
+        "3.7.2",
+        "1.9.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-i18next",
+      "Versions": [
+        "11.18.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "debounce",
+      "Versions": [
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "vue-template-compiler",
+      "Versions": [
+        "2.7.15"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "normalize.css",
+      "Versions": [
+        "8.0.1",
+        "7.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "json-stable-stringify",
+      "Versions": [
+        "1.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "socket.io-client",
+      "Versions": [
+        "2.5.0",
+        "4.7.2",
+        "1.7.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "tiny-invariant",
+      "Versions": [
+        "1.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ioredis",
+      "Versions": [
+        "4.28.5",
+        "5.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "tar",
+      "Versions": [
+        "6.2.0",
+        "4.4.19"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "rollup",
+      "Versions": [
+        "2.79.1",
+        "3.29.4",
+        "1.32.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "tmp",
+      "Versions": [
+        "0.2.1",
+        "0.0.33",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ms",
+      "Versions": [
+        "2.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "webpack-hot-middleware",
+      "Versions": [
+        "2.25.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "eslint-plugin-prettier",
+      "Versions": [
+        "3.4.1",
+        "4.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "micromatch",
+      "Versions": [
+        "4.0.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-cli",
+      "Versions": [
+        "6.26.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "identity-obj-proxy",
+      "Versions": [
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "css-loader",
+      "Versions": [
+        "0.28.11",
+        "3.6.0",
+        "6.8.1",
+        "5.2.7",
+        "2.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "socket.io",
+      "Versions": [
+        "2.5.0",
+        "4.7.2",
+        "1.7.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "https-proxy-agent",
+      "Versions": [
+        "5.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-plugin-transform-runtime",
+      "Versions": [
+        "6.23.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "extend",
+      "Versions": [
+        "3.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "multer",
+      "Versions": [
+        "1.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "memoize-one",
+      "Versions": [
+        "5.2.1",
+        "6.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/hyper-function-component",
+      "Versions": [
+        "2.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "immer",
+      "Versions": [
+        "9.0.21",
+        "5.0.0",
+        "1.12.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-select",
+      "Versions": [
+        "3.2.0",
+        "5.7.7",
+        "4.3.1",
+        "2.4.4",
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "util-deprecate",
+      "Versions": [
+        "1.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "validator",
+      "Versions": [
+        "13.11.0",
+        "10.11.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "got",
+      "Versions": [
+        "11.8.6",
+        "9.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "envify",
+      "Versions": [
+        "4.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "gulp-util",
+      "Versions": [
+        "3.0.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "codemirror",
+      "Versions": [
+        "5.65.15"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "loader-utils",
+      "Versions": [
+        "1.4.2",
+        "2.0.4",
+        "0.2.17"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@swc/helpers",
+      "Versions": [
+        "0.5.1",
+        "0.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "zone.js",
+      "Versions": [
+        "0.8.29",
+        "0.11.8",
+        "0.10.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "find-up",
+      "Versions": [
+        "5.0.0",
+        "4.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "serve-static",
+      "Versions": [
+        "1.15.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@smithy/types",
+      "Versions": [
+        "2.4.0",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "luxon",
+      "Versions": [
+        "3.4.3",
+        "1.28.1",
+        "2.5.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lodash.set",
+      "Versions": [
+        "4.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "querystring",
+      "Versions": [
+        "0.2.1",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "vue-i18n",
+      "Versions": [
+        "8.28.2",
+        "9.6.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@reduxjs/toolkit",
+      "Versions": [
+        "1.9.7"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "process",
+      "Versions": [
+        "0.11.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/styled-components",
+      "Versions": [
+        "5.1.29"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "passport-local",
+      "Versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "raf",
+      "Versions": [
+        "3.4.1",
+        "3.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "faker",
+      "Versions": [
+        "4.1.0",
+        "5.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "enquirer",
+      "Versions": [
+        "2.4.1",
+        "2.3.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "highlight.js",
+      "Versions": [
+        "9.18.5",
+        "10.7.3",
+        "11.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "readline-sync",
+      "Versions": [
+        "1.4.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "object-hash",
+      "Versions": [
+        "1.3.1",
+        "2.2.0",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ip",
+      "Versions": [
+        "1.1.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "common-tags",
+      "Versions": [
+        "1.8.2",
+        "1.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "archiver",
+      "Versions": [
+        "5.3.2",
+        "3.1.1",
+        "2.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "http-proxy",
+      "Versions": [
+        "1.18.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "portfinder",
+      "Versions": [
+        "1.0.32"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "nan",
+      "Versions": [
+        "2.18.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "qrcode",
+      "Versions": [
+        "1.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "clone",
+      "Versions": [
+        "2.1.2",
+        "1.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "consola",
+      "Versions": [
+        "2.15.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "content-type",
+      "Versions": [
+        "1.0.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "redis",
+      "Versions": [
+        "2.8.0",
+        "3.1.2",
+        "4.6.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-router",
+      "Versions": [
+        "5.3.4",
+        "4.3.1",
+        "6.18.0",
+        "3.2.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/generator",
+      "Versions": [
+        "7.23.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "clipboard",
+      "Versions": [
+        "2.0.11"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "base64-js",
+      "Versions": [
+        "1.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "superagent",
+      "Versions": [
+        "5.3.1",
+        "3.8.3",
+        "6.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "keycode",
+      "Versions": [
+        "2.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "reselect",
+      "Versions": [
+        "4.1.8",
+        "3.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "echarts",
+      "Versions": [
+        "5.4.3",
+        "4.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-desc",
+      "Versions": [
+        "4.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "listr",
+      "Versions": [
+        "0.14.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "cookie",
+      "Versions": [
+        "0.4.2",
+        "0.5.0",
+        "0.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@sprucelabs/error",
+      "Versions": [
+        "5.1.40"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "inversify",
+      "Versions": [
+        "5.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "html2canvas",
+      "Versions": [
+        "1.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/runtime-corejs2",
+      "Versions": [
+        "7.23.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "util",
+      "Versions": [
+        "0.12.5",
+        "0.10.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "localforage",
+      "Versions": [
+        "1.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-plugin-import",
+      "Versions": [
+        "1.13.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-table",
+      "Versions": [
+        "7.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-beautiful-dnd",
+      "Versions": [
+        "13.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-preset-stage-0",
+      "Versions": [
+        "6.24.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "js-base64",
+      "Versions": [
+        "3.7.5",
+        "2.6.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "io-ts",
+      "Versions": [
+        "2.2.20",
+        "2.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "browserslist",
+      "Versions": [
+        "4.22.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@apollo/client",
+      "Versions": [
+        "3.8.7"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "tailwindcss",
+      "Versions": [
+        "3.3.5",
+        "1.9.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "wrappy",
+      "Versions": [
+        "1.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "validate-npm-package-name",
+      "Versions": [
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/jest",
+      "Versions": [
+        "27.5.2",
+        "26.0.24",
+        "24.9.1",
+        "29.5.7"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "request-promise-native",
+      "Versions": [
+        "1.0.9"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "json-loader",
+      "Versions": [
+        "0.5.7"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "redux-logger",
+      "Versions": [
+        "3.0.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/plugin-proposal-nullish-coalescing-operator",
+      "Versions": [
+        "7.18.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "apollo-link-http",
+      "Versions": [
+        "1.5.17"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "flat",
+      "Versions": [
+        "5.0.2",
+        "4.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-loadable",
+      "Versions": [
+        "5.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "web3",
+      "Versions": [
+        "1.10.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "immutability-helper",
+      "Versions": [
+        "3.1.1",
+        "2.9.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "sass-loader",
+      "Versions": [
+        "7.3.1",
+        "8.0.2",
+        "6.0.7",
+        "10.4.1",
+        "12.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@headlessui/react",
+      "Versions": [
+        "1.7.17"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "js-beautify",
+      "Versions": [
+        "1.14.9"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "json-stringify-safe",
+      "Versions": [
+        "5.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "loglevel",
+      "Versions": [
+        "1.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "uglify-js",
+      "Versions": [
+        "3.17.4",
+        "2.8.29"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "bunyan",
+      "Versions": [
+        "1.8.15"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "terser-webpack-plugin",
+      "Versions": [
+        "5.3.9",
+        "2.3.8",
+        "1.4.5",
+        "4.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "koa-static",
+      "Versions": [
+        "5.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/node-fetch",
+      "Versions": [
+        "2.6.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "extract-text-webpack-plugin",
+      "Versions": [
+        "3.0.2",
+        "1.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "chart.js",
+      "Versions": [
+        "2.9.4",
+        "3.9.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "abort-controller",
+      "Versions": [
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "gulp-rename",
+      "Versions": [
+        "1.4.0",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lit-html",
+      "Versions": [
+        "1.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@backstage/config",
+      "Versions": [
+        "1.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "class-validator",
+      "Versions": [
+        "0.13.2",
+        "0.14.0",
+        "0.12.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "mustache",
+      "Versions": [
+        "4.2.0",
+        "2.3.2",
+        "3.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "nullthrows",
+      "Versions": [
+        "1.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "crypto",
+      "Versions": [
+        "1.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "optimize-css-assets-webpack-plugin",
+      "Versions": [
+        "5.0.8",
+        "5.0.3",
+        "5.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "eslint-plugin-node",
+      "Versions": [
+        "11.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "p-map",
+      "Versions": [
+        "4.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "preact",
+      "Versions": [
+        "10.18.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/styled-system",
+      "Versions": [
+        "5.1.20"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "decimal.js",
+      "Versions": [
+        "10.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-player",
+      "Versions": [
+        "2.13.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "elliptic",
+      "Versions": [
+        "6.5.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "vue-class-component",
+      "Versions": [
+        "7.2.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "memoizee",
+      "Versions": [
+        "0.4.15"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "lodash.omit",
+      "Versions": [
+        "4.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "focus-visible",
+      "Versions": [
+        "5.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "apollo-client",
+      "Versions": [
+        "2.6.10"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "camelcase",
+      "Versions": [
+        "6.3.0",
+        "5.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "less-loader",
+      "Versions": [
+        "4.1.0",
+        "5.0.0",
+        "2.2.3",
+        "7.3.0",
+        "10.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@balena/jellyfish-assert",
+      "Versions": [
+        "1.11.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@grpc/grpc-js",
+      "Versions": [
+        "1.9.9"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "passport",
+      "Versions": [
+        "0.4.1",
+        "0.6.0",
+        "0.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "path-browserify",
+      "Versions": [
+        "1.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@babel/helper-plugin-utils",
+      "Versions": [
+        "7.22.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "optimist",
+      "Versions": [
+        "0.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "string-width",
+      "Versions": [
+        "4.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-virtualized",
+      "Versions": [
+        "9.22.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-hot-loader",
+      "Versions": [
+        "4.13.1",
+        "3.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "prompt",
+      "Versions": [
+        "1.3.0",
+        "0.2.14"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "function-bind",
+      "Versions": [
+        "1.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-copy-to-clipboard",
+      "Versions": [
+        "5.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "cli-progress",
+      "Versions": [
+        "3.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "class-transformer",
+      "Versions": [
+        "0.5.1",
+        "0.3.1",
+        "0.2.3",
+        "0.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "is-url",
+      "Versions": [
+        "1.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "xml-js",
+      "Versions": [
+        "1.6.11"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "warning",
+      "Versions": [
+        "4.0.3",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-spring",
+      "Versions": [
+        "8.0.27",
+        "9.7.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@aws-sdk/types",
+      "Versions": [
+        "3.254.0",
+        "3.347.0",
+        "3.433.0",
+        "3.310.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "extract-zip",
+      "Versions": [
+        "2.0.1",
+        "1.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "webpack-node-externals",
+      "Versions": [
+        "1.7.2",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-custom-scrollbars",
+      "Versions": [
+        "4.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "babel-plugin-transform-class-properties",
+      "Versions": [
+        "6.24.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "mysql2",
+      "Versions": [
+        "2.3.3",
+        "1.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "type-fest",
+      "Versions": [
+        "0.8.1",
+        "2.19.0",
+        "3.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "cli-table",
+      "Versions": [
+        "0.3.11"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "protobufjs",
+      "Versions": [
+        "6.11.4",
+        "7.2.5"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "command-exists",
+      "Versions": [
+        "1.2.9"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "dompurify",
+      "Versions": [
+        "2.4.7"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "bip39",
+      "Versions": [
+        "3.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "marked",
+      "Versions": [
+        "4.3.0",
+        "0.3.19",
+        "0.7.0",
+        "2.1.3",
+        "1.2.9"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "get-port",
+      "Versions": [
+        "5.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "clear",
+      "Versions": [
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "koa-router",
+      "Versions": [
+        "7.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@ethersproject/providers",
+      "Versions": [
+        "5.7.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@backstage/theme",
+      "Versions": [
+        "0.2.19"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "bcrypt",
+      "Versions": [
+        "5.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ignore",
+      "Versions": [
+        "5.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@emotion/css",
+      "Versions": [
+        "11.11.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ini",
+      "Versions": [
+        "1.3.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "tweetnacl",
+      "Versions": [
+        "1.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@material-ui/pickers",
+      "Versions": [
+        "3.3.11"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "jsonschema",
+      "Versions": [
+        "1.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "read-pkg-up",
+      "Versions": [
+        "7.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@aws-cdk/core",
+      "Versions": [
+        "1.204.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ts-dedent",
+      "Versions": [
+        "2.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "libphonenumber-js",
+      "Versions": [
+        "1.10.49"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "case-sensitive-paths-webpack-plugin",
+      "Versions": [
+        "2.4.0",
+        "2.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "ajv-formats",
+      "Versions": [
+        "2.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "emotion",
+      "Versions": [
+        "10.0.27",
+        "9.2.12"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "readable-stream",
+      "Versions": [
+        "3.6.2",
+        "2.3.8"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-datepicker",
+      "Versions": [
+        "4.21.0",
+        "3.8.0",
+        "2.16.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "wu",
+      "Versions": [
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "xtend",
+      "Versions": [
+        "4.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "assert",
+      "Versions": [
+        "2.1.0",
+        "1.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "recompose",
+      "Versions": [
+        "0.30.0",
+        "0.26.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "koa-bodyparser",
+      "Versions": [
+        "4.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "which",
+      "Versions": [
+        "2.0.2",
+        "1.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "escape-string-regexp",
+      "Versions": [
+        "1.0.5",
+        "4.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "browser-sync",
+      "Versions": [
+        "2.29.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@ethersproject/bytes",
+      "Versions": [
+        "5.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "connect",
+      "Versions": [
+        "3.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "apollo-cache-inmemory",
+      "Versions": [
+        "1.6.6"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-is",
+      "Versions": [
+        "16.13.1",
+        "17.0.2",
+        "18.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "opn",
+      "Versions": [
+        "5.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "slick-carousel",
+      "Versions": [
+        "1.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "gulp-concat",
+      "Versions": [
+        "2.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@rollup/plugin-json",
+      "Versions": [
+        "4.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "tslint",
+      "Versions": [
+        "5.20.1",
+        "6.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "deep-equal",
+      "Versions": [
+        "1.1.1",
+        "2.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "enzyme",
+      "Versions": [
+        "3.11.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "nunjucks",
+      "Versions": [
+        "3.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@types/classnames",
+      "Versions": [
+        "2.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "tiny-warning",
+      "Versions": [
+        "1.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "leaflet",
+      "Versions": [
+        "1.9.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "nodemon",
+      "Versions": [
+        "2.0.22",
+        "1.19.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "websocket",
+      "Versions": [
+        "1.0.34"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "@backstage/errors",
+      "Versions": [
+        "1.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "npm",
+      "Versions": [
+        "6.14.18",
+        "8.19.4"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "redux-saga",
+      "Versions": [
+        "1.2.3",
+        "0.16.2"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "download-git-repo",
+      "Versions": [
+        "3.0.2",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "react-dropzone",
+      "Versions": [
+        "11.7.1",
+        "14.2.3",
+        "10.2.2",
+        "4.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "npm",
+      "Name": "normalize-path",
+      "Versions": [
+        "3.0.0"
+      ]
+    }
+  ]
+}

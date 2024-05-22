@@ -1,0 +1,4 @@
+FROM alpine
+ARG BINARY
+COPY $BINARY /gsutil_writeonly
+ENTRYPOINT ["/gsutil_writeonly"]

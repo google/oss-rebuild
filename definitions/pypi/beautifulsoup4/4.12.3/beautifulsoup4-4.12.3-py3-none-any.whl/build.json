@@ -1,0 +1,5 @@
+rebuild_location_hint:
+  location:
+    repo: "https://git.launchpad.net/beautifulsoup"
+    ref: ""
+    dir: ""
