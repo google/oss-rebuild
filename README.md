@@ -27,7 +27,7 @@ ecosystem are currently rebuilt.
 The `oss-rebuild` CLI tool can be used to inspect attestations:
 
 ```bash
-$ go install github.com/google/oss-rebuild/v0/cmd/oss-rebuild
+$ go install github.com/google/oss-rebuild/cmd/oss-rebuild@latest
 $ oss-rebuild get pypi absl-py 2.0.0
 ```
 
