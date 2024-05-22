@@ -1,0 +1,25 @@
+# jj
+.jj/
+
+# Go
+# From https://github.com/github/gitignore/blob/7b22f8ab6c85b4ef1469d72a8ba96462e2a44853/Go.gitignore
+*.test
+*.out
+go.work
+go.work.sum
+
+# Terraform
+# From https://github.com/github/gitignore/blob/7b22f8ab6c85b4ef1469d72a8ba96462e2a44853/Terraform.gitignore
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
