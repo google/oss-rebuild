@@ -35,7 +35,7 @@ import (
 	"github.com/pkg/errors"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/cache"
-	"google3/third_party/golang/gitv5/plumbing/filemode/filemode"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/filesystem"

@@ -33,6 +33,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-yaml/yaml"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -42,7 +43,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/pkg/errors"
 	"github.com/cheggaaa/pb"
-	"google3/third_party/golang/yaml/yaml"
 )
 
 var rootCmd = &cobra.Command{
