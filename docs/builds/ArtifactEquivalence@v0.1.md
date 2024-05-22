@@ -17,11 +17,10 @@ differences.
 The `subject` field describes the upstream artifact against which the rebuilt
 artifact is being compared for equivalence:
 
-| field    | details                                                         |
-| -------- | --------------------------------------------------------------- |
-| `name`   | The file name of the artifact. For many ecosystems this is some |
-:          : combination of the package name and version.                    :
-| `digest` | A hash digest of the artifact, keyed by the algorithm used.     |
+field    | details
+-------- | ------------------------------------------------------------------------------------------------------------
+`name`   | The file name of the artifact. For many ecosystems this is some combination of the package name and version.
+`digest` | A hash digest of the artifact, keyed by the algorithm used.
 
 Example:
 
