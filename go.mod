@@ -1,6 +1,6 @@
 module github.com/google/oss-rebuild
 
-go 1.23
+go 1.21
 
 require (
 	cloud.google.com/go/bigquery v1.59.1
