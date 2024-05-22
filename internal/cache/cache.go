@@ -106,7 +106,7 @@ func NewHierarchicalCache(base Cache) *HierarchicalCache {
 }
 
 func (h *HierarchicalCache) get(key any) (any, error) {
-	for i := range len(h.stack) {
+	for i := range h.stack {
 		c := h.stack[len(h.stack)-1-i]
 		if val, err := c.Get(key); err == nil {
 			return val, nil
