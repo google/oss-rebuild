@@ -1,0 +1,4 @@
+FROM alpine
+ARG BINARY
+COPY $BINARY ./api
+ENTRYPOINT ["./api"]

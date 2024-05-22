@@ -1,0 +1,9891 @@
+{
+  "Count": 2385,
+  "Updated": "2024-01-22T19:17:18.593376892Z",
+  "Packages": [
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-dateutil",
+      "Versions": [
+        "2.8.2",
+        "2.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "certifi",
+      "Versions": [
+        "2023.11.17",
+        "2023.7.22"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "requests",
+      "Versions": [
+        "2.31.0",
+        "2.27.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "six",
+      "Versions": [
+        "1.16.0",
+        "1.15.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "wheel",
+      "Versions": [
+        "0.42.0",
+        "0.37.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "idna",
+      "Versions": [
+        "3.6",
+        "3.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "typing-extensions",
+      "Versions": [
+        "4.9.0",
+        "4.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pip",
+      "Versions": [
+        "23.3.2",
+        "21.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "packaging",
+      "Versions": [
+        "23.2",
+        "21.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "urllib3",
+      "Versions": [
+        "1.26.18",
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "setuptools",
+      "Versions": [
+        "69.0.3",
+        "68.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pycparser",
+      "Versions": [
+        "2.21",
+        "2.20"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyasn1",
+      "Versions": [
+        "0.5.1",
+        "0.4.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "exceptiongroup",
+      "Versions": [
+        "1.2.0",
+        "1.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "attrs",
+      "Versions": [
+        "23.2.0",
+        "23.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tomli",
+      "Versions": [
+        "2.0.1",
+        "1.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "click",
+      "Versions": [
+        "8.1.7",
+        "8.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sniffio",
+      "Versions": [
+        "1.3.0",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytz",
+      "Versions": [
+        "2023.3.post1",
+        "2023.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyjwt",
+      "Versions": [
+        "2.8.0",
+        "2.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jmespath",
+      "Versions": [
+        "1.0.1",
+        "0.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "isodate",
+      "Versions": [
+        "0.6.1",
+        "0.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "botocore",
+      "Versions": [
+        "1.34.20",
+        "1.33.13"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "oauthlib",
+      "Versions": [
+        "3.2.2",
+        "3.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "requests-oauthlib",
+      "Versions": [
+        "1.3.1",
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "zipp",
+      "Versions": [
+        "3.17.0",
+        "3.15.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "rsa",
+      "Versions": [
+        "4.9",
+        "4.7.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "anyio",
+      "Versions": [
+        "4.2.0",
+        "3.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jinja2",
+      "Versions": [
+        "3.1.3",
+        "3.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aiosignal",
+      "Versions": [
+        "1.3.1",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyasn1-modules",
+      "Versions": [
+        "0.3.0",
+        "0.2.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "async-timeout",
+      "Versions": [
+        "4.0.3",
+        "4.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "s3transfer",
+      "Versions": [
+        "0.10.0",
+        "0.8.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cachetools",
+      "Versions": [
+        "5.3.2",
+        "4.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "iniconfig",
+      "Versions": [
+        "2.0.0",
+        "1.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyparsing",
+      "Versions": [
+        "3.1.1",
+        "2.4.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "filelock",
+      "Versions": [
+        "3.13.1",
+        "3.12.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-auth",
+      "Versions": [
+        "2.26.2",
+        "1.35.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "et-xmlfile",
+      "Versions": [
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "importlib-metadata",
+      "Versions": [
+        "7.0.1",
+        "6.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pluggy",
+      "Versions": [
+        "1.3.0",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "asn1crypto",
+      "Versions": [
+        "1.5.1",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "googleapis-common-protos",
+      "Versions": [
+        "1.62.0",
+        "1.61.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tqdm",
+      "Versions": [
+        "4.66.1",
+        "4.64.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "decorator",
+      "Versions": [
+        "5.1.1",
+        "4.4.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "colorama",
+      "Versions": [
+        "0.4.6",
+        "0.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-core",
+      "Versions": [
+        "1.29.6",
+        "1.24.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "boto3",
+      "Versions": [
+        "1.33.13",
+        "1.34.20"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "platformdirs",
+      "Versions": [
+        "4.1.0",
+        "3.11.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pygments",
+      "Versions": [
+        "2.17.2",
+        "2.14.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "distlib",
+      "Versions": [
+        "0.3.8",
+        "0.3.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-api-core",
+      "Versions": [
+        "2.15.0",
+        "1.34.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tzdata",
+      "Versions": [
+        "2023.4",
+        "2023.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "requests-toolbelt",
+      "Versions": [
+        "1.0.0",
+        "0.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mypy-extensions",
+      "Versions": [
+        "1.0.0",
+        "0.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ptyprocess",
+      "Versions": [
+        "0.7.0",
+        "0.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "beautifulsoup4",
+      "Versions": [
+        "4.12.2",
+        "4.12.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "annotated-types",
+      "Versions": [
+        "0.6.0",
+        "0.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "virtualenv",
+      "Versions": [
+        "20.25.0",
+        "20.23.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tabulate",
+      "Versions": [
+        "0.9.0",
+        "0.8.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tomlkit",
+      "Versions": [
+        "0.12.3",
+        "0.12.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "soupsieve",
+      "Versions": [
+        "2.5",
+        "2.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "docutils",
+      "Versions": [
+        "0.16",
+        "0.15.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydantic",
+      "Versions": [
+        "2.5.3",
+        "2.5.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "h11",
+      "Versions": [
+        "0.14.0",
+        "0.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "itsdangerous",
+      "Versions": [
+        "2.1.2",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "deprecated",
+      "Versions": [
+        "1.2.14",
+        "1.2.13"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "msal",
+      "Versions": [
+        "1.26.0",
+        "1.18.0b1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsonschema-specifications",
+      "Versions": [
+        "2023.12.1",
+        "2023.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "referencing",
+      "Versions": [
+        "0.32.1",
+        "0.30.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest",
+      "Versions": [
+        "7.4.4",
+        "7.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsonschema",
+      "Versions": [
+        "4.21.0",
+        "4.17.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "smmap",
+      "Versions": [
+        "5.0.1",
+        "5.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pexpect",
+      "Versions": [
+        "4.9.0",
+        "4.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gitdb",
+      "Versions": [
+        "4.0.11",
+        "4.0.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "py",
+      "Versions": [
+        "1.11.0",
+        "1.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "importlib-resources",
+      "Versions": [
+        "6.1.1",
+        "5.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "charset-normalizer",
+      "Versions": [
+        "2.0.12",
+        "2.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "toml",
+      "Versions": [
+        "0.10.2",
+        "0.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sortedcontainers",
+      "Versions": [
+        "2.4.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "wcwidth",
+      "Versions": [
+        "0.2.13",
+        "0.2.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "werkzeug",
+      "Versions": [
+        "3.0.1",
+        "2.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "more-itertools",
+      "Versions": [
+        "10.2.0",
+        "9.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "openpyxl",
+      "Versions": [
+        "3.1.2",
+        "3.0.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-common",
+      "Versions": [
+        "1.1.28",
+        "1.1.25"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "websocket-client",
+      "Versions": [
+        "1.7.0",
+        "1.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "backoff",
+      "Versions": [
+        "2.2.1",
+        "1.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "portalocker",
+      "Versions": [
+        "2.8.2",
+        "2.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "poetry-core",
+      "Versions": [
+        "1.8.1",
+        "1.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mdurl",
+      "Versions": [
+        "0.1.2",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gitpython",
+      "Versions": [
+        "3.1.41",
+        "3.1.40"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sqlparse",
+      "Versions": [
+        "0.4.4",
+        "0.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "xmltodict",
+      "Versions": [
+        "0.13.0",
+        "0.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-resumable-media",
+      "Versions": [
+        "2.7.0",
+        "2.3.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ply",
+      "Versions": [
+        "3.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "msrest",
+      "Versions": [
+        "0.7.1",
+        "0.6.21"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "proto-plus",
+      "Versions": [
+        "1.23.0",
+        "1.22.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "secretstorage",
+      "Versions": [
+        "3.3.3",
+        "3.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fsspec",
+      "Versions": [
+        "2023.12.2",
+        "2023.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jeepney",
+      "Versions": [
+        "0.8.0",
+        "0.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-dotenv",
+      "Versions": [
+        "1.0.0",
+        "0.21.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-core",
+      "Versions": [
+        "2.4.1",
+        "2.3.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyopenssl",
+      "Versions": [
+        "23.3.0",
+        "23.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pkginfo",
+      "Versions": [
+        "1.9.6",
+        "1.5.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "awscli",
+      "Versions": [
+        "1.32.20",
+        "1.31.13"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pathspec",
+      "Versions": [
+        "0.12.1",
+        "0.11.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "msal-extensions",
+      "Versions": [
+        "1.1.0",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jaraco-classes",
+      "Versions": [
+        "3.3.0",
+        "3.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "scramp",
+      "Versions": [
+        "1.4.4",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "nest-asyncio",
+      "Versions": [
+        "1.5.9",
+        "1.5.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyproject-hooks",
+      "Versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dill",
+      "Versions": [
+        "0.3.7",
+        "0.3.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mccabe",
+      "Versions": [
+        "0.7.0",
+        "0.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "joblib",
+      "Versions": [
+        "1.3.2",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "defusedxml",
+      "Versions": [
+        "0.7.1",
+        "0.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tenacity",
+      "Versions": [
+        "8.2.3",
+        "8.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "grpcio-status",
+      "Versions": [
+        "1.60.0",
+        "1.48.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "blinker",
+      "Versions": [
+        "1.7.0",
+        "1.6.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "rich",
+      "Versions": [
+        "13.7.0",
+        "12.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "markdown-it-py",
+      "Versions": [
+        "3.0.0",
+        "2.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "webencodings",
+      "Versions": [
+        "0.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pkgutil-resolve-name",
+      "Versions": [
+        "1.3.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "redshift-connector",
+      "Versions": [
+        "2.0.918",
+        "2.0.909"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "shellingham",
+      "Versions": [
+        "1.5.4",
+        "1.5.0.post1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "trove-classifiers",
+      "Versions": [
+        "2024.1.8",
+        "2023.9.19"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-identity",
+      "Versions": [
+        "1.15.0",
+        "1.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "prompt-toolkit",
+      "Versions": [
+        "3.0.43",
+        "3.0.39"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fastjsonschema",
+      "Versions": [
+        "2.19.1",
+        "2.19.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "requests-aws4auth",
+      "Versions": [
+        "1.2.3",
+        "1.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "matplotlib-inline",
+      "Versions": [
+        "0.1.6",
+        "0.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mako",
+      "Versions": [
+        "1.3.0",
+        "1.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "httplib2",
+      "Versions": [
+        "0.22.0",
+        "0.20.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-storage-blob",
+      "Versions": [
+        "12.19.0",
+        "12.14.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pymysql",
+      "Versions": [
+        "1.1.0",
+        "1.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tzlocal",
+      "Versions": [
+        "5.2",
+        "5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "paramiko",
+      "Versions": [
+        "3.4.0",
+        "2.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cycler",
+      "Versions": [
+        "0.11.0",
+        "0.12.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-cov",
+      "Versions": [
+        "4.1.0",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "humanfriendly",
+      "Versions": [
+        "10.0",
+        "6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "chardet",
+      "Versions": [
+        "3.0.4",
+        "4.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "py4j",
+      "Versions": [
+        "0.10.9.7",
+        "0.10.9.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "uritemplate",
+      "Versions": [
+        "4.1.1",
+        "3.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "parso",
+      "Versions": [
+        "0.8.3",
+        "0.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "appdirs",
+      "Versions": [
+        "1.4.4",
+        "1.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "keyring",
+      "Versions": [
+        "24.3.0",
+        "23.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "installer",
+      "Versions": [
+        "0.7.0",
+        "0.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "toolz",
+      "Versions": [
+        "0.12.0",
+        "0.11.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jedi",
+      "Versions": [
+        "0.19.1",
+        "0.17.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "oscrypto",
+      "Versions": [
+        "1.3.0",
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "adal",
+      "Versions": [
+        "1.2.7",
+        "1.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aioitertools",
+      "Versions": [
+        "0.11.0",
+        "0.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsonpath-ng",
+      "Versions": [
+        "1.6.1",
+        "1.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "typing-inspect",
+      "Versions": [
+        "0.9.0",
+        "0.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "babel",
+      "Versions": [
+        "2.14.0",
+        "2.12.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "crashtest",
+      "Versions": [
+        "0.4.1",
+        "0.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsonpointer",
+      "Versions": [
+        "2.4",
+        "2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "marshmallow",
+      "Versions": [
+        "3.20.2",
+        "3.19.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-json-logger",
+      "Versions": [
+        "2.0.7",
+        "2.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "build",
+      "Versions": [
+        "1.0.3",
+        "0.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-auth-httplib2",
+      "Versions": [
+        "0.2.0",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dnspython",
+      "Versions": [
+        "2.4.2",
+        "2.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cleo",
+      "Versions": [
+        "2.1.0",
+        "1.0.0a5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pure-eval",
+      "Versions": [
+        "0.2.2",
+        "0.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "traitlets",
+      "Versions": [
+        "5.14.1",
+        "5.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "httpcore",
+      "Versions": [
+        "1.0.2",
+        "0.17.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aenum",
+      "Versions": [
+        "3.1.15",
+        "3.1.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-storage",
+      "Versions": [
+        "2.14.0",
+        "2.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "threadpoolctl",
+      "Versions": [
+        "3.2.0",
+        "3.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "markdown",
+      "Versions": [
+        "3.5.2",
+        "3.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "termcolor",
+      "Versions": [
+        "2.4.0",
+        "2.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "asynctest",
+      "Versions": [
+        "0.13.0",
+        "0.12.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "rfc3339-validator",
+      "Versions": [
+        "0.1.4",
+        "0.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "asgiref",
+      "Versions": [
+        "3.7.2",
+        "3.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "alembic",
+      "Versions": [
+        "1.13.1",
+        "1.12.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "asttokens",
+      "Versions": [
+        "2.4.1",
+        "2.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gunicorn",
+      "Versions": [
+        "21.2.0",
+        "20.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cachecontrol",
+      "Versions": [
+        "0.13.1",
+        "0.12.14"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "executing",
+      "Versions": [
+        "2.0.1",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "httpx",
+      "Versions": [
+        "0.26.0",
+        "0.24.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-auth-oauthlib",
+      "Versions": [
+        "1.2.0",
+        "0.4.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "requests-file",
+      "Versions": [
+        "1.5.1",
+        "1.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsonpatch",
+      "Versions": [
+        "1.33",
+        "1.32"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask",
+      "Versions": [
+        "3.0.0",
+        "2.2.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-pasta",
+      "Versions": [
+        "0.2.0",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "retry",
+      "Versions": [
+        "0.9.2",
+        "0.9.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pickleshare",
+      "Versions": [
+        "0.7.5",
+        "0.7.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyrsistent",
+      "Versions": [
+        "0.19.3",
+        "0.20.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "setuptools-scm",
+      "Versions": [
+        "8.0.4",
+        "7.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "stack-data",
+      "Versions": [
+        "0.6.3",
+        "0.6.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "redis",
+      "Versions": [
+        "5.0.1",
+        "3.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "backcall",
+      "Versions": [
+        "0.2.0",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gremlinpython",
+      "Versions": [
+        "3.7.1",
+        "3.6.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "text-unidecode",
+      "Versions": [
+        "1.3",
+        "1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "poetry-plugin-export",
+      "Versions": [
+        "1.6.0",
+        "1.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opensearch-py",
+      "Versions": [
+        "2.4.2",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "oauth2client",
+      "Versions": [
+        "4.1.3",
+        "4.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "databricks-cli",
+      "Versions": [
+        "0.18.0",
+        "0.17.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pysocks",
+      "Versions": [
+        "1.7.1",
+        "1.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "distro",
+      "Versions": [
+        "1.9.0",
+        "1.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytzdata",
+      "Versions": [
+        "2020.1",
+        "2019.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cloudpickle",
+      "Versions": [
+        "2.2.1",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "docker",
+      "Versions": [
+        "6.1.3",
+        "7.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-utils",
+      "Versions": [
+        "3.5.2",
+        "3.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ruamel-yaml",
+      "Versions": [
+        "0.18.5",
+        "0.17.17"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "msrestazure",
+      "Versions": [
+        "0.6.4",
+        "0.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pg8000",
+      "Versions": [
+        "1.29.8",
+        "1.30.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "isort",
+      "Versions": [
+        "5.13.2",
+        "5.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "xlrd",
+      "Versions": [
+        "2.0.1",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "coloredlogs",
+      "Versions": [
+        "15.0.1",
+        "14.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "nodeenv",
+      "Versions": [
+        "1.8.0",
+        "1.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "html5lib",
+      "Versions": [
+        "1.1",
+        "1.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-runner",
+      "Versions": [
+        "6.0.1",
+        "5.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pycodestyle",
+      "Versions": [
+        "2.11.1",
+        "2.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pbr",
+      "Versions": [
+        "6.0.0",
+        "5.11.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "contextlib2",
+      "Versions": [
+        "21.6.0",
+        "0.6.0.post1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-python-dateutil",
+      "Versions": [
+        "2.8.19.20240106",
+        "2.8.19.14"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "click-plugins",
+      "Versions": [
+        "1.1.1",
+        "1.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "lockfile",
+      "Versions": [
+        "0.12.2",
+        "0.11.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "progressbar2",
+      "Versions": [
+        "4.2.0",
+        "4.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "networkx",
+      "Versions": [
+        "3.2.1",
+        "2.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mpmath",
+      "Versions": [
+        "1.3.0",
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "entrypoints",
+      "Versions": [
+        "0.4",
+        "0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tinycss2",
+      "Versions": [
+        "1.2.1",
+        "1.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "awswrangler",
+      "Versions": [
+        "2.20.1",
+        "3.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cinemagoer",
+      "Versions": [
+        "2023.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "imdbpy",
+      "Versions": [
+        "2022.7.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "arrow",
+      "Versions": [
+        "1.3.0",
+        "1.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "typer",
+      "Versions": [
+        "0.9.0",
+        "0.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sympy",
+      "Versions": [
+        "1.12",
+        "1.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "querystring-parser",
+      "Versions": [
+        "1.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyter-core",
+      "Versions": [
+        "5.7.1",
+        "4.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cached-property",
+      "Versions": [
+        "1.5.2",
+        "1.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "send2trash",
+      "Versions": [
+        "1.8.2",
+        "1.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cfgv",
+      "Versions": [
+        "3.4.0",
+        "3.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "execnet",
+      "Versions": [
+        "2.0.2",
+        "1.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "snowballstemmer",
+      "Versions": [
+        "2.2.0",
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "loguru",
+      "Versions": [
+        "0.7.2",
+        "0.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "poetry",
+      "Versions": [
+        "1.7.1",
+        "1.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ordered-set",
+      "Versions": [
+        "4.1.0",
+        "3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "imageio",
+      "Versions": [
+        "2.15.0",
+        "2.33.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "notebook-shim",
+      "Versions": [
+        "0.2.3",
+        "0.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyter-client",
+      "Versions": [
+        "8.6.0",
+        "7.4.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-slugify",
+      "Versions": [
+        "8.0.1",
+        "6.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aiobotocore",
+      "Versions": [
+        "2.4.2",
+        "2.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mistune",
+      "Versions": [
+        "3.0.2",
+        "0.8.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-api",
+      "Versions": [
+        "1.22.0",
+        "1.20.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-core",
+      "Versions": [
+        "1.4.0",
+        "1.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "json5",
+      "Versions": [
+        "0.9.14",
+        "0.9.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "s3fs",
+      "Versions": [
+        "2023.1.0",
+        "0.4.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "identify",
+      "Versions": [
+        "2.5.33",
+        "2.5.24"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "semantic-version",
+      "Versions": [
+        "2.10.0",
+        "2.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opencensus-context",
+      "Versions": [
+        "0.1.3",
+        "0.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "grpc-google-iam-v1",
+      "Versions": [
+        "0.13.0",
+        "0.12.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "rfc3986-validator",
+      "Versions": [
+        "0.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pandocfilters",
+      "Versions": [
+        "1.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "overrides",
+      "Versions": [
+        "7.4.0",
+        "7.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "absl-py",
+      "Versions": [
+        "2.1.0",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "nltk",
+      "Versions": [
+        "3.8.1",
+        "3.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-nspkg",
+      "Versions": [
+        "3.0.2",
+        "3.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "inflection",
+      "Versions": [
+        "0.5.1",
+        "0.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "huggingface-hub",
+      "Versions": [
+        "0.20.2",
+        "0.16.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "astunparse",
+      "Versions": [
+        "1.6.3",
+        "1.6.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "nbformat",
+      "Versions": [
+        "5.9.2",
+        "5.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "webcolors",
+      "Versions": [
+        "1.13",
+        "1.12"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opt-einsum",
+      "Versions": [
+        "3.3.0",
+        "3.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fqdn",
+      "Versions": [
+        "1.5.1",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "isoduration",
+      "Versions": [
+        "20.11.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "prometheus-client",
+      "Versions": [
+        "0.19.0",
+        "0.17.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-keyvault-secrets",
+      "Versions": [
+        "4.7.0",
+        "4.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "altair",
+      "Versions": [
+        "4.2.2",
+        "5.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flatbuffers",
+      "Versions": [
+        "23.5.26",
+        "1.12"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-api-python-client",
+      "Versions": [
+        "2.114.0",
+        "1.12.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "argparse",
+      "Versions": [
+        "1.4.0",
+        "1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "patsy",
+      "Versions": [
+        "0.5.6",
+        "0.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-bigquery",
+      "Versions": [
+        "3.16.0",
+        "3.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "schema",
+      "Versions": [
+        "0.7.5",
+        "0.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "smart-open",
+      "Versions": [
+        "6.4.0",
+        "6.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sentry-sdk",
+      "Versions": [
+        "1.39.2",
+        "1.39.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "outcome",
+      "Versions": [
+        "1.3.0.post0",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "uri-template",
+      "Versions": [
+        "1.3.0",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opencensus",
+      "Versions": [
+        "0.11.4",
+        "0.11.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pathlib2",
+      "Versions": [
+        "2.3.7.post1",
+        "2.3.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "wsproto",
+      "Versions": [
+        "1.2.0",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "argon2-cffi",
+      "Versions": [
+        "23.1.0",
+        "21.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "comm",
+      "Versions": [
+        "0.2.1",
+        "0.1.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mock",
+      "Versions": [
+        "5.1.0",
+        "4.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "docker-pycreds",
+      "Versions": [
+        "0.4.0",
+        "0.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-datalake-store",
+      "Versions": [
+        "0.0.53",
+        "0.0.52"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "deprecation",
+      "Versions": [
+        "2.1.0",
+        "2.0.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "starlette",
+      "Versions": [
+        "0.27.0",
+        "0.35.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "boto",
+      "Versions": [
+        "2.49.0",
+        "2.25.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyter-events",
+      "Versions": [
+        "0.9.0",
+        "0.6.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "async-lru",
+      "Versions": [
+        "2.0.4",
+        "1.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyter-server-terminals",
+      "Versions": [
+        "0.5.1",
+        "0.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyterlab-server",
+      "Versions": [
+        "2.25.2",
+        "2.24.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pox",
+      "Versions": [
+        "0.3.3",
+        "0.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyter-server",
+      "Versions": [
+        "2.12.5",
+        "1.24.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ppft",
+      "Versions": [
+        "1.7.6.7",
+        "1.6.6.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "semver",
+      "Versions": [
+        "2.13.0",
+        "3.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pathos",
+      "Versions": [
+        "0.3.1",
+        "0.2.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aws-requests-auth",
+      "Versions": [
+        "0.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyflakes",
+      "Versions": [
+        "3.2.0",
+        "3.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "monotonic",
+      "Versions": [
+        "1.6",
+        "1.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ecdsa",
+      "Versions": [
+        "0.18.0",
+        "0.17.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "smdebug-rulesconfig",
+      "Versions": [
+        "1.0.1",
+        "0.1.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-jose",
+      "Versions": [
+        "3.3.0",
+        "3.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-daemon",
+      "Versions": [
+        "3.0.1",
+        "2.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "docstring-parser",
+      "Versions": [
+        "0.15",
+        "0.14.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "applicationinsights",
+      "Versions": [
+        "0.11.10",
+        "0.11.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyterlab",
+      "Versions": [
+        "4.0.10",
+        "3.6.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "futures",
+      "Versions": [
+        "3.4.0",
+        "3.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bleach",
+      "Versions": [
+        "6.1.0",
+        "6.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ipython",
+      "Versions": [
+        "8.20.0",
+        "7.34.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "retrying",
+      "Versions": [
+        "1.3.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "uvicorn",
+      "Versions": [
+        "0.26.0",
+        "0.22.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-multipart",
+      "Versions": [
+        "0.0.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "imagesize",
+      "Versions": [
+        "1.4.1",
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "argcomplete",
+      "Versions": [
+        "3.2.1",
+        "1.12.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cattrs",
+      "Versions": [
+        "23.2.3",
+        "23.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "notebook",
+      "Versions": [
+        "7.0.6",
+        "6.5.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dataclasses-json",
+      "Versions": [
+        "0.6.3",
+        "0.5.14"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ipython-genutils",
+      "Versions": [
+        "0.2.0",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "kubernetes",
+      "Versions": [
+        "29.0.0",
+        "26.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyter-lsp",
+      "Versions": [
+        "2.2.1",
+        "2.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "zeep",
+      "Versions": [
+        "4.2.1",
+        "4.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "trio",
+      "Versions": [
+        "0.24.0",
+        "0.22.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "nbconvert",
+      "Versions": [
+        "7.14.2",
+        "7.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyterlab-widgets",
+      "Versions": [
+        "3.0.9",
+        "1.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sphinxcontrib-jsmath",
+      "Versions": [
+        "1.0.1",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "widgetsnbextension",
+      "Versions": [
+        "4.0.9",
+        "3.6.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "plotly",
+      "Versions": [
+        "5.18.0",
+        "5.14.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "click-man",
+      "Versions": [
+        "0.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "click-didyoumean",
+      "Versions": [
+        "0.3.0",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aiofiles",
+      "Versions": [
+        "23.2.1",
+        "22.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ipywidgets",
+      "Versions": [
+        "8.1.1",
+        "7.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ddsketch",
+      "Versions": [
+        "2.0.4",
+        "2.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flake8",
+      "Versions": [
+        "7.0.0",
+        "6.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-pyyaml",
+      "Versions": [
+        "6.0.12.12",
+        "6.0.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ipykernel",
+      "Versions": [
+        "6.29.0",
+        "6.16.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsonpickle",
+      "Versions": [
+        "3.0.2",
+        "2.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "typing",
+      "Versions": [
+        "3.10.0.0",
+        "3.6.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "xlsxwriter",
+      "Versions": [
+        "3.1.9",
+        "3.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fastapi",
+      "Versions": [
+        "0.109.0",
+        "0.95.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dataclasses",
+      "Versions": [
+        "0.8",
+        "0.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gast",
+      "Versions": [
+        "0.4.0",
+        "0.5.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-storage-file-datalake",
+      "Versions": [
+        "12.14.0",
+        "12.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "nbclient",
+      "Versions": [
+        "0.9.0",
+        "0.7.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "makefun",
+      "Versions": [
+        "1.15.2",
+        "1.15.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pre-commit",
+      "Versions": [
+        "3.6.0",
+        "3.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fonttools",
+      "Versions": [
+        "4.38.0",
+        "4.39.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opencensus-ext-azure",
+      "Versions": [
+        "1.1.13",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-mock",
+      "Versions": [
+        "3.12.0",
+        "3.11.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyterlab-pygments",
+      "Versions": [
+        "0.3.0",
+        "0.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "typeguard",
+      "Versions": [
+        "2.13.3",
+        "4.1.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-sdk",
+      "Versions": [
+        "1.22.0",
+        "1.20.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pipenv",
+      "Versions": [
+        "2023.11.15",
+        "2023.10.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "trio-websocket",
+      "Versions": [
+        "0.11.1",
+        "0.9.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-keyvault",
+      "Versions": [
+        "1.1.0",
+        "4.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "slicer",
+      "Versions": [
+        "0.0.7",
+        "0.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-semantic-conventions",
+      "Versions": [
+        "0.43b0",
+        "0.41b0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cligj",
+      "Versions": [
+        "0.7.2",
+        "0.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "slack-sdk",
+      "Versions": [
+        "3.26.2",
+        "3.19.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytimeparse",
+      "Versions": [
+        "1.1.8",
+        "1.1.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "snowflake-sqlalchemy",
+      "Versions": [
+        "1.5.1",
+        "1.4.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-http-client",
+      "Versions": [
+        "3.3.7",
+        "3.3.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "db-dtypes",
+      "Versions": [
+        "1.2.0",
+        "1.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydata-google-auth",
+      "Versions": [
+        "1.8.2",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "zope-event",
+      "Versions": [
+        "5.0",
+        "4.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "stevedore",
+      "Versions": [
+        "5.1.0",
+        "3.5.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "openai",
+      "Versions": [
+        "1.8.0",
+        "0.28.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "multiprocess",
+      "Versions": [
+        "0.70.15",
+        "0.70.15"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-bigquery-storage",
+      "Versions": [
+        "2.24.0",
+        "2.13.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "croniter",
+      "Versions": [
+        "2.0.1",
+        "1.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "rich-argparse",
+      "Versions": [
+        "1.4.0",
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "graphviz",
+      "Versions": [
+        "0.20.1",
+        "0.8.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hpack",
+      "Versions": [
+        "4.0.0",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "prettytable",
+      "Versions": [
+        "3.9.0",
+        "2.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-storage-common",
+      "Versions": [
+        "1.4.2",
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "marshmallow-enum",
+      "Versions": [
+        "1.5.1",
+        "1.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "click-repl",
+      "Versions": [
+        "0.3.0",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "vine",
+      "Versions": [
+        "5.1.0",
+        "5.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-audit-log",
+      "Versions": [
+        "0.2.5",
+        "0.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hyperframe",
+      "Versions": [
+        "6.0.1",
+        "5.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-xdist",
+      "Versions": [
+        "3.5.0",
+        "3.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ipaddress",
+      "Versions": [
+        "1.0.23",
+        "1.0.22"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "responses",
+      "Versions": [
+        "0.24.1",
+        "0.18.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorboard-plugin-wit",
+      "Versions": [
+        "1.8.1",
+        "1.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "h2",
+      "Versions": [
+        "4.1.0",
+        "3.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "terminado",
+      "Versions": [
+        "0.18.0",
+        "0.17.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "seaborn",
+      "Versions": [
+        "0.12.2",
+        "0.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "parsedatetime",
+      "Versions": [
+        "2.6",
+        "2.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-datalake-store",
+      "Versions": [
+        "0.5.0",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "texttable",
+      "Versions": [
+        "1.7.0",
+        "1.6.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "amqp",
+      "Versions": [
+        "5.2.0",
+        "5.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "astroid",
+      "Versions": [
+        "3.0.2",
+        "2.15.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "kafka-python",
+      "Versions": [
+        "2.0.2",
+        "1.4.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-proto",
+      "Versions": [
+        "1.22.0",
+        "1.20.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-urllib3",
+      "Versions": [
+        "1.26.25.14",
+        "1.26.25.13"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "wandb",
+      "Versions": [
+        "0.16.2",
+        "0.16.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsondiff",
+      "Versions": [
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydeequ",
+      "Versions": [
+        "1.0.1",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-exporter-otlp-proto-common",
+      "Versions": [
+        "1.22.0",
+        "1.20.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "rfc3986",
+      "Versions": [
+        "1.5.0",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "limits",
+      "Versions": [
+        "3.7.0",
+        "3.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "datadog",
+      "Versions": [
+        "0.47.0",
+        "0.42.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fuzzywuzzy",
+      "Versions": [
+        "0.18.0",
+        "0.16.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-limiter",
+      "Versions": [
+        "3.5.0",
+        "3.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "elasticsearch",
+      "Versions": [
+        "7.13.4",
+        "8.11.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pybind11",
+      "Versions": [
+        "2.11.1",
+        "2.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "junit-xml",
+      "Versions": [
+        "1.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bytecode",
+      "Versions": [
+        "0.15.1",
+        "0.13.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydot",
+      "Versions": [
+        "1.4.2",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-nspkg",
+      "Versions": [
+        "3.0.2",
+        "3.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-datalake-nspkg",
+      "Versions": [
+        "3.0.1",
+        "3.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "unidecode",
+      "Versions": [
+        "1.3.8",
+        "1.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pygithub",
+      "Versions": [
+        "2.1.1",
+        "1.55"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-magic",
+      "Versions": [
+        "0.4.27",
+        "0.4.18"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "universal-pathlib",
+      "Versions": [
+        "0.1.4",
+        "0.0.23"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-loganalytics",
+      "Versions": [
+        "0.1.1",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pylint",
+      "Versions": [
+        "3.0.3",
+        "2.17.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "nose",
+      "Versions": [
+        "1.3.7",
+        "1.3.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyhcl",
+      "Versions": [
+        "0.4.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "asyncio",
+      "Versions": [
+        "3.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud",
+      "Versions": [
+        "0.34.0",
+        "0.27.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hvac",
+      "Versions": [
+        "2.1.0",
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "imbalanced-learn",
+      "Versions": [
+        "0.11.0",
+        "0.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "astor",
+      "Versions": [
+        "0.8.1",
+        "0.6.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-keyvault-certificates",
+      "Versions": [
+        "4.7.0",
+        "4.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-exporter-otlp",
+      "Versions": [
+        "1.22.0",
+        "1.20.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-exporter-otlp-proto-grpc",
+      "Versions": [
+        "1.22.0",
+        "1.20.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "envier",
+      "Versions": [
+        "0.5.0",
+        "0.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "datetime",
+      "Versions": [
+        "5.4",
+        "4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-exporter-otlp-proto-http",
+      "Versions": [
+        "1.22.0",
+        "1.20.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyserial",
+      "Versions": [
+        "3.5",
+        "3.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mlflow",
+      "Versions": [
+        "2.9.2",
+        "2.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pep517",
+      "Versions": [
+        "0.13.0",
+        "0.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jaydebeapi",
+      "Versions": [
+        "1.2.3",
+        "1.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "graphql-core",
+      "Versions": [
+        "3.2.3",
+        "2.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "transformers",
+      "Versions": [
+        "4.36.2",
+        "4.30.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "djangorestframework",
+      "Versions": [
+        "3.14.0",
+        "3.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "readme-renderer",
+      "Versions": [
+        "42.0",
+        "37.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "leather",
+      "Versions": [
+        "0.3.4",
+        "0.3.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "invoke",
+      "Versions": [
+        "1.7.3",
+        "2.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyspnego",
+      "Versions": [
+        "0.10.2",
+        "0.9.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "apache-airflow",
+      "Versions": [
+        "2.8.0",
+        "2.6.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cssselect",
+      "Versions": [
+        "1.2.0",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-consumption",
+      "Versions": [
+        "2.0.0",
+        "10.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-relay",
+      "Versions": [
+        "0.1.0",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-secret-manager",
+      "Versions": [
+        "2.17.0",
+        "2.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "apscheduler",
+      "Versions": [
+        "3.10.4",
+        "3.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "colorlog",
+      "Versions": [
+        "6.8.0",
+        "4.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pycountry",
+      "Versions": [
+        "23.12.11",
+        "18.12.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "alabaster",
+      "Versions": [
+        "0.7.16",
+        "0.7.13"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "graphframes",
+      "Versions": [
+        "0.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "commonmark",
+      "Versions": [
+        "0.9.1",
+        "0.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "langcodes",
+      "Versions": [
+        "3.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pip-tools",
+      "Versions": [
+        "7.3.0",
+        "6.12.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "webob",
+      "Versions": [
+        "1.8.7",
+        "1.8.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "editables",
+      "Versions": [
+        "0.5",
+        "0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "py-cpuinfo",
+      "Versions": [
+        "9.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "simple-salesforce",
+      "Versions": [
+        "1.12.5",
+        "1.11.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "enum34",
+      "Versions": [
+        "1.1.10",
+        "1.1.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mergedeep",
+      "Versions": [
+        "1.3.4",
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "spacy-legacy",
+      "Versions": [
+        "3.0.12",
+        "3.0.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "faker",
+      "Versions": [
+        "22.2.0",
+        "20.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-graphrbac",
+      "Versions": [
+        "0.61.1",
+        "0.60.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "keras-preprocessing",
+      "Versions": [
+        "1.1.2",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-cosmosdb-nspkg",
+      "Versions": [
+        "2.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-awscrt",
+      "Versions": [
+        "0.20.0",
+        "0.16.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sphinxcontrib-serializinghtml",
+      "Versions": [
+        "1.1.10",
+        "1.1.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "prometheus-flask-exporter",
+      "Versions": [
+        "0.23.0",
+        "0.20.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-appengine-logging",
+      "Versions": [
+        "1.4.0",
+        "1.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydub",
+      "Versions": [
+        "0.25.1",
+        "0.23.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sshtunnel",
+      "Versions": [
+        "0.1.5",
+        "0.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sphinxcontrib-htmlhelp",
+      "Versions": [
+        "2.0.5",
+        "2.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-timeout",
+      "Versions": [
+        "2.2.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sphinxcontrib-devhelp",
+      "Versions": [
+        "1.0.6",
+        "1.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydocstyle",
+      "Versions": [
+        "6.3.0",
+        "6.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "email-validator",
+      "Versions": [
+        "2.1.0.post1",
+        "1.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sphinxcontrib-qthelp",
+      "Versions": [
+        "1.0.7",
+        "1.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sphinxcontrib-applehelp",
+      "Versions": [
+        "1.0.8",
+        "1.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fabric",
+      "Versions": [
+        "2.7.1",
+        "3.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aws-psycopg2",
+      "Versions": [
+        "1.2.1",
+        "1.3.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fasteners",
+      "Versions": [
+        "0.19",
+        "0.16.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "catalogue",
+      "Versions": [
+        "2.0.10",
+        "1.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "billiard",
+      "Versions": [
+        "3.6.4.0",
+        "4.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-cosmosdb-table",
+      "Versions": [
+        "1.0.6",
+        "1.0.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-keyvault-keys",
+      "Versions": [
+        "4.8.0",
+        "4.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "configparser",
+      "Versions": [
+        "4.0.2",
+        "6.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "linkify-it-py",
+      "Versions": [
+        "2.0.2",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-pytz",
+      "Versions": [
+        "2023.3.1.1",
+        "2023.3.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pywin32-ctypes",
+      "Versions": [
+        "0.2.2",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-dns",
+      "Versions": [
+        "8.0.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "apache-airflow-providers-common-sql",
+      "Versions": [
+        "1.10.0",
+        "1.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-appconfiguration",
+      "Versions": [
+        "1.1.1",
+        "1.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "funcsigs",
+      "Versions": [
+        "1.0.2",
+        "0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-cosmos",
+      "Versions": [
+        "3.2.0",
+        "4.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-privatedns",
+      "Versions": [
+        "1.0.0",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "lightning-utilities",
+      "Versions": [
+        "0.10.0",
+        "0.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-hdinsight",
+      "Versions": [
+        "9.0.0",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-resource",
+      "Versions": [
+        "23.0.1",
+        "21.1.0b1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "locket",
+      "Versions": [
+        "1.0.0",
+        "0.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-marketplaceordering",
+      "Versions": [
+        "1.1.0",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-advisor",
+      "Versions": [
+        "9.0.0",
+        "1.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "omegaconf",
+      "Versions": [
+        "2.3.0",
+        "2.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-applicationinsights",
+      "Versions": [
+        "1.0.0",
+        "0.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "spacy-loggers",
+      "Versions": [
+        "1.0.5",
+        "1.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-billing",
+      "Versions": [
+        "6.0.0",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "diskcache",
+      "Versions": [
+        "5.6.3",
+        "5.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-managedservices",
+      "Versions": [
+        "1.0.0",
+        "6.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-devtestlabs",
+      "Versions": [
+        "4.0.0",
+        "2.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-kusto",
+      "Versions": [
+        "0.3.0",
+        "0.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-managementgroups",
+      "Versions": [
+        "1.0.0",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gspread",
+      "Versions": [
+        "5.12.4",
+        "3.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-servicefabric",
+      "Versions": [
+        "1.0.0",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-eventhub",
+      "Versions": [
+        "10.1.0",
+        "2.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "scp",
+      "Versions": [
+        "0.13.6",
+        "0.14.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-synapse-spark",
+      "Versions": [
+        "0.2.0",
+        "0.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-datamigration",
+      "Versions": [
+        "10.0.0",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-maps",
+      "Versions": [
+        "2.0.0",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-databoxedge",
+      "Versions": [
+        "1.0.0",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-data-tables",
+      "Versions": [
+        "12.4.0",
+        "12.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aniso8601",
+      "Versions": [
+        "9.0.1",
+        "7.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-cdn",
+      "Versions": [
+        "12.0.0",
+        "3.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-servicefabricmanagedclusters",
+      "Versions": [
+        "1.0.0",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-synapse-accesscontrol",
+      "Versions": [
+        "0.5.0",
+        "0.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-s3transfer",
+      "Versions": [
+        "0.10.0",
+        "0.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "javaproperties",
+      "Versions": [
+        "0.5.2",
+        "0.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "apispec",
+      "Versions": [
+        "6.4.0",
+        "3.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "uc-micro-py",
+      "Versions": [
+        "1.0.2",
+        "1.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hyperlink",
+      "Versions": [
+        "21.0.0",
+        "17.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-trafficmanager",
+      "Versions": [
+        "1.0.0",
+        "0.50.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-iothubprovisioningservices",
+      "Versions": [
+        "1.1.0",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-media",
+      "Versions": [
+        "9.0.0",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyter",
+      "Versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-firestore",
+      "Versions": [
+        "2.14.0",
+        "2.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hatchling",
+      "Versions": [
+        "1.21.0",
+        "1.17.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-gitlab",
+      "Versions": [
+        "3.15.0",
+        "4.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "lazy-loader",
+      "Versions": [
+        "0.3",
+        "0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-cors",
+      "Versions": [
+        "4.0.0",
+        "3.0.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tldextract",
+      "Versions": [
+        "5.1.1",
+        "2.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyproject-api",
+      "Versions": [
+        "1.6.1",
+        "1.5.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pathlib",
+      "Versions": [
+        "1.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "configobj",
+      "Versions": [
+        "5.0.8",
+        "5.0.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "validators",
+      "Versions": [
+        "0.22.0",
+        "0.18.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pandas-gbq",
+      "Versions": [
+        "0.20.0",
+        "0.19.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "twine",
+      "Versions": [
+        "4.0.2",
+        "3.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "korean-lunar-calendar",
+      "Versions": [
+        "0.3.1",
+        "0.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyarrow-hotfix",
+      "Versions": [
+        "0.6",
+        "0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "partd",
+      "Versions": [
+        "1.4.1",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "selenium",
+      "Versions": [
+        "3.141.0",
+        "4.16.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-eventhub",
+      "Versions": [
+        "5.11.5",
+        "5.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "incremental",
+      "Versions": [
+        "22.10.0",
+        "21.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "keras-applications",
+      "Versions": [
+        "1.0.8",
+        "1.0.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "convertdate",
+      "Versions": [
+        "2.4.0",
+        "2.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ndg-httpsclient",
+      "Versions": [
+        "0.5.1",
+        "0.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dacite",
+      "Versions": [
+        "1.8.1",
+        "1.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "nbclassic",
+      "Versions": [
+        "1.0.0",
+        "0.5.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-appbuilder",
+      "Versions": [
+        "4.3.10",
+        "4.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-gnupg",
+      "Versions": [
+        "0.5.2",
+        "0.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sphinx",
+      "Versions": [
+        "7.2.6",
+        "5.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "humanize",
+      "Versions": [
+        "4.9.0",
+        "4.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "urllib3-secure-extra",
+      "Versions": [
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "wasabi",
+      "Versions": [
+        "1.1.2",
+        "0.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "freezegun",
+      "Versions": [
+        "1.2.2",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "parse",
+      "Versions": [
+        "1.20.0",
+        "1.19.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "kombu",
+      "Versions": [
+        "5.3.5",
+        "5.3.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "xlwt",
+      "Versions": [
+        "1.3.0",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tblib",
+      "Versions": [
+        "3.0.0",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "geographiclib",
+      "Versions": [
+        "2.0",
+        "1.52"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "passlib",
+      "Versions": [
+        "1.7.4",
+        "1.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sqlalchemy-utils",
+      "Versions": [
+        "0.41.1",
+        "0.38.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-sqlalchemy",
+      "Versions": [
+        "2.5.1",
+        "3.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-asyncio",
+      "Versions": [
+        "0.21.1",
+        "0.23.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-datalake-analytics",
+      "Versions": [
+        "0.2.1",
+        "0.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-metadata",
+      "Versions": [
+        "3.0.0",
+        "2.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-web",
+      "Versions": [
+        "7.0.0",
+        "0.35.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-batchai",
+      "Versions": [
+        "7.0.0b1",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "einops",
+      "Versions": [
+        "0.7.0",
+        "0.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-authorization",
+      "Versions": [
+        "0.61.0",
+        "4.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "confection",
+      "Versions": [
+        "0.1.4",
+        "0.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-datafactory",
+      "Versions": [
+        "4.0.0",
+        "0.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytz-deprecation-shim",
+      "Versions": [
+        "0.1.0.post0",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-extendedlocation",
+      "Versions": [
+        "1.0.0b2",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-loganalytics",
+      "Versions": [
+        "13.0.0b4",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dateparser",
+      "Versions": [
+        "1.2.0",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "connexion",
+      "Versions": [
+        "2.14.2",
+        "2.14.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyrfc3339",
+      "Versions": [
+        "1.1",
+        "1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "spark-nlp",
+      "Versions": [
+        "5.2.2",
+        "3.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-login",
+      "Versions": [
+        "0.6.3",
+        "0.6.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-requests",
+      "Versions": [
+        "2.31.0.20240106",
+        "2.31.0.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-apimanagement",
+      "Versions": [
+        "3.0.0",
+        "4.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-search",
+      "Versions": [
+        "8.0.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-eventgrid",
+      "Versions": [
+        "10.2.0b2",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "orderedmultidict",
+      "Versions": [
+        "1.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pypdf2",
+      "Versions": [
+        "3.0.1",
+        "2.12.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "knack",
+      "Versions": [
+        "0.9.0",
+        "0.11.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "automat",
+      "Versions": [
+        "22.10.0",
+        "20.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tox",
+      "Versions": [
+        "4.12.1",
+        "3.28.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ua-parser",
+      "Versions": [
+        "0.18.0",
+        "0.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "requests-ntlm",
+      "Versions": [
+        "1.2.0",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mdit-py-plugins",
+      "Versions": [
+        "0.4.0",
+        "0.3.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "trio-asyncio",
+      "Versions": [
+        "0.13.0",
+        "0.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "toposort",
+      "Versions": [
+        "1.10",
+        "1.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-editor",
+      "Versions": [
+        "1.0.4",
+        "1.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jupyter-console",
+      "Versions": [
+        "6.6.3",
+        "6.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "async-generator",
+      "Versions": [
+        "1.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-deploymentmanager",
+      "Versions": [
+        "0.2.0",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "binaryornot",
+      "Versions": [
+        "0.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "parameterized",
+      "Versions": [
+        "0.9.0",
+        "0.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-forked",
+      "Versions": [
+        "1.6.0",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cssselect2",
+      "Versions": [
+        "0.7.0",
+        "0.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "qtpy",
+      "Versions": [
+        "2.4.1",
+        "1.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-containerinstance",
+      "Versions": [
+        "9.1.0",
+        "10.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "configargparse",
+      "Versions": [
+        "1.7",
+        "1.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-synapse-managedprivateendpoints",
+      "Versions": [
+        "0.3.0",
+        "0.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-storage-file-share",
+      "Versions": [
+        "12.15.0",
+        "12.4.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-iothub",
+      "Versions": [
+        "2.2.0",
+        "0.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "repoze-lru",
+      "Versions": [
+        "0.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "botocore-stubs",
+      "Versions": [
+        "1.34.20",
+        "1.34.21"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bs4",
+      "Versions": [
+        "0.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "yacs",
+      "Versions": [
+        "0.1.8",
+        "0.1.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-storage-queue",
+      "Versions": [
+        "12.9.0",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-batch",
+      "Versions": [
+        "12.0.0",
+        "4.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-storage",
+      "Versions": [
+        "21.1.0",
+        "20.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "junitparser",
+      "Versions": [
+        "3.1.0",
+        "3.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-redis",
+      "Versions": [
+        "13.1.0",
+        "5.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-servicebus",
+      "Versions": [
+        "7.11.4",
+        "7.8.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ldap3",
+      "Versions": [
+        "2.9.1",
+        "2.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-redhatopenshift",
+      "Versions": [
+        "1.1.0",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "yamllint",
+      "Versions": [
+        "1.33.0",
+        "1.32.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "celery",
+      "Versions": [
+        "5.3.6",
+        "5.2.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-session",
+      "Versions": [
+        "0.5.0",
+        "0.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "robotframework-seleniumlibrary",
+      "Versions": [
+        "6.1.0",
+        "6.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-imagebuilder",
+      "Versions": [
+        "1.1.0",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-servicelinker",
+      "Versions": [
+        "1.0.0",
+        "1.2.0b1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-batch",
+      "Versions": [
+        "16.2.0",
+        "5.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python3-openid",
+      "Versions": [
+        "3.2.0",
+        "3.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "asyncache",
+      "Versions": [
+        "0.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "addict",
+      "Versions": [
+        "2.4.0",
+        "2.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "prison",
+      "Versions": [
+        "0.2.1",
+        "0.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "statsd",
+      "Versions": [
+        "3.3.0",
+        "4.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorflow-serving-api",
+      "Versions": [
+        "1.15.0",
+        "2.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "magicattr",
+      "Versions": [
+        "0.1.5",
+        "0.1.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "netaddr",
+      "Versions": [
+        "0.10.1",
+        "0.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hyperopt",
+      "Versions": [
+        "0.2.7",
+        "0.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorflow-estimator",
+      "Versions": [
+        "1.15.1",
+        "2.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "translationstring",
+      "Versions": [
+        "1.4",
+        "1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "elastic-transport",
+      "Versions": [
+        "8.11.0",
+        "8.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jdcal",
+      "Versions": [
+        "1.4.1",
+        "1.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "datasets",
+      "Versions": [
+        "2.16.1",
+        "2.14.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "shortuuid",
+      "Versions": [
+        "1.0.11",
+        "1.0.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorboard",
+      "Versions": [
+        "1.15.0",
+        "2.15.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-jsonpath",
+      "Versions": [
+        "0.10.3",
+        "0.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "blessed",
+      "Versions": [
+        "1.20.0",
+        "1.19.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "kr8s",
+      "Versions": [
+        "0.12.15",
+        "0.8.18"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pastedeploy",
+      "Versions": [
+        "3.1.0",
+        "3.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-pubsub",
+      "Versions": [
+        "2.19.0",
+        "2.18.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flit-core",
+      "Versions": [
+        "3.9.0",
+        "3.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "venusian",
+      "Versions": [
+        "3.1.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hupper",
+      "Versions": [
+        "1.12",
+        "1.10.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "psycopg",
+      "Versions": [
+        "3.1.17",
+        "3.1.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "zope-deprecation",
+      "Versions": [
+        "5.0",
+        "4.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "plaster",
+      "Versions": [
+        "1.1.2",
+        "1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "plaster-pastedeploy",
+      "Versions": [
+        "1.0.1",
+        "0.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-keyvault",
+      "Versions": [
+        "9.3.0",
+        "10.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opencensus-ext-logging",
+      "Versions": [
+        "0.1.1",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-logging",
+      "Versions": [
+        "3.9.0",
+        "3.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "databricks-sql-connector",
+      "Versions": [
+        "2.9.3",
+        "3.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "kfp-pipeline-spec",
+      "Versions": [
+        "0.1.16",
+        "0.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tifffile",
+      "Versions": [
+        "2023.12.9",
+        "2023.7.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-wtf",
+      "Versions": [
+        "1.1.1",
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bracex",
+      "Versions": [
+        "2.4",
+        "2.3.post1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cerberus",
+      "Versions": [
+        "1.3.5",
+        "1.3.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "keras",
+      "Versions": [
+        "2.12.0",
+        "2.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "appnope",
+      "Versions": [
+        "0.1.3",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-containerregistry",
+      "Versions": [
+        "8.2.0",
+        "10.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-keyvault-administration",
+      "Versions": [
+        "4.0.0b3",
+        "4.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ftfy",
+      "Versions": [
+        "6.1.3",
+        "6.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sarif-om",
+      "Versions": [
+        "1.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-recoveryservices",
+      "Versions": [
+        "2.0.0",
+        "0.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jschema-to-python",
+      "Versions": [
+        "1.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "deepdiff",
+      "Versions": [
+        "6.7.1",
+        "5.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "configupdater",
+      "Versions": [
+        "3.2",
+        "3.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-resource-manager",
+      "Versions": [
+        "1.11.0",
+        "1.10.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "moto",
+      "Versions": [
+        "4.2.13",
+        "4.2.12"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "geopy",
+      "Versions": [
+        "2.4.1",
+        "2.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cog",
+      "Versions": [
+        "0.9.0b10",
+        "0.9.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sphinxcontrib-jquery",
+      "Versions": [
+        "4.1",
+        "4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hijri-converter",
+      "Versions": [
+        "2.3.1",
+        "2.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-network",
+      "Versions": [
+        "20.0.0",
+        "25.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-monitor",
+      "Versions": [
+        "3.0.0",
+        "0.5.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-consul",
+      "Versions": [
+        "1.1.0",
+        "0.7.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ipdb",
+      "Versions": [
+        "0.13.13",
+        "0.13.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flake8-docstrings",
+      "Versions": [
+        "1.7.0",
+        "1.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bottle",
+      "Versions": [
+        "0.12.25",
+        "0.12.17"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-servicebus",
+      "Versions": [
+        "7.1.0",
+        "0.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "authlib",
+      "Versions": [
+        "1.3.0",
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cython",
+      "Versions": [
+        "0.29.37",
+        "3.0.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "furl",
+      "Versions": [
+        "2.1.3",
+        "2.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-jwt-extended",
+      "Versions": [
+        "4.6.0",
+        "4.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "waitress",
+      "Versions": [
+        "2.0.0",
+        "2.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pkce",
+      "Versions": [
+        "1.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gcsfs",
+      "Versions": [
+        "2023.12.2.post1",
+        "0.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyquaternion",
+      "Versions": [
+        "0.9.9",
+        "0.9.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-security",
+      "Versions": [
+        "2.0.0b1",
+        "5.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyyaml-env-tag",
+      "Versions": [
+        "0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sendgrid",
+      "Versions": [
+        "6.11.0",
+        "6.9.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "iso8601",
+      "Versions": [
+        "2.1.0",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "telethon",
+      "Versions": [
+        "1.25.2",
+        "1.24.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google",
+      "Versions": [
+        "3.0.0",
+        "2.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydantic-settings",
+      "Versions": [
+        "2.1.0",
+        "2.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "backports-weakref",
+      "Versions": [
+        "1.0.post1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "accelerate",
+      "Versions": [
+        "0.26.1",
+        "0.21.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-reservations",
+      "Versions": [
+        "2.0.0",
+        "0.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-recoveryservicesbackup",
+      "Versions": [
+        "5.0.0",
+        "0.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ghp-import",
+      "Versions": [
+        "2.1.0",
+        "2.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "structlog",
+      "Versions": [
+        "24.1.0",
+        "23.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyramid-mako",
+      "Versions": [
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-synapse",
+      "Versions": [
+        "2.1.0b2",
+        "2.1.0b5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "langsmith",
+      "Versions": [
+        "0.0.81",
+        "0.0.80"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-msi",
+      "Versions": [
+        "6.0.1",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-kusto-data",
+      "Versions": [
+        "4.3.1",
+        "0.0.45"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyramid",
+      "Versions": [
+        "2.0",
+        "2.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-containerservice",
+      "Versions": [
+        "20.2.0",
+        "4.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-signalr",
+      "Versions": [
+        "1.0.0b2",
+        "0.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "user-agents",
+      "Versions": [
+        "2.2.0",
+        "2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-multiapi-storage",
+      "Versions": [
+        "0.9.0",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "clickclick",
+      "Versions": [
+        "20.10.2",
+        "1.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "oldest-supported-numpy",
+      "Versions": [
+        "2023.12.21",
+        "2022.11.19"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-cognitiveservices",
+      "Versions": [
+        "13.2.0",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-appconfiguration",
+      "Versions": [
+        "2.1.0",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-compute",
+      "Versions": [
+        "27.1.0",
+        "30.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-synapse-artifacts",
+      "Versions": [
+        "0.13.0",
+        "0.18.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aiohttp-retry",
+      "Versions": [
+        "2.8.3",
+        "2.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-sqlvirtualmachine",
+      "Versions": [
+        "1.0.0b3",
+        "1.0.0b5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-iotcentral",
+      "Versions": [
+        "10.0.0b1",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-botservice",
+      "Versions": [
+        "2.0.0b3",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-cli",
+      "Versions": [
+        "2.40.0",
+        "2.39.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "rdflib",
+      "Versions": [
+        "7.0.0",
+        "6.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "natsort",
+      "Versions": [
+        "8.4.0",
+        "7.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pastel",
+      "Versions": [
+        "0.2.1",
+        "0.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-sql",
+      "Versions": [
+        "4.0.0b2",
+        "0.9.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-cli-core",
+      "Versions": [
+        "2.39.0",
+        "2.56.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-cosmosdb",
+      "Versions": [
+        "7.0.0b6",
+        "0.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-netapp",
+      "Versions": [
+        "8.0.0",
+        "10.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyramid-debugtoolbar",
+      "Versions": [
+        "4.9",
+        "4.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-cli-telemetry",
+      "Versions": [
+        "1.0.7",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyramid-jinja2",
+      "Versions": [
+        "2.8",
+        "2.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "boto3-type-annotations",
+      "Versions": [
+        "0.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-policyinsights",
+      "Versions": [
+        "1.1.0b2",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-rdbms",
+      "Versions": [
+        "10.2.0b1",
+        "1.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-levenshtein",
+      "Versions": [
+        "0.23.0",
+        "0.21.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dpath",
+      "Versions": [
+        "2.1.6",
+        "2.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "requests-mock",
+      "Versions": [
+        "1.11.0",
+        "1.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "strenum",
+      "Versions": [
+        "0.4.15",
+        "0.4.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "parse-type",
+      "Versions": [
+        "0.6.2",
+        "0.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "geopandas",
+      "Versions": [
+        "0.12.2",
+        "0.14.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aws-xray-sdk",
+      "Versions": [
+        "2.12.1",
+        "2.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "qtconsole",
+      "Versions": [
+        "5.5.1",
+        "5.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dynamodb-json",
+      "Versions": [
+        "1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-storage-nspkg",
+      "Versions": [
+        "3.1.0",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "somnium",
+      "Versions": [
+        "9.9.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pika",
+      "Versions": [
+        "1.3.2",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "analytics-python",
+      "Versions": [
+        "1.4.0",
+        "1.4.post1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyreadline3",
+      "Versions": [
+        "3.4.1",
+        "3.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "filterpy",
+      "Versions": [
+        "1.4.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cachelib",
+      "Versions": [
+        "0.10.2",
+        "0.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "expiringdict",
+      "Versions": [
+        "1.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "publication",
+      "Versions": [
+        "0.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "delta-spark",
+      "Versions": [
+        "2.4.0",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "unittest-xml-reporting",
+      "Versions": [
+        "3.2.0",
+        "3.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "backports-tempfile",
+      "Versions": [
+        "1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pooch",
+      "Versions": [
+        "1.8.0",
+        "1.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mypy-boto3-s3",
+      "Versions": [
+        "1.34.14",
+        "1.34.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "enum-compat",
+      "Versions": [
+        "0.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "userpath",
+      "Versions": [
+        "1.9.1",
+        "1.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorboard-data-server",
+      "Versions": [
+        "0.7.2",
+        "0.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "resolvelib",
+      "Versions": [
+        "1.0.1",
+        "0.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "slackclient",
+      "Versions": [
+        "2.9.4",
+        "2.9.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "watchtower",
+      "Versions": [
+        "3.0.1",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pipx",
+      "Versions": [
+        "1.2.0",
+        "1.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-docx",
+      "Versions": [
+        "1.1.0",
+        "1.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "descartes",
+      "Versions": [
+        "1.1.0",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "torchmetrics",
+      "Versions": [
+        "1.3.0",
+        "1.3.0.post0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mashumaro",
+      "Versions": [
+        "3.11",
+        "3.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pkgconfig",
+      "Versions": [
+        "1.5.5",
+        "1.5.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "yapf",
+      "Versions": [
+        "0.40.2",
+        "0.32.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-eventgrid",
+      "Versions": [
+        "1.3.0",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-setuptools",
+      "Versions": [
+        "69.0.0.20240115",
+        "62.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "injector",
+      "Versions": [
+        "0.21.0",
+        "0.18.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "backports-functools-lru-cache",
+      "Versions": [
+        "2.0.0",
+        "1.6.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dictdiffer",
+      "Versions": [
+        "0.9.0",
+        "0.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "marshmallow-sqlalchemy",
+      "Versions": [
+        "0.26.1",
+        "0.23.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pylev",
+      "Versions": [
+        "1.4.0",
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tomli-w",
+      "Versions": [
+        "1.0.0",
+        "0.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "virtualenv-clone",
+      "Versions": [
+        "0.5.7",
+        "0.5.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "agate",
+      "Versions": [
+        "1.7.1",
+        "1.6.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "coreapi",
+      "Versions": [
+        "2.3.3",
+        "2.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "chevron",
+      "Versions": [
+        "0.14.0",
+        "0.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "itypes",
+      "Versions": [
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "lark",
+      "Versions": [
+        "1.1.9",
+        "1.1.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorflow-hub",
+      "Versions": [
+        "0.15.0",
+        "0.13.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-babel",
+      "Versions": [
+        "2.0.0",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "django-extensions",
+      "Versions": [
+        "3.2.3",
+        "3.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyotp",
+      "Versions": [
+        "2.9.0",
+        "2.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "factory-boy",
+      "Versions": [
+        "3.3.0",
+        "3.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "evergreen-py",
+      "Versions": [
+        "3.6.14",
+        "3.6.15"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "voluptuous",
+      "Versions": [
+        "0.14.1",
+        "0.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mkdocs",
+      "Versions": [
+        "1.5.3",
+        "1.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pypandoc",
+      "Versions": [
+        "1.12",
+        "1.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "filetype",
+      "Versions": [
+        "1.2.0",
+        "1.0.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "diff-match-patch",
+      "Versions": [
+        "20200713",
+        "20230430"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aiosqlite",
+      "Versions": [
+        "0.19.0",
+        "0.17.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "xyzservices",
+      "Versions": [
+        "2023.10.1",
+        "2023.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-repeat",
+      "Versions": [
+        "0.9.1",
+        "0.9.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "inflect",
+      "Versions": [
+        "7.0.0",
+        "6.0.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-protobuf",
+      "Versions": [
+        "4.24.0.20240106",
+        "4.24.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pypng",
+      "Versions": [
+        "0.20220715.0",
+        "0.0.20"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "marshmallow-oneofschema",
+      "Versions": [
+        "3.0.1",
+        "3.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-devops",
+      "Versions": [
+        "7.1.0b2",
+        "5.0.0b9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "xarray",
+      "Versions": [
+        "2023.1.0",
+        "2023.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "constantly",
+      "Versions": [
+        "23.10.4",
+        "15.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyproject-metadata",
+      "Versions": [
+        "0.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aiohttp-cors",
+      "Versions": [
+        "0.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "uritools",
+      "Versions": [
+        "4.0.2",
+        "4.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "wcmatch",
+      "Versions": [
+        "8.5",
+        "8.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "boltons",
+      "Versions": [
+        "23.1.1",
+        "21.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "office365-rest-python-client",
+      "Versions": [
+        "2.4.0",
+        "2.5.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytimeparse2",
+      "Versions": [
+        "1.7.1",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "marshmallow-dataclass",
+      "Versions": [
+        "8.5.11",
+        "8.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "datefinder",
+      "Versions": [
+        "0.7.3",
+        "0.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cartoframes",
+      "Versions": [
+        "1.2.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pathable",
+      "Versions": [
+        "0.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "wget",
+      "Versions": [
+        "3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aiodns",
+      "Versions": [
+        "3.1.1",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "yq",
+      "Versions": [
+        "3.2.3",
+        "2.13.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tokenize-rt",
+      "Versions": [
+        "5.2.0",
+        "4.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fs",
+      "Versions": [
+        "2.4.16",
+        "2.4.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "db-contrib-tool",
+      "Versions": [
+        "0.6.11",
+        "0.6.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "plotnine",
+      "Versions": [
+        "0.8.0",
+        "0.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "weasel",
+      "Versions": [
+        "0.3.4",
+        "0.3.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "snuggs",
+      "Versions": [
+        "1.4.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hydra-core",
+      "Versions": [
+        "1.3.2",
+        "1.0.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "kornia",
+      "Versions": [
+        "0.4.1",
+        "0.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "affine",
+      "Versions": [
+        "2.4.0",
+        "2.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cloudpathlib",
+      "Versions": [
+        "0.16.0",
+        "0.17.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dash-core-components",
+      "Versions": [
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dash-html-components",
+      "Versions": [
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "palettable",
+      "Versions": [
+        "3.3.3",
+        "3.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dash-table",
+      "Versions": [
+        "5.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyxlsb",
+      "Versions": [
+        "1.0.10",
+        "1.0.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bandit",
+      "Versions": [
+        "1.7.6",
+        "1.7.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mizani",
+      "Versions": [
+        "0.7.3",
+        "0.9.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "beartype",
+      "Versions": [
+        "0.16.4",
+        "0.15.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorboardx",
+      "Versions": [
+        "2.6.2.2",
+        "2.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "holidays",
+      "Versions": [
+        "0.41",
+        "0.27.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsonref",
+      "Versions": [
+        "1.1.0",
+        "0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsii",
+      "Versions": [
+        "1.94.0",
+        "1.91.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hologram",
+      "Versions": [
+        "0.0.16",
+        "0.0.15"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "great-expectations",
+      "Versions": [
+        "0.18.8",
+        "0.16.13"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "altgraph",
+      "Versions": [
+        "0.17.4",
+        "0.17.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyelftools",
+      "Versions": [
+        "0.30",
+        "0.26"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-order",
+      "Versions": [
+        "1.1.0",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "autopep8",
+      "Versions": [
+        "2.0.4",
+        "1.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "wtforms",
+      "Versions": [
+        "3.1.2",
+        "3.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "protobuf",
+      "Versions": [
+        "4.25.2",
+        "3.20.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ansi2html",
+      "Versions": [
+        "1.9.1",
+        "1.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "constructs",
+      "Versions": [
+        "10.3.0",
+        "3.4.344"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydeck",
+      "Versions": [
+        "0.8.1b0",
+        "0.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyhumps",
+      "Versions": [
+        "3.8.0",
+        "3.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "qrcode",
+      "Versions": [
+        "7.4.2",
+        "6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "phonenumbers",
+      "Versions": [
+        "8.13.28",
+        "8.13.27"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "swagger-ui-bundle",
+      "Versions": [
+        "0.0.9",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dash",
+      "Versions": [
+        "2.14.2",
+        "2.9.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-functions",
+      "Versions": [
+        "1.18.0",
+        "1.17.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "click-option-group",
+      "Versions": [
+        "0.5.6",
+        "0.5.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sphinx-rtd-theme",
+      "Versions": [
+        "2.0.0",
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "stanio",
+      "Versions": [
+        "0.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cmdstanpy",
+      "Versions": [
+        "1.2.0",
+        "0.9.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-bidi",
+      "Versions": [
+        "0.4.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cookiecutter",
+      "Versions": [
+        "2.5.0",
+        "1.7.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "findspark",
+      "Versions": [
+        "2.0.1",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jira",
+      "Versions": [
+        "3.6.0",
+        "3.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fastapi-utils",
+      "Versions": [
+        "0.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyudev",
+      "Versions": [
+        "0.24.1",
+        "0.23.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "concurrent-log-handler",
+      "Versions": [
+        "0.9.25",
+        "0.9.16"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bidict",
+      "Versions": [
+        "0.22.1",
+        "0.22.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "zc-lockfile",
+      "Versions": [
+        "3.0.post1",
+        "2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pypdf",
+      "Versions": [
+        "3.17.4",
+        "3.17.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sqlalchemy-redshift",
+      "Versions": [
+        "0.8.14",
+        "0.8.12"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "plumbum",
+      "Versions": [
+        "1.8.2",
+        "1.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "unidiff",
+      "Versions": [
+        "0.7.5",
+        "0.7.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "databricks-api",
+      "Versions": [
+        "0.9.0",
+        "0.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-kusto-ingest",
+      "Versions": [
+        "4.3.1",
+        "0.0.45"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "audioread",
+      "Versions": [
+        "3.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azureml-core",
+      "Versions": [
+        "1.54.0.post1",
+        "1.53.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "linecache2",
+      "Versions": [
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "feedparser",
+      "Versions": [
+        "6.0.11",
+        "6.0.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-caching",
+      "Versions": [
+        "2.1.0",
+        "2.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "html2text",
+      "Versions": [
+        "2020.1.16",
+        "2019.8.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyinstaller-hooks-contrib",
+      "Versions": [
+        "2023.12",
+        "2023.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "looker-sdk",
+      "Versions": [
+        "22.4.0",
+        "23.20.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "lunarcalendar",
+      "Versions": [
+        "0.0.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mkdocs-material-extensions",
+      "Versions": [
+        "1.3.1",
+        "1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opencensus-ext-requests",
+      "Versions": [
+        "0.8.0",
+        "0.7.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "multimethod",
+      "Versions": [
+        "1.10",
+        "1.9.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "langchain-community",
+      "Versions": [
+        "0.0.13",
+        "0.0.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aws-sam-translator",
+      "Versions": [
+        "1.83.0",
+        "1.56.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "grpcio-gcp",
+      "Versions": [
+        "0.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyquery",
+      "Versions": [
+        "2.0.0",
+        "1.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "strictyaml",
+      "Versions": [
+        "1.7.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mongoengine",
+      "Versions": [
+        "0.27.0",
+        "0.24.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mysql-connector-python",
+      "Versions": [
+        "8.0.29",
+        "8.0.23"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "influxdb",
+      "Versions": [
+        "5.3.1",
+        "5.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "portpicker",
+      "Versions": [
+        "1.6.0",
+        "1.5.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "evaluate",
+      "Versions": [
+        "0.4.1",
+        "0.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-django",
+      "Versions": [
+        "4.5.2",
+        "4.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "chex",
+      "Versions": [
+        "0.1.85",
+        "0.1.82"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "traceback2",
+      "Versions": [
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyphen",
+      "Versions": [
+        "0.14.0",
+        "0.9.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "antlr4-python3-runtime",
+      "Versions": [
+        "4.11.1",
+        "4.13.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-instrumentation",
+      "Versions": [
+        "0.43b0",
+        "0.40b0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "redis-py-cluster",
+      "Versions": [
+        "2.1.3",
+        "2.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "click-default-group",
+      "Versions": [
+        "1.2.4",
+        "1.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sagemaker",
+      "Versions": [
+        "2.203.1",
+        "2.200.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "setuptools-git",
+      "Versions": [
+        "1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "scikit-build-core",
+      "Versions": [
+        "0.7.1",
+        "0.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opencensus-ext-threading",
+      "Versions": [
+        "0.1.2",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sseclient-py",
+      "Versions": [
+        "1.8.0",
+        "1.7.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "geomet",
+      "Versions": [
+        "0.2.1.post1",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cfn-flip",
+      "Versions": [
+        "1.3.0",
+        "1.2.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "graphql-relay",
+      "Versions": [
+        "3.2.0",
+        "2.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "setuptools-rust",
+      "Versions": [
+        "1.8.1",
+        "1.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "multi-key-dict",
+      "Versions": [
+        "2.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorflow-metadata",
+      "Versions": [
+        "1.14.0",
+        "1.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pathlib-abc",
+      "Versions": [
+        "0.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "django",
+      "Versions": [
+        "3.2.23",
+        "4.2.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "keyrings-google-artifactregistry-auth",
+      "Versions": [
+        "1.0.0",
+        "1.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "singledispatch",
+      "Versions": [
+        "3.7.0",
+        "4.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azureml-contrib-services",
+      "Versions": [
+        "1.54.0",
+        "1.47.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "w3lib",
+      "Versions": [
+        "2.1.2",
+        "1.22.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsonlines",
+      "Versions": [
+        "4.0.0",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sshpubkeys",
+      "Versions": [
+        "3.3.1",
+        "3.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cmd2",
+      "Versions": [
+        "2.4.3",
+        "0.9.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jax",
+      "Versions": [
+        "0.4.21",
+        "0.4.23"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azureml-designer-serving",
+      "Versions": [
+        "0.0.12",
+        "0.0.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "requests-aws-sign",
+      "Versions": [
+        "0.1.6",
+        "0.1.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pathy",
+      "Versions": [
+        "0.11.0",
+        "0.10.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "nvidia-ml-py",
+      "Versions": [
+        "12.535.133",
+        "11.495.46"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gql",
+      "Versions": [
+        "3.5.0",
+        "3.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "zict",
+      "Versions": [
+        "3.0.0",
+        "2.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "webdriver-manager",
+      "Versions": [
+        "4.0.1",
+        "4.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "grpcio-health-checking",
+      "Versions": [
+        "1.60.0",
+        "1.48.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-dataproc",
+      "Versions": [
+        "5.8.0",
+        "5.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "supervisor",
+      "Versions": [
+        "4.2.5",
+        "4.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mypy-protobuf",
+      "Versions": [
+        "3.5.0",
+        "3.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-commerce",
+      "Versions": [
+        "1.0.1",
+        "6.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-machinelearningcompute",
+      "Versions": [
+        "0.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-hanaonazure",
+      "Versions": [
+        "0.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "behave",
+      "Versions": [
+        "1.2.6",
+        "1.2.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "thrift-sasl",
+      "Versions": [
+        "0.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-managementpartner",
+      "Versions": [
+        "0.1.1",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-openid",
+      "Versions": [
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dirac",
+      "Versions": [
+        "8.0.31",
+        "8.0.34"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pykakasi",
+      "Versions": [
+        "2.2.1",
+        "2.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opencensus-ext-postgresql",
+      "Versions": [
+        "0.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pypiwin32",
+      "Versions": [
+        "223",
+        "219"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hatch-vcs",
+      "Versions": [
+        "0.4.0",
+        "0.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "langchain-core",
+      "Versions": [
+        "0.1.11",
+        "0.1.12"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydash",
+      "Versions": [
+        "7.0.6",
+        "7.0.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opencensus-ext-httplib",
+      "Versions": [
+        "0.7.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-powerbiembedded",
+      "Versions": [
+        "2.0.0",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "etils",
+      "Versions": [
+        "1.6.0",
+        "1.5.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-scheduler",
+      "Versions": [
+        "2.0.0",
+        "1.1.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-logic",
+      "Versions": [
+        "3.0.0",
+        "10.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-subscription",
+      "Versions": [
+        "0.2.0",
+        "3.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-devspaces",
+      "Versions": [
+        "0.1.0",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt",
+      "Versions": [
+        "4.0.0",
+        "5.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-notificationhubs",
+      "Versions": [
+        "2.1.0",
+        "7.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "elementpath",
+      "Versions": [
+        "4.1.5",
+        "2.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "objsize",
+      "Versions": [
+        "0.6.1",
+        "0.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-mgmt-appcontainers",
+      "Versions": [
+        "2.0.0",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "funcy",
+      "Versions": [
+        "2.0",
+        "1.18"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-pyopenssl",
+      "Versions": [
+        "23.3.0.20240106",
+        "23.3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-storage-file",
+      "Versions": [
+        "1.4.0",
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gviz-api",
+      "Versions": [
+        "1.10.0",
+        "1.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "simplegeneric",
+      "Versions": [
+        "0.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-servicemanagement-legacy",
+      "Versions": [
+        "0.20.7",
+        "0.20.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dbt-semantic-interfaces",
+      "Versions": [
+        "0.4.3",
+        "0.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cmaes",
+      "Versions": [
+        "0.10.0",
+        "0.9.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "geoip2",
+      "Versions": [
+        "4.7.0",
+        "4.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "boolean-py",
+      "Versions": [
+        "4.0",
+        "3.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "adlfs",
+      "Versions": [
+        "2023.12.0",
+        "2023.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "checksumdir",
+      "Versions": [
+        "1.2.0",
+        "1.1.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-html",
+      "Versions": [
+        "3.2.0",
+        "4.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "databricks-sdk",
+      "Versions": [
+        "0.17.0",
+        "0.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "streamlit",
+      "Versions": [
+        "1.30.0",
+        "1.29.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-servicefabric",
+      "Versions": [
+        "6.3.0.0",
+        "7.2.0.46"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure",
+      "Versions": [
+        "4.0.0",
+        "5.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-split",
+      "Versions": [
+        "0.8.1",
+        "0.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cheroot",
+      "Versions": [
+        "10.0.0",
+        "8.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "terminaltables",
+      "Versions": [
+        "3.1.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "unittest2",
+      "Versions": [
+        "1.1.0",
+        "0.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "orbax",
+      "Versions": [
+        "0.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "readchar",
+      "Versions": [
+        "4.0.5",
+        "4.0.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-applicationinsights",
+      "Versions": [
+        "0.1.1",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flax",
+      "Versions": [
+        "0.6.4",
+        "0.7.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-aiplatform",
+      "Versions": [
+        "1.39.0",
+        "1.38.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cfn-lint",
+      "Versions": [
+        "0.83.8",
+        "0.83.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorflow-gcs-config",
+      "Versions": [
+        "2.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "trampoline",
+      "Versions": [
+        "0.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-rerunfailures",
+      "Versions": [
+        "13.0",
+        "10.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jproperties",
+      "Versions": [
+        "2.1.1",
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gprof2dot",
+      "Versions": [
+        "2022.7.29"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "j2cli",
+      "Versions": [
+        "0.3.10",
+        "0.3.12b0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "service-identity",
+      "Versions": [
+        "24.1.0",
+        "21.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "atlassian-jwt-auth",
+      "Versions": [
+        "3.6.0",
+        "17.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flake8-polyfill",
+      "Versions": [
+        "1.0.2",
+        "1.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hatch-fancy-pypi-readme",
+      "Versions": [
+        "24.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-jenkins",
+      "Versions": [
+        "1.8.2",
+        "1.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dbt-core",
+      "Versions": [
+        "1.7.4",
+        "1.3.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "log-symbols",
+      "Versions": [
+        "0.0.14"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "spinners",
+      "Versions": [
+        "0.0.24"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "url-normalize",
+      "Versions": [
+        "1.4.3",
+        "1.3.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flaky",
+      "Versions": [
+        "3.7.0",
+        "3.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jinja2-time",
+      "Versions": [
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "smbprotocol",
+      "Versions": [
+        "1.12.0",
+        "1.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "docker-compose",
+      "Versions": [
+        "1.29.2",
+        "1.25.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "imagehash",
+      "Versions": [
+        "4.3.1",
+        "4.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "emoji",
+      "Versions": [
+        "2.9.0",
+        "2.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "raven",
+      "Versions": [
+        "6.10.0",
+        "6.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cachy",
+      "Versions": [
+        "0.3.0",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "databricks",
+      "Versions": [
+        "0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "markdown2",
+      "Versions": [
+        "2.4.12",
+        "2.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-decouple",
+      "Versions": [
+        "3.8",
+        "3.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "apache-airflow-providers-snowflake",
+      "Versions": [
+        "5.2.1",
+        "4.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "django-cors-headers",
+      "Versions": [
+        "4.3.1",
+        "3.13.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fastprogress",
+      "Versions": [
+        "1.0.3",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "autograd",
+      "Versions": [
+        "1.6.2",
+        "1.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "diff-cover",
+      "Versions": [
+        "8.0.2",
+        "7.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "langchain",
+      "Versions": [
+        "0.1.1",
+        "0.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "multivolumefile",
+      "Versions": [
+        "0.2.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pymdown-extensions",
+      "Versions": [
+        "10.7",
+        "10.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "simple-websocket",
+      "Versions": [
+        "1.0.0",
+        "0.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "graphene",
+      "Versions": [
+        "3.3",
+        "2.1.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "packageurl-python",
+      "Versions": [
+        "0.13.4",
+        "0.11.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "thop",
+      "Versions": [
+        "0.1.1.post2209072238",
+        "0.1.1.post2207130030"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-crontab",
+      "Versions": [
+        "3.0.0",
+        "2.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "multipledispatch",
+      "Versions": [
+        "1.0.0",
+        "0.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pycomposefile",
+      "Versions": [
+        "0.0.30"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "autopage",
+      "Versions": [
+        "0.5.2",
+        "0.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dask",
+      "Versions": [
+        "2024.1.0",
+        "2023.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "glom",
+      "Versions": [
+        "22.1.0",
+        "23.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorflow-datasets",
+      "Versions": [
+        "4.9.4",
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "py-partiql-parser",
+      "Versions": [
+        "0.5.0",
+        "0.3.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "icecream",
+      "Versions": [
+        "2.1.3",
+        "2.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "debugpy",
+      "Versions": [
+        "1.8.0",
+        "1.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "peppercorn",
+      "Versions": [
+        "0.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pprintpp",
+      "Versions": [
+        "0.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-bigtable",
+      "Versions": [
+        "1.7.3",
+        "2.22.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytorch-lightning",
+      "Versions": [
+        "2.1.3",
+        "1.9.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-benchmark",
+      "Versions": [
+        "4.0.0",
+        "3.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aws-lambda-powertools",
+      "Versions": [
+        "2.31.0",
+        "2.30.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "optax",
+      "Versions": [
+        "0.1.7",
+        "0.1.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "facexlib",
+      "Versions": [
+        "0.3.0",
+        "0.2.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyaml",
+      "Versions": [
+        "23.12.0",
+        "19.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-util-http",
+      "Versions": [
+        "0.43b0",
+        "0.40b0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ffmpeg-python",
+      "Versions": [
+        "0.2.0",
+        "0.1.17"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "questionary",
+      "Versions": [
+        "2.0.1",
+        "1.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "license-expression",
+      "Versions": [
+        "30.2.0",
+        "30.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-storage",
+      "Versions": [
+        "0.36.0",
+        "0.35.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cloud-tpu-client",
+      "Versions": [
+        "0.10",
+        "0.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pympler",
+      "Versions": [
+        "1.0.1",
+        "1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flatten-dict",
+      "Versions": [
+        "0.4.2",
+        "0.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mlflow-skinny",
+      "Versions": [
+        "2.9.2",
+        "2.8.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dm-env",
+      "Versions": [
+        "1.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-toml",
+      "Versions": [
+        "0.10.8.7",
+        "0.10.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "orbax-checkpoint",
+      "Versions": [
+        "0.4.4",
+        "0.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "clu",
+      "Versions": [
+        "0.0.9",
+        "0.0.10"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "iterative-telemetry",
+      "Versions": [
+        "0.0.8",
+        "0.0.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dparse",
+      "Versions": [
+        "0.6.3",
+        "0.6.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gfpgan",
+      "Versions": [
+        "1.3.8"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cloudevents",
+      "Versions": [
+        "1.9.0",
+        "1.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "riot",
+      "Versions": [
+        "0.19.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "timm",
+      "Versions": [
+        "0.9.12",
+        "0.9.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cairocffi",
+      "Versions": [
+        "1.6.1",
+        "1.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pycep-parser",
+      "Versions": [
+        "0.4.1",
+        "0.3.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-apitools",
+      "Versions": [
+        "0.5.32",
+        "0.5.31"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pynvml",
+      "Versions": [
+        "11.5.0",
+        "11.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "memory-profiler",
+      "Versions": [
+        "0.61.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dynaconf",
+      "Versions": [
+        "3.2.4",
+        "3.1.12"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "schedule",
+      "Versions": [
+        "1.2.1",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bc-detect-secrets",
+      "Versions": [
+        "1.4.30",
+        "1.4.29"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "spdx-tools",
+      "Versions": [
+        "0.8.2",
+        "0.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sh",
+      "Versions": [
+        "1.14.2",
+        "2.0.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytesseract",
+      "Versions": [
+        "0.3.10",
+        "0.3.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sqlalchemy-jsonfield",
+      "Versions": [
+        "1.0.2",
+        "0.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gradio-client",
+      "Versions": [
+        "0.5.0",
+        "0.8.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyglove",
+      "Versions": [
+        "0.4.4",
+        "0.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "wrapt",
+      "Versions": [
+        "1.16.0",
+        "1.15.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "twisted",
+      "Versions": [
+        "23.10.0",
+        "22.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-randomly",
+      "Versions": [
+        "3.15.0",
+        "3.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-custom-exit-code",
+      "Versions": [
+        "0.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "distrax",
+      "Versions": [
+        "0.1.3",
+        "0.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorflow-probability",
+      "Versions": [
+        "0.22.1",
+        "0.12.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pdfminer-six",
+      "Versions": [
+        "20231228",
+        "20221105"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "datadog-api-client",
+      "Versions": [
+        "2.21.0",
+        "2.13.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tensorboard-plugin-profile",
+      "Versions": [
+        "2.14.0",
+        "2.15.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "clikit",
+      "Versions": [
+        "0.6.2",
+        "0.4.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "rlax",
+      "Versions": [
+        "0.1.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "verboselogs",
+      "Versions": [
+        "1.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-recommendations-ai",
+      "Versions": [
+        "0.7.1",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "trino",
+      "Versions": [
+        "0.327.0",
+        "0.326.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-six",
+      "Versions": [
+        "1.16.21.20240106",
+        "1.16.21.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "snowflake-snowpark-python",
+      "Versions": [
+        "1.11.1",
+        "1.5.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gdown",
+      "Versions": [
+        "4.7.3",
+        "4.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "requests-auth-aws-sigv4",
+      "Versions": [
+        "0.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dbutils",
+      "Versions": [
+        "3.0.3",
+        "3.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "seqio",
+      "Versions": [
+        "0.0.18"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "resampy",
+      "Versions": [
+        "0.4.2",
+        "0.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bc-jsonpath-ng",
+      "Versions": [
+        "1.6.1",
+        "1.5.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "testcontainers",
+      "Versions": [
+        "3.7.1",
+        "3.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bc-python-hcl2",
+      "Versions": [
+        "0.4.2",
+        "0.3.51"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "auth",
+      "Versions": [
+        "0.5.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hjson",
+      "Versions": [
+        "3.1.0",
+        "3.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "atpublic",
+      "Versions": [
+        "4.0",
+        "3.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tfds-nightly",
+      "Versions": [
+        "4.9.4.dev202401170044",
+        "4.9.4.dev202401160044"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "drf-yasg",
+      "Versions": [
+        "1.21.7",
+        "1.21.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-engineio",
+      "Versions": [
+        "4.8.2",
+        "3.14.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pamqp",
+      "Versions": [
+        "3.2.1",
+        "2.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "django-storages",
+      "Versions": [
+        "1.14.2",
+        "1.13.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mypy-boto3-dynamodb",
+      "Versions": [
+        "1.34.0",
+        "1.26.24"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "typish",
+      "Versions": [
+        "1.9.3",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pefile",
+      "Versions": [
+        "2023.2.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hikka-tl-new",
+      "Versions": [
+        "2.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hikka-pyro-new",
+      "Versions": [
+        "2.0.103"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azureml-dataprep",
+      "Versions": [
+        "4.12.9",
+        "5.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "openapi-schema-validator",
+      "Versions": [
+        "0.6.2",
+        "0.4.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "django-filter",
+      "Versions": [
+        "23.5",
+        "2.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "elasticsearch-dsl",
+      "Versions": [
+        "7.3.0",
+        "7.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "property-manager",
+      "Versions": [
+        "3.0",
+        "2.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-instrumentation-asgi",
+      "Versions": [
+        "0.43b0",
+        "0.40b0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mypy-boto3-secretsmanager",
+      "Versions": [
+        "1.34.17",
+        "1.28.67"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ntlm-auth",
+      "Versions": [
+        "1.5.0",
+        "1.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-ordering",
+      "Versions": [
+        "0.6",
+        "0.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "openapi-spec-validator",
+      "Versions": [
+        "0.7.1",
+        "0.5.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyathena",
+      "Versions": [
+        "2.25.2",
+        "3.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyee",
+      "Versions": [
+        "11.0.1",
+        "8.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "shtab",
+      "Versions": [
+        "1.6.5",
+        "1.6.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "colorful",
+      "Versions": [
+        "0.5.5",
+        "0.5.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyusb",
+      "Versions": [
+        "1.2.1",
+        "1.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-redis",
+      "Versions": [
+        "4.6.0.20240106",
+        "4.6.0.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aws-cdk-asset-kubectl-v20",
+      "Versions": [
+        "2.1.2",
+        "2.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-lsp-jsonrpc",
+      "Versions": [
+        "1.0.0",
+        "1.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-instrumentation-fastapi",
+      "Versions": [
+        "0.43b0",
+        "0.41b0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "types-cryptography",
+      "Versions": [
+        "3.3.23.2",
+        "3.3.23"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hexbytes",
+      "Versions": [
+        "0.3.1",
+        "1.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "frozenlist",
+      "Versions": [
+        "1.4.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "eventlet",
+      "Versions": [
+        "0.34.2",
+        "0.34.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pynndescent",
+      "Versions": [
+        "0.5.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "functions-framework",
+      "Versions": [
+        "3.0.0",
+        "3.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-env",
+      "Versions": [
+        "1.1.3",
+        "0.8.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-monitoring",
+      "Versions": [
+        "2.18.0",
+        "2.16.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "install",
+      "Versions": [
+        "1.3.5",
+        "1.3.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pygtrie",
+      "Versions": [
+        "2.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "html-testrunner",
+      "Versions": [
+        "1.2.1",
+        "1.1.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pathvalidate",
+      "Versions": [
+        "3.2.0",
+        "2.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "eth-hash",
+      "Versions": [
+        "0.6.0",
+        "0.5.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "reportlab",
+      "Versions": [
+        "4.0.9",
+        "4.0.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aiomultiprocess",
+      "Versions": [
+        "0.9.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "gradio",
+      "Versions": [
+        "3.41.2",
+        "4.14.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-base-url",
+      "Versions": [
+        "2.0.0",
+        "1.4.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "splunk-hec-handler",
+      "Versions": [
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pep8",
+      "Versions": [
+        "1.7.1",
+        "1.5.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azure-ai-ml",
+      "Versions": [
+        "1.12.1",
+        "1.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "asyncssh",
+      "Versions": [
+        "2.14.2",
+        "2.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "js2py",
+      "Versions": [
+        "0.74",
+        "0.70"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "allure-python-commons",
+      "Versions": [
+        "2.13.2",
+        "2.9.45"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mbstrdecoder",
+      "Versions": [
+        "1.1.3",
+        "1.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "munch",
+      "Versions": [
+        "4.0.0",
+        "2.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "attr",
+      "Versions": [
+        "0.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tld",
+      "Versions": [
+        "0.13",
+        "0.12.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "realesrgan",
+      "Versions": [
+        "0.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "queuelib",
+      "Versions": [
+        "1.6.2",
+        "1.5.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-ads",
+      "Versions": [
+        "22.1.0",
+        "20.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "cssutils",
+      "Versions": [
+        "2.9.0",
+        "2.7.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pdfkit",
+      "Versions": [
+        "1.0.0",
+        "0.6.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pep8-naming",
+      "Versions": [
+        "0.13.3",
+        "0.10.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mypy-boto3-sqs",
+      "Versions": [
+        "1.34.0",
+        "1.26.0.post1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-redis",
+      "Versions": [
+        "2.14.0",
+        "2.13.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "aws-cdk-asset-awscli-v1",
+      "Versions": [
+        "2.2.201",
+        "2.2.200"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mongomock",
+      "Versions": [
+        "4.1.2",
+        "3.21.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pytest-sugar",
+      "Versions": [
+        "0.9.7",
+        "0.9.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "django-redis",
+      "Versions": [
+        "5.4.0",
+        "5.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "blessings",
+      "Versions": [
+        "1.7",
+        "1.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "opentelemetry-sdk-extension-aws",
+      "Versions": [
+        "2.0.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jwt",
+      "Versions": [
+        "1.3.1",
+        "1.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ultralytics",
+      "Versions": [
+        "8.1.2",
+        "8.0.151"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-vision",
+      "Versions": [
+        "3.5.0",
+        "1.0.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "djangorestframework-simplejwt",
+      "Versions": [
+        "5.2.2",
+        "5.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "datasketch",
+      "Versions": [
+        "1.5.0",
+        "1.5.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "typepy",
+      "Versions": [
+        "1.3.2",
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "signalfx",
+      "Versions": [
+        "1.1.15",
+        "1.1.16"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dunamai",
+      "Versions": [
+        "1.19.0",
+        "1.18.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pylint-plugin-utils",
+      "Versions": [
+        "0.8.2",
+        "0.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "fluent-logger",
+      "Versions": [
+        "0.10.0",
+        "0.9.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "apache-airflow-providers-databricks",
+      "Versions": [
+        "6.0.0",
+        "4.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "sampleproject",
+      "Versions": [
+        "2.0.0",
+        "3.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "comtypes",
+      "Versions": [
+        "1.2.1",
+        "1.1.14"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "azureml-dataset-runtime",
+      "Versions": [
+        "1.54.0.post1",
+        "1.49.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mutagen",
+      "Versions": [
+        "1.47.0",
+        "1.45.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "python-socketio",
+      "Versions": [
+        "5.11.0",
+        "4.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "librosa",
+      "Versions": [
+        "0.9.2",
+        "0.10.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "openapi-schema-pydantic",
+      "Versions": [
+        "1.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pyppeteer",
+      "Versions": [
+        "1.0.2",
+        "0.2.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "markdownify",
+      "Versions": [
+        "0.11.6",
+        "0.10.3"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-language",
+      "Versions": [
+        "1.3.2",
+        "2.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "jsonschema-path",
+      "Versions": [
+        "0.3.2",
+        "0.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "olefile",
+      "Versions": [
+        "0.47",
+        "0.42.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "interface-meta",
+      "Versions": [
+        "1.3.0",
+        "1.2.4"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "hypothesis",
+      "Versions": [
+        "6.45.0",
+        "6.96.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-videointelligence",
+      "Versions": [
+        "1.16.3",
+        "2.12.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "apache-airflow-providers-ssh",
+      "Versions": [
+        "3.10.0",
+        "3.4.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "atomicwrites",
+      "Versions": [
+        "1.4.0",
+        "1.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "click-log",
+      "Versions": [
+        "0.4.0",
+        "0.3.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flower",
+      "Versions": [
+        "2.0.1",
+        "1.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "ifaddr",
+      "Versions": [
+        "0.2.0",
+        "0.1.7"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "mypy-boto3-lambda",
+      "Versions": [
+        "1.34.0",
+        "1.26.18"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "tableauserverclient",
+      "Versions": [
+        "0.29",
+        "0.25"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "environs",
+      "Versions": [
+        "9.5.0",
+        "10.3.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "textwrap3",
+      "Versions": [
+        "0.9.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "requests-unixsocket",
+      "Versions": [
+        "0.3.0",
+        "0.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "stone",
+      "Versions": [
+        "3.3.1",
+        "3.3.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "colour",
+      "Versions": [
+        "0.1.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "django-debug-toolbar",
+      "Versions": [
+        "4.2.0",
+        "4.1.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "dockerfile-parse",
+      "Versions": [
+        "2.0.1",
+        "2.0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "face",
+      "Versions": [
+        "22.0.0",
+        "20.1.1"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "parsel",
+      "Versions": [
+        "1.8.1",
+        "1.6.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "autocommand",
+      "Versions": [
+        "2.2.2"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "flask-restful",
+      "Versions": [
+        "0.3.10",
+        "0.3.9"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "bump2version",
+      "Versions": [
+        "1.0.1",
+        "0.5.11"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "github3-py",
+      "Versions": [
+        "4.0.1",
+        "3.2.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydyf",
+      "Versions": [
+        "0.8.0",
+        "0.7.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "piexif",
+      "Versions": [
+        "1.1.3",
+        "1.0.13"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "numpy",
+      "Versions": [
+        "1.16.5",
+        "1.21.6"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "imblearn",
+      "Versions": [
+        "0.0"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "pydispatcher",
+      "Versions": [
+        "2.0.7",
+        "2.0.5"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "boto3-stubs",
+      "Versions": [
+        "1.34.20",
+        "1.26.94"
+      ]
+    },
+    {
+      "Ecosystem": "pypi",
+      "Name": "google-cloud-tasks",
+      "Versions": [
+        "2.15.0",
+        "2.14.2"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+FROM alpine
+RUN apk add npm
+ARG BINARY
+COPY $BINARY ./inference
+ENTRYPOINT ["./inference"]
