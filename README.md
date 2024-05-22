@@ -88,3 +88,7 @@ Check out these related projects contributing to the reproducible builds effort:
     Java, Kotlin reproducibility.
 *   [kpcyrd/rebuilderd](https://github.com/kpcyrd/rebuilderd): Rebuild scheduler
     with support for several distros.
+
+## Disclaimer
+
+This is not an officially supported Google product.
