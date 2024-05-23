@@ -30,3 +30,15 @@ This project follows
 All submissions, including submissions by project members, require review. We
 use [GitHub pull requests](https://docs.github.com/articles/about-pull-requests)
 for this purpose.
+
+### Commit Structure
+
+Pull Requests may use either Squash or Rebase PR merge strategies. For more
+background, see
+[the docs](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github))
+but to summarize:
+
+- _Squash_: All PR commits are combined into one commit when merged.
+- _Rebase_: All PR commits are merged as-is.
+
+Feel free to cater your PR to whichever workflow you prefer.
