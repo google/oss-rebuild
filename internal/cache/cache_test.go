@@ -67,7 +67,7 @@ func TestCoalescingMemoryCache_GetOrSet(t *testing.T) {
 	count := 5
 	results := make(chan any, count)
 	called := 0
-	for range count {
+	for i := 0; i < count; i++ {
 		go func() {
 			val, err := cache.GetOrSet("key", func() (any, error) {
 				called++
@@ -81,7 +81,7 @@ func TestCoalescingMemoryCache_GetOrSet(t *testing.T) {
 			}
 		}()
 	}
-	for range count {
+	for i := 0; i < count; i++ {
 		if got := <-results; got != want {
 			t.Fatalf("results differed: want=%v,got=%v", want, got)
 		}
