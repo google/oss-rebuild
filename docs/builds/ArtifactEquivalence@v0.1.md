@@ -17,10 +17,10 @@ differences.
 The `subject` field describes the upstream artifact against which the rebuilt
 artifact is being compared for equivalence:
 
-field    | details
--------- | ------------------------------------------------------------------------------------------------------------
-`name`   | The file name of the artifact. For many ecosystems this is some combination of the package name and version.
-`digest` | A hash digest of the artifact, keyed by the algorithm used.
+| field    | details                                                                                                      |
+| -------- | ------------------------------------------------------------------------------------------------------------ |
+| `name`   | The file name of the artifact. For many ecosystems this is some combination of the package name and version. |
+| `digest` | A hash digest of the artifact, keyed by the algorithm used.                                                  |
 
 Example:
 
@@ -40,10 +40,10 @@ Example:
 The `externalParameters` describe what inputs the artifact equivalence process
 was given. This will be the upstream artifact, and the rebuild result.
 
-field       | details
------------ | -----------------------------------------------------
-`candidate` | An identifier used for the rebuilt artifact.
-`target`    | The URL for upstream artifact which will be compared.
+| field       | details                                               |
+| ----------- | ----------------------------------------------------- |
+| `candidate` | An identifier used for the rebuilt artifact.          |
+| `target`    | The URL for upstream artifact which will be compared. |
 
 Example:
 
@@ -59,10 +59,10 @@ Example:
 The `resolvedDependencies` provide the hash digests for the artifacts being
 compared.
 
-field    | details
--------- | -----------------------------------------------------------
-`name`   | The artifact identifier from `externalParameters`.
-`digest` | A hash digest of the artifact, keyed by the algorithm used.
+| field    | details                                                     |
+| -------- | ----------------------------------------------------------- |
+| `name`   | The artifact identifier from `externalParameters`.          |
+| `digest` | A hash digest of the artifact, keyed by the algorithm used. |
 
 Example:
 
@@ -87,10 +87,10 @@ Example:
 
 The `byproducts` include a hash digest of the normalized version.
 
-field    | details
--------- | -----------------------------------------------------------
-`name`   | The artifact identifier from `externalParameters`.
-`digest` | A hash digest of the artifact, keyed by the algorithm used.
+| field    | details                                                     |
+| -------- | ----------------------------------------------------------- |
+| `name`   | The artifact identifier from `externalParameters`.          |
+| `digest` | A hash digest of the artifact, keyed by the algorithm used. |
 
 Example:
 
@@ -114,7 +114,7 @@ rebuild should result in an identical "normalized" artifact.
 
 ### Zip
 
-[Zip](https://en.wikipedia.org/wiki/ZIP_\(file_format\)) is an archive file
+[Zip](<https://en.wikipedia.org/wiki/ZIP_(file_format)>) is an archive file
 format that supports lossless data compression. Zip archives contain
 modification times, zip version metadata and other filesystem specific data
 frequently differ from system to system. We believe this data does not have a
@@ -124,15 +124,15 @@ process:
 
 1.  Read all the existing zip entries
 1.  Create new zip entries with:
-    -   Exactly the same file contents
-    -   Exactly the same file name
-    -   Set the Modified time to 0
+    - Exactly the same file contents
+    - Exactly the same file name
+    - Set the Modified time to 0
 1.  Sort the zip entries by filename
 1.  Write the zip entries to a new file
 
 ### Tar
 
-[tar](https://en.wikipedia.org/wiki/Tar_\(computing\)) is a utility and
+[tar](<https://en.wikipedia.org/wiki/Tar_(computing)>) is a utility and
 accompanying archive format. Tar itself does not provide compression, frequently
 that is done using another compression scheme in combination with tar. Tarballs
 contain the file mode, owner and group IDs, and a modification time. These
@@ -143,13 +143,13 @@ process:
 
 1.  Read all the existing tar entries
 1.  Create new tar entries with:
-    -   The same entry name
-    -   The same file contents
-    -   ModTime and AccessTime as 1985 Oct 26 8:15am UTC (an arbitrary date
-        time)
-    -   Uid and Gid of 0
-    -   Empty Uname and Gname
-    -   Mode 0777
+    - The same entry name
+    - The same file contents
+    - ModTime and AccessTime as 1985 Oct 26 8:15am UTC (an arbitrary date
+      time)
+    - Uid and Gid of 0
+    - Empty Uname and Gname
+    - Mode 0777
 1.  Sort the tar entries by filename
 1.  Write the entries to a new file
 

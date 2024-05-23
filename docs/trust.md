@@ -50,17 +50,17 @@ An unsuccessful rebuild should be interpreted carefully and in context. Notably,
 there are many reasons why a rebuild might fail that are not indicative of an
 attack:
 
-*   *Automation failure*: The automation process may have failed to identify an
-    accurate build script or configuration.
-*   *Metadata discrepancy*: A published artifact may correspond to a repository
-    state near to the documented release point in the source repository (e.g.
-    the version's git tag).
-*   *Environmental differences*: Variations in the build environment, such as
-    different versions of dependencies or tools, can lead to inconsistencies
-    despite attempts to adhere to the original build.
-*   *Non-deterministic builds*: Some builds are inherently non-deterministic,
-    meaning they can produce slightly different results even with the same
-    inputs.
+- _Automation failure_: The automation process may have failed to identify an
+  accurate build script or configuration.
+- _Metadata discrepancy_: A published artifact may correspond to a repository
+  state near to the documented release point in the source repository (e.g.
+  the version's git tag).
+- _Environmental differences_: Variations in the build environment, such as
+  different versions of dependencies or tools, can lead to inconsistencies
+  despite attempts to adhere to the original build.
+- _Non-deterministic builds_: Some builds are inherently non-deterministic,
+  meaning they can produce slightly different results even with the same
+  inputs.
 
 It's important to recognize that not all failures are equal in severity, and
 many are unrelated to the package owner's actions. Still, rebuild failures are

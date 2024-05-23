@@ -11,10 +11,10 @@ as the identities of many of the build tools used.
 
 The `subject` field describes the rebuilt artifact:
 
-field    | details
--------- | -------------------------------------------------------------------------------------------------------------------------------------
-`name`   | The file name of the artifact prefixed with `rebuild/`. For many ecosystems this is some combination of the package name and version.
-`digest` | A hash digest of the artifact, keyed by the algorithm used.
+| field    | details                                                                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`   | The file name of the artifact prefixed with `rebuild/`. For many ecosystems this is some combination of the package name and version. |
+| `digest` | A hash digest of the artifact, keyed by the algorithm used.                                                                           |
 
 Example:
 
@@ -34,12 +34,12 @@ Example:
 The `externalParameters` describe the inputs to the rebuild process. This will
 be the upstream artifact, and the rebuild result.
 
-field       | details
------------ | ------------------------------------------------------
-`ecosystem` | The ecosystem identifier associated with the artifact.
-`package`   | The package whose artifact is to be rebuilt.
-`version`   | The package version whose artifact is to be rebuilt.
-`artifact`  | The file name of the artifact to be rebuilt.
+| field       | details                                                |
+| ----------- | ------------------------------------------------------ |
+| `ecosystem` | The ecosystem identifier associated with the artifact. |
+| `package`   | The package whose artifact is to be rebuilt.           |
+| `version`   | The package version whose artifact is to be rebuilt.   |
+| `artifact`  | The file name of the artifact to be rebuilt.           |
 
 Example:
 
@@ -57,10 +57,10 @@ Example:
 The `resolvedDependencies` provide the resource identifiers for the source
 repository and build containers used.
 
-field    | details
--------- | -----------------------------------------------------------
-`name`   | The source repo and container URLs.
-`digest` | A hash digest of the artifact, keyed by the algorithm used.
+| field    | details                                                     |
+| -------- | ----------------------------------------------------------- |
+| `name`   | The source repo and container URLs.                         |
+| `digest` | A hash digest of the artifact, keyed by the algorithm used. |
 
 Example:
 
@@ -92,10 +92,10 @@ Example:
 
 The `byproducts` include a hash digest of the normalized version.
 
-field     | details
---------- | ---------------------------------------------------------------------------------------------------------
-`name`    | The high-level build definition, Dockerfile, and Google Cloud Build process that implemented the rebuild.
-`content` | The base64-encoded content of the artifact.
+| field     | details                                                                                                   |
+| --------- | --------------------------------------------------------------------------------------------------------- |
+| `name`    | The high-level build definition, Dockerfile, and Google Cloud Build process that implemented the rebuild. |
+| `content` | The base64-encoded content of the artifact.                                                               |
 
 Example:
 
