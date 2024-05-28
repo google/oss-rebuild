@@ -180,7 +180,7 @@ func TestDoCloudBuild(t *testing.T) {
 			Id:     "build-id",
 			Status: "QUEUED",
 			Steps: []*cloudbuild.BuildStep{
-				&cloudbuild.BuildStep{Name: "gcr.io/foo/bar", Script: "./bar"},
+				{Name: "gcr.io/foo/bar", Script: "./bar"},
 			},
 		}
 		afterBuild := &cloudbuild.Build{
@@ -188,7 +188,7 @@ func TestDoCloudBuild(t *testing.T) {
 			Status:     "SUCCESS",
 			FinishTime: "2024-05-08T15:23:00Z",
 			Steps: []*cloudbuild.BuildStep{
-				&cloudbuild.BuildStep{Name: "gcr.io/foo/bar", Script: "./bar"},
+				{Name: "gcr.io/foo/bar", Script: "./bar"},
 			},
 			Results: &cloudbuild.Results{BuildStepImages: []string{"sha256:abcd"}},
 		}
@@ -241,23 +241,23 @@ func TestMakeBuild(t *testing.T) {
 			Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
 			ServiceAccount: "test-service-account",
 			Steps: []*cloudbuild.BuildStep{
-				&cloudbuild.BuildStep{
+				{
 					Name:   "gcr.io/cloud-builders/docker",
 					Script: "cat <<'EOS' | docker buildx build --tag=img -\nFROM alpine:3.19\nEOS",
 				},
-				&cloudbuild.BuildStep{
+				{
 					Name: "gcr.io/cloud-builders/docker",
 					Args: []string{"run", "--name=container", "img"},
 				},
-				&cloudbuild.BuildStep{
+				{
 					Name: "gcr.io/cloud-builders/docker",
 					Args: []string{"cp", "container:/out/pkg-version.tgz", "/workspace/pkg-version.tgz"},
 				},
-				&cloudbuild.BuildStep{
+				{
 					Name:   "gcr.io/cloud-builders/docker",
 					Script: "docker save img | gzip > /workspace/image.tgz",
 				},
-				&cloudbuild.BuildStep{
+				{
 					Name: "gcr.io/cloud-builders/gsutil",
 					Script: ("" +
 						"gsutil cp -P gs://test-bootstrap/gsutil_writeonly . && " +
