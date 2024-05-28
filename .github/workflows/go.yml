@@ -29,3 +29,6 @@ jobs:
 
     - name: Vet
       run: go vet -v ./...
+
+    - name: Format
+      run: '[ ! "$(gofmt -s -l .)" ]'
