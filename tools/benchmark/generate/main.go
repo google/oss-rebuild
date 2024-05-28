@@ -723,7 +723,7 @@ func main() {
 		}
 		log.Printf("Generating %s...", b.Filename)
 		todo <- nil
-		go func() {
+		go func(b *RebuildBenchmark) {
 			ps := b.Generator(ctx)
 			out, err := json.MarshalIndent(ps, "", "  ")
 			if err != nil {
@@ -734,7 +734,7 @@ func main() {
 				log.Fatalf("error writing %s: %v", b.Filename, err)
 			}
 			done <- nil
-		}()
+		}(&b)
 	}
 	close(todo)
 	for range todo {
