@@ -48,7 +48,7 @@ func TestCreateAttestations(t *testing.T) {
 		BuildEnd:    must(time.Parse(time.RFC3339, "2024-01-01T00:00:00Z")),
 		BuildImages: map[string]string{"gcr.io/foo/bar": "abcd"},
 		Steps: []*cloudbuild.BuildStep{
-			&cloudbuild.BuildStep{
+			{
 				Name:       "gcr.io/foo/bar",
 				Script:     "./bar",
 				Status:     "SUCCESS",

@@ -91,23 +91,23 @@ func makeBuild(t Target, dockerfile, imageUploadPath, rebuildUploadPath string, 
 		Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
 		ServiceAccount: opts.BuildServiceAccount,
 		Steps: []*cloudbuild.BuildStep{
-			&cloudbuild.BuildStep{
+			{
 				Name:   "gcr.io/cloud-builders/docker",
 				Script: "cat <<'EOS' | docker buildx build --tag=img -\n" + dockerfile + "\nEOS",
 			},
-			&cloudbuild.BuildStep{
+			{
 				Name: "gcr.io/cloud-builders/docker",
 				Args: []string{"run", "--name=container", "img"},
 			},
-			&cloudbuild.BuildStep{
+			{
 				Name: "gcr.io/cloud-builders/docker",
 				Args: []string{"cp", "container:" + path.Join("/out", t.Artifact), path.Join("/workspace", t.Artifact)},
 			},
-			&cloudbuild.BuildStep{
+			{
 				Name:   "gcr.io/cloud-builders/docker",
 				Script: "docker save img | gzip > /workspace/image.tgz",
 			},
-			&cloudbuild.BuildStep{
+			{
 				Name: "gcr.io/cloud-builders/gsutil",
 				Script: fmt.Sprintf(
 					"gsutil cp -P gs://%s/gsutil_writeonly . && ./gsutil_writeonly %s && ./gsutil_writeonly %s",
