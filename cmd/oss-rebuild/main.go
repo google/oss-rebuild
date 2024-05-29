@@ -239,7 +239,7 @@ var listCmd = &cobra.Command{
 		if len(args) < 2 {
 			log.Fatal("Please include at least an ecosystem and package")
 		}
-		gcsClient, err := gcs.NewClient(cmd.Context())
+		gcsClient, err := gcs.NewClient(cmd.Context(), option.WithoutAuthentication())
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "initializing GCS client"))
 		}
