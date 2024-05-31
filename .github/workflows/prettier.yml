@@ -1,0 +1,29 @@
+name: Formatting for Markdown and YAML
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["**/*.md", "**/*.yml", "**/*.yaml"]
+  pull_request:
+    branches: ["main"]
+    paths: ["**/*.md", "**/*.yml", "**/*.yaml"]
+
+jobs:
+  prettier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install
+        run: npm ci --save-dev
+
+      - name: Check formatting
+        run: |
+          npx prettier --version
+          npx prettier --check **/*.md **/*.yml **/*.yaml

@@ -6,6 +6,6 @@ attestations under a [CC0](https://creativecommons.org/public-domain/cc0/)
 
 ## Hosting Details
 
-*   Attestation storage URI: gs://google-rebuild-attestations/
-*   Signing key URI:
-    https://cloudkms.googleapis.com/projects/oss-rebuild/locations/global/keyRings/ring/cryptoKeys/signing-key/cryptoKeyVersions/1
+- Attestation storage URI: gs://google-rebuild-attestations/
+- Signing key URI:
+  https://cloudkms.googleapis.com/projects/oss-rebuild/locations/global/keyRings/ring/cryptoKeys/signing-key/cryptoKeyVersions/1

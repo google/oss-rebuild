@@ -15,9 +15,9 @@ of the upstream artifact and eliminating many possible sources of compromise.
 
 We currently support the following ecosystems:
 
--   NPM (JavaScript/TypeScript)
--   PyPI (Python)
--   Crates.io (Rust)
+- NPM (JavaScript/TypeScript)
+- PyPI (Python)
+- Crates.io (Rust)
 
 While complete coverage is the aim, only the most popular packages within each
 ecosystem are currently rebuilt.
@@ -66,14 +66,14 @@ Check out [the contribution guide](./CONTRIBUTING.md) to learn more.
 
 ## Purpose
 
-*   **Mitigate supply chain attacks**: Detect discrepancies in open-source
-    packages, helping to prevent compromises like those of Solarwinds and
-    Codecov.
-*   **Scale security standards**: Utilize industry best practices such as SLSA,
-    Sigstore, and containerized builds.
-*   **Community participation**: Create a venue to collectivize effort towards
-    securing the open-source supply chain.
-*   **Enable future innovation**: Derive data to leverage AI-driven rebuilds.
+- **Mitigate supply chain attacks**: Detect discrepancies in open-source
+  packages, helping to prevent compromises like those of Solarwinds and
+  Codecov.
+- **Scale security standards**: Utilize industry best practices such as SLSA,
+  Sigstore, and containerized builds.
+- **Community participation**: Create a venue to collectivize effort towards
+  securing the open-source supply chain.
+- **Enable future innovation**: Derive data to leverage AI-driven rebuilds.
 
 ## Security
 
@@ -84,10 +84,10 @@ To better understand the security properties of rebuilds, see
 
 Check out these related projects contributing to the reproducible builds effort:
 
-*   [reproducible-central](https://github.com/jvm-repo-rebuild/reproducible-central):
-    Java, Kotlin reproducibility.
-*   [kpcyrd/rebuilderd](https://github.com/kpcyrd/rebuilderd): Rebuild scheduler
-    with support for several distros.
+- [reproducible-central](https://github.com/jvm-repo-rebuild/reproducible-central):
+  Java, Kotlin reproducibility.
+- [kpcyrd/rebuilderd](https://github.com/kpcyrd/rebuilderd): Rebuild scheduler
+  with support for several distros.
 
 ## Disclaimer
 
