@@ -105,9 +105,19 @@ func zipHashes(ctx context.Context, r *git.Repository, zr *zip.Reader) (files []
 	return
 }
 
-// fileIdentitySearch searches across repository for the input files provided for the nearest matching commit(s).
-// The set of matching commits along with the number of matches are returned.
-func fileIdentitySearch(ctx context.Context, r *git.Repository, hashes []string, skip func(*object.Commit) bool) (closest []string, matched, total int, err error) {
+type searchStrategy interface {
+	Search(ctx context.Context, r *git.Repository, hashes []string) (closest []string, matched, total int, err error)
+}
+
+// CommitsNearPublishStrategy searches across repository for the input files
+// provided for the nearest matching commit(s).
+type CommitsNearPublishStrategy struct {
+	Published time.Time
+	Window    time.Duration
+}
+
+// Search returns the set of matching commits along with the number of matches are returned.
+func (s CommitsNearPublishStrategy) Search(ctx context.Context, r *git.Repository, hashes []string) (closest []string, matched, total int, err error) {
 	files := make(map[string]bool)
 	for _, h := range hashes {
 		files[h] = true
@@ -118,8 +128,12 @@ func fileIdentitySearch(ctx context.Context, r *git.Repository, hashes []string,
 		return
 	}
 	found := make(map[string]bool)
+	notNearPublishDate := func(c *object.Commit) bool {
+		committed := c.Committer.When
+		return committed.Before(s.Published.Add(-1*s.Window)) || committed.After(s.Published.Add(s.Window))
+	}
 	err = it.ForEach(func(c *object.Commit) error {
-		if skip(c) {
+		if notNearPublishDate(c) {
 			return nil
 		}
 		t, err := c.Tree()
@@ -220,12 +234,8 @@ func main() {
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "hash calculation"))
 	}
-	wiggleRoom := 7 * 24 * time.Hour
-	notNearPublishDate := func(c *object.Commit) bool {
-		committed := c.Committer.When
-		return committed.Before(published.Add(-1*wiggleRoom)) || committed.After(published.Add(wiggleRoom))
-	}
-	closest, matched, total, err := fileIdentitySearch(ctx, r, hashes, notNearPublishDate)
+	s := CommitsNearPublishStrategy{Published: published, Window: 7 * 24 * time.Hour}
+	closest, matched, total, err := s.Search(ctx, r, hashes)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "identity search"))
 	}
