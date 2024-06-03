@@ -48,6 +48,7 @@ var (
 	version   = flag.String("version", "", "package version")
 	repo      = flag.String("repo", "", "package repo")
 	repoPath  = flag.String("repo-path", "", "local path from which to load the package repo")
+	strategy  = flag.String("strategy", "dynamic", "strategy to use to search and rank commits. {dynamic, commits-near-publish}")
 )
 
 func getRepo(ctx context.Context, uri, path string) (*git.Repository, error) {
@@ -109,6 +110,81 @@ type searchStrategy interface {
 	Search(ctx context.Context, r *git.Repository, hashes []string) (closest []string, matched, total int, err error)
 }
 
+// DynamicTreeSearchStrategy  searches all TreeObjects in the repository for
+// the number of matches against the input files provided.
+type DynamicTreeSearchStrategy struct {
+}
+
+// Search returns the set of matching commits along with the number of matches.
+func (DynamicTreeSearchStrategy) Search(ctx context.Context, r *git.Repository, hashes []string) (closest []string, matched, total int, err error) {
+	files := make(map[plumbing.Hash]bool)
+	for _, h := range hashes {
+		_, err = r.BlobObject(plumbing.NewHash(h))
+		if err == plumbing.ErrObjectNotFound {
+			// Skip files not present in repo.
+			err = nil
+		} else if err != nil {
+			return
+		} else {
+			files[plumbing.NewHash(h)] = true
+		}
+	}
+	total = len(files)
+	if total == 0 {
+		err = errors.New("repo contains no matching files")
+		return
+	}
+	// Construct cache of all trees and their match count.
+	cache := make(map[plumbing.Hash]int)
+	ti, _ := r.TreeObjects()
+	ti.ForEach(func(t *object.Tree) error {
+		countTree(t, files, cache)
+		return nil
+	})
+	// Search through all commits for the one whose tree has the most matches.
+	ci, _ := r.CommitObjects()
+	err = ci.ForEach(func(c *object.Commit) error {
+		count := cache[c.TreeHash]
+		if matched < count {
+			matched = count
+			closest = closest[:0]
+		}
+		if matched == count {
+			closest = append(closest, c.Hash.String())
+		}
+		return nil
+	})
+	return
+}
+
+// countTree counts the number of matching files in the given git Tree and records them in "cache".
+func countTree(t *object.Tree, toMatch map[plumbing.Hash]bool, cache map[plumbing.Hash]int) (count int) {
+	if val, ok := cache[t.Hash]; ok {
+		return val
+	}
+	for _, e := range t.Entries {
+		switch e.Mode {
+		case filemode.Dir:
+			if val, ok := cache[e.Hash]; ok {
+				count += val
+			} else {
+				t, _ := t.Tree(e.Name)
+				subcount := countTree(t, toMatch, cache)
+				cache[e.Hash] = subcount
+				count += subcount
+			}
+		case filemode.Submodule, filemode.Symlink:
+			continue
+		default:
+			if _, ok := toMatch[e.Hash]; ok {
+				count++
+			}
+		}
+	}
+	cache[t.Hash] = count
+	return
+}
+
 // CommitsNearPublishStrategy searches across repository for the input files
 // provided for the nearest matching commit(s).
 type CommitsNearPublishStrategy struct {
@@ -116,7 +192,7 @@ type CommitsNearPublishStrategy struct {
 	Window    time.Duration
 }
 
-// Search returns the set of matching commits along with the number of matches are returned.
+// Search returns the set of matching commits along with the number of matches.
 func (s CommitsNearPublishStrategy) Search(ctx context.Context, r *git.Repository, hashes []string) (closest []string, matched, total int, err error) {
 	files := make(map[string]bool)
 	for _, h := range hashes {
@@ -234,7 +310,15 @@ func main() {
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "hash calculation"))
 	}
-	s := CommitsNearPublishStrategy{Published: published, Window: 7 * 24 * time.Hour}
+	var s searchStrategy
+	switch *strategy {
+	case "dynamic":
+		s = &DynamicTreeSearchStrategy{}
+	case "commits-near-publish":
+		s = &CommitsNearPublishStrategy{Published: published, Window: 7 * 24 * time.Hour}
+	default:
+		log.Fatalln("unknown strategy:", *strategy)
+	}
 	closest, matched, total, err := s.Search(ctx, r, hashes)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "identity search"))
