@@ -21,6 +21,7 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -194,7 +195,8 @@ func (rb *Rebuilder) Restart(ctx context.Context) {
 }
 
 // RunLocal runs the rebuilder for the given example.
-func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild) {
+// Each element of extraParams is a url parameter like "param=value".
+func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, extraParams ...string) {
 	_, err := rb.runningInstance(ctx)
 	if err != nil {
 		log.Println(err)
@@ -202,7 +204,11 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild) {
 	}
 	log.Printf("Calling the rebuilder for %s\n", r.ID())
 	id := time.Now().UTC().Format(time.RFC3339)
-	cmd := exec.CommandContext(ctx, "curl", "--silent", "-d", fmt.Sprintf("ecosystem=%s&pkg=%s&versions=%s&id=%s", r.Ecosystem, r.Package, r.Version, id), "-X", "POST", "127.0.0.1:8080/smoketest")
+	var extra string
+	if len(extraParams) > 0 {
+		extra = "&" + strings.Join(extraParams, "&")
+	}
+	cmd := exec.CommandContext(ctx, "curl", "--silent", "-d", fmt.Sprintf("ecosystem=%s&pkg=%s&versions=%s&id=%s%s", r.Ecosystem, r.Package, r.Version, id, extra), "-X", "POST", "127.0.0.1:8080/smoketest")
 	rllog := logWriter(log.New(log.Default().Writer(), logPrefix("runlocal"), 0))
 	cmd.Stdout = rllog
 	cmd.Stderr = rllog

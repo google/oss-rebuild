@@ -99,6 +99,15 @@ func NewRebuildFromFirestore(doc *firestore.DocumentSnapshot) Rebuild {
 	return rb
 }
 
+func (r Rebuild) Target() rebuild.Target {
+	return rebuild.Target{
+		Ecosystem: rebuild.Ecosystem(r.Ecosystem),
+		Package:   r.Package,
+		Version:   r.Version,
+		Artifact:  r.Artifact,
+	}
+}
+
 type BenchmarkMode string
 
 const (

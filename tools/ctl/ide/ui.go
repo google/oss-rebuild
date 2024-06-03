@@ -20,7 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,26 +89,25 @@ func sanitize(name string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(name, "@", ""), "/", "-")
 }
 
-func newAssetStores(ctx context.Context, runID string) (localAssets, gcsAssets rebuild.AssetStore, err error) {
+func localAssetStore(ctx context.Context, runID string) (rebuild.AssetStore, error) {
 	// TODO: Maybe this should be a different ctx variable?
 	dir := filepath.Join("/tmp/oss-rebuild", runID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to create directory %s", dir)
+		return nil, errors.Wrapf(err, "failed to create directory %s", dir)
 	}
 	assetsFS, err := osfs.New("/").Chroot(dir)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to chroot into directory %s", dir)
+		return nil, errors.Wrapf(err, "failed to chroot into directory %s", dir)
 	}
-	localAssets = rebuild.NewFilesystemAssetStore(assetsFS)
+	return rebuild.NewFilesystemAssetStore(assetsFS), nil
+}
+
+func gcsAssetStore(ctx context.Context, runID string) (rebuild.AssetStore, error) {
 	bucket, ok := ctx.Value(rebuild.UploadArtifactsPathID).(string)
 	if !ok {
-		return nil, nil, errors.Errorf("GCS bucket was not specified")
+		return nil, errors.Errorf("GCS bucket was not specified")
 	}
-	gcsAssets, err = rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, runID), bucket)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to create GCS store")
-	}
-	return localAssets, gcsAssets, nil
+	return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, runID), bucket)
 }
 
 func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
@@ -120,9 +121,14 @@ func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, gcsAssets, err := newAssetStores(ctx, example.Run)
+	localAssets, err := localAssetStore(ctx, example.Run)
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to create asset stores"))
+		log.Println(errors.Wrap(err, "failed to create local asset store"))
+		return
+	}
+	gcsAssets, err := gcsAssetStore(ctx, example.Run)
+	if err != nil {
+		log.Println(errors.Wrap(err, "failed to create gcs asset store"))
 		return
 	}
 	// TODO: Clean up these artifacts.
@@ -200,9 +206,14 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, gcsAssets, err := newAssetStores(ctx, example.Run)
+	localAssets, err := localAssetStore(ctx, example.Run)
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to create asset stores"))
+		log.Println(errors.Wrap(err, "failed to create local asset store"))
+		return
+	}
+	gcsAssets, err := gcsAssetStore(ctx, example.Run)
+	if err != nil {
+		log.Println(errors.Wrap(err, "failed to create gcs asset store"))
 		return
 	}
 	logs, err := rebuild.AssetCopy(ctx, localAssets, gcsAssets, rebuild.Asset{Target: t, Type: rebuild.DebugLogsAsset})
@@ -214,6 +225,78 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 	if err := cmd.Run(); err != nil {
 		log.Println(errors.Wrap(err, "failed to read logs"))
 	}
+}
+
+func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) {
+	localAssets, err := localAssetStore(ctx, example.Run)
+	if err != nil {
+		log.Println(errors.Wrap(err, "failed to create local asset store"))
+		return
+	}
+	buildDefAsset := rebuild.Asset{Type: rebuild.BuildDef, Target: example.Target()}
+	var currentStratYaml []byte
+	{
+		if r, _, err := localAssets.Reader(ctx, buildDefAsset); err == nil {
+			buf := new(bytes.Buffer)
+			_, err = io.Copy(buf, r)
+			if err != nil {
+				log.Println(errors.Wrap(err, "failed to read existing build definition"))
+				return
+			}
+			currentStratYaml = buf.Bytes()
+		} else {
+			var oneof schema.StrategyOneOf
+			if err := json.Unmarshal([]byte(example.Strategy), &oneof); err != nil {
+				log.Println(errors.Wrap(err, "failed to parse strategy"))
+				return
+			}
+			var err error
+			if currentStratYaml, err = yaml.Marshal(oneof); err != nil {
+				log.Println(errors.Wrap(err, "failed to marshal strategy"))
+				return
+			}
+		}
+	}
+	var newStratYaml []byte
+	{
+		w, uri, err := localAssets.Writer(ctx, buildDefAsset)
+		if err != nil {
+			log.Println(errors.Wrapf(err, "opening strategy file"))
+			return
+		}
+		w.Write(append([]byte("# Edit the strategy below, then save and exit the file to begin a rebuild.\n"), currentStratYaml...))
+		w.Close()
+		// Send a "tmux wait -S" signal once the edit is complete.
+		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("$EDITOR %s; tmux wait -S editing", uri))
+		if out, err := cmd.Output(); err != nil {
+			log.Println(errors.Wrap(err, "failed to edit strategy:"))
+			log.Println(out)
+			return
+		}
+		// Wait to receive the tmux signal.
+		if _, err := exec.Command("tmux", "wait", "editing").Output(); err != nil {
+			log.Println(errors.Wrap(err, "failed to wait for tmux signal"))
+			return
+		}
+		newStratYaml, err = os.ReadFile(uri)
+		if err != nil {
+			log.Println(errors.Wrap(err, "failed to read strategy"))
+			return
+		}
+	}
+	log.Println("New strategy: " + string(newStratYaml))
+	var oneof schema.StrategyOneOf
+	if err := yaml.Unmarshal(newStratYaml, &oneof); err != nil {
+		log.Println(errors.Wrap(err, "failed to parse new strategy"))
+		return
+	}
+	log.Printf("Decoded oneof: %+v", oneof)
+	newStratJsonBytes, err := json.Marshal(oneof)
+	if err != nil {
+		log.Println(errors.Wrap(err, "failed to convert new strategy to json"))
+		return
+	}
+	go e.rb.RunLocal(e.ctx, example, "strategy="+url.QueryEscape(string(newStratJsonBytes)))
 }
 
 func (e *explorer) makeExampleNode(example firestore.Rebuild) *tview.TreeNode {
@@ -230,6 +313,9 @@ func (e *explorer) makeExampleNode(example firestore.Rebuild) *tview.TreeNode {
 					e.rb.Restart(e.ctx)
 					e.rb.RunLocal(e.ctx, example)
 				}()
+			}))
+			node.AddChild(makeCommandNode("edit and run local", func() {
+				go e.editAndRun(e.ctx, example)
 			}))
 			node.AddChild(makeCommandNode("details", func() {
 				go e.showDetails(e.ctx, example)
