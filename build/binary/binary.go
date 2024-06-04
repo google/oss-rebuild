@@ -25,7 +25,7 @@ import (
 
 // Build constructs a binary for one of the project's microservices.
 func Build(ctx context.Context, name string) (path string, err error) {
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", "./bin/"+name, "./cmd/"+name)
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", filepath.Join("./bin/", name), filepath.Join("./cmd/", name))
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	cmd.Stdout = log.Writer()
 	cmd.Stderr = log.Writer()
@@ -34,6 +34,6 @@ func Build(ctx context.Context, name string) (path string, err error) {
 	if err != nil {
 		return
 	}
-	path, err = filepath.Abs("./bin/" + name)
+	path, err = filepath.Abs(filepath.Join("./bin/", name))
 	return
 }
