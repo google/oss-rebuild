@@ -252,23 +252,23 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) {
 	{
 		w, uri, err := localAssets.Writer(ctx, buildDefAsset)
 		if err != nil {
-			log.Println(errors.Wrapf(err, "opening strategy file"))
+			log.Println(errors.Wrapf(err, "opening build definition"))
 			return
 		}
-		if _, err = w.Write([]byte("# Edit the strategy below, then save and exit the file to begin a rebuild.\n")); err != nil {
-			log.Println(errors.Wrapf(err, "writing comment to strategy file"))
+		if _, err = w.Write([]byte("# Edit the build definition below, then save and exit the file to begin a rebuild.\n")); err != nil {
+			log.Println(errors.Wrapf(err, "writing comment to build definition file"))
 			return
 		}
 		e := yaml.NewEncoder(w)
 		if e.Encode(&currentStrat) != nil {
-			log.Println(errors.Wrapf(err, "populating strategy file"))
+			log.Println(errors.Wrapf(err, "populating build definition"))
 			return
 		}
 		w.Close()
 		// Send a "tmux wait -S" signal once the edit is complete.
 		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("$EDITOR %s; tmux wait -S editing", uri))
 		if out, err := cmd.Output(); err != nil {
-			log.Println(errors.Wrap(err, "failed to edit strategy"))
+			log.Println(errors.Wrap(err, "failed to edit build definition"))
 			log.Println(out)
 			return
 		}
@@ -279,12 +279,12 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) {
 		}
 		r, _, err := localAssets.Reader(ctx, buildDefAsset)
 		if err != nil {
-			log.Println(errors.Wrap(err, "failed to open strategy after edits"))
+			log.Println(errors.Wrap(err, "failed to open build definition after edits"))
 			return
 		}
 		d := yaml.NewDecoder(r)
 		if err := d.Decode(&newStrat); err != nil {
-			log.Println(errors.Wrap(err, "manual strategy failed to parse"))
+			log.Println(errors.Wrap(err, "manual strategy oneof failed to parse"))
 			return
 		}
 	}
