@@ -51,6 +51,9 @@ const (
 
 	// AttestationBundleAsset is the signed attestation bundle generated for a rebuild.
 	AttestationBundleAsset AssetType = "rebuild.intoto.jsonl"
+
+	// BuildDef is the build definition, including strategy.
+	BuildDef AssetType = "build.yaml"
 )
 
 var (

@@ -16,16 +16,21 @@ package ide
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os/exec"
 	"sync"
 	"time"
 
 	"github.com/google/oss-rebuild/build/binary"
 	"github.com/google/oss-rebuild/build/container"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/ctl/firestore"
 	"github.com/google/oss-rebuild/tools/docker"
 	"github.com/pkg/errors"
@@ -193,23 +198,50 @@ func (rb *Rebuilder) Restart(ctx context.Context) {
 	}
 }
 
+type RunLocalOpts struct {
+	Strategy *schema.StrategyOneOf
+}
+
 // RunLocal runs the rebuilder for the given example.
-func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild) {
+func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts RunLocalOpts) {
 	_, err := rb.runningInstance(ctx)
 	if err != nil {
-		log.Println(err)
+		log.Println(err.Error())
 		return
 	}
 	log.Printf("Calling the rebuilder for %s\n", r.ID())
 	id := time.Now().UTC().Format(time.RFC3339)
-	cmd := exec.CommandContext(ctx, "curl", "--silent", "-d", fmt.Sprintf("ecosystem=%s&pkg=%s&versions=%s&id=%s", r.Ecosystem, r.Package, r.Version, id), "-X", "POST", "127.0.0.1:8080/smoketest")
-	rllog := logWriter(log.New(log.Default().Writer(), logPrefix("runlocal"), 0))
-	cmd.Stdout = rllog
-	cmd.Stderr = rllog
-	log.Println(cmd.String())
-	if err := cmd.Start(); err != nil {
-		log.Println(err)
+	vals := url.Values{}
+	vals.Add("ecosystem", r.Ecosystem)
+	vals.Add("pkg", r.Package)
+	vals.Add("versions", r.Version)
+	vals.Add("id", id)
+	if opts.Strategy != nil {
+		byts, err := json.Marshal(opts.Strategy)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		vals.Add("strategy", string(byts))
 	}
+	client := http.DefaultClient
+	url := "http://127.0.0.1:8080/smoketest"
+	log.Println("Requesting a smoketest from: " + url)
+	resp, err := client.PostForm(url, vals)
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
+	var smkRespBytes bytes.Buffer
+	var smkResp schema.SmoketestResponse
+	if err := json.NewDecoder(io.TeeReader(resp.Body, &smkRespBytes)).Decode(&smkResp); err != nil {
+		log.Println(errors.Wrap(err, "failed to decode smoketest response").Error())
+	}
+	msg := "FAILED"
+	if json.Unmarshal(smkRespBytes.Bytes(), &smkResp) == nil && len(smkResp.Verdicts) == 1 && smkResp.Verdicts[0].Message == "" {
+		msg = "SUCCESS"
+	}
+	log.Printf("Smoketest %s:\n%s", msg, smkRespBytes.String())
 }
 
 // Attach opens a new tmux window that's attached to the rebuilder container.
