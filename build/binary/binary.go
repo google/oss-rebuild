@@ -18,13 +18,16 @@ package binary
 import (
 	"context"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Build constructs a binary for one of the project's microservices.
 func Build(ctx context.Context, name string) (path string, err error) {
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", name, "./cmd/"+name)
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", strings.Join([]string{".", "bin", name}, string(os.PathSeparator)), strings.Join([]string{".", "cmd", name}, string(os.PathSeparator)))
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	cmd.Stdout = log.Writer()
 	cmd.Stderr = log.Writer()
 	log.Print(cmd.String())
@@ -32,6 +35,6 @@ func Build(ctx context.Context, name string) (path string, err error) {
 	if err != nil {
 		return
 	}
-	path, err = filepath.Abs(name)
+	path, err = filepath.Abs(filepath.Join(".", "bin", name))
 	return
 }
