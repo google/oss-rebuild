@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/url"
 	"os"
@@ -234,42 +233,42 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) {
 		return
 	}
 	buildDefAsset := rebuild.Asset{Type: rebuild.BuildDef, Target: example.Target()}
-	var currentStratYaml []byte
+	var currentStrat schema.StrategyOneOf
 	{
 		if r, _, err := localAssets.Reader(ctx, buildDefAsset); err == nil {
-			buf := new(bytes.Buffer)
-			_, err = io.Copy(buf, r)
-			if err != nil {
+			d := yaml.NewDecoder(r)
+			if d.Decode(&currentStrat) != nil {
 				log.Println(errors.Wrap(err, "failed to read existing build definition"))
 				return
 			}
-			currentStratYaml = buf.Bytes()
 		} else {
-			var oneof schema.StrategyOneOf
-			if err := json.Unmarshal([]byte(example.Strategy), &oneof); err != nil {
+			if err := json.Unmarshal([]byte(example.Strategy), &currentStrat); err != nil {
 				log.Println(errors.Wrap(err, "failed to parse strategy"))
-				return
-			}
-			var err error
-			if currentStratYaml, err = yaml.Marshal(oneof); err != nil {
-				log.Println(errors.Wrap(err, "failed to marshal strategy"))
 				return
 			}
 		}
 	}
-	var newStratYaml []byte
+	var newStrat schema.StrategyOneOf
 	{
 		w, uri, err := localAssets.Writer(ctx, buildDefAsset)
 		if err != nil {
 			log.Println(errors.Wrapf(err, "opening strategy file"))
 			return
 		}
-		w.Write(append([]byte("# Edit the strategy below, then save and exit the file to begin a rebuild.\n"), currentStratYaml...))
+		if _, err = w.Write([]byte("# Edit the strategy below, then save and exit the file to begin a rebuild.\n")); err != nil {
+			log.Println(errors.Wrapf(err, "writing comment to strategy file"))
+			return
+		}
+		e := yaml.NewEncoder(w)
+		if e.Encode(&currentStrat) != nil {
+			log.Println(errors.Wrapf(err, "populating strategy file"))
+			return
+		}
 		w.Close()
 		// Send a "tmux wait -S" signal once the edit is complete.
 		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("$EDITOR %s; tmux wait -S editing", uri))
 		if out, err := cmd.Output(); err != nil {
-			log.Println(errors.Wrap(err, "failed to edit strategy:"))
+			log.Println(errors.Wrap(err, "failed to edit strategy"))
 			log.Println(out)
 			return
 		}
@@ -278,20 +277,18 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) {
 			log.Println(errors.Wrap(err, "failed to wait for tmux signal"))
 			return
 		}
-		newStratYaml, err = os.ReadFile(uri)
+		r, _, err := localAssets.Reader(ctx, buildDefAsset)
 		if err != nil {
-			log.Println(errors.Wrap(err, "failed to read strategy"))
+			log.Println(errors.Wrap(err, "failed to open strategy after edits"))
+			return
+		}
+		d := yaml.NewDecoder(r)
+		if err := d.Decode(&newStrat); err != nil {
+			log.Println(errors.Wrap(err, "manual strategy failed to parse"))
 			return
 		}
 	}
-	log.Println("New strategy: " + string(newStratYaml))
-	var oneof schema.StrategyOneOf
-	if err := yaml.Unmarshal(newStratYaml, &oneof); err != nil {
-		log.Println(errors.Wrap(err, "failed to parse new strategy"))
-		return
-	}
-	log.Printf("Decoded oneof: %+v", oneof)
-	newStratJsonBytes, err := json.Marshal(oneof)
+	newStratJsonBytes, err := json.Marshal(newStrat)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to convert new strategy to json"))
 		return
