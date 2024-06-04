@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os/exec"
 	"sync"
@@ -205,7 +206,7 @@ type RunLocalOpts struct {
 func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts RunLocalOpts) {
 	_, err := rb.runningInstance(ctx)
 	if err != nil {
-		log.Println(err)
+		log.Println(err.Error())
 		return
 	}
 	log.Printf("Calling the rebuilder for %s\n", r.ID())
@@ -223,13 +224,20 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts Run
 		}
 		vals.Add("strategy", string(byts))
 	}
-	cmd := exec.CommandContext(ctx, "curl", "--silent", "-d", vals.Encode(), "-X", "POST", "127.0.0.1:8080/smoketest")
-	rllog := logWriter(log.New(log.Default().Writer(), logPrefix("runlocal"), 0))
-	cmd.Stdout = rllog
-	cmd.Stderr = rllog
-	log.Println(cmd.String())
-	if err := cmd.Start(); err != nil {
-		log.Println(err)
+	client := http.DefaultClient
+	resp, err := client.PostForm("http://127.0.0.1:8080/smoketest", vals)
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
+	var smkResp schema.SmoketestResponse
+	if err := json.NewDecoder(resp.Body).Decode(&smkResp); err != nil {
+		log.Println(errors.Wrap(err, "failed to decode smoketest response").Error())
+	}
+	// TODO: Is there a more usefull way to print this response?
+	log.Println(smkResp)
+	if len(smkResp.Verdicts) == 0 && smkResp.Verdicts[0].Message == "" {
+		log.Println("Success!")
 	}
 }
 
