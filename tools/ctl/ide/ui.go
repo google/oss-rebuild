@@ -226,11 +226,10 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 	}
 }
 
-func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) {
+func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) error {
 	localAssets, err := localAssetStore(ctx, example.Run)
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to create local asset store"))
-		return
+		return errors.Wrap(err, "failed to create local asset store")
 	}
 	buildDefAsset := rebuild.Asset{Type: rebuild.BuildDef, Target: example.Target()}
 	var currentStrat schema.StrategyOneOf
@@ -238,13 +237,11 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) {
 		if r, _, err := localAssets.Reader(ctx, buildDefAsset); err == nil {
 			d := yaml.NewDecoder(r)
 			if d.Decode(&currentStrat) != nil {
-				log.Println(errors.Wrap(err, "failed to read existing build definition"))
-				return
+				return errors.Wrap(err, "failed to read existing build definition")
 			}
 		} else {
 			if err := json.Unmarshal([]byte(example.Strategy), &currentStrat); err != nil {
-				log.Println(errors.Wrap(err, "failed to parse strategy"))
-				return
+				return errors.Wrap(err, "failed to parse strategy")
 			}
 		}
 	}
@@ -252,48 +249,40 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) {
 	{
 		w, uri, err := localAssets.Writer(ctx, buildDefAsset)
 		if err != nil {
-			log.Println(errors.Wrapf(err, "opening build definition"))
-			return
+			return errors.Wrapf(err, "opening build definition")
 		}
 		if _, err = w.Write([]byte("# Edit the build definition below, then save and exit the file to begin a rebuild.\n")); err != nil {
-			log.Println(errors.Wrapf(err, "writing comment to build definition file"))
-			return
+			return errors.Wrapf(err, "writing comment to build definition file")
 		}
 		e := yaml.NewEncoder(w)
 		if e.Encode(&currentStrat) != nil {
-			log.Println(errors.Wrapf(err, "populating build definition"))
-			return
+			return errors.Wrapf(err, "populating build definition")
 		}
 		w.Close()
 		// Send a "tmux wait -S" signal once the edit is complete.
 		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("$EDITOR %s; tmux wait -S editing", uri))
-		if out, err := cmd.Output(); err != nil {
-			log.Println(errors.Wrap(err, "failed to edit build definition"))
-			log.Println(out)
-			return
+		if _, err := cmd.Output(); err != nil {
+			return errors.Wrap(err, "failed to edit build definition")
 		}
 		// Wait to receive the tmux signal.
 		if _, err := exec.Command("tmux", "wait", "editing").Output(); err != nil {
-			log.Println(errors.Wrap(err, "failed to wait for tmux signal"))
-			return
+			return errors.Wrap(err, "failed to wait for tmux signal")
 		}
 		r, _, err := localAssets.Reader(ctx, buildDefAsset)
 		if err != nil {
-			log.Println(errors.Wrap(err, "failed to open build definition after edits"))
-			return
+			return errors.Wrap(err, "failed to open build definition after edits")
 		}
 		d := yaml.NewDecoder(r)
 		if err := d.Decode(&newStrat); err != nil {
-			log.Println(errors.Wrap(err, "manual strategy oneof failed to parse"))
-			return
+			return errors.Wrap(err, "manual strategy oneof failed to parse")
 		}
 	}
 	newStratJsonBytes, err := json.Marshal(newStrat)
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to convert new strategy to json"))
-		return
+		return errors.Wrap(err, "failed to convert new strategy to json")
 	}
-	go e.rb.RunLocal(e.ctx, example, "strategy="+url.QueryEscape(string(newStratJsonBytes)))
+	e.rb.RunLocal(e.ctx, example, "strategy="+url.QueryEscape(string(newStratJsonBytes)))
+	return nil
 }
 
 func (e *explorer) makeExampleNode(example firestore.Rebuild) *tview.TreeNode {
@@ -312,7 +301,11 @@ func (e *explorer) makeExampleNode(example firestore.Rebuild) *tview.TreeNode {
 				}()
 			}))
 			node.AddChild(makeCommandNode("edit and run local", func() {
-				go e.editAndRun(e.ctx, example)
+				go func() {
+					if err := e.editAndRun(e.ctx, example); err != nil {
+						log.Println(err.Error())
+					}
+				}()
 			}))
 			node.AddChild(makeCommandNode("details", func() {
 				go e.showDetails(e.ctx, example)
