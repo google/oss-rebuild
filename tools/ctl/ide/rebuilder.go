@@ -203,7 +203,6 @@ type RunLocalOpts struct {
 }
 
 // RunLocal runs the rebuilder for the given example.
-// Each element of extraParams is a url parameter like "param=value".
 func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts RunLocalOpts) {
 	_, err := rb.runningInstance(ctx)
 	if err != nil {
