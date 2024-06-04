@@ -233,14 +233,15 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts Run
 		return
 	}
 	var smkRespBytes bytes.Buffer
-	if _, err := io.Copy(&smkRespBytes, resp.Body); err != nil {
+	var smkResp schema.SmoketestResponse
+	if err := json.NewDecoder(io.TeeReader(resp.Body, &smkRespBytes)).Decode(&smkResp); err != nil {
 		log.Println(errors.Wrap(err, "failed to decode smoketest response").Error())
 	}
-	log.Println(smkRespBytes.String())
-	var smkResp schema.SmoketestResponse
+	msg := "FAILED"
 	if json.Unmarshal(smkRespBytes.Bytes(), &smkResp) == nil && len(smkResp.Verdicts) == 1 && smkResp.Verdicts[0].Message == "" {
-		log.Println("Success!")
+		msg = "SUCCESS"
 	}
+	log.Printf("Smoketest %s:\n%s", msg, smkRespBytes.String())
 }
 
 // Attach opens a new tmux window that's attached to the rebuilder container.
