@@ -16,6 +16,7 @@ package ide
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -225,18 +226,20 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts Run
 		vals.Add("strategy", string(byts))
 	}
 	client := http.DefaultClient
-	resp, err := client.PostForm("http://127.0.0.1:8080/smoketest", vals)
+	url := "http://127.0.0.1:8080/smoketest"
+	log.Println("Requesting a smoketest from: " + url)
+	resp, err := client.PostForm(url, vals)
 	if err != nil {
 		log.Println(err.Error())
 		return
 	}
-	var smkResp schema.SmoketestResponse
-	if err := json.NewDecoder(resp.Body).Decode(&smkResp); err != nil {
+	var smkRespBytes bytes.Buffer
+	if _, err := io.Copy(&smkRespBytes, resp.Body); err != nil {
 		log.Println(errors.Wrap(err, "failed to decode smoketest response").Error())
 	}
-	// TODO: Is there a more usefull way to print this response?
-	log.Println(smkResp)
-	if len(smkResp.Verdicts) == 0 && smkResp.Verdicts[0].Message == "" {
+	log.Println(smkRespBytes.String())
+	var smkResp schema.SmoketestResponse
+	if json.Unmarshal(smkRespBytes.Bytes(), &smkResp) == nil && len(smkResp.Verdicts) == 1 && smkResp.Verdicts[0].Message == "" {
 		log.Println("Success!")
 	}
 }
