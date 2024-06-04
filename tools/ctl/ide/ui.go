@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -277,11 +276,7 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) er
 			return errors.Wrap(err, "manual strategy oneof failed to parse")
 		}
 	}
-	newStratJsonBytes, err := json.Marshal(newStrat)
-	if err != nil {
-		return errors.Wrap(err, "failed to convert new strategy to json")
-	}
-	e.rb.RunLocal(e.ctx, example, "strategy="+url.QueryEscape(string(newStratJsonBytes)))
+	e.rb.RunLocal(e.ctx, example, RunLocalOpts{Strategy: &newStrat})
 	return nil
 }
 
@@ -292,12 +287,12 @@ func (e *explorer) makeExampleNode(example firestore.Rebuild) *tview.TreeNode {
 		children := node.GetChildren()
 		if len(children) == 0 {
 			node.AddChild(makeCommandNode("run local", func() {
-				go e.rb.RunLocal(e.ctx, example)
+				go e.rb.RunLocal(e.ctx, example, RunLocalOpts{})
 			}))
 			node.AddChild(makeCommandNode("restart && run local", func() {
 				go func() {
 					e.rb.Restart(e.ctx)
-					e.rb.RunLocal(e.ctx, example)
+					e.rb.RunLocal(e.ctx, example, RunLocalOpts{})
 				}()
 			}))
 			node.AddChild(makeCommandNode("edit and run local", func() {

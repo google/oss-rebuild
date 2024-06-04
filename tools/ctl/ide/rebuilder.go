@@ -17,16 +17,18 @@ package ide
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/oss-rebuild/build/binary"
 	"github.com/google/oss-rebuild/build/container"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/ctl/firestore"
 	"github.com/google/oss-rebuild/tools/docker"
 	"github.com/pkg/errors"
@@ -194,9 +196,13 @@ func (rb *Rebuilder) Restart(ctx context.Context) {
 	}
 }
 
+type RunLocalOpts struct {
+	Strategy *schema.StrategyOneOf
+}
+
 // RunLocal runs the rebuilder for the given example.
 // Each element of extraParams is a url parameter like "param=value".
-func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, extraParams ...string) {
+func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts RunLocalOpts) {
 	_, err := rb.runningInstance(ctx)
 	if err != nil {
 		log.Println(err)
@@ -204,11 +210,20 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, extraPar
 	}
 	log.Printf("Calling the rebuilder for %s\n", r.ID())
 	id := time.Now().UTC().Format(time.RFC3339)
-	var extra string
-	if len(extraParams) > 0 {
-		extra = "&" + strings.Join(extraParams, "&")
+	vals := url.Values{}
+	vals.Add("ecosystem", r.Ecosystem)
+	vals.Add("pkg", r.Package)
+	vals.Add("versions", r.Version)
+	vals.Add("id", id)
+	if opts.Strategy != nil {
+		byts, err := json.Marshal(opts.Strategy)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		vals.Add("strategy", string(byts))
 	}
-	cmd := exec.CommandContext(ctx, "curl", "--silent", "-d", fmt.Sprintf("ecosystem=%s&pkg=%s&versions=%s&id=%s%s", r.Ecosystem, r.Package, r.Version, id, extra), "-X", "POST", "127.0.0.1:8080/smoketest")
+	cmd := exec.CommandContext(ctx, "curl", "--silent", "-d", vals.Encode(), "-X", "POST", "127.0.0.1:8080/smoketest")
 	rllog := logWriter(log.New(log.Default().Writer(), logPrefix("runlocal"), 0))
 	cmd.Stdout = rllog
 	cmd.Stderr = rllog
