@@ -34,6 +34,6 @@ func Build(ctx context.Context, name string) (path string, err error) {
 	if err != nil {
 		return
 	}
-	path, err = filepath.Abs(name)
+	path, err = filepath.Abs("./bin/" + name)
 	return
 }

@@ -32,7 +32,7 @@ func Build(ctx context.Context, name, binary string) error {
 	}
 	defer os.RemoveAll(tempDir)
 
-	err = copyFile(filepath.Join(tempDir, name), filepath.Join("./bin/", name))
+	err = copyFile(filepath.Join(tempDir, name), binary)
 	if err != nil {
 		return err
 	}
