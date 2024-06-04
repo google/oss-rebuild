@@ -1,5 +1,5 @@
 # Locally built binaries
-rebuilder
+bin/
 
 # jj
 .jj/
