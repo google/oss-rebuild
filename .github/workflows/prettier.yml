@@ -26,4 +26,4 @@ jobs:
       - name: Check formatting
         run: |
           npx prettier --version
-          npx prettier --check **/*.md **/*.yml **/*.yaml
+          npx prettier --check --no-error-on-unmatched-pattern **/*.md **/*.yml **/*.yaml
