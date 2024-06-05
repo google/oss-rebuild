@@ -5,9 +5,10 @@ on:
   # Runs on pushes targeting the default branch
   push:
     branches: ["main"]
-
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
+    paths: ["docs/**", ".github/workflows/jekyll-gh-pages.yml"]
+  pull_request:
+    branches: ["main"]
+    paths: ["docs/**", ".github/workflows/jekyll-gh-pages.yml"]
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -42,6 +43,7 @@ jobs:
 
   # Deployment job
   deploy:
+    if: github.event_name == 'push'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
