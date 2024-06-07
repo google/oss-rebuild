@@ -42,21 +42,34 @@ import (
 // These are commonly used in PyPi metadata to point to the project git repo, using a map as a set.
 // Some people capitalize these differently, or add/remove spaces. We normalized to lower, no space.
 var commonRepoLinks = map[string]bool{
-	"homepage":     true,
-	"home":         true,
-	"sourcecode":   true,
-	"source":       true,
-	"repository":   true,
-	"github":       true,
-	"project":      true,
-	"issuetracker": true,
+	"source":     true,
+	"sourcecode": true,
+	"repository": true,
+	"project":    true,
+	"github":     true,
 }
+
+// There are two places to find the repo:
+// 1. In the ProjectURLs (project links)
+// 2. Embeded in the description
+//
+// For 1, there are some ProjectURLs that are very common to use for a repo
+// (commonRepoLinks above), so we can break up the ProjectURLs
+
+// Preference:
+// where               | known repo
+// --------------------------------
+// project source link | yes
+// project source link | no
+// description         | yes
+// other project links | yes
 
 func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	project, err := mux.PyPI.Project(t.Package)
 	if err != nil {
 		return "", nil
 	}
+	var repoLinks []string
 	for name, url := range project.ProjectURLs {
 		_, ok := commonRepoLinks[strings.ReplaceAll(strings.ToLower(name), " ", "")]
 		if !ok {
@@ -66,14 +79,34 @@ func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, e
 		if strings.Contains(url, "sponsors") {
 			continue
 		}
-		c, err := uri.CanonicalizeRepoURI(url)
-		if err == nil {
-			return c, nil
+		repoLinks = append(repoLinks, url)
+	}
+	// Four priority levels:
+	// 1. project source link | known repo
+	for _, url := range repoLinks {
+		if uri.SmellsLikeARepo(url) {
+			return uri.CanonicalizeRepoURI(url)
 		}
 	}
-	c, err := uri.CanonicalizeRepoURI(project.Description)
-	if err == nil && !strings.Contains(c, "sponsors") {
-		return c, nil
+	// 2. project source link | not known repo
+	if len(repoLinks) != 0 {
+		return repoLinks[0], nil
+	}
+	// 3. description         | known repo
+	r := uri.FindARepo(project.Description)
+	if !strings.Contains(r, "sponsors") {
+		log.Printf("Found repo from the description: %s\n", r)
+		return r, nil
+	}
+	// 4. other project links | known repo
+	for _, url := range project.ProjectURLs {
+		// Exclude sponsor URLs.
+		if strings.Contains(url, "sponsors") {
+			continue
+		}
+		if uri.SmellsLikeARepo(url) {
+			return uri.CanonicalizeRepoURI(url)
+		}
 	}
 	return "", errors.New("no git repo")
 }
