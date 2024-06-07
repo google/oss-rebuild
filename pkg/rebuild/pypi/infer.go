@@ -90,13 +90,12 @@ func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, e
 	}
 	// 2. project source link | not known repo
 	if len(repoLinks) != 0 {
-		return repoLinks[0], nil
+		return uri.CanonicalizeRepoURI([0])
 	}
 	// 3. description         | known repo
 	r := uri.FindARepo(project.Description)
-	if !strings.Contains(r, "sponsors") {
-		log.Printf("Found repo from the description: %s\n", r)
-		return r, nil
+	if r != "" && !strings.Contains(r, "sponsors") {
+		return uri.CanonicalizeRepoURI(r)
 	}
 	// 4. other project links | known repo
 	for _, url := range project.ProjectURLs {
