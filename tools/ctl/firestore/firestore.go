@@ -25,6 +25,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
@@ -48,54 +49,25 @@ type Rebuild struct {
 
 // NewRebuildFromFirestore creates a Rebuild instance from a "attempt" collection document.
 func NewRebuildFromFirestore(doc *firestore.DocumentSnapshot) Rebuild {
+	var sa schema.SmoketestAttempt
+	if err := doc.DataTo(&sa); err != nil {
+		panic(err)
+	}
 	var rb Rebuild
-	// Because things have been added incrementally, we treat everything as optional. Too many times
-	// has this been the cause of a nil dereference and panic.
-	//
-	// TODO: use firestore's DataTo method with a struct defined in schema.go
-	// https://pkg.go.dev/cloud.google.com/go/firestore#DocumentSnapshot.DataTo
-	if d, ok := doc.Data()["ecosystem"]; ok {
-		rb.Ecosystem = d.(string)
-	}
-	if d, ok := doc.Data()["package"]; ok {
-		rb.Package = d.(string)
-	}
-	if d, ok := doc.Data()["version"]; ok {
-		rb.Version = d.(string)
-	}
-	if d, ok := doc.Data()["success"]; ok {
-		rb.Success = d.(bool)
-	}
-	if d, ok := doc.Data()["message"]; ok {
-		rb.Message = d.(string)
-	}
-	if d, ok := doc.Data()["strategy"]; ok {
-		rb.Strategy = d.(string)
-	}
-	if d, ok := doc.Data()["executor_version"]; ok {
-		rb.Executor = d.(string)
-	}
-	if d, ok := doc.Data()["run_id"]; ok {
-		rb.Run = d.(string)
-	}
-	if d, ok := doc.Data()["doc"]; ok {
-		rb.Created = time.UnixMilli(d.(int64))
-	}
-	if d, ok := doc.Data()["artifact"]; ok {
-		rb.Artifact = d.(string)
-	}
-	if d, ok := doc.Data()["time_clone_estimate"]; ok {
-		rb.Timings.CloneEstimate = time.Duration(d.(float64) * float64(time.Second))
-	}
-	if d, ok := doc.Data()["time_source"]; ok {
-		rb.Timings.Source = time.Duration(d.(float64) * float64(time.Second))
-	}
-	if d, ok := doc.Data()["time_infer"]; ok {
-		rb.Timings.Infer = time.Duration(d.(float64) * float64(time.Second))
-	}
-	if d, ok := doc.Data()["time_build"]; ok {
-		rb.Timings.Build = time.Duration(d.(float64) * float64(time.Second))
-	}
+	rb.Ecosystem = sa.Ecosystem
+	rb.Package = sa.Package
+	rb.Version = sa.Version
+	rb.Success = sa.Success
+	rb.Message = sa.Message
+	rb.Strategy = sa.Strategy
+	rb.Executor = sa.ExecutorVersion
+	rb.Run = sa.RunID
+	rb.Created = time.UnixMilli(sa.Created)
+	rb.Artifact = sa.Artifact
+	rb.Timings.CloneEstimate = time.Duration(sa.TimeCloneEstimate * float64(time.Second))
+	rb.Timings.Source = time.Duration(sa.TimeSource * float64(time.Second))
+	rb.Timings.Infer = time.Duration(sa.TimeInfer * float64(time.Second))
+	rb.Timings.Build = time.Duration(sa.TimeBuild * float64(time.Second))
 	return rb
 }
 
