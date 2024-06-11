@@ -184,21 +184,21 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 		} else {
 			log.Printf("invalid strategy returned from smoketest: %v\n", err)
 		}
-		_, err := client.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(sreq.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(sreq.ID).Set(ctx, map[string]any{
-			"ecosystem":           string(v.Target.Ecosystem),
-			"package":             v.Target.Package,
-			"version":             v.Target.Version,
-			"artifact":            v.Target.Artifact,
-			"success":             v.Message == "",
-			"message":             v.Message,
-			"strategy":            rawStrategy,
-			"time_clone_estimate": v.Timings.Source.Seconds(),
-			"time_source":         v.Timings.Source.Seconds(),
-			"time_infer":          v.Timings.Infer.Seconds(),
-			"time_build":          v.Timings.Build.Seconds(),
-			"executor_version":    executor,
-			"run_id":              sreq.ID,
-			"created":             time.Now().UnixMilli(),
+		_, err := client.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(sreq.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(sreq.ID).Set(ctx, schema.SmoketestAttempt{
+			Ecosystem:         string(v.Target.Ecosystem),
+			Package:           v.Target.Package,
+			Version:           v.Target.Version,
+			Artifact:          v.Target.Artifact,
+			Success:           v.Message == "",
+			Message:           v.Message,
+			Strategy:          rawStrategy,
+			TimeCloneEstimate: v.Timings.Source.Seconds(),
+			TimeSource:        v.Timings.Source.Seconds(),
+			TimeInfer:         v.Timings.Infer.Seconds(),
+			TimeBuild:         v.Timings.Build.Seconds(),
+			ExecutorVersion:   executor,
+			RunID:             sreq.ID,
+			Created:           time.Now().UnixMilli(),
 		})
 		if err != nil {
 			log.Printf("Failed to write record for [pkg=%s, version=%s]: %v\n", sreq.Package, v.Target.Version, err)
