@@ -15,6 +15,7 @@
 package rebuild
 
 import (
+	"context"
 	"errors"
 
 	cacheinternal "github.com/google/oss-rebuild/internal/cache"
@@ -52,30 +53,30 @@ func RegistryMuxWithCache(registry RegistryMux, c cacheinternal.Cache) (Registry
 	return newmux, nil
 }
 
-func warmCacheforArtifact(registry RegistryMux, t Target) {
+func warmCacheforArtifact(ctx context.Context, registry RegistryMux, t Target) {
 	switch t.Ecosystem {
 	case NPM:
-		registry.NPM.Package(t.Package)
-		registry.NPM.Version(t.Package, t.Version)
-		registry.NPM.Artifact(t.Package, t.Version)
+		registry.NPM.Package(ctx, t.Package)
+		registry.NPM.Version(ctx, t.Package, t.Version)
+		registry.NPM.Artifact(ctx, t.Package, t.Version)
 	case PyPI:
-		registry.PyPI.Project(t.Package)
-		registry.PyPI.Release(t.Package, t.Version)
-		registry.PyPI.Artifact(t.Package, t.Version, t.Artifact)
+		registry.PyPI.Project(ctx, t.Package)
+		registry.PyPI.Release(ctx, t.Package, t.Version)
+		registry.PyPI.Artifact(ctx, t.Package, t.Version, t.Artifact)
 	case CratesIO:
-		registry.CratesIO.Crate(t.Package)
-		registry.CratesIO.Version(t.Package, t.Version)
-		registry.CratesIO.Artifact(t.Package, t.Version)
+		registry.CratesIO.Crate(ctx, t.Package)
+		registry.CratesIO.Version(ctx, t.Package, t.Version)
+		registry.CratesIO.Artifact(ctx, t.Package, t.Version)
 	}
 }
 
-func warmCacheForPackage(registry RegistryMux, t Target) {
+func warmCacheForPackage(ctx context.Context, registry RegistryMux, t Target) {
 	switch t.Ecosystem {
 	case NPM:
-		registry.NPM.Package(t.Package)
+		registry.NPM.Package(ctx, t.Package)
 	case PyPI:
-		registry.PyPI.Project(t.Package)
+		registry.PyPI.Project(ctx, t.Package)
 	case CratesIO:
-		registry.CratesIO.Crate(t.Package)
+		registry.CratesIO.Crate(ctx, t.Package)
 	}
 }

@@ -15,6 +15,7 @@
 package npm
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -79,9 +80,9 @@ var registryURL, _ = url.Parse("https://registry.npmjs.org")
 
 // Registry is an npm package registry.
 type Registry interface {
-	Package(string) (*NPMPackage, error)
-	Version(string, string) (*NPMVersion, error)
-	Artifact(string, string) (io.ReadCloser, error)
+	Package(context.Context, string) (*NPMPackage, error)
+	Version(context.Context, string, string) (*NPMVersion, error)
+	Artifact(context.Context, string, string) (io.ReadCloser, error)
 }
 
 // HTTPRegistry is a Registry implementation that uses the npmjs.org HTTP API.
@@ -90,12 +91,12 @@ type HTTPRegistry struct {
 }
 
 // Package returns the package metadata for the given package.
-func (r HTTPRegistry) Package(pkg string) (*NPMPackage, error) {
+func (r HTTPRegistry) Package(ctx context.Context, pkg string) (*NPMPackage, error) {
 	pathURL, err := url.Parse(path.Join("/", pkg))
 	if err != nil {
 		return nil, err
 	}
-	req, _ := http.NewRequest(http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -123,12 +124,12 @@ func (r HTTPRegistry) Package(pkg string) (*NPMPackage, error) {
 }
 
 // Version returns the package metadata for the given package version.
-func (r HTTPRegistry) Version(pkg, version string) (*NPMVersion, error) {
+func (r HTTPRegistry) Version(ctx context.Context, pkg, version string) (*NPMVersion, error) {
 	pathURL, err := url.Parse(path.Join("/", pkg, version))
 	if err != nil {
 		return nil, err
 	}
-	req, _ := http.NewRequest(http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -153,12 +154,12 @@ func (r HTTPRegistry) Version(pkg, version string) (*NPMVersion, error) {
 }
 
 // Artifact returns the package artifact for the given package version.
-func (r HTTPRegistry) Artifact(pkg, version string) (io.ReadCloser, error) {
-	v, err := r.Version(pkg, version)
+func (r HTTPRegistry) Artifact(ctx context.Context, pkg, version string) (io.ReadCloser, error) {
+	v, err := r.Version(ctx, pkg, version)
 	if err != nil {
 		return nil, err
 	}
-	req, _ := http.NewRequest(http.MethodGet, v.Dist.URL, nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, v.Dist.URL, nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err

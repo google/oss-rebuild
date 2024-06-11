@@ -23,7 +23,7 @@ import (
 
 // Rebuilder defines the operations used to rebuild an ecosystem's packages.
 type Rebuilder interface {
-	InferRepo(Target, RegistryMux) (string, error)
+	InferRepo(context.Context, Target, RegistryMux) (string, error)
 	CloneRepo(context.Context, Target, string, billy.Filesystem, storage.Storer) (RepoConfig, error)
 	InferStrategy(context.Context, Target, RegistryMux, *RepoConfig, Strategy) (Strategy, error)
 	Rebuild(context.Context, Target, Instructions, billy.Filesystem) error

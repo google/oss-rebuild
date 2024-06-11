@@ -98,7 +98,7 @@ var cratesioTop2000 = RebuildBenchmark{
 			if len(ps.Packages) >= maxPackages {
 				break
 			}
-			pmeta, err := cratesio.HTTPRegistry{Client: http.DefaultClient}.Crate(m.Name)
+			pmeta, err := cratesio.HTTPRegistry{Client: http.DefaultClient}.Crate(ctx, m.Name)
 			if err != nil {
 				log.Fatalf("error fetching package metadata for %s: %v", m.Name, err)
 			}

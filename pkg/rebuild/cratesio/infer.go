@@ -56,8 +56,8 @@ func getCargoTOML(tree *object.Tree, path string) (ct reg.CargoTOML, err error) 
 	return
 }
 
-func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
-	pmeta, err := mux.CratesIO.Crate(t.Package)
+func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
+	pmeta, err := mux.CratesIO.Crate(ctx, t.Package)
 	if err != nil {
 		return "", err
 	}
@@ -185,11 +185,11 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
 	name, version := t.Package, t.Version
-	vmeta, err := mux.CratesIO.Version(name, version)
+	vmeta, err := mux.CratesIO.Version(ctx, name, version)
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to fetch crate version")
 	}
-	r, err := mux.CratesIO.Artifact(name, version)
+	r, err := mux.CratesIO.Artifact(ctx, name, version)
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to fetch upstream crate")
 	}

@@ -53,7 +53,7 @@ func RebuildMany(ctx context.Context, rebuilder Rebuilder, inputs []Input, regis
 	if err != nil {
 		return nil, errors.Wrap(err, "creating cached registry")
 	}
-	go warmCacheForPackage(registry, inputs[0].Target)
+	go warmCacheForPackage(ctx, registry, inputs[0].Target)
 	var fs billy.Filesystem // fs will be {oss-rebuild root}/{ecosystem}/sanitize({package})/
 	{
 		// Setup the workdir `fs`.
@@ -148,7 +148,7 @@ func RebuildMany(ctx context.Context, rebuilder Rebuilder, inputs []Input, regis
 	for _, input := range inputs {
 		log.Printf("Rebuilding %s %s", input.Target.Package, input.Target.Version)
 		c.Push(&cacheinternal.CoalescingMemoryCache{})
-		go warmCacheforArtifact(registry, input.Target)
+		go warmCacheforArtifact(ctx, registry, input.Target)
 		safeRebuildOne(input)
 		c.Pop()
 	}
