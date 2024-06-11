@@ -230,7 +230,7 @@ func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.
 }
 
 var runBenchmark = &cobra.Command{
-	Use:   "run-bench smoketest|attest -api <URI> [-build-local] <benchmark.json>",
+	Use:   "run-bench smoketest|attest -api <URI> [-local] <benchmark.json>",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
