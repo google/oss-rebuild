@@ -81,7 +81,7 @@ func getRepo(ctx context.Context, uri, path string) (*git.Repository, error) {
 	return r, errors.Wrap(err, "cloning repo")
 }
 
-func zipHashes(ctx context.Context, r *git.Repository, zr *zip.Reader) (files []string, err error) {
+func zipHashes(zr *zip.Reader) (files []string, err error) {
 	var f io.ReadCloser
 	for _, zf := range zr.File {
 		size := int64(zf.UncompressedSize64)
@@ -306,7 +306,7 @@ func main() {
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "creating zip reader"))
 	}
-	hashes, err := zipHashes(ctx, r, zr)
+	hashes, err := zipHashes(zr)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "hash calculation"))
 	}
