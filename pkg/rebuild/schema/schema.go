@@ -315,3 +315,21 @@ func (req InferenceRequest) ToValues() (url.Values, error) {
 	}
 	return vals, nil
 }
+
+// SmoketestAttempt stores rebuild and execution metadata on a single smoketest run.
+type SmoketestAttempt struct {
+	Ecosystem         string  `firestore:"ecosystem,omitempty"`
+	Package           string  `firestore:"package,omitempty"`
+	Version           string  `firestore:"version,omitempty"`
+	Artifact          string  `firestore:"artifact,omitempty"`
+	Success           bool    `firestore:"success,omitempty"`
+	Message           string  `firestore:"message,omitempty"`
+	Strategy          string  `firestore:"strategy,omitempty"`
+	TimeCloneEstimate float64 `firestore:"time_clone_estimate,omitempty"`
+	TimeSource        float64 `firestore:"time_source,omitempty"`
+	TimeInfer         float64 `firestore:"time_infer,omitempty"`
+	TimeBuild         float64 `firestore:"time_build,omitempty"`
+	ExecutorVersion   string  `firestore:"executor_version,omitempty"`
+	RunID             string  `firestore:"run_id,omitempty"`
+	Created           int64   `firestore:"created,omitempty"`
+}
