@@ -230,7 +230,7 @@ func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.
 }
 
 var runBenchmark = &cobra.Command{
-	Use:   "run-bench smoketest|attest -api <URI> <benchmark.json>",
+	Use:   "run-bench smoketest|attest -api <URI> [-build-local] <benchmark.json>",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -252,11 +252,17 @@ var runBenchmark = &cobra.Command{
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "parsing API endpoint"))
 		}
-		apiURL.Scheme = "https"
 		ctx := cmd.Context()
-		idclient, err := oauth.AuthorizedUserIDClient(ctx)
-		if err != nil {
-			log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
+		var idclient *http.Client
+		if strings.Contains(apiURL.Host, "run.app") {
+			// If the api is on Cloud Run, we need to use an authorized client.
+			apiURL.Scheme = "https"
+			idclient, err = oauth.AuthorizedUserIDClient(ctx)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
+			}
+		} else {
+			idclient = http.DefaultClient
 		}
 		var executor string
 		if mode == firestore.SmoketestMode {
@@ -269,7 +275,11 @@ var runBenchmark = &cobra.Command{
 			log.Fatal(err)
 		}
 		var run string
-		{
+		if *buildLocal {
+			// The build-local service does not support creating a new run-id.
+			// If we're talking to build-local directly, then we skip run-id generation.
+			run = "build-local-run"
+		} else {
 			u := apiURL.JoinPath("runs")
 			values := url.Values{
 				"name": []string{filepath.Base(path)},
@@ -319,7 +329,7 @@ var runBenchmark = &cobra.Command{
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if mode == firestore.SmoketestMode {
+				if mode == firestore.SmoketestMode && !*buildLocal {
 					// First, warm up the instances to ensure it can handle actual load.
 					// Warm up requires the service fulfill sequentially successful version
 					// requests (which hit both the API and the builder jobs).
@@ -363,7 +373,7 @@ var runBenchmark = &cobra.Command{
 						}
 						if resp.StatusCode != 200 {
 							totalErrors++
-							aggErrors = append(aggErrors, errors.Wrap(errors.New(resp.Status), "request").Error())
+							aggErrors = append(aggErrors, errors.Wrapf(errors.New(resp.Status), "request: %s", req.URL.String()).Error())
 						}
 					}
 					bar.Increment()
@@ -503,6 +513,7 @@ var (
 	api = flag.String("api", "", "OSS Rebuild API endpoint URI")
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
+	buildLocal     = flag.Bool("build-local", false, "true if this request is goind direct to build-local (not through API first)")
 	// get-results
 	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
 	bench        = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
@@ -523,6 +534,7 @@ var (
 func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("build-local"))
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
