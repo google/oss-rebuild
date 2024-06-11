@@ -32,6 +32,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
+	"cloud.google.com/go/kms/apiv1/kmspb"
 	"github.com/google/oss-rebuild/internal/cache"
 	httpinternal "github.com/google/oss-rebuild/internal/http"
 	"github.com/google/oss-rebuild/internal/httpegress"
@@ -50,7 +51,6 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/api/idtoken"
 	"google.golang.org/api/iterator"
-	kmspb "google.golang.org/genproto/googleapis/cloud/kms/v1"
 )
 
 var (

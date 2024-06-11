@@ -23,9 +23,9 @@ import (
 	"encoding/pem"
 
 	kms "cloud.google.com/go/kms/apiv1"
+	"cloud.google.com/go/kms/apiv1/kmspb"
 	"github.com/pkg/errors"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
-	kmspb "google.golang.org/genproto/googleapis/cloud/kms/v1"
 )
 
 type CloudKMSSigner struct {
