@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -229,8 +230,55 @@ func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.
 	return req
 }
 
+// targetGroup is the set of targets handled by a single request.
+// For attestations there is only one version. For smoketest there might be multiple.
+type targetGroup struct {
+	Ecosystem string
+	Package   string
+	Versions  []string
+}
+
+func parseResp(t targetGroup, resp *http.Response, err error) []rebuild.Verdict {
+	var sharedMsg string
+	if err != nil {
+		sharedMsg = errors.Wrap(err, "sending request").Error()
+	}
+	if resp.StatusCode != 200 {
+		sharedMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
+	}
+	if sharedMsg != "" {
+		var errorVerdicts []rebuild.Verdict
+		for _, v := range t.Versions {
+			errorVerdicts = append(errorVerdicts, rebuild.Verdict{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.Ecosystem(t.Ecosystem),
+					Package:   t.Package,
+					Version:   v,
+				},
+				Message: sharedMsg,
+			})
+		}
+		return errorVerdicts
+	}
+	var decodedVerdicts []rebuild.Verdict
+	d := json.NewDecoder(resp.Body)
+	for {
+		var v rebuild.Verdict
+		if err := d.Decode(&v); err != nil {
+			break
+		}
+		decodedVerdicts = append(decodedVerdicts, v)
+	}
+	// This could maybe be smarter, matching exactly which one is missing. We
+	// don't expect missing verdicts often though, so fatal is ok.
+	if len(decodedVerdicts) != len(t.Versions) {
+		log.Fatalf("Unexpected number of decoded verdicts for %v (got %v)", t, decodedVerdicts)
+	}
+	return decodedVerdicts
+}
+
 var runBenchmark = &cobra.Command{
-	Use:   "run-bench smoketest|attest -api <URI> [-local] <benchmark.json>",
+	Use:   "run-bench smoketest|attest -api <URI> [-local] <benchmark.json> [-format=csv]",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -322,8 +370,7 @@ var runBenchmark = &cobra.Command{
 			// constraint of 1QPS. At minimum, we expect to make 4 calls per test.
 			"cratesio": time.Tick(8 * time.Second),
 		}
-		var totalErrors int
-		var aggErrors []string
+		var verdicts []rebuild.Verdict
 		var wg sync.WaitGroup
 		for i := 0; i < *maxConcurrency; i++ {
 			wg.Add(1)
@@ -344,37 +391,44 @@ var runBenchmark = &cobra.Command{
 				}
 				// Second, start triggering rebuilds.
 				for j := range jobs {
-					var reqs []*http.Request
+					var reqs []struct {
+						targetGroup
+						*http.Request
+					}
 					if mode == firestore.SmoketestMode {
-						reqs = append(reqs, makeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), schema.SmoketestRequest{
+						t := targetGroup{j.Ecosystem, j.Name, j.Versions}
+						r := makeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), schema.SmoketestRequest{
 							Ecosystem: rebuild.Ecosystem(j.Ecosystem),
 							Package:   j.Name,
 							Versions:  j.Versions,
 							ID:        run,
-						}))
+						})
+						reqs = append(reqs, struct {
+							targetGroup
+							*http.Request
+						}{t, r})
 					} else if mode == firestore.AttestMode {
 						for _, v := range j.Versions {
-							reqs = append(reqs, makeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), schema.RebuildPackageRequest{
+							t := targetGroup{j.Ecosystem, j.Name, j.Versions}
+							r := makeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), schema.RebuildPackageRequest{
 								Ecosystem: rebuild.Ecosystem(j.Ecosystem),
 								Package:   j.Name,
 								Version:   v,
 								ID:        run,
-							}))
+							})
+							reqs = append(reqs, struct {
+								targetGroup
+								*http.Request
+							}{t, r})
 						}
 					}
-					for _, req := range reqs {
+					for _, tup := range reqs {
 						// Wait for a tick from the limiter.
 						<-limiterMap[j.Ecosystem]
+						t := tup.targetGroup
+						req := tup.Request
 						resp, err := idclient.Do(req)
-						if err != nil {
-							totalErrors++
-							aggErrors = append(aggErrors, errors.Wrap(err, "sending request").Error())
-							continue
-						}
-						if resp.StatusCode != 200 {
-							totalErrors++
-							aggErrors = append(aggErrors, errors.Wrapf(errors.New(resp.Status), "requesting %s", req.URL.String()).Error())
-						}
+						verdicts = append(verdicts, parseResp(t, resp, err)...)
 					}
 					bar.Increment()
 				}
@@ -383,9 +437,11 @@ var runBenchmark = &cobra.Command{
 		wg.Wait()
 		bar.Finish()
 		log.Printf("Completed rebuilds for %d artifacts...\n", set.Count)
-		log.Printf("Total errors: %d\n", totalErrors)
-		for _, e := range aggErrors {
-			log.Println(e)
+		sort.Slice(verdicts, func(i, j int) bool {
+			return fmt.Sprint(verdicts[i].Target) > fmt.Sprint(verdicts[j].Target)
+		})
+		for _, v := range verdicts {
+			fmt.Printf("%s,%s", fmt.Sprint(v.Target), v.Message)
 		}
 	},
 }
@@ -535,6 +591,7 @@ func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("local"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("format"))
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
