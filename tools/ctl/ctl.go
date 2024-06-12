@@ -218,7 +218,8 @@ var getResults = &cobra.Command{
 }
 
 type PackageWorker interface {
-	Run(ctx context.Context, bar *pb.ProgressBar, out chan schema.Verdict, in chan benchmark.Package)
+	Initialize(ctx context.Context)
+	ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict)
 }
 
 type WorkerPool struct {
@@ -242,7 +243,10 @@ func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Packag
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			pool.Worker.Run(ctx, bar, results, jobs)
+			for p := range jobs {
+				pool.Worker.ProcessOne(ctx, p, results)
+				bar.Increment()
+			}
 		}()
 	}
 	wg.Wait()
@@ -275,7 +279,9 @@ type AttestWorker struct {
 	WorkerConfig
 }
 
-func (w *AttestWorker) processOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
+func (w *AttestWorker) Initialize(ctx context.Context) {}
+
+func (w *AttestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	for _, v := range p.Versions {
 		<-w.limiters[p.Ecosystem]
 		resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("rebuild"), schema.RebuildPackageRequest{
@@ -317,19 +323,28 @@ func (w *AttestWorker) processOne(ctx context.Context, p benchmark.Package, out 
 	}
 }
 
-func (w *AttestWorker) Run(ctx context.Context, bar *pb.ProgressBar, out chan schema.Verdict, in chan benchmark.Package) {
-	for p := range in {
-		w.processOne(ctx, p, out)
-		bar.Increment()
-	}
-}
-
 type SmoketestWorker struct {
 	WorkerConfig
 	warmup bool
 }
 
-func (w *SmoketestWorker) processOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
+func (w *SmoketestWorker) Initialize(ctx context.Context) {
+	if w.warmup {
+		// First, warm up the instances to ensure it can handle actual load.
+		// Warm up requires the service fulfill sequentially successful version
+		// requests (which hit both the API and the builder jobs).
+		for i := 0; i < 5; {
+			_, err := getExecutorVersion(ctx, w.client, w.url, "build-local")
+			if err != nil {
+				i = 0
+			} else {
+				i++
+			}
+		}
+	}
+}
+
+func (w *SmoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	<-w.limiters[p.Ecosystem]
 	resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("smoketest"), schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
@@ -364,26 +379,6 @@ func (w *SmoketestWorker) processOne(ctx context.Context, p benchmark.Package, o
 		for _, v := range r.Verdicts {
 			out <- v
 		}
-	}
-}
-
-func (w *SmoketestWorker) Run(ctx context.Context, bar *pb.ProgressBar, out chan schema.Verdict, in chan benchmark.Package) {
-	if w.warmup {
-		// First, warm up the instances to ensure it can handle actual load.
-		// Warm up requires the service fulfill sequentially successful version
-		// requests (which hit both the API and the builder jobs).
-		for i := 0; i < 5; {
-			_, err := getExecutorVersion(ctx, w.client, w.url, "build-local")
-			if err != nil {
-				i = 0
-			} else {
-				i++
-			}
-		}
-	}
-	for p := range in {
-		w.processOne(ctx, p, out)
-		bar.Increment()
 	}
 }
 
