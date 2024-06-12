@@ -227,7 +227,7 @@ type WorkerPool struct {
 }
 
 func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Package) []schema.Verdict {
-	jobs := make(chan benchmark.Package, *maxConcurrency)
+	jobs := make(chan benchmark.Package, pool.Size)
 	results := make(chan schema.Verdict)
 	bar := pb.StartNew(len(packages))
 	bar.ShowTimeLeft = true
@@ -238,7 +238,7 @@ func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Packag
 		close(jobs)
 	}()
 	var wg sync.WaitGroup
-	for i := 0; i < *maxConcurrency; i++ {
+	for i := 0; i < pool.Size; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
