@@ -34,12 +34,16 @@ Example:
 The `externalParameters` describe the inputs to the rebuild process. This will
 be the upstream artifact, and the rebuild result.
 
-| field       | details                                                |
-| ----------- | ------------------------------------------------------ |
-| `ecosystem` | The ecosystem identifier associated with the artifact. |
-| `package`   | The package whose artifact is to be rebuilt.           |
-| `version`   | The package version whose artifact is to be rebuilt.   |
-| `artifact`  | The file name of the artifact to be rebuilt.           |
+| field                          | details                                                                                                  |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `ecosystem`                    | The ecosystem identifier associated with the artifact.                                                   |
+| `package`                      | The package whose artifact is to be rebuilt.                                                             |
+| `version`                      | The package version whose artifact is to be rebuilt.                                                     |
+| `artifact`                     | The file name of the artifact to be rebuilt.                                                             |
+| `buildConfigSource`            | The location from which the build definition was read. _NOTE: Only for user-generated build definitions_ |
+| `buildConfigSource.repository` | The repo URL from which the build definition was read.                                                   |
+| `buildConfigSource.ref`        | The repo ref from which the build definition was read.                                                   |
+| `buildConfigSource.path`       | The repo relpath from which the build definition was read.                                               |
 
 Example:
 
@@ -49,18 +53,28 @@ Example:
         "ecosystem": "pypi",
         "package": "absl-py",
         "version": "2.0.0"
+        "buildConfigSource": {
+          "repository": "https://github.com/google/oss-rebuild",
+          "ref": "feedface00000000000000000000000000000000",
+          "path": "definitions/pypi/absl-py/2.0.0"
+        }
       }
 ```
 
 ### Resolved Dependencies
 
-The `resolvedDependencies` provide the resource identifiers for the source
-repository and build containers used.
+The `resolvedDependencies` provide the resource identifiers used in the build.
+The current dependencies are:
 
-| field    | details                                                     |
-| -------- | ----------------------------------------------------------- |
-| `name`   | The source repo and container URLs.                         |
-| `digest` | A hash digest of the artifact, keyed by the algorithm used. |
+- The package's source repository
+- The builder containers
+- The input build definition (_NOTE: Only for user-generated build definitions_)
+
+| field     | details                                                                      |
+| --------- | ---------------------------------------------------------------------------- |
+| `name`    | The source repo and container URLs.                                          |
+| `digest`  | When provided, the hash digest of the artifact, keyed by the algorithm used. |
+| `content` | When provided, the base64-encoded content of the artifact.                   |
 
 Example:
 
@@ -83,6 +97,10 @@ Example:
             "sha256": "sha256:0c526a10e09c2690fb451ed7ab27afc15b482d5bf21395de16c8dbd212446a84"
           },
           "name": "gcr.io/cloud-builders/docker"
+        }
+        {
+          "content": "eyJ<snip...>uNy4yIl19fQ==",
+          "name": "build.fix.json"
         }
       ]
 

@@ -530,7 +530,7 @@ var runBenchmark = &cobra.Command{
 }
 
 var runOne = &cobra.Command{
-	Use:   "run-one smoketest|attest --api <URI> --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--strategy <strategy.yaml>]",
+	Use:   "run-one smoketest|attest --api <URI> --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--strategy <strategy.yaml>] [--strategy-from-repo]",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -559,6 +559,9 @@ var runOne = &cobra.Command{
 		}
 		var strategy *schema.StrategyOneOf
 		if *strategyPath != "" {
+			if mode == firestore.AttestMode {
+				log.Fatal("--strategy not supported in attest mode, use --strategy-from-repo")
+			}
 			f, err := os.Open(*strategyPath)
 			if err != nil {
 				return
@@ -584,11 +587,11 @@ var runOne = &cobra.Command{
 			})
 		} else if mode == firestore.AttestMode {
 			req = makeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), schema.RebuildPackageRequest{
-				Ecosystem:     rebuild.Ecosystem(*ecosystem),
-				Package:       *pkg,
-				Version:       *version,
-				StrategyOneof: strategy,
-				ID:            "runOne",
+				Ecosystem:        rebuild.Ecosystem(*ecosystem),
+				Package:          *pkg,
+				Version:          *version,
+				StrategyFromRepo: *useStrategyRepo,
+				ID:               "runOne",
 			})
 		}
 		resp, err := client.Do(req)
@@ -654,15 +657,16 @@ var (
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
 	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
 	// get-results
-	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
-	bench        = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
-	format       = flag.String("format", "summary", "the format to be printed. Options: summary, bench")
-	filter       = flag.String("filter", "", "a verdict message (or prefix) which will restrict the returned results")
-	sample       = flag.Int("sample", -1, "if provided, only N results will be displayed")
-	project      = flag.String("project", "", "the project from which to fetch the Firestore data")
-	clean        = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
-	debugBucket  = flag.String("debug-bucket", "", "the gcs bucket to find debug logs and artifacts")
-	strategyPath = flag.String("strategy", "", "the strategy file to use")
+	runFlag         = flag.String("run", "", "the run(s) from which to fetch results")
+	bench           = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
+	format          = flag.String("format", "summary", "the format to be printed. Options: summary, bench")
+	filter          = flag.String("filter", "", "a verdict message (or prefix) which will restrict the returned results")
+	sample          = flag.Int("sample", -1, "if provided, only N results will be displayed")
+	project         = flag.String("project", "", "the project from which to fetch the Firestore data")
+	clean           = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
+	debugBucket     = flag.String("debug-bucket", "", "the gcs bucket to find debug logs and artifacts")
+	strategyPath    = flag.String("strategy", "", "the strategy file to use")
+	useStrategyRepo = flag.Bool("strategy-from-repo", false, "whether to lookup and use the strategy from the server-configured repo")
 
 	ecosystem = flag.String("ecosystem", "", "the ecosystem")
 	pkg       = flag.String("package", "", "the package name")
@@ -678,6 +682,7 @@ func init() {
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
+	runOne.Flags().AddGoFlag(flag.Lookup("strategy-from-repo"))
 	runOne.Flags().AddGoFlag(flag.Lookup("ecosystem"))
 	runOne.Flags().AddGoFlag(flag.Lookup("package"))
 	runOne.Flags().AddGoFlag(flag.Lookup("version"))
