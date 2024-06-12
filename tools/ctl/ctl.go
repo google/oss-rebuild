@@ -398,7 +398,7 @@ func urlIsCloudRun(u *url.URL) bool {
 }
 
 var runBenchmark = &cobra.Command{
-	Use:   "run-bench smoketest|attest -api <URI> [-local] <benchmark.json> [-format=csv]",
+	Use:   "run-bench smoketest|attest -api <URI>  [-local] [-format=csv] <benchmark.json>",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
