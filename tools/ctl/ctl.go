@@ -285,7 +285,7 @@ type AttestWorker struct {
 func (w *AttestWorker) processOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	for _, v := range p.Versions {
 		<-w.limiters[p.Ecosystem]
-		resp, err := w.client.Do(makeHTTPRequest(ctx, w.url, schema.RebuildPackageRequest{
+		resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("rebuild"), schema.RebuildPackageRequest{
 			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 			Package:   p.Name,
 			Version:   v,
@@ -338,7 +338,7 @@ type SmoketestWorker struct {
 
 func (w *SmoketestWorker) processOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	<-w.limiters[p.Ecosystem]
-	resp, err := w.client.Do(makeHTTPRequest(ctx, w.url, schema.SmoketestRequest{
+	resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("smoketest"), schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 		Package:   p.Name,
 		Versions:  p.Versions,
@@ -489,18 +489,17 @@ var runBenchmark = &cobra.Command{
 		}
 		wrkConf := WorkerConfig{
 			client:   idclient,
+			url:      apiURL,
 			limiters: defaultLimiters(),
 			run:      run,
 		}
 		pool := WorkerPool{Size: *maxConcurrency}
 		if mode == firestore.SmoketestMode {
-			wrkConf.url = apiURL.JoinPath("smoketest")
 			pool.Worker = &SmoketestWorker{
 				WorkerConfig: wrkConf,
 				warmup:       urlIsCloudRun(apiURL),
 			}
 		} else {
-			wrkConf.url = apiURL.JoinPath("rebuild")
 			pool.Worker = &AttestWorker{
 				WorkerConfig: wrkConf,
 			}
