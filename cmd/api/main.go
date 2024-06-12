@@ -68,15 +68,6 @@ var (
 
 var httpcfg = httpegress.Config{}
 
-// TODO: Create a shared interface defn with cmd/rebuilder
-type verdict struct {
-	Ecosystem string
-	Package   string
-	Version   string
-	Message   string
-	Executor  string
-}
-
 func checkClose(closer io.Closer) {
 	if err := closer.Close(); err != nil {
 		panic(errors.Wrap(err, "deferred close failed"))
