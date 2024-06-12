@@ -226,7 +226,7 @@ type WorkerPool struct {
 	Worker PackageWorker
 }
 
-func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Package) []schema.Verdict {
+func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Package) chan schema.Verdict {
 	jobs := make(chan benchmark.Package, pool.Size)
 	results := make(chan schema.Verdict)
 	bar := pb.StartNew(len(packages))
@@ -245,17 +245,10 @@ func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Packag
 			pool.Worker.Run(ctx, bar, results, jobs)
 		}()
 	}
-	var verdicts []schema.Verdict
-	for v := range results {
-		verdicts = append(verdicts, v)
-	}
 	wg.Wait()
+	close(results)
 	bar.Finish()
-	log.Printf("Completed rebuilds for %d artifacts...\n", len(packages))
-	sort.Slice(verdicts, func(i, j int) bool {
-		return fmt.Sprint(verdicts[i].Target) > fmt.Sprint(verdicts[j].Target)
-	})
-	return verdicts
+	return results
 }
 
 func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.Request {
@@ -504,7 +497,14 @@ var runBenchmark = &cobra.Command{
 				WorkerConfig: wrkConf,
 			}
 		}
-		verdicts := pool.Process(ctx, set.Packages)
+		verdictChan := pool.Process(ctx, set.Packages)
+		var verdicts []schema.Verdict
+		for v := range verdictChan {
+			verdicts = append(verdicts, v)
+		}
+		sort.Slice(verdicts, func(i, j int) bool {
+			return fmt.Sprint(verdicts[i].Target) > fmt.Sprint(verdicts[j].Target)
+		})
 		log.Printf("Triggering rebuilds on executor version '%s' with ID=%s...\n", executor, run)
 		for _, v := range verdicts {
 			fmt.Printf("%s,%s", fmt.Sprint(v.Target), v.Message)
