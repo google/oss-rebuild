@@ -131,7 +131,8 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, "Internal Error", 500)
 		return
 	}
-	var verdicts []schema.SmoketestVerdict
+	var verdicts []schema.Verdict
+	respCopy := new(bytes.Buffer)
 	var executor string
 	if resp.StatusCode != 200 {
 		log.Printf("smoketest failed: %v\n", resp.Status)
@@ -139,7 +140,7 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 		// version from the smoketest version endpoint if possible.
 		executor = <-versionChan
 		for _, v := range sreq.Versions {
-			verdicts = append(verdicts, schema.SmoketestVerdict{
+			verdicts = append(verdicts, schema.Verdict{
 				Target: rebuild.Target{
 					Ecosystem: rebuild.Ecosystem(sreq.Ecosystem),
 					Package:   sreq.Package,
@@ -152,7 +153,7 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 		}
 	} else {
 		defer checkClose(resp.Body)
-		d := json.NewDecoder(resp.Body)
+		d := json.NewDecoder(io.TeeReader(resp.Body, respCopy))
 		var resp schema.SmoketestResponse
 		if err := d.Decode(&resp); err != nil {
 			log.Printf("json.Decode: %v\n", err)
@@ -196,6 +197,13 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 			http.Error(rw, "Internal Error", 500)
 			return
 		}
+	}
+	if respCopy.Len() > 0 {
+		io.Copy(rw, respCopy)
+	} else {
+		log.Println("No SmoketestResponse to forward.")
+		http.Error(rw, "Internal Error", 500)
+		return
 	}
 }
 
@@ -408,6 +416,8 @@ func HandleRebuildPackage(rw http.ResponseWriter, req *http.Request) {
 		LogsBucket:          *logsBucket,
 		MetadataBucket:      *metadataBucket,
 	}
+	// TODO: These doRebuild functions should return a verdict, and this handler
+	// endpoint should forward those to the caller as a schema.Verdict.
 	switch t.Ecosystem {
 	case rebuild.NPM:
 		hashes = append(hashes, crypto.SHA512)

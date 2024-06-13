@@ -180,7 +180,7 @@ func (sreq *SmoketestRequest) ToInputs() ([]rebuild.Input, error) {
 	return inputs, nil
 }
 
-type SmoketestVerdict struct {
+type Verdict struct {
 	Target        rebuild.Target
 	Message       string
 	StrategyOneof StrategyOneOf
@@ -189,7 +189,7 @@ type SmoketestVerdict struct {
 
 // SmoketestResponse is the result of a rebuild smoketest.
 type SmoketestResponse struct {
-	Verdicts []SmoketestVerdict
+	Verdicts []Verdict
 	Executor string
 }
 
