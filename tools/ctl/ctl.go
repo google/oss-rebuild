@@ -223,15 +223,14 @@ type PackageWorker interface {
 }
 
 type WorkerPool struct {
-	Size   int
-	Worker PackageWorker
+	Size      int
+	Worker    PackageWorker
+	Increment func()
 }
 
 func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Package) chan schema.Verdict {
 	jobs := make(chan benchmark.Package, pool.Size)
 	results := make(chan schema.Verdict)
-	bar := pb.StartNew(len(packages))
-	bar.ShowTimeLeft = true
 	go func() {
 		for _, p := range packages {
 			jobs <- p
@@ -245,13 +244,14 @@ func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Packag
 			defer wg.Done()
 			for p := range jobs {
 				pool.Worker.ProcessOne(ctx, p, results)
-				bar.Increment()
+				if pool.Increment != nil {
+					pool.Increment()
+				}
 			}
 		}()
 	}
 	wg.Wait()
 	close(results)
-	bar.Finish()
 	return results
 }
 
@@ -481,7 +481,9 @@ var runBenchmark = &cobra.Command{
 			limiters: defaultLimiters(),
 			run:      run,
 		}
-		pool := WorkerPool{Size: *maxConcurrency}
+		bar := pb.StartNew(len(set.Packages))
+		bar.ShowTimeLeft = true
+		pool := WorkerPool{Size: *maxConcurrency, Increment: func() { bar.Increment() }}
 		if mode == firestore.SmoketestMode {
 			pool.Worker = &SmoketestWorker{
 				WorkerConfig: wrkConf,
@@ -497,6 +499,7 @@ var runBenchmark = &cobra.Command{
 		for v := range verdictChan {
 			verdicts = append(verdicts, v)
 		}
+		bar.Finish()
 		sort.Slice(verdicts, func(i, j int) bool {
 			return fmt.Sprint(verdicts[i].Target) > fmt.Sprint(verdicts[j].Target)
 		})
