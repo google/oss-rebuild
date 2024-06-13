@@ -36,7 +36,7 @@ var (
 
 var errUnsupportedRepo = errors.Errorf("unsupported repo type")
 
-// CanonicalizeRepoURI parses repos into a canonical HTTP. This changes
+// CanonicalizeRepoURI parses repos into a canonical HTTPS URI.
 func CanonicalizeRepoURI(uri string) (string, error) {
 	if uri == "" {
 		return "", errors.New("No repo URL")
@@ -66,8 +66,8 @@ func CanonicalizeRepoURI(uri string) (string, error) {
 	return u.String(), nil
 }
 
-// FindARepo attempts to find something that looks like a repo in the text. It will return empty string when no repo is found.
-func FindARepo(text string) string {
+// FindCommonRepo attempts to find something that looks like a repo in the text. It will return empty string when no repo is found.
+func FindCommonRepo(text string) string {
 	for _, pattern := range commonRepos {
 		if repo := pattern.FindString(text); repo != "" {
 			return repo
@@ -78,5 +78,5 @@ func FindARepo(text string) string {
 
 // SmellsLikeARepo returns true if the uri matches a well known URI pattern.
 func SmellsLikeARepo(uri string) bool {
-	return FindARepo(uri) != ""
+	return FindCommonRepo(uri) != ""
 }

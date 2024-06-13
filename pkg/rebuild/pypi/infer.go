@@ -91,13 +91,12 @@ func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, e
 		return uri.CanonicalizeRepoURI(repoLinks[0])
 	}
 	// 3. description         | known repo
-	r := uri.FindARepo(project.Description)
+	r := uri.FindCommonRepo(project.Description)
 	if r != "" && !strings.Contains(r, "sponsors") {
 		return uri.CanonicalizeRepoURI(r)
 	}
 	// 4. other project links | known repo
 	for _, url := range project.ProjectURLs {
-		// Exclude sponsor URLs.
 		if strings.Contains(url, "sponsors") {
 			continue
 		}

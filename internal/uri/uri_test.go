@@ -34,7 +34,7 @@ func TestFindARepoAndSmellsLike(t *testing.T) {
 		{"https://bitbucket.org/team/repo", "bitbucket.org/team/repo"},          // Bitbucket
 	}
 	for _, test := range tests {
-		actual := FindARepo(test.input)
+		actual := FindCommonRepo(test.input)
 		if actual != test.expected {
 			t.Errorf("FindARepo(%s) = %s, expected %s", test.input, actual, test.expected)
 		}
