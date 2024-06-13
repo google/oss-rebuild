@@ -278,7 +278,7 @@ var runBenchmark = &cobra.Command{
 		if *buildLocal {
 			// The build-local service does not support creating a new run-id.
 			// If we're talking to build-local directly, then we skip run-id generation.
-			run = "build-local-run"
+			run = time.Now().UTC().Format(time.RFC3339)
 		} else {
 			u := apiURL.JoinPath("runs")
 			values := url.Values{
