@@ -228,9 +228,8 @@ type WorkerPool struct {
 	Increment func()
 }
 
-func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Package) chan schema.Verdict {
+func (pool *WorkerPool) Process(ctx context.Context, out chan schema.Verdict, packages []benchmark.Package) {
 	jobs := make(chan benchmark.Package, pool.Size)
-	results := make(chan schema.Verdict)
 	go func() {
 		for _, p := range packages {
 			jobs <- p
@@ -243,7 +242,7 @@ func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Packag
 		go func() {
 			defer wg.Done()
 			for p := range jobs {
-				pool.Worker.ProcessOne(ctx, p, results)
+				pool.Worker.ProcessOne(ctx, p, out)
 				if pool.Increment != nil {
 					pool.Increment()
 				}
@@ -251,8 +250,7 @@ func (pool *WorkerPool) Process(ctx context.Context, packages []benchmark.Packag
 		}()
 	}
 	wg.Wait()
-	close(results)
-	return results
+	close(out)
 }
 
 func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.Request {
@@ -494,7 +492,8 @@ var runBenchmark = &cobra.Command{
 				WorkerConfig: wrkConf,
 			}
 		}
-		verdictChan := pool.Process(ctx, set.Packages)
+		var verdictChan chan schema.Verdict
+		go pool.Process(ctx, verdictChan, set.Packages)
 		var verdicts []schema.Verdict
 		for v := range verdictChan {
 			verdicts = append(verdicts, v)
