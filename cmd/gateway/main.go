@@ -45,6 +45,7 @@ func waitOn(c chan<- func()) {
 var queues = map[string]chan<- func(){
 	"crates.io":  consumeEvery(time.Second),
 	"github.com": consumeEvery(200 * time.Millisecond),
+	"pypi.org":   consumeEvery(200 * time.Millisecond),
 }
 
 // Handle provides a redirect to the "uri" param applying the configured policy.
