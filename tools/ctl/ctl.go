@@ -229,7 +229,7 @@ type WorkerPool struct {
 }
 
 func (pool *WorkerPool) Process(ctx context.Context, out chan schema.Verdict, packages []benchmark.Package) {
-	jobs := make(chan benchmark.Package, pool.Size)
+	jobs := make(chan benchmark.Package)
 	go func() {
 		for _, p := range packages {
 			jobs <- p
@@ -492,7 +492,7 @@ var runBenchmark = &cobra.Command{
 				WorkerConfig: wrkConf,
 			}
 		}
-		var verdictChan chan schema.Verdict
+		verdictChan := make(chan schema.Verdict)
 		go pool.Process(ctx, verdictChan, set.Packages)
 		var verdicts []schema.Verdict
 		for v := range verdictChan {
