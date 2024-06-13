@@ -222,13 +222,13 @@ type PackageWorker interface {
 	ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict)
 }
 
-type WorkerPool struct {
-	Size      int
-	Worker    PackageWorker
-	Increment func()
+type Executor struct {
+	Concurrency int
+	Worker      PackageWorker
+	Increment   func()
 }
 
-func (pool *WorkerPool) Process(ctx context.Context, out chan schema.Verdict, packages []benchmark.Package) {
+func (ex *Executor) Process(ctx context.Context, out chan schema.Verdict, packages []benchmark.Package) {
 	jobs := make(chan benchmark.Package)
 	go func() {
 		for _, p := range packages {
@@ -237,14 +237,14 @@ func (pool *WorkerPool) Process(ctx context.Context, out chan schema.Verdict, pa
 		close(jobs)
 	}()
 	var wg sync.WaitGroup
-	for i := 0; i < pool.Size; i++ {
+	for i := 0; i < ex.Concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for p := range jobs {
-				pool.Worker.ProcessOne(ctx, p, out)
-				if pool.Increment != nil {
-					pool.Increment()
+				ex.Worker.ProcessOne(ctx, p, out)
+				if ex.Increment != nil {
+					ex.Increment()
 				}
 			}
 		}()
@@ -481,19 +481,19 @@ var runBenchmark = &cobra.Command{
 		}
 		bar := pb.StartNew(len(set.Packages))
 		bar.ShowTimeLeft = true
-		pool := WorkerPool{Size: *maxConcurrency, Increment: func() { bar.Increment() }}
+		ex := Executor{Concurrency: *maxConcurrency, Increment: func() { bar.Increment() }}
 		if mode == firestore.SmoketestMode {
-			pool.Worker = &SmoketestWorker{
+			ex.Worker = &SmoketestWorker{
 				WorkerConfig: wrkConf,
 				warmup:       urlIsCloudRun(apiURL),
 			}
 		} else {
-			pool.Worker = &AttestWorker{
+			ex.Worker = &AttestWorker{
 				WorkerConfig: wrkConf,
 			}
 		}
 		verdictChan := make(chan schema.Verdict)
-		go pool.Process(ctx, verdictChan, set.Packages)
+		go ex.Process(ctx, verdictChan, set.Packages)
 		var verdicts []schema.Verdict
 		for v := range verdictChan {
 			verdicts = append(verdicts, v)
