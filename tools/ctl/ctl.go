@@ -218,7 +218,7 @@ var getResults = &cobra.Command{
 }
 
 type PackageWorker interface {
-	Initialize(ctx context.Context)
+	Setup(ctx context.Context)
 	ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict)
 }
 
@@ -229,6 +229,7 @@ type Executor struct {
 }
 
 func (ex *Executor) Process(ctx context.Context, out chan schema.Verdict, packages []benchmark.Package) {
+	ex.Worker.Setup(ctx)
 	jobs := make(chan benchmark.Package)
 	go func() {
 		for _, p := range packages {
@@ -277,7 +278,7 @@ type AttestWorker struct {
 	WorkerConfig
 }
 
-func (w *AttestWorker) Initialize(ctx context.Context) {}
+func (w *AttestWorker) Setup(ctx context.Context) {}
 
 func (w *AttestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	for _, v := range p.Versions {
@@ -291,8 +292,7 @@ func (w *AttestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 		var errMsg string
 		if err != nil {
 			errMsg = errors.Wrap(err, "sending request").Error()
-		}
-		if resp.StatusCode != 200 {
+		} else if resp.StatusCode != 200 {
 			errMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
 		}
 		var verdict schema.Verdict
@@ -326,7 +326,7 @@ type SmoketestWorker struct {
 	warmup bool
 }
 
-func (w *SmoketestWorker) Initialize(ctx context.Context) {
+func (w *SmoketestWorker) Setup(ctx context.Context) {
 	if w.warmup {
 		// First, warm up the instances to ensure it can handle actual load.
 		// Warm up requires the service fulfill sequentially successful version
@@ -369,9 +369,8 @@ func (w *SmoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, o
 			}
 		}
 	} else {
-		d := json.NewDecoder(resp.Body)
 		var r schema.SmoketestResponse
-		if err := d.Decode(&r); err != nil {
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 			log.Fatalf("Failed to decode smoketest response: %v", err)
 		}
 		for _, v := range r.Verdicts {
@@ -391,7 +390,7 @@ func defaultLimiters() map[string]<-chan time.Time {
 	}
 }
 
-func urlIsCloudRun(u *url.URL) bool {
+func isCloudRun(u *url.URL) bool {
 	return strings.HasSuffix(u.Host, ".run.app")
 }
 
@@ -422,23 +421,23 @@ var runBenchmark = &cobra.Command{
 			}
 			log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
 		}
-		var idclient *http.Client
-		if urlIsCloudRun(apiURL) {
+		var client *http.Client
+		if isCloudRun(apiURL) {
 			// If the api is on Cloud Run, we need to use an authorized client.
 			apiURL.Scheme = "https"
-			idclient, err = oauth.AuthorizedUserIDClient(ctx)
+			client, err = oauth.AuthorizedUserIDClient(ctx)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
 			}
 		} else {
-			idclient = http.DefaultClient
+			client = http.DefaultClient
 		}
 		var executor string
 		if mode == firestore.SmoketestMode {
-			executor, err = getExecutorVersion(ctx, idclient, apiURL, "build-local")
+			executor, err = getExecutorVersion(ctx, client, apiURL, "build-local")
 		} else if mode == firestore.AttestMode {
 			// Empty string returns the API version.
-			executor, err = getExecutorVersion(ctx, idclient, apiURL, "")
+			executor, err = getExecutorVersion(ctx, client, apiURL, "")
 		}
 		if err != nil {
 			log.Fatal(err)
@@ -460,7 +459,7 @@ var runBenchmark = &cobra.Command{
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "creating API version request"))
 			}
-			resp, err := idclient.Do(req)
+			resp, err := client.Do(req)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "requesting run creation"))
 			}
@@ -474,7 +473,7 @@ var runBenchmark = &cobra.Command{
 			run = string(runBytes)
 		}
 		wrkConf := WorkerConfig{
-			client:   idclient,
+			client:   client,
 			url:      apiURL,
 			limiters: defaultLimiters(),
 			run:      run,
@@ -485,7 +484,7 @@ var runBenchmark = &cobra.Command{
 		if mode == firestore.SmoketestMode {
 			ex.Worker = &SmoketestWorker{
 				WorkerConfig: wrkConf,
-				warmup:       urlIsCloudRun(apiURL),
+				warmup:       isCloudRun(apiURL),
 			}
 		} else {
 			ex.Worker = &AttestWorker{
