@@ -392,7 +392,7 @@ func defaultLimiters() map[string]<-chan time.Time {
 }
 
 func urlIsCloudRun(u *url.URL) bool {
-	return strings.Contains(u.Host, ".run.app")
+	return strings.HasSuffix(u.Host, ".run.app")
 }
 
 var runBenchmark = &cobra.Command{
