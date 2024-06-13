@@ -42,12 +42,12 @@ import (
 // These are commonly used in PyPi metadata to point to the project git repo, using a map as a set.
 // Some people capitalize these differently, or add/remove spaces. We normalized to lower, no space.
 // This list is ordered, we will choose the first occurance.
-var commonRepoLinks = map[string]bool{
-	"source":     true,
-	"sourcecode": true,
-	"repository": true,
-	"project":    true,
-	"github":     true,
+var commonRepoLinks = []string{
+	"source",
+	"sourcecode",
+	"repository",
+	"project",
+	"github",
 }
 
 // There are two places to find the repo:
@@ -72,15 +72,12 @@ func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, e
 	}
 	var repoLinks []string
 	for name, url := range project.ProjectURLs {
-		_, ok := commonRepoLinks[strings.ReplaceAll(strings.ToLower(name), " ", "")]
-		if !ok {
-			continue
+		for _, commonName := range commonRepoLinks {
+			if strings.ToLower(name) == commonName {
+				repoLinks = append(repoLinks, url)
+				break
+			}
 		}
-		// Exclude sponsor URLs.
-		if strings.Contains(url, "sponsors") {
-			continue
-		}
-		repoLinks = append(repoLinks, url)
 	}
 	// Four priority levels:
 	// 1. project source link | known repo
