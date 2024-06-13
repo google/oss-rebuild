@@ -199,7 +199,10 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 		}
 	}
 	if respCopy.Len() > 0 {
-		io.Copy(rw, respCopy)
+		if _, err := io.Copy(rw, respCopy); err != nil {
+			log.Println("Failed to write verdicts into the http response.")
+			http.Error(rw, "Internal Error", 500)
+		}
 	} else {
 		log.Println("No SmoketestResponse to forward.")
 		http.Error(rw, "Internal Error", 500)
@@ -417,7 +420,7 @@ func HandleRebuildPackage(rw http.ResponseWriter, req *http.Request) {
 		MetadataBucket:      *metadataBucket,
 	}
 	// TODO: These doRebuild functions should return a verdict, and this handler
-	// endpoint should forward those to the caller as a schema.Verdict.
+	// should forward those to the caller as a schema.Verdict.
 	switch t.Ecosystem {
 	case rebuild.NPM:
 		hashes = append(hashes, crypto.SHA512)
