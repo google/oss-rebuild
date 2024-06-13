@@ -42,6 +42,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"google.golang.org/api/option"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -165,7 +166,8 @@ var getResults = &cobra.Command{
 		case "summary":
 			log.Println("Verdict summary:")
 			for _, vg := range byCount {
-				fmt.Printf(" %4d - %s (example: %s)\n", vg.Count, vg.Msg[:min(len(vg.Msg), 1000)], vg.Examples[0].ID())
+				s := fmt.Sprintf(" %4d - %s (example: %s)\n", vg.Count, vg.Msg[:min(len(vg.Msg), 1000)], vg.Examples[0].ID())
+				cmd.OutOrStdout().Write([]byte(s))
 			}
 			successes := 0
 			for _, r := range rebuilds {
@@ -209,7 +211,97 @@ var getResults = &cobra.Command{
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "marshalling benchmark"))
 			}
-			fmt.Println(string(b))
+			cmd.OutOrStdout().Write(b)
+			cmd.OutOrStderr().Write([]byte("\n"))
+		default:
+			log.Fatalf("Unknown --format type: %s", *format)
+		}
+	},
+}
+
+var missingAttestations = &cobra.Command{
+	Use:   "find-missing-attestations -project <ID> -run <ID> -attestation-bucket <name> -format <summary|bench>",
+	Short: "Find successes from a smoketest run that don't exist in the attestation bucket.",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		log.Default().SetOutput(cmd.ErrOrStderr())
+		ctx := cmd.Context()
+		var passing []firestore.Rebuild
+		{
+			req, err := buildFetchRebuildRequest(ctx, "", *runFlag, "", *clean)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fireClient, err := firestore.NewClient(ctx, *project)
+			if err != nil {
+				log.Fatal(err)
+			}
+			rebuilds, err := fireClient.FetchRebuilds(ctx, req)
+			if err != nil {
+				log.Fatal(err)
+			}
+			for _, r := range rebuilds {
+				if r.Success {
+					passing = append(passing, r)
+				}
+			}
+		}
+		var missing []firestore.Rebuild
+		{
+			ctx = context.WithValue(ctx, rebuild.RunID, "")
+			ctx = context.WithValue(ctx, rebuild.GCSClientOptionsID, []option.ClientOption{option.WithoutAuthentication()})
+			attestation, err := rebuild.NewGCSStore(ctx, "gs://"+*attestationBucket)
+			if err != nil {
+				log.Fatal(errors.Wrapf(err, "creating attestation store"))
+			}
+			log.Println("Checking all successful packages for attestation...")
+			bar := pb.New(len(passing))
+			bar.ShowTimeLeft = true
+			bar.Output = cmd.ErrOrStderr()
+			bar.Start()
+			for _, rb := range passing {
+				r, _, err := attestation.Reader(ctx, rebuild.Asset{Target: rb.Target(), Type: rebuild.AttestationBundleAsset})
+				if errors.Is(err, rebuild.ErrAssetNotFound) {
+					missing = append(missing, rb)
+				} else if err != nil {
+					log.Fatal(errors.Wrapf(err, "failed attempting to read %v", rb.Target()))
+				} else {
+					defer r.Close()
+				}
+				bar.Increment()
+			}
+			bar.Finish()
+		}
+		slices.SortFunc(missing, func(a firestore.Rebuild, b firestore.Rebuild) int { return strings.Compare(a.ID(), b.ID()) })
+		switch *format {
+		case "summary":
+			for _, rb := range missing {
+				cmd.OutOrStdout().Write([]byte(fmt.Sprintf("%v", rb.Target())))
+			}
+		case "bench":
+			var ps benchmark.PackageSet
+			ps.Count = len(missing)
+			for _, r := range missing {
+				idx := -1
+				for i, psp := range ps.Packages {
+					if psp.Name == r.Package {
+						idx = i
+						break
+					}
+				}
+				if idx == -1 {
+					ps.Packages = append(ps.Packages, benchmark.Package{Name: r.Package, Ecosystem: r.Ecosystem})
+					idx = len(ps.Packages) - 1
+				}
+				ps.Packages[idx].Versions = append(ps.Packages[idx].Versions, r.Version)
+			}
+			ps.Updated = time.Now()
+			b, err := json.MarshalIndent(ps, "", "  ")
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "marshalling benchmark"))
+			}
+			cmd.OutOrStdout().Write(b)
+			cmd.OutOrStderr().Write([]byte("\n"))
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
 		}
@@ -446,9 +538,6 @@ var runOne = &cobra.Command{
 		if err != nil {
 			log.Fatal(err.Error())
 		}
-		if resp.StatusCode != 200 {
-			log.Fatalf("response status: %v", *resp)
-		}
 		io.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Received response status: %d %s\n", resp.StatusCode, http.StatusText(resp.StatusCode)))
 		io.Copy(cmd.OutOrStdout(), resp.Body)
 		cmd.OutOrStdout().Write([]byte("\n"))
@@ -500,24 +589,28 @@ var listRuns = &cobra.Command{
 
 var (
 	// Shared
-	api = flag.String("api", "", "OSS Rebuild API endpoint URI")
+	api     = flag.String("api", "", "OSS Rebuild API endpoint URI")
+	project = flag.String("project", "", "the project from which to fetch the Firestore data")
+	// tui
+	debugBucket = flag.String("debug-bucket", "", "the gcs bucket to find debug logs and artifacts")
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
-	// get-results
-	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
-	bench        = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
-	format       = flag.String("format", "summary", "the format to be printed. Options: summary, bench")
-	filter       = flag.String("filter", "", "a verdict message (or prefix) which will restrict the returned results")
-	sample       = flag.Int("sample", -1, "if provided, only N results will be displayed")
-	project      = flag.String("project", "", "the project from which to fetch the Firestore data")
-	clean        = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
-	debugBucket  = flag.String("debug-bucket", "", "the gcs bucket to find debug logs and artifacts")
+	// run-one
+	ecosystem    = flag.String("ecosystem", "", "the ecosystem")
+	pkg          = flag.String("package", "", "the package name")
+	version      = flag.String("version", "", "the version of the package")
+	artifact     = flag.String("artifact", "", "the artifact name")
 	strategyPath = flag.String("strategy", "", "the strategy file to use")
-
-	ecosystem = flag.String("ecosystem", "", "the ecosystem")
-	pkg       = flag.String("package", "", "the package name")
-	version   = flag.String("version", "", "the version of the package")
-	artifact  = flag.String("artifact", "", "the artifact name")
+	// get-results and find-missing-attestations
+	runFlag = flag.String("run", "", "the run(s) from which to fetch results")
+	format  = flag.String("format", "summary", "the format to be printed. Options: summary, bench")
+	// get-results
+	bench  = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
+	filter = flag.String("filter", "", "a verdict message (or prefix) which will restrict the returned results")
+	sample = flag.Int("sample", -1, "if provided, only N results will be displayed")
+	clean  = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
+	// find-missing-attestations
+	attestationBucket = flag.String("attestation-bucket", "google-rebuild-attestations", "GCS bucket from which to pull rebuild attestations")
 )
 
 func init() {
@@ -539,6 +632,11 @@ func init() {
 	getResults.Flags().AddGoFlag(flag.Lookup("clean"))
 	getResults.Flags().AddGoFlag(flag.Lookup("format"))
 
+	missingAttestations.Flags().AddGoFlag(flag.Lookup("project"))
+	missingAttestations.Flags().AddGoFlag(flag.Lookup("run"))
+	missingAttestations.Flags().AddGoFlag(flag.Lookup("attestation-bucket"))
+	missingAttestations.Flags().AddGoFlag(flag.Lookup("format"))
+
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
 	tui.Flags().AddGoFlag(flag.Lookup("clean"))
 	tui.Flags().AddGoFlag(flag.Lookup("debug-bucket"))
@@ -549,6 +647,7 @@ func init() {
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
 	rootCmd.AddCommand(getResults)
+	rootCmd.AddCommand(missingAttestations)
 	rootCmd.AddCommand(tui)
 	rootCmd.AddCommand(listRuns)
 }
