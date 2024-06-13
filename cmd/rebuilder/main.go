@@ -199,9 +199,9 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, fmt.Sprintf("Unexpected number of results [want=%d,got=%d]", len(sreq.Versions), len(verdicts)), 500)
 		return
 	}
-	smkVerdicts := make([]schema.SmoketestVerdict, len(verdicts))
+	smkVerdicts := make([]schema.Verdict, len(verdicts))
 	for i, v := range verdicts {
-		smkVerdicts[i] = schema.SmoketestVerdict{
+		smkVerdicts[i] = schema.Verdict{
 			Target:        v.Target,
 			Message:       v.Message,
 			StrategyOneof: schema.NewStrategyOneOf(v.Strategy),
