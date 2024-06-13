@@ -513,7 +513,7 @@ var (
 	api = flag.String("api", "", "OSS Rebuild API endpoint URI")
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
-	buildLocal     = flag.Bool("build-local", false, "true if this request is goind direct to build-local (not through API first)")
+	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
 	// get-results
 	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
 	bench        = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
@@ -534,7 +534,7 @@ var (
 func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
-	runBenchmark.Flags().AddGoFlag(flag.Lookup("build-local"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("local"))
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
