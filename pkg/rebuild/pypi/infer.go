@@ -80,22 +80,22 @@ func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, e
 		}
 	}
 	// Four priority levels:
-	// 1. project source link | known repo
+	// 1. project source link, known repo
 	for _, url := range repoLinks {
 		if repo := uri.FindCommonRepo(url); repo != "" {
 			return uri.CanonicalizeRepoURI(repo)
 		}
 	}
-	// 2. project source link | not known repo
+	// 2. project source link, unknown repo
 	if len(repoLinks) != 0 {
 		return uri.CanonicalizeRepoURI(repoLinks[0])
 	}
-	// 3. description         | known repo
+	// 3. description, known repo
 	r := uri.FindCommonRepo(project.Description)
 	if r != "" && !strings.Contains(r, "sponsors") {
 		return uri.CanonicalizeRepoURI(r)
 	}
-	// 4. other project links | known repo
+	// 4. other project links, known repo
 	for _, url := range project.ProjectURLs {
 		if strings.Contains(url, "sponsors") {
 			continue
