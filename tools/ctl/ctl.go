@@ -395,7 +395,7 @@ func isCloudRun(u *url.URL) bool {
 }
 
 var runBenchmark = &cobra.Command{
-	Use:   "run-bench smoketest|attest -api <URI>  [-local] [-format=csv] <benchmark.json>",
+	Use:   "run-bench smoketest|attest -api <URI>  [-local] [-format=summary|csv] <benchmark.json>",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -472,7 +472,7 @@ var runBenchmark = &cobra.Command{
 			}
 			run = string(runBytes)
 		}
-		wrkConf := WorkerConfig{
+		conf := WorkerConfig{
 			client:   client,
 			url:      apiURL,
 			limiters: defaultLimiters(),
@@ -483,12 +483,12 @@ var runBenchmark = &cobra.Command{
 		ex := Executor{Concurrency: *maxConcurrency, Increment: func() { bar.Increment() }}
 		if mode == firestore.SmoketestMode {
 			ex.Worker = &SmoketestWorker{
-				WorkerConfig: wrkConf,
+				WorkerConfig: conf,
 				warmup:       isCloudRun(apiURL),
 			}
 		} else {
 			ex.Worker = &AttestWorker{
-				WorkerConfig: wrkConf,
+				WorkerConfig: conf,
 			}
 		}
 		verdictChan := make(chan schema.Verdict)
@@ -502,8 +502,22 @@ var runBenchmark = &cobra.Command{
 			return fmt.Sprint(verdicts[i].Target) > fmt.Sprint(verdicts[j].Target)
 		})
 		log.Printf("Triggering rebuilds on executor version '%s' with ID=%s...\n", executor, run)
-		for _, v := range verdicts {
-			fmt.Printf("%s,%s", fmt.Sprint(v.Target), v.Message)
+		switch *format {
+		// TODO: Maybe add more format options, or include more data in the csv?
+		case "csv":
+			for _, v := range verdicts {
+				cmd.OutOrStdout().Write([]byte(fmt.Sprintf("%s,%s\n", v.Target, v.Message)))
+			}
+		case "summary":
+			var successes int
+			for _, v := range verdicts {
+				if v.Message == "" {
+					successes++
+				}
+			}
+			cmd.OutOrStdout().Write([]byte(fmt.Sprintf("Successes: %d/%d\n", successes, len(verdicts))))
+		default:
+			log.Fatalf("Unsupported format: %s", *format)
 		}
 	},
 }
