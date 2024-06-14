@@ -506,7 +506,7 @@ var runBenchmark = &cobra.Command{
 		// TODO: Maybe add more format options, or include more data in the csv?
 		case "csv":
 			for _, v := range verdicts {
-				cmd.OutOrStdout().Write([]byte(fmt.Sprintf("%s,%s\n", v.Target, v.Message)))
+				io.WriteString(cmd.OutOrStdout(), fmt.Sprintf("%s,%s\n", v.Target, v.Message))
 			}
 		case "summary":
 			var successes int
@@ -515,7 +515,7 @@ var runBenchmark = &cobra.Command{
 					successes++
 				}
 			}
-			cmd.OutOrStdout().Write([]byte(fmt.Sprintf("Successes: %d/%d\n", successes, len(verdicts))))
+			io.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Successes: %d/%d\n", successes, len(verdicts)))
 		default:
 			log.Fatalf("Unsupported format: %s", *format)
 		}
