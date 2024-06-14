@@ -16,6 +16,7 @@
 package cratesio
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -61,9 +62,9 @@ type CrateVersion struct {
 
 // Registry is a crates.io package registry.
 type Registry interface {
-	Crate(string) (*Crate, error)
-	Version(string, string) (*CrateVersion, error)
-	Artifact(string, string) (io.ReadCloser, error)
+	Crate(context.Context, string) (*Crate, error)
+	Version(context.Context, string, string) (*CrateVersion, error)
+	Artifact(context.Context, string, string) (io.ReadCloser, error)
 }
 
 // HTTPRegistry is a Registry implementation that uses the crates.io HTTP API.
@@ -72,12 +73,12 @@ type HTTPRegistry struct {
 }
 
 // Crate provides all API information related to the given crate.
-func (r HTTPRegistry) Crate(pkg string) (*Crate, error) {
+func (r HTTPRegistry) Crate(ctx context.Context, pkg string) (*Crate, error) {
 	pathURL, err := url.Parse(path.Join("/api/v1/crates", pkg))
 	if err != nil {
 		return nil, err
 	}
-	req, _ := http.NewRequest(http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -97,12 +98,12 @@ func (r HTTPRegistry) Crate(pkg string) (*Crate, error) {
 }
 
 // Version provides all API information related to the given version of a crate.
-func (r HTTPRegistry) Version(pkg, version string) (*CrateVersion, error) {
+func (r HTTPRegistry) Version(ctx context.Context, pkg, version string) (*CrateVersion, error) {
 	pathURL, err := url.Parse(path.Join("/api/v1/crates", pkg, version))
 	if err != nil {
 		return nil, err
 	}
-	req, _ := http.NewRequest(http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -120,12 +121,12 @@ func (r HTTPRegistry) Version(pkg, version string) (*CrateVersion, error) {
 }
 
 // Artifact provides the crate artifact associated with a specific crate version.
-func (r HTTPRegistry) Artifact(pkg string, version string) (io.ReadCloser, error) {
-	vmeta, err := r.Version(pkg, version)
+func (r HTTPRegistry) Artifact(ctx context.Context, pkg string, version string) (io.ReadCloser, error) {
+	vmeta, err := r.Version(ctx, pkg, version)
 	if err != nil {
 		return nil, err
 	}
-	req, _ := http.NewRequest(http.MethodGet, vmeta.DownloadURL, nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, vmeta.DownloadURL, nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err

@@ -103,7 +103,7 @@ func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.Regist
 	if len(inputs) == 0 {
 		return nil, errors.New("no inputs provided")
 	}
-	project, err := mux.PyPI.Project(inputs[0].Target.Package)
+	project, err := mux.PyPI.Project(ctx, inputs[0].Target.Package)
 	if err != nil {
 		return nil, err
 	}

@@ -32,8 +32,8 @@ import (
 )
 
 // GetVersions returns the versions to be processed, most recent to least recent.
-func GetVersions(pkg string, mux rebuild.RegistryMux) (versions []string, err error) {
-	p, err := mux.NPM.Package(pkg)
+func GetVersions(ctx context.Context, pkg string, mux rebuild.RegistryMux) (versions []string, err error) {
+	p, err := mux.NPM.Package(ctx, pkg)
 	if err != nil {
 		return
 	}

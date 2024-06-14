@@ -253,7 +253,7 @@ func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.Regist
 	case rebuild.CratesIO:
 		t.Artifact = fmt.Sprintf("%s-%s.crate", sanitize(t.Package), t.Version)
 	case rebuild.PyPI:
-		release, err := mux.PyPI.Release(t.Package, t.Version)
+		release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
 		if err != nil {
 			return errors.Wrap(err, "fetching metadata failed")
 		}
@@ -272,7 +272,7 @@ func doNPMRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.
 	if err := npmrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
 		return "", errors.Wrap(err, "rebuild failed")
 	}
-	vmeta, err := mux.NPM.Version(t.Package, t.Version)
+	vmeta, err := mux.NPM.Version(ctx, t.Package, t.Version)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching metadata failed")
 	}
@@ -283,7 +283,7 @@ func doCratesRebuild(ctx context.Context, t rebuild.Target, id string, mux rebui
 	if err := cratesrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
 		return "", errors.Wrap(err, "rebuild failed")
 	}
-	vmeta, err := mux.CratesIO.Version(t.Package, t.Version)
+	vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching metadata failed")
 	}
@@ -291,7 +291,7 @@ func doCratesRebuild(ctx context.Context, t rebuild.Target, id string, mux rebui
 }
 
 func doPyPIRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
-	release, err := mux.PyPI.Release(t.Package, t.Version)
+	release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching metadata failed")
 	}

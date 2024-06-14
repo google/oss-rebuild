@@ -273,7 +273,7 @@ func main() {
 		defer f.Close()
 		published = mv.Published
 	case "pypi":
-		p, err := pypireg.HTTPRegistry{}.Project(*pkg)
+		p, err := pypireg.HTTPRegistry{}.Project(ctx, *pkg)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "fetching pypi metadata"))
 		}

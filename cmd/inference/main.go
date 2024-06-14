@@ -47,7 +47,7 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 		repo = lh.Location.Repo
 	} else {
 		var err error
-		repo, err = rebuilder.InferRepo(t, mux)
+		repo, err = rebuilder.InferRepo(ctx, t, mux)
 		if err != nil {
 			return nil, err
 		}

@@ -50,8 +50,8 @@ func getPackageJSON(tree *object.Tree, path string) (pkgJSON npmreg.PackageJSON,
 	return
 }
 
-func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
-	vmeta, err := mux.NPM.Version(t.Package, t.Version)
+func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
+	vmeta, err := mux.NPM.Version(ctx, t.Package, t.Version)
 	if err != nil {
 		return "", err
 	}
@@ -184,7 +184,7 @@ func inferFromRepo(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
 	name, version := t.Package, t.Version
-	vmeta, err := mux.NPM.Version(name, version)
+	vmeta, err := mux.NPM.Version(ctx, name, version)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		// TODO: Expand beyond just scripts named "build".
 		if _, ok := pkgJSON.Scripts["build"]; ok {
 			// TODO: Consider limiting this case to only packages with a 'dist/' dir.
-			pmeta, err := mux.NPM.Package(name)
+			pmeta, err := mux.NPM.Package(ctx, name)
 			if err != nil {
 				return nil, errors.Wrap(err, "[INTERNAL] fetching package metadata")
 			}

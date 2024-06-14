@@ -16,6 +16,7 @@ package cratesio
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -108,7 +109,7 @@ func TestHTTPRegistry_Crate(t *testing.T) {
 					},
 				},
 			}
-			actual, err := registry.Crate(tc.pkg)
+			actual, err := registry.Crate(context.Background(), tc.pkg)
 			if err != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
@@ -187,7 +188,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 					},
 				},
 			}
-			actual, err := registry.Version(tc.pkg, tc.version)
+			actual, err := registry.Version(context.Background(), tc.pkg, tc.version)
 			if err != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
@@ -280,7 +281,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					},
 				},
 			}
-			actual, err := registry.Artifact(tc.pkg, tc.version)
+			actual, err := registry.Artifact(context.Background(), tc.pkg, tc.version)
 			if err != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}

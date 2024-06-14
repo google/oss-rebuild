@@ -16,6 +16,7 @@ package pypi
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -108,7 +109,7 @@ func TestHTTPRegistry_Project(t *testing.T) {
 					},
 				},
 			}
-			actual, err := registry.Project(tc.pkg)
+			actual, err := registry.Project(context.Background(), tc.pkg)
 			if err != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
@@ -196,7 +197,7 @@ func TestHTTPRegistry_Release(t *testing.T) {
 					},
 				},
 			}
-			actual, err := registry.Release(tc.pkg, tc.version)
+			actual, err := registry.Release(context.Background(), tc.pkg, tc.version)
 			if err != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
@@ -321,7 +322,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					},
 				},
 			}
-			actual, err := registry.Artifact(tc.pkg, tc.version, tc.filename)
+			actual, err := registry.Artifact(context.Background(), tc.pkg, tc.version, tc.filename)
 			if err != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
