@@ -75,8 +75,3 @@ func FindCommonRepo(text string) string {
 	}
 	return ""
 }
-
-// SmellsLikeARepo returns true if the uri matches a well known URI pattern.
-func SmellsLikeARepo(uri string) bool {
-	return FindCommonRepo(uri) != ""
-}

@@ -82,8 +82,8 @@ func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, e
 	// Four priority levels:
 	// 1. project source link | known repo
 	for _, url := range repoLinks {
-		if uri.SmellsLikeARepo(url) {
-			return uri.CanonicalizeRepoURI(url)
+		if repo := uri.FindCommonRepo(url); repo != "" {
+			return uri.CanonicalizeRepoURI(repo)
 		}
 	}
 	// 2. project source link | not known repo
@@ -100,8 +100,8 @@ func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, e
 		if strings.Contains(url, "sponsors") {
 			continue
 		}
-		if uri.SmellsLikeARepo(url) {
-			return uri.CanonicalizeRepoURI(url)
+		if repo := uri.FindCommonRepo(url); repo != "" {
+			return uri.CanonicalizeRepoURI(repo)
 		}
 	}
 	return "", errors.New("no git repo")
