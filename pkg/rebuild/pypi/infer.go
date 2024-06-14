@@ -92,6 +92,7 @@ func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, e
 	}
 	// 3. description, known repo
 	r := uri.FindCommonRepo(project.Description)
+	// TODO: Maybe revisit this sponsors logic?
 	if r != "" && !strings.Contains(r, "sponsors") {
 		return uri.CanonicalizeRepoURI(r)
 	}
