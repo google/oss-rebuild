@@ -373,7 +373,7 @@ var runBenchmark = &cobra.Command{
 						}
 						if resp.StatusCode != 200 {
 							totalErrors++
-							aggErrors = append(aggErrors, errors.Wrapf(errors.New(resp.Status), "request: %s", req.URL.String()).Error())
+							aggErrors = append(aggErrors, errors.Wrapf(errors.New(resp.Status), "requesting %s", req.URL.String()).Error())
 						}
 					}
 					bar.Increment()
