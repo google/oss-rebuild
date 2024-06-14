@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -505,8 +506,11 @@ var runBenchmark = &cobra.Command{
 		switch *format {
 		// TODO: Maybe add more format options, or include more data in the csv?
 		case "csv":
+			w := csv.NewWriter(cmd.OutOrStdout())
 			for _, v := range verdicts {
-				io.WriteString(cmd.OutOrStdout(), fmt.Sprintf("%s,%s\n", v.Target, v.Message))
+				if err := w.Write([]string{fmt.Sprintf("%v", v.Target), v.Message}); err != nil {
+					log.Fatal(errors.Wrap(err, "writing CSV"))
+				}
 			}
 		case "summary":
 			var successes int
