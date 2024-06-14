@@ -41,10 +41,12 @@ func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 
 // MakeClient creates a new HTTP BasicClient for making egress requests.
 func MakeClient(ctx context.Context, cfg Config) (httpinternal.BasicClient, error) {
-	if cfg.UserAgent == "" {
-		return nil, errors.New("no user agent provided")
+	var client httpinternal.BasicClient
+	if cfg.UserAgent != "" {
+		client = &httpinternal.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: cfg.UserAgent}
+	} else {
+		client = http.DefaultClient
 	}
-	client := httpinternal.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: cfg.UserAgent}
 	if cfg.GatewayURL != "" {
 		c, err := idtoken.NewClient(ctx, cfg.GatewayURL)
 		if err != nil {
@@ -54,7 +56,7 @@ func MakeClient(ctx context.Context, cfg Config) (httpinternal.BasicClient, erro
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing gateway URL")
 		}
-		return &gateway.Client{RedirectClient: &client, IDClient: c, URL: u}, nil
+		return &gateway.Client{RedirectClient: client, IDClient: c, URL: u}, nil
 	}
-	return &client, nil
+	return client, nil
 }
