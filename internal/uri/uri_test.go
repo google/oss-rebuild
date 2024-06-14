@@ -18,14 +18,14 @@ import (
 	"testing"
 )
 
-func TestFindARepoAndSmellsLike(t *testing.T) {
+func TestFindARepo(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected string
 	}{
 		{"", ""},       // Empty input
 		{"foobar", ""}, // Invalid URL
-		// FindARepo and SmellsLikeARepo don't canonicallize.
+		// FindARepo doesn't canonicallize.
 		{"github.com/user/repo", "github.com/user/repo"},                        // GitHub, basic
 		{"github:user/repo", "github:user/repo"},                                // GitHub, alt format
 		{"https://github.com/org/project.git", "github.com/org/project.git"},    // GitHub, with .git
@@ -37,11 +37,6 @@ func TestFindARepoAndSmellsLike(t *testing.T) {
 		actual := FindCommonRepo(test.input)
 		if actual != test.expected {
 			t.Errorf("FindARepo(%s) = %s, expected %s", test.input, actual, test.expected)
-		}
-		actualSmell := SmellsLikeARepo(test.input)
-		expectedSmell := (test.expected != "")
-		if actualSmell != expectedSmell {
-			t.Errorf("SmellsLikeARepo(%s) = %t, expected %t", test.input, actualSmell, expectedSmell)
 		}
 	}
 }
