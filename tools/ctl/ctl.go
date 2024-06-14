@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -29,6 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -216,6 +218,43 @@ var getResults = &cobra.Command{
 	},
 }
 
+type PackageWorker interface {
+	Setup(ctx context.Context)
+	ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict)
+}
+
+type Executor struct {
+	Concurrency int
+	Worker      PackageWorker
+	Increment   func()
+}
+
+func (ex *Executor) Process(ctx context.Context, out chan schema.Verdict, packages []benchmark.Package) {
+	ex.Worker.Setup(ctx)
+	jobs := make(chan benchmark.Package)
+	go func() {
+		for _, p := range packages {
+			jobs <- p
+		}
+		close(jobs)
+	}()
+	var wg sync.WaitGroup
+	for i := 0; i < ex.Concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for p := range jobs {
+				ex.Worker.ProcessOne(ctx, p, out)
+				if ex.Increment != nil {
+					ex.Increment()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(out)
+}
+
 func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.Request {
 	values, err := msg.ToValues()
 	if err != nil {
@@ -229,22 +268,143 @@ func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.
 	return req
 }
 
+type WorkerConfig struct {
+	client   *http.Client
+	url      *url.URL
+	limiters map[string]<-chan time.Time
+	run      string
+}
+
+type AttestWorker struct {
+	WorkerConfig
+}
+
+func (w *AttestWorker) Setup(ctx context.Context) {}
+
+func (w *AttestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
+	for _, v := range p.Versions {
+		<-w.limiters[p.Ecosystem]
+		resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("rebuild"), schema.RebuildPackageRequest{
+			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+			Package:   p.Name,
+			Version:   v,
+			ID:        w.run,
+		}))
+		var errMsg string
+		if err != nil {
+			errMsg = errors.Wrap(err, "sending request").Error()
+		} else if resp.StatusCode != 200 {
+			errMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
+		}
+		var verdict schema.Verdict
+		if errMsg != "" {
+			verdict = schema.Verdict{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+					Package:   p.Name,
+					Version:   v,
+				},
+				Message: errMsg,
+			}
+		} else {
+			// TODO: Once the attestation endpoint returns verdict objects,
+			// support that here.
+			verdict = schema.Verdict{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+					Package:   p.Name,
+					Version:   v,
+				},
+				Message: "",
+			}
+		}
+		out <- verdict
+	}
+}
+
+type SmoketestWorker struct {
+	WorkerConfig
+	warmup bool
+}
+
+func (w *SmoketestWorker) Setup(ctx context.Context) {
+	if w.warmup {
+		// First, warm up the instances to ensure it can handle actual load.
+		// Warm up requires the service fulfill sequentially successful version
+		// requests (which hit both the API and the builder jobs).
+		for i := 0; i < 5; {
+			_, err := getExecutorVersion(ctx, w.client, w.url, "build-local")
+			if err != nil {
+				i = 0
+			} else {
+				i++
+			}
+		}
+	}
+}
+
+func (w *SmoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
+	<-w.limiters[p.Ecosystem]
+	resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("smoketest"), schema.SmoketestRequest{
+		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+		Package:   p.Name,
+		Versions:  p.Versions,
+		ID:        w.run,
+	}))
+	var errMsg string
+	if err != nil {
+		errMsg = errors.Wrap(err, "sending request").Error()
+	}
+	if resp.StatusCode != 200 {
+		errMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
+	}
+	if errMsg != "" {
+		for _, v := range p.Versions {
+			out <- schema.Verdict{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+					Package:   p.Name,
+					Version:   v,
+				},
+				Message: errMsg,
+			}
+		}
+	} else {
+		var r schema.SmoketestResponse
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+			log.Fatalf("Failed to decode smoketest response: %v", err)
+		}
+		for _, v := range r.Verdicts {
+			out <- v
+		}
+	}
+}
+
+func defaultLimiters() map[string]<-chan time.Time {
+	return map[string]<-chan time.Time{
+		"pypi":  time.Tick(time.Second),
+		"npm":   time.Tick(2 * time.Second),
+		"maven": time.Tick(2 * time.Second),
+		// NOTE: cratesio needs to be especially slow given our registry API
+		// constraint of 1QPS. At minimum, we expect to make 4 calls per test.
+		"cratesio": time.Tick(8 * time.Second),
+	}
+}
+
+func isCloudRun(u *url.URL) bool {
+	return strings.HasSuffix(u.Host, ".run.app")
+}
+
 var runBenchmark = &cobra.Command{
-	Use:   "run-bench smoketest|attest -api <URI> [-build-local] <benchmark.json>",
+	Use:   "run-bench smoketest|attest -api <URI>  [-local] [-format=summary|csv] <benchmark.json>",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
+		ctx := cmd.Context()
 		mode := firestore.BenchmarkMode(args[0])
 		if mode != firestore.SmoketestMode && mode != firestore.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
-		path := args[1]
-		log.Printf("Extracting benchmark %s...\n", filepath.Base(path))
-		set, err := readBenchmark(path)
-		if err != nil {
-			log.Fatal(errors.Wrap(err, "reading benchmark file"))
-		}
-		log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
 		if *api == "" {
 			log.Fatal("API endpoint not provided")
 		}
@@ -252,24 +412,33 @@ var runBenchmark = &cobra.Command{
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "parsing API endpoint"))
 		}
-		ctx := cmd.Context()
-		var idclient *http.Client
-		if strings.Contains(apiURL.Host, "run.app") {
+		var set benchmark.PackageSet
+		{
+			path := args[1]
+			log.Printf("Extracting benchmark %s...\n", filepath.Base(path))
+			set, err := readBenchmark(path)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "reading benchmark file"))
+			}
+			log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
+		}
+		var client *http.Client
+		if isCloudRun(apiURL) {
 			// If the api is on Cloud Run, we need to use an authorized client.
 			apiURL.Scheme = "https"
-			idclient, err = oauth.AuthorizedUserIDClient(ctx)
+			client, err = oauth.AuthorizedUserIDClient(ctx)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
 			}
 		} else {
-			idclient = http.DefaultClient
+			client = http.DefaultClient
 		}
 		var executor string
 		if mode == firestore.SmoketestMode {
-			executor, err = getExecutorVersion(ctx, idclient, apiURL, "build-local")
+			executor, err = getExecutorVersion(ctx, client, apiURL, "build-local")
 		} else if mode == firestore.AttestMode {
 			// Empty string returns the API version.
-			executor, err = getExecutorVersion(ctx, idclient, apiURL, "")
+			executor, err = getExecutorVersion(ctx, client, apiURL, "")
 		}
 		if err != nil {
 			log.Fatal(err)
@@ -282,7 +451,7 @@ var runBenchmark = &cobra.Command{
 		} else {
 			u := apiURL.JoinPath("runs")
 			values := url.Values{
-				"name": []string{filepath.Base(path)},
+				"name": []string{filepath.Base(args[1])},
 				"hash": []string{hex.EncodeToString(set.Hash(sha256.New()))},
 				"type": []string{string(mode)},
 			}
@@ -291,7 +460,7 @@ var runBenchmark = &cobra.Command{
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "creating API version request"))
 			}
-			resp, err := idclient.Do(req)
+			resp, err := client.Do(req)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "requesting run creation"))
 			}
@@ -304,88 +473,55 @@ var runBenchmark = &cobra.Command{
 			}
 			run = string(runBytes)
 		}
-		log.Printf("Triggering rebuilds on executor version '%s' with ID=%s...\n", executor, run)
-		jobs := make(chan benchmark.Package, *maxConcurrency)
+		conf := WorkerConfig{
+			client:   client,
+			url:      apiURL,
+			limiters: defaultLimiters(),
+			run:      run,
+		}
 		bar := pb.StartNew(len(set.Packages))
 		bar.ShowTimeLeft = true
-		go func() {
-			for _, p := range set.Packages {
-				jobs <- p
+		ex := Executor{Concurrency: *maxConcurrency, Increment: func() { bar.Increment() }}
+		if mode == firestore.SmoketestMode {
+			ex.Worker = &SmoketestWorker{
+				WorkerConfig: conf,
+				warmup:       isCloudRun(apiURL),
 			}
-			close(jobs)
-		}()
-		limiterMap := map[string]<-chan time.Time{
-			"pypi":  time.Tick(time.Second),
-			"npm":   time.Tick(2 * time.Second),
-			"maven": time.Tick(2 * time.Second),
-			// NOTE: cratesio needs to be especially slow given our registry API
-			// constraint of 1QPS. At minimum, we expect to make 4 calls per test.
-			"cratesio": time.Tick(8 * time.Second),
+		} else {
+			ex.Worker = &AttestWorker{
+				WorkerConfig: conf,
+			}
 		}
-		var totalErrors int
-		var aggErrors []string
-		var wg sync.WaitGroup
-		for i := 0; i < *maxConcurrency; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				if mode == firestore.SmoketestMode && !*buildLocal {
-					// First, warm up the instances to ensure it can handle actual load.
-					// Warm up requires the service fulfill sequentially successful version
-					// requests (which hit both the API and the builder jobs).
-					for i := 0; i < 5; {
-						_, err := getExecutorVersion(ctx, idclient, apiURL, "build-local")
-						if err != nil {
-							i = 0
-						} else {
-							i++
-						}
-					}
-				}
-				// Second, start triggering rebuilds.
-				for j := range jobs {
-					var reqs []*http.Request
-					if mode == firestore.SmoketestMode {
-						reqs = append(reqs, makeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), schema.SmoketestRequest{
-							Ecosystem: rebuild.Ecosystem(j.Ecosystem),
-							Package:   j.Name,
-							Versions:  j.Versions,
-							ID:        run,
-						}))
-					} else if mode == firestore.AttestMode {
-						for _, v := range j.Versions {
-							reqs = append(reqs, makeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), schema.RebuildPackageRequest{
-								Ecosystem: rebuild.Ecosystem(j.Ecosystem),
-								Package:   j.Name,
-								Version:   v,
-								ID:        run,
-							}))
-						}
-					}
-					for _, req := range reqs {
-						// Wait for a tick from the limiter.
-						<-limiterMap[j.Ecosystem]
-						resp, err := idclient.Do(req)
-						if err != nil {
-							totalErrors++
-							aggErrors = append(aggErrors, errors.Wrap(err, "sending request").Error())
-							continue
-						}
-						if resp.StatusCode != 200 {
-							totalErrors++
-							aggErrors = append(aggErrors, errors.Wrapf(errors.New(resp.Status), "requesting %s", req.URL.String()).Error())
-						}
-					}
-					bar.Increment()
-				}
-			}()
+		verdictChan := make(chan schema.Verdict)
+		go ex.Process(ctx, verdictChan, set.Packages)
+		var verdicts []schema.Verdict
+		for v := range verdictChan {
+			verdicts = append(verdicts, v)
 		}
-		wg.Wait()
 		bar.Finish()
-		log.Printf("Completed rebuilds for %d artifacts...\n", set.Count)
-		log.Printf("Total errors: %d\n", totalErrors)
-		for _, e := range aggErrors {
-			log.Println(e)
+		sort.Slice(verdicts, func(i, j int) bool {
+			return fmt.Sprint(verdicts[i].Target) > fmt.Sprint(verdicts[j].Target)
+		})
+		log.Printf("Triggering rebuilds on executor version '%s' with ID=%s...\n", executor, run)
+		switch *format {
+		// TODO: Maybe add more format options, or include more data in the csv?
+		case "csv":
+			w := csv.NewWriter(cmd.OutOrStdout())
+			for _, v := range verdicts {
+				if err := w.Write([]string{fmt.Sprintf("%v", v.Target), v.Message}); err != nil {
+					log.Fatal(errors.Wrap(err, "writing CSV"))
+				}
+			}
+		case "summary":
+			var successes int
+			for _, v := range verdicts {
+				if v.Message == "" {
+					successes++
+				}
+			}
+			io.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Successes: %d/%d\n", successes, len(verdicts)))
+		default:
+			log.Fatalf("Unsupported format: %s", *format)
 		}
 	},
 }
@@ -535,6 +671,7 @@ func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("local"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("format"))
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
