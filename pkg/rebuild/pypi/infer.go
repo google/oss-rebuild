@@ -58,10 +58,11 @@ var commonRepoLinks = []string{
 // (commonRepoLinks above), so we can break up the ProjectURLs
 
 // Preference:
-// where               | known repo
-// --------------------------------
+// where               | known repo host
+// -------------------------------------
 // project source link | yes
 // project source link | no
+// "Homepage" link     | yes
 // description         | yes
 // other project links | yes
 
@@ -70,33 +71,44 @@ func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, e
 	if err != nil {
 		return "", nil
 	}
-	var repoLinks []string
+	var linksNamedSource []string
 	for name, url := range project.ProjectURLs {
 		for _, commonName := range commonRepoLinks {
-			if strings.ToLower(name) == commonName {
-				repoLinks = append(repoLinks, url)
+			if strings.ReplaceAll(strings.ToLower(name), " ", "") == commonName {
+				linksNamedSource = append(linksNamedSource, url)
 				break
 			}
 		}
 	}
 	// Four priority levels:
-	// 1. project source link, known repo
-	for _, url := range repoLinks {
+	// 1. link name is common source link name and it points to a known repo host
+	for _, url := range linksNamedSource {
 		if repo := uri.FindCommonRepo(url); repo != "" {
 			return uri.CanonicalizeRepoURI(repo)
 		}
 	}
-	// 2. project source link, unknown repo
-	if len(repoLinks) != 0 {
-		return uri.CanonicalizeRepoURI(repoLinks[0])
+	// 2. link name is common source link name but it doesn't point to a known repo host
+	if len(linksNamedSource) != 0 {
+		return uri.CanonicalizeRepoURI(linksNamedSource[0])
 	}
-	// 3. description, known repo
+	// 3. project.Homepage or project.ProjectURLs["Homepage"] points a known repo host
+	if repo := uri.FindCommonRepo(project.Homepage); repo != "" {
+		return uri.CanonicalizeRepoURI(repo)
+	}
+	for name, url := range project.ProjectURLs {
+		if strings.ReplaceAll(strings.ToLower(name), " ", "") == "homepage" {
+			if repo := uri.FindCommonRepo(url); repo != "" {
+				return uri.CanonicalizeRepoURI(repo)
+			}
+		}
+	}
+	// 4. first known repo host link found in the description
 	r := uri.FindCommonRepo(project.Description)
 	// TODO: Maybe revisit this sponsors logic?
 	if r != "" && !strings.Contains(r, "sponsors") {
 		return uri.CanonicalizeRepoURI(r)
 	}
-	// 4. other project links, known repo
+	// 5. link name is not a common source link name, but points to known repo repo host
 	for _, url := range project.ProjectURLs {
 		if strings.Contains(url, "sponsors") {
 			continue
