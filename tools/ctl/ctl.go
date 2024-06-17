@@ -416,7 +416,7 @@ var runBenchmark = &cobra.Command{
 		{
 			path := args[1]
 			log.Printf("Extracting benchmark %s...\n", filepath.Base(path))
-			set, err := readBenchmark(path)
+			set, err = readBenchmark(path)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "reading benchmark file"))
 			}
@@ -479,7 +479,8 @@ var runBenchmark = &cobra.Command{
 			limiters: defaultLimiters(),
 			run:      run,
 		}
-		bar := pb.StartNew(len(set.Packages))
+		bar := pb.New(len(set.Packages))
+		bar.Output = cmd.OutOrStderr()
 		bar.ShowTimeLeft = true
 		ex := Executor{Concurrency: *maxConcurrency, Increment: func() { bar.Increment() }}
 		if mode == firestore.SmoketestMode {
@@ -493,6 +494,8 @@ var runBenchmark = &cobra.Command{
 			}
 		}
 		verdictChan := make(chan schema.Verdict)
+		log.Printf("Triggering rebuilds on executor version '%s' with ID=%s...\n", executor, run)
+		bar.Start()
 		go ex.Process(ctx, verdictChan, set.Packages)
 		var verdicts []schema.Verdict
 		for v := range verdictChan {
@@ -502,11 +505,11 @@ var runBenchmark = &cobra.Command{
 		sort.Slice(verdicts, func(i, j int) bool {
 			return fmt.Sprint(verdicts[i].Target) > fmt.Sprint(verdicts[j].Target)
 		})
-		log.Printf("Triggering rebuilds on executor version '%s' with ID=%s...\n", executor, run)
 		switch *format {
 		// TODO: Maybe add more format options, or include more data in the csv?
 		case "csv":
 			w := csv.NewWriter(cmd.OutOrStdout())
+			defer w.Flush()
 			for _, v := range verdicts {
 				if err := w.Write([]string{fmt.Sprintf("%v", v.Target), v.Message}); err != nil {
 					log.Fatal(errors.Wrap(err, "writing CSV"))
