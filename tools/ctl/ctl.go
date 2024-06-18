@@ -39,6 +39,7 @@ import (
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/firestore"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
@@ -256,7 +257,7 @@ func (ex *Executor) Process(ctx context.Context, out chan schema.Verdict, packag
 }
 
 func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.Request {
-	values, err := msg.ToValues()
+	values, err := form.Marshal(msg)
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "creating values"))
 	}
@@ -579,11 +580,11 @@ var runOne = &cobra.Command{
 		var req *http.Request
 		if mode == firestore.SmoketestMode {
 			req = makeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), &schema.SmoketestRequest{
-				Ecosystem:     rebuild.Ecosystem(*ecosystem),
-				Package:       *pkg,
-				Versions:      []string{*version},
-				StrategyOneof: strategy,
-				ID:            "runOne",
+				Ecosystem: rebuild.Ecosystem(*ecosystem),
+				Package:   *pkg,
+				Versions:  []string{*version},
+				Strategy:  strategy,
+				ID:        "runOne",
 			})
 		} else if mode == firestore.AttestMode {
 			req = makeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), &schema.RebuildPackageRequest{

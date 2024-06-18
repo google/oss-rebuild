@@ -49,6 +49,7 @@ import (
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
@@ -87,7 +88,7 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	req.ParseForm()
 	var sreq schema.SmoketestRequest
-	if err := sreq.FromValues(req.Form); err != nil {
+	if err := form.Unmarshal(req.Form, &sreq); err != nil {
 		log.Println(errors.Wrap(err, "parsing smoketest request"))
 		http.Error(rw, err.Error(), 400)
 		return
@@ -128,7 +129,7 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 		close(versionChan)
 	}()
 	smoketestURL := u.JoinPath("smoketest")
-	smoketestVals, err := sreq.ToValues()
+	smoketestVals, err := form.Marshal(sreq)
 	if err != nil {
 		log.Printf("failed to parse smoketest vals: %v\n", err)
 		http.Error(rw, "Internal Error", 500)
@@ -229,7 +230,7 @@ func getInference(ctx context.Context, ireq schema.InferenceRequest) (rebuild.St
 	if err != nil {
 		return nil, errors.Wrap(err, "initializing client")
 	}
-	vals, err := ireq.ToValues()
+	vals, err := form.Marshal(ireq)
 	if err != nil {
 		return nil, errors.Wrap(err, "marshalling inference request")
 	}
@@ -342,7 +343,7 @@ func HandleRebuildPackage(rw http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	req.ParseForm()
 	var rbreq schema.RebuildPackageRequest
-	if err := rbreq.FromValues(req.Form); err != nil {
+	if err := form.Unmarshal(req.Form, &rbreq); err != nil {
 		log.Println(errors.Wrap(err, "parsing rebuild request"))
 		http.Error(rw, err.Error(), 400)
 		return
@@ -436,7 +437,7 @@ func HandleRebuildPackage(rw http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if hint, ok := manualStrategy.(*rebuild.LocationHint); ok && hint != nil {
-			ireq.LocationHint = hint
+			ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
 		} else if manualStrategy != nil {
 			strategy = manualStrategy
 		}

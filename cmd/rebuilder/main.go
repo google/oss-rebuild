@@ -35,6 +35,7 @@ import (
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
@@ -138,7 +139,7 @@ func doMavenRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest) (
 func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	var sreq schema.SmoketestRequest
-	if err := sreq.FromValues(req.Form); err != nil {
+	if err := form.Unmarshal(req.Form, &sreq); err != nil {
 		http.Error(rw, err.Error(), 400)
 		return
 	}
