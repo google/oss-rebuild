@@ -82,16 +82,7 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 	}
 	// Four priority levels:
 	// 1. link name is common source link name and it points to a known repo host
-	for _, url := range linksNamedSource {
-		if repo := uri.FindCommonRepo(url); repo != "" {
-			return uri.CanonicalizeRepoURI(repo)
-		}
-	}
-	// 2. link name is common source link name but it doesn't point to a known repo host
-	if len(linksNamedSource) != 0 {
-		return uri.CanonicalizeRepoURI(linksNamedSource[0])
-	}
-	// 3. project.Homepage or project.ProjectURLs["Homepage"] points a known repo host
+	// 1.a prefer "Homepage" if it's a common repo host.
 	if repo := uri.FindCommonRepo(project.Homepage); repo != "" {
 		return uri.CanonicalizeRepoURI(repo)
 	}
@@ -102,13 +93,23 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 			}
 		}
 	}
-	// 4. first known repo host link found in the description
+	// 1.b use other source links.
+	for _, url := range linksNamedSource {
+		if repo := uri.FindCommonRepo(url); repo != "" {
+			return uri.CanonicalizeRepoURI(repo)
+		}
+	}
+	// 2. link name is common source link name but it doesn't point to a known repo host
+	if len(linksNamedSource) != 0 {
+		return uri.CanonicalizeRepoURI(linksNamedSource[0])
+	}
+	// 3. first known repo host link found in the description
 	r := uri.FindCommonRepo(project.Description)
 	// TODO: Maybe revisit this sponsors logic?
 	if r != "" && !strings.Contains(r, "sponsors") {
 		return uri.CanonicalizeRepoURI(r)
 	}
-	// 5. link name is not a common source link name, but points to known repo repo host
+	// 4. link name is not a common source link name, but points to known repo repo host
 	for _, url := range project.ProjectURLs {
 		if strings.Contains(url, "sponsors") {
 			continue
