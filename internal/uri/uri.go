@@ -27,11 +27,16 @@ var (
 	githubRE    = re.MustCompile(`(?i)\bgithub(\.com)?[:/]([\w-]+/[\w-\.]+)`)
 	gitlabRE    = re.MustCompile(`(?i)\bgitlab(\.com)?[:/]([\w-]+/[\w-\.]+)`)
 	bitbucketRE = re.MustCompile(`(?i)\bbitbucket(\.org)?[:/]([\w-]+/[\w-\.]+)`)
+	commonRepos = []*re.Regexp{
+		githubRE,
+		gitlabRE,
+		bitbucketRE,
+	}
 )
 
 var errUnsupportedRepo = errors.Errorf("unsupported repo type")
 
-// CanonicalizeRepoURI parses the supported repos into canonical HTTP.
+// CanonicalizeRepoURI parses repos into a canonical HTTPS URI.
 func CanonicalizeRepoURI(uri string) (string, error) {
 	if uri == "" {
 		return "", errors.New("No repo URL")
@@ -59,4 +64,14 @@ func CanonicalizeRepoURI(uri string) (string, error) {
 	}
 	u.RawQuery = ""
 	return u.String(), nil
+}
+
+// FindCommonRepo attempts to find something that looks like a repo in the text. It will return empty string when no repo is found.
+func FindCommonRepo(text string) string {
+	for _, pattern := range commonRepos {
+		if repo := pattern.FindString(text); repo != "" {
+			return repo
+		}
+	}
+	return ""
 }

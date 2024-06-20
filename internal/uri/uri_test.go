@@ -18,6 +18,29 @@ import (
 	"testing"
 )
 
+func TestFindARepo(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},       // Empty input
+		{"foobar", ""}, // Invalid URL
+		// FindARepo doesn't canonicallize.
+		{"github.com/user/repo", "github.com/user/repo"},                        // GitHub, basic
+		{"github:user/repo", "github:user/repo"},                                // GitHub, alt format
+		{"https://github.com/org/project.git", "github.com/org/project.git"},    // GitHub, with .git
+		{"http://github.com/org/project/tree/branch", "github.com/org/project"}, // GitHub, with path
+		{"GitLab.com/Group/Repo", "GitLab.com/Group/Repo"},                      // GitLab, case insensitive
+		{"https://bitbucket.org/team/repo", "bitbucket.org/team/repo"},          // Bitbucket
+	}
+	for _, test := range tests {
+		actual := FindCommonRepo(test.input)
+		if actual != test.expected {
+			t.Errorf("FindARepo(%s) = %s, expected %s", test.input, actual, test.expected)
+		}
+	}
+}
+
 func TestCanonicalizeRepoURI(t *testing.T) {
 	tests := []struct {
 		input    string

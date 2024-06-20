@@ -41,39 +41,82 @@ import (
 
 // These are commonly used in PyPi metadata to point to the project git repo, using a map as a set.
 // Some people capitalize these differently, or add/remove spaces. We normalized to lower, no space.
-var commonRepoLinks = map[string]bool{
-	"homepage":     true,
-	"home":         true,
-	"sourcecode":   true,
-	"source":       true,
-	"repository":   true,
-	"github":       true,
-	"project":      true,
-	"issuetracker": true,
+// This list is ordered, we will choose the first occurance.
+var commonRepoLinks = []string{
+	"source",
+	"sourcecode",
+	"repository",
+	"project",
+	"github",
 }
+
+// There are two places to find the repo:
+// 1. In the ProjectURLs (project links)
+// 2. Embeded in the description
+//
+// For 1, there are some ProjectURLs that are very common to use for a repo
+// (commonRepoLinks above), so we can break up the ProjectURLs
+
+// Preference:
+// where               | known repo host
+// -------------------------------------
+// project source link | yes
+// project source link | no
+// "Homepage" link     | yes
+// description         | yes
+// other project links | yes
 
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	project, err := mux.PyPI.Project(ctx, t.Package)
 	if err != nil {
 		return "", nil
 	}
-	for name, url := range project.ProjectURLs {
-		_, ok := commonRepoLinks[strings.ReplaceAll(strings.ToLower(name), " ", "")]
-		if !ok {
-			continue
+	var linksNamedSource []string
+	for _, commonName := range commonRepoLinks {
+		for name, url := range project.ProjectURLs {
+			if strings.ReplaceAll(strings.ToLower(name), " ", "") == commonName {
+				linksNamedSource = append(linksNamedSource, url)
+				break
+			}
 		}
-		// Exclude sponsor URLs.
+	}
+	// Four priority levels:
+	// 1. link name is common source link name and it points to a known repo host
+	// 1.a prefer "Homepage" if it's a common repo host.
+	if repo := uri.FindCommonRepo(project.Homepage); repo != "" {
+		return uri.CanonicalizeRepoURI(repo)
+	}
+	for name, url := range project.ProjectURLs {
+		if strings.ReplaceAll(strings.ToLower(name), " ", "") == "homepage" {
+			if repo := uri.FindCommonRepo(url); repo != "" {
+				return uri.CanonicalizeRepoURI(repo)
+			}
+		}
+	}
+	// 1.b use other source links.
+	for _, url := range linksNamedSource {
+		if repo := uri.FindCommonRepo(url); repo != "" {
+			return uri.CanonicalizeRepoURI(repo)
+		}
+	}
+	// 2. link name is common source link name but it doesn't point to a known repo host
+	if len(linksNamedSource) != 0 {
+		return uri.CanonicalizeRepoURI(linksNamedSource[0])
+	}
+	// 3. first known repo host link found in the description
+	r := uri.FindCommonRepo(project.Description)
+	// TODO: Maybe revisit this sponsors logic?
+	if r != "" && !strings.Contains(r, "sponsors") {
+		return uri.CanonicalizeRepoURI(r)
+	}
+	// 4. link name is not a common source link name, but points to known repo repo host
+	for _, url := range project.ProjectURLs {
 		if strings.Contains(url, "sponsors") {
 			continue
 		}
-		c, err := uri.CanonicalizeRepoURI(url)
-		if err == nil {
-			return c, nil
+		if repo := uri.FindCommonRepo(url); repo != "" {
+			return uri.CanonicalizeRepoURI(repo)
 		}
-	}
-	c, err := uri.CanonicalizeRepoURI(project.Description)
-	if err == nil && !strings.Contains(c, "sponsors") {
-		return c, nil
 	}
 	return "", errors.New("no git repo")
 }

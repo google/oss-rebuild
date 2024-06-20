@@ -47,6 +47,7 @@ type Info struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Version     string            `json:"version"`
+	Homepage    string            `json:"home_page"`
 	ProjectURLs map[string]string `json:"project_urls"`
 }
 
