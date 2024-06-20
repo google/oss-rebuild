@@ -66,8 +66,8 @@ var commonRepoLinks = []string{
 // description         | yes
 // other project links | yes
 
-func (Rebuilder) InferRepo(t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
-	project, err := mux.PyPI.Project(t.Package)
+func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
+	project, err := mux.PyPI.Project(ctx, t.Package)
 	if err != nil {
 		return "", nil
 	}
@@ -236,7 +236,7 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
 	name, version := t.Package, t.Version
-	release, err := mux.PyPI.Release(name, version)
+	release, err := mux.PyPI.Release(ctx, name, version)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +266,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		return cfg, errors.Wrap(err, "finding pure wheel")
 	}
 	log.Printf("Downloading artifact: %s", a.URL)
-	r, err := mux.PyPI.Artifact(name, version, a.Filename)
+	r, err := mux.PyPI.Artifact(ctx, name, version, a.Filename)
 	if err != nil {
 		return nil, err
 	}

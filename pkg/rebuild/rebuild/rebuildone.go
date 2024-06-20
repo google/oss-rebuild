@@ -44,7 +44,7 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 		}
 	} else {
 		var err error
-		repoURI, err = r.InferRepo(t, mux)
+		repoURI, err = r.InferRepo(ctx, t, mux)
 		if err != nil {
 			return nil, nil, err
 		}

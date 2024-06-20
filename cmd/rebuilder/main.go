@@ -58,7 +58,7 @@ var httpcfg = httpegress.Config{}
 func doNpmRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {
 	if len(req.Versions) == 0 {
 		var err error
-		req.Versions, err = npmrb.GetVersions(req.Package, mux)
+		req.Versions, err = npmrb.GetVersions(ctx, req.Package, mux)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Failed to fetch versions")
 		}
@@ -75,7 +75,7 @@ func doNpmRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, mux
 }
 
 func doPypiRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {
-	m, err := mux.PyPI.Project(req.Package)
+	m, err := mux.PyPI.Project(ctx, req.Package)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to pypi metadata.")
 	}
@@ -99,7 +99,7 @@ func doPypiRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, mu
 func doCratesIORebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {
 	if len(req.Versions) == 0 {
 		var err error
-		req.Versions, err = rsrb.GetVersions(req.Package, mux)
+		req.Versions, err = rsrb.GetVersions(ctx, req.Package, mux)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Failed to fetch versions")
 		}

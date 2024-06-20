@@ -16,6 +16,7 @@
 package pypi
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -71,9 +72,9 @@ type Digests struct {
 
 // Registry is an PyPI package registry.
 type Registry interface {
-	Project(string) (*Project, error)
-	Release(string, string) (*Release, error)
-	Artifact(string, string, string) (io.ReadCloser, error)
+	Project(context.Context, string) (*Project, error)
+	Release(context.Context, string, string) (*Release, error)
+	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
 }
 
 // HTTPRegistry is a Registry implementation that uses the pypi.org HTTP API.
@@ -82,12 +83,12 @@ type HTTPRegistry struct {
 }
 
 // Project provides all API information related to the given package.
-func (r HTTPRegistry) Project(pkg string) (*Project, error) {
+func (r HTTPRegistry) Project(ctx context.Context, pkg string) (*Project, error) {
 	pathURL, err := url.Parse(path.Join("/pypi", pkg, "json"))
 	if err != nil {
 		return nil, err
 	}
-	req, _ := http.NewRequest(http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, registryURL.ResolveReference(pathURL).String(), nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -103,7 +104,7 @@ func (r HTTPRegistry) Project(pkg string) (*Project, error) {
 }
 
 // Release provides all API information related to the given version of a package.
-func (r HTTPRegistry) Release(pkg, version string) (*Release, error) {
+func (r HTTPRegistry) Release(ctx context.Context, pkg, version string) (*Release, error) {
 	pathURL, err := url.Parse(path.Join("/pypi", pkg, version, "json"))
 	if err != nil {
 		return nil, err
@@ -124,8 +125,8 @@ func (r HTTPRegistry) Release(pkg, version string) (*Release, error) {
 }
 
 // Artifact provides the artifact associated with a specific package version.
-func (r HTTPRegistry) Artifact(pkg, version, filename string) (io.ReadCloser, error) {
-	release, err := r.Release(pkg, version)
+func (r HTTPRegistry) Artifact(ctx context.Context, pkg, version, filename string) (io.ReadCloser, error) {
+	release, err := r.Release(ctx, pkg, version)
 	if err != nil {
 		return nil, err
 	}

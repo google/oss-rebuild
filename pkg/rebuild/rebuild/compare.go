@@ -24,15 +24,15 @@ import (
 	"github.com/pkg/errors"
 )
 
-func artifactReader(t Target, mux RegistryMux) (io.ReadCloser, error) {
+func artifactReader(ctx context.Context, t Target, mux RegistryMux) (io.ReadCloser, error) {
 	// TODO: Make this configurable from within each ecosystem.
 	switch t.Ecosystem {
 	case NPM:
-		return mux.NPM.Artifact(t.Package, t.Version)
+		return mux.NPM.Artifact(ctx, t.Package, t.Version)
 	case PyPI:
-		return mux.PyPI.Artifact(t.Package, t.Version, t.Artifact)
+		return mux.PyPI.Artifact(ctx, t.Package, t.Version, t.Artifact)
 	case CratesIO:
-		return mux.CratesIO.Artifact(t.Package, t.Version)
+		return mux.CratesIO.Artifact(ctx, t.Package, t.Version)
 	default:
 		return nil, errors.New("unsupported ecosystem")
 	}
@@ -63,7 +63,7 @@ func Canonicalize(ctx context.Context, t Target, mux RegistryMux, rbPath string,
 			return rb, up, errors.Errorf("[INTERNAL] failued to store asset %v", up)
 		}
 		defer w.Close()
-		r, err := artifactReader(t, mux)
+		r, err := artifactReader(ctx, t, mux)
 		if err != nil {
 			return rb, up, errors.Wrapf(err, "[INTERNAL] Failed to fetch upstream artifact")
 		}
