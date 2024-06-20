@@ -72,8 +72,8 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 		return "", nil
 	}
 	var linksNamedSource []string
-	for name, url := range project.ProjectURLs {
-		for _, commonName := range commonRepoLinks {
+	for _, commonName := range commonRepoLinks {
+		for name, url := range project.ProjectURLs {
 			if strings.ReplaceAll(strings.ToLower(name), " ", "") == commonName {
 				linksNamedSource = append(linksNamedSource, url)
 				break
