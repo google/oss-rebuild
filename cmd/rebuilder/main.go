@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -26,7 +25,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/google/oss-rebuild/internal/api"
 	gitinternal "github.com/google/oss-rebuild/internal/git"
+	httpinternal "github.com/google/oss-rebuild/internal/http"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/timewarp"
 	rsrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
@@ -35,7 +36,6 @@ import (
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
@@ -43,6 +43,7 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/api/idtoken"
 	gapihttp "google.golang.org/api/transport/http"
+	"google.golang.org/grpc/codes"
 )
 
 var (
@@ -136,49 +137,68 @@ func doMavenRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest) (
 	return mavenrb.RebuildMany(rbctx, req.Package, inputs)
 }
 
-func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
-	req.ParseForm()
-	var sreq schema.SmoketestRequest
-	if err := form.Unmarshal(req.Form, &sreq); err != nil {
-		http.Error(rw, err.Error(), 400)
-		return
+type RebuildSmoketestDeps struct {
+	HTTPClient  httpinternal.BasicClient
+	GitCache    *gitinternal.Cache
+	AssetDir    string
+	TimewarpURL *string
+	DebugBucket *string
+	VersionStub api.StubT[schema.VersionRequest, schema.VersionResponse]
+}
+
+func RebuildSmoketestInit(ctx context.Context) (*RebuildSmoketestDeps, error) {
+	var d RebuildSmoketestDeps
+	var err error
+	d.HTTPClient, err = httpegress.MakeClient(ctx, httpcfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating http client")
 	}
-	log.Printf("Running smoketest: %v", sreq)
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, rebuild.RunID, sreq.ID)
 	if *gitCacheURL != "" {
 		c, err := idtoken.NewClient(ctx, *gitCacheURL)
 		if err != nil {
-			log.Fatalf("Failed to create ID Client: %v", err)
+			return nil, errors.Wrap(err, "creating id client")
 		}
 		sc, _, err := gapihttp.NewClient(ctx)
 		if err != nil {
-			log.Fatalf("Failed to create API Client: %v", err)
+			return nil, errors.Wrap(err, "creating api client")
 		}
 		u, err := url.Parse(*gitCacheURL)
 		if err != nil {
 			log.Fatalf("Failed to create API Client: %v", err)
 		}
-		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, gitinternal.Cache{IDClient: c, APIClient: sc, URL: u})
-	}
-	client, err := httpegress.MakeClient(ctx, httpcfg)
-	if err != nil {
-		log.Fatalf("Failed to initialize HTTP egress client: %v", err)
-	}
-	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, client)
-	mux := rebuild.RegistryMux{
-		CratesIO: cratesreg.HTTPRegistry{Client: client},
-		NPM:      npmreg.HTTPRegistry{Client: client},
-		PyPI:     pypireg.HTTPRegistry{Client: client},
+		d.GitCache = &gitinternal.Cache{IDClient: c, APIClient: sc, URL: u}
 	}
 	if *useTimewarp {
-		ctx = context.WithValue(ctx, rebuild.TimewarpID, fmt.Sprintf("localhost:%d", *timewarpPort))
+		*d.TimewarpURL = fmt.Sprintf("localhost:%d", *timewarpPort)
 	}
-	ctx = context.WithValue(ctx, rebuild.AssetDirID, *localAssetDir)
 	if *debugBucket != "" {
-		ctx = context.WithValue(ctx, rebuild.UploadArtifactsPathID, "gs://"+*debugBucket)
+		*d.DebugBucket = fmt.Sprintf("gs://%s", *debugBucket)
+	}
+	d.AssetDir = *localAssetDir
+	return &d, nil
+}
+
+func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *RebuildSmoketestDeps) (*schema.SmoketestResponse, error) {
+	log.Printf("Running smoketest: %v", sreq)
+	ctx = context.WithValue(ctx, rebuild.RunID, sreq.ID)
+	if deps.GitCache != nil {
+		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, *deps.GitCache)
+	}
+	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
+	mux := rebuild.RegistryMux{
+		CratesIO: cratesreg.HTTPRegistry{Client: deps.HTTPClient},
+		NPM:      npmreg.HTTPRegistry{Client: deps.HTTPClient},
+		PyPI:     pypireg.HTTPRegistry{Client: deps.HTTPClient},
+	}
+	if deps.TimewarpURL != nil {
+		ctx = context.WithValue(ctx, rebuild.TimewarpID, *deps.TimewarpURL)
+	}
+	ctx = context.WithValue(ctx, rebuild.AssetDirID, deps.AssetDir)
+	if deps.DebugBucket != nil {
+		ctx = context.WithValue(ctx, rebuild.UploadArtifactsPathID, *deps.DebugBucket)
 	}
 	var verdicts []rebuild.Verdict
+	var err error
 	switch sreq.Ecosystem {
 	case rebuild.NPM:
 		verdicts, err = doNpmRebuildSmoketest(ctx, sreq, mux)
@@ -189,16 +209,13 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 	case rebuild.Maven:
 		verdicts, err = doMavenRebuildSmoketest(ctx, sreq)
 	default:
-		http.Error(rw, fmt.Sprintf("Unsupported ecosystem: '%s'", sreq.Ecosystem), 400)
-		return
+		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
 	if err != nil {
-		http.Error(rw, err.Error(), 500)
-		return
+		return nil, api.AsStatus(codes.Internal, err)
 	}
 	if len(verdicts) != len(sreq.Versions) {
-		http.Error(rw, fmt.Sprintf("Unexpected number of results [want=%d,got=%d]", len(sreq.Versions), len(verdicts)), 500)
-		return
+		return nil, api.AsStatus(codes.Internal, errors.Errorf("unexpected number of results [want=%d,got=%d]", len(sreq.Versions), len(verdicts)))
 	}
 	smkVerdicts := make([]schema.Verdict, len(verdicts))
 	for i, v := range verdicts {
@@ -209,21 +226,15 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 			Timings:       v.Timings,
 		}
 	}
-	resp := schema.SmoketestResponse{Verdicts: smkVerdicts, Executor: os.Getenv("K_REVISION")}
-	enc := json.NewEncoder(rw)
-	if err := enc.Encode(resp); err != nil {
-		log.Printf("Failed to encode SmoketestResponse for [pkg=%s, version=%v]: %v\n", sreq.Package, sreq.Versions, err)
-		http.Error(rw, "Encoding error", 500)
-		return
-	}
+	return &schema.SmoketestResponse{Verdicts: smkVerdicts, Executor: os.Getenv("K_REVISION")}, nil
 }
 
 func sanitize(key string) string {
 	return strings.ReplaceAll(key, "/", "!")
 }
 
-func HandleVersion(rw http.ResponseWriter, req *http.Request) {
-	rw.Write([]byte(os.Getenv("K_REVISION")))
+func Version(ctx context.Context, req schema.VersionRequest, _ *api.NoDeps) (*schema.VersionResponse, error) {
+	return &schema.VersionResponse{Version: os.Getenv("K_REVISION")}, nil
 }
 
 func main() {
@@ -236,8 +247,8 @@ func main() {
 			}
 		}()
 	}
-	http.HandleFunc("/smoketest", HandleRebuildSmoketest)
-	http.HandleFunc("/version", HandleVersion)
+	http.HandleFunc("/smoketest", api.Handler(RebuildSmoketestInit, RebuildSmoketest))
+	http.HandleFunc("/version", api.Handler(api.NoDepsInit, Version))
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalln(err)
 	}

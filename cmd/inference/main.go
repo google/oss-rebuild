@@ -16,26 +16,26 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/google/oss-rebuild/internal/api"
+	httpinternal "github.com/google/oss-rebuild/internal/http"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
 )
 
 var httpcfg = httpegress.Config{}
@@ -64,69 +64,65 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 	return strategy, nil
 }
 
-func HandleInfer(rw http.ResponseWriter, req *http.Request) {
-	ctx := context.Background()
-	req.ParseForm()
-	var ireq schema.InferenceRequest
-	if err := form.Unmarshal(req.Form, &ireq); err != nil {
-		log.Println(errors.Wrap(err, "parsing inference request"))
-		http.Error(rw, err.Error(), 400)
-		return
-	}
-	if ireq.LocationHint() != nil && ireq.LocationHint().Ref == "" && ireq.LocationHint().Dir != "" {
-		http.Error(rw, fmt.Sprintf("A location hint dir without ref is not yet supported. Received: %v", *ireq.LocationHint()), 400)
-		return
-	}
-	client, err := httpegress.MakeClient(ctx, httpcfg)
+type InferDeps struct {
+	HTTPClient httpinternal.BasicClient
+}
+
+func InferInit(ctx context.Context) (*InferDeps, error) {
+	var d InferDeps
+	var err error
+	d.HTTPClient, err = httpegress.MakeClient(ctx, httpcfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize HTTP egress client: %v", err)
+		return nil, errors.Wrap(err, "making http client")
 	}
-	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, client)
+	return &d, nil
+}
+
+func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*schema.StrategyOneOf, error) {
+	if req.LocationHint() != nil && req.LocationHint().Ref == "" && req.LocationHint().Dir != "" {
+		return nil, api.AsStatus(codes.Unimplemented, errors.New("location hint dir without ref not implemented"))
+	}
+	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	mux := rebuild.RegistryMux{
-		CratesIO: cratesreg.HTTPRegistry{Client: client},
-		NPM:      npmreg.HTTPRegistry{Client: client},
-		PyPI:     pypireg.HTTPRegistry{Client: client},
+		CratesIO: cratesreg.HTTPRegistry{Client: deps.HTTPClient},
+		NPM:      npmreg.HTTPRegistry{Client: deps.HTTPClient},
+		PyPI:     pypireg.HTTPRegistry{Client: deps.HTTPClient},
 	}
 	var s rebuild.Strategy
 	t := rebuild.Target{
-		Ecosystem: ireq.Ecosystem,
-		Package:   ireq.Package,
-		Version:   ireq.Version,
+		Ecosystem: req.Ecosystem,
+		Package:   req.Package,
+		Version:   req.Version,
 	}
-	// TODO: Use ireq.LocationHint in these individual infer calls.
-	switch ireq.Ecosystem {
+	// TODO: Use req.LocationHint in these individual infer calls.
+	var err error
+	switch req.Ecosystem {
 	case rebuild.NPM:
-		s, err = doInfer(ctx, npm.Rebuilder{}, t, mux, ireq.LocationHint())
+		s, err = doInfer(ctx, npm.Rebuilder{}, t, mux, req.LocationHint())
 	case rebuild.PyPI:
-		s, err = doInfer(ctx, pypi.Rebuilder{}, t, mux, ireq.LocationHint())
+		s, err = doInfer(ctx, pypi.Rebuilder{}, t, mux, req.LocationHint())
 	case rebuild.CratesIO:
-		s, err = doInfer(ctx, cratesio.Rebuilder{}, t, mux, ireq.LocationHint())
+		s, err = doInfer(ctx, cratesio.Rebuilder{}, t, mux, req.LocationHint())
 	default:
-		http.Error(rw, "unsupported ecosystem", 400)
-		return
+		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
 	if err != nil {
-		log.Printf("No inference for [pkg=%s, version=%v]: %v\n", ireq.Package, ireq.Version, err)
-		http.Error(rw, "No inference provided", 400)
-		return
+		log.Printf("No inference for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, err)
+		return nil, api.AsStatus(codes.InvalidArgument, errors.New("no inference provided"))
 	}
-	enc := json.NewEncoder(rw)
-	if err := enc.Encode(schema.NewStrategyOneOf(s)); err != nil {
-		log.Printf("Failed to encode verdicts for [pkg=%s, version=%v]: %v\n", ireq.Package, ireq.Version, err)
-		http.Error(rw, "Encoding error", 500)
-	}
-	return
+	oneof := schema.NewStrategyOneOf(s)
+	return &oneof, nil
 }
 
-func HandleVersion(rw http.ResponseWriter, req *http.Request) {
-	rw.Write([]byte(os.Getenv("K_REVISION")))
+func Version(ctx context.Context, req schema.VersionRequest, _ *api.NoDeps) (*schema.VersionResponse, error) {
+	return &schema.VersionResponse{Version: os.Getenv("K_REVISION")}, nil
 }
 
 func main() {
 	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
-	http.HandleFunc("/infer", HandleInfer)
-	http.HandleFunc("/version", HandleVersion)
+	http.HandleFunc("/infer", api.Handler(InferInit, Infer))
+	http.HandleFunc("/version", api.Handler(api.NoDepsInit, Version))
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalln(err)
 	}
