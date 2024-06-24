@@ -66,8 +66,8 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 func HandleInfer(rw http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	req.ParseForm()
-	ireq, err := schema.NewInferenceRequest(req.Form)
-	if err != nil {
+	var ireq schema.InferenceRequest
+	if err := ireq.FromValues(req.Form); err != nil {
 		log.Println(errors.Wrap(err, "parsing inference request"))
 		http.Error(rw, err.Error(), 400)
 		return
