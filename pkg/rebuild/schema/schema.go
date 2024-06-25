@@ -17,6 +17,8 @@
 package schema
 
 import (
+	"encoding/hex"
+
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
@@ -86,6 +88,16 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 }
 
 type Message interface {
+}
+
+type VersionRequest struct {
+	Service string `form:","`
+}
+
+var _ Message = &VersionRequest{}
+
+type VersionResponse struct {
+	Version string
 }
 
 // SmoketestRequest is a single request to the smoketest endpoint.
@@ -172,6 +184,24 @@ func (req InferenceRequest) Validate() error {
 func (req InferenceRequest) LocationHint() *rebuild.LocationHint {
 	s, _ := req.StrategyHint.Strategy()
 	return s.(*rebuild.LocationHint)
+}
+
+type CreateRunRequest struct {
+	Name string `form:","`
+	Type string `form:","`
+	Hash string `form:","`
+}
+
+// Validate parses the CreateRun form values into a CreateRunRequest.
+func (req CreateRunRequest) Validate() error {
+	if _, err := hex.DecodeString(req.Hash); err != nil {
+		return errors.Wrap(err, "decoding hex hash")
+	}
+	return nil
+}
+
+type CreateRunResponse struct {
+	ID string
 }
 
 // SmoketestAttempt stores rebuild and execution metadata on a single smoketest run.

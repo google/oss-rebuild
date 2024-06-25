@@ -16,9 +16,7 @@ package ide
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -30,6 +28,8 @@ import (
 
 	"github.com/google/oss-rebuild/build/binary"
 	"github.com/google/oss-rebuild/build/container"
+	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/ctl/firestore"
 	"github.com/google/oss-rebuild/tools/docker"
@@ -210,38 +210,29 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts Run
 		return
 	}
 	log.Printf("Calling the rebuilder for %s\n", r.ID())
-	id := time.Now().UTC().Format(time.RFC3339)
-	vals := url.Values{}
-	vals.Add("ecosystem", r.Ecosystem)
-	vals.Add("pkg", r.Package)
-	vals.Add("versions", r.Version)
-	vals.Add("id", id)
-	if opts.Strategy != nil {
-		byts, err := json.Marshal(opts.Strategy)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		vals.Add("strategy", string(byts))
-	}
-	client := http.DefaultClient
-	url := "http://127.0.0.1:8080/smoketest"
-	log.Println("Requesting a smoketest from: " + url)
-	resp, err := client.PostForm(url, vals)
+	u, err := url.Parse("http://localhost:8080/smoketest")
 	if err != nil {
 		log.Println(err.Error())
 		return
 	}
-	var smkRespBytes bytes.Buffer
-	var smkResp schema.SmoketestResponse
-	if err := json.NewDecoder(io.TeeReader(resp.Body, &smkRespBytes)).Decode(&smkResp); err != nil {
-		log.Println(errors.Wrap(err, "failed to decode smoketest response").Error())
+	log.Println("Requesting a smoketest from: " + u.String())
+	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](http.DefaultClient, *u)
+	resp, err := stub(ctx, schema.SmoketestRequest{
+		Ecosystem: rebuild.Ecosystem(r.Ecosystem),
+		Package:   r.Package,
+		Versions:  []string{r.Version},
+		ID:        time.Now().UTC().Format(time.RFC3339),
+		Strategy:  opts.Strategy,
+	})
+	if err != nil {
+		log.Println(err.Error())
+		return
 	}
 	msg := "FAILED"
-	if json.Unmarshal(smkRespBytes.Bytes(), &smkResp) == nil && len(smkResp.Verdicts) == 1 && smkResp.Verdicts[0].Message == "" {
+	if len(resp.Verdicts) == 1 && resp.Verdicts[0].Message == "" {
 		msg = "SUCCESS"
 	}
-	log.Printf("Smoketest %s:\n%s", msg, smkRespBytes.String())
+	log.Printf("Smoketest %s:\n%v", msg, resp)
 }
 
 // Attach opens a new tmux window that's attached to the rebuilder container.
