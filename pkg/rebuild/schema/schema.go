@@ -17,11 +17,6 @@
 package schema
 
 import (
-	"encoding/json"
-	"net/url"
-	"strconv"
-	"strings"
-
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
@@ -91,70 +86,18 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 }
 
 type Message interface {
-	FromValues(url.Values) error
-	ToValues() (url.Values, error)
 }
 
 // SmoketestRequest is a single request to the smoketest endpoint.
 type SmoketestRequest struct {
-	Ecosystem     rebuild.Ecosystem
-	Package       string
-	Versions      []string
-	ID            string
-	StrategyOneof *StrategyOneOf
+	Ecosystem rebuild.Ecosystem `form:",required"`
+	Package   string            `form:",required"`
+	Versions  []string          `form:",required"`
+	ID        string            `form:",required"`
+	Strategy  *StrategyOneOf    `form:""`
 }
 
 var _ Message = &SmoketestRequest{}
-
-// FromValues parses the smoketest form values into a SmoketestRequest.
-func (req *SmoketestRequest) FromValues(form url.Values) error {
-	// TODO: check that it's a valid ecosystem?
-	req.Ecosystem = rebuild.Ecosystem(form.Get("ecosystem"))
-	if req.Ecosystem == "" {
-		return errors.New("No ecosystem provided")
-	}
-	req.Package = form.Get("pkg")
-	if req.Package == "" {
-		return errors.New("No pkg provided")
-	}
-	versions := form.Get("versions")
-	if versions != "" {
-		req.Versions = strings.Split(versions, ",")
-	}
-	req.ID = form.Get("id")
-	if req.ID == "" {
-		return errors.New("No ID provided")
-	}
-	if encStrat := form.Get("strategy"); encStrat != "" {
-		oneof := StrategyOneOf{}
-		err := json.Unmarshal([]byte(encStrat), &oneof)
-		if err != nil {
-			return err
-		}
-		if _, err := oneof.Strategy(); err != nil {
-			return err
-		}
-		req.StrategyOneof = &oneof
-	}
-	return nil
-}
-
-// ToValues converts a SmoketestRequest into a url.Values.
-func (sreq SmoketestRequest) ToValues() (url.Values, error) {
-	vals := url.Values{}
-	vals.Set("ecosystem", string(sreq.Ecosystem))
-	vals.Set("pkg", sreq.Package)
-	vals.Set("versions", strings.Join(sreq.Versions, ","))
-	vals.Set("id", sreq.ID)
-	if sreq.StrategyOneof != nil {
-		encStrat, err := json.Marshal(sreq.StrategyOneof)
-		if err != nil {
-			return nil, err
-		}
-		vals.Set("strategy", string(encStrat))
-	}
-	return vals, nil
-}
 
 // ToInputs converts a SmoketestRequest into rebuild.Input objects.
 func (sreq *SmoketestRequest) ToInputs() ([]rebuild.Input, error) {
@@ -168,11 +111,11 @@ func (sreq *SmoketestRequest) ToInputs() ([]rebuild.Input, error) {
 			},
 		})
 	}
-	if sreq.StrategyOneof != nil {
+	if sreq.Strategy != nil {
 		if len(inputs) != 1 {
 			return nil, errors.Errorf("strategy provided, expected exactly one version, got %d", len(sreq.Versions))
 		}
-		strategy, err := sreq.StrategyOneof.Strategy()
+		strategy, err := sreq.Strategy.Strategy()
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing strategy in SmoketestRequest")
 		}
@@ -197,112 +140,38 @@ type SmoketestResponse struct {
 // RebuildPackageRequest is a single request to the rebuild package endpoint.
 type RebuildPackageRequest struct {
 	// TODO: Should this also include Artifact?
-	Ecosystem        rebuild.Ecosystem
-	Package          string
-	Version          string
-	ID               string
-	StrategyFromRepo bool
+	Ecosystem        rebuild.Ecosystem `form:",required"`
+	Package          string            `form:",required"`
+	Version          string            `form:""`
+	ID               string            `form:",required"`
+	StrategyFromRepo bool              `form:""`
 }
 
 var _ Message = &SmoketestRequest{}
 
-// FromValues parses the rebuild form values into a RebuildPackageRequest.
-func (req *RebuildPackageRequest) FromValues(form url.Values) error {
-	// TODO: check that it's a valid ecosystem?
-	req.Ecosystem = rebuild.Ecosystem(form.Get("ecosystem"))
-	if req.Ecosystem == "" {
-		return errors.New("No ecosystem provided")
-	}
-	req.Package = form.Get("pkg")
-	if req.Package == "" {
-		return errors.New("No pkg provided")
-	}
-	version := form.Get("version")
-	if version != "" {
-		req.Version = version
-	}
-	req.ID = form.Get("id")
-	if req.ID == "" {
-		return errors.New("No ID provided")
-	}
-	if fromRepo := form.Get("strategyFromRepo"); fromRepo != "" {
-		strategyFromRepo, err := strconv.ParseBool(fromRepo)
-		if err != nil {
-			return err
-		}
-		req.StrategyFromRepo = strategyFromRepo
-	}
-	return nil
-}
-
-// ToValues converts a RebuildPackageRequest into a url.Values.
-func (req RebuildPackageRequest) ToValues() (url.Values, error) {
-	vals := url.Values{}
-	vals.Set("ecosystem", string(req.Ecosystem))
-	vals.Set("pkg", req.Package)
-	vals.Set("version", req.Version)
-	vals.Set("id", req.ID)
-	vals.Set("strategyFromRepo", strconv.FormatBool(req.StrategyFromRepo))
-	return vals, nil
-}
-
 // InferenceRequest is a single request to the inference endpoint.
 type InferenceRequest struct {
-	Ecosystem    rebuild.Ecosystem
-	Package      string
-	Version      string
-	LocationHint *rebuild.LocationHint
+	Ecosystem    rebuild.Ecosystem `form:",required"`
+	Package      string            `form:",required"`
+	Version      string            `form:",required"`
+	StrategyHint *StrategyOneOf    `form:""`
 }
 
 var _ Message = &InferenceRequest{}
 
-// NewInferenceRequest parses the inference form values into an InferenceRequest.
-func (req *InferenceRequest) FromValues(form url.Values) error {
-	// TODO: check that it's a valid ecosystem?
-	req.Ecosystem = rebuild.Ecosystem(form.Get("ecosystem"))
-	if req.Ecosystem == "" {
-		return errors.New("No ecosystem provided")
-	}
-	req.Package = form.Get("pkg")
-	if req.Package == "" {
-		return errors.New("No pkg provided")
-	}
-	req.Version = form.Get("version")
-	if req.Version == "" {
-		return errors.New("No version provided")
-	}
-	if encHint := form.Get("strategy_hint"); encHint != "" {
-		var oneof StrategyOneOf
-		err := json.Unmarshal([]byte(encHint), &oneof)
-		if err != nil {
-			return err
-		}
-		var s rebuild.Strategy
-		if s, err = oneof.Strategy(); err != nil {
-			return err
-		} else if _, ok := s.(*rebuild.LocationHint); !ok {
-			return errors.Errorf("strategy hint should be a LocationHint, got: %T", s)
-		}
-		req.LocationHint = s.(*rebuild.LocationHint)
+func (req InferenceRequest) Validate() error {
+	if req.StrategyHint == nil {
+	} else if s, err := req.StrategyHint.Strategy(); err != nil {
+		return err
+	} else if _, ok := s.(*rebuild.LocationHint); !ok {
+		return errors.Errorf("strategy hint should be a LocationHint, got: %T", s)
 	}
 	return nil
 }
 
-// ToValues converts an InferenceRequest into a url.Values.
-func (req InferenceRequest) ToValues() (url.Values, error) {
-	vals := url.Values{}
-	vals.Set("ecosystem", string(req.Ecosystem))
-	vals.Set("pkg", req.Package)
-	vals.Set("version", req.Version)
-	if req.LocationHint != nil {
-		oneof := NewStrategyOneOf(req.LocationHint)
-		hint, err := json.Marshal(oneof)
-		if err != nil {
-			return nil, err
-		}
-		vals.Set("strategy_hint", string(hint))
-	}
-	return vals, nil
+func (req InferenceRequest) LocationHint() *rebuild.LocationHint {
+	s, _ := req.StrategyHint.Strategy()
+	return s.(*rebuild.LocationHint)
 }
 
 // SmoketestAttempt stores rebuild and execution metadata on a single smoketest run.

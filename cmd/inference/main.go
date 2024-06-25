@@ -31,6 +31,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
@@ -67,13 +68,13 @@ func HandleInfer(rw http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	req.ParseForm()
 	var ireq schema.InferenceRequest
-	if err := ireq.FromValues(req.Form); err != nil {
+	if err := form.Unmarshal(req.Form, &ireq); err != nil {
 		log.Println(errors.Wrap(err, "parsing inference request"))
 		http.Error(rw, err.Error(), 400)
 		return
 	}
-	if ireq.LocationHint != nil && ireq.LocationHint.Ref == "" && ireq.LocationHint.Dir != "" {
-		http.Error(rw, fmt.Sprintf("A location hint dir without ref is not yet supported. Received: %v", *ireq.LocationHint), 400)
+	if ireq.LocationHint() != nil && ireq.LocationHint().Ref == "" && ireq.LocationHint().Dir != "" {
+		http.Error(rw, fmt.Sprintf("A location hint dir without ref is not yet supported. Received: %v", *ireq.LocationHint()), 400)
 		return
 	}
 	client, err := httpegress.MakeClient(ctx, httpcfg)
@@ -95,11 +96,11 @@ func HandleInfer(rw http.ResponseWriter, req *http.Request) {
 	// TODO: Use ireq.LocationHint in these individual infer calls.
 	switch ireq.Ecosystem {
 	case rebuild.NPM:
-		s, err = doInfer(ctx, npm.Rebuilder{}, t, mux, ireq.LocationHint)
+		s, err = doInfer(ctx, npm.Rebuilder{}, t, mux, ireq.LocationHint())
 	case rebuild.PyPI:
-		s, err = doInfer(ctx, pypi.Rebuilder{}, t, mux, ireq.LocationHint)
+		s, err = doInfer(ctx, pypi.Rebuilder{}, t, mux, ireq.LocationHint())
 	case rebuild.CratesIO:
-		s, err = doInfer(ctx, cratesio.Rebuilder{}, t, mux, ireq.LocationHint)
+		s, err = doInfer(ctx, cratesio.Rebuilder{}, t, mux, ireq.LocationHint())
 	default:
 		http.Error(rw, "unsupported ecosystem", 400)
 		return
