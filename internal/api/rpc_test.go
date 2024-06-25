@@ -19,6 +19,8 @@ type FooRequest struct {
 	Foo string `form:",required"`
 }
 
+func (FooRequest) Validate() error { return nil }
+
 type FooResponse struct {
 	Bar string
 }
