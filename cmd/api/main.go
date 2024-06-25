@@ -37,6 +37,7 @@ import (
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/cache"
+	gcb "github.com/google/oss-rebuild/internal/cloudbuild"
 	httpinternal "github.com/google/oss-rebuild/internal/http"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/uri"
@@ -54,6 +55,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
+	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/idtoken"
 	"google.golang.org/api/iterator"
 )
@@ -451,12 +453,25 @@ func HandleRebuildPackage(rw http.ResponseWriter, req *http.Request) {
 	id := uuid.New().String()
 	var upstreamURI string
 	hashes := []crypto.Hash{crypto.SHA256}
+	metadata, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, id), "gs://"+*metadataBucket)
+	if err != nil {
+		log.Println(errors.Wrap(err, "creating metadata uploader"))
+		http.Error(rw, "Internal server error", 500)
+		return
+	}
+	svc, err := cloudbuild.NewService(ctx)
+	if err != nil {
+		log.Println(errors.Wrap(err, "creating CloudBuild service"))
+		http.Error(rw, "Internal server error", 500)
+		return
+	}
 	opts := rebuild.RemoteOptions{
+		GCBClient:           &gcb.Service{Service: svc},
 		Project:             *project,
 		BuildServiceAccount: *buildRemoteIdentity,
 		UtilPrebuildBucket:  *prebuildBucket,
 		LogsBucket:          *logsBucket,
-		MetadataBucket:      *metadataBucket,
+		MetadataStore:       metadata,
 	}
 	// TODO: These doRebuild functions should return a verdict, and this handler
 	// should forward those to the caller as a schema.Verdict.
@@ -474,12 +489,6 @@ func HandleRebuildPackage(rw http.ResponseWriter, req *http.Request) {
 	}
 	if err != nil {
 		log.Println(errors.Wrap(err, "error rebuilding"))
-		http.Error(rw, "Internal server error", 500)
-		return
-	}
-	metadata, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, id), "gs://"+*metadataBucket)
-	if err != nil {
-		log.Println(errors.Wrap(err, "creating metadata uploader"))
 		http.Error(rw, "Internal server error", 500)
 		return
 	}

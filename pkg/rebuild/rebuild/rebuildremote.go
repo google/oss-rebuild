@@ -33,10 +33,11 @@ import (
 
 // RemoteOptions provides the configuration to execute rebuilds on Cloud Build.
 type RemoteOptions struct {
+	GCBClient           gcb.Client
 	Project             string
 	BuildServiceAccount string
 	LogsBucket          string
-	MetadataBucket      string
+	MetadataStore       AssetStore
 	UtilPrebuildBucket  string
 	// TODO: Consider moving this to Strategy.
 	UseTimewarp bool
@@ -171,16 +172,12 @@ func makeDockerfile(input Input, opts RemoteOptions) (string, error) {
 func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptions) error {
 	t := input.Target
 	bi := BuildInfo{Target: t, ID: id, Builder: os.Getenv("K_REVISION"), BuildStart: time.Now()}
-	metadata, err := NewGCSStore(context.WithValue(ctx, RunID, id), "gs://"+opts.MetadataBucket)
-	if err != nil {
-		return errors.Wrap(err, "creating metadata uploader")
-	}
 	dockerfile, err := makeDockerfile(input, opts)
 	if err != nil {
 		return errors.Wrap(err, "creating dockerfile")
 	}
 	{
-		w, _, err := metadata.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
+		w, _, err := opts.MetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
 		if err != nil {
 			return errors.Wrap(err, "creating writer for Dockerfile")
 		}
@@ -191,24 +188,20 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 	}
 	// NOTE: Ignore the local writer since GCS doesn't flush writes until Close.
 	// TODO: Could be resolved by adding ResourcePath() method.
-	_, imageUploadPath, err := metadata.Writer(ctx, Asset{Target: t, Type: ContainerImageAsset})
+	_, imageUploadPath, err := opts.MetadataStore.Writer(ctx, Asset{Target: t, Type: ContainerImageAsset})
 	if err != nil {
 		return errors.Wrap(err, "creating dummy writer for container image")
 	}
-	_, rebuildUploadPath, err := metadata.Writer(ctx, Asset{Target: t, Type: RebuildAsset})
+	_, rebuildUploadPath, err := opts.MetadataStore.Writer(ctx, Asset{Target: t, Type: RebuildAsset})
 	if err != nil {
 		return errors.Wrap(err, "creating dummy writer for rebuild")
 	}
 	build := makeBuild(t, dockerfile, imageUploadPath, rebuildUploadPath, opts)
-	svc, err := cloudbuild.NewService(ctx)
-	if err != nil {
-		return errors.Wrap(err, "creating CloudBuild service")
-	}
-	if err := doCloudBuild(ctx, &gcb.Service{Service: svc}, build, opts, &bi); err != nil {
+	if err := doCloudBuild(ctx, opts.GCBClient, build, opts, &bi); err != nil {
 		return errors.Wrap(err, "performing build")
 	}
 	{
-		w, _, err := metadata.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
+		w, _, err := opts.MetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
 		if err != nil {
 			return errors.Wrap(err, "creating writer for build info")
 		}
