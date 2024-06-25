@@ -137,8 +137,8 @@ func doMavenRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest) (
 
 func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
-	sreq, err := schema.NewSmoketestRequest(req.Form)
-	if err != nil {
+	var sreq schema.SmoketestRequest
+	if err := sreq.FromValues(req.Form); err != nil {
 		http.Error(rw, err.Error(), 400)
 		return
 	}
@@ -180,13 +180,13 @@ func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 	var verdicts []rebuild.Verdict
 	switch sreq.Ecosystem {
 	case rebuild.NPM:
-		verdicts, err = doNpmRebuildSmoketest(ctx, *sreq, mux)
+		verdicts, err = doNpmRebuildSmoketest(ctx, sreq, mux)
 	case rebuild.PyPI:
-		verdicts, err = doPypiRebuildSmoketest(ctx, *sreq, mux)
+		verdicts, err = doPypiRebuildSmoketest(ctx, sreq, mux)
 	case rebuild.CratesIO:
-		verdicts, err = doCratesIORebuildSmoketest(ctx, *sreq, mux)
+		verdicts, err = doCratesIORebuildSmoketest(ctx, sreq, mux)
 	case rebuild.Maven:
-		verdicts, err = doMavenRebuildSmoketest(ctx, *sreq)
+		verdicts, err = doMavenRebuildSmoketest(ctx, sreq)
 	default:
 		http.Error(rw, fmt.Sprintf("Unsupported ecosystem: '%s'", sreq.Ecosystem), 400)
 		return

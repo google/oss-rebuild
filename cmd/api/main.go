@@ -86,8 +86,8 @@ func checkClose(closer io.Closer) {
 func HandleRebuildSmoketest(rw http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	req.ParseForm()
-	sreq, err := schema.NewSmoketestRequest(req.Form)
-	if err != nil {
+	var sreq schema.SmoketestRequest
+	if err := sreq.FromValues(req.Form); err != nil {
 		log.Println(errors.Wrap(err, "parsing smoketest request"))
 		http.Error(rw, err.Error(), 400)
 		return
@@ -341,8 +341,8 @@ func makeKMSSigner(ctx context.Context, cryptoKeyVersion string) (*dsse.Envelope
 func HandleRebuildPackage(rw http.ResponseWriter, req *http.Request) {
 	ctx := context.Background()
 	req.ParseForm()
-	rbreq, err := schema.NewRebuildPackageRequest(req.Form)
-	if err != nil {
+	var rbreq schema.RebuildPackageRequest
+	if err := rbreq.FromValues(req.Form); err != nil {
 		log.Println(errors.Wrap(err, "parsing rebuild request"))
 		http.Error(rw, err.Error(), 400)
 		return

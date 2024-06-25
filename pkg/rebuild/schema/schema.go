@@ -91,6 +91,7 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 }
 
 type Message interface {
+	FromValues(url.Values) error
 	ToValues() (url.Values, error)
 }
 
@@ -105,17 +106,16 @@ type SmoketestRequest struct {
 
 var _ Message = &SmoketestRequest{}
 
-// NewSmoketestRequest parses the smoketest form values into a SmoketestRequest.
-func NewSmoketestRequest(form url.Values) (*SmoketestRequest, error) {
-	req := &SmoketestRequest{}
+// FromValues parses the smoketest form values into a SmoketestRequest.
+func (req *SmoketestRequest) FromValues(form url.Values) error {
 	// TODO: check that it's a valid ecosystem?
 	req.Ecosystem = rebuild.Ecosystem(form.Get("ecosystem"))
 	if req.Ecosystem == "" {
-		return nil, errors.New("No ecosystem provided")
+		return errors.New("No ecosystem provided")
 	}
 	req.Package = form.Get("pkg")
 	if req.Package == "" {
-		return nil, errors.New("No pkg provided")
+		return errors.New("No pkg provided")
 	}
 	versions := form.Get("versions")
 	if versions != "" {
@@ -123,20 +123,20 @@ func NewSmoketestRequest(form url.Values) (*SmoketestRequest, error) {
 	}
 	req.ID = form.Get("id")
 	if req.ID == "" {
-		return nil, errors.New("No ID provided")
+		return errors.New("No ID provided")
 	}
 	if encStrat := form.Get("strategy"); encStrat != "" {
 		oneof := StrategyOneOf{}
 		err := json.Unmarshal([]byte(encStrat), &oneof)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if _, err := oneof.Strategy(); err != nil {
-			return nil, err
+			return err
 		}
 		req.StrategyOneof = &oneof
 	}
-	return req, nil
+	return nil
 }
 
 // ToValues converts a SmoketestRequest into a url.Values.
@@ -206,17 +206,16 @@ type RebuildPackageRequest struct {
 
 var _ Message = &SmoketestRequest{}
 
-// NewRebuildPackageRequest parses the rebuild form values into a RebuildPackageRequest.
-func NewRebuildPackageRequest(form url.Values) (*RebuildPackageRequest, error) {
-	req := &RebuildPackageRequest{}
+// FromValues parses the rebuild form values into a RebuildPackageRequest.
+func (req *RebuildPackageRequest) FromValues(form url.Values) error {
 	// TODO: check that it's a valid ecosystem?
 	req.Ecosystem = rebuild.Ecosystem(form.Get("ecosystem"))
 	if req.Ecosystem == "" {
-		return nil, errors.New("No ecosystem provided")
+		return errors.New("No ecosystem provided")
 	}
 	req.Package = form.Get("pkg")
 	if req.Package == "" {
-		return nil, errors.New("No pkg provided")
+		return errors.New("No pkg provided")
 	}
 	version := form.Get("version")
 	if version != "" {
@@ -224,16 +223,16 @@ func NewRebuildPackageRequest(form url.Values) (*RebuildPackageRequest, error) {
 	}
 	req.ID = form.Get("id")
 	if req.ID == "" {
-		return nil, errors.New("No ID provided")
+		return errors.New("No ID provided")
 	}
 	if fromRepo := form.Get("strategyFromRepo"); fromRepo != "" {
 		strategyFromRepo, err := strconv.ParseBool(fromRepo)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		req.StrategyFromRepo = strategyFromRepo
 	}
-	return req, nil
+	return nil
 }
 
 // ToValues converts a RebuildPackageRequest into a url.Values.
@@ -258,36 +257,35 @@ type InferenceRequest struct {
 var _ Message = &InferenceRequest{}
 
 // NewInferenceRequest parses the inference form values into an InferenceRequest.
-func NewInferenceRequest(form url.Values) (*InferenceRequest, error) {
-	req := &InferenceRequest{}
+func (req *InferenceRequest) FromValues(form url.Values) error {
 	// TODO: check that it's a valid ecosystem?
 	req.Ecosystem = rebuild.Ecosystem(form.Get("ecosystem"))
 	if req.Ecosystem == "" {
-		return nil, errors.New("No ecosystem provided")
+		return errors.New("No ecosystem provided")
 	}
 	req.Package = form.Get("pkg")
 	if req.Package == "" {
-		return nil, errors.New("No pkg provided")
+		return errors.New("No pkg provided")
 	}
 	req.Version = form.Get("version")
 	if req.Version == "" {
-		return nil, errors.New("No version provided")
+		return errors.New("No version provided")
 	}
 	if encHint := form.Get("strategy_hint"); encHint != "" {
 		var oneof StrategyOneOf
 		err := json.Unmarshal([]byte(encHint), &oneof)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		var s rebuild.Strategy
 		if s, err = oneof.Strategy(); err != nil {
-			return nil, err
+			return err
 		} else if _, ok := s.(*rebuild.LocationHint); !ok {
-			return nil, errors.Errorf("strategy hint should be a LocationHint, got: %T", s)
+			return errors.Errorf("strategy hint should be a LocationHint, got: %T", s)
 		}
 		req.LocationHint = s.(*rebuild.LocationHint)
 	}
-	return req, nil
+	return nil
 }
 
 // ToValues converts an InferenceRequest into a url.Values.

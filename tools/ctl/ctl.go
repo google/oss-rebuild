@@ -284,7 +284,7 @@ func (w *AttestWorker) Setup(ctx context.Context) {}
 func (w *AttestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	for _, v := range p.Versions {
 		<-w.limiters[p.Ecosystem]
-		resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("rebuild"), schema.RebuildPackageRequest{
+		resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("rebuild"), &schema.RebuildPackageRequest{
 			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 			Package:   p.Name,
 			Version:   v,
@@ -345,7 +345,7 @@ func (w *SmoketestWorker) Setup(ctx context.Context) {
 
 func (w *SmoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	<-w.limiters[p.Ecosystem]
-	resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("smoketest"), schema.SmoketestRequest{
+	resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("smoketest"), &schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 		Package:   p.Name,
 		Versions:  p.Versions,
@@ -578,7 +578,7 @@ var runOne = &cobra.Command{
 		}
 		var req *http.Request
 		if mode == firestore.SmoketestMode {
-			req = makeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), schema.SmoketestRequest{
+			req = makeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), &schema.SmoketestRequest{
 				Ecosystem:     rebuild.Ecosystem(*ecosystem),
 				Package:       *pkg,
 				Versions:      []string{*version},
@@ -586,7 +586,7 @@ var runOne = &cobra.Command{
 				ID:            "runOne",
 			})
 		} else if mode == firestore.AttestMode {
-			req = makeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), schema.RebuildPackageRequest{
+			req = makeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), &schema.RebuildPackageRequest{
 				Ecosystem:        rebuild.Ecosystem(*ecosystem),
 				Package:          *pkg,
 				Version:          *version,
