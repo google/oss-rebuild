@@ -352,6 +352,8 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--logs-bucket=${google_storage_bucket.logs.name}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
+        "--build-def-repo=https://github.com/google/oss-rebuild",
+        "--build-def-repo-dir=definitions",
       ]
       resources {
         limits = {

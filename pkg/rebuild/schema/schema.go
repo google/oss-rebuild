@@ -19,6 +19,7 @@ package schema
 import (
 	"encoding/json"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
@@ -196,11 +197,11 @@ type SmoketestResponse struct {
 // RebuildPackageRequest is a single request to the rebuild package endpoint.
 type RebuildPackageRequest struct {
 	// TODO: Should this also include Artifact?
-	Ecosystem     rebuild.Ecosystem
-	Package       string
-	Version       string
-	ID            string
-	StrategyOneof *StrategyOneOf
+	Ecosystem        rebuild.Ecosystem
+	Package          string
+	Version          string
+	ID               string
+	StrategyFromRepo bool
 }
 
 var _ Message = &SmoketestRequest{}
@@ -225,16 +226,12 @@ func NewRebuildPackageRequest(form url.Values) (*RebuildPackageRequest, error) {
 	if req.ID == "" {
 		return nil, errors.New("No ID provided")
 	}
-	if encStrat := form.Get("strategy"); encStrat != "" {
-		oneof := StrategyOneOf{}
-		err := json.Unmarshal([]byte(encStrat), &oneof)
+	if fromRepo := form.Get("strategyFromRepo"); fromRepo != "" {
+		strategyFromRepo, err := strconv.ParseBool(fromRepo)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := oneof.Strategy(); err != nil {
-			return nil, err
-		}
-		req.StrategyOneof = &oneof
+		req.StrategyFromRepo = strategyFromRepo
 	}
 	return req, nil
 }
@@ -246,13 +243,7 @@ func (req RebuildPackageRequest) ToValues() (url.Values, error) {
 	vals.Set("pkg", req.Package)
 	vals.Set("version", req.Version)
 	vals.Set("id", req.ID)
-	if req.StrategyOneof != nil {
-		encStrat, err := json.Marshal(req.StrategyOneof)
-		if err != nil {
-			return nil, err
-		}
-		vals.Set("strategy", string(encStrat))
-	}
+	vals.Set("strategyFromRepo", strconv.FormatBool(req.StrategyFromRepo))
 	return vals, nil
 }
 

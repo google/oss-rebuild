@@ -79,7 +79,8 @@ func TestCreateAttestations(t *testing.T) {
 		inputStrategy := &rebuild.LocationHint{Location: rebuild.Location{Repo: "http://github.com/foo/bar", Ref: "0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33"}}
 		strategy := &rebuild.ManualStrategy{Location: inputStrategy.Location, Deps: "echo deps", Build: "echo build", SystemDeps: []string{"git"}, OutputPath: "foo/bar"}
 		input := rebuild.Input{Target: target, Strategy: inputStrategy}
-		eqStmt, buildStmt, err := CreateAttestations(ctx, input, strategy, "test-id", rbSummary, upSummary, metadata)
+		loc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "b33eec7134eff8a16cb902b80e434de58bf37e2c", Dir: "definitions/cratesio/bytes/1.0.0/bytes-1.0.0.crate/build.yaml"}
+		eqStmt, buildStmt, err := CreateAttestations(ctx, input, strategy, "test-id", rbSummary, upSummary, metadata, loc)
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
@@ -157,8 +158,12 @@ func TestCreateAttestations(t *testing.T) {
       "buildType": "https://docs.oss-rebuild.dev/builds/Rebuild@v0.1",
       "externalParameters": {
         "artifact": "bytes-1.0.0.crate",
+        "buildConfigSource": {
+          "path": "definitions/cratesio/bytes/1.0.0/bytes-1.0.0.crate/build.yaml",
+          "ref": "b33eec7134eff8a16cb902b80e434de58bf37e2c",
+          "repository": "https://github.com/google/oss-rebuild"
+        },
         "ecosystem": "cratesio",
-        "manualBuild": "{\"rebuild_location_hint\":{\"repo\":\"http://github.com/foo/bar\",\"ref\":\"0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33\",\"dir\":\"\"}}",
         "package": "bytes",
         "version": "1.0.0"
       },
@@ -174,6 +179,10 @@ func TestCreateAttestations(t *testing.T) {
             "sha256": "abcd"
           },
           "name": "gcr.io/foo/bar"
+        },
+        {
+          "name": "build.fix.json",
+          "content": "eyJyZWJ1aWxkX2xvY2F0aW9uX2hpbnQiOnsicmVwbyI6Imh0dHA6Ly9naXRodWIuY29tL2Zvby9iYXIiLCJyZWYiOiIwYmVlYzdiNWVhM2YwZmRiYzk1ZDBkZDQ3ZjNjNWJjMjc1ZGE4YTMzIiwiZGlyIjoiIn19"
         }
       ]
     },

@@ -27,16 +27,21 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
 	"cloud.google.com/go/kms/apiv1/kmspb"
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/cache"
 	httpinternal "github.com/google/oss-rebuild/internal/http"
 	"github.com/google/oss-rebuild/internal/httpegress"
+	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/google/oss-rebuild/pkg/builddef"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
@@ -63,6 +68,8 @@ var (
 	attestationBucket     = flag.String("attestation-bucket", "", "GCS bucket to which to publish rebuild attestation")
 	logsBucket            = flag.String("logs-bucket", "", "GCS bucket for rebuild logs")
 	prebuildBucket        = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
+	buildDefRepo          = flag.String("build-def-repo", "", "repository for build definitions")
+	buildDefRepoDir       = flag.String("build-def-repo-dir", ".", "relpath within the build definitions repository")
 	overwriteAttestations = flag.Bool("overwrite-attestations", false, "whether to overwrite existing attestations when writing to GCS")
 )
 
@@ -381,15 +388,47 @@ func HandleRebuildPackage(rw http.ResponseWriter, req *http.Request) {
 		}
 	}
 	var manualStrategy, strategy rebuild.Strategy
+	var buildDefLoc rebuild.Location
 	ireq := schema.InferenceRequest{
 		Ecosystem: rbreq.Ecosystem,
 		Package:   rbreq.Package,
 		Version:   rbreq.Version,
 	}
-	if rbreq.StrategyOneof != nil {
-		manualStrategy, err = rbreq.StrategyOneof.Strategy()
+	if rbreq.StrategyFromRepo {
+		repo, err := uri.CanonicalizeRepoURI(*buildDefRepo)
 		if err != nil {
-			err := errors.Wrap(err, "parsing provided strategy")
+			err := errors.Wrap(err, "canonicalizing build def repo")
+			log.Println(err)
+			http.Error(rw, err.Error(), 400)
+			return
+		}
+		dir := path.Clean(*buildDefRepoDir)
+		defs, err := builddef.NewBuildDefinitionSetFromGit(&builddef.GitBuildDefinitionSetOptions{
+			CloneOptions: git.CloneOptions{
+				URL:           repo,
+				ReferenceName: plumbing.Main,
+				Depth:         1,
+				NoCheckout:    true,
+			},
+			RelativePath: dir,
+			// TODO: Limit this further to only the target's path we want.
+			SparseCheckoutDirs: []string{dir},
+		})
+		if err != nil {
+			err = errors.Wrap(err, "creating build definition repo reader")
+			log.Println(err)
+			http.Error(rw, err.Error(), 400)
+			return
+		}
+		pth, _ := defs.Path(ctx, t)
+		buildDefLoc = rebuild.Location{
+			Repo: repo,
+			Ref:  defs.Ref().String(),
+			Dir:  pth,
+		}
+		manualStrategy, err := defs.Get(ctx, t)
+		if err != nil {
+			err = errors.Wrap(err, "accessing build definition")
 			log.Println(err)
 			http.Error(rw, err.Error(), 400)
 			return
@@ -458,7 +497,7 @@ func HandleRebuildPackage(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	input := rebuild.Input{Target: t, Strategy: manualStrategy}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, metadata)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, metadata, buildDefLoc)
 	if err != nil {
 		log.Println(errors.Wrap(err, "error creating attestations"))
 		http.Error(rw, "Internal server error", 500)

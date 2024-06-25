@@ -36,7 +36,7 @@ const (
 )
 
 // CreateAttestations creates the SLSA attestations associated with a rebuild.
-func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
+func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, buildDef rebuild.Location) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
 	t, manualStrategy := input.Target, input.Strategy
 	var dockerfile []byte
 	{
@@ -123,7 +123,7 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "marshalling Strategy")
 	}
-	externalParams := map[string]string{
+	externalParams := map[string]any{
 		"ecosystem": string(t.Ecosystem),
 		"package":   t.Package,
 		"version":   t.Version,
@@ -131,11 +131,16 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 	}
 	// Only add manual strategy field if it was used.
 	if manualStrategy != nil {
-		raw, err := json.Marshal(schema.NewStrategyOneOf(manualStrategy))
+		rawStrategy, err := json.Marshal(schema.NewStrategyOneOf(manualStrategy))
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "marshalling manual strategy")
 		}
-		externalParams["manualBuild"] = string(raw)
+		rd = append(rd, slsa1.ResourceDescriptor{Name: "build.fix.json", Content: rawStrategy})
+		externalParams["buildConfigSource"] = map[string]string{
+			"ref":        buildDef.Ref,
+			"repository": buildDef.Repo,
+			"path":       buildDef.Dir,
+		}
 	}
 	stmt := &in_toto.ProvenanceStatementSLSA1{
 		StatementHeader: in_toto.StatementHeader{
