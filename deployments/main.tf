@@ -318,6 +318,7 @@ resource "google_cloud_run_v2_service" "inference" {
       args = [
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
+        "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
       ]
       resources {
         limits = {

@@ -7,6 +7,7 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
@@ -46,11 +47,15 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 
 type InferDeps struct {
 	HTTPClient httpx.BasicClient
+	GitCache   *gitx.Cache
 }
 
 func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*schema.StrategyOneOf, error) {
 	if req.LocationHint() != nil && req.LocationHint().Ref == "" && req.LocationHint().Dir != "" {
 		return nil, api.AsStatus(codes.Unimplemented, errors.New("location hint dir without ref not implemented"))
+	}
+	if deps.GitCache != nil {
+		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, *deps.GitCache)
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	mux := rebuild.RegistryMux{
