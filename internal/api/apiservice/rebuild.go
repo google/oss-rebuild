@@ -114,6 +114,64 @@ type RebuildPackageDeps struct {
 	InferStub             api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
 }
 
+type StrategyAndOrigin struct {
+	Strategy       rebuild.Strategy
+	ManualStrategy rebuild.Strategy
+	buildDefLoc    rebuild.Location
+}
+
+func getStrategy(ctx context.Context, t rebuild.Target, deps *RebuildPackageDeps, fromRepo bool) (*StrategyAndOrigin, error) {
+	strat := &StrategyAndOrigin{}
+	ireq := schema.InferenceRequest{
+		Ecosystem: t.Ecosystem,
+		Package:   t.Package,
+		Version:   t.Version,
+	}
+	if fromRepo {
+		defs, err := builddef.NewBuildDefinitionSetFromGit(&builddef.GitBuildDefinitionSetOptions{
+			CloneOptions: git.CloneOptions{
+				URL:           deps.BuildDefRepo.Repo,
+				ReferenceName: plumbing.ReferenceName(deps.BuildDefRepo.Ref),
+				Depth:         1,
+				NoCheckout:    true,
+			},
+			RelativePath: deps.BuildDefRepo.Dir,
+			// TODO: Limit this further to only the target's path we want.
+			SparseCheckoutDirs: []string{deps.BuildDefRepo.Dir},
+		})
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating build definition repo reader"))
+		}
+		pth, _ := defs.Path(ctx, t)
+		strat.buildDefLoc = rebuild.Location{
+			Repo: deps.BuildDefRepo.Repo,
+			Ref:  defs.Ref().String(),
+			Dir:  pth,
+		}
+		strat.ManualStrategy, err = defs.Get(ctx, t)
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "accessing build definition"))
+		}
+		if hint, ok := strat.ManualStrategy.(*rebuild.LocationHint); ok && hint != nil {
+			ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
+		} else if strat.ManualStrategy != nil {
+			strat.Strategy = strat.ManualStrategy
+		}
+	}
+	if strat.Strategy == nil {
+		s, err := deps.InferStub(ctx, ireq)
+		if err != nil {
+			// TODO: Surface better error than Internal.
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "fetching inference"))
+		}
+		strat.Strategy, err = s.Strategy()
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "reading strategy"))
+		}
+	}
+	return strat, nil
+}
+
 func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*api.NoReturn, error) {
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
@@ -135,54 +193,9 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 			return nil, api.AsStatus(codes.AlreadyExists, errors.New("conflict with existing attestation bundle"))
 		}
 	}
-	var manualStrategy, strategy rebuild.Strategy
-	var buildDefLoc rebuild.Location
-	ireq := schema.InferenceRequest{
-		Ecosystem: req.Ecosystem,
-		Package:   req.Package,
-		Version:   req.Version,
-	}
-	if req.StrategyFromRepo {
-		defs, err := builddef.NewBuildDefinitionSetFromGit(&builddef.GitBuildDefinitionSetOptions{
-			CloneOptions: git.CloneOptions{
-				URL:           deps.BuildDefRepo.Repo,
-				ReferenceName: plumbing.ReferenceName(deps.BuildDefRepo.Ref),
-				Depth:         1,
-				NoCheckout:    true,
-			},
-			RelativePath: deps.BuildDefRepo.Dir,
-			// TODO: Limit this further to only the target's path we want.
-			SparseCheckoutDirs: []string{deps.BuildDefRepo.Dir},
-		})
-		if err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating build definition repo reader"))
-		}
-		pth, _ := defs.Path(ctx, t)
-		buildDefLoc = rebuild.Location{
-			Repo: deps.BuildDefRepo.Repo,
-			Ref:  defs.Ref().String(),
-			Dir:  pth,
-		}
-		manualStrategy, err := defs.Get(ctx, t)
-		if err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "accessing build definition"))
-		}
-		if hint, ok := manualStrategy.(*rebuild.LocationHint); ok && hint != nil {
-			ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
-		} else if manualStrategy != nil {
-			strategy = manualStrategy
-		}
-	}
-	if strategy == nil {
-		s, err := deps.InferStub(ctx, ireq)
-		if err != nil {
-			// TODO: Surface better error than Internal.
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "fetching inference"))
-		}
-		strategy, err = s.Strategy()
-		if err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "reading strategy"))
-		}
+	strat, err := getStrategy(ctx, t, deps, req.StrategyFromRepo)
+	if err != nil {
+		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "getting strategy"))
 	}
 	id := uuid.New().String()
 	metadata, err := deps.MetadataBuilder(ctx, id)
@@ -204,11 +217,11 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	switch t.Ecosystem {
 	case rebuild.NPM:
 		hashes = append(hashes, crypto.SHA512)
-		upstreamURI, err = doNPMRebuild(ctx, t, id, mux, strategy, opts)
+		upstreamURI, err = doNPMRebuild(ctx, t, id, mux, strat.Strategy, opts)
 	case rebuild.CratesIO:
-		upstreamURI, err = doCratesRebuild(ctx, t, id, mux, strategy, opts)
+		upstreamURI, err = doCratesRebuild(ctx, t, id, mux, strat.Strategy, opts)
 	case rebuild.PyPI:
-		upstreamURI, err = doPyPIRebuild(ctx, t, id, mux, strategy, opts)
+		upstreamURI, err = doPyPIRebuild(ctx, t, id, mux, strat.Strategy, opts)
 	default:
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
@@ -224,8 +237,8 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if !exactMatch && !canonicalizedMatch {
 		return nil, api.AsStatus(codes.FailedPrecondition, errors.Wrap(err, "rebuild content mismatch"))
 	}
-	input := rebuild.Input{Target: t, Strategy: manualStrategy}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, metadata, buildDefLoc)
+	input := rebuild.Input{Target: t, Strategy: strat.ManualStrategy}
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat.Strategy, id, rb, up, metadata, strat.buildDefLoc)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating attestations"))
 	}
