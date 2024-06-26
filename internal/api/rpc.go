@@ -36,6 +36,9 @@ func Stub[I schema.Message, O any](client httpinternal.BasicClient, u url.URL) S
 		if err != nil {
 			return nil, errors.Wrap(err, "serializing request")
 		}
+		if err := i.Validate(); err != nil {
+			return nil, errors.Wrap(err, "serializing request")
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(values.Encode()))
 		if err != nil {
 			return nil, errors.Wrap(err, "building http request")
@@ -92,6 +95,11 @@ func Handler[I schema.Message, O any, D Dependencies](initDeps InitT[D], handler
 		var req I
 		if err := form.Unmarshal(r.Form, &req); err != nil {
 			log.Println(errors.Wrap(err, "parsing request"))
+			http.Error(rw, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+		if err := req.Validate(); err != nil {
+			log.Println(errors.Wrap(err, "validating request"))
 			http.Error(rw, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}

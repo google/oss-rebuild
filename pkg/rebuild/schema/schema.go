@@ -88,13 +88,16 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 }
 
 type Message interface {
+	Validate() error
 }
 
 type VersionRequest struct {
 	Service string `form:","`
 }
 
-var _ Message = &VersionRequest{}
+var _ Message = VersionRequest{}
+
+func (VersionRequest) Validate() error { return nil }
 
 type VersionResponse struct {
 	Version string
@@ -109,25 +112,27 @@ type SmoketestRequest struct {
 	Strategy  *StrategyOneOf    `form:""`
 }
 
-var _ Message = &SmoketestRequest{}
+var _ Message = SmoketestRequest{}
+
+func (SmoketestRequest) Validate() error { return nil }
 
 // ToInputs converts a SmoketestRequest into rebuild.Input objects.
-func (sreq *SmoketestRequest) ToInputs() ([]rebuild.Input, error) {
+func (req SmoketestRequest) ToInputs() ([]rebuild.Input, error) {
 	var inputs []rebuild.Input
-	for _, v := range sreq.Versions {
+	for _, v := range req.Versions {
 		inputs = append(inputs, rebuild.Input{
 			Target: rebuild.Target{
-				Ecosystem: sreq.Ecosystem,
-				Package:   sreq.Package,
+				Ecosystem: req.Ecosystem,
+				Package:   req.Package,
 				Version:   v,
 			},
 		})
 	}
-	if sreq.Strategy != nil {
+	if req.Strategy != nil {
 		if len(inputs) != 1 {
-			return nil, errors.Errorf("strategy provided, expected exactly one version, got %d", len(sreq.Versions))
+			return nil, errors.Errorf("strategy provided, expected exactly one version, got %d", len(req.Versions))
 		}
-		strategy, err := sreq.Strategy.Strategy()
+		strategy, err := req.Strategy.Strategy()
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing strategy in SmoketestRequest")
 		}
@@ -159,7 +164,9 @@ type RebuildPackageRequest struct {
 	StrategyFromRepo bool              `form:""`
 }
 
-var _ Message = &SmoketestRequest{}
+var _ Message = RebuildPackageRequest{}
+
+func (RebuildPackageRequest) Validate() error { return nil }
 
 // InferenceRequest is a single request to the inference endpoint.
 type InferenceRequest struct {
@@ -169,7 +176,7 @@ type InferenceRequest struct {
 	StrategyHint *StrategyOneOf    `form:""`
 }
 
-var _ Message = &InferenceRequest{}
+var _ Message = InferenceRequest{}
 
 func (req InferenceRequest) Validate() error {
 	if req.StrategyHint == nil {
@@ -191,6 +198,8 @@ type CreateRunRequest struct {
 	Type string `form:","`
 	Hash string `form:","`
 }
+
+var _ Message = CreateRunRequest{}
 
 // Validate parses the CreateRun form values into a CreateRunRequest.
 func (req CreateRunRequest) Validate() error {
