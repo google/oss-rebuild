@@ -109,6 +109,10 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "making http client")
 	}
+	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating firestore client")
+	}
 	d.Signer, err = makeKMSSigner(ctx, *signingKeyVersion)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating signer")
