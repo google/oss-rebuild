@@ -2,7 +2,6 @@ package apiservice
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -64,27 +63,18 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 		executor = resp.Executor
 	}
 	for _, v := range verdicts {
-		var rawStrategy string
-		if enc, err := json.Marshal(v.StrategyOneof); err != nil {
-			log.Printf("invalid strategy returned from smoketest: %v\n", err)
-		} else {
-			rawStrategy = string(enc)
-		}
 		_, err := deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(sreq.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(sreq.ID).Set(ctx, schema.SmoketestAttempt{
-			Ecosystem:         string(v.Target.Ecosystem),
-			Package:           v.Target.Package,
-			Version:           v.Target.Version,
-			Artifact:          v.Target.Artifact,
-			Success:           v.Message == "",
-			Message:           v.Message,
-			Strategy:          rawStrategy,
-			TimeCloneEstimate: v.Timings.Source.Seconds(),
-			TimeSource:        v.Timings.Source.Seconds(),
-			TimeInfer:         v.Timings.Infer.Seconds(),
-			TimeBuild:         v.Timings.Build.Seconds(),
-			ExecutorVersion:   executor,
-			RunID:             sreq.ID,
-			Created:           time.Now().UnixMilli(),
+			Ecosystem:       string(v.Target.Ecosystem),
+			Package:         v.Target.Package,
+			Version:         v.Target.Version,
+			Artifact:        v.Target.Artifact,
+			Success:         v.Message == "",
+			Message:         v.Message,
+			Strategy:        v.StrategyOneof,
+			Timings:         v.Timings,
+			ExecutorVersion: executor,
+			RunID:           sreq.ID,
+			Created:         time.Now().UnixMilli(),
 		})
 		if err != nil {
 			return nil, api.AsStatus(codes.Internal, errors.Wrapf(err, "writing record for %s@%s", sreq.Package, v.Target.Version))
