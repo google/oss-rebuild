@@ -151,6 +151,28 @@ cratesio_cargo_package:
     dir: the_dir
 `,
 	},
+	{
+		name: "ManualStrategy",
+		strategy: &rebuild.ManualStrategy{
+			Location: rebuild.Location{
+				Dir:  "the_dir",
+				Ref:  "the_ref",
+				Repo: "the_repo",
+			},
+			Build: "foo",
+			Deps:  "bar",
+		},
+		jsonEncoded: `{"manual":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","deps":"bar","build":"foo","system_deps":null,"output_path":""}}`,
+		yamlEncoded: `
+manual:
+  location:
+    repo: the_repo
+    ref: the_ref
+    dir: the_dir
+  deps: bar
+  build: foo
+`,
+	},
 }
 
 func normalizeYML(yml string) string {
