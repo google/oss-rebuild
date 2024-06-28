@@ -149,7 +149,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 			SparseCheckoutDirs: []string{deps.BuildDefRepo.Dir},
 		})
 		if err != nil {
-			return nil, nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating build definition repo reader"))
+			return nil, nil, errors.Wrap(err, "creating build definition repo reader")
 		}
 		pth, _ := defs.Path(ctx, t)
 		rstrat = &repoStrategy{
@@ -161,7 +161,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		}
 		rstrat.RepoStrategy, err = defs.Get(ctx, t)
 		if err != nil {
-			return nil, nil, api.AsStatus(codes.Internal, errors.Wrap(err, "accessing build definition"))
+			return nil, nil, errors.Wrap(err, "accessing build definition")
 		}
 		if hint, ok := rstrat.RepoStrategy.(*rebuild.LocationHint); ok && hint != nil {
 			ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
@@ -173,11 +173,11 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		s, err := deps.InferStub(ctx, ireq)
 		if err != nil {
 			// TODO: Surface better error than Internal.
-			return nil, nil, api.AsStatus(codes.Internal, errors.Wrap(err, "fetching inference"))
+			return nil, nil, errors.Wrap(err, "fetching inference")
 		}
 		strat, err = s.Strategy()
 		if err != nil {
-			return nil, nil, api.AsStatus(codes.Internal, errors.Wrap(err, "reading strategy"))
+			return nil, nil, errors.Wrap(err, "reading strategy")
 		}
 	}
 	return strat, rstrat, nil
@@ -187,7 +187,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	id := uuid.New().String()
 	metadata, err := deps.MetadataBuilder(ctx, id)
 	if err != nil {
-		return api.AsStatus(codes.Internal, errors.Wrap(err, "creating metadata store"))
+		return errors.Wrap(err, "creating metadata store")
 	}
 	hashes := []crypto.Hash{crypto.SHA256}
 	opts := rebuild.RemoteOptions{
@@ -211,11 +211,11 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
 	if err != nil {
-		return api.AsStatus(codes.Internal, errors.Wrap(err, "rebuilding"))
+		return errors.Wrap(err, "rebuilding")
 	}
 	rb, up, err := verifier.SummarizeArtifacts(ctx, metadata, t, upstreamURI, hashes)
 	if err != nil {
-		return api.AsStatus(codes.Internal, errors.Wrap(err, "comparing artifacts"))
+		return errors.Wrap(err, "comparing artifacts")
 	}
 	exactMatch := bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
 	canonicalizedMatch := bytes.Equal(rb.CanonicalHash.Sum(nil), up.CanonicalHash.Sum(nil))
@@ -225,10 +225,10 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	input := rebuild.Input{Target: t, Strategy: rstrat.RepoStrategy}
 	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat, id, rb, up, metadata, rstrat.BuildDefLoc)
 	if err != nil {
-		return api.AsStatus(codes.Internal, errors.Wrap(err, "creating attestations"))
+		return errors.Wrap(err, "creating attestations")
 	}
 	if err := a.PublishBundle(ctx, t, eqStmt, buildStmt); err != nil {
-		return api.AsStatus(codes.Internal, errors.Wrap(err, "publishing bundle"))
+		return errors.Wrap(err, "publishing bundle")
 	}
 	return nil
 }
@@ -238,18 +238,18 @@ func doRebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, dep
 	a := verifier.Attestor{Store: deps.AttestationStore, Signer: signer, AllowOverwrite: deps.OverwriteAttestations}
 	if !deps.OverwriteAttestations {
 		if exists, err := a.BundleExists(ctx, t); err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "checking existing bundle"))
+			return nil, errors.Wrap(err, "checking existing bundle")
 		} else if exists {
 			return nil, api.AsStatus(codes.AlreadyExists, errors.New("conflict with existing attestation bundle"))
 		}
 	}
 	strat, rstrat, err := getStrategy(ctx, deps, t, req.StrategyFromRepo)
 	if err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "getting strategy"))
+		return nil, errors.Wrap(err, "getting strategy")
 	}
 	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat)
 	if err != nil {
-		return strat, api.AsStatus(codes.Internal, errors.Wrap(err, "executing rebuild"))
+		return strat, errors.Wrap(err, "executing rebuild")
 	}
 	return strat, nil
 }
@@ -264,7 +264,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		PyPI:     pypireg.HTTPRegistry{Client: regclient},
 	}
 	if err := populateArtifact(ctx, &t, mux); err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "selecting artifact"))
+		return nil, errors.Wrap(err, "selecting artifact")
 	}
 	strat, rberr := doRebuildPackage(ctx, req, deps, mux, t)
 	v := schema.Verdict{
@@ -296,7 +296,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Created:         time.Now().UnixMilli(),
 	})
 	if err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "storing results in firestore"))
+		return nil, errors.Wrap(err, "storing results in firestore")
 	}
 	return &v, nil
 }
