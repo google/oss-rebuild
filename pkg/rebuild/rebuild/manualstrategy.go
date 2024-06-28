@@ -17,10 +17,10 @@ package rebuild
 // ManualStrategy allows full control over the build instruction steps, for builds that don't fit any other strategy.
 type ManualStrategy struct {
 	Location
-	Deps       string
-	Build      string
-	SystemDeps []string
-	OutputPath string
+	Deps       string   `json:"deps" yaml:"deps,omitempty"`
+	Build      string   `json:"build" yaml:"build,omitempty"`
+	SystemDeps []string `json:"system_deps" yaml:"system_deps,omitempty"`
+	OutputPath string   `json:"output_path" yaml:"output_path,omitempty"`
 }
 
 var _ Strategy = &ManualStrategy{}

@@ -198,7 +198,7 @@ func TestCreateAttestations(t *testing.T) {
       "byproducts": [
         {
           "name": "build.json",
-          "content": "e30="
+          "content": "eyJtYW51YWwiOnsicmVwbyI6Imh0dHA6Ly9naXRodWIuY29tL2Zvby9iYXIiLCJyZWYiOiIwYmVlYzdiNWVhM2YwZmRiYzk1ZDBkZDQ3ZjNjNWJjMjc1ZGE4YTMzIiwiZGlyIjoiIiwiZGVwcyI6ImVjaG8gZGVwcyIsImJ1aWxkIjoiZWNobyBidWlsZCIsInN5c3RlbV9kZXBzIjpbImdpdCJdLCJvdXRwdXRfcGF0aCI6ImZvby9iYXIifX0="
         },
         {
           "name": "Dockerfile",
