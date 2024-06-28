@@ -26,7 +26,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/hashext"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	cloudbuild "google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/cloudbuild/v1"
 )
 
 func TestCreateAttestations(t *testing.T) {
