@@ -120,14 +120,17 @@ type RebuildPackageDeps struct {
 	InferStub             api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
 }
 
-type StrategyAndOrigin struct {
-	Strategy       rebuild.Strategy
-	ManualStrategy rebuild.Strategy
-	buildDefLoc    rebuild.Location
+type repoStrategy struct {
+	// The strategy that was pulled from the build def repo.
+	RepoStrategy rebuild.Strategy
+	// Details about which build def repo this strategy was pulled from.
+	BuildDefLoc rebuild.Location
 }
 
-func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target, fromRepo bool) (*StrategyAndOrigin, error) {
-	strat := &StrategyAndOrigin{}
+// getStrategy determines which strategy we should execute. If a build def repo was used, that data will be included as repoStrategy.
+func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target, fromRepo bool) (rebuild.Strategy, *repoStrategy, error) {
+	var strat rebuild.Strategy
+	var rstrat *repoStrategy
 	ireq := schema.InferenceRequest{
 		Ecosystem: t.Ecosystem,
 		Package:   t.Package,
@@ -146,39 +149,41 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 			SparseCheckoutDirs: []string{deps.BuildDefRepo.Dir},
 		})
 		if err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating build definition repo reader"))
+			return nil, nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating build definition repo reader"))
 		}
 		pth, _ := defs.Path(ctx, t)
-		strat.buildDefLoc = rebuild.Location{
-			Repo: deps.BuildDefRepo.Repo,
-			Ref:  defs.Ref().String(),
-			Dir:  pth,
+		rstrat = &repoStrategy{
+			BuildDefLoc: rebuild.Location{
+				Repo: deps.BuildDefRepo.Repo,
+				Ref:  defs.Ref().String(),
+				Dir:  pth,
+			},
 		}
-		strat.ManualStrategy, err = defs.Get(ctx, t)
+		rstrat.RepoStrategy, err = defs.Get(ctx, t)
 		if err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "accessing build definition"))
+			return nil, nil, api.AsStatus(codes.Internal, errors.Wrap(err, "accessing build definition"))
 		}
-		if hint, ok := strat.ManualStrategy.(*rebuild.LocationHint); ok && hint != nil {
+		if hint, ok := rstrat.RepoStrategy.(*rebuild.LocationHint); ok && hint != nil {
 			ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
-		} else if strat.ManualStrategy != nil {
-			strat.Strategy = strat.ManualStrategy
+		} else if rstrat.RepoStrategy != nil {
+			strat = rstrat.RepoStrategy
 		}
 	}
-	if strat.Strategy == nil {
+	if strat == nil {
 		s, err := deps.InferStub(ctx, ireq)
 		if err != nil {
 			// TODO: Surface better error than Internal.
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "fetching inference"))
+			return nil, nil, api.AsStatus(codes.Internal, errors.Wrap(err, "fetching inference"))
 		}
-		strat.Strategy, err = s.Strategy()
+		strat, err = s.Strategy()
 		if err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "reading strategy"))
+			return nil, nil, api.AsStatus(codes.Internal, errors.Wrap(err, "reading strategy"))
 		}
 	}
-	return strat, nil
+	return strat, rstrat, nil
 }
 
-func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strat StrategyAndOrigin) (err error) {
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strat rebuild.Strategy, rstrat *repoStrategy) (err error) {
 	id := uuid.New().String()
 	metadata, err := deps.MetadataBuilder(ctx, id)
 	if err != nil {
@@ -197,11 +202,11 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	switch t.Ecosystem {
 	case rebuild.NPM:
 		hashes = append(hashes, crypto.SHA512)
-		upstreamURI, err = doNPMRebuild(ctx, t, id, mux, strat.Strategy, opts)
+		upstreamURI, err = doNPMRebuild(ctx, t, id, mux, strat, opts)
 	case rebuild.CratesIO:
-		upstreamURI, err = doCratesRebuild(ctx, t, id, mux, strat.Strategy, opts)
+		upstreamURI, err = doCratesRebuild(ctx, t, id, mux, strat, opts)
 	case rebuild.PyPI:
-		upstreamURI, err = doPyPIRebuild(ctx, t, id, mux, strat.Strategy, opts)
+		upstreamURI, err = doPyPIRebuild(ctx, t, id, mux, strat, opts)
 	default:
 		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
@@ -217,8 +222,8 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if !exactMatch && !canonicalizedMatch {
 		return api.AsStatus(codes.FailedPrecondition, errors.Wrap(err, "rebuild content mismatch"))
 	}
-	input := rebuild.Input{Target: t, Strategy: strat.ManualStrategy}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat.Strategy, id, rb, up, metadata, strat.buildDefLoc)
+	input := rebuild.Input{Target: t, Strategy: rstrat.RepoStrategy}
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat, id, rb, up, metadata, rstrat.BuildDefLoc)
 	if err != nil {
 		return api.AsStatus(codes.Internal, errors.Wrap(err, "creating attestations"))
 	}
@@ -228,7 +233,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	return nil
 }
 
-func doRebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps, mux rebuild.RegistryMux, t rebuild.Target) (*StrategyAndOrigin, error) {
+func doRebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps, mux rebuild.RegistryMux, t rebuild.Target) (rebuild.Strategy, error) {
 	signer := verifier.InTotoEnvelopeSigner{EnvelopeSigner: deps.Signer}
 	a := verifier.Attestor{Store: deps.AttestationStore, Signer: signer, AllowOverwrite: deps.OverwriteAttestations}
 	if !deps.OverwriteAttestations {
@@ -238,11 +243,11 @@ func doRebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, dep
 			return nil, api.AsStatus(codes.AlreadyExists, errors.New("conflict with existing attestation bundle"))
 		}
 	}
-	strat, err := getStrategy(ctx, deps, t, req.StrategyFromRepo)
+	strat, rstrat, err := getStrategy(ctx, deps, t, req.StrategyFromRepo)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "getting strategy"))
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, *strat)
+	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat)
 	if err != nil {
 		return strat, api.AsStatus(codes.Internal, errors.Wrap(err, "executing rebuild"))
 	}
@@ -266,7 +271,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Target: t,
 	}
 	if strat != nil {
-		v.StrategyOneof = schema.NewStrategyOneOf(strat.Strategy)
+		v.StrategyOneof = schema.NewStrategyOneOf(strat)
 	}
 	if rberr != nil {
 		v.Message = rberr.Error()
