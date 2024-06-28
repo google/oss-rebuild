@@ -187,7 +187,7 @@ func TestDoCloudBuild(t *testing.T) {
 					Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: beforeBuild})),
 				}, nil
 			},
-			GetOperationFunc: func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
+			WaitForOperationFunc: func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
 				return &cloudbuild.Operation{
 					Name:     "operations/build-id",
 					Done:     true,

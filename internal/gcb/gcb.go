@@ -29,22 +29,44 @@ import (
 // Client interface abstracts Cloud Build service interactions.
 type Client interface {
 	CreateBuild(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error)
-	GetOperation(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error)
+	WaitForOperation(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error)
 }
 
-// Service is a concrete implementation using the Cloud Build service.
-type Service struct {
-	Service *cloudbuild.Service
+// clientImpl is a concrete implementation of the Client interface using the Cloud Build service.
+type clientImpl struct {
+	service      *cloudbuild.Service
+	pollInterval time.Duration
+}
+
+// NewClient creates a new Client with the given options.
+func NewClient(s *cloudbuild.Service) Client {
+	// TODO: Add optional configuration of poll value if/when needed.
+	return &clientImpl{
+		service:      s,
+		pollInterval: 10 * time.Second, // default GCB API quota is low
+	}
 }
 
 // CreateBuild creates and starts a GCB Build.
-func (cbs *Service) CreateBuild(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
-	return cbs.Service.Projects.Builds.Create(project, build).Context(ctx).Do()
+func (c *clientImpl) CreateBuild(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
+	return c.service.Projects.Builds.Create(project, build).Context(ctx).Do()
 }
 
-// GetOperation polls and returns the current state of a GCB operation.
-func (cbs *Service) GetOperation(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
-	return cbs.Service.Operations.Get(op.Name).Context(ctx).Do()
+// WaitForOperation polls and waits for the operation to complete.
+func (c *clientImpl) WaitForOperation(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
+	for !op.Done {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(c.pollInterval):
+			var err error
+			op, err = c.service.Operations.Get(op.Name).Context(ctx).Do()
+			if err != nil {
+				return nil, errors.Wrap(err, "fetching operation")
+			}
+		}
+	}
+	return op, nil
 }
 
 // DoBuild executes a build on Cloud Build, waits for completion, and updates the provided BuildInfo.
@@ -53,12 +75,9 @@ func DoBuild(ctx context.Context, client Client, project string, build *cloudbui
 	if err != nil {
 		return nil, err
 	}
-	for !op.Done {
-		time.Sleep(10 * time.Second)
-		op, err = client.GetOperation(ctx, op)
-		if err != nil {
-			return nil, errors.Wrap(err, "fetching operation")
-		}
+	op, err = client.WaitForOperation(ctx, op)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching operation")
 	}
 	// NOTE: Build status check will handle failures with better error messages.
 	if op.Error != nil {

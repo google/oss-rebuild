@@ -117,7 +117,7 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "creating CloudBuild service")
 	}
-	d.GCBClient = &gcb.Service{Service: svc}
+	d.GCBClient = gcb.NewClient(svc)
 	d.BuildProject = *project
 	d.BuildServiceAccount = *buildRemoteIdentity
 	d.UtilPrebuildBucket = *prebuildBucket
