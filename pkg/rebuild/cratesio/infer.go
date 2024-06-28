@@ -35,14 +35,13 @@ import (
 func getCargoTOML(tree *object.Tree, path string) (ct reg.CargoTOML, err error) {
 	f, err := tree.File(path)
 	if err != nil {
-		return
+		return ct, err
 	}
 	p, err := f.Contents()
 	if err != nil {
-		return
+		return ct, err
 	}
-	err = toml.Unmarshal([]byte(p), &ct)
-	return
+	return ct, toml.Unmarshal([]byte(p), &ct)
 }
 
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
@@ -59,11 +58,9 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	switch err {
 	case nil:
 	case transport.ErrAuthenticationRequired:
-		err = errors.Errorf("repo invalid or private [repo=%s]", r.URI)
-		return
+		return r, errors.Errorf("repo invalid or private [repo=%s]", r.URI)
 	default:
-		err = errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
-		return
+		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
 	}
 	// Do Cargo.toml search.
 	head, _ := r.Repository.Head()
@@ -83,7 +80,7 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 			log.Printf("Cargo.toml version heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
 		}
 	}
-	return
+	return r, err
 }
 
 func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte, rcfg *rebuild.RepoConfig) (ref, dir string, err error) {
@@ -421,5 +418,5 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 			log.Printf("Multiple matches found [pkg=%s,ver=%s,refs=%v]\n", pkg, ver, dupes)
 		}
 	}
-	return
+	return tm, err
 }

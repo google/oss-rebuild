@@ -140,13 +140,11 @@ func createFile(fs dockerfs.Filesystem, content []byte, path string) error {
 func addBinding(imageSpec []byte, from, to, mode string) (newSpec []byte, err error) {
 	img := make(map[string]any)
 	if err = json.Unmarshal(imageSpec, &img); err != nil {
-		err = errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
-		return
+		return nil, errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
 	}
 	hostConfig, ok := img["HostConfig"].(map[string]any)
 	if !ok {
-		err = errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
-		return
+		return nil, errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
 	}
 	newBinding := strings.Join([]string{from, to, mode}, ":")
 	bindsObj, ok := hostConfig["Binds"]
@@ -155,17 +153,15 @@ func addBinding(imageSpec []byte, from, to, mode string) (newSpec []byte, err er
 	} else {
 		binds, ok := bindsObj.([]any)
 		if !ok {
-			err = errors.Errorf("unexpected type of HostConfig.Binds\nBody: %s", string(imageSpec))
-			return
+			return nil, errors.Errorf("unexpected type of HostConfig.Binds\nBody: %s", string(imageSpec))
 		}
 		hostConfig["Binds"] = append(binds, newBinding)
 	}
 	newSpec, err = json.Marshal(img)
 	if err != nil {
-		err = errors.Errorf("failed to re-marshal json: %s\nStruct: %s", err, img)
-		return
+		return nil, errors.Errorf("failed to re-marshal json: %s\nStruct: %s", err, img)
 	}
-	return
+	return newSpec, nil
 }
 
 func getNetwork(imageSpec []byte) (network string, err error) {
@@ -187,35 +183,31 @@ func getNetwork(imageSpec []byte) (network string, err error) {
 func setNetwork(imageSpec []byte, network string) (newSpec []byte, err error) {
 	img := make(map[string]any)
 	if err = json.Unmarshal(imageSpec, &img); err != nil {
-		err = errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
-		return
+		return nil, errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
 	}
 	hostConfig, ok := img["HostConfig"].(map[string]any)
 	if !ok {
-		err = errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
-		return
+		return nil, errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
 	}
 	hostConfig["NetworkMode"] = network
 	newSpec, err = json.Marshal(img)
 	if err != nil {
 		return nil, errors.Errorf("failed to re-marshal json: %s\nStruct: %s", err, img)
 	}
-	return
+	return newSpec, nil
 }
 
 func getEnvVar(imageSpec []byte, avar string) (val string, err error) {
 	img := make(map[string]any)
 	if err = json.Unmarshal(imageSpec, &img); err != nil {
-		err = errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
-		return
+		return "", errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
 	}
 	raw, ok := img["Env"]
 	var envs []any
 	if ok && raw != nil {
 		envs, ok = img["Env"].([]any)
 		if !ok {
-			err = errors.Errorf("unexpected type of Env\nBody: %s", string(imageSpec))
-			return
+			return "", errors.Errorf("unexpected type of Env\nBody: %s", string(imageSpec))
 		}
 	}
 	// NOTE: Last one wins!
@@ -227,24 +219,22 @@ func getEnvVar(imageSpec []byte, avar string) (val string, err error) {
 		}
 	}
 	if !found {
-		err = iofs.ErrNotExist
+		return "", iofs.ErrNotExist
 	}
-	return
+	return val, nil
 }
 
 func addEnvVars(imageSpec []byte, newVars []string) (newSpec []byte, err error) {
 	img := make(map[string]any)
 	if err = json.Unmarshal(imageSpec, &img); err != nil {
-		err = errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
-		return
+		return nil, errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
 	}
 	raw, ok := img["Env"]
 	var envs []any
 	if ok && raw != nil {
 		envs, ok = img["Env"].([]any)
 		if !ok {
-			err = errors.Errorf("unexpected type of Env\nBody: %s", string(imageSpec))
-			return
+			return nil, errors.Errorf("unexpected type of Env\nBody: %s", string(imageSpec))
 		}
 	}
 	var patched []any
@@ -255,34 +245,29 @@ func addEnvVars(imageSpec []byte, newVars []string) (newSpec []byte, err error) 
 	img["Env"] = envs
 	newSpec, err = json.Marshal(img)
 	if err != nil {
-		err = errors.Errorf("failed to re-marshal json: %s\nStruct: %s", err, img)
-		return
+		return nil, errors.Errorf("failed to re-marshal json: %s\nStruct: %s", err, img)
 	}
-	return
+	return newSpec, nil
 }
 
 func removeEnvVars(imageSpec []byte, varNames []string) (newSpec []byte, err error) {
 	img := make(map[string]any)
 	if err = json.Unmarshal(imageSpec, &img); err != nil {
-		err = errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
-		return
+		return nil, errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
 	}
 	raw, ok := img["Env"]
 	if !ok || raw == nil {
-		newSpec = imageSpec
-		return
+		return imageSpec, nil
 	}
 	envs, ok := img["Env"].([]any)
 	if !ok {
-		err = errors.Errorf("unexpected type of Env\nBody: %s", string(imageSpec))
-		return
+		return nil, errors.Errorf("unexpected type of Env\nBody: %s", string(imageSpec))
 	}
 	stripped := make([]string, 0)
 	for i := range envs {
 		env, ok := envs[len(envs)-i-1].(string)
 		if !ok {
-			err = errors.Errorf("unexpected type of Env #%d\nBody: %s", i, string(imageSpec))
-			return
+			return nil, errors.Errorf("unexpected type of Env #%d\nBody: %s", i, string(imageSpec))
 		}
 		var j int
 		var varName string
@@ -304,10 +289,9 @@ func removeEnvVars(imageSpec []byte, varNames []string) (newSpec []byte, err err
 	img["Env"] = stripped
 	newSpec, err = json.Marshal(img)
 	if err != nil {
-		err = errors.Errorf("failed to re-marshal json: %s\nStruct: %s", err, img)
-		return
+		return nil, errors.Errorf("failed to re-marshal json: %s\nStruct: %s", err, img)
 	}
-	return
+	return newSpec, nil
 }
 
 func trimQuotes(in string) string {

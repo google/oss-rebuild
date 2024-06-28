@@ -39,7 +39,7 @@ type Cache struct {
 func (c Cache) GetLink(repo string, contains time.Time) (uri string, err error) {
 	u, err := c.URL.Parse("/get")
 	if err != nil {
-		return
+		return "", err
 	}
 	q := u.Query()
 	q.Add("uri", repo)
@@ -55,29 +55,25 @@ func (c Cache) GetLink(repo string, contains time.Time) (uri string, err error) 
 	}
 	resp, err := c.IDClient.Get(u.String())
 	if err != nil {
-		return
+		return "", err
 	}
 	var errs []byte
 	switch resp.StatusCode {
 	case http.StatusFound:
 		uri = resp.Header.Get("Location")
 		// FIXME: Figure out why this URL parsing artifact is being reintroduced.
-		uri = strings.ReplaceAll(uri, "%252F", "%2F")
-		return
+		return strings.ReplaceAll(uri, "%252F", "%2F"), nil
 	case http.StatusBadRequest:
 		errs, err = io.ReadAll(resp.Body)
 		if err != nil {
-			return
+			return uri, err
 		}
 		if strings.Contains(string(errs), transport.ErrAuthenticationRequired.Error()) {
-			err = transport.ErrAuthenticationRequired
-		} else {
-			err = errors.New(string(errs))
+			return uri, transport.ErrAuthenticationRequired
 		}
-		return
+		return uri, errors.New(string(errs))
 	default:
-		err = errors.Wrap(errors.New(resp.Status), "making cache request")
-		return
+		return uri, errors.Wrap(errors.New(resp.Status), "making cache request")
 	}
 }
 

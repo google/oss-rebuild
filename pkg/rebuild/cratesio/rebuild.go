@@ -23,7 +23,7 @@ import (
 func GetVersions(ctx context.Context, pkg string, mux rebuild.RegistryMux) (versions []string, err error) {
 	p, err := mux.CratesIO.Crate(ctx, pkg)
 	if err != nil {
-		return
+		return nil, err
 	}
 	var vs []reg.Version
 	for _, v := range p.Versions {
@@ -40,7 +40,7 @@ func GetVersions(ctx context.Context, pkg string, mux rebuild.RegistryMux) (vers
 	for _, v := range vs {
 		versions = append(versions, v.Version)
 	}
-	return
+	return versions, nil
 }
 
 func sanitize(name string) string {

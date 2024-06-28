@@ -45,7 +45,7 @@ func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err
 	var matches, nearMatches []string
 	tags, err := allTags(repo)
 	if err != nil {
-		return
+		return "", err
 	}
 	for _, tag := range tags {
 		strict, approx := MatchTag(tag, pkg, version)
@@ -68,13 +68,13 @@ func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err
 		}
 		if t, err := repo.TagObject(ref.Hash()); err == nil {
 			// Annotated tag. Use the Target pointer as the ref hash.
-			commit = t.Target.String()
+			return t.Target.String(), nil
 		} else {
 			// Lightweight tag. Use the ref hash itself.
-			commit = ref.Hash().String()
+			return ref.Hash().String(), nil
 		}
 	}
-	return
+	return "", nil
 }
 
 func allTags(repo *git.Repository) (tags []string, err error) {

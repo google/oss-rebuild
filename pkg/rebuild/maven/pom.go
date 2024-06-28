@@ -64,9 +64,8 @@ func NewPomXML(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (
 	var r io.ReadCloser
 	r, err = mux.Maven.ReleaseFile(ctx, t.Package, t.Version, maven.TypePOM)
 	if err != nil {
-		return
+		return p, err
 	}
 	defer r.Close()
-	err = xml.NewDecoder(r).Decode(&p)
-	return
+	return p, xml.NewDecoder(r).Decode(&p)
 }

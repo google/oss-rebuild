@@ -31,14 +31,14 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 			var inst Instructions
 			inst, err = input.Strategy.GenerateFor(t, BuildEnv{})
 			if err != nil {
-				return
+				return verdict, nil, err
 			}
 			repoURI = inst.Location.Repo
 		}
 	} else {
 		repoURI, err = r.InferRepo(ctx, t, mux)
 		if err != nil {
-			return
+			return verdict, nil, err
 		}
 	}
 	repoSetupStart := time.Now()
@@ -52,7 +52,7 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 		var newRepo RepoConfig
 		newRepo, err = r.CloneRepo(ctx, t, repoURI, fs, s)
 		if err != nil {
-			return
+			return verdict, nil, err
 		}
 		*rcfg = newRepo
 		verdict.Timings.CloneEstimate = time.Since(cloneStart)
@@ -60,7 +60,7 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 		// Do a fresh checkout to wipe any cruft from previous builds.
 		_, err = gitx.Reuse(ctx, s, fs, &git.CloneOptions{URL: rcfg.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
 		if err != nil {
-			return
+			return verdict, nil, err
 		}
 	}
 	verdict.Timings.Source = time.Since(repoSetupStart)
@@ -69,13 +69,12 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 		// If the input was a hint, include it in inference.
 		if lh.Ref == "" && lh.Dir != "" {
 			// TODO: For each ecosystem, allow ref inference to occur and validate dir.
-			err = errors.New("Dir without Ref is not yet supported.")
-			return
+			return verdict, nil, errors.New("Dir without Ref is not yet supported.")
 		}
 		log.Printf("[%s] LocationHint provided: %v, running inference...\n", t.Package, *lh)
 		verdict.Strategy, err = r.InferStrategy(ctx, t, mux, rcfg, lh)
 		if err != nil {
-			return
+			return verdict, nil, err
 		}
 	} else if input.Strategy != nil {
 		// If the input was a full strategy, skip inference.
@@ -86,7 +85,7 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 		log.Printf("[%s] No strategy provided, running inference...\n", t.Package)
 		verdict.Strategy, err = r.InferStrategy(ctx, t, mux, rcfg, nil)
 		if err != nil {
-			return
+			return verdict, nil, err
 		}
 	}
 	verdict.Timings.Infer = time.Since(inferenceStart)
@@ -96,33 +95,29 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 	}
 	inst, err := verdict.Strategy.GenerateFor(t, rbenv)
 	if err != nil {
-		err = errors.Wrap(err, "failed to generate strategy")
-		return
+		return verdict, nil, errors.Wrap(err, "failed to generate strategy")
 	}
 	buildStart := time.Now()
 	err = r.Rebuild(ctx, t, inst, fs)
 	verdict.Timings.Build = time.Since(buildStart)
 	if err != nil {
-		return
+		return verdict, nil, err
 	}
 	rbPath := inst.OutputPath
 	_, err = fs.Stat(rbPath)
 	if err != nil {
 		if errors.Is(err, iofs.ErrNotExist) {
-			err = errors.Wrap(err, "failed to locate artifact")
-			return
+			return verdict, nil, errors.Wrap(err, "failed to locate artifact")
 		}
-		err = errors.Wrapf(err, "failed to stat artifact")
-		return
+		return verdict, nil, errors.Wrapf(err, "failed to stat artifact")
 	}
 	rb, up, err := Stabilize(ctx, t, mux, rbPath, fs, assets)
 	if err != nil {
-		return
+		return verdict, nil, err
 	}
 	cmpErr, err := r.Compare(ctx, t, rb, up, assets, inst)
 	if err == nil {
 		err = cmpErr
 	}
-	toUpload = append(toUpload, rb, up)
-	return
+	return verdict, []Asset{rb, up}, err
 }
