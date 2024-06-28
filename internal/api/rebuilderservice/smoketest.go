@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/google/oss-rebuild/internal/api"
-	gitinternal "github.com/google/oss-rebuild/internal/git"
-	httpinternal "github.com/google/oss-rebuild/internal/http"
+	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/httpx"
 	rsrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	mavenrb "github.com/google/oss-rebuild/pkg/rebuild/maven"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
@@ -103,8 +103,8 @@ func doMavenRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, v
 }
 
 type RebuildSmoketestDeps struct {
-	HTTPClient          httpinternal.BasicClient
-	GitCache            *gitinternal.Cache
+	HTTPClient          httpx.BasicClient
+	GitCache            *gitx.Cache
 	AssetDir            string
 	TimewarpURL         *string
 	DebugBucket         *string

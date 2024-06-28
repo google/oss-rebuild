@@ -22,7 +22,7 @@ import (
 	"net/url"
 
 	"github.com/google/oss-rebuild/internal/gateway"
-	httpinternal "github.com/google/oss-rebuild/internal/http"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/pkg/errors"
 	"google.golang.org/api/idtoken"
 )
@@ -40,10 +40,10 @@ func (cfg *Config) RegisterFlags(fs *flag.FlagSet) {
 }
 
 // MakeClient creates a new HTTP BasicClient for making egress requests.
-func MakeClient(ctx context.Context, cfg Config) (httpinternal.BasicClient, error) {
-	var client httpinternal.BasicClient
+func MakeClient(ctx context.Context, cfg Config) (httpx.BasicClient, error) {
+	var client httpx.BasicClient
 	if cfg.UserAgent != "" {
-		client = &httpinternal.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: cfg.UserAgent}
+		client = &httpx.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: cfg.UserAgent}
 	} else {
 		client = http.DefaultClient
 	}

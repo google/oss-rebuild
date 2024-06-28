@@ -29,7 +29,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-	gitinternal "github.com/google/oss-rebuild/internal/git"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/pkg/errors"
 )
 
@@ -121,13 +121,13 @@ func allTags(repo *git.Repository) (tags []string, err error) {
 // instead of the remote defined in CloneOptions.URL.
 func LoadRepo(ctx context.Context, pkg string, s storage.Storer, fs billy.Filesystem, opt git.CloneOptions) (*git.Repository, error) {
 	var r *git.Repository
-	r, err := gitinternal.Reuse(ctx, s, fs, &opt)
+	r, err := gitx.Reuse(ctx, s, fs, &opt)
 	switch err {
 	case nil:
 		log.Printf("Reusing already cloned repository [pkg=%s]\n", pkg)
-	case gitinternal.ErrRemoteNotTracked:
+	case gitx.ErrRemoteNotTracked:
 		log.Printf("Cannot reuse already cloned repository [pkg=%s]. Cleaning up...\n", pkg)
-		is, ok := s.(*gitinternal.Storer)
+		is, ok := s.(*gitx.Storer)
 		if !ok {
 			return nil, errors.New("cleaning up unsupported Storer")
 		}
@@ -145,14 +145,14 @@ func LoadRepo(ctx context.Context, pkg string, s storage.Storer, fs billy.Filesy
 		}
 		fallthrough
 	case git.ErrRepositoryNotExists:
-		if c, ok := ctx.Value(RepoCacheClientID).(*gitinternal.Cache); ok && c != nil {
+		if c, ok := ctx.Value(RepoCacheClientID).(*gitx.Cache); ok && c != nil {
 			r, err = c.Clone(ctx, s, fs, &opt)
 			if err != nil {
 				return nil, errors.Wrap(err, "using repo cache")
 			}
 			log.Printf("Using cached repository [pkg=%s]\n", pkg)
 		} else {
-			r, err = gitinternal.Clone(ctx, s, fs, &opt)
+			r, err = gitx.Clone(ctx, s, fs, &opt)
 			if err != nil {
 				return nil, errors.Wrap(err, "cloning repo")
 			}

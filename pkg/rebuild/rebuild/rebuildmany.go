@@ -31,7 +31,7 @@ import (
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	cacheinternal "github.com/google/oss-rebuild/internal/cache"
-	gitinternal "github.com/google/oss-rebuild/internal/git"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/pkg/errors"
 )
 
@@ -97,7 +97,7 @@ func RebuildMany(ctx context.Context, rebuilder Rebuilder, inputs []Input, regis
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to chroot to .git")
 	}
-	s := gitinternal.NewStorer(func() storage.Storer {
+	s := gitx.NewStorer(func() storage.Storer {
 		return filesystem.NewStorageWithOptions(gitfs, cache.NewObjectLRUDefault(), filesystem.Options{ExclusiveAccess: false})
 	})
 	var verdicts []Verdict

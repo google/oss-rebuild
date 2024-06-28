@@ -19,7 +19,7 @@ import (
 	"errors"
 
 	cacheinternal "github.com/google/oss-rebuild/internal/cache"
-	httpinternal "github.com/google/oss-rebuild/internal/http"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/google/oss-rebuild/pkg/registry/npm"
 	"github.com/google/oss-rebuild/pkg/registry/pypi"
@@ -36,17 +36,17 @@ type RegistryMux struct {
 func RegistryMuxWithCache(registry RegistryMux, c cacheinternal.Cache) (RegistryMux, error) {
 	var newmux RegistryMux
 	if httpreg, ok := registry.NPM.(npm.HTTPRegistry); ok {
-		newmux.NPM = npm.HTTPRegistry{Client: httpinternal.NewCachedClient(httpreg.Client, c)}
+		newmux.NPM = npm.HTTPRegistry{Client: httpx.NewCachedClient(httpreg.Client, c)}
 	} else {
 		return newmux, errors.New("unknown npm registry type")
 	}
 	if httpreg, ok := registry.PyPI.(pypi.HTTPRegistry); ok {
-		newmux.PyPI = pypi.HTTPRegistry{Client: httpinternal.NewCachedClient(httpreg.Client, c)}
+		newmux.PyPI = pypi.HTTPRegistry{Client: httpx.NewCachedClient(httpreg.Client, c)}
 	} else {
 		return newmux, errors.New("unknown PyPI registry type")
 	}
 	if httpreg, ok := registry.CratesIO.(cratesio.HTTPRegistry); ok {
-		newmux.CratesIO = cratesio.HTTPRegistry{Client: httpinternal.NewCachedClient(httpreg.Client, c)}
+		newmux.CratesIO = cratesio.HTTPRegistry{Client: httpx.NewCachedClient(httpreg.Client, c)}
 	} else {
 		return newmux, errors.New("unknown crates.io registry type")
 	}
