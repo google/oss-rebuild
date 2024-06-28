@@ -20,10 +20,7 @@ type RebuildSmoketestDeps struct {
 	VersionStub     api.StubT[schema.VersionRequest, schema.VersionResponse]
 }
 
-func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *RebuildSmoketestDeps) (*schema.SmoketestResponse, error) {
-	if sreq.ID == "" {
-		sreq.ID = time.Now().UTC().Format(time.RFC3339)
-	}
+func rebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *RebuildSmoketestDeps) (*schema.SmoketestResponse, error) {
 	log.Printf("Dispatching smoketest: %v", sreq)
 	versionChan := make(chan string, 1)
 	go func() {
@@ -36,16 +33,20 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 		}
 		close(versionChan)
 	}()
-	resp, stuberr := deps.SmoketestStub(ctx, sreq)
-	var verdicts []schema.Verdict
-	var executor string
-	if errors.Is(stuberr, api.ErrNotOK) {
+	stubresp, stuberr := deps.SmoketestStub(ctx, sreq)
+	switch {
+	case stuberr == nil:
+		return stubresp, nil
+	case !errors.Is(stuberr, api.ErrNotOK):
+		return nil, api.AsStatus(codes.Internal, errors.Wrap(stuberr, "making smoketest request"))
+	default:
+		var resp schema.SmoketestResponse
 		log.Printf("smoketest failed: %v\n", stuberr)
 		// If smoketest failed, populate the verdicts with as much info as we can (pulling executor
 		// version from the smoketest version endpoint if possible.
-		executor = <-versionChan
+		resp.Executor = <-versionChan
 		for _, v := range sreq.Versions {
-			verdicts = append(verdicts, schema.Verdict{
+			resp.Verdicts = append(resp.Verdicts, schema.Verdict{
 				Target: rebuild.Target{
 					Ecosystem: rebuild.Ecosystem(sreq.Ecosystem),
 					Package:   sreq.Package,
@@ -56,13 +57,15 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 				Message: fmt.Sprintf("build-local failed: %v", stuberr),
 			})
 		}
-	} else if stuberr != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(stuberr, "making smoketest request"))
-	} else {
-		verdicts = resp.Verdicts
-		executor = resp.Executor
+		return &resp, nil
 	}
-	for _, v := range verdicts {
+}
+func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *RebuildSmoketestDeps) (*schema.SmoketestResponse, error) {
+	if sreq.ID == "" {
+		sreq.ID = time.Now().UTC().Format(time.RFC3339)
+	}
+	resp, err := rebuildSmoketest(ctx, sreq, deps)
+	for _, v := range resp.Verdicts {
 		_, err := deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(sreq.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(sreq.ID).Set(ctx, schema.SmoketestAttempt{
 			Ecosystem:       string(v.Target.Ecosystem),
 			Package:         v.Target.Package,
@@ -72,7 +75,7 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 			Message:         v.Message,
 			Strategy:        v.StrategyOneof,
 			Timings:         v.Timings,
-			ExecutorVersion: executor,
+			ExecutorVersion: resp.Executor,
 			RunID:           sreq.ID,
 			Created:         time.Now().UnixMilli(),
 		})
@@ -80,9 +83,8 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 			return nil, api.AsStatus(codes.Internal, errors.Wrapf(err, "writing record for %s@%s", sreq.Package, v.Target.Version))
 		}
 	}
-	if stuberr != nil {
-		// TODO: Pass on status code here.
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(stuberr, "executing smoketest"))
+	if err != nil {
+		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "executing smoketest"))
 	}
 	return resp, nil
 }
