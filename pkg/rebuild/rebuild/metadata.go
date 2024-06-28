@@ -17,7 +17,7 @@ package rebuild
 import (
 	"time"
 
-	cloudbuild "google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/cloudbuild/v1"
 )
 
 type BuildInfo struct {
