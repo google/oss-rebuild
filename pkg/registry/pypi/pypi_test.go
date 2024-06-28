@@ -20,48 +20,40 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 )
-
-type fakeHTTPClient struct {
-	DoFunc func(*http.Request) (*http.Response, error)
-}
-
-func (c *fakeHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	return c.DoFunc(req)
-}
 
 func TestHTTPRegistry_Project(t *testing.T) {
 	testCases := []struct {
-		name         string
-		pkg          string
-		httpResponse *http.Response
-		httpError    error
-		expected     *Project
-		expectedErr  error
-		expectedURL  *url.URL
+		name        string
+		pkg         string
+		call        httpxtest.Call
+		expected    *Project
+		expectedErr error
 	}{
 		{
 			name: "Success",
 			pkg:  "requests",
-			httpResponse: &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewReader([]byte(`{
-                    "info": {
-                        "name": "requests",
-                        "version": "2.31.0"
-                    },
-                    "releases": {
-                        "2.31.0": [
-                            {"filename": "requests-2.31.0-py3-none-any.whl"}
-                        ]
-                    }
-                }`))),
+			call: httpxtest.Call{
+				URL: "https://pypi.org/pypi/requests/json",
+				Response: &http.Response{
+					StatusCode: 200,
+					Body: io.NopCloser(bytes.NewReader([]byte(`{
+                        "info": {
+                            "name": "requests",
+                            "version": "2.31.0"
+                        },
+                        "releases": {
+                            "2.31.0": [
+                                {"filename": "requests-2.31.0-py3-none-any.whl"}
+                            ]
+                        }
+                    }`))),
+				},
 			},
-			expectedURL: must(url.Parse("https://pypi.org/pypi/requests/json")),
 			expected: &Project{
 				Info: Info{
 					Name:    "requests",
@@ -75,48 +67,54 @@ func TestHTTPRegistry_Project(t *testing.T) {
 			},
 		},
 		{
-			name:        "HTTP Error",
-			pkg:         "requests",
-			httpError:   errors.New("network error"),
+			name: "HTTP Error",
+			pkg:  "requests",
+			call: httpxtest.Call{
+				URL:   "https://pypi.org/pypi/requests/json",
+				Error: errors.New("network error"),
+			},
 			expectedErr: errors.New("network error"),
-			expectedURL: must(url.Parse("https://pypi.org/pypi/requests/json")),
 		},
 		{
-			name:         "HTTP Error Status",
-			pkg:          "nonexistent-pkg",
-			httpResponse: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
-			expectedErr:  errors.New("pypi registry error: Not Found"),
-			expectedURL:  must(url.Parse("https://pypi.org/pypi/nonexistent-pkg/json")),
+			name: "HTTP Error Status",
+			pkg:  "nonexistent-pkg",
+			call: httpxtest.Call{
+				URL:      "https://pypi.org/pypi/nonexistent-pkg/json",
+				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
+			},
+			expectedErr: errors.New("pypi registry error: Not Found"),
 		},
 		{
-			name:         "JSON Decode Error",
-			pkg:          "bad-json-package",
-			httpResponse: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
-			expectedErr:  errors.New("invalid character ',' looking for beginning of object key string"),
-			expectedURL:  must(url.Parse("https://pypi.org/pypi/bad-json-package/json")),
+			name: "JSON Decode Error",
+			pkg:  "bad-json-package",
+			call: httpxtest.Call{
+				URL:      "https://pypi.org/pypi/bad-json-package/json",
+				Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
+			},
+			expectedErr: errors.New("invalid character ',' looking for beginning of object key string"),
 		},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			registry := HTTPRegistry{
-				Client: &fakeHTTPClient{
-					DoFunc: func(req *http.Request) (*http.Response, error) {
-						if diff := cmp.Diff(req.URL, tc.expectedURL); diff != "" {
-							t.Errorf("URL mismatch: diff\n%v", diff)
-						}
-						return tc.httpResponse, tc.httpError
-					},
+			mockClient := &httpxtest.MockClient{
+				Calls: []httpxtest.Call{tc.call},
+				URLValidator: func(expected, actual string) {
+					if diff := cmp.Diff(expected, actual); diff != "" {
+						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+					}
 				},
 			}
-			actual, err := registry.Project(context.Background(), tc.pkg)
-			if err != nil && err.Error() != tc.expectedErr.Error() {
+			actual, err := HTTPRegistry{Client: mockClient}.Project(context.Background(), tc.pkg)
+			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
 			if tc.expected != nil {
 				if diff := cmp.Diff(actual, tc.expected); diff != "" {
-					t.Errorf("Version mismatch: diff\n%v", diff)
+					t.Errorf("Project mismatch: diff\n%v", diff)
 				}
+			}
+			if mockClient.CallCount() != 1 {
+				t.Errorf("Expected 1 call, got %d", mockClient.CallCount())
 			}
 		})
 	}
@@ -124,32 +122,32 @@ func TestHTTPRegistry_Project(t *testing.T) {
 
 func TestHTTPRegistry_Release(t *testing.T) {
 	testCases := []struct {
-		name         string
-		pkg          string
-		version      string
-		httpResponse *http.Response
-		httpError    error
-		expected     *Release
-		expectedErr  error
-		expectedURL  *url.URL
+		name        string
+		pkg         string
+		version     string
+		call        httpxtest.Call
+		expected    *Release
+		expectedErr error
 	}{
 		{
 			name:    "Success",
 			pkg:     "requests",
 			version: "2.31.0",
-			httpResponse: &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewReader([]byte(`{
-                    "info": {
-                        "name": "requests",
-                        "version": "2.31.0"
-                    },
-                    "urls": [
-                        {"filename": "requests-2.31.0-py3-none-any.whl"}
-                    ]
-                }`))),
+			call: httpxtest.Call{
+				URL: "https://pypi.org/pypi/requests/2.31.0/json",
+				Response: &http.Response{
+					StatusCode: 200,
+					Body: io.NopCloser(bytes.NewReader([]byte(`{
+                        "info": {
+                            "name": "requests",
+                            "version": "2.31.0"
+                        },
+                        "urls": [
+                            {"filename": "requests-2.31.0-py3-none-any.whl"}
+                        ]
+                    }`))),
+				},
 			},
-			expectedURL: must(url.Parse("https://pypi.org/pypi/requests/2.31.0/json")),
 			expected: &Release{
 				Info: Info{
 					Name:    "requests",
@@ -161,50 +159,57 @@ func TestHTTPRegistry_Release(t *testing.T) {
 			},
 		},
 		{
-			name:        "HTTP Error",
-			pkg:         "requests",
-			version:     "2.31.0",
-			httpError:   errors.New("network error"),
+			name:    "HTTP Error",
+			pkg:     "requests",
+			version: "2.31.0",
+			call: httpxtest.Call{
+				URL:   "https://pypi.org/pypi/requests/2.31.0/json",
+				Error: errors.New("network error"),
+			},
 			expectedErr: errors.New("network error"),
-			expectedURL: must(url.Parse("https://pypi.org/pypi/requests/2.31.0/json")),
 		},
 		{
-			name:         "HTTP Error Status",
-			pkg:          "nonexistent-pkg",
-			version:      "1.0.0",
-			httpResponse: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
-			expectedErr:  errors.New("pypi registry error: Not Found"),
-			expectedURL:  must(url.Parse("https://pypi.org/pypi/nonexistent-pkg/1.0.0/json")),
+			name:    "HTTP Error Status",
+			pkg:     "nonexistent-pkg",
+			version: "1.0.0",
+			call: httpxtest.Call{
+				URL:      "https://pypi.org/pypi/nonexistent-pkg/1.0.0/json",
+				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
+			},
+			expectedErr: errors.New("pypi registry error: Not Found"),
 		},
 		{
-			name:         "JSON Decode Error",
-			pkg:          "bad-json-pkg",
-			version:      "1.0.0",
-			httpResponse: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
-			expectedErr:  errors.New("invalid character ',' looking for beginning of object key string"),
-			expectedURL:  must(url.Parse("https://pypi.org/pypi/bad-json-pkg/1.0.0/json")),
+			name:    "JSON Decode Error",
+			pkg:     "bad-json-pkg",
+			version: "1.0.0",
+			call: httpxtest.Call{
+				URL:      "https://pypi.org/pypi/bad-json-pkg/1.0.0/json",
+				Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
+			},
+			expectedErr: errors.New("invalid character ',' looking for beginning of object key string"),
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			registry := HTTPRegistry{
-				Client: &fakeHTTPClient{
-					DoFunc: func(req *http.Request) (*http.Response, error) {
-						if diff := cmp.Diff(req.URL, tc.expectedURL); diff != "" {
-							t.Errorf("URL mismatch: diff\n%v", diff)
-						}
-						return tc.httpResponse, tc.httpError
-					},
+			mockClient := &httpxtest.MockClient{
+				Calls: []httpxtest.Call{tc.call},
+				URLValidator: func(expected, actual string) {
+					if diff := cmp.Diff(expected, actual); diff != "" {
+						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+					}
 				},
 			}
-			actual, err := registry.Release(context.Background(), tc.pkg, tc.version)
-			if err != nil && err.Error() != tc.expectedErr.Error() {
+			actual, err := HTTPRegistry{Client: mockClient}.Release(context.Background(), tc.pkg, tc.version)
+			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
 			if tc.expected != nil {
 				if diff := cmp.Diff(actual, tc.expected); diff != "" {
-					t.Errorf("Version mismatch: diff\n%v", diff)
+					t.Errorf("Release mismatch: diff\n%v", diff)
 				}
+			}
+			if mockClient.CallCount() != 1 {
+				t.Errorf("Expected 1 call, got %d", mockClient.CallCount())
 			}
 		})
 	}
@@ -216,11 +221,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 		pkg                string
 		version            string
 		filename           string
-		releaseHTTPResp    *http.Response
-		artifactHTTPResp   *http.Response
-		releaseURL         *url.URL
-		artifactURL        *url.URL
-		httpError          error
+		calls              []httpxtest.Call
 		expectedReadCloser io.ReadCloser
 		expectedErr        error
 	}{
@@ -229,38 +230,40 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 			pkg:      "requests",
 			version:  "2.31.0",
 			filename: "requests-2.31.0-py3-none-any.whl",
-			releaseHTTPResp: &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewReader([]byte(`{
-                    "info": {"name": "requests", "version": "2.31.0"},
-                    "urls": [
-                        {"filename": "requests-2.31.0-py3-none-any.whl", "url": "https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl"}
-                    ]
-                }`))),
+			calls: []httpxtest.Call{
+				{
+					URL: "https://pypi.org/pypi/requests/2.31.0/json",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(bytes.NewReader([]byte(`{
+                            "info": {"name": "requests", "version": "2.31.0"},
+                            "urls": [
+                                {"filename": "requests-2.31.0-py3-none-any.whl", "url": "https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl"}
+                            ]
+                        }`))),
+					},
+				},
+				{
+					URL: "https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
+					},
+				},
 			},
-			artifactHTTPResp: &http.Response{
-				StatusCode: 200,
-				Body:       io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
-			},
-			releaseURL:         must(url.Parse("https://pypi.org/pypi/requests/2.31.0/json")),
-			artifactURL:        must(url.Parse("https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl")),
 			expectedReadCloser: io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
 		},
 		{
-			name:        "Release Fetch Error",
-			pkg:         "requests",
-			version:     "2.31.0",
-			releaseURL:  must(url.Parse("https://pypi.org/pypi/requests/2.31.0/json")),
-			httpError:   errors.New("network error"),
-			expectedErr: errors.New("network error"),
-		},
-		{
-			name:        "Release Fetch Error Status",
-			pkg:         "error-package",
-			version:     "1.0.0",
-			filename:    "artifact.whl",
-			releaseURL:  must(url.Parse("https://pypi.org/pypi/error-package/1.0.0/json")),
-			httpError:   errors.New("network error"),
+			name:     "Release Fetch Error",
+			pkg:      "requests",
+			version:  "2.31.0",
+			filename: "requests-2.31.0-py3-none-any.whl",
+			calls: []httpxtest.Call{
+				{
+					URL:   "https://pypi.org/pypi/requests/2.31.0/json",
+					Error: errors.New("network error"),
+				},
+			},
 			expectedErr: errors.New("network error"),
 		},
 		{
@@ -268,68 +271,69 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 			pkg:      "requests",
 			version:  "2.31.0",
 			filename: "nonexistent-artifact.whl",
-			releaseHTTPResp: &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewReader([]byte(`{
-                    "info": {"name": "requests", "version": "2.31.0"},
-                    "urls": [
-                        {"filename": "requests-2.31.0-py3-none-any.whl"}
-                    ]
-                }`))),
+			calls: []httpxtest.Call{
+				{
+					URL: "https://pypi.org/pypi/requests/2.31.0/json",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(bytes.NewReader([]byte(`{
+                            "info": {"name": "requests", "version": "2.31.0"},
+                            "urls": [
+                                {"filename": "requests-2.31.0-py3-none-any.whl"}
+                            ]
+                        }`))),
+					},
+				},
 			},
-			releaseURL:  must(url.Parse("https://pypi.org/pypi/requests/2.31.0/json")),
-			artifactURL: must(url.Parse("https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl")),
 			expectedErr: errors.New("not found"),
 		},
 		{
-			name:     "Artifact Fetch Error Status",
+			name:     "Artifact Fetch Error",
 			pkg:      "requests",
 			version:  "2.31.0",
 			filename: "requests-2.31.0-py3-none-any.whl",
-			releaseHTTPResp: &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewReader([]byte(`{
-                    "info": {"name": "requests", "version": "2.31.0"},
-                    "urls": [
-                        {"filename": "requests-2.31.0-py3-none-any.whl", "url": "https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl"}
-                    ]
-                }`))),
-			},
-			artifactHTTPResp: &http.Response{StatusCode: 500, Status: http.StatusText(500)},
-			releaseURL:       must(url.Parse("https://pypi.org/pypi/requests/2.31.0/json")),
-			artifactURL:      must(url.Parse("https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl")),
-			expectedErr:      errors.New("fetching artifact: Internal Server Error"),
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			callCount := 0
-			registry := HTTPRegistry{
-				Client: &fakeHTTPClient{
-					DoFunc: func(req *http.Request) (*http.Response, error) {
-						callCount++
-						if callCount == 1 {
-							if diff := cmp.Diff(req.URL, tc.releaseURL); diff != "" {
-								t.Errorf("URL mismatch: diff\n%v", diff)
-							}
-							return tc.releaseHTTPResp, tc.httpError
-						}
-						if diff := cmp.Diff(req.URL, tc.artifactURL); diff != "" {
-							t.Errorf("URL mismatch: diff\n%v", diff)
-						}
-						return tc.artifactHTTPResp, tc.httpError
+			calls: []httpxtest.Call{
+				{
+					URL: "https://pypi.org/pypi/requests/2.31.0/json",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(bytes.NewReader([]byte(`{
+                            "info": {"name": "requests", "version": "2.31.0"},
+                            "urls": [
+                                {"filename": "requests-2.31.0-py3-none-any.whl", "url": "https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl"}
+                            ]
+                        }`))),
 					},
 				},
+				{
+					URL:      "https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl",
+					Response: &http.Response{StatusCode: 500, Status: http.StatusText(500)},
+				},
+			},
+			expectedErr: errors.New("fetching artifact: Internal Server Error"),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockClient := &httpxtest.MockClient{
+				Calls: tc.calls,
+				URLValidator: func(expected, actual string) {
+					if diff := cmp.Diff(expected, actual); diff != "" {
+						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+					}
+				},
 			}
-			actual, err := registry.Artifact(context.Background(), tc.pkg, tc.version, tc.filename)
-			if err != nil && err.Error() != tc.expectedErr.Error() {
+			actual, err := HTTPRegistry{Client: mockClient}.Artifact(context.Background(), tc.pkg, tc.version, tc.filename)
+			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
 			if tc.expectedReadCloser != nil {
 				if diff := cmp.Diff(must(io.ReadAll(actual)), must(io.ReadAll(tc.expectedReadCloser))); diff != "" {
 					t.Errorf("Artifact content mismatch:\n%v", diff)
 				}
+			}
+			if mockClient.CallCount() != len(tc.calls) {
+				t.Errorf("Expected %d calls, got %d", len(tc.calls), mockClient.CallCount())
 			}
 		})
 	}

@@ -20,45 +20,37 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 )
-
-type fakeHTTPClient struct {
-	DoFunc func(*http.Request) (*http.Response, error)
-}
-
-func (c *fakeHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	return c.DoFunc(req)
-}
 
 func TestHTTPRegistry_Crate(t *testing.T) {
 	testCases := []struct {
-		name         string
-		pkg          string
-		expectedURL  *url.URL
-		httpResponse *http.Response
-		httpError    error
-		expected     *Crate
-		expectedErr  error
+		name        string
+		pkg         string
+		call        httpxtest.Call
+		expected    *Crate
+		expectedErr error
 	}{
 		{
-			name:        "Success",
-			pkg:         "serde",
-			expectedURL: must(url.Parse("https://crates.io/api/v1/crates/serde")),
-			httpResponse: &http.Response{
-				StatusCode: 200,
-				Body: io.NopCloser(bytes.NewReader([]byte(`{
-                    "crate": {
-                        "id": "serde",
-                        "repository": "https://github.com/serde-rs/serde"
-                    },
-                    "versions": [
-                        {"num": "1.0.150", "dl_path": "/api/v1/crates/serde/1.0.150/download"}
-                    ]
-                }`))),
+			name: "Success",
+			pkg:  "serde",
+			call: httpxtest.Call{
+				URL: "https://crates.io/api/v1/crates/serde",
+				Response: &http.Response{
+					StatusCode: 200,
+					Body: io.NopCloser(bytes.NewReader([]byte(`{
+                        "crate": {
+                            "id": "serde",
+                            "repository": "https://github.com/serde-rs/serde"
+                        },
+                        "versions": [
+                            {"num": "1.0.150", "dl_path": "/api/v1/crates/serde/1.0.150/download"}
+                        ]
+                    }`))),
+				},
 			},
 			expected: &Crate{
 				Metadata: Metadata{
@@ -75,48 +67,54 @@ func TestHTTPRegistry_Crate(t *testing.T) {
 			},
 		},
 		{
-			name:        "HTTP Error",
-			pkg:         "serde",
-			expectedURL: must(url.Parse("https://crates.io/api/v1/crates/serde")),
-			httpError:   errors.New("network error"),
+			name: "HTTP Error",
+			pkg:  "serde",
+			call: httpxtest.Call{
+				URL:   "https://crates.io/api/v1/crates/serde",
+				Error: errors.New("network error"),
+			},
 			expectedErr: errors.New("network error"),
 		},
 		{
-			name:         "HTTP Error Status",
-			pkg:          "nonexistent-pkg",
-			expectedURL:  must(url.Parse("https://crates.io/api/v1/crates/nonexistent-pkg")),
-			httpResponse: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
-			expectedErr:  errors.New("crates.io registry error: Not Found"),
+			name: "HTTP Error Status",
+			pkg:  "nonexistent-pkg",
+			call: httpxtest.Call{
+				URL:      "https://crates.io/api/v1/crates/nonexistent-pkg",
+				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
+			},
+			expectedErr: errors.New("crates.io registry error: Not Found"),
 		},
 		{
-			name:         "JSON Decode Error",
-			pkg:          "bad-json-package",
-			expectedURL:  must(url.Parse("https://crates.io/api/v1/crates/bad-json-package")),
-			httpResponse: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
-			expectedErr:  errors.New("invalid character ',' looking for beginning of object key string"),
+			name: "JSON Decode Error",
+			pkg:  "bad-json-package",
+			call: httpxtest.Call{
+				URL:      "https://crates.io/api/v1/crates/bad-json-package",
+				Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
+			},
+			expectedErr: errors.New("invalid character ',' looking for beginning of object key string"),
 		},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			registry := HTTPRegistry{
-				Client: &fakeHTTPClient{
-					DoFunc: func(req *http.Request) (*http.Response, error) {
-						if diff := cmp.Diff(req.URL, tc.expectedURL); diff != "" {
-							t.Errorf("URL mismatch: diff\n%v", diff)
-						}
-						return tc.httpResponse, tc.httpError
-					},
+			mockClient := &httpxtest.MockClient{
+				Calls: []httpxtest.Call{tc.call},
+				URLValidator: func(expected, actual string) {
+					if diff := cmp.Diff(expected, actual); diff != "" {
+						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+					}
 				},
 			}
-			actual, err := registry.Crate(context.Background(), tc.pkg)
-			if err != nil && err.Error() != tc.expectedErr.Error() {
+			actual, err := HTTPRegistry{Client: mockClient}.Crate(context.Background(), tc.pkg)
+			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
 			if tc.expected != nil {
 				if diff := cmp.Diff(actual, tc.expected); diff != "" {
-					t.Errorf("Version mismatch: diff\n%v", diff)
+					t.Errorf("Crate mismatch: diff\n%v", diff)
 				}
+			}
+			if mockClient.CallCount() != 1 {
+				t.Errorf("Expected 1 call, got %d", mockClient.CallCount())
 			}
 		})
 	}
@@ -124,23 +122,22 @@ func TestHTTPRegistry_Crate(t *testing.T) {
 
 func TestHTTPRegistry_Version(t *testing.T) {
 	testCases := []struct {
-		name         string
-		pkg          string
-		version      string
-		expectedURL  *url.URL
-		mockResponse *http.Response
-		httpError    error
-		expected     *CrateVersion
-		expectedErr  error
+		name        string
+		pkg         string
+		version     string
+		call        httpxtest.Call
+		expected    *CrateVersion
+		expectedErr error
 	}{
 		{
-			name:        "Success",
-			pkg:         "serde",
-			version:     "1.0.150",
-			expectedURL: must(url.Parse("https://crates.io/api/v1/crates/serde/1.0.150")),
-			mockResponse: &http.Response{
-				StatusCode: 200,
-				Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+			name:    "Success",
+			pkg:     "serde",
+			version: "1.0.150",
+			call: httpxtest.Call{URL: "https://crates.io/api/v1/crates/serde/1.0.150",
+				Response: &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+				},
 			},
 			expected: &CrateVersion{
 				Version: Version{
@@ -151,45 +148,45 @@ func TestHTTPRegistry_Version(t *testing.T) {
 			},
 		},
 		{
-			name:        "HTTP Error",
-			pkg:         "serde",
-			version:     "1.0.150",
-			expectedURL: must(url.Parse("https://crates.io/api/v1/crates/serde/1.0.150")),
-			httpError:   errors.New("network error"),
+			name:    "HTTP Error",
+			pkg:     "serde",
+			version: "1.0.150",
+			call: httpxtest.Call{URL: "https://crates.io/api/v1/crates/serde/1.0.150",
+				Error: errors.New("network error"),
+			},
 			expectedErr: errors.New("network error"),
 		},
 		{
-			name:         "HTTP Error Status",
-			pkg:          "nonexistent-pkg",
-			version:      "1.0.0",
-			expectedURL:  must(url.Parse("https://crates.io/api/v1/crates/nonexistent-pkg/1.0.0")),
-			mockResponse: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
-			expectedErr:  errors.New("crates.io registry error: Not Found"),
+			name:    "HTTP Error Status",
+			pkg:     "nonexistent-pkg",
+			version: "1.0.0",
+			call: httpxtest.Call{URL: "https://crates.io/api/v1/crates/nonexistent-pkg/1.0.0",
+				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
+			},
+			expectedErr: errors.New("crates.io registry error: Not Found"),
 		},
 		{
-			name:         "JSON Decode Error",
-			pkg:          "serde",
-			version:      "1.0.150",
-			expectedURL:  must(url.Parse("https://crates.io/api/v1/crates/serde/1.0.150")),
-			mockResponse: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json"}`)))},
-			expectedErr:  errors.New("decoding error: invalid character 'i' looking for beginning of object key string"),
+			name:    "JSON Decode Error",
+			pkg:     "serde",
+			version: "1.0.150",
+			call: httpxtest.Call{URL: "https://crates.io/api/v1/crates/serde/1.0.150",
+				Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json"}`)))},
+			},
+			expectedErr: errors.New("decoding error: invalid character 'i' looking for beginning of object key string"),
 		},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			registry := HTTPRegistry{
-				Client: &fakeHTTPClient{
-					DoFunc: func(req *http.Request) (*http.Response, error) {
-						if diff := cmp.Diff(req.URL, tc.expectedURL); diff != "" {
-							t.Errorf("URL mismatch: diff\n%v", diff)
-						}
-						return tc.mockResponse, tc.httpError
-					},
+			mockClient := &httpxtest.MockClient{
+				Calls: []httpxtest.Call{tc.call},
+				URLValidator: func(expected, actual string) {
+					if diff := cmp.Diff(expected, actual); diff != "" {
+						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+					}
 				},
 			}
-			actual, err := registry.Version(context.Background(), tc.pkg, tc.version)
-			if err != nil && err.Error() != tc.expectedErr.Error() {
+			actual, err := HTTPRegistry{Client: mockClient}.Version(context.Background(), tc.pkg, tc.version)
+			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
 			if tc.expected != nil {
@@ -197,98 +194,108 @@ func TestHTTPRegistry_Version(t *testing.T) {
 					t.Errorf("Version mismatch: diff\n%v", diff)
 				}
 			}
+			if mockClient.CallCount() != 1 {
+				t.Errorf("Expected 1 call, got %d", mockClient.CallCount())
+			}
 		})
 	}
 }
 
 func TestHTTPRegistry_Artifact(t *testing.T) {
 	testCases := []struct {
-		name                string
-		pkg                 string
-		version             string
-		expectedVersionURL  *url.URL
-		versionHTTPResp     *http.Response
-		expectedArtifactURL *url.URL
-		artifacHTTPtResp    *http.Response
-		httpError           error
-		expectedReadCloser  io.ReadCloser
-		expectedErr         error
+		name               string
+		pkg                string
+		version            string
+		calls              []httpxtest.Call
+		expectedReadCloser io.ReadCloser
+		expectedErr        error
 	}{
 		{
-			name:               "Success",
-			pkg:                "serde",
-			version:            "1.0.150",
-			expectedVersionURL: must(url.Parse("https://crates.io/api/v1/crates/serde/1.0.150")),
-			versionHTTPResp: &http.Response{
-				StatusCode: 200,
-				Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
-			},
-			expectedArtifactURL: must(url.Parse("https://crates.io/api/v1/crates/serde/1.0.150/download")),
-			artifacHTTPtResp: &http.Response{
-				StatusCode: 200,
-				Body:       io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
+			name:    "Success",
+			pkg:     "serde",
+			version: "1.0.150",
+			calls: []httpxtest.Call{
+				{
+					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+					},
+				},
+				{
+					URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
+					},
+				},
 			},
 			expectedReadCloser: io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
 		},
 		{
-			name:               "Version Fetch Error",
-			pkg:                "serde",
-			version:            "1.0.150",
-			expectedVersionURL: must(url.Parse("https://crates.io/api/v1/crates/serde/1.0.150")),
-			httpError:          errors.New("network error"),
-			expectedErr:        errors.New("network error"),
-		},
-		{
-			name:               "Version Fetch Error Status",
-			pkg:                "nonexistent-pkg",
-			version:            "1.0.0",
-			expectedVersionURL: must(url.Parse("https://crates.io/api/v1/crates/nonexistent-pkg/1.0.0")),
-			versionHTTPResp:    &http.Response{StatusCode: 404, Status: http.StatusText(404)},
-			expectedErr:        errors.New("crates.io registry error: Not Found"),
-		},
-		{
-			name:               "Artifact Fetch Error",
-			pkg:                "serde",
-			version:            "1.0.150",
-			expectedVersionURL: must(url.Parse("https://crates.io/api/v1/crates/serde/1.0.150")),
-			versionHTTPResp: &http.Response{
-				StatusCode: 200,
-				Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+			name:    "Version Fetch Error",
+			pkg:     "serde",
+			version: "1.0.150",
+			calls: []httpxtest.Call{
+				{
+					URL:   "https://crates.io/api/v1/crates/serde/1.0.150",
+					Error: errors.New("network error"),
+				},
 			},
-			expectedArtifactURL: must(url.Parse("https://crates.io/api/v1/crates/serde/1.0.150/download")),
-			artifacHTTPtResp:    &http.Response{StatusCode: 500, Status: http.StatusText(500)},
-			expectedErr:         errors.New("fetching artifact: Internal Server Error"),
 		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			callCount := 0
-			registry := HTTPRegistry{
-				Client: &fakeHTTPClient{
-					DoFunc: func(req *http.Request) (*http.Response, error) {
-						callCount++
-						if callCount == 1 {
-							if diff := cmp.Diff(req.URL, tc.expectedVersionURL); diff != "" {
-								t.Errorf("URL mismatch: diff\n%v", diff)
-							}
-							return tc.versionHTTPResp, tc.httpError
-						}
-						if diff := cmp.Diff(req.URL, tc.expectedArtifactURL); diff != "" {
-							t.Errorf("URL mismatch: diff\n%v", diff)
-						}
-						return tc.artifacHTTPtResp, tc.httpError
+		{
+			name:    "Version Fetch Error Status",
+			pkg:     "nonexistent-pkg",
+			version: "1.0.0",
+			calls: []httpxtest.Call{
+				{
+					URL:      "https://crates.io/api/v1/crates/nonexistent-pkg/1.0.0",
+					Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
+				},
+			},
+			expectedErr: errors.New("crates.io registry error: Not Found"),
+		},
+		{
+			name:    "Artifact Fetch Error",
+			pkg:     "serde",
+			version: "1.0.150",
+			calls: []httpxtest.Call{
+				{
+					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
 					},
 				},
+				{
+					URL:      "https://crates.io/api/v1/crates/serde/1.0.150/download",
+					Response: &http.Response{StatusCode: 500, Status: http.StatusText(500)},
+				},
+			},
+			expectedErr: errors.New("fetching artifact: Internal Server Error"),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockClient := &httpxtest.MockClient{
+				Calls: tc.calls,
+				URLValidator: func(expected, actual string) {
+					if diff := cmp.Diff(expected, actual); diff != "" {
+						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+					}
+				},
 			}
-			actual, err := registry.Artifact(context.Background(), tc.pkg, tc.version)
-			if err != nil && err.Error() != tc.expectedErr.Error() {
+			actual, err := HTTPRegistry{Client: mockClient}.Artifact(context.Background(), tc.pkg, tc.version)
+			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
 			}
 			if tc.expectedReadCloser != nil {
 				if diff := cmp.Diff(must(io.ReadAll(actual)), must(io.ReadAll(tc.expectedReadCloser))); diff != "" {
 					t.Errorf("Artifact content mismatch:\n%v", diff)
 				}
+			}
+			if mockClient.CallCount() != len(tc.calls) {
+				t.Errorf("Expected %d calls, got %d", len(tc.calls), mockClient.CallCount())
 			}
 		})
 	}
