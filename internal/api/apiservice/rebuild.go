@@ -233,29 +233,11 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	return nil
 }
 
-func doRebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps, mux rebuild.RegistryMux, t rebuild.Target) (rebuild.Strategy, error) {
-	signer := verifier.InTotoEnvelopeSigner{EnvelopeSigner: deps.Signer}
-	a := verifier.Attestor{Store: deps.AttestationStore, Signer: signer, AllowOverwrite: deps.OverwriteAttestations}
-	if !deps.OverwriteAttestations {
-		if exists, err := a.BundleExists(ctx, t); err != nil {
-			return nil, errors.Wrap(err, "checking existing bundle")
-		} else if exists {
-			return nil, api.AsStatus(codes.AlreadyExists, errors.New("conflict with existing attestation bundle"))
-		}
-	}
-	strat, rstrat, err := getStrategy(ctx, deps, t, req.StrategyFromRepo)
-	if err != nil {
-		return nil, errors.Wrap(err, "getting strategy")
-	}
-	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat)
-	if err != nil {
-		return strat, errors.Wrap(err, "executing rebuild")
-	}
-	return strat, nil
-}
-
-func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
+func doRebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version}
+	v := schema.Verdict{
+		Target: t,
+	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	regclient := httpinternal.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
 	mux := rebuild.RegistryMux{
@@ -264,17 +246,41 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		PyPI:     pypireg.HTTPRegistry{Client: regclient},
 	}
 	if err := populateArtifact(ctx, &t, mux); err != nil {
-		return nil, errors.Wrap(err, "selecting artifact")
+		// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
+		// For this reason, we don't return a nil error and expect no verdict to be written.
+		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "selecting artifact"))
 	}
-	strat, rberr := doRebuildPackage(ctx, req, deps, mux, t)
-	v := schema.Verdict{
-		Target: t,
+	signer := verifier.InTotoEnvelopeSigner{EnvelopeSigner: deps.Signer}
+	a := verifier.Attestor{Store: deps.AttestationStore, Signer: signer, AllowOverwrite: deps.OverwriteAttestations}
+	if !deps.OverwriteAttestations {
+		if exists, err := a.BundleExists(ctx, t); err != nil {
+			v.Message = errors.Wrap(err, "checking existing bundle").Error()
+			return &v, nil
+		} else if exists {
+			v.Message = api.AsStatus(codes.AlreadyExists, errors.New("conflict with existing attestation bundle")).Error()
+			return &v, nil
+		}
+	}
+	strat, rstrat, err := getStrategy(ctx, deps, t, req.StrategyFromRepo)
+	if err != nil {
+		v.Message = errors.Wrap(err, "getting strategy").Error()
+		return &v, nil
 	}
 	if strat != nil {
 		v.StrategyOneof = schema.NewStrategyOneOf(strat)
 	}
-	if rberr != nil {
-		v.Message = rberr.Error()
+	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat)
+	if err != nil {
+		v.Message = errors.Wrap(err, "executing rebuild").Error()
+		return &v, nil
+	}
+	return &v, nil
+}
+
+func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
+	v, err := doRebuildPackage(ctx, req, deps)
+	if err != nil {
+		return nil, err
 	}
 	var rawStrategy string
 	if enc, err := json.Marshal(v.StrategyOneof); err != nil {
@@ -282,8 +288,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	} else {
 		rawStrategy = string(enc)
 	}
-
-	_, err := deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(req.ID).Set(ctx, schema.SmoketestAttempt{
+	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(req.ID).Set(ctx, schema.SmoketestAttempt{
 		Ecosystem:       string(v.Target.Ecosystem),
 		Package:         v.Target.Package,
 		Version:         v.Target.Version,
@@ -296,7 +301,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Created:         time.Now().UnixMilli(),
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "storing results in firestore")
+		log.Print(errors.Wrap(err, "storing results in firestore"))
 	}
-	return &v, nil
+	return v, nil
 }
