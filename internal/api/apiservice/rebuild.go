@@ -233,7 +233,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	return nil
 }
 
-func doRebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
+func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version}
 	v := schema.Verdict{
 		Target: t,
@@ -278,7 +278,7 @@ func doRebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, dep
 }
 
 func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
-	v, err := doRebuildPackage(ctx, req, deps)
+	v, err := rebuildPackage(ctx, req, deps)
 	if err != nil {
 		return nil, err
 	}
