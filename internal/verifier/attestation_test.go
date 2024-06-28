@@ -26,7 +26,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/hashext"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	cloudbuild "google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/cloudbuild/v1"
 )
 
 func TestCreateAttestations(t *testing.T) {
@@ -198,7 +198,7 @@ func TestCreateAttestations(t *testing.T) {
       "byproducts": [
         {
           "name": "build.json",
-          "content": "e30="
+          "content": "eyJtYW51YWwiOnsicmVwbyI6Imh0dHA6Ly9naXRodWIuY29tL2Zvby9iYXIiLCJyZWYiOiIwYmVlYzdiNWVhM2YwZmRiYzk1ZDBkZDQ3ZjNjNWJjMjc1ZGE4YTMzIiwiZGlyIjoiIiwiZGVwcyI6ImVjaG8gZGVwcyIsImJ1aWxkIjoiZWNobyBidWlsZCIsInN5c3RlbV9kZXBzIjpbImdpdCJdLCJvdXRwdXRfcGF0aCI6ImZvby9iYXIifX0="
         },
         {
           "name": "Dockerfile",

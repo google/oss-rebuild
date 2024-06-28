@@ -16,14 +16,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
 	"net/url"
 	"path"
-	"strings"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
@@ -33,7 +30,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api/apiservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/api/rebuilderservice"
-	gcb "github.com/google/oss-rebuild/internal/cloudbuild"
+	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
@@ -42,7 +39,6 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/idtoken"
-	"google.golang.org/api/iterator"
 )
 
 var (
@@ -156,48 +152,6 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	return &d, nil
 }
 
-func sanitize(key string) string {
-	return strings.ReplaceAll(key, "/", "!")
-}
-
-func HandleGet(rw http.ResponseWriter, req *http.Request) {
-	ctx := context.Background()
-	req.ParseForm()
-	// FIXME encode scope in docref
-	pkg, version := req.Form.Get("pkg"), req.Form.Get("version")
-	client, err := firestore.NewClient(ctx, *project)
-	if err != nil {
-		log.Println(err)
-		http.Error(rw, "Internal Error", 500)
-		return
-	}
-	var snapshot *firestore.DocumentSnapshot
-	iter := client.Collection("packages").Doc(sanitize(pkg)).Collection("versions").Doc(version).Collection("attempts").Limit(1).Documents(ctx)
-	snapshot, err = iter.Next()
-	if err == iterator.Done {
-		http.Error(rw, "Not Found", 404)
-		return
-	}
-	if err != nil {
-		log.Println(err)
-		http.Error(rw, "Internal Error", 500)
-		return
-	}
-	ret, err := json.Marshal(map[string]any{
-		"package":          snapshot.Data()["package"].(string),
-		"version":          snapshot.Data()["version"].(string),
-		"success":          snapshot.Data()["success"].(bool),
-		"message":          snapshot.Data()["message"].(string),
-		"executor_version": snapshot.Data()["executor_version"].(string),
-		"created":          time.UnixMilli(snapshot.Data()["created"].(int64)),
-	})
-	if err != nil {
-		http.Error(rw, "Internal Error", 500)
-		return
-	}
-	rw.Write(ret)
-}
-
 func VersionInit(ctx context.Context) (*apiservice.VersionDeps, error) {
 	var d apiservice.VersionDeps
 	var err error
@@ -245,7 +199,6 @@ func main() {
 	flag.Parse()
 	http.HandleFunc("/smoketest", api.Handler(RebuildSmoketestInit, apiservice.RebuildSmoketest))
 	http.HandleFunc("/rebuild", api.Handler(RebuildPackageInit, apiservice.RebuildPackage))
-	http.HandleFunc("/get", HandleGet)
 	http.HandleFunc("/version", api.Handler(VersionInit, apiservice.Version))
 	http.HandleFunc("/runs", api.Handler(CreateRunInit, apiservice.CreateRun))
 	if err := http.ListenAndServe(":8080", nil); err != nil {

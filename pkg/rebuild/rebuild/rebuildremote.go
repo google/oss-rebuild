@@ -26,9 +26,9 @@ import (
 	"text/template"
 	"time"
 
-	gcb "github.com/google/oss-rebuild/internal/cloudbuild"
+	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/pkg/errors"
-	cloudbuild "google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/cloudbuild/v1"
 )
 
 // RemoteOptions provides the configuration to execute rebuilds on Cloud Build.

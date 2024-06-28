@@ -24,7 +24,7 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/storage"
-	gitinternal "github.com/google/oss-rebuild/internal/git"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/pkg/errors"
 )
 
@@ -66,7 +66,7 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 		cloneTime = time.Since(cloneStart)
 	} else {
 		// Do a fresh checkout to wipe any cruft from previous builds.
-		_, err := gitinternal.Reuse(ctx, s, fs, &git.CloneOptions{URL: rcfg.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
+		_, err := gitx.Reuse(ctx, s, fs, &git.CloneOptions{URL: rcfg.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
 		if err != nil {
 			return nil, nil, err
 		}

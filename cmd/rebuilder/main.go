@@ -25,7 +25,7 @@ import (
 
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/rebuilderservice"
-	gitinternal "github.com/google/oss-rebuild/internal/git"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/timewarp"
 	"github.com/pkg/errors"
@@ -64,7 +64,7 @@ func RebuildSmoketestInit(ctx context.Context) (*rebuilderservice.RebuildSmokete
 		if err != nil {
 			log.Fatalf("Failed to create API Client: %v", err)
 		}
-		d.GitCache = &gitinternal.Cache{IDClient: c, APIClient: sc, URL: u}
+		d.GitCache = &gitx.Cache{IDClient: c, APIClient: sc, URL: u}
 	}
 	if *useTimewarp {
 		*d.TimewarpURL = fmt.Sprintf("localhost:%d", *timewarpPort)

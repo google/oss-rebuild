@@ -16,8 +16,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
-	gcb "github.com/google/oss-rebuild/internal/cloudbuild"
-	httpinternal "github.com/google/oss-rebuild/internal/http"
+	"github.com/google/oss-rebuild/internal/gcb"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
@@ -105,7 +105,7 @@ func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.Regist
 }
 
 type RebuildPackageDeps struct {
-	HTTPClient            httpinternal.BasicClient
+	HTTPClient            httpx.BasicClient
 	FirestoreClient       *firestore.Client
 	Signer                *dsse.EnvelopeSigner
 	GCBClient             gcb.Client
@@ -239,7 +239,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Target: t,
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
-	regclient := httpinternal.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
+	regclient := httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
 	mux := rebuild.RegistryMux{
 		CratesIO: cratesreg.HTTPRegistry{Client: regclient},
 		NPM:      npmreg.HTTPRegistry{Client: regclient},

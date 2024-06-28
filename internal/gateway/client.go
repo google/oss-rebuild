@@ -21,18 +21,18 @@ import (
 	"net/http"
 	"net/url"
 
-	httpinternal "github.com/google/oss-rebuild/internal/http"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/pkg/errors"
 )
 
 // Client is a client for the gateway service.
 type Client struct {
-	RedirectClient httpinternal.BasicClient
+	RedirectClient httpx.BasicClient
 	IDClient       *http.Client
 	URL            *url.URL
 }
 
-var _ httpinternal.BasicClient = &Client{}
+var _ httpx.BasicClient = &Client{}
 
 // Do sends a request to the gateway service and then through to the actual endpoint.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {

@@ -18,12 +18,12 @@ import (
 	"context"
 	"net/http"
 
-	httpinternal "github.com/google/oss-rebuild/internal/http"
+	"github.com/google/oss-rebuild/internal/httpx"
 )
 
 // DoContext attempts to make an external HTTP request using the gateway client, if configured.
 func DoContext(ctx context.Context, req *http.Request) (*http.Response, error) {
-	if c, ok := ctx.Value(HTTPBasicClientID).(httpinternal.BasicClient); ok && c != nil {
+	if c, ok := ctx.Value(HTTPBasicClientID).(httpx.BasicClient); ok && c != nil {
 		return c.Do(req)
 	}
 	return http.DefaultClient.Do(req)

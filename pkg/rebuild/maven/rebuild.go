@@ -28,7 +28,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-	gitinternal "github.com/google/oss-rebuild/internal/git"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	mvnreg "github.com/google/oss-rebuild/pkg/registry/maven"
@@ -59,7 +59,7 @@ func rebuildOne(ctx context.Context, input rebuild.Input, rcfg *RepoConfig, fs b
 		*rcfg = newRepo
 	} else {
 		// Do a fresh checkout to wipe any cruft from previous builds.
-		_, err := gitinternal.Reuse(ctx, s, fs, &git.CloneOptions{URL: rcfg.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
+		_, err := gitx.Reuse(ctx, s, fs, &git.CloneOptions{URL: rcfg.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
 		if err != nil {
 			return nil, err
 		}
@@ -87,7 +87,7 @@ func RebuildMany(ctx context.Context, name string, inputs []rebuild.Input) ([]re
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failure chroot to git")
 	}
-	s := gitinternal.NewStorer(func() storage.Storer {
+	s := gitx.NewStorer(func() storage.Storer {
 		return filesystem.NewStorageWithOptions(gitfs, cache.NewObjectLRUDefault(), filesystem.Options{ExclusiveAccess: false})
 	})
 	var rcfg RepoConfig

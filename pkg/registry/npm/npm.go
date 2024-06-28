@@ -23,7 +23,7 @@ import (
 	"path"
 	"time"
 
-	httpinternal "github.com/google/oss-rebuild/internal/http"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/pkg/errors"
 )
 
@@ -87,7 +87,7 @@ type Registry interface {
 
 // HTTPRegistry is a Registry implementation that uses the npmjs.org HTTP API.
 type HTTPRegistry struct {
-	Client httpinternal.BasicClient
+	Client httpx.BasicClient
 }
 
 // Package returns the package metadata for the given package.

@@ -16,7 +16,6 @@ package verifier
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"crypto"
 	"io"
@@ -27,19 +26,11 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/hashext"
+	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
-
-type mockHTTPClient struct {
-	Reqests []*http.Request
-	DoFunc  func(req *http.Request) (*http.Response, error)
-}
-
-func (c *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	c.Reqests = append(c.Reqests, req)
-	return c.DoFunc(req)
-}
 
 func TestSummarizeArtifacts(t *testing.T) {
 	ctx := context.Background()
@@ -53,37 +44,33 @@ func TestSummarizeArtifacts(t *testing.T) {
 		}
 		w, rebuildURI, err := metadata.Writer(ctx, rebuild.Asset{Target: target, Type: rebuild.RebuildAsset})
 		orDie(err)
-		hash := hashext.NewMultiHash(crypto.SHA256)
-		{
-			zw := zip.NewWriter(io.MultiWriter(w, hash))
-			ze := archive.ZipEntry{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Comment: "foo"}, Body: []byte("data")}
-			orDie(ze.WriteTo(zw))
-			orDie(zw.Close())
-			orDie(w.Close())
-		}
-		upstreamURI := "https://example.com/foo-1.0.0.tgz"
-		var c mockHTTPClient
-		{
-			upstreamZip := bytes.NewBuffer(nil)
-			zw := zip.NewWriter(upstreamZip)
-			ze := archive.ZipEntry{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Comment: "foo"}, Body: []byte("data")}
-			orDie(ze.WriteTo(zw))
-			orDie(zw.Close())
-			c.DoFunc = func(req *http.Request) (*http.Response, error) {
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Body:       io.NopCloser(upstreamZip),
-				}, nil
-			}
-		}
-		ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, &c)
-		canonicalized := hashext.NewMultiHash(crypto.SHA256)
-		{
-			zw := zip.NewWriter(canonicalized)
-			ze := archive.ZipEntry{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Modified: time.UnixMilli(0)}, Body: []byte("data")}
-			orDie(ze.WriteTo(zw))
-			orDie(zw.Close())
-		}
+		origHash := hashext.NewMultiHash(crypto.SHA256)
+		origZip := must(archivetest.ZipFile([]archive.ZipEntry{
+			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Comment: "foo"}, Body: []byte("data")},
+		}))
+		must(io.MultiWriter(w, origHash).Write(origZip.Bytes()))
+		upstreamURI := "https://example.com/foo-1.0.0.whl"
+		ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, &httpxtest.MockClient{
+			Calls: []httpxtest.Call{
+				{
+					URL: upstreamURI,
+					Response: &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(origZip),
+					},
+				},
+			},
+			URLValidator: func(expected, actual string) {
+				if diff := cmp.Diff(expected, actual); diff != "" {
+					t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+				}
+			},
+		})
+		canonicalizedHash := hashext.NewMultiHash(crypto.SHA256)
+		canonicalizedZip := must(archivetest.ZipFile([]archive.ZipEntry{
+			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Modified: time.UnixMilli(0)}, Body: []byte("data")},
+		}))
+		must(canonicalizedHash.Write(canonicalizedZip.Bytes()))
 		rb, up, err := SummarizeArtifacts(ctx, metadata, target, upstreamURI, []crypto.Hash{crypto.SHA256})
 		if err != nil {
 			t.Fatalf("SummarizeArtifacts() returned error: %v", err)
@@ -91,29 +78,20 @@ func TestSummarizeArtifacts(t *testing.T) {
 		if rb.URI != rebuildURI {
 			t.Errorf("SummarizeArtifacts() returned diff for rb.URI: want %q, got %q", rebuildURI, rb.URI)
 		}
-		if diff := cmp.Diff(hash.Sum(nil), rb.Hash.Sum(nil)); diff != "" {
+		if diff := cmp.Diff(origHash.Sum(nil), rb.Hash.Sum(nil)); diff != "" {
 			t.Errorf("SummarizeArtifacts() returned diff for rb.Hash (-want +got):\n%s", diff)
 		}
-		if diff := cmp.Diff(canonicalized.Sum(nil), rb.CanonicalHash.Sum(nil)); diff != "" {
+		if diff := cmp.Diff(canonicalizedHash.Sum(nil), rb.CanonicalHash.Sum(nil)); diff != "" {
 			t.Errorf("SummarizeArtifacts() returned diff for rb.CanonicalHash (-want +got):\n%s", diff)
 		}
 		if up.URI != upstreamURI {
 			t.Errorf("SummarizeArtifacts() returned diff for up.URI: want %q, got %q", upstreamURI, up.URI)
 		}
-		if diff := cmp.Diff(hash.Sum(nil), up.Hash.Sum(nil)); diff != "" {
+		if diff := cmp.Diff(origHash.Sum(nil), up.Hash.Sum(nil)); diff != "" {
 			t.Errorf("SummarizeArtifacts() returned diff for up.Hash (-want +got):\n%s", diff)
 		}
-		if diff := cmp.Diff(canonicalized.Sum(nil), up.CanonicalHash.Sum(nil)); diff != "" {
+		if diff := cmp.Diff(canonicalizedHash.Sum(nil), up.CanonicalHash.Sum(nil)); diff != "" {
 			t.Errorf("SummarizeArtifacts() returned diff for up.CanonicalHash (-want +got):\n%s", diff)
-		}
-		if len(c.Reqests) != 1 {
-			t.Fatalf("SummarizeArtifacts() made %d requests, want 1", len(c.Reqests))
-		}
-		if c.Reqests[0].Method != http.MethodGet {
-			t.Errorf("SummarizeArtifacts() made request with method %q, want %q", c.Reqests[0].Method, http.MethodGet)
-		}
-		if c.Reqests[0].URL.String() != upstreamURI {
-			t.Errorf("SummarizeArtifacts() made request to %q, want %q", c.Reqests[0].URL.String(), upstreamURI)
 		}
 	})
 }

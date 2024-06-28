@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package cloudbuild
+package gcb
 
 import (
 	"context"
@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	cloudbuild "google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
