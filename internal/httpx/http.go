@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package http provides a simpler http.Client abstraction and derivative uses.
-package http
+package httpx
 
 import (
 	"bufio"

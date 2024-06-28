@@ -12,7 +12,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
 	gcb "github.com/google/oss-rebuild/internal/cloudbuild"
-	httpinternal "github.com/google/oss-rebuild/internal/http"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
@@ -100,7 +100,7 @@ func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.Regist
 }
 
 type RebuildPackageDeps struct {
-	HTTPClient            httpinternal.BasicClient
+	HTTPClient            httpx.BasicClient
 	Signer                *dsse.EnvelopeSigner
 	GCBClient             gcb.Client
 	BuildProject          string
@@ -117,7 +117,7 @@ type RebuildPackageDeps struct {
 func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*api.NoReturn, error) {
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
-	regclient := httpinternal.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
+	regclient := httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
 	mux := rebuild.RegistryMux{
 		CratesIO: cratesreg.HTTPRegistry{Client: regclient},
 		NPM:      npmreg.HTTPRegistry{Client: regclient},

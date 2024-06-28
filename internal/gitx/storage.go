@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package git
+package gitx
 
 import (
 	"github.com/go-git/go-git/v5/storage"

@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	httpinternal "github.com/google/oss-rebuild/internal/http"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/pkg/errors"
@@ -30,7 +30,7 @@ type NoReturn struct{}
 
 var ErrNotOK = errors.New("non-OK response")
 
-func Stub[I schema.Message, O any](client httpinternal.BasicClient, u url.URL) StubT[I, O] {
+func Stub[I schema.Message, O any](client httpx.BasicClient, u url.URL) StubT[I, O] {
 	return func(ctx context.Context, i I) (*O, error) {
 		values, err := form.Marshal(i)
 		if err != nil {
@@ -60,7 +60,7 @@ func Stub[I schema.Message, O any](client httpinternal.BasicClient, u url.URL) S
 	}
 }
 
-func StubFromHandler[I schema.Message, O any, D Dependencies](client httpinternal.BasicClient, u url.URL, handler HandlerT[I, O, D]) StubT[I, O] {
+func StubFromHandler[I schema.Message, O any, D Dependencies](client httpx.BasicClient, u url.URL, handler HandlerT[I, O, D]) StubT[I, O] {
 	return Stub[I, O](client, u)
 }
 

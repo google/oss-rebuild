@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package git provides rebuilder-specific git abstractions.
-package git
+package gitx
 
 import (
 	"context"

@@ -24,7 +24,7 @@ import (
 	"path"
 	"time"
 
-	httpinternal "github.com/google/oss-rebuild/internal/http"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/pkg/errors"
 )
 
@@ -69,7 +69,7 @@ type Registry interface {
 
 // HTTPRegistry is a Registry implementation that uses the crates.io HTTP API.
 type HTTPRegistry struct {
-	Client httpinternal.BasicClient
+	Client httpx.BasicClient
 }
 
 // Crate provides all API information related to the given crate.
