@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/gcb/gcbtest"
 	"google.golang.org/api/cloudbuild/v1"
 )
 
@@ -160,20 +161,6 @@ ENTRYPOINT ["/bin/sh","/build"]
 	}
 }
 
-// MockClient implements gcb.Client for testing.
-type MockClient struct {
-	CreateBuildFunc  func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error)
-	GetOperationFunc func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error)
-}
-
-func (mc *MockClient) CreateBuild(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
-	return mc.CreateBuildFunc(ctx, project, build)
-}
-
-func (mc *MockClient) GetOperation(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
-	return mc.GetOperationFunc(ctx, op)
-}
-
 func TestDoCloudBuild(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		beforeBuild := &cloudbuild.Build{
@@ -192,7 +179,7 @@ func TestDoCloudBuild(t *testing.T) {
 			},
 			Results: &cloudbuild.Results{BuildStepImages: []string{"sha256:abcd"}},
 		}
-		client := &MockClient{
+		client := &gcbtest.MockClient{
 			CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
 				return &cloudbuild.Operation{
 					Name:     "operations/build-id",
