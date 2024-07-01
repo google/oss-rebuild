@@ -4,9 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"strings"
+	"time"
 
+	"cloud.google.com/go/firestore"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
@@ -101,6 +106,7 @@ func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.Regist
 
 type RebuildPackageDeps struct {
 	HTTPClient            httpx.BasicClient
+	FirestoreClient       *firestore.Client
 	Signer                *dsse.EnvelopeSigner
 	GCBClient             gcb.Client
 	BuildProject          string
@@ -114,35 +120,23 @@ type RebuildPackageDeps struct {
 	InferStub             api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
 }
 
-func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*api.NoReturn, error) {
-	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version}
-	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
-	regclient := httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
-	mux := rebuild.RegistryMux{
-		CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-		NPM:      npmreg.HTTPRegistry{Client: regclient},
-		PyPI:     pypireg.HTTPRegistry{Client: regclient},
-	}
-	if err := populateArtifact(ctx, &t, mux); err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "selecting artifact"))
-	}
-	signer := verifier.InTotoEnvelopeSigner{EnvelopeSigner: deps.Signer}
-	a := verifier.Attestor{Store: deps.AttestationStore, Signer: signer, AllowOverwrite: deps.OverwriteAttestations}
-	if !deps.OverwriteAttestations {
-		if exists, err := a.BundleExists(ctx, t); err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "checking existing bundle"))
-		} else if exists {
-			return nil, api.AsStatus(codes.AlreadyExists, errors.New("conflict with existing attestation bundle"))
-		}
-	}
-	var manualStrategy, strategy rebuild.Strategy
-	var buildDefLoc rebuild.Location
+type repoStrategy struct {
+	// The strategy that was pulled from the build def repo.
+	RepoStrategy rebuild.Strategy
+	// Details about which build def repo this strategy was pulled from.
+	BuildDefLoc rebuild.Location
+}
+
+// getStrategy determines which strategy we should execute. If a build def repo was used, that data will be included as repoStrategy.
+func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target, fromRepo bool) (rebuild.Strategy, *repoStrategy, error) {
+	var strat rebuild.Strategy
+	var rstrat *repoStrategy
 	ireq := schema.InferenceRequest{
-		Ecosystem: req.Ecosystem,
-		Package:   req.Package,
-		Version:   req.Version,
+		Ecosystem: t.Ecosystem,
+		Package:   t.Package,
+		Version:   t.Version,
 	}
-	if req.StrategyFromRepo {
+	if fromRepo {
 		defs, err := builddef.NewBuildDefinitionSetFromGit(&builddef.GitBuildDefinitionSetOptions{
 			CloneOptions: git.CloneOptions{
 				URL:           deps.BuildDefRepo.Repo,
@@ -155,41 +149,46 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 			SparseCheckoutDirs: []string{deps.BuildDefRepo.Dir},
 		})
 		if err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating build definition repo reader"))
+			return nil, nil, errors.Wrap(err, "creating build definition repo reader")
 		}
 		pth, _ := defs.Path(ctx, t)
-		buildDefLoc = rebuild.Location{
-			Repo: deps.BuildDefRepo.Repo,
-			Ref:  defs.Ref().String(),
-			Dir:  pth,
+		rstrat = &repoStrategy{
+			BuildDefLoc: rebuild.Location{
+				Repo: deps.BuildDefRepo.Repo,
+				Ref:  defs.Ref().String(),
+				Dir:  pth,
+			},
 		}
-		manualStrategy, err := defs.Get(ctx, t)
+		rstrat.RepoStrategy, err = defs.Get(ctx, t)
 		if err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "accessing build definition"))
+			return nil, nil, errors.Wrap(err, "accessing build definition")
 		}
-		if hint, ok := manualStrategy.(*rebuild.LocationHint); ok && hint != nil {
+		if hint, ok := rstrat.RepoStrategy.(*rebuild.LocationHint); ok && hint != nil {
 			ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
-		} else if manualStrategy != nil {
-			strategy = manualStrategy
+		} else if rstrat.RepoStrategy != nil {
+			strat = rstrat.RepoStrategy
 		}
 	}
-	if strategy == nil {
+	if strat == nil {
 		s, err := deps.InferStub(ctx, ireq)
 		if err != nil {
 			// TODO: Surface better error than Internal.
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "fetching inference"))
+			return nil, nil, errors.Wrap(err, "fetching inference")
 		}
-		strategy, err = s.Strategy()
+		strat, err = s.Strategy()
 		if err != nil {
-			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "reading strategy"))
+			return nil, nil, errors.Wrap(err, "reading strategy")
 		}
 	}
+	return strat, rstrat, nil
+}
+
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strat rebuild.Strategy, rstrat *repoStrategy) (err error) {
 	id := uuid.New().String()
 	metadata, err := deps.MetadataBuilder(ctx, id)
 	if err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating metadata store"))
+		return errors.Wrap(err, "creating metadata store")
 	}
-	var upstreamURI string
 	hashes := []crypto.Hash{crypto.SHA256}
 	opts := rebuild.RemoteOptions{
 		GCBClient:           deps.GCBClient,
@@ -199,38 +198,110 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		LogsBucket:          deps.BuildLogsBucket,
 		MetadataStore:       metadata,
 	}
-	// TODO: These doRebuild functions should return a verdict, and this handler
-	// should forward those to the caller as a schema.Verdict.
+	var upstreamURI string
 	switch t.Ecosystem {
 	case rebuild.NPM:
 		hashes = append(hashes, crypto.SHA512)
-		upstreamURI, err = doNPMRebuild(ctx, t, id, mux, strategy, opts)
+		upstreamURI, err = doNPMRebuild(ctx, t, id, mux, strat, opts)
 	case rebuild.CratesIO:
-		upstreamURI, err = doCratesRebuild(ctx, t, id, mux, strategy, opts)
+		upstreamURI, err = doCratesRebuild(ctx, t, id, mux, strat, opts)
 	case rebuild.PyPI:
-		upstreamURI, err = doPyPIRebuild(ctx, t, id, mux, strategy, opts)
+		upstreamURI, err = doPyPIRebuild(ctx, t, id, mux, strat, opts)
 	default:
-		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
+		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
 	if err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "rebuilding"))
+		return errors.Wrap(err, "rebuilding")
 	}
 	rb, up, err := verifier.SummarizeArtifacts(ctx, metadata, t, upstreamURI, hashes)
 	if err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "comparing artifacts"))
+		return errors.Wrap(err, "comparing artifacts")
 	}
 	exactMatch := bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
 	canonicalizedMatch := bytes.Equal(rb.CanonicalHash.Sum(nil), up.CanonicalHash.Sum(nil))
 	if !exactMatch && !canonicalizedMatch {
-		return nil, api.AsStatus(codes.FailedPrecondition, errors.Wrap(err, "rebuild content mismatch"))
+		return api.AsStatus(codes.FailedPrecondition, errors.Wrap(err, "rebuild content mismatch"))
 	}
-	input := rebuild.Input{Target: t, Strategy: manualStrategy}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, metadata, buildDefLoc)
+	input := rebuild.Input{Target: t, Strategy: rstrat.RepoStrategy}
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat, id, rb, up, metadata, rstrat.BuildDefLoc)
 	if err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating attestations"))
+		return errors.Wrap(err, "creating attestations")
 	}
 	if err := a.PublishBundle(ctx, t, eqStmt, buildStmt); err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "publishing bundle"))
+		return errors.Wrap(err, "publishing bundle")
 	}
-	return nil, nil
+	return nil
+}
+
+func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
+	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version}
+	v := schema.Verdict{
+		Target: t,
+	}
+	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
+	regclient := httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
+	mux := rebuild.RegistryMux{
+		CratesIO: cratesreg.HTTPRegistry{Client: regclient},
+		NPM:      npmreg.HTTPRegistry{Client: regclient},
+		PyPI:     pypireg.HTTPRegistry{Client: regclient},
+	}
+	if err := populateArtifact(ctx, &t, mux); err != nil {
+		// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
+		// For this reason, we don't return a nil error and expect no verdict to be written.
+		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "selecting artifact"))
+	}
+	signer := verifier.InTotoEnvelopeSigner{EnvelopeSigner: deps.Signer}
+	a := verifier.Attestor{Store: deps.AttestationStore, Signer: signer, AllowOverwrite: deps.OverwriteAttestations}
+	if !deps.OverwriteAttestations {
+		if exists, err := a.BundleExists(ctx, t); err != nil {
+			v.Message = errors.Wrap(err, "checking existing bundle").Error()
+			return &v, nil
+		} else if exists {
+			v.Message = api.AsStatus(codes.AlreadyExists, errors.New("conflict with existing attestation bundle")).Error()
+			return &v, nil
+		}
+	}
+	strat, rstrat, err := getStrategy(ctx, deps, t, req.StrategyFromRepo)
+	if err != nil {
+		v.Message = errors.Wrap(err, "getting strategy").Error()
+		return &v, nil
+	}
+	if strat != nil {
+		v.StrategyOneof = schema.NewStrategyOneOf(strat)
+	}
+	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat)
+	if err != nil {
+		v.Message = errors.Wrap(err, "executing rebuild").Error()
+		return &v, nil
+	}
+	return &v, nil
+}
+
+func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
+	v, err := rebuildPackage(ctx, req, deps)
+	if err != nil {
+		return nil, err
+	}
+	var rawStrategy string
+	if enc, err := json.Marshal(v.StrategyOneof); err != nil {
+		log.Printf("invalid strategy returned from smoketest: %v\n", err)
+	} else {
+		rawStrategy = string(enc)
+	}
+	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(req.ID).Set(ctx, schema.SmoketestAttempt{
+		Ecosystem:       string(v.Target.Ecosystem),
+		Package:         v.Target.Package,
+		Version:         v.Target.Version,
+		Artifact:        v.Target.Artifact,
+		Success:         v.Message == "",
+		Message:         v.Message,
+		Strategy:        rawStrategy,
+		ExecutorVersion: os.Getenv("K_REVISION"),
+		RunID:           req.ID,
+		Created:         time.Now().UnixMilli(),
+	})
+	if err != nil {
+		log.Print(errors.Wrap(err, "storing results in firestore"))
+	}
+	return v, nil
 }
