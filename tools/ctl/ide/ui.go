@@ -18,7 +18,6 @@ package ide
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -119,12 +118,12 @@ func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, err := localAssetStore(ctx, example.Run)
+	localAssets, err := localAssetStore(ctx, example.RunID)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
 	}
-	gcsAssets, err := gcsAssetStore(ctx, example.Run)
+	gcsAssets, err := gcsAssetStore(ctx, example.RunID)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to create gcs asset store"))
 		return
@@ -164,12 +163,6 @@ func (e *explorer) showModal(ctx context.Context, tv *tview.TextView, onExit fun
 
 func (e *explorer) showDetails(ctx context.Context, example firestore.Rebuild) {
 	details := tview.NewTextView()
-
-	var stratOneof schema.StrategyOneOf
-	if err := json.Unmarshal([]byte(example.Strategy), &stratOneof); err != nil {
-		log.Println(errors.Wrap(err, "failed to unmarshal strategy"))
-		return
-	}
 	type detailsStruct struct {
 		Success  bool
 		Message  string
@@ -183,7 +176,7 @@ func (e *explorer) showDetails(ctx context.Context, example firestore.Rebuild) {
 		Success:  example.Success,
 		Message:  example.Message,
 		Timings:  example.Timings,
-		Strategy: stratOneof,
+		Strategy: example.Strategy,
 	})
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to marshal details"))
@@ -204,12 +197,12 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, err := localAssetStore(ctx, example.Run)
+	localAssets, err := localAssetStore(ctx, example.RunID)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
 	}
-	gcsAssets, err := gcsAssetStore(ctx, example.Run)
+	gcsAssets, err := gcsAssetStore(ctx, example.RunID)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to create gcs asset store"))
 		return
@@ -226,7 +219,7 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 }
 
 func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) error {
-	localAssets, err := localAssetStore(ctx, example.Run)
+	localAssets, err := localAssetStore(ctx, example.RunID)
 	if err != nil {
 		return errors.Wrap(err, "failed to create local asset store")
 	}
@@ -239,9 +232,7 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) er
 				return errors.Wrap(err, "failed to read existing build definition")
 			}
 		} else {
-			if err := json.Unmarshal([]byte(example.Strategy), &currentStrat); err != nil {
-				return errors.Wrap(err, "failed to parse strategy")
-			}
+			currentStrat = example.Strategy
 		}
 	}
 	var newStrat schema.StrategyOneOf
