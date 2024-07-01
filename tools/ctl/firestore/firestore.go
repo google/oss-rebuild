@@ -34,17 +34,8 @@ import (
 
 // Rebuild represents the result of a specific rebuild.
 type Rebuild struct {
-	Ecosystem string
-	Package   string
-	Version   string
-	Artifact  string
-	Success   bool
-	Message   string
-	Strategy  string
-	Executor  string
-	Run       string
-	Created   time.Time
-	Timings   rebuild.Timings
+	schema.SmoketestAttempt
+	Created time.Time
 }
 
 // NewRebuildFromFirestore creates a Rebuild instance from a "attempt" collection document.
@@ -54,20 +45,8 @@ func NewRebuildFromFirestore(doc *firestore.DocumentSnapshot) Rebuild {
 		panic(err)
 	}
 	var rb Rebuild
-	rb.Ecosystem = sa.Ecosystem
-	rb.Package = sa.Package
-	rb.Version = sa.Version
-	rb.Success = sa.Success
-	rb.Message = sa.Message
-	rb.Strategy = sa.Strategy
-	rb.Executor = sa.ExecutorVersion
-	rb.Run = sa.RunID
+	rb.SmoketestAttempt = sa
 	rb.Created = time.UnixMilli(sa.Created)
-	rb.Artifact = sa.Artifact
-	rb.Timings.CloneEstimate = time.Duration(sa.TimeCloneEstimate * float64(time.Second))
-	rb.Timings.Source = time.Duration(sa.TimeSource * float64(time.Second))
-	rb.Timings.Infer = time.Duration(sa.TimeInfer * float64(time.Second))
-	rb.Timings.Build = time.Duration(sa.TimeBuild * float64(time.Second))
 	return rb
 }
 
@@ -78,6 +57,11 @@ func (r Rebuild) Target() rebuild.Target {
 		Version:   r.Version,
 		Artifact:  r.Artifact,
 	}
+}
+
+// ID returns a stable, human-readable formatting of the ecosystem, package, and version.
+func (r *Rebuild) ID() string {
+	return strings.Join([]string{r.Ecosystem, r.Package, r.Version}, "!")
 }
 
 type BenchmarkMode string
@@ -109,11 +93,6 @@ func NewRunFromFirestore(doc *firestore.DocumentSnapshot) Run {
 		Type:          typ,
 		Created:       time.UnixMilli(doc.Data()["created"].(int64)),
 	}
-}
-
-// ID returns a stable, human-readable formatting of the ecosystem, package, and version.
-func (r *Rebuild) ID() string {
-	return strings.Join([]string{r.Ecosystem, r.Package, r.Version}, "!")
 }
 
 // DoQuery executes a query, transforming and sending each document to the output channel.
