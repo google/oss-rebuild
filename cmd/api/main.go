@@ -48,6 +48,7 @@ var (
 	inferenceURL          = flag.String("inference-url", "", "URL of the inference service")
 	signingKeyVersion     = flag.String("signing-key-version", "", "Resource name of the signing CryptoKeyVersion")
 	metadataBucket        = flag.String("metadata-bucket", "", "GCS bucket for rebuild metadata")
+	rebuildBucket         = flag.String("rebuild-bucket", "", "GCS bucket for rebuild artifacts")
 	attestationBucket     = flag.String("attestation-bucket", "", "GCS bucket to which to publish rebuild attestation")
 	logsBucket            = flag.String("logs-bucket", "", "GCS bucket for rebuild logs")
 	prebuildBucket        = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
@@ -137,6 +138,9 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	}
 	d.MetadataBuilder = func(ctx context.Context, id string) (rebuild.AssetStore, error) {
 		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, id), "gs://"+*metadataBucket)
+	}
+	d.RebuildStoreBuilder = func(ctx context.Context, id string) (rebuild.AssetStore, error) {
+		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, id), "gs://"+*rebuildBucket)
 	}
 	d.OverwriteAttestations = *overwriteAttestations
 	u, err := url.Parse(*inferenceURL)
