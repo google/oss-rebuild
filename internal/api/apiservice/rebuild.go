@@ -115,6 +115,7 @@ type RebuildPackageDeps struct {
 	BuildDefRepo          rebuild.Location
 	AttestationStore      rebuild.AssetStore
 	MetadataBuilder       func(ctx context.Context, id string) (rebuild.AssetStore, error)
+	RebuildStoreBuilder   func(ctx context.Context, id string) (rebuild.AssetStore, error)
 	OverwriteAttestations bool
 	InferStub             api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
 }
@@ -188,6 +189,10 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if err != nil {
 		return errors.Wrap(err, "creating metadata store")
 	}
+	rebuildStore, err := deps.RebuildStoreBuilder(ctx, id)
+	if err != nil {
+		return errors.Wrap(err, "creating rebuild store")
+	}
 	hashes := []crypto.Hash{crypto.SHA256}
 	opts := rebuild.RemoteOptions{
 		GCBClient:           deps.GCBClient,
@@ -196,6 +201,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		UtilPrebuildBucket:  deps.UtilPrebuildBucket,
 		LogsBucket:          deps.BuildLogsBucket,
 		MetadataStore:       metadata,
+		RebuildStore:        rebuildStore,
 	}
 	var upstreamURI string
 	switch t.Ecosystem {
@@ -212,7 +218,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if err != nil {
 		return errors.Wrap(err, "rebuilding")
 	}
-	rb, up, err := verifier.SummarizeArtifacts(ctx, metadata, t, upstreamURI, hashes)
+	rb, up, err := verifier.SummarizeArtifacts(ctx, rebuildStore, t, upstreamURI, hashes)
 	if err != nil {
 		return errors.Wrap(err, "comparing artifacts")
 	}
