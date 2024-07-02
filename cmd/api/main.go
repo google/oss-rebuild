@@ -48,7 +48,7 @@ var (
 	buildLocalURL         = flag.String("build-local-url", "", "URL of the rebuild service")
 	inferenceURL          = flag.String("inference-url", "", "URL of the inference service")
 	signingKeyVersion     = flag.String("signing-key-version", "", "Resource name of the signing CryptoKeyVersion")
-	rebuildBucket         = flag.String("rebuild-bucket", "", "GCS bucket for rebuild artifacts")
+	metadataBucket        = flag.String("metadata-bucket", "", "GCS bucket for rebuild artifacts")
 	attestationBucket     = flag.String("attestation-bucket", "", "GCS bucket to which to publish rebuild attestation")
 	logsBucket            = flag.String("logs-bucket", "", "GCS bucket for rebuild logs")
 	prebuildBucket        = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
@@ -136,9 +136,9 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "creating attestation uploader")
 	}
-	d.MetadataStore = rebuild.NewFilesystemAssetStore(memfs.New())
-	d.RebuildStoreBuilder = func(ctx context.Context, id string) (rebuild.AssetStore, error) {
-		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, id), "gs://"+*rebuildBucket)
+	d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(memfs.New())
+	d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.AssetStore, error) {
+		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, id), "gs://"+*metadataBucket)
 	}
 	d.OverwriteAttestations = *overwriteAttestations
 	u, err := url.Parse(*inferenceURL)

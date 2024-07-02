@@ -128,13 +128,6 @@ resource "google_storage_bucket" "metadata" {
   uniform_bucket_level_access = true
   depends_on = [google_project_service.storage]
 }
-resource "google_storage_bucket" "rebuild-artifacts" {
-  name                        = "${var.host}-rebuild-artifacts"
-  location                    = "us-central1"
-  storage_class               = "STANDARD"
-  uniform_bucket_level_access = true
-  depends_on = [google_project_service.storage]
-}
 resource "google_storage_bucket" "logs" {
   name                        = "${var.host}-rebuild-logs"
   location                    = "us-central1"
@@ -356,7 +349,6 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--prebuild-bucket=${google_storage_bucket.bootstrap-tools.name}",
         "--signing-key-version=${data.google_kms_crypto_key_version.signing-key-version.name}",
         "--metadata-bucket=${google_storage_bucket.metadata.name}",
-        "--rebuild-bucket=${google_storage_bucket.rebuild-artifacts.name}",
         "--attestation-bucket=${google_storage_bucket.attestations.name}",
         "--logs-bucket=${google_storage_bucket.logs.name}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
@@ -404,13 +396,8 @@ resource "google_storage_bucket_iam_binding" "orchestrator-manages-metadata" {
   role    = "roles/storage.objectAdmin"
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
-resource "google_storage_bucket_iam_binding" "orchestrator-manages-rebuild-artifacts" {
-  bucket  = google_storage_bucket.rebuild-artifacts.name
-  role    = "roles/storage.objectAdmin"
-  members = ["serviceAccount:${google_service_account.orchestrator.email}"]
-}
-resource "google_storage_bucket_iam_binding" "remote-build-writes-rebuild-artifacts" {
-  bucket  = google_storage_bucket.rebuild-artifacts.name
+resource "google_storage_bucket_iam_binding" "remote-build-writes-metadata" {
+  bucket  = google_storage_bucket.metadata.name
   role    = "roles/storage.objectCreator"
   members = ["serviceAccount:${google_service_account.builder-remote.email}"]
 }

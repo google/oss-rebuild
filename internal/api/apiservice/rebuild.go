@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
@@ -105,20 +104,20 @@ func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.Regist
 }
 
 type RebuildPackageDeps struct {
-	HTTPClient            httpx.BasicClient
-	FirestoreClient       *firestore.Client
-	Signer                *dsse.EnvelopeSigner
-	GCBClient             gcb.Client
-	BuildProject          string
-	BuildServiceAccount   string
-	UtilPrebuildBucket    string
-	BuildLogsBucket       string
-	BuildDefRepo          rebuild.Location
-	AttestationStore      rebuild.AssetStore
-	MetadataStore         rebuild.AssetStore
-	RebuildStoreBuilder   func(ctx context.Context, id string) (rebuild.AssetStore, error)
-	OverwriteAttestations bool
-	InferStub             api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
+	HTTPClient                 httpx.BasicClient
+	FirestoreClient            *firestore.Client
+	Signer                     *dsse.EnvelopeSigner
+	GCBClient                  gcb.Client
+	BuildProject               string
+	BuildServiceAccount        string
+	UtilPrebuildBucket         string
+	BuildLogsBucket            string
+	BuildDefRepo               rebuild.Location
+	AttestationStore           rebuild.AssetStore
+	LocalMetadataStore         rebuild.AssetStore
+	RemoteMetadataStoreBuilder func(ctx context.Context, id string) (rebuild.AssetStore, error)
+	OverwriteAttestations      bool
+	InferStub                  api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
 }
 
 type repoStrategy struct {
@@ -186,7 +185,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 
 func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strat rebuild.Strategy, rstrat *repoStrategy) (err error) {
 	id := uuid.New().String()
-	rebuildStore, err := deps.RebuildStoreBuilder(ctx, id)
+	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, id)
 	if err != nil {
 		return errors.Wrap(err, "creating rebuild store")
 	}
@@ -197,8 +196,8 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		BuildServiceAccount: deps.BuildServiceAccount,
 		UtilPrebuildBucket:  deps.UtilPrebuildBucket,
 		LogsBucket:          deps.BuildLogsBucket,
-		MetadataStore:       deps.MetadataStore,
-		RebuildStore:        rebuildStore,
+		LocalMetadataStore:  deps.LocalMetadataStore,
+		RemoteMetadataStore: remoteMetadata,
 	}
 	var upstreamURI string
 	switch t.Ecosystem {
@@ -215,7 +214,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if err != nil {
 		return errors.Wrap(err, "rebuilding")
 	}
-	rb, up, err := verifier.SummarizeArtifacts(ctx, rebuildStore, t, upstreamURI, hashes)
+	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes)
 	if err != nil {
 		return errors.Wrap(err, "comparing artifacts")
 	}
@@ -230,7 +229,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		input.Strategy = rstrat.RepoStrategy
 		loc = rstrat.BuildDefLoc
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat, id, rb, up, deps.MetadataStore, loc)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat, id, rb, up, deps.LocalMetadataStore, loc)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
