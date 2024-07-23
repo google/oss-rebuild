@@ -67,10 +67,12 @@ func RebuildSmoketestInit(ctx context.Context) (*rebuilderservice.RebuildSmokete
 		d.GitCache = &gitx.Cache{IDClient: c, APIClient: sc, URL: u}
 	}
 	if *useTimewarp {
-		*d.TimewarpURL = fmt.Sprintf("localhost:%d", *timewarpPort)
+		addr := fmt.Sprintf("localhost:%d", *timewarpPort)
+		d.TimewarpURL = &addr
 	}
 	if *debugBucket != "" {
-		*d.DebugBucket = fmt.Sprintf("gs://%s", *debugBucket)
+		url := fmt.Sprintf("gs://%s", *debugBucket)
+		d.DebugBucket = &url
 	}
 	d.AssetDir = *localAssetDir
 	d.DefaultVersionCount = *defaultVersionCount
