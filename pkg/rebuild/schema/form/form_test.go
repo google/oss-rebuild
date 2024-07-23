@@ -37,14 +37,18 @@ func TestMarshal(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "Not a struct",
-			input:   "not a struct",
-			want:    nil,
-			wantErr: true,
+			name: "Pointer to struct",
+			input: &TestStruct{
+				StringField: "test",
+			},
+			want: url.Values{
+				"string_field": []string{"test"},
+			},
+			wantErr: false,
 		},
 		{
-			name:    "Pointer not a struct",
-			input:   &TestStruct{},
+			name:    "Not a struct",
+			input:   "not a struct",
 			want:    nil,
 			wantErr: true,
 		},

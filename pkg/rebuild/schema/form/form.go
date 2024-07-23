@@ -36,6 +36,10 @@ func options(field reflect.StructField) fieldOptions {
 func Marshal(in any) (url.Values, error) {
 	tvalue := reflect.ValueOf(in)
 	ttype := tvalue.Type()
+	if ttype.Kind() == reflect.Pointer {
+		tvalue = reflect.Indirect(tvalue)
+		ttype = tvalue.Type()
+	}
 	if ttype.Kind() != reflect.Struct {
 		return nil, ErrInvalidType
 	}
