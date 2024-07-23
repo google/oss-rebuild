@@ -84,6 +84,9 @@ func getRepo(ctx context.Context, uri, path string) (*git.Repository, error) {
 func zipHashes(zr *zip.Reader) (files []string, err error) {
 	var f io.ReadCloser
 	for _, zf := range zr.File {
+		if zf.FileInfo().IsDir() {
+			continue
+		}
 		size := int64(zf.UncompressedSize64)
 		if size < 0 {
 			// TODO: support git LFS?
