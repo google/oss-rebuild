@@ -221,8 +221,13 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if !exactMatch && !canonicalizedMatch {
 		return api.AsStatus(codes.FailedPrecondition, errors.Wrap(err, "rebuild content mismatch"))
 	}
-	input := rebuild.Input{Target: t, Strategy: rstrat.RepoStrategy}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat, id, rb, up, metadata, rstrat.BuildDefLoc)
+	input := rebuild.Input{Target: t}
+	var loc rebuild.Location
+	if rstrat != nil {
+		input.Strategy = rstrat.RepoStrategy
+		loc = rstrat.BuildDefLoc
+	}
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat, id, rb, up, metadata, loc)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
