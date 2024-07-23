@@ -120,7 +120,10 @@ func NewGCSStore(ctx context.Context, uploadPrefix string) (*GCSStore, error) {
 	s := &GCSStore{}
 	{
 		var err error
-		gcsOpts := ctx.Value(GCSClientOptionsID).([]option.ClientOption)
+		var gcsOpts []option.ClientOption
+		if opts, ok := ctx.Value(GCSClientOptionsID).([]option.ClientOption); ok {
+			gcsOpts = append(gcsOpts, opts...)
+		}
 		s.gcsClient, err = gcs.NewClient(ctx, gcsOpts...)
 		if err != nil {
 			return nil, errors.Wrap(err, "Failed to create GCS client")
