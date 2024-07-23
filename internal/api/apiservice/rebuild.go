@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -282,12 +281,6 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if err != nil {
 		return nil, err
 	}
-	var rawStrategy string
-	if enc, err := json.Marshal(v.StrategyOneof); err != nil {
-		log.Printf("invalid strategy returned from smoketest: %v\n", err)
-	} else {
-		rawStrategy = string(enc)
-	}
 	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(req.ID).Set(ctx, schema.SmoketestAttempt{
 		Ecosystem:       string(v.Target.Ecosystem),
 		Package:         v.Target.Package,
@@ -295,7 +288,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Artifact:        v.Target.Artifact,
 		Success:         v.Message == "",
 		Message:         v.Message,
-		Strategy:        rawStrategy,
+		Strategy:        v.StrategyOneof,
 		ExecutorVersion: os.Getenv("K_REVISION"),
 		RunID:           req.ID,
 		Created:         time.Now().UnixMilli(),
