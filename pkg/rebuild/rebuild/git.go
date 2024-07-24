@@ -26,7 +26,6 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/oss-rebuild/internal/gitx"
@@ -92,7 +91,7 @@ func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err
 func allTags(repo *git.Repository) (tags []string, err error) {
 	ri, err := repo.Tags()
 	if err != nil {
-		return
+		return nil, err
 	}
 	var ref *plumbing.Reference
 	for {
@@ -100,19 +99,11 @@ func allTags(repo *git.Repository) (tags []string, err error) {
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			return
+			return nil, err
 		}
 		tags = append(tags, ref.Name().Short())
 	}
-	ti, err := repo.TagObjects()
-	if err != nil {
-		return
-	}
-	err = ti.ForEach(func(t *object.Tag) error {
-		tags = append(tags, t.Name)
-		return nil
-	})
-	return
+	return tags, nil
 }
 
 // LoadRepo attempts to either reuse the local or load the remote repo specified in CloneOptions.
