@@ -37,6 +37,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/google/oss-rebuild/internal/bitmap"
 	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
@@ -251,6 +252,103 @@ func (s CommitsNearPublishStrategy) Search(ctx context.Context, r *git.Repositor
 	return
 }
 
+// ExhaustiveTreeSearchStrategy
+type ExhaustiveTreeSearchStrategy struct {
+}
+
+// Search returns the set of matching commits along with the number of matches.
+func (s ExhaustiveTreeSearchStrategy) Search(ctx context.Context, r *git.Repository, hashes []string) (closest []string, matched, total int, err error) {
+	// Find subset of file hashes that are present in the repo.
+	files := make(map[plumbing.Hash]int)
+	var i int
+	for _, h := range hashes {
+		_, err = r.BlobObject(plumbing.NewHash(h))
+		if err == plumbing.ErrObjectNotFound {
+			// Skip files not present in repo.
+			err = nil
+		} else if err != nil {
+			return
+		} else {
+			files[plumbing.NewHash(h)] = i
+			i++
+		}
+	}
+	// Iterate over repo trees to create an ordering.
+	trees := make(map[plumbing.Hash]int)
+	i = 0
+	for ti, _ := r.TreeObjects(); ; {
+		t, err := ti.Next()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			panic(err)
+		} else {
+			trees[t.Hash] = i
+			i++
+		}
+	}
+	total = len(files)
+	if total == 0 {
+		err = errors.New("repo contains no matching files")
+		return
+	}
+	// Recursively build set of matching files for each tree.
+	matches := bitmap.NewBatch(len(files), len(trees))
+	processed := bitmap.New(len(trees))
+	ti, _ := r.TreeObjects()
+	ti.ForEach(func(t *object.Tree) error {
+		processTree(t, files, trees, matches, processed)
+		return nil
+	})
+	// Search through all commits for the one whose tree has the most matches.
+	var ci object.CommitIter
+	ci, err = r.CommitObjects()
+	if err != nil {
+		err = errors.Wrap(err, "creating commit iterator")
+		return
+	}
+	err = ci.ForEach(func(c *object.Commit) error {
+		if !processed.Get(trees[c.TreeHash]) {
+			return errors.New("unprocessed tree")
+		}
+		count := matches[trees[c.TreeHash]].Count()
+		if matched < count {
+			matched = count
+			closest = closest[:0]
+		}
+		if matched == count {
+			closest = append(closest, c.Hash.String())
+		}
+		return nil
+	})
+	return
+}
+
+// processTree recursively determines the presence of a set of files in the given git Tree and records them.
+func processTree(t *object.Tree, files, trees map[plumbing.Hash]int, matches []bitmap.Bitmap, processed *bitmap.Bitmap) {
+	if processed.Get(trees[t.Hash]) {
+		return
+	}
+	for _, e := range t.Entries {
+		switch e.Mode {
+		case filemode.Dir:
+			if !processed.Get(trees[e.Hash]) {
+				st, _ := t.Tree(e.Name)
+				processTree(st, files, trees, matches, processed)
+			}
+			matches[trees[t.Hash]].Or(&matches[trees[e.Hash]])
+		case filemode.Submodule, filemode.Symlink:
+			continue
+		default:
+			if file, ok := files[e.Hash]; ok {
+				matches[trees[t.Hash]].Set(file)
+			}
+		}
+	}
+	processed.Set(trees[t.Hash])
+	return
+}
+
 func main() {
 	flag.Parse()
 	ctx := context.Background()
@@ -319,6 +417,8 @@ func main() {
 		s = &DynamicTreeSearchStrategy{}
 	case "commits-near-publish":
 		s = &CommitsNearPublishStrategy{Published: published, Window: 7 * 24 * time.Hour}
+	case "dynamic-exhaustive":
+		s = &ExhaustiveTreeSearchStrategy{}
 	default:
 		log.Fatalln("unknown strategy:", *strategy)
 	}
