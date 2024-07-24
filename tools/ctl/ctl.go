@@ -450,29 +450,22 @@ var runBenchmark = &cobra.Command{
 			// If we're talking to build-local directly, then we skip run-id generation.
 			run = time.Now().UTC().Format(time.RFC3339)
 		} else {
-			u := apiURL.JoinPath("runs")
-			values := url.Values{
-				"name": []string{filepath.Base(args[1])},
-				"hash": []string{hex.EncodeToString(set.Hash(sha256.New()))},
-				"type": []string{string(mode)},
-			}
-			u.RawQuery = values.Encode()
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
+			resp, err := client.Do(makeHTTPRequest(ctx, apiURL.JoinPath("runs"), &schema.CreateRunRequest{
+				Name: filepath.Base(args[1]),
+				Hash: hex.EncodeToString(set.Hash(sha256.New())),
+				Type: string(mode),
+			}))
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating API version request"))
-			}
-			resp, err := client.Do(req)
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "requesting run creation"))
+				log.Fatal(errors.Wrap(err, "creating run"))
 			}
 			if resp.StatusCode != 200 {
 				log.Fatal(errors.Wrap(errors.New(resp.Status), "creating run"))
 			}
-			runBytes, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "reading created run"))
+			var r schema.CreateRunResponse
+			if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+				log.Fatalf("Failed to decode smoketest response: %v", err)
 			}
-			run = string(runBytes)
+			run = r.ID
 		}
 		conf := WorkerConfig{
 			client:   client,
