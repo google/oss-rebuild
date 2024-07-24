@@ -92,7 +92,7 @@ func Reuse(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.
 	err = wt.Checkout(&git.CheckoutOptions{Branch: plumbing.Master, Force: true})
 	if err == plumbing.ErrReferenceNotFound {
 		// Try main if master failed.
-		if err := wt.Checkout(&git.CheckoutOptions{Branch: "refs/heads/main", Force: true}); err != nil {
+		if err := wt.Checkout(&git.CheckoutOptions{Branch: plumbing.Main, Force: true}); err != nil {
 			return nil, errors.Wrapf(err, "Failed to checkout")
 		}
 	} else if err != nil {
