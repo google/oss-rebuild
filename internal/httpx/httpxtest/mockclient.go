@@ -5,6 +5,7 @@ import (
 )
 
 type Call struct {
+	Method   string
 	URL      string
 	Response *http.Response
 	Error    error
@@ -24,7 +25,11 @@ func (m *MockClient) Do(req *http.Request) (*http.Response, error) {
 	m.callCount++
 
 	if m.URLValidator != nil {
-		m.URLValidator(call.URL, req.URL.String())
+		if call.Method != "" {
+			m.URLValidator(call.Method+" "+call.URL, req.Method+" "+req.URL.String())
+		} else {
+			m.URLValidator(call.URL, req.URL.String())
+		}
 	}
 
 	return call.Response, call.Error
