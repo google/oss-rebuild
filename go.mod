@@ -8,17 +8,20 @@ require (
 	cloud.google.com/go/kms v1.15.7
 	cloud.google.com/go/storage v1.37.0
 	github.com/cheggaaa/pb v1.0.29
+	github.com/elazarl/goproxy v0.0.0-20230808193330-2592e75ae04a
 	github.com/gdamore/tcell/v2 v2.7.4
 	github.com/go-git/go-billy/v5 v5.5.0
 	github.com/go-git/go-git/v5 v5.12.0
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/in-toto-golang v0.9.1-0.20240514222827-dd6278764ab1
+	github.com/pavlo-v-chernykh/keystore-go/v4 v4.5.0
 	github.com/pelletier/go-toml/v2 v2.2.2
 	github.com/pkg/errors v0.9.1
 	github.com/rivo/tview v0.0.0-20240519200218-0ac5f73025a8
 	github.com/secure-systems-lab/go-securesystemslib v0.8.0
 	github.com/spf13/cobra v1.8.0
+	golang.org/x/crypto v0.21.0
 	golang.org/x/oauth2 v0.17.0
 	google.golang.org/api v0.162.0
 	google.golang.org/grpc v1.63.2
@@ -73,7 +76,6 @@ require (
 	go.opentelemetry.io/otel v1.22.0 // indirect
 	go.opentelemetry.io/otel/metric v1.22.0 // indirect
 	go.opentelemetry.io/otel/trace v1.22.0 // indirect
-	golang.org/x/crypto v0.21.0 // indirect
 	golang.org/x/mod v0.13.0 // indirect
 	golang.org/x/net v0.23.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
