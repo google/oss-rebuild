@@ -407,10 +407,10 @@ var runBenchmark = &cobra.Command{
 		if mode != firestore.SmoketestMode && mode != firestore.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
-		if *api_uri == "" {
+		if *apiUri == "" {
 			log.Fatal("API endpoint not provided")
 		}
-		apiURL, err := url.Parse(*api_uri)
+		apiURL, err := url.Parse(*apiUri)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "parsing API endpoint"))
 		}
@@ -527,10 +527,10 @@ var runOne = &cobra.Command{
 		if mode != firestore.SmoketestMode && mode != firestore.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
-		if *api_uri == "" {
+		if *apiUri == "" {
 			log.Fatal("API endpoint not provided")
 		}
-		apiURL, err := url.Parse(*api_uri)
+		apiURL, err := url.Parse(*apiUri)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "parsing API endpoint"))
 		}
@@ -641,7 +641,7 @@ var listRuns = &cobra.Command{
 
 var (
 	// Shared
-	api_uri = flag.String("api", "", "OSS Rebuild API endpoint URI")
+	apiUri = flag.String("api", "", "OSS Rebuild API endpoint URI")
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
 	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
