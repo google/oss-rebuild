@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb"
+	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -406,10 +407,10 @@ var runBenchmark = &cobra.Command{
 		if mode != firestore.SmoketestMode && mode != firestore.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
-		if *api == "" {
+		if *api_uri == "" {
 			log.Fatal("API endpoint not provided")
 		}
-		apiURL, err := url.Parse(*api)
+		apiURL, err := url.Parse(*api_uri)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "parsing API endpoint"))
 		}
@@ -450,22 +451,16 @@ var runBenchmark = &cobra.Command{
 			// If we're talking to build-local directly, then we skip run-id generation.
 			run = time.Now().UTC().Format(time.RFC3339)
 		} else {
-			resp, err := client.Do(makeHTTPRequest(ctx, apiURL.JoinPath("runs"), &schema.CreateRunRequest{
+			stub := api.Stub[schema.CreateRunRequest, schema.CreateRunResponse](client, *apiURL.JoinPath("runs"))
+			resp, err := stub(ctx, schema.CreateRunRequest{
 				Name: filepath.Base(args[1]),
 				Hash: hex.EncodeToString(set.Hash(sha256.New())),
 				Type: string(mode),
-			}))
+			})
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "creating run"))
 			}
-			if resp.StatusCode != 200 {
-				log.Fatal(errors.Wrap(errors.New(resp.Status), "creating run"))
-			}
-			var r schema.CreateRunResponse
-			if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-				log.Fatalf("Failed to decode smoketest response: %v", err)
-			}
-			run = r.ID
+			run = resp.ID
 		}
 		conf := WorkerConfig{
 			client:   client,
@@ -532,10 +527,10 @@ var runOne = &cobra.Command{
 		if mode != firestore.SmoketestMode && mode != firestore.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
-		if *api == "" {
+		if *api_uri == "" {
 			log.Fatal("API endpoint not provided")
 		}
-		apiURL, err := url.Parse(*api)
+		apiURL, err := url.Parse(*api_uri)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "parsing API endpoint"))
 		}
@@ -646,7 +641,7 @@ var listRuns = &cobra.Command{
 
 var (
 	// Shared
-	api = flag.String("api", "", "OSS Rebuild API endpoint URI")
+	api_uri = flag.String("api", "", "OSS Rebuild API endpoint URI")
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
 	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
