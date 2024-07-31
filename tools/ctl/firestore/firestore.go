@@ -280,7 +280,6 @@ func (f *Client) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (r
 		err = errors.Wrap(err, "query error")
 		return nil, err
 	}
-	log.Printf("Fetched %d rebuilds", len(rebuilds))
 	return
 }
 

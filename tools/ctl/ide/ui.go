@@ -346,6 +346,7 @@ func (e *explorer) makeRunNode(runid string) *tview.TreeNode {
 				log.Println(errors.Wrapf(err, "failed to get rebuilds for runid: %s", runid))
 				return
 			}
+			log.Printf("Fetched %d rebuilds", len(rebuilds))
 			byCount := firestore.GroupRebuilds(rebuilds)
 			for i := len(byCount) - 1; i >= 0; i-- {
 				vgnode := e.makeVerdictGroupNode(byCount[i], 100*float32(byCount[i].Count)/float32(len(rebuilds)))
