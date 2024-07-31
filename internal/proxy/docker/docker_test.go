@@ -174,7 +174,7 @@ func statAndOpen(t *testing.T, name, content, linkTarget string) (http.Header, i
 }
 
 func TestProxyNormalReq(t *testing.T) {
-	ctp := NewContainerTruststorePatcher(CERT, []string{}, false, false)
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{})
 	sock := tempSocketName(t)
 	l, err := net.Listen("unix", sock)
 	if err != nil {
@@ -199,7 +199,7 @@ func TestProxyNormalReq(t *testing.T) {
 }
 
 func TestPatchOnStart(t *testing.T) {
-	ctp := NewContainerTruststorePatcher(CERT, []string{}, false, false)
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{})
 	sock := tempSocketName(t)
 	l, err := net.Listen("unix", sock)
 	if err != nil {
@@ -269,7 +269,7 @@ func TestPatchOnStart(t *testing.T) {
 }
 
 func TestTryPatchOnStartUnknownOS(t *testing.T) {
-	ctp := NewContainerTruststorePatcher(CERT, []string{}, false, false)
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{})
 	sock := tempSocketName(t)
 	l, err := net.Listen("unix", sock)
 	if err != nil {
@@ -332,7 +332,7 @@ func TestTryPatchOnStartUnknownOS(t *testing.T) {
 }
 
 func TestUnpatchDuringExport(t *testing.T) {
-	ctp := NewContainerTruststorePatcher(CERT, []string{}, false, false)
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{})
 	sock := tempSocketName(t)
 	l, err := net.Listen("unix", sock)
 	if err != nil {
@@ -427,7 +427,7 @@ func TestUnpatchDuringExport(t *testing.T) {
 }
 
 func TestUnpatchDuringCommit(t *testing.T) {
-	ctp := NewContainerTruststorePatcher(CERT, []string{}, false, false)
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{})
 	sock := tempSocketName(t)
 	l, err := net.Listen("unix", sock)
 	if err != nil {
@@ -522,7 +522,7 @@ func TestUnpatchDuringCommit(t *testing.T) {
 }
 
 func TestPatchOnStartWithJavaEnv(t *testing.T) {
-	ctp := NewContainerTruststorePatcher(CERT, []string{}, true, false)
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{JavaEnvVar: true})
 	sock := tempSocketName(t)
 	l, err := net.Listen("unix", sock)
 	if err != nil {
@@ -596,7 +596,7 @@ func TestPatchOnStartWithJavaEnv(t *testing.T) {
 }
 
 func TestPatchOnStartWithProxySocket(t *testing.T) {
-	ctp := NewContainerTruststorePatcher(CERT, []string{}, false, true)
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{RecursiveProxy: true})
 	sock := tempSocketName(t)
 	l, err := net.Listen("unix", sock)
 	if err != nil {
@@ -684,6 +684,89 @@ func TestAddBinding(t *testing.T) {
 		if bytes.Compare(tc.Want, got) != 0 {
 			t.Fatalf("addBinding(%s, %v, %v, %v): got=%s, want=%s", tc.Body, tc.Src, tc.Dest, tc.Mode, got, tc.Want)
 		}
+	}
+}
+
+func TestGetNetwork(t *testing.T) {
+	testCases := []struct {
+		name        string
+		imageSpec   []byte
+		wantNetwork string
+		wantErr     bool
+	}{
+		{
+			name:        "Valid network mode",
+			imageSpec:   []byte(`{"HostConfig": {"NetworkMode": "bridge"}}`),
+			wantNetwork: "bridge",
+		},
+		{
+			name:      "Missing NetworkMode",
+			imageSpec: []byte(`{"HostConfig": {}}`),
+			wantErr:   true,
+		},
+		{
+			name:      "Invalid JSON",
+			imageSpec: []byte(`{"HostConfig": {`),
+			wantErr:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotNetwork, err := getNetwork(tc.imageSpec)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("getNetwork() error = %v, wantErr %v", err, tc.wantErr)
+				return
+			}
+			if gotNetwork != tc.wantNetwork {
+				t.Errorf("getNetwork() = %v, want %v", gotNetwork, tc.wantNetwork)
+			}
+		})
+	}
+}
+
+func TestSetNetwork(t *testing.T) {
+	testCases := []struct {
+		name       string
+		imageSpec  []byte
+		newNetwork string
+		wantSpec   []byte
+		wantErr    bool
+	}{
+		{
+			name:       "Set new network",
+			imageSpec:  []byte(`{"HostConfig": {"NetworkMode": "bridge"}}`),
+			newNetwork: "host",
+			wantSpec:   []byte(`{"HostConfig":{"NetworkMode":"host"}}`),
+		},
+		{
+			name:       "Add network",
+			imageSpec:  []byte(`{"HostConfig": {}}`),
+			newNetwork: "host",
+			wantSpec:   []byte(`{"HostConfig":{"NetworkMode":"host"}}`),
+		},
+		{
+			name:       "Invalid JSON",
+			imageSpec:  []byte(`{"HostConfig": {`),
+			newNetwork: "host",
+			wantErr:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotSpec, err := setNetwork(tc.imageSpec, tc.newNetwork)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("setNetwork() error = %v, wantErr %v", err, tc.wantErr)
+				return
+			}
+			if tc.wantErr {
+				return
+			}
+			if !bytes.Equal(gotSpec, tc.wantSpec) {
+				t.Errorf("setNetwork() = %s, want %s", gotSpec, tc.wantSpec)
+			}
+		})
 	}
 }
 

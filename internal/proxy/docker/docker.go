@@ -165,6 +165,41 @@ func addBinding(imageSpec []byte, from, to, mode string) (newSpec []byte, err er
 	return
 }
 
+func getNetwork(imageSpec []byte) (network string, err error) {
+	img := make(map[string]any)
+	if err = json.Unmarshal(imageSpec, &img); err != nil {
+		return "", errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
+	}
+	hostConfig, ok := img["HostConfig"].(map[string]any)
+	if !ok {
+		return "", errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
+	}
+	network, ok = hostConfig["NetworkMode"].(string)
+	if !ok {
+		return "", errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
+	}
+	return network, nil
+}
+
+func setNetwork(imageSpec []byte, network string) (newSpec []byte, err error) {
+	img := make(map[string]any)
+	if err = json.Unmarshal(imageSpec, &img); err != nil {
+		err = errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
+		return
+	}
+	hostConfig, ok := img["HostConfig"].(map[string]any)
+	if !ok {
+		err = errors.Errorf("unexpected type of HostConfig\nBody: %s", string(imageSpec))
+		return
+	}
+	hostConfig["NetworkMode"] = network
+	newSpec, err = json.Marshal(img)
+	if err != nil {
+		return nil, errors.Errorf("failed to re-marshal json: %s\nStruct: %s", err, img)
+	}
+	return
+}
+
 func getEnvVar(imageSpec []byte, avar string) (val string, err error) {
 	img := make(map[string]any)
 	if err = json.Unmarshal(imageSpec, &img); err != nil {
@@ -384,29 +419,46 @@ type patchSet struct {
 
 // ContainerTruststorePatcher provides a Docker API proxy that patches the container truststore while running.
 type ContainerTruststorePatcher struct {
-	Cert        x509.Certificate
-	EnvVars     []string
-	JavaEnvVar  bool
-	proxySocket string
-	patchMap    map[string]*patchSet
-	m           sync.Mutex
-	created     atomic.Uint32
+	cert            x509.Certificate
+	envVars         []string
+	javaEnvVar      bool
+	networkOverride string // TODO: Not a good fit for this abstraction
+	proxySocket     string
+	patchMap        map[string]*patchSet
+	m               sync.Mutex
+	created         atomic.Uint32
 }
 
-// NewContainerTruststorePatcher creates a new ContainerTruststorePatcher for the provided root certificate.
-func NewContainerTruststorePatcher(cert x509.Certificate, truststoreEnvVars []string, javaEnvVar bool, recursiveProxy bool) *ContainerTruststorePatcher {
+// ContainerTruststorePatcherOpts defines the optional parameters for creating a ContainerTruststorePatcher.
+type ContainerTruststorePatcherOpts struct {
+	EnvVars         []string
+	JavaEnvVar      bool
+	RecursiveProxy  bool
+	NetworkOverride string
+}
+
+// NewContainerTruststorePatcher creates a new ContainerTruststorePatcher with the provided certificate and options.
+func NewContainerTruststorePatcher(cert x509.Certificate, opts ContainerTruststorePatcherOpts) (*ContainerTruststorePatcher, error) {
 	var sockName string
-	if recursiveProxy {
+	if opts.RecursiveProxy {
 		file, err := os.CreateTemp("/tmp", "proxy-*.sock")
 		if err != nil {
-			log.Fatalf("failed to create temp file: %s", err)
+			return nil, errors.Wrap(err, "creating temporary socket")
 		}
 		sockName = file.Name()
 		if err := os.Remove(file.Name()); err != nil {
-			log.Fatalf("failed to configure temp file: %s", err)
+			return nil, errors.Wrap(err, "cleaning up temporary socket")
 		}
 	}
-	return &ContainerTruststorePatcher{Cert: cert, EnvVars: truststoreEnvVars, JavaEnvVar: javaEnvVar, proxySocket: sockName, patchMap: make(map[string]*patchSet)}
+
+	return &ContainerTruststorePatcher{
+		cert:            cert,
+		envVars:         opts.EnvVars,
+		javaEnvVar:      opts.JavaEnvVar,
+		networkOverride: opts.NetworkOverride,
+		proxySocket:     sockName,
+		patchMap:        make(map[string]*patchSet),
+	}, nil
 }
 
 // leasePatchSet locks and returns the provided container's patchSet.
@@ -506,10 +558,10 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			log.Fatalf("Failed to add volume for request %s: %s", req.URL.Path, err)
 		}
 		var vars []string
-		for _, v := range d.EnvVars {
+		for _, v := range d.envVars {
 			vars = append(vars, v+"="+proxyCertPath)
 		}
-		if d.JavaEnvVar {
+		if d.javaEnvVar {
 			// NOTE: Since other user-provided values can be set in JAVA_TOOL_OPTIONS,
 			// we merge the proxy-specific arg into the existing value, if present.
 			val, err := getEnvVar(newBody, javaEnvVar)
@@ -536,6 +588,17 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		if err != nil {
 			log.Fatalf("Failed to add env vars for request %s: %s", req.URL.Path, err)
 		}
+		if d.networkOverride != "" {
+			network, err := getNetwork(newBody)
+			if err != nil {
+				log.Fatalf("Failed to get network for request %s: %s", req.URL.Path, err)
+			}
+			log.Printf("Modifying network from %s to %s", network, d.networkOverride)
+			newBody, err = setNetwork(newBody, d.networkOverride)
+			if err != nil {
+				log.Fatalf("Failed to set network for request %s: %s", req.URL.Path, err)
+			}
+		}
 		req.ContentLength = int64(len(newBody))
 		req.Body = io.NopCloser(bytes.NewReader(newBody))
 	case patchTruststoreBefore:
@@ -551,15 +614,15 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			return
 		}
 		fs := dockerfs.Filesystem{Client: serverClient, Container: id}
-		certBytes := certfmt.ToPEM(&d.Cert)
+		certBytes := certfmt.ToPEM(&d.cert)
 		// NOTE: This doesn't need to be cleaned up due to the enclosing volume
 		// binding made at creation time.
 		if err := createFile(fs, id, certBytes, proxyCertPath); err != nil {
 			log.Println(err.Error())
 			break
 		}
-		if d.JavaEnvVar {
-			jks, err := certfmt.ToJKS(&d.Cert)
+		if d.javaEnvVar {
+			jks, err := certfmt.ToJKS(&d.cert)
 			if err != nil {
 				log.Println(err.Error())
 				break
@@ -594,13 +657,13 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			log.Fatalf("failed to read body for request %s: %s", req.URL.Path, err)
 		}
 		var otherVars []string
-		if d.JavaEnvVar {
+		if d.javaEnvVar {
 			otherVars = append(otherVars, javaEnvVar)
 		}
 		if d.proxySocket != "" {
 			otherVars = append(otherVars, dockerEnvVar)
 		}
-		allVars := append(otherVars, d.EnvVars...)
+		allVars := append(otherVars, d.envVars...)
 		var newBody []byte
 		if !bytes.Equal(body, nullJSONBody) {
 			newBody, err = removeEnvVars(body, allVars)
