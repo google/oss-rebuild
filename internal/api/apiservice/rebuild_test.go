@@ -154,17 +154,17 @@ func TestRebuildPackage(t *testing.T) {
 			fs := memfs.New()
 			afs := must(fs.Chroot("attestations"))
 			d.AttestationStore = rebuild.NewFilesystemAssetStore(afs)
-			mfs := must(fs.Chroot("metadata"))
-			metadata := rebuild.NewFilesystemAssetStore(mfs)
-			d.MetadataBuilder = func(ctx context.Context, id string) (rebuild.AssetStore, error) {
-				return metadata, nil
+			remoteMetadata := rebuild.NewFilesystemAssetStore(must(fs.Chroot("remote-metadata")))
+			d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.AssetStore, error) {
+				return remoteMetadata, nil
 			}
+			d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(must(fs.Chroot("local-metadata")))
 			buildSteps := []*cloudbuild.BuildStep{
 				{Name: "gcr.io/foo/bar", Script: "./bar"},
 			}
 			d.GCBClient = &gcbtest.MockClient{
 				CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
-					c, _ := must3(metadata.Writer(ctx, rebuild.Asset{Type: rebuild.RebuildAsset, Target: tc.target}))
+					c, _ := must3(remoteMetadata.Writer(ctx, rebuild.Asset{Type: rebuild.RebuildAsset, Target: tc.target}))
 					defer func() { must1(c.Close()) }()
 					must(c.Write(tc.file.Bytes()))
 					return &cloudbuild.Operation{
@@ -215,11 +215,11 @@ func TestRebuildPackage(t *testing.T) {
 				t.Fatalf("RebuildPackage() verdict: %v", verdict.Message)
 			}
 
-			dockerfile, _ := must3(metadata.Reader(ctx, rebuild.Asset{Type: rebuild.DockerfileAsset, Target: tc.target}))
+			dockerfile, _ := must3(d.LocalMetadataStore.Reader(ctx, rebuild.Asset{Type: rebuild.DockerfileAsset, Target: tc.target}))
 			if len(must(io.ReadAll(dockerfile))) == 0 {
 				t.Error("Dockerfile empty")
 			}
-			buildinfo, _ := must3(metadata.Reader(ctx, rebuild.Asset{Type: rebuild.BuildInfoAsset, Target: tc.target}))
+			buildinfo, _ := must3(d.LocalMetadataStore.Reader(ctx, rebuild.Asset{Type: rebuild.BuildInfoAsset, Target: tc.target}))
 			diff := cmp.Diff(
 				rebuild.BuildInfo{
 					Target:      tc.target,
