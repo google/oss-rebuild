@@ -25,6 +25,7 @@ import (
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
 	"cloud.google.com/go/kms/apiv1/kmspb"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/apiservice"
@@ -47,7 +48,7 @@ var (
 	buildLocalURL         = flag.String("build-local-url", "", "URL of the rebuild service")
 	inferenceURL          = flag.String("inference-url", "", "URL of the inference service")
 	signingKeyVersion     = flag.String("signing-key-version", "", "Resource name of the signing CryptoKeyVersion")
-	metadataBucket        = flag.String("metadata-bucket", "", "GCS bucket for rebuild metadata")
+	metadataBucket        = flag.String("metadata-bucket", "", "GCS bucket for rebuild artifacts")
 	attestationBucket     = flag.String("attestation-bucket", "", "GCS bucket to which to publish rebuild attestation")
 	logsBucket            = flag.String("logs-bucket", "", "GCS bucket for rebuild logs")
 	prebuildBucket        = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
@@ -135,7 +136,8 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "creating attestation uploader")
 	}
-	d.MetadataBuilder = func(ctx context.Context, id string) (rebuild.AssetStore, error) {
+	d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(memfs.New())
+	d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.AssetStore, error) {
 		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, id), "gs://"+*metadataBucket)
 	}
 	d.OverwriteAttestations = *overwriteAttestations
