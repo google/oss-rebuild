@@ -229,6 +229,7 @@ type SmoketestAttempt struct {
 	Success         bool            `firestore:"success,omitempty"`
 	Message         string          `firestore:"message,omitempty"`
 	Strategy        StrategyOneOf   `firestore:"strategyoneof,omitempty"`
+	Dockerfile      string          `firestore:"dockerfile,omitempty"`
 	Timings         rebuild.Timings `firestore:"timings,omitempty"`
 	ExecutorVersion string          `firestore:"executor_version,omitempty"`
 	RunID           string          `firestore:"run_id,omitempty"`
