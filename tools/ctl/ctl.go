@@ -160,6 +160,7 @@ var getResults = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
+		log.Printf("Fetched %d rebuilds", len(rebuilds))
 		byCount := firestore.GroupRebuilds(rebuilds)
 		if len(byCount) == 0 {
 			log.Println("No results")

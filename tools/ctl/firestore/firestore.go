@@ -277,7 +277,8 @@ func (f *Client) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (r
 		rebuilds[r.ID()] = r
 	}
 	if err := <-cerr; err != nil {
-		log.Fatal("query error", err.Error())
+		err = errors.Wrap(err, "query error")
+		return nil, err
 	}
 	return
 }
