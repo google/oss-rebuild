@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -114,7 +115,7 @@ type RebuildPackageDeps struct {
 	BuildLogsBucket       string
 	BuildDefRepo          rebuild.Location
 	AttestationStore      rebuild.AssetStore
-	MetadataBuilder       func(ctx context.Context, id string) (rebuild.AssetStore, error)
+	MetadataStore         rebuild.AssetStore
 	RebuildStoreBuilder   func(ctx context.Context, id string) (rebuild.AssetStore, error)
 	OverwriteAttestations bool
 	InferStub             api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
@@ -185,10 +186,6 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 
 func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strat rebuild.Strategy, rstrat *repoStrategy) (err error) {
 	id := uuid.New().String()
-	metadata, err := deps.MetadataBuilder(ctx, id)
-	if err != nil {
-		return errors.Wrap(err, "creating metadata store")
-	}
 	rebuildStore, err := deps.RebuildStoreBuilder(ctx, id)
 	if err != nil {
 		return errors.Wrap(err, "creating rebuild store")
@@ -200,7 +197,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		BuildServiceAccount: deps.BuildServiceAccount,
 		UtilPrebuildBucket:  deps.UtilPrebuildBucket,
 		LogsBucket:          deps.BuildLogsBucket,
-		MetadataStore:       metadata,
+		MetadataStore:       deps.MetadataStore,
 		RebuildStore:        rebuildStore,
 	}
 	var upstreamURI string
@@ -233,7 +230,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		input.Strategy = rstrat.RepoStrategy
 		loc = rstrat.BuildDefLoc
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat, id, rb, up, metadata, loc)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strat, id, rb, up, deps.MetadataStore, loc)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
