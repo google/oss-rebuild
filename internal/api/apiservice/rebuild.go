@@ -290,7 +290,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		return nil, err
 	}
 	var dockerfile string
-	w, _, err := deps.MetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.DockerfileAsset})
+	w, _, err := deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.DockerfileAsset})
 	if err == nil {
 		if b, err := io.ReadAll(w); err == nil {
 			dockerfile = string(b)
