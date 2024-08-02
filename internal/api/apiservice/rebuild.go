@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -288,6 +289,13 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if err != nil {
 		return nil, err
 	}
+	var dockerfile string
+	w, _, err := deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.DockerfileAsset})
+	if err == nil {
+		if b, err := io.ReadAll(w); err == nil {
+			dockerfile = string(b)
+		}
+	}
 	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(req.ID).Set(ctx, schema.SmoketestAttempt{
 		Ecosystem:       string(v.Target.Ecosystem),
 		Package:         v.Target.Package,
@@ -296,6 +304,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Success:         v.Message == "",
 		Message:         v.Message,
 		Strategy:        v.StrategyOneof,
+		Dockerfile:      dockerfile,
 		ExecutorVersion: os.Getenv("K_REVISION"),
 		RunID:           req.ID,
 		Created:         time.Now().UnixMilli(),
