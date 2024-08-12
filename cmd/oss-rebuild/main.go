@@ -130,6 +130,19 @@ func (b *Bundle) Byproduct(name string) ([]byte, error) {
 	return nil, fmt.Errorf("byproduct named %s not found", name)
 }
 
+func writeIndentedJson(out io.Writer, b []byte) error {
+	var decoded any
+	if err := json.NewDecoder(bytes.NewBuffer(b)).Decode(&decoded); err != nil {
+		return errors.Wrap(err, "decoding json")
+	}
+	e := json.NewEncoder(out)
+	e.SetIndent("", "  ")
+	if err := e.Encode(decoded); err != nil {
+		log.Fatal(errors.Wrap(err, "encoding json"))
+	}
+	return nil
+}
+
 var getCmd = &cobra.Command{
 	Use:   "get <ecosystem> <package> <version> [<artifact>]",
 	Short: "Get rebuild attestation for a specific artifact.",
@@ -210,9 +223,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "getting build.json"))
 			}
-			e := json.NewEncoder(cmd.OutOrStdout())
-			e.SetIndent("", "  ")
-			if err := e.Encode(build); err != nil {
+			if err := writeIndentedJson(cmd.OutOrStdout(), build); err != nil {
 				log.Fatal(errors.Wrap(err, "encoding build.json"))
 			}
 		case "steps":
@@ -220,9 +231,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "getting steps.json"))
 			}
-			e := json.NewEncoder(cmd.OutOrStdout())
-			e.SetIndent("", "  ")
-			if err := e.Encode(steps); err != nil {
+			if err := writeIndentedJson(cmd.OutOrStdout(), steps); err != nil {
 				log.Fatal(errors.Wrap(err, "encoding steps.json"))
 			}
 		default:
