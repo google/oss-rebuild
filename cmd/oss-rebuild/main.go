@@ -131,7 +131,7 @@ func (b *Bundle) Byproduct(name string) ([]byte, error) {
 }
 
 func writeIndentedJson(out io.Writer, b []byte) error {
-	var decoded interface{}
+	var decoded any
 	if err := json.NewDecoder(bytes.NewBuffer(b)).Decode(&decoded); err != nil {
 		return errors.Wrap(err, "decoding json")
 	}
@@ -223,7 +223,6 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "getting build.json"))
 			}
-			cmd.OutOrStdout().Write(build)
 			if err := writeIndentedJson(cmd.OutOrStdout(), build); err != nil {
 				log.Fatal(errors.Wrap(err, "encoding build.json"))
 			}
