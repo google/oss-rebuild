@@ -216,52 +216,151 @@ func TestDoCloudBuild(t *testing.T) {
 }
 
 func TestMakeBuild(t *testing.T) {
-	dockerfile := "FROM alpine:3.19"
-	opts := RemoteOptions{
-		LogsBucket:          "test-logs-bucket",
-		BuildServiceAccount: "test-service-account",
-		UtilPrebuildBucket:  "test-bootstrap",
-		RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
-	}
 
-	t.Run("Success", func(t *testing.T) {
-		target := Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"}
-		build := must(makeBuild(target, dockerfile, opts))
-		diff := cmp.Diff(build, &cloudbuild.Build{
-			LogsBucket:     "test-logs-bucket",
-			Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
-			ServiceAccount: "test-service-account",
-			Steps: []*cloudbuild.BuildStep{
-				{
-					Name: "gcr.io/cloud-builders/docker",
-					Script: `set -eux
+	type testCase struct {
+		name        string
+		target      Target
+		dockerfile  string
+		opts        RemoteOptions
+		expected    *cloudbuild.Build
+		expectedErr bool
+	}
+	testCases := []testCase{
+		{
+			name:       "standard build",
+			target:     Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+			dockerfile: "FROM alpine:3.19",
+			opts: RemoteOptions{
+				LogsBucket:          "test-logs-bucket",
+				BuildServiceAccount: "test-service-account",
+				UtilPrebuildBucket:  "test-bootstrap",
+				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
+			},
+			expected: &cloudbuild.Build{
+				LogsBucket:     "test-logs-bucket",
+				Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
+				ServiceAccount: "test-service-account",
+				Steps: []*cloudbuild.BuildStep{
+					{
+						Name: "gcr.io/cloud-builders/docker",
+						Script: `set -eux
 cat <<'EOS' | docker buildx build --tag=img -
 FROM alpine:3.19
 EOS
-docker run --name=container img`,
-				},
-				{
-					Name: "gcr.io/cloud-builders/docker",
-					Args: []string{"cp", "container:/out/pkg-version.tgz", "/workspace/pkg-version.tgz"},
-				},
-				{
-					Name:   "gcr.io/cloud-builders/docker",
-					Script: "docker save img | gzip > /workspace/image.tgz",
-				},
-				{
-					Name: "gcr.io/cloud-builders/gsutil",
-					Script: ("" +
-						"set -eux\n" +
-						"gsutil cp -P gs://test-bootstrap/gsutil_writeonly .\n" +
-						"./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz\n" +
-						"./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz\n"),
+docker run --name=container img
+`,
+					},
+					{
+						Name: "gcr.io/cloud-builders/docker",
+						Args: []string{"cp", "container:/out/pkg-version.tgz", "/workspace/pkg-version.tgz"},
+					},
+					{
+						Name:   "gcr.io/cloud-builders/docker",
+						Script: "docker save img | gzip > /workspace/image.tgz",
+					},
+					{
+						Name: "gcr.io/cloud-builders/gsutil",
+						Script: `set -eux
+gsutil cp -P gs://test-bootstrap/gsutil_writeonly .
+./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
+./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz
+`,
+					},
 				},
 			},
+		},
+		{
+			name:       "proxy build",
+			target:     Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+			dockerfile: "FROM alpine:3.19",
+			opts: RemoteOptions{
+				LogsBucket:          "test-logs-bucket",
+				BuildServiceAccount: "test-service-account",
+				UtilPrebuildBucket:  "test-bootstrap",
+				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
+				UseNetworkProxy:     true,
+			},
+			expected: &cloudbuild.Build{
+				LogsBucket:     "test-logs-bucket",
+				Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
+				ServiceAccount: "test-service-account",
+				Steps: []*cloudbuild.BuildStep{
+					{
+						Name: "gcr.io/cloud-builders/docker",
+						Script: `set -eux
+docker run --volume=/workspace:/workspace gcr.io/cloud-builders/gsutil cp -P gs://test-bootstrap/proxy /workspace
+docker network create proxynet
+useradd --system proxyu
+uid=$(id -u proxyu)
+docker run --detach --name=proxy --network=proxynet --privileged --volume=/workspace/proxy:/workspace/proxy --volume=/var/run/docker.sock:/var/run/docker.sock --entrypoint /bin/sh gcr.io/cloud-builders/docker -euxc '
+	useradd --system --non-unique --uid '$uid' proxyu
+	chown proxyu /workspace/proxy
+	chown proxyu /var/run/docker.sock
+	su - proxyu -c "/workspace/proxy \
+		-verbose=true \
+		-http_addr=:3128 \
+		-tls_addr=:3129 \
+		-ctrl_addr=:3127 \
+		-docker_addr=:3130 \
+		-docker_socket=/var/run/docker.sock \
+		-docker_truststore_env_vars=PIP_CERT,CURL_CA_BUNDLE,NODE_EXTRA_CA_CERTS,CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE,NIX_SSL_CERT_FILE \
+		-docker_network=container:build \
+		-docker_java_truststore=true"
+'
+proxyIP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' proxy)
+docker network connect cloudbuild proxy
+docker run --detach --name=build --network=proxynet --entrypoint=/bin/sh gcr.io/cloud-builders/docker -c 'sleep infinity'
+docker exec --privileged build /bin/sh -euxc '
+	iptables -t nat -A OUTPUT -p tcp --dport 3128 -j ACCEPT
+	iptables -t nat -A OUTPUT -p tcp --dport 3129 -j ACCEPT
+	iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner '$uid' -j ACCEPT
+	iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination '$proxyIP':3128
+	iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':3129
+'
+docker exec build /bin/sh -euxc '
+	curl http://proxy:3127/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
+	export DOCKER_HOST=tcp://proxy:3130 PROXYCERT=/etc/ssl/certs/proxy.crt
+	docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
+	cat <<EOS | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs --mount=type=secret,id=PROXYCERT,env=PIP_CERT --mount=type=secret,id=PROXYCERT,env=CURL_CA_BUNDLE --mount=type=secret,id=PROXYCERT,env=NODE_EXTRA_CA_CERTS --mount=type=secret,id=PROXYCERT,env=CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE --mount=type=secret,id=PROXYCERT,env=NIX_SSL_CERT_FILE|" | \
+		docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT --load --tag=img -
+	FROM alpine:3.19
+EOS
+	docker run --name=container img
+'
+curl http://proxy:3127/summary > /workspace/netlog.json
+`,
+					},
+					{
+						Name: "gcr.io/cloud-builders/docker",
+						Args: []string{"cp", "container:/out/pkg-version.tgz", "/workspace/pkg-version.tgz"},
+					},
+					{
+						Name:   "gcr.io/cloud-builders/docker",
+						Script: "docker save img | gzip > /workspace/image.tgz",
+					},
+					{
+						Name: "gcr.io/cloud-builders/gsutil",
+						Script: `set -eux
+gsutil cp -P gs://test-bootstrap/gsutil_writeonly .
+./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
+./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz
+./gsutil_writeonly cp /workspace/netlog.json file:///npm/pkg/version/pkg-version.tgz/netlog.json
+`,
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			build, err := makeBuild(tc.target, tc.dockerfile, tc.opts)
+			if (err != nil) != tc.expectedErr {
+				t.Errorf("Unexpected error: %v", err)
+			} else if diff := cmp.Diff(build, tc.expected); diff != "" {
+				t.Errorf("Unexpected Build: diff: %v", diff)
+			}
 		})
-		if diff != "" {
-			t.Errorf("Unexpected Build: diff: %v", diff)
-		}
-	})
+	}
 }
 
 func must[T any](t T, err error) T {
