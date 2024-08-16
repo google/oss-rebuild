@@ -229,12 +229,12 @@ func TestMakeBuild(t *testing.T) {
 			ServiceAccount: "test-service-account",
 			Steps: []*cloudbuild.BuildStep{
 				{
-					Name:   "gcr.io/cloud-builders/docker",
-					Script: "cat <<'EOS' | docker buildx build --tag=img -\nFROM alpine:3.19\nEOS",
-				},
-				{
 					Name: "gcr.io/cloud-builders/docker",
-					Args: []string{"run", "--name=container", "img"},
+					Script: `set -eux
+cat <<'EOS' | docker buildx build --tag=img -
+FROM alpine:3.19
+EOS
+docker run --name=container img`,
 				},
 				{
 					Name: "gcr.io/cloud-builders/docker",

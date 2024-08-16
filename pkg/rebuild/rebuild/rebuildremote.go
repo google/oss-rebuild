@@ -97,11 +97,7 @@ func makeBuild(t Target, dockerfile, imageUploadPath, rebuildUploadPath string, 
 		Steps: []*cloudbuild.BuildStep{
 			{
 				Name:   "gcr.io/cloud-builders/docker",
-				Script: "cat <<'EOS' | docker buildx build --tag=img -\n" + dockerfile + "\nEOS",
-			},
-			{
-				Name: "gcr.io/cloud-builders/docker",
-				Args: []string{"run", "--name=container", "img"},
+				Script: "set -eux\ncat <<'EOS' | docker buildx build --tag=img -\n" + dockerfile + "\nEOS\ndocker run --name=container img",
 			},
 			{
 				Name: "gcr.io/cloud-builders/docker",
