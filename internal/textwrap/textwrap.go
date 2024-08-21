@@ -33,7 +33,7 @@ func Dedent(text string) string {
 			commonIndent = indent
 		} else {
 			// Mismatched indent -> update to largest common prefix
-			for i := 0; i < len(commonIndent) && i < len(indent); i++ {
+			for i := range min(len(commonIndent), len(indent)) {
 				if commonIndent[i] != indent[i] {
 					commonIndent = commonIndent[:i]
 					break

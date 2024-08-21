@@ -44,7 +44,7 @@ func Marshal(in any) (url.Values, error) {
 		return nil, ErrInvalidType
 	}
 	v := url.Values{}
-	for i := 0; i < ttype.NumField(); i++ {
+	for i := range ttype.NumField() {
 		field, value := ttype.Field(i), tvalue.Field(i)
 		if !field.IsExported() {
 			continue
@@ -81,7 +81,7 @@ func Unmarshal(v url.Values, out any) error {
 	if ttype.Kind() != reflect.Struct {
 		return ErrInvalidType
 	}
-	for i := 0; i < ttype.NumField(); i++ {
+	for i := range ttype.NumField() {
 		field, value := ttype.Field(i), tvalue.Field(i)
 		if !field.IsExported() {
 			continue

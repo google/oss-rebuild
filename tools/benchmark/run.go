@@ -79,7 +79,7 @@ func (ex *executor) Process(ctx context.Context, out chan schema.Verdict, packag
 		close(jobs)
 	}()
 	var wg sync.WaitGroup
-	for i := 0; i < ex.Concurrency; i++ {
+	for range ex.Concurrency {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
