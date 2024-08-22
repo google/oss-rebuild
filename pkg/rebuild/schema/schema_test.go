@@ -17,6 +17,7 @@ package schema
 import (
 	"bytes"
 	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -282,5 +284,123 @@ func TestJsonMarshalStrategyRoundTrip(t *testing.T) {
 		if got, want := res, tc.strategy; !cmp.Equal(got, want) {
 			t.Errorf("RoundTrip(%v) %v", tc.strategy, cmp.Diff(got, want))
 		}
+	}
+}
+
+func TestInferenceRequest_Validate(t *testing.T) {
+	tests := []struct {
+		name         string
+		values       url.Values
+		wantParseErr bool
+		wantErr      bool
+	}{
+		{
+			name: "valid request without strategy hint",
+			values: url.Values{
+				"ecosystem": []string{"npm"},
+				"package":   []string{"lodash"},
+				"version":   []string{"4.17.21"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid request with location hint",
+			values: url.Values{
+				"ecosystem":    []string{"pypi"},
+				"package":      []string{"requests"},
+				"version":      []string{"2.25.1"},
+				"strategyhint": []string{`{"rebuild_location_hint":{"repo":"https://github.com/psf/requests"}}`},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid request with non-location hint strategy",
+			values: url.Values{
+				"ecosystem":    []string{"npm"},
+				"package":      []string{"express"},
+				"version":      []string{"4.17.1"},
+				"strategyhint": []string{`{"npm_pack_build": {}}`},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid request with multiple strategies",
+			values: url.Values{
+				"ecosystem":    []string{"pypi"},
+				"package":      []string{"django"},
+				"version":      []string{"3.2.4"},
+				"strategyhint": []string{`{"rebuild_location_hint":{},"npm_pack_build":{}}`},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing required field",
+			values: url.Values{
+				"ecosystem": []string{"npm"},
+				"package":   []string{"lodash"},
+				// missing "version"
+			},
+			wantParseErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req InferenceRequest
+			err := form.Unmarshal(tt.values, &req)
+			if (err != nil) != tt.wantParseErr {
+				t.Fatalf("Failed to decode form values: %v", err)
+			}
+
+			err = req.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("InferenceRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestInferenceRequest_LocationHint(t *testing.T) {
+	tests := []struct {
+		name   string
+		values url.Values
+		want   *rebuild.LocationHint
+	}{
+		{
+			name: "request without strategy hint",
+			values: url.Values{
+				"ecosystem": []string{"npm"},
+				"package":   []string{"lodash"},
+				"version":   []string{"4.17.21"},
+			},
+			want: nil,
+		},
+		{
+			name: "request with location hint",
+			values: url.Values{
+				"ecosystem":    []string{"pypi"},
+				"package":      []string{"requests"},
+				"version":      []string{"2.25.1"},
+				"strategyhint": []string{`{"rebuild_location_hint":{"repo":"https://github.com/psf/requests"}}`},
+			},
+			want: &rebuild.LocationHint{
+				Location: rebuild.Location{Repo: "https://github.com/psf/requests"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req InferenceRequest
+			err := form.Unmarshal(tt.values, &req)
+			if err != nil {
+				t.Fatalf("Failed to decode form values: %v", err)
+			}
+
+			got := req.LocationHint()
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("InferenceRequest.LocationHint() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
