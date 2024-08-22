@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,10 +40,11 @@ func (FakeSigner) KeyID() (string, error) {
 
 func TestRebuildPackage(t *testing.T) {
 	for _, tc := range []struct {
-		target   rebuild.Target
-		calls    []httpxtest.Call
-		strategy rebuild.Strategy
-		file     *bytes.Buffer
+		target      rebuild.Target
+		calls       []httpxtest.Call
+		strategy    rebuild.Strategy
+		file        *bytes.Buffer
+		expectedMsg string
 	}{
 		{
 			target: rebuild.Target{Ecosystem: rebuild.PyPI, Package: "absl-py", Version: "2.0.0", Artifact: "absl_py-2.0.0-py3-none-any.whl"},
@@ -81,6 +83,45 @@ func TestRebuildPackage(t *testing.T) {
 			file: must(archivetest.ZipFile([]archive.ZipEntry{
 				{FileHeader: &zip.FileHeader{Name: "foo", Modified: time.UnixMilli(0)}, Body: []byte("foo")},
 			})),
+		},
+		{
+			target: rebuild.Target{Ecosystem: rebuild.PyPI, Package: "absl-py", Version: "2.0.0", Artifact: "absl_py-2.0.0-py3-none-any.whl"},
+			calls: []httpxtest.Call{
+				{
+					URL: "https://pypi.org/pypi/absl-py/2.0.0/json",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(bytes.NewReader([]byte(`{
+              "info": {
+                  "name": "absl-py",
+                  "version": "2.0.0"
+              },
+              "urls": [
+                  {
+                      "filename": "absl_py-2.0.0-py3-none-any.whl",
+                      "url": "https://files.pythonhosted.org/packages/01/e4/abcd.../absl_py-2.0.0-py3-none-any.whl"
+                  }
+              ]
+          }`))),
+					},
+				},
+				{
+					URL: "https://files.pythonhosted.org/packages/01/e4/abcd.../absl_py-2.0.0-py3-none-any.whl",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(must(archivetest.ZipFile([]archive.ZipEntry{
+							{FileHeader: &zip.FileHeader{Name: "totally-not-foo"}, Body: []byte("not-in-the-least-foo")},
+						}))),
+					},
+				},
+			},
+			strategy: &pypi.PureWheelBuild{
+				Location: rebuild.Location{Repo: "foo", Ref: "aaaabbbbccccddddeeeeaaaabbbbccccddddeeee", Dir: "foo"},
+			},
+			file: must(archivetest.ZipFile([]archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "foo", Modified: time.UnixMilli(0)}, Body: []byte("foo")},
+			})),
+			expectedMsg: "rebuild content mismatch",
 		},
 		{
 			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
@@ -210,6 +251,12 @@ func TestRebuildPackage(t *testing.T) {
 			verdict, err := rebuildPackage(ctx, schema.RebuildPackageRequest{Ecosystem: tc.target.Ecosystem, Package: tc.target.Package, Version: tc.target.Version}, &d)
 			if err != nil {
 				t.Fatalf("RebuildPackage(): %v", err)
+			}
+			if tc.expectedMsg != "" {
+				if !strings.Contains(verdict.Message, tc.expectedMsg) {
+					t.Fatalf("RebuildPackage(): verdict=%v,want=%s", verdict.Message, tc.expectedMsg)
+				}
+				return
 			}
 			if verdict.Message != "" {
 				t.Fatalf("RebuildPackage() verdict: %v", verdict.Message)
