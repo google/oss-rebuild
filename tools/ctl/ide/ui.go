@@ -86,7 +86,7 @@ func sanitize(name string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(name, "@", ""), "/", "-")
 }
 
-func localAssetStore(ctx context.Context, runID string) (rebuild.AssetStore, error) {
+func localAssetStore(ctx context.Context, runID string) (*rebuild.FilesystemAssetStore, error) {
 	// TODO: Maybe this should be a different ctx variable?
 	dir := filepath.Join("/tmp/oss-rebuild", runID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -99,7 +99,7 @@ func localAssetStore(ctx context.Context, runID string) (rebuild.AssetStore, err
 	return rebuild.NewFilesystemAssetStore(assetsFS), nil
 }
 
-func gcsAssetStore(ctx context.Context, runID string) (rebuild.AssetStore, error) {
+func gcsAssetStore(ctx context.Context, runID string) (*rebuild.GCSStore, error) {
 	bucket, ok := ctx.Value(rebuild.UploadArtifactsPathID).(string)
 	if !ok {
 		return nil, errors.Errorf("GCS bucket was not specified")
@@ -130,17 +130,18 @@ func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
 	}
 	// TODO: Clean up these artifacts.
 	// TODO: Check if these are already downloaded.
-	var rba, usa string
-	rba, err = rebuild.AssetCopy(ctx, localAssets, gcsAssets, rebuild.Asset{Target: t, Type: rebuild.DebugRebuildAsset})
-	if err != nil {
+	rebuildAsset := rebuild.Asset{Target: t, Type: rebuild.DebugRebuildAsset}
+	upstreamAsset := rebuild.Asset{Target: t, Type: rebuild.DebugUpstreamAsset}
+	if err := rebuild.AssetCopy(ctx, localAssets, gcsAssets, rebuildAsset); err != nil {
 		log.Println(errors.Wrap(err, "failed to copy rebuild asset"))
 		return
 	}
-	usa, err = rebuild.AssetCopy(ctx, localAssets, gcsAssets, rebuild.Asset{Target: t, Type: rebuild.DebugUpstreamAsset})
-	if err != nil {
+	if err := rebuild.AssetCopy(ctx, localAssets, gcsAssets, upstreamAsset); err != nil {
 		log.Println(errors.Wrap(err, "failed to copy upstream asset"))
 		return
 	}
+	rba := localAssets.URL(rebuildAsset).Path
+	usa := localAssets.URL(upstreamAsset).Path
 	log.Printf("downloaded rebuild and upstream:\n\t%s\n\t%s", rba, usa)
 	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("diffoscope --text-color=always %s %s | less -R", rba, usa))
 	if err := cmd.Run(); err != nil {
@@ -207,8 +208,9 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 		log.Println(errors.Wrap(err, "failed to create gcs asset store"))
 		return
 	}
-	logs, err := rebuild.AssetCopy(ctx, localAssets, gcsAssets, rebuild.Asset{Target: t, Type: rebuild.DebugLogsAsset})
-	if err != nil {
+	logsAsset := rebuild.Asset{Target: t, Type: rebuild.DebugLogsAsset}
+	logs := localAssets.URL(logsAsset).Path
+	if err := rebuild.AssetCopy(ctx, localAssets, gcsAssets, logsAsset); err != nil {
 		log.Println(errors.Wrap(err, "failed to copy rebuild asset"))
 		return
 	}
@@ -226,7 +228,7 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) er
 	buildDefAsset := rebuild.Asset{Type: rebuild.BuildDef, Target: example.Target()}
 	var currentStrat schema.StrategyOneOf
 	{
-		if r, _, err := localAssets.Reader(ctx, buildDefAsset); err == nil {
+		if r, err := localAssets.Reader(ctx, buildDefAsset); err == nil {
 			d := yaml.NewDecoder(r)
 			if d.Decode(&currentStrat) != nil {
 				return errors.Wrap(err, "failed to read existing build definition")
@@ -237,7 +239,7 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) er
 	}
 	var newStrat schema.StrategyOneOf
 	{
-		w, uri, err := localAssets.Writer(ctx, buildDefAsset)
+		w, err := localAssets.Writer(ctx, buildDefAsset)
 		if err != nil {
 			return errors.Wrapf(err, "opening build definition")
 		}
@@ -250,7 +252,7 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) er
 		}
 		w.Close()
 		// Send a "tmux wait -S" signal once the edit is complete.
-		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("$EDITOR %s; tmux wait -S editing", uri))
+		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("$EDITOR %s; tmux wait -S editing", localAssets.URL(buildDefAsset).Path))
 		if _, err := cmd.Output(); err != nil {
 			return errors.Wrap(err, "failed to edit build definition")
 		}
@@ -258,7 +260,7 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) er
 		if _, err := exec.Command("tmux", "wait", "editing").Output(); err != nil {
 			return errors.Wrap(err, "failed to wait for tmux signal")
 		}
-		r, _, err := localAssets.Reader(ctx, buildDefAsset)
+		r, err := localAssets.Reader(ctx, buildDefAsset)
 		if err != nil {
 			return errors.Wrap(err, "failed to open build definition after edits")
 		}

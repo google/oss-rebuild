@@ -196,7 +196,7 @@ func TestRebuildPackage(t *testing.T) {
 			afs := must(fs.Chroot("attestations"))
 			d.AttestationStore = rebuild.NewFilesystemAssetStore(afs)
 			remoteMetadata := rebuild.NewFilesystemAssetStore(must(fs.Chroot("remote-metadata")))
-			d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.AssetStore, error) {
+			d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.LocatableAssetStore, error) {
 				return remoteMetadata, nil
 			}
 			d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(must(fs.Chroot("local-metadata")))
@@ -205,7 +205,7 @@ func TestRebuildPackage(t *testing.T) {
 			}
 			d.GCBClient = &gcbtest.MockClient{
 				CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
-					c, _ := must3(remoteMetadata.Writer(ctx, rebuild.Asset{Type: rebuild.RebuildAsset, Target: tc.target}))
+					c := must(remoteMetadata.Writer(ctx, rebuild.Asset{Type: rebuild.RebuildAsset, Target: tc.target}))
 					defer func() { must1(c.Close()) }()
 					must(c.Write(tc.file.Bytes()))
 					return &cloudbuild.Operation{
@@ -262,11 +262,11 @@ func TestRebuildPackage(t *testing.T) {
 				t.Fatalf("RebuildPackage() verdict: %v", verdict.Message)
 			}
 
-			dockerfile, _ := must3(d.LocalMetadataStore.Reader(ctx, rebuild.Asset{Type: rebuild.DockerfileAsset, Target: tc.target}))
+			dockerfile := must(d.LocalMetadataStore.Reader(ctx, rebuild.Asset{Type: rebuild.DockerfileAsset, Target: tc.target}))
 			if len(must(io.ReadAll(dockerfile))) == 0 {
 				t.Error("Dockerfile empty")
 			}
-			buildinfo, _ := must3(d.LocalMetadataStore.Reader(ctx, rebuild.Asset{Type: rebuild.BuildInfoAsset, Target: tc.target}))
+			buildinfo := must(d.LocalMetadataStore.Reader(ctx, rebuild.Asset{Type: rebuild.BuildInfoAsset, Target: tc.target}))
 			diff := cmp.Diff(
 				rebuild.BuildInfo{
 					Target:      tc.target,
@@ -280,7 +280,7 @@ func TestRebuildPackage(t *testing.T) {
 			if diff != "" {
 				t.Errorf("BuildInfo diff: %s", diff)
 			}
-			bundle, _ := must3(d.AttestationStore.Reader(ctx, rebuild.Asset{Type: rebuild.AttestationBundleAsset, Target: tc.target}))
+			bundle := must(d.AttestationStore.Reader(ctx, rebuild.Asset{Type: rebuild.AttestationBundleAsset, Target: tc.target}))
 			attestations := mustJSONL[map[string]any](bundle)
 			if len(attestations) != 2 {
 				t.Errorf("Attestation bundle length: want=2 got=%d", len(attestations))
@@ -315,8 +315,4 @@ func must1(err error) {
 func must[T any](t T, err error) T {
 	must1(err)
 	return t
-}
-func must3[T, U any](t T, u U, err error) (T, U) {
-	must1(err)
-	return t, u
 }

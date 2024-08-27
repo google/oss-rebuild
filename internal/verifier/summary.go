@@ -35,12 +35,14 @@ type ArtifactSummary struct {
 }
 
 // SummarizeArtifacts fetches and summarizes the rebuild and upstream artifacts.
-func SummarizeArtifacts(ctx context.Context, metadata rebuild.AssetStore, t rebuild.Target, upstreamURI string, hashes []crypto.Hash) (rb, up ArtifactSummary, err error) {
+func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStore, t rebuild.Target, upstreamURI string, hashes []crypto.Hash) (rb, up ArtifactSummary, err error) {
 	rb = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), CanonicalHash: hashext.NewMultiHash(hashes...)}
 	up = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), CanonicalHash: hashext.NewMultiHash(hashes...), URI: upstreamURI}
 	// Fetch and process rebuild.
 	var r io.ReadCloser
-	r, rb.URI, err = metadata.Reader(ctx, rebuild.Asset{Target: t, Type: rebuild.RebuildAsset})
+	rbAsset := rebuild.Asset{Target: t, Type: rebuild.RebuildAsset}
+	rb.URI = metadata.URL(rbAsset).String()
+	r, err = metadata.Reader(ctx, rbAsset)
 	if err != nil {
 		err = errors.Wrap(err, "reading artifact")
 		return

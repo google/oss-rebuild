@@ -137,7 +137,7 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 		return nil, errors.Wrap(err, "creating attestation uploader")
 	}
 	d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(memfs.New())
-	d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.AssetStore, error) {
+	d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.LocatableAssetStore, error) {
 		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, id), "gs://"+*metadataBucket)
 	}
 	d.OverwriteAttestations = *overwriteAttestations

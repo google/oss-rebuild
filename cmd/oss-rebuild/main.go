@@ -53,7 +53,7 @@ type Bundle struct {
 }
 
 func NewBundle(ctx context.Context, t rebuild.Target, attestation rebuild.AssetStore) (*Bundle, error) {
-	r, _, err := attestation.Reader(ctx, rebuild.Asset{Target: t, Type: rebuild.AttestationBundleAsset})
+	r, err := attestation.Reader(ctx, rebuild.Asset{Target: t, Type: rebuild.AttestationBundleAsset})
 	if err != nil {
 		log.Fatal(errors.Wrap(err, "opening bundle"))
 	}

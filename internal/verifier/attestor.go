@@ -34,7 +34,7 @@ type Attestor struct {
 
 // BundleExists returns whether an existing attestation bundle exists.
 func (a Attestor) BundleExists(ctx context.Context, t rebuild.Target) (bool, error) {
-	r, _, err := a.Store.Reader(ctx, rebuild.Asset{Target: t, Type: rebuild.AttestationBundleAsset})
+	r, err := a.Store.Reader(ctx, rebuild.Asset{Target: t, Type: rebuild.AttestationBundleAsset})
 	if errors.Is(err, rebuild.ErrAssetNotFound) {
 		return false, nil
 	} else if err != nil {
@@ -63,7 +63,7 @@ func (a Attestor) PublishBundle(ctx context.Context, t rebuild.Target, stmts ...
 			return errors.Wrap(err, "marshalling DSSE")
 		}
 	}
-	w, _, err := a.Store.Writer(ctx, rebuild.Asset{Target: t, Type: rebuild.AttestationBundleAsset})
+	w, err := a.Store.Writer(ctx, rebuild.Asset{Target: t, Type: rebuild.AttestationBundleAsset})
 	if err != nil {
 		return errors.Wrap(err, "creating writer for bundle")
 	}

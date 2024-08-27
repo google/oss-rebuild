@@ -40,7 +40,7 @@ type RemoteOptions struct {
 	// LocalMetadataStore stores the dockerfile and build info. Cloud build does not need access to this.
 	LocalMetadataStore AssetStore
 	// RemoteMetadataStore stores the rebuilt artifact. Cloud build needs access to upload artifacts here.
-	RemoteMetadataStore AssetStore
+	RemoteMetadataStore LocatableAssetStore
 	UtilPrebuildBucket  string
 	// TODO: Consider moving this to Strategy.
 	UseTimewarp bool
@@ -176,7 +176,7 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 		return errors.Wrap(err, "creating dockerfile")
 	}
 	{
-		w, _, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
+		w, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
 		if err != nil {
 			return errors.Wrap(err, "creating writer for Dockerfile")
 		}
@@ -185,22 +185,14 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 			return errors.Wrap(err, "writing Dockerfile")
 		}
 	}
-	// NOTE: Ignore the local writer since GCS doesn't flush writes until Close.
-	// TODO: Could be resolved by adding ResourcePath() method.
-	_, imageUploadPath, err := opts.RemoteMetadataStore.Writer(ctx, Asset{Target: t, Type: ContainerImageAsset})
-	if err != nil {
-		return errors.Wrap(err, "creating dummy writer for container image")
-	}
-	_, rebuildUploadPath, err := opts.RemoteMetadataStore.Writer(ctx, Asset{Target: t, Type: RebuildAsset})
-	if err != nil {
-		return errors.Wrap(err, "creating dummy writer for rebuild")
-	}
+	imageUploadPath := opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String()
+	rebuildUploadPath := opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()
 	build := makeBuild(t, dockerfile, imageUploadPath, rebuildUploadPath, opts)
 	if err := doCloudBuild(ctx, opts.GCBClient, build, opts, &bi); err != nil {
 		return errors.Wrap(err, "performing build")
 	}
 	{
-		w, _, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
+		w, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
 		if err != nil {
 			return errors.Wrap(err, "creating writer for build info")
 		}

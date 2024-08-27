@@ -154,7 +154,7 @@ func TestCompare(t *testing.T) {
 			as := rebuild.NewFilesystemAssetStore(memfs.New())
 			rb, up := rebuild.Asset{Type: rebuild.DebugRebuildAsset, Target: tc.target}, rebuild.Asset{Type: rebuild.DebugUpstreamAsset, Target: tc.target}
 			{
-				w, _ := must2(as.Writer(context.Background(), rb))
+				w := must(as.Writer(context.Background(), rb))
 				zw := zip.NewWriter(w)
 				for _, entry := range tc.rebuild {
 					orDie(entry.WriteTo(zw))
@@ -162,7 +162,7 @@ func TestCompare(t *testing.T) {
 				orDie(zw.Close())
 			}
 			{
-				w, _ := must2(as.Writer(context.Background(), up))
+				w := must(as.Writer(context.Background(), up))
 				zw := zip.NewWriter(w)
 				for _, entry := range tc.upstream {
 					orDie(entry.WriteTo(zw))
@@ -185,13 +185,6 @@ func must[T any](t T, err error) T {
 		panic(err)
 	}
 	return t
-}
-
-func must2[T, U any](t T, u U, err error) (T, U) {
-	if err != nil {
-		panic(err)
-	}
-	return t, u
 }
 
 func orDie(err error) {
