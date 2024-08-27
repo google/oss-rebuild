@@ -1,4 +1,4 @@
-package logger
+package netlog
 
 import (
 	"net"

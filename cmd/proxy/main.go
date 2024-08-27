@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/google/oss-rebuild/pkg/proxy/docker"
-	"github.com/google/oss-rebuild/pkg/proxy/logger"
+	"github.com/google/oss-rebuild/pkg/proxy/netlog"
 	"github.com/google/oss-rebuild/pkg/proxy/proxy"
 )
 
@@ -41,10 +41,10 @@ func main() {
 	p := proxy.NewTransparentProxyServer(*verbose)
 	// Administrative endpoint.
 	mx := new(sync.Mutex)
-	proxyServer := proxy.TransparentProxyServer{
+	proxyServer := proxy.TransparentProxyService{
 		Proxy:      p,
 		Ca:         ca,
-		NetworkLog: logger.CaptureActivityLog(p, mx),
+		NetworkLog: netlog.CaptureActivityLog(p, mx),
 	}
 	go proxyServer.ServeMetadata(*ctrlAddr, mx)
 	// Start proxy server endpoints.

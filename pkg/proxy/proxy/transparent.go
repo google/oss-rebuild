@@ -16,18 +16,18 @@ import (
 	"github.com/elazarl/goproxy"
 	"github.com/google/oss-rebuild/internal/proxy/handshake"
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
-	"github.com/google/oss-rebuild/pkg/proxy/logger"
+	"github.com/google/oss-rebuild/pkg/proxy/netlog"
 )
 
 // TLS port to which proxied TLS traffic should be redirected.
 // Used to enable customization during testing.
 var tlsPort = "443"
 
-// TransparentProxyServer transparently proxies HTTP and HTTPS traffic.
-type TransparentProxyServer struct {
+// TransparentProxyService transparently proxies HTTP and HTTPS traffic.
+type TransparentProxyService struct {
 	Proxy      *goproxy.ProxyHttpServer
 	Ca         *tls.Certificate
-	NetworkLog *logger.NetworkActivityLog
+	NetworkLog *netlog.NetworkActivityLog
 }
 
 // ConfigureGoproxyCA sets the global intermediate CA used by goproxy.
@@ -39,7 +39,7 @@ func ConfigureGoproxyCA(ca *tls.Certificate) {
 	goproxy.RejectConnect = &goproxy.ConnectAction{Action: goproxy.ConnectReject, TLSConfig: goproxy.TLSConfigFromCA(ca)}
 }
 
-// NewTransparentProxyServer constructs a TransparentProxyServer.
+// NewTransparentProxyServer constructs a ProxyHttpServer.
 func NewTransparentProxyServer(verbose bool) *goproxy.ProxyHttpServer {
 	t := goproxy.NewProxyHttpServer()
 	t.Verbose = verbose
@@ -76,7 +76,7 @@ func NewTransparentProxyServer(verbose bool) *goproxy.ProxyHttpServer {
 
 // ProxyHTTP serves an endpoint that transparently redirects HTTP connections to the proxy server.
 // This endpoint also explicitly (i.e. non-transparently) proxies HTTP and TLS connections.
-func (t TransparentProxyServer) ProxyHTTP(addr string) {
+func (t TransparentProxyService) ProxyHTTP(addr string) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("Error listening for http connections - %v", err)
@@ -87,7 +87,7 @@ func (t TransparentProxyServer) ProxyHTTP(addr string) {
 }
 
 // ProxyTLS serves an endpoint that transparently redirects TLS connections to the proxy server.
-func (t TransparentProxyServer) ProxyTLS(addr string) {
+func (t TransparentProxyService) ProxyTLS(addr string) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("Error listening for https connections - %v", err)
@@ -129,7 +129,7 @@ func (t TransparentProxyServer) ProxyTLS(addr string) {
 	}
 }
 
-func (t *TransparentProxyServer) ServeMetadata(addr string, mx *sync.Mutex) {
+func (t *TransparentProxyService) ServeMetadata(addr string, mx *sync.Mutex) {
 	pemBytes := cert.ToPEM(t.Ca.Leaf)
 	jksBytes, err := cert.ToJKS(t.Ca.Leaf)
 	if err != nil {
