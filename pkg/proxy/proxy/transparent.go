@@ -23,13 +23,6 @@ import (
 // Used to enable customization during testing.
 var tlsPort = "443"
 
-// TransparentProxyService transparently proxies HTTP and HTTPS traffic.
-type TransparentProxyService struct {
-	Proxy      *goproxy.ProxyHttpServer
-	Ca         *tls.Certificate
-	NetworkLog *netlog.NetworkActivityLog
-}
-
 // ConfigureGoproxyCA sets the global intermediate CA used by goproxy.
 func ConfigureGoproxyCA(ca *tls.Certificate) {
 	// TODO: Refactor TLSConfigFromCA to support ed25519.
@@ -72,6 +65,13 @@ func NewTransparentProxyServer(verbose bool) *goproxy.ProxyHttpServer {
 	t.OnRequest(goproxy.ReqHostMatches(regexp.MustCompile("^.*:" + tlsPort + "$"))).
 		HandleConnect(goproxy.AlwaysMitm)
 	return t
+}
+
+// TransparentProxyService transparently proxies HTTP and HTTPS traffic.
+type TransparentProxyService struct {
+	Proxy      *goproxy.ProxyHttpServer
+	Ca         *tls.Certificate
+	NetworkLog *netlog.NetworkActivityLog
 }
 
 // ProxyHTTP serves an endpoint that transparently redirects HTTP connections to the proxy server.
