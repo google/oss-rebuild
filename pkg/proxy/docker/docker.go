@@ -41,8 +41,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/oss-rebuild/internal/proxy/certfmt"
 	"github.com/google/oss-rebuild/internal/proxy/dockerfs"
+	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/pkg/errors"
 )
 
@@ -614,7 +614,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			return
 		}
 		fs := dockerfs.Filesystem{Client: serverClient, Container: id}
-		certBytes := certfmt.ToPEM(&d.cert)
+		certBytes := cert.ToPEM(&d.cert)
 		// NOTE: This doesn't need to be cleaned up due to the enclosing volume
 		// binding made at creation time.
 		if err := createFile(fs, id, certBytes, proxyCertPath); err != nil {
@@ -622,7 +622,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			break
 		}
 		if d.javaEnvVar {
-			jks, err := certfmt.ToJKS(&d.cert)
+			jks, err := cert.ToJKS(&d.cert)
 			if err != nil {
 				log.Println(err.Error())
 				break
