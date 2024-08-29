@@ -46,7 +46,7 @@ func TestNPMCustomBuild(t *testing.T) {
 				Source:     "git checkout --force 'the_ref'",
 				Deps:       "",
 				Build: `PATH=/usr/bin:/bin:/usr/local/bin /usr/bin/npm version --prefix the_dir --no-git-tag-version green
-/usr/bin/npx --package=npm@red -- "cd the_dir && npm pack"`,
+/usr/bin/npx --package=npm@red -c "cd the_dir && npm pack"`,
 				OutputPath: "the_dir/the_artifact",
 			},
 		},
@@ -62,7 +62,7 @@ func TestNPMCustomBuild(t *testing.T) {
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps:       "",
-				Build:      `/usr/bin/npx --package=npm@red -- "cd the_dir && npm pack"`,
+				Build:      `/usr/bin/npx --package=npm@red -c "cd the_dir && npm pack"`,
 				OutputPath: "the_dir/the_artifact",
 			},
 		},
@@ -83,9 +83,9 @@ func TestNPMCustomBuild(t *testing.T) {
 				Deps: `/usr/bin/npm config --location-global set registry http://npm:2006-01-02T03:04:05Z@orange
 trap '/usr/bin/npm config --location-global delete registry' EXIT
 wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -- "cd the_dir && npm install --force"`,
+/usr/local/bin/npx --package=npm@red -c "cd the_dir && npm install --force"`,
 				Build: `PATH=/usr/bin:/bin:/usr/local/bin /usr/bin/npm version --prefix the_dir --no-git-tag-version green
-/usr/local/bin/npx --package=npm@red -- "cd the_dir && npm run yellow" && rm -rf node_modules && npm pack`,
+/usr/local/bin/npx --package=npm@red -c "cd the_dir && npm run yellow" && rm -rf node_modules && npm pack`,
 				OutputPath: "the_dir/the_artifact",
 			},
 		},
@@ -106,8 +106,8 @@ wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue
 				Deps: `/usr/bin/npm config --location-global set registry http://npm:2006-01-02T03:04:05Z@orange
 trap '/usr/bin/npm config --location-global delete registry' EXIT
 wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -- "cd the_dir && npm install --force"`,
-				Build:      `/usr/local/bin/npx --package=npm@red -- "cd the_dir && npm run yellow" && rm -rf node_modules && npm pack`,
+/usr/local/bin/npx --package=npm@red -c "cd the_dir && npm install --force"`,
+				Build:      `/usr/local/bin/npx --package=npm@red -c "cd the_dir && npm run yellow" && rm -rf node_modules && npm pack`,
 				OutputPath: "the_dir/the_artifact",
 			},
 		},
