@@ -226,7 +226,7 @@ func TestMakeBuild(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		target := Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"}
-		build := makeBuild(target, dockerfile, opts)
+		build := must(makeBuild(target, dockerfile, opts))
 		diff := cmp.Diff(build, &cloudbuild.Build{
 			LogsBucket:     "test-logs-bucket",
 			Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
@@ -251,9 +251,10 @@ docker run --name=container img`,
 				{
 					Name: "gcr.io/cloud-builders/gsutil",
 					Script: ("" +
-						"gsutil cp -P gs://test-bootstrap/gsutil_writeonly . && " +
-						"./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz && " +
-						"./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz"),
+						"set -eux\n" +
+						"gsutil cp -P gs://test-bootstrap/gsutil_writeonly .\n" +
+						"./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz\n" +
+						"./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz\n"),
 				},
 			},
 		})
