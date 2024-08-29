@@ -89,7 +89,7 @@ WORKDIR "/src"
 ENTRYPOINT ["/bin/sh","/build"]
 `))
 
-func makeBuild(t Target, dockerfile, imageUploadPath, rebuildUploadPath string, opts RemoteOptions) *cloudbuild.Build {
+func makeBuild(t Target, dockerfile string, opts RemoteOptions) *cloudbuild.Build {
 	return &cloudbuild.Build{
 		LogsBucket:     opts.LogsBucket,
 		Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
@@ -115,12 +115,12 @@ func makeBuild(t Target, dockerfile, imageUploadPath, rebuildUploadPath string, 
 					strings.Join([]string{
 						"cp",
 						"/workspace/image.tgz",
-						imageUploadPath,
+						opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String(),
 					}, " "),
 					strings.Join([]string{
 						"cp",
 						path.Join("/workspace", t.Artifact),
-						rebuildUploadPath,
+						opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String(),
 					}, " "),
 				),
 			},
@@ -185,9 +185,7 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 			return errors.Wrap(err, "writing Dockerfile")
 		}
 	}
-	imageUploadPath := opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String()
-	rebuildUploadPath := opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()
-	build := makeBuild(t, dockerfile, imageUploadPath, rebuildUploadPath, opts)
+	build := makeBuild(t, dockerfile, opts)
 	if err := doCloudBuild(ctx, opts.GCBClient, build, opts, &bi); err != nil {
 		return errors.Wrap(err, "performing build")
 	}
