@@ -196,6 +196,9 @@ func (req InferenceRequest) Validate() error {
 }
 
 func (req InferenceRequest) LocationHint() *rebuild.LocationHint {
+	if req.StrategyHint == nil {
+		return nil
+	}
 	s, _ := req.StrategyHint.Strategy()
 	return s.(*rebuild.LocationHint)
 }
