@@ -76,7 +76,7 @@ Qux
 `,
 		},
 		{
-			name: "Tabs and spaces aren't interchangable",
+			name: "Tabs and spaces aren't interchangeable",
 			input: `
 \t\tHello
 \t World
