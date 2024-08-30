@@ -222,7 +222,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	exactMatch := bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
 	canonicalizedMatch := bytes.Equal(rb.CanonicalHash.Sum(nil), up.CanonicalHash.Sum(nil))
 	if !exactMatch && !canonicalizedMatch {
-		return api.AsStatus(codes.FailedPrecondition, errors.Wrap(err, "rebuild content mismatch"))
+		return api.AsStatus(codes.FailedPrecondition, errors.New("rebuild content mismatch"))
 	}
 	input := rebuild.Input{Target: t}
 	var loc rebuild.Location
