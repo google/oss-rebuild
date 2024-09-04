@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gcb/gcbtest"
 	"google.golang.org/api/cloudbuild/v1"
@@ -216,13 +217,16 @@ func TestDoCloudBuild(t *testing.T) {
 
 func TestMakeBuild(t *testing.T) {
 	dockerfile := "FROM alpine:3.19"
-	imageUploadPath := "gs://test-bucket/image.tgz"
-	rebuildUploadPath := "gs://test-bucket/pkg-version.tgz"
-	opts := RemoteOptions{LogsBucket: "test-logs-bucket", BuildServiceAccount: "test-service-account", UtilPrebuildBucket: "test-bootstrap"}
+	opts := RemoteOptions{
+		LogsBucket:          "test-logs-bucket",
+		BuildServiceAccount: "test-service-account",
+		UtilPrebuildBucket:  "test-bootstrap",
+		RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
+	}
 
 	t.Run("Success", func(t *testing.T) {
 		target := Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"}
-		build := makeBuild(target, dockerfile, imageUploadPath, rebuildUploadPath, opts)
+		build := makeBuild(target, dockerfile, opts)
 		diff := cmp.Diff(build, &cloudbuild.Build{
 			LogsBucket:     "test-logs-bucket",
 			Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
@@ -248,8 +252,8 @@ docker run --name=container img`,
 					Name: "gcr.io/cloud-builders/gsutil",
 					Script: ("" +
 						"gsutil cp -P gs://test-bootstrap/gsutil_writeonly . && " +
-						"./gsutil_writeonly cp /workspace/image.tgz gs://test-bucket/image.tgz && " +
-						"./gsutil_writeonly cp /workspace/pkg-version.tgz gs://test-bucket/pkg-version.tgz"),
+						"./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz && " +
+						"./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz"),
 				},
 			},
 		})
