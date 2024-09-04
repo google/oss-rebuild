@@ -42,7 +42,9 @@ func TestSummarizeArtifacts(t *testing.T) {
 			Version:   "1.0.0",
 			Artifact:  "foo-1.0.0.whl",
 		}
-		w, rebuildURI, err := metadata.Writer(ctx, rebuild.Asset{Target: target, Type: rebuild.RebuildAsset})
+		asset := rebuild.Asset{Target: target, Type: rebuild.RebuildAsset}
+		rebuildURI := metadata.URL(asset).String()
+		w, err := metadata.Writer(ctx, asset)
 		orDie(err)
 		origHash := hashext.NewMultiHash(crypto.SHA256)
 		origZip := must(archivetest.ZipFile([]archive.ZipEntry{

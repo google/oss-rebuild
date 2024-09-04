@@ -42,7 +42,7 @@ func artifactReader(ctx context.Context, t Target, mux RegistryMux) (io.ReadClos
 func Canonicalize(ctx context.Context, t Target, mux RegistryMux, rbPath string, fs billy.Filesystem, assets AssetStore) (rb, up Asset, err error) {
 	{ // Canonicalize rebuild
 		rb = Asset{Type: DebugRebuildAsset, Target: t}
-		w, _, err := assets.Writer(ctx, rb)
+		w, err := assets.Writer(ctx, rb)
 		if err != nil {
 			return rb, up, errors.Errorf("[INTERNAL] failed to store asset %v", rb)
 		}
@@ -58,7 +58,7 @@ func Canonicalize(ctx context.Context, t Target, mux RegistryMux, rbPath string,
 	}
 	{ // Canonicalize upstream
 		up = Asset{Type: DebugUpstreamAsset, Target: t}
-		w, _, err := assets.Writer(ctx, up)
+		w, err := assets.Writer(ctx, up)
 		if err != nil {
 			return rb, up, errors.Errorf("[INTERNAL] failued to store asset %v", up)
 		}
@@ -78,7 +78,7 @@ func Canonicalize(ctx context.Context, t Target, mux RegistryMux, rbPath string,
 // Summarize constructs ContentSummary objects for the upstream and rebuilt artifacts.
 func Summarize(ctx context.Context, t Target, rb, up Asset, assets AssetStore) (csRB, csUP *archive.ContentSummary, err error) {
 	{ // Summarize rebuild
-		r, _, err := assets.Reader(ctx, rb)
+		r, err := assets.Reader(ctx, rb)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "[INTERNAL] Failed to find rebuilt artifact")
 		}
@@ -89,7 +89,7 @@ func Summarize(ctx context.Context, t Target, rb, up Asset, assets AssetStore) (
 		}
 	}
 	{ // Summarize upstream
-		r, _, err := assets.Reader(ctx, up)
+		r, err := assets.Reader(ctx, up)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "[INTERNAL] Failed to find upstream artifact")
 		}

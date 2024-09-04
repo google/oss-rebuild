@@ -123,7 +123,7 @@ func RebuildMany(ctx context.Context, rebuilder Rebuilder, inputs []Input, regis
 		resetLogger()
 		{
 			asset := Asset{Type: DebugLogsAsset, Target: t}
-			w, _, err := localAssets.Writer(ctx, asset)
+			w, err := localAssets.Writer(ctx, asset)
 			if err != nil {
 				log.Printf("Failed to create writer for log asset: %v\n", err)
 			} else {
@@ -139,7 +139,7 @@ func RebuildMany(ctx context.Context, rebuilder Rebuilder, inputs []Input, regis
 		}
 		if debugStorer != nil {
 			for _, asset := range assets {
-				if _, err := AssetCopy(ctx, debugStorer, localAssets, asset); err != nil {
+				if err := AssetCopy(ctx, debugStorer, localAssets, asset); err != nil {
 					log.Printf("Failed to upload asset to debug storer: %v\n", err)
 				}
 			}

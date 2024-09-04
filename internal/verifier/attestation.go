@@ -40,7 +40,7 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 	t, manualStrategy := input.Target, input.Strategy
 	var dockerfile []byte
 	{
-		r, _, err := metadata.Reader(ctx, rebuild.Asset{Target: t, Type: rebuild.DockerfileAsset})
+		r, err := metadata.Reader(ctx, rebuild.Asset{Target: t, Type: rebuild.DockerfileAsset})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "opening rebuild Dockerfile")
 		}
@@ -52,7 +52,7 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 	}
 	var buildInfo rebuild.BuildInfo
 	{
-		r, _, err := metadata.Reader(ctx, rebuild.Asset{Target: t, Type: rebuild.BuildInfoAsset})
+		r, err := metadata.Reader(ctx, rebuild.Asset{Target: t, Type: rebuild.BuildInfoAsset})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "opening rebuild build info file")
 		}

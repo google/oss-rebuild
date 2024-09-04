@@ -138,7 +138,7 @@ func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.A
 	{
 		var upRef string
 		{
-			r, _, err := assets.Reader(ctx, up)
+			r, err := assets.Reader(ctx, up)
 			if err != nil {
 				return nil, errors.Wrapf(err, "reading upstream")
 			}

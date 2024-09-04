@@ -17,9 +17,9 @@ package rebuild
 import (
 	"context"
 	stderrors "errors"
-	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -73,26 +73,32 @@ type Asset struct {
 
 // AssetStore is a storage mechanism for debug assets.
 type AssetStore interface {
-	Reader(ctx context.Context, a Asset) (io.ReadCloser, string, error)
-	Writer(ctx context.Context, a Asset) (io.WriteCloser, string, error)
+	Reader(ctx context.Context, a Asset) (io.ReadCloser, error)
+	Writer(ctx context.Context, a Asset) (io.WriteCloser, error)
 }
 
-// AssetCopy copies an asset from one store to another and returns the URI of the destination.
-func AssetCopy(ctx context.Context, to, from AssetStore, a Asset) (string, error) {
-	r, _, err := from.Reader(ctx, a)
+// LocatableAssetStore is an asset store whose assets can be identified with a URL.
+type LocatableAssetStore interface {
+	AssetStore
+	URL(a Asset) *url.URL
+}
+
+// AssetCopy copies an asset from one store to another.
+func AssetCopy(ctx context.Context, to, from AssetStore, a Asset) error {
+	r, err := from.Reader(ctx, a)
 	if err != nil {
-		return "", errors.Wrap(err, "from.Reader failed")
+		return errors.Wrap(err, "from.Reader failed")
 	}
 	defer r.Close()
-	w, uri, err := to.Writer(ctx, a)
+	w, err := to.Writer(ctx, a)
 	if err != nil {
-		return "", errors.Wrap(err, "to.Writer failed")
+		return errors.Wrap(err, "to.Writer failed")
 	}
 	defer w.Close()
 	if _, err := io.Copy(w, r); err != nil {
-		return "", errors.Wrap(err, "copy failed")
+		return errors.Wrap(err, "copy failed")
 	}
-	return uri, nil
+	return nil
 }
 
 // DebugStoreFromContext constructs a DebugStorer using values from the given context.
@@ -140,6 +146,10 @@ func NewGCSStore(ctx context.Context, uploadPrefix string) (*GCSStore, error) {
 	return s, nil
 }
 
+func (s *GCSStore) URL(a Asset) *url.URL {
+	return &url.URL{Scheme: "gs", Path: filepath.Join(s.bucket, s.resourcePath(a))}
+}
+
 func (s *GCSStore) resourcePath(a Asset) string {
 	name := string(a.Type)
 	if a.Type == RebuildAsset {
@@ -149,7 +159,7 @@ func (s *GCSStore) resourcePath(a Asset) string {
 }
 
 // Reader returns a reader for the given asset.
-func (s *GCSStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, uri string, err error) {
+func (s *GCSStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, err error) {
 	path := s.resourcePath(a)
 	obj := s.gcsClient.Bucket(s.bucket).Object(path)
 	r, err = obj.NewReader(ctx)
@@ -157,20 +167,20 @@ func (s *GCSStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, uri st
 		if err == gcs.ErrObjectNotExist {
 			err = stderrors.Join(err, ErrAssetNotFound)
 		}
-		return nil, "", errors.Wrapf(err, "creating GCS reader for %s", path)
+		return nil, errors.Wrapf(err, "creating GCS reader for %s", path)
 	}
-	return r, fmt.Sprintf("gs://%s/%s", s.bucket, obj.ObjectName()), nil
+	return r, nil
 }
 
 // Writer returns a writer for the given asset.
-func (s *GCSStore) Writer(ctx context.Context, a Asset) (r io.WriteCloser, uri string, err error) {
+func (s *GCSStore) Writer(ctx context.Context, a Asset) (r io.WriteCloser, err error) {
 	objectPath := s.resourcePath(a)
 	obj := s.gcsClient.Bucket(s.bucket).Object(objectPath)
 	w := obj.NewWriter(ctx)
-	return w, fmt.Sprintf("gs://%s/%s", s.bucket, obj.ObjectName()), nil
+	return w, nil
 }
 
-var _ AssetStore = &GCSStore{}
+var _ LocatableAssetStore = &GCSStore{}
 
 // FilesystemAssetStore will store assets in a billy.Filesystem
 type FilesystemAssetStore struct {
@@ -186,30 +196,34 @@ func (s *FilesystemAssetStore) resourcePath(a Asset) string {
 	return filepath.Join(string(a.Target.Ecosystem), a.Target.Package, a.Target.Version, a.Target.Artifact, name)
 }
 
+func (s *FilesystemAssetStore) URL(a Asset) *url.URL {
+	return &url.URL{Scheme: "file", Path: filepath.Join(s.fs.Root(), s.resourcePath(a))}
+}
+
 // Reader returns a reader for the given asset.
-func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, uri string, err error) {
+func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, err error) {
 	path := s.resourcePath(a)
 	f, err := s.fs.Open(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			err = stderrors.Join(err, ErrAssetNotFound)
 		}
-		return nil, "", errors.Wrapf(err, "creating reader for %v", a)
+		return nil, errors.Wrapf(err, "creating reader for %v", a)
 	}
-	return f, filepath.Join(s.fs.Root(), path), nil
+	return f, nil
 }
 
 // Writer returns a writer for the given asset.
-func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (r io.WriteCloser, uri string, err error) {
+func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (r io.WriteCloser, err error) {
 	path := s.resourcePath(a)
 	f, err := s.fs.Create(path)
 	if err != nil {
-		return nil, "", errors.Wrapf(err, "creating writer for %v", a)
+		return nil, errors.Wrapf(err, "creating writer for %v", a)
 	}
-	return f, filepath.Join(s.fs.Root(), path), nil
+	return f, nil
 }
 
-var _ AssetStore = &FilesystemAssetStore{}
+var _ LocatableAssetStore = &FilesystemAssetStore{}
 
 // NewFilesystemAssetStore creates a new FilesystemAssetStore.
 func NewFilesystemAssetStore(fs billy.Filesystem) *FilesystemAssetStore {

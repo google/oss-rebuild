@@ -43,7 +43,7 @@ func NewFilesystemBuildDefinitionSet(fs billy.Filesystem) *FilesystemBuildDefini
 
 func (s *FilesystemBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target) (rebuild.Strategy, error) {
 	definitions := rebuild.NewFilesystemAssetStore(s.fs)
-	r, _, err := definitions.Reader(ctx, rebuild.Asset{Type: rebuild.BuildDef, Target: t})
+	r, err := definitions.Reader(ctx, rebuild.Asset{Type: rebuild.BuildDef, Target: t})
 	if err != nil {
 		if errors.Is(err, rebuild.ErrAssetNotFound) {
 			return nil, nil // Return nil strategy if definition is not found
@@ -59,9 +59,9 @@ func (s *FilesystemBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target
 }
 
 func (s *FilesystemBuildDefinitionSet) Path(ctx context.Context, t rebuild.Target) (string, error) {
-	definitions := rebuild.NewFilesystemAssetStore(s.fs)
-	_, pth, err := definitions.Reader(ctx, rebuild.Asset{Type: rebuild.BuildDef, Target: t})
-	return pth, err
+	defs := rebuild.NewFilesystemAssetStore(s.fs)
+	url := defs.URL(rebuild.Asset{Type: rebuild.BuildDef, Target: t})
+	return url.Path, nil
 }
 
 type GitBuildDefinitionSet struct {

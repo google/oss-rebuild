@@ -116,7 +116,7 @@ type RebuildPackageDeps struct {
 	BuildDefRepo               rebuild.Location
 	AttestationStore           rebuild.AssetStore
 	LocalMetadataStore         rebuild.AssetStore
-	RemoteMetadataStoreBuilder func(ctx context.Context, id string) (rebuild.AssetStore, error)
+	RemoteMetadataStoreBuilder func(ctx context.Context, id string) (rebuild.LocatableAssetStore, error)
 	OverwriteAttestations      bool
 	InferStub                  api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
 }
@@ -290,7 +290,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		return nil, err
 	}
 	var dockerfile string
-	w, _, err := deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.DockerfileAsset})
+	w, err := deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.DockerfileAsset})
 	if err == nil {
 		if b, err := io.ReadAll(w); err == nil {
 			dockerfile = string(b)
