@@ -36,7 +36,8 @@ func main() {
 	if *verbose {
 		log.Printf("Server starting up! - configured to listen on http interface %s and https interface %s", *httpProxyAddr, *tlsProxyAddr)
 	}
-	proxyServer := proxy.NewTransparentProxyService(*verbose, ca)
+	p := proxy.NewTransparentProxyServer(*verbose)
+	proxyServer := proxy.NewTransparentProxyService(p, ca)
 	// Administrative endpoint.
 	go proxyServer.ServeMetadata(*ctrlAddr)
 	// Start proxy server endpoints.

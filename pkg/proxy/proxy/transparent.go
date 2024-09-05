@@ -76,8 +76,7 @@ type TransparentProxyService struct {
 }
 
 // NewTransparentProxyService creates a new TransparentProxyService.
-func NewTransparentProxyService(verbose bool, ca *tls.Certificate) TransparentProxyService {
-	p := NewTransparentProxyServer(verbose)
+func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate) TransparentProxyService {
 	m := new(sync.Mutex)
 	return TransparentProxyService{
 		Proxy:      p,
