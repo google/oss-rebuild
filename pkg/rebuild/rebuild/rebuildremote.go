@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path"
@@ -27,6 +26,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/gcb"
+	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
 )
@@ -39,7 +39,7 @@ type RemoteOptions struct {
 	LogsBucket          string
 	// LocalMetadataStore stores the dockerfile and build info. Cloud build does not need access to this.
 	LocalMetadataStore AssetStore
-	// RemoteMetadataStore stores the rebuilt artifact. Cloud build needs access to upload artifacts here.
+	// RemoteMetadataStore stores the rebuilt artifact. Cloud build needs access to upload assets here.
 	RemoteMetadataStore LocatableAssetStore
 	UtilPrebuildBucket  string
 	// TODO: Consider moving this to Strategy.
@@ -60,36 +60,67 @@ var rebuildContainerTpl = template.Must(
 		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
 	}).Parse(
 		// NOTE: For syntax docs, see https://docs.docker.com/build/dockerfile/release-notes/
-		`#syntax=docker/dockerfile:1.4
-{{- if .UseTimewarp}}
-FROM gcr.io/cloud-builders/gsutil AS timewarp_provider
-RUN gsutil cp -P gs://{{.UtilPrebuildBucket}}/timewarp .
-{{- end}}
-FROM alpine:3.19
-{{- if .UseTimewarp}}
-COPY --from=timewarp_provider ./timewarp .
-{{- end}}
-RUN <<'EOF'
- set -eux
-{{- if .UseTimewarp}}
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
-{{- end}}
- apk add {{join " " .Instructions.SystemDeps}}
- mkdir /src && cd /src
- {{.Instructions.Source| indent}}
- {{.Instructions.Deps | indent}}
-EOF
-RUN cat <<'EOF' >build
- set -eux
- {{.Instructions.Build | indent}}
- mkdir /out && cp /src/{{.Instructions.OutputPath}} /out/
-EOF
-WORKDIR "/src"
-ENTRYPOINT ["/bin/sh","/build"]
-`))
+		textwrap.Dedent(`
+				#syntax=docker/dockerfile:1.4
+				{{- if .UseTimewarp}}
+				FROM gcr.io/cloud-builders/gsutil AS timewarp_provider
+				RUN gsutil cp -P gs://{{.UtilPrebuildBucket}}/timewarp .
+				{{- end}}
+				FROM alpine:3.19
+				{{- if .UseTimewarp}}
+				COPY --from=timewarp_provider ./timewarp .
+				{{- end}}
+				RUN <<'EOF'
+				 set -eux
+				{{- if .UseTimewarp}}
+				 ./timewarp -port 8080 &
+				 while ! nc -z localhost 8080;do sleep 1;done
+				{{- end}}
+				 apk add {{join " " .Instructions.SystemDeps}}
+				 mkdir /src && cd /src
+				 {{.Instructions.Source| indent}}
+				 {{.Instructions.Deps | indent}}
+				EOF
+				RUN cat <<'EOF' >build
+				 set -eux
+				 {{.Instructions.Build | indent}}
+				 mkdir /out && cp /src/{{.Instructions.OutputPath}} /out/
+				EOF
+				WORKDIR "/src"
+				ENTRYPOINT ["/bin/sh","/build"]
+				`)[1:], // remove leading newline
+	))
 
-func makeBuild(t Target, dockerfile string, opts RemoteOptions) *cloudbuild.Build {
+type upload struct {
+	From string
+	To   string
+}
+
+var assetUploadTpl = template.Must(
+	template.New(
+		"asset upload",
+	).Parse(
+		textwrap.Dedent(`
+				set -eux
+				gsutil cp -P gs://{{.UtilPrebuildBucket}}/gsutil_writeonly .
+				{{- range .Uploads}}
+				./gsutil_writeonly cp {{.From}} {{.To}}
+				{{- end}}
+				`)[1:], // remove leading newline
+	))
+
+func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Build, error) {
+	var assetUploadScript bytes.Buffer
+	err := assetUploadTpl.Execute(&assetUploadScript, map[string]any{
+		"UtilPrebuildBucket": opts.UtilPrebuildBucket,
+		"Uploads": []upload{
+			{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String()},
+			{From: path.Join("/workspace", t.Artifact), To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()},
+		},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "expanding asset upload template")
+	}
 	return &cloudbuild.Build{
 		LogsBucket:     opts.LogsBucket,
 		Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
@@ -108,24 +139,11 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) *cloudbuild.Buil
 				Script: "docker save img | gzip > /workspace/image.tgz",
 			},
 			{
-				Name: "gcr.io/cloud-builders/gsutil",
-				Script: fmt.Sprintf(
-					"gsutil cp -P gs://%s/gsutil_writeonly . && ./gsutil_writeonly %s && ./gsutil_writeonly %s",
-					opts.UtilPrebuildBucket,
-					strings.Join([]string{
-						"cp",
-						"/workspace/image.tgz",
-						opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String(),
-					}, " "),
-					strings.Join([]string{
-						"cp",
-						path.Join("/workspace", t.Artifact),
-						opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String(),
-					}, " "),
-				),
+				Name:   "gcr.io/cloud-builders/gsutil",
+				Script: assetUploadScript.String(),
 			},
 		},
-	}
+	}, nil
 }
 
 func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Build, opts RemoteOptions, bi *BuildInfo) error {
@@ -185,7 +203,10 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 			return errors.Wrap(err, "writing Dockerfile")
 		}
 	}
-	build := makeBuild(t, dockerfile, opts)
+	build, err := makeBuild(t, dockerfile, opts)
+	if err != nil {
+		return errors.Wrap(err, "creating build")
+	}
 	if err := doCloudBuild(ctx, opts.GCBClient, build, opts, &bi); err != nil {
 		return errors.Wrap(err, "performing build")
 	}
