@@ -363,6 +363,69 @@ gsutil cp -P gs://test-bootstrap/gsutil_writeonly .
 	}
 }
 
+func TestMakeEBPFBuild(t *testing.T) {
+	dockerfile := "FROM alpine:3.19"
+	opts := RemoteOptions{
+		LogsBucket:          "test-logs-bucket",
+		BuildServiceAccount: "test-service-account",
+		UtilPrebuildBucket:  "test-bootstrap",
+		RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
+		EnableEBPF:          true,
+	}
+
+	t.Run("Success", func(t *testing.T) {
+		target := Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"}
+		build := must(makeBuild(target, dockerfile, opts))
+		diff := cmp.Diff(build, &cloudbuild.Build{
+			LogsBucket:     "test-logs-bucket",
+			Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
+			ServiceAccount: "test-service-account",
+			Steps: []*cloudbuild.BuildStep{
+				{
+					Name:         "gcr.io/cloud-builders/docker",
+					Args:         []string{"run", "--name=tetragon", "--pid=host", "--cgroupns=host", "--privileged", "-v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf", "quay.io/cilium/tetragon:v1.1.2", "/usr/bin/tetragon", "--export-filename=/var/log/tetragon/tetragon.log"},
+					Id:           "run_tetragon",
+					AllowFailure: true,
+				},
+				{
+					Name: "gcr.io/cloud-builders/docker",
+					Script: `set -eux
+cat <<'EOS' | docker buildx build --tag=img -
+FROM alpine:3.19
+EOS
+docker run --name=container img`,
+					Id:      "run_builder",
+					WaitFor: []string{"-"},
+				},
+				{
+					Name: "gcr.io/cloud-builders/docker",
+					Script: ("" +
+						"set -eux\n" +
+						"docker cp container:/out/pkg-version.tgz /workspace/pkg-version.tgz\n" +
+						"docker save img | gzip > /workspace/image.tgz\n" +
+						"docker cp tetragon:/var/log/tetragon/tetragon.log /workspace/tetragon.log\n" +
+						"docker kill tetragon\n"),
+					Id:      "cleanup",
+					WaitFor: []string{"run_builder"},
+				},
+				{
+					Name: "gcr.io/cloud-builders/gsutil",
+					Script: ("" +
+						"set -eux\n" +
+						"gsutil cp -P gs://test-bootstrap/gsutil_writeonly .\n" +
+						"./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz\n" +
+						"./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz\n" +
+						"./gsutil_writeonly cp /workspace/tetragon.log file:///npm/pkg/version/pkg-version.tgz/tetragon.log\n"),
+					WaitFor: []string{"cleanup"},
+				},
+			},
+		})
+		if diff != "" {
+			t.Errorf("Unexpected Build: diff: %v", diff)
+		}
+	})
+}
+
 func must[T any](t T, err error) T {
 	if err != nil {
 		panic(err)

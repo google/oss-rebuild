@@ -169,6 +169,7 @@ type RebuildPackageRequest struct {
 	Version          string            `form:""`
 	ID               string            `form:",required"`
 	StrategyFromRepo bool              `form:""`
+	EnableEBPF       bool              `form:""`
 	UseNetworkProxy  bool              `form:""`
 }
 

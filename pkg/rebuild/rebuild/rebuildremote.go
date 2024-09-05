@@ -45,6 +45,7 @@ type RemoteOptions struct {
 	// TODO: Consider moving these to Strategy.
 	UseTimewarp     bool
 	UseNetworkProxy bool
+	EnableEBPF  bool
 }
 
 type rebuildContainerArgs struct {
@@ -197,10 +198,26 @@ var proxyBuildTpl = template.Must(
 				`)[1:], // remove leading newline
 	))
 
-type upload struct {
+// transfer describes the source and destination of either a move or copy.
+type transfer struct {
 	From string
 	To   string
 }
+
+var rebuildCleanupTpl = template.Must(
+	template.New(
+		"rebuild cleanup",
+	).Parse(
+		textwrap.Dedent(`
+				set -eux
+				docker cp container:{{.Artifact.From}} {{.Artifact.To}}
+				docker save img | gzip > /workspace/image.tgz
+				{{- if .EnableEBPF}}
+				docker cp tetragon:/var/log/tetragon/tetragon.log /workspace/tetragon.log
+				docker kill tetragon
+				{{- end}}
+				`)[1:], // remove leading newline
+	))
 
 var assetUploadTpl = template.Must(
 	template.New(
@@ -261,15 +278,17 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 			return nil, errors.Wrap(err, "expanding standard build template")
 		}
 	}
-	var assetUploadScript bytes.Buffer
-	err := assetUploadTpl.Execute(&assetUploadScript, map[string]any{
+	if opts.EnableEBPF {
+		uploads = append(uploads, transfer{From: "/workspace/tetragon.log", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: TetragonLog}).String()})
+	}
+	err = assetUploadTpl.Execute(&assetUploadScript, map[string]any{
 		"UtilPrebuildBucket": opts.UtilPrebuildBucket,
 		"Uploads":            uploads,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "expanding asset upload template")
 	}
-	return &cloudbuild.Build{
+	var build = cloudbuild.Build{
 		LogsBucket:     opts.LogsBucket,
 		Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
 		ServiceAccount: opts.BuildServiceAccount,
@@ -279,19 +298,29 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 				Script: buildScript.String(),
 			},
 			{
-				Name: "gcr.io/cloud-builders/docker",
-				Args: []string{"cp", "container:" + path.Join("/out", t.Artifact), path.Join("/workspace", t.Artifact)},
+				Name:    "gcr.io/cloud-builders/docker",
+				Script:  cleanupScript.String(),
+				Id:      "cleanup",
+				WaitFor: []string{"run_builder"},
 			},
 			{
-				Name:   "gcr.io/cloud-builders/docker",
-				Script: "docker save img | gzip > /workspace/image.tgz",
-			},
-			{
-				Name:   "gcr.io/cloud-builders/gsutil",
-				Script: assetUploadScript.String(),
+				Name:    "gcr.io/cloud-builders/gsutil",
+				Script:  assetUploadScript.String(),
+				WaitFor: []string{"cleanup"},
 			},
 		},
-	}, nil
+	}
+	if opts.EnableEBPF {
+		// Prepend a build step to start the tetragon contianer.
+		build.Steps = append([]*cloudbuild.BuildStep{{
+			Name:         "gcr.io/cloud-builders/docker",
+			Args:         []string{"run", "--name=tetragon", "--pid=host", "--cgroupns=host", "--privileged", "-v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf", "quay.io/cilium/tetragon:v1.1.2", "/usr/bin/tetragon", "--export-filename=/var/log/tetragon/tetragon.log"},
+			Id:           "run_tetragon",
+			AllowFailure: true,
+		},
+		}, build.Steps...)
+	}
+	return &build, nil
 }
 
 func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Build, opts RemoteOptions, bi *BuildInfo) error {

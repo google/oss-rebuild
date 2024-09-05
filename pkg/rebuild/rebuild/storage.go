@@ -56,6 +56,9 @@ const (
 
 	// BuildDef is the build definition, including strategy.
 	BuildDef AssetType = "build.yaml"
+
+	// TetragonLog is the log of all tetragon events.
+	TetragonLog AssetType = "tetragon.log"
 )
 
 var (
