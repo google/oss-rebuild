@@ -5,12 +5,10 @@ import (
 	"flag"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/google/oss-rebuild/pkg/proxy/docker"
-	"github.com/google/oss-rebuild/pkg/proxy/netlog"
 	"github.com/google/oss-rebuild/pkg/proxy/proxy"
 )
 
@@ -38,15 +36,9 @@ func main() {
 	if *verbose {
 		log.Printf("Server starting up! - configured to listen on http interface %s and https interface %s", *httpProxyAddr, *tlsProxyAddr)
 	}
-	p := proxy.NewTransparentProxyServer(*verbose)
+	proxyServer := proxy.NewTransparentProxyService(*verbose, ca)
 	// Administrative endpoint.
-	mx := new(sync.Mutex)
-	proxyServer := proxy.TransparentProxyService{
-		Proxy:      p,
-		Ca:         ca,
-		NetworkLog: netlog.CaptureActivityLog(p, mx),
-	}
-	go proxyServer.ServeMetadata(*ctrlAddr, mx)
+	go proxyServer.ServeMetadata(*ctrlAddr)
 	// Start proxy server endpoints.
 	go proxyServer.ProxyTLS(*tlsProxyAddr)
 	go proxyServer.ProxyHTTP(*httpProxyAddr)
