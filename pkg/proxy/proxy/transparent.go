@@ -148,7 +148,7 @@ func (t TransparentProxyService) ProxyTLS(addr string) {
 				c.Close()
 				return
 			}
-			log.Printf("Got connection from: %s", host)
+			log.Printf("Connecting to %s", host)
 			connectReq := &http.Request{
 				Method: "CONNECT",
 				URL: &url.URL{

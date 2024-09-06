@@ -17,7 +17,7 @@ func distro(dfs *dockerfs.Filesystem) (string, error) {
 	}
 	matches := distroPattern.FindSubmatch(f.Contents)
 	if matches == nil {
-		return "", errors.New("No distro identifier found")
+		return "", errors.New("distro identifier not found")
 	}
 	return string(matches[1]), nil
 }
@@ -50,6 +50,6 @@ func locateTruststore(dfs *dockerfs.Filesystem) (*dockerfs.File, error) {
 		// NOTE: JKS file also needs to be regenerated at /var/lib/ca-certificates/java-cacerts.
 		return dfs.OpenAndResolve("/var/lib/ca-certificates/ca-bundle.pem")
 	default:
-		return nil, errors.Errorf("Unsupported distro: %s", d)
+		return nil, errors.Errorf("unsupported distro: %s", d)
 	}
 }
