@@ -72,6 +72,18 @@ type TransparentProxyService struct {
 	Proxy      *goproxy.ProxyHttpServer
 	Ca         *tls.Certificate
 	NetworkLog *netlog.NetworkActivityLog
+	mx         *sync.Mutex
+}
+
+// NewTransparentProxyService creates a new TransparentProxyService.
+func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate) TransparentProxyService {
+	m := new(sync.Mutex)
+	return TransparentProxyService{
+		Proxy:      p,
+		Ca:         ca,
+		NetworkLog: netlog.CaptureActivityLog(p, m),
+		mx:         m,
+	}
 }
 
 // ProxyHTTP serves an endpoint that transparently redirects HTTP connections to the proxy server.
@@ -129,7 +141,7 @@ func (t TransparentProxyService) ProxyTLS(addr string) {
 	}
 }
 
-func (t *TransparentProxyService) ServeMetadata(addr string, mx *sync.Mutex) {
+func (t *TransparentProxyService) ServeMetadata(addr string) {
 	pemBytes := cert.ToPEM(t.Ca.Leaf)
 	jksBytes, err := cert.ToJKS(t.Ca.Leaf)
 	if err != nil {
@@ -149,8 +161,8 @@ func (t *TransparentProxyService) ServeMetadata(addr string, mx *sync.Mutex) {
 		}
 	})
 	mux.HandleFunc("/summary", func(w http.ResponseWriter, r *http.Request) {
-		mx.Lock()
-		defer mx.Unlock()
+		t.mx.Lock()
+		defer t.mx.Unlock()
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(t.NetworkLog); err != nil {
