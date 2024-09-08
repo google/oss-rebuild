@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/elazarl/goproxy"
@@ -67,21 +68,48 @@ func NewTransparentProxyServer(verbose bool) *goproxy.ProxyHttpServer {
 	return t
 }
 
+type ProxyMode int
+
+const (
+	MonitorMode ProxyMode = iota
+	EnforcementMode
+	UnkownMode
+)
+
+func StringToProxyMode(mode string) ProxyMode {
+	switch mode {
+	case "monitor":
+		return MonitorMode
+	case "enforce":
+		return EnforcementMode
+	default:
+		return UnkownMode
+	}
+}
+
 // TransparentProxyService transparently proxies HTTP and HTTPS traffic.
 type TransparentProxyService struct {
 	Proxy      *goproxy.ProxyHttpServer
 	Ca         *tls.Certificate
 	NetworkLog *netlog.NetworkActivityLog
-	mx         *sync.Mutex
+	Policy     *NetworkPolicy
+	Mode       ProxyMode
+
+	mx *sync.Mutex
 }
 
 // NewTransparentProxyService creates a new TransparentProxyService.
-func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate) TransparentProxyService {
+func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode string) TransparentProxyService {
 	m := new(sync.Mutex)
+	pm := StringToProxyMode(mode)
+	if pm == UnkownMode {
+		log.Fatalf("Invalid proxy mode specified: %v", mode)
+	}
 	return TransparentProxyService{
 		Proxy:      p,
 		Ca:         ca,
 		NetworkLog: netlog.CaptureActivityLog(p, m),
+		Mode:       pm,
 		mx:         m,
 	}
 }
@@ -172,6 +200,55 @@ func (t *TransparentProxyService) ServeMetadata(addr string) {
 	})
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// Check that the requested url is allowed by the network policy.
+func (proxy TransparentProxyService) CheckNetworkPolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	if proxy.Mode != EnforcementMode {
+		return req, nil
+	}
+	url := req.URL
+	if proxy.Policy != nil {
+		for _, rule := range proxy.Policy.Rules {
+			if url.Hostname() != rule.Host {
+				continue
+			}
+			if urlSatisfiesRule(url, rule) {
+				return req, nil
+			}
+		}
+	}
+	log.Printf("Request to %s blocked by network policy", url.String())
+	errorMessage := fmt.Sprintf("Access to %s is blocked by the proxy's network policy", url.String())
+	return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, errorMessage)
+}
+
+type MatchingStrategy int
+
+const (
+	PathPrefix MatchingStrategy = iota
+	FullPath
+)
+
+type NetworkPolicy struct {
+	Rules []NetworkPolicyRule
+}
+
+type NetworkPolicyRule struct {
+	Host     string
+	Path     string
+	Strategy MatchingStrategy
+}
+
+func urlSatisfiesRule(url *url.URL, rule NetworkPolicyRule) bool {
+	switch rule.Strategy {
+	case PathPrefix:
+		return strings.HasPrefix(url.Path, rule.Path)
+	case FullPath:
+		return url.Path == rule.Path
+	default:
+		return false
 	}
 }
 
