@@ -22,7 +22,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"os"
 	re "regexp"
 	"strings"
 
@@ -357,5 +356,5 @@ func getFile(fname string, zr *zip.Reader) ([]byte, error) {
 			return io.ReadAll(fi)
 		}
 	}
-	return nil, os.ErrNotExist
+	return nil, fs.ErrNotExist
 }

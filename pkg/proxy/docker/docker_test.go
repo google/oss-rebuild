@@ -777,8 +777,8 @@ func TestGetEnvVar(t *testing.T) {
 		Want    string
 		WantErr error
 	}){
-		{[]byte(`{}`), "FOO", "", os.ErrNotExist},
-		{[]byte(`{"Env":["BAR="]}`), "FOO", "", os.ErrNotExist},
+		{[]byte(`{}`), "FOO", "", fs.ErrNotExist},
+		{[]byte(`{"Env":["BAR="]}`), "FOO", "", fs.ErrNotExist},
 		{[]byte(`{"Env":["FOO="]}`), "FOO", "", nil},
 		{[]byte(`{"Env":["FOO=a"]}`), "FOO", "a", nil},
 		{[]byte(`{"Env":["FOO='a'"]}`), "FOO", "'a'", nil},
