@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/google/oss-rebuild/pkg/proxy/policy"
 )
 
 func TestCheckNetworkPolicy(t *testing.T) {
@@ -11,19 +13,19 @@ func TestCheckNetworkPolicy(t *testing.T) {
 	tests := []struct {
 		name     string
 		mode     ProxyMode
-		policy   NetworkPolicy
+		policy   policy.Policy
 		url      string
 		wantResp int
 	}{
 		{
 			name: "empty host policy rule does not match any url",
 			mode: EnforcementMode,
-			policy: NetworkPolicy{
-				Rules: []NetworkPolicyRule{
-					{
-						Host:     "",
-						Path:     "path",
-						Strategy: PathPrefix,
+			policy: policy.Policy{
+				Rules: []policy.Rule{
+					policy.URLMatchRule{
+						Host: "",
+						Path: "path",
+						Type: policy.PathPrefix,
 					},
 				},
 			},
@@ -33,12 +35,12 @@ func TestCheckNetworkPolicy(t *testing.T) {
 		{
 			name: "partial host policy rule does not match any url",
 			mode: EnforcementMode,
-			policy: NetworkPolicy{
-				Rules: []NetworkPolicyRule{
-					{
-						Host:     "host",
-						Path:     "path",
-						Strategy: PathPrefix,
+			policy: policy.Policy{
+				Rules: []policy.Rule{
+					policy.URLMatchRule{
+						Host: "host",
+						Path: "path",
+						Type: policy.PathPrefix,
 					},
 				},
 			},
@@ -48,12 +50,12 @@ func TestCheckNetworkPolicy(t *testing.T) {
 		{
 			name: "path prefix matching strategy allows matching url",
 			mode: EnforcementMode,
-			policy: NetworkPolicy{
-				Rules: []NetworkPolicyRule{
-					{
-						Host:     "host.com",
-						Path:     "/path",
-						Strategy: PathPrefix,
+			policy: policy.Policy{
+				Rules: []policy.Rule{
+					policy.URLMatchRule{
+						Host: "host.com",
+						Path: "/path",
+						Type: policy.PathPrefix,
 					},
 				},
 			},
@@ -63,12 +65,12 @@ func TestCheckNetworkPolicy(t *testing.T) {
 		{
 			name: "path prefix matching strategy disallows non-matching url",
 			mode: EnforcementMode,
-			policy: NetworkPolicy{
-				Rules: []NetworkPolicyRule{
-					{
-						Host:     "host.com",
-						Path:     "/path",
-						Strategy: PathPrefix,
+			policy: policy.Policy{
+				Rules: []policy.Rule{
+					policy.URLMatchRule{
+						Host: "host.com",
+						Path: "/path",
+						Type: policy.PathPrefix,
 					},
 				},
 			},
@@ -78,12 +80,12 @@ func TestCheckNetworkPolicy(t *testing.T) {
 		{
 			name: "full path matching strategy allows matching url",
 			mode: EnforcementMode,
-			policy: NetworkPolicy{
-				Rules: []NetworkPolicyRule{
-					{
-						Host:     "host.com",
-						Path:     "/matching/path",
-						Strategy: FullPath,
+			policy: policy.Policy{
+				Rules: []policy.Rule{
+					policy.URLMatchRule{
+						Host: "host.com",
+						Path: "/matching/path",
+						Type: policy.FullPath,
 					},
 				},
 			},
@@ -93,12 +95,12 @@ func TestCheckNetworkPolicy(t *testing.T) {
 		{
 			name: "full path matching strategy disallows non-matching url",
 			mode: EnforcementMode,
-			policy: NetworkPolicy{
-				Rules: []NetworkPolicyRule{
-					{
-						Host:     "host.com",
-						Path:     "/path",
-						Strategy: FullPath,
+			policy: policy.Policy{
+				Rules: []policy.Rule{
+					policy.URLMatchRule{
+						Host: "host.com",
+						Path: "/path",
+						Type: policy.FullPath,
 					},
 				},
 			},
@@ -108,12 +110,12 @@ func TestCheckNetworkPolicy(t *testing.T) {
 		{
 			name: "monitor mode:empty host policy rule gets passed through",
 			mode: MonitorMode,
-			policy: NetworkPolicy{
-				Rules: []NetworkPolicyRule{
-					{
-						Host:     "",
-						Path:     "path",
-						Strategy: PathPrefix,
+			policy: policy.Policy{
+				Rules: []policy.Rule{
+					policy.URLMatchRule{
+						Host: "",
+						Path: "path",
+						Type: policy.PathPrefix,
 					},
 				},
 			},
@@ -123,12 +125,12 @@ func TestCheckNetworkPolicy(t *testing.T) {
 		{
 			name: "monitor mode:allowed url is passed through",
 			mode: MonitorMode,
-			policy: NetworkPolicy{
-				Rules: []NetworkPolicyRule{
-					{
-						Host:     "host.com",
-						Path:     "/path",
-						Strategy: PathPrefix,
+			policy: policy.Policy{
+				Rules: []policy.Rule{
+					policy.URLMatchRule{
+						Host: "host.com",
+						Path: "/path",
+						Type: policy.PathPrefix,
 					},
 				},
 			},
@@ -138,12 +140,12 @@ func TestCheckNetworkPolicy(t *testing.T) {
 		{
 			name: "monitor mode:disallowed url is passed through",
 			mode: MonitorMode,
-			policy: NetworkPolicy{
-				Rules: []NetworkPolicyRule{
-					{
-						Host:     "host.com",
-						Path:     "/path",
-						Strategy: PathPrefix,
+			policy: policy.Policy{
+				Rules: []policy.Rule{
+					policy.URLMatchRule{
+						Host: "host.com",
+						Path: "/path",
+						Type: policy.PathPrefix,
 					},
 				},
 			},

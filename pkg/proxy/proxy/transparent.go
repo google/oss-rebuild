@@ -11,13 +11,13 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"strings"
 	"sync"
 
 	"github.com/elazarl/goproxy"
 	"github.com/google/oss-rebuild/internal/proxy/handshake"
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/google/oss-rebuild/pkg/proxy/netlog"
+	"github.com/google/oss-rebuild/pkg/proxy/policy"
 )
 
 // TLS port to which proxied TLS traffic should be redirected.
@@ -68,22 +68,19 @@ func NewTransparentProxyServer(verbose bool) *goproxy.ProxyHttpServer {
 	return t
 }
 
-type ProxyMode int
+type ProxyMode string
 
 const (
-	MonitorMode ProxyMode = iota
-	EnforcementMode
-	UnkownMode
+	MonitorMode     ProxyMode = "monitor"
+	EnforcementMode ProxyMode = "enforce"
 )
 
-func StringToProxyMode(mode string) ProxyMode {
-	switch mode {
-	case "monitor":
-		return MonitorMode
-	case "enforce":
-		return EnforcementMode
+func (m ProxyMode) IsValid() bool {
+	switch m {
+	case MonitorMode, EnforcementMode:
+		return true
 	default:
-		return UnkownMode
+		return false
 	}
 }
 
@@ -92,7 +89,7 @@ type TransparentProxyService struct {
 	Proxy      *goproxy.ProxyHttpServer
 	Ca         *tls.Certificate
 	NetworkLog *netlog.NetworkActivityLog
-	Policy     *NetworkPolicy
+	Policy     *policy.Policy
 	Mode       ProxyMode
 
 	mx *sync.Mutex
@@ -101,8 +98,8 @@ type TransparentProxyService struct {
 // NewTransparentProxyService creates a new TransparentProxyService.
 func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode string) TransparentProxyService {
 	m := new(sync.Mutex)
-	pm := StringToProxyMode(mode)
-	if pm == UnkownMode {
+	pm := ProxyMode(mode)
+	if !pm.IsValid() {
 		log.Fatalf("Invalid proxy mode specified: %v", mode)
 	}
 	return TransparentProxyService{
@@ -208,48 +205,7 @@ func (proxy TransparentProxyService) CheckNetworkPolicy(req *http.Request, ctx *
 	if proxy.Mode != EnforcementMode {
 		return req, nil
 	}
-	url := req.URL
-	if proxy.Policy != nil {
-		for _, rule := range proxy.Policy.Rules {
-			if url.Hostname() != rule.Host {
-				continue
-			}
-			if urlSatisfiesRule(url, rule) {
-				return req, nil
-			}
-		}
-	}
-	log.Printf("Request to %s blocked by network policy", url.String())
-	errorMessage := fmt.Sprintf("Access to %s is blocked by the proxy's network policy", url.String())
-	return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, errorMessage)
-}
-
-type MatchingStrategy int
-
-const (
-	PathPrefix MatchingStrategy = iota
-	FullPath
-)
-
-type NetworkPolicy struct {
-	Rules []NetworkPolicyRule
-}
-
-type NetworkPolicyRule struct {
-	Host     string
-	Path     string
-	Strategy MatchingStrategy
-}
-
-func urlSatisfiesRule(url *url.URL, rule NetworkPolicyRule) bool {
-	switch rule.Strategy {
-	case PathPrefix:
-		return strings.HasPrefix(url.Path, rule.Path)
-	case FullPath:
-		return url.Path == rule.Path
-	default:
-		return false
-	}
+	return proxy.Policy.EnforcePolicy(req, ctx)
 }
 
 // eatConnectResponseWriter drops the goproxy response to the HTTP CONNECT tunnel creation.
