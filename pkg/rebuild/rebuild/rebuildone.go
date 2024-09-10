@@ -16,8 +16,8 @@ package rebuild
 
 import (
 	"context"
+	iofs "io/fs"
 	"log"
-	"os"
 	"time"
 
 	billy "github.com/go-git/go-billy/v5"
@@ -117,7 +117,7 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 	rbPath := inst.OutputPath
 	_, err = fs.Stat(rbPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, iofs.ErrNotExist) {
 			return &Verdict{Target: t, Message: errors.Wrap(err, "failed to locate artifact").Error(), Strategy: strategy}, []Asset{}, nil
 		}
 		return nil, nil, errors.Wrapf(err, "failed to stat artifact")

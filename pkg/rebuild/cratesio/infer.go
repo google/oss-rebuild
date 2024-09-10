@@ -23,8 +23,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
-	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -108,7 +108,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 	topLevel := t.Package + "-" + vmeta.Version.Version
 	vcsInfo, err := getFileFromCrate(bytes.NewReader(crateBytes), topLevel+"/.cargo_vcs_info.json")
 	var info reg.CargoVCSInfo
-	if err == os.ErrNotExist {
+	if errors.Is(err, fs.ErrNotExist) {
 		log.Printf("No .cargo_vcs_info.json file found")
 	} else if err != nil {
 		return "", "", errors.Wrapf(err, "[INTERNAL] Failed to extract upstream .cargo_vcs_info.json")
@@ -236,7 +236,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	topLevel := t.Package + "-" + vmeta.Version.Version
 	lockContent, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.lock")
 	var lock *ExplicitLockfile
-	if err == os.ErrNotExist {
+	if errors.Is(err, fs.ErrNotExist) {
 		lock = nil
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream Cargo.lock")
@@ -286,7 +286,7 @@ func getFileFromCrate(crate io.Reader, path string) ([]byte, error) {
 			return nil, err
 		}
 	}
-	return nil, os.ErrNotExist
+	return nil, fs.ErrNotExist
 }
 
 // findAndValidateCargoTOML ensures the package config has the expected name and version, or finds a new version if necessary.

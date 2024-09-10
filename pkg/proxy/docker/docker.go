@@ -29,7 +29,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
+	iofs "io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -122,7 +122,7 @@ func truststoreCertPatch(fs dockerfs.Filesystem, container string, cert []byte) 
 
 func createFile(fs dockerfs.Filesystem, container string, content []byte, path string) error {
 	_, err := fs.Stat(path)
-	if err != os.ErrNotExist {
+	if !errors.Is(err, iofs.ErrNotExist) {
 		return errors.New("file already exists")
 	}
 	name := filepath.Base(path)
@@ -224,7 +224,7 @@ func getEnvVar(imageSpec []byte, avar string) (val string, err error) {
 		}
 	}
 	if !found {
-		err = os.ErrNotExist
+		err = iofs.ErrNotExist
 	}
 	return
 }
@@ -500,7 +500,7 @@ func (d *ContainerTruststorePatcher) Proxy(srvAddr, dockerAddr string) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := os.Chmod(ul.Addr().String(), fs.ModeSocket|0660); err != nil {
+		if err := os.Chmod(ul.Addr().String(), iofs.ModeSocket|0660); err != nil {
 			log.Fatal(err)
 		}
 		go func() {
@@ -565,7 +565,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			// NOTE: Since other user-provided values can be set in JAVA_TOOL_OPTIONS,
 			// we merge the proxy-specific arg into the existing value, if present.
 			val, err := getEnvVar(newBody, javaEnvVar)
-			if err != nil && !os.IsNotExist(err) {
+			if err != nil && !errors.Is(err, iofs.ErrNotExist) {
 				log.Fatalf("Failed to get env var for request %s: %s", req.URL.Path, err)
 			}
 			newVal := val
