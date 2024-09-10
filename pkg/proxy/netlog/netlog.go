@@ -41,6 +41,8 @@ func CaptureActivityLog(t *goproxy.ProxyHttpServer, mx *sync.Mutex) *NetworkActi
 		return req, nil
 	})
 	netlog := new(NetworkActivityLog)
+	// Initialize slice to avoid serializing as null.
+	netlog.HTTPRequests = []HTTPRequestLog{}
 	go func() {
 		for {
 			select {
