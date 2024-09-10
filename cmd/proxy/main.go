@@ -44,7 +44,10 @@ func main() {
 	go proxyServer.ProxyTLS(*tlsProxyAddr)
 	go proxyServer.ProxyHTTP(*httpProxyAddr)
 	if len(*dockerAddr) > 0 {
-		vars := strings.Split(*dockerEnvVars, ",")
+		var vars []string
+		if *dockerEnvVars != "" {
+			vars = strings.Split(*dockerEnvVars, ",")
+		}
 		ctp, err := docker.NewContainerTruststorePatcher(*ca.Leaf, docker.ContainerTruststorePatcherOpts{
 			EnvVars:         vars,
 			JavaEnvVar:      *dockerJavaEnvVar,
