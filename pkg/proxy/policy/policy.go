@@ -10,26 +10,18 @@ import (
 	"github.com/elazarl/goproxy"
 )
 
-type MatchingType int
-
-const (
-	PathPrefix MatchingType = iota
-	FullPath
-)
-
 type Policy struct {
 	Rules []Rule
 }
 
 func (p Policy) EnforcePolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-	url := req.URL
 	for _, rule := range p.Rules {
 		if rule.IsCompliant(req) {
 			return req, nil
 		}
 	}
-	log.Printf("Request to %s blocked by network policy", url.String())
-	errorMessage := fmt.Sprintf("Access to %s is blocked by the proxy's network policy", url.String())
+	log.Printf("Request to %s blocked by network policy", req.URL.String())
+	errorMessage := fmt.Sprintf("Access to %s is blocked by the proxy's network policy", req.URL.String())
 	return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, errorMessage)
 }
 
@@ -37,6 +29,13 @@ func (p Policy) EnforcePolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.R
 type Rule interface {
 	IsCompliant(req *http.Request) bool
 }
+
+type MatchingType string
+
+const (
+	FullPath   MatchingType = "fullpath"
+	PathPrefix MatchingType = "pathprefix"
+)
 
 type URLMatchRule struct {
 	Host string

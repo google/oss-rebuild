@@ -96,17 +96,16 @@ type TransparentProxyService struct {
 }
 
 // NewTransparentProxyService creates a new TransparentProxyService.
-func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode string) TransparentProxyService {
+func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode ProxyMode) TransparentProxyService {
 	m := new(sync.Mutex)
-	pm := ProxyMode(mode)
-	if !pm.IsValid() {
+	if !mode.IsValid() {
 		log.Fatalf("Invalid proxy mode specified: %v", mode)
 	}
 	return TransparentProxyService{
 		Proxy:      p,
 		Ca:         ca,
 		NetworkLog: netlog.CaptureActivityLog(p, m),
-		Mode:       pm,
+		Mode:       mode,
 		mx:         m,
 	}
 }
@@ -201,7 +200,7 @@ func (t *TransparentProxyService) ServeMetadata(addr string) {
 }
 
 // Check that the requested url is allowed by the network policy.
-func (proxy TransparentProxyService) CheckNetworkPolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+func (proxy TransparentProxyService) ApplyNetworkPolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if proxy.Mode != EnforcementMode {
 		return req, nil
 	}

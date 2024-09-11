@@ -40,10 +40,10 @@ func main() {
 		log.Printf("Server starting up! - configured to listen on http interface %s and https interface %s", *httpProxyAddr, *tlsProxyAddr)
 	}
 	p := proxy.NewTransparentProxyServer(*verbose)
-	proxyService := proxy.NewTransparentProxyService(p, ca, *proxyMode)
+	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.ProxyMode(*proxyMode))
 	proxyService.Proxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			return proxyService.CheckNetworkPolicy(req, ctx)
+			return proxyService.ApplyNetworkPolicy(req, ctx)
 		})
 	// Administrative endpoint.
 	go proxyService.ServeMetadata(*ctrlAddr)
