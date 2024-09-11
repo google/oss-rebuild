@@ -45,7 +45,7 @@ type RemoteOptions struct {
 	// TODO: Consider moving these to Strategy.
 	UseTimewarp     bool
 	UseNetworkProxy bool
-	EnableEBPF  bool
+	EnableEBPF      bool
 }
 
 type rebuildContainerArgs struct {
@@ -204,9 +204,9 @@ type transfer struct {
 	To   string
 }
 
-var rebuildCleanupTpl = template.Must(
+var rebuildFinalizeTpl = template.Must(
 	template.New(
-		"rebuild cleanup",
+		"rebuild finalize",
 	).Parse(
 		textwrap.Dedent(`
 				set -eux
@@ -233,50 +233,21 @@ var assetUploadTpl = template.Must(
 	))
 
 func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Build, error) {
-	var buildScript bytes.Buffer
-	uploads := []upload{
+	var cleanupScript bytes.Buffer
+	err := rebuildCleanupTpl.Execute(&cleanupScript, map[string]any{
+		"Artifact": transfer{
+			From: path.Join("/out", t.Artifact),
+			To:   path.Join("/workspace", t.Artifact),
+		},
+		"EnableEBPF": opts.EnableEBPF,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "expanding asset upload template")
+	}
+	var assetUploadScript bytes.Buffer
+	var uploads = []transfer{
 		{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String()},
 		{From: path.Join("/workspace", t.Artifact), To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()},
-	}
-	if opts.UseNetworkProxy {
-		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
-			"UtilPrebuildBucket": opts.UtilPrebuildBucket,
-			"Dockerfile":         dockerfile,
-			"HTTPPort":           "3128",
-			"TLSPort":            "3129",
-			"CtrlPort":           "3127",
-			"DockerPort":         "3130",
-			"User":               "proxyu",
-			"CertEnvVars": []string{
-				// Used by pip.
-				// See https://pip.pypa.io/en/stable/topics/https-certificates/#using-a-specific-certificate-store
-				"PIP_CERT",
-				// Used by curl.
-				// See https://curl.se/docs/sslcerts.html#use-a-custom-ca-store
-				"CURL_CA_BUNDLE",
-				// Used by npm and node.
-				// See https://nodejs.org/api/cli.html#node_extra_ca_certsfile
-				"NODE_EXTRA_CA_CERTS",
-				// Used by gcloud.
-				// See https://cloud.google.com/sdk/gcloud/reference/topic/configurations#:~:text=custom_ca_certs_file
-				// Note: Env vars are the highest-precedence form of config.
-				"CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE",
-				// Used by nix.
-				// See https://nix.dev/manual/nix/2.18/installation/env-variables#nix_ssl_cert_file
-				"NIX_SSL_CERT_FILE",
-			},
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "expanding proxy build template")
-		}
-		uploads = append(uploads, upload{From: "/workspace/netlog.json", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ProxyNetlogAsset}).String()})
-	} else {
-		err := standardBuildTpl.Execute(&buildScript, map[string]any{
-			"Dockerfile": dockerfile,
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "expanding standard build template")
-		}
 	}
 	if opts.EnableEBPF {
 		uploads = append(uploads, transfer{From: "/workspace/tetragon.log", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: TetragonLog}).String()})
@@ -288,37 +259,41 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	if err != nil {
 		return nil, errors.Wrap(err, "expanding asset upload template")
 	}
-	var build = cloudbuild.Build{
-		LogsBucket:     opts.LogsBucket,
-		Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
-		ServiceAccount: opts.BuildServiceAccount,
-		Steps: []*cloudbuild.BuildStep{
-			{
-				Name:   "gcr.io/cloud-builders/docker",
-				Script: buildScript.String(),
-			},
-			{
-				Name:    "gcr.io/cloud-builders/docker",
-				Script:  cleanupScript.String(),
-				Id:      "cleanup",
-				WaitFor: []string{"run_builder"},
-			},
-			{
-				Name:    "gcr.io/cloud-builders/gsutil",
-				Script:  assetUploadScript.String(),
-				WaitFor: []string{"cleanup"},
-			},
-		},
-	}
+	steps := []*cloudbuild.BuildStep{}
 	if opts.EnableEBPF {
-		// Prepend a build step to start the tetragon contianer.
-		build.Steps = append([]*cloudbuild.BuildStep{{
+		steps = append(steps, &cloudbuild.BuildStep{
 			Name:         "gcr.io/cloud-builders/docker",
 			Args:         []string{"run", "--name=tetragon", "--pid=host", "--cgroupns=host", "--privileged", "-v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf", "quay.io/cilium/tetragon:v1.1.2", "/usr/bin/tetragon", "--export-filename=/var/log/tetragon/tetragon.log"},
 			Id:           "run_tetragon",
 			AllowFailure: true,
+		})
+	}
+	steps = append(steps, []*cloudbuild.BuildStep{
+		{
+			Name:   "gcr.io/cloud-builders/docker",
+			Script: "set -eux\ncat <<'EOS' | docker buildx build --tag=img -\n" + dockerfile + "\nEOS\ndocker run --name=container img",
+			Id:     "run_builder",
+			// Run immediately ("-" is a special value indicating this step
+			// shouldn't wait for anything).
+			WaitFor: []string{"-"},
 		},
-		}, build.Steps...)
+		{
+			Name:    "gcr.io/cloud-builders/docker",
+			Script:  finalizeScript.String(),
+			Id:      "finalize",
+			WaitFor: []string{"run_builder"},
+		},
+		{
+			Name:    "gcr.io/cloud-builders/gsutil",
+			Script:  assetUploadScript.String(),
+			WaitFor: []string{"finalize"},
+		},
+	}...)
+	var build = cloudbuild.Build{
+		LogsBucket:     opts.LogsBucket,
+		Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
+		ServiceAccount: opts.BuildServiceAccount,
+		Steps:          steps,
 	}
 	return &build, nil
 }
