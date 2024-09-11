@@ -289,13 +289,12 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 			WaitFor: []string{"finalize"},
 		},
 	}...)
-	var build = cloudbuild.Build{
+	return &cloudbuild.Build{
 		LogsBucket:     opts.LogsBucket,
 		Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
 		ServiceAccount: opts.BuildServiceAccount,
 		Steps:          steps,
-	}
-	return &build, nil
+	}, nil
 }
 
 func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Build, opts RemoteOptions, bi *BuildInfo) error {

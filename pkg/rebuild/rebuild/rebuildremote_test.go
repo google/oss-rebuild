@@ -405,7 +405,7 @@ docker run --name=container img`,
 						"docker save img | gzip > /workspace/image.tgz\n" +
 						"docker cp tetragon:/var/log/tetragon/tetragon.log /workspace/tetragon.log\n" +
 						"docker kill tetragon\n"),
-					Id:      "cleanup",
+					Id:      "finalize",
 					WaitFor: []string{"run_builder"},
 				},
 				{
@@ -416,7 +416,7 @@ docker run --name=container img`,
 						"./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz\n" +
 						"./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz\n" +
 						"./gsutil_writeonly cp /workspace/tetragon.log file:///npm/pkg/version/pkg-version.tgz/tetragon.log\n"),
-					WaitFor: []string{"cleanup"},
+					WaitFor: []string{"finalize"},
 				},
 			},
 		})
