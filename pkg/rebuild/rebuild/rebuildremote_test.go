@@ -383,7 +383,7 @@ func TestMakeEBPFBuild(t *testing.T) {
 			Steps: []*cloudbuild.BuildStep{
 				{
 					Name:         "gcr.io/cloud-builders/docker",
-					Args:         []string{"run", "--name=tetragon", "--pid=host", "--cgroupns=host", "--privileged", "-v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf", "quay.io/cilium/tetragon:v1.1.2", "/usr/bin/tetragon", "--export-filename=/var/log/tetragon/tetragon.log"},
+					Args:         []string{"run", "--name=tetragon", "--pid=host", "--cgroupns=host", "--privileged", "-v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf", "quay.io/cilium/tetragon:v1.1.2", "/usr/bin/tetragon", "--export-filename=/var/log/tetragon/tetragon.jsonl"},
 					Id:           "run_tetragon",
 					AllowFailure: true,
 				},
@@ -403,7 +403,7 @@ docker run --name=container img`,
 						"set -eux\n" +
 						"docker cp container:/out/pkg-version.tgz /workspace/pkg-version.tgz\n" +
 						"docker save img | gzip > /workspace/image.tgz\n" +
-						"docker cp tetragon:/var/log/tetragon/tetragon.log /workspace/tetragon.log\n" +
+						"docker cp tetragon:/var/log/tetragon/tetragon.jsonl /workspace/tetragon.jsonl\n" +
 						"docker kill tetragon\n"),
 					Id:      "finalize",
 					WaitFor: []string{"run_builder"},
@@ -415,7 +415,7 @@ docker run --name=container img`,
 						"gsutil cp -P gs://test-bootstrap/gsutil_writeonly .\n" +
 						"./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz\n" +
 						"./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz\n" +
-						"./gsutil_writeonly cp /workspace/tetragon.log file:///npm/pkg/version/pkg-version.tgz/tetragon.log\n"),
+						"./gsutil_writeonly cp /workspace/tetragon.jsonl file:///npm/pkg/version/pkg-version.tgz/tetragon.jsonl\n"),
 					WaitFor: []string{"finalize"},
 				},
 			},

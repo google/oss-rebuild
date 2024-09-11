@@ -213,7 +213,7 @@ var rebuildFinalizeTpl = template.Must(
 				docker cp container:{{.Artifact.From}} {{.Artifact.To}}
 				docker save img | gzip > /workspace/image.tgz
 				{{- if .EnableEBPF}}
-				docker cp tetragon:/var/log/tetragon/tetragon.log /workspace/tetragon.log
+				docker cp tetragon:/var/log/tetragon/tetragon.jsonl /workspace/tetragon.jsonl
 				docker kill tetragon
 				{{- end}}
 				`)[1:], // remove leading newline
@@ -245,25 +245,27 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		return nil, errors.Wrap(err, "expanding asset upload template")
 	}
 	var assetUploadScript bytes.Buffer
-	var uploads = []transfer{
-		{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String()},
-		{From: path.Join("/workspace", t.Artifact), To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()},
-	}
-	if opts.EnableEBPF {
-		uploads = append(uploads, transfer{From: "/workspace/tetragon.log", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: TetragonLog}).String()})
-	}
-	err = assetUploadTpl.Execute(&assetUploadScript, map[string]any{
-		"UtilPrebuildBucket": opts.UtilPrebuildBucket,
-		"Uploads":            uploads,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "expanding asset upload template")
+	{
+		var uploads = []transfer{
+			{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String()},
+			{From: path.Join("/workspace", t.Artifact), To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()},
+		}
+		if opts.EnableEBPF {
+			uploads = append(uploads, transfer{From: "/workspace/tetragon.jsonl", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: TetragonLog}).String()})
+		}
+		err := assetUploadTpl.Execute(&assetUploadScript, map[string]any{
+			"UtilPrebuildBucket": opts.UtilPrebuildBucket,
+			"Uploads":            uploads,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "expanding asset upload template")
+		}
 	}
 	steps := []*cloudbuild.BuildStep{}
 	if opts.EnableEBPF {
 		steps = append(steps, &cloudbuild.BuildStep{
 			Name:         "gcr.io/cloud-builders/docker",
-			Args:         []string{"run", "--name=tetragon", "--pid=host", "--cgroupns=host", "--privileged", "-v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf", "quay.io/cilium/tetragon:v1.1.2", "/usr/bin/tetragon", "--export-filename=/var/log/tetragon/tetragon.log"},
+			Args:         []string{"run", "--name=tetragon", "--pid=host", "--cgroupns=host", "--privileged", "-v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf", "quay.io/cilium/tetragon:v1.1.2", "/usr/bin/tetragon", "--export-filename=/var/log/tetragon/tetragon.jsonl"},
 			Id:           "run_tetragon",
 			AllowFailure: true,
 		})

@@ -58,7 +58,7 @@ const (
 	BuildDef AssetType = "build.yaml"
 
 	// TetragonLog is the log of all tetragon events.
-	TetragonLog AssetType = "tetragon.log"
+	TetragonLog AssetType = "tetragon.jsonl"
 )
 
 var (
