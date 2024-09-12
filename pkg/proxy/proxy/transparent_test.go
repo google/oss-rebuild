@@ -48,7 +48,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 			wantResp: http.StatusForbidden,
 		},
 		{
-			name: "MonitorMode passes compliant request through",
+			name: "DisabledMode passes compliant request through",
 			mode: DisabledMode,
 			policy: policy.Policy{
 				AnyOf: []policy.Rule{
@@ -63,7 +63,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 			wantResp: http.StatusOK,
 		},
 		{
-			name: "MonitorMode passes non-compliant request through",
+			name: "DisabledMode passes non-compliant request through",
 			mode: DisabledMode,
 			policy: policy.Policy{
 				AnyOf: []policy.Rule{

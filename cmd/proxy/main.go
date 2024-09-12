@@ -26,7 +26,7 @@ var (
 	dockerJavaEnvVar  = flag.Bool("docker_java_truststore", false, "whether to patch containers with Java proxy cert truststore file and env var")
 	dockerProxySocket = flag.Bool("docker_recursive_proxy", false, "whether to patch containers with a unix domain socket which proxies docker requests from created containers")
 	// TODO: Implement flag for reading a policy file.
-	policyMode = flag.String("policy_mode", "disabled", "mode to run the proxy in. Options: monitor, enforce")
+	policyMode = flag.String("policy_mode", "disabled", "mode to run the proxy in. Options: disabled, enforce")
 )
 
 func main() {
