@@ -25,7 +25,8 @@ var (
 	dockerEnvVars     = flag.String("docker_truststore_env_vars", "", "comma-separated env vars to populate with the proxy cert and patch into containers")
 	dockerJavaEnvVar  = flag.Bool("docker_java_truststore", false, "whether to patch containers with Java proxy cert truststore file and env var")
 	dockerProxySocket = flag.Bool("docker_recursive_proxy", false, "whether to patch containers with a unix domain socket which proxies docker requests from created containers")
-	proxyMode         = flag.String("proxy_mode", "monitor", "mode to run the proxy in. Options: monitor, enforce")
+	// TODO: Implement flag for reading a policy file.
+	policyMode = flag.String("policy_mode", "disabled", "mode to run the proxy in. Options: monitor, enforce")
 )
 
 func main() {
@@ -40,7 +41,7 @@ func main() {
 		log.Printf("Server starting up! - configured to listen on http interface %s and https interface %s", *httpProxyAddr, *tlsProxyAddr)
 	}
 	p := proxy.NewTransparentProxyServer(*verbose)
-	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.ProxyMode(*proxyMode))
+	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode))
 	proxyService.Proxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			return proxyService.ApplyNetworkPolicy(req, ctx)

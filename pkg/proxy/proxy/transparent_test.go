@@ -12,7 +12,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 	proxyService := TransparentProxyService{}
 	tests := []struct {
 		name     string
-		mode     ProxyMode
+		mode     PolicyMode
 		policy   policy.Policy
 		url      string
 		wantResp int
@@ -49,7 +49,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 		},
 		{
 			name: "MonitorMode passes compliant request through",
-			mode: MonitorMode,
+			mode: DisabledMode,
 			policy: policy.Policy{
 				AnyOf: []policy.Rule{
 					policy.URLMatchRule{
@@ -64,7 +64,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 		},
 		{
 			name: "MonitorMode passes non-compliant request through",
-			mode: MonitorMode,
+			mode: DisabledMode,
 			policy: policy.Policy{
 				AnyOf: []policy.Rule{
 					policy.URLMatchRule{

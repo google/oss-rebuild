@@ -36,7 +36,7 @@ type Rule interface {
 type MatchingType string
 
 const (
-	FullMatch   MatchingType = "full_path"
+	FullMatch   MatchingType = "full"
 	PrefixMatch MatchingType = "prefix"
 )
 

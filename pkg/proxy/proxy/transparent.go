@@ -68,16 +68,16 @@ func NewTransparentProxyServer(verbose bool) *goproxy.ProxyHttpServer {
 	return t
 }
 
-type ProxyMode string
+type PolicyMode string
 
 const (
-	MonitorMode     ProxyMode = "monitor"
-	EnforcementMode ProxyMode = "enforce"
+	DisabledMode    PolicyMode = "disabled"
+	EnforcementMode PolicyMode = "enforce"
 )
 
-func (m ProxyMode) IsValid() bool {
+func (m PolicyMode) IsValid() bool {
 	switch m {
-	case MonitorMode, EnforcementMode:
+	case DisabledMode, EnforcementMode:
 		return true
 	default:
 		return false
@@ -90,13 +90,13 @@ type TransparentProxyService struct {
 	Ca         *tls.Certificate
 	NetworkLog *netlog.NetworkActivityLog
 	Policy     *policy.Policy
-	Mode       ProxyMode
+	Mode       PolicyMode
 
 	mx *sync.Mutex
 }
 
 // NewTransparentProxyService creates a new TransparentProxyService.
-func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode ProxyMode) TransparentProxyService {
+func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode PolicyMode) TransparentProxyService {
 	m := new(sync.Mutex)
 	if !mode.IsValid() {
 		log.Fatalf("Invalid proxy mode specified: %v", mode)
@@ -201,7 +201,7 @@ func (t *TransparentProxyService) ServeMetadata(addr string) {
 
 // Check that the requested url is allowed by the network policy.
 func (proxy TransparentProxyService) ApplyNetworkPolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-	if proxy.Mode != EnforcementMode {
+	if proxy.Mode == DisabledMode {
 		return req, nil
 	}
 	return proxy.Policy.Apply(req, ctx)
