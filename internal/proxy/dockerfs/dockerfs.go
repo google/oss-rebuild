@@ -39,11 +39,11 @@ func (c Filesystem) Open(path string) (*File, error) {
 	}
 	req, err := http.NewRequest(http.MethodGet, "/containers/"+c.Container+"/archive?path="+path, http.NoBody)
 	if err != nil {
-		return nil, errors.Wrap(err, "request building error: ")
+		return nil, errors.Wrap(err, "building request")
 	}
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return nil, errors.Wrap(err, "request error: ")
+		return nil, errors.Wrap(err, "making request")
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -52,7 +52,7 @@ func (c Filesystem) Open(path string) (*File, error) {
 	case http.StatusBadRequest:
 		return nil, fs.ErrNotExist
 	default:
-		return nil, errors.New("response error: Unexpected HTTP response: " + resp.Status)
+		return nil, errors.Errorf("response error: Unexpected HTTP response: %s", resp.Status)
 	}
 	tr := tar.NewReader(resp.Body)
 	hdr, err := tr.Next()
@@ -60,11 +60,11 @@ func (c Filesystem) Open(path string) (*File, error) {
 		return nil, errors.New("response error: No records found")
 	}
 	if err != nil {
-		return nil, errors.Wrap(err, "tar header read error: ")
+		return nil, errors.Wrap(err, "reading tar header")
 	}
 	b, err := io.ReadAll(tr)
 	if err != nil {
-		return nil, errors.Wrap(err, "tar file read error: ")
+		return nil, errors.Wrap(err, "reading tar content")
 	}
 	if _, err := tr.Next(); err != io.EOF {
 		return nil, fs.ErrInvalid // NOTE: dirs are unsupported.
@@ -80,11 +80,11 @@ func (c Filesystem) Stat(path string) (*FileInfo, error) {
 	}
 	req, err := http.NewRequest(http.MethodHead, "/containers/"+c.Container+"/archive?path="+path, http.NoBody)
 	if err != nil {
-		return nil, errors.Wrap(err, "request building error: ")
+		return nil, errors.Wrap(err, "building request")
 	}
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return nil, errors.Wrap(err, "request error: ")
+		return nil, errors.Wrap(err, "making request")
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -93,7 +93,7 @@ func (c Filesystem) Stat(path string) (*FileInfo, error) {
 	case http.StatusBadRequest:
 		return nil, errors.New("request error: bad parameter")
 	default:
-		return nil, errors.New("response error: Unexpected HTTP response: " + resp.Status)
+		return nil, errors.Errorf("response error: Unexpected HTTP response: %s", resp.Status)
 	}
 	encoded := resp.Header.Get(statHeader)
 	if encoded == "" {
@@ -200,7 +200,7 @@ func (c Filesystem) WriteFile(f *File) error {
 	log.Printf("WriteFile for file: %s", f.Path)
 	req, err := http.NewRequest(http.MethodPut, "/containers/"+c.Container+"/archive?path="+filepath.Dir(f.Path), nil)
 	if err != nil {
-		return errors.Wrap(err, "request building error: ")
+		return errors.Wrap(err, "request building error")
 	}
 	req.Header.Set("Content-Type", "application/x-tar")
 	var archive bytes.Buffer
@@ -208,19 +208,19 @@ func (c Filesystem) WriteFile(f *File) error {
 	tw := tar.NewWriter(w)
 	f.Metadata.Size = int64(len(f.Contents))
 	if err := tw.WriteHeader(&f.Metadata); err != nil {
-		return errors.Wrap(err, "tar header error: ")
+		return errors.Wrap(err, "writing tar header")
 	}
 	if _, err := tw.Write(f.Contents); err != nil {
-		return errors.Wrap(err, "tar write error: ")
+		return errors.Wrap(err, "writing tar content")
 	}
 	if err := tw.Close(); err != nil {
-		return errors.Wrap(err, "tar flush error: ")
+		return errors.Wrap(err, "flushing tar")
 	}
 	w.Flush()
 	req.Body = io.NopCloser(bytes.NewReader(archive.Bytes()))
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "request error: ")
+		return errors.Wrap(err, "making request")
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -228,9 +228,10 @@ func (c Filesystem) WriteFile(f *File) error {
 	case http.StatusNotFound:
 		return fs.ErrNotExist
 	case http.StatusBadRequest:
+		// TODO: Confirm the conditions under which this occurs.
 		return fs.ErrNotExist
 	default:
-		return errors.New("response error: Unexpected HTTP response: " + resp.Status)
+		return errors.Errorf("unexpected HTTP response: %s", resp.Status)
 	}
 }
 

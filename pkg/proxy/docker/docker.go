@@ -110,25 +110,25 @@ func resolveContainerID(c *UDSHTTPClient, id string) (string, error) {
 	}
 }
 
-func truststoreCertPatch(fs dockerfs.Filesystem, container string, cert []byte) (*patch, error) {
+func truststoreCertPatch(fs dockerfs.Filesystem, cert []byte) (*patch, error) {
 	truststore, err := locateTruststore(&fs)
 	if err != nil {
-		return nil, errors.New("Unable to locate truststore for " + container + ": " + err.Error())
+		return nil, errors.Wrap(err, "locating truststore")
 	}
 	old := *truststore
 	truststore.Contents = append(truststore.Contents[:], cert...)
 	return newPatch(&old, truststore)
 }
 
-func createFile(fs dockerfs.Filesystem, container string, content []byte, path string) error {
+func createFile(fs dockerfs.Filesystem, content []byte, path string) error {
 	_, err := fs.Stat(path)
 	if !errors.Is(err, iofs.ErrNotExist) {
-		return errors.New("file already exists")
+		return iofs.ErrExist
 	}
 	name := filepath.Base(path)
 	hdr, err := tar.FileInfoHeader(dockerfs.NewFileInfo(name, int64(len(content)), os.FileMode(0664), time.Now(), ""), "")
 	if err != nil {
-		return err
+		return errors.Wrap(err, "constructing file header")
 	}
 	f := dockerfs.File{Path: path, Metadata: *hdr, Contents: content}
 	return fs.WriteFile(&f)
@@ -538,7 +538,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		log.Printf("Failed to read client request from %s: %s", clientConn.RemoteAddr(), err)
 		return
 	}
-	log.Printf("Processing request: %s %s", req.Method, req.URL.RequestURI())
+	log.Printf("Proxying request: %s %s", req.Method, req.URL.RequestURI())
 	serverClient := NewUDSHTTPClient(serverConn.RemoteAddr().String())
 	action, id := getActionType(req)
 	switch action {
@@ -617,35 +617,35 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		certBytes := cert.ToPEM(&d.cert)
 		// NOTE: This doesn't need to be cleaned up due to the enclosing volume
 		// binding made at creation time.
-		if err := createFile(fs, id, certBytes, proxyCertPath); err != nil {
-			log.Println(err.Error())
+		if err := createFile(fs, certBytes, proxyCertPath); err != nil {
+			log.Printf("Creating proxy cert: %v", err)
 			break
 		}
 		if d.javaEnvVar {
 			jks, err := cert.ToJKS(&d.cert)
 			if err != nil {
-				log.Println(err.Error())
+				log.Printf("Generating java proxy cert: %v", err)
 				break
 			}
-			if err := createFile(fs, id, jks, proxyCertJKSPath); err != nil {
-				log.Println(err.Error())
+			if err := createFile(fs, jks, proxyCertJKSPath); err != nil {
+				log.Printf("Creating java proxy cert: %v", err)
 				break
 			}
 		}
 		patchset := d.leasePatchSet(id)
 		if len(patchset.Patches) > 0 {
-			log.Println("Active patches applied for " + id)
+			log.Printf("Active patches applied for %s", id)
 			patchset.Unlock()
 			break
 		}
-		truststorePatch, err := truststoreCertPatch(fs, id, certBytes)
+		truststorePatch, err := truststoreCertPatch(fs, certBytes)
 		if err != nil {
-			log.Println(err.Error())
+			log.Printf("patching certstore for %s: %v", id, err)
 			patchset.Unlock()
 			break
 		}
 		if err := truststorePatch.Apply(&fs); err != nil {
-			log.Println("Unable to apply patch for " + id + ": " + err.Error())
+			log.Printf("Unable to apply patch for %s: %v", id, err)
 			patchset.Unlock()
 			break
 		}
@@ -654,7 +654,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 	case unpatchTruststoreAndEnvVarsDuring:
 		body, err := io.ReadAll(req.Body)
 		if err != nil {
-			log.Fatalf("failed to read body for request %s: %s", req.URL.Path, err)
+			log.Fatalf("failed to read body for request %s: %v", req.URL.Path, err)
 		}
 		var otherVars []string
 		if d.javaEnvVar {
@@ -824,5 +824,5 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		}
 	term:
 	}
-	log.Printf("Finished request: %s %s", req.Method, req.URL.RequestURI())
+	log.Printf("Responding %d to request: %s %s", resp.StatusCode, req.Method, req.URL.RequestURI())
 }
