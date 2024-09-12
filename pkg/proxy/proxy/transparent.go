@@ -17,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/internal/proxy/handshake"
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/google/oss-rebuild/pkg/proxy/netlog"
+	"github.com/google/oss-rebuild/pkg/proxy/policy"
 )
 
 // TLS port to which proxied TLS traffic should be redirected.
@@ -67,21 +68,44 @@ func NewTransparentProxyServer(verbose bool) *goproxy.ProxyHttpServer {
 	return t
 }
 
+type PolicyMode string
+
+const (
+	DisabledMode    PolicyMode = "disabled"
+	EnforcementMode PolicyMode = "enforce"
+)
+
+func (m PolicyMode) IsValid() bool {
+	switch m {
+	case DisabledMode, EnforcementMode:
+		return true
+	default:
+		return false
+	}
+}
+
 // TransparentProxyService transparently proxies HTTP and HTTPS traffic.
 type TransparentProxyService struct {
 	Proxy      *goproxy.ProxyHttpServer
 	Ca         *tls.Certificate
 	NetworkLog *netlog.NetworkActivityLog
-	mx         *sync.Mutex
+	Policy     *policy.Policy
+	Mode       PolicyMode
+
+	mx *sync.Mutex
 }
 
 // NewTransparentProxyService creates a new TransparentProxyService.
-func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate) TransparentProxyService {
+func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode PolicyMode) TransparentProxyService {
 	m := new(sync.Mutex)
+	if !mode.IsValid() {
+		log.Fatalf("Invalid proxy mode specified: %v", mode)
+	}
 	return TransparentProxyService{
 		Proxy:      p,
 		Ca:         ca,
 		NetworkLog: netlog.CaptureActivityLog(p, m),
+		Mode:       mode,
 		mx:         m,
 	}
 }
@@ -173,6 +197,14 @@ func (t *TransparentProxyService) ServeMetadata(addr string) {
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// Check that the requested url is allowed by the network policy.
+func (proxy TransparentProxyService) ApplyNetworkPolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	if proxy.Mode == DisabledMode {
+		return req, nil
+	}
+	return proxy.Policy.Apply(req, ctx)
 }
 
 // eatConnectResponseWriter drops the goproxy response to the HTTP CONNECT tunnel creation.
