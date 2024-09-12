@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestEnforcePolicyOnURLMatchRule(t *testing.T) {
+func TestApplyOnURLMatchRule(t *testing.T) {
 	tests := []struct {
 		name     string
 		policy   Policy
@@ -14,13 +14,29 @@ func TestEnforcePolicyOnURLMatchRule(t *testing.T) {
 		wantResp int
 	}{
 		{
+			name: "nil policy does not apply",
+			policy: Policy{
+				AnyOf: nil,
+			},
+			url:      "https://host.com/path",
+			wantResp: http.StatusOK,
+		},
+		{
+			name: "empty policy does not apply",
+			policy: Policy{
+				AnyOf: []Rule{},
+			},
+			url:      "https://host.com/path",
+			wantResp: http.StatusOK,
+		},
+		{
 			name: "empty host policy rule does not match any url",
 			policy: Policy{
-				Rules: []Rule{
+				AnyOf: []Rule{
 					URLMatchRule{
-						Host: "",
-						Path: "path",
-						Type: PathPrefix,
+						Host:      "",
+						Path:      "path",
+						PathMatch: PrefixMatch,
 					},
 				},
 			},
@@ -30,11 +46,11 @@ func TestEnforcePolicyOnURLMatchRule(t *testing.T) {
 		{
 			name: "partial host policy rule does not match any url",
 			policy: Policy{
-				Rules: []Rule{
+				AnyOf: []Rule{
 					URLMatchRule{
-						Host: "host",
-						Path: "path",
-						Type: PathPrefix,
+						Host:      "host",
+						Path:      "path",
+						PathMatch: PrefixMatch,
 					},
 				},
 			},
@@ -44,11 +60,11 @@ func TestEnforcePolicyOnURLMatchRule(t *testing.T) {
 		{
 			name: "path prefix matching type allows matching url",
 			policy: Policy{
-				Rules: []Rule{
+				AnyOf: []Rule{
 					URLMatchRule{
-						Host: "host.com",
-						Path: "/path",
-						Type: PathPrefix,
+						Host:      "host.com",
+						Path:      "/path",
+						PathMatch: PrefixMatch,
 					},
 				},
 			},
@@ -58,11 +74,11 @@ func TestEnforcePolicyOnURLMatchRule(t *testing.T) {
 		{
 			name: "path prefix matching type disallows non-matching url",
 			policy: Policy{
-				Rules: []Rule{
+				AnyOf: []Rule{
 					URLMatchRule{
-						Host: "host.com",
-						Path: "/path",
-						Type: PathPrefix,
+						Host:      "host.com",
+						Path:      "/path",
+						PathMatch: PrefixMatch,
 					},
 				},
 			},
@@ -72,11 +88,11 @@ func TestEnforcePolicyOnURLMatchRule(t *testing.T) {
 		{
 			name: "full path matching type allows matching url",
 			policy: Policy{
-				Rules: []Rule{
+				AnyOf: []Rule{
 					URLMatchRule{
-						Host: "host.com",
-						Path: "/matching/path",
-						Type: FullPath,
+						Host:      "host.com",
+						Path:      "/matching/path",
+						PathMatch: FullMatch,
 					},
 				},
 			},
@@ -86,11 +102,11 @@ func TestEnforcePolicyOnURLMatchRule(t *testing.T) {
 		{
 			name: "full path matching type disallows non-matching url",
 			policy: Policy{
-				Rules: []Rule{
+				AnyOf: []Rule{
 					URLMatchRule{
-						Host: "host.com",
-						Path: "/path",
-						Type: FullPath,
+						Host:      "host.com",
+						Path:      "/path",
+						PathMatch: FullMatch,
 					},
 				},
 			},
@@ -103,13 +119,13 @@ func TestEnforcePolicyOnURLMatchRule(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
 
-			_, gotResp := tc.policy.EnforcePolicy(req, nil)
+			_, gotResp := tc.policy.Apply(req, nil)
 			// nil response means request allowed through proxy. Assume 200 status.
 			if gotResp == nil && tc.wantResp != http.StatusOK {
-				t.Errorf("EnforcePolicy returned an unexpected response code %v, want %v", http.StatusOK, tc.wantResp)
+				t.Errorf("Apply returned an unexpected response code %v, want %v", http.StatusOK, tc.wantResp)
 			}
 			if gotResp != nil && tc.wantResp != gotResp.StatusCode {
-				t.Errorf("EnforcePolicy returned an unexpected response code %v, want %v", gotResp.StatusCode, tc.wantResp)
+				t.Errorf("Apply returned an unexpected response code %v, want %v", gotResp.StatusCode, tc.wantResp)
 			}
 		})
 	}

@@ -11,12 +11,15 @@ import (
 )
 
 type Policy struct {
-	Rules []Rule
+	AnyOf []Rule
 }
 
-func (p Policy) EnforcePolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-	for _, rule := range p.Rules {
-		if rule.IsCompliant(req) {
+func (p Policy) Apply(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	if p.AnyOf == nil || len(p.AnyOf) == 0 {
+		return req, nil
+	}
+	for _, rule := range p.AnyOf {
+		if rule.Allows(req) {
 			return req, nil
 		}
 	}
@@ -27,32 +30,32 @@ func (p Policy) EnforcePolicy(req *http.Request, ctx *goproxy.ProxyCtx) (*http.R
 
 // Rule interface with method to check compliance of incoming http(s) requests.
 type Rule interface {
-	IsCompliant(req *http.Request) bool
+	Allows(req *http.Request) bool
 }
 
 type MatchingType string
 
 const (
-	FullPath   MatchingType = "fullpath"
-	PathPrefix MatchingType = "pathprefix"
+	FullMatch   MatchingType = "full_path"
+	PrefixMatch MatchingType = "prefix"
 )
 
 type URLMatchRule struct {
-	Host string
-	Path string
-	Type MatchingType
+	Host      string
+	Path      string
+	PathMatch MatchingType
 }
 
-func (rule URLMatchRule) IsCompliant(req *http.Request) bool {
+func (rule URLMatchRule) Allows(req *http.Request) bool {
 	url := req.URL
 	if url.Hostname() != rule.Host {
 		return false
 	}
 
-	switch rule.Type {
-	case PathPrefix:
+	switch rule.PathMatch {
+	case PrefixMatch:
 		return strings.HasPrefix(url.Path, rule.Path)
-	case FullPath:
+	case FullMatch:
 		return url.Path == rule.Path
 	default:
 		return false

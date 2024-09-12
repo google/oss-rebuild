@@ -204,7 +204,7 @@ func (proxy TransparentProxyService) ApplyNetworkPolicy(req *http.Request, ctx *
 	if proxy.Mode != EnforcementMode {
 		return req, nil
 	}
-	return proxy.Policy.EnforcePolicy(req, ctx)
+	return proxy.Policy.Apply(req, ctx)
 }
 
 // eatConnectResponseWriter drops the goproxy response to the HTTP CONNECT tunnel creation.

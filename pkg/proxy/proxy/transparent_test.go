@@ -21,11 +21,11 @@ func TestApplyNetworkPolicy(t *testing.T) {
 			name: "EnforcementMode passes compliant request through",
 			mode: EnforcementMode,
 			policy: policy.Policy{
-				Rules: []policy.Rule{
+				AnyOf: []policy.Rule{
 					policy.URLMatchRule{
-						Host: "host.com",
-						Path: "/path",
-						Type: policy.PathPrefix,
+						Host:      "host.com",
+						Path:      "/path",
+						PathMatch: policy.PrefixMatch,
 					},
 				},
 			},
@@ -36,11 +36,11 @@ func TestApplyNetworkPolicy(t *testing.T) {
 			name: "EnforcementMode rejects non-compliant request",
 			mode: EnforcementMode,
 			policy: policy.Policy{
-				Rules: []policy.Rule{
+				AnyOf: []policy.Rule{
 					policy.URLMatchRule{
-						Host: "host.com",
-						Path: "/path",
-						Type: policy.PathPrefix,
+						Host:      "host.com",
+						Path:      "/path",
+						PathMatch: policy.PrefixMatch,
 					},
 				},
 			},
@@ -51,11 +51,11 @@ func TestApplyNetworkPolicy(t *testing.T) {
 			name: "MonitorMode passes compliant request through",
 			mode: MonitorMode,
 			policy: policy.Policy{
-				Rules: []policy.Rule{
+				AnyOf: []policy.Rule{
 					policy.URLMatchRule{
-						Host: "host.com",
-						Path: "/path",
-						Type: policy.PathPrefix,
+						Host:      "host.com",
+						Path:      "/path",
+						PathMatch: policy.PrefixMatch,
 					},
 				},
 			},
@@ -66,11 +66,11 @@ func TestApplyNetworkPolicy(t *testing.T) {
 			name: "MonitorMode passes non-compliant request through",
 			mode: MonitorMode,
 			policy: policy.Policy{
-				Rules: []policy.Rule{
+				AnyOf: []policy.Rule{
 					policy.URLMatchRule{
-						Host: "host.com",
-						Path: "/path",
-						Type: policy.PathPrefix,
+						Host:      "host.com",
+						Path:      "/path",
+						PathMatch: policy.PrefixMatch,
 					},
 				},
 			},
