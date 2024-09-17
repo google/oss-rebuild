@@ -2,6 +2,7 @@
 package policy
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,10 +11,60 @@ import (
 	"github.com/elazarl/goproxy"
 )
 
+var ruleRegistry = map[string]func() Rule{}
+
+// RegisterRule adds a rule to the rule registry.
+// The rule registry contains implementations of the Rule interface recognized
+// by the proxy. Updates to the policy will try to unmarshal json structs into the
+// registered rules. Expects the rule name and a constructor returning the Rule type.
+func RegisterRule(rulename string, constructor func() Rule) {
+	ruleRegistry[rulename] = constructor
+}
+
+// Policy contains a list of Rules that will be applied to the request.
 type Policy struct {
+	// AnyOf expects incoming requests to satisfy one of these Rules.
 	AnyOf []Rule
 }
 
+// UnmarshalJSON implements the json.Unmarshaler interface for the Policy class.
+// Expects rule_type to specify an existing rule in the rule registry.
+func (p *Policy) UnmarshalJSON(data []byte) error {
+	var policywrapper struct {
+		Policy struct {
+			AnyOf []json.RawMessage `json:"AnyOf"`
+		} `json:"Policy"`
+	}
+	if err := json.Unmarshal(data, &policywrapper); err != nil {
+		return err
+	}
+
+	for _, rule := range policywrapper.Policy.AnyOf {
+		var tmpmap map[string]interface{}
+		if err := json.Unmarshal(rule, &tmpmap); err != nil {
+			return err
+		}
+
+		if _, ok := tmpmap["rule_type"]; !ok {
+			return fmt.Errorf("rule_type not specified in Rule: %v", string(rule))
+		}
+
+		ruleType := tmpmap["rule_type"].(string)
+		if registeredrule, ok := ruleRegistry[ruleType]; !ok {
+			return fmt.Errorf("unexpected rule_type specified: '%s'", ruleType)
+		} else {
+			newRule := registeredrule()
+			if err := json.Unmarshal(rule, &newRule); err == nil {
+				p.AnyOf = append(p.AnyOf, newRule)
+			}
+		}
+	}
+
+	return nil
+}
+
+// Apply enforces the policy on the request. Returns http.StatusForbidden if the
+// request does not satisfy the policy rules.
 func (p Policy) Apply(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	if p.AnyOf == nil || len(p.AnyOf) == 0 {
 		return req, nil
@@ -40,10 +91,11 @@ const (
 	PrefixMatch MatchingType = "prefix"
 )
 
+// Implements the Rule interface. Matches the request URL based on the MatchingType.
 type URLMatchRule struct {
-	Host      string
-	Path      string
-	PathMatch MatchingType
+	Host      string       `json:"host"`
+	Path      string       `json:"path"`
+	PathMatch MatchingType `json:"matching_type"`
 }
 
 func (rule URLMatchRule) Allows(req *http.Request) bool {

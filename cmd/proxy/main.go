@@ -11,6 +11,7 @@ import (
 	"github.com/elazarl/goproxy"
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/google/oss-rebuild/pkg/proxy/docker"
+	"github.com/google/oss-rebuild/pkg/proxy/policy"
 	"github.com/google/oss-rebuild/pkg/proxy/proxy"
 )
 
@@ -27,6 +28,7 @@ var (
 	dockerProxySocket = flag.Bool("docker_recursive_proxy", false, "whether to patch containers with a unix domain socket which proxies docker requests from created containers")
 	// TODO: Implement flag for reading a policy file.
 	policyMode = flag.String("policy_mode", "disabled", "mode to run the proxy in. Options: disabled, enforce")
+	policyFile = flag.String("policy_file", "", "path to a json file specifying the policy to apply to the proxy")
 )
 
 func main() {
@@ -41,13 +43,14 @@ func main() {
 		log.Printf("Server starting up! - configured to listen on http interface %s and https interface %s", *httpProxyAddr, *tlsProxyAddr)
 	}
 	p := proxy.NewTransparentProxyServer(*verbose)
-	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode))
+	policy.RegisterRule("URLMatchRule", func() policy.Rule { return &policy.URLMatchRule{} })
+	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode), *policyFile)
 	proxyService.Proxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			return proxyService.ApplyNetworkPolicy(req, ctx)
 		})
 	// Administrative endpoint.
-	go proxyService.ServeMetadata(*ctrlAddr)
+	go proxyService.ServeAdminEndpoint(*ctrlAddr)
 	// Start proxy server endpoints.
 	go proxyService.ProxyTLS(*tlsProxyAddr)
 	go proxyService.ProxyHTTP(*httpProxyAddr)

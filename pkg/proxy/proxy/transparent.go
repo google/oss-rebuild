@@ -6,10 +6,12 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"sync"
 
@@ -96,16 +98,28 @@ type TransparentProxyService struct {
 }
 
 // NewTransparentProxyService creates a new TransparentProxyService.
-func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode PolicyMode) TransparentProxyService {
+func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode PolicyMode, policyFile string) TransparentProxyService {
 	m := new(sync.Mutex)
 	if !mode.IsValid() {
 		log.Fatalf("Invalid proxy mode specified: %v", mode)
+	}
+	var pl policy.Policy
+	if policyFile != "" {
+		content, err := os.ReadFile(policyFile)
+		if err != nil {
+			log.Fatalf("Error reading policy file: %v", err)
+		}
+		err = json.Unmarshal(content, &pl)
+		if err != nil {
+			log.Fatalf("Error unmarshaling policy file content: %v", err)
+		}
 	}
 	return TransparentProxyService{
 		Proxy:      p,
 		Ca:         ca,
 		NetworkLog: netlog.CaptureActivityLog(p, m),
 		Mode:       mode,
+		Policy:     &pl,
 		mx:         m,
 	}
 }
@@ -165,7 +179,7 @@ func (t TransparentProxyService) ProxyTLS(addr string) {
 	}
 }
 
-func (t *TransparentProxyService) ServeMetadata(addr string) {
+func (t *TransparentProxyService) ServeAdminEndpoint(addr string) {
 	pemBytes := cert.ToPEM(t.Ca.Leaf)
 	jksBytes, err := cert.ToJKS(t.Ca.Leaf)
 	if err != nil {
@@ -194,8 +208,43 @@ func (t *TransparentProxyService) ServeMetadata(addr string) {
 			http.Error(w, "Internal Error", http.StatusInternalServerError)
 		}
 	})
+	mux.HandleFunc("/policy", t.policyHandler)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// policyHandler handles requests to the /policy endpoint.
+func (t *TransparentProxyService) policyHandler(w http.ResponseWriter, r *http.Request) {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+	switch r.Method {
+	case http.MethodGet:
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(t.Policy); err != nil {
+			log.Printf("Failed to marshal metadata: %v", err)
+			http.Error(w, "Internal Error", http.StatusInternalServerError)
+		}
+	case http.MethodPut:
+		if r.Header.Get("Content-Type") != "application/json" {
+			http.Error(w, "Bad request received. Expected Content-Type: application/json", http.StatusBadRequest)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Internal Error", http.StatusInternalServerError)
+		}
+
+		var p policy.Policy
+		err = json.Unmarshal(body, &p)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error unmarshaling request body: %v", err), http.StatusBadRequest)
+		}
+		t.Policy = &p
+	default:
+		log.Printf("Invalid method type received in request: %v", r.Method)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 	}
 }
 
