@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"io"
 	"path"
+	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -107,7 +108,10 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 	}
 	rd = append(rd, slsa1.ResourceDescriptor{Name: "git+" + inst.Location.Repo, Digest: gitDigestSet(inst.Location)})
 	for n, s := range buildInfo.BuildImages {
-		rd = append(rd, slsa1.ResourceDescriptor{Name: n, Digest: common.DigestSet{"sha256": s}})
+		if !strings.HasPrefix(s, "sha256:") {
+			return nil, nil, errors.New("buildInfo.BuildImages contains non-sha256 digest")
+		}
+		rd = append(rd, slsa1.ResourceDescriptor{Name: n, Digest: common.DigestSet{"sha256": strings.TrimPrefix(s, "sha256:")}})
 	}
 	// Empty the PullTiming and Status fields since they are superfluous to
 	// downstream users.
