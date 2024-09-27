@@ -57,11 +57,11 @@ type explorer struct {
 	tree          *tview.TreeView
 	root          *tview.TreeNode
 	rb            *Rebuilder
-	firestore     *firestore.Client
+	firestore     firestore.Reader
 	firestoreOpts firestore.FetchRebuildOpts
 }
 
-func newExplorer(ctx context.Context, app *tview.Application, firestore *firestore.Client, firestoreOpts firestore.FetchRebuildOpts, rb *Rebuilder) *explorer {
+func newExplorer(ctx context.Context, app *tview.Application, firestore firestore.Reader, firestoreOpts firestore.FetchRebuildOpts, rb *Rebuilder) *explorer {
 	e := explorer{
 		ctx:           ctx,
 		app:           app,
@@ -423,7 +423,7 @@ type TuiApp struct {
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(ctx context.Context, fireClient *firestore.Client, firestoreOpts firestore.FetchRebuildOpts) *TuiApp {
+func NewTuiApp(ctx context.Context, fireClient firestore.Reader, firestoreOpts firestore.FetchRebuildOpts) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()

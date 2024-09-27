@@ -127,7 +127,7 @@ var tui = &cobra.Command{
 			tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, bucket)
 		}
 		// TODO: Support filtering in the UI on TUI.
-		fireClient, err := firestore.NewClient(tctx, *project)
+		fireClient, err := firestore.NewRemoteClient(tctx, *project)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -152,7 +152,7 @@ var getResults = &cobra.Command{
 		if *format == "summary" && *sample > 0 {
 			log.Fatal("--sample option incompatible with --format=summary")
 		}
-		fireClient, err := firestore.NewClient(cmd.Context(), *project)
+		fireClient, err := firestore.NewRemoteClient(cmd.Context(), *project)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -616,7 +616,7 @@ var listRuns = &cobra.Command{
 		if *project == "" {
 			log.Fatal("project not provided")
 		}
-		client, err := firestore.NewClient(ctx, *project)
+		client, err := firestore.NewRemoteClient(ctx, *project)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "creating firestore client"))
 		}

@@ -17,13 +17,19 @@ package firestore
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -182,23 +188,6 @@ func cleanVerdict(m string) string {
 	return m
 }
 
-// Client is a wrapper around the external firestore client.
-type Client struct {
-	Client *firestore.Client
-}
-
-// NewClient creates a new FirestoreClient.
-func NewClient(ctx context.Context, project string) (*Client, error) {
-	if project == "" {
-		return nil, errors.New("empty project provided")
-	}
-	client, err := firestore.NewClient(ctx, project)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating firestore client")
-	}
-	return &Client{Client: client}, nil
-}
-
 type FetchRebuildOpts struct {
 	Clean  bool
 	Filter string
@@ -212,26 +201,42 @@ type FetchRebuildRequest struct {
 	Opts      FetchRebuildOpts
 }
 
-// FetchRebuilds fetches the Rebuild objects out of firestore.
-func (f *Client) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (rebuilds map[string]Rebuild, err error) {
-	log.Println("Analyzing results...")
-	if len(req.Executors) != 0 && len(req.Runs) != 0 {
-		return nil, errors.New("only provide one of executors and runs")
+// FetchRunsOpts describes which Runs you would like to fetch from firestore.
+type FetchRunsOpts struct {
+	BenchmarkHash string
+}
+
+type Reader interface {
+	FetchRuns(context.Context, FetchRunsOpts) ([]Run, error)
+	FetchRebuilds(context.Context, *FetchRebuildRequest) (map[string]Rebuild, error)
+}
+
+type Writer interface {
+	WriteRebuild(ctx context.Context, r Rebuild) error
+	WriteRun(ctx context.Context, r Run) error
+}
+
+// RemoteClient is a wrapper around the external firestore client.
+type RemoteClient struct {
+	Client *firestore.Client
+}
+
+// RemoteClient is only a Reader for now.
+var _ Reader = &RemoteClient{}
+
+// NewRemoteClient creates a new FirestoreClient.
+func NewRemoteClient(ctx context.Context, project string) (*RemoteClient, error) {
+	if project == "" {
+		return nil, errors.New("empty project provided")
 	}
-	if req.Bench != nil && req.Bench.Count == 0 {
-		return nil, errors.New("empty bench provided")
+	client, err := firestore.NewClient(ctx, project)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating firestore client")
 	}
-	q := f.Client.CollectionGroup("attempts").Query
-	if len(req.Executors) != 0 {
-		log.Printf("Searching rebuild results for executor versions '%v'...\n", req.Executors)
-		q = q.Where("executor_version", "in", req.Executors)
-	}
-	if len(req.Runs) != 0 {
-		log.Printf("Searching rebuild results for runs '%v'...\n", req.Runs)
-		q = q.Where("run_id", "in", req.Runs)
-	}
-	all := make(chan Rebuild)
-	cerr := DoQuery(ctx, q, NewRebuildFromFirestore, all)
+	return &RemoteClient{Client: client}, nil
+}
+
+func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Rebuild {
 	p := pipe.From(all)
 	if req.Bench != nil {
 		benchMap := make(map[string]benchmark.Package)
@@ -268,7 +273,7 @@ func (f *Client) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (r
 			out <- in
 		})
 	}
-	rebuilds = make(map[string]Rebuild)
+	rebuilds := make(map[string]Rebuild)
 	for r := range p.Out() {
 		if existing, seen := rebuilds[r.ID()]; seen && existing.Created.After(r.Created) {
 			continue
@@ -276,20 +281,39 @@ func (f *Client) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (r
 		r.Message = strings.ReplaceAll(r.Message, "\n", "\\n")
 		rebuilds[r.ID()] = r
 	}
+	return rebuilds
+}
+
+// FetchRebuilds fetches the Rebuild objects out of firestore.
+func (f *RemoteClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (map[string]Rebuild, error) {
+	log.Println("Analyzing results...")
+	if len(req.Executors) != 0 && len(req.Runs) != 0 {
+		return nil, errors.New("only provide one of executors and runs")
+	}
+	if req.Bench != nil && req.Bench.Count == 0 {
+		return nil, errors.New("empty bench provided")
+	}
+	q := f.Client.CollectionGroup("attempts").Query
+	if len(req.Executors) != 0 {
+		log.Printf("Searching rebuild results for executor versions '%v'...\n", req.Executors)
+		q = q.Where("executor_version", "in", req.Executors)
+	}
+	if len(req.Runs) != 0 {
+		log.Printf("Searching rebuild results for runs '%v'...\n", req.Runs)
+		q = q.Where("run_id", "in", req.Runs)
+	}
+	all := make(chan Rebuild)
+	cerr := DoQuery(ctx, q, NewRebuildFromFirestore, all)
+	rebuilds := filterRebuilds(all, req)
 	if err := <-cerr; err != nil {
 		err = errors.Wrap(err, "query error")
 		return nil, err
 	}
-	return
-}
-
-// FetchRunsOpts  describes which Runs you would like to fetch from firestore.
-type FetchRunsOpts struct {
-	BenchmarkHash string
+	return rebuilds, nil
 }
 
 // FetchRuns fetches Runs out of firestore.
-func (f *Client) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
+func (f *RemoteClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
 	q := f.Client.CollectionGroup("runs").Query
 	if opts.BenchmarkHash != "" {
 		q = q.Where("benchmark_hash", "==", opts.BenchmarkHash)
@@ -304,6 +328,119 @@ func (f *Client) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, erro
 		return nil, errors.New("query error")
 	}
 	return runSlice, nil
+}
+
+// LocalClient reads rebuilds from the local filesystem.
+type LocalClient struct {
+	fs billy.Filesystem
+}
+
+var _ Reader = &LocalClient{}
+var _ Writer = &LocalClient{}
+
+func NewLocalClient() *LocalClient {
+	return &LocalClient{
+		fs: osfs.New("/tmp/oss-rebuild/firestore"),
+	}
+}
+
+const (
+	rebuildFileName  = "firestore.json"
+	localRunsDir     = "runs"
+	localRunsMetaDir = "runs_metadata"
+)
+
+// FetchRuns fetches Runs out of firestore.
+func (f *LocalClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
+	runs := make([]Run, 0)
+	err := util.Walk(f.fs, localRunsMetaDir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".json" {
+			return nil
+		}
+		file, err := f.fs.Open(path)
+		if err != nil {
+			return errors.Wrap(err, "opening run file")
+		}
+		defer file.Close()
+		var r Run
+		if err := json.NewDecoder(file).Decode(&r); err != nil {
+			return errors.Wrap(err, "decoding run file")
+		}
+		if opts.BenchmarkHash != "" && r.BenchmarkHash != opts.BenchmarkHash {
+			return nil
+		}
+		runs = append(runs, r)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return runs, nil
+}
+
+// FetchRebuilds fetches the Rebuild objects out of firestore.
+func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (map[string]Rebuild, error) {
+	walkErr := make(chan error, 1)
+	all := make(chan Rebuild, 1)
+	go func() {
+		walkErr <- util.Walk(f.fs, localRunsDir, func(path string, info fs.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			// TODO: Skip run directories that don't match req.Runs
+			// This is just an optimization, filterRebuilds will also drop Rebuilds that don't match req.Runs.
+			if info.IsDir() {
+				return nil
+			}
+			if filepath.Base(path) != rebuildFileName {
+				return nil
+			}
+			file, err := f.fs.Open(path)
+			if err != nil {
+				return errors.Wrap(err, "opening firestore file")
+			}
+			defer file.Close()
+			var r Rebuild
+			if err := json.NewDecoder(file).Decode(&r); err != nil {
+				return errors.Wrap(err, "decoding firestore file")
+			}
+			all <- r
+			return nil
+		})
+		close(all)
+	}()
+	rebuilds := filterRebuilds(all, req)
+	if err := <-walkErr; err != nil {
+		err = errors.Wrap(err, "exploring rebuilds dir")
+		return nil, err
+	}
+	return rebuilds, nil
+}
+
+func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
+	path := filepath.Join(localRunsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, "firestore.json")
+	file, err := f.fs.Create(path)
+	if err != nil {
+		return errors.Wrap(err, "creating file")
+	}
+	defer file.Close()
+	return json.NewEncoder(file).Encode(r)
+}
+
+func (f *LocalClient) WriteRun(ctx context.Context, r Run) error {
+	path := filepath.Join(localRunsMetaDir, fmt.Sprintf("%s.json", r.ID))
+	file, err := f.fs.Create(path)
+	if err != nil {
+		return errors.Wrap(err, "creating file")
+	}
+	defer file.Close()
+	return json.NewEncoder(file).Encode(r)
 }
 
 // VerdictGroup is a collection of Rebuild objects, grouped by the same Message.
