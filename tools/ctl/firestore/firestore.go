@@ -28,12 +28,12 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
+	"github.com/google/oss-rebuild/tools/tempfs"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
 )
@@ -340,7 +340,7 @@ var _ Writer = &LocalClient{}
 
 func NewLocalClient() *LocalClient {
 	return &LocalClient{
-		fs: osfs.New("/tmp/oss-rebuild/firestore"),
+		fs: tempfs.FirestoreFS(),
 	}
 }
 

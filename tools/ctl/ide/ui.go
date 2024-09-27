@@ -20,18 +20,16 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 
 	tcell "github.com/gdamore/tcell/v2"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/ctl/firestore"
+	"github.com/google/oss-rebuild/tools/tempfs"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 	yaml "gopkg.in/yaml.v3"
@@ -86,19 +84,6 @@ func sanitize(name string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(name, "@", ""), "/", "-")
 }
 
-func localAssetStore(ctx context.Context, runID string) (*rebuild.FilesystemAssetStore, error) {
-	// TODO: Maybe this should be a different ctx variable?
-	dir := filepath.Join("/tmp/oss-rebuild", runID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, errors.Wrapf(err, "failed to create directory %s", dir)
-	}
-	assetsFS, err := osfs.New("/").Chroot(dir)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to chroot into directory %s", dir)
-	}
-	return rebuild.NewFilesystemAssetStore(assetsFS), nil
-}
-
 func gcsAssetStore(ctx context.Context, runID string) (*rebuild.GCSStore, error) {
 	bucket, ok := ctx.Value(rebuild.UploadArtifactsPathID).(string)
 	if !ok {
@@ -118,7 +103,7 @@ func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, err := localAssetStore(ctx, example.RunID)
+	localAssets, err := tempfs.AssetStore(example.RunID)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
@@ -198,7 +183,7 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, err := localAssetStore(ctx, example.RunID)
+	localAssets, err := tempfs.AssetStore(example.RunID)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
@@ -221,7 +206,7 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 }
 
 func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) error {
-	localAssets, err := localAssetStore(ctx, example.RunID)
+	localAssets, err := tempfs.AssetStore(example.RunID)
 	if err != nil {
 		return errors.Wrap(err, "failed to create local asset store")
 	}
