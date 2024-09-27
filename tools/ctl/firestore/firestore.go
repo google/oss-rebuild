@@ -70,27 +70,20 @@ func (r *Rebuild) ID() string {
 	return strings.Join([]string{r.Ecosystem, r.Package, r.Version}, "!")
 }
 
-type BenchmarkMode string
-
-const (
-	SmoketestMode BenchmarkMode = "smoketest"
-	AttestMode    BenchmarkMode = "attest"
-)
-
 // Run represents a group of one or more rebuild executions.
 type Run struct {
 	ID            string
 	BenchmarkName string
 	BenchmarkHash string
-	Type          BenchmarkMode
+	Type          benchmark.BenchmarkMode
 	Created       time.Time
 }
 
 // NewRunFromFirestore creates a Run instance from a "runs" collection document.
 func NewRunFromFirestore(doc *firestore.DocumentSnapshot) Run {
-	var typ BenchmarkMode
+	var typ benchmark.BenchmarkMode
 	if maybeType, ok := doc.Data()["run_type"]; ok {
-		typ = BenchmarkMode(maybeType.(string))
+		typ = benchmark.BenchmarkMode(maybeType.(string))
 	}
 	return Run{
 		ID:            doc.Ref.ID,

@@ -32,7 +32,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cheggaaa/pb"
@@ -75,16 +74,6 @@ func getExecutorVersion(ctx context.Context, client *http.Client, api *url.URL, 
 	return string(vb), nil
 }
 
-func readBenchmark(filename string) (ps benchmark.PackageSet, err error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	err = json.NewDecoder(f).Decode(&ps)
-	return
-}
-
 func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, clean bool) (*firestore.FetchRebuildRequest, error) {
 	var runs []string
 	if run != "" {
@@ -103,7 +92,7 @@ func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, cl
 	// Load the benchmark, if provided.
 	if bench != "" {
 		log.Printf("Extracting benchmark %s...\n", filepath.Base(bench))
-		set, err := readBenchmark(bench)
+		set, err := benchmark.ReadBenchmark(bench)
 		if err != nil {
 			return nil, errors.Wrap(err, "reading benchmark file")
 		}
@@ -221,43 +210,6 @@ var getResults = &cobra.Command{
 	},
 }
 
-type PackageWorker interface {
-	Setup(ctx context.Context)
-	ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict)
-}
-
-type Executor struct {
-	Concurrency int
-	Worker      PackageWorker
-	Increment   func()
-}
-
-func (ex *Executor) Process(ctx context.Context, out chan schema.Verdict, packages []benchmark.Package) {
-	ex.Worker.Setup(ctx)
-	jobs := make(chan benchmark.Package)
-	go func() {
-		for _, p := range packages {
-			jobs <- p
-		}
-		close(jobs)
-	}()
-	var wg sync.WaitGroup
-	for i := 0; i < ex.Concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for p := range jobs {
-				ex.Worker.ProcessOne(ctx, p, out)
-				if ex.Increment != nil {
-					ex.Increment()
-				}
-			}
-		}()
-	}
-	wg.Wait()
-	close(out)
-}
-
 func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.Request {
 	values, err := form.Marshal(msg)
 	if err != nil {
@@ -271,129 +223,6 @@ func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.
 	return req
 }
 
-type WorkerConfig struct {
-	client   *http.Client
-	url      *url.URL
-	limiters map[string]<-chan time.Time
-	run      string
-}
-
-type AttestWorker struct {
-	WorkerConfig
-}
-
-func (w *AttestWorker) Setup(ctx context.Context) {}
-
-func (w *AttestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
-	for _, v := range p.Versions {
-		<-w.limiters[p.Ecosystem]
-		resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("rebuild"), &schema.RebuildPackageRequest{
-			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-			Package:   p.Name,
-			Version:   v,
-			ID:        w.run,
-		}))
-		var errMsg string
-		if err != nil {
-			errMsg = errors.Wrap(err, "sending request").Error()
-		} else if resp.StatusCode != 200 {
-			errMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
-		}
-		var verdict schema.Verdict
-		if errMsg != "" {
-			verdict = schema.Verdict{
-				Target: rebuild.Target{
-					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-					Package:   p.Name,
-					Version:   v,
-				},
-				Message: errMsg,
-			}
-		} else {
-			// TODO: Once the attestation endpoint returns verdict objects,
-			// support that here.
-			verdict = schema.Verdict{
-				Target: rebuild.Target{
-					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-					Package:   p.Name,
-					Version:   v,
-				},
-				Message: "",
-			}
-		}
-		out <- verdict
-	}
-}
-
-type SmoketestWorker struct {
-	WorkerConfig
-	warmup bool
-}
-
-func (w *SmoketestWorker) Setup(ctx context.Context) {
-	if w.warmup {
-		// First, warm up the instances to ensure it can handle actual load.
-		// Warm up requires the service fulfill sequentially successful version
-		// requests (which hit both the API and the builder jobs).
-		for i := 0; i < 5; {
-			_, err := getExecutorVersion(ctx, w.client, w.url, "build-local")
-			if err != nil {
-				i = 0
-			} else {
-				i++
-			}
-		}
-	}
-}
-
-func (w *SmoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
-	<-w.limiters[p.Ecosystem]
-	resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("smoketest"), &schema.SmoketestRequest{
-		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-		Package:   p.Name,
-		Versions:  p.Versions,
-		ID:        w.run,
-	}))
-	var errMsg string
-	if err != nil {
-		errMsg = errors.Wrap(err, "sending request").Error()
-	}
-	if resp.StatusCode != 200 {
-		errMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
-	}
-	if errMsg != "" {
-		for _, v := range p.Versions {
-			out <- schema.Verdict{
-				Target: rebuild.Target{
-					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-					Package:   p.Name,
-					Version:   v,
-				},
-				Message: errMsg,
-			}
-		}
-	} else {
-		var r schema.SmoketestResponse
-		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-			log.Fatalf("Failed to decode smoketest response: %v", err)
-		}
-		for _, v := range r.Verdicts {
-			out <- v
-		}
-	}
-}
-
-func defaultLimiters() map[string]<-chan time.Time {
-	return map[string]<-chan time.Time{
-		"pypi":  time.Tick(time.Second),
-		"npm":   time.Tick(2 * time.Second),
-		"maven": time.Tick(2 * time.Second),
-		// NOTE: cratesio needs to be especially slow given our registry API
-		// constraint of 1QPS. At minimum, we expect to make 4 calls per test.
-		"cratesio": time.Tick(8 * time.Second),
-	}
-}
-
 func isCloudRun(u *url.URL) bool {
 	return strings.HasSuffix(u.Host, ".run.app")
 }
@@ -404,8 +233,8 @@ var runBenchmark = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := cmd.Context()
-		mode := firestore.BenchmarkMode(args[0])
-		if mode != firestore.SmoketestMode && mode != firestore.AttestMode {
+		mode := benchmark.BenchmarkMode(args[0])
+		if mode != benchmark.SmoketestMode && mode != benchmark.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
 		if *apiUri == "" {
@@ -419,7 +248,7 @@ var runBenchmark = &cobra.Command{
 		{
 			path := args[1]
 			log.Printf("Extracting benchmark %s...\n", filepath.Base(path))
-			set, err = readBenchmark(path)
+			set, err = benchmark.ReadBenchmark(path)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "reading benchmark file"))
 			}
@@ -436,20 +265,8 @@ var runBenchmark = &cobra.Command{
 		} else {
 			client = http.DefaultClient
 		}
-		var executor string
-		if mode == firestore.SmoketestMode {
-			executor, err = getExecutorVersion(ctx, client, apiURL, "build-local")
-		} else if mode == firestore.AttestMode {
-			// Empty string returns the API version.
-			executor, err = getExecutorVersion(ctx, client, apiURL, "")
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
 		var run string
 		if *buildLocal {
-			// The build-local service does not support creating a new run-id.
-			// If we're talking to build-local directly, then we skip run-id generation.
 			run = time.Now().UTC().Format(time.RFC3339)
 		} else {
 			stub := api.Stub[schema.CreateRunRequest, schema.CreateRunResponse](client, *apiURL.JoinPath("runs"))
@@ -463,32 +280,21 @@ var runBenchmark = &cobra.Command{
 			}
 			run = resp.ID
 		}
-		conf := WorkerConfig{
-			client:   client,
-			url:      apiURL,
-			limiters: defaultLimiters(),
-			run:      run,
-		}
 		bar := pb.New(len(set.Packages))
 		bar.Output = cmd.OutOrStderr()
 		bar.ShowTimeLeft = true
-		ex := Executor{Concurrency: *maxConcurrency, Increment: func() { bar.Increment() }}
-		if mode == firestore.SmoketestMode {
-			ex.Worker = &SmoketestWorker{
-				WorkerConfig: conf,
-				warmup:       isCloudRun(apiURL),
-			}
-		} else {
-			ex.Worker = &AttestWorker{
-				WorkerConfig: conf,
-			}
+		verdictChan, err := benchmark.RunBench(ctx, client, apiURL, set, benchmark.RunBenchOpts{
+			Mode:           mode,
+			RunID:          run,
+			MaxConcurrency: *maxConcurrency,
+		})
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "running benchmark"))
 		}
-		verdictChan := make(chan schema.Verdict)
-		log.Printf("Triggering rebuilds on executor version '%s' with ID=%s...\n", executor, run)
-		bar.Start()
-		go ex.Process(ctx, verdictChan, set.Packages)
 		var verdicts []schema.Verdict
+		bar.Start()
 		for v := range verdictChan {
+			bar.Increment()
 			verdicts = append(verdicts, v)
 		}
 		bar.Finish()
@@ -524,8 +330,8 @@ var runOne = &cobra.Command{
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		mode := firestore.BenchmarkMode(args[0])
-		if mode != firestore.SmoketestMode && mode != firestore.AttestMode {
+		mode := benchmark.BenchmarkMode(args[0])
+		if mode != benchmark.SmoketestMode && mode != benchmark.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
 		if *apiUri == "" {
@@ -549,7 +355,7 @@ var runOne = &cobra.Command{
 		}
 		var strategy *schema.StrategyOneOf
 		if *strategyPath != "" {
-			if mode == firestore.AttestMode {
+			if mode == benchmark.AttestMode {
 				log.Fatal("--strategy not supported in attest mode, use --strategy-from-repo")
 			}
 			f, err := os.Open(*strategyPath)
@@ -567,7 +373,7 @@ var runOne = &cobra.Command{
 			log.Fatal("ecosystem, package, and version must be provided")
 		}
 		var req *http.Request
-		if mode == firestore.SmoketestMode {
+		if mode == benchmark.SmoketestMode {
 			req = makeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), &schema.SmoketestRequest{
 				Ecosystem: rebuild.Ecosystem(*ecosystem),
 				Package:   *pkg,
@@ -575,7 +381,7 @@ var runOne = &cobra.Command{
 				Strategy:  strategy,
 				ID:        "runOne",
 			})
-		} else if mode == firestore.AttestMode {
+		} else if mode == benchmark.AttestMode {
 			req = makeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), &schema.RebuildPackageRequest{
 				Ecosystem:        rebuild.Ecosystem(*ecosystem),
 				Package:          *pkg,
@@ -606,7 +412,7 @@ var listRuns = &cobra.Command{
 		var opts firestore.FetchRunsOpts
 		if *bench != "" {
 			log.Printf("Extracting benchmark %s...\n", filepath.Base(*bench))
-			set, err := readBenchmark(*bench)
+			set, err := benchmark.ReadBenchmark(*bench)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "reading benchmark file"))
 			}

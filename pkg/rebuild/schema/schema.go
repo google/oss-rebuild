@@ -17,12 +17,16 @@
 package schema
 
 import (
+	"context"
 	"encoding/hex"
+	"net/http"
+	"net/url"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/pkg/errors"
 )
 
@@ -96,6 +100,20 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 
 type Message interface {
 	Validate() error
+}
+
+// TODO: Most callers of this can be replace with a stub instead.
+func MakeHTTPRequest(ctx context.Context, u *url.URL, msg Message) (*http.Request, error) {
+	values, err := form.Marshal(msg)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating values")
+	}
+	u.RawQuery = values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating request")
+	}
+	return req, nil
 }
 
 type VersionRequest struct {

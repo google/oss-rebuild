@@ -28,6 +28,7 @@ import (
 	tcell "github.com/gdamore/tcell/v2"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/firestore"
 	"github.com/google/oss-rebuild/tools/tempfs"
 	"github.com/pkg/errors"
@@ -370,7 +371,7 @@ func (e *explorer) LoadTree() error {
 	}
 	byBench := make(map[string][]string)
 	for _, run := range runs {
-		if run.Type == firestore.AttestMode {
+		if run.Type == benchmark.AttestMode {
 			continue
 		}
 		byBench[run.BenchmarkName] = append(byBench[run.BenchmarkName], run.ID)
