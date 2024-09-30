@@ -123,8 +123,8 @@ func TestPolicyEndpoint(t *testing.T) {
 						{
 							"host": "host.com",
 							"path": "/path",
-							"matching_type": "prefix",
-							"rule_type": "URLMatchRule"
+							"matchingType": "prefix",
+							"ruleType": "URLMatchRule"
 						}
 					]
 				}
@@ -149,7 +149,7 @@ func TestPolicyEndpoint(t *testing.T) {
 						{
 							"host": "host.com",
 							"path": "/path",
-							"matching_type": "prefix",
+							"matchingType": "prefix",
 						}
 					]
 				}
@@ -207,7 +207,7 @@ func TestPolicyEndpoint(t *testing.T) {
 			wantResp:   http.StatusMethodNotAllowed,
 		},
 	}
-	proxyService := NewTransparentProxyService(NewTransparentProxyServer(false), nil, "enforce", "")
+	proxyService := NewTransparentProxyService(NewTransparentProxyServer(false), nil, "enforce", &policy.Policy{})
 	policy.RegisterRule("URLMatchRule", func() policy.Rule { return &policy.URLMatchRule{} })
 	mux := http.NewServeMux()
 	mux.HandleFunc("/policy", proxyService.policyHandler)

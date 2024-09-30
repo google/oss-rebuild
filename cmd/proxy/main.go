@@ -2,9 +2,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -44,7 +46,18 @@ func main() {
 	}
 	p := proxy.NewTransparentProxyServer(*verbose)
 	policy.RegisterRule("URLMatchRule", func() policy.Rule { return &policy.URLMatchRule{} })
-	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode), *policyFile)
+	var pl policy.Policy
+	if *policyFile != "" {
+		content, err := os.ReadFile(*policyFile)
+		if err != nil {
+			log.Fatalf("Error reading policy file: %v", err)
+		}
+		err = json.Unmarshal(content, &pl)
+		if err != nil {
+			log.Fatalf("Error unmarshaling policy file content: %v", err)
+		}
+	}
+	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode), &pl)
 	proxyService.Proxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			return proxyService.ApplyNetworkPolicy(req, ctx)

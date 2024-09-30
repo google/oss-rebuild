@@ -24,7 +24,7 @@ func RegisterRule(rulename string, constructor func() Rule) {
 // Policy contains a list of Rules that will be applied to the request.
 type Policy struct {
 	// AnyOf expects incoming requests to satisfy one of these Rules.
-	AnyOf []Rule
+	AnyOf []Rule `json:"anyOf"`
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface for the Policy class.
@@ -32,43 +32,49 @@ type Policy struct {
 func (p *Policy) UnmarshalJSON(data []byte) error {
 	var policywrapper struct {
 		Policy struct {
-			AnyOf []json.RawMessage `json:"AnyOf"`
-		} `json:"Policy"`
+			AnyOf []json.RawMessage
+		}
 	}
 	if err := json.Unmarshal(data, &policywrapper); err != nil {
 		return err
 	}
+	rules, err := unmarshalRuleType(policywrapper.Policy.AnyOf)
+	if err != nil {
+		return err
+	}
+	p.AnyOf = rules
+	return nil
+}
 
-	for _, rule := range policywrapper.Policy.AnyOf {
-		var tmpmap map[string]interface{}
+// unmarshalRule tries to unmarshal a rule json into the registered rule types.
+func unmarshalRuleType(rules []json.RawMessage) ([]Rule, error) {
+	res := []Rule{}
+	for _, rule := range rules {
+		var tmpmap map[string]any
 		if err := json.Unmarshal(rule, &tmpmap); err != nil {
-			return err
+			return nil, err
 		}
 
-		if _, ok := tmpmap["rule_type"]; !ok {
-			return fmt.Errorf("rule_type not specified in Rule: %v", string(rule))
+		if _, ok := tmpmap["ruleType"]; !ok {
+			return nil, fmt.Errorf("rule_type not specified in Rule: %v", string(rule))
 		}
 
-		ruleType := tmpmap["rule_type"].(string)
+		ruleType := tmpmap["ruleType"].(string)
 		if registeredrule, ok := ruleRegistry[ruleType]; !ok {
-			return fmt.Errorf("unexpected rule_type specified: '%s'", ruleType)
+			return nil, fmt.Errorf("unexpected rule_type specified: '%s'", ruleType)
 		} else {
 			newRule := registeredrule()
 			if err := json.Unmarshal(rule, &newRule); err == nil {
-				p.AnyOf = append(p.AnyOf, newRule)
+				res = append(res, newRule)
 			}
 		}
 	}
-
-	return nil
+	return res, nil
 }
 
 // Apply enforces the policy on the request. Returns http.StatusForbidden if the
 // request does not satisfy the policy rules.
 func (p Policy) Apply(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-	if p.AnyOf == nil || len(p.AnyOf) == 0 {
-		return req, nil
-	}
 	for _, rule := range p.AnyOf {
 		if rule.Allows(req) {
 			return req, nil
@@ -95,7 +101,7 @@ const (
 type URLMatchRule struct {
 	Host      string       `json:"host"`
 	Path      string       `json:"path"`
-	PathMatch MatchingType `json:"matching_type"`
+	PathMatch MatchingType `json:"matchingType"`
 }
 
 func (rule URLMatchRule) Allows(req *http.Request) bool {

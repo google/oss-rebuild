@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"sync"
 
@@ -98,28 +97,17 @@ type TransparentProxyService struct {
 }
 
 // NewTransparentProxyService creates a new TransparentProxyService.
-func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode PolicyMode, policyFile string) TransparentProxyService {
+func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode PolicyMode, pl *policy.Policy) TransparentProxyService {
 	m := new(sync.Mutex)
 	if !mode.IsValid() {
 		log.Fatalf("Invalid proxy mode specified: %v", mode)
-	}
-	var pl policy.Policy
-	if policyFile != "" {
-		content, err := os.ReadFile(policyFile)
-		if err != nil {
-			log.Fatalf("Error reading policy file: %v", err)
-		}
-		err = json.Unmarshal(content, &pl)
-		if err != nil {
-			log.Fatalf("Error unmarshaling policy file content: %v", err)
-		}
 	}
 	return TransparentProxyService{
 		Proxy:      p,
 		Ca:         ca,
 		NetworkLog: netlog.CaptureActivityLog(p, m),
 		Mode:       mode,
-		Policy:     &pl,
+		Policy:     pl,
 		mx:         m,
 	}
 }
