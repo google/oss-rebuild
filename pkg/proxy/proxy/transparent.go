@@ -102,6 +102,9 @@ func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate,
 	if !mode.IsValid() {
 		log.Fatalf("Invalid proxy mode specified: %v", mode)
 	}
+	if mode != DisabledMode && pl == nil {
+		log.Fatalf("Invalid policy: %v", nil)
+	}
 	return TransparentProxyService{
 		Proxy:      p,
 		Ca:         ca,
@@ -167,7 +170,7 @@ func (t TransparentProxyService) ProxyTLS(addr string) {
 	}
 }
 
-func (t *TransparentProxyService) ServeAdminEndpoint(addr string) {
+func (t *TransparentProxyService) ServeAdmin(addr string) {
 	pemBytes := cert.ToPEM(t.Ca.Leaf)
 	jksBytes, err := cert.ToJKS(t.Ca.Leaf)
 	if err != nil {

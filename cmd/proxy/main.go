@@ -63,7 +63,7 @@ func main() {
 			return proxyService.ApplyNetworkPolicy(req, ctx)
 		})
 	// Administrative endpoint.
-	go proxyService.ServeAdminEndpoint(*ctrlAddr)
+	go proxyService.ServeAdmin(*ctrlAddr)
 	// Start proxy server endpoints.
 	go proxyService.ProxyTLS(*tlsProxyAddr)
 	go proxyService.ProxyHTTP(*httpProxyAddr)
