@@ -123,7 +123,7 @@ func TestPolicyEndpoint(t *testing.T) {
 						{
 							"host": "host.com",
 							"path": "/path",
-							"matchingType": "prefix",
+							"matchPathBy": "prefix",
 							"ruleType": "URLMatchRule"
 						}
 					]
@@ -149,7 +149,7 @@ func TestPolicyEndpoint(t *testing.T) {
 						{
 							"host": "host.com",
 							"path": "/path",
-							"matchingType": "prefix",
+							"matchPathBy": "prefix",
 						}
 					]
 				}

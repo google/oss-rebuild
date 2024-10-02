@@ -38,38 +38,32 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &policywrapper); err != nil {
 		return err
 	}
-	rules, err := unmarshalRuleType(policywrapper.Policy.AnyOf)
-	if err != nil {
-		return err
-	}
-	p.AnyOf = rules
-	return nil
+	err := loadRules(policywrapper.Policy.AnyOf, &p.AnyOf)
+	return err
 }
 
-// unmarshalRule tries to unmarshal a rule json into the registered rule types.
-func unmarshalRuleType(rules []json.RawMessage) ([]Rule, error) {
-	res := []Rule{}
+func loadRules(rules []json.RawMessage, ruleSet *[]Rule) error {
 	for _, rule := range rules {
 		var tmpmap map[string]any
 		if err := json.Unmarshal(rule, &tmpmap); err != nil {
-			return nil, err
+			return err
 		}
 
 		if _, ok := tmpmap["ruleType"]; !ok {
-			return nil, fmt.Errorf("rule_type not specified in Rule: %v", string(rule))
+			return fmt.Errorf("rule_type not specified in Rule: %v", string(rule))
 		}
 
 		ruleType := tmpmap["ruleType"].(string)
 		if registeredrule, ok := ruleRegistry[ruleType]; !ok {
-			return nil, fmt.Errorf("unexpected rule_type specified: '%s'", ruleType)
+			return fmt.Errorf("unexpected rule_type specified: '%s'", ruleType)
 		} else {
 			newRule := registeredrule()
 			if err := json.Unmarshal(rule, &newRule); err == nil {
-				res = append(res, newRule)
+				*ruleSet = append(*ruleSet, newRule)
 			}
 		}
 	}
-	return res, nil
+	return nil
 }
 
 // Apply enforces the policy on the request. Returns http.StatusForbidden if the
@@ -101,7 +95,7 @@ const (
 type URLMatchRule struct {
 	Host      string       `json:"host"`
 	Path      string       `json:"path"`
-	PathMatch MatchingType `json:"matchingType"`
+	PathMatch MatchingType `json:"matchPathBy"`
 }
 
 func (rule URLMatchRule) Allows(req *http.Request) bool {
