@@ -103,7 +103,7 @@ func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate,
 		log.Fatalf("Invalid proxy mode specified: %v", mode)
 	}
 	if mode != DisabledMode && pl == nil {
-		log.Fatalf("Invalid policy: %v", nil)
+		log.Fatalf("Invalid policy: %v", pl)
 	}
 	return TransparentProxyService{
 		Proxy:      p,
