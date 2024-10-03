@@ -38,32 +38,35 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &policywrapper); err != nil {
 		return err
 	}
-	err := loadRules(policywrapper.Policy.AnyOf, &p.AnyOf)
-	return err
-}
-
-func loadRules(rules []json.RawMessage, ruleSet *[]Rule) error {
-	for _, rule := range rules {
-		var tmpmap map[string]any
-		if err := json.Unmarshal(rule, &tmpmap); err != nil {
+	for _, r := range policywrapper.Policy.AnyOf {
+		if rule, err := newRuleFromJson(r); err != nil {
 			return err
-		}
-
-		if _, ok := tmpmap["ruleType"]; !ok {
-			return fmt.Errorf("rule_type not specified in Rule: %v", string(rule))
-		}
-
-		ruleType := tmpmap["ruleType"].(string)
-		if registeredrule, ok := ruleRegistry[ruleType]; !ok {
-			return fmt.Errorf("unexpected rule_type specified: '%s'", ruleType)
 		} else {
-			newRule := registeredrule()
-			if err := json.Unmarshal(rule, &newRule); err == nil {
-				*ruleSet = append(*ruleSet, newRule)
-			}
+			p.AnyOf = append(p.AnyOf, rule)
 		}
 	}
 	return nil
+}
+
+func newRuleFromJson(rule json.RawMessage) (Rule, error) {
+	var tmpmap map[string]any
+	if err := json.Unmarshal(rule, &tmpmap); err != nil {
+		return nil, err
+	}
+	if _, ok := tmpmap["ruleType"]; !ok {
+		return nil, fmt.Errorf("rule_type not specified in Rule: %v", string(rule))
+	}
+	ruleType := tmpmap["ruleType"].(string)
+	if constructor, ok := ruleRegistry[ruleType]; !ok {
+		return nil, fmt.Errorf("unexpected rule_type specified: '%s'", ruleType)
+	} else {
+		newRule := constructor()
+		if err := json.Unmarshal(rule, &newRule); err != nil {
+			return nil, err
+		} else {
+			return newRule, nil
+		}
+	}
 }
 
 // Apply enforces the policy on the request. Returns http.StatusForbidden if the
