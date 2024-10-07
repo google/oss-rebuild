@@ -20,10 +20,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	tcell "github.com/gdamore/tcell/v2"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -36,16 +39,59 @@ import (
 	yaml "gopkg.in/yaml.v3"
 )
 
+const (
+	defaultModalBackground = tcell.ColorDarkCyan
+)
+
 // Returns a new primitive which puts the provided primitive in the center and
-// sets its size to the given width and height.
-func modal(p tview.Primitive, margin int) tview.Primitive {
+// adds vertical and horizontal margin.
+func modal(p tview.Primitive, vertMargin, horizMargin int) tview.Primitive {
 	return tview.NewFlex().
-		AddItem(nil, margin, 0, false).
+		AddItem(nil, horizMargin, 0, false).
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(nil, margin, 0, false).
+			AddItem(nil, vertMargin, 0, false).
 			AddItem(p, 0, 1, true).
-			AddItem(nil, margin, 0, false), 0, 1, true).
-		AddItem(nil, margin, 0, false)
+			AddItem(nil, vertMargin, 0, false), 0, 1, true).
+		AddItem(nil, horizMargin, 0, false)
+}
+
+type inputCaptureable interface {
+	tview.Primitive
+	SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey) *tview.Box
+}
+
+type modalOpts struct {
+	Height int
+	Width  int
+	Margin int
+}
+
+func showModal(app *tview.Application, container *tview.Pages, contents inputCaptureable, opts modalOpts) (exitFunc func()) {
+	pageName := fmt.Sprintf("modal%d", container.GetPageCount()+1)
+	exitFunc = func() {
+		container.RemovePage(pageName)
+	}
+	contents.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyESC {
+			exitFunc()
+		}
+		return event
+	})
+	_, _, containerWidth, containerHeight := container.GetInnerRect()
+	// If opts.Width or opts.Height is zero, assume the full container size.
+	if opts.Width == 0 {
+		opts.Width = containerWidth
+	}
+	if opts.Height == 0 {
+		opts.Height = containerHeight
+	}
+	// Always apply the margin (default is zero).
+	opts.Height = min(opts.Height, containerHeight-(2*opts.Margin))
+	opts.Width = min(opts.Width, containerWidth-(2*opts.Margin))
+	app.QueueUpdateDraw(func() {
+		container.AddPage(pageName, modal(contents, (containerHeight-opts.Height)/2, (containerWidth-opts.Width)/2), true, true)
+	})
+	return exitFunc
 }
 
 // The explorer is the Tree structure on the left side of the TUI
@@ -135,19 +181,6 @@ func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
 	}
 }
 
-func (e *explorer) showModal(ctx context.Context, tv *tview.TextView, onExit func()) {
-	tv.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyESC {
-			e.container.RemovePage("modal")
-			onExit()
-		}
-		return event
-	})
-	e.app.QueueUpdateDraw(func() {
-		e.container.AddPage("modal", modal(tv, 10), true, true)
-	})
-}
-
 func (e *explorer) showDetails(ctx context.Context, example firestore.Rebuild) {
 	details := tview.NewTextView()
 	type detailsStruct struct {
@@ -169,8 +202,8 @@ func (e *explorer) showDetails(ctx context.Context, example firestore.Rebuild) {
 		log.Println(errors.Wrap(err, "failed to marshal details"))
 		return
 	}
-	details.SetText(detailsYaml.String()).SetTitle("Execution details").SetBackgroundColor(tcell.ColorDarkCyan)
-	e.showModal(ctx, details, func() {})
+	details.SetText(detailsYaml.String()).SetBackgroundColor(defaultModalBackground).SetTitle("Execution details")
+	showModal(e.app, e.container, details, modalOpts{Margin: 10})
 }
 
 func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
@@ -399,17 +432,19 @@ type tuiAppCmd struct {
 
 // TuiApp represents the entire IDE, containing UI widgets and worker processes.
 type TuiApp struct {
-	Ctx       context.Context
-	app       *tview.Application
-	explorer  *explorer
-	statusBox *tview.TextView
-	logs      *tview.TextView
-	cmds      []tuiAppCmd
-	rb        *Rebuilder
+	Ctx          context.Context
+	app          *tview.Application
+	root         *tview.Pages
+	explorer     *explorer
+	statusBox    *tview.TextView
+	logs         *tview.TextView
+	cmds         []tuiAppCmd
+	benchmarkDir string
+	rb           *Rebuilder
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(ctx context.Context, fireClient firestore.Reader, firestoreOpts firestore.FetchRebuildOpts) *TuiApp {
+func NewTuiApp(ctx context.Context, fireClient firestore.Reader, firestoreOpts firestore.FetchRebuildOpts, benchmarkDir string) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -420,15 +455,17 @@ func NewTuiApp(ctx context.Context, fireClient firestore.Reader, firestoreOpts f
 		log.Default().SetPrefix(logPrefix("ctl"))
 		log.Default().SetFlags(0)
 		logs.SetBorder(true).SetTitle("Logs")
+		logs.ScrollToEnd()
 		rb := &Rebuilder{}
 		t = &TuiApp{
 			Ctx:      ctx,
 			app:      app,
 			explorer: newExplorer(ctx, app, fireClient, firestoreOpts, rb),
 			// When the widgets are updated, we should refresh the application.
-			statusBox: tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
-			logs:      logs,
-			rb:        rb,
+			statusBox:    tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
+			logs:         logs,
+			benchmarkDir: benchmarkDir,
+			rb:           rb,
 		}
 	}
 	t.cmds = []tuiAppCmd{
@@ -475,9 +512,16 @@ func NewTuiApp(ctx context.Context, fireClient firestore.Reader, firestoreOpts f
 				t.logs.ScrollToEnd()
 			},
 		},
+		{
+			Name: "benchmark",
+			Rune: 'b',
+			Func: func() {
+				t.selectBenchmark()
+			},
+		},
 	}
 
-	var root tview.Primitive
+	var root *tview.Pages
 	{
 		/*             window
 		┌───────────────────────────────────┐
@@ -507,8 +551,10 @@ func NewTuiApp(ctx context.Context, fireClient firestore.Reader, firestoreOpts f
 		window := tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(mainPane, flexed, unit, focused).
 			AddItem(bottomBar, unit, 0, !focused)
-		root = window
+		container := tview.NewPages().AddPage("main window", window, true, true)
+		root = container
 	}
+	t.root = root
 	t.app.SetRoot(root, true).SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyCtrlC {
 			// Clean up the rebuilder docker container.
@@ -540,6 +586,99 @@ func (t *TuiApp) updateStatus() {
 		cid = string(inst.ID)
 	}
 	t.statusBox.SetText(fmt.Sprintf("rebuilder cid: %s", cid))
+}
+
+func (t *TuiApp) modalText(content string) {
+	tv := tview.NewTextView()
+	tv.SetText("\n" + content + "\n").
+		SetTextAlign(tview.AlignCenter).
+		SetTextColor(tcell.ColorWhite).
+		SetBackgroundColor(defaultModalBackground)
+	showModal(t.app, t.root, tv, modalOpts{Height: 3, Margin: 10})
+}
+
+func (t *TuiApp) runBenchmark(bench string) {
+	fire, ok := t.explorer.firestore.(firestore.Writer)
+	if !ok {
+		log.Println("Cannot run benchmark with non-local firestore client.")
+		return
+	}
+	set, err := benchmark.ReadBenchmark(bench)
+	if err != nil {
+		log.Println(errors.Wrap(err, "reading benchmark"))
+		return
+	}
+	runID := time.Now().UTC().Format(time.RFC3339)
+	fire.WriteRun(t.Ctx, firestore.Run{
+		ID:            runID,
+		BenchmarkName: filepath.Base(bench),
+		BenchmarkHash: "N/A",
+		Type:          benchmark.SmoketestMode,
+		Created:       time.Now(),
+	})
+	verdictChan, err := t.rb.RunBench(t.Ctx, set, runID)
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
+	var successes int
+	for v := range verdictChan {
+		if v.Message == "" {
+			successes += 1
+		}
+		now := time.Now().UnixMilli()
+		fire.WriteRebuild(t.Ctx, firestore.Rebuild{
+			SmoketestAttempt: schema.SmoketestAttempt{
+				Ecosystem:       string(v.Target.Ecosystem),
+				Package:         v.Target.Package,
+				Version:         v.Target.Version,
+				Artifact:        v.Target.Artifact,
+				Success:         v.Message == "",
+				Message:         v.Message,
+				Strategy:        v.StrategyOneof,
+				Timings:         v.Timings,
+				ExecutorVersion: "local",
+				RunID:           runID,
+				Created:         now,
+			},
+			Created: time.UnixMilli(now),
+		})
+	}
+	log.Printf("Finished benchmark %s with %d successes.", bench, successes)
+}
+
+func (t *TuiApp) selectBenchmark() {
+	if t.benchmarkDir == "" {
+		t.modalText("No benchmark dir provided.")
+		return
+	}
+	options := tview.NewList()
+	options.SetBackgroundColor(defaultModalBackground).SetBorder(true).SetTitle("Select a benchmark to execute.")
+	// exitFunc will be populated once the modal has been created.
+	var exitFunc func()
+	err := filepath.Walk(t.benchmarkDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			// Skip this failure.
+			return nil
+		}
+		if filepath.Ext(path) != ".json" {
+			// Skip non-json files.
+			return nil
+		}
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		options.AddItem(name, "", 0, func() {
+			go t.runBenchmark(path)
+			if exitFunc != nil {
+				exitFunc()
+			}
+		})
+		return nil
+	})
+	if err != nil {
+		t.modalText(errors.Wrap(err, "walking benchmark dir").Error())
+		return
+	}
+	exitFunc = showModal(t.app, t.root, options, modalOpts{Height: (options.GetItemCount() * 2) + 2, Margin: 10})
 }
 
 // Run runs the underlying tview app.

@@ -39,7 +39,6 @@ import (
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/firestore"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
@@ -103,24 +102,34 @@ func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, cl
 }
 
 var tui = &cobra.Command{
-	Use:   "tui --project <ID> [--debug-bucket <bucket>] [--clean]",
+	Use:   "tui [--project <ID>] [--debug-bucket <bucket>] [--benchmark-dir <dir>] [--clean]",
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Exactly one of benchmarkDir or project should be set.
+		if (*benchmarkDir != "") == (*project != "" || *debugBucket != "") {
+			log.Fatal(errors.New("TUI should either be local (--benchmark-dir) or remote (--project, --debug-bucket)"))
+		}
 		tctx := cmd.Context()
-		if *debugBucket != "" {
-			bucket, prefix, _ := strings.Cut(strings.TrimPrefix(*debugBucket, "gs://"), string(filepath.Separator))
-			if prefix != "" {
-				log.Fatalf("--debug-bucket cannot have additional path elements, found %s", prefix)
+		var fireClient firestore.Reader
+		if *benchmarkDir != "" {
+			fireClient = firestore.NewLocalClient()
+		} else {
+			if *debugBucket != "" {
+				bucket, prefix, _ := strings.Cut(strings.TrimPrefix(*debugBucket, "gs://"), string(filepath.Separator))
+				if prefix != "" {
+					log.Fatalf("--debug-bucket cannot have additional path elements, found %s", prefix)
+				}
+				tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, bucket)
 			}
-			tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, bucket)
+			// TODO: Support filtering in the UI on TUI.
+			var err error
+			fireClient, err = firestore.NewRemoteClient(tctx, *project)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
-		// TODO: Support filtering in the UI on TUI.
-		fireClient, err := firestore.NewRemoteClient(tctx, *project)
-		if err != nil {
-			log.Fatal(err)
-		}
-		tapp := ide.NewTuiApp(tctx, fireClient, firestore.FetchRebuildOpts{Clean: *clean})
+		tapp := ide.NewTuiApp(tctx, fireClient, firestore.FetchRebuildOpts{Clean: *clean}, *benchmarkDir)
 		if err := tapp.Run(); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -208,19 +217,6 @@ var getResults = &cobra.Command{
 			log.Fatalf("Unknown --format type: %s", *format)
 		}
 	},
-}
-
-func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.Request {
-	values, err := form.Marshal(msg)
-	if err != nil {
-		log.Fatal(errors.Wrap(err, "creating values"))
-	}
-	u.RawQuery = values.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
-	if err != nil {
-		log.Fatal(errors.Wrap(err, "creating request"))
-	}
-	return req
 }
 
 func isCloudRun(u *url.URL) bool {
@@ -374,21 +370,27 @@ var runOne = &cobra.Command{
 		}
 		var req *http.Request
 		if mode == benchmark.SmoketestMode {
-			req = makeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), &schema.SmoketestRequest{
+			req, err = schema.MakeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), &schema.SmoketestRequest{
 				Ecosystem: rebuild.Ecosystem(*ecosystem),
 				Package:   *pkg,
 				Versions:  []string{*version},
 				Strategy:  strategy,
 				ID:        "runOne",
 			})
+			if err != nil {
+				log.Fatal(err)
+			}
 		} else if mode == benchmark.AttestMode {
-			req = makeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), &schema.RebuildPackageRequest{
+			req, err = schema.MakeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), &schema.RebuildPackageRequest{
 				Ecosystem:        rebuild.Ecosystem(*ecosystem),
 				Package:          *pkg,
 				Version:          *version,
 				StrategyFromRepo: *useStrategyRepo,
 				ID:               "runOne",
 			})
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 		resp, err := client.Do(req)
 		if err != nil {
@@ -463,6 +465,7 @@ var (
 	debugBucket     = flag.String("debug-bucket", "", "the gcs bucket to find debug logs and artifacts")
 	strategyPath    = flag.String("strategy", "", "the strategy file to use")
 	useStrategyRepo = flag.Bool("strategy-from-repo", false, "whether to lookup and use the strategy from the server-configured repo")
+	benchmarkDir    = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 
 	ecosystem = flag.String("ecosystem", "", "the ecosystem")
 	pkg       = flag.String("package", "", "the package name")
@@ -493,8 +496,9 @@ func init() {
 	getResults.Flags().AddGoFlag(flag.Lookup("format"))
 
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
-	tui.Flags().AddGoFlag(flag.Lookup("clean"))
 	tui.Flags().AddGoFlag(flag.Lookup("debug-bucket"))
+	tui.Flags().AddGoFlag(flag.Lookup("benchmark-dir"))
+	tui.Flags().AddGoFlag(flag.Lookup("clean"))
 
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
