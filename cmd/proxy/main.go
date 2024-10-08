@@ -58,6 +58,7 @@ func main() {
 		}
 	}
 	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode), &pl)
+	proxyService.LogActivity()
 	proxyService.Proxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			return proxyService.ApplyNetworkPolicy(req, ctx)

@@ -108,11 +108,16 @@ func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate,
 	return TransparentProxyService{
 		Proxy:      p,
 		Ca:         ca,
-		NetworkLog: netlog.CaptureActivityLog(p, m),
+		NetworkLog: &netlog.NetworkActivityLog{},
 		Mode:       mode,
 		Policy:     pl,
 		mx:         m,
 	}
+}
+
+// LogActivity starts recording network activity in memory.
+func (t *TransparentProxyService) LogActivity() {
+	t.NetworkLog = netlog.CaptureActivityLog(t.Proxy, t.mx)
 }
 
 // ProxyHTTP serves an endpoint that transparently redirects HTTP connections to the proxy server.
