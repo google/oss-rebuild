@@ -2,15 +2,18 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/elazarl/goproxy"
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/google/oss-rebuild/pkg/proxy/docker"
+	"github.com/google/oss-rebuild/pkg/proxy/policy"
 	"github.com/google/oss-rebuild/pkg/proxy/proxy"
 )
 
@@ -27,6 +30,7 @@ var (
 	dockerProxySocket = flag.Bool("docker_recursive_proxy", false, "whether to patch containers with a unix domain socket which proxies docker requests from created containers")
 	// TODO: Implement flag for reading a policy file.
 	policyMode = flag.String("policy_mode", "disabled", "mode to run the proxy in. Options: disabled, enforce")
+	policyFile = flag.String("policy_file", "", "path to a json file specifying the policy to apply to the proxy")
 )
 
 func main() {
@@ -41,13 +45,25 @@ func main() {
 		log.Printf("Server starting up! - configured to listen on http interface %s and https interface %s", *httpProxyAddr, *tlsProxyAddr)
 	}
 	p := proxy.NewTransparentProxyServer(*verbose)
-	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode))
+	policy.RegisterRule("URLMatchRule", func() policy.Rule { return &policy.URLMatchRule{} })
+	var pl policy.Policy
+	if *policyFile != "" {
+		content, err := os.ReadFile(*policyFile)
+		if err != nil {
+			log.Fatalf("Error reading policy file: %v", err)
+		}
+		err = json.Unmarshal(content, &pl)
+		if err != nil {
+			log.Fatalf("Error unmarshaling policy file content: %v", err)
+		}
+	}
+	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode), &pl)
 	proxyService.Proxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			return proxyService.ApplyNetworkPolicy(req, ctx)
 		})
 	// Administrative endpoint.
-	go proxyService.ServeMetadata(*ctrlAddr)
+	go proxyService.ServeAdmin(*ctrlAddr)
 	// Start proxy server endpoints.
 	go proxyService.ProxyTLS(*tlsProxyAddr)
 	go proxyService.ProxyHTTP(*httpProxyAddr)

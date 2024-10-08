@@ -14,20 +14,20 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 		wantResp int
 	}{
 		{
-			name: "nil policy does not apply",
+			name: "nil policy blocks everything",
 			policy: Policy{
 				AnyOf: nil,
 			},
 			url:      "https://host.com/path",
-			wantResp: http.StatusOK,
+			wantResp: http.StatusForbidden,
 		},
 		{
-			name: "empty policy does not apply",
+			name: "empty policy blocks everything",
 			policy: Policy{
 				AnyOf: []Rule{},
 			},
 			url:      "https://host.com/path",
-			wantResp: http.StatusOK,
+			wantResp: http.StatusForbidden,
 		},
 		{
 			name: "empty host policy rule does not match any url",

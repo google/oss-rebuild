@@ -2,6 +2,7 @@
 package policy
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,14 +11,67 @@ import (
 	"github.com/elazarl/goproxy"
 )
 
-type Policy struct {
-	AnyOf []Rule
+var ruleRegistry = map[string]func() Rule{}
+
+// RegisterRule adds a rule to the rule registry.
+// The rule registry contains implementations of the Rule interface recognized
+// by the proxy. Updates to the policy will try to unmarshal json structs into the
+// registered rules. Expects the rule name and a constructor returning the Rule type.
+func RegisterRule(rulename string, constructor func() Rule) {
+	ruleRegistry[rulename] = constructor
 }
 
-func (p Policy) Apply(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-	if p.AnyOf == nil || len(p.AnyOf) == 0 {
-		return req, nil
+// Policy contains a list of Rules that will be applied to the request.
+type Policy struct {
+	// AnyOf expects incoming requests to satisfy one of these Rules.
+	AnyOf []Rule `json:"anyOf"`
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface for the Policy class.
+// Expects rule_type to specify an existing rule in the rule registry.
+func (p *Policy) UnmarshalJSON(data []byte) error {
+	var policywrapper struct {
+		Policy struct {
+			AnyOf []json.RawMessage
+		}
 	}
+	if err := json.Unmarshal(data, &policywrapper); err != nil {
+		return err
+	}
+	for _, r := range policywrapper.Policy.AnyOf {
+		if rule, err := newRuleFromJson(r); err != nil {
+			return err
+		} else {
+			p.AnyOf = append(p.AnyOf, rule)
+		}
+	}
+	return nil
+}
+
+func newRuleFromJson(rule json.RawMessage) (Rule, error) {
+	var tmpmap map[string]any
+	if err := json.Unmarshal(rule, &tmpmap); err != nil {
+		return nil, err
+	}
+	if _, ok := tmpmap["ruleType"]; !ok {
+		return nil, fmt.Errorf("rule_type not specified in Rule: %v", string(rule))
+	}
+	ruleType := tmpmap["ruleType"].(string)
+	if constructor, ok := ruleRegistry[ruleType]; !ok {
+		return nil, fmt.Errorf("unexpected rule_type specified: '%s'", ruleType)
+	} else {
+		newRule := constructor()
+		if err := json.Unmarshal(rule, &newRule); err != nil {
+			return nil, err
+		} else {
+			return newRule, nil
+		}
+	}
+}
+
+// Apply enforces the policy on the request. Returns http.StatusForbidden if the
+// request does not satisfy the policy rules.
+func (p Policy) Apply(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	for _, rule := range p.AnyOf {
 		if rule.Allows(req) {
 			return req, nil
@@ -40,10 +94,11 @@ const (
 	PrefixMatch MatchingType = "prefix"
 )
 
+// Implements the Rule interface. Matches the request URL based on the MatchingType.
 type URLMatchRule struct {
-	Host      string
-	Path      string
-	PathMatch MatchingType
+	Host      string       `json:"host"`
+	Path      string       `json:"path"`
+	PathMatch MatchingType `json:"matchPathBy"`
 }
 
 func (rule URLMatchRule) Allows(req *http.Request) bool {
