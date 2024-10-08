@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -127,60 +128,104 @@ func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate,
 
 // ProxyHTTP serves an endpoint that transparently redirects HTTP connections to the proxy server.
 // This endpoint also explicitly (i.e. non-transparently) proxies HTTP and TLS connections.
-func (t TransparentProxyService) ProxyHTTP(addr string) {
+func (t TransparentProxyService) ProxyHTTP(addr string) func(context.Context) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("Error listening for http connections - %v", err)
 	}
-	if err := http.Serve(ln, t.Proxy); err != nil {
-		log.Fatalln(err)
+	server := &http.Server{
+		Addr:    addr,
+		Handler: t.Proxy,
 	}
+	go func() {
+		if err := server.Serve(ln); err != nil {
+			log.Println(err)
+		}
+	}()
+	return func(ctx context.Context) error { return server.Shutdown(ctx) }
 }
 
 // ProxyTLS serves an endpoint that transparently redirects TLS connections to the proxy server.
-func (t TransparentProxyService) ProxyTLS(addr string) {
+func (t TransparentProxyService) ProxyTLS(addr string) func(context.Context) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("Error listening for https connections - %v", err)
 	}
-	for {
-		log.Println("Awaiting TLS connection")
-		c, err := ln.Accept()
-		if err != nil {
-			log.Printf("Error accepting new connection - %v", err)
-			continue
+	var inflightRequests sync.WaitGroup
+	t.Proxy.OnResponse().DoFunc(func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
+		defer inflightRequests.Done()
+		return resp
+	})
+	done := make(chan bool)
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				log.Println("Awaiting TLS connection")
+				c, err := ln.Accept()
+				if err != nil {
+					log.Printf("Error accepting new connection - %v", err)
+					continue
+				}
+				inflightRequests.Add(1)
+				go func(c net.Conn) {
+					log.Println("Connection from ", c.RemoteAddr())
+					conn, hello, err := handshake.PeekClientHello(c)
+					if err != nil {
+						log.Printf("Error accepting new connection - %v", err)
+						return
+					}
+					host := hello.ServerName
+					if host == "" {
+						log.Printf("Cannot support non-SNI enabled clients")
+						c.Close()
+						return
+					}
+					log.Printf("Connecting to %s", host)
+					connectReq := &http.Request{
+						Method: "CONNECT",
+						URL: &url.URL{
+							Opaque: host,
+							Host:   net.JoinHostPort(host, tlsPort),
+						},
+						Host:       net.JoinHostPort(host, tlsPort),
+						Header:     make(http.Header),
+						RemoteAddr: c.RemoteAddr().String(),
+					}
+					resp := eatConnectResponseWriter{conn}
+					t.Proxy.ServeHTTP(resp, connectReq)
+				}(c)
+			}
 		}
-		go func(c net.Conn) {
-			log.Println("Connection from ", c.RemoteAddr())
-			conn, hello, err := handshake.PeekClientHello(c)
-			if err != nil {
-				log.Printf("Error accepting new connection - %v", err)
+	}()
+	shutdown := func(ctx context.Context) error {
+		ch := make(chan struct{})
+		errChan := make(chan error)
+		go func() {
+			if err := ln.Close(); err != nil {
+				errChan <- err
 				return
 			}
-			host := hello.ServerName
-			if host == "" {
-				log.Printf("Cannot support non-SNI enabled clients")
-				c.Close()
-				return
-			}
-			log.Printf("Connecting to %s", host)
-			connectReq := &http.Request{
-				Method: "CONNECT",
-				URL: &url.URL{
-					Opaque: host,
-					Host:   net.JoinHostPort(host, tlsPort),
-				},
-				Host:       net.JoinHostPort(host, tlsPort),
-				Header:     make(http.Header),
-				RemoteAddr: c.RemoteAddr().String(),
-			}
-			resp := eatConnectResponseWriter{conn}
-			t.Proxy.ServeHTTP(resp, connectReq)
-		}(c)
+			done <- true
+			log.Println("Waiting for in-flight requests to complete...")
+			inflightRequests.Wait()
+			close(ch)
+		}()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-errChan:
+			return err
+		case <-ch:
+			return nil
+		}
 	}
+	return shutdown
 }
 
-func (t *TransparentProxyService) ServeAdmin(addr string) {
+func (t *TransparentProxyService) ServeAdmin(addr string) func(context.Context) error {
 	pemBytes := cert.ToPEM(t.Ca.Leaf)
 	jksBytes, err := cert.ToJKS(t.Ca.Leaf)
 	if err != nil {
@@ -210,9 +255,16 @@ func (t *TransparentProxyService) ServeAdmin(addr string) {
 		}
 	})
 	mux.HandleFunc("/policy", t.policyHandler)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatal(err)
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
 	}
+	go func() {
+		if err := server.ListenAndServe(); err != nil {
+			log.Print(err)
+		}
+	}()
+	return func(ctx context.Context) error { return server.Shutdown(ctx) }
 }
 
 // policyHandler handles requests to the /policy endpoint.
