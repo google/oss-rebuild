@@ -184,7 +184,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 	return strat, rstrat, nil
 }
 
-func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strat rebuild.Strategy, rstrat *repoStrategy, useProxy bool, enableEBPF bool) (err error) {
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strat rebuild.Strategy, rstrat *repoStrategy, useProxy bool, enableSyscallMonitor bool) (err error) {
 	id := uuid.New().String()
 	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, id)
 	if err != nil {
@@ -192,14 +192,14 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	}
 	hashes := []crypto.Hash{crypto.SHA256}
 	opts := rebuild.RemoteOptions{
-		GCBClient:           deps.GCBClient,
-		Project:             deps.BuildProject,
-		BuildServiceAccount: deps.BuildServiceAccount,
-		UtilPrebuildBucket:  deps.UtilPrebuildBucket,
-		LogsBucket:          deps.BuildLogsBucket,
-		LocalMetadataStore:  deps.LocalMetadataStore,
-		RemoteMetadataStore: remoteMetadata,
-		EnableEBPF:          enableEBPF,
+		GCBClient:            deps.GCBClient,
+		Project:              deps.BuildProject,
+		BuildServiceAccount:  deps.BuildServiceAccount,
+		UtilPrebuildBucket:   deps.UtilPrebuildBucket,
+		LogsBucket:           deps.BuildLogsBucket,
+		LocalMetadataStore:   deps.LocalMetadataStore,
+		RemoteMetadataStore:  remoteMetadata,
+		EnableSyscallMonitor: enableSyscallMonitor,
 		UseNetworkProxy:     useProxy,
 	}
 	var upstreamURI string
@@ -278,7 +278,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if strat != nil {
 		v.StrategyOneof = schema.NewStrategyOneOf(strat)
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat, req.UseNetworkProxy, req.EnableEBPF)
+	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat, req.UseNetworkProxy, req.EnableSyscallMonitor)
 	if err != nil {
 		v.Message = errors.Wrap(err, "executing rebuild").Error()
 		return &v, nil

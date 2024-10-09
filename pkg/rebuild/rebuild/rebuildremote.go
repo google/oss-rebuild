@@ -43,9 +43,9 @@ type RemoteOptions struct {
 	RemoteMetadataStore LocatableAssetStore
 	UtilPrebuildBucket  string
 	// TODO: Consider moving these to Strategy.
-	UseTimewarp     bool
-	UseNetworkProxy bool
-	EnableEBPF      bool
+	UseTimewarp          bool
+	UseNetworkProxy      bool
+	EnableSyscallMonitor bool
 }
 
 type rebuildContainerArgs struct {
@@ -100,10 +100,16 @@ var standardBuildTpl = template.Must(
 	).Parse(
 		textwrap.Dedent(`
 				set -eux
+				{{- if .EnableSyscallMonitor}}
+				docker run --name=tetragon --pid=host --cgroupns=host --privileged -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
+				{{- end}}
 				cat <<'EOS' | docker buildx build --tag=img -
 				{{.Dockerfile}}
 				EOS
 				docker run --name=container img
+				{{- if .EnableSyscallMonitor}}
+				docker kill tetragon
+				{{- end}}
 				`)[1:], // remove leading newline
 	))
 
@@ -184,6 +190,9 @@ var proxyBuildTpl = template.Must(
 					iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination '$proxyIP':{{.HTTPPort}}
 					iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':{{.TLSPort}}
 				'
+				{{- if .EnableSyscallMonitor}}
+				docker run --name=tetragon --pid=host --cgroupns=host --privileged -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
+				{{- end}}
 				docker exec build /bin/sh -euxc '
 					curl http://proxy:{{.CtrlPort}}/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
 					export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt
@@ -194,30 +203,17 @@ var proxyBuildTpl = template.Must(
 				EOS
 					docker run --name=container img
 				'
+				{{- if .EnableSyscallMonitor}}
+				docker kill tetragon
+				{{- end}}
 				curl http://proxy:{{.CtrlPort}}/summary > /workspace/netlog.json
 				`)[1:], // remove leading newline
 	))
 
-// transfer describes the source and destination of either a move or copy.
-type transfer struct {
+type upload struct {
 	From string
 	To   string
 }
-
-var rebuildFinalizeTpl = template.Must(
-	template.New(
-		"rebuild finalize",
-	).Parse(
-		textwrap.Dedent(`
-				set -eux
-				docker cp container:{{.Artifact.From}} {{.Artifact.To}}
-				docker save img | gzip > /workspace/image.tgz
-				{{- if .EnableEBPF}}
-				docker cp tetragon:/var/log/tetragon/tetragon.jsonl /workspace/tetragon.jsonl
-				docker kill tetragon
-				{{- end}}
-				`)[1:], // remove leading newline
-	))
 
 var assetUploadTpl = template.Must(
 	template.New(
@@ -233,73 +229,86 @@ var assetUploadTpl = template.Must(
 	))
 
 func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Build, error) {
-	var cleanupScript bytes.Buffer
-	err := rebuildCleanupTpl.Execute(&cleanupScript, map[string]any{
-		"Artifact": transfer{
-			From: path.Join("/out", t.Artifact),
-			To:   path.Join("/workspace", t.Artifact),
-		},
-		"EnableEBPF": opts.EnableEBPF,
+	var buildScript bytes.Buffer
+	uploads := []upload{
+		{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String()},
+		{From: path.Join("/workspace", t.Artifact), To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()},
+	}
+	if opts.EnableSyscallMonitor {
+		uploads = append(uploads, upload{From: "/workspace/tetragon.jsonl", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: TetragonLog}).String()})
+	}
+	if opts.UseNetworkProxy {
+		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
+			"UtilPrebuildBucket":   opts.UtilPrebuildBucket,
+			"Dockerfile":           dockerfile,
+			"EnableSyscallMonitor": opts.EnableSyscallMonitor,
+			"HTTPPort":             "3128",
+			"TLSPort":              "3129",
+			"CtrlPort":             "3127",
+			"DockerPort":           "3130",
+			"User":                 "proxyu",
+			"CertEnvVars": []string{
+				// Used by pip.
+				// See https://pip.pypa.io/en/stable/topics/https-certificates/#using-a-specific-certificate-store
+				"PIP_CERT",
+				// Used by curl.
+				// See https://curl.se/docs/sslcerts.html#use-a-custom-ca-store
+				"CURL_CA_BUNDLE",
+				// Used by npm and node.
+				// See https://nodejs.org/api/cli.html#node_extra_ca_certsfile
+				"NODE_EXTRA_CA_CERTS",
+				// Used by gcloud.
+				// See https://cloud.google.com/sdk/gcloud/reference/topic/configurations#:~:text=custom_ca_certs_file
+				// Note: Env vars are the highest-precedence form of config.
+				"CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE",
+				// Used by nix.
+				// See https://nix.dev/manual/nix/2.18/installation/env-variables#nix_ssl_cert_file
+				"NIX_SSL_CERT_FILE",
+			},
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "expanding proxy build template")
+		}
+		uploads = append(uploads, upload{From: "/workspace/netlog.json", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ProxyNetlogAsset}).String()})
+	} else {
+		err := standardBuildTpl.Execute(&buildScript, map[string]any{
+			"Dockerfile":           dockerfile,
+			"EnableSyscallMonitor": opts.EnableSyscallMonitor,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "expanding standard build template")
+		}
+	}
+	var assetUploadScript bytes.Buffer
+	err := assetUploadTpl.Execute(&assetUploadScript, map[string]any{
+		"UtilPrebuildBucket": opts.UtilPrebuildBucket,
+		"Uploads":            uploads,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "expanding asset upload template")
 	}
-	var assetUploadScript bytes.Buffer
-	{
-		var uploads = []transfer{
-			{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String()},
-			{From: path.Join("/workspace", t.Artifact), To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()},
-		}
-		if opts.EnableEBPF {
-			uploads = append(uploads, transfer{From: "/workspace/tetragon.jsonl", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: TetragonLog}).String()})
-		}
-		err := assetUploadTpl.Execute(&assetUploadScript, map[string]any{
-			"UtilPrebuildBucket": opts.UtilPrebuildBucket,
-			"Uploads":            uploads,
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "expanding asset upload template")
-		}
-	}
-	steps := []*cloudbuild.BuildStep{}
-	if opts.EnableEBPF {
-		steps = append(steps, &cloudbuild.BuildStep{
-			Name: "gcr.io/cloud-builders/docker",
-			Args: []string{"run", "--name=tetragon", "--pid=host", "--cgroupns=host", "--privileged", "-v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf", "quay.io/cilium/tetragon:v1.1.2", "/usr/bin/tetragon", "--export-filename=/var/log/tetragon/tetragon.jsonl"},
-			Id:   "run_tetragon",
-			// This tetragon step will run indefinitely in the background.
-			// We will kill it when the build is complete, which will appear to be a failure.
-			// In the future we should investigate a more graceful way to setup and teardown.
-			AllowFailure: true,
-		})
-	}
-	steps = append(steps, []*cloudbuild.BuildStep{
-		{
-			Name:   "gcr.io/cloud-builders/docker",
-			Script: "set -eux\ncat <<'EOS' | docker buildx build --tag=img -\n" + dockerfile + "\nEOS\ndocker run --name=container img",
-			Id:     "run_builder",
-			// Wait for no other steps: run immediately.
-			// "-" is a special value indicating this step shouldn't wait for anything.
-			// https://cloud.google.com/build/docs/configuring-builds/configure-build-step-order#build_step_order_and_dependencies
-			WaitFor: []string{"-"},
-		},
-		{
-			Name:    "gcr.io/cloud-builders/docker",
-			Script:  finalizeScript.String(),
-			Id:      "finalize",
-			WaitFor: []string{"run_builder"},
-		},
-		{
-			Name:    "gcr.io/cloud-builders/gsutil",
-			Script:  assetUploadScript.String(),
-			WaitFor: []string{"finalize"},
-		},
-	}...)
 	return &cloudbuild.Build{
 		LogsBucket:     opts.LogsBucket,
 		Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
 		ServiceAccount: opts.BuildServiceAccount,
-		Steps:          steps,
+		Steps: []*cloudbuild.BuildStep{
+			{
+				Name:   "gcr.io/cloud-builders/docker",
+				Script: buildScript.String(),
+			},
+			{
+				Name: "gcr.io/cloud-builders/docker",
+				Args: []string{"cp", "container:" + path.Join("/out", t.Artifact), path.Join("/workspace", t.Artifact)},
+			},
+			{
+				Name:   "gcr.io/cloud-builders/docker",
+				Script: "docker save img | gzip > /workspace/image.tgz",
+			},
+			{
+				Name:   "gcr.io/cloud-builders/gsutil",
+				Script: assetUploadScript.String(),
+			},
+		},
 	}, nil
 }
 

@@ -366,11 +366,11 @@ gsutil cp -P gs://test-bootstrap/gsutil_writeonly .
 func TestMakeEBPFBuild(t *testing.T) {
 	dockerfile := "FROM alpine:3.19"
 	opts := RemoteOptions{
-		LogsBucket:          "test-logs-bucket",
-		BuildServiceAccount: "test-service-account",
-		UtilPrebuildBucket:  "test-bootstrap",
-		RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
-		EnableEBPF:          true,
+		LogsBucket:           "test-logs-bucket",
+		BuildServiceAccount:  "test-service-account",
+		UtilPrebuildBucket:   "test-bootstrap",
+		RemoteMetadataStore:  NewFilesystemAssetStore(memfs.New()),
+		EnableSyscallMonitor: true,
 	}
 
 	t.Run("Success", func(t *testing.T) {
