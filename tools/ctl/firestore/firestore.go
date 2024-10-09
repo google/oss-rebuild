@@ -32,8 +32,8 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
-	"github.com/google/oss-rebuild/tools/tempfs"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
 )
@@ -333,7 +333,7 @@ var _ Writer = &LocalClient{}
 
 func NewLocalClient() *LocalClient {
 	return &LocalClient{
-		fs: tempfs.FirestoreFS(),
+		fs: localfiles.FirestoreFS(),
 	}
 }
 

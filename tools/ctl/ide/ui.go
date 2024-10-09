@@ -35,7 +35,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/firestore"
-	"github.com/google/oss-rebuild/tools/tempfs"
+	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 	yaml "gopkg.in/yaml.v3"
@@ -152,7 +152,7 @@ func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, err := tempfs.AssetStore(example.RunID)
+	localAssets, err := localfiles.AssetStore(example.RunID)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
@@ -219,7 +219,7 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, err := tempfs.AssetStore(example.RunID)
+	localAssets, err := localfiles.AssetStore(example.RunID)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
@@ -242,7 +242,7 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 }
 
 func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) error {
-	localAssets, err := tempfs.AssetStore(example.RunID)
+	localAssets, err := localfiles.AssetStore(example.RunID)
 	if err != nil {
 		return errors.Wrap(err, "failed to create local asset store")
 	}

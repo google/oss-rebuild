@@ -1,4 +1,4 @@
-package tempfs
+package localfiles
 
 import (
 	"os"
