@@ -48,6 +48,8 @@ const (
 	BuildInfoAsset AssetType = "info.json"
 	// ContainerImageAsset is the container state after executing the rebuild.
 	ContainerImageAsset AssetType = "image.tgz"
+	// ProxyNetlogAsset is the network activity from the rebuild process.
+	ProxyNetlogAsset AssetType = "netlog.json"
 
 	// AttestationBundleAsset is the signed attestation bundle generated for a rebuild.
 	AttestationBundleAsset AssetType = "rebuild.intoto.jsonl"
