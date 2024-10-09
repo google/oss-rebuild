@@ -264,9 +264,12 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	steps := []*cloudbuild.BuildStep{}
 	if opts.EnableEBPF {
 		steps = append(steps, &cloudbuild.BuildStep{
-			Name:         "gcr.io/cloud-builders/docker",
-			Args:         []string{"run", "--name=tetragon", "--pid=host", "--cgroupns=host", "--privileged", "-v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf", "quay.io/cilium/tetragon:v1.1.2", "/usr/bin/tetragon", "--export-filename=/var/log/tetragon/tetragon.jsonl"},
-			Id:           "run_tetragon",
+			Name: "gcr.io/cloud-builders/docker",
+			Args: []string{"run", "--name=tetragon", "--pid=host", "--cgroupns=host", "--privileged", "-v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf", "quay.io/cilium/tetragon:v1.1.2", "/usr/bin/tetragon", "--export-filename=/var/log/tetragon/tetragon.jsonl"},
+			Id:   "run_tetragon",
+			// This tetragon step will run indefinitely in the background.
+			// We will kill it when the build is complete, which will appear to be a failure.
+			// In the future we should investigate a more graceful way to setup and teardown.
 			AllowFailure: true,
 		})
 	}
@@ -275,8 +278,9 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 			Name:   "gcr.io/cloud-builders/docker",
 			Script: "set -eux\ncat <<'EOS' | docker buildx build --tag=img -\n" + dockerfile + "\nEOS\ndocker run --name=container img",
 			Id:     "run_builder",
-			// Run immediately ("-" is a special value indicating this step
-			// shouldn't wait for anything).
+			// Wait for no other steps: run immediately.
+			// "-" is a special value indicating this step shouldn't wait for anything.
+			// https://cloud.google.com/build/docs/configuring-builds/configure-build-step-order#build_step_order_and_dependencies
 			WaitFor: []string{"-"},
 		},
 		{
