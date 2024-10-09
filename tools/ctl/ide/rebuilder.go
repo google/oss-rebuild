@@ -66,6 +66,7 @@ const (
 // Instance represents a single run of the rebuilder container.
 type Instance struct {
 	ID     string
+	URL    *url.URL
 	cancel func()
 	state  instanceState
 }
@@ -105,6 +106,12 @@ func (in *Instance) Run(ctx context.Context) {
 			}
 		}()
 		in.ID = <-idchan
+		in.URL, err = url.Parse("http://localhost:8080")
+		if err != nil {
+			rblog.Println("Parsing url: ", err.Error())
+			in.state = dead
+			return
+		}
 		if in.ID != "" {
 			in.state = serving
 		}
@@ -203,27 +210,14 @@ type RunLocalOpts struct {
 	Strategy *schema.StrategyOneOf
 }
 
-func (rb *Rebuilder) url() (*url.URL, error) {
-	u, err := url.Parse("http://localhost:8080")
-	if err != nil {
-		return nil, errors.Wrap(err, "parsing url")
-	}
-	return u, nil
-}
-
 // RunLocal runs the rebuilder for the given example.
 func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts RunLocalOpts) {
-	_, err := rb.runningInstance(ctx)
+	inst, err := rb.runningInstance(ctx)
 	if err != nil {
 		log.Println(errors.Wrap(err, "getting running instance"))
 		return
 	}
-	u, err := rb.url()
-	if err != nil {
-		log.Println(err.Error())
-		return
-	}
-	u = u.JoinPath("smoketest")
+	u := inst.URL.JoinPath("smoketest")
 	log.Println("Requesting a smoketest from: " + u.String())
 	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](http.DefaultClient, *u)
 	// TODO: Should this use benchmark.RunBench?
@@ -247,16 +241,11 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts Run
 
 // RunBench executes the benchmark against the local rebuilder.
 func (rb *Rebuilder) RunBench(ctx context.Context, set benchmark.PackageSet, runID string) (<-chan schema.Verdict, error) {
-	_, err := rb.runningInstance(ctx)
+	inst, err := rb.runningInstance(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting running instance")
 	}
-	u, err := rb.url()
-	client := http.DefaultClient
-	if err != nil {
-		return nil, err
-	}
-	return benchmark.RunBench(ctx, client, u, set, benchmark.RunBenchOpts{
+	return benchmark.RunBench(ctx, http.DefaultClient, inst.URL, set, benchmark.RunBenchOpts{
 		Mode:           benchmark.SmoketestMode,
 		RunID:          runID,
 		MaxConcurrency: 1,

@@ -11,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+// These are the different folders used for local storage.
 // /tmp/oss-rebuild/
 // 		assets/
 //		firestore/

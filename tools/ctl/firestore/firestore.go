@@ -417,7 +417,7 @@ func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReques
 }
 
 func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
-	path := filepath.Join(localRunsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, "firestore.json")
+	path := filepath.Join(localRunsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")

@@ -18,6 +18,8 @@ package ide
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -612,7 +614,7 @@ func (t *TuiApp) runBenchmark(bench string) {
 	fire.WriteRun(t.Ctx, firestore.Run{
 		ID:            runID,
 		BenchmarkName: filepath.Base(bench),
-		BenchmarkHash: "N/A",
+		BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
 		Type:          benchmark.SmoketestMode,
 		Created:       time.Now(),
 	})
@@ -658,11 +660,10 @@ func (t *TuiApp) selectBenchmark() {
 	var exitFunc func()
 	err := filepath.Walk(t.benchmarkDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			// Skip this failure.
+			// Best effort reading, skip failures.
 			return nil
 		}
 		if filepath.Ext(path) != ".json" {
-			// Skip non-json files.
 			return nil
 		}
 		name := strings.TrimSuffix(filepath.Base(path), ".json")
