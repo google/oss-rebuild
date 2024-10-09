@@ -87,17 +87,22 @@ func (m PolicyMode) IsValid() bool {
 
 // TransparentProxyService transparently proxies HTTP and HTTPS traffic.
 type TransparentProxyService struct {
-	Proxy      *goproxy.ProxyHttpServer
-	Ca         *tls.Certificate
-	NetworkLog *netlog.NetworkActivityLog
-	Policy     *policy.Policy
-	Mode       PolicyMode
+	Proxy  *goproxy.ProxyHttpServer
+	Ca     *tls.Certificate
+	Policy *policy.Policy
+	Mode   PolicyMode
 
-	mx *sync.Mutex
+	mx         *sync.Mutex
+	networkLog *netlog.NetworkActivityLog
+}
+
+// TransparentProxyServiceOpts defines the optional parameters for creating a TransparentProxyService.
+type TransparentProxyServiceOpts struct {
+	SkipLogInit bool
 }
 
 // NewTransparentProxyService creates a new TransparentProxyService.
-func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode PolicyMode, pl *policy.Policy) TransparentProxyService {
+func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode PolicyMode, pl *policy.Policy, opts TransparentProxyServiceOpts) TransparentProxyService {
 	m := new(sync.Mutex)
 	if !mode.IsValid() {
 		log.Fatalf("Invalid proxy mode specified: %v", mode)
@@ -105,19 +110,18 @@ func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate,
 	if mode != DisabledMode && pl == nil {
 		log.Fatalf("Invalid policy: %v", pl)
 	}
+	networkLog := &netlog.NetworkActivityLog{}
+	if !opts.SkipLogInit {
+		networkLog = netlog.CaptureActivityLog(p, m)
+	}
 	return TransparentProxyService{
 		Proxy:      p,
 		Ca:         ca,
-		NetworkLog: &netlog.NetworkActivityLog{},
 		Mode:       mode,
 		Policy:     pl,
 		mx:         m,
+		networkLog: networkLog,
 	}
-}
-
-// LogActivity starts recording network activity in memory.
-func (t *TransparentProxyService) LogActivity() {
-	t.NetworkLog = netlog.CaptureActivityLog(t.Proxy, t.mx)
 }
 
 // ProxyHTTP serves an endpoint that transparently redirects HTTP connections to the proxy server.
@@ -199,7 +203,7 @@ func (t *TransparentProxyService) ServeAdmin(addr string) {
 		defer t.mx.Unlock()
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(t.NetworkLog); err != nil {
+		if err := enc.Encode(t.networkLog); err != nil {
 			log.Printf("Failed to marshal metadata: %v", err)
 			http.Error(w, "Internal Error", http.StatusInternalServerError)
 		}
