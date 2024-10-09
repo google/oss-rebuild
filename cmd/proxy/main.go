@@ -68,15 +68,10 @@ func main() {
 			return proxyService.ApplyNetworkPolicy(req, ctx)
 		})
 	// Administrative endpoint.
-	shutdownAdmin := proxyService.ServeAdmin(*ctrlAddr)
+	go proxyService.ServeAdmin(*ctrlAddr)
 	// Start proxy server endpoints.
-	shutdownTLS := proxyService.ProxyTLS(*tlsProxyAddr)
-	shutdownHTTP := proxyService.ProxyHTTP(*httpProxyAddr)
-	shutdownFuncs := map[string]func(context.Context) error{
-		"Admin": shutdownAdmin,
-		"TLS":   shutdownTLS,
-		"HTTP":  shutdownHTTP,
-	}
+	go proxyService.ProxyTLS(*tlsProxyAddr)
+	go proxyService.ProxyHTTP(*httpProxyAddr)
 	if len(*dockerAddr) > 0 {
 		var vars []string
 		if *dockerEnvVars != "" {
@@ -99,14 +94,11 @@ func main() {
 	sig := <-sigChan
 
 	log.Printf("Received signal: %v. Attempting graceful shutdown...", sig)
-	for srv, shutdown := range shutdownFuncs {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-		defer cancel()
-		log.Printf("Shutting down %s server.", srv)
-		if err := shutdown(ctx); err != nil {
-			log.Printf("Error shutting down %s server: %v", srv, err)
-		} else {
-			log.Printf("Successfully shut down %s server.", srv)
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	if err := proxyService.Shutdown(ctx); err != nil {
+		log.Fatalf("Error shutting down proxy: %v", err)
+	} else {
+		log.Printf("Successfully shutdown network proxy")
 	}
 }

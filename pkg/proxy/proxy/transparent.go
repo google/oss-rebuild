@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -93,8 +94,11 @@ type TransparentProxyService struct {
 	Policy *policy.Policy
 	Mode   PolicyMode
 
-	mx         *sync.Mutex
-	networkLog *netlog.NetworkActivityLog
+	mx            *sync.Mutex
+	networkLog    *netlog.NetworkActivityLog
+	adminShutdown func(context.Context) error
+	httpShutdown  func(context.Context) error
+	tlsShutdown   func(context.Context) error
 }
 
 // TransparentProxyServiceOpts defines the optional parameters for creating a TransparentProxyService.
@@ -126,9 +130,28 @@ func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate,
 	}
 }
 
+func (t TransparentProxyService) Shutdown(ctx context.Context) error {
+	if t.adminShutdown != nil {
+		if err := t.adminShutdown(ctx); err != nil {
+			return err
+		}
+	}
+	if t.httpShutdown != nil {
+		if err := t.httpShutdown(ctx); err != nil {
+			return err
+		}
+	}
+	if t.tlsShutdown != nil {
+		if err := t.tlsShutdown(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ProxyHTTP serves an endpoint that transparently redirects HTTP connections to the proxy server.
 // This endpoint also explicitly (i.e. non-transparently) proxies HTTP and TLS connections.
-func (t TransparentProxyService) ProxyHTTP(addr string) func(context.Context) error {
+func (t *TransparentProxyService) ProxyHTTP(addr string) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("Error listening for http connections - %v", err)
@@ -137,70 +160,20 @@ func (t TransparentProxyService) ProxyHTTP(addr string) func(context.Context) er
 		Addr:    addr,
 		Handler: t.Proxy,
 	}
-	go func() {
-		if err := server.Serve(ln); err != nil {
-			log.Println(err)
-		}
-	}()
-	return func(ctx context.Context) error { return server.Shutdown(ctx) }
+	t.httpShutdown = func(ctx context.Context) error { return server.Shutdown(ctx) }
+	if err := server.Serve(ln); err != nil {
+		log.Println(err)
+	}
 }
 
 // ProxyTLS serves an endpoint that transparently redirects TLS connections to the proxy server.
-func (t TransparentProxyService) ProxyTLS(addr string) func(context.Context) error {
+func (t *TransparentProxyService) ProxyTLS(addr string) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("Error listening for https connections - %v", err)
 	}
 	var inflightRequests sync.WaitGroup
-	t.Proxy.OnResponse().DoFunc(func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-		defer inflightRequests.Done()
-		return resp
-	})
-	done := make(chan bool)
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				log.Println("Awaiting TLS connection")
-				c, err := ln.Accept()
-				if err != nil {
-					log.Printf("Error accepting new connection - %v", err)
-					continue
-				}
-				inflightRequests.Add(1)
-				go func(c net.Conn) {
-					log.Println("Connection from ", c.RemoteAddr())
-					conn, hello, err := handshake.PeekClientHello(c)
-					if err != nil {
-						log.Printf("Error accepting new connection - %v", err)
-						return
-					}
-					host := hello.ServerName
-					if host == "" {
-						log.Printf("Cannot support non-SNI enabled clients")
-						c.Close()
-						return
-					}
-					log.Printf("Connecting to %s", host)
-					connectReq := &http.Request{
-						Method: "CONNECT",
-						URL: &url.URL{
-							Opaque: host,
-							Host:   net.JoinHostPort(host, tlsPort),
-						},
-						Host:       net.JoinHostPort(host, tlsPort),
-						Header:     make(http.Header),
-						RemoteAddr: c.RemoteAddr().String(),
-					}
-					resp := eatConnectResponseWriter{conn}
-					t.Proxy.ServeHTTP(resp, connectReq)
-				}(c)
-			}
-		}
-	}()
-	shutdown := func(ctx context.Context) error {
+	t.tlsShutdown = func(ctx context.Context) error {
 		ch := make(chan struct{})
 		errChan := make(chan error)
 		go func() {
@@ -208,7 +181,6 @@ func (t TransparentProxyService) ProxyTLS(addr string) func(context.Context) err
 				errChan <- err
 				return
 			}
-			done <- true
 			log.Println("Waiting for in-flight requests to complete...")
 			inflightRequests.Wait()
 			close(ch)
@@ -222,10 +194,49 @@ func (t TransparentProxyService) ProxyTLS(addr string) func(context.Context) err
 			return nil
 		}
 	}
-	return shutdown
+	for {
+		log.Println("Awaiting TLS connection")
+		c, err := ln.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			log.Printf("Error accepting new connection - %v", err)
+			continue
+		}
+		inflightRequests.Add(1)
+		defer inflightRequests.Done()
+		go func(c net.Conn) {
+			log.Println("Connection from ", c.RemoteAddr())
+			conn, hello, err := handshake.PeekClientHello(c)
+			if err != nil {
+				log.Printf("Error accepting new connection - %v", err)
+				return
+			}
+			host := hello.ServerName
+			if host == "" {
+				log.Printf("Cannot support non-SNI enabled clients")
+				c.Close()
+				return
+			}
+			log.Printf("Connecting to %s", host)
+			connectReq := &http.Request{
+				Method: "CONNECT",
+				URL: &url.URL{
+					Opaque: host,
+					Host:   net.JoinHostPort(host, tlsPort),
+				},
+				Host:       net.JoinHostPort(host, tlsPort),
+				Header:     make(http.Header),
+				RemoteAddr: c.RemoteAddr().String(),
+			}
+			resp := eatConnectResponseWriter{conn}
+			t.Proxy.ServeHTTP(resp, connectReq)
+		}(c)
+	}
 }
 
-func (t *TransparentProxyService) ServeAdmin(addr string) func(context.Context) error {
+func (t *TransparentProxyService) ServeAdmin(addr string) {
 	pemBytes := cert.ToPEM(t.Ca.Leaf)
 	jksBytes, err := cert.ToJKS(t.Ca.Leaf)
 	if err != nil {
@@ -259,12 +270,10 @@ func (t *TransparentProxyService) ServeAdmin(addr string) func(context.Context) 
 		Addr:    addr,
 		Handler: mux,
 	}
-	go func() {
-		if err := server.ListenAndServe(); err != nil {
-			log.Print(err)
-		}
-	}()
-	return func(ctx context.Context) error { return server.Shutdown(ctx) }
+	t.adminShutdown = func(ctx context.Context) error { return server.Shutdown(ctx) }
+	if err := server.ListenAndServe(); err != nil {
+		log.Print(err)
+	}
 }
 
 // policyHandler handles requests to the /policy endpoint.
