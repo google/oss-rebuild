@@ -78,15 +78,14 @@ ENTRYPOINT ["/bin/sh","/build"]
 					OutputPath: "output/foo.tgz",
 				},
 				UseTimewarp:        true,
-				UtilPrebuildBucket: "my-bucket", // Add a bucket name
+				UtilPrebuildBucket: "my-bucket",
 			},
 			expected: `#syntax=docker/dockerfile:1.4
-FROM gcr.io/cloud-builders/gsutil AS timewarp_provider
-RUN gsutil cp -P gs://my-bucket/timewarp .
 FROM alpine:3.19
-COPY --from=timewarp_provider ./timewarp .
 RUN <<'EOF'
  set -eux
+ wget https://storage.googleapis.com/my-bucket/timewarp
+ chmod +x timewarp
  ./timewarp -port 8080 &
  while ! nc -z localhost 8080;do sleep 1;done
  apk add git make
@@ -259,9 +258,10 @@ docker run --name=container img
 						Script: "docker save img | gzip > /workspace/image.tgz",
 					},
 					{
-						Name: "gcr.io/cloud-builders/gsutil",
+						Name: "alpine:3.19",
 						Script: `set -eux
-gsutil cp -P gs://test-bootstrap/gsutil_writeonly .
+wget https://storage.googleapis.com/test-bootstrap/gsutil_writeonly
+chmod +x gsutil_writeonly
 ./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
 ./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz
 `,
@@ -306,9 +306,10 @@ docker kill tetragon
 						Script: "docker save img | gzip > /workspace/image.tgz",
 					},
 					{
-						Name: "gcr.io/cloud-builders/gsutil",
+						Name: "alpine:3.19",
 						Script: `set -eux
-gsutil cp -P gs://test-bootstrap/gsutil_writeonly .
+wget https://storage.googleapis.com/test-bootstrap/gsutil_writeonly
+chmod +x gsutil_writeonly
 ./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
 ./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz
 ./gsutil_writeonly cp /workspace/tetragon.jsonl file:///npm/pkg/version/pkg-version.tgz/tetragon.jsonl
@@ -336,7 +337,8 @@ gsutil cp -P gs://test-bootstrap/gsutil_writeonly .
 					{
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `set -eux
-docker run --volume=/workspace:/workspace gcr.io/cloud-builders/gsutil cp -P gs://test-bootstrap/proxy /workspace
+curl -O https://storage.googleapis.com/test-bootstrap/proxy
+chmod +x proxy
 docker network create proxynet
 useradd --system proxyu
 uid=$(id -u proxyu)
@@ -387,9 +389,10 @@ curl http://proxy:3127/summary > /workspace/netlog.json
 						Script: "docker save img | gzip > /workspace/image.tgz",
 					},
 					{
-						Name: "gcr.io/cloud-builders/gsutil",
+						Name: "alpine:3.19",
 						Script: `set -eux
-gsutil cp -P gs://test-bootstrap/gsutil_writeonly .
+wget https://storage.googleapis.com/test-bootstrap/gsutil_writeonly
+chmod +x gsutil_writeonly
 ./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
 ./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz
 ./gsutil_writeonly cp /workspace/netlog.json file:///npm/pkg/version/pkg-version.tgz/netlog.json
