@@ -101,7 +101,8 @@ var standardBuildTpl = template.Must(
 		textwrap.Dedent(`
 				set -eux
 				{{- if .UseSyscallMonitor}}
-				docker run --name=tetragon --pid=host --cgroupns=host --privileged -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
+				touch /workspace/tetragon.jsonl
+				docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
 				{{- end}}
 				cat <<'EOS' | docker buildx build --tag=img -
 				{{.Dockerfile}}
@@ -191,7 +192,8 @@ var proxyBuildTpl = template.Must(
 					iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':{{.TLSPort}}
 				'
 				{{- if .UseSyscallMonitor}}
-				docker run --name=tetragon --pid=host --cgroupns=host --privileged -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
+				touch /workspace/tetragon.jsonl
+				docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
 				{{- end}}
 				docker exec build /bin/sh -euxc '
 					curl http://proxy:{{.CtrlPort}}/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
