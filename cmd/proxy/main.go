@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"log"
@@ -9,6 +10,9 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"os/signal"
+	"syscall"
 
 	"github.com/elazarl/goproxy"
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
@@ -28,9 +32,8 @@ var (
 	dockerEnvVars     = flag.String("docker_truststore_env_vars", "", "comma-separated env vars to populate with the proxy cert and patch into containers")
 	dockerJavaEnvVar  = flag.Bool("docker_java_truststore", false, "whether to patch containers with Java proxy cert truststore file and env var")
 	dockerProxySocket = flag.Bool("docker_recursive_proxy", false, "whether to patch containers with a unix domain socket which proxies docker requests from created containers")
-	// TODO: Implement flag for reading a policy file.
-	policyMode = flag.String("policy_mode", "disabled", "mode to run the proxy in. Options: disabled, enforce")
-	policyFile = flag.String("policy_file", "", "path to a json file specifying the policy to apply to the proxy")
+	policyMode        = flag.String("policy_mode", "disabled", "mode to run the proxy in. Options: disabled, enforce")
+	policyFile        = flag.String("policy_file", "", "path to a json file specifying the policy to apply to the proxy")
 )
 
 func main() {
@@ -86,8 +89,16 @@ func main() {
 		go ctp.Proxy(*dockerAddr, *dockerSocket)
 	}
 
-	// Sleep in the main thread.
-	for {
-		time.Sleep(time.Hour)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+	sig := <-sigChan
+
+	log.Printf("Received signal: %v. Attempting graceful shutdown...", sig)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	if err := proxyService.Shutdown(ctx); err != nil {
+		log.Fatalf("Error shutting down proxy: %v", err)
+	} else {
+		log.Printf("Successfully shutdown network proxy")
 	}
 }

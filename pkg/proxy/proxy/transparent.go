@@ -3,8 +3,10 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -92,8 +94,9 @@ type TransparentProxyService struct {
 	Policy *policy.Policy
 	Mode   PolicyMode
 
-	mx         *sync.Mutex
-	networkLog *netlog.NetworkActivityLog
+	mx            *sync.Mutex
+	networkLog    *netlog.NetworkActivityLog
+	shutdownFuncs []func(context.Context) error
 }
 
 // TransparentProxyServiceOpts defines the optional parameters for creating a TransparentProxyService.
@@ -125,31 +128,77 @@ func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate,
 	}
 }
 
+// Shutdown attempts to gracefully shutdown all active servers.
+func (t *TransparentProxyService) Shutdown(ctx context.Context) error {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+	for _, shutdown := range t.shutdownFuncs {
+		if err := shutdown(ctx); err != nil {
+			return err
+		}
+	}
+	t.shutdownFuncs = nil
+	return nil
+}
+
 // ProxyHTTP serves an endpoint that transparently redirects HTTP connections to the proxy server.
 // This endpoint also explicitly (i.e. non-transparently) proxies HTTP and TLS connections.
-func (t TransparentProxyService) ProxyHTTP(addr string) {
+func (t *TransparentProxyService) ProxyHTTP(addr string) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("Error listening for http connections - %v", err)
 	}
-	if err := http.Serve(ln, t.Proxy); err != nil {
-		log.Fatalln(err)
+	server := &http.Server{
+		Addr:    addr,
+		Handler: t.Proxy,
+	}
+	t.mx.Lock()
+	t.shutdownFuncs = append(t.shutdownFuncs, func(ctx context.Context) error { return server.Shutdown(ctx) })
+	t.mx.Unlock()
+	if err := server.Serve(ln); err != nil {
+		log.Println(err)
 	}
 }
 
 // ProxyTLS serves an endpoint that transparently redirects TLS connections to the proxy server.
-func (t TransparentProxyService) ProxyTLS(addr string) {
+func (t *TransparentProxyService) ProxyTLS(addr string) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("Error listening for https connections - %v", err)
 	}
+	var inflightRequests sync.WaitGroup
+	t.mx.Lock()
+	t.shutdownFuncs = append(t.shutdownFuncs, func(ctx context.Context) error {
+		errChan := make(chan error)
+		go func() {
+			if err := ln.Close(); err != nil {
+				errChan <- err
+				return
+			}
+			log.Println("Waiting for in-flight requests to complete...")
+			inflightRequests.Wait()
+			errChan <- nil
+		}()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-errChan:
+			return err
+		}
+	})
+	t.mx.Unlock()
 	for {
 		log.Println("Awaiting TLS connection")
 		c, err := ln.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
 			log.Printf("Error accepting new connection - %v", err)
 			continue
 		}
+		inflightRequests.Add(1)
+		defer inflightRequests.Done()
 		go func(c net.Conn) {
 			log.Println("Connection from ", c.RemoteAddr())
 			conn, hello, err := handshake.PeekClientHello(c)
@@ -210,8 +259,15 @@ func (t *TransparentProxyService) ServeAdmin(addr string) {
 		}
 	})
 	mux.HandleFunc("/policy", t.policyHandler)
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		log.Fatal(err)
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+	t.mx.Lock()
+	t.shutdownFuncs = append(t.shutdownFuncs, func(ctx context.Context) error { return server.Shutdown(ctx) })
+	t.mx.Unlock()
+	if err := server.ListenAndServe(); err != nil {
+		log.Print(err)
 	}
 }
 
