@@ -98,7 +98,6 @@ type Message interface {
 	Validate() error
 }
 
-// TODO: Most callers of this can be replace with a stub instead.
 type VersionRequest struct {
 	Service string `form:","`
 }
