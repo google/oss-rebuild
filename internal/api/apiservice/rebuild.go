@@ -184,7 +184,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 	return strat, rstrat, nil
 }
 
-func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strat rebuild.Strategy, rstrat *repoStrategy, useProxy bool) (err error) {
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strat rebuild.Strategy, rstrat *repoStrategy, useProxy bool, useSyscallMonitor bool) (err error) {
 	id := uuid.New().String()
 	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, id)
 	if err != nil {
@@ -199,6 +199,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		LogsBucket:          deps.BuildLogsBucket,
 		LocalMetadataStore:  deps.LocalMetadataStore,
 		RemoteMetadataStore: remoteMetadata,
+		UseSyscallMonitor:   useSyscallMonitor,
 		UseNetworkProxy:     useProxy,
 	}
 	var upstreamURI string
@@ -277,7 +278,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if strat != nil {
 		v.StrategyOneof = schema.NewStrategyOneOf(strat)
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat, req.UseNetworkProxy)
+	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat, req.UseNetworkProxy, req.UseSyscallMonitor)
 	if err != nil {
 		v.Message = errors.Wrap(err, "executing rebuild").Error()
 		return &v, nil
