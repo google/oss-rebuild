@@ -65,17 +65,12 @@ var rebuildContainerTpl = template.Must(
 		// NOTE: For syntax docs, see https://docs.docker.com/build/dockerfile/release-notes/
 		textwrap.Dedent(`
 				#syntax=docker/dockerfile:1.4
-				{{- if .UseTimewarp}}
-				FROM gcr.io/cloud-builders/gsutil AS timewarp_provider
-				RUN gsutil cp -P gs://{{.UtilPrebuildBucket}}/timewarp .
-				{{- end}}
 				FROM alpine:3.19
-				{{- if .UseTimewarp}}
-				COPY --from=timewarp_provider ./timewarp .
-				{{- end}}
 				RUN <<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
+				 wget https://storage.googleapis.com/{{.UtilPrebuildBucket}}/timewarp
+				 chmod +x timewarp
 				 ./timewarp -port 8080 &
 				 while ! nc -z localhost 8080;do sleep 1;done
 				{{- end}}
@@ -162,7 +157,8 @@ var proxyBuildTpl = template.Must(
 	}).Parse(
 		textwrap.Dedent(`
 				set -eux
-				docker run --volume=/workspace:/workspace gcr.io/cloud-builders/gsutil cp -P gs://{{.UtilPrebuildBucket}}/proxy /workspace
+				curl -O https://storage.googleapis.com/{{.UtilPrebuildBucket}}/proxy
+				chmod +x proxy
 				docker network create proxynet
 				useradd --system {{.User}}
 				uid=$(id -u {{.User}})
@@ -223,7 +219,8 @@ var assetUploadTpl = template.Must(
 	).Parse(
 		textwrap.Dedent(`
 				set -eux
-				gsutil cp -P gs://{{.UtilPrebuildBucket}}/gsutil_writeonly .
+				wget https://storage.googleapis.com/{{.UtilPrebuildBucket}}/gsutil_writeonly
+				chmod +x gsutil_writeonly
 				{{- range .Uploads}}
 				./gsutil_writeonly cp {{.From}} {{.To}}
 				{{- end}}
@@ -307,7 +304,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 				Script: "docker save img | gzip > /workspace/image.tgz",
 			},
 			{
-				Name:   "gcr.io/cloud-builders/gsutil",
+				Name:   "alpine:3.19",
 				Script: assetUploadScript.String(),
 			},
 		},
