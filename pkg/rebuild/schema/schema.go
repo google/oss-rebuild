@@ -170,7 +170,7 @@ type RebuildPackageRequest struct {
 	ID                string            `form:",required"`
 	StrategyFromRepo  bool              `form:""`
 	UseSyscallMonitor bool              `form:""`
-	UseNetworkProxy  bool              `form:""`
+	UseNetworkProxy   bool              `form:""`
 }
 
 var _ Message = RebuildPackageRequest{}
