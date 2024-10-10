@@ -43,9 +43,9 @@ type RemoteOptions struct {
 	RemoteMetadataStore LocatableAssetStore
 	UtilPrebuildBucket  string
 	// TODO: Consider moving these to Strategy.
-	UseTimewarp          bool
-	UseNetworkProxy      bool
-	EnableSyscallMonitor bool
+	UseTimewarp       bool
+	UseNetworkProxy   bool
+	UseSyscallMonitor bool
 }
 
 type rebuildContainerArgs struct {
@@ -100,14 +100,14 @@ var standardBuildTpl = template.Must(
 	).Parse(
 		textwrap.Dedent(`
 				set -eux
-				{{- if .EnableSyscallMonitor}}
+				{{- if .UseSyscallMonitor}}
 				docker run --name=tetragon --pid=host --cgroupns=host --privileged -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
 				{{- end}}
 				cat <<'EOS' | docker buildx build --tag=img -
 				{{.Dockerfile}}
 				EOS
 				docker run --name=container img
-				{{- if .EnableSyscallMonitor}}
+				{{- if .UseSyscallMonitor}}
 				docker kill tetragon
 				{{- end}}
 				`)[1:], // remove leading newline
@@ -190,7 +190,7 @@ var proxyBuildTpl = template.Must(
 					iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination '$proxyIP':{{.HTTPPort}}
 					iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':{{.TLSPort}}
 				'
-				{{- if .EnableSyscallMonitor}}
+				{{- if .UseSyscallMonitor}}
 				docker run --name=tetragon --pid=host --cgroupns=host --privileged -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
 				{{- end}}
 				docker exec build /bin/sh -euxc '
@@ -203,7 +203,7 @@ var proxyBuildTpl = template.Must(
 				EOS
 					docker run --name=container img
 				'
-				{{- if .EnableSyscallMonitor}}
+				{{- if .UseSyscallMonitor}}
 				docker kill tetragon
 				{{- end}}
 				curl http://proxy:{{.CtrlPort}}/summary > /workspace/netlog.json
@@ -234,19 +234,19 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String()},
 		{From: path.Join("/workspace", t.Artifact), To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()},
 	}
-	if opts.EnableSyscallMonitor {
+	if opts.UseSyscallMonitor {
 		uploads = append(uploads, upload{From: "/workspace/tetragon.jsonl", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: TetragonLog}).String()})
 	}
 	if opts.UseNetworkProxy {
 		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
-			"UtilPrebuildBucket":   opts.UtilPrebuildBucket,
-			"Dockerfile":           dockerfile,
-			"EnableSyscallMonitor": opts.EnableSyscallMonitor,
-			"HTTPPort":             "3128",
-			"TLSPort":              "3129",
-			"CtrlPort":             "3127",
-			"DockerPort":           "3130",
-			"User":                 "proxyu",
+			"UtilPrebuildBucket": opts.UtilPrebuildBucket,
+			"Dockerfile":         dockerfile,
+			"UseSyscallMonitor":  opts.UseSyscallMonitor,
+			"HTTPPort":           "3128",
+			"TLSPort":            "3129",
+			"CtrlPort":           "3127",
+			"DockerPort":         "3130",
+			"User":               "proxyu",
 			"CertEnvVars": []string{
 				// Used by pip.
 				// See https://pip.pypa.io/en/stable/topics/https-certificates/#using-a-specific-certificate-store
@@ -272,8 +272,8 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		uploads = append(uploads, upload{From: "/workspace/netlog.json", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ProxyNetlogAsset}).String()})
 	} else {
 		err := standardBuildTpl.Execute(&buildScript, map[string]any{
-			"Dockerfile":           dockerfile,
-			"EnableSyscallMonitor": opts.EnableSyscallMonitor,
+			"Dockerfile":        dockerfile,
+			"UseSyscallMonitor": opts.UseSyscallMonitor,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "expanding standard build template")
