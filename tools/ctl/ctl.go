@@ -32,7 +32,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cheggaaa/pb"
@@ -40,10 +39,9 @@ import (
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/firestore"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
+	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v3"
@@ -75,24 +73,14 @@ func getExecutorVersion(ctx context.Context, client *http.Client, api *url.URL, 
 	return string(vb), nil
 }
 
-func readBenchmark(filename string) (ps benchmark.PackageSet, err error) {
-	f, err := os.Open(filename)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	err = json.NewDecoder(f).Decode(&ps)
-	return
-}
-
-func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, clean bool) (*firestore.FetchRebuildRequest, error) {
+func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, clean bool) (*rundex.FetchRebuildRequest, error) {
 	var runs []string
 	if run != "" {
 		runs = strings.Split(run, ",")
 	}
-	req := firestore.FetchRebuildRequest{
+	req := rundex.FetchRebuildRequest{
 		Runs: runs,
-		Opts: firestore.FetchRebuildOpts{
+		Opts: rundex.FetchRebuildOpts{
 			Filter: filter,
 			Clean:  clean,
 		},
@@ -103,7 +91,7 @@ func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, cl
 	// Load the benchmark, if provided.
 	if bench != "" {
 		log.Printf("Extracting benchmark %s...\n", filepath.Base(bench))
-		set, err := readBenchmark(bench)
+		set, err := benchmark.ReadBenchmark(bench)
 		if err != nil {
 			return nil, errors.Wrap(err, "reading benchmark file")
 		}
@@ -114,24 +102,34 @@ func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, cl
 }
 
 var tui = &cobra.Command{
-	Use:   "tui --project <ID> [--debug-bucket <bucket>] [--clean]",
+	Use:   "tui [--project <ID>] [--debug-bucket <bucket>] [--benchmark-dir <dir>] [--clean]",
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Exactly one of benchmarkDir or project should be set.
+		if (*benchmarkDir != "") == (*project != "" || *debugBucket != "") {
+			log.Fatal(errors.New("TUI should either be local (--benchmark-dir) or remote (--project, --debug-bucket)"))
+		}
 		tctx := cmd.Context()
-		if *debugBucket != "" {
-			bucket, prefix, _ := strings.Cut(strings.TrimPrefix(*debugBucket, "gs://"), string(filepath.Separator))
-			if prefix != "" {
-				log.Fatalf("--debug-bucket cannot have additional path elements, found %s", prefix)
+		var fireClient rundex.Reader
+		if *benchmarkDir != "" {
+			fireClient = rundex.NewLocalClient()
+		} else {
+			if *debugBucket != "" {
+				bucket, prefix, _ := strings.Cut(strings.TrimPrefix(*debugBucket, "gs://"), string(filepath.Separator))
+				if prefix != "" {
+					log.Fatalf("--debug-bucket cannot have additional path elements, found %s", prefix)
+				}
+				tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, bucket)
 			}
-			tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, bucket)
+			// TODO: Support filtering in the UI on TUI.
+			var err error
+			fireClient, err = rundex.NewFirestore(tctx, *project)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
-		// TODO: Support filtering in the UI on TUI.
-		fireClient, err := firestore.NewClient(tctx, *project)
-		if err != nil {
-			log.Fatal(err)
-		}
-		tapp := ide.NewTuiApp(tctx, fireClient, firestore.FetchRebuildOpts{Clean: *clean})
+		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir)
 		if err := tapp.Run(); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -152,7 +150,7 @@ var getResults = &cobra.Command{
 		if *format == "summary" && *sample > 0 {
 			log.Fatal("--sample option incompatible with --format=summary")
 		}
-		fireClient, err := firestore.NewClient(cmd.Context(), *project)
+		fireClient, err := rundex.NewFirestore(cmd.Context(), *project)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -161,7 +159,7 @@ var getResults = &cobra.Command{
 			log.Fatal(err)
 		}
 		log.Printf("Fetched %d rebuilds", len(rebuilds))
-		byCount := firestore.GroupRebuilds(rebuilds)
+		byCount := rundex.GroupRebuilds(rebuilds)
 		if len(byCount) == 0 {
 			log.Println("No results")
 			return
@@ -187,11 +185,11 @@ var getResults = &cobra.Command{
 				ps.Count = len(rebuilds)
 			}
 			rng := rand.New(rand.NewSource(int64(ps.Count)))
-			var rbs []firestore.Rebuild
+			var rbs []rundex.Rebuild
 			for _, r := range rebuilds {
 				rbs = append(rbs, r)
 			}
-			slices.SortFunc(rbs, func(a firestore.Rebuild, b firestore.Rebuild) int { return strings.Compare(a.ID(), b.ID()) })
+			slices.SortFunc(rbs, func(a rundex.Rebuild, b rundex.Rebuild) int { return strings.Compare(a.ID(), b.ID()) })
 			rng.Shuffle(len(rbs), func(i int, j int) {
 				rbs[i], rbs[j] = rbs[j], rbs[i]
 			})
@@ -221,179 +219,6 @@ var getResults = &cobra.Command{
 	},
 }
 
-type PackageWorker interface {
-	Setup(ctx context.Context)
-	ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict)
-}
-
-type Executor struct {
-	Concurrency int
-	Worker      PackageWorker
-	Increment   func()
-}
-
-func (ex *Executor) Process(ctx context.Context, out chan schema.Verdict, packages []benchmark.Package) {
-	ex.Worker.Setup(ctx)
-	jobs := make(chan benchmark.Package)
-	go func() {
-		for _, p := range packages {
-			jobs <- p
-		}
-		close(jobs)
-	}()
-	var wg sync.WaitGroup
-	for i := 0; i < ex.Concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for p := range jobs {
-				ex.Worker.ProcessOne(ctx, p, out)
-				if ex.Increment != nil {
-					ex.Increment()
-				}
-			}
-		}()
-	}
-	wg.Wait()
-	close(out)
-}
-
-func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) *http.Request {
-	values, err := form.Marshal(msg)
-	if err != nil {
-		log.Fatal(errors.Wrap(err, "creating values"))
-	}
-	u.RawQuery = values.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
-	if err != nil {
-		log.Fatal(errors.Wrap(err, "creating request"))
-	}
-	return req
-}
-
-type WorkerConfig struct {
-	client   *http.Client
-	url      *url.URL
-	limiters map[string]<-chan time.Time
-	run      string
-}
-
-type AttestWorker struct {
-	WorkerConfig
-}
-
-func (w *AttestWorker) Setup(ctx context.Context) {}
-
-func (w *AttestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
-	for _, v := range p.Versions {
-		<-w.limiters[p.Ecosystem]
-		resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("rebuild"), &schema.RebuildPackageRequest{
-			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-			Package:   p.Name,
-			Version:   v,
-			ID:        w.run,
-		}))
-		var errMsg string
-		if err != nil {
-			errMsg = errors.Wrap(err, "sending request").Error()
-		} else if resp.StatusCode != 200 {
-			errMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
-		}
-		var verdict schema.Verdict
-		if errMsg != "" {
-			verdict = schema.Verdict{
-				Target: rebuild.Target{
-					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-					Package:   p.Name,
-					Version:   v,
-				},
-				Message: errMsg,
-			}
-		} else {
-			// TODO: Once the attestation endpoint returns verdict objects,
-			// support that here.
-			verdict = schema.Verdict{
-				Target: rebuild.Target{
-					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-					Package:   p.Name,
-					Version:   v,
-				},
-				Message: "",
-			}
-		}
-		out <- verdict
-	}
-}
-
-type SmoketestWorker struct {
-	WorkerConfig
-	warmup bool
-}
-
-func (w *SmoketestWorker) Setup(ctx context.Context) {
-	if w.warmup {
-		// First, warm up the instances to ensure it can handle actual load.
-		// Warm up requires the service fulfill sequentially successful version
-		// requests (which hit both the API and the builder jobs).
-		for i := 0; i < 5; {
-			_, err := getExecutorVersion(ctx, w.client, w.url, "build-local")
-			if err != nil {
-				i = 0
-			} else {
-				i++
-			}
-		}
-	}
-}
-
-func (w *SmoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
-	<-w.limiters[p.Ecosystem]
-	resp, err := w.client.Do(makeHTTPRequest(ctx, w.url.JoinPath("smoketest"), &schema.SmoketestRequest{
-		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-		Package:   p.Name,
-		Versions:  p.Versions,
-		ID:        w.run,
-	}))
-	var errMsg string
-	if err != nil {
-		errMsg = errors.Wrap(err, "sending request").Error()
-	}
-	if resp.StatusCode != 200 {
-		errMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
-	}
-	if errMsg != "" {
-		for _, v := range p.Versions {
-			out <- schema.Verdict{
-				Target: rebuild.Target{
-					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-					Package:   p.Name,
-					Version:   v,
-				},
-				Message: errMsg,
-			}
-		}
-	} else {
-		var r schema.SmoketestResponse
-		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-			log.Fatalf("Failed to decode smoketest response: %v", err)
-		}
-		for _, v := range r.Verdicts {
-			out <- v
-		}
-	}
-}
-
-func defaultLimiters() map[string]<-chan time.Time {
-	return map[string]<-chan time.Time{
-		"pypi":  time.Tick(time.Second),
-		"npm":   time.Tick(2 * time.Second),
-		"maven": time.Tick(2 * time.Second),
-		// NOTE: cratesio needs to be especially slow given our registry API
-		// constraint of 1QPS. At minimum, we expect to make 4 calls per test.
-		"cratesio": time.Tick(8 * time.Second),
-	}
-}
-
 func isCloudRun(u *url.URL) bool {
 	return strings.HasSuffix(u.Host, ".run.app")
 }
@@ -404,8 +229,8 @@ var runBenchmark = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := cmd.Context()
-		mode := firestore.BenchmarkMode(args[0])
-		if mode != firestore.SmoketestMode && mode != firestore.AttestMode {
+		mode := benchmark.BenchmarkMode(args[0])
+		if mode != benchmark.SmoketestMode && mode != benchmark.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
 		if *apiUri == "" {
@@ -419,7 +244,7 @@ var runBenchmark = &cobra.Command{
 		{
 			path := args[1]
 			log.Printf("Extracting benchmark %s...\n", filepath.Base(path))
-			set, err = readBenchmark(path)
+			set, err = benchmark.ReadBenchmark(path)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "reading benchmark file"))
 			}
@@ -436,20 +261,8 @@ var runBenchmark = &cobra.Command{
 		} else {
 			client = http.DefaultClient
 		}
-		var executor string
-		if mode == firestore.SmoketestMode {
-			executor, err = getExecutorVersion(ctx, client, apiURL, "build-local")
-		} else if mode == firestore.AttestMode {
-			// Empty string returns the API version.
-			executor, err = getExecutorVersion(ctx, client, apiURL, "")
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
 		var run string
 		if *buildLocal {
-			// The build-local service does not support creating a new run-id.
-			// If we're talking to build-local directly, then we skip run-id generation.
 			run = time.Now().UTC().Format(time.RFC3339)
 		} else {
 			stub := api.Stub[schema.CreateRunRequest, schema.CreateRunResponse](client, *apiURL.JoinPath("runs"))
@@ -463,32 +276,21 @@ var runBenchmark = &cobra.Command{
 			}
 			run = resp.ID
 		}
-		conf := WorkerConfig{
-			client:   client,
-			url:      apiURL,
-			limiters: defaultLimiters(),
-			run:      run,
-		}
 		bar := pb.New(len(set.Packages))
 		bar.Output = cmd.OutOrStderr()
 		bar.ShowTimeLeft = true
-		ex := Executor{Concurrency: *maxConcurrency, Increment: func() { bar.Increment() }}
-		if mode == firestore.SmoketestMode {
-			ex.Worker = &SmoketestWorker{
-				WorkerConfig: conf,
-				warmup:       isCloudRun(apiURL),
-			}
-		} else {
-			ex.Worker = &AttestWorker{
-				WorkerConfig: conf,
-			}
+		verdictChan, err := benchmark.RunBench(ctx, client, apiURL, set, benchmark.RunBenchOpts{
+			Mode:           mode,
+			RunID:          run,
+			MaxConcurrency: *maxConcurrency,
+		})
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "running benchmark"))
 		}
-		verdictChan := make(chan schema.Verdict)
-		log.Printf("Triggering rebuilds on executor version '%s' with ID=%s...\n", executor, run)
-		bar.Start()
-		go ex.Process(ctx, verdictChan, set.Packages)
 		var verdicts []schema.Verdict
+		bar.Start()
 		for v := range verdictChan {
+			bar.Increment()
 			verdicts = append(verdicts, v)
 		}
 		bar.Finish()
@@ -524,8 +326,8 @@ var runOne = &cobra.Command{
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		mode := firestore.BenchmarkMode(args[0])
-		if mode != firestore.SmoketestMode && mode != firestore.AttestMode {
+		mode := benchmark.BenchmarkMode(args[0])
+		if mode != benchmark.SmoketestMode && mode != benchmark.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
 		if *apiUri == "" {
@@ -549,7 +351,7 @@ var runOne = &cobra.Command{
 		}
 		var strategy *schema.StrategyOneOf
 		if *strategyPath != "" {
-			if mode == firestore.AttestMode {
+			if mode == benchmark.AttestMode {
 				log.Fatal("--strategy not supported in attest mode, use --strategy-from-repo")
 			}
 			f, err := os.Open(*strategyPath)
@@ -567,22 +369,28 @@ var runOne = &cobra.Command{
 			log.Fatal("ecosystem, package, and version must be provided")
 		}
 		var req *http.Request
-		if mode == firestore.SmoketestMode {
-			req = makeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), &schema.SmoketestRequest{
+		if mode == benchmark.SmoketestMode {
+			req, err = schema.MakeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), &schema.SmoketestRequest{
 				Ecosystem: rebuild.Ecosystem(*ecosystem),
 				Package:   *pkg,
 				Versions:  []string{*version},
 				Strategy:  strategy,
 				ID:        "runOne",
 			})
-		} else if mode == firestore.AttestMode {
-			req = makeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), &schema.RebuildPackageRequest{
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else if mode == benchmark.AttestMode {
+			req, err = schema.MakeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), &schema.RebuildPackageRequest{
 				Ecosystem:        rebuild.Ecosystem(*ecosystem),
 				Package:          *pkg,
 				Version:          *version,
 				StrategyFromRepo: *useStrategyRepo,
 				ID:               "runOne",
 			})
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 		resp, err := client.Do(req)
 		if err != nil {
@@ -603,10 +411,10 @@ var listRuns = &cobra.Command{
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := context.Background()
-		var opts firestore.FetchRunsOpts
+		var opts rundex.FetchRunsOpts
 		if *bench != "" {
 			log.Printf("Extracting benchmark %s...\n", filepath.Base(*bench))
-			set, err := readBenchmark(*bench)
+			set, err := benchmark.ReadBenchmark(*bench)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "reading benchmark file"))
 			}
@@ -616,7 +424,7 @@ var listRuns = &cobra.Command{
 		if *project == "" {
 			log.Fatal("project not provided")
 		}
-		client, err := firestore.NewClient(ctx, *project)
+		client, err := rundex.NewFirestore(ctx, *project)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "creating firestore client"))
 		}
@@ -657,6 +465,7 @@ var (
 	debugBucket     = flag.String("debug-bucket", "", "the gcs bucket to find debug logs and artifacts")
 	strategyPath    = flag.String("strategy", "", "the strategy file to use")
 	useStrategyRepo = flag.Bool("strategy-from-repo", false, "whether to lookup and use the strategy from the server-configured repo")
+	benchmarkDir    = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 
 	ecosystem = flag.String("ecosystem", "", "the ecosystem")
 	pkg       = flag.String("package", "", "the package name")
@@ -687,8 +496,9 @@ func init() {
 	getResults.Flags().AddGoFlag(flag.Lookup("format"))
 
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
-	tui.Flags().AddGoFlag(flag.Lookup("clean"))
 	tui.Flags().AddGoFlag(flag.Lookup("debug-bucket"))
+	tui.Flags().AddGoFlag(flag.Lookup("benchmark-dir"))
+	tui.Flags().AddGoFlag(flag.Lookup("clean"))
 
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))

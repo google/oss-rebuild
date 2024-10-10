@@ -18,6 +18,8 @@ package ide
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -26,27 +28,72 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	tcell "github.com/gdamore/tcell/v2"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/tools/ctl/firestore"
+	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/localfiles"
+	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 	yaml "gopkg.in/yaml.v3"
 )
 
+const (
+	defaultModalBackground = tcell.ColorDarkCyan
+)
+
 // Returns a new primitive which puts the provided primitive in the center and
-// sets its size to the given width and height.
-func modal(p tview.Primitive, margin int) tview.Primitive {
+// adds vertical and horizontal margin.
+func modal(p tview.Primitive, vertMargin, horizMargin int) tview.Primitive {
 	return tview.NewFlex().
-		AddItem(nil, margin, 0, false).
+		AddItem(nil, horizMargin, 0, false).
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(nil, margin, 0, false).
+			AddItem(nil, vertMargin, 0, false).
 			AddItem(p, 0, 1, true).
-			AddItem(nil, margin, 0, false), 0, 1, true).
-		AddItem(nil, margin, 0, false)
+			AddItem(nil, vertMargin, 0, false), 0, 1, true).
+		AddItem(nil, horizMargin, 0, false)
+}
+
+type inputCaptureable interface {
+	tview.Primitive
+	SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey) *tview.Box
+}
+
+type modalOpts struct {
+	Height int
+	Width  int
+	Margin int
+}
+
+func showModal(app *tview.Application, container *tview.Pages, contents inputCaptureable, opts modalOpts) (exitFunc func()) {
+	pageName := fmt.Sprintf("modal%d", container.GetPageCount()+1)
+	exitFunc = func() {
+		container.RemovePage(pageName)
+	}
+	contents.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyESC {
+			exitFunc()
+		}
+		return event
+	})
+	_, _, containerWidth, containerHeight := container.GetInnerRect()
+	// If opts.Width or opts.Height is zero, assume the full container size.
+	if opts.Width == 0 {
+		opts.Width = containerWidth
+	}
+	if opts.Height == 0 {
+		opts.Height = containerHeight
+	}
+	// Always apply the margin (default is zero).
+	opts.Height = min(opts.Height, containerHeight-(2*opts.Margin))
+	opts.Width = min(opts.Width, containerWidth-(2*opts.Margin))
+	app.QueueUpdateDraw(func() {
+		container.AddPage(pageName, modal(contents, (containerHeight-opts.Height)/2, (containerWidth-opts.Width)/2), true, true)
+	})
+	return exitFunc
 }
 
 // The explorer is the Tree structure on the left side of the TUI
@@ -57,11 +104,11 @@ type explorer struct {
 	tree          *tview.TreeView
 	root          *tview.TreeNode
 	rb            *Rebuilder
-	firestore     *firestore.Client
-	firestoreOpts firestore.FetchRebuildOpts
+	firestore     rundex.Reader
+	firestoreOpts rundex.FetchRebuildOpts
 }
 
-func newExplorer(ctx context.Context, app *tview.Application, firestore *firestore.Client, firestoreOpts firestore.FetchRebuildOpts, rb *Rebuilder) *explorer {
+func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder) *explorer {
 	e := explorer{
 		ctx:           ctx,
 		app:           app,
@@ -86,19 +133,6 @@ func sanitize(name string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(name, "@", ""), "/", "-")
 }
 
-func localAssetStore(ctx context.Context, runID string) (*rebuild.FilesystemAssetStore, error) {
-	// TODO: Maybe this should be a different ctx variable?
-	dir := filepath.Join("/tmp/oss-rebuild", runID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, errors.Wrapf(err, "failed to create directory %s", dir)
-	}
-	assetsFS, err := osfs.New("/").Chroot(dir)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to chroot into directory %s", dir)
-	}
-	return rebuild.NewFilesystemAssetStore(assetsFS), nil
-}
-
 func gcsAssetStore(ctx context.Context, runID string) (*rebuild.GCSStore, error) {
 	bucket, ok := ctx.Value(rebuild.UploadArtifactsPathID).(string)
 	if !ok {
@@ -107,7 +141,7 @@ func gcsAssetStore(ctx context.Context, runID string) (*rebuild.GCSStore, error)
 	return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, runID), bucket)
 }
 
-func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
+func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
 	if example.Artifact == "" {
 		log.Println("Firestore does not have the artifact, cannot find GCS path.")
 		return
@@ -118,7 +152,7 @@ func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, err := localAssetStore(ctx, example.RunID)
+	localAssets, err := localfiles.AssetStore(example.RunID)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
@@ -149,20 +183,7 @@ func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
 	}
 }
 
-func (e *explorer) showModal(ctx context.Context, tv *tview.TextView, onExit func()) {
-	tv.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyESC {
-			e.container.RemovePage("modal")
-			onExit()
-		}
-		return event
-	})
-	e.app.QueueUpdateDraw(func() {
-		e.container.AddPage("modal", modal(tv, 10), true, true)
-	})
-}
-
-func (e *explorer) showDetails(ctx context.Context, example firestore.Rebuild) {
+func (e *explorer) showDetails(ctx context.Context, example rundex.Rebuild) {
 	details := tview.NewTextView()
 	type detailsStruct struct {
 		Success  bool
@@ -183,11 +204,11 @@ func (e *explorer) showDetails(ctx context.Context, example firestore.Rebuild) {
 		log.Println(errors.Wrap(err, "failed to marshal details"))
 		return
 	}
-	details.SetText(detailsYaml.String()).SetTitle("Execution details").SetBackgroundColor(tcell.ColorDarkCyan)
-	e.showModal(ctx, details, func() {})
+	details.SetText(detailsYaml.String()).SetBackgroundColor(defaultModalBackground).SetTitle("Execution details")
+	showModal(e.app, e.container, details, modalOpts{Margin: 10})
 }
 
-func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
+func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 	if example.Artifact == "" {
 		log.Println("Firestore does not have the artifact, cannot find GCS path.")
 		return
@@ -198,7 +219,7 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, err := localAssetStore(ctx, example.RunID)
+	localAssets, err := localfiles.AssetStore(example.RunID)
 	if err != nil {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
@@ -220,8 +241,8 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 	}
 }
 
-func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) error {
-	localAssets, err := localAssetStore(ctx, example.RunID)
+func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error {
+	localAssets, err := localfiles.AssetStore(example.RunID)
 	if err != nil {
 		return errors.Wrap(err, "failed to create local asset store")
 	}
@@ -273,7 +294,7 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) er
 	return nil
 }
 
-func (e *explorer) makeExampleNode(example firestore.Rebuild) *tview.TreeNode {
+func (e *explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 	name := fmt.Sprintf("%s [%ds]", example.ID(), int(example.Timings.EstimateCleanBuild().Seconds()))
 	node := tview.NewTreeNode(name).SetColor(tcell.ColorYellow)
 	node.SetSelectedFunc(func() {
@@ -311,7 +332,7 @@ func (e *explorer) makeExampleNode(example firestore.Rebuild) *tview.TreeNode {
 	return node
 }
 
-func (e *explorer) makeVerdictGroupNode(vg *firestore.VerdictGroup, percent float32) *tview.TreeNode {
+func (e *explorer) makeVerdictGroupNode(vg *rundex.VerdictGroup, percent float32) *tview.TreeNode {
 	var msg string
 	if vg.Msg == "" {
 		msg = "Success!"
@@ -343,13 +364,13 @@ func (e *explorer) makeRunNode(runid string) *tview.TreeNode {
 	node.SetSelectedFunc(func() {
 		children := node.GetChildren()
 		if len(children) == 0 {
-			rebuilds, err := e.firestore.FetchRebuilds(e.ctx, &firestore.FetchRebuildRequest{Runs: []string{runid}, Opts: e.firestoreOpts})
+			rebuilds, err := e.firestore.FetchRebuilds(e.ctx, &rundex.FetchRebuildRequest{Runs: []string{runid}, Opts: e.firestoreOpts})
 			if err != nil {
 				log.Println(errors.Wrapf(err, "failed to get rebuilds for runid: %s", runid))
 				return
 			}
 			log.Printf("Fetched %d rebuilds", len(rebuilds))
-			byCount := firestore.GroupRebuilds(rebuilds)
+			byCount := rundex.GroupRebuilds(rebuilds)
 			for i := len(byCount) - 1; i >= 0; i-- {
 				vgnode := e.makeVerdictGroupNode(byCount[i], 100*float32(byCount[i].Count)/float32(len(rebuilds)))
 				node.AddChild(vgnode)
@@ -379,13 +400,13 @@ func (e *explorer) makeRunGroupNode(benchName string, runs []string) *tview.Tree
 // LoadTree will query firestore for all the runs, then display them.
 func (e *explorer) LoadTree() error {
 	e.root.ClearChildren()
-	runs, err := e.firestore.FetchRuns(e.ctx, firestore.FetchRunsOpts{})
+	runs, err := e.firestore.FetchRuns(e.ctx, rundex.FetchRunsOpts{})
 	if err != nil {
 		return err
 	}
 	byBench := make(map[string][]string)
 	for _, run := range runs {
-		if run.Type == firestore.AttestMode {
+		if run.Type == benchmark.AttestMode {
 			continue
 		}
 		byBench[run.BenchmarkName] = append(byBench[run.BenchmarkName], run.ID)
@@ -413,17 +434,19 @@ type tuiAppCmd struct {
 
 // TuiApp represents the entire IDE, containing UI widgets and worker processes.
 type TuiApp struct {
-	Ctx       context.Context
-	app       *tview.Application
-	explorer  *explorer
-	statusBox *tview.TextView
-	logs      *tview.TextView
-	cmds      []tuiAppCmd
-	rb        *Rebuilder
+	Ctx          context.Context
+	app          *tview.Application
+	root         *tview.Pages
+	explorer     *explorer
+	statusBox    *tview.TextView
+	logs         *tview.TextView
+	cmds         []tuiAppCmd
+	benchmarkDir string
+	rb           *Rebuilder
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(ctx context.Context, fireClient *firestore.Client, firestoreOpts firestore.FetchRebuildOpts) *TuiApp {
+func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, benchmarkDir string) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -434,15 +457,17 @@ func NewTuiApp(ctx context.Context, fireClient *firestore.Client, firestoreOpts 
 		log.Default().SetPrefix(logPrefix("ctl"))
 		log.Default().SetFlags(0)
 		logs.SetBorder(true).SetTitle("Logs")
+		logs.ScrollToEnd()
 		rb := &Rebuilder{}
 		t = &TuiApp{
 			Ctx:      ctx,
 			app:      app,
 			explorer: newExplorer(ctx, app, fireClient, firestoreOpts, rb),
 			// When the widgets are updated, we should refresh the application.
-			statusBox: tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
-			logs:      logs,
-			rb:        rb,
+			statusBox:    tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
+			logs:         logs,
+			benchmarkDir: benchmarkDir,
+			rb:           rb,
 		}
 	}
 	t.cmds = []tuiAppCmd{
@@ -489,9 +514,16 @@ func NewTuiApp(ctx context.Context, fireClient *firestore.Client, firestoreOpts 
 				t.logs.ScrollToEnd()
 			},
 		},
+		{
+			Name: "benchmark",
+			Rune: 'b',
+			Func: func() {
+				t.selectBenchmark()
+			},
+		},
 	}
 
-	var root tview.Primitive
+	var root *tview.Pages
 	{
 		/*             window
 		┌───────────────────────────────────┐
@@ -521,8 +553,10 @@ func NewTuiApp(ctx context.Context, fireClient *firestore.Client, firestoreOpts 
 		window := tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(mainPane, flexed, unit, focused).
 			AddItem(bottomBar, unit, 0, !focused)
-		root = window
+		container := tview.NewPages().AddPage("main window", window, true, true)
+		root = container
 	}
+	t.root = root
 	t.app.SetRoot(root, true).SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyCtrlC {
 			// Clean up the rebuilder docker container.
@@ -554,6 +588,98 @@ func (t *TuiApp) updateStatus() {
 		cid = string(inst.ID)
 	}
 	t.statusBox.SetText(fmt.Sprintf("rebuilder cid: %s", cid))
+}
+
+func (t *TuiApp) modalText(content string) {
+	tv := tview.NewTextView()
+	tv.SetText("\n" + content + "\n").
+		SetTextAlign(tview.AlignCenter).
+		SetTextColor(tcell.ColorWhite).
+		SetBackgroundColor(defaultModalBackground)
+	showModal(t.app, t.root, tv, modalOpts{Height: 3, Margin: 10})
+}
+
+func (t *TuiApp) runBenchmark(bench string) {
+	fire, ok := t.explorer.firestore.(rundex.Writer)
+	if !ok {
+		log.Println("Cannot run benchmark with non-local firestore client.")
+		return
+	}
+	set, err := benchmark.ReadBenchmark(bench)
+	if err != nil {
+		log.Println(errors.Wrap(err, "reading benchmark"))
+		return
+	}
+	runID := time.Now().UTC().Format(time.RFC3339)
+	fire.WriteRun(t.Ctx, rundex.Run{
+		ID:            runID,
+		BenchmarkName: filepath.Base(bench),
+		BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
+		Type:          benchmark.SmoketestMode,
+		Created:       time.Now(),
+	})
+	verdictChan, err := t.rb.RunBench(t.Ctx, set, runID)
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
+	var successes int
+	for v := range verdictChan {
+		if v.Message == "" {
+			successes += 1
+		}
+		now := time.Now().UnixMilli()
+		fire.WriteRebuild(t.Ctx, rundex.Rebuild{
+			SmoketestAttempt: schema.SmoketestAttempt{
+				Ecosystem:       string(v.Target.Ecosystem),
+				Package:         v.Target.Package,
+				Version:         v.Target.Version,
+				Artifact:        v.Target.Artifact,
+				Success:         v.Message == "",
+				Message:         v.Message,
+				Strategy:        v.StrategyOneof,
+				Timings:         v.Timings,
+				ExecutorVersion: "local",
+				RunID:           runID,
+				Created:         now,
+			},
+			Created: time.UnixMilli(now),
+		})
+	}
+	log.Printf("Finished benchmark %s with %d successes.", bench, successes)
+}
+
+func (t *TuiApp) selectBenchmark() {
+	if t.benchmarkDir == "" {
+		t.modalText("No benchmark dir provided.")
+		return
+	}
+	options := tview.NewList()
+	options.SetBackgroundColor(defaultModalBackground).SetBorder(true).SetTitle("Select a benchmark to execute.")
+	// exitFunc will be populated once the modal has been created.
+	var exitFunc func()
+	err := filepath.Walk(t.benchmarkDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			// Best effort reading, skip failures.
+			return nil
+		}
+		if filepath.Ext(path) != ".json" {
+			return nil
+		}
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		options.AddItem(name, "", 0, func() {
+			go t.runBenchmark(path)
+			if exitFunc != nil {
+				exitFunc()
+			}
+		})
+		return nil
+	})
+	if err != nil {
+		t.modalText(errors.Wrap(err, "walking benchmark dir").Error())
+		return
+	}
+	exitFunc = showModal(t.app, t.root, options, modalOpts{Height: (options.GetItemCount() * 2) + 2, Margin: 10})
 }
 
 // Run runs the underlying tview app.

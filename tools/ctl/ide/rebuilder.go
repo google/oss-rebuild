@@ -31,7 +31,8 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/tools/ctl/firestore"
+	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/google/oss-rebuild/tools/docker"
 	"github.com/pkg/errors"
 )
@@ -65,6 +66,7 @@ const (
 // Instance represents a single run of the rebuilder container.
 type Instance struct {
 	ID     string
+	URL    *url.URL
 	cancel func()
 	state  instanceState
 }
@@ -104,6 +106,12 @@ func (in *Instance) Run(ctx context.Context) {
 			}
 		}()
 		in.ID = <-idchan
+		in.URL, err = url.Parse("http://localhost:8080")
+		if err != nil {
+			rblog.Println("Parsing url: ", err.Error())
+			in.state = dead
+			return
+		}
 		if in.ID != "" {
 			in.state = serving
 		}
@@ -203,20 +211,16 @@ type RunLocalOpts struct {
 }
 
 // RunLocal runs the rebuilder for the given example.
-func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts RunLocalOpts) {
-	_, err := rb.runningInstance(ctx)
+func (rb *Rebuilder) RunLocal(ctx context.Context, r rundex.Rebuild, opts RunLocalOpts) {
+	inst, err := rb.runningInstance(ctx)
 	if err != nil {
-		log.Println(err.Error())
+		log.Println(errors.Wrap(err, "getting running instance"))
 		return
 	}
-	log.Printf("Calling the rebuilder for %s\n", r.ID())
-	u, err := url.Parse("http://localhost:8080/smoketest")
-	if err != nil {
-		log.Println(err.Error())
-		return
-	}
+	u := inst.URL.JoinPath("smoketest")
 	log.Println("Requesting a smoketest from: " + u.String())
 	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](http.DefaultClient, *u)
+	// TODO: Should this use benchmark.RunBench?
 	resp, err := stub(ctx, schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(r.Ecosystem),
 		Package:   r.Package,
@@ -233,6 +237,19 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts Run
 		msg = "SUCCESS"
 	}
 	log.Printf("Smoketest %s:\n%v", msg, resp)
+}
+
+// RunBench executes the benchmark against the local rebuilder.
+func (rb *Rebuilder) RunBench(ctx context.Context, set benchmark.PackageSet, runID string) (<-chan schema.Verdict, error) {
+	inst, err := rb.runningInstance(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting running instance")
+	}
+	return benchmark.RunBench(ctx, http.DefaultClient, inst.URL, set, benchmark.RunBenchOpts{
+		Mode:           benchmark.SmoketestMode,
+		RunID:          runID,
+		MaxConcurrency: 1,
+	})
 }
 
 // Attach opens a new tmux window that's attached to the rebuilder container.

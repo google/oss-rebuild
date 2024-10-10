@@ -18,12 +18,12 @@ package pipe
 // Pipe constructs a series of executions.
 type Pipe[T any] struct {
 	Width int
-	steps []chan T
+	steps []<-chan T
 }
 
 // From creates a Pipe from the given input channel.
-func From[T any](in chan T) Pipe[T] {
-	return Pipe[T]{steps: []chan T{in}, Width: cap(in)}
+func From[T any](in <-chan T) Pipe[T] {
+	return Pipe[T]{steps: []<-chan T{in}, Width: cap(in)}
 }
 
 // DoFor adds a pipeline combinator.
