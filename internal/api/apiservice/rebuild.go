@@ -278,7 +278,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if strat != nil {
 		v.StrategyOneof = schema.NewStrategyOneOf(strat)
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat, req.UseNetworkProxy, req.EnableSyscallMonitor)
+	err = buildAndAttest(ctx, deps, mux, a, t, strat, rstrat, req.UseNetworkProxy, req.UseSyscallMonitor)
 	if err != nil {
 		v.Message = errors.Wrap(err, "executing rebuild").Error()
 		return &v, nil
