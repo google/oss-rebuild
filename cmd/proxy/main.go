@@ -57,7 +57,9 @@ func main() {
 			log.Fatalf("Error unmarshaling policy file content: %v", err)
 		}
 	}
-	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode), &pl)
+	proxyService := proxy.NewTransparentProxyService(p, ca, proxy.PolicyMode(*policyMode), proxy.TransparentProxyServiceOpts{
+		Policy: &pl,
+	})
 	proxyService.Proxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			return proxyService.ApplyNetworkPolicy(req, ctx)
