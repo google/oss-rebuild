@@ -50,15 +50,14 @@ const (
 	ContainerImageAsset AssetType = "image.tgz"
 	// ProxyNetlogAsset is the network activity from the rebuild process.
 	ProxyNetlogAsset AssetType = "netlog.json"
+	// TetragonLogAsset is the log of all tetragon events.
+	TetragonLogAsset AssetType = "tetragon.jsonl"
 
 	// AttestationBundleAsset is the signed attestation bundle generated for a rebuild.
 	AttestationBundleAsset AssetType = "rebuild.intoto.jsonl"
 
 	// BuildDef is the build definition, including strategy.
 	BuildDef AssetType = "build.yaml"
-
-	// TetragonLog is the log of all tetragon events.
-	TetragonLog AssetType = "tetragon.jsonl"
 )
 
 var (

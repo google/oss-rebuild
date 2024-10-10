@@ -234,7 +234,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		{From: path.Join("/workspace", t.Artifact), To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()},
 	}
 	if opts.UseSyscallMonitor {
-		uploads = append(uploads, upload{From: "/workspace/tetragon.jsonl", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: TetragonLog}).String()})
+		uploads = append(uploads, upload{From: "/workspace/tetragon.jsonl", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: TetragonLogAsset}).String()})
 	}
 	if opts.UseNetworkProxy {
 		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
