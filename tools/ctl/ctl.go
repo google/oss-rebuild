@@ -370,8 +370,7 @@ var runOne = &cobra.Command{
 		}
 		set := benchmark.PackageSet{
 			Metadata: benchmark.Metadata{
-				Count:   1,
-				Updated: time.Now(),
+				Count: 1,
 			},
 			Packages: []benchmark.Package{
 				{
