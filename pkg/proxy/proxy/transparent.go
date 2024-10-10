@@ -125,17 +125,6 @@ func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate,
 	}
 }
 
-// RotateLog clears the activity log if logging is enabled. Otherwise starts capturing network activity.
-func (t *TransparentProxyService) RotateLog() {
-	t.mx.Lock()
-	defer t.mx.Unlock()
-	if t.networkLog == nil {
-		t.networkLog = netlog.CaptureActivityLog(t.Proxy, t.mx)
-	} else {
-		t.networkLog.HTTPRequests = []netlog.HTTPRequestLog{}
-	}
-}
-
 // ProxyHTTP serves an endpoint that transparently redirects HTTP connections to the proxy server.
 // This endpoint also explicitly (i.e. non-transparently) proxies HTTP and TLS connections.
 func (t TransparentProxyService) ProxyHTTP(addr string) {
