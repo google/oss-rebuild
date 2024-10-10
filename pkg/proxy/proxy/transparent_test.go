@@ -207,7 +207,7 @@ func TestPolicyEndpoint(t *testing.T) {
 			wantResp:   http.StatusMethodNotAllowed,
 		},
 	}
-	proxyService := NewTransparentProxyService(NewTransparentProxyServer(false), nil, "enforce", &policy.Policy{}, TransparentProxyServiceOpts{})
+	proxyService := NewTransparentProxyService(NewTransparentProxyServer(false), nil, "enforce", TransparentProxyServiceOpts{})
 	policy.RegisterRule("URLMatchRule", func() policy.Rule { return &policy.URLMatchRule{} })
 	mux := http.NewServeMux()
 	mux.HandleFunc("/policy", proxyService.policyHandler)

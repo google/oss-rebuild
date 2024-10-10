@@ -98,29 +98,41 @@ type TransparentProxyService struct {
 
 // TransparentProxyServiceOpts defines the optional parameters for creating a TransparentProxyService.
 type TransparentProxyServiceOpts struct {
-	SkipLogInit bool
+	Policy      *policy.Policy
+	SkipLogging bool
 }
 
 // NewTransparentProxyService creates a new TransparentProxyService.
-func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode PolicyMode, pl *policy.Policy, opts TransparentProxyServiceOpts) TransparentProxyService {
+func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate, mode PolicyMode, opts TransparentProxyServiceOpts) TransparentProxyService {
 	m := new(sync.Mutex)
 	if !mode.IsValid() {
 		log.Fatalf("Invalid proxy mode specified: %v", mode)
 	}
-	if mode != DisabledMode && pl == nil {
-		log.Fatalf("Invalid policy: %v", pl)
+	if mode != DisabledMode && opts.Policy == nil {
+		log.Fatalf("Invalid policy: %v", opts.Policy)
 	}
 	networkLog := &netlog.NetworkActivityLog{}
-	if !opts.SkipLogInit {
+	if !opts.SkipLogging {
 		networkLog = netlog.CaptureActivityLog(p, m)
 	}
 	return TransparentProxyService{
 		Proxy:      p,
 		Ca:         ca,
 		Mode:       mode,
-		Policy:     pl,
+		Policy:     opts.Policy,
 		mx:         m,
 		networkLog: networkLog,
+	}
+}
+
+// RotateLog clears the activity log if logging is enabled. Otherwise starts capturing network activity.
+func (t *TransparentProxyService) RotateLog() {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+	if t.networkLog == nil {
+		t.networkLog = netlog.CaptureActivityLog(t.Proxy, t.mx)
+	} else {
+		t.networkLog.HTTPRequests = []netlog.HTTPRequestLog{}
 	}
 }
 
