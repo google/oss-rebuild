@@ -96,9 +96,7 @@ type TransparentProxyService struct {
 
 	mx            *sync.Mutex
 	networkLog    *netlog.NetworkActivityLog
-	adminShutdown func(context.Context) error
-	httpShutdown  func(context.Context) error
-	tlsShutdown   func(context.Context) error
+	shutdownFuncs []func(context.Context) error
 }
 
 // TransparentProxyServiceOpts defines the optional parameters for creating a TransparentProxyService.
@@ -130,22 +128,16 @@ func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate,
 	}
 }
 
-func (t TransparentProxyService) Shutdown(ctx context.Context) error {
-	if t.adminShutdown != nil {
-		if err := t.adminShutdown(ctx); err != nil {
+// Shutdown attempts to gracefully shutdown all active servers.
+func (t *TransparentProxyService) Shutdown(ctx context.Context) error {
+	t.mx.Lock()
+	defer t.mx.Unlock()
+	for _, shutdown := range t.shutdownFuncs {
+		if err := shutdown(ctx); err != nil {
 			return err
 		}
 	}
-	if t.httpShutdown != nil {
-		if err := t.httpShutdown(ctx); err != nil {
-			return err
-		}
-	}
-	if t.tlsShutdown != nil {
-		if err := t.tlsShutdown(ctx); err != nil {
-			return err
-		}
-	}
+	t.shutdownFuncs = nil
 	return nil
 }
 
@@ -160,7 +152,9 @@ func (t *TransparentProxyService) ProxyHTTP(addr string) {
 		Addr:    addr,
 		Handler: t.Proxy,
 	}
-	t.httpShutdown = func(ctx context.Context) error { return server.Shutdown(ctx) }
+	t.mx.Lock()
+	t.shutdownFuncs = append(t.shutdownFuncs, func(ctx context.Context) error { return server.Shutdown(ctx) })
+	t.mx.Unlock()
 	if err := server.Serve(ln); err != nil {
 		log.Println(err)
 	}
@@ -173,8 +167,8 @@ func (t *TransparentProxyService) ProxyTLS(addr string) {
 		log.Fatalf("Error listening for https connections - %v", err)
 	}
 	var inflightRequests sync.WaitGroup
-	t.tlsShutdown = func(ctx context.Context) error {
-		ch := make(chan struct{})
+	t.mx.Lock()
+	t.shutdownFuncs = append(t.shutdownFuncs, func(ctx context.Context) error {
 		errChan := make(chan error)
 		go func() {
 			if err := ln.Close(); err != nil {
@@ -183,17 +177,16 @@ func (t *TransparentProxyService) ProxyTLS(addr string) {
 			}
 			log.Println("Waiting for in-flight requests to complete...")
 			inflightRequests.Wait()
-			close(ch)
+			errChan <- nil
 		}()
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-errChan:
 			return err
-		case <-ch:
-			return nil
 		}
-	}
+	})
+	t.mx.Unlock()
 	for {
 		log.Println("Awaiting TLS connection")
 		c, err := ln.Accept()
@@ -270,7 +263,9 @@ func (t *TransparentProxyService) ServeAdmin(addr string) {
 		Addr:    addr,
 		Handler: mux,
 	}
-	t.adminShutdown = func(ctx context.Context) error { return server.Shutdown(ctx) }
+	t.mx.Lock()
+	t.shutdownFuncs = append(t.shutdownFuncs, func(ctx context.Context) error { return server.Shutdown(ctx) })
+	t.mx.Unlock()
 	if err := server.ListenAndServe(); err != nil {
 		log.Print(err)
 	}
