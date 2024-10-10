@@ -270,6 +270,54 @@ gsutil cp -P gs://test-bootstrap/gsutil_writeonly .
 			},
 		},
 		{
+			name:       "standard build with syscall monitoring",
+			target:     Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+			dockerfile: "FROM alpine:3.19",
+			opts: RemoteOptions{
+				LogsBucket:          "test-logs-bucket",
+				BuildServiceAccount: "test-service-account",
+				UtilPrebuildBucket:  "test-bootstrap",
+				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
+				UseSyscallMonitor:   true,
+			},
+			expected: &cloudbuild.Build{
+				LogsBucket:     "test-logs-bucket",
+				Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
+				ServiceAccount: "test-service-account",
+				Steps: []*cloudbuild.BuildStep{
+					{
+						Name: "gcr.io/cloud-builders/docker",
+						Script: `set -eux
+touch /workspace/tetragon.jsonl
+docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
+cat <<'EOS' | docker buildx build --tag=img -
+FROM alpine:3.19
+EOS
+docker run --name=container img
+docker kill tetragon
+`,
+					},
+					{
+						Name: "gcr.io/cloud-builders/docker",
+						Args: []string{"cp", "container:/out/pkg-version.tgz", "/workspace/pkg-version.tgz"},
+					},
+					{
+						Name:   "gcr.io/cloud-builders/docker",
+						Script: "docker save img | gzip > /workspace/image.tgz",
+					},
+					{
+						Name: "gcr.io/cloud-builders/gsutil",
+						Script: `set -eux
+gsutil cp -P gs://test-bootstrap/gsutil_writeonly .
+./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
+./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz
+./gsutil_writeonly cp /workspace/tetragon.jsonl file:///npm/pkg/version/pkg-version.tgz/tetragon.jsonl
+`,
+					},
+				},
+			},
+		},
+		{
 			name:       "proxy build",
 			target:     Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
 			dockerfile: "FROM alpine:3.19",

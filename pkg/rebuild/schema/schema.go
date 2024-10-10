@@ -164,12 +164,13 @@ type SmoketestResponse struct {
 // RebuildPackageRequest is a single request to the rebuild package endpoint.
 type RebuildPackageRequest struct {
 	// TODO: Should this also include Artifact?
-	Ecosystem        rebuild.Ecosystem `form:",required"`
-	Package          string            `form:",required"`
-	Version          string            `form:""`
-	ID               string            `form:",required"`
-	StrategyFromRepo bool              `form:""`
-	UseNetworkProxy  bool              `form:""`
+	Ecosystem         rebuild.Ecosystem `form:",required"`
+	Package           string            `form:",required"`
+	Version           string            `form:""`
+	ID                string            `form:",required"`
+	StrategyFromRepo  bool              `form:""`
+	UseSyscallMonitor bool              `form:""`
+	UseNetworkProxy   bool              `form:""`
 }
 
 var _ Message = RebuildPackageRequest{}
