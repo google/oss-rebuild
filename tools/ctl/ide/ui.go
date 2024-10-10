@@ -34,8 +34,8 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/firestore"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
+	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 	yaml "gopkg.in/yaml.v3"
@@ -104,11 +104,11 @@ type explorer struct {
 	tree          *tview.TreeView
 	root          *tview.TreeNode
 	rb            *Rebuilder
-	firestore     firestore.Reader
-	firestoreOpts firestore.FetchRebuildOpts
+	firestore     rundex.Reader
+	firestoreOpts rundex.FetchRebuildOpts
 }
 
-func newExplorer(ctx context.Context, app *tview.Application, firestore firestore.Reader, firestoreOpts firestore.FetchRebuildOpts, rb *Rebuilder) *explorer {
+func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder) *explorer {
 	e := explorer{
 		ctx:           ctx,
 		app:           app,
@@ -141,7 +141,7 @@ func gcsAssetStore(ctx context.Context, runID string) (*rebuild.GCSStore, error)
 	return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, runID), bucket)
 }
 
-func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
+func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
 	if example.Artifact == "" {
 		log.Println("Firestore does not have the artifact, cannot find GCS path.")
 		return
@@ -183,7 +183,7 @@ func diffArtifacts(ctx context.Context, example firestore.Rebuild) {
 	}
 }
 
-func (e *explorer) showDetails(ctx context.Context, example firestore.Rebuild) {
+func (e *explorer) showDetails(ctx context.Context, example rundex.Rebuild) {
 	details := tview.NewTextView()
 	type detailsStruct struct {
 		Success  bool
@@ -208,7 +208,7 @@ func (e *explorer) showDetails(ctx context.Context, example firestore.Rebuild) {
 	showModal(e.app, e.container, details, modalOpts{Margin: 10})
 }
 
-func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
+func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 	if example.Artifact == "" {
 		log.Println("Firestore does not have the artifact, cannot find GCS path.")
 		return
@@ -241,7 +241,7 @@ func (e *explorer) showLogs(ctx context.Context, example firestore.Rebuild) {
 	}
 }
 
-func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) error {
+func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error {
 	localAssets, err := localfiles.AssetStore(example.RunID)
 	if err != nil {
 		return errors.Wrap(err, "failed to create local asset store")
@@ -294,7 +294,7 @@ func (e *explorer) editAndRun(ctx context.Context, example firestore.Rebuild) er
 	return nil
 }
 
-func (e *explorer) makeExampleNode(example firestore.Rebuild) *tview.TreeNode {
+func (e *explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 	name := fmt.Sprintf("%s [%ds]", example.ID(), int(example.Timings.EstimateCleanBuild().Seconds()))
 	node := tview.NewTreeNode(name).SetColor(tcell.ColorYellow)
 	node.SetSelectedFunc(func() {
@@ -332,7 +332,7 @@ func (e *explorer) makeExampleNode(example firestore.Rebuild) *tview.TreeNode {
 	return node
 }
 
-func (e *explorer) makeVerdictGroupNode(vg *firestore.VerdictGroup, percent float32) *tview.TreeNode {
+func (e *explorer) makeVerdictGroupNode(vg *rundex.VerdictGroup, percent float32) *tview.TreeNode {
 	var msg string
 	if vg.Msg == "" {
 		msg = "Success!"
@@ -364,13 +364,13 @@ func (e *explorer) makeRunNode(runid string) *tview.TreeNode {
 	node.SetSelectedFunc(func() {
 		children := node.GetChildren()
 		if len(children) == 0 {
-			rebuilds, err := e.firestore.FetchRebuilds(e.ctx, &firestore.FetchRebuildRequest{Runs: []string{runid}, Opts: e.firestoreOpts})
+			rebuilds, err := e.firestore.FetchRebuilds(e.ctx, &rundex.FetchRebuildRequest{Runs: []string{runid}, Opts: e.firestoreOpts})
 			if err != nil {
 				log.Println(errors.Wrapf(err, "failed to get rebuilds for runid: %s", runid))
 				return
 			}
 			log.Printf("Fetched %d rebuilds", len(rebuilds))
-			byCount := firestore.GroupRebuilds(rebuilds)
+			byCount := rundex.GroupRebuilds(rebuilds)
 			for i := len(byCount) - 1; i >= 0; i-- {
 				vgnode := e.makeVerdictGroupNode(byCount[i], 100*float32(byCount[i].Count)/float32(len(rebuilds)))
 				node.AddChild(vgnode)
@@ -400,7 +400,7 @@ func (e *explorer) makeRunGroupNode(benchName string, runs []string) *tview.Tree
 // LoadTree will query firestore for all the runs, then display them.
 func (e *explorer) LoadTree() error {
 	e.root.ClearChildren()
-	runs, err := e.firestore.FetchRuns(e.ctx, firestore.FetchRunsOpts{})
+	runs, err := e.firestore.FetchRuns(e.ctx, rundex.FetchRunsOpts{})
 	if err != nil {
 		return err
 	}
@@ -446,7 +446,7 @@ type TuiApp struct {
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(ctx context.Context, fireClient firestore.Reader, firestoreOpts firestore.FetchRebuildOpts, benchmarkDir string) *TuiApp {
+func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, benchmarkDir string) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -600,7 +600,7 @@ func (t *TuiApp) modalText(content string) {
 }
 
 func (t *TuiApp) runBenchmark(bench string) {
-	fire, ok := t.explorer.firestore.(firestore.Writer)
+	fire, ok := t.explorer.firestore.(rundex.Writer)
 	if !ok {
 		log.Println("Cannot run benchmark with non-local firestore client.")
 		return
@@ -611,7 +611,7 @@ func (t *TuiApp) runBenchmark(bench string) {
 		return
 	}
 	runID := time.Now().UTC().Format(time.RFC3339)
-	fire.WriteRun(t.Ctx, firestore.Run{
+	fire.WriteRun(t.Ctx, rundex.Run{
 		ID:            runID,
 		BenchmarkName: filepath.Base(bench),
 		BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
@@ -629,7 +629,7 @@ func (t *TuiApp) runBenchmark(bench string) {
 			successes += 1
 		}
 		now := time.Now().UnixMilli()
-		fire.WriteRebuild(t.Ctx, firestore.Rebuild{
+		fire.WriteRebuild(t.Ctx, rundex.Rebuild{
 			SmoketestAttempt: schema.SmoketestAttempt{
 				Ecosystem:       string(v.Target.Ecosystem),
 				Package:         v.Target.Package,

@@ -32,7 +32,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/firestore"
+	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/google/oss-rebuild/tools/docker"
 	"github.com/pkg/errors"
 )
@@ -211,7 +211,7 @@ type RunLocalOpts struct {
 }
 
 // RunLocal runs the rebuilder for the given example.
-func (rb *Rebuilder) RunLocal(ctx context.Context, r firestore.Rebuild, opts RunLocalOpts) {
+func (rb *Rebuilder) RunLocal(ctx context.Context, r rundex.Rebuild, opts RunLocalOpts) {
 	inst, err := rb.runningInstance(ctx)
 	if err != nil {
 		log.Println(errors.Wrap(err, "getting running instance"))

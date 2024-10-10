@@ -40,8 +40,8 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/firestore"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
+	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	yaml "gopkg.in/yaml.v3"
@@ -73,14 +73,14 @@ func getExecutorVersion(ctx context.Context, client *http.Client, api *url.URL, 
 	return string(vb), nil
 }
 
-func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, clean bool) (*firestore.FetchRebuildRequest, error) {
+func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, clean bool) (*rundex.FetchRebuildRequest, error) {
 	var runs []string
 	if run != "" {
 		runs = strings.Split(run, ",")
 	}
-	req := firestore.FetchRebuildRequest{
+	req := rundex.FetchRebuildRequest{
 		Runs: runs,
-		Opts: firestore.FetchRebuildOpts{
+		Opts: rundex.FetchRebuildOpts{
 			Filter: filter,
 			Clean:  clean,
 		},
@@ -111,9 +111,9 @@ var tui = &cobra.Command{
 			log.Fatal(errors.New("TUI should either be local (--benchmark-dir) or remote (--project, --debug-bucket)"))
 		}
 		tctx := cmd.Context()
-		var fireClient firestore.Reader
+		var fireClient rundex.Reader
 		if *benchmarkDir != "" {
-			fireClient = firestore.NewLocalClient()
+			fireClient = rundex.NewLocalClient()
 		} else {
 			if *debugBucket != "" {
 				bucket, prefix, _ := strings.Cut(strings.TrimPrefix(*debugBucket, "gs://"), string(filepath.Separator))
@@ -124,12 +124,12 @@ var tui = &cobra.Command{
 			}
 			// TODO: Support filtering in the UI on TUI.
 			var err error
-			fireClient, err = firestore.NewRemoteClient(tctx, *project)
+			fireClient, err = rundex.NewFirestore(tctx, *project)
 			if err != nil {
 				log.Fatal(err)
 			}
 		}
-		tapp := ide.NewTuiApp(tctx, fireClient, firestore.FetchRebuildOpts{Clean: *clean}, *benchmarkDir)
+		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir)
 		if err := tapp.Run(); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -150,7 +150,7 @@ var getResults = &cobra.Command{
 		if *format == "summary" && *sample > 0 {
 			log.Fatal("--sample option incompatible with --format=summary")
 		}
-		fireClient, err := firestore.NewRemoteClient(cmd.Context(), *project)
+		fireClient, err := rundex.NewFirestore(cmd.Context(), *project)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -159,7 +159,7 @@ var getResults = &cobra.Command{
 			log.Fatal(err)
 		}
 		log.Printf("Fetched %d rebuilds", len(rebuilds))
-		byCount := firestore.GroupRebuilds(rebuilds)
+		byCount := rundex.GroupRebuilds(rebuilds)
 		if len(byCount) == 0 {
 			log.Println("No results")
 			return
@@ -185,11 +185,11 @@ var getResults = &cobra.Command{
 				ps.Count = len(rebuilds)
 			}
 			rng := rand.New(rand.NewSource(int64(ps.Count)))
-			var rbs []firestore.Rebuild
+			var rbs []rundex.Rebuild
 			for _, r := range rebuilds {
 				rbs = append(rbs, r)
 			}
-			slices.SortFunc(rbs, func(a firestore.Rebuild, b firestore.Rebuild) int { return strings.Compare(a.ID(), b.ID()) })
+			slices.SortFunc(rbs, func(a rundex.Rebuild, b rundex.Rebuild) int { return strings.Compare(a.ID(), b.ID()) })
 			rng.Shuffle(len(rbs), func(i int, j int) {
 				rbs[i], rbs[j] = rbs[j], rbs[i]
 			})
@@ -411,7 +411,7 @@ var listRuns = &cobra.Command{
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := context.Background()
-		var opts firestore.FetchRunsOpts
+		var opts rundex.FetchRunsOpts
 		if *bench != "" {
 			log.Printf("Extracting benchmark %s...\n", filepath.Base(*bench))
 			set, err := benchmark.ReadBenchmark(*bench)
@@ -424,7 +424,7 @@ var listRuns = &cobra.Command{
 		if *project == "" {
 			log.Fatal("project not provided")
 		}
-		client, err := firestore.NewRemoteClient(ctx, *project)
+		client, err := rundex.NewFirestore(ctx, *project)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "creating firestore client"))
 		}

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package firestore helps interact with the rebuild results stored in firestore.
-package firestore
+// Package rundex provides access to metadata about runs and attempts.
+package rundex
 
 import (
 	"context"
@@ -209,16 +209,16 @@ type Writer interface {
 	WriteRun(ctx context.Context, r Run) error
 }
 
-// RemoteClient is a wrapper around the external firestore client.
-type RemoteClient struct {
+// FirestoreClient is a wrapper around the external firestore client.
+type FirestoreClient struct {
 	Client *firestore.Client
 }
 
-// RemoteClient is only a Reader for now.
-var _ Reader = &RemoteClient{}
+// FirestoreClient is only a Reader for now.
+var _ Reader = &FirestoreClient{}
 
-// NewRemoteClient creates a new FirestoreClient.
-func NewRemoteClient(ctx context.Context, project string) (*RemoteClient, error) {
+// NewFirestore creates a new FirestoreClient.
+func NewFirestore(ctx context.Context, project string) (*FirestoreClient, error) {
 	if project == "" {
 		return nil, errors.New("empty project provided")
 	}
@@ -226,7 +226,7 @@ func NewRemoteClient(ctx context.Context, project string) (*RemoteClient, error)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
-	return &RemoteClient{Client: client}, nil
+	return &FirestoreClient{Client: client}, nil
 }
 
 func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Rebuild {
@@ -278,7 +278,7 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Reb
 }
 
 // FetchRebuilds fetches the Rebuild objects out of firestore.
-func (f *RemoteClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (map[string]Rebuild, error) {
+func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (map[string]Rebuild, error) {
 	log.Println("Analyzing results...")
 	if len(req.Executors) != 0 && len(req.Runs) != 0 {
 		return nil, errors.New("only provide one of executors and runs")
@@ -306,7 +306,7 @@ func (f *RemoteClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReque
 }
 
 // FetchRuns fetches Runs out of firestore.
-func (f *RemoteClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
+func (f *FirestoreClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
 	q := f.Client.CollectionGroup("runs").Query
 	if opts.BenchmarkHash != "" {
 		q = q.Where("benchmark_hash", "==", opts.BenchmarkHash)
@@ -333,7 +333,7 @@ var _ Writer = &LocalClient{}
 
 func NewLocalClient() *LocalClient {
 	return &LocalClient{
-		fs: localfiles.FirestoreFS(),
+		fs: localfiles.Rundex(),
 	}
 }
 
