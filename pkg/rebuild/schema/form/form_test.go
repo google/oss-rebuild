@@ -11,6 +11,7 @@ type TestStruct struct {
 	IntField      int      `form:"int_field"`
 	SliceField    []string `form:"slice_field"`
 	IntSliceField []int    `form:""`
+	BoolField     bool     `form:"bool_field"`
 }
 
 func TestMarshal(t *testing.T) {
@@ -27,12 +28,14 @@ func TestMarshal(t *testing.T) {
 				IntField:      123,
 				SliceField:    []string{"a", "b", "c"},
 				IntSliceField: []int{1, 2, 3},
+				BoolField:     true,
 			},
 			want: url.Values{
 				"string_field":  []string{"test"},
 				"int_field":     []string{"123"},
 				"slice_field":   []string{"a", "b", "c"},
 				"intslicefield": []string{"[1,2,3]"},
+				"bool_field":    []string{"true"},
 			},
 			wantErr: false,
 		},
@@ -81,11 +84,13 @@ func TestUnmarshal(t *testing.T) {
 				"string_field": {"test"},
 				"int_field":    {"123"},
 				"slice_field":  {"a", "b", "c"},
+				"bool_field":   {"false"},
 			},
 			want: TestStruct{
 				StringField: "test",
 				IntField:    123,
 				SliceField:  []string{"a", "b", "c"},
+				BoolField:   false,
 			},
 			wantErr: false,
 		},
