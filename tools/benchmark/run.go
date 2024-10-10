@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/pkg/errors"
 )
 
@@ -43,6 +44,19 @@ func getExecutorVersion(ctx context.Context, client *http.Client, api *url.URL, 
 		return "", errors.Wrap(err, "reading API version")
 	}
 	return string(vb), nil
+}
+
+func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) (*http.Request, error) {
+	values, err := form.Marshal(msg)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating values")
+	}
+	u.RawQuery = values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating request")
+	}
+	return req, nil
 }
 
 type packageWorker interface {
@@ -97,7 +111,7 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schem
 	for _, v := range p.Versions {
 		<-w.limiters[p.Ecosystem]
 		var errMsg string
-		req, err := schema.MakeHTTPRequest(ctx, w.url.JoinPath("rebuild"), &schema.RebuildPackageRequest{
+		req, err := makeHTTPRequest(ctx, w.url.JoinPath("rebuild"), &schema.RebuildPackageRequest{
 			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 			Package:   p.Name,
 			Version:   v,
@@ -162,7 +176,7 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
 	<-w.limiters[p.Ecosystem]
 	var errMsg string
-	req, err := schema.MakeHTTPRequest(ctx, w.url.JoinPath("smoketest"), &schema.SmoketestRequest{
+	req, err := makeHTTPRequest(ctx, w.url.JoinPath("smoketest"), &schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 		Package:   p.Name,
 		Versions:  p.Versions,

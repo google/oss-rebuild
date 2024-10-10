@@ -368,40 +368,33 @@ var runOne = &cobra.Command{
 		if *ecosystem == "" || *pkg == "" || *version == "" {
 			log.Fatal("ecosystem, package, and version must be provided")
 		}
-		var req *http.Request
-		if mode == benchmark.SmoketestMode {
-			req, err = schema.MakeHTTPRequest(ctx, apiURL.JoinPath("smoketest"), &schema.SmoketestRequest{
-				Ecosystem: rebuild.Ecosystem(*ecosystem),
-				Package:   *pkg,
-				Versions:  []string{*version},
-				Strategy:  strategy,
-				ID:        "runOne",
-			})
-			if err != nil {
-				log.Fatal(err)
-			}
-		} else if mode == benchmark.AttestMode {
-			req, err = schema.MakeHTTPRequest(ctx, apiURL.JoinPath("rebuild"), &schema.RebuildPackageRequest{
-				Ecosystem:        rebuild.Ecosystem(*ecosystem),
-				Package:          *pkg,
-				Version:          *version,
-				StrategyFromRepo: *useStrategyRepo,
-				ID:               "runOne",
-			})
-			if err != nil {
-				log.Fatal(err)
-			}
+		set := benchmark.PackageSet{
+			Metadata: benchmark.Metadata{
+				Count: 1,
+			},
+			Packages: []benchmark.Package{
+				{
+					Ecosystem: *ecosystem,
+					Name:      *pkg,
+					Versions:  []string{*version},
+				},
+			},
 		}
-		resp, err := client.Do(req)
+		verdictChan, err := benchmark.RunBench(ctx, client, apiURL, set, benchmark.RunBenchOpts{})
 		if err != nil {
-			log.Fatal(err.Error())
+			log.Fatal(errors.Wrap(err, "running benchmark"))
 		}
-		if resp.StatusCode != 200 {
-			log.Fatalf("response status: %v", *resp)
+		var verdicts []schema.Verdict
+		for v := range verdictChan {
+			verdicts = append(verdicts, v)
 		}
-		io.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Received response status: %d %s\n", resp.StatusCode, http.StatusText(resp.StatusCode)))
-		io.Copy(cmd.OutOrStdout(), resp.Body)
-		cmd.OutOrStdout().Write([]byte("\n"))
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		for _, v := range verdicts {
+			if err := enc.Encode(v); err != nil {
+				log.Fatal(errors.Wrap(err, "encoding result"))
+			}
+		}
 	},
 }
 
