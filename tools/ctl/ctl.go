@@ -326,6 +326,9 @@ var runOne = &cobra.Command{
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if *ecosystem == "" || *pkg == "" || *version == "" {
+			log.Fatal("ecosystem, package, and version must be provided")
+		}
 		mode := benchmark.BenchmarkMode(args[0])
 		if mode != benchmark.SmoketestMode && mode != benchmark.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
@@ -339,54 +342,64 @@ var runOne = &cobra.Command{
 		}
 		ctx := cmd.Context()
 		var client *http.Client
-		if strings.Contains(apiURL.Host, "run.app") {
-			// If the api is on Cloud Run, we need to use an authorized client.
-			apiURL.Scheme = "https"
-			client, err = oauth.AuthorizedUserIDClient(ctx)
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
+		{
+			if strings.Contains(apiURL.Host, "run.app") {
+				// If the api is on Cloud Run, we need to use an authorized client.
+				apiURL.Scheme = "https"
+				client, err = oauth.AuthorizedUserIDClient(ctx)
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
+				}
+			} else {
+				client = http.DefaultClient
 			}
-		} else {
-			client = http.DefaultClient
 		}
 		var strategy *schema.StrategyOneOf
-		if *strategyPath != "" {
-			if mode == benchmark.AttestMode {
-				log.Fatal("--strategy not supported in attest mode, use --strategy-from-repo")
+		{
+			if *strategyPath != "" {
+				if mode == benchmark.AttestMode {
+					log.Fatal("--strategy not supported in attest mode, use --strategy-from-repo")
+				}
+				f, err := os.Open(*strategyPath)
+				if err != nil {
+					return
+				}
+				defer f.Close()
+				strategy = &schema.StrategyOneOf{}
+				err = yaml.NewDecoder(f).Decode(strategy)
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "reading strategy file"))
+				}
 			}
-			f, err := os.Open(*strategyPath)
-			if err != nil {
-				return
-			}
-			defer f.Close()
-			strategy = &schema.StrategyOneOf{}
-			err = yaml.NewDecoder(f).Decode(strategy)
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "reading strategy file"))
-			}
-		}
-		if *ecosystem == "" || *pkg == "" || *version == "" {
-			log.Fatal("ecosystem, package, and version must be provided")
-		}
-		set := benchmark.PackageSet{
-			Metadata: benchmark.Metadata{
-				Count: 1,
-			},
-			Packages: []benchmark.Package{
-				{
-					Ecosystem: *ecosystem,
-					Name:      *pkg,
-					Versions:  []string{*version},
-				},
-			},
-		}
-		verdictChan, err := benchmark.RunBench(ctx, client, apiURL, set, benchmark.RunBenchOpts{})
-		if err != nil {
-			log.Fatal(errors.Wrap(err, "running benchmark"))
 		}
 		var verdicts []schema.Verdict
-		for v := range verdictChan {
-			verdicts = append(verdicts, v)
+		{
+			if mode == benchmark.SmoketestMode {
+				stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, *apiURL.JoinPath("smoketest"))
+				resp, err := stub(ctx, schema.SmoketestRequest{
+					Ecosystem: rebuild.Ecosystem(*ecosystem),
+					Package:   *pkg,
+					Versions:  []string{*version},
+					Strategy:  strategy,
+				})
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "running smoketest"))
+				}
+				verdicts = resp.Verdicts
+			} else {
+				stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, *apiURL.JoinPath(""))
+				resp, err := stub(ctx, schema.RebuildPackageRequest{
+					Ecosystem:         rebuild.Ecosystem(*ecosystem),
+					Package:           *pkg,
+					Version:           *version,
+					UseNetworkProxy:   *useNetworkProxy,
+					UseSyscallMonitor: *useSyscallMonitor,
+				})
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "running smoketest"))
+				}
+				verdicts = []schema.Verdict{*resp}
+			}
 		}
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
@@ -443,27 +456,29 @@ var listRuns = &cobra.Command{
 
 var (
 	// Shared
-	apiUri = flag.String("api", "", "OSS Rebuild API endpoint URI")
-	// run-bench
-	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
-	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
-	// get-results
-	runFlag         = flag.String("run", "", "the run(s) from which to fetch results")
-	bench           = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
-	format          = flag.String("format", "summary", "the format to be printed. Options: summary, bench")
-	filter          = flag.String("filter", "", "a verdict message (or prefix) which will restrict the returned results")
-	sample          = flag.Int("sample", -1, "if provided, only N results will be displayed")
-	project         = flag.String("project", "", "the project from which to fetch the Firestore data")
-	clean           = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
-	debugBucket     = flag.String("debug-bucket", "", "the gcs bucket to find debug logs and artifacts")
-	strategyPath    = flag.String("strategy", "", "the strategy file to use")
-	useStrategyRepo = flag.Bool("strategy-from-repo", false, "whether to lookup and use the strategy from the server-configured repo")
-	benchmarkDir    = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
-
+	apiUri    = flag.String("api", "", "OSS Rebuild API endpoint URI")
 	ecosystem = flag.String("ecosystem", "", "the ecosystem")
 	pkg       = flag.String("package", "", "the package name")
 	version   = flag.String("version", "", "the version of the package")
 	artifact  = flag.String("artifact", "", "the artifact name")
+	// run-bench
+	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
+	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
+	// run-one
+	strategyPath      = flag.String("strategy", "", "the strategy file to use")
+	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
+	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request the newtwork proxy")
+	// get-results
+	runFlag     = flag.String("run", "", "the run(s) from which to fetch results")
+	bench       = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
+	format      = flag.String("format", "summary", "the format to be printed. Options: summary, bench")
+	filter      = flag.String("filter", "", "a verdict message (or prefix) which will restrict the returned results")
+	sample      = flag.Int("sample", -1, "if provided, only N results will be displayed")
+	project     = flag.String("project", "", "the project from which to fetch the Firestore data")
+	clean       = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
+	debugBucket = flag.String("debug-bucket", "", "the gcs bucket to find debug logs and artifacts")
+	//TUI
+	benchmarkDir = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 )
 
 func init() {
@@ -474,7 +489,8 @@ func init() {
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
-	runOne.Flags().AddGoFlag(flag.Lookup("strategy-from-repo"))
+	runOne.Flags().AddGoFlag(flag.Lookup("use-network-proxy"))
+	runOne.Flags().AddGoFlag(flag.Lookup("use-syscall-monitor"))
 	runOne.Flags().AddGoFlag(flag.Lookup("ecosystem"))
 	runOne.Flags().AddGoFlag(flag.Lookup("package"))
 	runOne.Flags().AddGoFlag(flag.Lookup("version"))
