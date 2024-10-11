@@ -49,7 +49,7 @@ func TestRebuildContainerTpl(t *testing.T) {
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.4
-FROM alpine:3.19
+FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
  apk add git make
@@ -81,7 +81,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 				UtilPrebuildBucket: "my-bucket",
 			},
 			expected: `#syntax=docker/dockerfile:1.4
-FROM alpine:3.19
+FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
  wget https://storage.googleapis.com/my-bucket/timewarp
@@ -122,7 +122,7 @@ python3 setup.py sdist`,
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.4
-FROM alpine:3.19
+FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
  apk add curl jq
@@ -228,7 +228,7 @@ func TestMakeBuild(t *testing.T) {
 		{
 			name:       "standard build",
 			target:     Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
-			dockerfile: "FROM alpine:3.19",
+			dockerfile: "FROM docker.io/library/alpine:3.19",
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
 				BuildServiceAccount: "test-service-account",
@@ -244,7 +244,7 @@ func TestMakeBuild(t *testing.T) {
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `set -eux
 cat <<'EOS' | docker buildx build --tag=img -
-FROM alpine:3.19
+FROM docker.io/library/alpine:3.19
 EOS
 docker run --name=container img
 `,
@@ -258,7 +258,7 @@ docker run --name=container img
 						Script: "docker save img | gzip > /workspace/image.tgz",
 					},
 					{
-						Name: "alpine:3.19",
+						Name: "docker.io/library/alpine:3.19",
 						Script: `set -eux
 wget https://storage.googleapis.com/test-bootstrap/gsutil_writeonly
 chmod +x gsutil_writeonly
@@ -272,7 +272,7 @@ chmod +x gsutil_writeonly
 		{
 			name:       "standard build with syscall monitoring",
 			target:     Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
-			dockerfile: "FROM alpine:3.19",
+			dockerfile: "FROM docker.io/library/alpine:3.19",
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
 				BuildServiceAccount: "test-service-account",
@@ -291,7 +291,7 @@ chmod +x gsutil_writeonly
 touch /workspace/tetragon.jsonl
 docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
 cat <<'EOS' | docker buildx build --tag=img -
-FROM alpine:3.19
+FROM docker.io/library/alpine:3.19
 EOS
 docker run --name=container img
 docker kill tetragon
@@ -306,7 +306,7 @@ docker kill tetragon
 						Script: "docker save img | gzip > /workspace/image.tgz",
 					},
 					{
-						Name: "alpine:3.19",
+						Name: "docker.io/library/alpine:3.19",
 						Script: `set -eux
 wget https://storage.googleapis.com/test-bootstrap/gsutil_writeonly
 chmod +x gsutil_writeonly
@@ -321,7 +321,7 @@ chmod +x gsutil_writeonly
 		{
 			name:       "proxy build",
 			target:     Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
-			dockerfile: "FROM alpine:3.19",
+			dockerfile: "FROM docker.io/library/alpine:3.19",
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
 				BuildServiceAccount: "test-service-account",
@@ -373,7 +373,7 @@ docker exec build /bin/sh -euxc '
 	docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
 	cat <<EOS | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs --mount=type=secret,id=PROXYCERT,env=PIP_CERT --mount=type=secret,id=PROXYCERT,env=CURL_CA_BUNDLE --mount=type=secret,id=PROXYCERT,env=NODE_EXTRA_CA_CERTS --mount=type=secret,id=PROXYCERT,env=CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE --mount=type=secret,id=PROXYCERT,env=NIX_SSL_CERT_FILE|" | \
 		docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT --load --tag=img -
-	FROM alpine:3.19
+	FROM docker.io/library/alpine:3.19
 EOS
 	docker run --name=container img
 '
@@ -389,7 +389,7 @@ curl http://proxy:3127/summary > /workspace/netlog.json
 						Script: "docker save img | gzip > /workspace/image.tgz",
 					},
 					{
-						Name: "alpine:3.19",
+						Name: "docker.io/library/alpine:3.19",
 						Script: `set -eux
 wget https://storage.googleapis.com/test-bootstrap/gsutil_writeonly
 chmod +x gsutil_writeonly

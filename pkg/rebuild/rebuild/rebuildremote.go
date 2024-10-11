@@ -65,7 +65,7 @@ var rebuildContainerTpl = template.Must(
 		// NOTE: For syntax docs, see https://docs.docker.com/build/dockerfile/release-notes/
 		textwrap.Dedent(`
 				#syntax=docker/dockerfile:1.4
-				FROM alpine:3.19
+				FROM docker.io/library/alpine:3.19
 				RUN <<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
@@ -304,7 +304,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 				Script: "docker save img | gzip > /workspace/image.tgz",
 			},
 			{
-				Name:   "alpine:3.19",
+				Name:   "docker.io/library/alpine:3.19",
 				Script: assetUploadScript.String(),
 			},
 		},
