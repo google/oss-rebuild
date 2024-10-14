@@ -32,6 +32,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/google/oss-rebuild/tools/docker"
 	"github.com/pkg/errors"
@@ -98,7 +99,18 @@ func (in *Instance) Run(ctx context.Context) {
 		in.state = running
 		idchan := make(chan string)
 		go func() {
-			err = docker.RunServer(ctx, "rebuilder", 8080, &docker.RunOptions{ID: idchan, Output: logWriter(rblog)})
+			localAssets := localfiles.AssetsPath()
+			err = docker.RunServer(
+				ctx,
+				"rebuilder",
+				8080,
+				&docker.RunOptions{
+					ID:         idchan,
+					Output:     logWriter(rblog),
+					DockerArgs: []string{fmt.Sprintf("-v=%s:%s", localAssets, localAssets)},
+					Args:       []string{"--debug-bucket=file://" + localAssets},
+				},
+			)
 			if err != nil {
 				rblog.Println("Error running rebuilder: ", err.Error())
 				in.state = dead

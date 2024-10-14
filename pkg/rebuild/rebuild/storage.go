@@ -19,12 +19,14 @@ import (
 	stderrors "errors"
 	"io"
 	"io/fs"
+	"log"
 	"net/url"
 	"path/filepath"
 	"strings"
 
 	gcs "cloud.google.com/go/storage"
 	billy "github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/pkg/errors"
 	"google.golang.org/api/option"
 )
@@ -87,18 +89,24 @@ type LocatableAssetStore interface {
 	URL(a Asset) *url.URL
 }
 
+func logWrap(f func() error) {
+	if err := f(); err != nil {
+		log.Print(err)
+	}
+}
+
 // AssetCopy copies an asset from one store to another.
 func AssetCopy(ctx context.Context, to, from AssetStore, a Asset) error {
 	r, err := from.Reader(ctx, a)
 	if err != nil {
 		return errors.Wrap(err, "from.Reader failed")
 	}
-	defer r.Close()
+	defer logWrap(r.Close)
 	w, err := to.Writer(ctx, a)
 	if err != nil {
 		return errors.Wrap(err, "to.Writer failed")
 	}
-	defer w.Close()
+	defer logWrap(w.Close)
 	if _, err := io.Copy(w, r); err != nil {
 		return errors.Wrap(err, "copy failed")
 	}
@@ -111,6 +119,9 @@ func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
 		if strings.HasPrefix(uploadpath, "gs://") {
 			storer, err := NewGCSStore(ctx, uploadpath)
 			return storer, errors.Wrapf(err, "Failed to create GCS storer")
+		} else if strings.HasPrefix(uploadpath, "file://") {
+			path, _ := strings.CutPrefix(uploadpath, "file://")
+			return NewFilesystemAssetStore(osfs.New(path)), nil
 		}
 		return nil, errors.New("unsupported upload path")
 	}

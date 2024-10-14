@@ -27,13 +27,18 @@ import (
 
 // RunOptions defines optional arguments for RunServer.
 type RunOptions struct {
-	ID     chan<- string
-	Output io.Writer
+	ID         chan<- string
+	Output     io.Writer
+	DockerArgs []string
+	Args       []string
 }
 
 // RunServer runs a docker container hosting a simple server.
 func RunServer(ctx context.Context, img string, port int, opts *RunOptions) error {
-	cmd := exec.CommandContext(ctx, "docker", "run", "--detach", "-p", fmt.Sprintf("%d:%d", port, port), "--rm", img, "--user-agent=OSSRebuildLocal/0.0.0")
+	args := append([]string{"run", "--detach", "-p", fmt.Sprintf("%d:%d", port, port), "--rm"}, opts.DockerArgs...)
+	args = append(args, []string{img, "--user-agent=OSSRebuildLocal/0.0.0"}...)
+	args = append(args, opts.Args...)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	log.Print(cmd.String())
 	out, err := cmd.Output()
 	if err != nil {

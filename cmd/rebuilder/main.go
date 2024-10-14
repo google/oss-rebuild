@@ -71,8 +71,7 @@ func RebuildSmoketestInit(ctx context.Context) (*rebuilderservice.RebuildSmokete
 		d.TimewarpURL = &addr
 	}
 	if *debugBucket != "" {
-		url := fmt.Sprintf("gs://%s", *debugBucket)
-		d.DebugBucket = &url
+		d.DebugBucket = debugBucket
 	}
 	d.AssetDir = *localAssetDir
 	d.DefaultVersionCount = *defaultVersionCount
