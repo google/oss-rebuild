@@ -108,7 +108,7 @@ func (in *Instance) Run(ctx context.Context) {
 					ID:         idchan,
 					Output:     logWriter(rblog),
 					DockerArgs: []string{fmt.Sprintf("-v=%s:%s", localAssets, localAssets)},
-					Args:       []string{"--debug-bucket=file://" + localAssets},
+					Args:       []string{"--debug-storage=file://" + localAssets},
 				},
 			)
 			if err != nil {

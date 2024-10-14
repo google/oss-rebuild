@@ -34,7 +34,7 @@ import (
 )
 
 var (
-	debugBucket         = flag.String("debug-bucket", "", "if provided, the bucket to which rebuild results should be uploaded")
+	debugStorage        = flag.String("debug-storage", "", "if provided, the location in which rebuild results should be stored")
 	gitCacheURL         = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
 	defaultVersionCount = flag.Int("default-version-count", 5, "The number of versions to rebuild if no version is provided")
 	useTimewarp         = flag.Bool("timewarp", true, "whether to use launch an instance of the timewarp server")
@@ -70,8 +70,8 @@ func RebuildSmoketestInit(ctx context.Context) (*rebuilderservice.RebuildSmokete
 		addr := fmt.Sprintf("localhost:%d", *timewarpPort)
 		d.TimewarpURL = &addr
 	}
-	if *debugBucket != "" {
-		d.DebugBucket = debugBucket
+	if *debugStorage != "" {
+		d.DebugStorage = debugStorage
 	}
 	d.AssetDir = *localAssetDir
 	d.DefaultVersionCount = *defaultVersionCount
