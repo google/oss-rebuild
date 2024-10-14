@@ -116,8 +116,12 @@ var tui = &cobra.Command{
 			fireClient = rundex.NewLocalClient()
 		} else {
 			if *debugStorage != "" {
-				if strings.HasPrefix(*debugStorage, "gs://") {
-					_, prefix, _ := strings.Cut(strings.TrimPrefix(*debugStorage, "gs://"), string(filepath.Separator))
+				u, err := url.Parse(*debugStorage)
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "parsing --debug-storage as url"))
+				}
+				if u.Scheme == "gs" {
+					prefix := strings.TrimPrefix(u.Path, string(filepath.Separator))
 					if prefix != "" {
 						log.Fatalf("--debug-storage cannot have additional path elements, found %s", prefix)
 					}

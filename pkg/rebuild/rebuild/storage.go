@@ -19,7 +19,6 @@ import (
 	stderrors "errors"
 	"io"
 	"io/fs"
-	"log"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -89,37 +88,35 @@ type LocatableAssetStore interface {
 	URL(a Asset) *url.URL
 }
 
-func logWrap(f func() error) {
-	if err := f(); err != nil {
-		log.Print(err)
-	}
-}
-
 // AssetCopy copies an asset from one store to another.
 func AssetCopy(ctx context.Context, to, from AssetStore, a Asset) error {
 	r, err := from.Reader(ctx, a)
 	if err != nil {
 		return errors.Wrap(err, "from.Reader failed")
 	}
-	defer logWrap(r.Close)
+	defer r.Close()
 	w, err := to.Writer(ctx, a)
 	if err != nil {
 		return errors.Wrap(err, "to.Writer failed")
 	}
-	defer logWrap(w.Close)
+	defer w.Close()
 	if _, err := io.Copy(w, r); err != nil {
 		return errors.Wrap(err, "copy failed")
 	}
-	return nil
+	return w.Close()
 }
 
 // DebugStoreFromContext constructs a DebugStorer using values from the given context.
 func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
 	if uploadpath, ok := ctx.Value(UploadArtifactsPathID).(string); ok {
-		if strings.HasPrefix(uploadpath, "gs://") {
+		u, err := url.Parse(uploadpath)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing UploadArtifactsPathID as url")
+		}
+		if u.Scheme == "gs" {
 			storer, err := NewGCSStore(ctx, uploadpath)
 			return storer, errors.Wrapf(err, "Failed to create GCS storer")
-		} else if strings.HasPrefix(uploadpath, "file://") {
+		} else if u.Scheme == "file" {
 			path, _ := strings.CutPrefix(uploadpath, "file://")
 			if runID, ok := ctx.Value(RunID).(string); ok {
 				path = filepath.Join(runID, path)

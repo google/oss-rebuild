@@ -105,10 +105,10 @@ func (in *Instance) Run(ctx context.Context) {
 				"rebuilder",
 				8080,
 				&docker.RunOptions{
-					ID:         idchan,
-					Output:     logWriter(rblog),
-					DockerArgs: []string{fmt.Sprintf("-v=%s:%s", localAssets, localAssets)},
-					Args:       []string{"--debug-storage=file://" + localAssets},
+					ID:     idchan,
+					Output: logWriter(rblog),
+					Mounts: []string{fmt.Sprintf("%s:%s", localAssets, localAssets)},
+					Args:   []string{"--debug-storage=file://" + localAssets},
 				},
 			)
 			if err != nil {
