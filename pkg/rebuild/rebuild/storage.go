@@ -121,6 +121,9 @@ func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
 			return storer, errors.Wrapf(err, "Failed to create GCS storer")
 		} else if strings.HasPrefix(uploadpath, "file://") {
 			path, _ := strings.CutPrefix(uploadpath, "file://")
+			if runID, ok := ctx.Value(RunID).(string); ok {
+				path = filepath.Join(runID, path)
+			}
 			return NewFilesystemAssetStore(osfs.New(path)), nil
 		}
 		return nil, errors.New("unsupported upload path")
