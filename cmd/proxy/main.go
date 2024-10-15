@@ -8,11 +8,10 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
-	"time"
-
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/elazarl/goproxy"
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
