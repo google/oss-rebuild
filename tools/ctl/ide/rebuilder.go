@@ -99,7 +99,7 @@ func (in *Instance) Run(ctx context.Context) {
 		in.state = running
 		idchan := make(chan string)
 		go func() {
-			localAssets := localfiles.AssetsPath()
+			assetDir := localfiles.AssetsPath()
 			err = docker.RunServer(
 				ctx,
 				"rebuilder",
@@ -107,8 +107,8 @@ func (in *Instance) Run(ctx context.Context) {
 				&docker.RunOptions{
 					ID:     idchan,
 					Output: logWriter(rblog),
-					Mounts: []string{fmt.Sprintf("%s:%s", localAssets, localAssets)},
-					Args:   []string{"--debug-storage=file://" + localAssets},
+					Mounts: []string{fmt.Sprintf("%s:%s", assetDir, assetDir)},
+					Args:   []string{"--debug-storage=file://" + assetDir},
 				},
 			)
 			if err != nil {

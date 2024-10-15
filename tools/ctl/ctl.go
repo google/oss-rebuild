@@ -121,7 +121,7 @@ var tui = &cobra.Command{
 					log.Fatal(errors.Wrap(err, "parsing --debug-storage as url"))
 				}
 				if u.Scheme == "gs" {
-					prefix := strings.TrimPrefix(u.Path, string(filepath.Separator))
+					prefix := strings.TrimPrefix(u.Path, "/")
 					if prefix != "" {
 						log.Fatalf("--debug-storage cannot have additional path elements, found %s", prefix)
 					}

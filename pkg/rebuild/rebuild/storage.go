@@ -117,7 +117,7 @@ func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
 			storer, err := NewGCSStore(ctx, uploadpath)
 			return storer, errors.Wrapf(err, "Failed to create GCS storer")
 		} else if u.Scheme == "file" {
-			path, _ := strings.CutPrefix(uploadpath, "file://")
+			path := u.Path
 			if runID, ok := ctx.Value(RunID).(string); ok {
 				path = filepath.Join(runID, path)
 			}
