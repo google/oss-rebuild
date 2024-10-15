@@ -151,7 +151,7 @@ func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
 	}
 	debugAssets, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.RunID, example.RunID))
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to create gcs asset store"))
+		log.Println(errors.Wrap(err, "failed to create debug asset store"))
 		return
 	}
 	// TODO: Clean up these artifacts.
@@ -218,13 +218,13 @@ func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 	}
 	debugAssets, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.RunID, example.RunID))
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to create gcs asset store"))
+		log.Println(errors.Wrap(err, "failed to create debug asset store"))
 		return
 	}
 	logsAsset := rebuild.Asset{Target: t, Type: rebuild.DebugLogsAsset}
 	logs := localAssets.URL(logsAsset).Path
 	if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, logsAsset); err != nil {
-		log.Println(errors.Wrap(err, "failed to copy rebuild asset"))
+		log.Println(errors.Wrap(err, "failed to copy logs asset"))
 		return
 	}
 	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("cat %s | less", logs))

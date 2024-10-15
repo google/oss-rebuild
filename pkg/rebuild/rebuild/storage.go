@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -119,8 +120,9 @@ func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
 		} else if u.Scheme == "file" {
 			path := u.Path
 			if runID, ok := ctx.Value(RunID).(string); ok {
-				path = filepath.Join(runID, path)
+				path = filepath.Join(path, runID)
 			}
+			os.MkdirAll(path, 0755)
 			return NewFilesystemAssetStore(osfs.New(path)), nil
 		}
 		return nil, errors.New("unsupported upload path")

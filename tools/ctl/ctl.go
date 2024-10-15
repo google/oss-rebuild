@@ -41,6 +41,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
+	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -114,6 +115,7 @@ var tui = &cobra.Command{
 		var fireClient rundex.Reader
 		if *benchmarkDir != "" {
 			fireClient = rundex.NewLocalClient()
+			tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, "file://"+localfiles.AssetsPath())
 		} else {
 			if *debugStorage != "" {
 				u, err := url.Parse(*debugStorage)
