@@ -84,7 +84,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
- wget https://storage.googleapis.com/my-bucket/timewarp
+ wget https://my-bucket.storage.googleapis.com/timewarp
  chmod +x timewarp
  ./timewarp -port 8080 &
  while ! nc -z localhost 8080;do sleep 1;done
@@ -260,7 +260,7 @@ docker run --name=container img
 					{
 						Name: "docker.io/library/alpine:3.19",
 						Script: `set -eux
-wget https://storage.googleapis.com/test-bootstrap/gsutil_writeonly
+wget https://test-bootstrap.storage.googleapis.com/gsutil_writeonly
 chmod +x gsutil_writeonly
 ./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
 ./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz
@@ -308,7 +308,7 @@ docker kill tetragon
 					{
 						Name: "docker.io/library/alpine:3.19",
 						Script: `set -eux
-wget https://storage.googleapis.com/test-bootstrap/gsutil_writeonly
+wget https://test-bootstrap.storage.googleapis.com/gsutil_writeonly
 chmod +x gsutil_writeonly
 ./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
 ./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz
@@ -337,7 +337,7 @@ chmod +x gsutil_writeonly
 					{
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `set -eux
-curl -O https://storage.googleapis.com/test-bootstrap/proxy
+curl -O https://test-bootstrap.storage.googleapis.com/proxy
 chmod +x proxy
 docker network create proxynet
 useradd --system proxyu
@@ -391,7 +391,7 @@ curl http://proxy:3127/summary > /workspace/netlog.json
 					{
 						Name: "docker.io/library/alpine:3.19",
 						Script: `set -eux
-wget https://storage.googleapis.com/test-bootstrap/gsutil_writeonly
+wget https://test-bootstrap.storage.googleapis.com/gsutil_writeonly
 chmod +x gsutil_writeonly
 ./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
 ./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz

@@ -69,7 +69,7 @@ var rebuildContainerTpl = template.Must(
 				RUN <<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
-				 wget https://storage.googleapis.com/{{.UtilPrebuildBucket}}/timewarp
+				 wget https://{{.UtilPrebuildBucket}}.storage.googleapis.com/timewarp
 				 chmod +x timewarp
 				 ./timewarp -port 8080 &
 				 while ! nc -z localhost 8080;do sleep 1;done
@@ -157,7 +157,7 @@ var proxyBuildTpl = template.Must(
 	}).Parse(
 		textwrap.Dedent(`
 				set -eux
-				curl -O https://storage.googleapis.com/{{.UtilPrebuildBucket}}/proxy
+				curl -O https://{{.UtilPrebuildBucket}}.storage.googleapis.com/proxy
 				chmod +x proxy
 				docker network create proxynet
 				useradd --system {{.User}}
@@ -219,7 +219,7 @@ var assetUploadTpl = template.Must(
 	).Parse(
 		textwrap.Dedent(`
 				set -eux
-				wget https://storage.googleapis.com/{{.UtilPrebuildBucket}}/gsutil_writeonly
+				wget https://{{.UtilPrebuildBucket}}.storage.googleapis.com/gsutil_writeonly
 				chmod +x gsutil_writeonly
 				{{- range .Uploads}}
 				./gsutil_writeonly cp {{.From}} {{.To}}
