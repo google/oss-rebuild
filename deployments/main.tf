@@ -289,7 +289,7 @@ resource "google_cloud_run_v2_service" "build-local" {
     containers {
       image = data.google_container_registry_image.rebuilder.image_url
       args = [
-        "--debug-bucket=${google_storage_bucket.debug.name}",
+        "--debug-storage=gs://${google_storage_bucket.debug.name}",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",

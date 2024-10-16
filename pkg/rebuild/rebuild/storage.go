@@ -20,11 +20,13 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
 	gcs "cloud.google.com/go/storage"
 	billy "github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/pkg/errors"
 	"google.golang.org/api/option"
 )
@@ -102,15 +104,26 @@ func AssetCopy(ctx context.Context, to, from AssetStore, a Asset) error {
 	if _, err := io.Copy(w, r); err != nil {
 		return errors.Wrap(err, "copy failed")
 	}
-	return nil
+	return w.Close()
 }
 
 // DebugStoreFromContext constructs a DebugStorer using values from the given context.
 func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
 	if uploadpath, ok := ctx.Value(UploadArtifactsPathID).(string); ok {
-		if strings.HasPrefix(uploadpath, "gs://") {
+		u, err := url.Parse(uploadpath)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing UploadArtifactsPathID as url")
+		}
+		if u.Scheme == "gs" {
 			storer, err := NewGCSStore(ctx, uploadpath)
 			return storer, errors.Wrapf(err, "Failed to create GCS storer")
+		} else if u.Scheme == "file" {
+			path := u.Path
+			if runID, ok := ctx.Value(RunID).(string); ok {
+				path = filepath.Join(path, runID)
+			}
+			os.MkdirAll(path, 0755)
+			return NewFilesystemAssetStore(osfs.New(path)), nil
 		}
 		return nil, errors.New("unsupported upload path")
 	}

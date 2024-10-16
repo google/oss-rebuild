@@ -133,14 +133,6 @@ func sanitize(name string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(name, "@", ""), "/", "-")
 }
 
-func gcsAssetStore(ctx context.Context, runID string) (*rebuild.GCSStore, error) {
-	bucket, ok := ctx.Value(rebuild.UploadArtifactsPathID).(string)
-	if !ok {
-		return nil, errors.Errorf("GCS bucket was not specified")
-	}
-	return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, runID), bucket)
-}
-
 func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
 	if example.Artifact == "" {
 		log.Println("Firestore does not have the artifact, cannot find GCS path.")
@@ -157,29 +149,36 @@ func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
 	}
-	gcsAssets, err := gcsAssetStore(ctx, example.RunID)
+	debugAssets, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.RunID, example.RunID))
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to create gcs asset store"))
+		log.Println(errors.Wrap(err, "failed to create debug asset store"))
 		return
 	}
 	// TODO: Clean up these artifacts.
 	// TODO: Check if these are already downloaded.
 	rebuildAsset := rebuild.Asset{Target: t, Type: rebuild.DebugRebuildAsset}
 	upstreamAsset := rebuild.Asset{Target: t, Type: rebuild.DebugUpstreamAsset}
-	if err := rebuild.AssetCopy(ctx, localAssets, gcsAssets, rebuildAsset); err != nil {
-		log.Println(errors.Wrap(err, "failed to copy rebuild asset"))
-		return
-	}
-	if err := rebuild.AssetCopy(ctx, localAssets, gcsAssets, upstreamAsset); err != nil {
-		log.Println(errors.Wrap(err, "failed to copy upstream asset"))
-		return
-	}
 	rba := localAssets.URL(rebuildAsset).Path
 	usa := localAssets.URL(upstreamAsset).Path
-	log.Printf("downloaded rebuild and upstream:\n\t%s\n\t%s", rba, usa)
+	if _, err := os.Stat(rba); errors.Is(err, os.ErrNotExist) {
+		if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, rebuildAsset); err != nil {
+			log.Println(errors.Wrap(err, "failed to copy rebuild asset"))
+			return
+		}
+	}
+	if _, err := os.Stat(usa); errors.Is(err, os.ErrNotExist) {
+		if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, upstreamAsset); err != nil {
+			log.Println(errors.Wrap(err, "failed to copy upstream asset"))
+			return
+		}
+		log.Printf("downloaded rebuild and upstream:\n\t%s\n\t%s", rba, usa)
+	}
 	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("diffoscope --text-color=always %s %s | less -R", rba, usa))
 	if err := cmd.Run(); err != nil {
 		log.Println(errors.Wrap(err, "failed to run diffoscope"))
+		if err.Error() == "exit status 1" {
+			log.Println("Maybe you're not running inside a tmux session?")
+		}
 	}
 }
 
@@ -224,20 +223,25 @@ func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
 	}
-	gcsAssets, err := gcsAssetStore(ctx, example.RunID)
-	if err != nil {
-		log.Println(errors.Wrap(err, "failed to create gcs asset store"))
-		return
-	}
 	logsAsset := rebuild.Asset{Target: t, Type: rebuild.DebugLogsAsset}
 	logs := localAssets.URL(logsAsset).Path
-	if err := rebuild.AssetCopy(ctx, localAssets, gcsAssets, logsAsset); err != nil {
-		log.Println(errors.Wrap(err, "failed to copy rebuild asset"))
-		return
+	if _, err := os.Stat(logs); errors.Is(err, os.ErrNotExist) {
+		debugAssets, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.RunID, example.RunID))
+		if err != nil {
+			log.Println(errors.Wrap(err, "failed to create debug asset store"))
+			return
+		}
+		if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, logsAsset); err != nil {
+			log.Println(errors.Wrap(err, "failed to copy logs asset"))
+			return
+		}
 	}
 	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("cat %s | less", logs))
 	if err := cmd.Run(); err != nil {
 		log.Println(errors.Wrap(err, "failed to read logs"))
+		if err.Error() == "exit status 1" {
+			log.Println("Maybe you're not running inside a tmux session?")
+		}
 	}
 }
 

@@ -41,6 +41,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
+	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -102,25 +103,32 @@ func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, cl
 }
 
 var tui = &cobra.Command{
-	Use:   "tui [--project <ID>] [--debug-bucket <bucket>] [--benchmark-dir <dir>] [--clean]",
+	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean]",
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Exactly one of benchmarkDir or project should be set.
-		if (*benchmarkDir != "") == (*project != "" || *debugBucket != "") {
-			log.Fatal(errors.New("TUI should either be local (--benchmark-dir) or remote (--project, --debug-bucket)"))
+		if (*benchmarkDir != "") == (*project != "" || *debugStorage != "") {
+			log.Fatal(errors.New("TUI should either be local (--benchmark-dir) or remote (--project, --debug-storage)"))
 		}
 		tctx := cmd.Context()
 		var fireClient rundex.Reader
 		if *benchmarkDir != "" {
 			fireClient = rundex.NewLocalClient()
+			tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, "file://"+localfiles.AssetsPath())
 		} else {
-			if *debugBucket != "" {
-				bucket, prefix, _ := strings.Cut(strings.TrimPrefix(*debugBucket, "gs://"), string(filepath.Separator))
-				if prefix != "" {
-					log.Fatalf("--debug-bucket cannot have additional path elements, found %s", prefix)
+			if *debugStorage != "" {
+				u, err := url.Parse(*debugStorage)
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "parsing --debug-storage as url"))
 				}
-				tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, bucket)
+				if u.Scheme == "gs" {
+					prefix := strings.TrimPrefix(u.Path, "/")
+					if prefix != "" {
+						log.Fatalf("--debug-storage cannot have additional path elements, found %s", prefix)
+					}
+				}
+				tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, *debugStorage)
 			}
 			// TODO: Support filtering in the UI on TUI.
 			var err error
@@ -469,14 +477,14 @@ var (
 	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
 	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request the newtwork proxy")
 	// get-results
-	runFlag     = flag.String("run", "", "the run(s) from which to fetch results")
-	bench       = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
-	format      = flag.String("format", "summary", "the format to be printed. Options: summary, bench")
-	filter      = flag.String("filter", "", "a verdict message (or prefix) which will restrict the returned results")
-	sample      = flag.Int("sample", -1, "if provided, only N results will be displayed")
-	project     = flag.String("project", "", "the project from which to fetch the Firestore data")
-	clean       = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
-	debugBucket = flag.String("debug-bucket", "", "the gcs bucket to find debug logs and artifacts")
+	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
+	bench        = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
+	format       = flag.String("format", "summary", "the format to be printed. Options: summary, bench")
+	filter       = flag.String("filter", "", "a verdict message (or prefix) which will restrict the returned results")
+	sample       = flag.Int("sample", -1, "if provided, only N results will be displayed")
+	project      = flag.String("project", "", "the project from which to fetch the Firestore data")
+	clean        = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
+	debugStorage = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
 	//TUI
 	benchmarkDir = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 )
@@ -505,7 +513,7 @@ func init() {
 	getResults.Flags().AddGoFlag(flag.Lookup("format"))
 
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
-	tui.Flags().AddGoFlag(flag.Lookup("debug-bucket"))
+	tui.Flags().AddGoFlag(flag.Lookup("debug-storage"))
 	tui.Flags().AddGoFlag(flag.Lookup("benchmark-dir"))
 	tui.Flags().AddGoFlag(flag.Lookup("clean"))
 

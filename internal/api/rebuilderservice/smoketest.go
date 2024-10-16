@@ -107,7 +107,7 @@ type RebuildSmoketestDeps struct {
 	GitCache            *gitx.Cache
 	AssetDir            string
 	TimewarpURL         *string
-	DebugBucket         *string
+	DebugStorage        *string
 	DefaultVersionCount int
 }
 
@@ -127,8 +127,8 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 		ctx = context.WithValue(ctx, rebuild.TimewarpID, *deps.TimewarpURL)
 	}
 	ctx = context.WithValue(ctx, rebuild.AssetDirID, deps.AssetDir)
-	if deps.DebugBucket != nil {
-		ctx = context.WithValue(ctx, rebuild.UploadArtifactsPathID, *deps.DebugBucket)
+	if deps.DebugStorage != nil {
+		ctx = context.WithValue(ctx, rebuild.UploadArtifactsPathID, *deps.DebugStorage)
 	}
 	var verdicts []rebuild.Verdict
 	var err error
