@@ -26,6 +26,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 				AnyOf: []policy.Rule{
 					policy.URLMatchRule{
 						Host:      "host.com",
+						HostMatch: policy.FullMatch,
 						Path:      "/path",
 						PathMatch: policy.PrefixMatch,
 					},
@@ -41,6 +42,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 				AnyOf: []policy.Rule{
 					policy.URLMatchRule{
 						Host:      "host.com",
+						HostMatch: policy.FullMatch,
 						Path:      "/path",
 						PathMatch: policy.PrefixMatch,
 					},
@@ -56,6 +58,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 				AnyOf: []policy.Rule{
 					policy.URLMatchRule{
 						Host:      "host.com",
+						HostMatch: policy.FullMatch,
 						Path:      "/path",
 						PathMatch: policy.PrefixMatch,
 					},
@@ -71,6 +74,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 				AnyOf: []policy.Rule{
 					policy.URLMatchRule{
 						Host:      "host.com",
+						HostMatch: policy.FullMatch,
 						Path:      "/path",
 						PathMatch: policy.PrefixMatch,
 					},
