@@ -30,11 +30,41 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 			wantResp: http.StatusForbidden,
 		},
 		{
-			name: "empty host policy rule does not match any url",
+			name: "empty HostMatch blocks everything",
 			policy: Policy{
 				AnyOf: []Rule{
 					URLMatchRule{
 						Host:      "",
+						Path:      "",
+						PathMatch: PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/path/with/prefix",
+			wantResp: http.StatusForbidden,
+		},
+		{
+			name: "empty host and path allows all through prefix match",
+			policy: Policy{
+				AnyOf: []Rule{
+					URLMatchRule{
+						Host:      "",
+						HostMatch: PrefixMatch,
+						Path:      "",
+						PathMatch: PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/path/with/prefix",
+			wantResp: http.StatusOK,
+		},
+		{
+			name: "empty host policy rule does not fully match url host",
+			policy: Policy{
+				AnyOf: []Rule{
+					URLMatchRule{
+						Host:      "",
+						HostMatch: FullMatch,
 						Path:      "path",
 						PathMatch: PrefixMatch,
 					},
@@ -44,18 +74,34 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 			wantResp: http.StatusForbidden,
 		},
 		{
-			name: "partial host policy rule does not match any url",
+			name: "partial host policy rule does not fully match url host",
 			policy: Policy{
 				AnyOf: []Rule{
 					URLMatchRule{
 						Host:      "host",
-						Path:      "path",
+						HostMatch: FullMatch,
+						Path:      "/path",
 						PathMatch: PrefixMatch,
 					},
 				},
 			},
 			url:      "https://host.com/path/with/prefix",
 			wantResp: http.StatusForbidden,
+		},
+		{
+			name: "partial host policy rule matches partially with url host",
+			policy: Policy{
+				AnyOf: []Rule{
+					URLMatchRule{
+						Host:      "host",
+						HostMatch: PrefixMatch,
+						Path:      "/path",
+						PathMatch: PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/path/with/prefix",
+			wantResp: http.StatusOK,
 		},
 		{
 			name: "path prefix matching type allows matching url",
@@ -63,6 +109,7 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 				AnyOf: []Rule{
 					URLMatchRule{
 						Host:      "host.com",
+						HostMatch: FullMatch,
 						Path:      "/path",
 						PathMatch: PrefixMatch,
 					},
@@ -77,6 +124,7 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 				AnyOf: []Rule{
 					URLMatchRule{
 						Host:      "host.com",
+						HostMatch: FullMatch,
 						Path:      "/path",
 						PathMatch: PrefixMatch,
 					},
@@ -91,6 +139,7 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 				AnyOf: []Rule{
 					URLMatchRule{
 						Host:      "host.com",
+						HostMatch: FullMatch,
 						Path:      "/matching/path",
 						PathMatch: FullMatch,
 					},
@@ -105,6 +154,7 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 				AnyOf: []Rule{
 					URLMatchRule{
 						Host:      "host.com",
+						HostMatch: FullMatch,
 						Path:      "/path",
 						PathMatch: FullMatch,
 					},
