@@ -44,18 +44,18 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 			wantResp: http.StatusForbidden,
 		},
 		{
-			name: "empty host and path allows all through prefix match",
+			name: "empty host and path allows all through suffix match",
 			policy: Policy{
 				AnyOf: []Rule{
 					URLMatchRule{
 						Host:      "",
-						HostMatch: PrefixMatch,
+						HostMatch: SuffixMatch,
 						Path:      "",
 						PathMatch: PrefixMatch,
 					},
 				},
 			},
-			url:      "https://host.com/path/with/prefix",
+			url:      "https://host.com/path",
 			wantResp: http.StatusOK,
 		},
 		{
@@ -74,7 +74,7 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 			wantResp: http.StatusForbidden,
 		},
 		{
-			name: "partial host policy rule does not fully match url host",
+			name: "host policy rule does not fully match url host",
 			policy: Policy{
 				AnyOf: []Rule{
 					URLMatchRule{
@@ -89,12 +89,12 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 			wantResp: http.StatusForbidden,
 		},
 		{
-			name: "partial host policy rule matches partially with url host",
+			name: "host policy rule matches url host suffix",
 			policy: Policy{
 				AnyOf: []Rule{
 					URLMatchRule{
-						Host:      "host",
-						HostMatch: PrefixMatch,
+						Host:      "host.com",
+						HostMatch: SuffixMatch,
 						Path:      "/path",
 						PathMatch: PrefixMatch,
 					},
@@ -102,6 +102,21 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 			},
 			url:      "https://host.com/path/with/prefix",
 			wantResp: http.StatusOK,
+		},
+		{
+			name: "host policy rule blocks non matching suffix",
+			policy: Policy{
+				AnyOf: []Rule{
+					URLMatchRule{
+						Host:      ".net",
+						HostMatch: SuffixMatch,
+						Path:      "/path",
+						PathMatch: PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/path/with/prefix",
+			wantResp: http.StatusForbidden,
 		},
 		{
 			name: "path prefix matching type allows matching url",

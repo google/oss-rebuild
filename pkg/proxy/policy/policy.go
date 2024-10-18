@@ -92,6 +92,7 @@ type MatchingType string
 const (
 	FullMatch   MatchingType = "full"
 	PrefixMatch MatchingType = "prefix"
+	SuffixMatch MatchingType = "suffix"
 )
 
 // Implements the Rule interface. Matches the request URL based on the MatchingType.
@@ -105,8 +106,8 @@ type URLMatchRule struct {
 func (rule URLMatchRule) Allows(req *http.Request) bool {
 	url := req.URL
 	switch rule.HostMatch {
-	case PrefixMatch:
-		if !strings.HasPrefix(url.Hostname(), rule.Host) {
+	case SuffixMatch:
+		if !strings.HasSuffix(url.Hostname(), rule.Host) {
 			return false
 		}
 	case FullMatch:
