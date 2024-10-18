@@ -92,18 +92,29 @@ type MatchingType string
 const (
 	FullMatch   MatchingType = "full"
 	PrefixMatch MatchingType = "prefix"
+	SuffixMatch MatchingType = "suffix"
 )
 
 // Implements the Rule interface. Matches the request URL based on the MatchingType.
 type URLMatchRule struct {
 	Host      string       `json:"host"`
+	HostMatch MatchingType `json:"matchHostBy"`
 	Path      string       `json:"path"`
 	PathMatch MatchingType `json:"matchPathBy"`
 }
 
 func (rule URLMatchRule) Allows(req *http.Request) bool {
 	url := req.URL
-	if url.Hostname() != rule.Host {
+	switch rule.HostMatch {
+	case SuffixMatch:
+		if !strings.HasSuffix(url.Hostname(), rule.Host) {
+			return false
+		}
+	case FullMatch:
+		if url.Hostname() != rule.Host {
+			return false
+		}
+	default:
 		return false
 	}
 
