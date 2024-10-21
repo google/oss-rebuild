@@ -116,7 +116,7 @@ func (c Filesystem) Stat(path string) (*FileInfo, error) {
 func (c Filesystem) OpenAndResolve(path string) (*File, error) {
 	log.Printf("OpenAndResolve for path: %s", path)
 	// NOTE: 255 is the repetition threshold used by filepath.EvalSymlinks.
-	for i := 0; i < 255; i++ {
+	for range 255 {
 		fi, err := c.Stat(path)
 		if err != nil {
 			return nil, err
