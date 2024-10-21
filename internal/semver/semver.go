@@ -74,10 +74,10 @@ func prereleaseKeys(p string) (alphas []string, numerics []int) {
 }
 
 func prereleaseCmp(a, b string) int {
-	if a == "" {
-		return 1
-	} else if b == "" {
-		return -1
+	// A version lacking a prerelease value is always 'greater' than a version
+	// with one. Shortcut the comparison logic to apply this rule, if applicable.
+	if a == "" || b == "" {
+		return -strings.Compare(a, b)
 	}
 	aas, ans := prereleaseKeys(a)
 	bas, bns := prereleaseKeys(b)
@@ -101,17 +101,11 @@ func Cmp(a, b string) int {
 	if err != nil {
 		return 1
 	}
-	switch {
-	case av.Major != bv.Major:
-		return cmp.Compare(av.Major, bv.Major)
-	case av.Minor != bv.Minor:
-		return cmp.Compare(av.Minor, bv.Minor)
-	case av.Patch != bv.Patch:
-		return cmp.Compare(av.Patch, bv.Patch)
-	case av.Prerelease != bv.Prerelease:
-		return prereleaseCmp(av.Prerelease, bv.Prerelease)
-	default:
-		// Build metadata does not participate in ordering.
-		return 0
-	}
+	// Build metadata does not participate in ordering.
+	return cmp.Or(
+		cmp.Compare(av.Major, bv.Major),
+		cmp.Compare(av.Minor, bv.Minor),
+		cmp.Compare(av.Patch, bv.Patch),
+		prereleaseCmp(av.Prerelease, bv.Prerelease),
+	)
 }
