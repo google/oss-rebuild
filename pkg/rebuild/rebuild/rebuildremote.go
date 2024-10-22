@@ -367,6 +367,14 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 		if _, err := io.WriteString(w, dockerfile); err != nil {
 			return errors.Wrap(err, "writing Dockerfile")
 		}
+		w, err = opts.RemoteMetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
+		if err != nil {
+			return errors.Wrap(err, "creating remote writer for Dockerfile")
+		}
+		defer w.Close()
+		if _, err := io.WriteString(w, dockerfile); err != nil {
+			return errors.Wrap(err, "remote writing Dockerfile")
+		}
 	}
 	build, err := makeBuild(t, dockerfile, opts)
 	if err != nil {
@@ -383,6 +391,14 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 		defer w.Close()
 		if err := json.NewEncoder(w).Encode(bi); err != nil {
 			return errors.Wrap(err, "marshalling and writing build info")
+		}
+		w, err = opts.RemoteMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
+		if err != nil {
+			return errors.Wrap(err, "creating remote writer for build info")
+		}
+		defer w.Close()
+		if err := json.NewEncoder(w).Encode(bi); err != nil {
+			return errors.Wrap(err, "marshalling and remote writing build info")
 		}
 	}
 	return nil
