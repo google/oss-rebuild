@@ -15,7 +15,6 @@
 package rebuild
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"testing"
@@ -27,25 +26,28 @@ import (
 	"google.golang.org/api/cloudbuild/v1"
 )
 
-func TestRebuildContainerTpl(t *testing.T) {
+func TestMakeDockerfile(t *testing.T) {
 	type testCase struct {
 		name        string
-		args        rebuildContainerArgs
+		input       Input
+		opts        RemoteOptions
 		expected    string
 		expectedErr bool
 	}
 	testCases := []testCase{
 		{
 			name: "Basic Usage",
-			args: rebuildContainerArgs{
-				Instructions: Instructions{
+			input: Input{
+				Target: Target{},
+				Strategy: &ManualStrategy{
 					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
 					SystemDeps: []string{"git", "make"},
-					Source:     "git clone ...",
 					Deps:       "make deps ...",
 					Build:      "make build ...",
 					OutputPath: "output/foo.tgz",
 				},
+			},
+			opts: RemoteOptions{
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.4
@@ -57,7 +59,8 @@ EOF
 RUN <<'EOF'
  set -eux
  mkdir /src && cd /src
- git clone ...
+ git clone 'github.com/example' .
+ git checkout --force 'main'
  make deps ...
 EOF
 RUN cat <<'EOF' >build
@@ -71,15 +74,17 @@ ENTRYPOINT ["/bin/sh","/build"]
 		},
 		{
 			name: "With Timewarp",
-			args: rebuildContainerArgs{
-				Instructions: Instructions{
+			input: Input{
+				Target: Target{},
+				Strategy: &ManualStrategy{
 					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
 					SystemDeps: []string{"git", "make"},
-					Source:     "git clone ...",
 					Deps:       "make deps ...",
 					Build:      "make build ...",
 					OutputPath: "output/foo.tgz",
 				},
+			},
+			opts: RemoteOptions{
 				UseTimewarp:        true,
 				UtilPrebuildBucket: "my-bucket",
 			},
@@ -96,7 +101,8 @@ EOF
 RUN <<'EOF'
  set -eux
  mkdir /src && cd /src
- git clone ...
+ git clone 'github.com/example' .
+ git checkout --force 'main'
  make deps ...
 EOF
 RUN cat <<'EOF' >build
@@ -110,13 +116,11 @@ ENTRYPOINT ["/bin/sh","/build"]
 		},
 		{
 			name: "Multi-Line Scripts",
-			args: rebuildContainerArgs{
-				Instructions: Instructions{
-					Location:   Location{Repo: "my-repo", Ref: "dev", Dir: "/workspace"},
+			input: Input{
+				Target: Target{},
+				Strategy: &ManualStrategy{
+					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
 					SystemDeps: []string{"curl", "jq"},
-					Source: `# Download source code
-curl -LO https://example.com/source.tar.gz
-tar xzf source.tar.gz`,
 					Deps: `# Install dependencies
 apk add --no-cache python3 py3-pip
 pip install requests`,
@@ -125,6 +129,8 @@ python3 setup.py build
 python3 setup.py sdist`,
 					OutputPath: "dist/foo.whl",
 				},
+			},
+			opts: RemoteOptions{
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.4
@@ -136,9 +142,8 @@ EOF
 RUN <<'EOF'
  set -eux
  mkdir /src && cd /src
- # Download source code
- curl -LO https://example.com/source.tar.gz
- tar xzf source.tar.gz
+ git clone 'github.com/example' .
+ git checkout --force 'main'
  # Install dependencies
  apk add --no-cache python3 py3-pip
  pip install requests
@@ -154,16 +159,57 @@ WORKDIR "/src"
 ENTRYPOINT ["/bin/sh","/build"]
 `,
 		},
+		{
+			name: "Debian",
+			input: Input{
+				Target: Target{
+					Ecosystem: Debian,
+				},
+				Strategy: &ManualStrategy{
+					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					SystemDeps: []string{"git", "make"},
+					Deps:       "make deps ...",
+					Build:      "make build ...",
+					OutputPath: "output/foo.tgz",
+				},
+			},
+			opts: RemoteOptions{
+				UseTimewarp: false,
+			},
+			expected: `#syntax=docker/dockerfile:1.4
+FROM docker.io/library/debian:bookworm-20240211-slim
+RUN <<'EOF'
+ set -eux
+ apt update
+ apt install -y git make
+EOF
+RUN <<'EOF'
+ set -eux
+ mkdir /src && cd /src
+ git clone 'github.com/example' .
+ git checkout --force 'main'
+ make deps ...
+EOF
+RUN cat <<'EOF' >build
+ set -eux
+ make build ...
+ ls
+ ls /src/
+ mkdir /out && cp /src/output/foo.tgz /out/
+EOF
+WORKDIR "/src"
+ENTRYPOINT ["/bin/sh","/build"]
+`,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			err := rebuildContainerTpl.Execute(&buf, tc.args)
+			actual, err := makeDockerfile(tc.input, tc.opts)
 			if (err != nil) != tc.expectedErr {
 				t.Errorf("Unexpected error: %v", err)
 			}
-			if diff := cmp.Diff(tc.expected, buf.String()); diff != "" {
+			if diff := cmp.Diff(tc.expected, actual); diff != "" {
 				t.Errorf("Incorrect output (-want +got):\n%s", diff)
 			}
 		})
@@ -209,6 +255,7 @@ func TestDoCloudBuild(t *testing.T) {
 		bi := &BuildInfo{Target: target}
 		err := doCloudBuild(context.Background(), client, beforeBuild, opts, bi)
 		if err != nil {
+			t.Errorf("Unexpected doCLoudBuildError %v", err)
 		}
 		expectedBI := &BuildInfo{
 			Target:      target,

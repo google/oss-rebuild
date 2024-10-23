@@ -107,7 +107,9 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "retrieving repo")
 	}
-	rd = append(rd, slsa1.ResourceDescriptor{Name: "git+" + inst.Location.Repo, Digest: gitDigestSet(inst.Location)})
+	if inst.Location.Ref != "" {
+		rd = append(rd, slsa1.ResourceDescriptor{Name: "git+" + inst.Location.Repo, Digest: gitDigestSet(inst.Location)})
+	}
 	for n, s := range buildInfo.BuildImages {
 		if !strings.HasPrefix(s, "sha256:") {
 			return nil, nil, errors.New("buildInfo.BuildImages contains non-sha256 digest")

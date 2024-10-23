@@ -18,6 +18,7 @@ package rebuild
 import (
 	"context"
 	"io"
+	"strings"
 
 	billy "github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/pkg/archive"
@@ -33,6 +34,12 @@ func artifactReader(ctx context.Context, t Target, mux RegistryMux) (io.ReadClos
 		return mux.PyPI.Artifact(ctx, t.Package, t.Version, t.Artifact)
 	case CratesIO:
 		return mux.CratesIO.Artifact(ctx, t.Package, t.Version)
+	case Debian:
+		component, name, found := strings.Cut(t.Package, "/")
+		if !found {
+			return nil, errors.Errorf("failed to parse debian component: %s", t.Package)
+		}
+		return mux.Debian.Artifact(ctx, component, name, t.Artifact)
 	default:
 		return nil, errors.New("unsupported ecosystem")
 	}

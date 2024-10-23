@@ -10,11 +10,13 @@ import (
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
+	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
@@ -62,6 +64,7 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		CratesIO: cratesreg.HTTPRegistry{Client: deps.HTTPClient},
 		NPM:      npmreg.HTTPRegistry{Client: deps.HTTPClient},
 		PyPI:     pypireg.HTTPRegistry{Client: deps.HTTPClient},
+		Debian:   debianreg.HTTPRegistry{Client: deps.HTTPClient},
 	}
 	var s rebuild.Strategy
 	t := rebuild.Target{
@@ -78,6 +81,8 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		s, err = doInfer(ctx, pypi.Rebuilder{}, t, mux, req.LocationHint())
 	case rebuild.CratesIO:
 		s, err = doInfer(ctx, cratesio.Rebuilder{}, t, mux, req.LocationHint())
+	case rebuild.Debian:
+		s, err = doInfer(ctx, debian.Rebuilder{}, t, mux, req.LocationHint())
 	default:
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}

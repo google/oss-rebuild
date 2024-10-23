@@ -217,9 +217,10 @@ func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan sc
 
 func defaultLimiters() map[string]<-chan time.Time {
 	return map[string]<-chan time.Time{
-		"pypi":  time.Tick(time.Second),
-		"npm":   time.Tick(2 * time.Second),
-		"maven": time.Tick(2 * time.Second),
+		"debian": time.Tick(time.Second),
+		"pypi":   time.Tick(time.Second),
+		"npm":    time.Tick(2 * time.Second),
+		"maven":  time.Tick(2 * time.Second),
 		// NOTE: cratesio needs to be especially slow given our registry API
 		// constraint of 1QPS. At minimum, we expect to make 4 calls per test.
 		"cratesio": time.Tick(8 * time.Second),
