@@ -146,8 +146,7 @@ process:
 1.  Create new tar entries with:
     - The same entry name
     - The same file contents
-    - ModTime and AccessTime as 1985 Oct 26 8:15am UTC (an arbitrary date
-      time)
+    - ModTime and AccessTime to the UNIX epoch
     - Uid and Gid of 0
     - Empty Uname and Gname
     - Mode 0777

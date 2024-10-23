@@ -31,10 +31,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Pick some arbitrary time to set all the time fields.
-// Source: https://github.com/npm/pacote/blob/main/lib/util/tar-create-options.js#L28
-var arbitraryTime = time.Date(1985, time.October, 26, 8, 15, 0, 0, time.UTC)
-
 // TarEntry represents an entry in a tar archive.
 type TarEntry struct {
 	*tar.Header
@@ -87,8 +83,8 @@ var StableTarFileOrder = TarArchiveStabilizer{
 var StableTarTime = TarEntryStabilizer{
 	Name: "tar-time",
 	Func: func(e *TarEntry) {
-		e.ModTime = arbitraryTime
-		e.AccessTime = arbitraryTime
+		e.ModTime = time.UnixMilli(0)
+		e.AccessTime = time.UnixMilli(0)
 		e.ChangeTime = time.Time{}
 		// NOTE: Without a PAX record, the tar library will disregard this value
 		// and write the format as USTAR. Setting 'atime' ensures at least one

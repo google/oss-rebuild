@@ -27,7 +27,7 @@ const (
 	RawFormat
 )
 
-// StabilizeOpts aggregates sanitizers to be used in stabilization.
+// StabilizeOpts aggregates stabilizers to be used in stabilization.
 type StabilizeOpts struct {
 	Stabilizers []any
 }

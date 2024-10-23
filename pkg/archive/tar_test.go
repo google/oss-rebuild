@@ -24,6 +24,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+var epoch = time.UnixMilli(0)
+
 func TestStabilizeTar(t *testing.T) {
 	testCases := []struct {
 		test     string
@@ -39,7 +41,7 @@ func TestStabilizeTar(t *testing.T) {
 				{&tar.Header{Name: "foo", Typeflag: tar.TypeReg, Size: 3, Mode: 0644, ModTime: time.Now(), AccessTime: time.Now()}, []byte("foo")},
 			},
 			expected: []*TarEntry{
-				{&tar.Header{Name: "foo", Typeflag: tar.TypeReg, Size: 3, Mode: 0777, ModTime: arbitraryTime, AccessTime: arbitraryTime, PAXRecords: map[string]string{"atime": "499162500"}, Format: tar.FormatPAX}, []byte("foo")},
+				{&tar.Header{Name: "foo", Typeflag: tar.TypeReg, Size: 3, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("foo")},
 			},
 		},
 		{
@@ -49,8 +51,8 @@ func TestStabilizeTar(t *testing.T) {
 				{&tar.Header{Name: "bar", Typeflag: tar.TypeReg, Size: 3, Mode: 0644}, []byte("bar")},
 			},
 			expected: []*TarEntry{
-				{&tar.Header{Name: "bar", Typeflag: tar.TypeReg, Size: 3, Mode: 0777, ModTime: arbitraryTime, AccessTime: arbitraryTime, PAXRecords: map[string]string{"atime": "499162500"}, Format: tar.FormatPAX}, []byte("bar")},
-				{&tar.Header{Name: "foo", Typeflag: tar.TypeReg, Size: 3, Mode: 0777, ModTime: arbitraryTime, AccessTime: arbitraryTime, PAXRecords: map[string]string{"atime": "499162500"}, Format: tar.FormatPAX}, []byte("foo")},
+				{&tar.Header{Name: "bar", Typeflag: tar.TypeReg, Size: 3, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("bar")},
+				{&tar.Header{Name: "foo", Typeflag: tar.TypeReg, Size: 3, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("foo")},
 			},
 		},
 		{
@@ -59,7 +61,7 @@ func TestStabilizeTar(t *testing.T) {
 				{&tar.Header{Name: "foo", Typeflag: tar.TypeReg, Size: 3, Uid: 10, Uname: "user", Gid: 30, Gname: "group"}, []byte("foo")},
 			},
 			expected: []*TarEntry{
-				{&tar.Header{Name: "foo", Typeflag: tar.TypeReg, Size: 3, Mode: 0777, ModTime: arbitraryTime, AccessTime: arbitraryTime, PAXRecords: map[string]string{"atime": "499162500"}, Format: tar.FormatPAX}, []byte("foo")},
+				{&tar.Header{Name: "foo", Typeflag: tar.TypeReg, Size: 3, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("foo")},
 			},
 		},
 	}
