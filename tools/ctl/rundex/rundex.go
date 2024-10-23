@@ -382,16 +382,16 @@ func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReques
 	walkErr := make(chan error, 1)
 	all := make(chan Rebuild, 1)
 	go func() {
-		var pathsToExplore []string
+		var toWalk []string
 		if len(req.Runs) != 0 {
 			for _, r := range req.Runs {
-				pathsToExplore = append(pathsToExplore, filepath.Join(localRunsDir, r))
+				toWalk = append(toWalk, filepath.Join(localRunsDir, r))
 			}
 		} else {
-			pathsToExplore = []string{localRunsDir}
+			toWalk = []string{localRunsDir}
 		}
 		defer close(all)
-		for _, p := range pathsToExplore {
+		for _, p := range toWalk {
 			err := util.Walk(f.fs, p, func(path string, info fs.FileInfo, err error) error {
 				if err != nil {
 					return err
