@@ -382,31 +382,44 @@ func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReques
 	walkErr := make(chan error, 1)
 	all := make(chan Rebuild, 1)
 	go func() {
-		walkErr <- util.Walk(f.fs, localRunsDir, func(path string, info fs.FileInfo, err error) error {
-			if err != nil {
-				return err
+		var toWalk []string
+		if len(req.Runs) != 0 {
+			for _, r := range req.Runs {
+				toWalk = append(toWalk, filepath.Join(localRunsDir, r))
 			}
-			// TODO: Skip run directories that don't match req.Runs
-			// This is just an optimization, filterRebuilds will also drop Rebuilds that don't match req.Runs.
-			if info.IsDir() {
+		} else {
+			toWalk = []string{localRunsDir}
+		}
+		defer close(all)
+		for _, p := range toWalk {
+			err := util.Walk(f.fs, p, func(path string, info fs.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if info.IsDir() {
+					return nil
+				}
+				if filepath.Base(path) != rebuildFileName {
+					return nil
+				}
+				file, err := f.fs.Open(path)
+				if err != nil {
+					return errors.Wrap(err, "opening firestore file")
+				}
+				defer file.Close()
+				var r Rebuild
+				if err := json.NewDecoder(file).Decode(&r); err != nil {
+					return errors.Wrap(err, "decoding firestore file")
+				}
+				all <- r
 				return nil
-			}
-			if filepath.Base(path) != rebuildFileName {
-				return nil
-			}
-			file, err := f.fs.Open(path)
+			})
 			if err != nil {
-				return errors.Wrap(err, "opening firestore file")
+				walkErr <- err
+				return
 			}
-			defer file.Close()
-			var r Rebuild
-			if err := json.NewDecoder(file).Decode(&r); err != nil {
-				return errors.Wrap(err, "decoding firestore file")
-			}
-			all <- r
-			return nil
-		})
-		close(all)
+		}
+		walkErr <- nil
 	}()
 	rebuilds := filterRebuilds(all, req)
 	if err := <-walkErr; err != nil {
