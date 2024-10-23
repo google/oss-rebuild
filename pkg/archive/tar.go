@@ -20,44 +20,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
 	billy "github.com/go-git/go-billy/v5"
 	"github.com/pkg/errors"
 )
-
-// Pick some arbitrary time to set all the time fields.
-// Source: https://github.com/npm/pacote/blob/main/lib/util/tar-create-options.js#L28
-var arbitraryTime = time.Date(1985, time.October, 26, 8, 15, 0, 0, time.UTC)
-
-func canonicalizeTarHeader(h *tar.Header) (*tar.Header, error) {
-	switch h.Typeflag {
-	case tar.TypeGNUSparse, tar.TypeGNULongName, tar.TypeGNULongLink:
-		// NOTE: Non-PAX header type support can be added, if necessary.
-		return nil, errors.Errorf("Unsupported header type: %v", h.Typeflag)
-	default:
-		return &tar.Header{
-			Typeflag:   h.Typeflag,
-			Name:       h.Name,
-			ModTime:    arbitraryTime,
-			AccessTime: arbitraryTime,
-			// TODO: Surface presence/absence of execute bit as a comparison config.
-			Mode:  0777,
-			Uid:   0,
-			Gid:   0,
-			Uname: "",
-			Gname: "",
-			Size:  h.Size,
-			// TODO: Surface comparison config for TAR metadata (PAXRecords, Xattrs).
-			Format: tar.FormatPAX,
-		}, nil
-	}
-}
 
 // TarEntry represents an entry in a tar archive.
 type TarEntry struct {
@@ -76,10 +48,88 @@ func (e TarEntry) WriteTo(tw *tar.Writer) error {
 	return nil
 }
 
+type TarFile struct{ Files []*TarEntry }
+
+type TarArchiveSanitizer struct {
+	Name string
+	Func func(*TarFile)
+}
+
+type TarEntrySanitizer struct {
+	Name string
+	Func func(*TarEntry)
+}
+
+var AllTarSanitizers []any = []any{
+	NormTarFileOrder,
+	NormTarTime,
+	NormTarFileMode,
+	NormTarOwners,
+	NormTarXattrs,
+	NormTarDeviceNumber,
+}
+
+var NormTarFileOrder = TarArchiveSanitizer{
+	Name: "tar-file-order",
+	Func: func(f *TarFile) {
+		slices.SortFunc(f.Files, func(a, b *TarEntry) int {
+			return strings.Compare(a.Name, b.Name)
+		})
+	},
+}
+
+var NormTarTime = TarEntrySanitizer{
+	Name: "tar-time",
+	Func: func(e *TarEntry) {
+		e.ModTime = time.UnixMilli(0)
+		e.AccessTime = time.UnixMilli(0)
+		e.ChangeTime = time.Time{}
+		// NOTE: Without a PAX record, the tar library will disregard this value
+		// and write a USTAR-formatted file. Setting 'atime' ensures at least one
+		// record exists which will cause tar to serialize and re-parse it as PAX.
+		e.Format = tar.FormatPAX
+	},
+}
+
+var NormTarFileMode = TarEntrySanitizer{
+	Name: "tar-file-mode",
+	Func: func(e *TarEntry) {
+		e.Mode = int64(fs.ModePerm)
+	},
+}
+
+var NormTarOwners = TarEntrySanitizer{
+	Name: "tar-owners",
+	Func: func(e *TarEntry) {
+		e.Uid = 0
+		e.Gid = 0
+		e.Uname = ""
+		e.Gname = ""
+	},
+}
+
+var NormTarXattrs = TarEntrySanitizer{
+	Name: "tar-xattrs",
+	Func: func(e *TarEntry) {
+		clear(e.Xattrs)
+		clear(e.PAXRecords)
+	},
+}
+
+var NormTarDeviceNumber = TarEntrySanitizer{
+	Name: "tar-device-number",
+	Func: func(e *TarEntry) {
+		// NOTE: 0 is currently reserved on Linux and will dynamically allocated a
+		// device number when passed to the kernel.
+		e.Devmajor = 0
+		e.Devminor = 0
+	},
+}
+
 // CanonicalizeTar strips volatile metadata and re-writes the provided archive in a canonical form.
-func CanonicalizeTar(tr *tar.Reader, tw *tar.Writer) error {
+func CanonicalizeTar(tr *tar.Reader, tw *tar.Writer, opts CanonicalizeOpts) error {
 	defer tw.Close()
-	var ents []TarEntry
+	var ents []*TarEntry
 	for {
 		header, err := tr.Next()
 		if err != nil {
@@ -88,22 +138,31 @@ func CanonicalizeTar(tr *tar.Reader, tw *tar.Writer) error {
 			}
 			return err
 		}
-		canonicalized, err := canonicalizeTarHeader(header)
-		if err != nil {
-			return err
+		// NOTE: Non-PAX header type support can be added, if necessary.
+		switch header.Typeflag {
+		case tar.TypeGNUSparse, tar.TypeGNULongName, tar.TypeGNULongLink:
+			return errors.New("Unsupported file type")
 		}
 		buf, err := io.ReadAll(tr)
 		if err != nil {
 			return err
 		}
-		// TODO: Memory-intensive. We're buffering the full file in memory (again).
-		// One option would be to do two passes and only buffer what's necessary.
-		ents = append(ents, TarEntry{canonicalized, buf[:]})
+		// NOTE: Memory-intensive. We're buffering the full file in memory as
+		// tar.Reader is single-pass and we need to support sorting entries.
+		ents = append(ents, &TarEntry{header, buf[:]})
 	}
-	sort.Slice(ents, func(i, j int) bool {
-		return ents[i].Header.Name < ents[j].Header.Name
-	})
-	for _, ent := range ents {
+	f := TarFile{Files: ents}
+	for _, s := range opts.Sanitizers {
+		switch s.(type) {
+		case TarArchiveSanitizer:
+			s.(TarArchiveSanitizer).Func(&f)
+		case TarEntrySanitizer:
+			for _, ent := range f.Files {
+				s.(TarEntrySanitizer).Func(ent)
+			}
+		}
+	}
+	for _, ent := range f.Files {
 		if err := ent.WriteTo(tw); err != nil {
 			return err
 		}

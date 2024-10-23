@@ -27,6 +27,11 @@ const (
 	RawFormat
 )
 
+// CanonicalizeOpts aggregates sanitizers to be used in canonicalization.
+type CanonicalizeOpts struct {
+	Sanitizers []any
+}
+
 // ContentSummary is a summary of rebuild-relevant features of an archive.
 type ContentSummary struct {
 	Files      []string
