@@ -27,6 +27,11 @@ const (
 	RawFormat
 )
 
+// StabilizeOpts aggregates sanitizers to be used in stabilization.
+type StabilizeOpts struct {
+	Stabilizers []any
+}
+
 // ContentSummary is a summary of rebuild-relevant features of an archive.
 type ContentSummary struct {
 	Files      []string

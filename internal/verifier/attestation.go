@@ -68,6 +68,7 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 		// TODO: Include build repository associated with this builder.
 	}
 	publicRebuildURI := path.Join("rebuild", buildInfo.Target.Artifact)
+	// TODO: Change from "normalized" to "stabilized".
 	publicNormalizedURI := path.Join("normalized", buildInfo.Target.Artifact)
 	// Create comparison attestation.
 	eqStmt := &in_toto.ProvenanceStatementSLSA1{
