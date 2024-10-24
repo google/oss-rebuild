@@ -23,8 +23,15 @@ import (
 	"github.com/pkg/errors"
 )
 
+var AllSanitzers = append(AllZipSanitizers, AllTarSanitizers...)
+
 // Canonicalize selects and applies the canonicalization routine for the given archive format.
 func Canonicalize(dst io.Writer, src io.Reader, f Format) error {
+	return CanonicalizeWithOpts(dst, src, f, CanonicalizeOpts{AllSanitzers})
+}
+
+// Canonicalize selects and applies the canonicalization routine for the given archive format.
+func CanonicalizeWithOpts(dst io.Writer, src io.Reader, f Format, opts CanonicalizeOpts) error {
 	switch f {
 	case ZipFormat:
 		srcReader, size, err := toZipCompatibleReader(src)
@@ -37,7 +44,7 @@ func Canonicalize(dst io.Writer, src io.Reader, f Format) error {
 		}
 		zw := zip.NewWriter(dst)
 		defer zw.Close()
-		err = CanonicalizeZip(zr, zw)
+		err = CanonicalizeZip(zr, zw, opts)
 		if err != nil {
 			return errors.Wrap(err, "canonicalizing zip")
 		}
@@ -49,7 +56,12 @@ func Canonicalize(dst io.Writer, src io.Reader, f Format) error {
 		defer gzr.Close()
 		gzw := gzip.NewWriter(dst)
 		defer gzw.Close()
-		err = CanonicalizeTar(tar.NewReader(gzr), tar.NewWriter(gzw))
+		err = CanonicalizeTar(tar.NewReader(gzr), tar.NewWriter(gzw), opts)
+		if err != nil {
+			return errors.Wrap(err, "canonicalizing tar.gz")
+		}
+	case TarFormat:
+		err := CanonicalizeTar(tar.NewReader(src), tar.NewWriter(dst), opts)
 		if err != nil {
 			return errors.Wrap(err, "canonicalizing tar")
 		}

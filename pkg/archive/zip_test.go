@@ -83,7 +83,7 @@ func TestCanonicalizeZip(t *testing.T) {
 			}
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
-			err := CanonicalizeZip(zr, zip.NewWriter(&output))
+			err := CanonicalizeZip(zr, zip.NewWriter(&output), CanonicalizeOpts{Sanitizers: AllZipSanitizers})
 			if err != nil {
 				t.Fatalf("CanonicalizeZip(%v) = %v, want nil", tc.test, err)
 			}
