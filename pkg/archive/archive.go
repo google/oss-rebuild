@@ -25,9 +25,13 @@ import (
 
 var AllStabilizers = append(AllZipStabilizers, AllTarStabilizers...)
 
-// Stabilize selects and applies the stabilization routine for the given archive format.
+// Stabilize selects and applies the default stabilization routine for the given archive format.
 func Stabilize(dst io.Writer, src io.Reader, f Format) error {
-	opts := StabilizeOpts{Stabilizers: AllStabilizers}
+	return StabilizeWithOpts(dst, src, f, StabilizeOpts{Stabilizers: AllStabilizers})
+}
+
+// StabilizeWithOpts selects and applies the provided stabilization routine for the given archive format.
+func StabilizeWithOpts(dst io.Writer, src io.Reader, f Format, opts StabilizeOpts) error {
 	switch f {
 	case ZipFormat:
 		srcReader, size, err := toZipCompatibleReader(src)
@@ -53,6 +57,11 @@ func Stabilize(dst io.Writer, src io.Reader, f Format) error {
 		gzw := gzip.NewWriter(dst)
 		defer gzw.Close()
 		err = StabilizeTar(tar.NewReader(gzr), tar.NewWriter(gzw), opts)
+		if err != nil {
+			return errors.Wrap(err, "stabilizing tar.gz")
+		}
+	case TarFormat:
+		err := StabilizeTar(tar.NewReader(src), tar.NewWriter(dst), opts)
 		if err != nil {
 			return errors.Wrap(err, "stabilizing tar")
 		}
