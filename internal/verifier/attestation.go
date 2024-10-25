@@ -96,7 +96,7 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 					InvocationID: id,
 				},
 				Byproducts: []slsa1.ResourceDescriptor{
-					{Name: publicNormalizedURI, Digest: makeDigestSet(up.CanonicalHash...)},
+					{Name: publicNormalizedURI, Digest: makeDigestSet(up.StabilizedHash...)},
 				},
 			},
 		},

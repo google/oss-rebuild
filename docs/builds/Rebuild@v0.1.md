@@ -108,12 +108,13 @@ Example:
 
 ### Byproducts
 
-The `byproducts` include a hash digest of the normalized version.
+The `byproducts` include the full file constructs used produce the artifact
+such as the high-level definition, the Cloud Build definition, and the specific Dockerfile.
 
-| field     | details                                                                                                   |
-| --------- | --------------------------------------------------------------------------------------------------------- |
-| `name`    | The high-level build definition, Dockerfile, and Google Cloud Build process that implemented the rebuild. |
-| `content` | The base64-encoded content of the artifact.                                                               |
+| field     | details                                                  |
+| --------- | -------------------------------------------------------- |
+| `name`    | The resource identifier for the build process byproduct. |
+| `content` | The base64-encoded content of the artifact.              |
 
 Example:
 

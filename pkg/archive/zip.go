@@ -68,8 +68,8 @@ func (e ZipEntry) WriteTo(zw *zip.Writer) error {
 	return nil
 }
 
-// CanonicalizeZip strips volatile metadata and rewrites the provided archive in a canonical form.
-func CanonicalizeZip(zr *zip.Reader, zw *zip.Writer) error {
+// StabilizeZip strips volatile metadata and rewrites the provided archive in a standard form.
+func StabilizeZip(zr *zip.Reader, zw *zip.Writer) error {
 	defer zw.Close()
 	var ents []ZipEntry
 	for _, f := range zr.File {

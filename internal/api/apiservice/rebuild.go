@@ -222,8 +222,8 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		return errors.Wrap(err, "comparing artifacts")
 	}
 	exactMatch := bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
-	canonicalizedMatch := bytes.Equal(rb.CanonicalHash.Sum(nil), up.CanonicalHash.Sum(nil))
-	if !exactMatch && !canonicalizedMatch {
+	stabilizedMatch := bytes.Equal(rb.StabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil))
+	if !exactMatch && !stabilizedMatch {
 		return api.AsStatus(codes.FailedPrecondition, errors.New("rebuild content mismatch"))
 	}
 	input := rebuild.Input{Target: t}

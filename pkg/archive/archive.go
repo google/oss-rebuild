@@ -23,8 +23,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Canonicalize selects and applies the canonicalization routine for the given archive format.
-func Canonicalize(dst io.Writer, src io.Reader, f Format) error {
+// Stabilize selects and applies the stabilization routine for the given archive format.
+func Stabilize(dst io.Writer, src io.Reader, f Format) error {
 	switch f {
 	case ZipFormat:
 		srcReader, size, err := toZipCompatibleReader(src)
@@ -37,9 +37,9 @@ func Canonicalize(dst io.Writer, src io.Reader, f Format) error {
 		}
 		zw := zip.NewWriter(dst)
 		defer zw.Close()
-		err = CanonicalizeZip(zr, zw)
+		err = StabilizeZip(zr, zw)
 		if err != nil {
-			return errors.Wrap(err, "canonicalizing zip")
+			return errors.Wrap(err, "stabilizing zip")
 		}
 	case TarGzFormat:
 		gzr, err := gzip.NewReader(src)
@@ -49,9 +49,9 @@ func Canonicalize(dst io.Writer, src io.Reader, f Format) error {
 		defer gzr.Close()
 		gzw := gzip.NewWriter(dst)
 		defer gzw.Close()
-		err = CanonicalizeTar(tar.NewReader(gzr), tar.NewWriter(gzw))
+		err = StabilizeTar(tar.NewReader(gzr), tar.NewWriter(gzw))
 		if err != nil {
-			return errors.Wrap(err, "canonicalizing tar")
+			return errors.Wrap(err, "stabilizing tar")
 		}
 	default:
 		return errors.New("unsupported archive type")

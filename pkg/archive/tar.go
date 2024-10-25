@@ -35,7 +35,7 @@ import (
 // Source: https://github.com/npm/pacote/blob/main/lib/util/tar-create-options.js#L28
 var arbitraryTime = time.Date(1985, time.October, 26, 8, 15, 0, 0, time.UTC)
 
-func canonicalizeTarHeader(h *tar.Header) (*tar.Header, error) {
+func stabilizeTarHeader(h *tar.Header) (*tar.Header, error) {
 	switch h.Typeflag {
 	case tar.TypeGNUSparse, tar.TypeGNULongName, tar.TypeGNULongLink:
 		// NOTE: Non-PAX header type support can be added, if necessary.
@@ -76,8 +76,8 @@ func (e TarEntry) WriteTo(tw *tar.Writer) error {
 	return nil
 }
 
-// CanonicalizeTar strips volatile metadata and re-writes the provided archive in a canonical form.
-func CanonicalizeTar(tr *tar.Reader, tw *tar.Writer) error {
+// StabilizeTar strips volatile metadata and re-writes the provided archive in a standard form.
+func StabilizeTar(tr *tar.Reader, tw *tar.Writer) error {
 	defer tw.Close()
 	var ents []TarEntry
 	for {
@@ -88,7 +88,7 @@ func CanonicalizeTar(tr *tar.Reader, tw *tar.Writer) error {
 			}
 			return err
 		}
-		canonicalized, err := canonicalizeTarHeader(header)
+		stabilized, err := stabilizeTarHeader(header)
 		if err != nil {
 			return err
 		}
@@ -98,7 +98,7 @@ func CanonicalizeTar(tr *tar.Reader, tw *tar.Writer) error {
 		}
 		// TODO: Memory-intensive. We're buffering the full file in memory (again).
 		// One option would be to do two passes and only buffer what's necessary.
-		ents = append(ents, TarEntry{canonicalized, buf[:]})
+		ents = append(ents, TarEntry{stabilized, buf[:]})
 	}
 	sort.Slice(ents, func(i, j int) bool {
 		return ents[i].Header.Name < ents[j].Header.Name

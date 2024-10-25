@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-func TestCanonicalizeZip(t *testing.T) {
+func TestStabilizeZip(t *testing.T) {
 	testCases := []struct {
 		test     string
 		input    []*ZipEntry
@@ -83,9 +83,9 @@ func TestCanonicalizeZip(t *testing.T) {
 			}
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
-			err := CanonicalizeZip(zr, zip.NewWriter(&output))
+			err := StabilizeZip(zr, zip.NewWriter(&output))
 			if err != nil {
-				t.Fatalf("CanonicalizeZip(%v) = %v, want nil", tc.test, err)
+				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
 			}
 			var got []ZipEntry
 			{
@@ -95,7 +95,7 @@ func TestCanonicalizeZip(t *testing.T) {
 				}
 			}
 			if len(got) != len(tc.expected) {
-				t.Fatalf("CanonicalizeZip(%v) = %v, want %v", tc.test, got, tc.expected)
+				t.Fatalf("StabilizeZip(%v) = %v, want %v", tc.test, got, tc.expected)
 			}
 			for i := range got {
 				if !all(
@@ -104,7 +104,7 @@ func TestCanonicalizeZip(t *testing.T) {
 					got[i].FileHeader.Modified.Equal(tc.expected[i].FileHeader.Modified),
 					got[i].FileHeader.Comment == tc.expected[i].FileHeader.Comment,
 				) {
-					t.Fatalf("CanonicalizeZip(%v) = %v, want %v", tc.test, got, tc.expected)
+					t.Fatalf("StabilizeZip(%v) = %v, want %v", tc.test, got, tc.expected)
 				}
 			}
 		})

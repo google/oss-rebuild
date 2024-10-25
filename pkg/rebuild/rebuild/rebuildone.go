@@ -122,7 +122,7 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 		}
 		return nil, nil, errors.Wrapf(err, "failed to stat artifact")
 	}
-	rb, up, err := Canonicalize(ctx, t, mux, rbPath, fs, assets)
+	rb, up, err := Stabilize(ctx, t, mux, rbPath, fs, assets)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -33,14 +33,14 @@ func TestCreateAttestations(t *testing.T) {
 	ctx := context.Background()
 	target := rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "bytes", Version: "1.0.0", Artifact: "bytes-1.0.0.crate"}
 	rbSummary := ArtifactSummary{
-		URI:           "gs://rebuild.bucket/bytes-1.0.0.crate",
-		Hash:          hashext.NewMultiHash(crypto.SHA256),
-		CanonicalHash: hashext.NewMultiHash(crypto.SHA256),
+		URI:            "gs://rebuild.bucket/bytes-1.0.0.crate",
+		Hash:           hashext.NewMultiHash(crypto.SHA256),
+		StabilizedHash: hashext.NewMultiHash(crypto.SHA256),
 	}
 	upSummary := ArtifactSummary{
-		URI:           "https://up.stream/bytes-1.0.0.crate",
-		Hash:          hashext.NewMultiHash(crypto.SHA256),
-		CanonicalHash: hashext.NewMultiHash(crypto.SHA256),
+		URI:            "https://up.stream/bytes-1.0.0.crate",
+		Hash:           hashext.NewMultiHash(crypto.SHA256),
+		StabilizedHash: hashext.NewMultiHash(crypto.SHA256),
 	}
 	buildInfo := &rebuild.BuildInfo{
 		Target:      target,

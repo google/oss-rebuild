@@ -24,7 +24,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestCanonicalizeTar(t *testing.T) {
+func TestStabilizeTar(t *testing.T) {
 	testCases := []struct {
 		test     string
 		input    []*TarEntry
@@ -77,9 +77,9 @@ func TestCanonicalizeTar(t *testing.T) {
 			}
 			var output bytes.Buffer
 			zr := tar.NewReader(bytes.NewReader(input.Bytes()))
-			err := CanonicalizeTar(zr, tar.NewWriter(&output))
+			err := StabilizeTar(zr, tar.NewWriter(&output))
 			if err != nil {
-				t.Fatalf("CanonicalizeTar(%v) = %v, want nil", tc.test, err)
+				t.Fatalf("StabilizeTar(%v) = %v, want nil", tc.test, err)
 			}
 			var got []*TarEntry
 			{
@@ -94,10 +94,10 @@ func TestCanonicalizeTar(t *testing.T) {
 				}
 			}
 			if len(got) != len(tc.expected) {
-				t.Fatalf("CanonicalizeTar(%v) = %v, want %v", tc.test, got, tc.expected)
+				t.Fatalf("StabilizeTar(%v) = %v, want %v", tc.test, got, tc.expected)
 			}
 			if !cmp.Equal(got, tc.expected) {
-				t.Fatalf("CanonicalizeTar(%v) = %v, want %v\nDiff:\n%s", tc.test, got, tc.expected, cmp.Diff(got, tc.expected))
+				t.Fatalf("StabilizeTar(%v) = %v, want %v\nDiff:\n%s", tc.test, got, tc.expected, cmp.Diff(got, tc.expected))
 			}
 		})
 	}
