@@ -21,7 +21,7 @@ func NewBatch(size, count int) []Bitmap {
 	mapints := (size + 63) / 64
 	mem := make([]uint64, count*mapints)
 	var maps []Bitmap
-	for i := 0; i < count; i++ {
+	for i := range count {
 		maps = append(maps, Bitmap{
 			bits: mem[i*mapints : (i+1)*mapints],
 			size: size,

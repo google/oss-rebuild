@@ -81,9 +81,9 @@ func prereleaseCmp(a, b string) int {
 	}
 	aas, ans := prereleaseKeys(a)
 	bas, bns := prereleaseKeys(b)
-	for i := 0; i < min(len(aas), len(bas)); i++ {
+	for i := range min(len(aas), len(bas)) {
 		if aas[i] != bas[i] {
-			return strings.Compare(aas[i], bas[i])
+			return cmp.Compare(aas[i], bas[i])
 		}
 		if ans[i] != bns[i] {
 			return cmp.Compare(ans[i], bns[i])
