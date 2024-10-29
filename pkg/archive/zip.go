@@ -20,7 +20,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
-	"sort"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -51,6 +52,7 @@ func NewContentSummaryFromZip(zr *zip.Reader) (*ContentSummary, error) {
 }
 
 // ZipEntry represents an entry in a zip archive.
+// TODO: Move to archivetest.
 type ZipEntry struct {
 	*zip.FileHeader
 	Body []byte
@@ -68,40 +70,164 @@ func (e ZipEntry) WriteTo(zw *zip.Writer) error {
 	return nil
 }
 
-// StabilizeZip strips volatile metadata and rewrites the provided archive in a standard form.
-func StabilizeZip(zr *zip.Reader, zw *zip.Writer) error {
-	defer zw.Close()
-	var ents []ZipEntry
-	for _, f := range zr.File {
-		r, err := f.Open()
-		if err != nil {
-			return err
-		}
-		b, err := io.ReadAll(r)
-		if err != nil {
-			r.Close()
-			return err
-		}
-		if err := r.Close(); err != nil {
-			return err
-		}
-		// TODO: Memory-intensive. We're buffering the full file in memory (again).
-		// One option would be to do two passes and only buffer what's necessary.
-		ents = append(ents, ZipEntry{&zip.FileHeader{Name: f.Name, Modified: time.UnixMilli(0)}, b})
+// MutableZipFile wraps zip.File to allow in-place modification of the original.
+type MutableZipFile struct {
+	zip.FileHeader
+	File       *zip.File
+	mutContent []byte
+}
+
+func (mf *MutableZipFile) Open() (io.Reader, error) {
+	if mf.mutContent != nil {
+		return bytes.NewReader(mf.mutContent), nil
 	}
-	sort.Slice(ents, func(i, j int) bool {
-		return ents[i].FileHeader.Name < ents[j].FileHeader.Name
-	})
-	for _, ent := range ents {
-		w, err := zw.CreateHeader(ent.FileHeader)
+	return mf.File.Open()
+}
+
+func (mf *MutableZipFile) SetContent(content []byte) {
+	mf.mutContent = content
+}
+
+// MutableZipReader wraps zip.Reader to allow in-place modification of the original.
+type MutableZipReader struct {
+	*zip.Reader
+	File    []*MutableZipFile
+	Comment string
+}
+
+func NewMutableReader(zr *zip.Reader) MutableZipReader {
+	mr := MutableZipReader{Reader: zr}
+	mr.Comment = mr.Reader.Comment
+	for _, zf := range zr.File {
+		mr.File = append(mr.File, &MutableZipFile{File: zf, FileHeader: zf.FileHeader})
+	}
+	return mr
+}
+
+func (mr MutableZipReader) WriteTo(zw *zip.Writer) error {
+	if err := zw.SetComment(mr.Comment); err != nil {
+		return err
+	}
+	for _, mf := range mr.File {
+		r, err := mf.Open()
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(w, bytes.NewReader(ent.Body)); err != nil {
+		w, err := zw.CreateHeader(&mf.FileHeader)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(w, r); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+type ZipArchiveStabilizer struct {
+	Name string
+	Func func(*MutableZipReader)
+}
+
+type ZipEntryStabilizer struct {
+	Name string
+	Func func(*MutableZipFile)
+}
+
+var AllZipStabilizers []any = []any{
+	StableZipFileOrder,
+	StableZipModifiedTime,
+	StableZipCompression,
+	StableZipDataDescriptor,
+	StableZipFileEncoding,
+	StableZipFileMode,
+	StableZipMisc,
+}
+
+var StableZipFileOrder = ZipArchiveStabilizer{
+	Name: "zip-file-order",
+	Func: func(zr *MutableZipReader) {
+		slices.SortFunc(zr.File, func(i, j *MutableZipFile) int {
+			return strings.Compare(i.Name, j.Name)
+		})
+	},
+}
+
+var StableZipModifiedTime = ZipEntryStabilizer{
+	Name: "zip-modified-time",
+	Func: func(zf *MutableZipFile) {
+		zf.Modified = time.UnixMilli(0)
+		zf.ModifiedDate = 0
+		zf.ModifiedTime = 0
+	},
+}
+
+var StableZipCompression = ZipEntryStabilizer{
+	Name: "zip-compression",
+	Func: func(zf *MutableZipFile) {
+		zf.Method = zip.Store
+	},
+}
+
+var dataDescriptorFlag = uint16(0x8)
+
+var StableZipDataDescriptor = ZipEntryStabilizer{
+	Name: "zip-data-descriptor",
+	Func: func(zf *MutableZipFile) {
+		zf.Flags = zf.Flags & ^dataDescriptorFlag
+		zf.CRC32 = 0
+		zf.CompressedSize = 0
+		zf.CompressedSize64 = 0
+		zf.UncompressedSize = 0
+		zf.UncompressedSize64 = 0
+	},
+}
+
+var StableZipFileEncoding = ZipEntryStabilizer{
+	Name: "zip-file-encoding",
+	Func: func(zf *MutableZipFile) {
+		zf.NonUTF8 = false
+	},
+}
+
+var StableZipFileMode = ZipEntryStabilizer{
+	Name: "zip-file-mode",
+	Func: func(zf *MutableZipFile) {
+		zf.CreatorVersion = 0
+		zf.ExternalAttrs = 0
+	},
+}
+
+var StableZipMisc = ZipEntryStabilizer{
+	Name: "zip-misc",
+	Func: func(zf *MutableZipFile) {
+		zf.Comment = ""
+		zf.ReaderVersion = 0
+		zf.Extra = []byte{}
+		// NOTE: Zero all flags except the data descriptor one handled above.
+		zf.Flags = zf.Flags & dataDescriptorFlag
+	},
+}
+
+// StabilizeZip strips volatile metadata and rewrites the provided archive in a standard form.
+func StabilizeZip(zr *zip.Reader, zw *zip.Writer, opts StabilizeOpts) error {
+	defer zw.Close()
+	var headers []zip.FileHeader
+	for _, zf := range zr.File {
+		headers = append(headers, zf.FileHeader)
+	}
+	mr := NewMutableReader(zr)
+	for _, s := range opts.Stabilizers {
+		switch s.(type) {
+		case ZipArchiveStabilizer:
+			s.(ZipArchiveStabilizer).Func(&mr)
+		case ZipEntryStabilizer:
+			for _, mf := range mr.File {
+				s.(ZipEntryStabilizer).Func(mf)
+			}
+		}
+	}
+	return mr.WriteTo(zw)
 }
 
 // toZipCompatibleReader coerces an io.Reader into an io.ReaderAt required to construct a zip.Reader.
