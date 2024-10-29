@@ -29,15 +29,15 @@ import (
 
 // ArtifactSummary is a summary of an artifact for the purposes of verification.
 type ArtifactSummary struct {
-	URI           string
-	Hash          hashext.MultiHash
-	CanonicalHash hashext.MultiHash
+	URI            string
+	Hash           hashext.MultiHash
+	StabilizedHash hashext.MultiHash
 }
 
 // SummarizeArtifacts fetches and summarizes the rebuild and upstream artifacts.
 func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStore, t rebuild.Target, upstreamURI string, hashes []crypto.Hash) (rb, up ArtifactSummary, err error) {
-	rb = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), CanonicalHash: hashext.NewMultiHash(hashes...)}
-	up = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), CanonicalHash: hashext.NewMultiHash(hashes...), URI: upstreamURI}
+	rb = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), StabilizedHash: hashext.NewMultiHash(hashes...)}
+	up = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), StabilizedHash: hashext.NewMultiHash(hashes...), URI: upstreamURI}
 	// Fetch and process rebuild.
 	var r io.ReadCloser
 	rbAsset := rebuild.Asset{Target: t, Type: rebuild.RebuildAsset}
@@ -48,7 +48,7 @@ func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStor
 		return
 	}
 	defer checkClose(r)
-	err = archive.Canonicalize(rb.CanonicalHash, io.TeeReader(r, rb.Hash), t.ArchiveType())
+	err = archive.Stabilize(rb.StabilizedHash, io.TeeReader(r, rb.Hash), t.ArchiveType())
 	if err != nil {
 		err = errors.Wrap(err, "fingerprinting rebuild")
 		return
@@ -64,7 +64,7 @@ func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStor
 		err = errors.Errorf("non-OK status fetching upstream artifact")
 		return
 	}
-	err = archive.Canonicalize(up.CanonicalHash, io.TeeReader(resp.Body, up.Hash), t.ArchiveType())
+	err = archive.Stabilize(up.StabilizedHash, io.TeeReader(resp.Body, up.Hash), t.ArchiveType())
 	checkClose(resp.Body)
 	if err != nil {
 		err = errors.Wrap(err, "fingerprinting upstream")

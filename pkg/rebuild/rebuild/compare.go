@@ -38,9 +38,9 @@ func artifactReader(ctx context.Context, t Target, mux RegistryMux) (io.ReadClos
 	}
 }
 
-// Canonicalize canonicalizes the upstream and rebuilt artifacts.
-func Canonicalize(ctx context.Context, t Target, mux RegistryMux, rbPath string, fs billy.Filesystem, assets AssetStore) (rb, up Asset, err error) {
-	{ // Canonicalize rebuild
+// Stabilize the upstream and rebuilt artifacts.
+func Stabilize(ctx context.Context, t Target, mux RegistryMux, rbPath string, fs billy.Filesystem, assets AssetStore) (rb, up Asset, err error) {
+	{ // Stabilize rebuild
 		rb = Asset{Type: DebugRebuildAsset, Target: t}
 		w, err := assets.Writer(ctx, rb)
 		if err != nil {
@@ -52,11 +52,11 @@ func Canonicalize(ctx context.Context, t Target, mux RegistryMux, rbPath string,
 			return rb, up, errors.Wrapf(err, "[INTERNAL] Failed to find rebuilt artifact")
 		}
 		defer f.Close()
-		if err := archive.Canonicalize(w, f, t.ArchiveType()); err != nil {
-			return rb, up, errors.Wrapf(err, "[INTERNAL] Canonicalizing rebuild failed")
+		if err := archive.Stabilize(w, f, t.ArchiveType()); err != nil {
+			return rb, up, errors.Wrapf(err, "[INTERNAL] Stabilize rebuild failed")
 		}
 	}
-	{ // Canonicalize upstream
+	{ // Stabilize upstream
 		up = Asset{Type: DebugUpstreamAsset, Target: t}
 		w, err := assets.Writer(ctx, up)
 		if err != nil {
@@ -68,8 +68,8 @@ func Canonicalize(ctx context.Context, t Target, mux RegistryMux, rbPath string,
 			return rb, up, errors.Wrapf(err, "[INTERNAL] Failed to fetch upstream artifact")
 		}
 		defer r.Close()
-		if err := archive.Canonicalize(w, r, t.ArchiveType()); err != nil {
-			return rb, up, errors.Wrapf(err, "[INTERNAL] Canonicalizing upstream failed")
+		if err := archive.Stabilize(w, r, t.ArchiveType()); err != nil {
+			return rb, up, errors.Wrapf(err, "[INTERNAL] Stabilize upstream failed")
 		}
 	}
 	return rb, up, nil

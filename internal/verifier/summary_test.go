@@ -68,11 +68,11 @@ func TestSummarizeArtifacts(t *testing.T) {
 				}
 			},
 		})
-		canonicalizedHash := hashext.NewMultiHash(crypto.SHA256)
-		canonicalizedZip := must(archivetest.ZipFile([]archive.ZipEntry{
+		stabilizedHash := hashext.NewMultiHash(crypto.SHA256)
+		stabilizedZip := must(archivetest.ZipFile([]archive.ZipEntry{
 			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Modified: time.UnixMilli(0)}, Body: []byte("data")},
 		}))
-		must(canonicalizedHash.Write(canonicalizedZip.Bytes()))
+		must(stabilizedHash.Write(stabilizedZip.Bytes()))
 		rb, up, err := SummarizeArtifacts(ctx, metadata, target, upstreamURI, []crypto.Hash{crypto.SHA256})
 		if err != nil {
 			t.Fatalf("SummarizeArtifacts() returned error: %v", err)
@@ -83,8 +83,8 @@ func TestSummarizeArtifacts(t *testing.T) {
 		if diff := cmp.Diff(origHash.Sum(nil), rb.Hash.Sum(nil)); diff != "" {
 			t.Errorf("SummarizeArtifacts() returned diff for rb.Hash (-want +got):\n%s", diff)
 		}
-		if diff := cmp.Diff(canonicalizedHash.Sum(nil), rb.CanonicalHash.Sum(nil)); diff != "" {
-			t.Errorf("SummarizeArtifacts() returned diff for rb.CanonicalHash (-want +got):\n%s", diff)
+		if diff := cmp.Diff(stabilizedHash.Sum(nil), rb.StabilizedHash.Sum(nil)); diff != "" {
+			t.Errorf("SummarizeArtifacts() returned diff for rb.StabilizedHash (-want +got):\n%s", diff)
 		}
 		if up.URI != upstreamURI {
 			t.Errorf("SummarizeArtifacts() returned diff for up.URI: want %q, got %q", upstreamURI, up.URI)
@@ -92,8 +92,8 @@ func TestSummarizeArtifacts(t *testing.T) {
 		if diff := cmp.Diff(origHash.Sum(nil), up.Hash.Sum(nil)); diff != "" {
 			t.Errorf("SummarizeArtifacts() returned diff for up.Hash (-want +got):\n%s", diff)
 		}
-		if diff := cmp.Diff(canonicalizedHash.Sum(nil), up.CanonicalHash.Sum(nil)); diff != "" {
-			t.Errorf("SummarizeArtifacts() returned diff for up.CanonicalHash (-want +got):\n%s", diff)
+		if diff := cmp.Diff(stabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil)); diff != "" {
+			t.Errorf("SummarizeArtifacts() returned diff for up.StabilizedHash (-want +got):\n%s", diff)
 		}
 	})
 }

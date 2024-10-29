@@ -1,7 +1,8 @@
 # `ArtifactEquivalence` Build Type
 
 The artifact equivalence attestation is a claim that two artifacts are equal
-after some non-security relevant details have been normalized.
+after certain non-security relevant aspects have been stabilized (see
+[section below](#artifact-stabilization-details)).
 
 Rebuilding exact bit-for-bit identical copies of upstream artifacts is not
 always possible. However, in many cases, the only reason a bit-for-bit match
@@ -85,7 +86,7 @@ Example:
 
 ### Byproducts
 
-The `byproducts` include a hash digest of the normalized version.
+The `byproducts` include a hash digest of the stabilized version.
 
 | field    | details                                                     |
 | -------- | ----------------------------------------------------------- |
@@ -105,21 +106,21 @@ Example:
       ]
 ```
 
-## Normalization Details
+## Artifact Stabilization Details
 
 To compare the rebuilt artifact and the upstream artifact, OSS Rebuild puts both
-artifacts through a normalization process and compares the results. If the
-rebuild was successful, then the outcome of this process for both upstream and
-rebuild should result in an identical "normalized" artifact.
+artifacts through a stabilization process and compares the results. If the
+rebuild was successful, then the result of this process for both upstream and
+rebuild should be identical artifacts.
 
 ### Zip
 
 [Zip](<https://en.wikipedia.org/wiki/ZIP_(file_format)>) is an archive file
 format that supports lossless data compression. Zip archives contain
-modification times, zip version metadata and other filesystem specific data
-frequently differ from system to system. We believe this data does not have a
+modification times, zip version metadata, and other filesystem specific data
+that frequently differ from system to system. We believe this data does not have a
 meaningful security impact for the source-based distribution systems like those
-supported by OSS Rebuild. For zip based archives, this is the normalization
+supported by OSS Rebuild. For zip based archives, this is the stabilization
 process:
 
 1.  Read all the existing zip entries
@@ -138,7 +139,7 @@ that is done using another compression scheme in combination with tar. Tarballs
 contain the file mode, owner and group IDs, and a modification time. These
 frequently differ between build environments and we do not believe they have a
 meaningful security impact for the source-based distribution systems like those
-supported by OSS Rebuild. For tar based archives, this is the normalization
+supported by OSS Rebuild. For tar based archives, this is the stabilization
 process:
 
 1.  Read all the existing tar entries
