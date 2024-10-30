@@ -359,12 +359,17 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 		return errors.Wrap(err, "creating dockerfile")
 	}
 	{
-		w, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
+		lw, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
 		if err != nil {
 			return errors.Wrap(err, "creating writer for Dockerfile")
 		}
-		defer w.Close()
-		if _, err := io.WriteString(w, dockerfile); err != nil {
+		defer lw.Close()
+		rw, err := opts.RemoteMetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
+		if err != nil {
+			return errors.Wrap(err, "creating remote writer for Dockerfile")
+		}
+		defer rw.Close()
+		if _, err := io.WriteString(io.MultiWriter(lw, rw), dockerfile); err != nil {
 			return errors.Wrap(err, "writing Dockerfile")
 		}
 	}
@@ -376,12 +381,17 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 		return errors.Wrap(err, "performing build")
 	}
 	{
-		w, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
+		lw, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
 		if err != nil {
 			return errors.Wrap(err, "creating writer for build info")
 		}
-		defer w.Close()
-		if err := json.NewEncoder(w).Encode(bi); err != nil {
+		defer lw.Close()
+		rw, err := opts.RemoteMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
+		if err != nil {
+			return errors.Wrap(err, "creating remote writer for build info")
+		}
+		defer rw.Close()
+		if err := json.NewEncoder(io.MultiWriter(lw, rw)).Encode(bi); err != nil {
 			return errors.Wrap(err, "marshalling and writing build info")
 		}
 	}
