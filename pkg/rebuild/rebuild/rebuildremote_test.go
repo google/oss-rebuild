@@ -342,7 +342,7 @@ chmod +x proxy
 docker network create proxynet
 useradd --system proxyu
 uid=$(id -u proxyu)
-docker run --detach --name=proxy --network=proxynet --privileged --volume=/workspace/proxy:/workspace/proxy --volume=/var/run/docker.sock:/var/run/docker.sock --entrypoint /bin/sh gcr.io/cloud-builders/docker -euxc '
+docker run --detach --name=proxy --network=proxynet --privileged -v=/workspace/proxy:/workspace/proxy -v=/var/run/docker.sock:/var/run/docker.sock --entrypoint /bin/sh gcr.io/cloud-builders/docker -euxc '
 	useradd --system --non-unique --uid '$uid' proxyu
 	chown proxyu /workspace/proxy
 	chown proxyu /var/run/docker.sock

@@ -162,7 +162,7 @@ var proxyBuildTpl = template.Must(
 				docker network create proxynet
 				useradd --system {{.User}}
 				uid=$(id -u {{.User}})
-				docker run --detach --name=proxy --network=proxynet --privileged --volume=/workspace/proxy:/workspace/proxy --volume=/var/run/docker.sock:/var/run/docker.sock --entrypoint /bin/sh gcr.io/cloud-builders/docker -euxc '
+				docker run --detach --name=proxy --network=proxynet --privileged -v=/workspace/proxy:/workspace/proxy -v=/var/run/docker.sock:/var/run/docker.sock --entrypoint /bin/sh gcr.io/cloud-builders/docker -euxc '
 					useradd --system --non-unique --uid '$uid' {{.User}}
 					chown {{.User}} /workspace/proxy
 					chown {{.User}} /var/run/docker.sock
