@@ -3,10 +3,12 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -100,22 +102,26 @@ func getPackageFilePath(packageName string) string {
 
 func findCommitWithVersions(repo *git.Repository, packages []Package, published time.Time) (*object.Commit, error) {
 	fmt.Println("Calculating commits...")
-	commitIter, err := repo.Log(&git.LogOptions{Until: &published, Order: git.LogOrderCommitterTime})
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println("Starting search...")
-	var c *object.Commit
-	var maxFound int
 	blobHashes := make(map[string]plumbing.Hash)
 	present := make(map[string]bool)
 	// TODO: detect yanking
-	err = commitIter.ForEach(func(commit *object.Commit) error {
+	matchesAt := func(ts int) int {
+		t := time.Unix(int64(ts), 0)
+		// NOTE: Log ordering shouldn't be an issue with the index's linear history.
+		commitIter, err := repo.Log(&git.LogOptions{Until: &t})
+		if err != nil {
+			panic(err)
+		}
+		commit, err := commitIter.Next()
+		if err == io.EOF {
+			return 0
+		} else if err != nil {
+			panic(err)
+		}
 		fmt.Printf("Analyzing %s [time: %s]... ", commit.Hash.String(), commit.Committer.When)
 		tree, err := commit.Tree()
 		if err != nil {
-			return err
+			panic(err)
 		}
 		var found int
 		for _, pkg := range packages {
@@ -145,18 +151,32 @@ func findCommitWithVersions(repo *git.Repository, packages []Package, published 
 				found++
 			}
 		}
-		fmt.Printf("Found %02d\n", found)
-
-		if found >= maxFound {
-			maxFound = found
-			c = commit
-			return nil
-		} else {
-			return io.EOF
-		}
-	})
-	if err != nil && err != io.EOF {
-		return nil, err
+		fmt.Println("Found", found)
+		return found
 	}
-	return c, nil
+	maxFound := matchesAt(int(published.Unix()))
+	// Linear scan backwards in days to find the one containing the target registry state.
+	day := 24 * time.Hour
+	dayBound := day
+	for ; ; dayBound += day {
+		if matchesAt(int(published.Add(-dayBound).Unix())) < maxFound {
+			break
+		}
+	}
+	lowerBound := int(published.Add(-dayBound).Unix())
+	// Binary search through the day's commits to find the earliest target registry state.
+	ts, found := sort.Find(int(day.Seconds()), func(ts int) int {
+		f := matchesAt(lowerBound + ts)
+		return -cmp.Compare(f, maxFound)
+	})
+	if !found {
+		panic("not found")
+	}
+	// Repeat the commit query to find the same commit found above.
+	t := time.Unix(int64(lowerBound+ts), 0)
+	commitIter, err := repo.Log(&git.LogOptions{Until: &t})
+	if err != nil {
+		panic(err)
+	}
+	return commitIter.Next()
 }
