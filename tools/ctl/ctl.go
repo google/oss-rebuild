@@ -53,27 +53,6 @@ var rootCmd = &cobra.Command{
 	Short: "A debugging tool for OSS-Rebuild",
 }
 
-func getExecutorVersion(ctx context.Context, client *http.Client, api *url.URL, service string) (string, error) {
-	verURL := api.JoinPath("version")
-	verURL.RawQuery = url.Values{"service": []string{service}}.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, verURL.String(), nil)
-	if err != nil {
-		return "", errors.Wrap(err, "creating API version request")
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", errors.Wrap(err, "sending API version request")
-	}
-	if resp.StatusCode != 200 {
-		return "", errors.Wrap(errors.New(resp.Status), "API version request")
-	}
-	vb, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", errors.Wrap(err, "reading API version")
-	}
-	return string(vb), nil
-}
-
 func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, clean bool) (*rundex.FetchRebuildRequest, error) {
 	var runs []string
 	if run != "" {
