@@ -15,6 +15,11 @@
 // Package pipe provides a simple way of applying transforms to a channel.
 package pipe
 
+import (
+	"math"
+	"sync"
+)
+
 // Pipe constructs a series of executions.
 type Pipe[T any] struct {
 	Width int
@@ -45,6 +50,28 @@ func (p Pipe[T]) Do(fn func(in T, out chan<- T)) Pipe[T] {
 	})
 }
 
+// ParDo adds an out-of-order, concurrent pipeline combinator.
+func (p Pipe[T]) ParDo(concurrency int, fn func(in T, out chan<- T)) Pipe[T] {
+	return p.DoFor(func(in <-chan T, out chan<- T) {
+		defer close(out)
+		if concurrency < 0 {
+			concurrency = math.MaxInt
+		}
+		bucket := make(chan struct{}, concurrency)
+		var wg sync.WaitGroup
+		for t := range in {
+			wg.Add(1)
+			bucket <- struct{}{}
+			go func() {
+				defer wg.Done()
+				fn(t, out)
+				<-bucket
+			}()
+		}
+		wg.Wait()
+	})
+}
+
 // Out produces the final output channel.
 func (p Pipe[T]) Out() <-chan T {
 	return p.steps[len(p.steps)-1]
@@ -65,5 +92,27 @@ func Into[T, S any](in Pipe[T], fn func(in T, out chan<- S)) Pipe[S] {
 		for t := range in {
 			fn(t, out)
 		}
+	})
+}
+
+// ParInto takes the input pipe and transforms it to another type in parallel.
+func ParInto[T, S any](concurrency int, in Pipe[T], fn func(in T, out chan<- S)) Pipe[S] {
+	return IntoFor(in, func(in <-chan T, out chan<- S) {
+		defer close(out)
+		if concurrency < 0 {
+			concurrency = math.MaxInt
+		}
+		bucket := make(chan struct{}, concurrency)
+		var wg sync.WaitGroup
+		for t := range in {
+			wg.Add(1)
+			bucket <- struct{}{}
+			go func() {
+				defer wg.Done()
+				fn(t, out)
+				<-bucket
+			}()
+		}
+		wg.Wait()
 	})
 }
