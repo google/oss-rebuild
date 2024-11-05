@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
-	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
@@ -154,6 +154,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		Ecosystem: t.Ecosystem,
 		Package:   t.Package,
 		Version:   t.Version,
+		Artifact:  t.Artifact,
 	}
 	if fromRepo {
 		defs, err := builddef.NewBuildDefinitionSetFromGit(&builddef.GitBuildDefinitionSetOptions{
@@ -337,7 +338,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 			log.Println("Failed to load build info:", err)
 		}
 	}
-	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(req.ID).Set(ctx, schema.RebuildAttempt{
+	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("artifacts").Doc(v.Target.Artifact).Collection("attempts").Doc(req.ID).Set(ctx, schema.RebuildAttempt{
 		Ecosystem:       string(v.Target.Ecosystem),
 		Package:         v.Target.Package,
 		Version:         v.Target.Version,

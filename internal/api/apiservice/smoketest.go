@@ -66,7 +66,7 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 	}
 	resp, err := rebuildSmoketest(ctx, sreq, deps)
 	for _, v := range resp.Verdicts {
-		_, err := deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(sreq.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(sreq.ID).Set(ctx, schema.RebuildAttempt{
+		_, err := deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(sreq.Package)).Collection("versions").Doc(v.Target.Version).Collection("artifacts").Doc(v.Target.Artifact).Collection("attempts").Doc(sreq.ID).Set(ctx, schema.RebuildAttempt{
 			Ecosystem:       string(v.Target.Ecosystem),
 			Package:         v.Target.Package,
 			Version:         v.Target.Version,

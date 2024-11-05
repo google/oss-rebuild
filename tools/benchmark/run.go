@@ -2,9 +2,7 @@ package benchmark
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -12,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/pkg/errors"
 )
 
@@ -24,40 +22,6 @@ const (
 	SmoketestMode BenchmarkMode = "smoketest"
 	AttestMode    BenchmarkMode = "attest"
 )
-
-func getExecutorVersion(ctx context.Context, client *http.Client, api *url.URL, service string) (string, error) {
-	verURL := api.JoinPath("version")
-	verURL.RawQuery = url.Values{"service": []string{service}}.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, verURL.String(), nil)
-	if err != nil {
-		return "", errors.Wrap(err, "creating API version request")
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", errors.Wrap(err, "sending API version request")
-	}
-	if resp.StatusCode != 200 {
-		return "", errors.Wrap(errors.New(resp.Status), "API version request")
-	}
-	vb, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", errors.Wrap(err, "reading API version")
-	}
-	return string(vb), nil
-}
-
-func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) (*http.Request, error) {
-	values, err := form.Marshal(msg)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating values")
-	}
-	u.RawQuery = values.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating request")
-	}
-	return req, nil
-}
 
 type packageWorker interface {
 	Setup(ctx context.Context)
@@ -111,52 +75,33 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schem
 	if len(p.Artifacts) > 0 && len(p.Artifacts) != len(p.Versions) {
 		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
 	}
+	stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](w.client, *w.url.JoinPath("rebuild"))
 	for i, v := range p.Versions {
 		<-w.limiters[p.Ecosystem]
 		var artifact string
 		if len(p.Artifacts) > 0 {
 			artifact = p.Artifacts[i]
 		}
-		var errMsg string
-		req, err := makeHTTPRequest(ctx, w.url.JoinPath("rebuild"), &schema.RebuildPackageRequest{
+		req := schema.RebuildPackageRequest{
 			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 			Package:   p.Name,
 			Version:   v,
 			Artifact:  artifact,
 			ID:        w.run,
-		})
-		if err != nil {
-			errMsg = errors.Wrap(err, "making request").Error()
 		}
-		resp, err := w.client.Do(req)
+		verdict, err := stub(ctx, req)
 		if err != nil {
-			errMsg = errors.Wrap(err, "sending request").Error()
-		} else if resp.StatusCode != 200 {
-			errMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
-		}
-		var verdict schema.Verdict
-		if errMsg != "" {
-			verdict = schema.Verdict{
+			out <- schema.Verdict{
 				Target: rebuild.Target{
 					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 					Package:   p.Name,
 					Version:   v,
 				},
-				Message: errMsg,
+				Message: err.Error(),
 			}
 		} else {
-			// TODO: Once the attestation endpoint returns verdict objects,
-			// support that here.
-			verdict = schema.Verdict{
-				Target: rebuild.Target{
-					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-					Package:   p.Name,
-					Version:   v,
-				},
-				Message: "",
-			}
+			out <- *verdict
 		}
-		out <- verdict
 	}
 }
 
@@ -170,9 +115,10 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 		// First, warm up the instances to ensure it can handle actual load.
 		// Warm up requires the service fulfill sequentially successful version
 		// requests (which hit both the API and the builder jobs).
+		stub := api.Stub[schema.VersionRequest, schema.VersionResponse](w.client, *w.url.JoinPath("version"))
+		req := schema.VersionRequest{Service: "build-local"}
 		for i := 0; i < 5; {
-			_, err := getExecutorVersion(ctx, w.client, w.url, "build-local")
-			if err != nil {
+			if _, err := stub(ctx, req); err != nil {
 				i = 0
 			} else {
 				i++
@@ -183,25 +129,16 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 
 func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
 	<-w.limiters[p.Ecosystem]
-	var errMsg string
-	req, err := makeHTTPRequest(ctx, w.url.JoinPath("smoketest"), &schema.SmoketestRequest{
+	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](w.client, *w.url.JoinPath("smoketest"))
+	req := schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 		Package:   p.Name,
 		Versions:  p.Versions,
 		ID:        w.run,
-	})
-	if err != nil {
-		errMsg = errors.Wrap(err, "making request").Error()
 	}
-	resp, err := w.client.Do(req)
+	resp, err := stub(ctx, req)
 	if err != nil {
-		errMsg = errors.Wrap(err, "sending request").Error()
-	} else if resp.StatusCode != 200 {
-		log.Println(req.URL.String())
-		io.Copy(log.Writer(), resp.Body)
-		errMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
-	}
-	if errMsg != "" {
+		errMsg := err.Error()
 		for _, v := range p.Versions {
 			out <- schema.Verdict{
 				Target: rebuild.Target{
@@ -212,14 +149,10 @@ func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan sc
 				Message: errMsg,
 			}
 		}
-	} else {
-		var r schema.SmoketestResponse
-		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-			log.Fatalf("Failed to decode smoketest response: %v", err)
-		}
-		for _, v := range r.Verdicts {
-			out <- v
-		}
+		return
+	}
+	for _, v := range resp.Verdicts {
+		out <- v
 	}
 }
 
@@ -236,12 +169,11 @@ func defaultLimiters() map[string]<-chan time.Time {
 }
 
 func isCloudRun(u *url.URL) bool {
-	return strings.HasSuffix(u.Host, ".run.app")
+	return u != nil && strings.HasSuffix(u.Host, ".run.app")
 }
 
 type RunBenchOpts struct {
-	Mode BenchmarkMode
-	// RunID is the ID for this run. Leave blank for one to be generated.
+	Mode           BenchmarkMode
 	RunID          string
 	MaxConcurrency int
 }
@@ -257,16 +189,17 @@ func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set Pac
 		run:      opts.RunID,
 	}
 	ex := executor{Concurrency: opts.MaxConcurrency}
-	if opts.Mode == SmoketestMode {
+	switch opts.Mode {
+	case SmoketestMode:
 		ex.Worker = &smoketestWorker{
 			workerConfig: conf,
 			warmup:       isCloudRun(apiURL),
 		}
-	} else if opts.Mode == AttestMode {
+	case AttestMode:
 		ex.Worker = &attestWorker{
 			workerConfig: conf,
 		}
-	} else {
+	default:
 		return nil, fmt.Errorf("invalid mode: %s", string(opts.Mode))
 	}
 	verdictChan := make(chan schema.Verdict)

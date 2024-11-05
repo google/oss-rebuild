@@ -17,9 +17,9 @@ package builddef
 import (
 	"context"
 
-	billy "github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
-	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"

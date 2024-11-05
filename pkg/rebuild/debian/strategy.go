@@ -26,17 +26,17 @@ var (
 )
 
 type FileWithChecksum struct {
-	URL string
-	MD5 string
+	URL string `json:"url" yaml:"url,omitempty"`
+	MD5 string `json:"md5" yaml:"md5,omitempty"`
 }
 
 // DebianPackage aggregates the options controlling a debian package build.
 type DebianPackage struct {
-	DSC          FileWithChecksum
-	Orig         FileWithChecksum
-	Debian       FileWithChecksum
-	Native       FileWithChecksum
-	Requirements []string
+	DSC          FileWithChecksum `json:"dsc" yaml:"dsc,omitempty"`
+	Orig         FileWithChecksum `json:"orig" yaml:"orig,omitempty"`
+	Debian       FileWithChecksum `json:"debian" yaml:"debian,omitempty"`
+	Native       FileWithChecksum `json:"native" yaml:"native,omitempty"`
+	Requirements []string         `json:"requirements" yaml:"requirements,omitempty"`
 }
 
 var _ rebuild.Strategy = &DebianPackage{}

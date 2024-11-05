@@ -191,39 +191,46 @@ resource "google_storage_notification" "attestation-notification" {
 
 ## Container resources
 
-resource "google_container_registry" "registry" {
-  project  = var.project
-  location = "US"
+resource "google_artifact_registry_repository" "registry" {
+  provider = google-beta
+  location = "us-central1"
+  repository_id = "service-images"
+  format  = "DOCKER"
 }
 
-data "google_container_registry_image" "gateway" {
-  name = "gateway"
-  tag = "latest"
-  depends_on = [google_container_registry.registry]
+data "google_artifact_registry_docker_image" "gateway" {
+  provider = google-beta
+  location = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name = "gateway"
 }
 
-data "google_container_registry_image" "git-cache" {
-  name = "git_cache"
-  tag = "latest"
-  depends_on = [google_container_registry.registry]
+data "google_artifact_registry_docker_image" "git-cache" {
+  provider = google-beta
+  location = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name = "git_cache"
 }
 
-data "google_container_registry_image" "rebuilder" {
-  name = "rebuilder"
-  tag = "latest"
-  depends_on = [google_container_registry.registry]
+data "google_artifact_registry_docker_image" "rebuilder" {
+  provider = google-beta
+  location = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name = "rebuilder"
 }
 
-data "google_container_registry_image" "inference" {
-  name = "inference"
-  tag = "latest"
-  depends_on = [google_container_registry.registry]
+data "google_artifact_registry_docker_image" "inference" {
+  provider = google-beta
+  location = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name = "inference"
 }
 
-data "google_container_registry_image" "api" {
-  name = "api"
-  tag = "latest"
-  depends_on = [google_container_registry.registry]
+data "google_artifact_registry_docker_image" "api" {
+  provider = google-beta
+  location = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name = "api"
 }
 
 ## Compute resources
@@ -242,7 +249,7 @@ resource "google_cloud_run_v2_service" "gateway" {
     service_account = google_service_account.gateway.email
     timeout         = "${5 * 60}s" // 5 minutes
     containers {
-      image = data.google_container_registry_image.gateway.image_url
+      image = data.google_artifact_registry_docker_image.gateway.self_link
       resources {
         limits = {
           cpu    = "1000m"
@@ -264,7 +271,7 @@ resource "google_cloud_run_v2_service" "git-cache" {
     service_account = google_service_account.git-cache.email
     timeout         = "${2 * 60}s" // 2 minutes
     containers {
-      image = data.google_container_registry_image.git-cache.image_url
+      image = data.google_artifact_registry_docker_image.git-cache.self_link
       args = [
         "--bucket=${google_storage_bucket.git-cache.name}"
       ]
@@ -287,7 +294,7 @@ resource "google_cloud_run_v2_service" "build-local" {
     service_account = google_service_account.builder-local.email
     timeout         = "${59 * 60}s" // 59 minutes
     containers {
-      image = data.google_container_registry_image.rebuilder.image_url
+      image = data.google_artifact_registry_docker_image.rebuilder.self_link
       args = [
         "--debug-storage=gs://${google_storage_bucket.debug.name}",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
@@ -314,7 +321,7 @@ resource "google_cloud_run_v2_service" "inference" {
     service_account       = google_service_account.inference.email
     timeout               = "${14 * 60}s" // 14 minutes
     containers {
-      image = data.google_container_registry_image.inference.image_url
+      image = data.google_artifact_registry_docker_image.inference.self_link
       args = [
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
@@ -340,7 +347,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
     service_account = google_service_account.orchestrator.email
     timeout         = "${59 * 60}s" // 59 minutes
     containers {
-      image = data.google_container_registry_image.api.image_url
+      image = data.google_artifact_registry_docker_image.api.self_link
       args = [
         "--project=${var.project}",
         "--build-local-url=${google_cloud_run_v2_service.build-local.uri}",
