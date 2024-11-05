@@ -46,7 +46,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	yaml "gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v3"
 )
 
 var rootCmd = &cobra.Command{
@@ -54,7 +54,7 @@ var rootCmd = &cobra.Command{
 	Short: "A debugging tool for OSS-Rebuild",
 }
 
-func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, clean bool) (*rundex.FetchRebuildRequest, error) {
+func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean bool) (*rundex.FetchRebuildRequest, error) {
 	var runs []string
 	if run != "" {
 		runs = strings.Split(run, ",")
@@ -62,8 +62,9 @@ func buildFetchRebuildRequest(ctx context.Context, bench, run, filter string, cl
 	req := rundex.FetchRebuildRequest{
 		Runs: runs,
 		Opts: rundex.FetchRebuildOpts{
-			Filter: filter,
-			Clean:  clean,
+			Prefix:  prefix,
+			Pattern: pattern,
+			Clean:   clean,
 		},
 	}
 	if len(req.Runs) == 0 {
@@ -130,22 +131,22 @@ var tui = &cobra.Command{
 }
 
 var getResults = &cobra.Command{
-	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-filter <verdict>] [-sample N]",
+	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-filter <verdict>] [-sample N] [-format=summary|bench]",
 	Short: "Analyze rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		req, err := buildFetchRebuildRequest(cmd.Context(), *bench, *runFlag, *filter, *clean)
+		req, err := buildFetchRebuildRequest(*bench, *runFlag, *prefix, *pattern, *clean)
 		if err != nil {
 			log.Fatal(err)
 		}
-		if *format == "summary" && *sample > 0 {
+		if (*format == "" || *format == "summary") && *sample > 0 {
 			log.Fatal("--sample option incompatible with --format=summary")
 		}
 		fireClient, err := rundex.NewFirestore(cmd.Context(), *project)
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Printf("Querying results for [executors=%v,runs=%v,bench=%s,filter=%s]", req.Executors, req.Runs, *bench, req.Opts.Filter)
+		log.Printf("Querying results for [executors=%v,runs=%v,bench=%s,prefix=%s,pattern=%s]", req.Executors, req.Runs, *bench, req.Opts.Prefix, req.Opts.Pattern)
 		rebuilds, err := fireClient.FetchRebuilds(cmd.Context(), req)
 		if err != nil {
 			log.Fatal(err)
@@ -157,7 +158,7 @@ var getResults = &cobra.Command{
 			return
 		}
 		switch *format {
-		case "summary":
+		case "", "summary":
 			log.Println("Verdict summary:")
 			for _, vg := range byCount {
 				fmt.Printf(" %4d - %s (example: %s)\n", vg.Count, vg.Msg[:min(len(vg.Msg), 1000)], vg.Examples[0].ID())
@@ -198,6 +199,9 @@ var getResults = &cobra.Command{
 					idx = len(ps.Packages) - 1
 				}
 				ps.Packages[idx].Versions = append(ps.Packages[idx].Versions, r.Version)
+				if r.Artifact != "" {
+					ps.Packages[idx].Artifacts = append(ps.Packages[idx].Artifacts, r.Artifact)
+				}
 			}
 			ps.Updated = time.Now()
 			b, err := json.MarshalIndent(ps, "", "  ")
@@ -294,6 +298,14 @@ var runBenchmark = &cobra.Command{
 		})
 		switch *format {
 		// TODO: Maybe add more format options, or include more data in the csv?
+		case "", "summary":
+			var successes int
+			for _, v := range verdicts {
+				if v.Message == "" {
+					successes++
+				}
+			}
+			io.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Successes: %d/%d\n", successes, len(verdicts)))
 		case "csv":
 			w := csv.NewWriter(cmd.OutOrStdout())
 			defer w.Flush()
@@ -302,14 +314,6 @@ var runBenchmark = &cobra.Command{
 					log.Fatal(errors.Wrap(err, "writing CSV"))
 				}
 			}
-		case "summary":
-			var successes int
-			for _, v := range verdicts {
-				if v.Message == "" {
-					successes++
-				}
-			}
-			io.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Successes: %d/%d\n", successes, len(verdicts)))
 		default:
 			log.Fatalf("Unsupported format: %s", *format)
 		}
@@ -452,7 +456,7 @@ var listRuns = &cobra.Command{
 }
 
 var infer = &cobra.Command{
-	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] ",
+	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] [--format strategy|dockerfile]",
 	Short: "Run inference",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -460,6 +464,7 @@ var infer = &cobra.Command{
 			Ecosystem: rebuild.Ecosystem(*ecosystem),
 			Package:   *pkg,
 			Version:   *version,
+			Artifact:  *artifact,
 			// TODO: Add support for strategy hint.
 		}
 		var resp *schema.StrategyOneOf
@@ -479,10 +484,10 @@ var infer = &cobra.Command{
 			} else {
 				client = http.DefaultClient
 			}
-			stub := api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, *apiURL.JoinPath("runs"))
+			stub := api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, *apiURL.JoinPath("/infer"))
 			resp, err = stub(cmd.Context(), req)
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating run"))
+				log.Fatal(errors.Wrap(err, "executing inference"))
 			}
 		} else {
 			deps := &inferenceservice.InferDeps{
@@ -495,10 +500,38 @@ var infer = &cobra.Command{
 				log.Fatal(err)
 			}
 		}
-		enc := json.NewEncoder(cmd.OutOrStdout())
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(resp); err != nil {
-			log.Fatal(errors.Wrap(err, "encoding result"))
+		switch *format {
+		case "", "strategy":
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(resp); err != nil {
+				log.Fatal(errors.Wrap(err, "encoding result"))
+			}
+		case "dockerfile":
+			t := rebuild.Target{
+				Ecosystem: rebuild.Ecosystem(*ecosystem),
+				Package:   *pkg,
+				Version:   *version,
+				Artifact:  *artifact,
+			}
+			s, err := resp.Strategy()
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "parsing strategy"))
+			}
+			if s == nil {
+				log.Fatal("no strategy")
+			}
+			in := rebuild.Input{
+				Target:   t,
+				Strategy: s,
+			}
+			dockerfile, err := rebuild.MakeDockerfile(in, rebuild.RemoteOptions{})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "generating dockerfile"))
+			}
+			cmd.OutOrStdout().Write([]byte(dockerfile))
+		default:
+			log.Fatalf("Unknown --format type: %s", *format)
 		}
 	},
 }
@@ -522,8 +555,9 @@ var (
 	// get-results
 	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
 	bench        = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
-	format       = flag.String("format", "summary", "the format to be printed. Options: summary, bench")
-	filter       = flag.String("filter", "", "a verdict message (or prefix) which will restrict the returned results")
+	format       = flag.String("format", "", "format of the output, options are command specific")
+	prefix       = flag.String("prefix", "", "a verdict message prefix which will restrict the returned results")
+	pattern      = flag.String("pattern", "", "a regex pattern to restrict the returned results")
 	sample       = flag.Int("sample", -1, "if provided, only N results will be displayed")
 	project      = flag.String("project", "", "the project from which to fetch the Firestore data")
 	clean        = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
@@ -550,7 +584,8 @@ func init() {
 
 	getResults.Flags().AddGoFlag(flag.Lookup("run"))
 	getResults.Flags().AddGoFlag(flag.Lookup("bench"))
-	getResults.Flags().AddGoFlag(flag.Lookup("filter"))
+	getResults.Flags().AddGoFlag(flag.Lookup("prefix"))
+	getResults.Flags().AddGoFlag(flag.Lookup("pattern"))
 	getResults.Flags().AddGoFlag(flag.Lookup("sample"))
 	getResults.Flags().AddGoFlag(flag.Lookup("project"))
 	getResults.Flags().AddGoFlag(flag.Lookup("clean"))
@@ -565,6 +600,8 @@ func init() {
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
 
+	infer.Flags().AddGoFlag(flag.Lookup("api"))
+	infer.Flags().AddGoFlag(flag.Lookup("format"))
 	infer.Flags().AddGoFlag(flag.Lookup("ecosystem"))
 	infer.Flags().AddGoFlag(flag.Lookup("package"))
 	infer.Flags().AddGoFlag(flag.Lookup("version"))

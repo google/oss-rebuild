@@ -89,13 +89,13 @@ func makeKMSSigner(ctx context.Context, cryptoKeyVersion string) (*dsse.Envelope
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching CryptoKeyVersion")
 	}
-	kmsSigner, err := kmsdsse.NewCloudKMSSigner(ctx, kc, ckv)
+	kmsSigner, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, ckv)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating CloudKMSSigner")
+		return nil, errors.Wrap(err, "creating Cloud KMS signer")
 	}
 	dsseSigner, err := dsse.NewEnvelopeSigner(kmsSigner)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating EnvelopeSigner")
+		return nil, errors.Wrap(err, "creating envelope signer")
 	}
 	return dsseSigner, nil
 }
