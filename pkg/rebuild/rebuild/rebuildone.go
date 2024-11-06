@@ -29,28 +29,30 @@ import (
 )
 
 // RebuildOne runs a rebuild for the given package artifact.
-func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, rcfg *RepoConfig, fs billy.Filesystem, s storage.Storer, assets AssetStore) (*Verdict, []Asset, error) {
+// NOTE: err indicates a failed rebuild but the verdict and toUpload returns
+// will be valid regardless of its value.
+func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, rcfg *RepoConfig, fs billy.Filesystem, s storage.Storer, assets AssetStore) (verdict Verdict, toUpload []Asset, err error) {
+	verdict.Target = input.Target
 	t := input.Target
 	var repoURI string
 	if input.Strategy != nil {
 		if hint, ok := input.Strategy.(*LocationHint); ok && hint != nil {
 			repoURI = hint.Repo
 		} else {
-			inst, err := input.Strategy.GenerateFor(t, BuildEnv{})
+			var inst Instructions
+			inst, err = input.Strategy.GenerateFor(t, BuildEnv{})
 			if err != nil {
-				return nil, nil, err
+				return
 			}
 			repoURI = inst.Location.Repo
 		}
 	} else {
-		var err error
 		repoURI, err = r.InferRepo(ctx, t, mux)
 		if err != nil {
-			return nil, nil, err
+			return
 		}
 	}
 	repoSetupStart := time.Now()
-	var cloneTime time.Duration
 	if repoURI != rcfg.URI {
 		cloneStart := time.Now()
 		log.Printf("[%s] Cloning repo '%s' for version '%s'\n", t.Package, repoURI, t.Version)
@@ -58,90 +60,80 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 			log.Printf("[%s] Cleaning up previously stored repo '%s'\n", t.Package, rcfg.URI)
 			util.RemoveAll(fs, fs.Root())
 		}
-		newRepo, err := r.CloneRepo(ctx, t, repoURI, fs, s)
+		var newRepo RepoConfig
+		newRepo, err = r.CloneRepo(ctx, t, repoURI, fs, s)
 		if err != nil {
-			return nil, nil, err
+			return
 		}
 		*rcfg = newRepo
-		cloneTime = time.Since(cloneStart)
+		verdict.Timings.CloneEstimate = time.Since(cloneStart)
 	} else {
 		// Do a fresh checkout to wipe any cruft from previous builds.
-		_, err := gitx.Reuse(ctx, s, fs, &git.CloneOptions{URL: rcfg.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
+		_, err = gitx.Reuse(ctx, s, fs, &git.CloneOptions{URL: rcfg.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
 		if err != nil {
-			return nil, nil, err
+			return
 		}
 	}
-	repoSetupTime := time.Since(repoSetupStart)
+	verdict.Timings.Source = time.Since(repoSetupStart)
 	inferenceStart := time.Now()
-	var strategy Strategy
 	if lh, ok := input.Strategy.(*LocationHint); ok && lh != nil {
 		// If the input was a hint, include it in inference.
 		if lh.Ref == "" && lh.Dir != "" {
 			// TODO: For each ecosystem, allow ref inference to occur and validate dir.
-			return nil, nil, errors.New("Dir without Ref is not yet supported.")
+			err = errors.New("Dir without Ref is not yet supported.")
+			return
 		}
-		var err error
 		log.Printf("[%s] LocationHint provided: %v, running inference...\n", t.Package, *lh)
-		strategy, err = r.InferStrategy(ctx, t, mux, rcfg, lh)
+		verdict.Strategy, err = r.InferStrategy(ctx, t, mux, rcfg, lh)
 		if err != nil {
-			return nil, nil, err
+			return
 		}
 	} else if input.Strategy != nil {
 		// If the input was a full strategy, skip inference.
 		log.Printf("[%s] Strategy provided, skipping inference.\n", t.Package)
-		strategy = input.Strategy
+		verdict.Strategy = input.Strategy
 	} else {
 		// Otherwise, run full inference.
-		var err error
 		log.Printf("[%s] No strategy provided, running inference...\n", t.Package)
-		strategy, err = r.InferStrategy(ctx, t, mux, rcfg, nil)
+		verdict.Strategy, err = r.InferStrategy(ctx, t, mux, rcfg, nil)
 		if err != nil {
-			return nil, nil, err
+			return
 		}
 	}
-	inferenceTime := time.Since(inferenceStart)
+	verdict.Timings.Infer = time.Since(inferenceStart)
 	rbenv := BuildEnv{HasRepo: true}
 	if tw, ok := ctx.Value(TimewarpID).(string); ok {
 		rbenv.TimewarpHost = tw
 	}
-	inst, err := strategy.GenerateFor(t, rbenv)
+	inst, err := verdict.Strategy.GenerateFor(t, rbenv)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to generate strategy")
+		err = errors.Wrap(err, "failed to generate strategy")
+		return
 	}
 	buildStart := time.Now()
 	err = r.Rebuild(ctx, t, inst, fs)
-	buildTime := time.Since(buildStart)
+	verdict.Timings.Build = time.Since(buildStart)
 	if err != nil {
-		return nil, nil, err
+		return
 	}
 	rbPath := inst.OutputPath
 	_, err = fs.Stat(rbPath)
 	if err != nil {
 		if errors.Is(err, iofs.ErrNotExist) {
-			return &Verdict{Target: t, Message: errors.Wrap(err, "failed to locate artifact").Error(), Strategy: strategy}, []Asset{}, nil
+			err = errors.Wrap(err, "failed to locate artifact")
+			return
 		}
-		return nil, nil, errors.Wrapf(err, "failed to stat artifact")
+		err = errors.Wrapf(err, "failed to stat artifact")
+		return
 	}
 	rb, up, err := Stabilize(ctx, t, mux, rbPath, fs, assets)
 	if err != nil {
-		return nil, nil, err
+		return
 	}
 	cmpErr, err := r.Compare(ctx, t, rb, up, assets, inst)
-	var msg string
-	if err != nil {
-		msg = err.Error()
-	} else if cmpErr != nil {
-		msg = cmpErr.Error()
+	if err == nil {
+		err = cmpErr
 	}
-	return &Verdict{
-		Target:   t,
-		Message:  msg,
-		Strategy: strategy,
-		Timings: Timings{
-			CloneEstimate: cloneTime,
-			Source:        repoSetupTime,
-			Infer:         inferenceTime,
-			Build:         buildTime,
-		},
-	}, []Asset{rb, up}, nil
+	toUpload = append(toUpload, rb, up)
+	return
 }

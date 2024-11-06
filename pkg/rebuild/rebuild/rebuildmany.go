@@ -116,10 +116,9 @@ func RebuildMany(ctx context.Context, rebuilder Rebuilder, inputs []Input, regis
 		resetLogger := ScopedLogCapture(log.Default(), logbuf)
 		verdict, assets, err := RebuildOne(ctx, rebuilder, input, registry, &rcfg, fs, s, localAssets)
 		if err != nil {
-			verdicts = append(verdicts, Verdict{Target: t, Message: err.Error()})
-		} else {
-			verdicts = append(verdicts, *verdict)
+			verdict.Message = err.Error()
 		}
+		verdicts = append(verdicts, verdict)
 		resetLogger()
 		{
 			asset := Asset{Type: DebugLogsAsset, Target: t}
