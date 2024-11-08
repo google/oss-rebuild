@@ -284,7 +284,7 @@ var runBenchmark = &cobra.Command{
 			}
 			run = resp.ID
 		}
-		bar := pb.New(len(set.Packages))
+		bar := pb.New(set.Count)
 		bar.Output = cmd.OutOrStderr()
 		bar.ShowTimeLeft = true
 		verdictChan, err := benchmark.RunBench(ctx, client, apiURL, set, benchmark.RunBenchOpts{
