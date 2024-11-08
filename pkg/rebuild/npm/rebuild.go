@@ -21,6 +21,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -83,6 +84,8 @@ type Rebuilder struct{}
 
 var _ rebuild.Rebuilder = Rebuilder{}
 
+var nodeFetchPat = regexp.MustCompile(`Connecting to unofficial-builds.nodejs.org [^\n]*?\nwget: server returned error: HTTP/1.1 404 Not Found`)
+
 func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Instructions, fs billy.Filesystem) error {
 	defer makeUsrLocalCleanup()()
 	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Source); err != nil {
@@ -103,6 +106,8 @@ func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Ins
 			endIdx := strings.Index(output, ": command not found")
 			startIdx := strings.LastIndex(output[:endIdx], ": ")
 			return errors.Errorf("pack command not found: %s", output[startIdx+2:endIdx])
+		case nodeFetchPat.FindString(output) != "":
+			return errors.Errorf("node version not found")
 		// TODO: Classify with newly-observed cases.
 		default:
 			return errors.Wrapf(err, "unknown npm pack failure:\n%s", output)
