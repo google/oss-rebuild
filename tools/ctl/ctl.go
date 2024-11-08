@@ -395,16 +395,17 @@ var runOne = &cobra.Command{
 				}
 				verdicts = resp.Verdicts
 			} else {
-				stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, *apiURL.JoinPath(""))
+				stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, *apiURL.JoinPath("rebuild"))
 				resp, err := stub(ctx, schema.RebuildPackageRequest{
 					Ecosystem:         rebuild.Ecosystem(*ecosystem),
 					Package:           *pkg,
 					Version:           *version,
 					UseNetworkProxy:   *useNetworkProxy,
 					UseSyscallMonitor: *useSyscallMonitor,
+					ID:                time.Now().UTC().Format(time.RFC3339),
 				})
 				if err != nil {
-					log.Fatal(errors.Wrap(err, "running smoketest"))
+					log.Fatal(errors.Wrap(err, "running attest"))
 				}
 				verdicts = []schema.Verdict{*resp}
 			}
