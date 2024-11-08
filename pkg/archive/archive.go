@@ -69,6 +69,10 @@ func StabilizeWithOpts(dst io.Writer, src io.Reader, f Format, opts StabilizeOpt
 		if err != nil {
 			return errors.Wrap(err, "stabilizing tar")
 		}
+	case RawFormat:
+		if _, err := io.Copy(dst, src); err != nil {
+			return errors.Wrap(err, "copying raw")
+		}
 	default:
 		return errors.New("unsupported archive type")
 	}

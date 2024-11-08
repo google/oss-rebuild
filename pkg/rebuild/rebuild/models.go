@@ -30,6 +30,7 @@ const (
 	PyPI     Ecosystem = "pypi"
 	CratesIO Ecosystem = "cratesio"
 	Maven    Ecosystem = "maven"
+	Debian   Ecosystem = "debian"
 )
 
 // Target is a single target we might attempt to rebuild.
@@ -43,6 +44,8 @@ type Target struct {
 // ArchiveType provide the Target's archive.Format.
 func (t Target) ArchiveType() archive.Format {
 	switch t.Ecosystem {
+	case Debian:
+		return archive.RawFormat
 	case CratesIO, NPM:
 		return archive.TarGzFormat
 	case PyPI:

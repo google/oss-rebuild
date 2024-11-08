@@ -21,11 +21,13 @@ import (
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
+	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/uuid"
@@ -33,6 +35,17 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/grpc/codes"
 )
+
+func doDebianRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
+	component, name, err := debianrb.ParseComponent(t.Package)
+	if err != nil {
+		return "", err
+	}
+	if err := debianrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
+		return "", errors.Wrap(err, "rebuild failed")
+	}
+	return debianreg.PoolURL(component, name, t.Artifact), nil
+}
 
 func doNPMRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
 	if err := npmrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
@@ -98,6 +111,12 @@ func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.Regist
 			return errors.Wrap(err, "locating pure wheel failed")
 		}
 		t.Artifact = a.Filename
+	case rebuild.Debian:
+		_, name, err := debianrb.ParseComponent(t.Package)
+		if err != nil {
+			return err
+		}
+		t.Artifact = debianreg.ArtifactName(name, t.Version)
 	default:
 		return errors.New("unknown ecosystem")
 	}
@@ -211,6 +230,8 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		upstreamURI, err = doCratesRebuild(ctx, t, id, mux, strat, opts)
 	case rebuild.PyPI:
 		upstreamURI, err = doPyPIRebuild(ctx, t, id, mux, strat, opts)
+	case rebuild.Debian:
+		upstreamURI, err = doDebianRebuild(ctx, t, id, mux, strat, opts)
 	default:
 		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
@@ -250,6 +271,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	regclient := httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
 	mux := rebuild.RegistryMux{
+		Debian:   debianreg.HTTPRegistry{Client: regclient},
 		CratesIO: cratesreg.HTTPRegistry{Client: regclient},
 		NPM:      npmreg.HTTPRegistry{Client: regclient},
 		PyPI:     pypireg.HTTPRegistry{Client: regclient},

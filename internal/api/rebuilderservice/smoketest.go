@@ -9,18 +9,32 @@ import (
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	rsrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
+	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
 	mavenrb "github.com/google/oss-rebuild/pkg/rebuild/maven"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 )
+
+func doDebianRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, mux rebuild.RegistryMux, versionCount int) ([]rebuild.Verdict, error) {
+	if len(req.Versions) == 0 {
+		return nil, errors.New("Debian smoketest versions must not be empty")
+	}
+	rbctx := ctx
+	inputs, err := req.ToInputs()
+	if err != nil {
+		return nil, errors.Wrap(err, "convert smoketest request to inputs")
+	}
+	return debianrb.RebuildMany(rbctx, inputs, mux)
+}
 
 func doNpmRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, mux rebuild.RegistryMux, versionCount int) ([]rebuild.Verdict, error) {
 	if len(req.Versions) == 0 {
@@ -119,6 +133,7 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	mux := rebuild.RegistryMux{
+		Debian:   debianreg.HTTPRegistry{Client: deps.HTTPClient},
 		CratesIO: cratesreg.HTTPRegistry{Client: deps.HTTPClient},
 		NPM:      npmreg.HTTPRegistry{Client: deps.HTTPClient},
 		PyPI:     pypireg.HTTPRegistry{Client: deps.HTTPClient},
@@ -133,6 +148,8 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 	var verdicts []rebuild.Verdict
 	var err error
 	switch sreq.Ecosystem {
+	case rebuild.Debian:
+		verdicts, err = doDebianRebuildSmoketest(ctx, sreq, mux, deps.DefaultVersionCount)
 	case rebuild.NPM:
 		verdicts, err = doNpmRebuildSmoketest(ctx, sreq, mux, deps.DefaultVersionCount)
 	case rebuild.PyPI:

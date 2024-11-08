@@ -21,6 +21,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
+	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -178,6 +179,63 @@ func TestRebuildPackage(t *testing.T) {
 			file: must(archivetest.TgzFile([]archive.TarEntry{
 				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
 			})),
+		},
+		{
+			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4-1+b1", Artifact: "xz-utils_5.2.4-1+b1_amd64.deb"},
+			calls: []httpxtest.Call{
+				{
+					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1+b1_amd64.deb",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
+					},
+				},
+				{
+					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(bytes.NewReader([]byte(`-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Format: 3.0 (quilt)
+Source: xz-utils
+Binary: bin-a, bin-b, xz-utils
+Build-Depends: debhelper (>= 8.9.0), autopoint | gettext (<< 0.18-1)
+Build-Depends-Indep: doxygen
+Package-List:
+ liblzma-dev deb libdevel optional arch=any
+ liblzma-doc deb doc optional arch=all
+Files:
+ 003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz
+ e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc
+ 5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz
+
+-----BEGIN PGP SIGNATURE-----
+
+iQJHBAEBCAAxFiEEUh5Y8X6W1xKqD/EC38Zx7rMz+iUFAlxOW5QTHGpybmllZGVy
+RLpmHHG1JOVdOA==
+=WDR2
+-----END PGP SIGNATURE-----`,
+						))),
+					},
+				},
+			},
+			strategy: &debian.DebianPackage{
+				DSC: debian.FileWithChecksum{
+					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
+					MD5: "",
+				},
+				Orig: debian.FileWithChecksum{
+					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.orig.tar.xz",
+					MD5: "003e4d0b1b1899fc6e3000b24feddf7c",
+				},
+				Debian: debian.FileWithChecksum{
+					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.debian.tar.xz",
+					MD5: "5d018428dac6a83f00c010f49c51836e",
+				},
+				Requirements: []string{"debhelper", "autopoint", "doxygen"},
+			},
+			file: bytes.NewBuffer([]byte("deb_contents")),
 		},
 	} {
 		t.Run(string(tc.target.Ecosystem), func(t *testing.T) {

@@ -55,7 +55,48 @@ type rebuildContainerArgs struct {
 	UtilPrebuildBucket string
 }
 
-var rebuildContainerTpl = template.Must(
+var debuildContainerTpl = template.Must(
+	template.New(
+		"rebuild container",
+	).Funcs(template.FuncMap{
+		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
+		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
+	}).Parse(
+		// NOTE: For syntax docs, see https://docs.docker.com/build/dockerfile/release-notes/
+		// TODO: Find a base image that has build-essentials installed, that would improve startup time significantly, and it would pin the build tools we're using.
+		textwrap.Dedent(`
+				#syntax=docker/dockerfile:1.4
+				FROM docker.io/library/debian:bookworm-20240211-slim
+				RUN <<'EOF'
+				 set -eux
+				{{- if .UseTimewarp}}
+				 curl https://{{.UtilPrebuildBucket}}.storage.googleapis.com/timewarp > timewarp
+				 chmod +x timewarp
+				 ./timewarp -port 8080 &
+				 while ! nc -z localhost 8080;do sleep 1;done
+				{{- end}}
+				 apt update
+				 apt install -y {{join " " .Instructions.SystemDeps}}
+				EOF
+				RUN <<'EOF'
+				 set -eux
+				 mkdir /src && cd /src
+				 {{.Instructions.Source| indent}}
+				 {{.Instructions.Deps | indent}}
+				EOF
+				RUN cat <<'EOF' >build
+				 set -eux
+				 {{.Instructions.Build | indent}}
+				 ls
+				 ls /src/
+				 mkdir /out && cp /src/{{.Instructions.OutputPath}} /out/
+				EOF
+				WORKDIR "/src"
+				ENTRYPOINT ["/bin/sh","/build"]
+				`)[1:], // remove leading newline
+	))
+
+var alpineContainerTpl = template.Must(
 	template.New(
 		"rebuild container",
 	).Funcs(template.FuncMap{
@@ -342,11 +383,19 @@ func makeDockerfile(input Input, opts RemoteOptions) (string, error) {
 		return "", errors.Wrap(err, "failed to generate strategy")
 	}
 	dockerfile := new(bytes.Buffer)
-	err = rebuildContainerTpl.Execute(dockerfile, rebuildContainerArgs{
-		UseTimewarp:        opts.UseTimewarp,
-		UtilPrebuildBucket: opts.UtilPrebuildBucket,
-		Instructions:       instructions,
-	})
+	if input.Target.Ecosystem == Debian {
+		err = debuildContainerTpl.Execute(dockerfile, rebuildContainerArgs{
+			UseTimewarp:        opts.UseTimewarp,
+			UtilPrebuildBucket: opts.UtilPrebuildBucket,
+			Instructions:       instructions,
+		})
+	} else {
+		err = alpineContainerTpl.Execute(dockerfile, rebuildContainerArgs{
+			UseTimewarp:        opts.UseTimewarp,
+			UtilPrebuildBucket: opts.UtilPrebuildBucket,
+			Instructions:       instructions,
+		})
+	}
 	if err != nil {
 		return "", errors.Wrap(err, "populating template")
 	}

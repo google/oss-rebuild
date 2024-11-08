@@ -71,7 +71,11 @@ type Strategy interface {
 // PopulateTemplate is a helper to execute a template string using a data object.
 func PopulateTemplate(tmpl string, data any) (string, error) {
 	tmpl = strings.TrimSpace(tmpl)
-	t, err := template.New("buildTmpl").Funcs(template.FuncMap{"SemverCmp": semver.Cmp}).Parse(tmpl)
+	t, err := template.New("buildTmpl").Funcs(
+		template.FuncMap{
+			"SemverCmp": semver.Cmp,
+			"join":      func(sep string, s []string) string { return strings.Join(s, sep) },
+		}).Parse(tmpl)
 	if err != nil {
 		return "", errors.Wrapf(err, "failed to parse template with contents: %s", tmpl)
 	}
