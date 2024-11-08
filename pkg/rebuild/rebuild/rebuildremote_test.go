@@ -53,6 +53,9 @@ FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
  apk add git make
+EOF
+RUN <<'EOF'
+ set -eux
  mkdir /src && cd /src
  git clone ...
  make deps ...
@@ -89,6 +92,9 @@ RUN <<'EOF'
  ./timewarp -port 8080 &
  while ! nc -z localhost 8080;do sleep 1;done
  apk add git make
+EOF
+RUN <<'EOF'
+ set -eux
  mkdir /src && cd /src
  git clone ...
  make deps ...
@@ -126,6 +132,9 @@ FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
  apk add curl jq
+EOF
+RUN <<'EOF'
+ set -eux
  mkdir /src && cd /src
  # Download source code
  curl -LO https://example.com/source.tar.gz

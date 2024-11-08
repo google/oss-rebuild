@@ -75,6 +75,9 @@ var rebuildContainerTpl = template.Must(
 				 while ! nc -z localhost 8080;do sleep 1;done
 				{{- end}}
 				 apk add {{join " " .Instructions.SystemDeps}}
+				EOF
+				RUN <<'EOF'
+				 set -eux
 				 mkdir /src && cd /src
 				 {{.Instructions.Source| indent}}
 				 {{.Instructions.Deps | indent}}
