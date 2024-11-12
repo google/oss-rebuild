@@ -298,7 +298,8 @@ func TestMakeBuild(t *testing.T) {
 				Steps: []*cloudbuild.BuildStep{
 					{
 						Name: "gcr.io/cloud-builders/docker",
-						Script: `set -eux
+						Script: `#!/usr/bin/env bash
+set -eux
 cat <<'EOS' | docker buildx build --tag=img -
 FROM docker.io/library/alpine:3.19
 EOS
@@ -343,9 +344,11 @@ chmod +x gsutil_writeonly
 				Steps: []*cloudbuild.BuildStep{
 					{
 						Name: "gcr.io/cloud-builders/docker",
-						Script: `set -eux
+						Script: `#!/usr/bin/env bash
+set -eux
 touch /workspace/tetragon.jsonl
-docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
+echo '{"apiVersion":"cilium.io/v1alpha1","kind":"TracingPolicy","metadata":{"name":"process-and-memory"},"spec":{"kprobes":[{"args":[{"index":0,"type":"file"},{"index":1,"type":"int"}],"call":"security_file_permission","return":true,"returnArg":{"index":0,"type":"int"},"returnArgAction":"Post","syscall":false},{"args":[{"index":0,"type":"file"},{"index":1,"type":"uint64"},{"index":2,"type":"uint32"}],"call":"security_mmap_file","return":true,"returnArg":{"index":0,"type":"int"},"returnArgAction":"Post","syscall":false},{"args":[{"index":0,"type":"path"}],"call":"security_path_truncate","return":true,"returnArg":{"index":0,"type":"int"},"returnArgAction":"Post","syscall":false}]}}' > /workspace/tetragon_policy.yaml
+export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon_policy.yaml:/workspace/tetragon_policy.yaml -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy=/workspace/tetragon_policy.yaml --export-filename=/workspace/tetragon.jsonl)
 cat <<'EOS' | docker buildx build --tag=img -
 FROM docker.io/library/alpine:3.19
 EOS
