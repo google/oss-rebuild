@@ -29,6 +29,7 @@ func doDebianRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, 
 		return nil, errors.New("Debian smoketest versions must not be empty")
 	}
 	rbctx := ctx
+	// TODO: Require artifacts and populate those for debian.
 	inputs, err := req.ToInputs()
 	if err != nil {
 		return nil, errors.Wrap(err, "convert smoketest request to inputs")

@@ -21,7 +21,6 @@ import (
 
 	billy "github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/pkg/errors"
 )
 
@@ -90,14 +89,6 @@ func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.A
 
 // RebuildMany executes rebuilds for each provided rebuild.Input returning their rebuild.Verdicts.
 func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {
-	for i := range inputs {
-		_, name, err := ParseComponent(inputs[i].Target.Package)
-		if err != nil {
-			return nil, err
-		}
-		art := debianreg.ArtifactName(name, inputs[i].Target.Version)
-		inputs[i].Target.Artifact = art
-	}
 	return rebuild.RebuildMany(ctx, Rebuilder{}, inputs, mux)
 }
 

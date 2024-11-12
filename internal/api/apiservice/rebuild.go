@@ -112,11 +112,7 @@ func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.Regist
 		}
 		t.Artifact = a.Filename
 	case rebuild.Debian:
-		_, name, err := debianrb.ParseComponent(t.Package)
-		if err != nil {
-			return err
-		}
-		t.Artifact = debianreg.ArtifactName(name, t.Version)
+		return errors.New("debian requires explicit artifact")
 	default:
 		return errors.New("unknown ecosystem")
 	}
@@ -264,7 +260,10 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 }
 
 func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
-	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version}
+	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
+	if req.Ecosystem == rebuild.Debian && strings.TrimSpace(req.Artifact) == "" {
+		return nil, api.AsStatus(codes.InvalidArgument, errors.New("debian requires artifact"))
+	}
 	v := schema.Verdict{
 		Target: t,
 	}

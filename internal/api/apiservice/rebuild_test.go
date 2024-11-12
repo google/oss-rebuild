@@ -306,7 +306,7 @@ RLpmHHG1JOVdOA==
 				return &oneof, nil
 			}
 
-			verdict, err := rebuildPackage(ctx, schema.RebuildPackageRequest{Ecosystem: tc.target.Ecosystem, Package: tc.target.Package, Version: tc.target.Version}, &d)
+			verdict, err := rebuildPackage(ctx, schema.RebuildPackageRequest{Ecosystem: tc.target.Ecosystem, Package: tc.target.Package, Version: tc.target.Version, Artifact: tc.target.Artifact}, &d)
 			if err != nil {
 				t.Fatalf("RebuildPackage(): %v", err)
 			}

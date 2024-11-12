@@ -400,6 +400,7 @@ var runOne = &cobra.Command{
 					Ecosystem:         rebuild.Ecosystem(*ecosystem),
 					Package:           *pkg,
 					Version:           *version,
+					Artifact:          *artifact,
 					UseNetworkProxy:   *useNetworkProxy,
 					UseSyscallMonitor: *useSyscallMonitor,
 					ID:                time.Now().UTC().Format(time.RFC3339),
