@@ -193,20 +193,16 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		// TODO: Guess based on upload date.
 		return nil, errors.New("No NPM version")
 	}
-	if s, err := semver.New(npmv); s.Prerelease != "" || s.Build != "" || err != nil {
+	if s, err := semver.New(npmv); err != nil || s.Prerelease != "" || s.Build != "" {
 		return nil, errors.Errorf("Unsupported NPM version '%s'", npmv)
-	}
-	switch npmv[:2] {
-	case "0.", "1.", "2.", "3.", "4.":
+	} else if s.Major < 5 {
 		// XXX: Upgrade all previous versions to 5.0.4 to fix incompatibilities.
 		npmv = "5.0.4"
-	case "5.":
+	} else if s.Major == 5 && (s.Minor == 4 || s.Minor == 5) {
 		// NOTE: Some versions of NPM 5 had issues with Node 9 and higher.
 		// Fix: https://github.com/npm/npm/commit/c851bb503a756b7cd48d12ef0e12f39e6f30c577
 		// Release: https://github.com/npm/npm/releases/tag/v5.6.0
-		if npmv[:4] == "5.5." || npmv[:4] == "5.4" {
-			npmv = "5.6.0"
-		}
+		npmv = "5.6.0"
 	}
 	var ref, dir, override string
 	lh, ok := hint.(*rebuild.LocationHint)
