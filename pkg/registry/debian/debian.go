@@ -148,11 +148,6 @@ func (r HTTPRegistry) DSC(ctx context.Context, component, name, version string) 
 	return DSCURI, d, err
 }
 
-func ArtifactName(name, version string) string {
-	// TODO: Add support for other platforms.
-	return fmt.Sprintf("%s_%s_amd64.deb", name, version)
-}
-
 // Artifact returns the package artifact for the given package version.
 func (r HTTPRegistry) Artifact(ctx context.Context, component, name, artifact string) (io.ReadCloser, error) {
 	return r.get(ctx, PoolURL(component, name, artifact))
