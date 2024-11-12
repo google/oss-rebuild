@@ -205,6 +205,7 @@ var standardBuildTpl = template.Must(
 				touch /workspace/tetragon.jsonl
 				echo '{{.SyscallPolicy}}' > /workspace/tetragon_policy.yaml
 				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon_policy.yaml:/workspace/tetragon_policy.yaml -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy=/workspace/tetragon_policy.yaml --export-filename=/workspace/tetragon.jsonl)
+				grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 				{{- end}}
 				cat <<'EOS' | docker buildx build --tag=img -
 				{{.Dockerfile}}
@@ -297,7 +298,8 @@ var proxyBuildTpl = template.Must(
 				{{- if .UseSyscallMonitor}}
 				touch /workspace/tetragon.jsonl
 				echo {{.SyscallPolicy}} > /workspace/tetragon_policy.yaml
-				docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --policy-file=/workspace/tetragon_policy.yaml --export-filename=/workspace/tetragon.jsonl
+				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --policy-file=/workspace/tetragon_policy.yaml --export-filename=/workspace/tetragon.jsonl)
+				grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 				{{- end}}
 				docker exec build /bin/sh -euxc '
 					curl http://proxy:{{.CtrlPort}}/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
