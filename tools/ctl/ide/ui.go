@@ -276,8 +276,12 @@ func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error
 			return errors.Wrapf(err, "populating build definition")
 		}
 		w.Close()
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "vim"
+		}
 		// Send a "tmux wait -S" signal once the edit is complete.
-		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("$EDITOR %s; tmux wait -S editing", localAssets.URL(buildDefAsset).Path))
+		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("%s %s; tmux wait -S editing", editor, localAssets.URL(buildDefAsset).Path))
 		if _, err := cmd.Output(); err != nil {
 			return errors.Wrap(err, "failed to edit build definition")
 		}
