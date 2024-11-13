@@ -67,6 +67,30 @@ func TestNPMCustomBuild(t *testing.T) {
 			},
 		},
 		{
+			"PackBuildNoDir",
+			&NPMPackBuild{
+				Location: rebuild.Location{
+					Dir:  ".",
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				NPMVersion:      "red",
+				VersionOverride: "",
+			},
+			rebuild.Instructions{
+				Location: rebuild.Location{
+					Dir:  ".",
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				SystemDeps: []string{"git", "npm"},
+				Source:     "git checkout --force 'the_ref'",
+				Deps:       "",
+				Build:      `/usr/bin/npx --package=npm@red -c 'npm pack'`,
+				OutputPath: "the_artifact",
+			},
+		},
+		{
 			"CustomBuildVersionOverride",
 			&NPMCustomBuild{
 				Location:        defaultLocation,
@@ -109,6 +133,36 @@ wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm install --force'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow' && rm -rf node_modules && npm pack`,
 				OutputPath: "the_dir/the_artifact",
+			},
+		},
+		{
+			"CustomBuildNoDir",
+			&NPMCustomBuild{
+				Location: rebuild.Location{
+					Dir:  ".",
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				NPMVersion:      "red",
+				NodeVersion:     "blue",
+				VersionOverride: "",
+				Command:         "yellow",
+				RegistryTime:    time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+			},
+			rebuild.Instructions{
+				Location: rebuild.Location{
+					Dir:  ".",
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				SystemDeps: []string{"git", "npm"},
+				Source:     "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/npm config --location-global set registry http://npm:2006-01-02T03:04:05Z@orange
+trap '/usr/bin/npm config --location-global delete registry' EXIT
+wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+/usr/local/bin/npx --package=npm@red -c 'npm install --force'`,
+				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm run yellow' && rm -rf node_modules && npm pack`,
+				OutputPath: "the_artifact",
 			},
 		},
 	}

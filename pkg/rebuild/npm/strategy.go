@@ -43,7 +43,7 @@ func (b *NPMPackBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebui
 {{if ne .VersionOverride "" -}}
 PATH=/usr/bin:/bin:/usr/local/bin /usr/bin/npm version --prefix {{.Location.Dir}} --no-git-tag-version {{.VersionOverride}}
 {{end -}}
-/usr/bin/npx --package=npm@{{.NPMVersion}} -c 'cd {{.Location.Dir}} && npm pack'
+/usr/bin/npx --package=npm@{{.NPMVersion}} -c '{{if ne .Location.Dir "."}}cd {{.Location.Dir}} && {{end}}npm pack'
 `, b)
 	if err != nil {
 		return rebuild.Instructions{}, err
@@ -87,7 +87,7 @@ func (b *NPMCustomBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (reb
 /usr/bin/npm config --location-global set registry {{.BuildEnv.TimewarpURL "npm" .RegistryTime}}
 trap '/usr/bin/npm config --location-global delete registry' EXIT
 wget -O - https://unofficial-builds.nodejs.org/download/release/v{{.NodeVersion}}/node-v{{.NodeVersion}}-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@{{.NPMVersion}} -c 'cd {{.Location.Dir}} && npm install --force'
+/usr/local/bin/npx --package=npm@{{.NPMVersion}} -c '{{if ne .Location.Dir "."}}cd {{.Location.Dir}} && {{end}}npm install --force'
 `, buildAndEnv)
 	if err != nil {
 		return rebuild.Instructions{}, err
@@ -97,7 +97,7 @@ wget -O - https://unofficial-builds.nodejs.org/download/release/v{{.NodeVersion}
 {{if ne .VersionOverride "" -}}
 PATH=/usr/bin:/bin:/usr/local/bin /usr/bin/npm version --prefix {{.Location.Dir}} --no-git-tag-version {{.VersionOverride}}
 {{end -}}
-/usr/local/bin/npx --package=npm@{{.NPMVersion}} -c 'cd {{.Location.Dir}} && npm run {{.Command}}' && rm -rf node_modules && npm pack
+/usr/local/bin/npx --package=npm@{{.NPMVersion}} -c '{{if ne .Location.Dir "."}}cd {{.Location.Dir}} && {{end}}npm run {{.Command}}' && rm -rf node_modules && npm pack
 `, b)
 	if err != nil {
 		return rebuild.Instructions{}, err
