@@ -91,8 +91,13 @@ func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Ins
 	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Source); err != nil {
 		return errors.Wrap(err, "failed to execute strategy.Source")
 	}
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Deps); err != nil {
-		return errors.Wrap(err, "failed to execute strategy.Deps")
+	if output, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Deps); err != nil {
+		switch {
+		case nodeFetchPat.FindString(output) != "":
+			return errors.Errorf("node version not found")
+		default:
+			return errors.Wrap(err, "failed to execute strategy.Deps")
+		}
 	}
 	if output, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Build); err != nil {
 		// Build failed. Let's try to figure out why.
@@ -106,8 +111,6 @@ func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Ins
 			endIdx := strings.Index(output, ": command not found")
 			startIdx := strings.LastIndex(output[:endIdx], ": ")
 			return errors.Errorf("pack command not found: %s", output[startIdx+2:endIdx])
-		case nodeFetchPat.FindString(output) != "":
-			return errors.Errorf("node version not found")
 		// TODO: Classify with newly-observed cases.
 		default:
 			return errors.Wrapf(err, "unknown npm pack failure:\n%s", output)
