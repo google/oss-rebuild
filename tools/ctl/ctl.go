@@ -114,7 +114,7 @@ var tui = &cobra.Command{
 		tctx := cmd.Context()
 		var fireClient rundex.Reader
 		if *benchmarkDir != "" {
-			fireClient = rundex.NewLocalClient()
+			fireClient = rundex.NewLocalClient(localfiles.Rundex())
 			tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, "file://"+localfiles.AssetsPath())
 		} else {
 			if *debugStorage != "" {
