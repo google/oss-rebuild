@@ -158,8 +158,6 @@ func cleanVerdict(m string) string {
 		m = "unsupported generator: " + m[strings.LastIndex(m, ":")+3:len(m)-2]
 	case strings.HasPrefix(m, `built version does not match requested version`):
 		m = "built version does not match requested version"
-	case strings.HasPrefix(m, `rebuild failure: rebuilt artifact not found upstream: `):
-		m = "rebuilt artifact not found upstream"
 	case strings.HasPrefix(m, "rebuild failure: Clone failed"):
 		m = "clone failed"
 	case strings.Contains(m, "Failed to extract upstream") && strings.Contains(m, ".dist-info/WHEEL: file does not exist"):
@@ -249,17 +247,6 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Reb
 			}
 		})
 	}
-	// Post-processing
-	p = p.Do(func(in Rebuild, out chan<- Rebuild) {
-		if strings.HasPrefix(in.Message, `rebuild failure: rebuilt artifact not found upstream: `) {
-			artifact := strings.TrimPrefix(in.Message, `rebuild failure: rebuilt artifact not found upstream: `)
-			builtVersion := strings.Split(artifact, "-")[1]
-			if builtVersion != in.Version {
-				in.Message = fmt.Sprintf("built version does not match requested version (%s vs %s)", builtVersion, in.Version)
-			}
-		}
-		out <- in
-	})
 	if req.Opts.Clean {
 		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
 			in.Message = cleanVerdict(in.Message)
