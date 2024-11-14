@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"os"
 	"path"
 	"strings"
@@ -29,6 +30,7 @@ import (
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
+	"gopkg.in/yaml.v3"
 )
 
 // RemoteOptions provides the configuration to execute rebuilds on Cloud Build.
@@ -53,6 +55,65 @@ type rebuildContainerArgs struct {
 	UseTimewarp        bool
 	UseNetworkProxy    bool
 	UtilPrebuildBucket string
+}
+
+const policyYaml = `
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: "process-and-memory"
+spec:
+  kprobes:
+  - call: "security_file_permission"
+    syscall: false
+    return: true
+    args:
+    - index: 0
+      type: "file" # (struct file *) used for getting the path
+    - index: 1
+      type: "int" # 0x04 is MAY_READ, 0x02 is MAY_WRITE
+    returnArg:
+      index: 0
+      type: "int"
+    returnArgAction: "Post"
+  - call: "security_mmap_file"
+    syscall: false
+    return: true
+    args:
+    - index: 0
+      type: "file" # (struct file *) used for getting the path
+    - index: 1
+      type: "uint64" # the prot flags PROT_READ(0x01), PROT_WRITE(0x02), PROT_EXEC(0x04)
+    - index: 2
+      type: "uint32" # the mmap flags (i.e. MAP_SHARED, ...)
+    returnArg:
+      index: 0
+      type: "int"
+    returnArgAction: "Post"
+  - call: "security_path_truncate"
+    syscall: false
+    return: true
+    args:
+    - index: 0
+      type: "path" # (struct path *) used for getting the path
+    returnArg:
+      index: 0
+      type: "int"
+    returnArgAction: "Post"
+`
+
+var tetragonPolicyJSON string
+
+func init() {
+	var data any
+	if err := yaml.Unmarshal([]byte(policyYaml), &data); err != nil {
+		log.Fatalf("Malformed tetragon policy: %v", err)
+	}
+	b, err := json.Marshal(data)
+	if err != nil {
+		log.Fatalf("Converting tetragon policy to json: %v", err)
+	}
+	tetragonPolicyJSON = string(b)
 }
 
 var debuildContainerTpl = template.Must(
@@ -138,10 +199,12 @@ var standardBuildTpl = template.Must(
 		"standard build",
 	).Parse(
 		textwrap.Dedent(`
+				#!/usr/bin/env bash
 				set -eux
 				{{- if .UseSyscallMonitor}}
 				touch /workspace/tetragon.jsonl
-				docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
+				echo '{{.SyscallPolicy}}' > /workspace/tetragon_policy.yaml
+				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon_policy.yaml:/workspace/tetragon_policy.yaml -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy=/workspace/tetragon_policy.yaml --export-filename=/workspace/tetragon.jsonl)
 				{{- end}}
 				cat <<'EOS' | docker buildx build --tag=img -
 				{{.Dockerfile}}
@@ -233,7 +296,8 @@ var proxyBuildTpl = template.Must(
 				'
 				{{- if .UseSyscallMonitor}}
 				touch /workspace/tetragon.jsonl
-				docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --export-filename=/workspace/tetragon.jsonl
+				echo {{.SyscallPolicy}} > /workspace/tetragon_policy.yaml
+				docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --policy-file=/workspace/tetragon_policy.yaml --export-filename=/workspace/tetragon.jsonl
 				{{- end}}
 				docker exec build /bin/sh -euxc '
 					curl http://proxy:{{.CtrlPort}}/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
@@ -285,6 +349,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 			"UtilPrebuildBucket": opts.UtilPrebuildBucket,
 			"Dockerfile":         dockerfile,
 			"UseSyscallMonitor":  opts.UseSyscallMonitor,
+			"SyscallPolicy":      tetragonPolicyJSON,
 			"HTTPPort":           "3128",
 			"TLSPort":            "3129",
 			"CtrlPort":           "3127",
@@ -317,6 +382,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		err := standardBuildTpl.Execute(&buildScript, map[string]any{
 			"Dockerfile":        dockerfile,
 			"UseSyscallMonitor": opts.UseSyscallMonitor,
+			"SyscallPolicy":     tetragonPolicyJSON,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "expanding standard build template")
