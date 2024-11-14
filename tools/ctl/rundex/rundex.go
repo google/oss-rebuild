@@ -212,7 +212,6 @@ type FirestoreClient struct {
 	Client *firestore.Client
 }
 
-// FirestoreClient is only a Reader for now.
 var _ Reader = &FirestoreClient{}
 
 // NewFirestore creates a new FirestoreClient.
