@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -266,7 +265,6 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Reb
 
 // FetchRebuilds fetches the Rebuild objects out of firestore.
 func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (map[string]Rebuild, error) {
-	log.Println("Analyzing results...")
 	if len(req.Executors) != 0 && len(req.Runs) != 0 {
 		return nil, errors.New("only provide one of executors and runs")
 	}
@@ -275,11 +273,9 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 	}
 	q := f.Client.CollectionGroup("attempts").Query
 	if len(req.Executors) != 0 {
-		log.Printf("Searching rebuild results for executor versions '%v'...\n", req.Executors)
 		q = q.Where("executor_version", "in", req.Executors)
 	}
 	if len(req.Runs) != 0 {
-		log.Printf("Searching rebuild results for runs '%v'...\n", req.Runs)
 		q = q.Where("run_id", "in", req.Runs)
 	}
 	all := make(chan Rebuild)
