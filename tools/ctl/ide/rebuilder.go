@@ -178,7 +178,7 @@ func (rb *Rebuilder) Kill() {
 	rb.m.Lock()
 	defer rb.m.Unlock()
 	if rb.instance != nil && !rb.instance.Dead() {
-		log.Println("Killing the exisitng rebuilder")
+		log.Println("Killing the existing rebuilder")
 		rb.instance.Kill()
 		rb.instance = nil
 		log.Printf("rebuilder exited")

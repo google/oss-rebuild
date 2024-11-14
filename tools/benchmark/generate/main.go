@@ -80,7 +80,7 @@ var cratesioTop2000 = RebuildBenchmark{
 					log.Fatalf("error fetching download-ordered page %d: %v", page, err)
 				}
 				if resp.StatusCode != 200 {
-					log.Fatalf("error from regsitry fetching download-ordered page %d: %s", page, resp.Status)
+					log.Fatalf("error from registry fetching download-ordered page %d: %s", page, resp.Status)
 				}
 				var ms struct {
 					Metadata []cratesio.Metadata `json:"crates"`
