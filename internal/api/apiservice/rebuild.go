@@ -322,7 +322,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		return nil, err
 	}
 	var dockerfile string
-	r, err := deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.DockerfileAsset})
+	r, err := deps.LocalMetadataStore.Reader(ctx, rebuild.DockerfileAsset.For(v.Target))
 	if err == nil {
 		if b, err := io.ReadAll(r); err == nil {
 			dockerfile = string(b)
@@ -331,7 +331,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		}
 	}
 	var bi rebuild.BuildInfo
-	r, err = deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.BuildInfoAsset})
+	r, err = deps.LocalMetadataStore.Reader(ctx, rebuild.BuildInfoAsset.For(v.Target))
 	if err == nil {
 		if err = json.NewDecoder(r).Decode(&bi); err != nil {
 			log.Println("Failed to load build info:", err)
