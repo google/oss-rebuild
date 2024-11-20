@@ -42,34 +42,12 @@ func (p Pipe[T]) DoFor(fn func(in <-chan T, out chan<- T)) Pipe[T] {
 
 // Do adds a per-item combinator.
 func (p Pipe[T]) Do(fn func(in T, out chan<- T)) Pipe[T] {
-	return p.DoFor(func(in <-chan T, out chan<- T) {
-		defer close(out)
-		for t := range in {
-			fn(t, out)
-		}
-	})
+	return p.DoFor(do(fn))
 }
 
 // ParDo adds an out-of-order, concurrent pipeline combinator.
 func (p Pipe[T]) ParDo(concurrency int, fn func(in T, out chan<- T)) Pipe[T] {
-	return p.DoFor(func(in <-chan T, out chan<- T) {
-		defer close(out)
-		if concurrency < 0 {
-			concurrency = math.MaxInt
-		}
-		bucket := make(chan struct{}, concurrency)
-		var wg sync.WaitGroup
-		for t := range in {
-			wg.Add(1)
-			bucket <- struct{}{}
-			go func() {
-				defer wg.Done()
-				fn(t, out)
-				<-bucket
-			}()
-		}
-		wg.Wait()
-	})
+	return p.DoFor(parDo(concurrency, fn))
 }
 
 // Out produces the final output channel.
@@ -87,17 +65,25 @@ func IntoFor[T, S any](in Pipe[T], fn func(in <-chan T, out chan<- S)) Pipe[S] {
 
 // Into takes the input pipe and transforms it to another type.
 func Into[T, S any](in Pipe[T], fn func(in T, out chan<- S)) Pipe[S] {
-	return IntoFor(in, func(in <-chan T, out chan<- S) {
-		defer close(out)
-		for t := range in {
-			fn(t, out)
-		}
-	})
+	return IntoFor(in, do(fn))
 }
 
 // ParInto takes the input pipe and transforms it to another type in parallel.
 func ParInto[T, S any](concurrency int, in Pipe[T], fn func(in T, out chan<- S)) Pipe[S] {
-	return IntoFor(in, func(in <-chan T, out chan<- S) {
+	return IntoFor(in, parDo(concurrency, fn))
+}
+
+func do[T, S any](fn func(in T, out chan<- S)) func(in <-chan T, out chan<- S) {
+	return func(in <-chan T, out chan<- S) {
+		defer close(out)
+		for t := range in {
+			fn(t, out)
+		}
+	}
+}
+
+func parDo[T, S any](concurrency int, fn func(in T, out chan<- S)) func(in <-chan T, out chan<- S) {
+	return func(in <-chan T, out chan<- S) {
 		defer close(out)
 		if concurrency < 0 {
 			concurrency = math.MaxInt
@@ -114,5 +100,5 @@ func ParInto[T, S any](concurrency int, in Pipe[T], fn func(in T, out chan<- S))
 			}()
 		}
 		wg.Wait()
-	})
+	}
 }
