@@ -192,6 +192,7 @@ type FetchRebuildRequest struct {
 
 // FetchRunsOpts describes which Runs you would like to fetch from firestore.
 type FetchRunsOpts struct {
+	IDs           []string
 	BenchmarkHash string
 }
 
@@ -295,8 +296,11 @@ func (f *FirestoreClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]
 	}
 	runs := make(chan Run)
 	cerr := DoQuery(ctx, q, NewRunFromFirestore, runs)
-	runSlice := make([]Run, 0, 0)
+	var runSlice []Run
 	for r := range runs {
+		if len(r.ID) != 0 && !slices.Contains(opts.IDs, r.ID) {
+			continue
+		}
 		runSlice = append(runSlice, r)
 	}
 	if err := <-cerr; err != nil {
@@ -346,6 +350,9 @@ func (f *LocalClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run,
 		var r Run
 		if err := json.NewDecoder(file).Decode(&r); err != nil {
 			return errors.Wrap(err, "decoding run file")
+		}
+		if len(r.ID) != 0 && !slices.Contains(opts.IDs, r.ID) {
+			return nil
 		}
 		if opts.BenchmarkHash != "" && r.BenchmarkHash != opts.BenchmarkHash {
 			return nil
