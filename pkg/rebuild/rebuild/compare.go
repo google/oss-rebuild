@@ -67,7 +67,7 @@ func Stabilize(ctx context.Context, t Target, mux RegistryMux, rbPath string, fs
 		up = Asset{Type: DebugUpstreamAsset, Target: t}
 		w, err := assets.Writer(ctx, up)
 		if err != nil {
-			return rb, up, errors.Errorf("[INTERNAL] failued to store asset %v", up)
+			return rb, up, errors.Errorf("[INTERNAL] failed to store asset %v", up)
 		}
 		defer w.Close()
 		r, err := artifactReader(ctx, t, mux)

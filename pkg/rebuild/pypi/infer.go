@@ -40,7 +40,7 @@ import (
 
 // These are commonly used in PyPi metadata to point to the project git repo, using a map as a set.
 // Some people capitalize these differently, or add/remove spaces. We normalized to lower, no space.
-// This list is ordered, we will choose the first occurance.
+// This list is ordered, we will choose the first occurrence.
 var commonRepoLinks = []string{
 	"source",
 	"sourcecode",
@@ -51,7 +51,7 @@ var commonRepoLinks = []string{
 
 // There are two places to find the repo:
 // 1. In the ProjectURLs (project links)
-// 2. Embeded in the description
+// 2. Embedded in the description
 //
 // For 1, there are some ProjectURLs that are very common to use for a repo
 // (commonRepoLinks above), so we can break up the ProjectURLs
