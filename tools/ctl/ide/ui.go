@@ -372,6 +372,7 @@ func (e *explorer) makeRunNode(runid string) *tview.TreeNode {
 	node.SetSelectedFunc(func() {
 		children := node.GetChildren()
 		if len(children) == 0 {
+			log.Printf("Fetching rebuilds...")
 			rebuilds, err := e.firestore.FetchRebuilds(e.ctx, &rundex.FetchRebuildRequest{Runs: []string{runid}, Opts: e.firestoreOpts})
 			if err != nil {
 				log.Println(errors.Wrapf(err, "failed to get rebuilds for runid: %s", runid))
@@ -408,6 +409,7 @@ func (e *explorer) makeRunGroupNode(benchName string, runs []string) *tview.Tree
 // LoadTree will query firestore for all the runs, then display them.
 func (e *explorer) LoadTree() error {
 	e.root.ClearChildren()
+	log.Printf("Fetching runs...")
 	runs, err := e.firestore.FetchRuns(e.ctx, rundex.FetchRunsOpts{})
 	if err != nil {
 		return err

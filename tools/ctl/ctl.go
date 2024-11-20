@@ -162,6 +162,7 @@ var getResults = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
+		log.Printf("Querying results for [executors=%v,runs=%v,bench=%s,filter=%s]", req.Executors, req.Runs, *bench, req.Opts.Filter)
 		rebuilds, err := fireClient.FetchRebuilds(cmd.Context(), req)
 		if err != nil {
 			log.Fatal(err)
