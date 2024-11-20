@@ -31,7 +31,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -314,9 +313,9 @@ type LocalClient struct {
 var _ Reader = &LocalClient{}
 var _ Writer = &LocalClient{}
 
-func NewLocalClient() *LocalClient {
+func NewLocalClient(fs billy.Filesystem) *LocalClient {
 	return &LocalClient{
-		fs: localfiles.Rundex(),
+		fs: fs,
 	}
 }
 
