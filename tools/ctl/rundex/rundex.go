@@ -298,7 +298,7 @@ func (f *FirestoreClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]
 	cerr := DoQuery(ctx, q, NewRunFromFirestore, runs)
 	var runSlice []Run
 	for r := range runs {
-		if len(r.ID) != 0 && !slices.Contains(opts.IDs, r.ID) {
+		if len(opts.IDs) != 0 && !slices.Contains(opts.IDs, r.ID) {
 			continue
 		}
 		runSlice = append(runSlice, r)
@@ -351,7 +351,7 @@ func (f *LocalClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run,
 		if err := json.NewDecoder(file).Decode(&r); err != nil {
 			return errors.Wrap(err, "decoding run file")
 		}
-		if len(r.ID) != 0 && !slices.Contains(opts.IDs, r.ID) {
+		if len(opts.IDs) != 0 && !slices.Contains(opts.IDs, r.ID) {
 			return nil
 		}
 		if opts.BenchmarkHash != "" && r.BenchmarkHash != opts.BenchmarkHash {
