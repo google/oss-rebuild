@@ -1,5 +1,7 @@
 # OSS Rebuild
 
+[![Go Report Card](https://goreportcard.com/badge/google/oss-rebuild)](https://goreportcard.com/report/google/oss-rebuild)
+
 Secure open-source package ecosystems by originating, validating, and augmenting
 build attestations.
 
