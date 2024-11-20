@@ -214,23 +214,19 @@ func (req InferenceRequest) LocationHint() *rebuild.LocationHint {
 }
 
 type CreateRunRequest struct {
-	Name string `form:","`
-	Type string `form:","`
-	Hash string `form:","`
+	BenchmarkName string `form:","`
+	BenchmarkHash string `form:","`
+	Type          string `form:","`
 }
 
 var _ Message = CreateRunRequest{}
 
 // Validate parses the CreateRun form values into a CreateRunRequest.
 func (req CreateRunRequest) Validate() error {
-	if _, err := hex.DecodeString(req.Hash); err != nil {
+	if _, err := hex.DecodeString(req.BenchmarkHash); err != nil {
 		return errors.Wrap(err, "decoding hex hash")
 	}
 	return nil
-}
-
-type CreateRunResponse struct {
-	ID string
 }
 
 // RebuildAttempt stores rebuild and execution metadata on a single smoketest run.
@@ -249,4 +245,13 @@ type RebuildAttempt struct {
 	BuildID         string          `firestore:"build_id,omitempty"`
 	ObliviousID     string          `firestore:"oblivious_id,omitempty"`
 	Created         int64           `firestore:"created,omitempty"`
+}
+
+// Run stores metadata on an execution grouping.
+type Run struct {
+	ID            string `firestore:"id,omitempty"`
+	BenchmarkName string `firestore:"benchmark_name,omitempty"`
+	BenchmarkHash string `firestore:"benchmark_hash,omitempty"`
+	Type          string `firestore:"run_type,omitempty"`
+	Created       int64  `firestore:"created,omitempty"`
 }

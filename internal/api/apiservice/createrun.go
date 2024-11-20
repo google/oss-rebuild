@@ -15,18 +15,19 @@ type CreateRunDeps struct {
 	FirestoreClient *firestore.Client
 }
 
-func CreateRun(ctx context.Context, req schema.CreateRunRequest, deps *CreateRunDeps) (*schema.CreateRunResponse, error) {
-	id := time.Now().UTC().Format(time.RFC3339)
+func CreateRun(ctx context.Context, req schema.CreateRunRequest, deps *CreateRunDeps) (*schema.Run, error) {
+	run := schema.Run{
+		ID:            time.Now().UTC().Format(time.RFC3339),
+		BenchmarkName: req.BenchmarkName,
+		BenchmarkHash: req.BenchmarkHash,
+		Type:          req.Type,
+	}
 	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
-		return t.Create(deps.FirestoreClient.Collection("runs").Doc(id), map[string]any{
-			"benchmark_name": req.Name,
-			"benchmark_hash": req.Hash,
-			"run_type":       req.Type,
-			"created":        time.Now().UTC().UnixMilli(),
-		})
+		run.Created = time.Now().UTC().UnixMilli()
+		return t.Create(deps.FirestoreClient.Collection("runs").Doc(run.ID), run)
 	})
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "firestore write"))
 	}
-	return &schema.CreateRunResponse{ID: id}, nil
+	return &run, nil
 }
