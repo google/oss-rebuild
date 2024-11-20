@@ -62,4 +62,5 @@ type Package struct {
 	Ecosystem string
 	Name      string
 	Versions  []string
+	Artifacts []string
 }
