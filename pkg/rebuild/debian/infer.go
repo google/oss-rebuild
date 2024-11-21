@@ -44,7 +44,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, err
 	}
-	var orig, debianTar FileWithChecksum
+	var orig, debianTar, native FileWithChecksum
 	var dependencies []string
 	for stanza := range dsc.Stanzas {
 		for field, values := range dsc.Stanzas[stanza].Fields {
@@ -65,8 +65,11 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 						debianTar.URL = debreg.PoolURL(component, name, f)
 						debianTar.MD5 = md5
 						continue
+					} else if strings.HasSuffix(f, ".tar.xz") {
+						native.URL = debreg.PoolURL(component, name, f)
+						native.MD5 = md5
+						continue
 					}
-					// TODO: support native debian packages (single .tar.xz file)
 				}
 			case "Build-Depends", "Build-Depends-Indep":
 				deps := strings.Split(strings.TrimSpace(values[0]), ",")
@@ -80,7 +83,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			}
 		}
 	}
-	if orig.URL == "" || debianTar.URL == "" {
+	if (orig.URL == "" || debianTar.URL == "") && (native.URL == "") {
 		return nil, errors.New("Failed to find source files in the .dsc file")
 	}
 	return &DebianPackage{
@@ -89,6 +92,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		},
 		Orig:         orig,
 		Debian:       debianTar,
+		Native:       native,
 		Requirements: dependencies,
 	}, nil
 }
