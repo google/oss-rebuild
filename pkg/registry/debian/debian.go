@@ -142,7 +142,7 @@ func (r HTTPRegistry) DSC(ctx context.Context, component, name, version string) 
 	DSCURI := guessDSCURL(component, name, version)
 	re, err := r.get(ctx, DSCURI)
 	if err != nil {
-		return "", nil, errors.Wrap(err, "failed to wget .dsc file")
+		return "", nil, errors.Wrapf(err, "failed to get .dsc file %s", DSCURI)
 	}
 	d, err := parseDSC(re)
 	return DSCURI, d, err
