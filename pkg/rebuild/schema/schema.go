@@ -38,6 +38,7 @@ type StrategyOneOf struct {
 	CratesIOCargoPackage *cratesio.CratesIOCargoPackage `json:"cratesio_cargo_package,omitempty" yaml:"cratesio_cargo_package,omitempty"`
 	DebianPackage        *debian.DebianPackage          `json:"debian_package,omitempty" yaml:"debian_package,omitempty"`
 	ManualStrategy       *rebuild.ManualStrategy        `json:"manual,omitempty" yaml:"manual,omitempty"`
+	WorkflowStrategy     *rebuild.WorkflowStrategy      `json:"flow,omitempty" yaml:"flow,omitempty"`
 }
 
 // NewStrategyOneOf creates a StrategyOneOf from a rebuild.Strategy, using typecasting to put the strategy in the right place.
@@ -58,6 +59,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.DebianPackage = t
 	case *rebuild.ManualStrategy:
 		oneof.ManualStrategy = t
+	case *rebuild.WorkflowStrategy:
+		oneof.WorkflowStrategy = t
 	}
 	return oneof
 }
@@ -94,6 +97,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.ManualStrategy != nil {
 			num++
 			s = oneof.ManualStrategy
+		}
+		if oneof.WorkflowStrategy != nil {
+			num++
+			s = oneof.WorkflowStrategy
 		}
 	}
 	if num != 1 {
