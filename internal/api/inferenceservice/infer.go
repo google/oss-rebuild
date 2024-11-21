@@ -88,7 +88,7 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	}
 	if err != nil {
 		log.Printf("No inference for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, err)
-		return nil, api.AsStatus(codes.InvalidArgument, errors.New("no inference provided"))
+		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to infer strategy"))
 	}
 	oneof := schema.NewStrategyOneOf(s)
 	return &oneof, nil
