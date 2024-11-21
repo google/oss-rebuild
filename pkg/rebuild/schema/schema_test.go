@@ -175,6 +175,27 @@ manual:
   build: foo
 `,
 	},
+	{
+		name: "MuddleStrategy",
+		strategy: &rebuild.MuddleStrategy{
+			Location: rebuild.Location{
+				Dir:  "the_dir",
+				Ref:  "the_ref",
+				Repo: "the_repo",
+			},
+			Source: []rebuild.MuddleStep{{Runs: "echo source"}},
+		},
+		jsonEncoded: `{"muddle":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","src":[{"runs":"echo source","uses":"","with":null}],"deps":null,"build":null,"system_deps":null,"output_path":""}}`,
+		yamlEncoded: `
+muddle:
+  location:
+    repo: the_repo
+    ref: the_ref
+    dir: the_dir
+  src:
+    - runs: echo source
+`,
+	},
 }
 
 func normalizeYML(yml string) string {
