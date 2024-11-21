@@ -21,6 +21,7 @@ import (
 	billy "github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/registry/debian"
 	debreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/pkg/errors"
 )
@@ -40,12 +41,12 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, err
 	}
-	dscURI, dsc, err := mux.Debian.DSC(ctx, component, name, t.Version)
+	p := DebianPackage{}
+	var dsc *debian.DSC
+	p.DSC.URL, dsc, err = mux.Debian.DSC(ctx, component, name, t.Version)
 	if err != nil {
 		return nil, err
 	}
-	var orig, debianTar, native FileWithChecksum
-	var dependencies []string
 	for stanza := range dsc.Stanzas {
 		for field, values := range dsc.Stanzas[stanza].Fields {
 			switch field {
@@ -58,17 +59,14 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 					md5 := elems[0]
 					f := elems[2]
 					if strings.HasSuffix(f, ".orig.tar.xz") || strings.HasSuffix(f, ".orig.tar.gz") {
-						orig.URL = debreg.PoolURL(component, name, f)
-						orig.MD5 = md5
-						continue
+						p.Orig.URL = debreg.PoolURL(component, name, f)
+						p.Orig.MD5 = md5
 					} else if strings.HasSuffix(f, ".debian.tar.xz") {
-						debianTar.URL = debreg.PoolURL(component, name, f)
-						debianTar.MD5 = md5
-						continue
+						p.Debian.URL = debreg.PoolURL(component, name, f)
+						p.Debian.MD5 = md5
 					} else if strings.HasSuffix(f, ".tar.xz") {
-						native.URL = debreg.PoolURL(component, name, f)
-						native.MD5 = md5
-						continue
+						p.Native.URL = debreg.PoolURL(component, name, f)
+						p.Native.MD5 = md5
 					}
 				}
 			case "Build-Depends", "Build-Depends-Indep":
@@ -79,20 +77,12 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 						deps[i] = strings.TrimSpace(strings.Split(dep, " ")[0])
 					}
 				}
-				dependencies = append(dependencies, deps...)
+				p.Requirements = append(p.Requirements, deps...)
 			}
 		}
 	}
-	if (orig.URL == "" || debianTar.URL == "") && (native.URL == "") {
-		return nil, errors.New("Failed to find source files in the .dsc file")
+	if (p.Orig.URL == "" || p.Debian.URL == "") && (p.Native.URL == "") {
+		return nil, errors.Errorf("failed to find source files in the .dsc file: %s", p.DSC.URL)
 	}
-	return &DebianPackage{
-		DSC: FileWithChecksum{
-			URL: dscURI,
-		},
-		Orig:         orig,
-		Debian:       debianTar,
-		Native:       native,
-		Requirements: dependencies,
-	}, nil
+	return &p, nil
 }
