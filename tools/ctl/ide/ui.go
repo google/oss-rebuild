@@ -106,6 +106,7 @@ type explorer struct {
 	rb            *Rebuilder
 	firestore     rundex.Reader
 	firestoreOpts rundex.FetchRebuildOpts
+	runs          map[string]rundex.Run
 }
 
 func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder) *explorer {
@@ -368,7 +369,15 @@ func (e *explorer) makeVerdictGroupNode(vg *rundex.VerdictGroup, percent float32
 }
 
 func (e *explorer) makeRunNode(runid string) *tview.TreeNode {
-	node := tview.NewTreeNode(runid).SetColor(tcell.ColorGreen).SetSelectable(true)
+	var title string
+	if run, ok := e.runs[runid]; ok && run.Type == benchmark.AttestMode {
+		title = fmt.Sprintf("%s (publish)", runid)
+	} else if run, ok := e.runs[runid]; ok && run.Type == benchmark.SmoketestMode {
+		title = fmt.Sprintf("%s (evaluate)", runid)
+	} else {
+		title = fmt.Sprintf("%s (unknown)", runid)
+	}
+	node := tview.NewTreeNode(title).SetColor(tcell.ColorGreen).SetSelectable(true)
 	node.SetSelectedFunc(func() {
 		children := node.GetChildren()
 		if len(children) == 0 {
@@ -415,11 +424,10 @@ func (e *explorer) LoadTree() error {
 		return err
 	}
 	byBench := make(map[string][]string)
+	e.runs = make(map[string]rundex.Run)
 	for _, run := range runs {
-		if run.Type == benchmark.AttestMode {
-			continue
-		}
 		byBench[run.BenchmarkName] = append(byBench[run.BenchmarkName], run.ID)
+		e.runs[run.ID] = run
 	}
 	sortedBenchNames := make([]string, 0, len(byBench))
 	for benchName := range byBench {
