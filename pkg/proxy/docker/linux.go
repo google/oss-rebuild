@@ -11,8 +11,7 @@ var distroPattern = re.MustCompile(`\bID=["'']?([^\r\n]+?)["'']?[\r\n]`)
 
 // distro returns the given container's distribution identifier.
 func distro(dfs *dockerfs.Filesystem) (string, error) {
-	_, err := dfs.Stat("/kaniko")
-	if err == nil {
+	if _, err := dfs.Stat("/kaniko"); err == nil {
 		return "kaniko", nil
 	}
 	f, err := dfs.OpenAndResolve("/etc/os-release")
