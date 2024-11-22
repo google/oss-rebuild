@@ -11,6 +11,10 @@ var distroPattern = re.MustCompile(`\bID=["'']?([^\r\n]+?)["'']?[\r\n]`)
 
 // distro returns the given container's distribution identifier.
 func distro(dfs *dockerfs.Filesystem) (string, error) {
+	_, err := dfs.Stat("/kaniko")
+	if err == nil {
+		return "kaniko", nil
+	}
 	f, err := dfs.OpenAndResolve("/etc/os-release")
 	if err != nil {
 		return "", err
@@ -49,6 +53,8 @@ func locateTruststore(dfs *dockerfs.Filesystem) (*dockerfs.File, error) {
 		// Expected Cert Dir:  /var/lib/ca-certificates/{openssl,pem}/
 		// NOTE: JKS file also needs to be regenerated at /var/lib/ca-certificates/java-cacerts.
 		return dfs.OpenAndResolve("/var/lib/ca-certificates/ca-bundle.pem")
+	case "kaniko":
+		return dfs.OpenAndResolve("/kaniko/ssl/certs/ca-certificates.crt")
 	default:
 		return nil, errors.Errorf("unsupported distro: %s", d)
 	}
