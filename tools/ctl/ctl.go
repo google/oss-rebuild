@@ -36,6 +36,7 @@ import (
 
 	"github.com/cheggaaa/pb"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -447,6 +448,58 @@ var listRuns = &cobra.Command{
 	},
 }
 
+var infer = &cobra.Command{
+	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] ",
+	Short: "Run inference",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		req := schema.InferenceRequest{
+			Ecosystem: rebuild.Ecosystem(*ecosystem),
+			Package:   *pkg,
+			Version:   *version,
+			// TODO: Add support for strategy hint.
+		}
+		var resp *schema.StrategyOneOf
+		if *apiUri != "" {
+			apiURL, err := url.Parse(*apiUri)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "parsing API endpoint"))
+			}
+			var client *http.Client
+			if isCloudRun(apiURL) {
+				// If the api is on Cloud Run, we need to use an authorized client.
+				apiURL.Scheme = "https"
+				client, err = oauth.AuthorizedUserIDClient(cmd.Context())
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
+				}
+			} else {
+				client = http.DefaultClient
+			}
+			stub := api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, *apiURL.JoinPath("runs"))
+			resp, err = stub(cmd.Context(), req)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "creating run"))
+			}
+		} else {
+			deps := &inferenceservice.InferDeps{
+				HTTPClient: http.DefaultClient,
+				GitCache:   nil,
+			}
+			var err error
+			resp, err = inferenceservice.Infer(cmd.Context(), req, deps)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(resp); err != nil {
+			log.Fatal(errors.Wrap(err, "encoding result"))
+		}
+	},
+}
+
 var (
 	// Shared
 	apiUri    = flag.String("api", "", "OSS Rebuild API endpoint URI")
@@ -507,11 +560,17 @@ func init() {
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
 
+	infer.Flags().AddGoFlag(flag.Lookup("ecosystem"))
+	infer.Flags().AddGoFlag(flag.Lookup("package"))
+	infer.Flags().AddGoFlag(flag.Lookup("version"))
+	infer.Flags().AddGoFlag(flag.Lookup("artifact"))
+
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
 	rootCmd.AddCommand(getResults)
 	rootCmd.AddCommand(tui)
 	rootCmd.AddCommand(listRuns)
+	rootCmd.AddCommand(infer)
 }
 
 func main() {
