@@ -279,6 +279,9 @@ var runBenchmark = &cobra.Command{
 		bar.Start()
 		for v := range verdictChan {
 			bar.Increment()
+			if *verbose && v.Message != "" {
+				fmt.Printf("\n%v: %s\n", v.Target, v.Message)
+			}
 			verdicts = append(verdicts, v)
 		}
 		bar.Finish()
@@ -451,6 +454,7 @@ var (
 	pkg       = flag.String("package", "", "the package name")
 	version   = flag.String("version", "", "the version of the package")
 	artifact  = flag.String("artifact", "", "the artifact name")
+	verbose   = flag.Bool("v", false, "verbose output")
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
 	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
@@ -476,6 +480,7 @@ func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("local"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("format"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("v"))
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
