@@ -108,13 +108,21 @@ var _ packageWorker = &attestWorker{}
 func (w *attestWorker) Setup(ctx context.Context) {}
 
 func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
-	for _, v := range p.Versions {
+	if len(p.Artifacts) > 0 && len(p.Artifacts) != len(p.Versions) {
+		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
+	}
+	for i, v := range p.Versions {
 		<-w.limiters[p.Ecosystem]
+		var artifact string
+		if len(p.Artifacts) > 0 {
+			artifact = p.Artifacts[i]
+		}
 		var errMsg string
 		req, err := makeHTTPRequest(ctx, w.url.JoinPath("rebuild"), &schema.RebuildPackageRequest{
 			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 			Package:   p.Name,
 			Version:   v,
+			Artifact:  artifact,
 			ID:        w.run,
 		})
 		if err != nil {
