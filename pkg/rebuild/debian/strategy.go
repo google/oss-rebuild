@@ -28,6 +28,7 @@ type DebianPackage struct {
 	DSC          FileWithChecksum
 	Orig         FileWithChecksum
 	Debian       FileWithChecksum
+	Native       FileWithChecksum
 	Requirements []string
 }
 
@@ -39,8 +40,12 @@ func (b *DebianPackage) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebu
 	src, err := rebuild.PopulateTemplate(`
 set -eux
 wget {{.DSC.URL}}
+{{- if .Native.URL }}
+wget {{.Native.URL}}
+{{ else }}
 wget {{.Orig.URL}}
 wget {{.Debian.URL}}
+{{ end }}
 dpkg-source -x --no-check $(basename "{{.DSC.URL}}")
 	`, b)
 	if err != nil {
