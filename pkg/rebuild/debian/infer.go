@@ -57,7 +57,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 					}
 					md5 := elems[0]
 					f := elems[2]
-					if strings.HasSuffix(f, ".orig.tar.xz") {
+					if strings.HasSuffix(f, ".orig.tar.xz") || strings.HasSuffix(f, ".orig.tar.gz") {
 						orig.URL = debreg.PoolURL(component, name, f)
 						orig.MD5 = md5
 						continue
