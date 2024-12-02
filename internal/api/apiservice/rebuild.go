@@ -119,6 +119,7 @@ func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.Regist
 	return nil
 }
 
+// TODO: LocalMetadataStore and DebugStoreBuilder can be combined into a layered AssetStore.
 type RebuildPackageDeps struct {
 	HTTPClient                 httpx.BasicClient
 	FirestoreClient            *firestore.Client
@@ -131,7 +132,8 @@ type RebuildPackageDeps struct {
 	BuildDefRepo               rebuild.Location
 	AttestationStore           rebuild.AssetStore
 	LocalMetadataStore         rebuild.AssetStore
-	RemoteMetadataStoreBuilder func(ctx context.Context, id string) (rebuild.LocatableAssetStore, error)
+	DebugStoreBuilder          func(ctx context.Context) (rebuild.AssetStore, error)
+	RemoteMetadataStoreBuilder func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error)
 	OverwriteAttestations      bool
 	InferStub                  api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
 }
@@ -200,6 +202,10 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 }
 
 func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, useProxy bool, useSyscallMonitor bool) (err error) {
+	debugStore, err := deps.DebugStoreBuilder(ctx)
+	if err != nil {
+		return errors.Wrap(err, "creating debug store")
+	}
 	id := uuid.New().String()
 	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, id)
 	if err != nil {
@@ -213,6 +219,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		UtilPrebuildBucket:  deps.UtilPrebuildBucket,
 		LogsBucket:          deps.BuildLogsBucket,
 		LocalMetadataStore:  deps.LocalMetadataStore,
+		DebugStore:          debugStore,
 		RemoteMetadataStore: remoteMetadata,
 		UseSyscallMonitor:   useSyscallMonitor,
 		UseNetworkProxy:     useProxy,
@@ -308,6 +315,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 }
 
 func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
+	ctx = context.WithValue(ctx, rebuild.RunID, req.ID)
 	v, err := rebuildPackage(ctx, req, deps)
 	if err != nil {
 		return nil, err

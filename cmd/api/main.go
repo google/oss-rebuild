@@ -51,6 +51,7 @@ var (
 	metadataBucket        = flag.String("metadata-bucket", "", "GCS bucket for rebuild artifacts")
 	attestationBucket     = flag.String("attestation-bucket", "", "GCS bucket to which to publish rebuild attestation")
 	logsBucket            = flag.String("logs-bucket", "", "GCS bucket for rebuild logs")
+	debugStorage          = flag.String("debug-storage", "", "if provided, the location in which rebuild debug info should be stored")
 	prebuildBucket        = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
 	buildDefRepo          = flag.String("build-def-repo", "", "repository for build definitions")
 	buildDefRepoDir       = flag.String("build-def-repo-dir", ".", "relpath within the build definitions repository")
@@ -137,8 +138,18 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 		return nil, errors.Wrap(err, "creating attestation uploader")
 	}
 	d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(memfs.New())
-	d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.LocatableAssetStore, error) {
-		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, id), "gs://"+*metadataBucket)
+	// TODO: This can be optional once LocalMetadata and DebugStore are combined into a cached store.
+	if *debugStorage == "" {
+		return nil, errors.New("debug-storage must be set")
+	}
+	d.DebugStoreBuilder = func(ctx context.Context) (rebuild.AssetStore, error) {
+		if ctx.Value(rebuild.RunID) == nil {
+			return nil, errors.New("RunID must be set in the context")
+		}
+		return rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.UploadArtifactsPathID, *debugStorage))
+	}
+	d.RemoteMetadataStoreBuilder = func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error) {
+		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, uuid), "gs://"+*metadataBucket)
 	}
 	d.OverwriteAttestations = *overwriteAttestations
 	u, err := url.Parse(*inferenceURL)

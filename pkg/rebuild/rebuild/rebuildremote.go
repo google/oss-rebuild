@@ -41,7 +41,9 @@ type RemoteOptions struct {
 	LogsBucket          string
 	// LocalMetadataStore stores the dockerfile and build info. Cloud build does not need access to this.
 	LocalMetadataStore AssetStore
-	// RemoteMetadataStore stores the rebuilt artifact. Cloud build needs access to upload assets here.
+	// DebugStore is the durable storage of the dockerfile and build info. Cloud build does not need access to this. It should be keyed by RunID to allow programatic access.
+	DebugStore AssetStore
+	// RemoteMetadataStore stores the rebuilt artifact. Cloud build needs access to upload assets here. It should be keyed by the unguessable UUID to sandbox each build.
 	RemoteMetadataStore LocatableAssetStore
 	UtilPrebuildBucket  string
 	// TODO: Consider moving these to Strategy.
@@ -484,7 +486,7 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 			return errors.Wrap(err, "creating writer for Dockerfile")
 		}
 		defer lw.Close()
-		rw, err := opts.RemoteMetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
+		rw, err := opts.DebugStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
 		if err != nil {
 			return errors.Wrap(err, "creating remote writer for Dockerfile")
 		}
@@ -506,7 +508,7 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 			return errors.Wrap(err, "creating writer for build info")
 		}
 		defer lw.Close()
-		rw, err := opts.RemoteMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
+		rw, err := opts.DebugStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
 		if err != nil {
 			return errors.Wrap(err, "creating remote writer for build info")
 		}

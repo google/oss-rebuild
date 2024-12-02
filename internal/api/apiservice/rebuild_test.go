@@ -304,6 +304,9 @@ RLpmHHG1JOVdOA==
 			fs := memfs.New()
 			afs := must(fs.Chroot("attestations"))
 			d.AttestationStore = rebuild.NewFilesystemAssetStore(afs)
+			d.DebugStoreBuilder = func(ctx context.Context) (rebuild.AssetStore, error) {
+				return rebuild.NewFilesystemAssetStore(must(fs.Chroot("debug-metadata"))), nil
+			}
 			remoteMetadata := rebuild.NewFilesystemAssetStore(must(fs.Chroot("remote-metadata")))
 			d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.LocatableAssetStore, error) {
 				return remoteMetadata, nil
