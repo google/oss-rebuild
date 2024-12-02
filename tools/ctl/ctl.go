@@ -95,7 +95,7 @@ var tui = &cobra.Command{
 		var fireClient rundex.Reader
 		if *benchmarkDir != "" {
 			fireClient = rundex.NewLocalClient(localfiles.Rundex())
-			tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, "file://"+localfiles.AssetsPath())
+			tctx = context.WithValue(tctx, rebuild.DebugStoreID, "file://"+localfiles.AssetsPath())
 		} else {
 			if *debugStorage != "" {
 				u, err := url.Parse(*debugStorage)
@@ -108,7 +108,7 @@ var tui = &cobra.Command{
 						log.Fatalf("--debug-storage cannot have additional path elements, found %s", prefix)
 					}
 				}
-				tctx = context.WithValue(tctx, rebuild.UploadArtifactsPathID, *debugStorage)
+				tctx = context.WithValue(tctx, rebuild.DebugStoreID, *debugStorage)
 			}
 			// TODO: Support filtering in the UI on TUI.
 			var err error
