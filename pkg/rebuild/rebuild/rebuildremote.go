@@ -440,7 +440,7 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 	for i, s := range bi.Steps {
 		bi.BuildImages[s.Name] = build.Results.BuildStepImages[i]
 	}
-	return nil
+	return gcb.ToError(build)
 }
 
 func makeDockerfile(input Input, opts RemoteOptions) (string, error) {

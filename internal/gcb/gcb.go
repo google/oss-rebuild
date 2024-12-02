@@ -69,7 +69,7 @@ func (c *clientImpl) WaitForOperation(ctx context.Context, op *cloudbuild.Operat
 	return op, nil
 }
 
-// DoBuild executes a build on Cloud Build, waits for completion, and updates the provided BuildInfo.
+// DoBuild executes a build on Cloud Build, waits for completion and returns the Build.
 func DoBuild(ctx context.Context, client Client, project string, build *cloudbuild.Build) (*cloudbuild.Build, error) {
 	op, err := client.CreateBuild(ctx, project, build)
 	if err != nil {
@@ -87,14 +87,19 @@ func DoBuild(ctx context.Context, client Client, project string, build *cloudbui
 	if err := json.Unmarshal(op.Metadata, &bm); err != nil {
 		return nil, err
 	}
-	switch bm.Build.Status {
-	case "SUCCESS":
-	case "FAILURE", "TIMEOUT":
-		return nil, errors.Errorf("GCB build failed: %s", bm.Build.StatusDetail)
-	case "INTERNAL_ERROR", "CANCELLED", "EXPIRED":
-		return nil, errors.Errorf("GCB build internal error: %s", bm.Build.StatusDetail)
-	default:
-		return nil, errors.Errorf("Unexpected build status: %s", bm.Build.Status)
-	}
 	return bm.Build, nil
+}
+
+func ToError(build *cloudbuild.Build) error {
+	switch build.Status {
+	case "SUCCESS":
+		return nil
+	case "FAILURE", "TIMEOUT":
+		return errors.Errorf("GCB build failed: %s", build.StatusDetail)
+	case "INTERNAL_ERROR", "CANCELLED", "EXPIRED":
+		return errors.Errorf("GCB build internal error: %s", build.StatusDetail)
+	default:
+		return errors.Errorf("Unexpected build status: %s", build.Status)
+	}
+
 }
