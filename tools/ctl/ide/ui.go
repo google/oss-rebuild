@@ -20,7 +20,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -30,7 +32,9 @@ import (
 	"strings"
 	"time"
 
+	gcs "cloud.google.com/go/storage"
 	tcell "github.com/gdamore/tcell/v2"
+	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -208,6 +212,65 @@ func (e *explorer) showDetails(ctx context.Context, example rundex.Rebuild) {
 	showModal(e.app, e.container, details, modalOpts{Margin: 10})
 }
 
+func downloadLogs(ctx context.Context, localAssets rebuild.AssetStore, example rundex.Rebuild) error {
+	t := rebuild.Target{
+		Ecosystem: rebuild.Ecosystem(example.Ecosystem),
+		Package:   example.Package,
+		Version:   example.Version,
+		Artifact:  example.Artifact,
+	}
+	logsAsset := rebuild.Asset{Target: t, Type: rebuild.DebugLogsAsset}
+	debugAssets, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.RunID, example.RunID))
+	if err != nil {
+		return errors.Wrap(err, "failed to create debug asset store")
+	}
+	// First, try to get the logs from the debug store directly.
+	if rebuild.AssetCopy(ctx, localAssets, debugAssets, logsAsset) == nil {
+		return nil
+	}
+	// If directly copying from the debug store doesn't work, attempt to find GCB logs.
+	logsBucket, ok := ctx.Value(rebuild.LogsBucketID).(string)
+	if !ok {
+		return errors.New("cannot read logs from gcb, not bucket provided")
+	}
+	var info rebuild.BuildInfo
+	{
+		infoAsset := rebuild.Asset{Target: t, Type: rebuild.BuildInfoAsset}
+		r, err := debugAssets.Reader(ctx, infoAsset)
+		if err != nil {
+			return errors.Wrap(err, "reading build info")
+		}
+		if json.NewDecoder(r).Decode(&info) != nil {
+			return errors.Wrap(err, "parseing build info")
+		}
+	}
+	if info.BuildID == "" {
+		return errors.New("BuildID is empty, cannot read gcb logs")
+	}
+	client, err := gcs.NewClient(ctx)
+	if err != nil {
+		return errors.Wrap(err, "creating gcs client")
+	}
+	obj := client.Bucket(logsBucket).Object(gcb.MergedLogFile(info.BuildID))
+	r, err := obj.NewReader(ctx)
+	if err != nil {
+		return errors.Wrap(err, "reading gcb logs")
+	}
+	defer r.Close()
+	w, err := localAssets.Writer(ctx, logsAsset)
+	if err != nil {
+		return errors.Wrap(err, "making localAsset writer")
+	}
+	defer w.Close()
+	if _, err := io.Copy(w, r); err != nil {
+		return errors.Wrap(err, "writing logs")
+	}
+	if err := w.Close(); err != nil {
+		return errors.Wrap(err, "closing localAsset writer")
+	}
+	return nil
+}
+
 func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 	if example.Artifact == "" {
 		log.Println("Firestore does not have the artifact, cannot find GCS path.")
@@ -227,13 +290,8 @@ func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 	logsAsset := rebuild.Asset{Target: t, Type: rebuild.DebugLogsAsset}
 	logs := localAssets.URL(logsAsset).Path
 	if _, err := os.Stat(logs); errors.Is(err, os.ErrNotExist) {
-		debugAssets, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.RunID, example.RunID))
-		if err != nil {
-			log.Println(errors.Wrap(err, "failed to create debug asset store"))
-			return
-		}
-		if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, logsAsset); err != nil {
-			log.Println(errors.Wrap(err, "failed to copy logs asset"))
+		if err := downloadLogs(ctx, localAssets, example); err != nil {
+			log.Println(errors.Wrap(err, "downloading logs"))
 			return
 		}
 	}
