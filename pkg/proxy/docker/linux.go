@@ -11,6 +11,11 @@ var distroPattern = re.MustCompile(`\bID=["'']?([^\r\n]+?)["'']?[\r\n]`)
 
 // distro returns the given container's distribution identifier.
 func distro(dfs *dockerfs.Filesystem) (string, error) {
+	// Kaniko images are built from scratch and do not have the /etc/os-release file.
+	// The /kaniko directory is present in all Kaniko images and also contains its own trust store.
+	if _, err := dfs.Stat("/kaniko"); err == nil {
+		return "kaniko", nil
+	}
 	f, err := dfs.OpenAndResolve("/etc/os-release")
 	if err != nil {
 		return "", err
@@ -49,6 +54,11 @@ func locateTruststore(dfs *dockerfs.Filesystem) (*dockerfs.File, error) {
 		// Expected Cert Dir:  /var/lib/ca-certificates/{openssl,pem}/
 		// NOTE: JKS file also needs to be regenerated at /var/lib/ca-certificates/java-cacerts.
 		return dfs.OpenAndResolve("/var/lib/ca-certificates/ca-bundle.pem")
+	case "kaniko":
+		// Expected Cert File: /kaniko/ssl/certs/ca-certificates.crt
+		// Expected Cert Dir: /kaniko/ssl/certs
+		// https://github.com/GoogleContainerTools/kaniko/blob/e328007bc1fa0d8c2eacf1918bebbabc923abafa/deploy/Dockerfile#L69
+		return dfs.OpenAndResolve("/kaniko/ssl/certs/ca-certificates.crt")
 	default:
 		return nil, errors.Errorf("unsupported distro: %s", d)
 	}
