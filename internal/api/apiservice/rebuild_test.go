@@ -304,14 +304,14 @@ RLpmHHG1JOVdOA==
 			fs := memfs.New()
 			afs := must(fs.Chroot("attestations"))
 			d.AttestationStore = rebuild.NewFilesystemAssetStore(afs)
-			d.DebugStoreBuilder = func(ctx context.Context) (rebuild.AssetStore, error) {
-				return rebuild.NewFilesystemAssetStore(must(fs.Chroot("debug-metadata"))), nil
+			metadata := rebuild.NewFilesystemAssetStore(must(fs.Chroot("debug-metadata")))
+			d.MetadataStoreBuilder = func(ctx context.Context) (rebuild.AssetStore, error) {
+				return metadata, nil
 			}
 			remoteMetadata := rebuild.NewFilesystemAssetStore(must(fs.Chroot("remote-metadata")))
 			d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.LocatableAssetStore, error) {
 				return remoteMetadata, nil
 			}
-			d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(must(fs.Chroot("local-metadata")))
 			buildSteps := []*cloudbuild.BuildStep{
 				{Name: "gcr.io/foo/bar", Script: "./bar"},
 			}
@@ -360,7 +360,7 @@ RLpmHHG1JOVdOA==
 				return &oneof, nil
 			}
 
-			verdict, err := rebuildPackage(ctx, schema.RebuildPackageRequest{Ecosystem: tc.target.Ecosystem, Package: tc.target.Package, Version: tc.target.Version, Artifact: tc.target.Artifact}, &d)
+			verdict, err := rebuildPackage(ctx, schema.RebuildPackageRequest{Ecosystem: tc.target.Ecosystem, Package: tc.target.Package, Version: tc.target.Version, Artifact: tc.target.Artifact}, &d, metadata)
 			if err != nil {
 				t.Fatalf("RebuildPackage(): %v", err)
 			}
@@ -374,11 +374,11 @@ RLpmHHG1JOVdOA==
 				t.Fatalf("RebuildPackage() verdict: %v", verdict.Message)
 			}
 
-			dockerfile := must(d.LocalMetadataStore.Reader(ctx, rebuild.Asset{Type: rebuild.DockerfileAsset, Target: tc.target}))
+			dockerfile := must(metadata.Reader(ctx, rebuild.Asset{Type: rebuild.DockerfileAsset, Target: tc.target}))
 			if len(must(io.ReadAll(dockerfile))) == 0 {
 				t.Error("Dockerfile empty")
 			}
-			buildinfo := must(d.LocalMetadataStore.Reader(ctx, rebuild.Asset{Type: rebuild.BuildInfoAsset, Target: tc.target}))
+			buildinfo := must(metadata.Reader(ctx, rebuild.Asset{Type: rebuild.BuildInfoAsset, Target: tc.target}))
 			diff := cmp.Diff(
 				rebuild.BuildInfo{
 					Target:      tc.target,

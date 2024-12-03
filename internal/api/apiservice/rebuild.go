@@ -132,8 +132,7 @@ type RebuildPackageDeps struct {
 	BuildLogsBucket            string
 	BuildDefRepo               rebuild.Location
 	AttestationStore           rebuild.AssetStore
-	LocalMetadataStore         rebuild.AssetStore
-	DebugStoreBuilder          func(ctx context.Context) (rebuild.AssetStore, error)
+	MetadataStoreBuilder       func(ctx context.Context) (rebuild.AssetStore, error)
 	RemoteMetadataStoreBuilder func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error)
 	OverwriteAttestations      bool
 	InferStub                  api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
@@ -202,11 +201,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 	return strategy, entry, nil
 }
 
-func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, useProxy bool, useSyscallMonitor bool) (err error) {
-	debugStore, err := deps.DebugStoreBuilder(ctx)
-	if err != nil {
-		return errors.Wrap(err, "creating debug store")
-	}
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, metadata rebuild.AssetStore, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, useProxy bool, useSyscallMonitor bool) (err error) {
 	id := uuid.New().String()
 	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, id)
 	if err != nil {
@@ -219,8 +214,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		BuildServiceAccount: deps.BuildServiceAccount,
 		UtilPrebuildBucket:  deps.UtilPrebuildBucket,
 		LogsBucket:          deps.BuildLogsBucket,
-		LocalMetadataStore:  deps.LocalMetadataStore,
-		DebugStore:          debugStore,
+		MetadataStore:       metadata,
 		RemoteMetadataStore: remoteMetadata,
 		UseSyscallMonitor:   useSyscallMonitor,
 		UseNetworkProxy:     useProxy,
@@ -257,7 +251,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		input.Strategy = entry.Strategy
 		loc = entry.BuildDefLoc
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, deps.LocalMetadataStore, loc)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, metadata, loc)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
@@ -267,7 +261,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	return nil
 }
 
-func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
+func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps, metadata rebuild.AssetStore) (*schema.Verdict, error) {
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
 	if req.Ecosystem == rebuild.Debian && strings.TrimSpace(req.Artifact) == "" {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("debian requires artifact"))
@@ -307,7 +301,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if strategy != nil {
 		v.StrategyOneof = schema.NewStrategyOneOf(strategy)
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, req.UseNetworkProxy, req.UseSyscallMonitor)
+	err = buildAndAttest(ctx, deps, metadata, mux, a, t, strategy, entry, req.UseNetworkProxy, req.UseSyscallMonitor)
 	if err != nil {
 		v.Message = errors.Wrap(err, "executing rebuild").Error()
 		return &v, nil
@@ -317,13 +311,16 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 
 func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
 	ctx = context.WithValue(ctx, rebuild.RunID, req.ID)
-	v, err := rebuildPackage(ctx, req, deps)
+	metadata, err := deps.MetadataStoreBuilder(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating metadata store")
+	}
+	v, err := rebuildPackage(ctx, req, deps, metadata)
 	if err != nil {
 		return nil, err
 	}
 	var dockerfile string
-	r, err := deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.DockerfileAsset})
-	if err == nil {
+	if r, err := metadata.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.DockerfileAsset}); err == nil {
 		if b, err := io.ReadAll(r); err == nil {
 			dockerfile = string(b)
 		} else {
@@ -331,8 +328,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		}
 	}
 	var bi rebuild.BuildInfo
-	r, err = deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.BuildInfoAsset})
-	if err == nil {
+	if r, err := metadata.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.BuildInfoAsset}); err == nil {
 		if err = json.NewDecoder(r).Decode(&bi); err != nil {
 			log.Println("Failed to load build info:", err)
 		}

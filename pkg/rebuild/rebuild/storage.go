@@ -109,7 +109,7 @@ func AssetCopy(ctx context.Context, to, from AssetStore, a Asset) error {
 }
 
 // DebugStoreFromContext constructs a DebugStorer using values from the given context.
-func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
+func DebugStoreFromContext(ctx context.Context) (LocatableAssetStore, error) {
 	if uploadpath, ok := ctx.Value(DebugStoreID).(string); ok {
 		u, err := url.Parse(uploadpath)
 		if err != nil {

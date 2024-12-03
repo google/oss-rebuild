@@ -39,11 +39,9 @@ type RemoteOptions struct {
 	Project             string
 	BuildServiceAccount string
 	LogsBucket          string
-	// LocalMetadataStore stores the dockerfile and build info. Cloud build does not need access to this.
-	LocalMetadataStore AssetStore
-	// DebugStore is the durable storage of the dockerfile and build info. Cloud build does not need access to this. It should be keyed by RunID to allow programatic access.
-	DebugStore AssetStore
-	// RemoteMetadataStore stores the rebuilt artifact. Cloud build needs access to upload assets here. It should be keyed by the unguessable UUID to sandbox each build.
+	// MetadataStore stores the dockerfile and build info. Cloud build does not need access to this.
+	MetadataStore AssetStore
+	// RemoteMetadataStore stores the rebuilt artifacts. Cloud build needs access to upload assets here. It should be keyed by the unguessable UUID to sandbox each build.
 	RemoteMetadataStore LocatableAssetStore
 	UtilPrebuildBucket  string
 	// TODO: Consider moving these to Strategy.
@@ -481,18 +479,15 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 		return errors.Wrap(err, "creating dockerfile")
 	}
 	{
-		lw, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
+		w, err := opts.MetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
 		if err != nil {
 			return errors.Wrap(err, "creating writer for Dockerfile")
 		}
-		defer lw.Close()
-		rw, err := opts.DebugStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
-		if err != nil {
-			return errors.Wrap(err, "creating remote writer for Dockerfile")
-		}
-		defer rw.Close()
-		if _, err := io.WriteString(io.MultiWriter(lw, rw), dockerfile); err != nil {
+		if _, err := io.WriteString(w, dockerfile); err != nil {
 			return errors.Wrap(err, "writing Dockerfile")
+		}
+		if err = w.Close(); err != nil {
+			return errors.Wrap(err, "closing writer for Dockerfile")
 		}
 	}
 	build, err := makeBuild(t, dockerfile, opts)
@@ -503,18 +498,15 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 		return errors.Wrap(err, "performing build")
 	}
 	{
-		lw, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
+		w, err := opts.MetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
 		if err != nil {
-			return errors.Wrap(err, "creating writer for build info")
+			return errors.Wrap(err, "creating writer for BuildInfo")
 		}
-		defer lw.Close()
-		rw, err := opts.DebugStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
-		if err != nil {
-			return errors.Wrap(err, "creating remote writer for build info")
-		}
-		defer rw.Close()
-		if err := json.NewEncoder(io.MultiWriter(lw, rw)).Encode(bi); err != nil {
+		if err := json.NewEncoder(w).Encode(bi); err != nil {
 			return errors.Wrap(err, "marshalling and writing build info")
+		}
+		if err = w.Close(); err != nil {
+			return errors.Wrap(err, "closing writer for BuildInfo")
 		}
 	}
 	return nil
