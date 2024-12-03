@@ -26,6 +26,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	billy "github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/pkg/errors"
 	"google.golang.org/api/option"
@@ -245,4 +246,69 @@ var _ LocatableAssetStore = &FilesystemAssetStore{}
 // NewFilesystemAssetStore creates a new FilesystemAssetStore.
 func NewFilesystemAssetStore(fs billy.Filesystem) *FilesystemAssetStore {
 	return &FilesystemAssetStore{fs: fs}
+}
+
+type CachedAssetStore struct {
+	fs     billy.Filesystem
+	local  *FilesystemAssetStore
+	remote LocatableAssetStore
+}
+
+var _ LocatableAssetStore = &CachedAssetStore{}
+
+func NewCachedAssetStore(remote LocatableAssetStore) *CachedAssetStore {
+	fs := memfs.New()
+	return &CachedAssetStore{
+		fs:     fs,
+		local:  NewFilesystemAssetStore(fs),
+		remote: remote,
+	}
+}
+
+func (s *CachedAssetStore) URL(a Asset) *url.URL {
+	return s.remote.URL(a)
+}
+
+// Reader returns a reader for the given asset.
+func (s *CachedAssetStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, err error) {
+	_, err = s.fs.Stat(s.local.resourcePath(a))
+	if errors.Is(err, os.ErrNotExist) {
+		if err := AssetCopy(ctx, s.local, s.remote, a); err != nil {
+			return nil, errors.Wrap(err, "populating cache")
+		}
+	} else if err != nil {
+		return nil, errors.Wrapf(err, "creating reader for %v", a)
+	}
+	return s.local.Reader(ctx, a)
+}
+
+type writerMultiCloser struct {
+	writer  io.Writer
+	closers []io.Closer
+}
+
+func (w *writerMultiCloser) Write(p []byte) (n int, err error) {
+	return w.writer.Write(p)
+}
+
+func (w *writerMultiCloser) Close() error {
+	for _, c := range w.closers {
+		if err := c.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Writer returns a writer for the given asset.
+func (s *CachedAssetStore) Writer(ctx context.Context, a Asset) (r io.WriteCloser, err error) {
+	lw, err := s.local.Writer(ctx, a)
+	if err != nil {
+		return nil, errors.Wrap(err, "cache writer")
+	}
+	rw, err := s.remote.Writer(ctx, a)
+	if err != nil {
+		return nil, errors.Wrap(err, "remote writer")
+	}
+	return &writerMultiCloser{writer: io.MultiWriter(lw, rw), closers: []io.Closer{lw, rw}}, nil
 }
