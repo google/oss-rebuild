@@ -24,9 +24,9 @@ import (
 type NPMPackBuild struct {
 	rebuild.Location
 	// NPMVersion is the version of the NPM CLI to use for the build.
-	NPMVersion string `json:"npm_version"`
+	NPMVersion string `json:"npm_version" yaml:"npm_version"`
 	// VersionOverride provides an alternative version value to apply to the package.json file.
-	VersionOverride string `json:"version_override"`
+	VersionOverride string `json:"version_override" yaml:"version_override,omitempty"`
 }
 
 var _ rebuild.Strategy = &NPMPackBuild{}
@@ -61,11 +61,11 @@ PATH=/usr/bin:/bin:/usr/local/bin /usr/bin/npm version --prefix {{.Location.Dir}
 // NPMCustomBuild implements a user-specified build script.
 type NPMCustomBuild struct {
 	rebuild.Location
-	NPMVersion      string    `json:"npm_version"`
-	NodeVersion     string    `json:"node_version"`
-	VersionOverride string    `json:"version_override"`
-	Command         string    `json:"command"`
-	RegistryTime    time.Time `json:"registry_time"`
+	NPMVersion      string    `json:"npm_version" yaml:"npm_version"`
+	NodeVersion     string    `json:"node_version" yaml:"node_version"`
+	VersionOverride string    `json:"version_override,omitempty" yaml:"version_override,omitempty"`
+	Command         string    `json:"command" yaml:"command"`
+	RegistryTime    time.Time `json:"registry_time" yaml:"registry_time"`
 }
 
 var _ rebuild.Strategy = &NPMCustomBuild{}

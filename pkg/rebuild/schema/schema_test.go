@@ -57,8 +57,8 @@ npm_pack_build:
     repo: the_repo
     ref: the_ref
     dir: the_dir
-  npmversion: red
-  versionoverride: green
+  npm_version: red
+  version_override: green
 `,
 	},
 	{
@@ -81,11 +81,11 @@ npm_custom_build:
     repo: the_repo
     ref: the_ref
     dir: the_dir
-  npmversion: red
-  nodeversion: ""
-  versionoverride: green
+  npm_version: red
+  node_version: ""
+  version_override: green
   command: the_command
-  registrytime: 0001-01-01T00:00:00Z
+  registry_time: 0001-01-01T00:00:00Z
 `,
 	},
 	{
