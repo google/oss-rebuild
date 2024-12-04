@@ -143,8 +143,8 @@ func TestWorkflowStrategy_GenerateFor(t *testing.T) {
 					Uses: "git-checkout",
 				}},
 				Build: []flow.Step{{
-					Uses: "npm/install",
-					With: map[string]string{"npmVersion": "8"},
+					Runs:  "npm pack",
+					Needs: []string{"npm"},
 				}},
 			},
 			want: Instructions{
@@ -154,7 +154,7 @@ func TestWorkflowStrategy_GenerateFor(t *testing.T) {
 				},
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git clone https://github.com/test/repo .\ngit checkout --force 'abc123'",
-				Build:      "PATH=/usr/local/bin:/usr/bin npx --package=npm@8 -c 'npm install --force'",
+				Build:      "npm pack",
 			},
 		},
 	}
@@ -201,9 +201,9 @@ func TestWorkflowStrategyYAML(t *testing.T) {
 				},
 				Deps: []flow.Step{
 					{
-						Uses: "npm/install",
+						Uses: "not-real",
 						With: map[string]string{
-							"npmVersion": "8.0.0",
+							"foo": "bar",
 						},
 					},
 				},
@@ -222,9 +222,9 @@ src:
     - runs: echo source
     - uses: git-checkout
 deps:
-    - uses: npm/install
+    - uses: not-real
       with:
-        npmVersion: 8.0.0
+        foo: bar
 build:
     - runs: make build
 system_deps:
@@ -314,61 +314,6 @@ func TestBuiltinCommand_GitCheckout(t *testing.T) {
 				t.Errorf("script mismatch (-want +got):\n%s", diff)
 			}
 			wantNeeds := []string{"git"}
-			if diff := cmp.Diff(wantNeeds, c.Needs); diff != "" {
-				t.Errorf("needs mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-func TestBuiltinCommand_NpmInstall(t *testing.T) {
-	tests := []struct {
-		name     string
-		location Location
-		with     map[string]string
-		want     string
-	}{
-		{
-			name: "root_directory",
-			location: Location{
-				Dir: ".",
-			},
-			with: map[string]string{
-				"npmVersion": "8.0.0",
-			},
-			want: "PATH=/usr/local/bin:/usr/bin npx --package=npm@8.0.0 -c 'npm install --force'",
-		},
-		{
-			name: "subdirectory",
-			location: Location{
-				Dir: "frontend",
-			},
-			with: map[string]string{
-				"npmVersion": "7.0.0",
-			},
-			want: "PATH=/usr/local/bin:/usr/bin npx --package=npm@7.0.0 -c 'cd frontend && npm install --force'",
-		},
-		{
-			name: "missing_npm_version",
-			location: Location{
-				Dir: "frontend",
-			},
-			with: map[string]string{},
-			want: "PATH=/usr/local/bin:/usr/bin npx --package=npm -c 'cd frontend && npm install --force'",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c, err := flow.Step{Uses: "npm/install", With: tt.with}.Resolve(nil, flow.Data{"Location": tt.location})
-			if err != nil {
-				t.Fatalf("Step.Resolve failed: %v", err)
-			}
-
-			if diff := cmp.Diff(tt.want, c.Script); diff != "" {
-				t.Errorf("script mismatch (-want +got):\n%s", diff)
-			}
-			wantNeeds := []string{"npm"}
 			if diff := cmp.Diff(wantNeeds, c.Needs); diff != "" {
 				t.Errorf("needs mismatch (-want +got):\n%s", diff)
 			}
