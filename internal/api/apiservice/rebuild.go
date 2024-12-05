@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -321,10 +322,19 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		return nil, err
 	}
 	var dockerfile string
-	w, err := deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.DockerfileAsset})
+	r, err := deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.DockerfileAsset})
 	if err == nil {
-		if b, err := io.ReadAll(w); err == nil {
+		if b, err := io.ReadAll(r); err == nil {
 			dockerfile = string(b)
+		} else {
+			log.Println("Failed to load dockerfile:", err)
+		}
+	}
+	var bi rebuild.BuildInfo
+	r, err = deps.LocalMetadataStore.Reader(ctx, rebuild.Asset{Target: v.Target, Type: rebuild.BuildInfoAsset})
+	if err == nil {
+		if err = json.NewDecoder(r).Decode(&bi); err != nil {
+			log.Println("Failed to load build info:", err)
 		}
 	}
 	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(req.ID).Set(ctx, schema.RebuildAttempt{
@@ -338,6 +348,8 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Dockerfile:      dockerfile,
 		ExecutorVersion: os.Getenv("K_REVISION"),
 		RunID:           req.ID,
+		BuildID:         bi.BuildID,
+		ObliviousID:     bi.ID,
 		Created:         time.Now().UnixMilli(),
 	})
 	if err != nil {

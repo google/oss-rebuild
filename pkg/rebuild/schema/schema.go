@@ -246,5 +246,7 @@ type RebuildAttempt struct {
 	Timings         rebuild.Timings `firestore:"timings,omitempty"`
 	ExecutorVersion string          `firestore:"executor_version,omitempty"`
 	RunID           string          `firestore:"run_id,omitempty"`
+	BuildID         string          `firestore:"build_id,omitempty"`
+	ObliviousID     string          `firestore:"oblivious_id,omitempty"`
 	Created         int64           `firestore:"created,omitempty"`
 }
