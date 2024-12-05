@@ -351,6 +351,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--metadata-bucket=${google_storage_bucket.metadata.name}",
         "--attestation-bucket=${google_storage_bucket.attestations.name}",
         "--logs-bucket=${google_storage_bucket.logs.name}",
+        "--debug-storage=gs://${google_storage_bucket.debug.name}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
         "--build-def-repo=https://github.com/google/oss-rebuild",
@@ -394,6 +395,11 @@ resource "google_storage_bucket_iam_binding" "orchestrator-writes-attestations" 
 resource "google_storage_bucket_iam_binding" "orchestrator-manages-metadata" {
   bucket  = google_storage_bucket.metadata.name
   role    = "roles/storage.objectAdmin"
+  members = ["serviceAccount:${google_service_account.orchestrator.email}"]
+}
+resource "google_storage_bucket_iam_binding" "orchestrator-writes-debug" {
+  bucket  = google_storage_bucket.debug.name
+  role    = "roles/storage.objectCreator"
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
 resource "google_storage_bucket_iam_binding" "remote-build-writes-metadata" {

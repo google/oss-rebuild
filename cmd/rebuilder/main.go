@@ -34,7 +34,7 @@ import (
 )
 
 var (
-	debugStorage        = flag.String("debug-storage", "", "if provided, the location in which rebuild results should be stored")
+	debugStorage        = flag.String("debug-storage", "", "if provided, the location in which rebuild debug info should be stored")
 	gitCacheURL         = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
 	defaultVersionCount = flag.Int("default-version-count", 5, "The number of versions to rebuild if no version is provided")
 	useTimewarp         = flag.Bool("timewarp", true, "whether to use launch an instance of the timewarp server")
