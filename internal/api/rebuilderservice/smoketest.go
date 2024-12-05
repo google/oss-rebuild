@@ -144,7 +144,7 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 	}
 	ctx = context.WithValue(ctx, rebuild.AssetDirID, deps.AssetDir)
 	if deps.DebugStorage != nil {
-		ctx = context.WithValue(ctx, rebuild.UploadArtifactsPathID, *deps.DebugStorage)
+		ctx = context.WithValue(ctx, rebuild.DebugStoreID, *deps.DebugStorage)
 	}
 	var verdicts []rebuild.Verdict
 	var err error

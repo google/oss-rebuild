@@ -146,7 +146,7 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 		if ctx.Value(rebuild.RunID) == nil {
 			return nil, errors.New("RunID must be set in the context")
 		}
-		return rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.UploadArtifactsPathID, *debugStorage))
+		return rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.DebugStoreID, *debugStorage))
 	}
 	d.RemoteMetadataStoreBuilder = func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error) {
 		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, uuid), "gs://"+*metadataBucket)
