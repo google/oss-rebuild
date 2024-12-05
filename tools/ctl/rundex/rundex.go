@@ -38,18 +38,18 @@ import (
 
 // Rebuild represents the result of a specific rebuild.
 type Rebuild struct {
-	schema.SmoketestAttempt
+	schema.RebuildAttempt
 	Created time.Time
 }
 
 // NewRebuildFromFirestore creates a Rebuild instance from a "attempt" collection document.
 func NewRebuildFromFirestore(doc *firestore.DocumentSnapshot) Rebuild {
-	var sa schema.SmoketestAttempt
+	var sa schema.RebuildAttempt
 	if err := doc.DataTo(&sa); err != nil {
 		panic(err)
 	}
 	var rb Rebuild
-	rb.SmoketestAttempt = sa
+	rb.RebuildAttempt = sa
 	rb.Created = time.UnixMilli(sa.Created)
 	return rb
 }
