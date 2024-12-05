@@ -640,7 +640,7 @@ func (t *TuiApp) runBenchmark(bench string) {
 		}
 		now := time.Now().UnixMilli()
 		fire.WriteRebuild(t.Ctx, rundex.Rebuild{
-			SmoketestAttempt: schema.SmoketestAttempt{
+			RebuildAttempt: schema.RebuildAttempt{
 				Ecosystem:       string(v.Target.Ecosystem),
 				Package:         v.Target.Package,
 				Version:         v.Target.Version,

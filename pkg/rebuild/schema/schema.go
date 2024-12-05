@@ -233,8 +233,8 @@ type CreateRunResponse struct {
 	ID string
 }
 
-// SmoketestAttempt stores rebuild and execution metadata on a single smoketest run.
-type SmoketestAttempt struct {
+// RebuildAttempt stores rebuild and execution metadata on a single smoketest run.
+type RebuildAttempt struct {
 	Ecosystem       string          `firestore:"ecosystem,omitempty"`
 	Package         string          `firestore:"package,omitempty"`
 	Version         string          `firestore:"version,omitempty"`
