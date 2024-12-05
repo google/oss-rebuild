@@ -500,6 +500,7 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 		return errors.Wrap(err, "creating build")
 	}
 	buildErr := errors.Wrap(doCloudBuild(ctx, opts.GCBClient, build, opts, &bi), "performing build")
+	// TODO: Maybe we should copy the GCB logs to the debug bucket to make them more accessible?
 	{
 		lw, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
 		if err != nil {

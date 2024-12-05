@@ -17,6 +17,7 @@ package gcb
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -102,4 +103,9 @@ func ToError(build *cloudbuild.Build) error {
 		return errors.Errorf("Unexpected build status: %s", build.Status)
 	}
 
+}
+
+// NOTE: There are also per-step logs available as log-<id>-step-<n>.txt
+func MergedLogFile(buildID string) string {
+	return fmt.Sprintf("log-%s.txt", buildID)
 }
