@@ -443,7 +443,7 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 	return gcb.ToError(build)
 }
 
-func makeDockerfile(input Input, opts RemoteOptions) (string, error) {
+func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 	env := BuildEnv{HasRepo: false, PreferPreciseToolchain: true}
 	if opts.UseTimewarp {
 		env.TimewarpHost = "localhost:8080"
@@ -476,7 +476,7 @@ func makeDockerfile(input Input, opts RemoteOptions) (string, error) {
 func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptions) error {
 	t := input.Target
 	bi := BuildInfo{Target: t, ID: id, Builder: os.Getenv("K_REVISION"), BuildStart: time.Now()}
-	dockerfile, err := makeDockerfile(input, opts)
+	dockerfile, err := MakeDockerfile(input, opts)
 	if err != nil {
 		return errors.Wrap(err, "creating dockerfile")
 	}
