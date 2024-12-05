@@ -499,9 +499,7 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 	if err != nil {
 		return errors.Wrap(err, "creating build")
 	}
-	if err := doCloudBuild(ctx, opts.GCBClient, build, opts, &bi); err != nil {
-		return errors.Wrap(err, "performing build")
-	}
+	buildErr := errors.Wrap(doCloudBuild(ctx, opts.GCBClient, build, opts, &bi), "performing build")
 	{
 		lw, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
 		if err != nil {
@@ -517,5 +515,5 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 			return errors.Wrap(err, "marshalling and writing build info")
 		}
 	}
-	return nil
+	return buildErr
 }
