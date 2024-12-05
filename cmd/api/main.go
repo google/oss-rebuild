@@ -137,16 +137,21 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "creating attestation uploader")
 	}
-	d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(memfs.New())
-	// TODO: This can be optional once LocalMetadata and DebugStore are combined into a cached store.
 	if *debugStorage == "" {
-		return nil, errors.New("debug-storage must be set")
-	}
-	d.DebugStoreBuilder = func(ctx context.Context) (rebuild.AssetStore, error) {
+		d.MetadataStoreBuilder = func(ctx context.Context) (rebuild.AssetStore, error) {
+			return rebuild.NewFilesystemAssetStore(memfs.New()), nil
+		}
+	} else {
 		if ctx.Value(rebuild.RunID) == nil {
 			return nil, errors.New("RunID must be set in the context")
 		}
-		return rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.DebugStoreID, *debugStorage))
+		d.MetadataStoreBuilder = func(ctx context.Context) (rebuild.AssetStore, error) {
+			debug, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.DebugStoreID, *debugStorage))
+			if err != nil {
+				return nil, errors.Wrap(err, "creating metadata store")
+			}
+			return rebuild.NewCachedAssetStore(debug), nil
+		}
 	}
 	d.RemoteMetadataStoreBuilder = func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error) {
 		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, uuid), "gs://"+*metadataBucket)
