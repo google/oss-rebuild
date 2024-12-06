@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/cache"
 )
@@ -83,3 +84,15 @@ func (cc *CachedClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 var _ BasicClient = &CachedClient{}
+
+type RateLimitedClient struct {
+	BasicClient
+	Ticker *time.Ticker
+}
+
+func (c *RateLimitedClient) Do(req *http.Request) (*http.Response, error) {
+	<-c.Ticker.C // Wait for next tick
+	return c.BasicClient.Do(req)
+}
+
+var _ BasicClient = &RateLimitedClient{}
