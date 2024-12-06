@@ -16,6 +16,7 @@ package pypi
 
 import (
 	"path"
+	"time"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
@@ -23,7 +24,8 @@ import (
 // PureWheelBuild aggregates the options controlling a wheel build.
 type PureWheelBuild struct {
 	rebuild.Location
-	Requirements []string `json:"requirements"`
+	Requirements []string  `json:"requirements"`
+	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
 }
 
 var _ rebuild.Strategy = &PureWheelBuild{}
@@ -34,13 +36,23 @@ func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (reb
 	if err != nil {
 		return rebuild.Instructions{}, err
 	}
+	buildAndEnv := struct {
+		*PureWheelBuild
+		BuildEnv *rebuild.BuildEnv
+	}{
+		PureWheelBuild: b,
+		BuildEnv:       &be,
+	}
 	deps, err := rebuild.PopulateTemplate(`
 /usr/bin/python3 -m venv /deps
+{{if not .RegistryTime.IsZero -}}
+export PIP_INDEX_URL={{.BuildEnv.TimewarpURL "pypi" .RegistryTime}}
+{{end -}}
 /deps/bin/pip install build
 {{range .Requirements -}}
 /deps/bin/pip install {{.}}
 {{end -}}
-`, b)
+`, buildAndEnv)
 	if err != nil {
 		return rebuild.Instructions{}, err
 	}

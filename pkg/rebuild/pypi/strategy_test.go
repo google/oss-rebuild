@@ -16,6 +16,7 @@ package pypi
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -67,10 +68,28 @@ func TestPureWheelBuild(t *testing.T) {
 				OutputPath: "dist/the_artifact",
 			},
 		},
+		{
+			"WithTimewarp",
+			&PureWheelBuild{
+				Location:     defaultLocation,
+				RegistryTime: time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/python3 -m venv /deps
+export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange
+/deps/bin/pip install build
+`,
+				Build:      "/deps/bin/python3 -m build --wheel -n the_dir",
+				SystemDeps: []string{"git", "python3"},
+				OutputPath: "dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			inst, err := tc.strategy.GenerateFor(rebuild.Target{Ecosystem: rebuild.PyPI, Package: "the_package", Version: "the_version", Artifact: "the_artifact"}, rebuild.BuildEnv{HasRepo: true})
+			inst, err := tc.strategy.GenerateFor(rebuild.Target{Ecosystem: rebuild.PyPI, Package: "the_package", Version: "the_version", Artifact: "the_artifact"}, rebuild.BuildEnv{HasRepo: true, TimewarpHost: "orange"})
 			if err != nil {
 				t.Fatalf("%s: Strategy%v.GenerateFor() failed unexpectedly: %v", tc.name, tc.strategy, err)
 			}
