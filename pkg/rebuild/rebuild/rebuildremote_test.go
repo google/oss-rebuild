@@ -63,7 +63,7 @@ RUN <<'EOF'
  git checkout --force 'main'
  make deps ...
 EOF
-RUN cat <<'EOF' >build
+RUN cat <<'EOF' >/build
  set -eux
  make build ...
  mkdir /out && cp /src/output/foo.tgz /out/
@@ -105,7 +105,7 @@ RUN <<'EOF'
  git checkout --force 'main'
  make deps ...
 EOF
-RUN cat <<'EOF' >build
+RUN cat <<'EOF' >/build
  set -eux
  make build ...
  mkdir /out && cp /src/output/foo.tgz /out/
@@ -148,7 +148,7 @@ RUN <<'EOF'
  apk add --no-cache python3 py3-pip
  pip install requests
 EOF
-RUN cat <<'EOF' >build
+RUN cat <<'EOF' >/build
  set -eux
  # Compile and package
  python3 setup.py build
@@ -190,7 +190,7 @@ RUN <<'EOF'
  git checkout --force 'main'
  make deps ...
 EOF
-RUN cat <<'EOF' >build
+RUN cat <<'EOF' >/build
  set -eux
  make build ...
  ls
