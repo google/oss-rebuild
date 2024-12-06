@@ -31,9 +31,9 @@ import (
 
 // Location is where a set of rebuild instruction should be executed.
 type Location struct {
-	Repo string `json:"repo"`
-	Ref  string `json:"ref"`
-	Dir  string `json:"dir"`
+	Repo string `json:"repo" yaml:"repo"`
+	Ref  string `json:"ref" yaml:"ref"`
+	Dir  string `json:"dir" yaml:"dir,omitempty"`
 }
 
 // Instructions represents the source, dependencies, and build steps to execute a rebuild.
