@@ -94,12 +94,12 @@ RUN <<'EOF'
  set -eux
  wget https://my-bucket.storage.googleapis.com/timewarp
  chmod +x timewarp
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
  apk add git make
 EOF
 RUN <<'EOF'
  set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
  mkdir /src && cd /src
  git clone 'github.com/example' .
  git checkout --force 'main'

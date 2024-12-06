@@ -135,14 +135,16 @@ var debuildContainerTpl = template.Must(
 				{{- if .UseTimewarp}}
 				 curl https://{{.UtilPrebuildBucket}}.storage.googleapis.com/timewarp > timewarp
 				 chmod +x timewarp
-				 ./timewarp -port 8080 &
-				 while ! nc -z localhost 8080;do sleep 1;done
 				{{- end}}
 				 apt update
 				 apt install -y {{join " " .Instructions.SystemDeps}}
 				EOF
 				RUN <<'EOF'
 				 set -eux
+				{{- if .UseTimewarp}}
+				 ./timewarp -port 8080 &
+				 while ! nc -z localhost 8080;do sleep 1;done
+				{{- end}}
 				 mkdir /src && cd /src
 				 {{.Instructions.Source| indent}}
 				 {{.Instructions.Deps | indent}}
@@ -175,13 +177,15 @@ var alpineContainerTpl = template.Must(
 				{{- if .UseTimewarp}}
 				 wget https://{{.UtilPrebuildBucket}}.storage.googleapis.com/timewarp
 				 chmod +x timewarp
-				 ./timewarp -port 8080 &
-				 while ! nc -z localhost 8080;do sleep 1;done
 				{{- end}}
 				 apk add {{join " " .Instructions.SystemDeps}}
 				EOF
 				RUN <<'EOF'
 				 set -eux
+				{{- if .UseTimewarp}}
+				 ./timewarp -port 8080 &
+				 while ! nc -z localhost 8080;do sleep 1;done
+				{{- end}}
 				 mkdir /src && cd /src
 				 {{.Instructions.Source| indent}}
 				 {{.Instructions.Deps | indent}}
