@@ -29,6 +29,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -39,7 +40,7 @@ import (
 
 var (
 	npmRegistry, _  = url.Parse("https://registry.npmjs.org/")
-	pypiRegistry, _ = url.Parse("https://pypi.org/")
+	pypiRegistry, _ = url.Parse("https://pypi.org/simple")
 	lowTimeBound    = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
 )
 
@@ -80,6 +81,7 @@ func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	case "pypi":
 		r.URL.Host = pypiRegistry.Host
 		r.URL.Scheme = pypiRegistry.Scheme
+		r.URL.Path = path.Join(pypiRegistry.Path, r.URL.Path)
 	default:
 		http.Error(rw, "unsupported platform", http.StatusBadRequest)
 		return
