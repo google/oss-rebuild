@@ -149,7 +149,7 @@ var debuildContainerTpl = template.Must(
 				 {{.Instructions.Source| indent}}
 				 {{.Instructions.Deps | indent}}
 				EOF
-				RUN cat <<'EOF' >build
+				RUN cat <<'EOF' >/build
 				 set -eux
 				 {{.Instructions.Build | indent}}
 				 ls
@@ -190,7 +190,7 @@ var alpineContainerTpl = template.Must(
 				 {{.Instructions.Source| indent}}
 				 {{.Instructions.Deps | indent}}
 				EOF
-				RUN cat <<'EOF' >build
+				RUN cat <<'EOF' >/build
 				 set -eux
 				 {{.Instructions.Build | indent}}
 				 mkdir /out && cp /src/{{.Instructions.OutputPath}} /out/
