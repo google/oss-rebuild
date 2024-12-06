@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/pkg/errors"
 )
 
@@ -60,11 +61,13 @@ func parseTime(ts string) (*time.Time, error) {
 }
 
 // Handler implements a registry-fronting HTTP service that filters returned content by time.
-type Handler struct{}
+type Handler struct {
+	Client httpx.BasicClient
+}
 
 var _ http.Handler = &Handler{}
 
-func (Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	// Expect to be called with a basic auth username and password of the form:
 	// http://<platform>:<RFC3339>@<hostname>/
 	// These populate the Authorization header with a "Basic" mode value and are
@@ -124,7 +127,7 @@ func (Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			nr.Header.Set("Accept", "application/json")
 		}
 	}
-	resp, err := http.DefaultClient.Do(nr)
+	resp, err := h.Client.Do(nr)
 	if err != nil {
 		err = errors.Wrap(err, "creating client")
 		log.Println("error", err.Error())
@@ -174,7 +177,7 @@ func (Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		// Reference: https://warehouse.pypa.io/api-reference/json.html
 		// TODO: Find a better (path-based?) heuristic for identifying project API.
 		if obj["releases"] != nil {
-			if err := timeWarpPyPIProjectRequest(obj, *t); err != nil {
+			if err := timeWarpPyPIProjectRequest(h.Client, obj, *t); err != nil {
 				err = errors.Wrap(err, "warping response")
 				log.Println("error", err.Error(), "[", nr.URL.String(), "]")
 				http.Error(rw, errors.Wrap(err, "warping response").Error(), http.StatusBadGateway)
@@ -263,7 +266,7 @@ func timeWarpNPMPackageRequest(obj map[string]any, at time.Time) error {
 }
 
 // timeWarpPyPIProjectRequest modifies the provided JSON-like map to exclude all content after "at".
-func timeWarpPyPIProjectRequest(obj map[string]any, at time.Time) error {
+func timeWarpPyPIProjectRequest(client httpx.BasicClient, obj map[string]any, at time.Time) error {
 	var futureVersions []string
 	var latestVersion string
 	var latestVersionTime time.Time
@@ -322,7 +325,11 @@ func timeWarpPyPIProjectRequest(obj map[string]any, at time.Time) error {
 		// so we need to make sure it's kept up to date.
 		project := obj["info"].(map[string]any)["name"].(string)
 		versionURL := pypiRegistry.JoinPath("pypi", project, latestVersion, "json")
-		resp, err := http.Get(versionURL.String())
+		req, err := http.NewRequest(http.MethodGet, versionURL.String(), nil)
+		if err != nil {
+			return errors.Wrap(err, "creating request")
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode != 200 {
 			err = errors.New(resp.Status)
 		}
