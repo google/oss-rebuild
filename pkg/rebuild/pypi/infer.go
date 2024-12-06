@@ -295,7 +295,18 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if pyprojReqs, err := extractPyProjectRequirements(ctx, tree); err != nil {
 			log.Println(errors.Wrap(err, "Failed to extract reqs from pyproject.toml."))
 		} else {
-			reqs = append(reqs, pyprojReqs...)
+			existing := make(map[string]bool)
+			pkgname := func(req string) string {
+				return strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~! \t", r) })[0]
+			}
+			for _, req := range reqs {
+				existing[pkgname(req)] = true
+			}
+			for _, newReq := range pyprojReqs {
+				if pkg := pkgname(newReq); !existing[pkg] {
+					reqs = append(reqs, newReq)
+				}
+			}
 		}
 	}
 	return &PureWheelBuild{
