@@ -31,7 +31,7 @@ var (
 func main() {
 	flag.Parse()
 	log.Printf("Server listening on port %d", *port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), timewarp.Handler{}); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), timewarp.Handler{Client: http.DefaultClient}); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 }
