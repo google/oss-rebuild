@@ -257,11 +257,11 @@ var runBenchmark = &cobra.Command{
 		if *buildLocal {
 			run = time.Now().UTC().Format(time.RFC3339)
 		} else {
-			stub := api.Stub[schema.CreateRunRequest, schema.CreateRunResponse](client, *apiURL.JoinPath("runs"))
+			stub := api.Stub[schema.CreateRunRequest, schema.Run](client, *apiURL.JoinPath("runs"))
 			resp, err := stub(ctx, schema.CreateRunRequest{
-				Name: filepath.Base(args[1]),
-				Hash: hex.EncodeToString(set.Hash(sha256.New())),
-				Type: string(mode),
+				BenchmarkName: filepath.Base(args[1]),
+				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
+				Type:          string(mode),
 			})
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "creating run"))

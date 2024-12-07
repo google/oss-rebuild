@@ -70,26 +70,26 @@ func (r *Rebuild) ID() string {
 
 // Run represents a group of one or more rebuild executions.
 type Run struct {
-	ID            string
-	BenchmarkName string
-	BenchmarkHash string
-	Type          benchmark.BenchmarkMode
-	Created       time.Time
+	schema.Run
+	Type    benchmark.BenchmarkMode
+	Created time.Time
+}
+
+func FromRun(r schema.Run) Run {
+	var rb Run
+	rb.Run = r
+	rb.Type = benchmark.BenchmarkMode(r.Type)
+	rb.Created = time.UnixMilli(r.Created)
+	return rb
 }
 
 // NewRunFromFirestore creates a Run instance from a "runs" collection document.
 func NewRunFromFirestore(doc *firestore.DocumentSnapshot) Run {
-	var typ benchmark.BenchmarkMode
-	if maybeType, ok := doc.Data()["run_type"]; ok {
-		typ = benchmark.BenchmarkMode(maybeType.(string))
+	var r schema.Run
+	if err := doc.DataTo(&r); err != nil {
+		panic(err)
 	}
-	return Run{
-		ID:            doc.Ref.ID,
-		BenchmarkName: doc.Data()["benchmark_name"].(string),
-		BenchmarkHash: doc.Data()["benchmark_hash"].(string),
-		Type:          typ,
-		Created:       time.UnixMilli(doc.Data()["created"].(int64)),
-	}
+	return FromRun(r)
 }
 
 // DoQuery executes a query, transforming and sending each document to the output channel.

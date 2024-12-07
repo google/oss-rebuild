@@ -686,14 +686,15 @@ func (t *TuiApp) runBenchmark(bench string) {
 		log.Println(errors.Wrap(err, "reading benchmark"))
 		return
 	}
-	runID := time.Now().UTC().Format(time.RFC3339)
-	fire.WriteRun(t.Ctx, rundex.Run{
+	ts := time.Now().UTC()
+	runID := ts.Format(time.RFC3339)
+	fire.WriteRun(t.Ctx, rundex.FromRun(schema.Run{
 		ID:            runID,
 		BenchmarkName: filepath.Base(bench),
 		BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-		Type:          benchmark.SmoketestMode,
-		Created:       time.Now(),
-	})
+		Type:          string(benchmark.SmoketestMode),
+		Created:       ts.UnixMilli(),
+	}))
 	verdictChan, err := t.rb.RunBench(t.Ctx, set, runID)
 	if err != nil {
 		log.Println(err.Error())
