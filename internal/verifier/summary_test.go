@@ -42,7 +42,7 @@ func TestSummarizeArtifacts(t *testing.T) {
 			Version:   "1.0.0",
 			Artifact:  "foo-1.0.0.whl",
 		}
-		asset := rebuild.Asset{Target: target, Type: rebuild.RebuildAsset}
+		asset := rebuild.RebuildAsset.For(target)
 		rebuildURI := metadata.URL(asset).String()
 		w, err := metadata.Writer(ctx, asset)
 		orDie(err)

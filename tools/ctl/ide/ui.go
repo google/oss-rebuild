@@ -161,8 +161,8 @@ func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
 	}
 	// TODO: Clean up these artifacts.
 	// TODO: Check if these are already downloaded.
-	rebuildAsset := rebuild.Asset{Target: t, Type: rebuild.DebugRebuildAsset}
-	upstreamAsset := rebuild.Asset{Target: t, Type: rebuild.DebugUpstreamAsset}
+	rebuildAsset := rebuild.DebugRebuildAsset.For(t)
+	upstreamAsset := rebuild.DebugUpstreamAsset.For(t)
 	rba := localAssets.URL(rebuildAsset).Path
 	usa := localAssets.URL(upstreamAsset).Path
 	if _, err := os.Stat(rba); errors.Is(err, os.ErrNotExist) {
@@ -219,7 +219,7 @@ func downloadLogs(ctx context.Context, localAssets rebuild.AssetStore, example r
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	logsAsset := rebuild.Asset{Target: t, Type: rebuild.DebugLogsAsset}
+	logsAsset := rebuild.DebugLogsAsset.For(t)
 	debugAssets, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.RunID, example.RunID))
 	if err != nil {
 		return errors.Wrap(err, "failed to create debug asset store")
@@ -235,7 +235,7 @@ func downloadLogs(ctx context.Context, localAssets rebuild.AssetStore, example r
 	}
 	var info rebuild.BuildInfo
 	{
-		infoAsset := rebuild.Asset{Target: t, Type: rebuild.BuildInfoAsset}
+		infoAsset := rebuild.BuildInfoAsset.For(t)
 		r, err := debugAssets.Reader(ctx, infoAsset)
 		if err != nil {
 			return errors.Wrap(err, "reading build info")
@@ -287,7 +287,7 @@ func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 		log.Println(errors.Wrap(err, "failed to create local asset store"))
 		return
 	}
-	logsAsset := rebuild.Asset{Target: t, Type: rebuild.DebugLogsAsset}
+	logsAsset := rebuild.DebugLogsAsset.For(t)
 	logs := localAssets.URL(logsAsset).Path
 	if _, err := os.Stat(logs); errors.Is(err, os.ErrNotExist) {
 		if err := downloadLogs(ctx, localAssets, example); err != nil {
@@ -309,7 +309,7 @@ func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error
 	if err != nil {
 		return errors.Wrap(err, "failed to create local asset store")
 	}
-	buildDefAsset := rebuild.Asset{Type: rebuild.BuildDef, Target: example.Target()}
+	buildDefAsset := rebuild.BuildDef.For(example.Target())
 	var currentStrat schema.StrategyOneOf
 	{
 		if r, err := localAssets.Reader(ctx, buildDefAsset); err == nil {

@@ -43,7 +43,7 @@ func NewFilesystemBuildDefinitionSet(fs billy.Filesystem) *FilesystemBuildDefini
 
 func (s *FilesystemBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target) (rebuild.Strategy, error) {
 	definitions := rebuild.NewFilesystemAssetStore(s.fs)
-	r, err := definitions.Reader(ctx, rebuild.Asset{Type: rebuild.BuildDef, Target: t})
+	r, err := definitions.Reader(ctx, rebuild.BuildDef.For(t))
 	if err != nil {
 		if errors.Is(err, rebuild.ErrAssetNotFound) {
 			return nil, nil // Return nil strategy if definition is not found
@@ -60,7 +60,7 @@ func (s *FilesystemBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target
 
 func (s *FilesystemBuildDefinitionSet) Path(ctx context.Context, t rebuild.Target) (string, error) {
 	defs := rebuild.NewFilesystemAssetStore(s.fs)
-	url := defs.URL(rebuild.Asset{Type: rebuild.BuildDef, Target: t})
+	url := defs.URL(rebuild.BuildDef.For(t))
 	return url.Path, nil
 }
 

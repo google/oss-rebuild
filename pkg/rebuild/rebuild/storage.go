@@ -34,6 +34,10 @@ import (
 // AssetType is the type of an asset we're storing for debug later.
 type AssetType string
 
+func (a AssetType) For(t Target) Asset {
+	return Asset{Type: a, Target: t}
+}
+
 const (
 	// DebugRebuildAsset is the artifact that we rebuilt.
 	DebugRebuildAsset AssetType = "rebuild"

@@ -65,12 +65,12 @@ func TestCreateAttestations(t *testing.T) {
 		fs := memfs.New()
 		metadata := rebuild.NewFilesystemAssetStore(fs)
 		{
-			w := must(metadata.Writer(ctx, rebuild.Asset{Target: target, Type: rebuild.DockerfileAsset}))
+			w := must(metadata.Writer(ctx, rebuild.DockerfileAsset.For(target)))
 			must(w.Write([]byte("FROM alpine:latest\nRUN echo deps\nENTRYPOINT [\"echo\", \"build\"]")))
 			orDie(w.Close())
 		}
 		{
-			w := must(metadata.Writer(ctx, rebuild.Asset{Target: target, Type: rebuild.BuildInfoAsset}))
+			w := must(metadata.Writer(ctx, rebuild.BuildInfoAsset.For(target)))
 			must(w.Write(must(json.Marshal(buildInfo))))
 			orDie(w.Close())
 		}

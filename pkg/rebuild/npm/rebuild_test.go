@@ -181,7 +181,7 @@ func TestCompare(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.test, func(t *testing.T) {
 			as := rebuild.NewFilesystemAssetStore(memfs.New())
-			rb, up := rebuild.Asset{Type: rebuild.DebugRebuildAsset, Target: tc.target}, rebuild.Asset{Type: rebuild.DebugUpstreamAsset, Target: tc.target}
+			rb, up := rebuild.DebugRebuildAsset.For(tc.target), rebuild.DebugUpstreamAsset.For(tc.target)
 			{
 				w := must(as.Writer(context.Background(), rb))
 				gw := gzip.NewWriter(w)

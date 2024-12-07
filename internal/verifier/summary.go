@@ -40,7 +40,7 @@ func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStor
 	up = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), StabilizedHash: hashext.NewMultiHash(hashes...), URI: upstreamURI}
 	// Fetch and process rebuild.
 	var r io.ReadCloser
-	rbAsset := rebuild.Asset{Target: t, Type: rebuild.RebuildAsset}
+	rbAsset := rebuild.RebuildAsset.For(t)
 	rb.URI = metadata.URL(rbAsset).String()
 	r, err = metadata.Reader(ctx, rbAsset)
 	if err != nil {

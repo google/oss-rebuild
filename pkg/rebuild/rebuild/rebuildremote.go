@@ -346,11 +346,11 @@ var assetUploadTpl = template.Must(
 func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Build, error) {
 	var buildScript bytes.Buffer
 	uploads := []upload{
-		{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ContainerImageAsset}).String()},
-		{From: path.Join("/workspace", t.Artifact), To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: RebuildAsset}).String()},
+		{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(ContainerImageAsset.For(t)).String()},
+		{From: path.Join("/workspace", t.Artifact), To: opts.RemoteMetadataStore.URL(RebuildAsset.For(t)).String()},
 	}
 	if opts.UseSyscallMonitor {
-		uploads = append(uploads, upload{From: "/workspace/tetragon.jsonl", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: TetragonLogAsset}).String()})
+		uploads = append(uploads, upload{From: "/workspace/tetragon.jsonl", To: opts.RemoteMetadataStore.URL(TetragonLogAsset.For(t)).String()})
 	}
 	if opts.UseNetworkProxy {
 		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
@@ -385,7 +385,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		if err != nil {
 			return nil, errors.Wrap(err, "expanding proxy build template")
 		}
-		uploads = append(uploads, upload{From: "/workspace/netlog.json", To: opts.RemoteMetadataStore.URL(Asset{Target: t, Type: ProxyNetlogAsset}).String()})
+		uploads = append(uploads, upload{From: "/workspace/netlog.json", To: opts.RemoteMetadataStore.URL(ProxyNetlogAsset.For(t)).String()})
 	} else {
 		err := standardBuildTpl.Execute(&buildScript, map[string]any{
 			"Dockerfile":        dockerfile,
@@ -485,12 +485,12 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 		return errors.Wrap(err, "creating dockerfile")
 	}
 	{
-		lw, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
+		lw, err := opts.LocalMetadataStore.Writer(ctx, DockerfileAsset.For(t))
 		if err != nil {
 			return errors.Wrap(err, "creating writer for Dockerfile")
 		}
 		defer lw.Close()
-		rw, err := opts.DebugStore.Writer(ctx, Asset{Target: t, Type: DockerfileAsset})
+		rw, err := opts.DebugStore.Writer(ctx, DockerfileAsset.For(t))
 		if err != nil {
 			return errors.Wrap(err, "creating remote writer for Dockerfile")
 		}
@@ -506,12 +506,12 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 	buildErr := errors.Wrap(doCloudBuild(ctx, opts.GCBClient, build, opts, &bi), "performing build")
 	// TODO: Maybe we should copy the GCB logs to the debug bucket to make them more accessible?
 	{
-		lw, err := opts.LocalMetadataStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
+		lw, err := opts.LocalMetadataStore.Writer(ctx, BuildInfoAsset.For(t))
 		if err != nil {
 			return errors.Wrap(err, "creating writer for build info")
 		}
 		defer lw.Close()
-		rw, err := opts.DebugStore.Writer(ctx, Asset{Target: t, Type: BuildInfoAsset})
+		rw, err := opts.DebugStore.Writer(ctx, BuildInfoAsset.For(t))
 		if err != nil {
 			return errors.Wrap(err, "creating remote writer for build info")
 		}
