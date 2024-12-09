@@ -25,7 +25,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func artifactReader(ctx context.Context, t Target, mux RegistryMux) (io.ReadCloser, error) {
+func UpstreamArtifactReader(ctx context.Context, t Target, mux RegistryMux) (io.ReadCloser, error) {
 	// TODO: Make this configurable from within each ecosystem.
 	switch t.Ecosystem {
 	case NPM:
@@ -70,7 +70,7 @@ func Stabilize(ctx context.Context, t Target, mux RegistryMux, rbPath string, fs
 			return rb, up, errors.Errorf("[INTERNAL] failed to store asset %v", up)
 		}
 		defer w.Close()
-		r, err := artifactReader(ctx, t, mux)
+		r, err := UpstreamArtifactReader(ctx, t, mux)
 		if err != nil {
 			return rb, up, errors.Wrapf(err, "[INTERNAL] Failed to fetch upstream artifact")
 		}

@@ -69,6 +69,12 @@ func (r *Rebuild) ID() string {
 	return strings.Join([]string{r.Ecosystem, r.Package, r.Version, r.Artifact}, "!")
 }
 
+// WasSmoketest returns true if this rebuild was part of a smoketest run.
+func (r Rebuild) WasSmoketest() bool {
+	// TODO: Should we store the type of execution directly on the Rebuild? A more explicit check would involve looking up the Run object.
+	return r.ObliviousID == ""
+}
+
 // Run represents a group of one or more rebuild executions.
 type Run struct {
 	schema.Run
