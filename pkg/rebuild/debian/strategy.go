@@ -15,7 +15,14 @@
 package debian
 
 import (
+	"fmt"
+	"regexp"
+
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+)
+
+var (
+	binaryVersionRegex = regexp.MustCompile(`^(?P<name>[^_]+)_(?P<nonbinary_version>[^_]+)(\+b\d+)_(?P<arch>[^_]+)\.deb$`)
 )
 
 type FileWithChecksum struct {
@@ -63,11 +70,25 @@ apt install -y {{join " " .Requirements}}
 	if err != nil {
 		return rebuild.Instructions{}, err
 	}
+	// If the target is a binary-only release (version ends with something like +b1) we need to add an additonal rename.
+	var expected string
+	if matches := binaryVersionRegex.FindStringSubmatch(t.Artifact); matches != nil {
+		artifactName := matches[binaryVersionRegex.SubexpIndex("name")]
+		nbversion := matches[binaryVersionRegex.SubexpIndex("nonbinary_version")]
+		arch := matches[binaryVersionRegex.SubexpIndex("arch")]
+		expected = fmt.Sprintf("%s_%s_%s.deb", artifactName, nbversion, arch)
+	}
 	build, err := rebuild.PopulateTemplate(`
 set -eux
 cd */
 debuild -b -uc -us
-`, t)
+{{- if .Expected }}
+mv /src/{{ .Expected }} /src/{{ .Target.Artifact }}
+{{- end }}
+`, struct {
+		Target   rebuild.Target
+		Expected string
+	}{Target: t, Expected: expected})
 	if err != nil {
 		return rebuild.Instructions{}, err
 	}
