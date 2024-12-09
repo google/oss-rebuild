@@ -114,7 +114,10 @@ var tui = &cobra.Command{
 				tctx = context.WithValue(tctx, rebuild.DebugStoreID, *debugStorage)
 			}
 			if *logsBucket != "" {
-				tctx = context.WithValue(tctx, rebuild.LogsBucketID, *logsBucket)
+				tctx = context.WithValue(tctx, ide.LogsBucketID, *logsBucket)
+			}
+			if *metadataBucket != "" {
+				tctx = context.WithValue(tctx, ide.MetadataBucketID, *metadataBucket)
 			}
 			// TODO: Support filtering in the UI on TUI.
 			var err error
@@ -563,13 +566,14 @@ var infer = &cobra.Command{
 
 var (
 	// Shared
-	apiUri     = flag.String("api", "", "OSS Rebuild API endpoint URI")
-	ecosystem  = flag.String("ecosystem", "", "the ecosystem")
-	pkg        = flag.String("package", "", "the package name")
-	version    = flag.String("version", "", "the version of the package")
-	artifact   = flag.String("artifact", "", "the artifact name")
-	verbose    = flag.Bool("v", false, "verbose output")
-	logsBucket = flag.String("logs-bucket", "", "the gcs bucket where gcb logs are stored")
+	apiUri         = flag.String("api", "", "OSS Rebuild API endpoint URI")
+	ecosystem      = flag.String("ecosystem", "", "the ecosystem")
+	pkg            = flag.String("package", "", "the package name")
+	version        = flag.String("version", "", "the version of the package")
+	artifact       = flag.String("artifact", "", "the artifact name")
+	verbose        = flag.Bool("v", false, "verbose output")
+	logsBucket     = flag.String("logs-bucket", "", "the gcs bucket where gcb logs are stored")
+	metadataBucket = flag.String("metadata-bucket", "", "the gcs bucket where rebuild output is stored")
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
 	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
@@ -626,6 +630,7 @@ func init() {
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
 	tui.Flags().AddGoFlag(flag.Lookup("debug-storage"))
 	tui.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
+	tui.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
 	tui.Flags().AddGoFlag(flag.Lookup("benchmark-dir"))
 	tui.Flags().AddGoFlag(flag.Lookup("clean"))
 	tui.Flags().AddGoFlag(flag.Lookup("def-dir"))
