@@ -48,7 +48,7 @@ func artifactReader(ctx context.Context, t Target, mux RegistryMux) (io.ReadClos
 // Stabilize the upstream and rebuilt artifacts.
 func Stabilize(ctx context.Context, t Target, mux RegistryMux, rbPath string, fs billy.Filesystem, assets AssetStore) (rb, up Asset, err error) {
 	{ // Stabilize rebuild
-		rb = Asset{Type: DebugRebuildAsset, Target: t}
+		rb = DebugRebuildAsset.For(t)
 		w, err := assets.Writer(ctx, rb)
 		if err != nil {
 			return rb, up, errors.Errorf("[INTERNAL] failed to store asset %v", rb)
@@ -64,7 +64,7 @@ func Stabilize(ctx context.Context, t Target, mux RegistryMux, rbPath string, fs
 		}
 	}
 	{ // Stabilize upstream
-		up = Asset{Type: DebugUpstreamAsset, Target: t}
+		up = DebugUpstreamAsset.For(t)
 		w, err := assets.Writer(ctx, up)
 		if err != nil {
 			return rb, up, errors.Errorf("[INTERNAL] failed to store asset %v", up)

@@ -121,7 +121,7 @@ func RebuildMany(ctx context.Context, rebuilder Rebuilder, inputs []Input, regis
 		verdicts = append(verdicts, verdict)
 		resetLogger()
 		{
-			asset := Asset{Type: DebugLogsAsset, Target: t}
+			asset := DebugLogsAsset.For(t)
 			w, err := localAssets.Writer(ctx, asset)
 			if err != nil {
 				log.Printf("Failed to create writer for log asset: %v\n", err)
