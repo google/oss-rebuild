@@ -89,6 +89,10 @@ func NewRunFromFirestore(doc *firestore.DocumentSnapshot) Run {
 	if err := doc.DataTo(&r); err != nil {
 		panic(err)
 	}
+	// Historical, past entries only contain runid in the doc.Ref.ID, not inside the document.
+	if r.ID == "" {
+		r.ID = doc.Ref.ID
+	}
 	return FromRun(r)
 }
 
