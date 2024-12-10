@@ -103,11 +103,33 @@ type URLMatchRule struct {
 	PathMatch MatchingType `json:"matchPathBy"`
 }
 
+// Allows validates the rule against the URL in req.
+//
+// Matching host by suffix assumes domain parts rather than plain string suffix.
+// That is, a domain suffix always starts with the dot delimiter.
+// E.g. notgoogle.com does not match google.com, but is.google.com does.
+// The empty string matches any domain.
 func (rule URLMatchRule) Allows(req *http.Request) bool {
 	url := req.URL
 	switch rule.HostMatch {
 	case SuffixMatch:
-		if !strings.HasSuffix(url.Hostname(), rule.Host) {
+		// Special case: match any.
+		if rule.Host == "" {
+			return true
+		}
+
+		// Check for an exact match first (see below).
+		if url.Hostname() == rule.Host {
+			return true
+		}
+
+		// Avoid matching partial domain names and only match full domain parts.
+		// That is, notgoogle.com must not match google.com, but is.google.com matches google.com.
+		host := rule.Host
+		if !strings.HasPrefix(".", host) {
+			host = "." + host
+		}
+		if !strings.HasSuffix(url.Hostname(), host) {
 			return false
 		}
 	case FullMatch:
