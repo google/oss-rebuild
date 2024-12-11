@@ -126,7 +126,7 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schem
 			ID:        w.run,
 		})
 		if err != nil {
-			errMsg = errors.Wrap(err, "making request").Error()
+			log.Fatal(errors.Wrap(err, "making request"))
 		}
 		resp, err := w.client.Do(req)
 		if err != nil {
@@ -134,9 +134,8 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schem
 		} else if resp.StatusCode != 200 {
 			errMsg = errors.Wrapf(errors.New(resp.Status), "sending request").Error()
 		}
-		var verdict schema.Verdict
 		if errMsg != "" {
-			verdict = schema.Verdict{
+			out <- schema.Verdict{
 				Target: rebuild.Target{
 					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 					Package:   p.Name,
@@ -145,18 +144,13 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schem
 				Message: errMsg,
 			}
 		} else {
-			// TODO: Once the attestation endpoint returns verdict objects,
-			// support that here.
-			verdict = schema.Verdict{
-				Target: rebuild.Target{
-					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-					Package:   p.Name,
-					Version:   v,
-				},
-				Message: "",
+			// TODO: Use stubs instead of http requests.
+			var v schema.Verdict
+			if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+				log.Fatalf("Failed to decode attestation verdict: %v", err)
 			}
+			out <- v
 		}
-		out <- verdict
 	}
 }
 
@@ -191,7 +185,7 @@ func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan sc
 		ID:        w.run,
 	})
 	if err != nil {
-		errMsg = errors.Wrap(err, "making request").Error()
+		log.Fatal(errors.Wrap(err, "making request"))
 	}
 	resp, err := w.client.Do(req)
 	if err != nil {
@@ -213,6 +207,7 @@ func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan sc
 			}
 		}
 	} else {
+		// TODO: Use stubs instead of http requests.
 		var r schema.SmoketestResponse
 		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
 			log.Fatalf("Failed to decode smoketest response: %v", err)
