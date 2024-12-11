@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -182,8 +183,9 @@ func cleanVerdict(m string) string {
 }
 
 type FetchRebuildOpts struct {
-	Clean  bool
-	Filter string
+	Clean   bool
+	Prefix  string
+	Pattern string
 }
 
 // FetchRebuildRequest describes which Rebuild results you would like to fetch from firestore.
@@ -243,9 +245,18 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Reb
 			}
 		})
 	}
-	if req.Opts.Filter != "" {
+	if req.Opts.Prefix != "" {
 		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
-			if strings.HasPrefix(in.Message, req.Opts.Filter) {
+			if strings.HasPrefix(in.Message, req.Opts.Prefix) {
+				out <- in
+			}
+		})
+	}
+	if req.Opts.Pattern != "" {
+		pat := regexp.MustCompile(req.Opts.Pattern)
+		fmt.Println(pat)
+		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
+			if pat.MatchString(in.Message) {
 				out <- in
 			}
 		})
