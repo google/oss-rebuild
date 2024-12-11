@@ -16,6 +16,7 @@ package debian
 
 import (
 	"context"
+	"regexp"
 	"strings"
 
 	billy "github.com/go-git/go-billy/v5"
@@ -35,6 +36,13 @@ func (Rebuilder) InferRepo(_ context.Context, _ rebuild.Target, _ rebuild.Regist
 func (Rebuilder) CloneRepo(_ context.Context, _ rebuild.Target, _ string, _ billy.Filesystem, _ storage.Storer) (rebuild.RepoConfig, error) {
 	return rebuild.RepoConfig{}, nil
 }
+
+// Source packages are expected to end with .tar.gz in format 3.0 or .diff.gz in format 1.0:
+// https://wiki.debian.org/Packaging/SourcePackage#The_definition_of_a_source_package
+// In the wild, we've seen a few additional compression schemes used.
+var origRegex = regexp.MustCompile(`\.orig\.tar\.(gz|xz|bz2)$`)
+var debianRegex = regexp.MustCompile(`\.(debian\.tar|diff)\.(gz|xz|bz2)$`)
+var nativeRegex = regexp.MustCompile(`\.tar\.(gz|xz|bz2)$`)
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
 	component, name, err := ParseComponent(t.Package)
@@ -58,13 +66,16 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 					}
 					md5 := elems[0]
 					f := elems[2]
-					if strings.HasSuffix(f, ".orig.tar.xz") || strings.HasSuffix(f, ".orig.tar.gz") {
+					if origRegex.FindStringIndex(f) != nil {
 						p.Orig.URL = debreg.PoolURL(component, name, f)
 						p.Orig.MD5 = md5
-					} else if strings.HasSuffix(f, ".debian.tar.xz") {
+					} else if debianRegex.FindStringIndex(f) != nil {
 						p.Debian.URL = debreg.PoolURL(component, name, f)
 						p.Debian.MD5 = md5
-					} else if strings.HasSuffix(f, ".tar.xz") {
+					} else if nativeRegex.FindStringIndex(f) != nil {
+						if p.Native.URL != "" {
+							return nil, errors.Errorf("multiple matches for native source: %s, %s", p.Native.URL, f)
+						}
 						p.Native.URL = debreg.PoolURL(component, name, f)
 						p.Native.MD5 = md5
 					}
