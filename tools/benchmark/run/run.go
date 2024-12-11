@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -102,7 +103,7 @@ func (ex *executor) Process(ctx context.Context, out chan schema.Verdict, packag
 
 type workerConfig struct {
 	execService ExecutionService
-	limiters    map[string]<-chan time.Time
+	limiters    map[string]*ratex.BackoffLimiter
 	runID       string
 }
 
@@ -123,7 +124,6 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
 	}
 	for i, v := range p.Versions {
-		<-w.limiters[p.Ecosystem]
 		var artifact string
 		if len(p.Artifacts) > 0 {
 			artifact = p.Artifacts[i]
@@ -137,7 +137,26 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 			UseSyscallMonitor: w.useSyscallMonitor,
 			UseNetworkProxy:   w.useNetworkProxy,
 		}
-		verdict, err := w.execService.RebuildPackage(ctx, req)
+		var verdict *schema.Verdict
+		var err error
+		// TODO: Maybe implement this rate-limiting using the internal task queue interface?
+		// Then some of these parameters can be configured there.
+		for range 3 {
+			if err := w.limiters[p.Ecosystem].Wait(ctx); err != nil {
+				log.Printf("limiter wait error: %v", err)
+				break
+			}
+			verdict, err = w.execService.RebuildPackage(ctx, req)
+			if err != nil && errors.Is(err, api.ErrExhausted) {
+				w.limiters[p.Ecosystem].Backoff()
+				log.Printf("rate limited, backing off to %s", w.limiters[p.Ecosystem].CurrentPeriod())
+				continue
+			}
+			break
+		}
+		if err == nil {
+			w.limiters[p.Ecosystem].Success()
+		}
 		if err != nil {
 			out <- schema.Verdict{
 				Target: rebuild.Target{
@@ -165,7 +184,7 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 }
 
 func (w *smoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
-	<-w.limiters[p.Ecosystem]
+	w.limiters[p.Ecosystem].Wait(ctx)
 	req := schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 		Package:   p.Name,
@@ -192,15 +211,15 @@ func (w *smoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, o
 	}
 }
 
-func defaultLimiters() map[string]<-chan time.Time {
-	return map[string]<-chan time.Time{
-		"debian": time.Tick(time.Second),
-		"pypi":   time.Tick(time.Second),
-		"npm":    time.Tick(2 * time.Second),
-		"maven":  time.Tick(2 * time.Second),
+func defaultLimiters() map[string]*ratex.BackoffLimiter {
+	return map[string]*ratex.BackoffLimiter{
+		"debian": ratex.NewBackoffLimiter(time.Second),
+		"pypi":   ratex.NewBackoffLimiter(time.Second),
+		"npm":    ratex.NewBackoffLimiter(2 * time.Second),
+		"maven":  ratex.NewBackoffLimiter(2 * time.Second),
 		// NOTE: cratesio needs to be especially slow given our registry API
 		// constraint of 1QPS. At minimum, we expect to make 4 calls per test.
-		"cratesio": time.Tick(8 * time.Second),
+		"cratesio": ratex.NewBackoffLimiter(8 * time.Second),
 	}
 }
 
