@@ -59,6 +59,43 @@ func makeHTTPRequest(ctx context.Context, u *url.URL, msg schema.Message) (*http
 	return req, nil
 }
 
+type Limiter struct {
+	CurrentPeriod time.Duration
+	minimum       time.Duration
+	current       *time.Timer
+	C             chan time.Time
+}
+
+func NewLimiter(minimum time.Duration) *Limiter {
+	l := &Limiter{
+		CurrentPeriod: minimum,
+		minimum:       minimum,
+		C:             make(chan time.Time, 1),
+	}
+	l.newTick()
+	return l
+}
+
+func (l *Limiter) newTick() {
+	l.current = time.AfterFunc(l.CurrentPeriod, func() {
+		// Don't accumulate ticks.
+		if len(l.C) == 0 {
+			l.C <- time.Now()
+		}
+		l.CurrentPeriod -= time.Second
+		if l.CurrentPeriod < l.minimum {
+			l.CurrentPeriod = l.minimum
+		}
+		go l.newTick()
+	})
+}
+
+func (l *Limiter) Backoff() {
+	l.current.Stop()
+	l.CurrentPeriod *= 2
+	l.newTick()
+}
+
 type packageWorker interface {
 	Setup(ctx context.Context)
 	ProcessOne(ctx context.Context, p Package, out chan schema.Verdict)
@@ -95,7 +132,7 @@ func (ex *executor) Process(ctx context.Context, out chan schema.Verdict, packag
 type workerConfig struct {
 	client   *http.Client
 	url      *url.URL
-	limiters map[string]<-chan time.Time
+	limiters map[string]*Limiter
 	run      string
 }
 
@@ -112,7 +149,6 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schem
 		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
 	}
 	for i, v := range p.Versions {
-		<-w.limiters[p.Ecosystem]
 		var artifact string
 		if len(p.Artifacts) > 0 {
 			artifact = p.Artifacts[i]
@@ -128,7 +164,17 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schem
 		if err != nil {
 			errMsg = errors.Wrap(err, "making request").Error()
 		}
-		resp, err := w.client.Do(req)
+		var resp *http.Response
+		for range 3 {
+			<-w.limiters[p.Ecosystem].C
+			resp, err = w.client.Do(req)
+			if err == nil && resp.StatusCode == 429 {
+				w.limiters[p.Ecosystem].Backoff()
+				log.Printf("rate limited, backing off to %d seconds", w.limiters[p.Ecosystem].CurrentPeriod/time.Second)
+				continue
+			}
+			break
+		}
 		if err != nil {
 			errMsg = errors.Wrap(err, "sending request").Error()
 		} else if resp.StatusCode != 200 {
@@ -182,7 +228,6 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 }
 
 func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
-	<-w.limiters[p.Ecosystem]
 	var errMsg string
 	req, err := makeHTTPRequest(ctx, w.url.JoinPath("smoketest"), &schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
@@ -193,7 +238,17 @@ func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan sc
 	if err != nil {
 		errMsg = errors.Wrap(err, "making request").Error()
 	}
-	resp, err := w.client.Do(req)
+	var resp *http.Response
+	for range 3 {
+		<-w.limiters[p.Ecosystem].C
+		resp, err = w.client.Do(req)
+		if err == nil && resp.StatusCode == 429 {
+			w.limiters[p.Ecosystem].Backoff()
+			log.Printf("rate limited, backing off to %d seconds", w.limiters[p.Ecosystem].CurrentPeriod/time.Second)
+			continue
+		}
+		break
+	}
 	if err != nil {
 		errMsg = errors.Wrap(err, "sending request").Error()
 	} else if resp.StatusCode != 200 {
@@ -223,15 +278,15 @@ func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan sc
 	}
 }
 
-func defaultLimiters() map[string]<-chan time.Time {
-	return map[string]<-chan time.Time{
-		"debian": time.Tick(time.Second),
-		"pypi":   time.Tick(time.Second),
-		"npm":    time.Tick(2 * time.Second),
-		"maven":  time.Tick(2 * time.Second),
+func defaultLimiters() map[string]*Limiter {
+	return map[string]*Limiter{
+		"debian": NewLimiter(time.Second),
+		"pypi":   NewLimiter(time.Second),
+		"npm":    NewLimiter(2 * time.Second),
+		"maven":  NewLimiter(2 * time.Second),
 		// NOTE: cratesio needs to be especially slow given our registry API
 		// constraint of 1QPS. At minimum, we expect to make 4 calls per test.
-		"cratesio": time.Tick(8 * time.Second),
+		"cratesio": NewLimiter(8 * time.Second),
 	}
 }
 
