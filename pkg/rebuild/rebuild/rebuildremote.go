@@ -441,10 +441,16 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 	bi.BuildID = build.Id
 	bi.Steps = build.Steps
 	bi.BuildImages = make(map[string]string)
-	for i, s := range bi.Steps {
-		bi.BuildImages[s.Name] = build.Results.BuildStepImages[i]
+	buildErr := gcb.ToError(build)
+	if build.Results != nil || build.Results.BuildStepImages != nil || len(build.Results.BuildStepImages) == len(bi.Steps) {
+		for i, s := range bi.Steps {
+			bi.BuildImages[s.Name] = build.Results.BuildStepImages[i]
+		}
+	} else if buildErr != nil {
+		// Only return errors about build.Results if the build was otherwise error-free.
+		return errors.New("missing build.Results.BuildStepImages")
 	}
-	return gcb.ToError(build)
+	return buildErr
 }
 
 func makeDockerfile(input Input, opts RemoteOptions) (string, error) {
