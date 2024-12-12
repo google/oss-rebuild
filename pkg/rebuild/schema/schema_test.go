@@ -175,6 +175,27 @@ manual:
   build: foo
 `,
 	},
+	{
+		name: "WorkflowStrategy",
+		strategy: &rebuild.WorkflowStrategy{
+			Location: rebuild.Location{
+				Dir:  "the_dir",
+				Ref:  "the_ref",
+				Repo: "the_repo",
+			},
+			Source: []rebuild.WorkflowStep{{Runs: "echo source"}},
+		},
+		jsonEncoded: `{"flow":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","src":[{"runs":"echo source","uses":"","with":null}],"deps":null,"build":null,"system_deps":null,"output_path":""}}`,
+		yamlEncoded: `
+flow:
+  location:
+    repo: the_repo
+    ref: the_ref
+    dir: the_dir
+  src:
+    - runs: echo source
+`,
+	},
 }
 
 func normalizeYML(yml string) string {
