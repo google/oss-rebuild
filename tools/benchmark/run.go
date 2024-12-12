@@ -13,6 +13,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
 )
 
@@ -25,7 +26,7 @@ const (
 
 type packageWorker interface {
 	Setup(ctx context.Context)
-	ProcessOne(ctx context.Context, p Package, out chan schema.Verdict)
+	ProcessOne(ctx context.Context, p Package, out chan<- schema.Verdict)
 }
 
 type executor struct {
@@ -36,22 +37,23 @@ type executor struct {
 func (ex *executor) Process(ctx context.Context, out chan schema.Verdict, packages []Package) {
 	ex.Worker.Setup(ctx)
 	jobs := make(chan Package)
+	var wg sync.WaitGroup
 	go func() {
 		for _, p := range packages {
+			wg.Add(len(p.Versions))
 			jobs <- p
 		}
 		close(jobs)
 	}()
-	var wg sync.WaitGroup
-	for range ex.Concurrency {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for p := range jobs {
-				ex.Worker.ProcessOne(ctx, p, out)
-			}
-		}()
-	}
+	verdicts := pipe.ParInto(ex.Concurrency, pipe.From(jobs), func(in Package, out chan<- schema.Verdict) {
+		ex.Worker.ProcessOne(ctx, in, out)
+	})
+	go func() {
+		for v := range verdicts.Out() {
+			wg.Done()
+			out <- v
+		}
+	}()
 	wg.Wait()
 	close(out)
 }
@@ -71,7 +73,7 @@ var _ packageWorker = &attestWorker{}
 
 func (w *attestWorker) Setup(ctx context.Context) {}
 
-func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
+func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan<- schema.Verdict) {
 	if len(p.Artifacts) > 0 && len(p.Artifacts) != len(p.Versions) {
 		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
 	}
@@ -127,7 +129,7 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 	}
 }
 
-func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
+func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan<- schema.Verdict) {
 	<-w.limiters[p.Ecosystem]
 	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](w.client, *w.url.JoinPath("smoketest"))
 	req := schema.SmoketestRequest{
