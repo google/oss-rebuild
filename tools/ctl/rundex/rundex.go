@@ -245,7 +245,7 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Reb
 	}
 	if req.Opts.Filter != "" {
 		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
-			if strings.HasPrefix(in.Message, req.Opts.Filter) {
+			if strings.Contains(in.Message, req.Opts.Filter) {
 				out <- in
 			}
 		})
