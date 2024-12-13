@@ -198,6 +198,9 @@ var getResults = &cobra.Command{
 					idx = len(ps.Packages) - 1
 				}
 				ps.Packages[idx].Versions = append(ps.Packages[idx].Versions, r.Version)
+				if r.Artifact != "" {
+					ps.Packages[idx].Artifacts = append(ps.Packages[idx].Artifacts, r.Artifact)
+				}
 			}
 			ps.Updated = time.Now()
 			b, err := json.MarshalIndent(ps, "", "  ")
