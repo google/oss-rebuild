@@ -337,7 +337,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 			log.Println("Failed to load build info:", err)
 		}
 	}
-	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("attempts").Doc(req.ID).Set(ctx, schema.RebuildAttempt{
+	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("artifacts").Doc(v.Target.Artifact).Collection("attempts").Doc(req.ID).Set(ctx, schema.RebuildAttempt{
 		Ecosystem:       string(v.Target.Ecosystem),
 		Package:         v.Target.Package,
 		Version:         v.Target.Version,

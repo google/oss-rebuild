@@ -65,7 +65,7 @@ func (r Rebuild) Target() rebuild.Target {
 
 // ID returns a stable, human-readable formatting of the ecosystem, package, and version.
 func (r *Rebuild) ID() string {
-	return strings.Join([]string{r.Ecosystem, r.Package, r.Version}, "!")
+	return strings.Join([]string{r.Ecosystem, r.Package, r.Version, r.Artifact}, "!")
 }
 
 // Run represents a group of one or more rebuild executions.
