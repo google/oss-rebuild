@@ -138,28 +138,45 @@ var toolkit = []*flow.Tool{
 		}},
 	},
 	{
-		Name: "debian/build/debuild",
+		Name: "debian/build/handle-binary-version",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				cd */
-				debuild -b -uc -us
 				{{- $expected := regexReplace .With.targetPath "\\+b[0-9]+(_[^_]+\\.deb)$" "$1"}}
-				{{- if ne $expected .With.targetPath }}
-				mv /src/{{$expected}} /src/{{.With.targetPath}}
+				{{- if ne $expected .With.targetPath }}mv /src/{{$expected}} /src/{{.With.targetPath}}
 				{{- end}}`)[1:],
-			Needs: []string{"build-essential", "fakeroot", "devscripts"},
+			Needs: []string{},
 		}},
 	},
 	{
+		Name: "debian/build/debuild",
+		Steps: []flow.Step{
+			{
+				Runs: textwrap.Dedent(`
+					cd */
+					debuild -b -uc -us`)[1:],
+				Needs: []string{"build-essential", "fakeroot", "devscripts"},
+			},
+			{
+				Uses: "debian/build/handle-binary-version",
+				With: map[string]string{
+					"targetPath": "{{.With.targetPath}}",
+				},
+			},
+		},
+	},
+	{
 		Name: "debian/build/debrebuild",
-		Steps: []flow.Step{{
-			Runs: textwrap.Dedent(`
-				debrebuild --buildresult=./out --builder=mmdebstrap {{ .With.buildinfo }}
-				{{- $expected := regexReplace .With.targetPath "\\+b[0-9]+(_[^_]+\\.deb)$" "$1"}}
-				{{- if ne $expected .With.targetPath }}
-				mv /src/{{$expected}} /src/{{.With.targetPath}}
-				{{- end}}`)[1:],
-			Needs: []string{"devscripts", "apt-utils", "mmdebstrap"},
-		}},
+		Steps: []flow.Step{
+			{
+				Runs:  "debrebuild --buildresult=./out --builder=mmdebstrap {{ .With.buildinfo }}",
+				Needs: []string{"devscripts", "apt-utils", "mmdebstrap"},
+			},
+			{
+				Uses: "debian/build/handle-binary-version",
+				With: map[string]string{
+					"targetPath": "{{.With.targetPath}}",
+				},
+			},
+		},
 	},
 }

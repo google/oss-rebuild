@@ -5,6 +5,7 @@ package debian
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -12,7 +13,6 @@ import (
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/debian"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/pkg/errors"
 )
 
@@ -32,8 +32,9 @@ func (Rebuilder) CloneRepo(_ context.Context, _ rebuild.Target, _ string, _ bill
 var origRegex = regexp.MustCompile(`\.orig\.tar\.(gz|xz|bz2)$`)
 var debianRegex = regexp.MustCompile(`\.(debian\.tar|diff)\.(gz|xz|bz2)$`)
 var nativeRegex = regexp.MustCompile(`\.tar\.(gz|xz|bz2)$`)
+var versionRegex = regexp.MustCompile(`^(?P<name>[^_]+)_(?P<nonbinary_version>[^_+]+)(?P<binary_version>\+.*)?_(?P<arch>[^_]+)\.deb$`)
 
-func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
+func inferDSC(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (rebuild.Strategy, error) {
 	component, name, err := ParseComponent(t.Package)
 	if err != nil {
 		return nil, err
@@ -56,16 +57,16 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 					md5 := elems[0]
 					f := elems[2]
 					if origRegex.FindStringIndex(f) != nil {
-						p.Orig.URL = debianreg.PoolURL(component, name, f)
+						p.Orig.URL = debian.PoolURL(component, name, f)
 						p.Orig.MD5 = md5
 					} else if debianRegex.FindStringIndex(f) != nil {
-						p.Debian.URL = debianreg.PoolURL(component, name, f)
+						p.Debian.URL = debian.PoolURL(component, name, f)
 						p.Debian.MD5 = md5
 					} else if nativeRegex.FindStringIndex(f) != nil {
 						if p.Native.URL != "" {
 							return nil, errors.Errorf("multiple matches for native source: %s, %s", p.Native.URL, f)
 						}
-						p.Native.URL = debianreg.PoolURL(component, name, f)
+						p.Native.URL = debian.PoolURL(component, name, f)
 						p.Native.MD5 = md5
 					}
 				}
@@ -85,4 +86,34 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		return nil, errors.Errorf("failed to find source files in the .dsc file: %s", p.DSC.URL)
 	}
 	return &p, nil
+}
+
+func inferBuildInfo(t rebuild.Target) (rebuild.Strategy, error) {
+	_, name, err := ParseComponent(t.Package)
+	if err != nil {
+		return nil, err
+	}
+	var infoURL string
+	if matches := versionRegex.FindStringSubmatch(t.Artifact); matches != nil {
+		nbversion := matches[versionRegex.SubexpIndex("nonbinary_version")]
+		bversion := matches[versionRegex.SubexpIndex("binary_version")]
+		version := nbversion
+		if !strings.HasPrefix(bversion, "+deb") {
+			version += bversion
+		}
+		arch := matches[versionRegex.SubexpIndex("arch")]
+		infoURL = debian.BuildInfoURL(name, version, arch)
+	} else {
+		return nil, fmt.Errorf("failed to parse artifact %s", t.Artifact)
+	}
+	// TODO: Populate the checksum
+	strat := Debrebuild{BuildInfo: FileWithChecksum{URL: infoURL, MD5: ""}}
+	return &strat, nil
+}
+
+func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
+	if _, ok := hint.(*DebianPackage); ok {
+		return inferDSC(ctx, t, mux)
+	}
+	return inferBuildInfo(t)
 }
