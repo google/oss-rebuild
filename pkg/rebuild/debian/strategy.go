@@ -102,7 +102,7 @@ mv /src/{{ .Expected }} /src/{{ .Target.Artifact }}
 
 // Debrebuild uses the upstream's generated buildinfo to perform a rebuild.
 type Debrebuild struct {
-	BuildInfo FileWithChecksum
+	BuildInfo FileWithChecksum `json:"buildinfo" yaml:"buildinfo,omitempty"`
 }
 
 // Generate generates the instructions for a Debrebuild

@@ -39,8 +39,6 @@ func (FakeSigner) KeyID() (string, error) {
 	return "fake", nil
 }
 
-// TODO: Add tests checking that inference properly handles artifacts once we have
-// a strategy type that's dependent on artifact.
 func TestRebuildPackage(t *testing.T) {
 	for _, tc := range []struct {
 		target      rebuild.Target
@@ -182,111 +180,130 @@ func TestRebuildPackage(t *testing.T) {
 				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
 			})),
 		},
+		// 		{
+		// 			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4-1+b1", Artifact: "xz-utils_5.2.4-1+b1_amd64.deb"},
+		// 			calls: []httpxtest.Call{
+		// 				{
+		// 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1+b1_amd64.deb",
+		// 					Response: &http.Response{
+		// 						StatusCode: 200,
+		// 						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
+		// 					},
+		// 				},
+		// 				{
+		// 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
+		// 					Response: &http.Response{
+		// 						StatusCode: 200,
+		// 						Body: io.NopCloser(bytes.NewReader([]byte(`-----BEGIN PGP SIGNED MESSAGE-----
+		// Hash: SHA256
+
+		// Format: 3.0 (quilt)
+		// Source: xz-utils
+		// Binary: bin-a, bin-b, xz-utils
+		// Build-Depends: debhelper (>= 8.9.0), autopoint | gettext (<< 0.18-1)
+		// Build-Depends-Indep: doxygen
+		// Package-List:
+		//  liblzma-dev deb libdevel optional arch=any
+		//  liblzma-doc deb doc optional arch=all
+		// Files:
+		//  003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz
+		//  e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc
+		//  5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz
+
+		// -----BEGIN PGP SIGNATURE-----
+
+		// iQJHBAEBCAAxFiEEUh5Y8X6W1xKqD/EC38Zx7rMz+iUFAlxOW5QTHGpybmllZGVy
+		// RLpmHHG1JOVdOA==
+		// =WDR2
+		// -----END PGP SIGNATURE-----`,
+		// 						))),
+		// 					},
+		// 				},
+		// 			},
+		// 			strategy: &debian.DebianPackage{
+		// 				DSC: debian.FileWithChecksum{
+		// 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
+		// 					MD5: "",
+		// 				},
+		// 				Orig: debian.FileWithChecksum{
+		// 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.orig.tar.xz",
+		// 					MD5: "003e4d0b1b1899fc6e3000b24feddf7c",
+		// 				},
+		// 				Debian: debian.FileWithChecksum{
+		// 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.debian.tar.xz",
+		// 					MD5: "5d018428dac6a83f00c010f49c51836e",
+		// 				},
+		// 				Requirements: []string{"debhelper", "autopoint", "doxygen"},
+		// 			},
+		// 			file: bytes.NewBuffer([]byte("deb_contents")),
+		// 		},
+		// 		{
+		// 			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4", Artifact: "xz-utils_5.2.4_amd64.deb"},
+		// 			calls: []httpxtest.Call{
+		// 				{
+		// 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4_amd64.deb",
+		// 					Response: &http.Response{
+		// 						StatusCode: 200,
+		// 						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
+		// 					},
+		// 				},
+		// 				{
+		// 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.dsc",
+		// 					Response: &http.Response{
+		// 						StatusCode: 200,
+		// 						Body: io.NopCloser(bytes.NewReader([]byte(`-----BEGIN PGP SIGNED MESSAGE-----
+		// Hash: SHA256
+
+		// Format: 3.0 (quilt)
+		// Source: xz-utils
+		// Binary: bin-a, bin-b, xz-utils
+		// Build-Depends: debhelper (>= 8.9.0), autopoint | gettext (<< 0.18-1)
+		// Build-Depends-Indep: doxygen
+		// Package-List:
+		//  liblzma-dev deb libdevel optional arch=any
+		//  liblzma-doc deb doc optional arch=all
+		// Files:
+		//  003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.tar.xz
+
+		// -----BEGIN PGP SIGNATURE-----
+
+		// iQJHBAEBCAAxFiEEUh5Y8X6W1xKqD/EC38Zx7rMz+iUFAlxOW5QTHGpybmllZGVy
+		// RLpmHHG1JOVdOA==
+		// =WDR2
+		// -----END PGP SIGNATURE-----`,
+		// 						))),
+		// 					},
+		// 				},
+		// 			},
+		// 			strategy: &debian.DebianPackage{
+		// 				DSC: debian.FileWithChecksum{
+		// 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
+		// 					MD5: "",
+		// 				},
+		// 				Native: debian.FileWithChecksum{
+		// 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.tar.xz",
+		// 					MD5: "003e4d0b1b1899fc6e3000b24feddf7c",
+		// 				},
+		// 				Requirements: []string{"debhelper", "autopoint", "doxygen"},
+		// 			},
+		// 			file: bytes.NewBuffer([]byte("deb_contents")),
+		// 		},
 		{
-			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4-1+b1", Artifact: "xz-utils_5.2.4-1+b1_amd64.deb"},
+			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/foopack", Version: "5.2.4-1+b1", Artifact: "foolib_5.2.4-1+b1_amd64.deb"},
 			calls: []httpxtest.Call{
 				{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1+b1_amd64.deb",
+					URL: "https://deb.debian.org/debian/pool/main/f/foopack/foolib_5.2.4-1+b1_amd64.deb",
 					Response: &http.Response{
 						StatusCode: 200,
 						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
 					},
 				},
-				{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
-					Response: &http.Response{
-						StatusCode: 200,
-						Body: io.NopCloser(bytes.NewReader([]byte(`-----BEGIN PGP SIGNED MESSAGE-----
-Hash: SHA256
-
-Format: 3.0 (quilt)
-Source: xz-utils
-Binary: bin-a, bin-b, xz-utils
-Build-Depends: debhelper (>= 8.9.0), autopoint | gettext (<< 0.18-1)
-Build-Depends-Indep: doxygen
-Package-List:
- liblzma-dev deb libdevel optional arch=any
- liblzma-doc deb doc optional arch=all
-Files:
- 003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz
- e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc
- 5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz
-
------BEGIN PGP SIGNATURE-----
-
-iQJHBAEBCAAxFiEEUh5Y8X6W1xKqD/EC38Zx7rMz+iUFAlxOW5QTHGpybmllZGVy
-RLpmHHG1JOVdOA==
-=WDR2
------END PGP SIGNATURE-----`,
-						))),
-					},
-				},
 			},
-			strategy: &debian.DebianPackage{
-				DSC: debian.FileWithChecksum{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
-					MD5: "",
+			strategy: &debian.Debrebuild{
+				BuildInfo: debian.FileWithChecksum{
+					URL: "https://buildinfos.debian.net/buildinfo-pool/main/f/foopack/foopack_5.2.4-1_amd64.buildinfo",
+					MD5: "abcdef",
 				},
-				Orig: debian.FileWithChecksum{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.orig.tar.xz",
-					MD5: "003e4d0b1b1899fc6e3000b24feddf7c",
-				},
-				Debian: debian.FileWithChecksum{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.debian.tar.xz",
-					MD5: "5d018428dac6a83f00c010f49c51836e",
-				},
-				Requirements: []string{"debhelper", "autopoint", "doxygen"},
-			},
-			file: bytes.NewBuffer([]byte("deb_contents")),
-		},
-		{
-			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4", Artifact: "xz-utils_5.2.4_amd64.deb"},
-			calls: []httpxtest.Call{
-				{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4_amd64.deb",
-					Response: &http.Response{
-						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
-					},
-				},
-				{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.dsc",
-					Response: &http.Response{
-						StatusCode: 200,
-						Body: io.NopCloser(bytes.NewReader([]byte(`-----BEGIN PGP SIGNED MESSAGE-----
-Hash: SHA256
-
-Format: 3.0 (quilt)
-Source: xz-utils
-Binary: bin-a, bin-b, xz-utils
-Build-Depends: debhelper (>= 8.9.0), autopoint | gettext (<< 0.18-1)
-Build-Depends-Indep: doxygen
-Package-List:
- liblzma-dev deb libdevel optional arch=any
- liblzma-doc deb doc optional arch=all
-Files:
- 003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.tar.xz
-
------BEGIN PGP SIGNATURE-----
-
-iQJHBAEBCAAxFiEEUh5Y8X6W1xKqD/EC38Zx7rMz+iUFAlxOW5QTHGpybmllZGVy
-RLpmHHG1JOVdOA==
-=WDR2
------END PGP SIGNATURE-----`,
-						))),
-					},
-				},
-			},
-			strategy: &debian.DebianPackage{
-				DSC: debian.FileWithChecksum{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
-					MD5: "",
-				},
-				Native: debian.FileWithChecksum{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.tar.xz",
-					MD5: "003e4d0b1b1899fc6e3000b24feddf7c",
-				},
-				Requirements: []string{"debhelper", "autopoint", "doxygen"},
 			},
 			file: bytes.NewBuffer([]byte("deb_contents")),
 		},

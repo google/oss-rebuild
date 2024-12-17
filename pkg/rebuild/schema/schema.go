@@ -37,6 +37,7 @@ type StrategyOneOf struct {
 	NPMCustomBuild       *npm.NPMCustomBuild            `json:"npm_custom_build,omitempty" yaml:"npm_custom_build,omitempty"`
 	CratesIOCargoPackage *cratesio.CratesIOCargoPackage `json:"cratesio_cargo_package,omitempty" yaml:"cratesio_cargo_package,omitempty"`
 	DebianPackage        *debian.DebianPackage          `json:"debian_package,omitempty" yaml:"debian_package,omitempty"`
+	Debrebuild           *debian.Debrebuild             `json:"debrebuild,omitempty" yaml:"debrebuild,omitempty"`
 	ManualStrategy       *rebuild.ManualStrategy        `json:"manual,omitempty" yaml:"manual,omitempty"`
 	WorkflowStrategy     *rebuild.WorkflowStrategy      `json:"flow,omitempty" yaml:"flow,omitempty"`
 }
@@ -57,6 +58,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.CratesIOCargoPackage = t
 	case *debian.DebianPackage:
 		oneof.DebianPackage = t
+	case *debian.Debrebuild:
+		oneof.Debrebuild = t
 	case *rebuild.ManualStrategy:
 		oneof.ManualStrategy = t
 	case *rebuild.WorkflowStrategy:
@@ -93,6 +96,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.DebianPackage != nil {
 			num++
 			s = oneof.DebianPackage
+		}
+		if oneof.Debrebuild != nil {
+			num++
+			s = oneof.Debrebuild
 		}
 		if oneof.ManualStrategy != nil {
 			num++
