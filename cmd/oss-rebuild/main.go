@@ -17,6 +17,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -26,8 +27,11 @@ import (
 	"path"
 	"strings"
 
+	kms "cloud.google.com/go/kms/apiv1"
+	"cloud.google.com/go/kms/apiv1/kmspb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/pkg/errors"
@@ -40,6 +44,7 @@ import (
 var (
 	output = flag.String("output", "payload", "Output format [bundle, payload, dockerfile, build, steps]")
 	bucket = flag.String("bucket", "google-rebuild-attestations", "GCS bucket from which to pull rebuild attestations")
+	verify = flag.Bool("verify", true, "whether to verify attestation signatures using the default OSS Rebuild keys")
 )
 
 var rootCmd = &cobra.Command{
@@ -47,88 +52,107 @@ var rootCmd = &cobra.Command{
 	Short: "A CLI tool for OSS Rebuild",
 }
 
-// Bundle is a SLSA rebuild attestation bundle.
+type VerifiedEnvelope struct {
+	Raw     *dsse.Envelope
+	Payload *in_toto.ProvenanceStatementSLSA1
+}
+
 type Bundle struct {
-	Bytes []byte
+	envelopes []VerifiedEnvelope
 }
 
-func NewBundle(ctx context.Context, t rebuild.Target, attestation rebuild.AssetStore) (*Bundle, error) {
-	r, err := attestation.Reader(ctx, rebuild.AttestationBundleAsset.For(t))
-	if err != nil {
-		log.Fatal(errors.Wrap(err, "opening bundle"))
-	}
-	bundle := bytes.NewBuffer(nil)
-	defer r.Close()
-	if _, err := io.Copy(bundle, r); err != nil {
-		log.Fatal(errors.Wrap(err, "reading bundle"))
-	}
-	return &Bundle{bundle.Bytes()}, nil
-}
-
-func unwrapEnvelope(e *dsse.Envelope) (*in_toto.ProvenanceStatementSLSA1, error) {
+func decodeEnvelopePayload(e *dsse.Envelope) (*in_toto.ProvenanceStatementSLSA1, error) {
 	if e.Payload == "" {
-		return nil, errors.New("no payload")
+		return nil, errors.New("empty payload")
 	}
 	b, err := base64.StdEncoding.DecodeString(e.Payload)
 	if err != nil {
-		return nil, errors.New("payload is not b64 encoded")
+		return nil, errors.Wrap(err, "decoding base64 payload")
 	}
-	var decoded *in_toto.ProvenanceStatementSLSA1
-	if json.Unmarshal(b, &decoded) != nil {
-		return nil, errors.New("payload is not valid json")
+	var decoded in_toto.ProvenanceStatementSLSA1
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		return nil, errors.Wrap(err, "unmarshaling payload")
 	}
-	return decoded, nil
+	return &decoded, nil
 }
 
-// Payloads returns all payloads in the bundle.
-func (b *Bundle) Payloads() ([]*in_toto.ProvenanceStatementSLSA1, error) {
-	bundle := bytes.NewBuffer(b.Bytes)
-	d := json.NewDecoder(bundle)
-	var payloads []*in_toto.ProvenanceStatementSLSA1
+func NewBundle(ctx context.Context, data []byte, verifier *dsse.EnvelopeVerifier) (*Bundle, error) {
+	d := json.NewDecoder(bytes.NewBuffer(data))
+	var envelopes []VerifiedEnvelope
 	for {
-		var envelope dsse.Envelope
-		err := d.Decode(&envelope)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
+		var env dsse.Envelope
+		if err := d.Decode(&env); err != nil {
+			if err == io.EOF {
+				break
+			}
 			return nil, errors.Wrap(err, "decoding envelope")
 		}
-		p, err := unwrapEnvelope(&envelope)
-		if err != nil {
-			return nil, errors.Wrap(err, "unwrapping envelope")
+		if _, err := verifier.Verify(ctx, &env); err != nil {
+			return nil, errors.Wrap(err, "verifying envelope")
 		}
-		payloads = append(payloads, p)
+		payload, err := decodeEnvelopePayload(&env)
+		if err != nil {
+			return nil, errors.Wrap(err, "decoding payload")
+		}
+		envelopes = append(envelopes, VerifiedEnvelope{
+			Raw:     &env,
+			Payload: payload,
+		})
 	}
-	return payloads, nil
+	return &Bundle{envelopes: envelopes}, nil
 }
 
-func (b *Bundle) rebuildAttestation() (*in_toto.ProvenanceStatementSLSA1, error) {
-	payloads, err := b.Payloads()
-	if err != nil {
-		return nil, err
+func (b *Bundle) Payloads() []*in_toto.ProvenanceStatementSLSA1 {
+	result := make([]*in_toto.ProvenanceStatementSLSA1, len(b.envelopes))
+	for i, env := range b.envelopes {
+		result[i] = env.Payload
 	}
-	for _, p := range payloads {
-		if p.Predicate.BuildDefinition.BuildType == verifier.RebuildBuildType {
-			return p, nil
+	return result
+}
+
+func (b *Bundle) RebuildAttestation() (*in_toto.ProvenanceStatementSLSA1, error) {
+	for _, env := range b.envelopes {
+		if env.Payload.Predicate.BuildDefinition.BuildType == verifier.RebuildBuildType {
+			return env.Payload, nil
 		}
 	}
 	return nil, errors.New("no rebuild attestation found")
 }
 
-// Byproduct returns the named byproduct from the rebuild attestation.
 func (b *Bundle) Byproduct(name string) ([]byte, error) {
-	att, err := b.rebuildAttestation()
+	att, err := b.RebuildAttestation()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "getting rebuild attestation")
 	}
 	for _, b := range att.Predicate.RunDetails.Byproducts {
 		if b.Name == name {
 			return b.Content, nil
 		}
 	}
-	return nil, fmt.Errorf("byproduct named %s not found", name)
+	return nil, errors.Errorf("byproduct %q not found", name)
 }
+
+func makeKMSVerifier(ctx context.Context, cryptoKeyVersion string) (dsse.Verifier, error) {
+	kc, err := kms.NewKeyManagementClient(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating KMS client")
+	}
+	ckv, err := kc.GetCryptoKeyVersion(ctx, &kmspb.GetCryptoKeyVersionRequest{Name: cryptoKeyVersion})
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching CryptoKeyVersion")
+	}
+	kmsVerifier, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, ckv)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating Cloud KMS verifier")
+	}
+	return kmsVerifier, nil
+}
+
+type trustAllVerifier struct{}
+
+func (v *trustAllVerifier) Verify(ctx context.Context, data, sig []byte) error { return nil }
+func (v *trustAllVerifier) KeyID() (string, error)                             { return "", nil }
+func (v *trustAllVerifier) Public() crypto.PublicKey                           { return nil }
 
 func writeIndentedJson(out io.Writer, b []byte) error {
 	var decoded any
@@ -138,10 +162,12 @@ func writeIndentedJson(out io.Writer, b []byte) error {
 	e := json.NewEncoder(out)
 	e.SetIndent("", "  ")
 	if err := e.Encode(decoded); err != nil {
-		log.Fatal(errors.Wrap(err, "encoding json"))
+		return errors.Wrap(err, "encoding json")
 	}
 	return nil
 }
+
+const ossRebuildKey = "projects/oss-rebuild/locations/global/keyRings/ring/cryptoKeys/signing-key/cryptoKeyVersions/1"
 
 var getCmd = &cobra.Command{
 	Use:   "get <ecosystem> <package> <version> [<artifact>]",
@@ -183,6 +209,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			}
 		}
 		var bundle *Bundle
+		var bundleBytes []byte
 		{
 			ctx := cmd.Context()
 			ctx = context.WithValue(ctx, rebuild.RunID, "")
@@ -191,24 +218,42 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "initializing GCS store"))
 			}
-			bundle, err = NewBundle(ctx, t, attestation)
+			var verifier dsse.Verifier
+			if *verify {
+				verifier, err = makeKMSVerifier(ctx, ossRebuildKey)
+				if err != nil {
+					log.Fatal(err)
+				}
+			} else {
+				verifier = &trustAllVerifier{}
+			}
+			dsseVerifier, err := dsse.NewEnvelopeVerifier(verifier)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal(errors.Wrap(err, "creating EnvelopeVerifier"))
+			}
+			r, err := attestation.Reader(ctx, rebuild.AttestationBundleAsset.For(t))
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "creating attestation reader"))
+			}
+			bundleBytes, err = io.ReadAll(r)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "creating attestation reader"))
+			}
+			bundle, err = NewBundle(ctx, bundleBytes, dsseVerifier)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "creating bundle"))
 			}
 		}
 		switch *output {
 		case "bundle":
-			cmd.OutOrStdout().Write(bundle.Bytes)
+			cmd.OutOrStdout().Write(bundleBytes)
 			return
 		case "payload":
-			payloads, err := bundle.Payloads()
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "getting payloads"))
-			}
+			payloads := bundle.Payloads()
 			encoder := json.NewEncoder(cmd.OutOrStdout())
 			encoder.SetIndent("", "  ")
 			for _, p := range payloads {
-				if encoder.Encode(p) != nil {
+				if err := encoder.Encode(p); err != nil {
 					log.Fatal(errors.Wrap(err, "pprinting payload"))
 				}
 			}
@@ -217,7 +262,9 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "getting dockerfile"))
 			}
-			cmd.OutOrStdout().Write(dockerfile)
+			if _, err := cmd.OutOrStdout().Write(dockerfile); err != nil {
+				log.Fatal(errors.Wrap(err, "writing dockerfile"))
+			}
 		case "build":
 			build, err := bundle.Byproduct("build.json")
 			if err != nil {
@@ -275,6 +322,7 @@ func init() {
 
 	getCmd.Flags().AddGoFlag(flag.Lookup("output"))
 	getCmd.Flags().AddGoFlag(flag.Lookup("bucket"))
+	getCmd.Flags().AddGoFlag(flag.Lookup("verify"))
 
 	rootCmd.AddCommand(listCmd)
 
