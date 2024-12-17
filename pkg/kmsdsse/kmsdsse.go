@@ -28,14 +28,14 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 )
 
-type CloudKMSSigner struct {
+type CloudKMSSignerVerifier struct {
 	client *kms.KeyManagementClient
 	key    *kmspb.CryptoKeyVersion
 	pubpb  *kmspb.PublicKey
 	pub    crypto.PublicKey
 }
 
-func NewCloudKMSSigner(ctx context.Context, c *kms.KeyManagementClient, k *kmspb.CryptoKeyVersion) (*CloudKMSSigner, error) {
+func NewCloudKMSSignerVerifier(ctx context.Context, c *kms.KeyManagementClient, k *kmspb.CryptoKeyVersion) (*CloudKMSSignerVerifier, error) {
 	req := &kmspb.GetPublicKeyRequest{
 		Name: k.Name,
 	}
@@ -51,14 +51,14 @@ func NewCloudKMSSigner(ctx context.Context, c *kms.KeyManagementClient, k *kmspb
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse PEM public key")
 	}
-	return &CloudKMSSigner{c, k, pubpb, pub}, nil
+	return &CloudKMSSignerVerifier{c, k, pubpb, pub}, nil
 }
 
-func (s *CloudKMSSigner) Public() crypto.PublicKey {
+func (s *CloudKMSSignerVerifier) Public() crypto.PublicKey {
 	return s.pub
 }
 
-func (s *CloudKMSSigner) Sign(ctx context.Context, data []byte) ([]byte, error) {
+func (s *CloudKMSSignerVerifier) Sign(ctx context.Context, data []byte) ([]byte, error) {
 	// NOTE: We could pass Digest here instead to shrink the RPC size.
 	req := &kmspb.AsymmetricSignRequest{
 		Name: s.key.Name,
@@ -71,7 +71,7 @@ func (s *CloudKMSSigner) Sign(ctx context.Context, data []byte) ([]byte, error) 
 	return resp.Signature, nil
 }
 
-func (s *CloudKMSSigner) Verify(ctx context.Context, data, sig []byte) error {
+func (s *CloudKMSSignerVerifier) Verify(ctx context.Context, data, sig []byte) error {
 	switch s.pubpb.Algorithm {
 	case kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256:
 		h := sha256.New()
@@ -90,8 +90,8 @@ func (s *CloudKMSSigner) Verify(ctx context.Context, data, sig []byte) error {
 	}
 }
 
-func (s CloudKMSSigner) KeyID() (string, error) {
+func (s CloudKMSSignerVerifier) KeyID() (string, error) {
 	return "https://cloudkms.googleapis.com/v1/" + s.key.Name, nil
 }
 
-var _ dsse.SignVerifier = (*CloudKMSSigner)(nil)
+var _ dsse.SignerVerifier = (*CloudKMSSignerVerifier)(nil)
