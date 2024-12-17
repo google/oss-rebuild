@@ -482,10 +482,10 @@ var infer = &cobra.Command{
 			} else {
 				client = http.DefaultClient
 			}
-			stub := api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, *apiURL.JoinPath("runs"))
+			stub := api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, *apiURL.JoinPath("/infer"))
 			resp, err = stub(cmd.Context(), req)
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating run"))
+				log.Fatal(errors.Wrap(err, "executing inference"))
 			}
 		} else {
 			deps := &inferenceservice.InferDeps{
@@ -568,6 +568,7 @@ func init() {
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
 
+	infer.Flags().AddGoFlag(flag.Lookup("api"))
 	infer.Flags().AddGoFlag(flag.Lookup("ecosystem"))
 	infer.Flags().AddGoFlag(flag.Lookup("package"))
 	infer.Flags().AddGoFlag(flag.Lookup("version"))
