@@ -154,6 +154,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		Ecosystem: t.Ecosystem,
 		Package:   t.Package,
 		Version:   t.Version,
+		Artifact:  t.Artifact,
 	}
 	if fromRepo {
 		defs, err := builddef.NewBuildDefinitionSetFromGit(&builddef.GitBuildDefinitionSetOptions{

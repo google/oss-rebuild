@@ -463,6 +463,7 @@ var infer = &cobra.Command{
 			Ecosystem: rebuild.Ecosystem(*ecosystem),
 			Package:   *pkg,
 			Version:   *version,
+			Artifact:  *artifact,
 			// TODO: Add support for strategy hint.
 		}
 		var resp *schema.StrategyOneOf

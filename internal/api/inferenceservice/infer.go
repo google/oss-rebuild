@@ -71,6 +71,7 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		Ecosystem: req.Ecosystem,
 		Package:   req.Package,
 		Version:   req.Version,
+		Artifact:  req.Artifact,
 	}
 	// TODO: Use req.LocationHint in these individual infer calls.
 	var err error

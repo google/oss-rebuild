@@ -39,6 +39,8 @@ func (FakeSigner) KeyID() (string, error) {
 	return "fake", nil
 }
 
+// TODO: Add tests checking that inference properly handles artifacts once we have
+// a strategy type that's dependent on artifact.
 func TestRebuildPackage(t *testing.T) {
 	for _, tc := range []struct {
 		target      rebuild.Target
