@@ -141,6 +141,72 @@ mv /src/pkg_1.0-1_amd64.deb /src/pkg_1.0-1+b1_amd64.deb`,
 		})
 	}
 }
+func TestDebrebuild(t *testing.T) {
+	tests := []struct {
+		name     string
+		strategy Debrebuild
+		target   rebuild.Target
+		env      rebuild.BuildEnv
+		want     rebuild.Instructions
+	}{
+		{
+			name: "normal",
+			strategy: Debrebuild{
+				BuildInfo: FileWithChecksum{
+					URL: "https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo",
+					MD5: "deadbeef",
+				},
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.Debian,
+				Package:   "main/acl",
+				Version:   "2.3.1-3",
+				Artifact:  "acl_2.3.1-3_amd64.deb",
+			},
+			env: rebuild.BuildEnv{},
+			want: rebuild.Instructions{
+				Source:     `wget https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo`,
+				Build:      `debrebuild --buildresult=./out --builder=mmdebstrap acl_2.3.2-2_amd64.buildinfo`,
+				OutputPath: "acl_2.3.1-3_amd64.deb",
+				SystemDeps: []string{"wget", "devscripts", "apt-utils", "mmdebstrap"},
+			},
+		},
+		{
+			name: "binaryRelease",
+			strategy: Debrebuild{
+				BuildInfo: FileWithChecksum{
+					URL: "https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2+b1_amd64.buildinfo",
+					MD5: "deadbeef",
+				},
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.Debian,
+				Package:   "main/acl",
+				Version:   "2.3.1-3+b1",
+				Artifact:  "acl_2.3.1-3+b1_amd64.deb",
+			},
+			env: rebuild.BuildEnv{},
+			want: rebuild.Instructions{
+				Source: `wget https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2+b1_amd64.buildinfo`,
+				Build: `debrebuild --buildresult=./out --builder=mmdebstrap acl_2.3.2-2+b1_amd64.buildinfo
+mv /src/acl_2.3.1-3_amd64.deb /src/acl_2.3.1-3+b1_amd64.deb`,
+				OutputPath: "acl_2.3.1-3+b1_amd64.deb",
+				SystemDeps: []string{"wget", "devscripts", "apt-utils", "mmdebstrap"},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.strategy.GenerateFor(tc.target, tc.env)
+			if err != nil {
+				t.Fatalf("Debrebuild.GenerateFor() failed unexpectedly: %v", err)
+			}
+			if diff := cmp.Diff(got, tc.want); diff != "" {
+				t.Errorf("Debrebuild.GenerateFor() returned diff (-got +want):\n%s", diff)
+			}
+		})
+	}
+}
 
 func TestBinaryVersionRegex(t *testing.T) {
 	tests := []struct {
