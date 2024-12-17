@@ -441,10 +441,15 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 	bi.BuildID = build.Id
 	bi.Steps = build.Steps
 	bi.BuildImages = make(map[string]string)
-	for i, s := range bi.Steps {
-		bi.BuildImages[s.Name] = build.Results.BuildStepImages[i]
+	buildErr := gcb.ToError(build)
+	// Don't try to read BuildStepImages if the build failed.
+	// It's possible we're missing some valid BuildStepImages this way, but not super important.
+	if buildErr == nil {
+		for i, s := range bi.Steps {
+			bi.BuildImages[s.Name] = build.Results.BuildStepImages[i]
+		}
 	}
-	return gcb.ToError(build)
+	return buildErr
 }
 
 func makeDockerfile(input Input, opts RemoteOptions) (string, error) {
