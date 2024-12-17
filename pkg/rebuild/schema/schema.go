@@ -197,6 +197,7 @@ type InferenceRequest struct {
 	Ecosystem    rebuild.Ecosystem `form:",required"`
 	Package      string            `form:",required"`
 	Version      string            `form:",required"`
+	Artifact     string            `form:""`
 	StrategyHint *StrategyOneOf    `form:""`
 }
 
