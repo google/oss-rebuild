@@ -205,7 +205,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual, err := makeDockerfile(tc.input, tc.opts)
+			actual, err := MakeDockerfile(tc.input, tc.opts)
 			if (err != nil) != tc.expectedErr {
 				t.Errorf("Unexpected error: %v", err)
 			}
