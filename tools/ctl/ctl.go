@@ -130,7 +130,7 @@ var tui = &cobra.Command{
 }
 
 var getResults = &cobra.Command{
-	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-filter <verdict>] [-sample N]",
+	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-filter <verdict>] [-sample N] [-format=summary|bench]",
 	Short: "Analyze rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -138,7 +138,7 @@ var getResults = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		if *format == "summary" && *sample > 0 {
+		if (*format == "" || *format == "summary") && *sample > 0 {
 			log.Fatal("--sample option incompatible with --format=summary")
 		}
 		fireClient, err := rundex.NewFirestore(cmd.Context(), *project)
@@ -157,6 +157,8 @@ var getResults = &cobra.Command{
 			return
 		}
 		switch *format {
+		case "":
+			fallthrough
 		case "summary":
 			log.Println("Verdict summary:")
 			for _, vg := range byCount {
@@ -297,14 +299,8 @@ var runBenchmark = &cobra.Command{
 		})
 		switch *format {
 		// TODO: Maybe add more format options, or include more data in the csv?
-		case "csv":
-			w := csv.NewWriter(cmd.OutOrStdout())
-			defer w.Flush()
-			for _, v := range verdicts {
-				if err := w.Write([]string{fmt.Sprintf("%v", v.Target), v.Message}); err != nil {
-					log.Fatal(errors.Wrap(err, "writing CSV"))
-				}
-			}
+		case "":
+			fallthrough
 		case "summary":
 			var successes int
 			for _, v := range verdicts {
@@ -313,6 +309,14 @@ var runBenchmark = &cobra.Command{
 				}
 			}
 			io.WriteString(cmd.OutOrStdout(), fmt.Sprintf("Successes: %d/%d\n", successes, len(verdicts)))
+		case "csv":
+			w := csv.NewWriter(cmd.OutOrStdout())
+			defer w.Flush()
+			for _, v := range verdicts {
+				if err := w.Write([]string{fmt.Sprintf("%v", v.Target), v.Message}); err != nil {
+					log.Fatal(errors.Wrap(err, "writing CSV"))
+				}
+			}
 		default:
 			log.Fatalf("Unsupported format: %s", *format)
 		}
@@ -526,7 +530,7 @@ var (
 	// get-results
 	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
 	bench        = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
-	format       = flag.String("format", "summary", "the format to be printed. Options: summary, bench")
+	format       = flag.String("format", "", "format of the output, options are command specific")
 	filter       = flag.String("filter", "", "a verdict message (or prefix) which will restrict the returned results")
 	sample       = flag.Int("sample", -1, "if provided, only N results will be displayed")
 	project      = flag.String("project", "", "the project from which to fetch the Firestore data")
