@@ -16,6 +16,7 @@ package debian
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -45,7 +46,6 @@ var _ rebuild.Strategy = &DebianPackage{}
 func (b *DebianPackage) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
 	// TODO: use the FileWithChecksum.MD5 values to verify the downloaded archives.
 	src, err := rebuild.PopulateTemplate(`
-set -eux
 wget {{.DSC.URL}}
 {{- if .Native.URL }}
 wget {{.Native.URL}}
@@ -59,7 +59,6 @@ dpkg-source -x --no-check $(basename "{{.DSC.URL}}")
 		return rebuild.Instructions{}, err
 	}
 	deps, err := rebuild.PopulateTemplate(`
-set -eux
 apt update
 apt install -y {{join " " .Requirements}}
 `, struct {
@@ -79,7 +78,6 @@ apt install -y {{join " " .Requirements}}
 		expected = fmt.Sprintf("%s_%s_%s.deb", artifactName, nbversion, arch)
 	}
 	build, err := rebuild.PopulateTemplate(`
-set -eux
 cd */
 debuild -b -uc -us
 {{- if .Expected }}
@@ -100,4 +98,48 @@ mv /src/{{ .Expected }} /src/{{ .Target.Artifact }}
 		SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
 		OutputPath: t.Artifact,
 	}, nil
+}
+
+// Debrebuild uses the upstream's generated buildinfo to perform a rebuild.
+type Debrebuild struct {
+	BuildInfo FileWithChecksum `json:"buildinfo" yaml:"buildinfo,omitempty"`
+}
+
+// Generate generates the instructions for a Debrebuild
+func (b *Debrebuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	// TODO: use the FileWithChecksum.MD5 values to verify the downloaded buildinfo.
+	inst := rebuild.Instructions{
+		Location:   rebuild.Location{},
+		SystemDeps: []string{"wget", "devscripts", "apt-utils", "mmdebstrap"},
+		OutputPath: "out/" + t.Artifact,
+	}
+	var err error
+	inst.Source, err = rebuild.PopulateTemplate(`
+wget {{.BuildInfo.URL}}
+`, b)
+	if err != nil {
+		return rebuild.Instructions{}, err
+	}
+	// If the target is a binary-only release (version ends with something like +b1) we need to add an additonal rename.
+	var expected string
+	if matches := binaryVersionRegex.FindStringSubmatch(t.Artifact); matches != nil {
+		artifactName := matches[binaryVersionRegex.SubexpIndex("name")]
+		nbversion := matches[binaryVersionRegex.SubexpIndex("nonbinary_version")]
+		arch := matches[binaryVersionRegex.SubexpIndex("arch")]
+		expected = fmt.Sprintf("%s_%s_%s.deb", artifactName, nbversion, arch)
+	}
+	inst.Build, err = rebuild.PopulateTemplate(`
+debrebuild --buildresult=./out --builder=mmdebstrap {{ .BuildInfo }}
+{{- if .Expected }}
+mv /src/out/{{ .Expected }} /src/out/{{ .Target.Artifact }}
+{{- end }}
+`, struct {
+		Target    rebuild.Target
+		Expected  string
+		BuildInfo string
+	}{Target: t, Expected: expected, BuildInfo: filepath.Base(b.BuildInfo.URL)})
+	if err != nil {
+		return rebuild.Instructions{}, err
+	}
+	return inst, nil
 }
