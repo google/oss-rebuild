@@ -120,7 +120,8 @@ var tui = &cobra.Command{
 				log.Fatal(err)
 			}
 		}
-		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir)
+		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir, *defDir)
+		log.Default().SetOutput(io.Discard)
 		if err := tapp.Run(); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -534,6 +535,7 @@ var (
 	debugStorage = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
 	//TUI
 	benchmarkDir = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
+	defDir       = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
 )
 
 func init() {
@@ -565,6 +567,7 @@ func init() {
 	tui.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
 	tui.Flags().AddGoFlag(flag.Lookup("benchmark-dir"))
 	tui.Flags().AddGoFlag(flag.Lookup("clean"))
+	tui.Flags().AddGoFlag(flag.Lookup("def-dir"))
 
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))

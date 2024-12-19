@@ -34,6 +34,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	tcell "github.com/gdamore/tcell/v2"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -111,9 +112,10 @@ type explorer struct {
 	firestore     rundex.Reader
 	firestoreOpts rundex.FetchRebuildOpts
 	runs          map[string]rundex.Run
+	buildDefDir   string
 }
 
-func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder) *explorer {
+func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder, buildDefDir string) *explorer {
 	e := explorer{
 		ctx:           ctx,
 		app:           app,
@@ -123,6 +125,7 @@ func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.R
 		rb:            rb,
 		firestore:     firestore,
 		firestoreOpts: firestoreOpts,
+		buildDefDir:   buildDefDir,
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
 	e.container.AddPage("explorer", e.tree, true, true)
@@ -305,9 +308,19 @@ func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 }
 
 func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error {
-	localAssets, err := localfiles.AssetStore(example.RunID)
-	if err != nil {
-		return errors.Wrap(err, "failed to create local asset store")
+	var err error
+	var localAssets *rebuild.FilesystemAssetStore
+	if e.buildDefDir != "" {
+		fs, err := osfs.New("/").Chroot(e.buildDefDir)
+		if err != nil {
+			return errors.Wrap(err, "creating asset store from build def repo")
+		}
+		localAssets = rebuild.NewFilesystemAssetStore(fs)
+	} else {
+		localAssets, err = localfiles.AssetStore(example.RunID)
+		if err != nil {
+			return errors.Wrap(err, "failed to create local asset store")
+		}
 	}
 	buildDefAsset := rebuild.BuildDef.For(example.Target())
 	var currentStrat schema.StrategyOneOf
@@ -522,7 +535,7 @@ type TuiApp struct {
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, benchmarkDir string) *TuiApp {
+func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, benchmarkDir, buildDefDir string) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -538,7 +551,7 @@ func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rund
 		t = &TuiApp{
 			Ctx:      ctx,
 			app:      app,
-			explorer: newExplorer(ctx, app, fireClient, firestoreOpts, rb),
+			explorer: newExplorer(ctx, app, fireClient, firestoreOpts, rb, buildDefDir),
 			// When the widgets are updated, we should refresh the application.
 			statusBox:    tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
 			logs:         logs,
