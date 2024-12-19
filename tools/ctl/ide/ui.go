@@ -111,9 +111,10 @@ type explorer struct {
 	firestore     rundex.Reader
 	firestoreOpts rundex.FetchRebuildOpts
 	runs          map[string]rundex.Run
+	buildDefs     rebuild.LocatableAssetStore
 }
 
-func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder) *explorer {
+func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder, buildDefs rebuild.LocatableAssetStore) *explorer {
 	e := explorer{
 		ctx:           ctx,
 		app:           app,
@@ -123,6 +124,7 @@ func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.R
 		rb:            rb,
 		firestore:     firestore,
 		firestoreOpts: firestoreOpts,
+		buildDefs:     buildDefs,
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
 	e.container.AddPage("explorer", e.tree, true, true)
@@ -300,14 +302,10 @@ func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 }
 
 func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error {
-	buildDefs, err := localfiles.BuildDefs()
-	if err != nil {
-		return errors.Wrap(err, "failed to create local asset store")
-	}
 	buildDefAsset := rebuild.BuildDef.For(example.Target())
 	var currentStrat schema.StrategyOneOf
 	{
-		if r, err := buildDefs.Reader(ctx, buildDefAsset); err == nil {
+		if r, err := e.buildDefs.Reader(ctx, buildDefAsset); err == nil {
 			d := yaml.NewDecoder(r)
 			if d.Decode(&currentStrat) != nil {
 				return errors.Wrap(err, "failed to read existing build definition")
@@ -318,15 +316,15 @@ func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error
 	}
 	var newStrat schema.StrategyOneOf
 	{
-		w, err := buildDefs.Writer(ctx, buildDefAsset)
+		w, err := e.buildDefs.Writer(ctx, buildDefAsset)
 		if err != nil {
 			return errors.Wrapf(err, "opening build definition")
 		}
 		if _, err = w.Write([]byte("# Edit the build definition below, then save and exit the file to begin a rebuild.\n")); err != nil {
 			return errors.Wrapf(err, "writing comment to build definition file")
 		}
-		e := yaml.NewEncoder(w)
-		if e.Encode(&currentStrat) != nil {
+		enc := yaml.NewEncoder(w)
+		if enc.Encode(&currentStrat) != nil {
 			return errors.Wrapf(err, "populating build definition")
 		}
 		w.Close()
@@ -335,7 +333,7 @@ func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error
 			editor = "vim"
 		}
 		// Send a "tmux wait -S" signal once the edit is complete.
-		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("%s %s; tmux wait -S editing", editor, buildDefs.URL(buildDefAsset).Path))
+		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("%s %s; tmux wait -S editing", editor, e.buildDefs.URL(buildDefAsset).Path))
 		if _, err := cmd.Output(); err != nil {
 			return errors.Wrap(err, "failed to edit build definition")
 		}
@@ -343,7 +341,7 @@ func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error
 		if _, err := exec.Command("tmux", "wait", "editing").Output(); err != nil {
 			return errors.Wrap(err, "failed to wait for tmux signal")
 		}
-		r, err := buildDefs.Reader(ctx, buildDefAsset)
+		r, err := e.buildDefs.Reader(ctx, buildDefAsset)
 		if err != nil {
 			return errors.Wrap(err, "failed to open build definition after edits")
 		}
@@ -517,7 +515,7 @@ type TuiApp struct {
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, benchmarkDir string) *TuiApp {
+func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, benchmarkDir string, buildDefs rebuild.LocatableAssetStore) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -533,7 +531,7 @@ func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rund
 		t = &TuiApp{
 			Ctx:      ctx,
 			app:      app,
-			explorer: newExplorer(ctx, app, fireClient, firestoreOpts, rb),
+			explorer: newExplorer(ctx, app, fireClient, firestoreOpts, rb, buildDefs),
 			// When the widgets are updated, we should refresh the application.
 			statusBox:    tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
 			logs:         logs,
