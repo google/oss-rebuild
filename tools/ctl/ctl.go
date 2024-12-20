@@ -455,7 +455,7 @@ var listRuns = &cobra.Command{
 }
 
 var infer = &cobra.Command{
-	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] ",
+	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] [--format strategy|dockerfile]",
 	Short: "Run inference",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -499,10 +499,38 @@ var infer = &cobra.Command{
 				log.Fatal(err)
 			}
 		}
-		enc := json.NewEncoder(cmd.OutOrStdout())
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(resp); err != nil {
-			log.Fatal(errors.Wrap(err, "encoding result"))
+		switch *format {
+		case "", "strategy":
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(resp); err != nil {
+				log.Fatal(errors.Wrap(err, "encoding result"))
+			}
+		case "dockerfile":
+			t := rebuild.Target{
+				Ecosystem: rebuild.Ecosystem(*ecosystem),
+				Package:   *pkg,
+				Version:   *version,
+				Artifact:  *artifact,
+			}
+			s, err := resp.Strategy()
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "parsing strategy"))
+			}
+			if s == nil {
+				log.Fatal("no strategy")
+			}
+			in := rebuild.Input{
+				Target:   t,
+				Strategy: s,
+			}
+			dockerfile, err := rebuild.MakeDockerfile(in, rebuild.RemoteOptions{})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "generating dockerfile"))
+			}
+			cmd.OutOrStdout().Write([]byte(dockerfile))
+		default:
+			log.Fatalf("Unknown --format type: %s", *format)
 		}
 	},
 }
@@ -570,6 +598,7 @@ func init() {
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
 
 	infer.Flags().AddGoFlag(flag.Lookup("api"))
+	infer.Flags().AddGoFlag(flag.Lookup("format"))
 	infer.Flags().AddGoFlag(flag.Lookup("ecosystem"))
 	infer.Flags().AddGoFlag(flag.Lookup("package"))
 	infer.Flags().AddGoFlag(flag.Lookup("version"))

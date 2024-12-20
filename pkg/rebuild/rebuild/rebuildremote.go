@@ -129,7 +129,7 @@ var debuildContainerTpl = template.Must(
 		// TODO: Find a base image that has build-essentials installed, that would improve startup time significantly, and it would pin the build tools we're using.
 		textwrap.Dedent(`
 				#syntax=docker/dockerfile:1.4
-				FROM docker.io/library/debian:bookworm-20240211-slim
+				FROM docker.io/library/debian:trixie-20241202-slim
 				RUN <<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
@@ -452,7 +452,7 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 	return buildErr
 }
 
-func makeDockerfile(input Input, opts RemoteOptions) (string, error) {
+func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 	env := BuildEnv{HasRepo: false, PreferPreciseToolchain: true}
 	if opts.UseTimewarp {
 		env.TimewarpHost = "localhost:8080"
@@ -485,7 +485,7 @@ func makeDockerfile(input Input, opts RemoteOptions) (string, error) {
 func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptions) error {
 	t := input.Target
 	bi := BuildInfo{Target: t, ID: id, Builder: os.Getenv("K_REVISION"), BuildStart: time.Now()}
-	dockerfile, err := makeDockerfile(input, opts)
+	dockerfile, err := MakeDockerfile(input, opts)
 	if err != nil {
 		return errors.Wrap(err, "creating dockerfile")
 	}
