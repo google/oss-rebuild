@@ -20,9 +20,9 @@ import (
 	"log"
 	"time"
 
-	billy "github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
-	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/pkg/errors"

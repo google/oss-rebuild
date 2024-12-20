@@ -19,11 +19,11 @@ import (
 	"regexp"
 	"strings"
 
-	billy "github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/debian"
-	debreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/pkg/errors"
 )
 
@@ -67,16 +67,16 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 					md5 := elems[0]
 					f := elems[2]
 					if origRegex.FindStringIndex(f) != nil {
-						p.Orig.URL = debreg.PoolURL(component, name, f)
+						p.Orig.URL = debianreg.PoolURL(component, name, f)
 						p.Orig.MD5 = md5
 					} else if debianRegex.FindStringIndex(f) != nil {
-						p.Debian.URL = debreg.PoolURL(component, name, f)
+						p.Debian.URL = debianreg.PoolURL(component, name, f)
 						p.Debian.MD5 = md5
 					} else if nativeRegex.FindStringIndex(f) != nil {
 						if p.Native.URL != "" {
 							return nil, errors.Errorf("multiple matches for native source: %s, %s", p.Native.URL, f)
 						}
-						p.Native.URL = debreg.PoolURL(component, name, f)
+						p.Native.URL = debianreg.PoolURL(component, name, f)
 						p.Native.MD5 = md5
 					}
 				}

@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	gcs "cloud.google.com/go/storage"
-	billy "github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/pkg/errors"
 	"google.golang.org/api/option"
