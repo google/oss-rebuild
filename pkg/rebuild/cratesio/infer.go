@@ -30,8 +30,8 @@ import (
 	"regexp"
 	"time"
 
-	billy "github.com/go-git/go-billy/v5"
-	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -39,7 +39,7 @@ import (
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	toml "github.com/pelletier/go-toml/v2"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
 )
 
