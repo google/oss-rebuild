@@ -54,7 +54,7 @@ var rootCmd = &cobra.Command{
 	Short: "A debugging tool for OSS-Rebuild",
 }
 
-func buildFetchRebuildRequest(ctx context.Context, bench, run, prefix, pattern string, clean bool) (*rundex.FetchRebuildRequest, error) {
+func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean bool) (*rundex.FetchRebuildRequest, error) {
 	var runs []string
 	if run != "" {
 		runs = strings.Split(run, ",")
@@ -135,7 +135,7 @@ var getResults = &cobra.Command{
 	Short: "Analyze rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		req, err := buildFetchRebuildRequest(cmd.Context(), *bench, *runFlag, *prefix, *pattern, *clean)
+		req, err := buildFetchRebuildRequest(*bench, *runFlag, *prefix, *pattern, *clean)
 		if err != nil {
 			log.Fatal(err)
 		}
