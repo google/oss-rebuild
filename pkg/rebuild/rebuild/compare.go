@@ -20,7 +20,7 @@ import (
 	"io"
 	"strings"
 
-	billy "github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/pkg/errors"
 )
