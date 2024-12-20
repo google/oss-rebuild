@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"gopkg.in/yaml.v3"
 )
 
-func TestMuddleStrategy_GenerateFor(t *testing.T) {
+func TestWorkflowStrategy_GenerateFor(t *testing.T) {
 	tests := []struct {
 		name        string
 		strategy    WorkflowStrategy
@@ -38,9 +39,9 @@ func TestMuddleStrategy_GenerateFor(t *testing.T) {
 		{
 			name: "simple_runs_commands",
 			strategy: WorkflowStrategy{
-				Source: []WorkflowStep{{Runs: "echo source"}},
-				Deps:   []WorkflowStep{{Runs: "echo deps"}},
-				Build:  []WorkflowStep{{Runs: "echo build"}},
+				Source: []flow.Step{{Runs: "echo source"}},
+				Deps:   []flow.Step{{Runs: "echo deps"}},
+				Build:  []flow.Step{{Runs: "echo build"}},
 			},
 			want: Instructions{
 				Source: "echo source",
@@ -51,31 +52,31 @@ func TestMuddleStrategy_GenerateFor(t *testing.T) {
 		{
 			name: "invalid_step_both_runs_and_uses",
 			strategy: WorkflowStrategy{
-				Source: []WorkflowStep{{
+				Source: []flow.Step{{
 					Runs: "echo test",
 					Uses: "git-checkout",
 				}},
 			},
 			wantErr:     true,
-			errContains: "exactly one of 'runs' or 'uses' must be provided",
+			errContains: "must provide exactly one of 'runs' or 'uses'",
 		},
 		{
 			name: "invalid_step_neither_runs_nor_uses",
 			strategy: WorkflowStrategy{
-				Source: []WorkflowStep{{}},
+				Source: []flow.Step{{}},
 			},
 			wantErr:     true,
-			errContains: "exactly one of 'runs' or 'uses' must be provided",
+			errContains: "must provide exactly one of 'runs' or 'uses'",
 		},
 		{
 			name: "unknown_uses_command",
 			strategy: WorkflowStrategy{
-				Source: []WorkflowStep{{
+				Source: []flow.Step{{
 					Uses: "nonexistent-command",
 				}},
 			},
 			wantErr:     true,
-			errContains: "unknown 'uses' tool: nonexistent-command",
+			errContains: `tool not found: "nonexistent-command"`,
 		},
 		{
 			name: "system_deps_deduplication",
@@ -85,10 +86,10 @@ func TestMuddleStrategy_GenerateFor(t *testing.T) {
 					Ref:  "abc123",
 				},
 				SystemDeps: []string{"git", "npm", "git"},
-				Source: []WorkflowStep{{
+				Source: []flow.Step{{
 					Uses: "git-checkout",
 				}},
-				Build: []WorkflowStep{{
+				Build: []flow.Step{{
 					Uses: "npm/install",
 					With: map[string]string{"npmVersion": "8"},
 				}},
@@ -127,7 +128,7 @@ func TestMuddleStrategy_GenerateFor(t *testing.T) {
 	}
 }
 
-func TestMuddleStrategyYAML(t *testing.T) {
+func TestWorkflowStrategyYAML(t *testing.T) {
 	tests := []struct {
 		name     string
 		strategy WorkflowStrategy
@@ -141,11 +142,11 @@ func TestMuddleStrategyYAML(t *testing.T) {
 					Repo: "https://example.com/test-repo",
 					Ref:  "abc123",
 				},
-				Source: []WorkflowStep{
+				Source: []flow.Step{
 					{Runs: "echo source"},
 					{Uses: "git-checkout"},
 				},
-				Deps: []WorkflowStep{
+				Deps: []flow.Step{
 					{
 						Uses: "npm/install",
 						With: map[string]string{
@@ -153,7 +154,7 @@ func TestMuddleStrategyYAML(t *testing.T) {
 						},
 					},
 				},
-				Build: []WorkflowStep{
+				Build: []flow.Step{
 					{Runs: "make build"},
 				},
 				SystemDeps: []string{"git", "npm"},
@@ -251,10 +252,9 @@ func TestBuiltinCommand_GitCheckout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := WorkflowStrategy{Location: tt.location}
-			c, err := s.generateForStep(WorkflowStep{Uses: "git-checkout"}, Target{}, tt.buildEnv)
+			c, err := flow.Step{Uses: "git-checkout"}.Resolve(nil, flow.Data{"Location": tt.location, "BuildEnv": tt.buildEnv})
 			if err != nil {
-				t.Fatalf("generateForStep failed: %v", err)
+				t.Fatalf("Step.Resolve failed: %v", err)
 			}
 
 			if diff := cmp.Diff(tt.want, c.Script); diff != "" {
@@ -307,10 +307,9 @@ func TestBuiltinCommand_NpmInstall(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := WorkflowStrategy{Location: tt.location}
-			c, err := s.generateForStep(WorkflowStep{Uses: "npm/install", With: tt.with}, Target{}, BuildEnv{})
+			c, err := flow.Step{Uses: "npm/install", With: tt.with}.Resolve(nil, flow.Data{"Location": tt.location})
 			if err != nil {
-				t.Fatalf("generateForStep failed: %v", err)
+				t.Fatalf("Step.Resolve failed: %v", err)
 			}
 
 			if diff := cmp.Diff(tt.want, c.Script); diff != "" {
@@ -319,64 +318,6 @@ func TestBuiltinCommand_NpmInstall(t *testing.T) {
 			wantNeeds := []string{"npm"}
 			if diff := cmp.Diff(wantNeeds, c.Needs); diff != "" {
 				t.Errorf("needs mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-func TestCommand_Join(t *testing.T) {
-	tests := []struct {
-		name string
-		cmd1 task
-		cmd2 task
-		want task
-	}{
-		{
-			name: "empty_commands",
-			cmd1: task{},
-			cmd2: task{},
-			want: task{
-				Script: "\n",
-				Needs:  nil,
-			},
-		},
-		{
-			name: "merge_scripts_and_deps",
-			cmd1: task{
-				Script: "echo first",
-				Needs:  []string{"dep1"},
-			},
-			cmd2: task{
-				Script: "echo second",
-				Needs:  []string{"dep2"},
-			},
-			want: task{
-				Script: "echo first\necho second",
-				Needs:  []string{"dep1", "dep2"},
-			},
-		},
-		{
-			name: "duplicate_deps",
-			cmd1: task{
-				Script: "echo first",
-				Needs:  []string{"dep1", "dep2"},
-			},
-			cmd2: task{
-				Script: "echo second",
-				Needs:  []string{"dep2", "dep3"},
-			},
-			want: task{
-				Script: "echo first\necho second",
-				Needs:  []string{"dep1", "dep2", "dep2", "dep3"},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.cmd1.Join(tt.cmd2)
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("Join() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -183,9 +184,9 @@ manual:
 				Ref:  "the_ref",
 				Repo: "the_repo",
 			},
-			Source: []rebuild.WorkflowStep{{Runs: "echo source"}},
+			Source: []flow.Step{{Runs: "echo source"}},
 		},
-		jsonEncoded: `{"flow":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","src":[{"runs":"echo source","uses":"","with":null}],"deps":null,"build":null,"system_deps":null,"output_path":""}}`,
+		jsonEncoded: `{"flow":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","src":[{"runs":"echo source","needs":null,"uses":"","with":null}],"deps":null,"build":null,"system_deps":null,"output_path":""}}`,
 		yamlEncoded: `
 flow:
   location:
