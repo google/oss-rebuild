@@ -133,11 +133,6 @@ func makeCommandNode(name string, handler func()) *tview.TreeNode {
 	return tview.NewTreeNode(name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(handler)
 }
 
-// TODO: This was copied from npm, but this should be shared.
-func sanitize(name string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(name, "@", ""), "/", "-")
-}
-
 func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
 	if example.Artifact == "" {
 		log.Println("Firestore does not have the artifact, cannot find GCS path.")
@@ -187,7 +182,7 @@ func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
 	}
 }
 
-func (e *explorer) showDetails(ctx context.Context, example rundex.Rebuild) {
+func (e *explorer) showDetails(example rundex.Rebuild) {
 	details := tview.NewTextView()
 	type detailsStruct struct {
 		Success  bool
@@ -384,7 +379,7 @@ func (e *explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 				}()
 			}))
 			node.AddChild(makeCommandNode("details", func() {
-				go e.showDetails(e.ctx, example)
+				go e.showDetails(example)
 			}))
 			node.AddChild(makeCommandNode("logs", func() {
 				go e.showLogs(e.ctx, example)
