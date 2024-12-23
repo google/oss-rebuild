@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,6 +38,10 @@ import (
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
+	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
@@ -111,9 +116,11 @@ type explorer struct {
 	firestore     rundex.Reader
 	firestoreOpts rundex.FetchRebuildOpts
 	runs          map[string]rundex.Run
+	mux           rebuild.RegistryMux
 }
 
 func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder) *explorer {
+	regclient := http.DefaultClient
 	e := explorer{
 		ctx:           ctx,
 		app:           app,
@@ -123,6 +130,12 @@ func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.R
 		rb:            rb,
 		firestore:     firestore,
 		firestoreOpts: firestoreOpts,
+		mux: rebuild.RegistryMux{
+			Debian:   debianreg.HTTPRegistry{Client: regclient},
+			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
+			NPM:      npmreg.HTTPRegistry{Client: regclient},
+			PyPI:     pypireg.HTTPRegistry{Client: regclient},
+		},
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
 	e.container.AddPage("explorer", e.tree, true, true)
@@ -138,7 +151,7 @@ func sanitize(name string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(name, "@", ""), "/", "-")
 }
 
-func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
+func diffArtifacts(ctx context.Context, mux rebuild.RegistryMux, example rundex.Rebuild) {
 	if example.Artifact == "" {
 		log.Println("Firestore does not have the artifact, cannot find GCS path.")
 		return
@@ -159,26 +172,67 @@ func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
 		log.Println(errors.Wrap(err, "failed to create debug asset store"))
 		return
 	}
-	// TODO: Clean up these artifacts.
-	// TODO: Check if these are already downloaded.
-	rebuildAsset := rebuild.DebugRebuildAsset.For(t)
-	upstreamAsset := rebuild.DebugUpstreamAsset.For(t)
-	rba := localAssets.URL(rebuildAsset).Path
-	usa := localAssets.URL(upstreamAsset).Path
-	if _, err := os.Stat(rba); errors.Is(err, os.ErrNotExist) {
-		if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, rebuildAsset); err != nil {
-			log.Println(errors.Wrap(err, "failed to copy rebuild asset"))
+	var rba, usa string
+	wasSmoketest := example.ObliviousID == ""
+	if wasSmoketest {
+		// TODO: Clean up these artifacts.
+		rebuildAsset := rebuild.DebugRebuildAsset.For(t)
+		upstreamAsset := rebuild.DebugUpstreamAsset.For(t)
+		rba = localAssets.URL(rebuildAsset).Path
+		usa = localAssets.URL(upstreamAsset).Path
+		if _, err := localAssets.Reader(ctx, rebuildAsset); errors.Is(err, os.ErrNotExist) {
+			if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, rebuildAsset); err != nil {
+				log.Println(errors.Wrap(err, "failed to copy rebuild asset"))
+				return
+			}
+			log.Printf("downloaded rebuild: %s", rba)
+		}
+		if _, err := localAssets.Reader(ctx, upstreamAsset); errors.Is(err, os.ErrNotExist) {
+			if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, upstreamAsset); err != nil {
+				log.Println(errors.Wrap(err, "failed to copy upstream asset"))
+				return
+			}
+			log.Printf("downloaded upstream: %s", usa)
+		}
+	} else {
+		r, err := debugAssets.Reader(ctx, rebuild.Asset{Target: t, Type: rebuild.BuildInfoAsset})
+		if err != nil {
+			log.Println(errors.Wrap(err, "reading build info"))
 			return
 		}
-	}
-	if _, err := os.Stat(usa); errors.Is(err, os.ErrNotExist) {
-		if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, upstreamAsset); err != nil {
-			log.Println(errors.Wrap(err, "failed to copy upstream asset"))
+		bi := rebuild.BuildInfo{}
+		if err := json.NewDecoder(r).Decode(&bi); err != nil {
+			log.Println(errors.Wrap(err, "decoding build info"))
 			return
 		}
-		log.Printf("downloaded rebuild and upstream:\n\t%s\n\t%s", rba, usa)
+		metadata, _ := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, bi.ID), "gs://rebuild-metadata")
+		// TODO: Clean up these artifacts.
+		rebuildAsset := rebuild.RebuildAsset.For(t)
+		upstreamAsset := rebuild.DebugUpstreamAsset.For(t)
+		rba = localAssets.URL(rebuildAsset).Path
+		usa = localAssets.URL(upstreamAsset).Path
+		if _, err := localAssets.Reader(ctx, rebuildAsset); errors.Is(err, os.ErrNotExist) {
+			if err := rebuild.AssetCopy(ctx, localAssets, metadata, rebuildAsset); err != nil {
+				log.Println(errors.Wrap(err, "failed to copy rebuild asset"))
+				return
+			}
+			log.Printf("downloaded rebuild: %s", rba)
+		}
+		if _, err := localAssets.Reader(ctx, upstreamAsset); errors.Is(err, os.ErrNotExist) {
+			w, _ := localAssets.Writer(ctx, upstreamAsset)
+			defer w.Close()
+			r, _ := rebuild.UpstreamArtifactReader(ctx, t, mux)
+			defer r.Close()
+			if _, err := io.Copy(w, r); err != nil {
+				log.Println(errors.Wrap(err, "failed to download upstream artifact"))
+				return
+			}
+			log.Printf("downloaded upstream: %s", usa)
+		}
+
 	}
-	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("diffoscope --text-color=always %s %s | less -R", rba, usa))
+
+	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("diffoscope --text-color=always %s %s 2>&1 | less -R", rba, usa))
 	if err := cmd.Run(); err != nil {
 		log.Println(errors.Wrap(err, "failed to run diffoscope"))
 		if err.Error() == "exit status 1" {
@@ -390,7 +444,7 @@ func (e *explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 				go e.showLogs(e.ctx, example)
 			}))
 			node.AddChild(makeCommandNode("diff", func() {
-				go diffArtifacts(e.ctx, example)
+				go diffArtifacts(e.ctx, e.mux, example)
 			}))
 		} else {
 			node.SetExpanded(!node.IsExpanded())
