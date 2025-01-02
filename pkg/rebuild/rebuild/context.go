@@ -22,6 +22,7 @@ const (
 	AssetDirID
 	DebugStoreID
 	LogsBucketID
+	MetadataBucketID
 	RepoCacheClientID
 	HTTPBasicClientID
 	InvocationID
