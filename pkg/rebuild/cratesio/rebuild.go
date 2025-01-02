@@ -24,7 +24,7 @@ import (
 	"sort"
 	"strings"
 
-	billy "github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/pkg/errors"

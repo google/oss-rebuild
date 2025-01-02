@@ -8,7 +8,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
-	rsrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
+	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
 	mavenrb "github.com/google/oss-rebuild/pkg/rebuild/maven"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
@@ -81,7 +81,7 @@ func doPypiRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, mu
 func doCratesIORebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, mux rebuild.RegistryMux, versionCount int) ([]rebuild.Verdict, error) {
 	if len(req.Versions) == 0 {
 		var err error
-		req.Versions, err = rsrb.GetVersions(ctx, req.Package, mux)
+		req.Versions, err = cratesrb.GetVersions(ctx, req.Package, mux)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Failed to fetch versions")
 		}
@@ -94,7 +94,7 @@ func doCratesIORebuildSmoketest(ctx context.Context, req schema.SmoketestRequest
 	if err != nil {
 		return nil, errors.Wrap(err, "converting smoketest request to inputs")
 	}
-	return rsrb.RebuildMany(rbctx, inputs, mux)
+	return cratesrb.RebuildMany(rbctx, inputs, mux)
 }
 
 func doMavenRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, versionCount int) ([]rebuild.Verdict, error) {
