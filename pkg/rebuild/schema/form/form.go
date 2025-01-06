@@ -2,10 +2,11 @@ package form
 
 import (
 	"encoding/json"
-	"errors"
 	"net/url"
 	"reflect"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 var (
@@ -92,7 +93,7 @@ func Unmarshal(v url.Values, out any) error {
 		urlval := v.Get(opt.name)
 		if urlval == "" {
 			if opt.required {
-				return ErrMissingRequired
+				return errors.Wrapf(ErrMissingRequired, "field '%s'", field.Name)
 			}
 			continue
 		}
