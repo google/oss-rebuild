@@ -39,6 +39,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/oauth"
+	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -285,6 +286,16 @@ var runBenchmark = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "creating run"))
 			}
 			run = resp.ID
+		}
+		if *async {
+			queue, err := taskqueue.NewQueue(ctx, *taskQueuePath, *taskQueueEmail)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "making taskqueue client"))
+			}
+			if err := benchmark.RunBenchAsync(ctx, set, mode, apiURL, run, queue); err != nil {
+				log.Fatal(errors.Wrap(err, "adding benchmark to queue"))
+			}
+			return
 		}
 		bar := pb.New(set.Count)
 		bar.Output = cmd.OutOrStderr()
@@ -562,6 +573,9 @@ var (
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
 	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
+	async          = flag.Bool("async", false, "true if this benchmark should run asynchronously")
+	taskQueuePath  = flag.String("task-queue", "", "the path identifier of the task queue to use")
+	taskQueueEmail = flag.String("task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
 	// run-one
 	strategyPath      = flag.String("strategy", "", "the strategy file to use")
 	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
@@ -587,6 +601,9 @@ func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("local"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("format"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("v"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("async"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("task-queue"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("task-queue-email"))
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
