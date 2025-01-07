@@ -98,6 +98,7 @@ func Handler[I schema.Message, O any, D Dependencies](initDeps InitT[D], handler
 			http.Error(rw, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
+		log.Printf("received request: %+v", req)
 		if err := req.Validate(); err != nil {
 			log.Println(errors.Wrap(err, "validating request"))
 			http.Error(rw, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
