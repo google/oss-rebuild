@@ -273,9 +273,6 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if req.Ecosystem == rebuild.Debian && strings.TrimSpace(req.Artifact) == "" {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("debian requires artifact"))
 	}
-	v := schema.Verdict{
-		Target: t,
-	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	regclient := httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
 	mux := rebuild.RegistryMux{
@@ -288,6 +285,9 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
 		// For this reason, we don't return a nil error and expect no verdict to be written.
 		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "selecting artifact"))
+	}
+	v := schema.Verdict{
+		Target: t,
 	}
 	signer := verifier.InTotoEnvelopeSigner{EnvelopeSigner: deps.Signer}
 	a := verifier.Attestor{Store: deps.AttestationStore, Signer: signer, AllowOverwrite: deps.OverwriteAttestations}
