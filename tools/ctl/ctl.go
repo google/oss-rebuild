@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/oauth"
@@ -121,7 +122,20 @@ var tui = &cobra.Command{
 				log.Fatal(err)
 			}
 		}
-		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir)
+		var buildDefs *rebuild.FilesystemAssetStore
+		if *defDir != "" {
+			if fs, err := osfs.New("/").Chroot(*defDir); err != nil {
+				log.Fatal(errors.Wrap(err, "creating asset store in build def dir"))
+			} else {
+				buildDefs = rebuild.NewFilesystemAssetStore(fs)
+			}
+		} else {
+			var err error
+			if buildDefs, err = localfiles.BuildDefs(); err != nil {
+				log.Fatal(errors.Wrap(err, "failed to create local build def asset store"))
+			}
+		}
+		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir, buildDefs)
 		if err := tapp.Run(); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -564,6 +578,7 @@ var (
 	debugStorage = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
 	//TUI
 	benchmarkDir = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
+	defDir       = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
 )
 
 func init() {
@@ -596,6 +611,7 @@ func init() {
 	tui.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
 	tui.Flags().AddGoFlag(flag.Lookup("benchmark-dir"))
 	tui.Flags().AddGoFlag(flag.Lookup("clean"))
+	tui.Flags().AddGoFlag(flag.Lookup("def-dir"))
 
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
