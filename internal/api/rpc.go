@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -128,5 +129,26 @@ func Handler[I schema.Message, O any, D Dependencies](initDeps InitT[D], handler
 				http.Error(rw, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
 		}
+	}
+}
+
+type Translator[O schema.Message] func(io.ReadCloser) (O, error)
+
+func Translate[O schema.Message](t Translator[O], h http.HandlerFunc) http.HandlerFunc {
+	return func(rw http.ResponseWriter, r *http.Request) {
+		m, err := t(r.Body)
+		if err != nil {
+			log.Println(errors.Wrap(err, "translating request"))
+			http.Error(rw, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+		values, err := form.Marshal(m)
+		if err != nil {
+			log.Println(errors.Wrap(err, "marshalling request"))
+			http.Error(rw, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+		r.Body = io.NopCloser(strings.NewReader(values.Encode()))
+		h(rw, r)
 	}
 }
