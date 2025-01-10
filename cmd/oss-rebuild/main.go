@@ -133,7 +133,7 @@ func (b *Bundle) Byproduct(name string) ([]byte, error) {
 }
 
 func makeKMSVerifier(ctx context.Context, cryptoKeyVersion string) (dsse.Verifier, error) {
-	kc, err := kms.NewKeyManagementClient(ctx)
+	kc, err := kms.NewKeyManagementClient(ctx, option.WithoutAuthentication())
 	if err != nil {
 		return nil, errors.Wrap(err, "creating KMS client")
 	}
