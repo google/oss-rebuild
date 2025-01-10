@@ -25,10 +25,11 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/pkg/errors"
 )
 
-var registryURL, _ = url.Parse("https://crates.io")
+var registryURL = urlx.MustParse("https://crates.io")
 
 // Crate is the /api/v1/crates/<name> result.
 type Crate struct {
@@ -91,7 +92,10 @@ func (r HTTPRegistry) Crate(ctx context.Context, pkg string) (*Crate, error) {
 		return nil, err
 	}
 	for i := range c.Versions {
-		downloadPath, _ := url.Parse(c.Versions[i].DownloadPath)
+		downloadPath, err := url.Parse(c.Versions[i].DownloadPath)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing version download path")
+		}
 		c.Versions[i].DownloadURL = registryURL.ResolveReference(downloadPath).String()
 	}
 	return &c, nil
@@ -115,7 +119,10 @@ func (r HTTPRegistry) Version(ctx context.Context, pkg, version string) (*CrateV
 	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
 		return nil, err
 	}
-	downloadPath, _ := url.Parse(v.DownloadPath)
+	downloadPath, err := url.Parse(v.DownloadPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing version download path")
+	}
 	v.DownloadURL = registryURL.ResolveReference(downloadPath).String()
 	return &v, nil
 }

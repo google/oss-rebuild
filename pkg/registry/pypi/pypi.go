@@ -25,10 +25,11 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/pkg/errors"
 )
 
-var registryURL, _ = url.Parse("https://pypi.org")
+var registryURL = urlx.MustParse("https://pypi.org")
 
 // Project describes a single PyPi project with multiple releases.
 type Project struct {

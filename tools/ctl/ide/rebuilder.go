@@ -29,6 +29,7 @@ import (
 	"github.com/google/oss-rebuild/build/binary"
 	"github.com/google/oss-rebuild/build/container"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -118,12 +119,7 @@ func (in *Instance) Run(ctx context.Context) {
 			}
 		}()
 		in.ID = <-idchan
-		in.URL, err = url.Parse("http://localhost:8080")
-		if err != nil {
-			rblog.Println("Parsing url: ", err.Error())
-			in.state = dead
-			return
-		}
+		in.URL = urlx.MustParse("http://localhost:8080")
 		if in.ID != "" {
 			in.state = serving
 		}
