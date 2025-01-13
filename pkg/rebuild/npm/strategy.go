@@ -40,8 +40,8 @@ func (b *NPMPackBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebui
 	deps := ""
 	build, err := rebuild.PopulateTemplate(`
 {{if ne .VersionOverride "" -}}
-{{- /* NOTE: Use builtin npm for 'npm version' as it wasn't introduced until NPM v6. */ -}}
-PATH=/usr/bin:/bin:/usr/local/bin /usr/bin/npm version --prefix {{.Location.Dir}} --no-git-tag-version {{.VersionOverride}}
+{{- /* NOTE: Prefer builtin npm for 'npm version' as it wasn't introduced until NPM v6. */ -}}
+PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix {{.Location.Dir}} --no-git-tag-version {{.VersionOverride}}
 {{end -}}
 /usr/bin/npx --package=npm@{{.NPMVersion}} -c '{{if ne .Location.Dir "."}}cd {{.Location.Dir}} && {{end}}npm pack'
 `, b)
@@ -94,8 +94,8 @@ wget -O - https://unofficial-builds.nodejs.org/download/release/v{{.NodeVersion}
 	}
 	build, err := rebuild.PopulateTemplate(`
 {{if ne .VersionOverride "" -}}
-{{- /* NOTE: Use builtin npm for 'npm version' as it wasn't introduced until NPM v6. */ -}}
-PATH=/usr/bin:/bin:/usr/local/bin /usr/bin/npm version --prefix {{.Location.Dir}} --no-git-tag-version {{.VersionOverride}}
+{{- /* NOTE: Prefer builtin npm for 'npm version' as it wasn't introduced until NPM v6. */ -}}
+PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix {{.Location.Dir}} --no-git-tag-version {{.VersionOverride}}
 {{end -}}
 /usr/local/bin/npx --package=npm@{{.NPMVersion}} -c '{{if ne .Location.Dir "."}}cd {{.Location.Dir}} && {{end}}npm run {{.Command}}' && rm -rf node_modules && npm pack
 `, b)
