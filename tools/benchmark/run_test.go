@@ -2,11 +2,11 @@ package benchmark
 
 import (
 	"context"
-	"net/url"
 	"testing"
 
 	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/pkg/errors"
 )
 
@@ -77,7 +77,7 @@ func TestRunBenchAsync(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			queue := &mockQueue{}
-			url, _ := url.Parse("https://example.com")
+			url := urlx.MustParse("https://example.com")
 			if err := RunBenchAsync(context.Background(), tc.set, tc.mode, url, "runid", queue); err != nil {
 				t.Error(errors.Wrap(err, "RunBenchAsync"))
 			}

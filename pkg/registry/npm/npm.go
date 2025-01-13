@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/pkg/errors"
 )
 
@@ -76,7 +77,7 @@ type PackageJSON struct {
 	Scripts map[string]string `json:"scripts"`
 }
 
-var registryURL, _ = url.Parse("https://registry.npmjs.org")
+var registryURL = urlx.MustParse("https://registry.npmjs.org")
 
 // Registry is an npm package registry.
 type Registry interface {

@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/oss-rebuild/internal/urlx"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -52,7 +53,7 @@ func TestStub(t *testing.T) {
 	}))
 	defer server.Close()
 
-	u, _ := url.Parse(server.URL)
+	u := urlx.MustParse(server.URL)
 	stub := Stub[FooRequest, FooResponse](server.Client(), *u)
 
 	ctx := context.Background()
@@ -77,7 +78,7 @@ func TestStubFromHandler(t *testing.T) {
 	server := httptest.NewServer(Handler(NoDepsInit, h))
 	defer server.Close()
 
-	u, _ := url.Parse(server.URL)
+	u := urlx.MustParse(server.URL)
 	stub := StubFromHandler(server.Client(), *u, h)
 
 	ctx := context.Background()
