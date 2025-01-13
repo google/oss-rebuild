@@ -21,7 +21,6 @@ const (
 	RetainArtifactsID ctxKey = iota
 	AssetDirID
 	DebugStoreID
-	LogsBucketID
 	RepoCacheClientID
 	HTTPBasicClientID
 	InvocationID

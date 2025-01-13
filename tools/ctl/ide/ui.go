@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,6 +38,10 @@ import (
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
+	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
@@ -112,9 +117,11 @@ type explorer struct {
 	firestoreOpts rundex.FetchRebuildOpts
 	runs          map[string]rundex.Run
 	buildDefs     rebuild.LocatableAssetStore
+	mux           rebuild.RegistryMux
 }
 
 func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder, buildDefs rebuild.LocatableAssetStore) *explorer {
+	regclient := http.DefaultClient
 	e := explorer{
 		ctx:           ctx,
 		app:           app,
@@ -125,6 +132,12 @@ func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.R
 		firestore:     firestore,
 		firestoreOpts: firestoreOpts,
 		buildDefs:     buildDefs,
+		mux: rebuild.RegistryMux{
+			Debian:   debianreg.HTTPRegistry{Client: regclient},
+			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
+			NPM:      npmreg.HTTPRegistry{Client: regclient},
+			PyPI:     pypireg.HTTPRegistry{Client: regclient},
+		},
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
 	e.container.AddPage("explorer", e.tree, true, true)
@@ -135,10 +148,9 @@ func makeCommandNode(name string, handler func()) *tview.TreeNode {
 	return tview.NewTreeNode(name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(handler)
 }
 
-func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
+func diffArtifacts(ctx context.Context, mux rebuild.RegistryMux, example rundex.Rebuild) error {
 	if example.Artifact == "" {
-		log.Println("Firestore does not have the artifact, cannot find GCS path.")
-		return
+		return errors.New("Firestore does not have the artifact, cannot find GCS path.")
 	}
 	t := rebuild.Target{
 		Ecosystem: rebuild.Ecosystem(example.Ecosystem),
@@ -148,40 +160,86 @@ func diffArtifacts(ctx context.Context, example rundex.Rebuild) {
 	}
 	localAssets, err := localfiles.AssetStore(example.RunID)
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to create local asset store"))
-		return
+		return errors.Wrap(err, "failed to create local asset store")
 	}
 	debugAssets, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.RunID, example.RunID))
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to create debug asset store"))
-		return
+		return errors.Wrap(err, "failed to create debug asset store")
 	}
-	// TODO: Clean up these artifacts.
-	// TODO: Check if these are already downloaded.
-	rebuildAsset := rebuild.DebugRebuildAsset.For(t)
-	upstreamAsset := rebuild.DebugUpstreamAsset.For(t)
-	rba := localAssets.URL(rebuildAsset).Path
-	usa := localAssets.URL(upstreamAsset).Path
-	if _, err := os.Stat(rba); errors.Is(err, os.ErrNotExist) {
-		if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, rebuildAsset); err != nil {
-			log.Println(errors.Wrap(err, "failed to copy rebuild asset"))
-			return
+	var rba, usa string
+	if example.WasSmoketest() {
+		// TODO: Clean up these artifacts.
+		rebuildAsset := rebuild.DebugRebuildAsset.For(t)
+		upstreamAsset := rebuild.DebugUpstreamAsset.For(t)
+		rba = localAssets.URL(rebuildAsset).Path
+		usa = localAssets.URL(upstreamAsset).Path
+		if _, err := localAssets.Reader(ctx, rebuildAsset); errors.Is(err, os.ErrNotExist) {
+			if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, rebuildAsset); err != nil {
+				return errors.Wrap(err, "failed to copy rebuild asset")
+			}
+			log.Printf("downloaded rebuild: %s", rba)
+		}
+		if _, err := localAssets.Reader(ctx, upstreamAsset); errors.Is(err, os.ErrNotExist) {
+			if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, upstreamAsset); err != nil {
+				return errors.Wrap(err, "failed to copy upstream asset")
+			}
+			log.Printf("downloaded upstream: %s", usa)
+		}
+	} else {
+		r, err := debugAssets.Reader(ctx, rebuild.BuildInfoAsset.For(t))
+		if err != nil {
+			return errors.Wrap(err, "reading build info")
+		}
+		var bi rebuild.BuildInfo
+		if err := json.NewDecoder(r).Decode(&bi); err != nil {
+			return errors.Wrap(err, "decoding build info")
+		}
+		metadataBucket, ok := ctx.Value(MetadataBucketID).(string)
+		if !ok {
+			return errors.New("cannot read rebuild asset from gcs, not bucket provided")
+		}
+		metadata, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, bi.ID), fmt.Sprintf("gs://%s", metadataBucket))
+		if err != nil {
+			return errors.Wrap(err, "initializing metadata store")
+		}
+		// TODO: Clean up these artifacts.
+		rebuildAsset := rebuild.RebuildAsset.For(t)
+		upstreamAsset := rebuild.DebugUpstreamAsset.For(t)
+		rba = localAssets.URL(rebuildAsset).Path
+		usa = localAssets.URL(upstreamAsset).Path
+		if _, err := localAssets.Reader(ctx, rebuildAsset); errors.Is(err, os.ErrNotExist) {
+			if err := rebuild.AssetCopy(ctx, localAssets, metadata, rebuildAsset); err != nil {
+				return errors.Wrap(err, "failed to copy rebuild asset")
+			}
+			log.Printf("downloaded rebuild: %s", rba)
+		}
+		if _, err := localAssets.Reader(ctx, upstreamAsset); errors.Is(err, os.ErrNotExist) {
+			w, err := localAssets.Writer(ctx, upstreamAsset)
+			if err != nil {
+				return errors.Wrap(err, "making localAsset writer")
+			}
+			defer w.Close()
+			r, err := rebuild.UpstreamArtifactReader(ctx, t, mux)
+			if err != nil {
+				return errors.Wrap(err, "making localAsset writer")
+			}
+			defer r.Close()
+			if _, err := io.Copy(w, r); err != nil {
+				return errors.Wrap(err, "failed to download upstream artifact")
+			}
+			log.Printf("downloaded upstream: %s", usa)
+		} else if err != nil {
+			return errors.Wrap(err, "trying to open local copy of upstream asset")
 		}
 	}
-	if _, err := os.Stat(usa); errors.Is(err, os.ErrNotExist) {
-		if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, upstreamAsset); err != nil {
-			log.Println(errors.Wrap(err, "failed to copy upstream asset"))
-			return
-		}
-		log.Printf("downloaded rebuild and upstream:\n\t%s\n\t%s", rba, usa)
-	}
-	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("diffoscope --text-color=always %s %s | less -R", rba, usa))
+	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("diffoscope --text-color=always %s %s 2>&1 | less -R", rba, usa))
 	if err := cmd.Run(); err != nil {
-		log.Println(errors.Wrap(err, "failed to run diffoscope"))
 		if err.Error() == "exit status 1" {
 			log.Println("Maybe you're not running inside a tmux session?")
 		}
+		return errors.Wrap(err, "failed to run diffoscope")
 	}
+	return nil
 }
 
 func (e *explorer) showDetails(example rundex.Rebuild) {
@@ -226,7 +284,7 @@ func downloadLogs(ctx context.Context, localAssets rebuild.AssetStore, example r
 		return nil
 	}
 	// If directly copying from the debug store doesn't work, attempt to find GCB logs.
-	logsBucket, ok := ctx.Value(rebuild.LogsBucketID).(string)
+	logsBucket, ok := ctx.Value(LogsBucketID).(string)
 	if !ok {
 		return errors.New("cannot read logs from gcb, not bucket provided")
 	}
@@ -383,7 +441,11 @@ func (e *explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 				go e.showLogs(e.ctx, example)
 			}))
 			node.AddChild(makeCommandNode("diff", func() {
-				go diffArtifacts(e.ctx, example)
+				go func() {
+					if err := diffArtifacts(e.ctx, e.mux, example); err != nil {
+						log.Println(err.Error())
+					}
+				}()
 			}))
 		} else {
 			node.SetExpanded(!node.IsExpanded())
