@@ -63,7 +63,7 @@ $ oss-rebuild list pypi absl-py
 
 ### Usage Requirements
 
-`oss-rebuild` uses a public GCP KMS signature verification key to validate attestations.
+`oss-rebuild` uses a public [Cloud KMS](https://cloud.google.com/kms/docs) key to validate attestation signatures.
 Anonymous authentication is not supported so an [ADC credential](https://cloud.google.com/docs/authentication/set-up-adc-local-dev-environment) must be present.
 
 This can be accomplished with:
