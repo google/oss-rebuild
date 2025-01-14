@@ -16,63 +16,23 @@
 package maven
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/pkg/errors"
 )
 
-// PomXML is the root element of a Maven POM file.
-type PomXML struct {
-	GroupID    string `xml:"project>groupId"`
-	ArtifactID string `xml:"project>artifactId"`
-	VersionID  string `xml:"project>version"`
-	URL        string `xml:"project>url"`
-	SCMURL     string `xml:"project>scm>url"`
-	Parent     Parent `xml:"project>parent"`
-}
-
-// Parent represents the parent package ref within a Maven POM file.
-type Parent struct {
-	GroupID    string `xml:"groupId"`
-	ArtifactID string `xml:"artifactId"`
-	VersionID  string `xml:"version"`
-}
-
-// Repo returns the repository URL for a Maven package.
-func (p PomXML) Repo() string {
-	if p.SCMURL != "" {
-		return p.SCMURL
-	}
-	return p.URL
-}
-
-// Name returns the Maven package name.
-func (p PomXML) Name() string {
-	return p.Group() + ":" + p.ArtifactID
-}
-
-// Group returns the Maven package group.
-func (p PomXML) Group() string {
-	if g := p.GroupID; g != "" {
-		return g
-	}
-	return p.Parent.GroupID
-}
-
-// Version returns the Maven package version.
-func (p PomXML) Version() string {
-	if v := p.VersionID; v != "" {
-		return v
-	}
-	return p.Parent.VersionID
-}
+var registryURL, _ = url.Parse("https://search.maven.org")
 
 // MavenPackage is a Maven package.
 type MavenPackage struct {
@@ -86,30 +46,6 @@ type MavenMetadata struct {
 	Versions          []string `xml:"versioning>versions>version"`
 	LastUpdatedString string   `xml:"versioning>lastUpdated"`
 	LastUpdated       time.Time
-}
-
-// PackageMetadata returns the metadata for a Maven package.
-func PackageMetadata(pkg string) (result MavenPackage, err error) {
-	g, a, found := strings.Cut(pkg, ":")
-	if !found {
-		err = errors.New("package identifier not of form 'group:artifact'")
-		return
-	}
-	path := filepath.Join(strings.ReplaceAll(g, ".", "/"), a, "maven-metadata.xml")
-	resp, err := http.Get(fmt.Sprintf("https://search.maven.org/remotecontent?filepath=%s", path))
-	if err != nil {
-		return
-	}
-	if resp.StatusCode != http.StatusOK {
-		err = errors.Errorf("maven registry error: %s", resp.Status)
-		return
-	}
-	err = xml.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
-		return
-	}
-	result.LastUpdated, err = time.Parse("20060102150405", result.LastUpdatedString)
-	return
 }
 
 // search is a Maven JSON search API response.
@@ -128,84 +64,112 @@ type MavenVersion struct {
 	Version        string `json:"v"`
 	PublishedMilli int64  `json:"timestamp"`
 	Published      time.Time
-	Files          []FileType `json:"ec"`
+	Files          []string `json:"ec"`
 }
-
-// FileType is a Maven package file type.
-type FileType string
 
 const (
 	// TypePOM is a POM file.
-	TypePOM FileType = ".pom"
+	TypePOM string = ".pom"
 	// TypeSources is a sources file.
-	TypeSources FileType = "-sources.jar"
+	TypeSources string = "-sources.jar"
 	// TypeJar is a jar file.
-	TypeJar FileType = ".jar"
+	TypeJar string = ".jar"
 	// TypeJavadoc is a javadoc file.
-	TypeJavadoc FileType = "-javadoc.jar"
+	TypeJavadoc string = "-javadoc.jar"
 	// TypeModule is a module file.
-	TypeModule FileType = ".module"
+	TypeModule   string = ".module"
+	TypeMetadata string = "-metadata.xml"
 )
 
+// Registry is a Maven Central package registry.
+type Registry interface {
+	PackageMetadata(context.Context, string) (*MavenPackage, error)
+	PackageVersion(context.Context, string, string) (*MavenVersion, error)
+	ReleaseFile(context.Context, string, string, string) (io.ReadCloser, error)
+}
+
+// HTTPRegistry is a Registry implementation that uses the search.maven.org HTTP API.
+type HTTPRegistry struct {
+	Client httpx.BasicClient
+}
+
+var _ Registry = &HTTPRegistry{}
+
 // VersionMetadata returns the metadata for a Maven package version.
-func VersionMetadata(pkg, version string) (result MavenVersion, err error) {
+func (r HTTPRegistry) PackageVersion(ctx context.Context, pkg, version string) (result *MavenVersion, err error) {
 	g, a, found := strings.Cut(pkg, ":")
 	if !found {
 		err = errors.New("package identifier not of form 'group:artifact'")
 		return
 	}
-	resp, err := http.Get(fmt.Sprintf("https://search.maven.org/solrsearch/select?rows=5&wt=json&core=gav&q=g:%s+AND+a:%s+AND+v:%s", g, a, version))
+	pathUrl, _ := url.Parse(path.Join("solrsearch", "select"))
+	pathUrl = registryURL.ResolveReference(pathUrl)
+	params := pathUrl.Query()
+	params.Add("rows", "5")
+	params.Add("wt", "json")
+	params.Add("core", "gav")
+	params.Add("q", fmt.Sprintf("g:%s+AND+a:%s+AND+v:%s", g, a, version))
+	pathUrl.RawQuery = params.Encode()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, pathUrl.String(), nil)
+	resp, err := r.Client.Do(req)
 	if err != nil {
-		return
+		return nil, err
 	}
-	if resp.StatusCode != http.StatusOK {
-		err = errors.Errorf("maven registry error: %s", resp.Status)
-		return
+	if resp.StatusCode != 200 {
+		return nil, errors.Errorf("maven registry error: %v", resp.Status)
 	}
+	defer resp.Body.Close()
 	var s search
 	err = json.NewDecoder(resp.Body).Decode(&s)
 	results := s.Response.Docs
 	if err != nil {
 		return
-	} else if results == nil || len(results) == 0 {
+	} else if len(results) == 0 {
 		err = errors.New("not found")
 	} else if len(results) > 1 {
 		err = errors.New("multiple matches found")
 	} else {
-		result = results[0]
+		result = &results[0]
 	}
 	result.Published = time.UnixMilli(result.PublishedMilli)
 	return
 }
 
-// ReleaseFile returns a release file for a Maven package version.
-func ReleaseFile(pkg, version string, typ FileType) (r io.ReadCloser, err error) {
-	g, a, found := strings.Cut(pkg, ":")
-	if !found {
-		err = errors.New("package identifier not of form 'group:artifact'")
-		return
-	}
-	path := filepath.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
-	resp, err := http.Get("https://search.maven.org/remotecontent?filepath=" + path)
+// PackageMetadata returns the metadata for a Maven package.
+func (r HTTPRegistry) PackageMetadata(ctx context.Context, pkg string) (result *MavenPackage, err error) {
+	content, err := r.ReleaseFile(ctx, pkg, "maven", TypeMetadata)
 	if err != nil {
 		return
 	}
-	if resp.StatusCode != http.StatusOK {
-		err = errors.Errorf("maven registry error: %s", resp.Status)
+	defer content.Close()
+	err = xml.NewDecoder(content).Decode(&result)
+	if err != nil {
 		return
 	}
-	r = resp.Body
+	result.LastUpdated, err = time.Parse("20060102150405", result.LastUpdatedString)
 	return
 }
 
-// VersionPomXML returns the POM file for a Maven package version.
-func VersionPomXML(pkg, version string) (p PomXML, err error) {
-	var r io.ReadCloser
-	r, err = ReleaseFile(pkg, version, TypePOM)
-	if err != nil {
-		return
+// ReleaseFile returns a release file for a Maven package version.
+func (r HTTPRegistry) ReleaseFile(ctx context.Context, pkg, version string, typ string) (io.ReadCloser, error) {
+	g, a, found := strings.Cut(pkg, ":")
+	if !found {
+		return nil, errors.New("package identifier not of form 'group:artifact'")
 	}
-	defer r.Close()
-	err = xml.NewDecoder(r).Decode(&p)
-	return
+	path := filepath.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
+	pathUrl, _ := url.Parse("remotecontent")
+	pathUrl = registryURL.ResolveReference(pathUrl)
+	params := pathUrl.Query()
+	params.Set("filepath", path)
+	pathUrl.RawQuery = params.Encode()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, pathUrl.String(), nil)
+	resp, err := r.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.Errorf("maven registry error: %v", resp.Status)
+	}
+
+	return resp.Body, nil
 }

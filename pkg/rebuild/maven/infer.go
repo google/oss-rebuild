@@ -34,31 +34,117 @@ import (
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
+	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/pkg/errors"
 )
 
-type RepoConfig struct {
-	*git.Repository
-	URI    string
-	Dir    string
-	RefMap map[string]string
+func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
+	pom, err := NewPomXML(ctx, t, mux)
+	if err != nil {
+		return "", err
+	}
+	return uri.CanonicalizeRepoURI(pom.URL)
 }
 
-type BuildConfig struct {
-	Repo string
-	Dir  string
-	Ref  string
-	// TODO: Switch to an interface that can represent different build types.
-	Build MavenBuild
+func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, fs billy.Filesystem, s storage.Storer) (r rebuild.RepoConfig, err error) {
+	r.URI = repoURI
+	r.Repository, err = rebuild.LoadRepo(ctx, t.Package, s, fs, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
+	switch err {
+	case nil:
+	case transport.ErrAuthenticationRequired:
+		err = errors.Errorf("repo invalid or private")
+		return
+	default:
+		err = errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
+	}
+	return
 }
 
-type MavenBuild struct {
-	// JDKVersion is the version of the JDK to use for the build.
-	JDKVersion string
+func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
+	// Do pom.xml search.
+	head, _ := repoConfig.Repository.Head()
+	commitObject, _ := repoConfig.Repository.CommitObject(head.Hash())
+	_, pkgPath, err := findPomXML(commitObject, t.Package)
+	if err != nil {
+		log.Printf("pom.xml path heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, repoConfig.URI, err.Error())
+	}
+
+	// Do version heuristic search.
+	refMap, err := pomXMLSearch(t.Package, pkgPath, repoConfig.Repository)
+	if err != nil {
+		log.Printf("pom.xml version heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, repoConfig.URI, err.Error())
+	}
+
+	name, version := t.Package, t.Version
+	cfg := &MavenBuild{}
+	dir := path.Dir(pkgPath)
+	pomXMLGuess := refMap[version]
+	tagGuess, err := rebuild.FindTagMatch(name, version, repoConfig.Repository)
+	if err != nil {
+		return cfg, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
+	}
+
+	var ref string
+	var commit *object.Commit
+	switch {
+	case tagGuess != "":
+		commit, err = repoConfig.Repository.CommitObject(plumbing.NewHash(tagGuess))
+		if err == nil {
+			if newPath, err := findAndValidatePomXML(commit, name, version, dir); err != nil {
+				log.Printf("registry heuristic tag invalid: %v", err)
+			} else {
+				log.Printf("using tag heuristic ref: %s", tagGuess[:9])
+				ref = tagGuess
+				dir = filepath.Dir(newPath)
+				break
+			}
+		} else if err == plumbing.ErrObjectNotFound {
+			log.Printf("tag heuristic ref not found in repo")
+		} else {
+			return cfg, errors.Wrapf(err, "[INTERNAL] Failed ref resolve from tag [repo=%s,ref=%s]", repoConfig.URI, tagGuess)
+		}
+		fallthrough
+	case pomXMLGuess != "":
+		commit, err = repoConfig.Repository.CommitObject(plumbing.NewHash(pomXMLGuess))
+		if err == nil {
+			if newPath, err := findAndValidatePomXML(commit, name, version, dir); err != nil {
+				log.Printf("registry heuristic git log invalid: %v", err)
+			} else {
+				log.Printf("using git log heuristic ref: %s", pomXMLGuess[:9])
+				ref = pomXMLGuess
+				dir = filepath.Dir(newPath)
+				break
+			}
+		} else if err == plumbing.ErrObjectNotFound {
+			log.Printf("git log heuristic ref not found in repo")
+		} else {
+			return cfg, errors.Wrapf(err, "[INTERNAL] Failed ref resolve from git log [repo=%s,ref=%s]", repoConfig.URI, pomXMLGuess)
+		}
+		fallthrough
+	default:
+		if tagGuess == "" && pomXMLGuess == "" {
+			return cfg, errors.Errorf("no git ref")
+		}
+		return cfg, errors.Errorf("no valid git ref")
+	}
+	jdk, err := getJarJDK(ctx, name, version, mux)
+	if err != nil {
+		return cfg, errors.Wrap(err, "fetching JDK")
+	}
+	if jdk == "" {
+		return cfg, errors.New("no JDK found")
+	}
+	return &MavenBuild{
+		Location: rebuild.Location{
+			Repo: repoConfig.URI,
+			Dir:  dir,
+			Ref:  ref,
+		},
+		JDKVersion: jdk,
+	}, nil
 }
 
-func getPomXML(tree *object.Tree, path string) (pomXML mavenreg.PomXML, err error) {
+func getPomXML(tree *object.Tree, path string) (pomXML PomXML, err error) {
 	f, err := tree.File(path)
 	if err != nil {
 		return
@@ -71,60 +157,31 @@ func getPomXML(tree *object.Tree, path string) (pomXML mavenreg.PomXML, err erro
 	return
 }
 
-func doRepoInferenceAndClone(ctx context.Context, name string, pomXML *mavenreg.PomXML, fs billy.Filesystem, s storage.Storer) (r RepoConfig, err error) {
-	r.URI, err = uri.CanonicalizeRepoURI(pomXML.URL)
-	if err != nil {
-		return
-	}
-	r.Repository, err = rebuild.LoadRepo(ctx, name, s, fs, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
-	switch err {
-	case nil:
-	case transport.ErrAuthenticationRequired:
-		err = errors.Errorf("Repo invalid or private")
-		return
-	default:
-		err = errors.Wrapf(err, "Clone failed [repo=%s]", r.URI)
-		return
-	}
-	// Do pom.xml search.
-	head, _ := r.Repository.Head()
-	c, _ := r.Repository.CommitObject(head.Hash())
-	_, pkgPath, err := findPomXML(r.Repository, c, name)
-	if err != nil {
-		log.Printf("pom.xml path heuristic failed [pkg=%s,repo=%s]: %s\n", name, r.URI, err.Error())
-	}
-	r.Dir = path.Dir(pkgPath)
-	// Do version heuristic search.
-	r.RefMap, err = pomXMLSearch(name, pkgPath, r.Repository)
-	if err != nil {
-		log.Printf("pom.xml version heuristic failed [pkg=%s,repo=%s]: %s\n", name, r.URI, err.Error())
-	}
-	return
-}
-
-func getJarJDK(name, version string) (string, error) {
-	r, err := mavenreg.ReleaseFile(name, version, mavenreg.TypeJar)
+func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
+	//r, err := mavenreg.HTTPRegistry{}.ReleaseFile(context.Background(), name, version, mavenreg.TypeJar)
+	releaseFile, err := mux.Maven.ReleaseFile(ctx, name, version, maven.TypeJar)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching jar file")
 	}
-	b, err := io.ReadAll(r)
+	jarBytes, err := io.ReadAll(releaseFile)
 	if err != nil {
 		return "", errors.Wrap(err, "reading jar file")
 	}
-	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
+	zipReader, err := zip.NewReader(bytes.NewReader(jarBytes), int64(len(jarBytes)))
 	if err != nil {
 		return "", errors.Wrap(err, "unzipping jar file")
 	}
-	f, err := zr.Open("META-INF/MANIFEST.MF")
+	manifestFile, err := zipReader.Open("META-INF/MANIFEST.MF")
 	if err != nil {
 		return "", errors.Wrap(err, "opening manifest file")
 	}
-	defer f.Close()
-	fr, err := io.ReadAll(f)
+	defer manifestFile.Close()
+
+	manifestReader, err := io.ReadAll(manifestFile)
 	if err != nil {
 		return "", errors.Wrap(err, "reading manifest file")
 	}
-	for _, line := range strings.Split(string(fr), "\n") {
+	for _, line := range strings.Split(string(manifestReader), "\n") {
 		if strings.HasPrefix(line, "Build-Jdk:") {
 			_, value, _ := strings.Cut(line, ":")
 			return strings.TrimSpace(value), nil
@@ -133,78 +190,15 @@ func getJarJDK(name, version string) (string, error) {
 	return "", nil
 }
 
-func doInference(ctx context.Context, t rebuild.Target, rcfg *RepoConfig) (BuildConfig, error) {
-	name, version := t.Package, t.Version
-	var cfg BuildConfig
-	dir := rcfg.Dir
-	pomXMLGuess := rcfg.RefMap[version]
-	tagGuess, err := rebuild.FindTagMatch(name, version, rcfg.Repository)
-	if err != nil {
-		return cfg, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
-	}
-	var ref string
-	var c *object.Commit
-	switch {
-	case tagGuess != "":
-		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagGuess))
-		if err == nil {
-			if newPath, err := findAndValidatePomXML(rcfg.Repository, c, name, version, dir); err != nil {
-				log.Printf("registry heuristic tag invalid: %v", err)
-			} else {
-				log.Printf("using tag heuristic ref: %s", tagGuess[:9])
-				ref = tagGuess
-				dir = filepath.Dir(newPath)
-				break
-			}
-		} else if err == plumbing.ErrObjectNotFound {
-			log.Printf("tag heuristic ref not found in repo")
-		} else {
-			return cfg, errors.Wrapf(err, "[INTERNAL] Failed ref resolve from tag [repo=%s,ref=%s]", rcfg.URI, tagGuess)
-		}
-		fallthrough
-	case pomXMLGuess != "":
-		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(pomXMLGuess))
-		if err == nil {
-			if newPath, err := findAndValidatePomXML(rcfg.Repository, c, name, version, dir); err != nil {
-				log.Printf("registry heuristic git log invalid: %v", err)
-			} else {
-				log.Printf("using git log heuristic ref: %s", pomXMLGuess[:9])
-				ref = pomXMLGuess
-				dir = filepath.Dir(newPath)
-				break
-			}
-		} else if err == plumbing.ErrObjectNotFound {
-			log.Printf("git log heuristic ref not found in repo")
-		} else {
-			return cfg, errors.Wrapf(err, "[INTERNAL] Failed ref resolve from git log [repo=%s,ref=%s]", rcfg.URI, pomXMLGuess)
-		}
-		fallthrough
-	default:
-		if tagGuess == "" && pomXMLGuess == "" {
-			return cfg, errors.Errorf("no git ref")
-		}
-		return cfg, errors.Errorf("no valid git ref")
-	}
-	jdk, err := getJarJDK(name, version)
-	if err != nil {
-		return cfg, errors.Wrap(err, "fetching JDK")
-	}
-	if jdk == "" {
-		return cfg, errors.New("no JDK found")
-	}
-	// TODO: Normalize JDK
-	return BuildConfig{Dir: dir, Ref: ref, Build: MavenBuild{JDKVersion: jdk}}, nil
-}
-
 // findAndValidatePomXML ensures the package config has the expected name and version,
 // or finds a new version if necessary.
-func findAndValidatePomXML(repo *git.Repository, c *object.Commit, name, version, dir string) (string, error) {
-	t, _ := c.Tree()
+func findAndValidatePomXML(commit *object.Commit, name, version, dir string) (string, error) {
+	commitTree, _ := commit.Tree()
 	path := path.Join(dir, "pom.xml")
-	orig, err := getPomXML(t, path)
+	orig, err := getPomXML(commitTree, path)
 	pomXML := &orig
 	if err == object.ErrFileNotFound {
-		pomXML, path, err = findPomXML(repo, c, name)
+		pomXML, path, err = findPomXML(commit, name)
 	}
 	if err == object.ErrFileNotFound {
 		return path, errors.Errorf("pom.xml file not found [path=%s]", path)
@@ -220,15 +214,15 @@ func findAndValidatePomXML(repo *git.Repository, c *object.Commit, name, version
 	return path, nil
 }
 
-func findPomXML(repo *git.Repository, c *object.Commit, pkg string) (*mavenreg.PomXML, string, error) {
-	t, _ := c.Tree()
+func findPomXML(commit *object.Commit, pkg string) (*PomXML, string, error) {
+	commitTree, _ := commit.Tree()
 	var names []string
-	var pomXMLs []mavenreg.PomXML
-	t.Files().ForEach(func(f *object.File) error {
+	var pomXMLs []PomXML
+	commitTree.Files().ForEach(func(f *object.File) error {
 		if !strings.HasSuffix(f.Name, "pom.xml") {
 			return nil
 		}
-		pomXML, err := getPomXML(t, f.Name)
+		pomXML, err := getPomXML(commitTree, f.Name)
 		if err != nil {
 			// XXX: ignore parse errors
 			return nil
@@ -241,7 +235,7 @@ func findPomXML(repo *git.Repository, c *object.Commit, pkg string) (*mavenreg.P
 	})
 	if len(names) > 0 {
 		if len(names) > 1 {
-			log.Printf("Multiple pom.xml file candidates [pkg=%s,ref=%s,matches=%v]\n", pkg, c.Hash.String(), names)
+			log.Printf("Multiple pom.xml file candidates [pkg=%s,ref=%s,matches=%v]\n", pkg, commit.Hash.String(), names)
 		}
 		return &pomXMLs[0], names[0], nil
 	}
@@ -321,20 +315,4 @@ func pomXMLSearch(name, pomXMLPath string, repo *git.Repository) (tm map[string]
 		}
 	}
 	return
-}
-
-// Infer produces a rebuild strategy from the available package metadata.
-func Infer(ctx context.Context, name, version string, s storage.Storer, fs billy.Filesystem) (BuildConfig, error) {
-	t := rebuild.Target{Ecosystem: rebuild.Maven, Package: name, Version: version}
-	p, err := mavenreg.VersionPomXML(name, version)
-	if err != nil {
-		return BuildConfig{}, err
-	}
-	rcfg, err := doRepoInferenceAndClone(ctx, name, &p, fs, s)
-	if err != nil {
-		return BuildConfig{}, err
-	}
-	cfg, err := doInference(ctx, t, &rcfg)
-	cfg.Repo = rcfg.URI
-	return cfg, err
 }

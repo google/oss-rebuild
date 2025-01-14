@@ -11,6 +11,7 @@ import (
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
+	"github.com/google/oss-rebuild/pkg/rebuild/maven"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -84,6 +85,8 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		s, err = doInfer(ctx, cratesio.Rebuilder{}, t, mux, req.LocationHint())
 	case rebuild.Debian:
 		s, err = doInfer(ctx, debian.Rebuilder{}, t, mux, req.LocationHint())
+	case rebuild.Maven:
+		s, err = doInfer(ctx, maven.Rebuilder{}, t, mux, req.LocationHint())
 	default:
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}

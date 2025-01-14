@@ -16,111 +16,43 @@ package maven
 
 import (
 	"context"
-	"fmt"
-	"log"
-	"runtime/debug"
-	"strings"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-billy/v5/util"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/storage"
-	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/google/oss-rebuild/internal/gitx"
-	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	mvnreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/pkg/errors"
 )
 
-func rebuildOne(ctx context.Context, input rebuild.Input, rcfg *RepoConfig, fs billy.Filesystem, s storage.Storer) (verdict error, err error) {
-	t := input.Target
-	pom, err := mvnreg.VersionPomXML(t.Package, t.Version)
-	if err != nil {
-		return
+type Rebuilder struct{}
+
+var _ rebuild.Rebuilder = Rebuilder{}
+
+func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Instructions, fs billy.Filesystem) error {
+	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Source); err != nil {
+		return errors.Wrap(err, "fetching source")
 	}
-	uri, err := uri.CanonicalizeRepoURI(pom.Repo())
-	if err != nil {
-		return
+	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Deps); err != nil {
+		return errors.Wrap(err, "configuring build deps")
 	}
-	if uri != rcfg.URI {
-		log.Printf("[%s] Cloning repo '%s' for version '%s'\n", t.Package, uri, t.Version)
-		if rcfg.URI != "" {
-			log.Printf("[%s] Cleaning up previously stored repo '%s'\n", t.Package, rcfg.URI)
-			util.RemoveAll(fs, fs.Root())
-		}
-		var newRepo RepoConfig
-		newRepo, err = doRepoInferenceAndClone(ctx, t.Package, &pom, fs, s)
-		if err != nil {
-			return
-		}
-		*rcfg = newRepo
-	} else {
-		// Do a fresh checkout to wipe any cruft from previous builds.
-		_, err := gitx.Reuse(ctx, s, fs, &git.CloneOptions{URL: rcfg.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
-		if err != nil {
-			return nil, err
-		}
+	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Build); err != nil {
+		return errors.Wrap(err, "executing build")
 	}
-	cfg, err := doInference(ctx, t, rcfg)
-	if err != nil {
-		return
-	}
-	cfg.Repo = rcfg.URI
-	err = errors.New("Found")
-	return
+	return nil
 }
 
-// RebuildMany executes rebuilds for each provided rebuild.Input returning their rebuild.Verdicts.
-func RebuildMany(ctx context.Context, name string, inputs []rebuild.Input) ([]rebuild.Verdict, error) {
+func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb rebuild.Asset, up rebuild.Asset, assets rebuild.AssetStore, inst rebuild.Instructions) (msg error, err error) {
+	return nil, nil
+}
+
+func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {
 	if len(inputs) == 0 {
 		return nil, errors.New("no inputs provided")
 	}
-	srcPath := fmt.Sprintf("%s/%s", string(rebuild.Maven), strings.ReplaceAll(name, "/", "!"))
-	fs, err := osfs.New(".").Chroot(srcPath)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to chroot to source")
-	}
-	gitfs, err := fs.Chroot(".git")
-	if err != nil {
-		return nil, errors.Wrapf(err, "Failure chroot to git")
-	}
-	s := gitx.NewStorer(func() storage.Storer {
-		return filesystem.NewStorageWithOptions(gitfs, cache.NewObjectLRUDefault(), filesystem.Options{ExclusiveAccess: false})
-	})
-	var rcfg RepoConfig
-	var failures []error
-	// TODO: Setup logging for each version.
-	// Protect against panics in rebuildOne.
-	safeRebuildOne := func(input rebuild.Input) {
-		defer func() {
-			if panicval := recover(); panicval != nil {
-				log.Printf("Rebuild panic: %v\n", panicval)
-				log.Println(string(debug.Stack()))
-				failures = append(failures, errors.Errorf("rebuild panic: %v", panicval))
-			}
-		}()
-		failure, err := rebuildOne(ctx, input, &rcfg, fs, s)
-		if err != nil {
-			failures = append(failures, errors.Wrapf(err, "rebuild failure"))
-		} else {
-			failures = append(failures, failure)
-		}
-	}
-	verdicts := make([]rebuild.Verdict, 0, len(failures))
 	for i := range inputs {
-		// TODO find the correct artifact name.
-		inputs[i].Target.Artifact = "default-artifact"
-		verdicts = append(verdicts, rebuild.Verdict{
-			Target:  inputs[i].Target,
-			Message: failures[i].Error(),
-		})
+		packageVersion, err := mux.Maven.PackageVersion(ctx, inputs[i].Target.Package, inputs[i].Target.Version)
+		if err != nil {
+			return nil, err
+		}
+		inputs[i].Target.Artifact = packageVersion.Files[0]
 	}
-	for _, input := range inputs {
-		log.Printf("Running a maven rebuildOne: %s %s", input.Target.Package, input.Target.Version)
-		safeRebuildOne(input)
-	}
-	return verdicts, nil
+	return rebuild.RebuildMany(ctx, Rebuilder{}, inputs, mux)
 }

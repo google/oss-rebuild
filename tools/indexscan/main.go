@@ -346,7 +346,6 @@ func processTree(t *object.Tree, files, trees map[plumbing.Hash]int, matches []b
 		}
 	}
 	processed.Set(trees[t.Hash])
-	return
 }
 
 func main() {
@@ -363,16 +362,16 @@ func main() {
 	var published time.Time
 	switch *ecosystem {
 	case "maven":
-		mv, err := mavenreg.VersionMetadata(*pkg, *version)
+		p, err := mavenreg.HTTPRegistry{}.PackageVersion(ctx, *pkg, *version)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "fetching version metadata"))
 		}
-		f, err = mavenreg.ReleaseFile(mv.GroupID+":"+mv.ArtifactID, mv.Version, mavenreg.TypeSources)
+		f, err = mavenreg.HTTPRegistry{}.ReleaseFile(ctx, *pkg, *version, mavenreg.TypeSources)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "fetching source jar"))
 		}
 		defer f.Close()
-		published = mv.Published
+		published = p.Published
 	case "pypi":
 		p, err := pypireg.HTTPRegistry{}.Project(ctx, *pkg)
 		if err != nil {
