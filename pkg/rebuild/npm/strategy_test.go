@@ -111,7 +111,7 @@ trap '/usr/bin/npm config --location-global delete registry' EXIT
 wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm install --force'`,
 				Build: `PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix the_dir --no-git-tag-version green
-/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow' && rm -rf node_modules && npm pack`,
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
 			},
 		},
@@ -133,7 +133,7 @@ wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue
 trap '/usr/bin/npm config --location-global delete registry' EXIT
 wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm install --force'`,
-				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow' && rm -rf node_modules && npm pack`,
+				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
 			},
 		},
@@ -163,7 +163,7 @@ wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue
 trap '/usr/bin/npm config --location-global delete registry' EXIT
 wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'npm install --force'`,
-				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm run yellow' && rm -rf node_modules && npm pack`,
+				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_artifact",
 			},
 		},
