@@ -17,7 +17,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -25,13 +24,11 @@ import (
 	"io"
 	"log"
 	"path"
+	"slices"
 	"strings"
 
-	kms "cloud.google.com/go/kms/apiv1"
-	"cloud.google.com/go/kms/apiv1/kmspb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/verifier"
-	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/pkg/errors"
@@ -42,9 +39,11 @@ import (
 )
 
 var (
-	output = flag.String("output", "payload", "Output format [bundle, payload, dockerfile, build, steps]")
-	bucket = flag.String("bucket", "google-rebuild-attestations", "GCS bucket from which to pull rebuild attestations")
-	verify = flag.Bool("verify", true, "whether to verify attestation signatures using the default OSS Rebuild keys")
+	output       = flag.String("output", "payload", "Output format [bundle, payload, dockerfile, build, steps]")
+	bucket       = flag.String("bucket", "google-rebuild-attestations", "GCS bucket from which to pull rebuild attestations")
+	verify       = flag.Bool("verify", true, "whether to verify rebuild attestation signatures")
+	verifyWith   = flag.String("verify-with", ossRebuildKeyURI, "comma-separated list of key URIs used to verify rebuild attestation signatures")
+	verifyOnline = flag.Bool("verify-online", false, "whether to always fetch --verify-with key contents, ignoring embedded contents")
 )
 
 var rootCmd = &cobra.Command{
@@ -132,28 +131,6 @@ func (b *Bundle) Byproduct(name string) ([]byte, error) {
 	return nil, errors.Errorf("byproduct %q not found", name)
 }
 
-func makeKMSVerifier(ctx context.Context, cryptoKeyVersion string) (dsse.Verifier, error) {
-	kc, err := kms.NewKeyManagementClient(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating KMS client")
-	}
-	ckv, err := kc.GetCryptoKeyVersion(ctx, &kmspb.GetCryptoKeyVersionRequest{Name: cryptoKeyVersion})
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching CryptoKeyVersion")
-	}
-	kmsVerifier, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, ckv)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating Cloud KMS verifier")
-	}
-	return kmsVerifier, nil
-}
-
-type trustAllVerifier struct{}
-
-func (v *trustAllVerifier) Verify(ctx context.Context, data, sig []byte) error { return nil }
-func (v *trustAllVerifier) KeyID() (string, error)                             { return "", nil }
-func (v *trustAllVerifier) Public() crypto.PublicKey                           { return nil }
-
 func writeIndentedJson(out io.Writer, b []byte) error {
 	var decoded any
 	if err := json.NewDecoder(bytes.NewBuffer(b)).Decode(&decoded); err != nil {
@@ -166,8 +143,6 @@ func writeIndentedJson(out io.Writer, b []byte) error {
 	}
 	return nil
 }
-
-const ossRebuildKey = "projects/oss-rebuild/locations/global/keyRings/ring/cryptoKeys/signing-key/cryptoKeyVersions/1"
 
 var getCmd = &cobra.Command{
 	Use:   "get <ecosystem> <package> <version> [<artifact>]",
@@ -218,16 +193,39 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "initializing GCS store"))
 			}
-			var verifier dsse.Verifier
-			if *verify {
-				verifier, err = makeKMSVerifier(ctx, ossRebuildKey)
-				if err != nil {
-					log.Fatal(err)
-				}
+			var verifiers []dsse.Verifier
+			if !*verify {
+				verifiers = append(verifiers, &trustAllVerifier{})
 			} else {
-				verifier = &trustAllVerifier{}
+				keysToAdd := slices.DeleteFunc(strings.Split(*verifyWith, ","), func(s string) bool { return s == "" })
+				var keysAdded []string
+				if !*verifyOnline {
+					for _, key := range embeddedKeys {
+						if !slices.Contains(keysToAdd, key.ID) {
+							continue
+						}
+						verifiers = append(verifiers, &keyVerifier{key})
+						keysAdded = append(keysAdded, key.ID)
+					}
+				}
+				for _, uri := range keysToAdd {
+					if slices.Contains(keysAdded, uri) {
+						continue
+					}
+					switch {
+					case strings.HasPrefix(uri, kmsV1API):
+						verifier, err := makeKMSVerifier(ctx, ossRebuildKeyResource)
+						if err != nil {
+							log.Fatal(err)
+						}
+						verifiers = append(verifiers, verifier)
+					default:
+						log.Fatalf("unsupported key URI: %s", uri)
+					}
+					keysAdded = append(keysAdded, uri)
+				}
 			}
-			dsseVerifier, err := dsse.NewEnvelopeVerifier(verifier)
+			dsseVerifier, err := dsse.NewEnvelopeVerifier(verifiers...)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "creating EnvelopeVerifier"))
 			}
@@ -323,6 +321,8 @@ func init() {
 	getCmd.Flags().AddGoFlag(flag.Lookup("output"))
 	getCmd.Flags().AddGoFlag(flag.Lookup("bucket"))
 	getCmd.Flags().AddGoFlag(flag.Lookup("verify"))
+	getCmd.Flags().AddGoFlag(flag.Lookup("verify-with"))
+	getCmd.Flags().AddGoFlag(flag.Lookup("verify-online"))
 
 	rootCmd.AddCommand(listCmd)
 
