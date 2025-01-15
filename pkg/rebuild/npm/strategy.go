@@ -97,7 +97,7 @@ wget -O - https://unofficial-builds.nodejs.org/download/release/v{{.NodeVersion}
 {{- /* NOTE: Prefer builtin npm for 'npm version' as it wasn't introduced until NPM v6. */ -}}
 PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix {{.Location.Dir}} --no-git-tag-version {{.VersionOverride}}
 {{end -}}
-/usr/local/bin/npx --package=npm@{{.NPMVersion}} -c '{{if ne .Location.Dir "."}}cd {{.Location.Dir}} && {{end}}npm run {{.Command}}' && rm -rf node_modules && npm pack
+/usr/local/bin/npx --package=npm@{{.NPMVersion}} -c '{{if ne .Location.Dir "."}}cd {{.Location.Dir}} && {{end}}npm run {{.Command}} && rm -rf node_modules && npm pack'
 `, b)
 	if err != nil {
 		return rebuild.Instructions{}, err
