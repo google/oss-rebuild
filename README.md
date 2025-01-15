@@ -61,6 +61,20 @@ rebuilt:
 $ oss-rebuild list pypi absl-py
 ```
 
+### Usage Requirements
+
+`oss-rebuild` uses a public [Cloud KMS](https://cloud.google.com/kms/docs) key to validate attestation signatures.
+Anonymous authentication is not supported so an [ADC credential](https://cloud.google.com/docs/authentication/set-up-adc-local-dev-environment) must be present.
+
+This can be accomplished with:
+
+```bash
+$ gcloud init
+$ gcloud auth application-default login
+```
+
+To disable signature verification and skip the requirement for KMS access use: `--verify=false`.
+
 ## Contributing
 
 Join us in building a more secure and reliable open-source ecosystem!
