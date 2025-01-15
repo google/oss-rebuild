@@ -50,6 +50,59 @@ func TestWorkflowStrategy_GenerateFor(t *testing.T) {
 			},
 		},
 		{
+			name: "output_path",
+			strategy: WorkflowStrategy{
+				Location: Location{
+					Repo: "https://github.com/test/repo",
+					Ref:  "main",
+				},
+				OutputPath: "foo",
+			},
+			target:   Target{Artifact: "bar"},
+			buildEnv: BuildEnv{},
+			want: Instructions{
+				Location: Location{
+					Repo: "https://github.com/test/repo",
+					Ref:  "main",
+				},
+				OutputPath: "foo",
+			},
+		},
+		{
+			name: "output_dir",
+			strategy: WorkflowStrategy{
+				Location: Location{
+					Repo: "https://github.com/test/repo",
+					Ref:  "main",
+				},
+				OutputDir: "foo",
+			},
+			target:   Target{Artifact: "bar"},
+			buildEnv: BuildEnv{},
+			want: Instructions{
+				Location: Location{
+					Repo: "https://github.com/test/repo",
+					Ref:  "main",
+				},
+				OutputPath: "foo/bar",
+			},
+		},
+		{
+			name: "invalid_output_path_and_dir",
+			strategy: WorkflowStrategy{
+				Location: Location{
+					Repo: "https://github.com/test/repo",
+					Ref:  "main",
+				},
+				OutputPath: "foo/bar",
+				OutputDir:  "foo",
+			},
+			target:      Target{Artifact: "bar"},
+			buildEnv:    BuildEnv{},
+			wantErr:     true,
+			errContains: "only one",
+		},
+		{
 			name: "invalid_step_both_runs_and_uses",
 			strategy: WorkflowStrategy{
 				Source: []flow.Step{{
