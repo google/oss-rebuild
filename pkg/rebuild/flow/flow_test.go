@@ -11,7 +11,7 @@ func TestResolveTemplate(t *testing.T) {
 	tests := []struct {
 		name     string
 		template string
-		data     interface{}
+		data     any
 		want     string
 		wantErr  bool
 	}{
@@ -25,14 +25,12 @@ func TestResolveTemplate(t *testing.T) {
 			name:     "invalid template syntax",
 			template: "Hello {{.Name",
 			data:     struct{ Name string }{"World"},
-			want:     "",
 			wantErr:  true,
 		},
 		{
 			name:     "missing struct data field",
 			template: "Hello {{.Name}}",
 			data:     struct{ Foo string }{"World"},
-			want:     "",
 			wantErr:  true,
 		},
 		{
@@ -46,6 +44,60 @@ func TestResolveTemplate(t *testing.T) {
 			template: "Hello {{.With.Name}}",
 			data:     Data{"With": map[string]string{}},
 			want:     "Hello ",
+		},
+		{
+			name:     "toJSON basic object",
+			template: `{{ toJSON . }}`,
+			data:     map[string]string{"name": "test", "value": "123"},
+			want:     `{"name":"test","value":"123"}`,
+		},
+		{
+			name:     "fromJSON basic object",
+			template: `{{ $data := fromJSON "{\"name\":\"test\"}" }}{{ $data.name }}`,
+			data:     nil,
+			want:     "test",
+		},
+		{
+			name:     "toJSON nested structure",
+			template: `{{ toJSON . }}`,
+			data:     map[string]any{"user": map[string]any{"name": "foo", "age": 30}},
+			want:     `{"user":{"age":30,"name":"foo"}}`,
+		},
+		{
+			name:     "fromJSON invalid input",
+			template: `{{ fromJSON "{invalid json}" }}`,
+			data:     nil,
+			wantErr:  true,
+		},
+		{
+			name:     "fromJSON with template processing",
+			template: `{{ range (fromJSON "{\"items\":[1,2,3]}").items }}{{.}},{{end}}`,
+			data:     nil,
+			want:     "1,2,3,",
+		},
+		{
+			name:     "toJSON and fromJSON chain",
+			template: `{{ (fromJSON (toJSON .)).name }}`,
+			data:     map[string]string{"name": "test"},
+			want:     "test",
+		},
+		{
+			name:     "fromJSON with nested access",
+			template: `{{ $data := fromJSON "{\"foo\":{\"bar\":{\"baz\":\"qux\"}}}" }}{{ $data.foo.bar.baz }}`,
+			data:     nil,
+			want:     "qux",
+		},
+		{
+			name:     "toJSON with nil value",
+			template: `{{ toJSON .missing }}`,
+			data:     map[string]any{},
+			want:     "null",
+		},
+		{
+			name:     "fromJSON empty string",
+			template: `{{ fromJSON "" }}`,
+			data:     nil,
+			wantErr:  true,
 		},
 	}
 	for _, tt := range tests {
