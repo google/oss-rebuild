@@ -70,7 +70,7 @@ apt install -y {{join " " .Requirements}}
 	if err != nil {
 		return rebuild.Instructions{}, err
 	}
-	// If the target is a binary-only release (version ends with something like +b1) we need to add an additonal rename.
+	// If the target is a binary-only release (version ends with something like +b1) we need to add an additional rename.
 	var expected string
 	if matches := binaryVersionRegex.FindStringSubmatch(t.Artifact); matches != nil {
 		artifactName := matches[binaryVersionRegex.SubexpIndex("name")]
