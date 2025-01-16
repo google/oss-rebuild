@@ -2,6 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/google/oss-rebuild/blob/master/LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/google/oss-rebuild)](https://goreportcard.com/report/google/oss-rebuild)
+[![Go Reference](https://pkg.go.dev/badge/github.com/google/oss-rebuild.svg)](https://pkg.go.dev/github.com/google/oss-rebuild)
 
 Secure open-source package ecosystems by originating, validating, and augmenting
 build attestations.
