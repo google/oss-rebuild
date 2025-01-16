@@ -236,7 +236,7 @@ var debianTop500 = RebuildBenchmark{
 						packageSourceName = sourceName
 					}
 					if !strings.HasPrefix(a, packageComponent+"/"+packageSourceName) {
-						log.Printf("Package occured with different prefixes: %s (%s vs %s)", p, packageComponent+"/"+packageSourceName, a)
+						log.Printf("Package occurred with different prefixes: %s (%s vs %s)", p, packageComponent+"/"+packageSourceName, a)
 						goto next
 					}
 					artifacts = append(artifacts, Artifact{Version: version, Name: artifact})
