@@ -167,3 +167,7 @@ var toolkit = map[string]*tool{
 		Needs: []string{"npm"},
 	},
 }
+
+type Flowable interface {
+	ToWorkflow() *WorkflowStrategy
+}
