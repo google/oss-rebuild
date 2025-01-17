@@ -24,13 +24,14 @@ import (
 )
 
 // PomXML is the root element of a Maven POM file.
+// The root element is called "project" and this is handled by the Decode method.
 type PomXML struct {
-	GroupID    string `xml:"project>groupId"`
-	ArtifactID string `xml:"project>artifactId"`
-	VersionID  string `xml:"project>version"`
-	URL        string `xml:"project>url"`
-	SCMURL     string `xml:"project>scm>url"`
-	Parent     Parent `xml:"project>parent"`
+	GroupID    string `xml:"groupId"`
+	ArtifactID string `xml:"artifactId"`
+	VersionID  string `xml:"version"`
+	URL        string `xml:"url"`
+	SCMURL     string `xml:"scm>url"`
+	Parent     Parent `xml:"parent"`
 }
 
 // Parent represents the parent package ref within a Maven POM file.

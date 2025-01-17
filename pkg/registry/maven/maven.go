@@ -29,10 +29,11 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/pkg/errors"
 )
 
-var registryURL, _ = url.Parse("https://search.maven.org")
+var registryURL = urlx.MustParse("https://search.maven.org")
 
 // MavenPackage is a Maven package.
 type MavenPackage struct {
@@ -156,12 +157,11 @@ func (r HTTPRegistry) ReleaseFile(ctx context.Context, pkg, version string, typ 
 	if !found {
 		return nil, errors.New("package identifier not of form 'group:artifact'")
 	}
-	path := filepath.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
 	pathUrl, _ := url.Parse("remotecontent")
 	pathUrl = registryURL.ResolveReference(pathUrl)
-	params := pathUrl.Query()
-	params.Set("filepath", path)
-	pathUrl.RawQuery = params.Encode()
+	searchPath := filepath.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
+	// Note that search.maven expects the / tokens in the query parameter not to be HTML-encoded.
+	pathUrl.RawQuery = fmt.Sprintf("filepath=%s", searchPath)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, pathUrl.String(), nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {

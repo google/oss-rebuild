@@ -43,6 +43,14 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 	if err != nil {
 		return "", err
 	}
+	// In some projects the groupId only exists on the parent.
+	// To keep the POM-parsing clean, we apply these fixups here.
+	if pom.GroupID == "" && pom.Parent.GroupID != "" {
+		pom.GroupID = pom.Parent.GroupID
+	}
+	if pom.VersionID == "" && pom.Parent.VersionID != "" {
+		pom.VersionID = pom.Parent.VersionID
+	}
 	return uri.CanonicalizeRepoURI(pom.URL)
 }
 

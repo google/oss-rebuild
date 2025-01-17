@@ -26,12 +26,17 @@ type MavenBuild struct {
 var _ rebuild.Strategy = &MavenBuild{}
 
 func (b *MavenBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	src, err := rebuild.BasicSourceSetup(b.Location, &be)
+	if err != nil {
+		return rebuild.Instructions{}, err
+	}
+
 	return rebuild.Instructions{
-		Location:   rebuild.Location{},
-		Source:     "", // src
-		Deps:       "", // deps
-		Build:      "", // build
-		SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
+		Location:   b.Location,
+		Source:     src,
+		Deps:       "true",
+		Build:      "true",
+		SystemDeps: []string{"maven"},
 		OutputPath: t.Artifact,
 	}, nil
 }

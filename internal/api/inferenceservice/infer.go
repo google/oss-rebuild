@@ -18,6 +18,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
@@ -65,6 +66,7 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		CratesIO: cratesreg.HTTPRegistry{Client: deps.HTTPClient},
 		NPM:      npmreg.HTTPRegistry{Client: deps.HTTPClient},
 		PyPI:     pypireg.HTTPRegistry{Client: deps.HTTPClient},
+		Maven:    mavenreg.HTTPRegistry{Client: deps.HTTPClient},
 		Debian:   debianreg.HTTPRegistry{Client: deps.HTTPClient},
 	}
 	var s rebuild.Strategy
