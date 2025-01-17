@@ -99,6 +99,24 @@ func TestResolveTemplate(t *testing.T) {
 			data:     nil,
 			wantErr:  true,
 		},
+		{
+			name:     "regex replacement",
+			template: `{{regexReplace .With.text "cat" "dog"}}`,
+			data:     Data{"With": map[string]string{"text": "The cat sat on the mat"}},
+			want:     "The dog sat on the mat",
+		},
+		{
+			name:     "regex capture groups",
+			template: `{{regexReplace .With.text "([A-Z])([A-Z])([A-Z])[A-Z]*" "($1$2$3)"}}`,
+			data:     Data{"With": map[string]string{"text": "FOOD BARN"}},
+			want:     "(FOO) (BAR)",
+		},
+		{
+			name:     "regex invalid pattern",
+			template: `{{regexReplace .With.text "[" "replacement"}}`,
+			data:     Data{"With": map[string]string{"text": "test"}},
+			wantErr:  true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

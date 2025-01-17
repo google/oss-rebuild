@@ -124,7 +124,7 @@ wget https://example.com/pkg_1.0-1.debian.tar.xz
 dpkg-source -x --no-check $(basename "https://example.com/pkg_1.0-1.dsc")`,
 				Deps: `set -eux
 apt update
-apt install -y `,
+apt install -y`,
 				Build: `set -eux
 cd */
 debuild -b -uc -us
