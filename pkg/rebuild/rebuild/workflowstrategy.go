@@ -99,3 +99,7 @@ func init() {
 		}},
 	})
 }
+
+type Flowable interface {
+	ToWorkflow() *WorkflowStrategy
+}

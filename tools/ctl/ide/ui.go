@@ -370,6 +370,14 @@ func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error
 			}
 		} else {
 			currentStrat = example.Strategy
+			s, err := currentStrat.Strategy()
+			if err != nil {
+				return errors.Wrap(err, "unpacking StrategyOneOf")
+			}
+			// Convert this strategy to a workflow strategy if possible.
+			if fable, ok := s.(rebuild.Flowable); ok {
+				currentStrat = schema.NewStrategyOneOf(fable.ToWorkflow())
+			}
 		}
 	}
 	var newStrat schema.StrategyOneOf
