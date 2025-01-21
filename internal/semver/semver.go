@@ -32,6 +32,17 @@ type Semver struct {
 	Build      string
 }
 
+// Compare evaluates how this semver identifier is ordered with respect to "other"
+func (s Semver) Compare(other Semver) int {
+	// NOTE: Build metadata does not participate in ordering
+	return cmp.Or(
+		cmp.Compare(s.Major, other.Major),
+		cmp.Compare(s.Minor, other.Minor),
+		cmp.Compare(s.Patch, other.Patch),
+		prereleaseCmp(s.Prerelease, other.Prerelease),
+	)
+}
+
 // Adapted from: https://semver.org/spec/v2.0.0#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
 var semverRE = regexp.MustCompile(`^v?(?P<Major>0|[1-9]\d*)\.(?P<Minor>0|[1-9]\d*)\.(?P<Patch>0|[1-9]\d*)(?:-(?P<Prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<Build>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`)
 
@@ -101,11 +112,5 @@ func Cmp(a, b string) int {
 	if err != nil {
 		return 1
 	}
-	// Build metadata does not participate in ordering.
-	return cmp.Or(
-		cmp.Compare(av.Major, bv.Major),
-		cmp.Compare(av.Minor, bv.Minor),
-		cmp.Compare(av.Patch, bv.Patch),
-		prereleaseCmp(av.Prerelease, bv.Prerelease),
-	)
+	return av.Compare(bv)
 }
