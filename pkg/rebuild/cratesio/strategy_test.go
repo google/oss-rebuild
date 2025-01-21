@@ -63,7 +63,7 @@ func TestCratesIOCargoPackage(t *testing.T) {
 			rebuild.Instructions{
 				Location:   defaultLocation,
 				Source:     "git checkout --force 'the_ref'",
-				Deps:       "echo 'lock_base64' | base64 -d > Cargo.lock\n",
+				Deps:       "echo 'lock_base64' | base64 -d > Cargo.lock",
 				Build:      `/root/.cargo/bin/cargo package --no-verify --package "path+file://$(readlink -f the_dir)"`,
 				SystemDeps: []string{"git", "rustup"},
 				OutputPath: "target/package/the_artifact",
@@ -83,7 +83,7 @@ func TestCratesIOCargoPackage(t *testing.T) {
 			rebuild.Instructions{
 				Location:   defaultLocation,
 				Source:     "git checkout --force 'the_ref'",
-				Deps:       "/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0\n",
+				Deps:       "/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0",
 				Build:      `/root/.cargo/bin/cargo package --no-verify --package "path+file://$(readlink -f the_dir)"`,
 				SystemDeps: []string{"git", "rustup"},
 				OutputPath: "target/package/the_artifact",
@@ -103,8 +103,7 @@ func TestCratesIOCargoPackage(t *testing.T) {
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `echo 'lock_base64' | base64 -d > Cargo.lock
-/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
-`,
+/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0`,
 				Build:      `/root/.cargo/bin/cargo package --no-verify --package "path+file://$(readlink -f the_dir)"`,
 				SystemDeps: []string{"git", "rustup"},
 				OutputPath: "target/package/the_artifact",
@@ -120,7 +119,7 @@ func TestCratesIOCargoPackage(t *testing.T) {
 			rebuild.Instructions{
 				Location:   defaultLocation,
 				Source:     "git checkout --force 'the_ref'",
-				Deps:       "/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.55.0\n",
+				Deps:       "/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.55.0",
 				Build:      `/root/.cargo/bin/cargo package --no-verify`,
 				SystemDeps: []string{"git", "rustup"},
 				OutputPath: "target/package/the_artifact",

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/pkg/errors"
 )
 
@@ -24,8 +25,9 @@ type Step struct {
 
 func resolveTemplate(buf *bytes.Buffer, tmpl string, data any) error {
 	t, err := template.New("").Option("missingkey=zero").Funcs(template.FuncMap{
-		"fromJSON": FromJSON,
-		"toJSON":   ToJSON,
+		"fromJSON":  FromJSON,
+		"toJSON":    ToJSON,
+		"cmpSemver": semver.Cmp,
 	}).Parse(tmpl)
 	if err != nil {
 		return errors.Wrap(err, "parsing template")

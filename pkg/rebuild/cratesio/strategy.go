@@ -15,8 +15,8 @@
 package cratesio
 
 import (
-	"path"
-
+	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
@@ -34,44 +34,85 @@ type CratesIOCargoPackage struct {
 
 var _ rebuild.Strategy = &CratesIOCargoPackage{}
 
-// Generate generates the instructions for a CratesIOCargoPackage
+func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
+	lockfile := ""
+	if b.ExplicitLockfile != nil {
+		lockfile = b.ExplicitLockfile.LockfileBase64
+	}
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Source: []flow.Step{{
+			Uses: "git-checkout",
+		}},
+		Deps: []flow.Step{
+			{
+				Uses: "cargo/create-lockfile",
+				With: map[string]string{
+					"lockfile": lockfile,
+				},
+			},
+			{
+				Uses: "cargo/deps/toolchain",
+				With: map[string]string{
+					"rustVersion":            b.RustVersion,
+					"preferPreciseToolchain": "{{.BuildEnv.PreferPreciseToolchain}}",
+				},
+			},
+		},
+		Build: []flow.Step{{
+			Uses: "cargo/build/package",
+			With: map[string]string{
+				"dir":                    b.Location.Dir,
+				"rustVersion":            b.RustVersion,
+				"preferPreciseToolchain": "{{.BuildEnv.PreferPreciseToolchain}}",
+			},
+		}},
+		OutputDir: "target/package",
+	}
+}
+
+// GenerateFor generates the instructions for a CratesIOCargoPackage.
 func (b *CratesIOCargoPackage) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
-	src, err := rebuild.BasicSourceSetup(b.Location, &be)
-	if err != nil {
-		return rebuild.Instructions{}, err
+	return b.ToWorkflow().GenerateFor(t, be)
+}
+
+func init() {
+	for _, t := range toolkit {
+		flow.Tools.MustRegister(t)
 	}
-	// Unless PreferPreciseToolchain is specified, we ignore CargoBuildExplicitLockfile.Version. Too
-	// many of these predate sparse index support introduced in 1.68.0. Without this, the full index
-	// requires ~700MB and minutes to fetch.
-	deps, err := rebuild.PopulateTemplate(`
-{{if ne .ExplicitLockfile nil -}}
-echo '{{.ExplicitLockfile.LockfileBase64}}' | base64 -d > Cargo.lock
-{{end -}}
-{{if .BuildEnv.PreferPreciseToolchain -}}
-/usr/bin/rustup-init -y --profile minimal --default-toolchain {{.RustVersion}}
-{{end -}}
-`, struct {
-		CratesIOCargoPackage
-		BuildEnv rebuild.BuildEnv
-	}{*b, be})
-	if err != nil {
-		return rebuild.Instructions{}, err
-	}
-	build, err := rebuild.PopulateTemplate(`
-/root/.cargo/bin/cargo package --no-verify{{if or (not .BuildEnv.PreferPreciseToolchain) (gt 0 (SemverCmp "1.56.0" .RustVersion))}} --package "path+file://$(readlink -f {{.Location.Dir}})"{{end}}
-`, struct {
-		CratesIOCargoPackage
-		BuildEnv rebuild.BuildEnv
-	}{*b, be})
-	if err != nil {
-		return rebuild.Instructions{}, err
-	}
-	return rebuild.Instructions{
-		Location:   b.Location,
-		Source:     src,
-		Deps:       deps,
-		Build:      build,
-		SystemDeps: []string{"git", "rustup"},
-		OutputPath: path.Join("target", "package", t.Artifact),
-	}, nil
+}
+
+// Base tools for individual operations
+var toolkit = []*flow.Tool{
+	{
+		Name: "cargo/create-lockfile",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				{{if ne .With.lockfile "" -}}
+				echo '{{.With.lockfile}}' | base64 -d > Cargo.lock
+				{{- end -}}`)[1:],
+		}},
+	},
+	{
+		Name: "cargo/deps/toolchain",
+		Steps: []flow.Step{{
+			// Unless PreferPreciseToolchain is specified, we ignore the exact
+			// toolchain version and rely on one that's ambiently installed. This is
+			// to avoid using a version that predates sparse index support (>=1.68.0)
+			// which requires a full index fetch (~700MB, many minutes of latency).
+			Runs: textwrap.Dedent(`
+				{{if eq .With.preferPreciseToolchain "true" -}}
+				/usr/bin/rustup-init -y --profile minimal --default-toolchain {{.With.rustVersion}}
+				{{- end -}}`)[1:],
+			Needs: []string{"rustup"},
+		}},
+	},
+	{
+		Name: "cargo/build/package",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				/root/.cargo/bin/cargo package --no-verify{{if or (ne .With.preferPreciseToolchain "true") (gt 0 (cmpSemver "1.56.0" .With.rustVersion))}} --package "path+file://$(readlink -f {{.With.dir}})"{{end}}`)[1:],
+			Needs: []string{"rustup"},
+		}},
+	},
 }
