@@ -96,23 +96,6 @@ func PopulateTemplate(tmpl string, data any) (string, error) {
 	return output.String(), nil
 }
 
-// BasicSourceSetup provides a common source setup script.
-func BasicSourceSetup(s Location, env *BuildEnv) (string, error) {
-	if env.HasRepo {
-		return PopulateTemplate("git checkout --force '{{.Ref}}'", s)
-	}
-	// TODO: We should eventually support single commit checkout.
-	// This would be roughly:
-	//   git init .
-	//   git remote add origin '{{.Repo}}'
-	//   git fetch --depth 1 origin '{{.Ref}}'
-	//   git checkout FETCH_HEAD
-	return PopulateTemplate(`
-git clone '{{.Repo}}' .
-git checkout --force '{{.Ref}}'
-`, s)
-}
-
 // ExecuteScript executes a single step of the strategy and returns the output regardless of error.
 func ExecuteScript(ctx context.Context, dir string, script string) (string, error) {
 	output := new(bytes.Buffer)
