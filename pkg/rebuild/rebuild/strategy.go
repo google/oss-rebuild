@@ -63,6 +63,15 @@ func (b *BuildEnv) TimewarpURL(ecosystem string, registryTime time.Time) (string
 	return fmt.Sprintf("http://%s:%s@%s", ecosystem, registryTime.Format(time.RFC3339), b.TimewarpHost), nil
 }
 
+// TimewarpURLFromString constructs the correct URL for an ecosystem and RFC 3339-formatted time.
+func (b *BuildEnv) TimewarpURLFromString(ecosystem string, rfc3339Time string) (string, error) {
+	registryTime, err := time.Parse(time.RFC3339, rfc3339Time)
+	if err != nil {
+		return "", errors.Wrap(err, "parsing time")
+	}
+	return b.TimewarpURL(ecosystem, registryTime)
+}
+
 // Strategy generates instructions to execute a rebuild.
 type Strategy interface {
 	GenerateFor(Target, BuildEnv) (Instructions, error)

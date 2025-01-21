@@ -15,9 +15,10 @@
 package npm
 
 import (
-	"path"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
@@ -31,31 +32,27 @@ type NPMPackBuild struct {
 
 var _ rebuild.Strategy = &NPMPackBuild{}
 
+func (b *NPMPackBuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Source: []flow.Step{{
+			Uses: "git-checkout",
+		}},
+		Deps: []flow.Step{},
+		Build: []flow.Step{{
+			Uses: "npm/build/pack",
+			With: map[string]string{
+				"npmVersion":      b.NPMVersion,
+				"versionOverride": b.VersionOverride,
+			},
+		}},
+		OutputDir: b.Location.Dir,
+	}
+}
+
 // GenerateFor generates the instructions for a NPMPackBuild.
 func (b *NPMPackBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
-	src, err := rebuild.BasicSourceSetup(b.Location, &be)
-	if err != nil {
-		return rebuild.Instructions{}, err
-	}
-	deps := ""
-	build, err := rebuild.PopulateTemplate(`
-{{if ne .VersionOverride "" -}}
-{{- /* NOTE: Prefer builtin npm for 'npm version' as it wasn't introduced until NPM v6. */ -}}
-PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix {{.Location.Dir}} --no-git-tag-version {{.VersionOverride}}
-{{end -}}
-/usr/bin/npx --package=npm@{{.NPMVersion}} -c '{{if ne .Location.Dir "."}}cd {{.Location.Dir}} && {{end}}npm pack'
-`, b)
-	if err != nil {
-		return rebuild.Instructions{}, err
-	}
-	return rebuild.Instructions{
-		Location:   b.Location,
-		SystemDeps: []string{"git", "npm"},
-		Source:     src,
-		Deps:       deps,
-		Build:      build,
-		OutputPath: path.Join(b.Location.Dir, t.Artifact),
-	}, nil
+	return b.ToWorkflow().GenerateFor(t, be)
 }
 
 // NPMCustomBuild implements a user-specified build script.
@@ -70,44 +67,166 @@ type NPMCustomBuild struct {
 
 var _ rebuild.Strategy = &NPMCustomBuild{}
 
+func (b *NPMCustomBuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Source: []flow.Step{{
+			Uses: "git-checkout",
+		}},
+		Deps: []flow.Step{{
+			Uses: "npm/deps/custom",
+			With: map[string]string{
+				"registryTime": b.RegistryTime.Format(time.RFC3339),
+				"nodeVersion":  b.NodeVersion,
+				"npmVersion":   b.NPMVersion,
+			},
+		}},
+		Build: []flow.Step{{
+			Uses: "npm/build/custom",
+			With: map[string]string{
+				"npmVersion":      b.NPMVersion,
+				"versionOverride": b.VersionOverride,
+				"command":         b.Command,
+			},
+		}},
+		OutputDir: b.Location.Dir,
+	}
+}
+
 // GenerateFor generates the instructions for a NPMCustomBuild.
 func (b *NPMCustomBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
-	src, err := rebuild.BasicSourceSetup(b.Location, &be)
-	if err != nil {
-		return rebuild.Instructions{}, err
+	return b.ToWorkflow().GenerateFor(t, be)
+}
+
+func init() {
+	for _, t := range toolkit {
+		flow.Tools.MustRegister(t)
 	}
-	buildAndEnv := struct {
-		*NPMCustomBuild
-		BuildEnv *rebuild.BuildEnv
-	}{
-		NPMCustomBuild: b,
-		BuildEnv:       &be,
-	}
-	deps, err := rebuild.PopulateTemplate(`
-/usr/bin/npm config --location-global set registry {{.BuildEnv.TimewarpURL "npm" .RegistryTime}}
-trap '/usr/bin/npm config --location-global delete registry' EXIT
-wget -O - https://unofficial-builds.nodejs.org/download/release/v{{.NodeVersion}}/node-v{{.NodeVersion}}-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@{{.NPMVersion}} -c '{{if ne .Location.Dir "."}}cd {{.Location.Dir}} && {{end}}npm install --force'
-`, buildAndEnv)
-	if err != nil {
-		return rebuild.Instructions{}, err
-	}
-	build, err := rebuild.PopulateTemplate(`
-{{if ne .VersionOverride "" -}}
-{{- /* NOTE: Prefer builtin npm for 'npm version' as it wasn't introduced until NPM v6. */ -}}
-PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix {{.Location.Dir}} --no-git-tag-version {{.VersionOverride}}
-{{end -}}
-/usr/local/bin/npx --package=npm@{{.NPMVersion}} -c '{{if ne .Location.Dir "."}}cd {{.Location.Dir}} && {{end}}npm run {{.Command}} && rm -rf node_modules && npm pack'
-`, b)
-	if err != nil {
-		return rebuild.Instructions{}, err
-	}
-	return rebuild.Instructions{
-		Location:   b.Location,
-		SystemDeps: []string{"git", "npm"},
-		Source:     src,
-		Deps:       deps,
-		Build:      build,
-		OutputPath: path.Join(b.Location.Dir, t.Artifact),
-	}, nil
+}
+
+// Base tools for individual operations
+var toolkit = []*flow.Tool{
+	{
+		Name: "npm/version-override",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				{{if ne .With.version "" -}}
+				{{- /* NOTE: Prefer builtin npm for 'npm version' as it wasn't introduced until NPM v6. */ -}}
+				PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix {{.With.dir}} --no-git-tag-version {{.With.version}}
+				{{- end -}}`)[1:],
+			Needs: []string{"npm"},
+		}},
+	},
+	{
+		Name: "npm/npx",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				{{.With.locator}}npx --package=npm@{{.With.npmVersion}} -c '
+						{{- if and (ne .With.dir ".") (ne .With.dir "")}}cd {{.With.dir}} && {{end -}}
+						{{.With.command}}'`)[1:],
+			Needs: []string{"npm"},
+		}},
+	},
+	{
+		Name: "npm/setup-registry",
+		Steps: []flow.Step{{
+			// TODO: Consider using npm_config_registry env var to set this instead.
+			Runs: textwrap.Dedent(`
+				/usr/bin/npm config --location-global set registry {{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}}
+				trap '/usr/bin/npm config --location-global delete registry' EXIT`)[1:],
+			Needs: []string{"npm"},
+		}},
+	},
+	{
+		Name: "npm/install-node",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				wget -O - https://unofficial-builds.nodejs.org/download/release/v{{.With.nodeVersion}}/node-v{{.With.nodeVersion}}-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/`)[1:],
+			Needs: []string{},
+		}},
+	},
+
+	// Composite tools for common dependency setups
+	{
+		Name: "npm/deps/basic",
+		Steps: []flow.Step{{
+			Uses: "npm/npx",
+			With: map[string]string{
+				"command":    "npm install --force",
+				"npmVersion": "{{.With.npmVersion}}",
+				"dir":        "{{.Location.Dir}}",
+				"locator":    "/usr/local/bin/",
+			},
+		}},
+	},
+	{
+		Name: "npm/deps/custom",
+		Steps: []flow.Step{
+			{
+				Uses: "npm/setup-registry",
+				With: map[string]string{
+					"registryTime": "{{.With.registryTime}}",
+				},
+			},
+			{
+				Uses: "npm/install-node",
+				With: map[string]string{
+					"nodeVersion": "{{.With.nodeVersion}}",
+				},
+			},
+			{
+				Uses: "npm/npx",
+				With: map[string]string{
+					"command":    "npm install --force",
+					"npmVersion": "{{.With.npmVersion}}",
+					"dir":        "{{.Location.Dir}}",
+					"locator":    "/usr/local/bin/",
+				},
+			},
+		},
+	},
+
+	// Composite tools for common build patterns
+	{
+		Name: "npm/build/pack",
+		Steps: []flow.Step{
+			{
+				Uses: "npm/version-override",
+				With: map[string]string{
+					"version": "{{.With.versionOverride}}",
+					"dir":     "{{.Location.Dir}}",
+				},
+			},
+			{
+				Uses: "npm/npx",
+				With: map[string]string{
+					"command":    "npm pack",
+					"npmVersion": "{{.With.npmVersion}}",
+					"dir":        "{{.Location.Dir}}",
+					"locator":    "/usr/bin/",
+				},
+			},
+		},
+	},
+	{
+		Name: "npm/build/custom",
+		Steps: []flow.Step{
+			{
+				Uses: "npm/version-override",
+				With: map[string]string{
+					"version": "{{.With.versionOverride}}",
+					"dir":     "{{.Location.Dir}}",
+				},
+			},
+			{
+				Uses: "npm/npx",
+				With: map[string]string{
+					"command":    "npm run {{.With.command}} && rm -rf node_modules && npm pack",
+					"npmVersion": "{{.With.npmVersion}}",
+					"dir":        "{{.Location.Dir}}",
+					"locator":    "/usr/local/bin/",
+				},
+			},
+		},
+	},
 }
