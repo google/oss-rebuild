@@ -59,7 +59,7 @@ EOF
 RUN <<'EOF'
  set -eux
  mkdir /src && cd /src
- git clone 'github.com/example' .
+ git clone github.com/example .
  git checkout --force 'main'
  make deps ...
 EOF
@@ -101,7 +101,7 @@ RUN <<'EOF'
  ./timewarp -port 8080 &
  while ! nc -z localhost 8080;do sleep 1;done
  mkdir /src && cd /src
- git clone 'github.com/example' .
+ git clone github.com/example .
  git checkout --force 'main'
  make deps ...
 EOF
@@ -137,12 +137,12 @@ python3 setup.py sdist`,
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
- apk add curl jq
+ apk add curl jq git
 EOF
 RUN <<'EOF'
  set -eux
  mkdir /src && cd /src
- git clone 'github.com/example' .
+ git clone github.com/example .
  git checkout --force 'main'
  # Install dependencies
  apk add --no-cache python3 py3-pip
@@ -186,7 +186,7 @@ EOF
 RUN <<'EOF'
  set -eux
  mkdir /src && cd /src
- git clone 'github.com/example' .
+ git clone github.com/example .
  git checkout --force 'main'
  make deps ...
 EOF

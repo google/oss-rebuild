@@ -14,6 +14,8 @@
 
 package rebuild
 
+import "github.com/google/oss-rebuild/pkg/rebuild/flow"
+
 // ManualStrategy allows full control over the build instruction steps, for builds that don't fit any other strategy.
 type ManualStrategy struct {
 	Location
@@ -25,18 +27,18 @@ type ManualStrategy struct {
 
 var _ Strategy = &ManualStrategy{}
 
-// GenerateFor generates the instructions for a ManualStrategy.
-func (s *ManualStrategy) GenerateFor(t Target, be BuildEnv) (Instructions, error) {
-	src, err := BasicSourceSetup(s.Location, &be)
-	if err != nil {
-		return Instructions{}, err
-	}
-	return Instructions{
+func (s *ManualStrategy) ToWorkflow() *WorkflowStrategy {
+	return &WorkflowStrategy{
 		Location:   s.Location,
-		Source:     src,
-		Deps:       s.Deps,
-		Build:      s.Build,
+		Source:     []flow.Step{{Uses: "git-checkout"}},
+		Deps:       []flow.Step{{Runs: s.Deps}},
+		Build:      []flow.Step{{Runs: s.Build}},
 		SystemDeps: s.SystemDeps,
 		OutputPath: s.OutputPath,
-	}, nil
+	}
+}
+
+// GenerateFor generates the instructions for a ManualStrategy.
+func (s *ManualStrategy) GenerateFor(t Target, be BuildEnv) (Instructions, error) {
+	return s.ToWorkflow().GenerateFor(t, be)
 }
