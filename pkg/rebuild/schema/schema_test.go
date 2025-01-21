@@ -186,7 +186,7 @@ manual:
 			},
 			Source: []flow.Step{{Runs: "echo source"}},
 		},
-		jsonEncoded: `{"flow":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","src":[{"runs":"echo source","needs":null,"uses":"","with":null}],"deps":null,"build":null,"system_deps":null,"output_path":""}}`,
+		jsonEncoded: `{"flow":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","src":[{"runs":"echo source","needs":null,"uses":"","with":null}],"deps":null,"build":null,"system_deps":null,"output_path":"","output_dir":""}}`,
 		yamlEncoded: `
 flow:
   location:

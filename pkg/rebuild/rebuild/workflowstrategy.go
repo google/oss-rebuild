@@ -14,6 +14,8 @@
 package rebuild
 
 import (
+	"path"
+
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/pkg/errors"
@@ -35,12 +37,24 @@ type WorkflowStrategy struct {
 	Build      []flow.Step `json:"build" yaml:"build,omitempty"`
 	SystemDeps []string    `json:"system_deps" yaml:"system_deps,omitempty"`
 	OutputPath string      `json:"output_path" yaml:"output_path,omitempty"`
+	OutputDir  string      `json:"output_dir" yaml:"output_dir,omitempty"`
 }
 
 var _ Strategy = &WorkflowStrategy{}
 
 // GenerateFor generates the instructions for a WorkflowStrategy.
 func (s *WorkflowStrategy) GenerateFor(t Target, be BuildEnv) (Instructions, error) {
+	var outputPath string
+	if (s.OutputDir != "") && (s.OutputPath != "") {
+		return Instructions{}, errors.New("only one of OutputPath and OutputDir may be provided")
+	} else if s.OutputPath != "" {
+		outputPath = s.OutputPath
+	} else if s.OutputDir != "" {
+		outputPath = path.Join(s.OutputDir, t.Artifact)
+	} else {
+		// NOTE: This is potentially unexpected default behavior.
+		outputPath = t.Artifact
+	}
 	data := map[string]any{
 		"Location": &s.Location,
 		"BuildEnv": &be,
@@ -72,7 +86,7 @@ func (s *WorkflowStrategy) GenerateFor(t Target, be BuildEnv) (Instructions, err
 		Deps:       deps.Script,
 		Build:      build.Script,
 		SystemDeps: finalDeps,
-		OutputPath: s.OutputPath,
+		OutputPath: outputPath,
 	}, nil
 }
 
