@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"log"
 	re "regexp"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -211,6 +212,11 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to get upstream generator")
 	}
+	// Determine setuptools version.
+	if slices.ContainsFunc(reqs, func(s string) bool { return strings.HasPrefix(s, "setuptools==") }) {
+		// setuptools already set.
+		return reqs, nil
+	}
 	// TODO: Also find this with a regex.
 	metadataPath := fmt.Sprintf("%s-%s.dist-info/METADATA", strings.ReplaceAll(name, "-", "_"), strings.ReplaceAll(version, "-", "_"))
 	metadata, err := getFile(metadataPath, zr)
@@ -320,6 +326,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 }
 
 var bdistWheelPat = re.MustCompile(`^Generator: bdist_wheel \(([\d\.]+)\)`)
+var setuptoolsPat = re.MustCompile(`^Generator: setuptools \(([\d\.]+)\)`)
 var flitPat = re.MustCompile(`^Generator: flit ([\d\.]+)`)
 var hatchlingPat = re.MustCompile(`^Generator: hatchling ([\d\.]+)`)
 
@@ -341,6 +348,8 @@ func getGenerator(wheel []byte) (reqs []string, err error) {
 		if bytes.Equal(key, []byte("Generator")) {
 			if matches := bdistWheelPat.FindSubmatch(line); matches != nil {
 				return []string{"wheel==" + string(matches[1])}, nil
+			} else if matches := setuptoolsPat.FindSubmatch(line); matches != nil {
+				return []string{"setuptools==" + string(matches[1])}, nil
 			} else if matches := flitPat.FindSubmatch(line); matches != nil {
 				return []string{"flit_core==" + string(matches[1]), "flit==" + string(matches[1])}, nil
 			} else if matches := hatchlingPat.FindSubmatch(line); matches != nil {
