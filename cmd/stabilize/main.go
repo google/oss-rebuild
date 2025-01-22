@@ -30,6 +30,8 @@ func getName(san any) string {
 		return san.(archive.ZipArchiveStabilizer).Name
 	case archive.ZipEntryStabilizer:
 		return san.(archive.ZipEntryStabilizer).Name
+	case archive.GzipStabilizer:
+		return san.(archive.GzipStabilizer).Name
 	default:
 		log.Fatalf("unknown stabilizer type: %T", san)
 		return "" // unreachable
