@@ -15,12 +15,7 @@
 package rebuild
 
 import (
-	"bytes"
-	"context"
 	"fmt"
-	"io"
-	"log"
-	"os/exec"
 	"time"
 
 	"github.com/pkg/errors"
@@ -72,20 +67,6 @@ func (b *BuildEnv) TimewarpURLFromString(ecosystem string, rfc3339Time string) (
 // Strategy generates instructions to execute a rebuild.
 type Strategy interface {
 	GenerateFor(Target, BuildEnv) (Instructions, error)
-}
-
-// ExecuteScript executes a single step of the strategy and returns the output regardless of error.
-func ExecuteScript(ctx context.Context, dir string, script string) (string, error) {
-	output := new(bytes.Buffer)
-	outAndLog := io.MultiWriter(output, log.Default().Writer())
-	cmd := exec.CommandContext(ctx, "sh", "-c", script)
-	cmd.Stdout = outAndLog
-	cmd.Stderr = outAndLog
-	// CD into the package's directory (which is where we cloned the repo.)
-	cmd.Dir = dir
-	log.Printf(`Executing build script: """%s"""`, cmd.String())
-	err := cmd.Run()
-	return output.String(), err
 }
 
 // LocationHint is a partial strategy used to provide a hint (git repo, git ref) to the inference machinery, but it is not sufficient for execution.
