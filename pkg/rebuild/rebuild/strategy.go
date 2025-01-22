@@ -21,11 +21,8 @@ import (
 	"io"
 	"log"
 	"os/exec"
-	"strings"
-	"text/template"
 	"time"
 
-	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/pkg/errors"
 )
 
@@ -75,25 +72,6 @@ func (b *BuildEnv) TimewarpURLFromString(ecosystem string, rfc3339Time string) (
 // Strategy generates instructions to execute a rebuild.
 type Strategy interface {
 	GenerateFor(Target, BuildEnv) (Instructions, error)
-}
-
-// PopulateTemplate is a helper to execute a template string using a data object.
-func PopulateTemplate(tmpl string, data any) (string, error) {
-	tmpl = strings.TrimSpace(tmpl)
-	t, err := template.New("buildTmpl").Funcs(
-		template.FuncMap{
-			"SemverCmp": semver.Cmp,
-			"join":      func(sep string, s []string) string { return strings.Join(s, sep) },
-		}).Parse(tmpl)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to parse template with contents: %s", tmpl)
-	}
-	output := new(bytes.Buffer)
-	err = t.Execute(output, data)
-	if err != nil {
-		return "", errors.Wrapf(err, "failed to execute template with contents: %s", tmpl)
-	}
-	return output.String(), nil
 }
 
 // ExecuteScript executes a single step of the strategy and returns the output regardless of error.
