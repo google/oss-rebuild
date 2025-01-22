@@ -102,16 +102,6 @@ func init() {
 			Needs: []string{"git"},
 		}},
 	})
-	flow.Tools.MustRegister(&flow.Tool{
-		Name: "npm/install",
-		Steps: []flow.Step{{
-			Runs: textwrap.Dedent(`
-				PATH=/usr/local/bin:/usr/bin npx --package=npm{{if ne .With.npmVersion ""}}@{{.With.npmVersion}}{{end}} -c '
-						{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}cd {{.Location.Dir}} && {{end -}}
-						npm install --force'`)[1:],
-			Needs: []string{"npm"},
-		}},
-	})
 }
 
 type Flowable interface {
