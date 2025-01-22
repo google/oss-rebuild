@@ -15,9 +15,10 @@
 package debian
 
 import (
-	"fmt"
 	"regexp"
 
+	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
@@ -41,63 +42,86 @@ type DebianPackage struct {
 
 var _ rebuild.Strategy = &DebianPackage{}
 
-// Generate generates the instructions for a DebianPackage
+func (b *DebianPackage) ToWorkflow() *rebuild.WorkflowStrategy {
+	return &rebuild.WorkflowStrategy{
+		Source: []flow.Step{{
+			Uses: "debian/fetch/sources",
+			With: map[string]string{
+				"dscUrl":    b.DSC.URL,
+				"origUrl":   b.Orig.URL,
+				"debianUrl": b.Debian.URL,
+				"nativeUrl": b.Native.URL,
+				"dscMd5":    b.DSC.MD5,
+				"origMd5":   b.Orig.MD5,
+				"debianMd5": b.Debian.MD5,
+				"nativeMd5": b.Native.MD5,
+			},
+		}},
+		Deps: []flow.Step{{
+			Uses: "debian/deps/install",
+			With: map[string]string{
+				"requirements": flow.MustToJSON(b.Requirements),
+			},
+		}},
+		Build: []flow.Step{{
+			Uses: "debian/build/package",
+			With: map[string]string{
+				"targetPath": "{{.Target.Artifact}}",
+			},
+		}},
+	}
+}
+
+// GenerateFor generates the instructions for a DebianPackage
 func (b *DebianPackage) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
-	// TODO: use the FileWithChecksum.MD5 values to verify the downloaded archives.
-	src, err := rebuild.PopulateTemplate(`
-set -eux
-wget {{.DSC.URL}}
-{{- if .Native.URL }}
-wget {{.Native.URL}}
-{{ else }}
-wget {{.Orig.URL}}
-wget {{.Debian.URL}}
-{{ end }}
-dpkg-source -x --no-check $(basename "{{.DSC.URL}}")
-	`, b)
-	if err != nil {
-		return rebuild.Instructions{}, err
+	return b.ToWorkflow().GenerateFor(t, be)
+}
+
+func init() {
+	for _, t := range toolkit {
+		flow.Tools.MustRegister(t)
 	}
-	deps, err := rebuild.PopulateTemplate(`
-set -eux
-apt update
-apt install -y {{join " " .Requirements}}
-`, struct {
-		DebianPackage
-		BuildEnv rebuild.BuildEnv
-		Target   rebuild.Target
-	}{*b, be, t})
-	if err != nil {
-		return rebuild.Instructions{}, err
-	}
-	// If the target is a binary-only release (version ends with something like +b1) we need to add an additional rename.
-	var expected string
-	if matches := binaryVersionRegex.FindStringSubmatch(t.Artifact); matches != nil {
-		artifactName := matches[binaryVersionRegex.SubexpIndex("name")]
-		nbversion := matches[binaryVersionRegex.SubexpIndex("nonbinary_version")]
-		arch := matches[binaryVersionRegex.SubexpIndex("arch")]
-		expected = fmt.Sprintf("%s_%s_%s.deb", artifactName, nbversion, arch)
-	}
-	build, err := rebuild.PopulateTemplate(`
-set -eux
-cd */
-debuild -b -uc -us
-{{- if .Expected }}
-mv /src/{{ .Expected }} /src/{{ .Target.Artifact }}
-{{- end }}
-`, struct {
-		Target   rebuild.Target
-		Expected string
-	}{Target: t, Expected: expected})
-	if err != nil {
-		return rebuild.Instructions{}, err
-	}
-	return rebuild.Instructions{
-		Location:   rebuild.Location{},
-		Source:     src,
-		Deps:       deps,
-		Build:      build,
-		SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
-		OutputPath: t.Artifact,
-	}, nil
+}
+
+var toolkit = []*flow.Tool{
+	{
+		Name: "debian/fetch/sources",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				set -eux
+				wget {{.With.dscUrl}}
+				{{- if ne .With.nativeUrl "" }}
+				wget {{.With.nativeUrl}}
+				{{ else }}
+				wget {{.With.origUrl}}
+				wget {{.With.debianUrl}}
+				{{ end }}
+				dpkg-source -x --no-check $(basename "{{.With.dscUrl}}")`)[1:],
+			Needs: []string{"wget", "git"},
+		}},
+	},
+	{
+		Name: "debian/deps/install",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				set -eux
+				apt update
+				apt install -y{{range $req := .With.requirements | fromJSON}} {{$req}}{{end}}`)[1:],
+			Needs: []string{},
+		}},
+	},
+	{
+		Name: "debian/build/package",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				set -eux
+				cd */
+				debuild -b -uc -us
+				{{- $expected := regexReplace .With.targetPath "\\+b[0-9]+(_[^_]+\\.deb)$" "$1"}}
+				{{- if ne $expected .With.targetPath }}
+				mv /src/{{$expected}} /src/{{.With.targetPath}}
+				{{- end}}`)[1:],
+			Needs: []string{"build-essential", "fakeroot", "devscripts"},
+		}},
+	},
 }

@@ -3,6 +3,7 @@ package flow
 import (
 	"bytes"
 	"cmp"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -28,6 +29,13 @@ func resolveTemplate(buf *bytes.Buffer, tmpl string, data any) error {
 		"fromJSON":  FromJSON,
 		"toJSON":    ToJSON,
 		"cmpSemver": semver.Cmp,
+		"regexReplace": func(src, pattern, repl string) (string, error) {
+			if re, err := regexp.Compile(pattern); err != nil {
+				return "", errors.Wrap(err, "compiling regex")
+			} else {
+				return string(re.ReplaceAll([]byte(src), []byte(repl))), nil
+			}
+		},
 	}).Parse(tmpl)
 	if err != nil {
 		return errors.Wrap(err, "parsing template")
