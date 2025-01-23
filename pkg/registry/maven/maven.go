@@ -36,7 +36,7 @@ var (
 	registryURL = urlx.MustParse("https://search.maven.org")
 	// Maven path component.
 	registryContentPathURL = urlx.MustParse("remotecontent")
-	registrySearchPathURL = urlx.MustParse(path.Join("solrsearch", "select"))
+	registrySearchPathURL  = urlx.MustParse(path.Join("solrsearch", "select"))
 )
 
 // MavenPackage is a Maven package.
