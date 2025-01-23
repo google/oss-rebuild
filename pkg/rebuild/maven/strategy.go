@@ -14,7 +14,10 @@
 
 package maven
 
-import "github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+import (
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+)
 
 type MavenBuild struct {
 	rebuild.Location
@@ -25,18 +28,21 @@ type MavenBuild struct {
 
 var _ rebuild.Strategy = &MavenBuild{}
 
-func (b *MavenBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
-	src, err := rebuild.BasicSourceSetup(b.Location, &be)
-	if err != nil {
-		return rebuild.Instructions{}, err
+func (b *MavenBuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Source: []flow.Step{{
+			Uses: "git-checkout",
+		}},
+		Deps: []flow.Step{{
+			Runs: "true",
+		}},
+		Build: []flow.Step{{
+			Uses: "true",
+		}},
 	}
+}
 
-	return rebuild.Instructions{
-		Location:   b.Location,
-		Source:     src,
-		Deps:       "true",
-		Build:      "true",
-		SystemDeps: []string{"maven"},
-		OutputPath: t.Artifact,
-	}, nil
+func (b *MavenBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	return b.ToWorkflow().GenerateFor(t, be)
 }

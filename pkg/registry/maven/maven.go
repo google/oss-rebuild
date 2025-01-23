@@ -22,9 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,7 +31,13 @@ import (
 	"github.com/pkg/errors"
 )
 
-var registryURL = urlx.MustParse("https://search.maven.org")
+var (
+	// Maven Central registry.
+	registryURL = urlx.MustParse("https://search.maven.org")
+	// Maven path component.
+	registryContentPathURL = urlx.MustParse("remotecontent")
+	registrySearchPathURL = urlx.MustParse(path.Join("solrsearch", "select"))
+)
 
 // MavenPackage is a Maven package.
 type MavenPackage struct {
@@ -103,8 +107,8 @@ func (r HTTPRegistry) PackageVersion(ctx context.Context, pkg, version string) (
 		err = errors.New("package identifier not of form 'group:artifact'")
 		return
 	}
-	pathUrl, _ := url.Parse(path.Join("solrsearch", "select"))
-	pathUrl = registryURL.ResolveReference(pathUrl)
+
+	pathUrl := registryURL.ResolveReference(registrySearchPathURL)
 	params := pathUrl.Query()
 	params.Add("rows", "5")
 	params.Add("wt", "json")
@@ -157,9 +161,8 @@ func (r HTTPRegistry) ReleaseFile(ctx context.Context, pkg, version string, typ 
 	if !found {
 		return nil, errors.New("package identifier not of form 'group:artifact'")
 	}
-	pathUrl, _ := url.Parse("remotecontent")
-	pathUrl = registryURL.ResolveReference(pathUrl)
-	searchPath := filepath.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
+	pathUrl := registryURL.ResolveReference(registryContentPathURL)
+	searchPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
 	// Note that search.maven expects the / tokens in the query parameter not to be HTML-encoded.
 	pathUrl.RawQuery = fmt.Sprintf("filepath=%s", searchPath)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, pathUrl.String(), nil)

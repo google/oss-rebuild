@@ -166,7 +166,6 @@ func getPomXML(tree *object.Tree, path string) (pomXML PomXML, err error) {
 }
 
 func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
-	//r, err := mavenreg.HTTPRegistry{}.ReleaseFile(context.Background(), name, version, mavenreg.TypeJar)
 	releaseFile, err := mux.Maven.ReleaseFile(ctx, name, version, maven.TypeJar)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching jar file")
