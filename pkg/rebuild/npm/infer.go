@@ -118,6 +118,28 @@ func PickNodeVersion(meta *npmreg.NPMVersion) (string, error) {
 	return best.Version.String(), nil
 }
 
+func PickNPMVersion(meta *npmreg.NPMVersion) (string, error) {
+	npmv := meta.NPMVersion
+	if npmv == "" {
+		// TODO: Guess based on upload date.
+		return "", errors.New("No NPM version")
+	}
+	s, err := semver.New(npmv)
+	if err != nil || s.Prerelease != "" || s.Build != "" {
+		return "", errors.Errorf("Unsupported NPM version '%s'", npmv)
+	}
+	if s.Major < 5 {
+		// NOTE: Upgrade all previous versions to 5.0.4 to fix incompatibilities.
+		return "5.0.4", nil
+	} else if s.Major == 5 && (s.Minor == 4 || s.Minor == 5) {
+		// NOTE: Some versions of NPM 5 had issues with Node 9 and higher.
+		// Fix: https://github.com/npm/npm/commit/c851bb503a756b7cd48d12ef0e12f39e6f30c577
+		// Release: https://github.com/npm/npm/releases/tag/v5.6.0
+		return "5.6.0", nil
+	}
+	return npmv, nil
+}
+
 func inferFromRepo(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.RepoConfig) (ref, dir, versionOverride string, err error) {
 	// Determine dir for build.
 	if vmeta.Directory != "" {
@@ -220,21 +242,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, err
 	}
-	npmv := vmeta.NPMVersion
-	if npmv == "" {
-		// TODO: Guess based on upload date.
-		return nil, errors.New("No NPM version")
-	}
-	if s, err := semver.New(npmv); err != nil || s.Prerelease != "" || s.Build != "" {
-		return nil, errors.Errorf("Unsupported NPM version '%s'", npmv)
-	} else if s.Major < 5 {
-		// XXX: Upgrade all previous versions to 5.0.4 to fix incompatibilities.
-		npmv = "5.0.4"
-	} else if s.Major == 5 && (s.Minor == 4 || s.Minor == 5) {
-		// NOTE: Some versions of NPM 5 had issues with Node 9 and higher.
-		// Fix: https://github.com/npm/npm/commit/c851bb503a756b7cd48d12ef0e12f39e6f30c577
-		// Release: https://github.com/npm/npm/releases/tag/v5.6.0
-		npmv = "5.6.0"
+	npmv, err := PickNPMVersion(vmeta)
+	if err != nil {
+		return nil, err
 	}
 	var ref, dir, override string
 	lh, ok := hint.(*rebuild.LocationHint)
