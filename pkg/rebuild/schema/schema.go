@@ -256,7 +256,8 @@ type RebuildAttempt struct {
 	RunID           string          `firestore:"run_id,omitempty"`
 	BuildID         string          `firestore:"build_id,omitempty"`
 	ObliviousID     string          `firestore:"oblivious_id,omitempty"`
-	Created         int64           `firestore:"created,omitempty"`
+	Started         int64           `firestore:"started,omitempty"` // The time rebuild started
+	Created         int64           `firestore:"created,omitempty"` // The time this record was created
 }
 
 // Run stores metadata on an execution grouping.
