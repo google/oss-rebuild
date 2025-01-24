@@ -77,3 +77,83 @@ func TestPickNodeVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestPickNPMVersion(t *testing.T) {
+	tests := []struct {
+		name       string
+		npmVersion string
+		want       string
+		wantErr    bool
+	}{
+		{
+			name:       "empty version returns error",
+			npmVersion: "",
+			wantErr:    true,
+		},
+		{
+			name:       "invalid semver returns error",
+			npmVersion: "not.a.version",
+			wantErr:    true,
+		},
+		{
+			name:       "prerelease version returns error",
+			npmVersion: "6.0.0-beta.1",
+			wantErr:    true,
+		},
+		{
+			name:       "build tag version returns error",
+			npmVersion: "6.0.0+20200101",
+			wantErr:    true,
+		},
+		{
+			name:       "less than version 5.x upgrades to 5.0.4",
+			npmVersion: "4.2.0",
+			want:       "5.0.4",
+		},
+		{
+			name:       "version 5.4.x upgrades to 5.6.0",
+			npmVersion: "5.4.2",
+			want:       "5.6.0",
+		},
+		{
+			name:       "version 5.5.x upgrades to 5.6.0",
+			npmVersion: "5.5.1",
+			want:       "5.6.0",
+		},
+		{
+			name:       "version 5.3.x stays as is",
+			npmVersion: "5.3.0",
+			want:       "5.3.0",
+		},
+		{
+			name:       "version 5.6.x stays as is",
+			npmVersion: "5.6.0",
+			want:       "5.6.0",
+		},
+		{
+			name:       "version 6.x stays as is",
+			npmVersion: "6.14.8",
+			want:       "6.14.8",
+		},
+		{
+			name:       "version 7.x stays as is",
+			npmVersion: "7.0.0",
+			want:       "7.0.0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := PickNPMVersion(&reg.NPMVersion{NPMVersion: tt.npmVersion})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("PickNPMVersion() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				return
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("PickNPMVersion() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
