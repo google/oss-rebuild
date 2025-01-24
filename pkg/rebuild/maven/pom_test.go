@@ -88,16 +88,17 @@ func TestNewPomXML(t *testing.T) {
 				},
 			}
 
-			if pom, err := NewPomXML(ctx, target, mux); err != nil && !tc.isError {
-				t.Fatalf("NewPomXML() error = %v", err)
-			} else if pom.ArtifactID != tc.expected.ArtifactID {
-				t.Errorf("NewPomXML() mismatch pom.ArtifactID expected=%s got=%s", tc.expected.ArtifactID, pom.ArtifactID)
-			} else if pom.GroupID != tc.expected.GroupID {
-				t.Errorf("NewPomXML() mismatch pom.GroupID expected=%s got=%s", tc.expected.GroupID, pom.GroupID)
-			} else if pom.VersionID != tc.expected.VersionID {
-				t.Errorf("NewPomXML() mismatch pom.VersionID expected=%s got=%s", tc.expected.VersionID, pom.VersionID)
-			} else if diff := cmp.Diff(tc.expected, pom); diff != "" {
-				t.Errorf("NewPomXML() cmp.Diff mismatch (-want +got):\n%s", diff)
+			pom, err := NewPomXML(ctx, target, mux)
+			if err != nil {
+				if !tc.isError {
+					t.Fatalf("NewPomXML() error = %v", err)
+				}
+				return
+			} else if tc.isError {
+				t.Fatalf("NewPomXML() expected error but no error returned")
+			}
+			if diff := cmp.Diff(tc.expected, pom); diff != "" {
+				t.Errorf("NewPomXML() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
