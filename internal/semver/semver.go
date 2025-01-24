@@ -17,6 +17,7 @@ package semver
 
 import (
 	"cmp"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -41,6 +42,17 @@ func (s Semver) Compare(other Semver) int {
 		cmp.Compare(s.Patch, other.Patch),
 		prereleaseCmp(s.Prerelease, other.Prerelease),
 	)
+}
+
+func (s Semver) String() string {
+	str := fmt.Sprintf("%d.%d.%d", s.Major, s.Minor, s.Patch)
+	if s.Prerelease != "" {
+		str += "-" + s.Prerelease
+	}
+	if s.Build != "" {
+		str += "+" + s.Build
+	}
+	return str
 }
 
 // Adapted from: https://semver.org/spec/v2.0.0#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string

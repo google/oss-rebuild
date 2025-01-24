@@ -74,3 +74,24 @@ func TestCmp(t *testing.T) {
 		}
 	}
 }
+
+func TestString(t *testing.T) {
+	tests := []struct {
+		semver Semver
+		want   string
+	}{
+		{Semver{1, 0, 0, "", ""}, "1.0.0"},
+		{Semver{2, 1, 3, "", ""}, "2.1.3"},
+		{Semver{1, 0, 0, "alpha", ""}, "1.0.0-alpha"},
+		{Semver{1, 0, 0, "", "001"}, "1.0.0+001"},
+		{Semver{1, 0, 0, "beta", "build.1"}, "1.0.0-beta+build.1"},
+		{Semver{0, 0, 1, "alpha.1", "build.123"}, "0.0.1-alpha.1+build.123"},
+	}
+
+	for _, tt := range tests {
+		got := tt.semver.String()
+		if got != tt.want {
+			t.Errorf("String() = %q, want %q", got, tt.want)
+		}
+	}
+}
