@@ -86,6 +86,38 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	return
 }
 
+func PickNodeVersion(meta *npmreg.NPMVersion) (string, error) {
+	version := meta.NodeVersion
+	if version == "" {
+		// TODO: Consider selecting based on release date.
+		return "10.17.0", nil
+	}
+	nv, err := semver.New(version)
+	if err != nil {
+		return "", errors.Errorf("invalid node version: %s", version)
+	}
+	if nv.Compare(npmreg.UnofficialNodeReleases[0].Version) > 0 {
+		// Trust the future
+		return nv.String(), nil
+	}
+	var best npmreg.NodeRelease
+	for _, r := range npmreg.UnofficialNodeReleases {
+		if !r.HasMUSL {
+			continue
+		}
+		if cmp := r.Version.Compare(nv); cmp == 0 {
+			return r.Version.String(), nil
+		} else if cmp < 0 {
+			return best.Version.String(), nil
+		}
+		// Skip update if major.minor match but patch version is lower
+		if !(best.Version.Major == r.Version.Major && best.Version.Minor == r.Version.Minor) {
+			best = r
+		}
+	}
+	return best.Version.String(), nil
+}
+
 func inferFromRepo(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.RepoConfig) (ref, dir, versionOverride string, err error) {
 	// Determine dir for build.
 	if vmeta.Directory != "" {
@@ -244,11 +276,15 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			if !ok {
 				return nil, errors.Errorf("[INTERNAL] upload time not found")
 			}
+			nodeVersion, err := PickNodeVersion(vmeta)
+			if err != nil {
+				return nil, errors.Wrap(err, "[INTERNAL] picking node version")
+			}
 			// TODO: detect and install pnpm
 			// TODO: detect and install yarn
 			return &NPMCustomBuild{
 				NPMVersion:      npmv,
-				NodeVersion:     vmeta.NodeVersion,
+				NodeVersion:     nodeVersion,
 				VersionOverride: override,
 				Command:         "build",
 				RegistryTime:    ut,
