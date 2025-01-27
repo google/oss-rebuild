@@ -121,8 +121,16 @@ func (r Fragment) Join(other Fragment) Fragment {
 	} else {
 		script = strings.Join([]string{r.Script, other.Script}, "\n")
 	}
+	var needs []string
+	seen := map[string]bool{}
+	for _, need := range append(r.Needs, other.Needs...) {
+		if _, ok := seen[need]; !ok {
+			seen[need] = true
+			needs = append(needs, need)
+		}
+	}
 	return Fragment{
 		Script: script,
-		Needs:  append(r.Needs, other.Needs...),
+		Needs:  needs,
 	}
 }

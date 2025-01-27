@@ -444,7 +444,7 @@ func TestFragment_Join(t *testing.T) {
 			},
 		},
 		{
-			name: "duplicate_deps",
+			name: "deduplicate_deps",
 			f1: Fragment{
 				Script: "echo first",
 				Needs:  []string{"dep1", "dep2"},
@@ -455,7 +455,7 @@ func TestFragment_Join(t *testing.T) {
 			},
 			want: Fragment{
 				Script: "echo first\necho second",
-				Needs:  []string{"dep1", "dep2", "dep2", "dep3"},
+				Needs:  []string{"dep1", "dep2", "dep3"},
 			},
 		},
 	}
