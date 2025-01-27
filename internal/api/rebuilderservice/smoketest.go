@@ -97,10 +97,9 @@ func doCratesIORebuildSmoketest(ctx context.Context, req schema.SmoketestRequest
 	return cratesrb.RebuildMany(rbctx, inputs, mux)
 }
 
-func doMavenRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, versionCount int) ([]rebuild.Verdict, error) {
+func doMavenRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, mux rebuild.RegistryMux, versionCount int) ([]rebuild.Verdict, error) {
 	if len(req.Versions) == 0 {
-		var meta mavenreg.MavenPackage
-		meta, err := mavenreg.PackageMetadata(req.Package)
+		meta, err := mux.Maven.PackageMetadata(ctx, req.Package)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Failed to fetch versions")
 		}
@@ -114,7 +113,7 @@ func doMavenRebuildSmoketest(ctx context.Context, req schema.SmoketestRequest, v
 	if err != nil {
 		return nil, errors.Wrapf(err, "converting smoketest request to inputs")
 	}
-	return mavenrb.RebuildMany(rbctx, req.Package, inputs)
+	return mavenrb.RebuildMany(rbctx, inputs, mux)
 }
 
 type RebuildSmoketestDeps struct {
@@ -138,6 +137,7 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 		CratesIO: cratesreg.HTTPRegistry{Client: deps.HTTPClient},
 		NPM:      npmreg.HTTPRegistry{Client: deps.HTTPClient},
 		PyPI:     pypireg.HTTPRegistry{Client: deps.HTTPClient},
+		Maven:    mavenreg.HTTPRegistry{Client: deps.HTTPClient},
 	}
 	if deps.TimewarpURL != nil {
 		ctx = context.WithValue(ctx, rebuild.TimewarpID, *deps.TimewarpURL)
@@ -158,7 +158,7 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 	case rebuild.CratesIO:
 		verdicts, err = doCratesIORebuildSmoketest(ctx, sreq, mux, deps.DefaultVersionCount)
 	case rebuild.Maven:
-		verdicts, err = doMavenRebuildSmoketest(ctx, sreq, deps.DefaultVersionCount)
+		verdicts, err = doMavenRebuildSmoketest(ctx, sreq, mux, deps.DefaultVersionCount)
 	default:
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}

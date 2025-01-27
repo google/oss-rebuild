@@ -24,6 +24,7 @@ import (
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/google/oss-rebuild/pkg/registry/debian"
+	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/google/oss-rebuild/pkg/registry/npm"
 	"github.com/google/oss-rebuild/pkg/registry/pypi"
 )
@@ -33,6 +34,7 @@ type RegistryMux struct {
 	NPM      npm.Registry
 	PyPI     pypi.Registry
 	CratesIO cratesio.Registry
+	Maven    maven.Registry
 	Debian   debian.Registry
 }
 
@@ -53,6 +55,11 @@ func RegistryMuxWithCache(registry RegistryMux, c cacheinternal.Cache) (Registry
 		newmux.CratesIO = cratesio.HTTPRegistry{Client: httpx.NewCachedClient(httpreg.Client, c)}
 	} else {
 		return newmux, errors.New("unknown crates.io registry type")
+	}
+	if httpreg, ok := registry.Maven.(maven.HTTPRegistry); ok {
+		newmux.Maven = maven.HTTPRegistry{Client: httpx.NewCachedClient(httpreg.Client, c)}
+	} else {
+		return newmux, errors.New("unknown Maven Central registry type")
 	}
 	if httpreg, ok := registry.Debian.(debian.HTTPRegistry); ok {
 		newmux.Debian = debian.HTTPRegistry{Client: httpx.NewCachedClient(httpreg.Client, c)}
@@ -76,6 +83,9 @@ func warmCacheforArtifact(ctx context.Context, registry RegistryMux, t Target) {
 		registry.CratesIO.Crate(ctx, t.Package)
 		registry.CratesIO.Version(ctx, t.Package, t.Version)
 		registry.CratesIO.Artifact(ctx, t.Package, t.Version)
+	case Maven:
+		registry.Maven.PackageMetadata(ctx, t.Package)
+		registry.Maven.PackageVersion(ctx, t.Package, t.Version)
 	case Debian:
 		component, name, found := strings.Cut(t.Package, "/")
 		if !found {
@@ -95,6 +105,8 @@ func warmCacheForPackage(ctx context.Context, registry RegistryMux, t Target) {
 		registry.PyPI.Project(ctx, t.Package)
 	case CratesIO:
 		registry.CratesIO.Crate(ctx, t.Package)
+	case Maven:
+		registry.Maven.PackageMetadata(ctx, t.Package)
 	case Debian:
 		// There is no Debian resource shared across versions.
 	}
