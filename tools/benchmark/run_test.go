@@ -7,6 +7,7 @@ import (
 	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/urlx"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 )
 
@@ -27,13 +28,13 @@ func (q *mockQueue) Add(ctx context.Context, url, body string) (*taskspb.Task, e
 func TestRunBenchAsync(t *testing.T) {
 	testCases := []struct {
 		name     string
-		mode     BenchmarkMode
+		mode     schema.ExecutionMode
 		set      PackageSet
 		expected []queueCall
 	}{
 		{
 			name: "attest",
-			mode: AttestMode,
+			mode: schema.AttestMode,
 			set: PackageSet{
 				Packages: []Package{
 					{
@@ -56,7 +57,7 @@ func TestRunBenchAsync(t *testing.T) {
 		},
 		{
 			name: "smoketest",
-			mode: SmoketestMode,
+			mode: schema.SmoketestMode,
 			set: PackageSet{
 				Packages: []Package{
 					{
