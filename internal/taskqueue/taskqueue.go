@@ -7,11 +7,13 @@ import (
 	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
 	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/pkg/errors"
 )
 
 type Queue interface {
-	Add(ctx context.Context, url, body string) (*taskspb.Task, error)
+	Add(ctx context.Context, url string, msg schema.Message) (*taskspb.Task, error)
 }
 
 type queue struct {
@@ -32,7 +34,14 @@ func NewQueue(ctx context.Context, queuePath, serviceAccountEmail string) (Queue
 	}, nil
 }
 
-func (q *queue) Add(ctx context.Context, url, body string) (*taskspb.Task, error) {
+func (q *queue) Add(ctx context.Context, url string, msg schema.Message) (*taskspb.Task, error) {
+	if err := msg.Validate(); err != nil {
+		return nil, errors.Wrap(err, "validating message")
+	}
+	values, err := form.Marshal(msg)
+	if err != nil {
+		return nil, errors.Wrap(err, "marshalling message")
+	}
 	req := &taskspb.CreateTaskRequest{
 		Parent: q.queuePath,
 		Task: &taskspb.Task{
@@ -43,7 +52,7 @@ func (q *queue) Add(ctx context.Context, url, body string) (*taskspb.Task, error
 					Headers: map[string]string{
 						"Content-Type": "application/x-www-form-urlencoded",
 					},
-					Body: []byte(body),
+					Body: []byte(values.Encode()),
 					AuthorizationHeader: &taskspb.HttpRequest_OidcToken{
 						OidcToken: &taskspb.OidcToken{
 							ServiceAccountEmail: q.serviceAccountEmail,
