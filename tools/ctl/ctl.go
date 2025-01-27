@@ -243,8 +243,8 @@ var runBenchmark = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := cmd.Context()
-		mode := benchmark.BenchmarkMode(args[0])
-		if mode != benchmark.SmoketestMode && mode != benchmark.AttestMode {
+		mode := schema.ExecutionMode(args[0])
+		if mode != schema.SmoketestMode && mode != schema.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
 		if *apiUri == "" {
@@ -356,8 +356,8 @@ var runOne = &cobra.Command{
 		if *ecosystem == "" || *pkg == "" || *version == "" {
 			log.Fatal("ecosystem, package, and version must be provided")
 		}
-		mode := benchmark.BenchmarkMode(args[0])
-		if mode != benchmark.SmoketestMode && mode != benchmark.AttestMode {
+		mode := schema.ExecutionMode(args[0])
+		if mode != schema.SmoketestMode && mode != schema.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
 		if *apiUri == "" {
@@ -384,7 +384,7 @@ var runOne = &cobra.Command{
 		var strategy *schema.StrategyOneOf
 		{
 			if *strategyPath != "" {
-				if mode == benchmark.AttestMode {
+				if mode == schema.AttestMode {
 					log.Fatal("--strategy not supported in attest mode, use --strategy-from-repo")
 				}
 				f, err := os.Open(*strategyPath)
@@ -401,7 +401,7 @@ var runOne = &cobra.Command{
 		}
 		var verdicts []schema.Verdict
 		{
-			if mode == benchmark.SmoketestMode {
+			if mode == schema.SmoketestMode {
 				stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, *apiURL.JoinPath("smoketest"))
 				resp, err := stub(ctx, schema.SmoketestRequest{
 					Ecosystem: rebuild.Ecosystem(*ecosystem),

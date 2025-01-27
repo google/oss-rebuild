@@ -491,9 +491,9 @@ func (e *explorer) makeVerdictGroupNode(vg *rundex.VerdictGroup, percent float32
 
 func (e *explorer) makeRunNode(runid string) *tview.TreeNode {
 	var title string
-	if run, ok := e.runs[runid]; ok && run.Type == benchmark.AttestMode {
+	if run, ok := e.runs[runid]; ok && run.Type == schema.AttestMode {
 		title = fmt.Sprintf("%s (publish)", runid)
-	} else if run, ok := e.runs[runid]; ok && run.Type == benchmark.SmoketestMode {
+	} else if run, ok := e.runs[runid]; ok && run.Type == schema.SmoketestMode {
 		title = fmt.Sprintf("%s (evaluate)", runid)
 	} else {
 		title = fmt.Sprintf("%s (unknown)", runid)
@@ -755,7 +755,7 @@ func (t *TuiApp) runBenchmark(bench string) {
 		ID:            runID,
 		BenchmarkName: filepath.Base(bench),
 		BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-		Type:          string(benchmark.SmoketestMode),
+		Type:          string(schema.SmoketestMode),
 		Created:       ts.UnixMilli(),
 	}))
 	verdictChan, err := t.rb.RunBench(t.Ctx, set, runID)

@@ -267,3 +267,11 @@ type Run struct {
 	Type          string `firestore:"run_type,omitempty"`
 	Created       int64  `firestore:"created,omitempty"`
 }
+
+// Execution mode describes the manner in which a rebuild happens.
+type ExecutionMode string
+
+const (
+	SmoketestMode ExecutionMode = "smoketest" // No attestations, faster.
+	AttestMode    ExecutionMode = "attest"    // Creates attestations, slower.
+)
