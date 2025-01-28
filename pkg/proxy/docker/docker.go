@@ -284,7 +284,7 @@ func removeEnvVars(imageSpec []byte, varNames []string) (newSpec []byte, err err
 		var j int
 		var varName string
 		for j, varName = range varNames {
-			if strings.HasPrefix(env, varName+"=") {
+			if env == varName || strings.HasPrefix(env, varName+"=") {
 				goto skip
 			}
 		}
@@ -419,22 +419,24 @@ type patchSet struct {
 
 // ContainerTruststorePatcher provides a Docker API proxy that patches the container truststore while running.
 type ContainerTruststorePatcher struct {
-	cert            x509.Certificate
-	envVars         []string
-	javaEnvVar      bool
-	networkOverride string // TODO: Not a good fit for this abstraction
-	proxySocket     string
-	patchMap        map[string]*patchSet
-	m               sync.Mutex
-	created         atomic.Uint32
+	cert              x509.Certificate
+	envVars           []string
+	trustStoreEnvVars []string
+	javaEnvVar        bool
+	networkOverride   string // TODO: Not a good fit for this abstraction
+	proxySocket       string
+	patchMap          map[string]*patchSet
+	m                 sync.Mutex
+	created           atomic.Uint32
 }
 
 // ContainerTruststorePatcherOpts defines the optional parameters for creating a ContainerTruststorePatcher.
 type ContainerTruststorePatcherOpts struct {
-	EnvVars         []string
-	JavaEnvVar      bool
-	RecursiveProxy  bool
-	NetworkOverride string
+	EnvVars           []string
+	TrustStoreEnvVars []string
+	JavaEnvVar        bool
+	RecursiveProxy    bool
+	NetworkOverride   string
 }
 
 // NewContainerTruststorePatcher creates a new ContainerTruststorePatcher with the provided certificate and options.
@@ -452,12 +454,13 @@ func NewContainerTruststorePatcher(cert x509.Certificate, opts ContainerTruststo
 	}
 
 	return &ContainerTruststorePatcher{
-		cert:            cert,
-		envVars:         opts.EnvVars,
-		javaEnvVar:      opts.JavaEnvVar,
-		networkOverride: opts.NetworkOverride,
-		proxySocket:     sockName,
-		patchMap:        make(map[string]*patchSet),
+		cert:              cert,
+		envVars:           opts.EnvVars,
+		trustStoreEnvVars: opts.TrustStoreEnvVars,
+		javaEnvVar:        opts.JavaEnvVar,
+		networkOverride:   opts.NetworkOverride,
+		proxySocket:       sockName,
+		patchMap:          make(map[string]*patchSet),
 	}, nil
 }
 
@@ -559,6 +562,9 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		}
 		var vars []string
 		for _, v := range d.envVars {
+			vars = append(vars, v)
+		}
+		for _, v := range d.trustStoreEnvVars {
 			vars = append(vars, v+"="+proxyCertPath)
 		}
 		if d.javaEnvVar {
@@ -664,6 +670,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			otherVars = append(otherVars, dockerEnvVar)
 		}
 		allVars := append(otherVars, d.envVars...)
+		allVars = append(otherVars, d.trustStoreEnvVars...)
 		var newBody []byte
 		if !bytes.Equal(body, nullJSONBody) {
 			newBody, err = removeEnvVars(body, allVars)

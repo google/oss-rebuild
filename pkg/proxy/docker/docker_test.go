@@ -813,6 +813,7 @@ func TestAddEnvVars(t *testing.T) {
 		{[]byte(`{"Env":[]}`), []string{"FOO="}, []byte(`{"Env":["FOO="]}`)},
 		{[]byte(`{"Env":["BAR="]}`), []string{"FOO="}, []byte(`{"Env":["BAR=","FOO="]}`)},
 		{[]byte(`{"Env":[]}`), []string{"FOO=", "BAR="}, []byte(`{"Env":["FOO=","BAR="]}`)},
+		{[]byte(`{"Env":[]}`), []string{"FOO=foo"}, []byte(`{"Env":["FOO=foo"]}`)},
 	} {
 		got, err := addEnvVars(tc.Body, tc.Vars)
 		if err != nil {
@@ -838,6 +839,9 @@ func TestRemoveEnvVars(t *testing.T) {
 		{[]byte(`{"Env":["BAR=","FOO="]}`), []string{"FOO", "BAR"}, []byte(`{"Env":[]}`)},
 		{[]byte(`{"Env":["BAR=old","BAR=new","FOO=new"]}`), []string{"BAR", "FOO"}, []byte(`{"Env":["BAR=old"]}`)},
 		{[]byte(`{"Env":["BAR=","BAZ=","FOO="]}`), []string{"BAR"}, []byte(`{"Env":["BAZ=","FOO="]}`)},
+		{[]byte(`{"Env":["FOO=foo"]}`), []string{"FOO=foo"}, []byte(`{"Env":[]}`)},
+		{[]byte(`{"Env":["FOO=foo"]}`), []string{"FOO=bar"}, []byte(`{"Env":["FOO=foo"]}`)},
+		{[]byte(`{"Env":["FOO=old","FOO=new"]}`), []string{"FOO=old"}, []byte(`{"Env":["FOO=new"]}`)},
 	} {
 		got, err := removeEnvVars(tc.Body, tc.Vars)
 		if err != nil {
