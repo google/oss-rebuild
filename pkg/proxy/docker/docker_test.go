@@ -526,7 +526,7 @@ func TestUnpatchDuringCommit(t *testing.T) {
 }
 
 func TestPatchOnStartWithJavaEnv(t *testing.T) {
-	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{JavaEnvVar: true})
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{JavaTruststoreEnvVar: true})
 	sock := tempSocketName(t)
 	l, err := net.Listen("unix", sock)
 	if err != nil {
