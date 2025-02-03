@@ -55,7 +55,7 @@ const (
 	proxyCertPath    = "/var/cache/proxy.crt"
 	proxyCertJKSPath = "/var/cache/proxy.crt.jks"
 	// Official interface for providing additional args to JVMs.
-	javaEnvVar = "JAVA_TOOL_OPTIONS"
+	javaTruststoreEnvVar = "JAVA_TOOL_OPTIONS"
 	// Env var to which docker requests will be sent by the docker CLI.
 	dockerEnvVar = "DOCKER_HOST"
 	// The path to the docker proxy that can be bound within a container to make docker calls.
@@ -284,7 +284,7 @@ func removeEnvVars(imageSpec []byte, varNames []string) (newSpec []byte, err err
 		var j int
 		var varName string
 		for j, varName = range varNames {
-			if strings.HasPrefix(env, varName+"=") {
+			if env == varName || strings.HasPrefix(env, varName+"=") {
 				goto skip
 			}
 		}
@@ -419,22 +419,24 @@ type patchSet struct {
 
 // ContainerTruststorePatcher provides a Docker API proxy that patches the container truststore while running.
 type ContainerTruststorePatcher struct {
-	cert            x509.Certificate
-	envVars         []string
-	javaEnvVar      bool
-	networkOverride string // TODO: Not a good fit for this abstraction
-	proxySocket     string
-	patchMap        map[string]*patchSet
-	m               sync.Mutex
-	created         atomic.Uint32
+	cert                 x509.Certificate
+	envVars              []string
+	truststoreEnvVars    []string
+	javaTruststoreEnvVar bool
+	networkOverride      string // TODO: Not a good fit for this abstraction
+	proxySocket          string
+	patchMap             map[string]*patchSet
+	m                    sync.Mutex
+	created              atomic.Uint32
 }
 
 // ContainerTruststorePatcherOpts defines the optional parameters for creating a ContainerTruststorePatcher.
 type ContainerTruststorePatcherOpts struct {
-	EnvVars         []string
-	JavaEnvVar      bool
-	RecursiveProxy  bool
-	NetworkOverride string
+	EnvVars              []string
+	TruststoreEnvVars    []string
+	JavaTruststoreEnvVar bool
+	RecursiveProxy       bool
+	NetworkOverride      string
 }
 
 // NewContainerTruststorePatcher creates a new ContainerTruststorePatcher with the provided certificate and options.
@@ -452,12 +454,13 @@ func NewContainerTruststorePatcher(cert x509.Certificate, opts ContainerTruststo
 	}
 
 	return &ContainerTruststorePatcher{
-		cert:            cert,
-		envVars:         opts.EnvVars,
-		javaEnvVar:      opts.JavaEnvVar,
-		networkOverride: opts.NetworkOverride,
-		proxySocket:     sockName,
-		patchMap:        make(map[string]*patchSet),
+		cert:                 cert,
+		envVars:              opts.EnvVars,
+		truststoreEnvVars:    opts.TruststoreEnvVars,
+		javaTruststoreEnvVar: opts.JavaTruststoreEnvVar,
+		networkOverride:      opts.NetworkOverride,
+		proxySocket:          sockName,
+		patchMap:             make(map[string]*patchSet),
 	}, nil
 }
 
@@ -559,12 +562,15 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		}
 		var vars []string
 		for _, v := range d.envVars {
+			vars = append(vars, v)
+		}
+		for _, v := range d.truststoreEnvVars {
 			vars = append(vars, v+"="+proxyCertPath)
 		}
-		if d.javaEnvVar {
+		if d.javaTruststoreEnvVar {
 			// NOTE: Since other user-provided values can be set in JAVA_TOOL_OPTIONS,
 			// we merge the proxy-specific arg into the existing value, if present.
-			val, err := getEnvVar(newBody, javaEnvVar)
+			val, err := getEnvVar(newBody, javaTruststoreEnvVar)
 			if err != nil && !errors.Is(err, iofs.ErrNotExist) {
 				log.Fatalf("Failed to get env var for request %s: %s", req.URL.Path, err)
 			}
@@ -573,8 +579,8 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 				newVal = trimQuotes(val) + " "
 			}
 			newVal += "-Djavax.net.ssl.trustStore=" + proxyCertJKSPath
-			vars = append(vars, javaEnvVar+"="+newVal)
-			log.Printf("Updated %s [old=%s, new=%s]", javaEnvVar, val, newVal)
+			vars = append(vars, javaTruststoreEnvVar+"="+newVal)
+			log.Printf("Updated %s [old=%s, new=%s]", javaTruststoreEnvVar, val, newVal)
 		}
 		if d.proxySocket != "" {
 			newBody, err = addBinding(newBody, d.proxySocket, proxySocketPath, "rw")
@@ -621,7 +627,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			log.Printf("Creating proxy cert: %v", err)
 			break
 		}
-		if d.javaEnvVar {
+		if d.javaTruststoreEnvVar {
 			jks, err := cert.ToJKS(&d.cert)
 			if err != nil {
 				log.Printf("Generating java proxy cert: %v", err)
@@ -657,13 +663,14 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			log.Fatalf("failed to read body for request %s: %v", req.URL.Path, err)
 		}
 		var otherVars []string
-		if d.javaEnvVar {
-			otherVars = append(otherVars, javaEnvVar)
+		if d.javaTruststoreEnvVar {
+			otherVars = append(otherVars, javaTruststoreEnvVar)
 		}
 		if d.proxySocket != "" {
 			otherVars = append(otherVars, dockerEnvVar)
 		}
 		allVars := append(otherVars, d.envVars...)
+		allVars = append(otherVars, d.truststoreEnvVars...)
 		var newBody []byte
 		if !bytes.Equal(body, nullJSONBody) {
 			newBody, err = removeEnvVars(body, allVars)
