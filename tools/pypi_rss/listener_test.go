@@ -12,6 +12,7 @@ import (
 
 	"cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/feed"
@@ -35,12 +36,12 @@ func (f *FakeTracker) IsTracked(e schema.ReleaseEvent) (bool, error) {
 
 type FakeQueue struct {
 	Err      error
-	Messages []schema.Message
+	Messages []api.Message
 }
 
 var _ taskqueue.Queue = &FakeQueue{}
 
-func (f *FakeQueue) Add(ctx context.Context, url string, msg schema.Message) (*cloudtaskspb.Task, error) {
+func (f *FakeQueue) Add(ctx context.Context, url string, msg api.Message) (*cloudtaskspb.Task, error) {
 	f.Messages = append(f.Messages, msg)
 	if f.Err != nil {
 		return nil, f.Err
@@ -59,7 +60,7 @@ func TestListenerHandle(t *testing.T) {
 		handled     map[string]map[string]bool
 		mode        schema.ExecutionMode
 		wantHandled map[string]map[string]bool
-		wantQueued  []schema.Message
+		wantQueued  []api.Message
 		wantErr     bool
 	}{
 		{
@@ -96,7 +97,7 @@ func TestListenerHandle(t *testing.T) {
 			tracked:     map[rebuild.Ecosystem]map[string]bool{rebuild.PyPI: {"pkg1": true}},
 			mode:        schema.AttestMode,
 			wantHandled: map[string]map[string]bool{"pkg1": {"1.0": true}},
-			wantQueued: []schema.Message{
+			wantQueued: []api.Message{
 				schema.RebuildPackageRequest{
 					Ecosystem: rebuild.PyPI,
 					Package:   "pkg1",
@@ -112,7 +113,7 @@ func TestListenerHandle(t *testing.T) {
 			tracked:     map[rebuild.Ecosystem]map[string]bool{rebuild.PyPI: {"pkg1": true}},
 			mode:        schema.SmoketestMode,
 			wantHandled: map[string]map[string]bool{"pkg1": {"1.0": true}},
-			wantQueued: []schema.Message{
+			wantQueued: []api.Message{
 				schema.SmoketestRequest{
 					Ecosystem: rebuild.PyPI,
 					Package:   "pkg1",
@@ -131,7 +132,7 @@ func TestListenerHandle(t *testing.T) {
 			tracked:     map[rebuild.Ecosystem]map[string]bool{rebuild.PyPI: {"pkg1": true}},
 			mode:        schema.SmoketestMode,
 			wantHandled: map[string]map[string]bool{"pkg1": {"1.0": true, "1.1": true}},
-			wantQueued: []schema.Message{
+			wantQueued: []api.Message{
 				schema.SmoketestRequest{
 					Ecosystem: rebuild.PyPI,
 					Package:   "pkg1",
@@ -150,7 +151,7 @@ func TestListenerHandle(t *testing.T) {
 			tracked:     map[rebuild.Ecosystem]map[string]bool{rebuild.PyPI: {"pkg1": true, "pkg2": true}},
 			mode:        schema.SmoketestMode,
 			wantHandled: map[string]map[string]bool{"pkg1": {"1.0": true}, "pkg2": {"2.0": true}},
-			wantQueued: []schema.Message{
+			wantQueued: []api.Message{
 				schema.SmoketestRequest{
 					Ecosystem: rebuild.PyPI,
 					Package:   "pkg1",

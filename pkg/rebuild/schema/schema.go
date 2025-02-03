@@ -19,6 +19,7 @@ package schema
 import (
 	"encoding/hex"
 
+	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/maven"
@@ -113,15 +114,11 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 	return s, nil
 }
 
-type Message interface {
-	Validate() error
-}
-
 type VersionRequest struct {
 	Service string `form:","`
 }
 
-var _ Message = VersionRequest{}
+var _ api.Message = VersionRequest{}
 
 func (VersionRequest) Validate() error { return nil }
 
@@ -138,7 +135,7 @@ type SmoketestRequest struct {
 	Strategy  *StrategyOneOf    `form:""`
 }
 
-var _ Message = SmoketestRequest{}
+var _ api.Message = SmoketestRequest{}
 
 func (SmoketestRequest) Validate() error { return nil }
 
@@ -192,7 +189,7 @@ type RebuildPackageRequest struct {
 	UseNetworkProxy   bool              `form:""`
 }
 
-var _ Message = RebuildPackageRequest{}
+var _ api.Message = RebuildPackageRequest{}
 
 func (RebuildPackageRequest) Validate() error { return nil }
 
@@ -205,7 +202,7 @@ type InferenceRequest struct {
 	StrategyHint *StrategyOneOf    `form:""`
 }
 
-var _ Message = InferenceRequest{}
+var _ api.Message = InferenceRequest{}
 
 func (req InferenceRequest) Validate() error {
 	if req.StrategyHint == nil {
@@ -231,7 +228,7 @@ type CreateRunRequest struct {
 	Type          string `form:","`
 }
 
-var _ Message = CreateRunRequest{}
+var _ api.Message = CreateRunRequest{}
 
 // Validate parses the CreateRun form values into a CreateRunRequest.
 func (req CreateRunRequest) Validate() error {
@@ -286,7 +283,7 @@ func (e ReleaseEvent) From(t rebuild.Target) ReleaseEvent {
 	return e
 }
 
-var _ Message = ReleaseEvent{}
+var _ api.Message = ReleaseEvent{}
 
 // Execution mode describes the manner in which a rebuild happens.
 type ExecutionMode string

@@ -7,13 +7,13 @@ import (
 	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
 	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 
-	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
+	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/form"
 	"github.com/pkg/errors"
 )
 
 type Queue interface {
-	Add(ctx context.Context, url string, msg schema.Message) (*taskspb.Task, error)
+	Add(ctx context.Context, url string, msg api.Message) (*taskspb.Task, error)
 }
 
 type queue struct {
@@ -34,7 +34,7 @@ func NewQueue(ctx context.Context, queuePath, serviceAccountEmail string) (Queue
 	}, nil
 }
 
-func (q *queue) Add(ctx context.Context, url string, msg schema.Message) (*taskspb.Task, error) {
+func (q *queue) Add(ctx context.Context, url string, msg api.Message) (*taskspb.Task, error) {
 	if err := msg.Validate(); err != nil {
 		return nil, errors.Wrap(err, "validating message")
 	}

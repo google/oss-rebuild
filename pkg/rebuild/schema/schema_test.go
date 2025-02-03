@@ -23,12 +23,12 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/api/form"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"gopkg.in/yaml.v3"
 )
 
