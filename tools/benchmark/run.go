@@ -18,13 +18,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-type BenchmarkMode string
-
-const (
-	SmoketestMode BenchmarkMode = "smoketest"
-	AttestMode    BenchmarkMode = "attest"
-)
-
 type packageWorker interface {
 	Setup(ctx context.Context)
 	ProcessOne(ctx context.Context, p Package, out chan schema.Verdict)
@@ -175,7 +168,7 @@ func isCloudRun(u *url.URL) bool {
 }
 
 type RunBenchOpts struct {
-	Mode           BenchmarkMode
+	Mode           schema.ExecutionMode
 	RunID          string
 	MaxConcurrency int
 }
@@ -192,12 +185,12 @@ func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set Pac
 	}
 	ex := executor{Concurrency: opts.MaxConcurrency}
 	switch opts.Mode {
-	case SmoketestMode:
+	case schema.SmoketestMode:
 		ex.Worker = &smoketestWorker{
 			workerConfig: conf,
 			warmup:       isCloudRun(apiURL),
 		}
-	case AttestMode:
+	case schema.AttestMode:
 		ex.Worker = &attestWorker{
 			workerConfig: conf,
 		}
@@ -209,9 +202,9 @@ func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set Pac
 	return verdictChan, nil
 }
 
-func RunBenchAsync(ctx context.Context, set PackageSet, mode BenchmarkMode, apiURL *url.URL, runID string, queue taskqueue.Queue) error {
+func RunBenchAsync(ctx context.Context, set PackageSet, mode schema.ExecutionMode, apiURL *url.URL, runID string, queue taskqueue.Queue) error {
 	for _, p := range set.Packages {
-		if mode == AttestMode {
+		if mode == schema.AttestMode {
 			for i, v := range p.Versions {
 				req := schema.RebuildPackageRequest{
 					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
@@ -233,7 +226,7 @@ func RunBenchAsync(ctx context.Context, set PackageSet, mode BenchmarkMode, apiU
 					return errors.Wrap(err, "queing rebuild task")
 				}
 			}
-		} else if mode == SmoketestMode {
+		} else if mode == schema.SmoketestMode {
 			req := schema.SmoketestRequest{
 				Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 				Package:   p.Name,
