@@ -269,6 +269,25 @@ type Run struct {
 	Created       int64  `firestore:"created,omitempty"`
 }
 
+type ReleaseEvent struct {
+	Ecosystem rebuild.Ecosystem `form:",required"`
+	Package   string            `form:",required"`
+	Version   string            `form:",required"`
+	Artifact  string            `form:""`
+}
+
+func (ReleaseEvent) Validate() error { return nil }
+
+func (e ReleaseEvent) From(t rebuild.Target) ReleaseEvent {
+	e.Ecosystem = t.Ecosystem
+	e.Package = t.Package
+	e.Version = t.Version
+	e.Artifact = t.Artifact
+	return e
+}
+
+var _ Message = ReleaseEvent{}
+
 // Execution mode describes the manner in which a rebuild happens.
 type ExecutionMode string
 
