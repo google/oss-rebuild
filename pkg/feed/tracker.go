@@ -16,6 +16,8 @@ func (f *funcTracker) IsTracked(e schema.ReleaseEvent) (bool, error) {
 	return f.isTracked(e)
 }
 
+var _ Tracker = &funcTracker{}
+
 func TrackerFromFunc(isTracked func(schema.ReleaseEvent) (bool, error)) Tracker {
 	return &funcTracker{isTracked: isTracked}
 }
