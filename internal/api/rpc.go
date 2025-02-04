@@ -9,9 +9,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/google/oss-rebuild/internal/api/form"
 	"github.com/google/oss-rebuild/internal/httpx"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -20,8 +19,8 @@ import (
 type Dependencies interface{}
 
 type InitT[D Dependencies] func(context.Context) (D, error)
-type HandlerT[I schema.Message, O any, D Dependencies] func(context.Context, I, D) (*O, error)
-type StubT[I schema.Message, O any] func(context.Context, I) (*O, error)
+type HandlerT[I Message, O any, D Dependencies] func(context.Context, I, D) (*O, error)
+type StubT[I Message, O any] func(context.Context, I) (*O, error)
 
 type NoDeps struct{}
 
@@ -31,7 +30,7 @@ type NoReturn struct{}
 
 var ErrNotOK = errors.New("non-OK response")
 
-func Stub[I schema.Message, O any](client httpx.BasicClient, u url.URL) StubT[I, O] {
+func Stub[I Message, O any](client httpx.BasicClient, u url.URL) StubT[I, O] {
 	return func(ctx context.Context, i I) (*O, error) {
 		values, err := form.Marshal(i)
 		if err != nil {
@@ -61,7 +60,7 @@ func Stub[I schema.Message, O any](client httpx.BasicClient, u url.URL) StubT[I,
 	}
 }
 
-func StubFromHandler[I schema.Message, O any, D Dependencies](client httpx.BasicClient, u url.URL, handler HandlerT[I, O, D]) StubT[I, O] {
+func StubFromHandler[I Message, O any, D Dependencies](client httpx.BasicClient, u url.URL, handler HandlerT[I, O, D]) StubT[I, O] {
 	return Stub[I, O](client, u)
 }
 
@@ -89,7 +88,7 @@ var grpcToHTTP = map[codes.Code]int{
 	codes.Unauthenticated:    http.StatusUnauthorized,
 }
 
-func Handler[I schema.Message, O any, D Dependencies](initDeps InitT[D], handler HandlerT[I, O, D]) http.HandlerFunc {
+func Handler[I Message, O any, D Dependencies](initDeps InitT[D], handler HandlerT[I, O, D]) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
 		r.ParseForm()
@@ -132,9 +131,9 @@ func Handler[I schema.Message, O any, D Dependencies](initDeps InitT[D], handler
 	}
 }
 
-type Translator[O schema.Message] func(io.ReadCloser) (O, error)
+type Translator[O Message] func(io.ReadCloser) (O, error)
 
-func Translate[O schema.Message](t Translator[O], h http.HandlerFunc) http.HandlerFunc {
+func Translate[O Message](t Translator[O], h http.HandlerFunc) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
 		m, err := t(r.Body)
 		if err != nil {

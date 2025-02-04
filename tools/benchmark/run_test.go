@@ -6,9 +6,10 @@ import (
 
 	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/form"
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/pkg/errors"
 )
 
@@ -21,7 +22,7 @@ type mockQueue struct {
 	calls []queueCall
 }
 
-func (q *mockQueue) Add(ctx context.Context, url string, msg schema.Message) (*taskspb.Task, error) {
+func (q *mockQueue) Add(ctx context.Context, url string, msg api.Message) (*taskspb.Task, error) {
 	body, err := form.Marshal(msg)
 	if err != nil {
 		return nil, errors.Wrap(err, "marshalling message")
