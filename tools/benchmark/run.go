@@ -14,7 +14,6 @@ import (
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/pkg/errors"
 )
 
@@ -215,14 +214,7 @@ func RunBenchAsync(ctx context.Context, set PackageSet, mode schema.ExecutionMod
 				if len(p.Artifacts) > 0 {
 					req.Artifact = p.Artifacts[i]
 				}
-				if err := req.Validate(); err != nil {
-					return errors.Wrap(err, "validating rebuild request")
-				}
-				values, err := form.Marshal(req)
-				if err != nil {
-					return errors.Wrap(err, "marshalling rebuild request")
-				}
-				if _, err := queue.Add(ctx, apiURL.JoinPath("rebuild").String(), values.Encode()); err != nil {
+				if _, err := queue.Add(ctx, apiURL.JoinPath("rebuild").String(), req); err != nil {
 					return errors.Wrap(err, "queing rebuild task")
 				}
 			}
@@ -233,14 +225,7 @@ func RunBenchAsync(ctx context.Context, set PackageSet, mode schema.ExecutionMod
 				Versions:  p.Versions,
 				ID:        runID,
 			}
-			if err := req.Validate(); err != nil {
-				return errors.Wrap(err, "validating smoketest request")
-			}
-			values, err := form.Marshal(req)
-			if err != nil {
-				return errors.Wrap(err, "marshalling smoketest request")
-			}
-			if _, err := queue.Add(ctx, apiURL.JoinPath("smoketest").String(), values.Encode()); err != nil {
+			if _, err := queue.Add(ctx, apiURL.JoinPath("smoketest").String(), req); err != nil {
 				return errors.Wrap(err, "queing smoketest task")
 			}
 		}

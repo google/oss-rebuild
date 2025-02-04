@@ -8,6 +8,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema/form"
 	"github.com/pkg/errors"
 )
 
@@ -20,8 +21,12 @@ type mockQueue struct {
 	calls []queueCall
 }
 
-func (q *mockQueue) Add(ctx context.Context, url, body string) (*taskspb.Task, error) {
-	q.calls = append(q.calls, queueCall{url, body})
+func (q *mockQueue) Add(ctx context.Context, url string, msg schema.Message) (*taskspb.Task, error) {
+	body, err := form.Marshal(msg)
+	if err != nil {
+		return nil, errors.Wrap(err, "marshalling message")
+	}
+	q.calls = append(q.calls, queueCall{url, body.Encode()})
 	return &taskspb.Task{}, nil
 }
 
