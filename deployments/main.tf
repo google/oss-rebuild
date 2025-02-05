@@ -60,6 +60,26 @@ variable "service_commit" {
   }
   // TODO: Validate that this commit exists in repo.
 }
+variable "prebuild_version" {
+  type = string
+  validation {
+    condition = can(regex("^v0.0.0-[0-9]{14}-[0-9a-f]{12}$", var.prebuild_version))
+    error_message = "The version must be valid a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions"
+  }
+  // TODO: Validate that this is a valid pseudo-version (for external repos).
+}
+variable "prebuild_commit" {
+  type = string
+  validation {
+    condition = can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", var.prebuild_commit))
+    error_message = "The commit must be a valid git commit hash"
+  }
+  validation {
+    condition = substr(var.prebuild_commit, 0, 12) == substr(var.prebuild_version, 22, 12)
+    error_message = "The commit must correspond to prebuild_version"
+  }
+  // TODO: Validate that this commit exists in repo.
+}
 variable "public" {
   type = bool
   default = true
@@ -242,6 +262,11 @@ resource "google_artifact_registry_repository" "registry" {
 resource "terraform_data" "service_version" {
   input = var.service_version
 }
+
+resource "terraform_data" "prebuild_version" {
+  input = var.prebuild_version
+}
+
 resource "terraform_data" "git_dir" {
   input = (
     !startswith(var.repo, "file://") ? "!remote!" :
@@ -267,27 +292,47 @@ resource "terraform_data" "image" {
     "gateway" = {
       name = "gateway"
       image = "${local.registry_url}/gateway"
+      version = terraform_data.service_version.output
     }
     "git-cache" = {
       name = "git_cache"
       image = "${local.registry_url}/git_cache"
+      version = terraform_data.service_version.output
     }
     "rebuilder" = {
       name = "rebuilder"
       image = "${local.registry_url}/rebuilder"
+      version = terraform_data.service_version.output
     }
     "inference" = {
       name = "inference"
       image = "${local.registry_url}/inference"
+      version = terraform_data.service_version.output
     }
     "api" = {
       name = "api"
       image = "${local.registry_url}/api"
+      version = terraform_data.service_version.output
+    }
+    "gsutil_writeonly" = {
+      name = "gsutil_writeonly"
+      image = "${local.registry_url}/gsutil_writeonly"
+      version = terraform_data.prebuild_version.output
+    }
+    "proxy" = {
+      name = "proxy"
+      image = "${local.registry_url}/proxy"
+      version = terraform_data.prebuild_version.output
+    }
+    "timewarp" = {
+      name = "timewarp"
+      image = "${local.registry_url}/timewarp"
+      version = terraform_data.prebuild_version.output
     }
   }
   provisioner "local-exec" {
     command = <<-EOT
-      path=${each.value.image}:${terraform_data.service_version.output}
+      path=${each.value.image}:${each.value.version}
       cmd="gcloud artifacts docker images describe $path"
       # Suppress stdout, show first line of stderr, return cmd's status.
       if ($cmd 2>&1 1>/dev/null | head -n1 >&2; exit $PIPESTATUS); then
@@ -302,6 +347,7 @@ resource "terraform_data" "image" {
   lifecycle {
     replace_triggered_by = [
       terraform_data.service_version.output,
+      terraform_data.prebuild_version.output,
       terraform_data.git_dir.output,
     ]
   }
