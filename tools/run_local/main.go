@@ -19,7 +19,6 @@ import (
 	"context"
 	"log"
 
-	"github.com/google/oss-rebuild/build/binary"
 	"github.com/google/oss-rebuild/build/container"
 	"github.com/google/oss-rebuild/tools/docker"
 )
@@ -27,12 +26,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	binary, err := binary.Build(ctx, "rebuilder")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = container.Build(ctx, "rebuilder", binary)
+	err := container.Build(ctx, "rebuilder")
 	if err != nil {
 		log.Fatal(err)
 	}
