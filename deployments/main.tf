@@ -564,6 +564,8 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--debug-storage=gs://${google_storage_bucket.debug.name}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
+        "--service-repo=${var.repo}",
+        "--service-version=${var.service_version}",
         "--build-def-repo=https://github.com/google/oss-rebuild",
         "--build-def-repo-dir=definitions",
       ]

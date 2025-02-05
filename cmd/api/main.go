@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
@@ -53,9 +54,15 @@ var (
 	logsBucket            = flag.String("logs-bucket", "", "GCS bucket for rebuild logs")
 	debugStorage          = flag.String("debug-storage", "", "if provided, the location in which rebuild debug info should be stored")
 	prebuildBucket        = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
+	serviceRepo           = flag.String("service-repo", "", "repo from which the service was built")
+	serviceVersion        = flag.String("service-version", "", "golang version identifier of the service container builds")
 	buildDefRepo          = flag.String("build-def-repo", "", "repository for build definitions")
 	buildDefRepoDir       = flag.String("build-def-repo-dir", ".", "relpath within the build definitions repository")
 	overwriteAttestations = flag.Bool("overwrite-attestations", false, "whether to overwrite existing attestations when writing to GCS")
+)
+
+var (
+	goPseudoVersion = regexp.MustCompile("^v0.0.0-[0-9]{14}-[0-9a-f]{12}$")
 )
 
 var httpcfg = httpegress.Config{}
@@ -124,12 +131,23 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	d.BuildServiceAccount = *buildRemoteIdentity
 	d.UtilPrebuildBucket = *prebuildBucket
 	d.BuildLogsBucket = *logsBucket
-	repo, err := uri.CanonicalizeRepoURI(*buildDefRepo)
+	serviceRepo, err := uri.CanonicalizeRepoURI(*serviceRepo)
+	if err != nil {
+		return nil, errors.Wrap(err, "canonicalizing service repo")
+	}
+	if !goPseudoVersion.MatchString(*serviceVersion) {
+		return nil, errors.New("service version must be a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions")
+	}
+	d.ServiceRepo = rebuild.Location{
+		Repo: serviceRepo,
+		Ref:  *serviceVersion,
+	}
+	buildDefRepo, err := uri.CanonicalizeRepoURI(*buildDefRepo)
 	if err != nil {
 		return nil, errors.Wrap(err, "canonicalizing build def repo")
 	}
 	d.BuildDefRepo = rebuild.Location{
-		Repo: repo,
+		Repo: buildDefRepo,
 		Ref:  plumbing.Main.String(),
 		Dir:  path.Clean(*buildDefRepoDir),
 	}
