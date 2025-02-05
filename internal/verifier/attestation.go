@@ -37,7 +37,7 @@ const (
 )
 
 // CreateAttestations creates the SLSA attestations associated with a rebuild.
-func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, buildDefLoc rebuild.Location) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
+func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, prebuildLoc, buildDefLoc rebuild.Location) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
 	t, manualStrategy := input.Target, input.Strategy
 	var dockerfile []byte
 	{
@@ -71,6 +71,10 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 		"serviceSource": map[string]string{
 			"ref":        serviceLoc.Ref,
 			"repository": serviceLoc.Repo,
+		},
+		"prebuildSource": map[string]string{
+			"ref":        prebuildLoc.Ref,
+			"repository": prebuildLoc.Repo,
 		},
 	}
 	publicRebuildURI := path.Join("rebuild", buildInfo.Target.Artifact)

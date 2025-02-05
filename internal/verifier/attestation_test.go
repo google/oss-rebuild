@@ -78,8 +78,9 @@ func TestCreateAttestations(t *testing.T) {
 		strategy := &rebuild.ManualStrategy{Location: inputStrategy.Location, Deps: "echo deps", Build: "echo build", SystemDeps: []string{"git"}, OutputPath: "foo/bar"}
 		input := rebuild.Input{Target: target, Strategy: inputStrategy}
 		serviceLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202501010000-feeddeadbeef00"}
+		prebuildLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202401010000-feeddeadbeef99"}
 		buildDefLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "b33eec7134eff8a16cb902b80e434de58bf37e2c", Dir: "definitions/cratesio/bytes/1.0.0/bytes-1.0.0.crate/build.yaml"}
-		eqStmt, buildStmt, err := CreateAttestations(ctx, input, strategy, "test-id", rbSummary, upSummary, metadata, serviceLoc, buildDefLoc)
+		eqStmt, buildStmt, err := CreateAttestations(ctx, input, strategy, "test-id", rbSummary, upSummary, metadata, serviceLoc, prebuildLoc, buildDefLoc)
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
@@ -104,6 +105,10 @@ func TestCreateAttestations(t *testing.T) {
         "target": "https://up.stream/bytes-1.0.0.crate"
       },
       "internalParameters": {
+        "prebuildSource": {
+          "ref": "v0.0.0-202401010000-feeddeadbeef99",
+          "repository": "https://github.com/google/oss-rebuild"
+        },
         "serviceSource": {
           "ref": "v0.0.0-202501010000-feeddeadbeef00",
           "repository": "https://github.com/google/oss-rebuild"
@@ -173,6 +178,10 @@ func TestCreateAttestations(t *testing.T) {
         "version": "1.0.0"
       },
       "internalParameters": {
+        "prebuildSource": {
+          "ref": "v0.0.0-202401010000-feeddeadbeef99",
+          "repository": "https://github.com/google/oss-rebuild"
+        },
         "serviceSource": {
           "ref": "v0.0.0-202501010000-feeddeadbeef00",
           "repository": "https://github.com/google/oss-rebuild"

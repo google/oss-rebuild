@@ -56,6 +56,7 @@ var (
 	prebuildBucket        = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
 	serviceRepo           = flag.String("service-repo", "", "repo from which the service was built")
 	serviceVersion        = flag.String("service-version", "", "golang version identifier of the service container builds")
+	prebuildVersion       = flag.String("prebuild-version", "", "golang version identifier of the prebuild binary builds")
 	buildDefRepo          = flag.String("build-def-repo", "", "repository for build definitions")
 	buildDefRepoDir       = flag.String("build-def-repo-dir", ".", "relpath within the build definitions repository")
 	overwriteAttestations = flag.Bool("overwrite-attestations", false, "whether to overwrite existing attestations when writing to GCS")
@@ -141,6 +142,13 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	d.ServiceRepo = rebuild.Location{
 		Repo: serviceRepo,
 		Ref:  *serviceVersion,
+	}
+	if !goPseudoVersion.MatchString(*prebuildVersion) {
+		return nil, errors.New("prebuild version must be a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions")
+	}
+	d.PrebuildRepo = rebuild.Location{
+		Repo: serviceRepo,
+		Ref:  *prebuildVersion,
 	}
 	buildDefRepo, err := uri.CanonicalizeRepoURI(*buildDefRepo)
 	if err != nil {
