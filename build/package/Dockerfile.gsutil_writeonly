@@ -1,4 +1,7 @@
-FROM alpine
-ARG BINARY
-COPY $BINARY /gsutil_writeonly
+FROM golang:1.22-alpine as binary
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -o /gsutil_writeonly -ldflags="-s -w" -gcflags="-l=4" ./cmd/gsutil_writeonly
+FROM scratch
+COPY --from=binary /gsutil_writeonly /gsutil_writeonly
 ENTRYPOINT ["/gsutil_writeonly"]
