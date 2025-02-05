@@ -353,6 +353,49 @@ resource "terraform_data" "image" {
   }
 }
 
+resource "terraform_data" "binary" {
+  for_each = {
+    "gsutil_writeonly" = {
+      name = "gsutil_writeonly"
+      image = "${local.registry_url}/gsutil_writeonly"
+      version = terraform_data.prebuild_version.output
+    }
+    "proxy" = {
+      name = "proxy"
+      image = "${local.registry_url}/proxy"
+      version = terraform_data.prebuild_version.output
+    }
+    "timewarp" = {
+      name = "timewarp"
+      image = "${local.registry_url}/timewarp"
+      version = terraform_data.prebuild_version.output
+    }
+  }
+  provisioner "local-exec" {
+    command = <<-EOT
+      path=gs://${google_storage_bucket.bootstrap-tools.name}/${each.value.version}/${each.value.name}
+      cmd="gcloud storage objects describe $path"
+      # Suppress stdout, show first line of stderr, return cmd's status.
+      if ($cmd 2>&1 1>/dev/null | head -n1 >&2; exit $PIPESTATUS); then
+        echo "Binary already exists in GCS"
+      else
+        echo "Extracting and uploading binary"
+        set -o pipefail
+        docker save ${each.value.image}:${each.value.version} | \
+          tar -xO --wildcards "*/layer.tar" | \
+          tar -xO ${each.value.name} | \
+          gcloud storage cp - $path
+      fi
+    EOT
+  }
+  lifecycle {
+    replace_triggered_by = [
+      terraform_data.image,
+      google_storage_bucket.bootstrap-tools.name,
+    ]
+  }
+}
+
 data "google_artifact_registry_docker_image" "gateway" {
   provider = google-beta
   location = google_artifact_registry_repository.registry.location
