@@ -37,7 +37,7 @@ const (
 )
 
 // CreateAttestations creates the SLSA attestations associated with a rebuild.
-func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, buildDef rebuild.Location) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
+func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, buildDefLoc rebuild.Location) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
 	t, manualStrategy := input.Target, input.Strategy
 	var dockerfile []byte
 	{
@@ -67,6 +67,12 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 		ID: "https://docs.oss-rebuild.dev/hosts/Google",
 		// TODO: Include build repository associated with this builder.
 	}
+	internalParams := map[string]any{
+		"serviceSource": map[string]string{
+			"ref":        serviceLoc.Ref,
+			"repository": serviceLoc.Repo,
+		},
+	}
 	publicRebuildURI := path.Join("rebuild", buildInfo.Target.Artifact)
 	// TODO: Change from "normalized" to "stabilized".
 	publicNormalizedURI := path.Join("normalized", buildInfo.Target.Artifact)
@@ -85,7 +91,7 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 					"target":    up.URI,
 				},
 				// NOTE: Could include comparison settings here when they're non-trivial.
-				InternalParameters: nil,
+				InternalParameters: internalParams,
 				ResolvedDependencies: []slsa1.ResourceDescriptor{
 					{Name: publicRebuildURI, Digest: makeDigestSet(rb.Hash...)},
 					{Name: up.URI, Digest: makeDigestSet(up.Hash...)},
@@ -144,9 +150,9 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 		}
 		rd = append(rd, slsa1.ResourceDescriptor{Name: "build.fix.json", Content: rawStrategy})
 		externalParams["buildConfigSource"] = map[string]string{
-			"ref":        buildDef.Ref,
-			"repository": buildDef.Repo,
-			"path":       buildDef.Dir,
+			"ref":        buildDefLoc.Ref,
+			"repository": buildDefLoc.Repo,
+			"path":       buildDefLoc.Dir,
 		}
 	}
 	stmt := &in_toto.ProvenanceStatementSLSA1{
@@ -160,7 +166,7 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 				BuildType:            RebuildBuildType,
 				ExternalParameters:   externalParams,
 				ResolvedDependencies: rd,
-				InternalParameters:   nil,
+				InternalParameters:   internalParams,
 			},
 			RunDetails: slsa1.ProvenanceRunDetails{
 				Builder: builder,

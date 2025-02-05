@@ -77,8 +77,9 @@ func TestCreateAttestations(t *testing.T) {
 		inputStrategy := &rebuild.LocationHint{Location: rebuild.Location{Repo: "http://github.com/foo/bar", Ref: "0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33"}}
 		strategy := &rebuild.ManualStrategy{Location: inputStrategy.Location, Deps: "echo deps", Build: "echo build", SystemDeps: []string{"git"}, OutputPath: "foo/bar"}
 		input := rebuild.Input{Target: target, Strategy: inputStrategy}
-		loc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "b33eec7134eff8a16cb902b80e434de58bf37e2c", Dir: "definitions/cratesio/bytes/1.0.0/bytes-1.0.0.crate/build.yaml"}
-		eqStmt, buildStmt, err := CreateAttestations(ctx, input, strategy, "test-id", rbSummary, upSummary, metadata, loc)
+		serviceLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202501010000-feeddeadbeef00"}
+		buildDefLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "b33eec7134eff8a16cb902b80e434de58bf37e2c", Dir: "definitions/cratesio/bytes/1.0.0/bytes-1.0.0.crate/build.yaml"}
+		eqStmt, buildStmt, err := CreateAttestations(ctx, input, strategy, "test-id", rbSummary, upSummary, metadata, serviceLoc, buildDefLoc)
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
@@ -101,6 +102,12 @@ func TestCreateAttestations(t *testing.T) {
       "externalParameters": {
         "candidate": "rebuild/bytes-1.0.0.crate",
         "target": "https://up.stream/bytes-1.0.0.crate"
+      },
+      "internalParameters": {
+        "serviceSource": {
+          "ref": "v0.0.0-202501010000-feeddeadbeef00",
+          "repository": "https://github.com/google/oss-rebuild"
+        }
       },
       "resolvedDependencies": [
         {
@@ -164,6 +171,12 @@ func TestCreateAttestations(t *testing.T) {
         "ecosystem": "cratesio",
         "package": "bytes",
         "version": "1.0.0"
+      },
+      "internalParameters": {
+        "serviceSource": {
+          "ref": "v0.0.0-202501010000-feeddeadbeef00",
+          "repository": "https://github.com/google/oss-rebuild"
+        }
       },
       "resolvedDependencies": [
         {

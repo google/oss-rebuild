@@ -130,6 +130,7 @@ type RebuildPackageDeps struct {
 	BuildServiceAccount        string
 	UtilPrebuildBucket         string
 	BuildLogsBucket            string
+	ServiceRepo                rebuild.Location
 	BuildDefRepo               rebuild.Location
 	AttestationStore           rebuild.AssetStore
 	LocalMetadataStore         rebuild.AssetStore
@@ -253,12 +254,12 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		return api.AsStatus(codes.FailedPrecondition, errors.New("rebuild content mismatch"))
 	}
 	input := rebuild.Input{Target: t}
-	var loc rebuild.Location
+	var buildDefRepo rebuild.Location
 	if entry != nil {
 		input.Strategy = entry.Strategy
-		loc = entry.BuildDefLoc
+		buildDefRepo = entry.BuildDefLoc
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, deps.LocalMetadataStore, loc)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, buildDefRepo)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
