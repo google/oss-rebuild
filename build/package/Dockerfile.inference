@@ -1,8 +1,8 @@
 FROM golang:1.22-alpine as binary
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 go build -o /inference -ldflags="-s -w" -gcflags="-l=4" ./cmd/inference
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -gcflags="-l=4" ./cmd/inference
 FROM alpine
-COPY --from=binary /inference ./inference
+COPY --from=binary /src/inference /
 RUN apk add npm
-ENTRYPOINT ["./inference"]
+ENTRYPOINT ["/inference"]
