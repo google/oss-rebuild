@@ -1,4 +1,7 @@
+FROM golang:1.22-alpine as binary
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -o /api -ldflags="-s -w" -gcflags="-l=4" ./cmd/api
 FROM alpine
-ARG BINARY
-COPY $BINARY ./api
+COPY --from=binary /api ./api
 ENTRYPOINT ["./api"]
