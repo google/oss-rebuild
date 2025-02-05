@@ -404,10 +404,13 @@ resource "google_storage_bucket_iam_binding" "orchestrator-manages-metadata" {
   role    = "roles/storage.objectAdmin"
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
-resource "google_storage_bucket_iam_binding" "orchestrator-writes-debug" {
+resource "google_storage_bucket_iam_binding" "orchestrator-and-local-build-write-debug" {
   bucket  = google_storage_bucket.debug.name
   role    = "roles/storage.objectCreator"
-  members = ["serviceAccount:${google_service_account.orchestrator.email}"]
+  members = [
+    "serviceAccount:${google_service_account.orchestrator.email}",
+    "serviceAccount:${google_service_account.builder-local.email}",
+  ]
 }
 resource "google_storage_bucket_iam_binding" "remote-build-writes-metadata" {
   bucket  = google_storage_bucket.metadata.name
@@ -428,11 +431,6 @@ resource "google_storage_bucket_iam_binding" "orchestrator-manages-attestations"
   bucket  = google_storage_bucket.attestations.name
   role    = "roles/storage.objectAdmin"
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
-}
-resource "google_storage_bucket_iam_binding" "local-build-writes-debug" {
-  bucket  = google_storage_bucket.debug.name
-  role    = "roles/storage.objectCreator"
-  members = ["serviceAccount:${google_service_account.builder-local.email}"]
 }
 resource "google_project_iam_binding" "orchestrator-uses-datastore" {
   project = var.project
