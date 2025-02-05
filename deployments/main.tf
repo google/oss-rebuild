@@ -566,6 +566,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
         "--service-repo=${var.repo}",
         "--service-version=${var.service_version}",
+        "--prebuild-version=${var.prebuild_version}",
         "--build-def-repo=https://github.com/google/oss-rebuild",
         "--build-def-repo-dir=definitions",
       ]
@@ -578,7 +579,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
     }
     max_instance_request_concurrency = 25
   }
-  depends_on = [google_project_service.run]
+  depends_on = [google_project_service.run, terraform_data.binary]
 }
 
 ## IAM Bindings

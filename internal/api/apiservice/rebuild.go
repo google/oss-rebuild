@@ -131,6 +131,7 @@ type RebuildPackageDeps struct {
 	UtilPrebuildBucket         string
 	BuildLogsBucket            string
 	ServiceRepo                rebuild.Location
+	PrebuildRepo               rebuild.Location
 	BuildDefRepo               rebuild.Location
 	AttestationStore           rebuild.AssetStore
 	LocalMetadataStore         rebuild.AssetStore
@@ -220,6 +221,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		Project:             deps.BuildProject,
 		BuildServiceAccount: deps.BuildServiceAccount,
 		UtilPrebuildBucket:  deps.UtilPrebuildBucket,
+		UtilPrebuildDir:     deps.PrebuildRepo.Ref,
 		LogsBucket:          deps.BuildLogsBucket,
 		LocalMetadataStore:  deps.LocalMetadataStore,
 		DebugStore:          debugStore,
@@ -259,7 +261,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		input.Strategy = entry.Strategy
 		buildDefRepo = entry.BuildDefLoc
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, buildDefRepo)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}

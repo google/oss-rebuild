@@ -46,6 +46,7 @@ type RemoteOptions struct {
 	// RemoteMetadataStore stores the rebuilt artifact. Cloud build needs access to upload assets here. It should be keyed by the unguessable UUID to sandbox each build.
 	RemoteMetadataStore LocatableAssetStore
 	UtilPrebuildBucket  string
+	UtilPrebuildDir     string
 	// TODO: Consider moving these to Strategy.
 	UseTimewarp       bool
 	UseNetworkProxy   bool
@@ -57,6 +58,7 @@ type rebuildContainerArgs struct {
 	UseTimewarp        bool
 	UseNetworkProxy    bool
 	UtilPrebuildBucket string
+	UtilPrebuildDir    string
 }
 
 const policyYaml = `
@@ -133,7 +135,7 @@ var debuildContainerTpl = template.Must(
 				RUN <<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
-				 curl https://{{.UtilPrebuildBucket}}.storage.googleapis.com/timewarp > timewarp
+				 curl https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}timewarp > timewarp
 				 chmod +x timewarp
 				{{- end}}
 				 apt update
@@ -175,7 +177,7 @@ var alpineContainerTpl = template.Must(
 				RUN <<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
-				 wget https://{{.UtilPrebuildBucket}}.storage.googleapis.com/timewarp
+				 wget https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}timewarp
 				 chmod +x timewarp
 				{{- end}}
 				 apk add {{join " " .Instructions.SystemDeps}}
@@ -271,7 +273,7 @@ var proxyBuildTpl = template.Must(
 	}).Parse(
 		textwrap.Dedent(`
 				set -eux
-				curl -O https://{{.UtilPrebuildBucket}}.storage.googleapis.com/proxy
+				curl -O https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}proxy
 				chmod +x proxy
 				docker network create proxynet
 				useradd --system {{.User}}
@@ -335,7 +337,7 @@ var assetUploadTpl = template.Must(
 	).Parse(
 		textwrap.Dedent(`
 				set -eux
-				wget https://{{.UtilPrebuildBucket}}.storage.googleapis.com/gsutil_writeonly
+				wget https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}gsutil_writeonly
 				chmod +x gsutil_writeonly
 				{{- range .Uploads}}
 				./gsutil_writeonly cp {{.From}} {{.To}}
@@ -355,6 +357,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	if opts.UseNetworkProxy {
 		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
 			"UtilPrebuildBucket": opts.UtilPrebuildBucket,
+			"UtilPrebuildDir":    opts.UtilPrebuildDir,
 			"Dockerfile":         dockerfile,
 			"UseSyscallMonitor":  opts.UseSyscallMonitor,
 			"SyscallPolicy":      tetragonPolicyJSON,
@@ -399,6 +402,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	var assetUploadScript bytes.Buffer
 	err := assetUploadTpl.Execute(&assetUploadScript, map[string]any{
 		"UtilPrebuildBucket": opts.UtilPrebuildBucket,
+		"UtilPrebuildDir":    opts.UtilPrebuildDir,
 		"Uploads":            uploads,
 	})
 	if err != nil {
@@ -466,12 +470,14 @@ func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 		err = debuildContainerTpl.Execute(dockerfile, rebuildContainerArgs{
 			UseTimewarp:        opts.UseTimewarp,
 			UtilPrebuildBucket: opts.UtilPrebuildBucket,
+			UtilPrebuildDir:    opts.UtilPrebuildDir,
 			Instructions:       instructions,
 		})
 	} else {
 		err = alpineContainerTpl.Execute(dockerfile, rebuildContainerArgs{
 			UseTimewarp:        opts.UseTimewarp,
 			UtilPrebuildBucket: opts.UtilPrebuildBucket,
+			UtilPrebuildDir:    opts.UtilPrebuildDir,
 			Instructions:       instructions,
 		})
 	}

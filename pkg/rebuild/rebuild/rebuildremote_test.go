@@ -115,6 +115,49 @@ ENTRYPOINT ["/bin/sh","/build"]
 `,
 		},
 		{
+			name: "With Timewarp at a Subdir",
+			input: Input{
+				Target: Target{},
+				Strategy: &ManualStrategy{
+					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					SystemDeps: []string{"git", "make"},
+					Deps:       "make deps ...",
+					Build:      "make build ...",
+					OutputPath: "output/foo.tgz",
+				},
+			},
+			opts: RemoteOptions{
+				UseTimewarp:        true,
+				UtilPrebuildBucket: "my-bucket",
+				UtilPrebuildDir:    "v0.0.0-202501010000-feeddeadbeef00",
+			},
+			expected: `#syntax=docker/dockerfile:1.4
+FROM docker.io/library/alpine:3.19
+RUN <<'EOF'
+ set -eux
+ wget https://my-bucket.storage.googleapis.com/v0.0.0-202501010000-feeddeadbeef00/timewarp
+ chmod +x timewarp
+ apk add git make
+EOF
+RUN <<'EOF'
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ mkdir /src && cd /src
+ git clone github.com/example .
+ git checkout --force 'main'
+ make deps ...
+EOF
+RUN cat <<'EOF' >/build
+ set -eux
+ make build ...
+ mkdir /out && cp /src/output/foo.tgz /out/
+EOF
+WORKDIR "/src"
+ENTRYPOINT ["/bin/sh","/build"]
+`,
+		},
+		{
 			name: "Multi-Line Scripts",
 			input: Input{
 				Target: Target{},
@@ -452,6 +495,90 @@ curl http://proxy:3127/summary > /workspace/netlog.json
 						Name: "docker.io/library/alpine:3.19",
 						Script: `set -eux
 wget https://test-bootstrap.storage.googleapis.com/gsutil_writeonly
+chmod +x gsutil_writeonly
+./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
+./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz
+./gsutil_writeonly cp /workspace/netlog.json file:///npm/pkg/version/pkg-version.tgz/netlog.json
+`,
+					},
+				},
+			},
+		},
+		{
+			name:       "proxy build at subdir",
+			target:     Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+			dockerfile: "FROM docker.io/library/alpine:3.19",
+			opts: RemoteOptions{
+				LogsBucket:          "test-logs-bucket",
+				BuildServiceAccount: "test-service-account",
+				UtilPrebuildBucket:  "test-bootstrap",
+				UtilPrebuildDir:     "v0.0.0-202501010000-feeddeadbeef00",
+				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
+				UseNetworkProxy:     true,
+			},
+			expected: &cloudbuild.Build{
+				LogsBucket:     "test-logs-bucket",
+				Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
+				ServiceAccount: "test-service-account",
+				Steps: []*cloudbuild.BuildStep{
+					{
+						Name: "gcr.io/cloud-builders/docker",
+						Script: `set -eux
+curl -O https://test-bootstrap.storage.googleapis.com/v0.0.0-202501010000-feeddeadbeef00/proxy
+chmod +x proxy
+docker network create proxynet
+useradd --system proxyu
+uid=$(id -u proxyu)
+docker run --detach --name=proxy --network=proxynet --privileged -v=/workspace/proxy:/workspace/proxy -v=/var/run/docker.sock:/var/run/docker.sock --entrypoint /bin/sh gcr.io/cloud-builders/docker -euxc '
+	useradd --system --non-unique --uid '$uid' proxyu
+	chown proxyu /workspace/proxy
+	chown proxyu /var/run/docker.sock
+	su - proxyu -c "/workspace/proxy \
+		-verbose=true \
+		-http_addr=:3128 \
+		-tls_addr=:3129 \
+		-ctrl_addr=:3127 \
+		-docker_addr=:3130 \
+		-docker_socket=/var/run/docker.sock \
+		-docker_truststore_env_vars=PIP_CERT,CURL_CA_BUNDLE,NODE_EXTRA_CA_CERTS,CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE,NIX_SSL_CERT_FILE \
+		-docker_network=container:build \
+		-docker_java_truststore=true"
+'
+proxyIP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' proxy)
+docker network connect cloudbuild proxy
+docker run --detach --name=build --network=proxynet --entrypoint=/bin/sh gcr.io/cloud-builders/docker -c 'sleep infinity'
+docker exec --privileged build /bin/sh -euxc '
+	iptables -t nat -A OUTPUT -p tcp --dport 3128 -j ACCEPT
+	iptables -t nat -A OUTPUT -p tcp --dport 3129 -j ACCEPT
+	iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner '$uid' -j ACCEPT
+	iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination '$proxyIP':3128
+	iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':3129
+'
+docker exec build /bin/sh -euxc '
+	curl http://proxy:3127/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
+	export DOCKER_HOST=tcp://proxy:3130 PROXYCERT=/etc/ssl/certs/proxy.crt
+	docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
+	cat <<EOS | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs --mount=type=secret,id=PROXYCERT,env=PIP_CERT --mount=type=secret,id=PROXYCERT,env=CURL_CA_BUNDLE --mount=type=secret,id=PROXYCERT,env=NODE_EXTRA_CA_CERTS --mount=type=secret,id=PROXYCERT,env=CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE --mount=type=secret,id=PROXYCERT,env=NIX_SSL_CERT_FILE|" | \
+		docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT --load --tag=img -
+	FROM docker.io/library/alpine:3.19
+EOS
+	docker run --name=container img
+'
+curl http://proxy:3127/summary > /workspace/netlog.json
+`,
+					},
+					{
+						Name: "gcr.io/cloud-builders/docker",
+						Args: []string{"cp", "container:/out/pkg-version.tgz", "/workspace/pkg-version.tgz"},
+					},
+					{
+						Name:   "gcr.io/cloud-builders/docker",
+						Script: "docker save img | gzip > /workspace/image.tgz",
+					},
+					{
+						Name: "docker.io/library/alpine:3.19",
+						Script: `set -eux
+wget https://test-bootstrap.storage.googleapis.com/v0.0.0-202501010000-feeddeadbeef00/gsutil_writeonly
 chmod +x gsutil_writeonly
 ./gsutil_writeonly cp /workspace/image.tgz file:///npm/pkg/version/pkg-version.tgz/image.tgz
 ./gsutil_writeonly cp /workspace/pkg-version.tgz file:///npm/pkg/version/pkg-version.tgz/pkg-version.tgz
