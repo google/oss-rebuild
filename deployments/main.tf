@@ -23,6 +23,10 @@ variable "host" {
     error_message = "The resource name must start with a letter and contain only lowercase letters and hyphens."
   }
 }
+variable "public" {
+  type = bool
+  default = true
+}
 
 data "google_project" "project" {
   project_id = var.project
@@ -432,10 +436,11 @@ resource "google_storage_bucket_iam_binding" "orchestrator-manages-attestations"
   role    = "roles/storage.objectAdmin"
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
-resource "google_project_iam_binding" "orchestrator-uses-datastore" {
-  project = var.project
-  role    = "roles/datastore.user"
-  members = ["serviceAccount:${google_service_account.orchestrator.email}"]
+resource "google_storage_bucket_iam_binding" "remote-build-views-bootstrap-bucket" {
+  count = var.public ? 0 : 1  // NOTE: Non-public objects must still be visible to the builder.
+  bucket  = google_storage_bucket.bootstrap-tools.name
+  role    = "roles/storage.objectViewer"
+  members = ["serviceAccount:${google_service_account.builder-remote.email}"]
 }
 resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-build-local" {
   provider = google-beta
@@ -509,16 +514,19 @@ resource "google_pubsub_topic_iam_binding" "readers-can-read-from-attestation-to
 ## Public resources
 
 resource "google_kms_crypto_key_iam_binding" "signing-key-is-public" {
+  count = var.public ? 1 : 0
   crypto_key_id = google_kms_crypto_key.signing-key.id
   role          = "roles/cloudkms.verifier"
   members       = ["allUsers"]
 }
 resource "google_storage_bucket_iam_binding" "attestation-bucket-is-public" {
+  count = var.public ? 1 : 0
   bucket  = google_storage_bucket.attestations.name
   role    = "roles/storage.objectViewer"
   members = ["allUsers"]
 }
 resource "google_storage_bucket_iam_binding" "bootstrap-bucket-is-public" {
+  count = var.public ? 1 : 0
   bucket  = google_storage_bucket.bootstrap-tools.name
   role    = "roles/storage.objectViewer"
   members = ["allUsers"]
