@@ -47,6 +47,7 @@ var (
 	buildDefRepo          = flag.String("build-def-repo", "", "repository for build definitions")
 	buildDefRepoDir       = flag.String("build-def-repo-dir", ".", "relpath within the build definitions repository")
 	overwriteAttestations = flag.Bool("overwrite-attestations", false, "whether to overwrite existing attestations when writing to GCS")
+	blockLocalRepoPublish = flag.Bool("block-local-repo-publish", true, "whether to prevent attestation publishing when the BuildRepo property points to a file:// URI")
 )
 
 // Link-time configured service identity
@@ -127,9 +128,26 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	d.BuildServiceAccount = *buildRemoteIdentity
 	d.UtilPrebuildBucket = *prebuildBucket
 	d.BuildLogsBucket = *logsBucket
-	serviceRepo, err := uri.CanonicalizeRepoURI(BuildRepo)
-	if err != nil {
-		return nil, errors.Wrap(err, "canonicalizing service repo")
+	var serviceRepo string
+	if BuildRepo == "" {
+		return nil, errors.New("empty service repo")
+	}
+	if repoURI, err := url.Parse(BuildRepo); err != nil {
+		return nil, errors.Wrap(err, "parsing service repo URI")
+	} else {
+		switch repoURI.Scheme {
+		case "file":
+			serviceRepo = repoURI.String()
+		case "http", "https":
+			if canonicalized, err := uri.CanonicalizeRepoURI(BuildRepo); err != nil {
+				serviceRepo = repoURI.String()
+			} else {
+				serviceRepo = canonicalized
+			}
+			// TODO: Support more schemes as necessary.
+		default:
+			return nil, errors.Errorf("unsupported scheme for service repo '%s'", BuildRepo)
+		}
 	}
 	if !goPseudoVersion.MatchString(BuildVersion) {
 		return nil, errors.New("service version must be a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions")
@@ -138,6 +156,7 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 		Repo: serviceRepo,
 		Ref:  BuildVersion,
 	}
+	d.PublishForLocalServiceRepo = !*blockLocalRepoPublish
 	if !goPseudoVersion.MatchString(*prebuildVersion) {
 		return nil, errors.New("prebuild version must be a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions")
 	}

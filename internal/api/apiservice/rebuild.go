@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -136,6 +137,7 @@ type RebuildPackageDeps struct {
 	ServiceRepo                rebuild.Location
 	PrebuildRepo               rebuild.Location
 	BuildDefRepo               rebuild.Location
+	PublishForLocalServiceRepo bool
 	AttestationStore           rebuild.AssetStore
 	LocalMetadataStore         rebuild.AssetStore
 	DebugStoreBuilder          func(ctx context.Context) (rebuild.AssetStore, error)
@@ -263,6 +265,11 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if entry != nil {
 		input.Strategy = entry.Strategy
 		buildDefRepo = entry.BuildDefLoc
+	}
+	if u, err := url.Parse(deps.ServiceRepo.Repo); err != nil {
+		return errors.Wrap(err, "bad ServiceRepo URL")
+	} else if (u.Scheme == "file" || u.Scheme == "") && !deps.PublishForLocalServiceRepo {
+		return errors.Wrap(err, "disallowed file:// ServiceRepo URL")
 	}
 	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo)
 	if err != nil {
