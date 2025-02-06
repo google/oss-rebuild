@@ -293,41 +293,49 @@ resource "terraform_data" "image" {
       name = "gateway"
       image = "${local.registry_url}/gateway"
       version = terraform_data.service_version.output
+      buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "git-cache" = {
       name = "git_cache"
       image = "${local.registry_url}/git_cache"
       version = terraform_data.service_version.output
+      buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "rebuilder" = {
       name = "rebuilder"
       image = "${local.registry_url}/rebuilder"
       version = terraform_data.service_version.output
+      buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "inference" = {
       name = "inference"
       image = "${local.registry_url}/inference"
       version = terraform_data.service_version.output
+      buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "api" = {
       name = "api"
       image = "${local.registry_url}/api"
       version = terraform_data.service_version.output
+      buildargs = ["DEBUG=${terraform_data.debug.output}", "BUILD_REPO=${var.repo}", "BUILD_VERSION=${terraform_data.service_version.output}"]
     }
     "gsutil_writeonly" = {
       name = "gsutil_writeonly"
       image = "${local.registry_url}/gsutil_writeonly"
       version = terraform_data.prebuild_version.output
+      buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "proxy" = {
       name = "proxy"
       image = "${local.registry_url}/proxy"
       version = terraform_data.prebuild_version.output
+      buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "timewarp" = {
       name = "timewarp"
       image = "${local.registry_url}/timewarp"
       version = terraform_data.prebuild_version.output
+      buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
   }
   provisioner "local-exec" {
@@ -339,7 +347,7 @@ resource "terraform_data" "image" {
         echo Found $path
       else
         echo Building $path
-        docker build --quiet --build-arg DEBUG=${var.debug} -f build/package/Dockerfile.${each.value.name} -t $path ${local.repo_docker_context} && \
+        docker build --quiet ${join(" ", [for arg in each.value.buildargs: "--build-arg ${arg}"])} -f build/package/Dockerfile.${each.value.name} -t $path ${local.repo_docker_context} && \
           docker push --quiet $path
       fi
     EOT
@@ -554,8 +562,6 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--debug-storage=gs://${google_storage_bucket.debug.name}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
-        "--service-repo=${var.repo}",
-        "--service-version=${var.service_version}",
         "--prebuild-version=${var.prebuild_version}",
         "--build-def-repo=https://github.com/google/oss-rebuild",
         "--build-def-repo-dir=definitions",

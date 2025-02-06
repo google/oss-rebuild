@@ -54,12 +54,18 @@ var (
 	logsBucket            = flag.String("logs-bucket", "", "GCS bucket for rebuild logs")
 	debugStorage          = flag.String("debug-storage", "", "if provided, the location in which rebuild debug info should be stored")
 	prebuildBucket        = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
-	serviceRepo           = flag.String("service-repo", "", "repo from which the service was built")
-	serviceVersion        = flag.String("service-version", "", "golang version identifier of the service container builds")
 	prebuildVersion       = flag.String("prebuild-version", "", "golang version identifier of the prebuild binary builds")
 	buildDefRepo          = flag.String("build-def-repo", "", "repository for build definitions")
 	buildDefRepoDir       = flag.String("build-def-repo-dir", ".", "relpath within the build definitions repository")
 	overwriteAttestations = flag.Bool("overwrite-attestations", false, "whether to overwrite existing attestations when writing to GCS")
+)
+
+// Link-time configured service identity
+var (
+	// Repo from which the service was built
+	BuildRepo string
+	// Golang version identifier of the service container builds
+	BuildVersion string
 )
 
 var (
@@ -132,16 +138,16 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	d.BuildServiceAccount = *buildRemoteIdentity
 	d.UtilPrebuildBucket = *prebuildBucket
 	d.BuildLogsBucket = *logsBucket
-	serviceRepo, err := uri.CanonicalizeRepoURI(*serviceRepo)
+	serviceRepo, err := uri.CanonicalizeRepoURI(BuildRepo)
 	if err != nil {
 		return nil, errors.Wrap(err, "canonicalizing service repo")
 	}
-	if !goPseudoVersion.MatchString(*serviceVersion) {
+	if !goPseudoVersion.MatchString(BuildVersion) {
 		return nil, errors.New("service version must be a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions")
 	}
 	d.ServiceRepo = rebuild.Location{
 		Repo: serviceRepo,
-		Ref:  *serviceVersion,
+		Ref:  BuildVersion,
 	}
 	if !goPseudoVersion.MatchString(*prebuildVersion) {
 		return nil, errors.New("prebuild version must be a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions")
