@@ -1,3 +1,6 @@
+// Copyright 2025 Google LLC
+// SPDX-License-Identifier: Apache-2.0
+
 // Package dockerfs defines a FS interface for accessing files in a Docker container.
 package dockerfs
 

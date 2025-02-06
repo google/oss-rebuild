@@ -1,3 +1,6 @@
+// Copyright 2025 Google LLC
+// SPDX-License-Identifier: Apache-2.0
+
 // PyPI RSS Subscriber for OSS Rebuild
 // This tool is a long-running service that fetches updates from PyPI's RSS feed,
 // and adds rebuild attempts into a task queue for any release of a package that's considered "tracked".
