@@ -99,12 +99,6 @@ provider "google" {
   zone    = "us-central1-c"
 }
 
-provider "google-beta" {
-  project = var.project
-  region  = "us-central1"
-  zone    = "us-central1-c"
-}
-
 ## IAM resources
 
 resource "google_service_account" "orchestrator" {
@@ -136,7 +130,6 @@ resource "google_service_account" "attestation-pubsub-reader" {
   description = "Identity for reading the attestation pubsub topic."
 }
 data "google_storage_project_service_account" "attestation-pubsub-publisher" {
-  provider = google-beta
 }
 
 ## KMS resources
@@ -145,13 +138,11 @@ resource "google_project_service" "cloudkms" {
   service = "cloudkms.googleapis.com"
 }
 resource "google_kms_key_ring" "ring" {
-  provider = google-beta
   name     = "ring"
   location = "global"
   depends_on = [google_project_service.cloudkms]
 }
 resource "google_kms_crypto_key" "signing-key" {
-  provider = google-beta
   name     = "signing-key"
   key_ring = google_kms_key_ring.ring.id
   purpose  = "ASYMMETRIC_SIGN"
@@ -163,7 +154,6 @@ resource "google_kms_crypto_key" "signing-key" {
   }
 }
 data "google_kms_crypto_key_version" "signing-key-version" {
-  provider   = google-beta
   crypto_key = google_kms_crypto_key.signing-key.id
 }
 
@@ -237,12 +227,10 @@ resource "google_app_engine_application" "dummy_app" {
 ## PubSub
 
 resource "google_pubsub_topic" "attestation-topic" {
-  provider = google-beta
   name     = "oss-rebuild-attestation-topic"
 }
 
 resource "google_storage_notification" "attestation-notification" {
-  provider       = google-beta
   bucket         = google_storage_bucket.attestations.name
   payload_format = "JSON_API_V1"
   topic          = google_pubsub_topic.attestation-topic.id
@@ -253,7 +241,6 @@ resource "google_storage_notification" "attestation-notification" {
 ## Container resources
 
 resource "google_artifact_registry_repository" "registry" {
-  provider = google-beta
   location = "us-central1"
   repository_id = "service-images"
   format  = "DOCKER"
@@ -397,7 +384,6 @@ resource "terraform_data" "binary" {
 }
 
 data "google_artifact_registry_docker_image" "gateway" {
-  provider = google-beta
   location = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name = "gateway:${terraform_data.service_version.output}"
@@ -405,7 +391,6 @@ data "google_artifact_registry_docker_image" "gateway" {
 }
 
 data "google_artifact_registry_docker_image" "git-cache" {
-  provider = google-beta
   location = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name = "git_cache:${terraform_data.service_version.output}"
@@ -413,7 +398,6 @@ data "google_artifact_registry_docker_image" "git-cache" {
 }
 
 data "google_artifact_registry_docker_image" "rebuilder" {
-  provider = google-beta
   location = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name = "rebuilder:${terraform_data.service_version.output}"
@@ -421,7 +405,6 @@ data "google_artifact_registry_docker_image" "rebuilder" {
 }
 
 data "google_artifact_registry_docker_image" "inference" {
-  provider = google-beta
   location = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name = "inference:${terraform_data.service_version.output}"
@@ -429,7 +412,6 @@ data "google_artifact_registry_docker_image" "inference" {
 }
 
 data "google_artifact_registry_docker_image" "api" {
-  provider = google-beta
   location = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name = "api:${terraform_data.service_version.output}"
@@ -445,7 +427,6 @@ resource "google_project_service" "run" {
   service = "run.googleapis.com"
 }
 resource "google_cloud_run_v2_service" "gateway" {
-  provider = google-beta
   name     = "gateway"
   location = "us-central1"
   template {
@@ -467,7 +448,6 @@ resource "google_cloud_run_v2_service" "gateway" {
   depends_on = [google_project_service.run]
 }
 resource "google_cloud_run_v2_service" "git-cache" {
-  provider = google-beta
   name     = "git-cache"
   location = "us-central1"
   template {
@@ -490,7 +470,6 @@ resource "google_cloud_run_v2_service" "git-cache" {
   depends_on = [google_project_service.run]
 }
 resource "google_cloud_run_v2_service" "build-local" {
-  provider = google-beta
   name     = "build-local"
   location = "us-central1"
   template {
@@ -517,7 +496,6 @@ resource "google_cloud_run_v2_service" "build-local" {
   depends_on = [google_project_service.run]
 }
 resource "google_cloud_run_v2_service" "inference" {
-  provider = google-beta
   name     = "inference"
   location = "us-central1"
   template {
@@ -543,7 +521,6 @@ resource "google_cloud_run_v2_service" "inference" {
 }
 
 resource "google_cloud_run_v2_service" "orchestrator" {
-  provider = google-beta
   name     = "api"
   location = "us-central1"
   template {
@@ -585,7 +562,6 @@ resource "google_cloud_run_v2_service" "orchestrator" {
 ## IAM Bindings
 
 resource "google_project_iam_custom_role" "bucket-viewer-role" {
-  provider    = google-beta
   role_id     = "bucketViewer"
   title       = "Bucket Viewer"
   permissions = ["storage.buckets.get", "storage.buckets.list"]
@@ -650,7 +626,6 @@ resource "google_storage_bucket_iam_binding" "remote-build-views-bootstrap-bucke
   members = ["serviceAccount:${google_service_account.builder-remote.email}"]
 }
 resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-build-local" {
-  provider = google-beta
   location = google_cloud_run_v2_service.build-local.location
   project  = google_cloud_run_v2_service.build-local.project
   name     = google_cloud_run_v2_service.build-local.name
@@ -668,7 +643,6 @@ resource "google_project_iam_binding" "orchestrator-runs-gcb-builds" {
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
 resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-inference" {
-  provider = google-beta
   location = google_cloud_run_v2_service.inference.location
   project  = google_cloud_run_v2_service.inference.project
   name     = google_cloud_run_v2_service.inference.name
@@ -686,7 +660,6 @@ resource "google_kms_crypto_key_iam_binding" "orchestrator-uses-signing-key" {
   members       = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
 resource "google_cloud_run_v2_service_iam_binding" "local-build-calls-git-cache" {
-  provider = google-beta
   location = google_cloud_run_v2_service.git-cache.location
   project  = google_cloud_run_v2_service.git-cache.project
   name     = google_cloud_run_v2_service.git-cache.name
@@ -694,7 +667,6 @@ resource "google_cloud_run_v2_service_iam_binding" "local-build-calls-git-cache"
   members  = ["serviceAccount:${google_service_account.builder-local.email}"]
 }
 resource "google_cloud_run_v2_service_iam_binding" "api-and-local-build-and-inference-call-gateway" {
-  provider = google-beta
   location = google_cloud_run_v2_service.gateway.location
   project  = google_cloud_run_v2_service.gateway.project
   name     = google_cloud_run_v2_service.gateway.name
@@ -706,13 +678,11 @@ resource "google_cloud_run_v2_service_iam_binding" "api-and-local-build-and-infe
   ]
 }
 resource "google_pubsub_topic_iam_binding" "can-publish-to-attestation-topic" {
-  provider = google-beta
   topic    = google_pubsub_topic.attestation-topic.id
   role     = "roles/pubsub.publisher"
   members  = ["serviceAccount:${data.google_storage_project_service_account.attestation-pubsub-publisher.email_address}"]
 }
 resource "google_pubsub_topic_iam_binding" "readers-can-read-from-attestation-topic" {
-  provider = google-beta
   topic    = google_pubsub_topic.attestation-topic.id
   role     = "roles/pubsub.subscriber"
   members  = ["serviceAccount:${google_service_account.attestation-pubsub-reader.email}"]
