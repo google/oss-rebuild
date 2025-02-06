@@ -84,6 +84,10 @@ variable "public" {
   type = bool
   default = true
 }
+variable "debug" {
+  type = bool
+  default = false
+}
 
 data "google_project" "project" {
   project_id = var.project
@@ -259,6 +263,10 @@ resource "terraform_data" "prebuild_version" {
   input = var.prebuild_version
 }
 
+resource "terraform_data" "debug" {
+  input = var.debug
+}
+
 resource "terraform_data" "git_dir" {
   input = (
     !startswith(var.repo, "file://") ? "!remote!" :
@@ -331,7 +339,7 @@ resource "terraform_data" "image" {
         echo Found $path
       else
         echo Building $path
-        docker build --quiet -f build/package/Dockerfile.${each.value.name} -t $path ${local.repo_docker_context} && \
+        docker build --quiet --build-arg DEBUG=${var.debug} -f build/package/Dockerfile.${each.value.name} -t $path ${local.repo_docker_context} && \
           docker push --quiet $path
       fi
     EOT

@@ -1,7 +1,8 @@
 FROM golang:1.22-alpine as binary
+ARG DEBUG=false
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -gcflags="-l=4" ./cmd/proxy
+RUN CGO_ENABLED=0 go build -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w')" -gcflags="-l=4" ./cmd/proxy
 FROM scratch
 COPY --from=binary /src/proxy  /
 ENTRYPOINT ["/proxy"]
