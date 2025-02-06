@@ -205,6 +205,8 @@ resource "google_storage_bucket" "bootstrap-tools" {
   location                    = "us-central1"
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
+  # Objects should not be deleted or replaced.
+  default_event_based_hold = true
   depends_on = [google_project_service.storage]
 }
 
