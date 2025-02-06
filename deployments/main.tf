@@ -638,6 +638,11 @@ resource "google_storage_bucket_iam_binding" "orchestrator-manages-attestations"
   role    = "roles/storage.objectAdmin"
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
+resource "google_project_iam_binding" "orchestrator-uses-datastore" {
+  project = var.project
+  role    = "roles/datastore.user"
+  members = ["serviceAccount:${google_service_account.orchestrator.email}"]
+}
 resource "google_storage_bucket_iam_binding" "remote-build-views-bootstrap-bucket" {
   count = var.public ? 0 : 1  // NOTE: Non-public objects must still be visible to the builder.
   bucket  = google_storage_bucket.bootstrap-tools.name
