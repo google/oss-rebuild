@@ -244,6 +244,9 @@ resource "google_artifact_registry_repository" "registry" {
   location = "us-central1"
   repository_id = "service-images"
   format  = "DOCKER"
+  docker_config {
+    immutable_tags = true
+  }
 }
 
 resource "terraform_data" "service_version" {
