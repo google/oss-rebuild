@@ -26,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/oss-rebuild/build/binary"
 	"github.com/google/oss-rebuild/build/container"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/urlx"
@@ -85,13 +84,7 @@ func (in *Instance) Run(ctx context.Context) {
 	rblog := log.New(log.Default().Writer(), logPrefix("rebuilder"), 0)
 	go func() {
 		in.state = building
-		path, err := binary.Build(ctx, "rebuilder")
-		if err != nil {
-			rblog.Println("Error building binary: ", err.Error())
-			in.state = dead
-			return
-		}
-		err = container.Build(ctx, "rebuilder", path)
+		err := container.Build(ctx, "rebuilder")
 		if err != nil {
 			rblog.Println("Error building container: ", err.Error())
 			in.state = dead
