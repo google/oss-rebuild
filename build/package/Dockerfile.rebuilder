@@ -1,7 +1,7 @@
 FROM golang:1.22-alpine as binary
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 go build -o /rebuilder -ldflags="-s -w" -gcflags="-l=4" ./cmd/rebuilder
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -gcflags="-l=4" ./cmd/rebuilder
 FROM alpine
 RUN apk add npm bash
 RUN apk add python3 py3-pip py3-build git
@@ -9,5 +9,5 @@ RUN git config --global advice.detachedHead false
 ENV RUSTUP_HOME=/root/.cargo/ CARGO_HOME=/root/.cargo/ CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 RUN apk add rustup && rustup-init -y --profile minimal
 WORKDIR "/home/oss-rebuild/"
-COPY --from=binary /rebuilder ./rebuilder
-ENTRYPOINT ["./rebuilder"]
+COPY --from=binary /src/rebuilder /
+ENTRYPOINT ["/rebuilder"]

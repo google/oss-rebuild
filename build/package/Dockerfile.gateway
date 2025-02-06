@@ -1,7 +1,7 @@
 FROM golang:1.22-alpine as binary
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 go build -o /gateway -ldflags="-s -w" -gcflags="-l=4" ./cmd/gateway
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -gcflags="-l=4" ./cmd/gateway
 FROM alpine
-COPY --from=binary /gateway ./gateway
-ENTRYPOINT ["./gateway"]
+COPY --from=binary /src/gateway /
+ENTRYPOINT ["/gateway"]

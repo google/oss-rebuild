@@ -1,7 +1,7 @@
 FROM golang:1.22-alpine as binary
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 go build -o /git_cache -ldflags="-s -w" -gcflags="-l=4" ./cmd/git_cache
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -gcflags="-l=4" ./cmd/git_cache
 FROM alpine
-COPY --from=binary /git_cache ./git_cache
-ENTRYPOINT ["./git_cache"]
+COPY --from=binary /src/git_cache /
+ENTRYPOINT ["/git_cache"]
