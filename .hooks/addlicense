@@ -1,0 +1,2 @@
+#!/bin/sh
+go run github.com/google/addlicense@v1.1.1 -s=only -ignore='bin/**' -ignore='**/.terraform.lock.hcl' -ignore='definitions/**' **
