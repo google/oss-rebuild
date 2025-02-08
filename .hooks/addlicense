@@ -1,2 +1,3 @@
 #!/bin/sh
+# NOTE: Keep in sync with .github/workflow/license.yml
 go run github.com/google/addlicense@v1.1.1 -s=only -ignore='bin/**' -ignore='**/.terraform.lock.hcl' -ignore='definitions/**' **
