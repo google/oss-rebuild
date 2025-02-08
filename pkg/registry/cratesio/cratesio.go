@@ -74,7 +74,7 @@ func (r HTTPRegistry) Crate(ctx context.Context, pkg string) (*Crate, error) {
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("crates.io registry error: %s", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching crate metadata")
 	}
 	var c Crate
 	if err := json.NewDecoder(resp.Body).Decode(&c); err != nil {
@@ -102,7 +102,7 @@ func (r HTTPRegistry) Version(ctx context.Context, pkg, version string) (*CrateV
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("crates.io registry error: %s", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching version")
 	}
 	var v CrateVersion
 	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
@@ -128,7 +128,7 @@ func (r HTTPRegistry) Artifact(ctx context.Context, pkg string, version string) 
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("fetching artifact: %s", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching artifact")
 	}
 	return resp.Body, nil
 }

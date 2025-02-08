@@ -156,7 +156,9 @@ func cleanVerdict(m string) string {
 		m = "unsupported generator: " + m[strings.LastIndex(m, ":")+3:len(m)-2]
 	case strings.HasPrefix(m, `built version does not match requested version`):
 		m = "built version does not match requested version"
-	case strings.HasPrefix(m, "rebuild failure: Clone failed"):
+	case strings.HasPrefix(strings.ToLower(m), "rebuild failure: repo invalid or private"):
+		m = "repo invalid or private"
+	case strings.HasPrefix(strings.ToLower(m), "rebuild failure: clone failed"):
 		m = "clone failed"
 	case strings.Contains(m, "Failed to extract upstream") && strings.Contains(m, ".dist-info/WHEEL: file does not exist"):
 		m = "failed to extract upstream WHEEL"

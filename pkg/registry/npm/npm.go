@@ -92,7 +92,7 @@ func (r HTTPRegistry) Package(ctx context.Context, pkg string) (*NPMPackage, err
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("npm registry error: %v", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching package")
 	}
 	var p NPMPackage
 	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
@@ -125,7 +125,7 @@ func (r HTTPRegistry) Version(ctx context.Context, pkg, version string) (*NPMVer
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("npm registry error: %v", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching version")
 	}
 	var v NPMVersion
 	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
@@ -155,7 +155,7 @@ func (r HTTPRegistry) Artifact(ctx context.Context, pkg, version string) (io.Rea
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("fetching artifact: %v", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching artifact")
 	}
 	return resp.Body, nil
 }
