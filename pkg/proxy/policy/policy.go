@@ -1,3 +1,6 @@
+// Copyright 2025 Google LLC
+// SPDX-License-Identifier: Apache-2.0
+
 // Package policy defines the network policy that the proxy can choose to enforce.
 package policy
 

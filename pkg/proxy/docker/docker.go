@@ -1,3 +1,6 @@
+// Copyright 2025 Google LLC
+// SPDX-License-Identifier: Apache-2.0
+
 // Package docker defines a proxy for the Docker API.
 //
 // Summary: Change the internal container state transparently while providing
