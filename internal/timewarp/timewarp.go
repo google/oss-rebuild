@@ -57,7 +57,27 @@ type Handler struct {
 
 var _ http.Handler = &Handler{}
 
+type herror struct {
+	error
+	status int
+}
+
 func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+	if err := h.handleRequest(rw, r); err != nil {
+		status := http.StatusInternalServerError
+		if he, ok := err.(herror); ok {
+			status = he.status
+		}
+		log.Printf("error: %+v  [%s]", err, r.URL.String())
+		if status/100 == 4 { // Only surface messages for 4XX errors
+			http.Error(rw, err.Error(), status)
+		} else {
+			http.Error(rw, http.StatusText(status), status)
+		}
+	}
+}
+
+func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 	// Expect to be called with a basic auth username and password of the form:
 	// http://<platform>:<RFC3339>@<hostname>/
 	// These populate the Authorization header with a "Basic" mode value and are
@@ -72,8 +92,7 @@ func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		r.URL.Scheme = pypiRegistry.Scheme
 		r.URL.Path = path.Join(pypiRegistry.Path, r.URL.Path)
 	default:
-		http.Error(rw, "unsupported platform", http.StatusBadRequest)
-		return
+		return herror{errors.New("unsupported platform"), http.StatusBadRequest}
 	}
 	{
 		unescaped, err := url.QueryUnescape(ts)
@@ -83,8 +102,7 @@ func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 	t, err := parseTime(ts)
 	if err != nil {
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
+		return herror{err, http.StatusBadRequest}
 	}
 	// Create a new request based on the provided method, path, and body but
 	// directed at the upstream registry.
@@ -110,20 +128,14 @@ func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				// TODO: We can support this case by adding a translation from the
 				// application/json response ourselves but current client behavior does
 				// not (yet) require it.
-				err := errors.Errorf("unsupported Accept header: %s", a)
-				log.Println(err.Error(), "[", nr.URL.String(), "]")
-				http.Error(rw, err.Error(), http.StatusBadGateway)
-				return
+				return herror{errors.Errorf("unsupported Accept header: %s", a), http.StatusBadGateway}
 			}
 			nr.Header.Set("Accept", "application/json")
 		}
 	}
 	resp, err := h.Client.Do(nr)
 	if err != nil {
-		err = errors.Wrap(err, "creating client")
-		log.Println("error", err.Error())
-		http.Error(rw, err.Error(), http.StatusBadGateway)
-		return
+		return herror{errors.Wrap(err, "creating client"), http.StatusBadGateway}
 	}
 	defer resp.Body.Close()
 	// Copy the registry response to the output, applying the time warp
@@ -135,19 +147,20 @@ func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 	if resp.StatusCode != 200 {
 		rw.WriteHeader(resp.StatusCode)
-		io.Copy(rw, resp.Body)
-		return
+		if _, err := io.Copy(rw, resp.Body); err != nil {
+			log.Printf("error: %+v", errors.Wrap(err, "transmitting non-ok response"))
+		}
+		return nil
 	}
 	if resp.Header.Get("Content-Type") != "application/json" {
-		io.Copy(rw, resp.Body)
-		return
+		if _, err := io.Copy(rw, resp.Body); err != nil {
+			log.Printf("error: %+v", errors.Wrap(err, "transmitting non-json response"))
+		}
+		return nil
 	}
 	obj := make(map[string]any)
 	if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
-		err = errors.Wrap(err, "parsing response")
-		log.Println("error", err.Error(), "[", nr.URL.String(), "]")
-		http.Error(rw, err.Error(), http.StatusBadGateway)
-		return
+		return herror{errors.Wrap(err, "parsing response"), http.StatusBadGateway}
 	}
 	if platform == "npm" {
 		// NOTE: This is a rough heuristic for NPM package requests since no other
@@ -156,10 +169,7 @@ func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		// TODO: Find a better (path-based?) heuristic for identifying package API.
 		if obj["time"] != nil {
 			if err := timeWarpNPMPackageRequest(obj, *t); err != nil {
-				err = errors.Wrap(err, "warping response")
-				log.Println("error", err.Error(), "[", nr.URL.String(), "]")
-				http.Error(rw, err.Error(), http.StatusBadGateway)
-				return
+				return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 			}
 		}
 	} else if platform == "pypi" {
@@ -169,19 +179,14 @@ func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		// TODO: Find a better (path-based?) heuristic for identifying project API.
 		if obj["releases"] != nil {
 			if err := timeWarpPyPIProjectRequest(h.Client, obj, *t); err != nil {
-				err = errors.Wrap(err, "warping response")
-				log.Println("error", err.Error(), "[", nr.URL.String(), "]")
-				http.Error(rw, errors.Wrap(err, "warping response").Error(), http.StatusBadGateway)
-				return
+				return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 			}
 		}
 	}
 	if err := json.NewEncoder(rw).Encode(obj); err != nil {
-		err = errors.Wrap(err, "serializing response")
-		log.Println("error", err.Error(), "[", nr.URL.String(), "]")
-		http.Error(rw, err.Error(), http.StatusBadGateway)
-		return
+		return herror{errors.Wrap(err, "serializing response"), http.StatusBadGateway}
 	}
+	return nil
 }
 
 // timeWarpNPMPackageRequest modifies the provided JSON-like map to exclude all content after "at".
