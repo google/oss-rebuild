@@ -81,6 +81,7 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 			"Export-Package",
 			"Include-Resource",
 			"Provide-Capability",
+			"Private-Package",
 		} {
 			value, _ := manifest.MainSection.Get(attr)
 			value = strings.ReplaceAll(value, "\r", "")
