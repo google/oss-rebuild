@@ -209,7 +209,8 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					[]byte(
 						"Export-Package: org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",org.slf4\n j.agent;version=\"2.0.6\",org.slf4j.instrumentation;uses:=javassist;versi\n on=\"2.0.6\",org.slf4j.cal10n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.sl\n f4j,org.slf4j.ext\",org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\n" +
-							"Include-Resource: META-INF/NOTICE=NOTICE,META-INF/LICENSE=LICENSE\n"),
+							"Include-Resource: META-INF/NOTICE=NOTICE,META-INF/LICENSE=LICENSE\n" +
+							"Private-Package: org.apache.shiro.util,org.apache.shiro.ldap,org.apach\n e.shiro.authc.credential,org.apache.shiro.authc,org.apache.shiro.auth\n c.pam,org.apache.shiro.subject,org.apache.shiro.subject.support,org.a\n pache.shiro.dao,org.apache.shiro,org.apache.shiro.aop,org.apache.shir\n o.env,org.apache.shiro.mgt,org.apache.shiro.ini,org.apache.shiro.jndi\n ,org.apache.shiro.concurrent,org.apache.shiro.authz,org.apache.shiro.\n authz.annotation,org.apache.shiro.authz.aop,org.apache.shiro.authz.pe\n rmission,org.apache.shiro.realm,org.apache.shiro.realm.ldap,org.apach\n e.shiro.realm.activedirectory,org.apache.shiro.realm.jdbc,org.apache.\n shiro.realm.jndi,org.apache.shiro.realm.text,org.apache.shiro.session\n ,org.apache.shiro.session.mgt,org.apache.shiro.session.mgt.eis\n"),
 				},
 			},
 			expected: []*ZipEntry{
@@ -217,7 +218,8 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					[]byte(
 						"Export-Package: org.slf4j,org.slf4j.agent;version=\"2.0.6\",org.slf4j.cal10n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.slf4j.ext\",org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",org.slf4j.instrumentation;uses:=javassist;version=\"2.0.6\",org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\n" +
-							"Include-Resource: META-INF/LICENSE=LICENSE,META-INF/NOTICE=NOTICE\n"),
+							"Include-Resource: META-INF/LICENSE=LICENSE,META-INF/NOTICE=NOTICE\n" +
+							"Private-Package: org.apache.shiro,org.apache.shiro.aop,org.apache.shiro.authc,org.apache.shiro.authc.credential,org.apache.shiro.authc.pam,org.apache.shiro.authz,org.apache.shiro.authz.annotation,org.apache.shiro.authz.aop,org.apache.shiro.authz.permission,org.apache.shiro.concurrent,org.apache.shiro.dao,org.apache.shiro.env,org.apache.shiro.ini,org.apache.shiro.jndi,org.apache.shiro.ldap,org.apache.shiro.mgt,org.apache.shiro.realm,org.apache.shiro.realm.activedirectory,org.apache.shiro.realm.jdbc,org.apache.shiro.realm.jndi,org.apache.shiro.realm.ldap,org.apache.shiro.realm.text,org.apache.shiro.session,org.apache.shiro.session.mgt,org.apache.shiro.session.mgt.eis,org.apache.shiro.subject,org.apache.shiro.subject.support,org.apache.shiro.util\n"),
 				},
 			},
 		},
@@ -250,10 +252,6 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 					got = append(got, ZipEntry{&ent.FileHeader, must(io.ReadAll(must(ent.Open())))})
 				}
 			}
-			if len(got) != len(tc.expected) {
-				t.Fatalf("StabilizeZip(%v) got %v entries, want %v", tc.test, len(got), len(tc.expected))
-			}
-
 			if got[0].Name != tc.expected[0].Name {
 				t.Errorf("StabilizeZip(%v) got %v, want %v", tc.test, got[0].Name, tc.expected[0].Name)
 			}
@@ -266,6 +264,11 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Could not parse expected manifest: %v", err)
 			}
+
+			if len(manifestGot.MainSection.Attributes) != len(manifestWant.MainSection.Attributes) {
+				t.Fatalf("StabilizeZip(%v) got %v entries, want %v", tc.test, len(manifestGot.MainSection.Attributes), len(manifestWant.MainSection.Attributes))
+			}
+
 			for _, attr := range tc.attributeName {
 				gotOrder := getSeparatedValues(manifestGot.MainSection.Attributes[attr])
 				wantOrder := getSeparatedValues(manifestWant.MainSection.Attributes[attr])

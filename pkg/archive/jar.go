@@ -84,6 +84,10 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 			"Private-Package",
 		} {
 			value, _ := manifest.MainSection.Get(attr)
+			// Skip empty values
+			if value == "" {
+				continue
+			}
 			value = strings.ReplaceAll(value, "\r", "")
 			value = strings.ReplaceAll(value, "\n", "")
 			value = strings.ReplaceAll(value, " ", "")
