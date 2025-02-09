@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -179,22 +180,44 @@ func TestStableJARBuildMetadata(t *testing.T) {
 
 func TestStableOrderOfAttributeValues(t *testing.T) {
 	testCases := []struct {
-		test     string
-		input    []*ZipEntry
-		expected []*ZipEntry
+		test          string
+		attributeName []string
+		input         []*ZipEntry
+		expected      []*ZipEntry
 	}{
 		{
-			test: "order_of_export-package_values",
+			test:          "single_attribute",
+			attributeName: []string{"Provide-Capability"},
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Export-Package: org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",org.slf4\n j.agent;version=\"2.0.6\",org.slf4j.instrumentation;uses:=javassist;versi\n on=\"2.0.6\",org.slf4j.cal10n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.sl\n f4j,org.slf4j.ext\",org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\""),
+					[]byte("Provide-Capability: sling.servlet;sling.servlet.resourceTypes:List<Strin\n g>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngin\n e=rhino;scriptExtension=ecma;sling.servlet.selectors:List<String>=scrip\n t,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sl\n ing/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExt\n ension=js;sling.servlet.selectors:List<String>=script,sling.servlet;sli\n ng.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sight\n ly/testing/precompiled\";scriptEngine=htl;scriptExtension=html,sling.ser\n vlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripti\n ng/sightly/testing/precompiled/templates-access-control\";scriptEngine=h\n tl;scriptExtension=html,sling.servlet;sling.servlet.resourceTypes:List<\n String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templat\n es-access-control\";scriptEngine=htl;scriptExtension=html;sling.servlet.\n selectors:List<String>=\"partials,include\"\n"),
 				},
 			},
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Export-Package: \r\n org.slf4j,org.slf4j.agent;version=\"2.0.6\",org.slf4j.cal10n;version=\"2.0\r\n .6\";uses:=\"ch.qos.cal10n,org.slf4j.ext\",org.slf4j.ext;version=\"2.0.6\";u\r\n ses:=\"org.slf4j\",org.slf4j.instrumentation;uses:=javassist;version=\"2.0\r\n .6\",org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\r\n\r\n"),
+					[]byte("Provide-Capability: include\",sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=htl;scriptExtension=html,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExtension=ecma;sling.servlet.selectors:List<String>=script,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExtension=js;sling.servlet.selectors:List<String>=script,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templates-access-control\";scriptEngine=htl;scriptExtension=html,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templates-access-control\";scriptEngine=htl;scriptExtension=html;sling.servlet.selectors:List<String>=\"partials\n"),
+				},
+			},
+		},
+		{
+			test:          "multiple_attributes",
+			attributeName: []string{"Export-Package", "Include-Resource"},
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte(
+						"Export-Package: org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",org.slf4\n j.agent;version=\"2.0.6\",org.slf4j.instrumentation;uses:=javassist;versi\n on=\"2.0.6\",org.slf4j.cal10n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.sl\n f4j,org.slf4j.ext\",org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\n" +
+							"Include-Resource: META-INF/NOTICE=NOTICE,META-INF/LICENSE=LICENSE\n"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte(
+						"Export-Package: org.slf4j,org.slf4j.agent;version=\"2.0.6\",org.slf4j.cal10n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.slf4j.ext\",org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",org.slf4j.instrumentation;uses:=javassist;version=\"2.0.6\",org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\n" +
+							"Include-Resource: META-INF/LICENSE=LICENSE,META-INF/NOTICE=NOTICE\n"),
 				},
 			},
 		},
@@ -230,14 +253,43 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 			if len(got) != len(tc.expected) {
 				t.Fatalf("StabilizeZip(%v) got %v entries, want %v", tc.test, len(got), len(tc.expected))
 			}
-			for i := range got {
-				if !all(
-					got[i].FileHeader.Name == tc.expected[i].FileHeader.Name,
-					bytes.Equal(got[i].Body, tc.expected[i].Body),
-				) {
-					t.Errorf("Entry %d of %v:\r\ngot:  %+v\r\nwant: %+v", i, tc.test, string(got[i].Body), string(tc.expected[i].Body))
+
+			if got[0].Name != tc.expected[0].Name {
+				t.Errorf("StabilizeZip(%v) got %v, want %v", tc.test, got[0].Name, tc.expected[0].Name)
+			}
+
+			manifestGot, err := ParseManifest(bytes.NewReader(got[0].Body))
+			if err != nil {
+				t.Fatalf("Could not parse actual manifest: %v", err)
+			}
+			manifestWant, err := ParseManifest(bytes.NewReader(tc.expected[0].Body))
+			if err != nil {
+				t.Fatalf("Could not parse expected manifest: %v", err)
+			}
+			for _, attr := range tc.attributeName {
+				gotOrder := getSeparatedValues(manifestGot.MainSection.Attributes[attr])
+				wantOrder := getSeparatedValues(manifestWant.MainSection.Attributes[attr])
+				if gotOrder == nil || wantOrder == nil {
+					t.Fatalf("Could not parse expected or actual manifest")
+				}
+
+				if len(gotOrder) != len(wantOrder) {
+					t.Fatalf("StabilizeZip(%v) got %v entries, want %v", tc.test, len(gotOrder), len(wantOrder))
+				}
+				for i := range gotOrder {
+					if gotOrder[i] != wantOrder[i] {
+						t.Errorf("Entry %d of %v:\r\ngot:  %+v\r\nwant: %+v", i, tc.test, gotOrder[i], wantOrder[i])
+					}
 				}
 			}
 		})
 	}
+}
+
+func getSeparatedValues(attributeValue string) []string {
+	value := strings.ReplaceAll(attributeValue, "\r", "")
+	value = strings.ReplaceAll(value, "\n", "")
+	value = strings.ReplaceAll(value, " ", "")
+	commaSeparateValues := strings.Split(value, ",")
+	return commaSeparateValues
 }
