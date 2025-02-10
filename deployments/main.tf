@@ -381,7 +381,8 @@ resource "terraform_data" "binary" {
         docker save ${each.value.image}:${each.value.version} | \
           tar -xO --wildcards "*/layer.tar" | \
           tar -xO ${each.value.name} | \
-          gcloud storage cp - $path
+          gcloud storage cp - $path && \
+          gcloud storage objects update $path --custom-metadata=goog-reserved-posix-mode=750
       fi
     EOT
   }
