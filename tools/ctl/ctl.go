@@ -29,6 +29,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
+	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -37,6 +38,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"google.golang.org/api/cloudbuild/v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -473,7 +475,7 @@ var listRuns = &cobra.Command{
 }
 
 var infer = &cobra.Command{
-	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] [--format strategy|dockerfile]",
+	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
 	Short: "Run inference",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -538,15 +540,53 @@ var infer = &cobra.Command{
 			if s == nil {
 				log.Fatal("no strategy")
 			}
-			in := rebuild.Input{
-				Target:   t,
-				Strategy: s,
-			}
+			in := rebuild.Input{Target: t, Strategy: s}
 			dockerfile, err := rebuild.MakeDockerfile(in, rebuild.RemoteOptions{})
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "generating dockerfile"))
 			}
 			cmd.OutOrStdout().Write([]byte(dockerfile))
+		case "debug-steps":
+			t := rebuild.Target{
+				Ecosystem: rebuild.Ecosystem(*ecosystem),
+				Package:   *pkg,
+				Version:   *version,
+				Artifact:  *artifact,
+			}
+			s, err := resp.Strategy()
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "parsing strategy"))
+			}
+			if s == nil {
+				log.Fatal("no strategy")
+			}
+			in := rebuild.Input{Target: t, Strategy: s}
+			dockerfile, err := rebuild.MakeDockerfile(in, rebuild.RemoteOptions{})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "generating dockerfile"))
+			}
+			buildScript := fmt.Sprintf(textwrap.Dedent(`
+				#!/usr/bin/env bash
+				set -eux
+				cat <<'EOS' | docker buildx build --tag=img -
+				%s
+				EOS
+				docker run --name=container img
+				`[1:]), dockerfile)
+			b := cloudbuild.Build{
+				Steps: []*cloudbuild.BuildStep{
+					{
+						Name:   "gcr.io/cloud-builders/docker",
+						Script: buildScript,
+					},
+				},
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(b); err != nil {
+				log.Fatal(errors.Wrap(err, "encoding build steps"))
+			}
+
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
 		}
