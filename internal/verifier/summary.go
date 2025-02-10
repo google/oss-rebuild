@@ -46,11 +46,11 @@ func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStor
 	req, _ := http.NewRequest(http.MethodGet, up.URI, nil)
 	resp, err := rebuild.DoContext(ctx, req)
 	if err != nil {
-		err = errors.Wrap(err, "error fetching upstream artifact")
+		err = errors.Wrap(err, "fetching upstream artifact")
 		return
 	}
 	if resp.StatusCode != 200 {
-		err = errors.Errorf("non-OK status fetching upstream artifact")
+		err = errors.Wrap(errors.New(resp.Status), "fetching upstream artifact")
 		return
 	}
 	err = archive.Stabilize(up.StabilizedHash, io.TeeReader(resp.Body, up.Hash), t.ArchiveType())

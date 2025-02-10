@@ -110,7 +110,7 @@ func (r HTTPRegistry) PackageVersion(ctx context.Context, pkg, version string) (
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("maven registry error: %v", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching package version")
 	}
 	defer resp.Body.Close()
 	var s search
@@ -160,7 +160,7 @@ func (r HTTPRegistry) ReleaseFile(ctx context.Context, pkg, version string, typ 
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("maven registry error: %v", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching release artifact")
 	}
 
 	return resp.Body, nil

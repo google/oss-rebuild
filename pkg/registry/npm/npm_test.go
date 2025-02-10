@@ -85,7 +85,7 @@ func TestHTTPRegistry_Package(t *testing.T) {
 				URL:      "https://registry.npmjs.org/invalid-package",
 				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
 			},
-			expectedErr: errors.New("npm registry error: Not Found"),
+			expectedErr: errors.New("fetching package: Not Found"),
 		},
 		{
 			name: "JSON Decode Error",
@@ -191,7 +191,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 				URL:      "https://registry.npmjs.org/invalid-package/1.0.0",
 				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
 			},
-			expectedErr: errors.New("npm registry error: Not Found"),
+			expectedErr: errors.New("fetching version: Not Found"),
 		},
 		{
 			name:    "JSON Decode Error",
@@ -284,7 +284,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
 				},
 			},
-			expectedErr: errors.New("npm registry error: Not Found"),
+			expectedErr: errors.New("fetching version: Not Found"),
 		},
 		{
 			name:    "Artifact Fetch Error",

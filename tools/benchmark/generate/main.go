@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -129,14 +130,14 @@ func get(ctx context.Context, url string) (io.ReadCloser, error) {
 	client := http.DefaultClient
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %v", err)
+		return nil, err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching: %v", err)
+		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("non 200 status: %s", resp.Status)
+		return nil, errors.New(resp.Status)
 	}
 	return resp.Body, nil
 }

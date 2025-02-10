@@ -47,7 +47,7 @@ func (r HTTPRegistry) get(ctx context.Context, url string) (io.ReadCloser, error
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("fetching artifact: %v", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching artifact")
 	}
 	return resp.Body, nil
 }

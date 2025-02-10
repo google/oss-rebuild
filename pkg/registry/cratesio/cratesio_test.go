@@ -71,7 +71,7 @@ func TestHTTPRegistry_Crate(t *testing.T) {
 				URL:      "https://crates.io/api/v1/crates/nonexistent-pkg",
 				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
 			},
-			expectedErr: errors.New("crates.io registry error: Not Found"),
+			expectedErr: errors.New("fetching crate metadata: Not Found"),
 		},
 		{
 			name: "JSON Decode Error",
@@ -152,7 +152,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 			call: httpxtest.Call{URL: "https://crates.io/api/v1/crates/nonexistent-pkg/1.0.0",
 				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
 			},
-			expectedErr: errors.New("crates.io registry error: Not Found"),
+			expectedErr: errors.New("fetching version: Not Found"),
 		},
 		{
 			name:    "JSON Decode Error",
@@ -242,7 +242,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
 				},
 			},
-			expectedErr: errors.New("crates.io registry error: Not Found"),
+			expectedErr: errors.New("fetching version: Not Found"),
 		},
 		{
 			name:    "Artifact Fetch Error",

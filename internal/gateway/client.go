@@ -47,6 +47,6 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		log.Println(io.ReadAll(resp.Body))
 		return nil, errors.New("gateway request rejected")
 	default:
-		return nil, errors.Errorf("Request failed: %s", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "requesting gateway")
 	}
 }

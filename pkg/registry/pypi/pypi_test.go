@@ -71,7 +71,7 @@ func TestHTTPRegistry_Project(t *testing.T) {
 				URL:      "https://pypi.org/pypi/nonexistent-pkg/json",
 				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
 			},
-			expectedErr: errors.New("pypi registry error: Not Found"),
+			expectedErr: errors.New("fetching project: Not Found"),
 		},
 		{
 			name: "JSON Decode Error",
@@ -165,7 +165,7 @@ func TestHTTPRegistry_Release(t *testing.T) {
 				URL:      "https://pypi.org/pypi/nonexistent-pkg/1.0.0/json",
 				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
 			},
-			expectedErr: errors.New("pypi registry error: Not Found"),
+			expectedErr: errors.New("fetching release: Not Found"),
 		},
 		{
 			name:    "JSON Decode Error",

@@ -55,7 +55,7 @@ func (c Filesystem) Open(path string) (*File, error) {
 	case http.StatusBadRequest:
 		return nil, fs.ErrNotExist
 	default:
-		return nil, errors.Errorf("response error: Unexpected HTTP response: %s", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "response error: Unexpected HTTP response")
 	}
 	tr := tar.NewReader(resp.Body)
 	hdr, err := tr.Next()
@@ -96,7 +96,7 @@ func (c Filesystem) Stat(path string) (*FileInfo, error) {
 	case http.StatusBadRequest:
 		return nil, errors.New("request error: bad parameter")
 	default:
-		return nil, errors.Errorf("response error: Unexpected HTTP response: %s", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "response error: Unexpected HTTP response")
 	}
 	encoded := resp.Header.Get(statHeader)
 	if encoded == "" {
@@ -234,7 +234,7 @@ func (c Filesystem) WriteFile(f *File) error {
 		// TODO: Confirm the conditions under which this occurs.
 		return fs.ErrNotExist
 	default:
-		return errors.Errorf("unexpected HTTP response: %s", resp.Status)
+		return errors.Wrap(errors.New(resp.Status), "unexpected HTTP response")
 	}
 }
 

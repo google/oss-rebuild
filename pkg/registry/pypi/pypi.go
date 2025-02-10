@@ -84,7 +84,7 @@ func (r HTTPRegistry) Project(ctx context.Context, pkg string) (*Project, error)
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("pypi registry error: %v", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching project")
 	}
 	var p Project
 	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
@@ -105,7 +105,7 @@ func (r HTTPRegistry) Release(ctx context.Context, pkg, version string) (*Releas
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, errors.Errorf("pypi registry error: %v", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching release")
 	}
 	var release Release
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
@@ -128,7 +128,7 @@ func (r HTTPRegistry) Artifact(ctx context.Context, pkg, version, filename strin
 				return nil, err
 			}
 			if resp.StatusCode != 200 {
-				return nil, errors.Errorf("fetching artifact: %v", resp.Status)
+				return nil, errors.Wrap(errors.New(resp.Status), "fetching artifact")
 			}
 			return resp.Body, nil
 		}

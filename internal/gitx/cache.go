@@ -76,7 +76,7 @@ func (c Cache) GetLink(repo string, contains time.Time) (uri string, err error) 
 		}
 		return
 	default:
-		err = errors.Errorf("Request failed: %s", resp.Status)
+		err = errors.Wrap(errors.New(resp.Status), "making cache request")
 		return
 	}
 }
@@ -103,7 +103,7 @@ func (c Cache) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem,
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("Failed to fetch cache link: %s", resp.Status)
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching cached repo")
 	}
 	gr, err := gzip.NewReader(resp.Body)
 	if err != nil {
