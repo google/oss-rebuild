@@ -33,31 +33,26 @@ func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStor
 	rb.URI = metadata.URL(rbAsset).String()
 	r, err = metadata.Reader(ctx, rbAsset)
 	if err != nil {
-		err = errors.Wrap(err, "reading artifact")
-		return
+		return rb, up, errors.Wrap(err, "reading artifact")
 	}
 	defer checkClose(r)
 	err = archive.Stabilize(rb.StabilizedHash, io.TeeReader(r, rb.Hash), t.ArchiveType())
 	if err != nil {
-		err = errors.Wrap(err, "fingerprinting rebuild")
-		return
+		return rb, up, errors.Wrap(err, "fingerprinting rebuild")
 	}
 	// Fetch and process upstream.
 	req, _ := http.NewRequest(http.MethodGet, up.URI, nil)
 	resp, err := rebuild.DoContext(ctx, req)
 	if err != nil {
-		err = errors.Wrap(err, "fetching upstream artifact")
-		return
+		return rb, up, errors.Wrap(err, "fetching upstream artifact")
 	}
 	if resp.StatusCode != 200 {
-		err = errors.Wrap(errors.New(resp.Status), "fetching upstream artifact")
-		return
+		return rb, up, errors.Wrap(errors.New(resp.Status), "fetching upstream artifact")
 	}
 	err = archive.Stabilize(up.StabilizedHash, io.TeeReader(resp.Body, up.Hash), t.ArchiveType())
 	checkClose(resp.Body)
 	if err != nil {
-		err = errors.Wrap(err, "fingerprinting upstream")
-		return
+		return rb, up, errors.Wrap(err, "fingerprinting upstream")
 	}
-	return
+	return rb, up, nil
 }

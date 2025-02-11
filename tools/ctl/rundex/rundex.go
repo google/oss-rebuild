@@ -294,8 +294,7 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 	cerr := DoQuery(ctx, q, NewRebuildFromFirestore, all)
 	rebuilds := filterRebuilds(all, req)
 	if err := <-cerr; err != nil {
-		err = errors.Wrap(err, "query error")
-		return nil, err
+		return nil, errors.Wrap(err, "query error")
 	}
 	return rebuilds, nil
 }
@@ -424,8 +423,7 @@ func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReques
 	}()
 	rebuilds := filterRebuilds(all, req)
 	if err := <-walkErr; err != nil {
-		err = errors.Wrap(err, "exploring rebuilds dir")
-		return nil, err
+		return nil, errors.Wrap(err, "exploring rebuilds dir")
 	}
 	return rebuilds, nil
 }

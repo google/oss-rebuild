@@ -73,18 +73,16 @@ type getRequest struct {
 func parseGetRequest(v url.Values) (r getRequest, err error) {
 	r.URI = v.Get("uri")
 	if r.URI == "" {
-		err = errors.New("Empty URI")
-		return
+		return r, errors.New("Empty URI")
 	}
 	qthreshold := v.Get("contains")
 	if qthreshold != "" {
 		r.Threshold, err = time.Parse(time.RFC3339, qthreshold)
 		if err != nil {
-			err = errors.Wrap(err, "Failed to parse RFC 3339 time")
-			return
+			return r, errors.Wrap(err, "Failed to parse RFC 3339 time")
 		}
 	}
-	return
+	return r, nil
 }
 
 func HandleGet(rw http.ResponseWriter, req *http.Request) {

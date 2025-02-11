@@ -25,7 +25,7 @@ import (
 func GetVersions(ctx context.Context, pkg string, mux rebuild.RegistryMux) (versions []string, err error) {
 	p, err := mux.NPM.Package(ctx, pkg)
 	if err != nil {
-		return
+		return nil, err
 	}
 	for v := range p.Versions {
 		// Omit pre-release versions.
@@ -38,7 +38,7 @@ func GetVersions(ctx context.Context, pkg string, mux rebuild.RegistryMux) (vers
 	sort.Slice(versions, func(i, j int) bool {
 		return p.UploadTimes[versions[i]].After(p.UploadTimes[versions[j]])
 	})
-	return
+	return versions, err
 }
 
 func sanitize(name string) string {

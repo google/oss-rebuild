@@ -80,23 +80,22 @@ func zipHashes(zr *zip.Reader) (files []string, err error) {
 		size := int64(zf.UncompressedSize64)
 		if size < 0 {
 			// TODO: support git LFS?
-			err = errors.Errorf("file exceeds max supported size: %d", zf.UncompressedSize64)
-			return
+			return nil, errors.Errorf("file exceeds max supported size: %d", zf.UncompressedSize64)
 		}
 		h := plumbing.NewHasher(plumbing.BlobObject, size)
 		f, err = zf.Open()
 		if err != nil {
-			return
+			return nil, err
 		}
 		if _, err = io.CopyN(h, f, size); err != nil {
-			return
+			return nil, err
 		}
 		if err = f.Close(); err != nil {
-			return
+			return nil, err
 		}
 		files = append(files, h.Sum().String())
 	}
-	return
+	return files, nil
 }
 
 type searchStrategy interface {

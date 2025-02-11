@@ -40,13 +40,12 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	r.Repository, err = rebuild.LoadRepo(ctx, t.Package, s, fs, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
 	switch err {
 	case nil:
+		return r, nil
 	case transport.ErrAuthenticationRequired:
-		err = errors.Errorf("repo invalid or private [repo=%s]", r.URI)
-		return
+		return r, errors.Errorf("repo invalid or private [repo=%s]", r.URI)
 	default:
-		err = errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
+		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
 	}
-	return
 }
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
@@ -136,14 +135,13 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 func getPomXML(tree *object.Tree, path string) (pomXML PomXML, err error) {
 	f, err := tree.File(path)
 	if err != nil {
-		return
+		return pomXML, err
 	}
 	p, err := f.Contents()
 	if err != nil {
-		return
+		return pomXML, err
 	}
-	err = xml.Unmarshal([]byte(p), &pomXML)
-	return
+	return pomXML, xml.Unmarshal([]byte(p), &pomXML)
 }
 
 func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
@@ -302,5 +300,5 @@ func pomXMLSearch(name, pomXMLPath string, repo *git.Repository) (tm map[string]
 			log.Printf("Multiple matches found [pkg=%s,ver=%s,refs=%v]\n", name, ver, dupes)
 		}
 	}
-	return
+	return tm, err
 }

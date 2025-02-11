@@ -29,14 +29,13 @@ import (
 func getPackageJSON(tree *object.Tree, path string) (pkgJSON npmreg.PackageJSON, err error) {
 	f, err := tree.File(path)
 	if err != nil {
-		return
+		return pkgJSON, err
 	}
 	p, err := f.Contents()
 	if err != nil {
-		return
+		return pkgJSON, err
 	}
-	err = json.Unmarshal([]byte(p), &pkgJSON)
-	return
+	return pkgJSON, json.Unmarshal([]byte(p), &pkgJSON)
 }
 
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
@@ -53,11 +52,9 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	switch err {
 	case nil:
 	case transport.ErrAuthenticationRequired:
-		err = errors.Errorf("repo invalid or private [repo=%s]", r.URI)
-		return
+		return r, errors.Errorf("repo invalid or private [repo=%s]", r.URI)
 	default:
-		err = errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
-		return
+		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
 	}
 	// Do package.json search.
 	head, _ := r.Repository.Head()
@@ -72,7 +69,7 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	if err != nil {
 		log.Printf("package.json version heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
 	}
-	return
+	return r, nil
 }
 
 func PickNodeVersion(meta *npmreg.NPMVersion) (string, error) {

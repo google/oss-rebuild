@@ -115,14 +115,12 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	r.Repository, err = rebuild.LoadRepo(ctx, t.Package, s, fs, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
 	switch err {
 	case nil:
+		return r, nil
 	case transport.ErrAuthenticationRequired:
-		err = errors.Errorf("repo invalid or private [repo=%s]", r.URI)
-		return
+		return r, errors.Errorf("repo invalid or private [repo=%s]", r.URI)
 	default:
-		err = errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
-		return
+		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
 	}
-	return
 }
 
 func extractPyProjectRequirements(ctx context.Context, tree *object.Tree) ([]string, error) {
