@@ -3,6 +3,7 @@
 
 variable "project" {
   type = string
+  description = "Google Cloud project ID to be used to deploy resources"
 }
 variable "host" {
   type = string
@@ -14,6 +15,7 @@ variable "host" {
 }
 variable "repo" {
   type = string
+  description = "Repository URI to be resolved for building and deploying services"
   default = "https://github.com/google/oss-rebuild"
   validation {
     condition = can(regex((
@@ -31,6 +33,7 @@ variable "repo" {
 }
 variable "service_version" {
   type = string
+  description = "Version identifier to be resolved for building and deploying services. Format must conform to go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions"
   validation {
     condition = can(regex("^v0.0.0-[0-9]{14}-[0-9a-f]{12}$", var.service_version))
     error_message = "The version must be valid a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions"
@@ -39,6 +42,7 @@ variable "service_version" {
 }
 variable "service_commit" {
   type = string
+  description = "Version commit hash to be resolved for building and deploying services. Format must conform to a git full commit hash."
   validation {
     condition = can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", var.service_commit))
     error_message = "The commit must be a valid git commit hash"
@@ -51,6 +55,7 @@ variable "service_commit" {
 }
 variable "prebuild_version" {
   type = string
+  description = "Version identifier to be resolved for building and deploying prebuild resources. Format must conform to go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions"
   validation {
     condition = can(regex("^v0.0.0-[0-9]{14}-[0-9a-f]{12}$", var.prebuild_version))
     error_message = "The version must be valid a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions"
@@ -59,6 +64,7 @@ variable "prebuild_version" {
 }
 variable "prebuild_commit" {
   type = string
+  description = "Version commit hash to be resolved for building and deploying prebuild resources. Format must conform to a git full commit hash."
   validation {
     condition = can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", var.prebuild_commit))
     error_message = "The commit must be a valid git commit hash"
@@ -71,10 +77,12 @@ variable "prebuild_commit" {
 }
 variable "public" {
   type = bool
+  description = "Whether to enable public access to certain resources like attestations and prebuild resources."
   default = true
 }
 variable "debug" {
   type = bool
+  description = "Whether to build and deploy services from debug builds."
   default = false
 }
 
