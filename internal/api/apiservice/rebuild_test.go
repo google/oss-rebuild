@@ -358,6 +358,11 @@ RLpmHHG1JOVdOA==
 				Ref:  plumbing.Main.String(),
 				Dir:  ".",
 			}
+			d.ServiceRepo = rebuild.Location{
+				Repo: "https://github.internal/foo/repo",
+				Ref:  plumbing.Main.String(),
+				Dir:  ".",
+			}
 			d.OverwriteAttestations = false
 			d.InferStub = func(context.Context, schema.InferenceRequest) (*schema.StrategyOneOf, error) {
 				oneof := schema.NewStrategyOneOf(tc.strategy)
