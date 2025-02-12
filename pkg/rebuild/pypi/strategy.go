@@ -85,9 +85,8 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{.With.locator}}pip install build
-				{{range $req := .With.requirements | fromJSON -}}
-				{{$.With.locator}}pip install {{$req}}
-				{{end -}}`)[1:],
+				{{- range $req := .With.requirements | fromJSON}}
+				{{$.With.locator}}pip install {{$req}}{{end}}`)[1:],
 			Needs: []string{"python3"},
 		}},
 	},
