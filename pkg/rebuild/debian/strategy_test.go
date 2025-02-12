@@ -43,17 +43,14 @@ func TestDebianPackage(t *testing.T) {
 			},
 			env: rebuild.BuildEnv{},
 			want: rebuild.Instructions{
-				Source: `set -eux
-wget https://example.com/pkg_1.0-1.dsc
+				Source: `wget https://example.com/pkg_1.0-1.dsc
 wget https://example.com/pkg_1.0.orig.tar.gz
 wget https://example.com/pkg_1.0-1.debian.tar.xz
 
 dpkg-source -x --no-check $(basename "https://example.com/pkg_1.0-1.dsc")`,
-				Deps: `set -eux
-apt update
+				Deps: `apt update
 apt install -y build-dep1 build-dep2`,
-				Build: `set -eux
-cd */
+				Build: `cd */
 debuild -b -uc -us`,
 				SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
 				OutputPath: "pkg_1.0-1_amd64.deb",
@@ -80,16 +77,13 @@ debuild -b -uc -us`,
 			},
 			env: rebuild.BuildEnv{},
 			want: rebuild.Instructions{
-				Source: `set -eux
-wget https://example.com/pkg_1.0.dsc
+				Source: `wget https://example.com/pkg_1.0.dsc
 wget https://example.com/pkg_1.0.tar.gz
 
 dpkg-source -x --no-check $(basename "https://example.com/pkg_1.0.dsc")`,
-				Deps: `set -eux
-apt update
+				Deps: `apt update
 apt install -y build-dep1`,
-				Build: `set -eux
-cd */
+				Build: `cd */
 debuild -b -uc -us`,
 				SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
 				OutputPath: "pkg_1.0_amd64.deb",
@@ -119,17 +113,14 @@ debuild -b -uc -us`,
 			},
 			env: rebuild.BuildEnv{},
 			want: rebuild.Instructions{
-				Source: `set -eux
-wget https://example.com/pkg_1.0-1.dsc
+				Source: `wget https://example.com/pkg_1.0-1.dsc
 wget https://example.com/pkg_1.0.orig.tar.gz
 wget https://example.com/pkg_1.0-1.debian.tar.xz
 
 dpkg-source -x --no-check $(basename "https://example.com/pkg_1.0-1.dsc")`,
-				Deps: `set -eux
-apt update
+				Deps: `apt update
 apt install -y`,
-				Build: `set -eux
-cd */
+				Build: `cd */
 debuild -b -uc -us
 mv /src/pkg_1.0-1_amd64.deb /src/pkg_1.0-1+b1_amd64.deb`,
 				SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
