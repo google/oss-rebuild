@@ -209,7 +209,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.4
-FROM docker.io/library/debian:bookworm-20240211-slim
+FROM docker.io/library/debian:trixie-20250203-slim
 RUN <<'EOF'
  set -eux
  apt update
