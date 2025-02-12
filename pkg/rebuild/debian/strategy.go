@@ -77,7 +77,6 @@ var toolkit = []*flow.Tool{
 		Name: "debian/fetch/sources",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				set -eux
 				wget {{.With.dscUrl}}
 				{{- if ne .With.nativeUrl "" }}
 				wget {{.With.nativeUrl}}
@@ -93,7 +92,6 @@ var toolkit = []*flow.Tool{
 		Name: "debian/deps/install",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				set -eux
 				apt update
 				apt install -y{{range $req := .With.requirements | fromJSON}} {{$req}}{{end}}`)[1:],
 			Needs: []string{},
@@ -103,7 +101,6 @@ var toolkit = []*flow.Tool{
 		Name: "debian/build/package",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				set -eux
 				cd */
 				debuild -b -uc -us
 				{{- $expected := regexReplace .With.targetPath "\\+b[0-9]+(_[^_]+\\.deb)$" "$1"}}
