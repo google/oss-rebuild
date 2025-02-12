@@ -553,6 +553,8 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--build-remote-identity=${google_service_account.builder-remote.name}",
         "--inference-url=${google_cloud_run_v2_service.inference.uri}",
         "--prebuild-bucket=${google_storage_bucket.bootstrap-tools.name}",
+        "--prebuild-version=${var.prebuild_version}",
+        "--prebuild-auth=${var.public ? "false" : "true"}",
         "--signing-key-version=${data.google_kms_crypto_key_version.signing-key-version.name}",
         "--metadata-bucket=${google_storage_bucket.metadata.name}",
         "--attestation-bucket=${google_storage_bucket.attestations.name}",
@@ -560,7 +562,6 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--debug-storage=gs://${google_storage_bucket.debug.name}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
-        "--prebuild-version=${var.prebuild_version}",
         "--build-def-repo=https://github.com/google/oss-rebuild",
         "--build-def-repo-dir=definitions",
       ]

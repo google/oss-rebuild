@@ -133,6 +133,7 @@ type RebuildPackageDeps struct {
 	BuildProject               string
 	BuildServiceAccount        string
 	UtilPrebuildBucket         string
+	UtilPrebuildAuth           bool
 	BuildLogsBucket            string
 	ServiceRepo                rebuild.Location
 	PrebuildRepo               rebuild.Location
@@ -227,6 +228,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		BuildServiceAccount: deps.BuildServiceAccount,
 		UtilPrebuildBucket:  deps.UtilPrebuildBucket,
 		UtilPrebuildDir:     deps.PrebuildRepo.Ref,
+		UtilPrebuildAuth:    deps.UtilPrebuildAuth,
 		LogsBucket:          deps.BuildLogsBucket,
 		LocalMetadataStore:  deps.LocalMetadataStore,
 		DebugStore:          debugStore,
