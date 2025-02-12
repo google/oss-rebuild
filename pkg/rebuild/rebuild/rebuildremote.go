@@ -304,7 +304,7 @@ var proxyBuildTpl = template.Must(
 					docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
 					cat <<EOS | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" | \
 						docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT --load --tag=img -
-					{{.Dockerfile}}
+				{{.Dockerfile}}
 				EOS
 					docker run --name=container img
 				'
