@@ -39,7 +39,7 @@ func TestMakeDockerfile(t *testing.T) {
 			opts: RemoteOptions{
 				UseTimewarp: false,
 			},
-			expected: `#syntax=docker/dockerfile:1.4
+			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -77,7 +77,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 				UseTimewarp:        true,
 				UtilPrebuildBucket: "my-bucket",
 			},
-			expected: `#syntax=docker/dockerfile:1.4
+			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -120,7 +120,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 				UtilPrebuildBucket: "my-bucket",
 				UtilPrebuildDir:    "v0.0.0-202501010000-feeddeadbeef00",
 			},
-			expected: `#syntax=docker/dockerfile:1.4
+			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -165,7 +165,7 @@ python3 setup.py sdist`,
 			opts: RemoteOptions{
 				UseTimewarp: false,
 			},
-			expected: `#syntax=docker/dockerfile:1.4
+			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -208,7 +208,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 			opts: RemoteOptions{
 				UseTimewarp: false,
 			},
-			expected: `#syntax=docker/dockerfile:1.4
+			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/debian:trixie-20250203-slim
 RUN <<'EOF'
  set -eux
@@ -465,7 +465,7 @@ docker exec build /bin/sh -euxc '
 	docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
 	cat <<EOS | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs --mount=type=secret,id=PROXYCERT,env=PIP_CERT --mount=type=secret,id=PROXYCERT,env=CURL_CA_BUNDLE --mount=type=secret,id=PROXYCERT,env=NODE_EXTRA_CA_CERTS --mount=type=secret,id=PROXYCERT,env=CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE --mount=type=secret,id=PROXYCERT,env=NIX_SSL_CERT_FILE|" | \
 		docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT --load --tag=img -
-	FROM docker.io/library/alpine:3.19
+FROM docker.io/library/alpine:3.19
 EOS
 	docker run --name=container img
 '
@@ -549,7 +549,7 @@ docker exec build /bin/sh -euxc '
 	docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
 	cat <<EOS | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs --mount=type=secret,id=PROXYCERT,env=PIP_CERT --mount=type=secret,id=PROXYCERT,env=CURL_CA_BUNDLE --mount=type=secret,id=PROXYCERT,env=NODE_EXTRA_CA_CERTS --mount=type=secret,id=PROXYCERT,env=CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE --mount=type=secret,id=PROXYCERT,env=NIX_SSL_CERT_FILE|" | \
 		docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT --load --tag=img -
-	FROM docker.io/library/alpine:3.19
+FROM docker.io/library/alpine:3.19
 EOS
 	docker run --name=container img
 '

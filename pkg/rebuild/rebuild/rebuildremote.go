@@ -119,7 +119,7 @@ var debuildContainerTpl = template.Must(
 		// NOTE: For syntax docs, see https://docs.docker.com/build/dockerfile/release-notes/
 		// TODO: Find a base image that has build-essentials installed, that would improve startup time significantly, and it would pin the build tools we're using.
 		textwrap.Dedent(`
-				#syntax=docker/dockerfile:1.4
+				#syntax=docker/dockerfile:1.10
 				FROM docker.io/library/debian:trixie-20250203-slim
 				RUN <<'EOF'
 				 set -eux
@@ -161,7 +161,7 @@ var alpineContainerTpl = template.Must(
 	}).Parse(
 		// NOTE: For syntax docs, see https://docs.docker.com/build/dockerfile/release-notes/
 		textwrap.Dedent(`
-				#syntax=docker/dockerfile:1.4
+				#syntax=docker/dockerfile:1.10
 				FROM docker.io/library/alpine:3.19
 				RUN <<'EOF'
 				 set -eux
@@ -304,7 +304,7 @@ var proxyBuildTpl = template.Must(
 					docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
 					cat <<EOS | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" | \
 						docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT --load --tag=img -
-					{{.Dockerfile}}
+				{{.Dockerfile}}
 				EOS
 					docker run --name=container img
 				'
