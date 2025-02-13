@@ -34,8 +34,7 @@ func TestPureWheelBuild(t *testing.T) {
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build
 /deps/bin/pip install req_1
-/deps/bin/pip install req_2
-`,
+/deps/bin/pip install req_2`,
 				Build:      "/deps/bin/python3 -m build --wheel -n the_dir",
 				SystemDeps: []string{"git", "python3"},
 				OutputPath: "dist/the_artifact",
@@ -50,8 +49,7 @@ func TestPureWheelBuild(t *testing.T) {
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
-/deps/bin/pip install build
-`,
+/deps/bin/pip install build`,
 				Build:      "/deps/bin/python3 -m build --wheel -n the_dir",
 				SystemDeps: []string{"git", "python3"},
 				OutputPath: "dist/the_artifact",
@@ -68,8 +66,7 @@ func TestPureWheelBuild(t *testing.T) {
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange
-/deps/bin/pip install build
-`,
+/deps/bin/pip install build`,
 				Build:      "/deps/bin/python3 -m build --wheel -n the_dir",
 				SystemDeps: []string{"git", "python3"},
 				OutputPath: "dist/the_artifact",
