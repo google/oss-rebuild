@@ -36,6 +36,7 @@ type RemoteOptions struct {
 	RemoteMetadataStore LocatableAssetStore
 	UtilPrebuildBucket  string
 	UtilPrebuildDir     string
+	UtilPrebuildAuth    bool
 	// TODO: Consider moving these to Strategy.
 	UseTimewarp       bool
 	UseNetworkProxy   bool
@@ -48,6 +49,7 @@ type rebuildContainerArgs struct {
 	UseNetworkProxy    bool
 	UtilPrebuildBucket string
 	UtilPrebuildDir    string
+	UtilPrebuildAuth   bool
 }
 
 const policyYaml = `
@@ -121,10 +123,11 @@ var debuildContainerTpl = template.Must(
 		textwrap.Dedent(`
 				#syntax=docker/dockerfile:1.10
 				FROM docker.io/library/debian:trixie-20250203-slim
-				RUN <<'EOF'
+				RUN {{if .UtilPrebuildAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
-				 curl https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}timewarp > timewarp
+				 curl {{if .UtilPrebuildAuth}}-H @/run/secrets/auth_header {{end -}}
+				 https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}timewarp > timewarp
 				 chmod +x timewarp
 				{{- end}}
 				 apt update
@@ -163,10 +166,11 @@ var alpineContainerTpl = template.Must(
 		textwrap.Dedent(`
 				#syntax=docker/dockerfile:1.10
 				FROM docker.io/library/alpine:3.19
-				RUN <<'EOF'
+				RUN {{if .UtilPrebuildAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
-				 wget https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}timewarp
+				 {{if .UtilPrebuildAuth}}apk add curl && curl -O -H @/run/secrets/auth_header {{else}}wget {{end -}}
+				  https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}timewarp
 				 chmod +x timewarp
 				{{- end}}
 				 apk add {{join " " .Instructions.SystemDeps}}
@@ -204,7 +208,11 @@ var standardBuildTpl = template.Must(
 				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon_policy.yaml:/workspace/tetragon_policy.yaml -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy=/workspace/tetragon_policy.yaml --export-filename=/workspace/tetragon.jsonl)
 				grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 				{{- end}}
-				cat <<'EOS' | docker buildx build --tag=img -
+				{{- if .UtilPrebuildAuth}}
+				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@{{.Project}}.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+				(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
+				{{- end}}
+				cat <<'EOS' | docker buildx build {{if .UtilPrebuildAuth}}--secret id=auth_header,src=/tmp/auth_header {{end}}--tag=img -
 				{{.Dockerfile}}
 				EOS
 				docker run --name=container img
@@ -262,7 +270,12 @@ var proxyBuildTpl = template.Must(
 	}).Parse(
 		textwrap.Dedent(`
 				set -eux
-				curl -O https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}proxy
+				{{- if .UtilPrebuildAuth}}
+				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@{{.Project}}.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+				(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
+				{{- end}}
+				curl -O {{if .UtilPrebuildAuth}}-H @/tmp/auth_header {{end -}}
+					https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}proxy
 				chmod +x proxy
 				docker network create proxynet
 				useradd --system {{.User}}
@@ -284,7 +297,11 @@ var proxyBuildTpl = template.Must(
 				'
 				proxyIP=$(docker inspect -f '{{printf "%s" "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"}}' proxy)
 				docker network connect cloudbuild proxy
-				docker run --detach --name=build --network=proxynet --entrypoint=/bin/sh gcr.io/cloud-builders/docker -c 'sleep infinity'
+				{{- /* NOTE: File-based mounting does not appear to work here so use an env var. */ -}}
+				{{- if .UtilPrebuildAuth}}
+				(printf 'HEADER='; cat /tmp/auth_header) > /tmp/envfile
+				{{- end}}
+				docker run --detach --name=build --network=proxynet --entrypoint=/bin/sh {{if .UtilPrebuildAuth}}--env-file /tmp/envfile {{end}}gcr.io/cloud-builders/docker -c 'sleep infinity'
 				docker exec --privileged build /bin/sh -euxc '
 					iptables -t nat -A OUTPUT -p tcp --dport {{.HTTPPort}} -j ACCEPT
 					iptables -t nat -A OUTPUT -p tcp --dport {{.TLSPort}} -j ACCEPT
@@ -300,10 +317,10 @@ var proxyBuildTpl = template.Must(
 				{{- end}}
 				docker exec build /bin/sh -euxc '
 					curl http://proxy:{{.CtrlPort}}/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
-					export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt
+					export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt{{if .UtilPrebuildAuth}} HEADER{{end}}
 					docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
 					cat <<EOS | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" | \
-						docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT --load --tag=img -
+						docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT {{if .UtilPrebuildAuth}}--secret id=auth_header,env=HEADER {{end}}--load --tag=img -
 				{{.Dockerfile}}
 				EOS
 					docker run --name=container img
@@ -326,7 +343,12 @@ var assetUploadTpl = template.Must(
 	).Parse(
 		textwrap.Dedent(`
 				set -eux
-				wget https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}gsutil_writeonly
+				{{- if .UtilPrebuildAuth}}
+				apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@{{.Project}}.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+				(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
+				{{- end}}
+				{{if .UtilPrebuildAuth}}curl -O -H @/tmp/auth_header {{else}}wget {{end -}}
+				 https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}gsutil_writeonly
 				chmod +x gsutil_writeonly
 				{{- range .Uploads}}
 				./gsutil_writeonly cp {{.From}} {{.To}}
@@ -347,6 +369,8 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
 			"UtilPrebuildBucket": opts.UtilPrebuildBucket,
 			"UtilPrebuildDir":    opts.UtilPrebuildDir,
+			"UtilPrebuildAuth":   opts.UtilPrebuildAuth,
+			"Project":            opts.Project,
 			"Dockerfile":         dockerfile,
 			"UseSyscallMonitor":  opts.UseSyscallMonitor,
 			"SyscallPolicy":      tetragonPolicyJSON,
@@ -383,6 +407,8 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 			"Dockerfile":        dockerfile,
 			"UseSyscallMonitor": opts.UseSyscallMonitor,
 			"SyscallPolicy":     tetragonPolicyJSON,
+			"UtilPrebuildAuth":  opts.UtilPrebuildAuth,
+			"Project":           opts.Project,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "expanding standard build template")
@@ -392,6 +418,8 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	err := assetUploadTpl.Execute(&assetUploadScript, map[string]any{
 		"UtilPrebuildBucket": opts.UtilPrebuildBucket,
 		"UtilPrebuildDir":    opts.UtilPrebuildDir,
+		"UtilPrebuildAuth":   opts.UtilPrebuildAuth,
+		"Project":            opts.Project,
 		"Uploads":            uploads,
 	})
 	if err != nil {
@@ -460,6 +488,7 @@ func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 			UseTimewarp:        opts.UseTimewarp,
 			UtilPrebuildBucket: opts.UtilPrebuildBucket,
 			UtilPrebuildDir:    opts.UtilPrebuildDir,
+			UtilPrebuildAuth:   opts.UtilPrebuildAuth,
 			Instructions:       instructions,
 		})
 	} else {
@@ -467,6 +496,7 @@ func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 			UseTimewarp:        opts.UseTimewarp,
 			UtilPrebuildBucket: opts.UtilPrebuildBucket,
 			UtilPrebuildDir:    opts.UtilPrebuildDir,
+			UtilPrebuildAuth:   opts.UtilPrebuildAuth,
 			Instructions:       instructions,
 		})
 	}

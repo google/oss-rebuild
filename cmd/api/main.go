@@ -44,6 +44,7 @@ var (
 	debugStorage          = flag.String("debug-storage", "", "if provided, the location in which rebuild debug info should be stored")
 	prebuildBucket        = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
 	prebuildVersion       = flag.String("prebuild-version", "", "golang version identifier of the prebuild binary builds")
+	prebuildAuth          = flag.Bool("prebuild-auth", false, "whether to authenticate requests to the prebuild tools bucket")
 	buildDefRepo          = flag.String("build-def-repo", "", "repository for build definitions")
 	buildDefRepoDir       = flag.String("build-def-repo-dir", ".", "relpath within the build definitions repository")
 	overwriteAttestations = flag.Bool("overwrite-attestations", false, "whether to overwrite existing attestations when writing to GCS")
@@ -127,6 +128,7 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	d.BuildProject = *project
 	d.BuildServiceAccount = *buildRemoteIdentity
 	d.UtilPrebuildBucket = *prebuildBucket
+	d.UtilPrebuildAuth = *prebuildAuth
 	d.BuildLogsBucket = *logsBucket
 	var serviceRepo string
 	if BuildRepo == "" {
