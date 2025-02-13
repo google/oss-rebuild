@@ -72,6 +72,21 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange
 				OutputPath: "dist/the_artifact",
 			},
 		},
+		{
+			"WithoutDir",
+			&PureWheelBuild{
+				Location: rebuild.Location{Ref: "the_ref", Repo: "the_repo"},
+			},
+			rebuild.Instructions{
+				Location: rebuild.Location{Ref: "the_ref", Repo: "the_repo"},
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/python3 -m venv /deps
+/deps/bin/pip install build`,
+				Build:      "/deps/bin/python3 -m build --wheel -n",
+				SystemDeps: []string{"git", "python3"},
+				OutputPath: "dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

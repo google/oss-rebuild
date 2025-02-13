@@ -121,7 +121,7 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				{{.With.locator}}python3 -m build --wheel -n {{.With.dir}}`)[1:],
+				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
 			Needs: []string{"python3"},
 		}},
 	},
