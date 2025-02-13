@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -17,7 +18,8 @@ import (
 )
 
 var (
-	registryURL         = "https://deb.debian.org/debian"
+	registryURL         = "https://deb.debian.org/debian/pool/"
+	buildinfoURL        = "https://buildinfos.debian.net/buildinfo-pool/"
 	binaryReleaseRegexp = regexp.MustCompile(`(\+b[\d\.]+)$`)
 )
 
@@ -52,14 +54,23 @@ func (r HTTPRegistry) get(ctx context.Context, url string) (io.ReadCloser, error
 	return resp.Body, nil
 }
 
-func PoolURL(component, name, artifact string) string {
+func poolSuffix(component, name, artifact string) string {
 	// Most packages are in a prefix dir matching their first letter.
 	prefixDir := name[0:1]
 	// "lib" is such a common prefix that these packages are subdivided into lib* directories.
 	if strings.HasPrefix(name, "lib") {
 		prefixDir = name[0:4]
 	}
-	return registryURL + fmt.Sprintf("/pool/%s/%s/%s/%s", component, prefixDir, name, artifact)
+	return fmt.Sprintf("%s/%s/%s/%s", component, prefixDir, name, artifact)
+}
+
+func PoolURL(component, name, artifact string) string {
+	return registryURL + poolSuffix(component, name, artifact)
+}
+
+func BuildInfoURL(component, name, artifact string) string {
+	file := fmt.Sprintf("%s.buildinfo", strings.TrimSuffix(artifact, filepath.Ext(artifact)))
+	return buildinfoURL + poolSuffix(component, name, file)
 }
 
 func guessDSCURL(component, name, version string) string {

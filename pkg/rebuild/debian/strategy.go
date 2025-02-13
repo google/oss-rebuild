@@ -4,6 +4,7 @@
 package debian
 
 import (
+	"path"
 	"regexp"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -53,7 +54,7 @@ func (b *DebianPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 			},
 		}},
 		Build: []flow.Step{{
-			Uses: "debian/build/package",
+			Uses: "debian/build/debuild",
 			With: map[string]string{
 				"targetPath": "{{.Target.Artifact}}",
 			},
@@ -63,6 +64,35 @@ func (b *DebianPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 
 // GenerateFor generates the instructions for a DebianPackage
 func (b *DebianPackage) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	return b.ToWorkflow().GenerateFor(t, be)
+}
+
+// Debrebuild uses the upstream's generated buildinfo to perform a rebuild.
+type Debrebuild struct {
+	BuildInfo FileWithChecksum `json:"buildinfo" yaml:"buildinfo,omitempty"`
+}
+
+func (b *Debrebuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	return &rebuild.WorkflowStrategy{
+		Source: []flow.Step{{
+			Uses: "debian/fetch/buildinfo",
+			With: map[string]string{
+				"buildinfoUrl": b.BuildInfo.URL,
+				"buildinfoMd5": b.BuildInfo.MD5,
+			},
+		}},
+		Build: []flow.Step{{
+			Uses: "debian/build/debrebuild",
+			With: map[string]string{
+				"targetPath": "{{.Target.Artifact}}",
+				"buildinfo":  path.Base(b.BuildInfo.URL),
+			},
+		}},
+	}
+}
+
+// Generate generates the instructions for a Debrebuild
+func (b *Debrebuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
 	return b.ToWorkflow().GenerateFor(t, be)
 }
 
@@ -76,6 +106,7 @@ var toolkit = []*flow.Tool{
 	{
 		Name: "debian/fetch/sources",
 		Steps: []flow.Step{{
+			// TODO: use the FileWithChecksum.MD5 values to verify the downloaded archives.
 			Runs: textwrap.Dedent(`
 				wget {{.With.dscUrl}}
 				{{- if ne .With.nativeUrl "" }}
@@ -89,6 +120,15 @@ var toolkit = []*flow.Tool{
 		}},
 	},
 	{
+		Name: "debian/fetch/buildinfo",
+		Steps: []flow.Step{{
+			// TODO: use the FileWithChecksum.MD5 values to verify the downloaded archives.
+			Runs: textwrap.Dedent(`
+				wget {{.With.buildinfoUrl}}`)[1:],
+			Needs: []string{"wget"},
+		}},
+	},
+	{
 		Name: "debian/deps/install",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
@@ -98,7 +138,7 @@ var toolkit = []*flow.Tool{
 		}},
 	},
 	{
-		Name: "debian/build/package",
+		Name: "debian/build/debuild",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				cd */
@@ -108,6 +148,18 @@ var toolkit = []*flow.Tool{
 				mv /src/{{$expected}} /src/{{.With.targetPath}}
 				{{- end}}`)[1:],
 			Needs: []string{"build-essential", "fakeroot", "devscripts"},
+		}},
+	},
+	{
+		Name: "debian/build/debrebuild",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				debrebuild --buildresult=./out --builder=mmdebstrap {{ .With.buildinfo }}
+				{{- $expected := regexReplace .With.targetPath "\\+b[0-9]+(_[^_]+\\.deb)$" "$1"}}
+				{{- if ne $expected .With.targetPath }}
+				mv /src/{{$expected}} /src/{{.With.targetPath}}
+				{{- end}}`)[1:],
+			Needs: []string{"devscripts", "apt-utils", "mmdebstrap"},
 		}},
 	},
 }
