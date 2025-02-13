@@ -120,7 +120,7 @@ var debuildContainerTpl = template.Must(
 		// TODO: Find a base image that has build-essentials installed, that would improve startup time significantly, and it would pin the build tools we're using.
 		textwrap.Dedent(`
 				#syntax=docker/dockerfile:1.4
-				FROM docker.io/library/debian:bookworm-20240211-slim
+				FROM docker.io/library/debian:trixie-20250203-slim
 				RUN <<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
