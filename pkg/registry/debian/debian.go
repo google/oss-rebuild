@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -54,23 +53,23 @@ func (r HTTPRegistry) get(ctx context.Context, url string) (io.ReadCloser, error
 	return resp.Body, nil
 }
 
-func poolSuffix(component, name, artifact string) string {
+func poolDir(name string) string {
 	// Most packages are in a prefix dir matching their first letter.
 	prefixDir := name[0:1]
 	// "lib" is such a common prefix that these packages are subdivided into lib* directories.
 	if strings.HasPrefix(name, "lib") {
 		prefixDir = name[0:4]
 	}
-	return fmt.Sprintf("%s/%s/%s/%s", component, prefixDir, name, artifact)
+	return prefixDir
 }
 
 func PoolURL(component, name, artifact string) string {
-	return registryURL + poolSuffix(component, name, artifact)
+	return registryURL + fmt.Sprintf("%s/%s/%s/%s", component, poolDir(name), name, artifact)
 }
 
-func BuildInfoURL(component, name, artifact string) string {
-	file := fmt.Sprintf("%s.buildinfo", strings.TrimSuffix(artifact, filepath.Ext(artifact)))
-	return buildinfoURL + poolSuffix(component, name, file)
+func BuildInfoURL(name, version, arch string) string {
+	file := fmt.Sprintf("%s_%s_%s.buildinfo", name, version, arch)
+	return buildinfoURL + fmt.Sprintf("%s/%s/%s", poolDir(name), name, file)
 }
 
 func guessDSCURL(component, name, version string) string {

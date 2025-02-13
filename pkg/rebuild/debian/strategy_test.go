@@ -150,7 +150,7 @@ func TestDebrebuild(t *testing.T) {
 		want     rebuild.Instructions
 	}{
 		{
-			name: "normal",
+			name: "NormalRelease",
 			strategy: Debrebuild{
 				BuildInfo: FileWithChecksum{
 					URL: "https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo",
@@ -172,7 +172,7 @@ func TestDebrebuild(t *testing.T) {
 			},
 		},
 		{
-			name: "binaryRelease",
+			name: "BinaryOnlyRelease",
 			strategy: Debrebuild{
 				BuildInfo: FileWithChecksum{
 					URL: "https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2+b1_amd64.buildinfo",
