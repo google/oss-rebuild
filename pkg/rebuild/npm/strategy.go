@@ -57,6 +57,10 @@ type NPMCustomBuild struct {
 var _ rebuild.Strategy = &NPMCustomBuild{}
 
 func (b *NPMCustomBuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	var registryTime string
+	if !b.RegistryTime.IsZero() {
+		registryTime = b.RegistryTime.Format(time.RFC3339)
+	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Source: []flow.Step{{
@@ -65,7 +69,7 @@ func (b *NPMCustomBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Deps: []flow.Step{{
 			Uses: "npm/deps/custom",
 			With: map[string]string{
-				"registryTime": b.RegistryTime.Format(time.RFC3339),
+				"registryTime": registryTime,
 				"nodeVersion":  b.NodeVersion,
 				"npmVersion":   b.NPMVersion,
 			},
@@ -119,7 +123,6 @@ var toolkit = []*flow.Tool{
 	{
 		Name: "npm/setup-registry",
 		Steps: []flow.Step{{
-			// TODO: Consider using npm_config_registry env var to set this instead.
 			Runs: textwrap.Dedent(`
 				/usr/bin/npm config --location-global set registry {{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}}
 				trap '/usr/bin/npm config --location-global delete registry' EXIT`)[1:],
@@ -152,12 +155,6 @@ var toolkit = []*flow.Tool{
 		Name: "npm/deps/custom",
 		Steps: []flow.Step{
 			{
-				Uses: "npm/setup-registry",
-				With: map[string]string{
-					"registryTime": "{{.With.registryTime}}",
-				},
-			},
-			{
 				Uses: "npm/install-node",
 				With: map[string]string{
 					"nodeVersion": "{{.With.nodeVersion}}",
@@ -166,7 +163,9 @@ var toolkit = []*flow.Tool{
 			{
 				Uses: "npm/npx",
 				With: map[string]string{
-					"command":    "npm install --force",
+					"command": `
+						{{- if ne .With.registryTime ""}}npm_config_registry={{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}} {{end -}}
+						npm install --force`,
 					"npmVersion": "{{.With.npmVersion}}",
 					"dir":        "{{.Location.Dir}}",
 					"locator":    "/usr/local/bin/",

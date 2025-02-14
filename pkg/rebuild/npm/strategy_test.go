@@ -95,10 +95,8 @@ func TestNPMCustomBuild(t *testing.T) {
 				Location:   defaultLocation,
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
-				Deps: `/usr/bin/npm config --location-global set registry http://npm:2006-01-02T03:04:05Z@orange
-trap '/usr/bin/npm config --location-global delete registry' EXIT
-wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm install --force'`,
+				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
 				Build: `PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix the_dir --no-git-tag-version green
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
@@ -118,9 +116,26 @@ wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue
 				Location:   defaultLocation,
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
-				Deps: `/usr/bin/npm config --location-global set registry http://npm:2006-01-02T03:04:05Z@orange
-trap '/usr/bin/npm config --location-global delete registry' EXIT
-wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
+				OutputPath: "the_dir/the_artifact",
+			},
+		},
+		{
+			"CustomBuildNoRegistryTime",
+			&NPMCustomBuild{
+				Location:        defaultLocation,
+				NPMVersion:      "red",
+				NodeVersion:     "blue",
+				VersionOverride: "",
+				Command:         "yellow",
+			},
+			rebuild.Instructions{
+				Location:   defaultLocation,
+				SystemDeps: []string{"git", "npm"},
+				Source:     "git checkout --force 'the_ref'",
+				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm install --force'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
@@ -148,10 +163,8 @@ wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue
 				},
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
-				Deps: `/usr/bin/npm config --location-global set registry http://npm:2006-01-02T03:04:05Z@orange
-trap '/usr/bin/npm config --location-global delete registry' EXIT
-wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'npm install --force'`,
+				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+/usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_artifact",
 			},
