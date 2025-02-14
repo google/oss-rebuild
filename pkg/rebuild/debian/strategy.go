@@ -4,6 +4,8 @@
 package debian
 
 import (
+	"encoding/base64"
+	"fmt"
 	"path"
 	"regexp"
 
@@ -81,6 +83,9 @@ func (b *Debrebuild) ToWorkflow() *rebuild.WorkflowStrategy {
 				"buildinfoMd5": b.BuildInfo.MD5,
 			},
 		}},
+		Deps: []flow.Step{{
+			Uses: "debian/deps/patch-debrebuild",
+		}},
 		Build: []flow.Step{{
 			Uses: "debian/build/debrebuild",
 			With: map[string]string{
@@ -138,6 +143,16 @@ var toolkit = []*flow.Tool{
 		}},
 	},
 	{
+		Name: "debian/deps/patch-debrebuild",
+		Steps: []flow.Step{{
+			Runs: fmt.Sprintf(`echo %s | base64 -d | patch /usr/bin/debrebuild`, base64.StdEncoding.EncodeToString([]byte(`@@ -725,2 +725,3 @@
+         ),
++        '--customize-hook=sleep 10',
+         '--customize-hook=chroot "$1" sh -c "'`))),
+			Needs: []string{"devscripts=2.25.2"},
+		}},
+	},
+	{
 		Name: "debian/build/handle-binary-version",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
@@ -169,7 +184,7 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{
 			{
 				Runs:  "debrebuild --buildresult=./out --builder=mmdebstrap {{ .With.buildinfo }}",
-				Needs: []string{"devscripts", "apt-utils", "mmdebstrap"},
+				Needs: []string{"devscripts=2.25.2", "apt-utils", "mmdebstrap"},
 			},
 			{
 				Uses: "debian/build/handle-binary-version",

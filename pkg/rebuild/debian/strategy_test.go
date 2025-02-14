@@ -166,9 +166,10 @@ func TestDebrebuild(t *testing.T) {
 			env: rebuild.BuildEnv{},
 			want: rebuild.Instructions{
 				Source:     `wget https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo`,
+				Deps:       `echo QEAgLTcyNSwyICs3MjUsMyBAQAogICAgICAgICApLAorICAgICAgICAnLS1jdXN0b21pemUtaG9vaz1zbGVlcCAxMCcsCiAgICAgICAgICctLWN1c3RvbWl6ZS1ob29rPWNocm9vdCAiJDEiIHNoIC1jICIn | base64 -d | patch /usr/bin/debrebuild`,
 				Build:      `debrebuild --buildresult=./out --builder=mmdebstrap acl_2.3.2-2_amd64.buildinfo`,
 				OutputPath: "acl_2.3.1-3_amd64.deb",
-				SystemDeps: []string{"wget", "devscripts", "apt-utils", "mmdebstrap"},
+				SystemDeps: []string{"wget", "devscripts=2.25.2", "apt-utils", "mmdebstrap"},
 			},
 		},
 		{
@@ -188,10 +189,11 @@ func TestDebrebuild(t *testing.T) {
 			env: rebuild.BuildEnv{},
 			want: rebuild.Instructions{
 				Source: `wget https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2+b1_amd64.buildinfo`,
+				Deps:   `echo QEAgLTcyNSwyICs3MjUsMyBAQAogICAgICAgICApLAorICAgICAgICAnLS1jdXN0b21pemUtaG9vaz1zbGVlcCAxMCcsCiAgICAgICAgICctLWN1c3RvbWl6ZS1ob29rPWNocm9vdCAiJDEiIHNoIC1jICIn | base64 -d | patch /usr/bin/debrebuild`,
 				Build: `debrebuild --buildresult=./out --builder=mmdebstrap acl_2.3.2-2+b1_amd64.buildinfo
 mv /src/acl_2.3.1-3_amd64.deb /src/acl_2.3.1-3+b1_amd64.deb`,
 				OutputPath: "acl_2.3.1-3+b1_amd64.deb",
-				SystemDeps: []string{"wget", "devscripts", "apt-utils", "mmdebstrap"},
+				SystemDeps: []string{"wget", "devscripts=2.25.2", "apt-utils", "mmdebstrap"},
 			},
 		},
 	}
