@@ -186,6 +186,22 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 		expected      []*ZipEntry
 	}{
 		{
+			test:          "synthetic_example",
+			attributeName: []string{"Export-Package"},
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Export-Package: c,\n a,b,d,\n e\n"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Export-Package: a,b,c,d,e\n"),
+				},
+			},
+		},
+		{
 			test:          "single_attribute",
 			attributeName: []string{"Provide-Capability"},
 			input: []*ZipEntry{
