@@ -79,7 +79,7 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 		}
 		// These attributes originate from bnd tool. Full list: https://bnd.bndtools.org/chapters/800-headers.html.
 		// Out of these, we only sort the values of the following attributes because we observed them in Reproducible
-		// Central dataset.
+		// Central dataset. https://github.com/chains-project/reproducible-central/issues/21#issuecomment-2600947048
 		for _, attr := range []string{
 			"Export-Package",
 			"Include-Resource",
