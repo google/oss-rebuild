@@ -93,7 +93,7 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 			}
 			commaSeparateValues := strings.Split(value, ",")
 			// We sort the values to ensure that the order of values is stable
-			// Related issues: https: //issues.apache.org/jira/browse/FELIX-6496
+			// Related issue: https: //issues.apache.org/jira/browse/FELIX-6496
 			sort.Strings(commaSeparateValues)
 			manifest.MainSection.Set(attr, strings.Join(commaSeparateValues, ","))
 		}
