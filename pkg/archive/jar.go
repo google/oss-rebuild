@@ -77,6 +77,9 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 		if err != nil {
 			return
 		}
+		// These attributes originate from bnd tool. Full list: https://bnd.bndtools.org/chapters/800-headers.html.
+		// Out of these, we only sort the values of the following attributes because we observed them in Reproducible
+		// Central dataset.
 		for _, attr := range []string{
 			"Export-Package",
 			"Include-Resource",
@@ -89,6 +92,8 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 				continue
 			}
 			commaSeparateValues := strings.Split(value, ",")
+			// We sort the values to ensure that the order of values is stable
+			// Related issues: https: //issues.apache.org/jira/browse/FELIX-6496
 			sort.Strings(commaSeparateValues)
 			manifest.MainSection.Set(attr, strings.Join(commaSeparateValues, ","))
 		}
