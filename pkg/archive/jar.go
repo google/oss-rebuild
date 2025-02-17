@@ -88,9 +88,6 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 			if value == "" {
 				continue
 			}
-			value = strings.ReplaceAll(value, "\r", "")
-			value = strings.ReplaceAll(value, "\n", "")
-			value = strings.ReplaceAll(value, " ", "")
 			commaSeparateValues := strings.Split(value, ",")
 			sort.Strings(commaSeparateValues)
 			manifest.MainSection.Set(attr, strings.Join(commaSeparateValues, ","))
