@@ -5,6 +5,7 @@ package archive
 
 import (
 	"bytes"
+	"sort"
 	"strings"
 )
 
@@ -53,6 +54,49 @@ var StableJARBuildMetadata = ZipEntryStabilizer{
 			"Source-Date-Epoch",
 		} {
 			manifest.MainSection.Delete(attr)
+		}
+		buf := bytes.NewBuffer(nil)
+		if err := WriteManifest(buf, manifest); err != nil {
+			return
+		}
+		zf.SetContent(buf.Bytes())
+	},
+}
+
+var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
+	Name: "jar-attribute-value-order",
+	Func: func(zf *MutableZipFile) {
+		if !strings.HasSuffix(zf.Name, "META-INF/MANIFEST.MF") {
+			return
+		}
+		r, err := zf.Open()
+		if err != nil {
+			return
+		}
+		manifest, err := ParseManifest(r)
+		if err != nil {
+			return
+		}
+		// These attributes originate from bnd tool. Full list: https://bnd.bndtools.org/chapters/800-headers.html.
+		// Out of these, we only sort the values of the following attributes because we observed them in Reproducible
+		// Central dataset. https://github.com/chains-project/reproducible-central/issues/21#issuecomment-2600947048
+		for _, attr := range []string{
+			"Export-Package",
+			"Include-Resource",
+			"Provide-Capability",
+			"Private-Package",
+		} {
+			value, _ := manifest.MainSection.Get(attr)
+			// Skip empty values
+			if value == "" {
+				continue
+			}
+			commaSeparateValues := strings.Split(value, ",")
+			// We sort the values to ensure that the order of values is stable
+			// Related issues: 1) [fix for Export-Package & Private-Package](https://github.com/bndtools/bnd/issues/5021)
+			// 2) [fix for Include-Resource](https://github.com/jvm-repo-rebuild/reproducible-central/issues/99)
+			sort.Strings(commaSeparateValues)
+			manifest.MainSection.Set(attr, strings.Join(commaSeparateValues, ","))
 		}
 		buf := bytes.NewBuffer(nil)
 		if err := WriteManifest(buf, manifest); err != nil {

@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -175,4 +176,139 @@ func TestStableJARBuildMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStableOrderOfAttributeValues(t *testing.T) {
+	testCases := []struct {
+		test          string
+		attributeName []string
+		input         []*ZipEntry
+		expected      []*ZipEntry
+	}{
+		{
+			test:          "synthetic_example",
+			attributeName: []string{"Export-Package"},
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Export-Package: c,\n a,b,d,\n e\n"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Export-Package: a,b,c,d,e\n"),
+				},
+			},
+		},
+		{
+			test:          "single_attribute",
+			attributeName: []string{"Provide-Capability"},
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Provide-Capability: sling.servlet;sling.servlet.resourceTypes:List<Strin\n g>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngin\n e=rhino;scriptExtension=ecma;sling.servlet.selectors:List<String>=scrip\n t,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sl\n ing/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExt\n ension=js;sling.servlet.selectors:List<String>=script,sling.servlet;sli\n ng.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sight\n ly/testing/precompiled\";scriptEngine=htl;scriptExtension=html,sling.ser\n vlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripti\n ng/sightly/testing/precompiled/templates-access-control\";scriptEngine=h\n tl;scriptExtension=html,sling.servlet;sling.servlet.resourceTypes:List<\n String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templat\n es-access-control\";scriptEngine=htl;scriptExtension=html;sling.servlet.\n selectors:List<String>=\"partials,include\"\n"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Provide-Capability: include\",sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=htl;scriptExtension=html,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExtension=ecma;sling.servlet.selectors:List<String>=script,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExtension=js;sling.servlet.selectors:List<String>=script,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templates-access-control\";scriptEngine=htl;scriptExtension=html,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templates-access-control\";scriptEngine=htl;scriptExtension=html;sling.servlet.selectors:List<String>=\"partials\n"),
+				},
+			},
+		},
+		{
+			test:          "multiple_attributes",
+			attributeName: []string{"Export-Package", "Include-Resource"},
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte(
+						"Export-Package: org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",org.slf4\n j.agent;version=\"2.0.6\",org.slf4j.instrumentation;uses:=javassist;versi\n on=\"2.0.6\",org.slf4j.cal10n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.sl\n f4j,org.slf4j.ext\",org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\n" +
+							"Include-Resource: META-INF/NOTICE=NOTICE,META-INF/LICENSE=LICENSE\n" +
+							"Private-Package: org.apache.shiro.util,org.apache.shiro.ldap,org.apach\n e.shiro.authc.credential,org.apache.shiro.authc,org.apache.shiro.auth\n c.pam,org.apache.shiro.subject,org.apache.shiro.subject.support,org.a\n pache.shiro.dao,org.apache.shiro,org.apache.shiro.aop,org.apache.shir\n o.env,org.apache.shiro.mgt,org.apache.shiro.ini,org.apache.shiro.jndi\n ,org.apache.shiro.concurrent,org.apache.shiro.authz,org.apache.shiro.\n authz.annotation,org.apache.shiro.authz.aop,org.apache.shiro.authz.pe\n rmission,org.apache.shiro.realm,org.apache.shiro.realm.ldap,org.apach\n e.shiro.realm.activedirectory,org.apache.shiro.realm.jdbc,org.apache.\n shiro.realm.jndi,org.apache.shiro.realm.text,org.apache.shiro.session\n ,org.apache.shiro.session.mgt,org.apache.shiro.session.mgt.eis\n"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte(
+						"Export-Package: org.slf4j,org.slf4j.agent;version=\"2.0.6\",org.slf4j.cal10n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.slf4j.ext\",org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",org.slf4j.instrumentation;uses:=javassist;version=\"2.0.6\",org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\n" +
+							"Include-Resource: META-INF/LICENSE=LICENSE,META-INF/NOTICE=NOTICE\n" +
+							"Private-Package: org.apache.shiro,org.apache.shiro.aop,org.apache.shiro.authc,org.apache.shiro.authc.credential,org.apache.shiro.authc.pam,org.apache.shiro.authz,org.apache.shiro.authz.annotation,org.apache.shiro.authz.aop,org.apache.shiro.authz.permission,org.apache.shiro.concurrent,org.apache.shiro.dao,org.apache.shiro.env,org.apache.shiro.ini,org.apache.shiro.jndi,org.apache.shiro.ldap,org.apache.shiro.mgt,org.apache.shiro.realm,org.apache.shiro.realm.activedirectory,org.apache.shiro.realm.jdbc,org.apache.shiro.realm.jndi,org.apache.shiro.realm.ldap,org.apache.shiro.realm.text,org.apache.shiro.session,org.apache.shiro.session.mgt,org.apache.shiro.session.mgt.eis,org.apache.shiro.subject,org.apache.shiro.subject.support,org.apache.shiro.util\n"),
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.test, func(t *testing.T) {
+			// Create input zip
+			var input bytes.Buffer
+			{
+				zw := zip.NewWriter(&input)
+				for _, entry := range tc.input {
+					orDie(entry.WriteTo(zw))
+				}
+				orDie(zw.Close())
+			}
+			// Process with stabilizer
+			var output bytes.Buffer
+			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
+			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
+				Stabilizers: []any{StableJAROrderOfAttributeValues},
+			})
+			if err != nil {
+				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
+			}
+			// Check output
+			var got []ZipEntry
+			{
+				zr := must(zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len())))
+				for _, ent := range zr.File {
+					got = append(got, ZipEntry{&ent.FileHeader, must(io.ReadAll(must(ent.Open())))})
+				}
+			}
+			if got[0].Name != tc.expected[0].Name {
+				t.Errorf("StabilizeZip(%v) got %v, want %v", tc.test, got[0].Name, tc.expected[0].Name)
+			}
+
+			manifestGot, err := ParseManifest(bytes.NewReader(got[0].Body))
+			if err != nil {
+				t.Fatalf("Could not parse actual manifest: %v", err)
+			}
+			manifestWant, err := ParseManifest(bytes.NewReader(tc.expected[0].Body))
+			if err != nil {
+				t.Fatalf("Could not parse expected manifest: %v", err)
+			}
+
+			if len(manifestGot.MainSection.Attributes) != len(manifestWant.MainSection.Attributes) {
+				t.Fatalf("StabilizeZip(%v) got %v entries, want %v", tc.test, len(manifestGot.MainSection.Attributes), len(manifestWant.MainSection.Attributes))
+			}
+
+			for _, attr := range tc.attributeName {
+				gotOrder := getSeparatedValues(manifestGot.MainSection.Attributes[attr])
+				wantOrder := getSeparatedValues(manifestWant.MainSection.Attributes[attr])
+				if gotOrder == nil || wantOrder == nil {
+					t.Fatalf("Could not parse expected or actual manifest")
+				}
+
+				if len(gotOrder) != len(wantOrder) {
+					t.Fatalf("StabilizeZip(%v) got %v entries, want %v", tc.test, len(gotOrder), len(wantOrder))
+				}
+				for i := range gotOrder {
+					if gotOrder[i] != wantOrder[i] {
+						t.Errorf("Entry %d of %v:\r\ngot:  %+v\r\nwant: %+v", i, tc.test, gotOrder[i], wantOrder[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+func getSeparatedValues(attributeValue string) []string {
+	value := strings.ReplaceAll(attributeValue, "\r", "")
+	value = strings.ReplaceAll(value, "\n", "")
+	value = strings.ReplaceAll(value, " ", "")
+	commaSeparateValues := strings.Split(value, ",")
+	return commaSeparateValues
 }
