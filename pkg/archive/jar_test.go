@@ -220,12 +220,11 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					[]byte("Provide-Capability: " +
-						"include\"," +
-						"sling.servlet;sling.servlet.resourceTypes:L\r\n ist<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";sc\r\n riptEngine=htl;scriptExtension=html," +
-						"sling.servlet;sling.servlet.resourc\r\n eTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precomp\r\n iled\";scriptEngine=rhino;scriptExtension=ecma;sling.servlet.selectors:L\r\n ist<String>=script," +
-						"sling.servlet;sling.servlet.resourceTypes:List<Strin\r\n g>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngin\r\n e=rhino;scriptExtension=js;sling.servlet.selectors:List<String>=script,\r\n " +
-						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/slin\r\n g/scripting/sightly/testing/precompiled/templates-access-control\";scrip\r\n tEngine=htl;scriptExtension=html," +
-						"sling.servlet;sling.servlet.resourceTy\r\n pes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompile\r\n d/templates-access-control\";scriptEngine=htl;scriptExtension=html;sling\r\n .servlet.selectors:List<String>=\"partials\r\n\r\n"),
+						"sling.servlet;sling.servlet.resourceTypes:List<Strin\r\n g>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngin\r\n e=htl;scriptExtension=html," +
+						"sling.servlet;sling.servlet.resourceTypes:Li\r\n st<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scr\r\n iptEngine=rhino;scriptExtension=ecma;sling.servlet.selectors:List<Strin\r\n g>=script," +
+						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/a\r\n pache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;s\r\n criptExtension=js;sling.servlet.selectors:List<String>=script," +
+						"sling.ser\r\n vlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripti\r\n ng/sightly/testing/precompiled/templates-access-control\";scriptEngine=h\r\n tl;scriptExtension=html," +
+						"sling.servlet;sling.servlet.resourceTypes:List<\r\n String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templat\r\n es-access-control\";scriptEngine=htl;scriptExtension=html;sling.servlet.\r\n selectors:List<String>=\"partials,include\"\r\n\r\n"),
 				},
 			},
 		},
@@ -276,9 +275,8 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					[]byte(
-						"Export-Package: org.slf4j," +
-							"org.slf4j.agent;version=\"2.0.6\"," +
-							"org.slf4j.cal1\r\n 0n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.slf4j.ext\"," +
+						"Export-Package: org.slf4j.agent;version=\"2.0.6\"," +
+							"org.slf4j.cal10n;version\r\n =\"2.0.6\";uses:=\"ch.qos.cal10n,org.slf4j,org.slf4j.ext\"," +
 							"org.slf4j.ext;ve\r\n rsion=\"2.0.6\";uses:=\"org.slf4j\"," +
 							"org.slf4j.instrumentation;uses:=javassi\r\n st;version=\"2.0.6\"," +
 							"org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\r\n" +
