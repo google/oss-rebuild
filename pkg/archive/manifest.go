@@ -186,45 +186,38 @@ func WriteManifest(w io.Writer, m *Manifest) error {
 func writeSection(w io.Writer, section *Section) error {
 	for _, name := range section.Order {
 		value, _ := section.Get(name)
-		line := fmt.Sprintf("%s: %s\r\n", name, value)
-		// Handle line length restrictions
-		if len(line) > 72 {
-			parts := splitLine(line)
-			for _, part := range parts {
-				if _, err := w.Write([]byte(part)); err != nil {
-					return err
-				}
-			}
-		} else {
-			if _, err := w.Write([]byte(line)); err != nil {
-				return err
-			}
+		if err := writeAttribute(w, name, value); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// splitLine splits a line longer than 72 bytes into continuation lines
-func splitLine(line string) []string {
-	var lines []string
-	remaining := line
+// writeAttribute splits a line longer than 72 bytes into continuation lines
+func writeAttribute(w io.Writer, name, value string) error {
+	sep := ": "
+	remaining := name + sep + value
+	base := len(name) + len(sep)
 	for len(remaining) > 72 {
 		// Find last space before 72 bytes
 		splitIdx := 71
-		for splitIdx > 0 && remaining[splitIdx] != ' ' {
+		for splitIdx > base && remaining[splitIdx] != ' ' {
 			splitIdx--
 		}
-		if splitIdx == 0 {
+		if splitIdx == base {
 			// No space found, force split at 71
 			splitIdx = 71
 		}
-		lines = append(lines, remaining[:splitIdx+1]+"\r\n")
+		if _, err := w.Write([]byte(remaining[:splitIdx+1] + "\r\n")); err != nil {
+			return err
+		}
 		remaining = " " + remaining[splitIdx+1:]
+		base = 0
 	}
-	if remaining != "" {
-		lines = append(lines, remaining)
+	if _, err := w.Write([]byte(remaining + "\r\n")); err != nil {
+		return err
 	}
-	return lines
+	return nil
 }
 
 // normalizeLineEndings ensures consistent CRLF line endings
