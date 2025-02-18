@@ -252,6 +252,21 @@ func TestWriteManifestOrder(t *testing.T) {
 				"\r\n",
 		},
 		{
+			name: "write with continuation lines without spaces",
+			manifest: func() *Manifest {
+				m := NewManifest()
+				m.MainSection.Set("Manifest-Version", "1.0")
+				m.MainSection.Set("Long-Attribute", "200aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+				return m
+			}(),
+			want: "Manifest-Version: 1.0\r\n" +
+				"Long-Attribute: 200aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n" +
+				" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n" +
+				" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n" +
+				" aaaaa\r\n" +
+				"\r\n",
+		},
+		{
 			name: "write multiple sections",
 			manifest: func() *Manifest {
 				m := NewManifest()
