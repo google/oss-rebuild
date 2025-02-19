@@ -91,12 +91,12 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 			if value == "" {
 				continue
 			}
-			commaSeparateValues := strings.Split(value, ",")
+			subvalues := splitPreservingQuotes(value, ',')
 			// We sort the values to ensure that the order of values is stable
 			// Related issues: 1) [fix for Export-Package & Private-Package](https://github.com/bndtools/bnd/issues/5021)
 			// 2) [fix for Include-Resource](https://github.com/jvm-repo-rebuild/reproducible-central/issues/99)
-			sort.Strings(commaSeparateValues)
-			manifest.MainSection.Set(attr, strings.Join(commaSeparateValues, ","))
+			sort.Strings(subvalues)
+			manifest.MainSection.Set(attr, strings.Join(subvalues, ","))
 		}
 		buf := bytes.NewBuffer(nil)
 		if err := WriteManifest(buf, manifest); err != nil {
@@ -104,4 +104,32 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 		}
 		zf.SetContent(buf.Bytes())
 	},
+}
+
+// splitPreservingQuotes splits a string by a separator while preserving quoted sections
+func splitPreservingQuotes(s string, sep rune) []string {
+	var result []string
+	var current strings.Builder
+	inQuote := false
+	for _, char := range s {
+		switch char {
+		case '"':
+			inQuote = !inQuote
+			current.WriteRune(char)
+		case sep:
+			if inQuote {
+				current.WriteRune(char)
+			} else {
+				result = append(result, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+	// Add the last segment
+	if current.Len() > 0 {
+		result = append(result, current.String())
+	}
+	return result
 }
