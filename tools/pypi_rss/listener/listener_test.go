@@ -54,7 +54,7 @@ func (f *FakeQueue) Add(ctx context.Context, url string, msg api.Message) (*clou
 
 func TestListenerHandle(t *testing.T) {
 	ctx := context.Background()
-	apiURL, _ := url.Parse("http://fake-api-url")
+	apiURL := urlx.MustParse("http://fake-api-url")
 	testTime, _ := time.Parse(time.RFC1123, "Mon, 02 Jan 2006 15:04:05 MST")
 	tests := []struct {
 		name        string
