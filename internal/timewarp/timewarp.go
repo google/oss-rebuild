@@ -30,7 +30,7 @@ import (
 
 var (
 	npmRegistry  = urlx.MustParse("https://registry.npmjs.org/")
-	pypiRegistry = urlx.MustParse("https://pypi.org/simple")
+	pypiRegistry = urlx.MustParse("https://pypi.org/")
 	lowTimeBound = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
 )
 
@@ -295,7 +295,7 @@ func timeWarpPyPIProjectRequest(client httpx.BasicClient, obj map[string]any, at
 				if t.Before(at.Add(time.Second)) {
 					pastFiles = append(pastFiles, file)
 				}
-				if t.Before(firstSeen) {
+				if t.Before(firstSeen) || firstSeen.IsZero() {
 					firstSeen = t
 				}
 			}
