@@ -69,7 +69,7 @@ func TestCreateAttestations(t *testing.T) {
 		serviceLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202501010000-feeddeadbeef00"}
 		prebuildLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202401010000-feeddeadbeef99"}
 		buildDefLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "b33eec7134eff8a16cb902b80e434de58bf37e2c", Dir: "definitions/cratesio/bytes/1.0.0/bytes-1.0.0.crate/build.yaml"}
-		eqStmt, buildStmt, err := CreateAttestations(ctx, input, strategy, "test-id", rbSummary, upSummary, metadata, serviceLoc, prebuildLoc, buildDefLoc)
+		eqStmt, buildStmt, err := CreateAttestations(ctx, input, strategy, "test-id", rbSummary, upSummary, metadata, serviceLoc, prebuildLoc, buildDefLoc, &[]string{"pkg:foo/bar@baz"})
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
@@ -216,6 +216,10 @@ func TestCreateAttestations(t *testing.T) {
         {
           "name": "steps.json",
           "content": "W3sibmFtZSI6Imdjci5pby9mb28vYmFyIiwic2NyaXB0IjoiLi9iYXIifV0="
+        },
+        {
+          "name": "urls.json",
+          "content": "WyJwa2c6Zm9vL2JhckBiYXoiXQ=="
         }
       ]
     }
