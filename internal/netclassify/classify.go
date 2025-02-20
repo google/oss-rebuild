@@ -36,6 +36,23 @@ var (
 	pythonSourceRegex = regexp.MustCompile(`^(?P<package>[\w\.]+)-(?P<version>.+?)(?P<ext>\.(zip|tar\.gz|tar\.bz2|tar\.xz|tar\.Z|tar))$`)
 )
 
+// NPM
+var (
+	npmAPIRegex  = regexp.MustCompile(`^https://registry\.(npmjs\.org|yarnpkg\.com)/((@[^/]+/)?[^/]+)/([^/]+)/?$`)
+	npmFileRegex = regexp.MustCompile(`^https://registry\.(npmjs\.org|yarnpkg\.com)/((@[^/]+/)?[^/]+)/-/([^/]+)-([^/-]+)\.tgz$`)
+)
+
+// Maven
+var (
+	mavenRegex = regexp.MustCompile(`^https?://(repo1\.maven\.org/maven2|plugins.gradle.org/m2)/(.+)/([^/]+)/([^/]+)/([^/]+)$`)
+)
+
+// Crates (Rust)
+var (
+	cratesAPIRegex  = regexp.MustCompile(`^https?://crates\.io/api/v1/crates/([^/]+)/([^/]+)(?:/\w+)?$`)
+	cratesFileRegex = regexp.MustCompile(`^https?://crates\.io/api/v1/crates/([^/]+)/([^/]+)/download$`)
+)
+
 // GCS
 var (
 	// https://cloud.google.com/storage/docs/json_api
@@ -83,6 +100,16 @@ func ClassifyURL(rawURL string) (string, error) {
 		return classifyPyPIURL(rawURL)
 	} else if pypiAPIRegex.MatchString(rawURL) {
 		return "", ErrSkipped
+	} else if npmFileRegex.MatchString(rawURL) {
+		return classifyNPMURL(rawURL)
+	} else if npmAPIRegex.MatchString(rawURL) {
+		return "", ErrSkipped
+	} else if cratesFileRegex.MatchString(rawURL) {
+		return classifyCratesURL(rawURL)
+	} else if cratesAPIRegex.MatchString(rawURL) {
+		return "", ErrSkipped
+	} else if mavenRegex.MatchString(rawURL) {
+		return classifyMavenURL(rawURL)
 	} else if gcsJSONRegex.MatchString(rawURL) {
 		return classifyGCSURL(rawURL, gcsJSONRegex)
 	} else if gcsXMLRegex.MatchString(rawURL) {
@@ -200,6 +227,41 @@ func classifyPyPIFile(fname string) (string, error) {
 		// TODO: Add file name to pURL.
 		return fmt.Sprintf("pkg:pypi/%s@%s", matches[pythonSourceRegex.SubexpIndex("package")], matches[pythonSourceRegex.SubexpIndex("version")]), nil
 	}
+}
+
+func classifyNPMURL(rawURL string) (string, error) {
+	matches := npmFileRegex.FindStringSubmatch(rawURL)
+	if len(matches) < 5 {
+		return "", errors.New("invalid NPM download URL format")
+	}
+	packagePath := matches[2]
+	version := matches[5]
+	return fmt.Sprintf("pkg:npm/%s@%s", packagePath, version), nil
+}
+
+func classifyCratesURL(rawURL string) (string, error) {
+	matches := cratesFileRegex.FindStringSubmatch(rawURL)
+	if len(matches) < 3 {
+		return "", errors.New("invalid Cargo URL format")
+	}
+	name := matches[1]
+	version := matches[2]
+	return fmt.Sprintf("pkg:cargo/%s@%s", name, version), nil
+}
+
+func classifyMavenURL(rawURL string) (string, error) {
+	matches := mavenRegex.FindStringSubmatch(rawURL)
+	if len(matches) < 6 {
+		return "", errors.New("invalid Maven URL format")
+	}
+	pathSegments := strings.Split(matches[2], "/")
+	if len(pathSegments) < 2 {
+		return "", errors.New("invalid Maven path format")
+	}
+	name := matches[3]
+	version := matches[4]
+	namespace := strings.Join(pathSegments, ".")
+	return fmt.Sprintf("pkg:maven/%s/%s@%s", namespace, name, version), nil
 }
 
 func classifyGCSURL(rawURL string, pattern *regexp.Regexp) (string, error) {

@@ -97,6 +97,77 @@ func TestClassifyURL(t *testing.T) {
 			wantErr: ErrUnclassified,
 		},
 
+		// NPM test cases
+		{
+			name: "npm_download_simple",
+			url:  "https://registry.npmjs.org/express/-/express-4.17.1.tgz",
+			want: "pkg:npm/express@4.17.1",
+		},
+		{
+			name: "npm_download_scoped",
+			url:  "https://registry.npmjs.org/@invisionag/eslint-config-ivx/-/eslint-config-ivx-0.0.2.tgz",
+			want: "pkg:npm/@invisionag/eslint-config-ivx@0.0.2",
+		},
+		{
+			name: "npm_yarn_download_simple",
+			url:  "https://registry.yarnpkg.com/express/-/express-4.17.1.tgz",
+			want: "pkg:npm/express@4.17.1",
+		},
+		{
+			name:    "npm_api_scoped",
+			url:     "https://registry.npmjs.org/@esbuild/freebsd-arm64/0.21.5",
+			wantErr: ErrSkipped,
+		},
+		{
+			name:    "npm_api_simple",
+			url:     "https://registry.npmjs.org/express/4.17.1",
+			wantErr: ErrSkipped,
+		},
+		{
+			name:    "npm_yarn_api_simple",
+			url:     "https://registry.yarnpkg.com/express/4.17.1",
+			wantErr: ErrSkipped,
+		},
+
+		// Maven test cases
+		{
+			name: "maven_central_artifact",
+			url:  "https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+			want: "pkg:maven/org.apache.commons/commons-lang3@3.12.0",
+		},
+		{
+			name: "maven_with_classifier",
+			url:  "https://repo1.maven.org/maven2/org/apache/spark/spark-core_2.12/3.1.2/spark-core_2.12-3.1.2-tests.jar",
+			want: "pkg:maven/org.apache.spark/spark-core_2.12@3.1.2",
+		},
+		{
+			name: "maven_gradle_plugin_repo_artifact",
+			url:  "https://plugins.gradle.org/m2/com/google/protobuf/com.google.protobuf.gradle.plugin/0.9.4/com.google.protobuf.gradle.plugin-0.9.4.pom",
+			want: "pkg:maven/com.google.protobuf/com.google.protobuf.gradle.plugin@0.9.4",
+		},
+
+		// Crates (Rust) test cases
+		{
+			name: "crates_download",
+			url:  "https://crates.io/api/v1/crates/rand/0.7.2/download",
+			want: "pkg:cargo/rand@0.7.2",
+		},
+		{
+			name:    "crates_api_package",
+			url:     "https://crates.io/api/v1/crates/rand",
+			wantErr: ErrUnclassified,
+		},
+		{
+			name:    "crates_api",
+			url:     "https://crates.io/api/v1/crates/rand/0.7.2",
+			wantErr: ErrSkipped,
+		},
+		{
+			name:    "crates_api_deps",
+			url:     "https://crates.io/api/v1/crates/rand/0.7.2/dependencies",
+			wantErr: ErrSkipped,
+		},
+
 		// gcs URL tests
 		{
 			name: "valid GCS URL",
