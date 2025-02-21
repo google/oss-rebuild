@@ -364,3 +364,151 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 		})
 	}
 }
+
+func TestStableGitProperties(t *testing.T) {
+	testCases := []struct {
+		test     string
+		input    []*ZipEntry
+		expected []*ZipEntry
+	}{
+		{
+			test: "delete_git_properties",
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: aman\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "git.properties"},
+					[]byte("git.build.user.email=mannu.poski10@gmail.com\r\ngit.build.user.name=Aman Sharma\r\n\r\n"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: aman\r\n\r\n"),
+				},
+			},
+		},
+		{
+			test: "delete_git_json",
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: aman\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "git.json"},
+					[]byte("{\n" +
+						"	 \"git.branch\": \"master\",\n" +
+						"	 \"git.commit.id.abbrev\": \"e646d22\",\n" +
+						"    \"git.commit.id.describe\": \"e646d22\",\n" +
+						"    \"git.total.commit.count\": \"1\"" +
+						"\n}"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: aman\r\n\r\n"),
+				},
+			},
+		},
+		{
+			test: "delete_git_json_from_custom_location",
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: aman\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "classes/foo"},
+					[]byte("bar"),
+				},
+				{
+					&zip.FileHeader{Name: "classes/git.json"},
+					[]byte("\n{\n" +
+						"    \"git.branch\": \"main\",\n" +
+						"    \"git.build.host\": \"ort\",\n" +
+						"    \"git.build.user.email\": \"jrivard@gmail.com\",\n" +
+						"    \"git.build.user.name\": \"Jason Rivard\",\n" +
+						"    \"git.build.version\": \"0.1.0\",\n" +
+						"    \"git.closest.tag.commit.count\": \"0\",\n" +
+						"    \"git.closest.tag.name\": \"v1_0_1\",\n" +
+						"    \"git.commit.author.time\": \"2022-01-06T10:16:03Z\",\n" +
+						"    \"git.commit.committer.time\": \"2022-01-06T10:16:03Z\",\n" +
+						"    \"git.commit.id\": \"b8b0e095af45ed8b3212b934ce46f2dcb54fdea6\",\n" +
+						"    \"git.commit.id.abbrev\": \"b8b0e09\",\n    \"git.commit.id.describe\": \"v1_0_1\",\n" +
+						"    \"git.commit.id.describe-short\": \"v1_0_1\",\n" +
+						"    \"git.commit.message.full\": \"0.1.0 release\",\n" +
+						"    \"git.commit.message.short\": \"0.1.0 release\",\n" +
+						"    \"git.commit.time\": \"2022-01-06T10:16:03Z\",\n" +
+						"    \"git.commit.user.email\": \"jrivard@gmail.com\",\n" +
+						"    \"git.commit.user.name\": \"Jason Rivard\",\n" +
+						"    \"git.dirty\": \"false\",\n" +
+						"    \"git.local.branch.ahead\": \"5\",\n" +
+						"    \"git.local.branch.behind\": \"0\",\n" +
+						"    \"git.remote.origin.url\": \"https://github.com/jrivard/chaixml\",\n" +
+						"    \"git.tags\": \"v1_0_1\",\n" +
+						"    \"git.total.commit.count\": \"8\"\n" +
+						"}"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: aman\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "classes/foo"},
+					[]byte("bar"),
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.test, func(t *testing.T) {
+			// Create input zip
+			var input bytes.Buffer
+			{
+				zw := zip.NewWriter(&input)
+				for _, entry := range tc.input {
+					orDie(entry.WriteTo(zw))
+				}
+				orDie(zw.Close())
+			}
+
+			// Process with stabilizer
+			var output bytes.Buffer
+			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
+			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
+				Stabilizers: []any{StableGitProperties},
+			})
+			if err != nil {
+				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
+			}
+
+			// Check output
+			var got []ZipEntry
+			{
+				zr := must(zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len())))
+				for _, ent := range zr.File {
+					got = append(got, ZipEntry{&ent.FileHeader, must(io.ReadAll(must(ent.Open())))})
+				}
+			}
+
+			if len(got) != len(tc.expected) {
+				t.Fatalf("StabilizeZip(%v) got %v entries, want %v", tc.test, len(got), len(tc.expected))
+			}
+
+			for i := range got {
+				if !all(
+					got[i].FileHeader.Name == tc.expected[i].FileHeader.Name,
+					bytes.Equal(got[i].Body, tc.expected[i].Body),
+				) {
+					t.Errorf("Entry %d of %v:\r\ngot:  %+v\r\nwant: %+v", i, tc.test, got[i], tc.expected[i])
+				}
+			}
+		})
+	}
+}
