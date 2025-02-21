@@ -236,11 +236,7 @@ func TestInferStrategy(t *testing.T) {
 						},
 					},
 				},
-				URLValidator: func(expected, actual string) {
-					if diff := cmp.Diff(expected, actual); diff != "" {
-						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-					}
-				},
+				URLValidator: httpxtest.NewURLValidator(t),
 			}
 			mux := rebuild.RegistryMux{CratesIO: cratesio.HTTPRegistry{Client: &client}}
 			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, nil)

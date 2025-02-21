@@ -60,11 +60,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 						},
 					},
 				},
-				URLValidator: func(expected, actual string) {
-					if diff := cmp.Diff(expected, actual); diff != "" {
-						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-					}
-				},
+				URLValidator: httpxtest.NewURLValidator(t),
 			},
 			want: &http.Response{
 				StatusCode: http.StatusOK,
@@ -147,11 +143,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 						},
 					},
 				},
-				URLValidator: func(expected, actual string) {
-					if diff := cmp.Diff(expected, actual); diff != "" {
-						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-					}
-				},
+				URLValidator: httpxtest.NewURLValidator(t),
 			},
 			want: &http.Response{
 				StatusCode: http.StatusOK,
@@ -230,11 +222,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 						},
 					},
 				},
-				URLValidator: func(expected, actual string) {
-					if diff := cmp.Diff(expected, actual); diff != "" {
-						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-					}
-				},
+				URLValidator: httpxtest.NewURLValidator(t),
 			},
 			want: &http.Response{
 				StatusCode: http.StatusOK,
