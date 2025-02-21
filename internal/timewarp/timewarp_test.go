@@ -60,6 +60,11 @@ func TestHandler_ServeHTTP(t *testing.T) {
 						},
 					},
 				},
+				URLValidator: func(expected, actual string) {
+					if diff := cmp.Diff(expected, actual); diff != "" {
+						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+					}
+				},
 			},
 			want: &http.Response{
 				StatusCode: http.StatusOK,
@@ -89,13 +94,13 @@ func TestHandler_ServeHTTP(t *testing.T) {
 		},
 		{
 			name:      "pypi project request - successful time warp",
-			url:       "http://localhost:8081/some-package",
+			url:       "http://localhost:8081/pypi/some-package/json",
 			basicAuth: "pypi:2022-01-01T00:00:00Z",
 			client: &httpxtest.MockClient{
 				Calls: []httpxtest.Call{
 					{
 						Method: "GET",
-						URL:    "https://pypi.org/simple/some-package",
+						URL:    "https://pypi.org/pypi/some-package/json",
 						Response: &http.Response{
 							StatusCode: http.StatusOK,
 							Header: http.Header{
@@ -126,7 +131,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 					},
 					{
 						Method: "GET",
-						URL:    "https://pypi.org/simple/pypi/some-package/1.0.0/json",
+						URL:    "https://pypi.org/pypi/some-package/1.0.0/json",
 						Response: &http.Response{
 							StatusCode: http.StatusOK,
 							Header: http.Header{
@@ -141,6 +146,11 @@ func TestHandler_ServeHTTP(t *testing.T) {
 							}`)),
 						},
 					},
+				},
+				URLValidator: func(expected, actual string) {
+					if diff := cmp.Diff(expected, actual); diff != "" {
+						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+					}
 				},
 			},
 			want: &http.Response{
@@ -162,6 +172,82 @@ func TestHandler_ServeHTTP(t *testing.T) {
 							}
 						]
 					}
+				}`)),
+			},
+		},
+		{
+			name:      "pypi project request - timewarp but no available packages",
+			url:       "http://localhost:8081/pypi/some-package/json",
+			basicAuth: "pypi:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://pypi.org/pypi/some-package/json",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header: http.Header{
+								"Content-Type": []string{"application/json"},
+							},
+							Body: io.NopCloser(bytes.NewBufferString(`{
+								"info": {
+									"name": "some-package",
+									"version": "2.0.0",
+									"requires_dist": ["req1", "req2", "req3"]
+								},
+								"releases": {
+									"1.0.0": [
+										{
+											"upload_time_iso_8601": "2023-06-01T00:00:00Z",
+											"filename": "some-package-1.0.0.tar.gz"
+										}
+									],
+									"2.0.0": [
+										{
+											"upload_time_iso_8601": "2024-06-01T00:00:00Z",
+											"filename": "some-package-2.0.0.tar.gz"
+										}
+									]
+								}
+							}`)),
+						},
+					},
+					{
+						Method: "GET",
+						URL:    "https://pypi.org/pypi/some-package/json",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header: http.Header{
+								"Content-Type": []string{"application/json"},
+							},
+							Body: io.NopCloser(bytes.NewBufferString(`{
+								"info": {
+									"name": "some-package",
+									"version": "1.0.0",
+									"requires_dist": ["req1", "req2"]
+								}
+							}`)),
+						},
+					},
+				},
+				URLValidator: func(expected, actual string) {
+					if diff := cmp.Diff(expected, actual); diff != "" {
+						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+					}
+				},
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`{
+					"info": {
+						"name": "some-package",
+						"version": "1.0.0",
+						"requires_dist": ["req1", "req2"]
+					},
+					"releases": {}
 				}`)),
 			},
 		},
