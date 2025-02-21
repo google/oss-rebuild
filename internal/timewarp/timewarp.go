@@ -24,13 +24,14 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/pkg/errors"
 )
 
 var (
-	npmRegistry, _  = url.Parse("https://registry.npmjs.org/")
-	pypiRegistry, _ = url.Parse("https://pypi.org/simple")
-	lowTimeBound    = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	npmRegistry  = urlx.MustParse("https://registry.npmjs.org/")
+	pypiRegistry = urlx.MustParse("https://pypi.org/simple")
+	lowTimeBound = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
 )
 
 func parseTime(ts string) (*time.Time, error) {
