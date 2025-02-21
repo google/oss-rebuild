@@ -175,3 +175,15 @@ func splitPreservingQuotes(s string, sep rune) []string {
 	}
 	return result
 }
+
+var StableGitProperties = ZipArchiveStabilizer{
+	Name: "jar-git-properties",
+	Func: func(mr *MutableZipReader) {
+		for _, mf := range mr.File {
+			if strings.HasSuffix(mf.Name, "git.properties") || strings.HasSuffix(mf.Name, "git.json") {
+				mr.DeleteFile(mf.Name)
+			}
+		}
+
+	},
+}
