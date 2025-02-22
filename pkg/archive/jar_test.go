@@ -6,11 +6,10 @@ package archive
 import (
 	"archive/zip"
 	"bytes"
-	"github.com/google/oss-rebuild/internal/textwrap"
 	"io"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/textwrap"
 )
 
 func TestStableJARBuildMetadata(t *testing.T) {
@@ -348,7 +347,7 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
 			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
-				Stabilizers: []Stabilizer{StableJAROrderOfAttributeValues},
+				Stabilizers: []any{StableJAROrderOfAttributeValues},
 			})
 			if err != nil {
 				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
