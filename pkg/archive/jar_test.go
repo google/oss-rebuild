@@ -6,10 +6,11 @@ package archive
 import (
 	"archive/zip"
 	"bytes"
-	"github.com/google/oss-rebuild/internal/textwrap"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/google/oss-rebuild/internal/textwrap"
 )
 
 func TestStableJARBuildMetadata(t *testing.T) {
