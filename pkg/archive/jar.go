@@ -178,23 +178,25 @@ func splitPreservingQuotes(s string, sep rune) []string {
 }
 
 var StableGitProperties = ZipArchiveStabilizer{
+var StableGitProperties = ZipEntryStabilizer{
 	Name: "jar-git-properties",
-	Func: func(mr *MutableZipReader) {
-		for _, mf := range mr.File {
-			// These files contain git properties set by git-commit-id-maven-plugin.
-			// They contain many unreproducible attributes as documented
-			// [here](https://github.com/git-commit-id/git-commit-id-maven-plugin/issues/825).
-
-			// Only JSON and properties file formats are available as documented
-			// [here](https://github.com/git-commit-id/git-commit-id-maven-plugin/blob/95d616fc7e16018deff3f17e2d03a4b217e55294/src/main/java/pl/project13/maven/git/GitCommitIdMojo.java#L454).
-			// By default, these file are created in ${project.build.outputDirectory} and are hence at the root of the jar.
-			// We assume that the file name is 'git' as this is the default value for the plugin.
-			// However, the plugin allows customizing the file name.
-			gitRegex := regexp.MustCompile(`\bgit\.(json|properties)$`)
-			if gitRegex.MatchString(mf.Name) {
-				mr.DeleteFile(mf.Name)
-			}
+	Func: func(zf *MutableZipFile) {
+		// These files contain git properties set by git-commit-id-maven-plugin.
+		// They contain many unreproducible attributes as documented
+		// [here](https://github.com/git-commit-id/git-commit-id-maven-plugin/issues/825).
+		// Only JSON and properties file formats are available as documented
+		// [here](https://github.com/git-commit-id/git-commit-id-maven-plugin/blob/95d616fc7e16018deff3f17e2d03a4b217e55294/src/main/java/pl/project13/maven/git/GitCommitIdMojo.java#L454).
+		// By default, these file are created in ${project.build.outputDirectory} and are hence at the root of the jar.
+		// We assume that the file name is 'git' as this is the default value for the plugin.
+		// We don't handle the case where the file name is changed by the user.
+		gitJsonRegex := regexp.MustCompile(`\bgit\.json$`)
+		if gitJsonRegex.MatchString(zf.Name) {
+			zf.SetContent([]byte("{}"))
 		}
 
+		gitPropertiesRegex := regexp.MustCompile(`\bgit\.properties$`)
+		if gitPropertiesRegex.MatchString(zf.Name) {
+			zf.SetContent([]byte{})
+		}
 	},
 }

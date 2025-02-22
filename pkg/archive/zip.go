@@ -113,15 +113,6 @@ func (mr MutableZipReader) WriteTo(zw *zip.Writer) error {
 	return nil
 }
 
-func (mr *MutableZipReader) DeleteFile(name string) {
-	for i, zipEntry := range mr.File {
-		if zipEntry.Name == name {
-			mr.File = append(mr.File[:i], mr.File[i+1:]...)
-			break
-		}
-	}
-}
-
 type ZipArchiveStabilizer struct {
 	Name string
 	Func func(*MutableZipReader)

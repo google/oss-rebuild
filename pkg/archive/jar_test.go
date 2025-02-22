@@ -389,6 +389,10 @@ func TestStableGitProperties(t *testing.T) {
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					[]byte("Built-By: root\r\n\r\n"),
 				},
+				{
+					&zip.FileHeader{Name: "git.properties"},
+					[]byte{},
+				},
 			},
 		},
 		{
@@ -413,6 +417,10 @@ func TestStableGitProperties(t *testing.T) {
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					[]byte("Built-By: root\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "git.json"},
+					[]byte("{}"),
 				},
 			},
 		},
@@ -466,6 +474,10 @@ func TestStableGitProperties(t *testing.T) {
 				{
 					&zip.FileHeader{Name: "classes/foo"},
 					[]byte("bar"),
+				},
+				{
+					&zip.FileHeader{Name: "classes/git.json"},
+					[]byte("{}"),
 				},
 			},
 		},
