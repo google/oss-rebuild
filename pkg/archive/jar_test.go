@@ -6,6 +6,7 @@ package archive
 import (
 	"archive/zip"
 	"bytes"
+	"github.com/google/oss-rebuild/internal/textwrap"
 	"io"
 	"testing"
 
@@ -399,12 +400,13 @@ func TestStableGitProperties(t *testing.T) {
 				},
 				{
 					&zip.FileHeader{Name: "git.json"},
-					[]byte("{\n" +
-						"	 \"git.branch\": \"master\",\n" +
-						"	 \"git.commit.id.abbrev\": \"e646d22\",\n" +
-						"    \"git.commit.id.describe\": \"e646d22\",\n" +
-						"    \"git.total.commit.count\": \"1\"" +
-						"\n}"),
+					[]byte(textwrap.Dedent(`
+						{
+							"git.branch": "master",
+							"git.commit.id.abbrev": "e646d22",
+							"git.commit.id.describe": "e646d22",
+							"git.total.commit.count": "1"
+						}`)),
 				},
 			},
 			expected: []*ZipEntry{
@@ -427,31 +429,33 @@ func TestStableGitProperties(t *testing.T) {
 				},
 				{
 					&zip.FileHeader{Name: "classes/git.json"},
-					[]byte("\n{\n" +
-						"    \"git.branch\": \"main\",\n" +
-						"    \"git.build.host\": \"ort\",\n" +
-						"    \"git.build.user.email\": \"jrivard@gmail.com\",\n" +
-						"    \"git.build.user.name\": \"Jason Rivard\",\n" +
-						"    \"git.build.version\": \"0.1.0\",\n" +
-						"    \"git.closest.tag.commit.count\": \"0\",\n" +
-						"    \"git.closest.tag.name\": \"v1_0_1\",\n" +
-						"    \"git.commit.author.time\": \"2022-01-06T10:16:03Z\",\n" +
-						"    \"git.commit.committer.time\": \"2022-01-06T10:16:03Z\",\n" +
-						"    \"git.commit.id\": \"b8b0e095af45ed8b3212b934ce46f2dcb54fdea6\",\n" +
-						"    \"git.commit.id.abbrev\": \"b8b0e09\",\n    \"git.commit.id.describe\": \"v1_0_1\",\n" +
-						"    \"git.commit.id.describe-short\": \"v1_0_1\",\n" +
-						"    \"git.commit.message.full\": \"0.1.0 release\",\n" +
-						"    \"git.commit.message.short\": \"0.1.0 release\",\n" +
-						"    \"git.commit.time\": \"2022-01-06T10:16:03Z\",\n" +
-						"    \"git.commit.user.email\": \"jrivard@gmail.com\",\n" +
-						"    \"git.commit.user.name\": \"Jason Rivard\",\n" +
-						"    \"git.dirty\": \"false\",\n" +
-						"    \"git.local.branch.ahead\": \"5\",\n" +
-						"    \"git.local.branch.behind\": \"0\",\n" +
-						"    \"git.remote.origin.url\": \"https://github.com/jrivard/chaixml\",\n" +
-						"    \"git.tags\": \"v1_0_1\",\n" +
-						"    \"git.total.commit.count\": \"8\"\n" +
-						"}"),
+					[]byte(textwrap.Dedent(`
+						{
+							"git.branch": "main",
+							"git.build.host": "ort",
+							"git.build.user.email": xmlchai@maven",
+							"git.build.user.name": "XMLChai Maven",
+							"git.build.version": "0.1.0",
+							"git.closest.tag.commit.count": "0",
+							"git.closest.tag.name": "v1_0_1",
+							"git.commit.author.time": "2022-01-06T10:16:03Z",
+							"git.commit.committer.time": "2022-01-06T10:16:03Z",
+							"git.commit.id": "b8b0e095af45ed8b3212b934ce46f2dcb54fdea6",
+							"git.commit.id.abbrev": "b8b0e09",
+							"git.commit.id.describe": "v1_0_1",
+							"git.commit.id.describe-short": "v1_0_1",
+							"git.commit.message.full": "0.1.0 release",
+							"git.commit.message.short": "0.1.0 release",
+							"git.commit.time": "2022-01-06T10:16:03Z",
+							"git.commit.user.email": "xmlchai@maven",
+							"git.commit.user.name": "XMLChai Maven",
+							"git.dirty": "false",
+							"git.local.branch.ahead": "5",
+							"git.local.branch.behind": "0",
+							"git.remote.origin.url": "https://github.com/jrivard/chaixml",
+							"git.tags": "v1_0_1",
+							"git.total.commit.count": "8"
+						}`)),
 				},
 			},
 			expected: []*ZipEntry{
