@@ -5,6 +5,7 @@ package archive
 
 import (
 	"bytes"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -189,8 +190,8 @@ var StableGitProperties = ZipArchiveStabilizer{
 			// By default, these file are created in ${project.build.outputDirectory} and are hence at the root of the jar.
 			// We assume that the file name is 'git' as this is the default value for the plugin.
 			// However, the plugin allows customizing the file name.
-			if strings.HasSuffix(mf.Name, "git.properties") || strings.HasSuffix(mf.Name, "git.json") {
-				// We remove these files to ensure reproducibility.
+			gitRegex := regexp.MustCompile(`\bgit\.(json|properties)$`)
+			if gitRegex.MatchString(mf.Name) {
 				mr.DeleteFile(mf.Name)
 			}
 		}
