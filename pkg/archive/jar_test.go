@@ -324,17 +324,17 @@ func TestStableGitProperties(t *testing.T) {
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: aman\r\n\r\n"),
+					[]byte("Built-By: root\r\n\r\n"),
 				},
 				{
 					&zip.FileHeader{Name: "git.properties"},
-					[]byte("git.build.user.email=mannu.poski10@gmail.com\r\ngit.build.user.name=Aman Sharma\r\n\r\n"),
+					[]byte("git.build.user.email=foo@bar.baz\r\ngit.build.user.name=foo bar\r\n\r\n"),
 				},
 			},
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: aman\r\n\r\n"),
+					[]byte("Built-By: root\r\n\r\n"),
 				},
 			},
 		},
@@ -343,7 +343,7 @@ func TestStableGitProperties(t *testing.T) {
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: aman\r\n\r\n"),
+					[]byte("Built-By: root\r\n\r\n"),
 				},
 				{
 					&zip.FileHeader{Name: "git.json"},
@@ -358,7 +358,7 @@ func TestStableGitProperties(t *testing.T) {
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: aman\r\n\r\n"),
+					[]byte("Built-By: root\r\n\r\n"),
 				},
 			},
 		},
@@ -367,7 +367,7 @@ func TestStableGitProperties(t *testing.T) {
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: aman\r\n\r\n"),
+					[]byte("Built-By: root\r\n\r\n"),
 				},
 				{
 					&zip.FileHeader{Name: "classes/foo"},
@@ -405,7 +405,7 @@ func TestStableGitProperties(t *testing.T) {
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: aman\r\n\r\n"),
+					[]byte("Built-By: root\r\n\r\n"),
 				},
 				{
 					&zip.FileHeader{Name: "classes/foo"},
