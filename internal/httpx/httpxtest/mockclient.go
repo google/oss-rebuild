@@ -15,9 +15,10 @@ type Call struct {
 }
 
 type MockClient struct {
-	Calls        []Call
-	URLValidator func(expected, actual string)
-	callCount    int
+	Calls             []Call
+	URLValidator      func(expected, actual string)
+	SkipURLValidation bool
+	callCount         int
 }
 
 func (m *MockClient) Do(req *http.Request) (*http.Response, error) {
@@ -27,6 +28,11 @@ func (m *MockClient) Do(req *http.Request) (*http.Response, error) {
 	call := m.Calls[m.callCount]
 	m.callCount++
 
+	if !m.SkipURLValidation && (m.URLValidator == nil) {
+		panic("URL validation requested but not configured")
+	} else if m.SkipURLValidation && (m.URLValidator != nil) {
+		panic("URL validation disabled but configured")
+	}
 	if m.URLValidator != nil {
 		if call.Method != "" {
 			m.URLValidator(call.Method+" "+call.URL, req.Method+" "+req.URL.String())
