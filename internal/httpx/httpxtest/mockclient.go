@@ -5,6 +5,9 @@ package httpxtest
 
 import (
 	"net/http"
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 type Call struct {
@@ -46,4 +49,13 @@ func (m *MockClient) Do(req *http.Request) (*http.Response, error) {
 
 func (m *MockClient) CallCount() int {
 	return m.callCount
+}
+
+func NewURLValidator(t *testing.T) func(string, string) {
+	return func(expected, actual string) {
+		t.Helper()
+		if diff := cmp.Diff(expected, actual); diff != "" {
+			t.Fatalf("URL mismatch (-want +got):\n%s", diff)
+		}
+	}
 }

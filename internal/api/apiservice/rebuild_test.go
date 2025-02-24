@@ -298,12 +298,8 @@ RLpmHHG1JOVdOA==
 			ctx := context.Background()
 			var d RebuildPackageDeps
 			d.HTTPClient = &httpxtest.MockClient{
-				Calls: tc.calls,
-				URLValidator: func(expected, actual string) {
-					if diff := cmp.Diff(expected, actual); diff != "" {
-						t.Errorf("URL mismatch: diff\n%v", diff)
-					}
-				},
+				Calls:        tc.calls,
+				URLValidator: httpxtest.NewURLValidator(t),
 			}
 			d.Signer = must(dsse.NewEnvelopeSigner(&FakeSigner{}))
 			fs := memfs.New()
