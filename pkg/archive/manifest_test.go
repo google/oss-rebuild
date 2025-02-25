@@ -128,13 +128,13 @@ func TestParseManifest(t *testing.T) {
 				return
 			}
 
-			if diff := cmp.Diff(got.MainSection.Attributes, tt.wantMain); diff != "" {
+			if diff := cmp.Diff(got.MainSection.attributes, tt.wantMain); diff != "" {
 				t.Errorf("Main section differs: (-got,+want)\n%s", diff)
 			}
 
 			var sections []map[string]string
 			for _, section := range got.EntrySections {
-				sections = append(sections, section.Attributes)
+				sections = append(sections, section.attributes)
 			}
 			if diff := cmp.Diff(sections, tt.wantEntry); diff != "" {
 				t.Errorf("Entry sections differ: (-got,+want)\n%s", diff)
@@ -203,14 +203,14 @@ func TestParseManifestOrder(t *testing.T) {
 			}
 
 			// Check main section order
-			if len(got.MainSection.Order) != len(tt.wantMainOrder) {
+			if len(got.MainSection.Names) != len(tt.wantMainOrder) {
 				t.Errorf("Main section order length = %d, want %d",
-					len(got.MainSection.Order), len(tt.wantMainOrder))
+					len(got.MainSection.Names), len(tt.wantMainOrder))
 			}
 			for i, name := range tt.wantMainOrder {
-				if got.MainSection.Order[i] != name {
+				if got.MainSection.Names[i] != name {
 					t.Errorf("Main section order[%d] = %s, want %s",
-						i, got.MainSection.Order[i], name)
+						i, got.MainSection.Names[i], name)
 				}
 			}
 		})
