@@ -23,8 +23,10 @@ import (
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/internal/netclassify"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/builddef"
+	"github.com/google/oss-rebuild/pkg/proxy/netlog"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
@@ -268,12 +270,35 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		input.Strategy = entry.Strategy
 		buildDefRepo = entry.BuildDefLoc
 	}
+	var proxyURLs *[]string
+	if useProxy {
+		proxyURLs = &[]string{}
+		rc, err := remoteMetadata.Reader(ctx, rebuild.ProxyNetlogAsset.For(t))
+		if err != nil {
+			return errors.Wrap(err, "fetching netlog")
+		}
+		defer rc.Close()
+		var nl netlog.NetworkActivityLog
+		if err := json.NewDecoder(rc).Decode(&nl); err != nil {
+			return errors.Wrap(err, "decoding netlog")
+		}
+		for _, req := range nl.HTTPRequests {
+			url := req.URL().String()
+			if purl, err := netclassify.ClassifyURL(url); errors.Is(err, netclassify.ErrSkipped) {
+				continue
+			} else if errors.Is(err, netclassify.ErrUnclassified) || err != nil {
+				*proxyURLs = append(*proxyURLs, url)
+			} else {
+				*proxyURLs = append(*proxyURLs, purl)
+			}
+		}
+	}
 	if u, err := url.Parse(deps.ServiceRepo.Repo); err != nil {
 		return errors.Wrap(err, "bad ServiceRepo URL")
 	} else if (u.Scheme == "file" || u.Scheme == "") && !deps.PublishForLocalServiceRepo {
 		return errors.Wrap(err, "disallowed file:// ServiceRepo URL")
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo, proxyURLs)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
