@@ -7,8 +7,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
-	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestStableJARBuildMetadata(t *testing.T) {
@@ -197,7 +198,7 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Export-Package: a,b,c,d,e\n"),
+					[]byte("Export-Package: a,b,c,d,e\r\n\r\n"),
 				},
 			},
 		},
@@ -207,13 +208,24 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Provide-Capability: sling.servlet;sling.servlet.resourceTypes:List<Strin\n g>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngin\n e=rhino;scriptExtension=ecma;sling.servlet.selectors:List<String>=scrip\n t,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sl\n ing/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExt\n ension=js;sling.servlet.selectors:List<String>=script,sling.servlet;sli\n ng.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sight\n ly/testing/precompiled\";scriptEngine=htl;scriptExtension=html,sling.ser\n vlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripti\n ng/sightly/testing/precompiled/templates-access-control\";scriptEngine=h\n tl;scriptExtension=html,sling.servlet;sling.servlet.resourceTypes:List<\n String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templat\n es-access-control\";scriptEngine=htl;scriptExtension=html;sling.servlet.\n selectors:List<String>=\"partials,include\"\n"),
+					[]byte("Provide-Capability: " +
+						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExtension=ecma;sling.servlet.selectors:List<String>=script," +
+						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExtension=js;sling.servlet.selectors:List<String>=script," +
+						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=htl;scriptExtension=html," +
+						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templates-access-control\";scriptEngine=htl;scriptExtension=html," +
+						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templates-access-control\";scriptEngine=htl;scriptExtension=html;sling.servlet.selectors:List<String>=\"partials,include\"\n"),
 				},
 			},
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Provide-Capability: include\",sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=htl;scriptExtension=html,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExtension=ecma;sling.servlet.selectors:List<String>=script,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExtension=js;sling.servlet.selectors:List<String>=script,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templates-access-control\";scriptEngine=htl;scriptExtension=html,sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templates-access-control\";scriptEngine=htl;scriptExtension=html;sling.servlet.selectors:List<String>=\"partials\n"),
+					[]byte("Provide-Capability: " +
+						"include\"," +
+						"sling.servlet;sling.servlet.resourceTypes:L\r\n ist<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";sc\r\n riptEngine=htl;scriptExtension=html," +
+						"sling.servlet;sling.servlet.resourc\r\n eTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precomp\r\n iled\";scriptEngine=rhino;scriptExtension=ecma;sling.servlet.selectors:L\r\n ist<String>=script," +
+						"sling.servlet;sling.servlet.resourceTypes:List<Strin\r\n g>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngin\r\n e=rhino;scriptExtension=js;sling.servlet.selectors:List<String>=script,\r\n " +
+						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/slin\r\n g/scripting/sightly/testing/precompiled/templates-access-control\";scrip\r\n tEngine=htl;scriptExtension=html," +
+						"sling.servlet;sling.servlet.resourceTy\r\n pes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompile\r\n d/templates-access-control\";scriptEngine=htl;scriptExtension=html;sling\r\n .servlet.selectors:List<String>=\"partials\r\n\r\n"),
 				},
 			},
 		},
@@ -224,18 +236,82 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					[]byte(
-						"Export-Package: org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",org.slf4\n j.agent;version=\"2.0.6\",org.slf4j.instrumentation;uses:=javassist;versi\n on=\"2.0.6\",org.slf4j.cal10n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.sl\n f4j,org.slf4j.ext\",org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\n" +
+						"Export-Package: org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",\n" +
+							" org.slf4j.agent;version=\"2.0.6\",\n" +
+							" org.slf4j.instrumentation;uses:=javassist;version=\"2.0.6\",\n" +
+							" org.slf4j.cal10n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.slf4j,org.slf4j.ext\",\n" +
+							" org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\n" +
 							"Include-Resource: META-INF/NOTICE=NOTICE,META-INF/LICENSE=LICENSE\n" +
-							"Private-Package: org.apache.shiro.util,org.apache.shiro.ldap,org.apach\n e.shiro.authc.credential,org.apache.shiro.authc,org.apache.shiro.auth\n c.pam,org.apache.shiro.subject,org.apache.shiro.subject.support,org.a\n pache.shiro.dao,org.apache.shiro,org.apache.shiro.aop,org.apache.shir\n o.env,org.apache.shiro.mgt,org.apache.shiro.ini,org.apache.shiro.jndi\n ,org.apache.shiro.concurrent,org.apache.shiro.authz,org.apache.shiro.\n authz.annotation,org.apache.shiro.authz.aop,org.apache.shiro.authz.pe\n rmission,org.apache.shiro.realm,org.apache.shiro.realm.ldap,org.apach\n e.shiro.realm.activedirectory,org.apache.shiro.realm.jdbc,org.apache.\n shiro.realm.jndi,org.apache.shiro.realm.text,org.apache.shiro.session\n ,org.apache.shiro.session.mgt,org.apache.shiro.session.mgt.eis\n"),
+							"Private-Package: org.apache.shiro.util,\n" +
+							" org.apache.shiro.ldap,\n" +
+							" org.apache.shiro.authc.credential,\n" +
+							" org.apache.shiro.authc,\n" +
+							" org.apache.shiro.authc.pam,\n" +
+							" org.apache.shiro.subject,\n" +
+							" org.apache.shiro.subject.support,\n" +
+							" org.apache.shiro.dao,\n" +
+							" org.apache.shiro,\n" +
+							" org.apache.shiro.aop,\n" +
+							" org.apache.shiro.env,\n" +
+							" org.apache.shiro.mgt,\n" +
+							" org.apache.shiro.ini,\n" +
+							" org.apache.shiro.jndi,\n" +
+							" org.apache.shiro.concurrent,\n" +
+							" org.apache.shiro.authz,\n" +
+							" org.apache.shiro.authz.annotation,\n" +
+							" org.apache.shiro.authz.aop,\n" +
+							" org.apache.shiro.authz.permission,\n" +
+							" org.apache.shiro.realm,\n" +
+							" org.apache.shiro.realm.ldap,\n" +
+							" org.apache.shiro.realm.activedirectory,\n" +
+							" org.apache.shiro.realm.jdbc,\n" +
+							" org.apache.shiro.realm.jndi,\n" +
+							" org.apache.shiro.realm.text,\n" +
+							" org.apache.shiro.session,\n" +
+							" org.apache.shiro.session.mgt,\n" +
+							" org.apache.shiro.session.mgt.eis\n"),
 				},
 			},
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					[]byte(
-						"Export-Package: org.slf4j,org.slf4j.agent;version=\"2.0.6\",org.slf4j.cal10n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.slf4j.ext\",org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",org.slf4j.instrumentation;uses:=javassist;version=\"2.0.6\",org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\n" +
-							"Include-Resource: META-INF/LICENSE=LICENSE,META-INF/NOTICE=NOTICE\n" +
-							"Private-Package: org.apache.shiro,org.apache.shiro.aop,org.apache.shiro.authc,org.apache.shiro.authc.credential,org.apache.shiro.authc.pam,org.apache.shiro.authz,org.apache.shiro.authz.annotation,org.apache.shiro.authz.aop,org.apache.shiro.authz.permission,org.apache.shiro.concurrent,org.apache.shiro.dao,org.apache.shiro.env,org.apache.shiro.ini,org.apache.shiro.jndi,org.apache.shiro.ldap,org.apache.shiro.mgt,org.apache.shiro.realm,org.apache.shiro.realm.activedirectory,org.apache.shiro.realm.jdbc,org.apache.shiro.realm.jndi,org.apache.shiro.realm.ldap,org.apache.shiro.realm.text,org.apache.shiro.session,org.apache.shiro.session.mgt,org.apache.shiro.session.mgt.eis,org.apache.shiro.subject,org.apache.shiro.subject.support,org.apache.shiro.util\n"),
+						"Export-Package: org.slf4j," +
+							"org.slf4j.agent;version=\"2.0.6\"," +
+							"org.slf4j.cal1\r\n 0n;version=\"2.0.6\";uses:=\"ch.qos.cal10n,org.slf4j.ext\"," +
+							"org.slf4j.ext;ve\r\n rsion=\"2.0.6\";uses:=\"org.slf4j\"," +
+							"org.slf4j.instrumentation;uses:=javassi\r\n st;version=\"2.0.6\"," +
+							"org.slf4j.profiler;version=\"2.0.6\";uses:=\"org.slf4j\"\r\n" +
+							"Include-Resource: META-INF/LICENSE=LICENSE,META-INF/NOTICE=NOTICE\r\n" +
+							"Private-Package: org.apache.shiro," +
+							"org.apache.shiro.aop," +
+							"org.apache.shiro.\r\n authc," +
+							"org.apache.shiro.authc.credential," +
+							"org.apache.shiro.authc.pam," +
+							"org.\r\n apache.shiro.authz," +
+							"org.apache.shiro.authz.annotation," +
+							"org.apache.shiro.a\r\n uthz.aop," +
+							"org.apache.shiro.authz.permission," +
+							"org.apache.shiro.concurrent,\r\n " +
+							"org.apache.shiro.dao," +
+							"org.apache.shiro.env," +
+							"org.apache.shiro.ini," +
+							"org.apac\r\n he.shiro.jndi," +
+							"org.apache.shiro.ldap," +
+							"org.apache.shiro.mgt," +
+							"org.apache.shi\r\n ro.realm," +
+							"org.apache.shiro.realm.activedirectory," +
+							"org.apache.shiro.realm.\r\n jdbc," +
+							"org.apache.shiro.realm.jndi," +
+							"org.apache.shiro.realm.ldap," +
+							"org.apache\r\n .shiro.realm.text," +
+							"org.apache.shiro.session," +
+							"org.apache.shiro.session.mgt\r\n ," +
+							"org.apache.shiro.session.mgt.eis," +
+							"org.apache.shiro.subject," +
+							"org.apache.s\r\n hiro.subject.support," +
+							"org.apache.shiro.util\r\n\r\n",
+					),
 				},
 			},
 		},
@@ -261,54 +337,14 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
 			}
 			// Check output
-			var got []ZipEntry
-			{
-				zr := must(zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len())))
-				for _, ent := range zr.File {
-					got = append(got, ZipEntry{&ent.FileHeader, must(io.ReadAll(must(ent.Open())))})
-				}
-			}
-			if got[0].Name != tc.expected[0].Name {
-				t.Errorf("StabilizeZip(%v) got %v, want %v", tc.test, got[0].Name, tc.expected[0].Name)
-			}
-
-			manifestGot, err := ParseManifest(bytes.NewReader(got[0].Body))
-			if err != nil {
-				t.Fatalf("Could not parse actual manifest: %v", err)
-			}
-			manifestWant, err := ParseManifest(bytes.NewReader(tc.expected[0].Body))
-			if err != nil {
-				t.Fatalf("Could not parse expected manifest: %v", err)
-			}
-
-			if len(manifestGot.MainSection.Attributes) != len(manifestWant.MainSection.Attributes) {
-				t.Fatalf("StabilizeZip(%v) got %v entries, want %v", tc.test, len(manifestGot.MainSection.Attributes), len(manifestWant.MainSection.Attributes))
-			}
-
-			for _, attr := range tc.attributeName {
-				gotOrder := getSeparatedValues(manifestGot.MainSection.Attributes[attr])
-				wantOrder := getSeparatedValues(manifestWant.MainSection.Attributes[attr])
-				if gotOrder == nil || wantOrder == nil {
-					t.Fatalf("Could not parse expected or actual manifest")
-				}
-
-				if len(gotOrder) != len(wantOrder) {
-					t.Fatalf("StabilizeZip(%v) got %v entries, want %v", tc.test, len(gotOrder), len(wantOrder))
-				}
-				for i := range gotOrder {
-					if gotOrder[i] != wantOrder[i] {
-						t.Errorf("Entry %d of %v:\r\ngot:  %+v\r\nwant: %+v", i, tc.test, gotOrder[i], wantOrder[i])
-					}
+			zr = must(zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len())))
+			for i, ent := range zr.File {
+				if ent.Name != tc.expected[i].Name {
+					t.Errorf("%v: ZipEntry[%d].Name got %v, want %v", tc.test, i, ent.Name, tc.expected[i].Name)
+				} else if diff := cmp.Diff(string(tc.expected[i].Body), string(must(io.ReadAll(must(ent.Open()))))); diff != "" {
+					t.Errorf("ZipEntry[%d].Body mismatch (-want +got):\n%s", i, diff)
 				}
 			}
 		})
 	}
-}
-
-func getSeparatedValues(attributeValue string) []string {
-	value := strings.ReplaceAll(attributeValue, "\r", "")
-	value = strings.ReplaceAll(value, "\n", "")
-	value = strings.ReplaceAll(value, " ", "")
-	commaSeparateValues := strings.Split(value, ",")
-	return commaSeparateValues
 }
