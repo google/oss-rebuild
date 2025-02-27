@@ -9,11 +9,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,15 +19,9 @@ import (
 	"strings"
 	"time"
 
-	gcs "cloud.google.com/go/storage"
 	"github.com/gdamore/tcell/v2"
-	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
@@ -106,11 +97,10 @@ type explorer struct {
 	firestoreOpts rundex.FetchRebuildOpts
 	runs          map[string]rundex.Run
 	buildDefs     rebuild.LocatableAssetStore
-	mux           rebuild.RegistryMux
+	butler        localfiles.Butler
 }
 
-func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder, buildDefs rebuild.LocatableAssetStore) *explorer {
-	regclient := http.DefaultClient
+func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *explorer {
 	e := explorer{
 		ctx:           ctx,
 		app:           app,
@@ -121,12 +111,7 @@ func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.R
 		firestore:     firestore,
 		firestoreOpts: firestoreOpts,
 		buildDefs:     buildDefs,
-		mux: rebuild.RegistryMux{
-			Debian:   debianreg.HTTPRegistry{Client: regclient},
-			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-			NPM:      npmreg.HTTPRegistry{Client: regclient},
-			PyPI:     pypireg.HTTPRegistry{Client: regclient},
-		},
+		butler:        butler,
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
 	e.container.AddPage("explorer", e.tree, true, true)
@@ -137,7 +122,7 @@ func makeCommandNode(name string, handler func()) *tview.TreeNode {
 	return tview.NewTreeNode(name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(handler)
 }
 
-func diffArtifacts(ctx context.Context, mux rebuild.RegistryMux, example rundex.Rebuild) error {
+func diffArtifacts(ctx context.Context, butler localfiles.Butler, example rundex.Rebuild) error {
 	if example.Artifact == "" {
 		return errors.New("Firestore does not have the artifact, cannot find GCS path.")
 	}
@@ -147,78 +132,23 @@ func diffArtifacts(ctx context.Context, mux rebuild.RegistryMux, example rundex.
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, err := localfiles.AssetStore(example.RunID)
-	if err != nil {
-		return errors.Wrap(err, "failed to create local asset store")
-	}
-	debugAssets, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.RunID, example.RunID))
-	if err != nil {
-		return errors.Wrap(err, "failed to create debug asset store")
-	}
 	var rba, usa string
-	if example.WasSmoketest() {
-		// TODO: Clean up these artifacts.
-		rebuildAsset := rebuild.DebugRebuildAsset.For(t)
-		upstreamAsset := rebuild.DebugUpstreamAsset.For(t)
-		rba = localAssets.URL(rebuildAsset).Path
-		usa = localAssets.URL(upstreamAsset).Path
-		if _, err := localAssets.Reader(ctx, rebuildAsset); errors.Is(err, os.ErrNotExist) {
-			if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, rebuildAsset); err != nil {
-				return errors.Wrap(err, "failed to copy rebuild asset")
-			}
-			log.Printf("downloaded rebuild: %s", rba)
-		}
-		if _, err := localAssets.Reader(ctx, upstreamAsset); errors.Is(err, os.ErrNotExist) {
-			if err := rebuild.AssetCopy(ctx, localAssets, debugAssets, upstreamAsset); err != nil {
-				return errors.Wrap(err, "failed to copy upstream asset")
-			}
-			log.Printf("downloaded upstream: %s", usa)
-		}
-	} else {
-		r, err := debugAssets.Reader(ctx, rebuild.BuildInfoAsset.For(t))
-		if err != nil {
-			return errors.Wrap(err, "reading build info")
-		}
-		var bi rebuild.BuildInfo
-		if err := json.NewDecoder(r).Decode(&bi); err != nil {
-			return errors.Wrap(err, "decoding build info")
-		}
-		metadataBucket, ok := ctx.Value(MetadataBucketID).(string)
-		if !ok {
-			return errors.New("cannot read rebuild asset from gcs, not bucket provided")
-		}
-		metadata, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, bi.ID), fmt.Sprintf("gs://%s", metadataBucket))
-		if err != nil {
-			return errors.Wrap(err, "initializing metadata store")
-		}
-		// TODO: Clean up these artifacts.
-		rebuildAsset := rebuild.RebuildAsset.For(t)
-		upstreamAsset := rebuild.DebugUpstreamAsset.For(t)
-		rba = localAssets.URL(rebuildAsset).Path
-		usa = localAssets.URL(upstreamAsset).Path
-		if _, err := localAssets.Reader(ctx, rebuildAsset); errors.Is(err, os.ErrNotExist) {
-			if err := rebuild.AssetCopy(ctx, localAssets, metadata, rebuildAsset); err != nil {
-				return errors.Wrap(err, "failed to copy rebuild asset")
-			}
-			log.Printf("downloaded rebuild: %s", rba)
-		}
-		if _, err := localAssets.Reader(ctx, upstreamAsset); errors.Is(err, os.ErrNotExist) {
-			w, err := localAssets.Writer(ctx, upstreamAsset)
+	{
+		var err error
+		if example.WasSmoketest() {
+			rba, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugRebuildAsset.For(t))
 			if err != nil {
-				return errors.Wrap(err, "making localAsset writer")
+				return errors.Wrap(err, "fetching rebuild asset")
 			}
-			defer w.Close()
-			r, err := rebuild.UpstreamArtifactReader(ctx, t, mux)
+		} else {
+			rba, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.RebuildAsset.For(t))
 			if err != nil {
-				return errors.Wrap(err, "making localAsset writer")
+				return errors.Wrap(err, "fetching rebuild asset")
 			}
-			defer r.Close()
-			if _, err := io.Copy(w, r); err != nil {
-				return errors.Wrap(err, "failed to download upstream artifact")
-			}
-			log.Printf("downloaded upstream: %s", usa)
-		} else if err != nil {
-			return errors.Wrap(err, "trying to open local copy of upstream asset")
+		}
+		usa, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(t))
+		if err != nil {
+			return errors.Wrap(err, "fetching upstream asset")
 		}
 	}
 	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("diffoscope --text-color=always %s %s 2>&1 | less -R", rba, usa))
@@ -256,65 +186,6 @@ func (e *explorer) showDetails(example rundex.Rebuild) {
 	showModal(e.app, e.container, details, modalOpts{Margin: 10})
 }
 
-func downloadLogs(ctx context.Context, localAssets rebuild.AssetStore, example rundex.Rebuild) error {
-	t := rebuild.Target{
-		Ecosystem: rebuild.Ecosystem(example.Ecosystem),
-		Package:   example.Package,
-		Version:   example.Version,
-		Artifact:  example.Artifact,
-	}
-	logsAsset := rebuild.DebugLogsAsset.For(t)
-	debugAssets, err := rebuild.DebugStoreFromContext(context.WithValue(ctx, rebuild.RunID, example.RunID))
-	if err != nil {
-		return errors.Wrap(err, "failed to create debug asset store")
-	}
-	// First, try to get the logs from the debug store directly.
-	if rebuild.AssetCopy(ctx, localAssets, debugAssets, logsAsset) == nil {
-		return nil
-	}
-	// If directly copying from the debug store doesn't work, attempt to find GCB logs.
-	logsBucket, ok := ctx.Value(LogsBucketID).(string)
-	if !ok {
-		return errors.New("cannot read logs from gcb, not bucket provided")
-	}
-	var info rebuild.BuildInfo
-	{
-		infoAsset := rebuild.BuildInfoAsset.For(t)
-		r, err := debugAssets.Reader(ctx, infoAsset)
-		if err != nil {
-			return errors.Wrap(err, "reading build info")
-		}
-		if json.NewDecoder(r).Decode(&info) != nil {
-			return errors.Wrap(err, "parseing build info")
-		}
-	}
-	if info.BuildID == "" {
-		return errors.New("BuildID is empty, cannot read gcb logs")
-	}
-	client, err := gcs.NewClient(ctx)
-	if err != nil {
-		return errors.Wrap(err, "creating gcs client")
-	}
-	obj := client.Bucket(logsBucket).Object(gcb.MergedLogFile(info.BuildID))
-	r, err := obj.NewReader(ctx)
-	if err != nil {
-		return errors.Wrap(err, "reading gcb logs")
-	}
-	defer r.Close()
-	w, err := localAssets.Writer(ctx, logsAsset)
-	if err != nil {
-		return errors.Wrap(err, "making localAsset writer")
-	}
-	defer w.Close()
-	if _, err := io.Copy(w, r); err != nil {
-		return errors.Wrap(err, "writing logs")
-	}
-	if err := w.Close(); err != nil {
-		return errors.Wrap(err, "closing localAsset writer")
-	}
-	return nil
-}
-
 func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 	if example.Artifact == "" {
 		log.Println("Firestore does not have the artifact, cannot find GCS path.")
@@ -326,18 +197,10 @@ func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 		Version:   example.Version,
 		Artifact:  example.Artifact,
 	}
-	localAssets, err := localfiles.AssetStore(example.RunID)
+	logs, err := e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugLogsAsset.For(t))
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to create local asset store"))
+		log.Println(errors.Wrap(err, "downloading logs"))
 		return
-	}
-	logsAsset := rebuild.DebugLogsAsset.For(t)
-	logs := localAssets.URL(logsAsset).Path
-	if _, err := os.Stat(logs); errors.Is(err, os.ErrNotExist) {
-		if err := downloadLogs(ctx, localAssets, example); err != nil {
-			log.Println(errors.Wrap(err, "downloading logs"))
-			return
-		}
 	}
 	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("cat %s | less", logs))
 	if err := cmd.Run(); err != nil {
@@ -439,7 +302,7 @@ func (e *explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 			}))
 			node.AddChild(makeCommandNode("diff", func() {
 				go func() {
-					if err := diffArtifacts(e.ctx, e.mux, example); err != nil {
+					if err := diffArtifacts(e.ctx, e.butler, example); err != nil {
 						log.Println(err.Error())
 					}
 				}()
@@ -574,7 +437,7 @@ type TuiApp struct {
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, benchmarkDir string, buildDefs rebuild.LocatableAssetStore) *TuiApp {
+func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, benchmarkDir string, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -590,7 +453,7 @@ func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rund
 		t = &TuiApp{
 			Ctx:      ctx,
 			app:      app,
-			explorer: newExplorer(ctx, app, fireClient, firestoreOpts, rb, buildDefs),
+			explorer: newExplorer(ctx, app, fireClient, firestoreOpts, rb, buildDefs, butler),
 			// When the widgets are updated, we should refresh the application.
 			statusBox:    tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
 			logs:         logs,

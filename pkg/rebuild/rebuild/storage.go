@@ -70,6 +70,11 @@ type Asset struct {
 	Target Target
 }
 
+// ReadOnlyAssetStore is a storage mechanism for debug assets.
+type ReadOnlyAssetStore interface {
+	Reader(ctx context.Context, a Asset) (io.ReadCloser, error)
+}
+
 // AssetStore is a storage mechanism for debug assets.
 type AssetStore interface {
 	Reader(ctx context.Context, a Asset) (io.ReadCloser, error)
@@ -83,7 +88,7 @@ type LocatableAssetStore interface {
 }
 
 // AssetCopy copies an asset from one store to another.
-func AssetCopy(ctx context.Context, to, from AssetStore, a Asset) error {
+func AssetCopy(ctx context.Context, to AssetStore, from ReadOnlyAssetStore, a Asset) error {
 	r, err := from.Reader(ctx, a)
 	if err != nil {
 		return errors.Wrap(err, "from.Reader failed")
