@@ -93,6 +93,7 @@ func (b *Debrebuild) ToWorkflow() *rebuild.WorkflowStrategy {
 				"buildinfo":  path.Base(b.BuildInfo.URL),
 			},
 		}},
+		OutputDir: "out",
 	}
 }
 
@@ -185,12 +186,6 @@ var toolkit = []*flow.Tool{
 			{
 				Runs:  "debrebuild --buildresult=./out --builder=mmdebstrap {{ .With.buildinfo }}",
 				Needs: []string{"devscripts=2.25.2", "apt-utils", "mmdebstrap"},
-			},
-			{
-				Uses: "debian/build/handle-binary-version",
-				With: map[string]string{
-					"targetPath": "{{.With.targetPath}}",
-				},
 			},
 		},
 	},
