@@ -51,11 +51,7 @@ func TestSummarizeArtifacts(t *testing.T) {
 					},
 				},
 			},
-			URLValidator: func(expected, actual string) {
-				if diff := cmp.Diff(expected, actual); diff != "" {
-					t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-				}
-			},
+			URLValidator: httpxtest.NewURLValidator(t),
 		})
 		stabilizedHash := hashext.NewMultiHash(crypto.SHA256)
 		stabilizedZip := must(archivetest.ZipFile([]archive.ZipEntry{

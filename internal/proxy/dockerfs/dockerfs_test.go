@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 )
 
@@ -61,11 +60,7 @@ func TestOpen(t *testing.T) {
 		Calls: []httpxtest.Call{
 			{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 		},
-		URLValidator: func(expected, actual string) {
-			if diff := cmp.Diff(expected, actual); diff != "" {
-				t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-			}
-		},
+		URLValidator: httpxtest.NewURLValidator(t),
 	}
 	f := Filesystem{Client: &c, Container: "abc"}
 	got := must(f.Open("/etc/release"))
@@ -90,11 +85,7 @@ func TestStat(t *testing.T) {
 		Calls: []httpxtest.Call{
 			{Method: "HEAD", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, want))}},
 		},
-		URLValidator: func(expected, actual string) {
-			if diff := cmp.Diff(expected, actual); diff != "" {
-				t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-			}
-		},
+		URLValidator: httpxtest.NewURLValidator(t),
 	}
 	f := Filesystem{Client: &c, Container: "abc"}
 	got := must(f.Stat("/etc/release"))
@@ -114,11 +105,7 @@ func TestOpenAndResolve(t *testing.T) {
 			{Method: "HEAD", URL: "/containers/abc/archive?path=/os-release", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, wantStat))}},
 			{Method: "GET", URL: "/containers/abc/archive?path=/os-release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 		},
-		URLValidator: func(expected, actual string) {
-			if diff := cmp.Diff(expected, actual); diff != "" {
-				t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-			}
-		},
+		URLValidator: httpxtest.NewURLValidator(t),
 	}
 	f := Filesystem{Client: &c, Container: "abc"}
 	got := must(f.OpenAndResolve("/etc/release"))
@@ -148,11 +135,7 @@ func TestResolve(t *testing.T) {
 			{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(symTarBytes))}},
 			{Method: "GET", URL: "/containers/abc/archive?path=/os-release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 		},
-		URLValidator: func(expected, actual string) {
-			if diff := cmp.Diff(expected, actual); diff != "" {
-				t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-			}
-		},
+		URLValidator: httpxtest.NewURLValidator(t),
 	}
 	f := Filesystem{Client: &c, Container: "abc"}
 	got := must(f.Open("/etc/release"))
@@ -184,11 +167,7 @@ func TestWriteFile(t *testing.T) {
 			{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 			{Method: "PUT", URL: "/containers/abc/archive?path=/etc", Response: &http.Response{StatusCode: http.StatusOK}},
 		},
-		URLValidator: func(expected, actual string) {
-			if diff := cmp.Diff(expected, actual); diff != "" {
-				t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-			}
-		},
+		URLValidator: httpxtest.NewURLValidator(t),
 	}
 	f := Filesystem{Client: &c, Container: "abc"}
 	got := must(f.Open("/etc/release"))

@@ -86,12 +86,8 @@ func TestHTTPRegistry_Crate(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockClient := &httpxtest.MockClient{
-				Calls: []httpxtest.Call{tc.call},
-				URLValidator: func(expected, actual string) {
-					if diff := cmp.Diff(expected, actual); diff != "" {
-						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-					}
-				},
+				Calls:        []httpxtest.Call{tc.call},
+				URLValidator: httpxtest.NewURLValidator(t),
 			}
 			actual, err := HTTPRegistry{Client: mockClient}.Crate(context.Background(), tc.pkg)
 			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
@@ -167,12 +163,8 @@ func TestHTTPRegistry_Version(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockClient := &httpxtest.MockClient{
-				Calls: []httpxtest.Call{tc.call},
-				URLValidator: func(expected, actual string) {
-					if diff := cmp.Diff(expected, actual); diff != "" {
-						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-					}
-				},
+				Calls:        []httpxtest.Call{tc.call},
+				URLValidator: httpxtest.NewURLValidator(t),
 			}
 			actual, err := HTTPRegistry{Client: mockClient}.Version(context.Background(), tc.pkg, tc.version)
 			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
@@ -267,12 +259,8 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockClient := &httpxtest.MockClient{
-				Calls: tc.calls,
-				URLValidator: func(expected, actual string) {
-					if diff := cmp.Diff(expected, actual); diff != "" {
-						t.Fatalf("URL mismatch (-want +got):\n%s", diff)
-					}
-				},
+				Calls:        tc.calls,
+				URLValidator: httpxtest.NewURLValidator(t),
 			}
 			actual, err := HTTPRegistry{Client: mockClient}.Artifact(context.Background(), tc.pkg, tc.version)
 			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {

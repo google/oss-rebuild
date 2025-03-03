@@ -17,43 +17,43 @@ import (
 
 // Section represents a section in the manifest file
 type Section struct {
-	// Attributes maintains the mapping of names to values for quick lookup
-	Attributes map[string]string
-	// Order maintains the original order of attributes
-	Order []string
+	// attributes maintains the mapping of names to values for quick lookup
+	attributes map[string]string
+	// Names of Attributes, by default maintaining their original order of appearance
+	Names []string
 }
 
 // NewSection creates a new section
 func NewSection() *Section {
 	return &Section{
-		Attributes: make(map[string]string),
-		Order:      make([]string, 0),
+		attributes: make(map[string]string),
+		Names:      make([]string, 0),
 	}
 }
 
 // Set adds or updates an attribute while maintaining order
 func (s *Section) Set(name, value string) {
-	if _, exists := s.Attributes[name]; !exists {
-		s.Order = append(s.Order, name)
+	if _, exists := s.attributes[name]; !exists {
+		s.Names = append(s.Names, name)
 	}
-	s.Attributes[name] = value
+	s.attributes[name] = value
 }
 
 // Get retrieves an attribute value
 func (s *Section) Get(name string) (string, bool) {
-	v, ok := s.Attributes[name]
+	v, ok := s.attributes[name]
 	return v, ok
 }
 
 // Delete removes an attribute
 func (s *Section) Delete(name string) {
-	if _, ok := s.Attributes[name]; !ok {
+	if _, ok := s.attributes[name]; !ok {
 		return
 	}
-	delete(s.Attributes, name)
-	for i, n := range s.Order {
+	delete(s.attributes, name)
+	for i, n := range s.Names {
 		if n == name {
-			s.Order = append(s.Order[:i], s.Order[i+1:]...)
+			s.Names = append(s.Names[:i], s.Names[i+1:]...)
 			break
 		}
 	}
@@ -111,7 +111,7 @@ func ParseManifest(r io.Reader) (*Manifest, error) {
 		currentLine = line
 		if line == "" {
 			// Section separator
-			if currentSection != manifest.MainSection && len(currentSection.Order) > 0 {
+			if currentSection != manifest.MainSection && len(currentSection.Names) > 0 {
 				manifest.EntrySections = append(manifest.EntrySections, currentSection)
 			}
 			currentSection = NewSection()
@@ -184,47 +184,40 @@ func WriteManifest(w io.Writer, m *Manifest) error {
 
 // writeSection writes a single section to a writer
 func writeSection(w io.Writer, section *Section) error {
-	for _, name := range section.Order {
+	for _, name := range section.Names {
 		value, _ := section.Get(name)
-		line := fmt.Sprintf("%s: %s\r\n", name, value)
-		// Handle line length restrictions
-		if len(line) > 72 {
-			parts := splitLine(line)
-			for _, part := range parts {
-				if _, err := w.Write([]byte(part)); err != nil {
-					return err
-				}
-			}
-		} else {
-			if _, err := w.Write([]byte(line)); err != nil {
-				return err
-			}
+		if err := writeAttribute(w, name, value); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// splitLine splits a line longer than 72 bytes into continuation lines
-func splitLine(line string) []string {
-	var lines []string
-	remaining := line
+// writeAttribute splits a line longer than 72 bytes into continuation lines
+func writeAttribute(w io.Writer, name, value string) error {
+	sep := ": "
+	remaining := name + sep + value
+	base := len(name) + len(sep)
 	for len(remaining) > 72 {
 		// Find last space before 72 bytes
 		splitIdx := 71
-		for splitIdx > 0 && remaining[splitIdx] != ' ' {
+		for splitIdx > base && remaining[splitIdx] != ' ' {
 			splitIdx--
 		}
-		if splitIdx == 0 {
+		if splitIdx == base {
 			// No space found, force split at 71
 			splitIdx = 71
 		}
-		lines = append(lines, remaining[:splitIdx+1]+"\r\n")
+		if _, err := w.Write([]byte(remaining[:splitIdx+1] + "\r\n")); err != nil {
+			return err
+		}
 		remaining = " " + remaining[splitIdx+1:]
+		base = 0
 	}
-	if remaining != "" {
-		lines = append(lines, remaining)
+	if _, err := w.Write([]byte(remaining + "\r\n")); err != nil {
+		return err
 	}
-	return lines
+	return nil
 }
 
 // normalizeLineEndings ensures consistent CRLF line endings

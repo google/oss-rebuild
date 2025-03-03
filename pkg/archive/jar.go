@@ -28,31 +28,68 @@ var StableJARBuildMetadata = ZipEntryStabilizer{
 		for _, attr := range []string{
 			"Archiver-Version",
 			"Bnd-LastModified",
+			"Build-Date",
+			"Build-Date-UTC",
+			"Build-Host",
+			"Build-Id",
+			"Build-Java-Version",
 			"Build-Jdk",
 			"Build-Jdk-Spec",
+			"Build-Job",
 			"Build-Number",
+			"Build-OS",
+			"Build-Status",
 			"Build-Time",
+			"Build-Timestamp",
+			"Build-Tool",
+			"Build-Url",
 			"Built-By",
 			"Built-Date",
 			"Built-Host",
+			"Built-JDK",
+			"Built-On",
 			"Built-OS",
+			"Built-Status",
 			"Created-By",
+			"DSTAMP",
+			"Eclipse-SourceReferences",
+			"Git-Commit-Id-Describe",
+			"Git-Remote-Origin-Url",
+			"Git-SHA",
+			"Git-Descriptor",
+			"git-describe",
+			"git-tags",
+			"hash",
 			"Hudson-Build-Number",
 			"Implementation-Build-Date",
 			"Implementation-Build-Java-Vendor",
 			"Implementation-Build-Java-Version",
 			"Implementation-Build",
+			"Ion-Java-Build-Time",
+			"Java-Vendor",
+			"Java-Version",
+			"JCabi-Date",
 			"Jenkins-Build-Number",
+			"Maven-Version",
+			"Module-Origin",
 			"Originally-Created-By",
+			"Os-Arch",
+			"Os-Name",
 			"Os-Version",
 			"SCM-Git-Branch",
-			"SCM-Revision",
 			"SCM-Git-Commit-Dirty",
 			"SCM-Git-Commit-ID",
 			"SCM-Git-Commit-Abbrev",
 			"SCM-Git-Commit-Description",
 			"SCM-Git-Commit-Timestamp",
+			"SCM-Revision",
+			"SHA-256-Digest",
 			"Source-Date-Epoch",
+			"Sunset-BuiltOn",
+			"TODAY",
+			"Tool",
+			"TSTAMP",
+			"url",
 		} {
 			manifest.MainSection.Delete(attr)
 		}
@@ -92,12 +129,12 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 			if value == "" {
 				continue
 			}
-			commaSeparateValues := strings.Split(value, ",")
+			subvalues := splitPreservingQuotes(value, ',')
 			// We sort the values to ensure that the order of values is stable
 			// Related issues: 1) [fix for Export-Package & Private-Package](https://github.com/bndtools/bnd/issues/5021)
 			// 2) [fix for Include-Resource](https://github.com/jvm-repo-rebuild/reproducible-central/issues/99)
-			sort.Strings(commaSeparateValues)
-			manifest.MainSection.Set(attr, strings.Join(commaSeparateValues, ","))
+			sort.Strings(subvalues)
+			manifest.MainSection.Set(attr, strings.Join(subvalues, ","))
 		}
 		buf := bytes.NewBuffer(nil)
 		if err := WriteManifest(buf, manifest); err != nil {
@@ -105,6 +142,34 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 		}
 		zf.SetContent(buf.Bytes())
 	},
+}
+
+// splitPreservingQuotes splits a string by a separator while preserving quoted sections
+func splitPreservingQuotes(s string, sep rune) []string {
+	var result []string
+	var current strings.Builder
+	inQuote := false
+	for _, char := range s {
+		switch char {
+		case '"':
+			inQuote = !inQuote
+			current.WriteRune(char)
+		case sep:
+			if inQuote {
+				current.WriteRune(char)
+			} else {
+				result = append(result, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+	// Add the last segment
+	if current.Len() > 0 {
+		result = append(result, current.String())
+	}
+	return result
 }
 
 var StableGitProperties = ZipEntryStabilizer{
