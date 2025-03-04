@@ -295,9 +295,11 @@ var runBenchmark = &cobra.Command{
 		bar.Output = cmd.OutOrStderr()
 		bar.ShowTimeLeft = true
 		verdictChan, err := benchmark.RunBench(ctx, client, apiURL, set, benchmark.RunBenchOpts{
-			Mode:           mode,
-			RunID:          run,
-			MaxConcurrency: *maxConcurrency,
+			Mode:              mode,
+			RunID:             run,
+			MaxConcurrency:    *maxConcurrency,
+			UseSyscallMonitor: *useSyscallMonitor,
+			UseNetworkProxy:   *useNetworkProxy,
 		})
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "running benchmark"))
@@ -595,14 +597,16 @@ var infer = &cobra.Command{
 
 var (
 	// Shared
-	apiUri         = flag.String("api", "", "OSS Rebuild API endpoint URI")
-	ecosystem      = flag.String("ecosystem", "", "the ecosystem")
-	pkg            = flag.String("package", "", "the package name")
-	version        = flag.String("version", "", "the version of the package")
-	artifact       = flag.String("artifact", "", "the artifact name")
-	verbose        = flag.Bool("v", false, "verbose output")
-	logsBucket     = flag.String("logs-bucket", "", "the gcs bucket where gcb logs are stored")
-	metadataBucket = flag.String("metadata-bucket", "", "the gcs bucket where rebuild output is stored")
+	apiUri            = flag.String("api", "", "OSS Rebuild API endpoint URI")
+	ecosystem         = flag.String("ecosystem", "", "the ecosystem")
+	pkg               = flag.String("package", "", "the package name")
+	version           = flag.String("version", "", "the version of the package")
+	artifact          = flag.String("artifact", "", "the artifact name")
+	verbose           = flag.Bool("v", false, "verbose output")
+	logsBucket        = flag.String("logs-bucket", "", "the gcs bucket where gcb logs are stored")
+	metadataBucket    = flag.String("metadata-bucket", "", "the gcs bucket where rebuild output is stored")
+	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
+	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request syscall monitoring")
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
 	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
@@ -610,9 +614,7 @@ var (
 	taskQueuePath  = flag.String("task-queue", "", "the path identifier of the task queue to use")
 	taskQueueEmail = flag.String("task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
 	// run-one
-	strategyPath      = flag.String("strategy", "", "the strategy file to use")
-	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
-	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request the newtwork proxy")
+	strategyPath = flag.String("strategy", "", "the strategy file to use")
 	// get-results
 	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
 	bench        = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
@@ -637,6 +639,8 @@ func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("async"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("task-queue"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("task-queue-email"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("use-network-proxy"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("use-syscall-montior"))
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
