@@ -32,6 +32,10 @@ import (
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
+	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
@@ -104,12 +108,6 @@ var tui = &cobra.Command{
 				}
 				tctx = context.WithValue(tctx, rebuild.DebugStoreID, *debugStorage)
 			}
-			if *logsBucket != "" {
-				tctx = context.WithValue(tctx, ide.LogsBucketID, *logsBucket)
-			}
-			if *metadataBucket != "" {
-				tctx = context.WithValue(tctx, ide.MetadataBucketID, *metadataBucket)
-			}
 			// TODO: Support filtering in the UI on TUI.
 			var err error
 			fireClient, err = rundex.NewFirestore(tctx, *project)
@@ -130,7 +128,15 @@ var tui = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "failed to create local build def asset store"))
 			}
 		}
-		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir, buildDefs)
+		regclient := http.DefaultClient
+		mux := rebuild.RegistryMux{
+			Debian:   debianreg.HTTPRegistry{Client: regclient},
+			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
+			NPM:      npmreg.HTTPRegistry{Client: regclient},
+			PyPI:     pypireg.HTTPRegistry{Client: regclient},
+		}
+		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
+		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir, buildDefs, butler)
 		if err := tapp.Run(); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -140,7 +146,7 @@ var tui = &cobra.Command{
 }
 
 var getResults = &cobra.Command{
-	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-filter <verdict>] [-sample N] [-format=summary|bench]",
+	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-filter <verdict>] [-sample N] [-format=summary|bench|assets] [-asset=<assetType>]",
 	Short: "Analyze rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -218,6 +224,30 @@ var getResults = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "marshalling benchmark"))
 			}
 			fmt.Println(string(b))
+		case "assets":
+			regclient := http.DefaultClient
+			mux := rebuild.RegistryMux{
+				Debian:   debianreg.HTTPRegistry{Client: regclient},
+				CratesIO: cratesreg.HTTPRegistry{Client: regclient},
+				NPM:      npmreg.HTTPRegistry{Client: regclient},
+				PyPI:     pypireg.HTTPRegistry{Client: regclient},
+			}
+			butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
+			atype := rebuild.AssetType(*assetType)
+			for _, r := range rebuilds {
+				t := rebuild.Target{
+					Ecosystem: rebuild.Ecosystem(r.Ecosystem),
+					Package:   r.Package,
+					Version:   r.Version,
+					Artifact:  r.Artifact,
+				}
+				path, err := butler.Fetch(cmd.Context(), *runFlag, r.WasSmoketest(), atype.For(t))
+				if err != nil {
+					cmd.OutOrStderr().Write([]byte(err.Error() + "\n"))
+					continue
+				}
+				cmd.OutOrStdout().Write([]byte(path + "\n"))
+			}
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
 		}
@@ -619,6 +649,7 @@ var (
 	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
 	bench        = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
 	format       = flag.String("format", "", "format of the output, options are command specific")
+	assetType    = flag.String("asset-type", "", "the type of asset that should be fetched")
 	prefix       = flag.String("prefix", "", "filter results to those matching this prefix ")
 	pattern      = flag.String("pattern", "", "filter results to those matching this regex pattern")
 	sample       = flag.Int("sample", -1, "if provided, only N results will be displayed")
@@ -659,6 +690,10 @@ func init() {
 	getResults.Flags().AddGoFlag(flag.Lookup("project"))
 	getResults.Flags().AddGoFlag(flag.Lookup("clean"))
 	getResults.Flags().AddGoFlag(flag.Lookup("format"))
+	getResults.Flags().AddGoFlag(flag.Lookup("asset-type"))
+	getResults.Flags().AddGoFlag(flag.Lookup("debug-storage"))
+	getResults.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
+	getResults.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
 
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
 	tui.Flags().AddGoFlag(flag.Lookup("debug-storage"))
