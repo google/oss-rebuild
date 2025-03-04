@@ -62,6 +62,8 @@ type workerConfig struct {
 
 type attestWorker struct {
 	workerConfig
+	useSyscallMonitor bool
+	useNetworkProxy   bool
 }
 
 var _ packageWorker = &attestWorker{}
@@ -80,11 +82,13 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schem
 			artifact = p.Artifacts[i]
 		}
 		req := schema.RebuildPackageRequest{
-			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-			Package:   p.Name,
-			Version:   v,
-			Artifact:  artifact,
-			ID:        w.run,
+			Ecosystem:         rebuild.Ecosystem(p.Ecosystem),
+			Package:           p.Name,
+			Version:           v,
+			Artifact:          artifact,
+			ID:                w.run,
+			UseSyscallMonitor: w.useSyscallMonitor,
+			UseNetworkProxy:   w.useNetworkProxy,
 		}
 		verdict, err := stub(ctx, req)
 		if err != nil {
@@ -170,14 +174,19 @@ func isCloudRun(u *url.URL) bool {
 }
 
 type RunBenchOpts struct {
-	Mode           schema.ExecutionMode
-	RunID          string
-	MaxConcurrency int
+	Mode              schema.ExecutionMode
+	RunID             string
+	MaxConcurrency    int
+	UseSyscallMonitor bool
+	UseNetworkProxy   bool
 }
 
 func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set PackageSet, opts RunBenchOpts) (<-chan schema.Verdict, error) {
 	if opts.RunID == "" {
 		return nil, errors.New("opts.RunID must be set")
+	}
+	if (opts.UseNetworkProxy || opts.UseSyscallMonitor) && opts.Mode != schema.AttestMode {
+		return nil, errors.New("cannot enable network proxy or syscall monitor for non-attest mode")
 	}
 	conf := workerConfig{
 		client:   client,
@@ -194,7 +203,9 @@ func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set Pac
 		}
 	case schema.AttestMode:
 		ex.Worker = &attestWorker{
-			workerConfig: conf,
+			workerConfig:      conf,
+			useSyscallMonitor: opts.UseSyscallMonitor,
+			useNetworkProxy:   opts.UseNetworkProxy,
 		}
 	default:
 		return nil, fmt.Errorf("invalid mode: %s", string(opts.Mode))
