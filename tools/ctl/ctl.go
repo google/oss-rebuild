@@ -32,6 +32,10 @@ import (
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
+	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
@@ -104,12 +108,6 @@ var tui = &cobra.Command{
 				}
 				tctx = context.WithValue(tctx, rebuild.DebugStoreID, *debugStorage)
 			}
-			if *logsBucket != "" {
-				tctx = context.WithValue(tctx, ide.LogsBucketID, *logsBucket)
-			}
-			if *metadataBucket != "" {
-				tctx = context.WithValue(tctx, ide.MetadataBucketID, *metadataBucket)
-			}
 			// TODO: Support filtering in the UI on TUI.
 			var err error
 			fireClient, err = rundex.NewFirestore(tctx, *project)
@@ -130,7 +128,15 @@ var tui = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "failed to create local build def asset store"))
 			}
 		}
-		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir, buildDefs)
+		regclient := http.DefaultClient
+		mux := rebuild.RegistryMux{
+			Debian:   debianreg.HTTPRegistry{Client: regclient},
+			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
+			NPM:      npmreg.HTTPRegistry{Client: regclient},
+			PyPI:     pypireg.HTTPRegistry{Client: regclient},
+		}
+		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
+		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir, buildDefs, butler)
 		if err := tapp.Run(); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
