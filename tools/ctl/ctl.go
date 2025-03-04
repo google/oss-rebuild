@@ -640,7 +640,7 @@ func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("task-queue"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("task-queue-email"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("use-network-proxy"))
-	runBenchmark.Flags().AddGoFlag(flag.Lookup("use-syscall-montior"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("use-syscall-monitor"))
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
