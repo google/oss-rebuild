@@ -19,7 +19,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type Dependencies interface{}
+type Dependencies any
 
 type InitT[D Dependencies] func(context.Context) (D, error)
 type HandlerT[I Message, O any, D Dependencies] func(context.Context, I, D) (*O, error)

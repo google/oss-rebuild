@@ -107,7 +107,7 @@ func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.A
 				metadataFiles = append(metadataFiles, path.Join(prefix, cargoTomlOrig))
 			}
 		}
-		allDiffs := append([]string{}, rbOnly...)
+		allDiffs := slices.Clone(rbOnly)
 		allDiffs = append(allDiffs, upOnly...)
 		allDiffs = append(allDiffs, diffs...)
 		cargoVersionDiff = len(allDiffs) > 0

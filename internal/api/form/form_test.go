@@ -20,7 +20,7 @@ type TestStruct struct {
 func TestMarshal(t *testing.T) {
 	tests := []struct {
 		name    string
-		input   interface{}
+		input   any
 		want    url.Values
 		wantErr bool
 	}{
