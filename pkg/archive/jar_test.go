@@ -148,7 +148,7 @@ func TestStableJARBuildMetadata(t *testing.T) {
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
 			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
-				Stabilizers: []any{StableJARBuildMetadata},
+				Stabilizers: []Stabilizer{StableJARBuildMetadata},
 			})
 			if err != nil {
 				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
@@ -329,7 +329,7 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
 			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
-				Stabilizers: []any{StableJAROrderOfAttributeValues},
+				Stabilizers: []Stabilizer{StableJAROrderOfAttributeValues},
 			})
 			if err != nil {
 				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
