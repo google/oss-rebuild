@@ -83,9 +83,17 @@ func (b *Debrebuild) ToWorkflow() *rebuild.WorkflowStrategy {
 				"buildinfoMd5": b.BuildInfo.MD5,
 			},
 		}},
-		Deps: []flow.Step{{
-			Uses: "debian/deps/patch-debrebuild",
-		}},
+		Deps: []flow.Step{
+			{
+				Uses: "debian/deps/add-snapshot",
+			},
+			{
+				Uses: "debian/deps/install-debrebuild",
+			},
+			{
+				Uses: "debian/deps/patch-debrebuild",
+			},
+		},
 		Build: []flow.Step{{
 			Uses: "debian/build/debrebuild",
 			With: map[string]string{
@@ -135,12 +143,36 @@ var toolkit = []*flow.Tool{
 		}},
 	},
 	{
+		Name: "debian/deps/add-snapshot",
+		Steps: []flow.Step{{
+			Runs: fmt.Sprintf("echo %s | base64 -d > /etc/apt/sources.list.d/debian.sources", base64.StdEncoding.EncodeToString([]byte(`Types: deb
+URIs: http://snapshot.debian.org/archive/debian/20250305T000000Z
+Suites: testing testing-updates
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: http://snapshot.debian.org/archive/debian-security/20250305T000000Z
+Suites: testing-security
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`))),
+		}},
+	},
+	{
 		Name: "debian/deps/install",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				apt update
 				apt install -y{{range $req := .With.requirements | fromJSON}} {{$req}}{{end}}`)[1:],
-			Needs: []string{},
+		}},
+	},
+	{
+		Name: "debian/deps/install-debrebuild",
+		Steps: []flow.Step{{
+			// TODO: pin these versions
+			Runs: textwrap.Dedent(`
+				apt -o Acquire::Check-Valid-Until=false update
+				apt install -y devscripts mmdebstrap apt-utils`)[1:],
 		}},
 	},
 	{
@@ -150,7 +182,6 @@ var toolkit = []*flow.Tool{
          ),
 +        '--customize-hook=sleep 10',
          '--customize-hook=chroot "$1" sh -c "'`))),
-			Needs: []string{"devscripts=2.25.2"},
 		}},
 	},
 	{
@@ -160,7 +191,6 @@ var toolkit = []*flow.Tool{
 				{{- $expected := regexReplace .With.targetPath "\\+b[0-9]+(_[^_]+\\.deb)$" "$1"}}
 				{{- if ne $expected .With.targetPath }}mv /src/{{$expected}} /src/{{.With.targetPath}}
 				{{- end}}`)[1:],
-			Needs: []string{},
 		}},
 	},
 	{
@@ -184,8 +214,7 @@ var toolkit = []*flow.Tool{
 		Name: "debian/build/debrebuild",
 		Steps: []flow.Step{
 			{
-				Runs:  "debrebuild --buildresult=./out --builder=mmdebstrap {{ .With.buildinfo }}",
-				Needs: []string{"devscripts=2.25.2", "apt-utils", "mmdebstrap"},
+				Runs: "debrebuild --buildresult=./out --builder=mmdebstrap {{ .With.buildinfo }}",
 			},
 		},
 	},

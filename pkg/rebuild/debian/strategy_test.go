@@ -165,11 +165,14 @@ func TestDebrebuild(t *testing.T) {
 			},
 			env: rebuild.BuildEnv{},
 			want: rebuild.Instructions{
-				Source:     `wget https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo`,
-				Deps:       `echo QEAgLTcyNSwyICs3MjUsMyBAQAogICAgICAgICApLAorICAgICAgICAnLS1jdXN0b21pemUtaG9vaz1zbGVlcCAxMCcsCiAgICAgICAgICctLWN1c3RvbWl6ZS1ob29rPWNocm9vdCAiJDEiIHNoIC1jICIn | base64 -d | patch /usr/bin/debrebuild`,
+				Source: `wget https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo`,
+				Deps: `echo VHlwZXM6IGRlYgpVUklzOiBodHRwOi8vc25hcHNob3QuZGViaWFuLm9yZy9hcmNoaXZlL2RlYmlhbi8yMDI1MDMwNVQwMDAwMDBaClN1aXRlczogdGVzdGluZyB0ZXN0aW5nLXVwZGF0ZXMKQ29tcG9uZW50czogbWFpbgpTaWduZWQtQnk6IC91c3Ivc2hhcmUva2V5cmluZ3MvZGViaWFuLWFyY2hpdmUta2V5cmluZy5ncGcKClR5cGVzOiBkZWIKVVJJczogaHR0cDovL3NuYXBzaG90LmRlYmlhbi5vcmcvYXJjaGl2ZS9kZWJpYW4tc2VjdXJpdHkvMjAyNTAzMDVUMDAwMDAwWgpTdWl0ZXM6IHRlc3Rpbmctc2VjdXJpdHkKQ29tcG9uZW50czogbWFpbgpTaWduZWQtQnk6IC91c3Ivc2hhcmUva2V5cmluZ3MvZGViaWFuLWFyY2hpdmUta2V5cmluZy5ncGc= | base64 -d > /etc/apt/sources.list.d/debian.sources
+apt -o Acquire::Check-Valid-Until=false update
+apt install -y devscripts mmdebstrap apt-utils
+echo QEAgLTcyNSwyICs3MjUsMyBAQAogICAgICAgICApLAorICAgICAgICAnLS1jdXN0b21pemUtaG9vaz1zbGVlcCAxMCcsCiAgICAgICAgICctLWN1c3RvbWl6ZS1ob29rPWNocm9vdCAiJDEiIHNoIC1jICIn | base64 -d | patch /usr/bin/debrebuild`,
 				Build:      `debrebuild --buildresult=./out --builder=mmdebstrap acl_2.3.2-2_amd64.buildinfo`,
 				OutputPath: "out/acl_2.3.1-3_amd64.deb",
-				SystemDeps: []string{"wget", "devscripts=2.25.2", "apt-utils", "mmdebstrap"},
+				SystemDeps: []string{"wget"},
 			},
 		},
 	}
