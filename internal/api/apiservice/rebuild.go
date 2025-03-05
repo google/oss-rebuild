@@ -195,14 +195,16 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "accessing build definition")
 		}
-		defnStrategy, err := entry.BuildDefinition.Strategy()
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "accessing strategy")
-		}
-		if hint, ok := defnStrategy.(*rebuild.LocationHint); ok && hint != nil {
-			ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
-		} else {
-			strategy = defnStrategy
+		if entry.BuildDefinition.StrategyOneOf != nil {
+			defnStrategy, err := entry.BuildDefinition.Strategy()
+			if err != nil {
+				return nil, nil, errors.Wrap(err, "accessing strategy")
+			}
+			if hint, ok := defnStrategy.(*rebuild.LocationHint); ok && hint != nil {
+				ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
+			} else {
+				strategy = defnStrategy
+			}
 		}
 	}
 	if strategy == nil {
@@ -228,6 +230,15 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, id)
 	if err != nil {
 		return errors.Wrap(err, "creating rebuild store")
+	}
+	var stabilizers []archive.Stabilizer
+	stabilizers = append(stabilizers, archive.AllStabilizers...)
+	if entry != nil && len(entry.BuildDefinition.CustomStabilizers) > 0 {
+		customStabilizers, err := archive.CreateCustomStabilizers(entry.BuildDefinition.CustomStabilizers, t.ArchiveType())
+		if err != nil {
+			return errors.Wrap(err, "creating stabilizers")
+		}
+		stabilizers = append(stabilizers, customStabilizers...)
 	}
 	var buildDefRepo rebuild.Location
 	var buildDef *schema.BuildDefinition
@@ -267,7 +278,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if err != nil {
 		return errors.Wrap(err, "rebuilding")
 	}
-	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes, archive.AllStabilizers)
+	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes, stabilizers)
 	if err != nil {
 		return errors.Wrap(err, "comparing artifacts")
 	}

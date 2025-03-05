@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/maven"
@@ -111,7 +112,8 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 }
 
 type BuildDefinition struct {
-	StrategyOneOf `json:",inline" yaml:",inline"`
+	*StrategyOneOf    `json:",inline,omitempty" yaml:",inline,omitempty"`
+	CustomStabilizers []archive.CustomStabilizerEntry `json:"custom_stabilizers,omitempty" yaml:"custom_stabilizers,omitempty"`
 }
 
 type VersionRequest struct {
