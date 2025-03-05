@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/maven"
@@ -108,6 +109,11 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		return nil, errors.Errorf("serialized StrategyOneOf should have exactly one strategy, found: %d", num)
 	}
 	return s, nil
+}
+
+type BuildDefinition struct {
+	StrategyOneOf    `yaml:",inline"`
+	StabilizerConfig []archive.CustomConfigOneOf `yaml:"custom_stabilizers"`
 }
 
 type VersionRequest struct {
