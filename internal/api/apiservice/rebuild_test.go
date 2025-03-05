@@ -331,10 +331,51 @@ RLpmHHG1JOVdOA==
 				},
 			},
 			buildDef: &schema.BuildDefinition{
-				StrategyOneOf: schema.StrategyOneOf{
+				StrategyOneOf: &schema.StrategyOneOf{
 					CratesIOCargoPackage: &cratesio.CratesIOCargoPackage{
 						Location:    rebuild.Location{Repo: "foo", Ref: "aaaabbbbccccddddeeeeaaaabbbbccccddddeeee", Dir: "foo"},
 						RustVersion: "1.65.0",
+					},
+				},
+			},
+			file: must(archivetest.TgzFile([]archive.TarEntry{
+				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
+			})),
+		},
+		{
+			name:   "manual build def with custom stabilizer success",
+			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
+			calls: []httpxtest.Call{
+				{
+					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+					},
+				},
+				{
+					URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(must(archivetest.TgzFile([]archive.TarEntry{
+							{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
+						}))),
+					},
+				},
+			},
+			buildDef: &schema.BuildDefinition{
+				StrategyOneOf: &schema.StrategyOneOf{
+					CratesIOCargoPackage: &cratesio.CratesIOCargoPackage{
+						Location:    rebuild.Location{Repo: "foo", Ref: "aaaabbbbccccddddeeeeaaaabbbbccccddddeeee", Dir: "foo"},
+						RustVersion: "1.65.0",
+					},
+				},
+				CustomStabilizers: []archive.CustomStabilizerEntry{
+					{
+						Config: archive.CustomStabilizerConfigOneOf{
+							ExcludePath: &archive.ExcludePath{Paths: []string{"foo"}},
+						},
+						Reason: "too much foo",
 					},
 				},
 			},
