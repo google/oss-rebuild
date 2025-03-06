@@ -5,7 +5,6 @@ package debian
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -32,7 +31,6 @@ func (Rebuilder) CloneRepo(_ context.Context, _ rebuild.Target, _ string, _ bill
 var origRegex = regexp.MustCompile(`\.orig\.tar\.(gz|xz|bz2)$`)
 var debianRegex = regexp.MustCompile(`\.(debian\.tar|diff)\.(gz|xz|bz2)$`)
 var nativeRegex = regexp.MustCompile(`\.tar\.(gz|xz|bz2)$`)
-var versionRegex = regexp.MustCompile(`^(?P<name>[^_]+)_(?P<nonbinary_version>[^_+]+)(?P<binary_version>\+.*)?_(?P<arch>[^_]+)\.deb$`)
 
 func inferDSC(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (rebuild.Strategy, error) {
 	component, name, err := ParseComponent(t.Package)
@@ -93,19 +91,13 @@ func inferBuildInfo(t rebuild.Target) (rebuild.Strategy, error) {
 	if err != nil {
 		return nil, err
 	}
-	var infoURL string
-	if matches := versionRegex.FindStringSubmatch(t.Artifact); matches != nil {
-		nbversion := matches[versionRegex.SubexpIndex("nonbinary_version")]
-		bversion := matches[versionRegex.SubexpIndex("binary_version")]
-		version := nbversion
-		if !strings.HasPrefix(bversion, "+deb") {
-			version += bversion
-		}
-		arch := matches[versionRegex.SubexpIndex("arch")]
-		infoURL = debian.BuildInfoURL(name, version, arch)
-	} else {
-		return nil, fmt.Errorf("failed to parse artifact %s", t.Artifact)
+	a, err := debian.ParseDebianArtifact(t.Artifact)
+	if err != nil {
+		return nil, err
 	}
+	// The buildinfo uses the *source* package name, and the entire version string (including binary-only upload components).
+	// This is because the buildinfo is versioned per build, not per source package release.
+	infoURL := debian.BuildInfoURL(name, a.Version.String(), a.Arch)
 	// TODO: Populate the checksum
 	strat := Debrebuild{BuildInfo: FileWithChecksum{URL: infoURL, MD5: ""}}
 	return &strat, nil

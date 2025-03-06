@@ -82,7 +82,7 @@ func TestGuessDSCURL(t *testing.T) {
 			component: "main",
 			pkg:       "xz-utils",
 			version:   "5.6.3-1+b1",
-			expected:  "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.6.3-1.dsc",
+			expected:  "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.6.3-1+b1.dsc",
 		},
 		{
 			name:      "stable release",
@@ -101,7 +101,12 @@ func TestGuessDSCURL(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := guessDSCURL(tc.component, tc.pkg, tc.version)
+			v, err := ParseVersion(tc.version)
+			if err != nil {
+				t.Errorf("Unexpected error parsing version: %v", err)
+				return
+			}
+			actual := guessDSCURL(tc.component, tc.pkg, v)
 			if actual != tc.expected {
 				t.Errorf("DSC url mismatch: got %v, want %v", actual, tc.expected)
 			}
@@ -296,6 +301,170 @@ RLpmHHG1JOVdOA==
 			}
 			if diff := cmp.Diff(DSCURI, tc.expectedURL); diff != "" {
 				t.Errorf("Returned DSC url doesn't match fetched url\n%v", diff)
+			}
+		})
+	}
+}
+
+func TestParseDebianArtifact(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		artifact                string
+		expected                ArtifactIdentifier
+		expectedRollbackBase    string
+		expectedBinaryNMU       string
+		expectedNonBinaryString string
+		expectedNative          bool
+		wantErr                 bool
+	}{
+		{
+			name:     "simple",
+			artifact: "apt_2.9.16_amd64.deb",
+			expected: ArtifactIdentifier{
+				Name: "apt",
+				Version: &Version{
+					Upstream: "2.9.16",
+				},
+				Arch: "amd64",
+			},
+			expectedRollbackBase:    "",
+			expectedBinaryNMU:       "",
+			expectedNonBinaryString: "2.9.16",
+			expectedNative:          true,
+			wantErr:                 false,
+		},
+		{
+			name:     "binary version",
+			artifact: "libacl1_2.3.2-2+b1_amd64.deb",
+			expected: ArtifactIdentifier{
+				Name: "libacl1",
+				Version: &Version{
+					Upstream:       "2.3.2",
+					DebianRevision: "2+b1",
+				},
+				Arch: "amd64",
+			},
+			expectedRollbackBase:    "",
+			expectedBinaryNMU:       "1",
+			expectedNonBinaryString: "2.3.2-2",
+			expectedNative:          false,
+			wantErr:                 false,
+		},
+		{
+			name:     "+deb version",
+			artifact: "libfreetype6_2.9.1-3+deb10u3_amd64.deb",
+			expected: ArtifactIdentifier{
+				Name: "libfreetype6",
+				Version: &Version{
+					Upstream:       "2.9.1",
+					DebianRevision: "3+deb10u3",
+				},
+				Arch: "amd64",
+			},
+			expectedRollbackBase:    "",
+			expectedBinaryNMU:       "",
+			expectedNonBinaryString: "2.9.1-3+deb10u3",
+			expectedNative:          false,
+			wantErr:                 false,
+		},
+		{
+			name:     "invalid",
+			artifact: "a_b.deb", // Not enough components.
+			wantErr:  true,
+		},
+		{
+			name:     "~deb version",
+			artifact: "akonadi-server_18.08.3-7~deb10u1_amd64.deb",
+			expected: ArtifactIdentifier{
+				Name: "akonadi-server",
+				Version: &Version{
+					Upstream:       "18.08.3",
+					DebianRevision: "7~deb10u1",
+				},
+				Arch: "amd64",
+			},
+			expectedRollbackBase:    "",
+			expectedBinaryNMU:       "",
+			expectedNonBinaryString: "18.08.3-7~deb10u1",
+			expectedNative:          false,
+			wantErr:                 false,
+		},
+		{
+			name:     "dash in name",
+			artifact: "libadios-bin_1.13.1-16_amd64.deb",
+			expected: ArtifactIdentifier{
+				Name: "libadios-bin",
+				Version: &Version{
+					Upstream:       "1.13.1",
+					DebianRevision: "16",
+				},
+				Arch: "amd64",
+			},
+			expectedRollbackBase:    "",
+			expectedBinaryNMU:       "",
+			expectedNonBinaryString: "1.13.1-16",
+			expectedNative:          false,
+			wantErr:                 false,
+		},
+		{
+			name:     "native package binary version",
+			artifact: "cdebootstrap-static_0.7.7+b12_amd64.deb",
+			expected: ArtifactIdentifier{
+				Name: "cdebootstrap-static",
+				Version: &Version{
+					Upstream:       "0.7.7+b12",
+					DebianRevision: "",
+				},
+				Arch: "amd64",
+			},
+			expectedRollbackBase:    "",
+			expectedBinaryNMU:       "12",
+			expectedNonBinaryString: "0.7.7",
+			expectedNative:          true,
+			wantErr:                 false,
+		},
+		{
+			name:     "rollback with +really",
+			artifact: "python3-bibtexparser_2.0.0b5+really1.4.3-1_all.deb",
+			expected: ArtifactIdentifier{
+				Name: "python3-bibtexparser",
+				Version: &Version{
+					Upstream:       "2.0.0b5+really1.4.3",
+					DebianRevision: "1",
+				},
+				Arch: "all",
+			},
+			expectedRollbackBase:    "1.4.3",
+			expectedBinaryNMU:       "",
+			expectedNonBinaryString: "2.0.0b5+really1.4.3-1",
+			expectedNative:          false,
+			wantErr:                 false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, err := ParseDebianArtifact(tc.artifact)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("WantError mismatch: got %v, want %v", err, tc.wantErr)
+				return
+			}
+			if tc.wantErr {
+				return
+			}
+			if diff := cmp.Diff(actual, tc.expected); diff != "" {
+				t.Errorf("Artifact mismatch: diff\n%v", diff)
+			}
+			if source := actual.Version.RollbackBase(); source != tc.expectedRollbackBase {
+				t.Errorf("RealUpstream mismatch: got %v, want %v", source, tc.expectedRollbackBase)
+			}
+			if binaryNMU := actual.Version.BinaryNonMaintainerUpload(); binaryNMU != tc.expectedBinaryNMU {
+				t.Errorf("BinaryNMU mismatch: got %v, want %v", binaryNMU, tc.expectedBinaryNMU)
+			}
+			if nbs := actual.Version.BinaryIndependentString(); nbs != tc.expectedNonBinaryString {
+				t.Errorf("NonBinaryString mismatch: got %v, want %v", nbs, tc.expectedNonBinaryString)
+			}
+			if native := actual.Version.Native(); native != tc.expectedNative {
+				t.Errorf("Native mismatch: got %v, want %v", native, tc.expectedNative)
 			}
 		})
 	}
