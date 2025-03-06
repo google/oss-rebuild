@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/url"
@@ -103,9 +102,9 @@ func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.Regist
 	}
 	switch t.Ecosystem {
 	case rebuild.NPM:
-		t.Artifact = fmt.Sprintf("%s-%s.tgz", sanitize(t.Package), t.Version)
+		t.Artifact = npmrb.ArtifactName(*t)
 	case rebuild.CratesIO:
-		t.Artifact = fmt.Sprintf("%s-%s.crate", sanitize(t.Package), t.Version)
+		t.Artifact = cratesrb.ArtifactName(*t)
 	case rebuild.PyPI:
 		release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
 		if err != nil {

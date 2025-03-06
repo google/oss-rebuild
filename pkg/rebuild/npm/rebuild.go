@@ -45,7 +45,7 @@ func sanitize(name string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(name, "@", ""), "/", "-")
 }
 
-func artifactName(t rebuild.Target) string {
+func ArtifactName(t rebuild.Target) string {
 	return fmt.Sprintf("%s-%s.tgz", sanitize(t.Package), t.Version)
 }
 
@@ -171,7 +171,7 @@ func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.A
 // RebuildMany executes rebuilds for each provided rebuild.Input returning their rebuild.Verdicts.
 func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {
 	for i := range inputs {
-		inputs[i].Target.Artifact = artifactName(inputs[i].Target)
+		inputs[i].Target.Artifact = ArtifactName(inputs[i].Target)
 	}
 	return rebuild.RebuildMany(ctx, Rebuilder{}, inputs, mux)
 }
