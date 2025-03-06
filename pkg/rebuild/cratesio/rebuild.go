@@ -43,13 +43,8 @@ func GetVersions(ctx context.Context, pkg string, mux rebuild.RegistryMux) (vers
 	return versions, nil
 }
 
-func sanitize(name string) string {
-	// XXX: No known sanitization required.
-	return name
-}
-
-func artifactName(t rebuild.Target) string {
-	return fmt.Sprintf("%s-%s.crate", sanitize(t.Package), t.Version)
+func ArtifactName(t rebuild.Target) string {
+	return fmt.Sprintf("%s-%s.crate", t.Package, t.Version)
 }
 
 type Rebuilder struct{}
@@ -171,7 +166,7 @@ func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.A
 // RebuildMany executes rebuilds for each provided rebuild.Input returning their rebuild.Verdicts.
 func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {
 	for i := range inputs {
-		inputs[i].Target.Artifact = artifactName(inputs[i].Target)
+		inputs[i].Target.Artifact = ArtifactName(inputs[i].Target)
 	}
 	return rebuild.RebuildMany(ctx, Rebuilder{}, inputs, mux)
 }
