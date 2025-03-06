@@ -47,7 +47,7 @@ type GzipStabilizer struct {
 	Func func(*MutableGzipHeader)
 }
 
-var AllGzipStabilizers = []any{
+var AllGzipStabilizers = []Stabilizer{
 	StableGzipCompression,
 	StableGzipName,
 	StableGzipTime,

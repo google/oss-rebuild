@@ -23,7 +23,7 @@ var (
 	disablePasses = flag.String("disable-passes", "none", "Disable only the comma-separated set of stabilizers or 'none'. -help for full list of options")
 )
 
-func getName(san any) string {
+func getName(san archive.Stabilizer) string {
 	switch san.(type) {
 	case archive.TarArchiveStabilizer:
 		return san.(archive.TarArchiveStabilizer).Name
@@ -56,25 +56,25 @@ func filetype(path string) archive.Format {
 }
 
 type StabilizerRegistry struct {
-	stabilizers []any
-	byName      map[string]any
+	stabilizers []archive.Stabilizer
+	byName      map[string]archive.Stabilizer
 }
 
-func NewStabilizerRegistry(stabs ...any) StabilizerRegistry {
+func NewStabilizerRegistry(stabs ...archive.Stabilizer) StabilizerRegistry {
 	reg := StabilizerRegistry{stabilizers: stabs}
-	reg.byName = make(map[string]any)
+	reg.byName = make(map[string]archive.Stabilizer)
 	for _, san := range reg.stabilizers {
 		reg.byName[getName(san)] = san
 	}
 	return reg
 }
 
-func (reg StabilizerRegistry) Get(name string) (any, bool) {
+func (reg StabilizerRegistry) Get(name string) (archive.Stabilizer, bool) {
 	val, ok := reg.byName[name]
 	return val, ok
 }
 
-func (reg StabilizerRegistry) GetAll() []any {
+func (reg StabilizerRegistry) GetAll() []archive.Stabilizer {
 	return reg.stabilizers[:]
 }
 
@@ -83,8 +83,8 @@ func (reg StabilizerRegistry) GetAll() []any {
 // - Preserves the order specified in enableSpec. Order of "all" is impl-defined.
 // - Disable has precedence over enable.
 // - Duplicates are retained and respected.
-func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string) ([]any, error) {
-	var toRun []any
+func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string) ([]archive.Stabilizer, error) {
+	var toRun []archive.Stabilizer
 	enabled := make(map[string]bool)
 	switch enableSpec {
 	case "all":
@@ -122,7 +122,7 @@ func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string) ([]
 		}
 	}
 	// Apply deletions from "enabled" map.
-	toRun = slices.DeleteFunc(toRun, func(san any) bool {
+	toRun = slices.DeleteFunc(toRun, func(san archive.Stabilizer) bool {
 		_, ok := enabled[getName(san)]
 		return !ok
 	})

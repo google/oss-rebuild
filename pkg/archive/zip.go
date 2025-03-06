@@ -123,7 +123,7 @@ type ZipEntryStabilizer struct {
 	Func func(*MutableZipFile)
 }
 
-var AllZipStabilizers []any = []any{
+var AllZipStabilizers = []Stabilizer{
 	StableZipFileOrder,
 	StableZipModifiedTime,
 	StableZipCompression,

@@ -30,7 +30,7 @@ func TestNewStabilizedGzipWriter(t *testing.T) {
 		header             gzip.Header
 		compression        int
 		defaultCompression int
-		stabilizers        []any
+		stabilizers        []Stabilizer
 		wantHeader         gzip.Header
 		wantCompression    int
 	}{
@@ -67,7 +67,7 @@ func TestNewStabilizedGzipWriter(t *testing.T) {
 				OS:      3,
 			},
 			compression: gzip.BestSpeed,
-			stabilizers: []any{StableGzipName},
+			stabilizers: []Stabilizer{StableGzipName},
 			wantHeader: gzip.Header{
 				Name:    "",
 				Comment: "test comment",

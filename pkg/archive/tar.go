@@ -51,7 +51,7 @@ type TarEntryStabilizer struct {
 	Func func(*TarEntry)
 }
 
-var AllTarStabilizers []any = []any{
+var AllTarStabilizers = []Stabilizer{
 	StableTarFileOrder,
 	StableTarTime,
 	StableTarFileMode,
