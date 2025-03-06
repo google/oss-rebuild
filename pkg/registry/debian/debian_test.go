@@ -120,7 +120,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 		component   string
 		pkg         string
 		artifact    string
-		call        httpxtest.Call
+		calls       []httpxtest.Call
 		expected    string
 		expectedErr error
 	}{
@@ -129,11 +129,20 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 			component: "main",
 			pkg:       "xz-utils",
 			artifact:  "xz-utils_5.4.1-0.2_amd64.deb",
-			call: httpxtest.Call{
-				URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.4.1-0.2_amd64.deb",
-				Response: &http.Response{
-					StatusCode: 200,
-					Body:       io.NopCloser(bytes.NewReader([]byte("artifact_contents"))),
+			calls: []httpxtest.Call{
+				{
+					URL: "https://snapshot.debian.org/mr/package/xz-utils/5.4.1-0.2/binfiles/xz-utils/5.4.1-0.2?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.4.1-0.2_amd64.deb"}]}","result":[{"architecture":"amd64","hash":"deadbeef"}]`))),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/file/deadbeef",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte("artifact_contents"))),
+					},
 				},
 			},
 			expected:    "artifact_contents",
@@ -143,7 +152,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockClient := &httpxtest.MockClient{
-				Calls:        []httpxtest.Call{tc.call},
+				Calls:        tc.calls,
 				URLValidator: httpxtest.NewURLValidator(t),
 			}
 			actual, err := HTTPRegistry{Client: mockClient}.Artifact(context.Background(), tc.component, tc.pkg, tc.artifact)
