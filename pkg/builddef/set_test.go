@@ -72,7 +72,7 @@ func TestFilesystemBuildDefinitionSet_Get(t *testing.T) {
 				})
 				f := must(fs.Create("/npm/test-package/1.0.0/test-package-1.0.0.tgz/build.yaml"))
 				defer f.Close()
-				orDie(yaml.NewEncoder(f).Encode(strategyOneOf))
+				orDie(yaml.NewEncoder(f).Encode(schema.BuildDefinition{StrategyOneOf: strategyOneOf}))
 			},
 			target: rebuild.Target{
 				Ecosystem: rebuild.NPM,
