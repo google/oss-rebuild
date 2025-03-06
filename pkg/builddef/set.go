@@ -5,6 +5,7 @@ package builddef
 
 import (
 	"context"
+	"io/fs"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -12,13 +13,14 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 
 // BuildDefinitionSet represents a collection of build definitions.
 type BuildDefinitionSet interface {
-	Get(ctx context.Context, target rebuild.Target) (rebuild.Strategy, error)
+	Get(ctx context.Context, target rebuild.Target) (schema.StrategyOneOf, error)
 }
 
 // FilesystemBuildDefinitionSet implements BuildDefinitionSet using a filesystem.
@@ -30,21 +32,21 @@ func NewFilesystemBuildDefinitionSet(fs billy.Filesystem) *FilesystemBuildDefini
 	return &FilesystemBuildDefinitionSet{fs: fs}
 }
 
-func (s *FilesystemBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target) (rebuild.Strategy, error) {
+func (s *FilesystemBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target) (schema.StrategyOneOf, error) {
 	definitions := rebuild.NewFilesystemAssetStore(s.fs)
 	r, err := definitions.Reader(ctx, rebuild.BuildDef.For(t))
 	if err != nil {
 		if errors.Is(err, rebuild.ErrAssetNotFound) {
-			return nil, nil // Return nil strategy if definition is not found
+			return schema.StrategyOneOf{}, fs.ErrNotExist
 		}
-		return nil, errors.Wrap(err, "reading build definition")
+		return schema.StrategyOneOf{}, errors.Wrap(err, "reading build definition")
 	}
 	defer r.Close()
-	var strategy rebuild.Strategy
-	if err := yaml.NewDecoder(r).Decode(strategy); err != nil {
-		return nil, errors.Wrap(err, "parsing build definition")
+	var oneof schema.StrategyOneOf
+	if err := yaml.NewDecoder(r).Decode(&oneof); err != nil {
+		return schema.StrategyOneOf{}, errors.Wrap(err, "parsing build definition")
 	}
-	return strategy, nil
+	return oneof, nil
 }
 
 func (s *FilesystemBuildDefinitionSet) Path(ctx context.Context, t rebuild.Target) (string, error) {
@@ -97,7 +99,7 @@ func NewBuildDefinitionSetFromGit(opts *GitBuildDefinitionSetOptions) (*GitBuild
 	return &GitBuildDefinitionSet{fs: defnfs, ref: ref.Hash()}, nil
 }
 
-func (s *GitBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target) (rebuild.Strategy, error) {
+func (s *GitBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target) (schema.StrategyOneOf, error) {
 	return (&FilesystemBuildDefinitionSet{fs: s.fs}).Get(ctx, t)
 }
 

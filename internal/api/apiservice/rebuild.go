@@ -187,9 +187,13 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 				Dir:  pth,
 			},
 		}
-		entry.Strategy, err = defs.Get(ctx, t)
+		oneof, err := defs.Get(ctx, t)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "accessing build definition")
+		}
+		entry.Strategy, err = oneof.Strategy()
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "accessing strategy")
 		}
 		if hint, ok := entry.Strategy.(*rebuild.LocationHint); ok && hint != nil {
 			ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
