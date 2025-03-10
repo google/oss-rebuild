@@ -6,6 +6,7 @@ package netlog
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/elazarl/goproxy"
@@ -16,6 +17,10 @@ type HTTPRequestLog struct {
 	Scheme string
 	Host   string
 	Path   string
+}
+
+func (l HTTPRequestLog) URL() *url.URL {
+	return &url.URL{Scheme: l.Scheme, Host: l.Host, Path: l.Path}
 }
 
 type NetworkActivityLog struct {

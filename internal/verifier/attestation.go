@@ -26,7 +26,7 @@ const (
 )
 
 // CreateAttestations creates the SLSA attestations associated with a rebuild.
-func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, prebuildLoc, buildDefLoc rebuild.Location) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
+func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, prebuildLoc, buildDefLoc rebuild.Location, proxyURLs *[]string) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
 	t, manualStrategy := input.Target, input.Strategy
 	var dockerfile []byte
 	{
@@ -176,6 +176,13 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 				},
 			},
 		},
+	}
+	if proxyURLs != nil {
+		proxyURLBytes, err := json.Marshal(*proxyURLs)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "marshalling proxy URLs")
+		}
+		stmt.Predicate.RunDetails.Byproducts = append(stmt.Predicate.RunDetails.Byproducts, slsa1.ResourceDescriptor{Name: "urls.json", Content: proxyURLBytes})
 	}
 	return eqStmt, stmt, nil
 }
