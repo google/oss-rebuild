@@ -631,6 +631,27 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 			},
 		},
 		{
+			name: "exclude_path_glob",
+			input: []*TarEntry{
+				{&tar.Header{Name: "test/foo/file1.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+				{&tar.Header{Name: "test/bar/file2.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+			},
+			entries: []CustomStabilizerEntry{
+				{
+					Config: CustomStabilizerConfigOneOf{
+						ExcludePath: &ExcludePath{
+							Path: "test/**/*.txt",
+						},
+					},
+					Reason: "exclude all test files",
+				},
+			},
+			expected: []*TarEntry{
+				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Hello World")},
+			},
+		},
+		{
 			name: "multiple_custom_stabilizers",
 			input: []*TarEntry{
 				{&tar.Header{Name: "test/file1.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
@@ -812,6 +833,27 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 			expected: []ZipEntry{
 				{&zip.FileHeader{Name: "other/file.txt", Modified: epoch}, []byte("Hello World")},
 				{&zip.FileHeader{Name: "test/file2.txt", Modified: epoch}, []byte("Hello World")},
+			},
+		},
+		{
+			name: "exclude_path_glob",
+			input: []ZipEntry{
+				{&zip.FileHeader{Name: "test/foo/file1.txt"}, []byte("Hello World")},
+				{&zip.FileHeader{Name: "test/bar/file2.txt"}, []byte("Hello World")},
+				{&zip.FileHeader{Name: "other/file.txt"}, []byte("Hello World")},
+			},
+			entries: []CustomStabilizerEntry{
+				{
+					Config: CustomStabilizerConfigOneOf{
+						ExcludePath: &ExcludePath{
+							Path: "test/**/*.txt",
+						},
+					},
+					Reason: "exclude all test files",
+				},
+			},
+			expected: []ZipEntry{
+				{&zip.FileHeader{Name: "other/file.txt", Modified: epoch}, []byte("Hello World")},
 			},
 		},
 		{
