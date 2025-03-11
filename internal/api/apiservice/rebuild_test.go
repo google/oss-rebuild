@@ -309,17 +309,17 @@ RLpmHHG1JOVdOA==
 				URLValidator: httpxtest.NewURLValidator(t),
 			}
 			d.Signer = must(dsse.NewEnvelopeSigner(&FakeSigner{}))
-			fs := memfs.New()
-			afs := must(fs.Chroot("attestations"))
+			mfs := memfs.New()
+			afs := must(mfs.Chroot("attestations"))
 			d.AttestationStore = rebuild.NewFilesystemAssetStore(afs)
 			d.DebugStoreBuilder = func(ctx context.Context) (rebuild.AssetStore, error) {
-				return rebuild.NewFilesystemAssetStore(must(fs.Chroot("debug-metadata"))), nil
+				return rebuild.NewFilesystemAssetStore(must(mfs.Chroot("debug-metadata"))), nil
 			}
-			remoteMetadata := rebuild.NewFilesystemAssetStore(must(fs.Chroot("remote-metadata")))
+			remoteMetadata := rebuild.NewFilesystemAssetStore(must(mfs.Chroot("remote-metadata")))
 			d.RemoteMetadataStoreBuilder = func(ctx context.Context, id string) (rebuild.LocatableAssetStore, error) {
 				return remoteMetadata, nil
 			}
-			d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(must(fs.Chroot("local-metadata")))
+			d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(must(mfs.Chroot("local-metadata")))
 			buildSteps := []*cloudbuild.BuildStep{
 				{Name: "gcr.io/foo/bar", Script: "./bar"},
 			}

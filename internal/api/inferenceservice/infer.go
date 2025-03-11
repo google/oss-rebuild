@@ -30,7 +30,7 @@ import (
 
 func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy) (rebuild.Strategy, error) {
 	s := memory.NewStorage()
-	fs := memfs.New()
+	mfs := memfs.New()
 	var repo string
 	if lh, ok := hint.(*rebuild.LocationHint); ok && lh != nil {
 		repo = lh.Location.Repo
@@ -41,7 +41,7 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 			return nil, err
 		}
 	}
-	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, fs, s)
+	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, mfs, s)
 	if err != nil {
 		return nil, err
 	}
