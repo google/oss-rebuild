@@ -27,7 +27,7 @@ func TestCustomStabilizerEntry_Validate(t *testing.T) {
 			entry: CustomStabilizerEntry{
 				Config: CustomStabilizerConfigOneOf{
 					ReplacePattern: &ReplacePattern{
-						Path:    "test/path",
+						Paths:   []string{"test/path"},
 						Pattern: "pattern",
 						Replace: "replace",
 					},
@@ -41,7 +41,7 @@ func TestCustomStabilizerEntry_Validate(t *testing.T) {
 			entry: CustomStabilizerEntry{
 				Config: CustomStabilizerConfigOneOf{
 					ExcludePath: &ExcludePath{
-						Path: "test/path",
+						Paths: []string{"test/path"},
 					},
 				},
 				Reason: "test reason",
@@ -53,7 +53,7 @@ func TestCustomStabilizerEntry_Validate(t *testing.T) {
 			entry: CustomStabilizerEntry{
 				Config: CustomStabilizerConfigOneOf{
 					ReplacePattern: &ReplacePattern{
-						Path:    "test/path",
+						Paths:   []string{"test/path"},
 						Pattern: "pattern",
 						Replace: "replace",
 					},
@@ -76,12 +76,12 @@ func TestCustomStabilizerEntry_Validate(t *testing.T) {
 			entry: CustomStabilizerEntry{
 				Config: CustomStabilizerConfigOneOf{
 					ReplacePattern: &ReplacePattern{
-						Path:    "test/path",
+						Paths:   []string{"test/path"},
 						Pattern: "pattern",
 						Replace: "replace",
 					},
 					ExcludePath: &ExcludePath{
-						Path: "test/path",
+						Paths: []string{"test/path"},
 					},
 				},
 				Reason: "test reason",
@@ -119,7 +119,7 @@ func TestReplacePattern_Validate(t *testing.T) {
 		{
 			name: "valid replace pattern",
 			rp: ReplacePattern{
-				Path:    "test/path",
+				Paths:   []string{"test/path"},
 				Pattern: "pattern",
 				Replace: "replace",
 			},
@@ -132,12 +132,12 @@ func TestReplacePattern_Validate(t *testing.T) {
 				Replace: "replace",
 			},
 			wantErr: true,
-			errMsg:  "empty path",
+			errMsg:  "no path provided",
 		},
 		{
 			name: "invalid pattern",
 			rp: ReplacePattern{
-				Path:    "test/path",
+				Paths:   []string{"test/path"},
 				Pattern: "[invalid",
 				Replace: "replace",
 			},
@@ -174,17 +174,17 @@ func TestExcludePath_Validate(t *testing.T) {
 		{
 			name: "valid exclude path",
 			ep: ExcludePath{
-				Path: "test/path",
+				Paths: []string{"test/path"},
 			},
 			wantErr: false,
 		},
 		{
 			name: "empty path",
 			ep: ExcludePath{
-				Path: "",
+				Paths: []string{},
 			},
 			wantErr: true,
-			errMsg:  "empty path",
+			errMsg:  "no path provided",
 		},
 	}
 	for _, tt := range tests {
@@ -209,7 +209,7 @@ func TestExcludePath_Validate(t *testing.T) {
 // Mock implementation to test ReplacePattern.Stabilizer
 func TestReplacePattern_Stabilizer(t *testing.T) {
 	rp := &ReplacePattern{
-		Path:    "test/path",
+		Paths:   []string{"test/path"},
 		Pattern: "pattern",
 		Replace: "replace",
 	}
@@ -291,7 +291,7 @@ func TestReplacePattern_Stabilizer(t *testing.T) {
 // Test ExcludePath.Stabilizer
 func TestExcludePath_Stabilizer(t *testing.T) {
 	ep := &ExcludePath{
-		Path: "test/path",
+		Paths: []string{"test/path"},
 	}
 	tests := []struct {
 		name     string
@@ -383,7 +383,7 @@ func TestCreateCustomStabilizers(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/path1",
+							Paths:   []string{"test/path1"},
 							Pattern: "pattern1",
 							Replace: "replace1",
 						},
@@ -393,7 +393,7 @@ func TestCreateCustomStabilizers(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ExcludePath: &ExcludePath{
-							Path: "test/path2",
+							Paths: []string{"test/path2"},
 						},
 					},
 					Reason: "test reason 2",
@@ -409,7 +409,7 @@ func TestCreateCustomStabilizers(t *testing.T) {
 					// Missing reason will cause validation error
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/path",
+							Paths:   []string{"test/path"},
 							Pattern: "pattern",
 							Replace: "replace",
 						},
@@ -427,7 +427,7 @@ func TestCreateCustomStabilizers(t *testing.T) {
 					// Empty path will cause validation error
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "",
+							Paths:   []string{""},
 							Pattern: "pattern",
 							Replace: "replace",
 						},
@@ -437,7 +437,7 @@ func TestCreateCustomStabilizers(t *testing.T) {
 			},
 			format:      TarFormat,
 			wantErr:     true,
-			errContains: "empty path",
+			errContains: "invalid path",
 		},
 		{
 			name: "stabilizer creation error",
@@ -445,7 +445,7 @@ func TestCreateCustomStabilizers(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/path",
+							Paths:   []string{"test/path"},
 							Pattern: "pattern",
 							Replace: "replace",
 						},
@@ -533,7 +533,7 @@ func TestCustomStabilizerConfigOneOf_CustomStabilizerConfig(t *testing.T) {
 			name: "replace pattern",
 			cfg: CustomStabilizerConfigOneOf{
 				ReplacePattern: &ReplacePattern{
-					Path:    "test/path",
+					Paths:   []string{"test/path"},
 					Pattern: "pattern",
 					Replace: "replace",
 				},
@@ -545,7 +545,7 @@ func TestCustomStabilizerConfigOneOf_CustomStabilizerConfig(t *testing.T) {
 			name: "exclude path",
 			cfg: CustomStabilizerConfigOneOf{
 				ExcludePath: &ExcludePath{
-					Path: "test/path",
+					Paths: []string{"test/path"},
 				},
 			},
 			wantType: reflect.TypeOf(&ExcludePath{}),
@@ -595,7 +595,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/*.txt",
+							Paths:   []string{"test/*.txt"},
 							Pattern: "Hello",
 							Replace: "Changed",
 						},
@@ -619,7 +619,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ExcludePath: &ExcludePath{
-							Path: "test/file1.txt",
+							Paths: []string{"test/file1.txt"},
 						},
 					},
 					Reason: "exclude specific file",
@@ -641,7 +641,28 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ExcludePath: &ExcludePath{
-							Path: "test/**/*.txt",
+							Paths: []string{"test/**/*.txt"},
+						},
+					},
+					Reason: "exclude all test files",
+				},
+			},
+			expected: []*TarEntry{
+				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Hello World")},
+			},
+		},
+		{
+			name: "exclude_path_multiglob",
+			input: []*TarEntry{
+				{&tar.Header{Name: "test/foo/file1.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+				{&tar.Header{Name: "test/bar/file2.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+			},
+			entries: []CustomStabilizerEntry{
+				{
+					Config: CustomStabilizerConfigOneOf{
+						ExcludePath: &ExcludePath{
+							Paths: []string{"test/foo/**", "test/bar/**"},
 						},
 					},
 					Reason: "exclude all test files",
@@ -662,7 +683,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ExcludePath: &ExcludePath{
-							Path: "test/file1.txt",
+							Paths: []string{"test/file1.txt"},
 						},
 					},
 					Reason: "exclude specific file",
@@ -670,7 +691,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/*.txt",
+							Paths:   []string{"test/*.txt"},
 							Pattern: "Hello",
 							Replace: "Changed",
 						},
@@ -693,7 +714,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/*.txt",
+							Paths:   []string{"test/*.txt"},
 							Pattern: "Hello",
 							Replace: "Changed",
 						},
@@ -715,7 +736,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/*.txt",
+							Paths:   []string{"test/*.txt"},
 							Pattern: "[invalid", // Invalid regex
 							Replace: "Changed",
 						},
@@ -800,7 +821,7 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/*.txt",
+							Paths:   []string{"test/*.txt"},
 							Pattern: "Hello",
 							Replace: "Changed",
 						},
@@ -824,7 +845,7 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ExcludePath: &ExcludePath{
-							Path: "test/file1.txt",
+							Paths: []string{"test/file1.txt"},
 						},
 					},
 					Reason: "exclude specific file",
@@ -846,7 +867,7 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ExcludePath: &ExcludePath{
-							Path: "test/**/*.txt",
+							Paths: []string{"test/**/*.txt"},
 						},
 					},
 					Reason: "exclude all test files",
@@ -867,7 +888,7 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ExcludePath: &ExcludePath{
-							Path: "test/file1.txt",
+							Paths: []string{"test/file1.txt"},
 						},
 					},
 					Reason: "exclude specific file",
@@ -875,7 +896,7 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/*.txt",
+							Paths:   []string{"test/*.txt"},
 							Pattern: "Hello",
 							Replace: "Changed",
 						},
@@ -898,7 +919,7 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/*.txt",
+							Paths:   []string{"test/*.txt"},
 							Pattern: "Hello",
 							Replace: "Changed",
 						},
@@ -920,7 +941,7 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 				{
 					Config: CustomStabilizerConfigOneOf{
 						ReplacePattern: &ReplacePattern{
-							Path:    "test/*.txt",
+							Paths:   []string{"test/*.txt"},
 							Pattern: "[invalid", // Invalid regex
 							Replace: "Changed",
 						},

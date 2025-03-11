@@ -8,6 +8,8 @@ import (
 	"io"
 	"regexp"
 
+	"slices"
+
 	"github.com/google/oss-rebuild/internal/glob"
 	"github.com/pkg/errors"
 )
@@ -91,18 +93,21 @@ func CreateCustomStabilizers(entries []CustomStabilizerEntry, format Format) ([]
 }
 
 // ReplacePattern is a regex replace stabilizer applied to a specified path
-// - Path is a path.Match-like pattern defining the archive paths to apply the replace.
+// - Paths is a slice of path.Match-like patterns defining the archive paths to apply the exclusion.
 // - Pattern is a regex that accepts the golang RE2 syntax.
 // - Replace can define a substitution for the matched content.
 type ReplacePattern struct {
-	Path    string `yaml:"path"`
-	Pattern string `yaml:"pattern"`
-	Replace string `yaml:"replace"`
+	Paths   []string `yaml:"paths"`
+	Pattern string   `yaml:"pattern"`
+	Replace string   `yaml:"replace"`
 }
 
 func (rp *ReplacePattern) Validate() error {
-	if rp.Path == "" {
-		return errors.New("empty path")
+	if len(rp.Paths) == 0 {
+		return errors.New("no path provided")
+	}
+	if slices.Contains(rp.Paths, "") {
+		return errors.New("invalid path")
 	}
 	if _, err := regexp.Compile(rp.Pattern); err != nil {
 		return errors.Wrap(err, "bad pattern")
@@ -118,7 +123,7 @@ func (rp *ReplacePattern) Stabilizer(name string, format Format) (Stabilizer, er
 		return TarEntryStabilizer{
 			Name: "replace-pattern-" + name,
 			Func: func(te *TarEntry) {
-				if match, err := glob.Match(rp.Path, te.Name); err != nil || !match {
+				if match, err := multiMatch(rp.Paths, te.Name); err != nil || !match {
 					return
 				}
 				te.Body = re.ReplaceAll(te.Body, []byte(rp.Replace))
@@ -129,7 +134,7 @@ func (rp *ReplacePattern) Stabilizer(name string, format Format) (Stabilizer, er
 		return ZipEntryStabilizer{
 			Name: "replace-pattern-" + name,
 			Func: func(zf *MutableZipFile) {
-				if match, err := glob.Match(rp.Path, zf.Name); err != nil || !match {
+				if match, err := multiMatch(rp.Paths, zf.Name); err != nil || !match {
 					return
 				}
 				r, err := zf.Open()
@@ -150,14 +155,17 @@ func (rp *ReplacePattern) Stabilizer(name string, format Format) (Stabilizer, er
 }
 
 // ExcludePath is stabilizer that removes specified path(s) from the output
-// - Path is a path.Match-like pattern defining the archive paths to apply the exclusion.
+// - Paths is a slice of path.Match-like patterns defining the archive paths to apply the exclusion.
 type ExcludePath struct {
-	Path string `yaml:"path"`
+	Paths []string `yaml:"paths"`
 }
 
 func (ep *ExcludePath) Validate() error {
-	if ep.Path == "" {
-		return errors.New("empty path")
+	if len(ep.Paths) == 0 {
+		return errors.New("no path provided")
+	}
+	if slices.Contains(ep.Paths, "") {
+		return errors.New("invalid path")
 	}
 	return nil
 }
@@ -170,7 +178,7 @@ func (ep *ExcludePath) Stabilizer(name string, format Format) (Stabilizer, error
 			Func: func(ta *TarArchive) {
 				var files []*TarEntry
 				for _, f := range ta.Files {
-					if match, err := glob.Match(ep.Path, f.Name); err != nil || match {
+					if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
 						continue
 					}
 					files = append(files, f)
@@ -184,7 +192,7 @@ func (ep *ExcludePath) Stabilizer(name string, format Format) (Stabilizer, error
 			Func: func(mzr *MutableZipReader) {
 				var files []*MutableZipFile
 				for _, f := range mzr.File {
-					if match, err := glob.Match(ep.Path, f.Name); err != nil || match {
+					if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
 						continue
 					}
 					files = append(files, f)
@@ -195,4 +203,15 @@ func (ep *ExcludePath) Stabilizer(name string, format Format) (Stabilizer, error
 	default:
 		return nil, errors.New("unsupported format")
 	}
+}
+
+func multiMatch(patterns []string, name string) (bool, error) {
+	for _, pattern := range patterns {
+		if match, err := glob.Match(pattern, name); err != nil {
+			return false, err
+		} else if match {
+			return true, nil
+		}
+	}
+	return false, nil
 }
