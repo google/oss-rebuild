@@ -6,9 +6,9 @@ package archive
 import (
 	"fmt"
 	"io"
-	"path"
 	"regexp"
 
+	"github.com/google/oss-rebuild/internal/glob"
 	"github.com/pkg/errors"
 )
 
@@ -91,7 +91,7 @@ func CreateCustomStabilizers(entries []CustomStabilizerEntry, format Format) ([]
 }
 
 // ReplacePattern is a regex replace stabilizer applied to a specified path
-// - Path is a path.Match pattern defining the archive paths to apply the replace.
+// - Path is a path.Match-like pattern defining the archive paths to apply the replace.
 // - Pattern is a regex that accepts the golang RE2 syntax.
 // - Replace can define a substitution for the matched content.
 type ReplacePattern struct {
@@ -118,7 +118,7 @@ func (rp *ReplacePattern) Stabilizer(name string, format Format) (Stabilizer, er
 		return TarEntryStabilizer{
 			Name: "replace-pattern-" + name,
 			Func: func(te *TarEntry) {
-				if match, err := path.Match(rp.Path, te.Name); err != nil || !match {
+				if match, err := glob.Match(rp.Path, te.Name); err != nil || !match {
 					return
 				}
 				te.Body = re.ReplaceAll(te.Body, []byte(rp.Replace))
@@ -129,7 +129,7 @@ func (rp *ReplacePattern) Stabilizer(name string, format Format) (Stabilizer, er
 		return ZipEntryStabilizer{
 			Name: "replace-pattern-" + name,
 			Func: func(zf *MutableZipFile) {
-				if match, err := path.Match(rp.Path, zf.Name); err != nil || !match {
+				if match, err := glob.Match(rp.Path, zf.Name); err != nil || !match {
 					return
 				}
 				r, err := zf.Open()
@@ -150,7 +150,7 @@ func (rp *ReplacePattern) Stabilizer(name string, format Format) (Stabilizer, er
 }
 
 // ExcludePath is stabilizer that removes specified path(s) from the output
-// - Path is a path.Match pattern defining the archive paths to apply the exclusion.
+// - Path is a path.Match-like pattern defining the archive paths to apply the exclusion.
 type ExcludePath struct {
 	Path string `yaml:"path"`
 }
@@ -170,7 +170,7 @@ func (ep *ExcludePath) Stabilizer(name string, format Format) (Stabilizer, error
 			Func: func(ta *TarArchive) {
 				var files []*TarEntry
 				for _, f := range ta.Files {
-					if match, err := path.Match(ep.Path, f.Name); err != nil || match {
+					if match, err := glob.Match(ep.Path, f.Name); err != nil || match {
 						continue
 					}
 					files = append(files, f)
@@ -184,7 +184,7 @@ func (ep *ExcludePath) Stabilizer(name string, format Format) (Stabilizer, error
 			Func: func(mzr *MutableZipReader) {
 				var files []*MutableZipFile
 				for _, f := range mzr.File {
-					if match, err := path.Match(ep.Path, f.Name); err != nil || match {
+					if match, err := glob.Match(ep.Path, f.Name); err != nil || match {
 						continue
 					}
 					files = append(files, f)
