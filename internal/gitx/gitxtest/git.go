@@ -7,11 +7,13 @@ import (
 	"io"
 	"path"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
@@ -39,7 +41,12 @@ type Repository struct {
 	Commits map[string]plumbing.Hash
 }
 
-func CreateRepoFromYAML(content string) (*Repository, error) {
+type RepositoryOptions struct {
+	Storer   storage.Storer
+	Worktree billy.Filesystem
+}
+
+func CreateRepoFromYAML(content string, opts *RepositoryOptions) (*Repository, error) {
 	var history GitHistory
 	var repo Repository
 	err := yaml.Unmarshal([]byte(content), &history)
@@ -48,8 +55,19 @@ func CreateRepoFromYAML(content string) (*Repository, error) {
 	}
 
 	// Create a new repository in memory
-	fs := memfs.New()
-	repo.Repository, err = git.Init(memory.NewStorage(), fs)
+	var s storage.Storer
+	if opts != nil && opts.Storer != nil {
+		s = opts.Storer
+	} else {
+		s = memory.NewStorage()
+	}
+	var wfs billy.Filesystem
+	if opts != nil && opts.Worktree != nil {
+		wfs = opts.Worktree
+	} else {
+		wfs = memfs.New()
+	}
+	repo.Repository, err = git.Init(s, wfs)
 	if err != nil {
 		return nil, errors.Wrap(err, "initializing repo")
 	}

@@ -200,7 +200,7 @@ func TestInferStrategy(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			repo := must(gitxtest.CreateRepoFromYAML(tc.repo))
+			repo := must(gitxtest.CreateRepoFromYAML(tc.repo, nil))
 			target := rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"}
 			rcfg := rebuild.RepoConfig{
 				Repository: repo.Repository,
