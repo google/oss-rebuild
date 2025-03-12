@@ -321,13 +321,13 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Export-Package: c2;a2;b2,a1;c1;b1\n"),
+					[]byte("Export-Package: c2=\"a,b\";a2;b2,a1=\"1234\";c1;b1\n"),
 				},
 			},
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Export-Package: a1;b1;c1,a2;b2;c2\r\n\r\n"),
+					[]byte("Export-Package: a1=\"1234\";b1;c1,a2;b2;c2=\"a,b\"\r\n\r\n"),
 				},
 			},
 		},
