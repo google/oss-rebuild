@@ -13,7 +13,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-var AllStabilizers = slices.Concat(AllZipStabilizers, AllTarStabilizers, AllGzipStabilizers)
+var AllStabilizers = slices.Concat(AllZipStabilizers, AllTarStabilizers, AllGzipStabilizers, AllJarStabilizers)
 
 // Stabilize selects and applies the default stabilization routine for the given archive format.
 func Stabilize(dst io.Writer, src io.Reader, f Format) error {
