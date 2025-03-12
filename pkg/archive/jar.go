@@ -133,6 +133,11 @@ var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 			// Related issues: 1) [fix for Export-Package & Private-Package](https://github.com/bndtools/bnd/issues/5021)
 			// 2) [fix for Include-Resource](https://github.com/jvm-repo-rebuild/reproducible-central/issues/99)
 			sort.Strings(subvalues)
+			for i, subvalue := range subvalues {
+				subvalueArray := splitPreservingQuotes(subvalue, ';')
+				sort.Strings(subvalueArray)
+				subvalues[i] = strings.Join(subvalueArray, ";")
+			}
 			manifest.MainSection.Set(attr, strings.Join(subvalues, ","))
 		}
 		buf := bytes.NewBuffer(nil)
