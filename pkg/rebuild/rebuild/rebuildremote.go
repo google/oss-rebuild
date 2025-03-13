@@ -52,8 +52,7 @@ type rebuildContainerArgs struct {
 	UtilPrebuildAuth   bool
 }
 
-const policyYaml = `
-apiVersion: cilium.io/v1alpha1
+var tetragonPoliciesYaml = []string{`apiVersion: cilium.io/v1alpha1
 kind: TracingPolicy
 metadata:
   name: "process-and-memory"
@@ -95,20 +94,43 @@ spec:
       index: 0
       type: "int"
     returnArgAction: "Post"
-`
+`,
+	`apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: "file-open-at"
+spec:
+  tracepoints:
+  - subsystem: syscalls
+    event: sys_enter_openat
+    args:
+    - index: 5
+      type: int32
+    - index: 6
+      type: string
+    - index: 7
+      type: uint32
+    - index: 8
+      type: uint32
+`}
 
-var tetragonPolicyJSON string
+var tetragonPoliciesJSON []string
 
 func init() {
-	var data any
-	if err := yaml.Unmarshal([]byte(policyYaml), &data); err != nil {
-		log.Fatalf("Malformed tetragon policy: %v", err)
+	for _, policyYaml := range tetragonPoliciesYaml {
+		var data any
+		if err := yaml.Unmarshal([]byte(policyYaml), &data); err != nil {
+			log.Fatalf("Malformed tetragon policy: %v", err)
+		}
+		b, err := json.Marshal(data)
+		if err != nil {
+			log.Fatalf("Converting tetragon policy to json: %v", err)
+		}
+		if bytes.Contains(b, []byte("'")) {
+			log.Fatalf("Policy cannot contain single quotes: %s", string(b))
+		}
+		tetragonPoliciesJSON = append(tetragonPoliciesJSON, string(b))
 	}
-	b, err := json.Marshal(data)
-	if err != nil {
-		log.Fatalf("Converting tetragon policy to json: %v", err)
-	}
-	tetragonPolicyJSON = string(b)
 }
 
 var debuildContainerTpl = template.Must(
@@ -203,9 +225,11 @@ var standardBuildTpl = template.Must(
 				#!/usr/bin/env bash
 				set -eux
 				{{- if .UseSyscallMonitor}}
-				touch /workspace/tetragon.jsonl
-				echo '{{.SyscallPolicy}}' > /workspace/tetragon_policy.yaml
-				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon_policy.yaml:/workspace/tetragon_policy.yaml -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy=/workspace/tetragon_policy.yaml --export-filename=/workspace/tetragon.jsonl)
+				mkdir /workspace/tetragon/
+				{{- range $i, $policy := .SyscallPolicies}}
+				echo '{{$policy}}' > "/workspace/tetragon/policy_{{ $i }}.json"
+				{{- end}}
+				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
 				grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 				{{- end}}
 				{{- if .UtilPrebuildAuth}}
@@ -310,9 +334,11 @@ var proxyBuildTpl = template.Must(
 					iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':{{.TLSPort}}
 				'
 				{{- if .UseSyscallMonitor}}
-				touch /workspace/tetragon.jsonl
-				echo {{.SyscallPolicy}} > /workspace/tetragon_policy.yaml
-				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --policy-file=/workspace/tetragon_policy.yaml --export-filename=/workspace/tetragon.jsonl)
+				mkdir /workspace/tetragon/
+				{{- range $i, $policy := .SyscallPolicies}}
+				echo '{{$policy}}' > "/workspace/tetragon/policy_{{ $i }}.json"
+				{{- end}}
+				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
 				grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 				{{- end}}
 				docker exec build /bin/sh -euxc '
@@ -373,7 +399,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 			"Project":            opts.Project,
 			"Dockerfile":         dockerfile,
 			"UseSyscallMonitor":  opts.UseSyscallMonitor,
-			"SyscallPolicy":      tetragonPolicyJSON,
+			"SyscallPolicies":    tetragonPoliciesJSON,
 			"HTTPPort":           "3128",
 			"TLSPort":            "3129",
 			"CtrlPort":           "3127",
@@ -406,7 +432,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		err := standardBuildTpl.Execute(&buildScript, map[string]any{
 			"Dockerfile":        dockerfile,
 			"UseSyscallMonitor": opts.UseSyscallMonitor,
-			"SyscallPolicy":     tetragonPolicyJSON,
+			"SyscallPolicies":   tetragonPoliciesJSON,
 			"UtilPrebuildAuth":  opts.UtilPrebuildAuth,
 			"Project":           opts.Project,
 		})
