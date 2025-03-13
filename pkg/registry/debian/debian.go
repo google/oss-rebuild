@@ -9,16 +9,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"regexp"
 	"strings"
 
 	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/pkg/errors"
 )
 
 var (
-	registryURL         = "https://deb.debian.org/debian/pool/"
-	buildinfoURL        = "https://buildinfos.debian.net/buildinfo-pool/"
+	registryURL         = urlx.MustParse("https://deb.debian.org/debian/pool/")
+	buildinfoURL        = urlx.MustParse("https://buildinfos.debian.net/buildinfo-pool/")
 	binaryReleaseRegexp = regexp.MustCompile(`(\+b[\d\.]+)$`)
 )
 
@@ -64,12 +66,15 @@ func poolDir(name string) string {
 }
 
 func PoolURL(component, name, artifact string) string {
-	return registryURL + fmt.Sprintf("%s/%s/%s/%s", component, poolDir(name), name, artifact)
+	u := urlx.Copy(registryURL)
+	u.Path += path.Join(component, poolDir(name), name, artifact)
+	return u.String()
 }
 
 func BuildInfoURL(name, version, arch string) string {
-	file := fmt.Sprintf("%s_%s_%s.buildinfo", name, version, arch)
-	return buildinfoURL + fmt.Sprintf("%s/%s/%s", poolDir(name), name, file)
+	u := urlx.Copy(buildinfoURL)
+	u.Path += path.Join(poolDir(name), name, fmt.Sprintf("%s_%s_%s.buildinfo", name, version, arch))
+	return u.String()
 }
 
 func guessDSCURL(component, name, version string) string {
