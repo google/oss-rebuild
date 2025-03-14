@@ -13,3 +13,8 @@ func MustParse(rawURL string) *url.URL {
 		return u
 	}
 }
+
+// Copy duplicates a URL object.
+func Copy(u *url.URL) *url.URL {
+	return MustParse(u.String())
+}
