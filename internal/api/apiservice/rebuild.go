@@ -164,6 +164,10 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		Artifact:  t.Artifact,
 	}
 	if fromRepo {
+		var sparseDirs []string
+		if deps.BuildDefRepo.Dir != "." {
+			sparseDirs = append(sparseDirs, deps.BuildDefRepo.Dir)
+		}
 		defs, err := builddef.NewBuildDefinitionSetFromGit(&builddef.GitBuildDefinitionSetOptions{
 			CloneOptions: git.CloneOptions{
 				URL:           deps.BuildDefRepo.Repo,
@@ -173,7 +177,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 			},
 			RelativePath: deps.BuildDefRepo.Dir,
 			// TODO: Limit this further to only the target's path we want.
-			SparseCheckoutDirs: []string{deps.BuildDefRepo.Dir},
+			SparseCheckoutDirs: sparseDirs,
 		})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "creating build definition repo reader")
