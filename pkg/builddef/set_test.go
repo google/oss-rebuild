@@ -19,8 +19,8 @@ import (
 )
 
 func TestFilesystemBuildDefinitionSet_Path(t *testing.T) {
-	fs := memfs.New()
-	bds := NewFilesystemBuildDefinitionSet(fs)
+	mfs := memfs.New()
+	bds := NewFilesystemBuildDefinitionSet(mfs)
 	target := rebuild.Target{
 		Ecosystem: rebuild.NPM,
 		Package:   "test-package",
@@ -110,9 +110,9 @@ func TestFilesystemBuildDefinitionSet_Get(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fs := memfs.New()
-			bds := NewFilesystemBuildDefinitionSet(fs)
-			tt.setupFS(fs, tt.target)
+			mfs := memfs.New()
+			bds := NewFilesystemBuildDefinitionSet(mfs)
+			tt.setupFS(mfs, tt.target)
 			ctx := context.Background()
 			got, err := bds.Get(ctx, tt.target)
 			// Check error expectations

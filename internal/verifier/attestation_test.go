@@ -50,9 +50,8 @@ func TestCreateAttestations(t *testing.T) {
 	}
 
 	t.Run("Success", func(t *testing.T) {
-		// Set up in-memory filesystem
-		fs := memfs.New()
-		metadata := rebuild.NewFilesystemAssetStore(fs)
+		mfs := memfs.New()
+		metadata := rebuild.NewFilesystemAssetStore(mfs)
 		{
 			w := must(metadata.Writer(ctx, rebuild.DockerfileAsset.For(target)))
 			must(w.Write([]byte("FROM alpine:latest\nRUN echo deps\nENTRYPOINT [\"echo\", \"build\"]")))

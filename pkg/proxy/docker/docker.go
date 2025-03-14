@@ -606,11 +606,11 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			}
 			return
 		}
-		fs := dockerfs.Filesystem{Client: serverClient, Container: id}
+		dfs := dockerfs.Filesystem{Client: serverClient, Container: id}
 		certBytes := cert.ToPEM(&d.cert)
 		// NOTE: This doesn't need to be cleaned up due to the enclosing volume
 		// binding made at creation time.
-		if err := createFile(fs, certBytes, proxyCertPath); err != nil {
+		if err := createFile(dfs, certBytes, proxyCertPath); err != nil {
 			log.Printf("Creating proxy cert: %v", err)
 			break
 		}
@@ -620,7 +620,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 				log.Printf("Generating java proxy cert: %v", err)
 				break
 			}
-			if err := createFile(fs, jks, proxyCertJKSPath); err != nil {
+			if err := createFile(dfs, jks, proxyCertJKSPath); err != nil {
 				log.Printf("Creating java proxy cert: %v", err)
 				break
 			}
@@ -631,13 +631,13 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			patchset.Unlock()
 			break
 		}
-		truststorePatch, err := truststoreCertPatch(fs, certBytes)
+		truststorePatch, err := truststoreCertPatch(dfs, certBytes)
 		if err != nil {
 			log.Printf("patching certstore for %s: %v", id, err)
 			patchset.Unlock()
 			break
 		}
-		if err := truststorePatch.Apply(&fs); err != nil {
+		if err := truststorePatch.Apply(&dfs); err != nil {
 			log.Printf("Unable to apply patch for %s: %v", id, err)
 			patchset.Unlock()
 			break
@@ -733,7 +733,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			}
 			return
 		}
-		fs := dockerfs.Filesystem{Client: serverClient, Container: id}
+		dfs := dockerfs.Filesystem{Client: serverClient, Container: id}
 		patchset := d.leasePatchSet(id)
 		defer patchset.Unlock()
 		if len(patchset.Patches) == 0 {
@@ -741,7 +741,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		}
 		// TODO: /pause the container here to ensure container operations don't see unpatched changes.
 		for _, p := range patchset.Patches {
-			if err := p.Revert(&fs); err != nil {
+			if err := p.Revert(&dfs); err != nil {
 				// XXX: This is a really bad situation. If we can't revert the
 				// patches applied, it's better we crash and try to ensure the
 				// corrupted state doesn't go silently unreported.
@@ -752,7 +752,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		defer func() {
 			var applied []int
 			for i, p := range patchset.Patches {
-				if err := p.Apply(&fs); err != nil {
+				if err := p.Apply(&dfs); err != nil {
 					log.Printf("Failed to re-apply patches for %s: %s", id, err)
 				} else {
 					applied = append(applied, i)
@@ -764,7 +764,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 				log.Printf("Attempting to recover from patch application failure for %s", id)
 				for _, idx := range applied {
 					p := patchset.Patches[idx]
-					if err := p.Revert(&fs); err != nil {
+					if err := p.Revert(&dfs); err != nil {
 						// Rollback failed. We're in an inconsistent state so crashing
 						// is the safest option.
 						log.Fatalf("Failed to recover from repatch failure for %s: %s", id, err)
