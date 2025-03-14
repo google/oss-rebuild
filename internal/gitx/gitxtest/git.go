@@ -48,12 +48,16 @@ type RepositoryOptions struct {
 
 func CreateRepoFromYAML(content string, opts *RepositoryOptions) (*Repository, error) {
 	var history GitHistory
-	var repo Repository
 	err := yaml.Unmarshal([]byte(content), &history)
 	if err != nil {
 		return nil, err
 	}
+	return CreateRepo(history.Commits, opts)
+}
 
+func CreateRepo(commits []Commit, opts *RepositoryOptions) (*Repository, error) {
+	var repo Repository
+	var err error
 	// Create a new repository in memory
 	var s storage.Storer
 	if opts != nil && opts.Storer != nil {
@@ -80,7 +84,7 @@ func CreateRepoFromYAML(content string, opts *RepositoryOptions) (*Repository, e
 	// Map to store created commits
 	repo.Commits = make(map[string]plumbing.Hash)
 
-	for _, c := range history.Commits {
+	for _, c := range commits {
 		// Create or update files
 		err = createFiles(w, c.Files)
 		if err != nil {
