@@ -110,6 +110,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 	return s, nil
 }
 
+type BuildDefinition struct {
+	StrategyOneOf `json:",inline" yaml:",inline"`
+}
+
 type VersionRequest struct {
 	Service string `form:","`
 }
