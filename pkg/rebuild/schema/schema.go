@@ -110,6 +110,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 	return s, nil
 }
 
+type BuildDefinition struct {
+	StrategyOneOf `json:",inline" yaml:",inline"`
+}
+
 type VersionRequest struct {
 	Service string `form:","`
 }
@@ -180,7 +184,7 @@ type RebuildPackageRequest struct {
 	Version           string            `form:",required"`
 	Artifact          string            `form:""`
 	ID                string            `form:",required"`
-	StrategyFromRepo  bool              `form:""`
+	UseRepoDefinition bool              `form:""`
 	UseSyscallMonitor bool              `form:""`
 	UseNetworkProxy   bool              `form:""`
 }

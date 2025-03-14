@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/hashext"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/api/cloudbuild/v1"
 )
 
@@ -64,11 +65,12 @@ func TestCreateAttestations(t *testing.T) {
 		}
 		inputStrategy := &rebuild.LocationHint{Location: rebuild.Location{Repo: "http://github.com/foo/bar", Ref: "0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33"}}
 		strategy := &rebuild.ManualStrategy{Location: inputStrategy.Location, Deps: "echo deps", Build: "echo build", SystemDeps: []string{"git"}, OutputPath: "foo/bar"}
-		input := rebuild.Input{Target: target, Strategy: inputStrategy}
+		oneof := schema.NewStrategyOneOf(inputStrategy)
+		defn := schema.BuildDefinition{StrategyOneOf: oneof}
 		serviceLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202501010000-feeddeadbeef00"}
 		prebuildLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202401010000-feeddeadbeef99"}
 		buildDefLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "b33eec7134eff8a16cb902b80e434de58bf37e2c", Dir: "definitions/cratesio/bytes/1.0.0/bytes-1.0.0.crate/build.yaml"}
-		eqStmt, buildStmt, err := CreateAttestations(ctx, input, strategy, "test-id", rbSummary, upSummary, metadata, serviceLoc, prebuildLoc, buildDefLoc)
+		eqStmt, buildStmt, err := CreateAttestations(ctx, target, &defn, strategy, "test-id", rbSummary, upSummary, metadata, serviceLoc, prebuildLoc, buildDefLoc)
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}

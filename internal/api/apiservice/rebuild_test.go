@@ -11,18 +11,25 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/oss-rebuild/internal/gcb/gcbtest"
+	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
+	"github.com/google/oss-rebuild/pkg/builddef"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
@@ -31,6 +38,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/api/cloudbuild/v1"
+	"gopkg.in/yaml.v3"
 )
 
 type FakeSigner struct{}
@@ -51,6 +59,7 @@ func TestRebuildPackage(t *testing.T) {
 		calls       []httpxtest.Call
 		strategy    rebuild.Strategy
 		file        *bytes.Buffer
+		buildDef    *schema.BuildDefinition
 		expectedMsg string
 	}{
 		{
@@ -300,6 +309,39 @@ RLpmHHG1JOVdOA==
 			},
 			file: bytes.NewBuffer([]byte("deb_contents")),
 		},
+		{
+			name:   "manual build def success",
+			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
+			calls: []httpxtest.Call{
+				{
+					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+					},
+				},
+				{
+					URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(must(archivetest.TgzFile([]archive.TarEntry{
+							{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
+						}))),
+					},
+				},
+			},
+			buildDef: &schema.BuildDefinition{
+				StrategyOneOf: schema.StrategyOneOf{
+					CratesIOCargoPackage: &cratesio.CratesIOCargoPackage{
+						Location:    rebuild.Location{Repo: "foo", Ref: "aaaabbbbccccddddeeeeaaaabbbbccccddddeeee", Dir: "foo"},
+						RustVersion: "1.65.0",
+					},
+				},
+			},
+			file: must(archivetest.TgzFile([]archive.TarEntry{
+				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
+			})),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -356,9 +398,16 @@ RLpmHHG1JOVdOA==
 			d.BuildServiceAccount = "foo-role"
 			d.UtilPrebuildBucket = "foo-prebuild-bucket"
 			d.BuildLogsBucket = "foo-logs-bucket"
+			tempDir := must(os.MkdirTemp("", "test-*"))
+			defer os.RemoveAll(tempDir)
+			var gfs osfs.BoundOS
+			repoOpts := gitxtest.RepositoryOptions{
+				Worktree: must(gfs.Chroot(tempDir)),
+				Storer:   filesystem.NewStorage(must(gfs.Chroot(path.Join(tempDir, ".git"))), cache.NewObjectLRUDefault()),
+			}
 			d.BuildDefRepo = rebuild.Location{
-				Repo: "https://github.internal/foo/build-def-repo",
-				Ref:  plumbing.Main.String(),
+				Repo: "file://" + tempDir,
+				Ref:  plumbing.Master.String(),
 				Dir:  ".",
 			}
 			d.ServiceRepo = rebuild.Location{
@@ -372,8 +421,17 @@ RLpmHHG1JOVdOA==
 				must(oneof.Strategy())
 				return &oneof, nil
 			}
+			if tc.buildDef != nil {
+				path := must(builddef.NewFilesystemBuildDefinitionSet(memfs.New()).Path(ctx, tc.target))
+				relpath := path[1:]
+				buildDef := string(must(yaml.Marshal(tc.buildDef)))
+				commits := []gitxtest.Commit{
+					{Files: gitxtest.FileContent{relpath: buildDef}},
+				}
+				must(gitxtest.CreateRepo(commits, &repoOpts))
+			}
 
-			verdict, err := rebuildPackage(ctx, schema.RebuildPackageRequest{Ecosystem: tc.target.Ecosystem, Package: tc.target.Package, Version: tc.target.Version, Artifact: tc.target.Artifact}, &d)
+			verdict, err := rebuildPackage(ctx, schema.RebuildPackageRequest{Ecosystem: tc.target.Ecosystem, Package: tc.target.Package, Version: tc.target.Version, Artifact: tc.target.Artifact, UseRepoDefinition: tc.buildDef != nil}, &d)
 			if err != nil {
 				t.Fatalf("RebuildPackage(): %v", err)
 			}
