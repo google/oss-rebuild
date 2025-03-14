@@ -6,6 +6,7 @@ package debian
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,10 +20,127 @@ import (
 )
 
 var (
-	registryURL         = urlx.MustParse("https://deb.debian.org/debian/pool/")
-	buildinfoURL        = urlx.MustParse("https://buildinfos.debian.net/buildinfo-pool/")
-	binaryReleaseRegexp = regexp.MustCompile(`(\+b[\d\.]+)$`)
+	registryURL           = urlx.MustParse("https://deb.debian.org/debian/pool/")
+	buildinfoURL          = urlx.MustParse("https://buildinfos.debian.net/buildinfo-pool/")
+	snapshotURL           = urlx.MustParse("https://snapshot.debian.org/")
+	debRegex              = regexp.MustCompile(`^(?P<name>[^_]+)_(?P<version>[^_]+)_(?P<arch>[^_]+)\.deb$`)
+	nativeVersionRegex    = regexp.MustCompile(`^((?P<epoch>[0-9]+):)?(?P<upstream_version>[0-9][A-Za-z0-9\.\+\~]*)$`)
+	nonNativeVersionRegex = regexp.MustCompile(`^((?P<epoch>[0-9]+):)?(?P<upstream_version>[0-9][A-Za-z0-9\.\+\~\-]*)\-(?P<debian_revision>[A-Za-z0-9\+\.\~]+)$`) // upstream_version is only allowed to contain "-" if debian_revision is non-empty
+	// Binary Non-maintainer Upload, end with +b<somenumber>.
+	// For native packages this will apply to upstream_version, or the debian_revision for non-native packages.
+	// For non-maintainer uploads that include source changes, there are other
+	// patterns but we don't care about those because the source version will
+	// match the binary version.
+	binaryNMURegex = regexp.MustCompile(`^(?P<base>.*)\+b(?P<binaryNMU>[0-9]+)$`)
 )
+
+// Debian pakage versions are rather complex. See these docs for details
+// https://www.debian.org/doc/debian-policy/ch-controlfields.html#s-f-version
+
+type Version struct {
+	// Epoch is used when upstream version number scheme changes.
+	Epoch          string
+	Upstream       string
+	DebianRevision string
+}
+
+func ParseVersion(version string) (*Version, error) {
+	if matches := nativeVersionRegex.FindStringSubmatch(version); matches != nil {
+		return &Version{
+			Epoch:    matches[nativeVersionRegex.SubexpIndex("epoch")],
+			Upstream: matches[nativeVersionRegex.SubexpIndex("upstream_version")],
+		}, nil
+	}
+	if matches := nonNativeVersionRegex.FindStringSubmatch(version); matches != nil {
+		return &Version{
+			Epoch:          matches[nonNativeVersionRegex.SubexpIndex("epoch")],
+			Upstream:       matches[nonNativeVersionRegex.SubexpIndex("upstream_version")],
+			DebianRevision: matches[nonNativeVersionRegex.SubexpIndex("debian_revision")],
+		}, nil
+	}
+	return nil, errors.Errorf("version doesn't match regex: %s", version)
+}
+
+func (v *Version) String() string {
+	epoch := ""
+	if v.Epoch != "" {
+		epoch = v.Epoch + ":"
+	}
+	upstream := v.Upstream
+	debianRevision := ""
+	if v.DebianRevision != "" {
+		debianRevision = "-" + v.DebianRevision
+	}
+	return epoch + upstream + debianRevision
+}
+
+// RealUpstream will return the true upstream, even if there's been a rollback denoted with +really.
+// Also any binary versions are stripped if present.
+func (v *Version) RealUpstream() string {
+	source := v.Upstream
+	// The presence of +really in the upstream_version component indicates that
+	// a newer upstream version has been rolled back to an older upstream version.
+	// The part of the upstream_version component following +really is the true upstream version.
+	if strings.Contains(v.Upstream, "+really") {
+		spl := strings.Split(v.Upstream, "+really")
+		source = spl[len(spl)-1]
+	}
+	// Remove any binary-only version suffix.
+	if match := binaryNMURegex.FindStringSubmatch(source); match != nil {
+		source = match[binaryNMURegex.SubexpIndex("base")]
+	}
+	return source
+}
+
+// Native returns true if a package is "native", meaning there is no distinction between Debian package releases and upstream releases.
+func (v *Version) Native() bool {
+	return v.DebianRevision == ""
+}
+
+// BinaryNonMaintainerUpload returns the version number of the binary-only NMU if this is one.
+func (v *Version) BinaryNonMaintainerUpload() string {
+	// If it's native and the upstream ends with \+b[0-9]+
+	if match := binaryNMURegex.FindStringSubmatch(v.Upstream); v.Native() && match != nil {
+		return match[binaryNMURegex.SubexpIndex("binaryNMU")]
+	}
+	// If it's native and the upstream ends with \+b[0-9]+
+	if match := binaryNMURegex.FindStringSubmatch(v.DebianRevision); !v.Native() && match != nil {
+		return match[binaryNMURegex.SubexpIndex("binaryNMU")]
+	}
+	return ""
+}
+
+// BinaryIndependentString converts this version into a string, minus any binary-only version identifiers.
+func (v *Version) BinaryIndependentString() string {
+	return strings.TrimSuffix(v.String(), "+b"+v.BinaryNonMaintainerUpload())
+}
+
+type ArtifactIdentifier struct {
+	// Name is the name of the artifact (different from the source package)
+	Name string
+	// Version is the parsed version following https://www.debian.org/doc/debian-policy/ch-controlfields.html#s-f-version
+	Version *Version
+	// Arch is the target architecture
+	Arch string
+}
+
+func ParseDebianArtifact(artifact string) (ArtifactIdentifier, error) {
+	matches := debRegex.FindStringSubmatch(artifact)
+	if matches == nil {
+		return ArtifactIdentifier{}, errors.Errorf("unexpected artifact name: %s", artifact)
+	}
+	name := matches[debRegex.SubexpIndex("name")]
+	version, err := ParseVersion(matches[debRegex.SubexpIndex("version")])
+	if err != nil {
+		return ArtifactIdentifier{}, err
+	}
+	arch := matches[debRegex.SubexpIndex("arch")]
+	return ArtifactIdentifier{
+		Name:    name,
+		Version: version,
+		Arch:    arch,
+	}, nil
+}
 
 type ControlStanza struct {
 	Fields map[string][]string
@@ -34,6 +152,7 @@ type DSC struct {
 
 // Registry is a debian package registry.
 type Registry interface {
+	ArtifactURL(context.Context, string, string) (string, error)
 	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
 	DSC(context.Context, string, string, string) (string, *DSC, error)
 }
@@ -77,9 +196,8 @@ func BuildInfoURL(name, version, arch string) string {
 	return u.String()
 }
 
-func guessDSCURL(component, name, version string) string {
-	cleanVersion := binaryReleaseRegexp.ReplaceAllString(version, "")
-	return PoolURL(component, name, fmt.Sprintf("%s_%s.dsc", name, cleanVersion))
+func guessDSCURL(component, name string, version *Version) string {
+	return PoolURL(component, name, fmt.Sprintf("%s_%s.dsc", name, version.String()))
 }
 
 func parseDSC(r io.ReadCloser) (*DSC, error) {
@@ -143,7 +261,11 @@ func parseDSC(r io.ReadCloser) (*DSC, error) {
 }
 
 func (r HTTPRegistry) DSC(ctx context.Context, component, name, version string) (string, *DSC, error) {
-	DSCURI := guessDSCURL(component, name, version)
+	v, err := ParseVersion(version)
+	if err != nil {
+		return "", nil, err
+	}
+	DSCURI := guessDSCURL(component, name, v)
 	re, err := r.get(ctx, DSCURI)
 	if err != nil {
 		return "", nil, errors.Wrapf(err, "failed to get .dsc file %s", DSCURI)
@@ -152,9 +274,88 @@ func (r HTTPRegistry) DSC(ctx context.Context, component, name, version string) 
 	return DSCURI, d, err
 }
 
+// fileInfo is the response from the binfiles endpoint on the snapshot service.
+type fileInfo struct {
+	// FileInfo is a map from file hash to extra info
+	FileInfo map[string][]struct {
+		Name string
+	}
+	// Result is a list of file hashes with architecture
+	Result []struct {
+		Architecture string
+		Hash         string
+	}
+}
+
+func (r HTTPRegistry) ArtifactURL(ctx context.Context, name, artifact string) (string, error) {
+	// Example series of urls to follow:
+	// https://snapshot.debian.org/mr/binary/acl/
+	// https://snapshot.debian.org/mr/package/acl/2.3.2-2/binfiles/libacl1/2.3.2-2+b1?fileinfo=1
+	// https://snapshot.debian.org/file/53f2b0612c8ed8a60970f9a206ae65eb84681f6e
+	a, err := ParseDebianArtifact(artifact)
+	if err != nil {
+		return "", err
+	}
+	var response fileInfo
+	fileinfoURL := urlx.Copy(snapshotURL)
+	{
+		fileinfoURL.Path += path.Join("mr/package", name, a.Version.NonBinaryString(), "binfiles", a.Name, a.Version.String())
+		query := fileinfoURL.Query()
+		query.Add(
+			"fileinfo",
+			"1",
+		)
+		fileinfoURL.RawQuery = query.Encode()
+	}
+	{
+		r, err := r.get(ctx, fileinfoURL.String())
+		if err != nil {
+			return "", err
+		}
+		defer r.Close()
+		if err = json.NewDecoder(r).Decode(&response); err != nil {
+			return "", err
+		}
+	}
+	var hash string
+	for _, f := range response.Result {
+		if f.Architecture == a.Arch {
+			hash = f.Hash
+			break
+		}
+	}
+	if hash == "" {
+		return "", errors.New("no matching architecture found")
+	}
+	// Verify we found the correct artifact
+	{
+		verified := false
+		found, ok := response.FileInfo[hash]
+		if !ok {
+			return "", errors.Errorf("no fileinfo at %s, for the hash %s", fileinfoURL, hash)
+		}
+		for i := range found {
+			if found[i].Name == artifact {
+				verified = true
+				break
+			}
+		}
+		if !verified {
+			return "", errors.Errorf("artifact name %s not found in fileinfo:%+v", artifact, response.FileInfo)
+		}
+	}
+	artifactURL := urlx.Copy(snapshotURL)
+	artifactURL.Path += path.Join("file", hash)
+	return artifactURL.String(), nil
+}
+
 // Artifact returns the package artifact for the given package version.
 func (r HTTPRegistry) Artifact(ctx context.Context, component, name, artifact string) (io.ReadCloser, error) {
-	return r.get(ctx, PoolURL(component, name, artifact))
+	url, err := r.ArtifactURL(ctx, name, artifact)
+	if err != nil {
+		return nil, err
+	}
+	return r.get(ctx, url)
 }
 
 var _ Registry = &HTTPRegistry{}
