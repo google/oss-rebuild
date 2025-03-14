@@ -26,8 +26,7 @@ const (
 )
 
 // CreateAttestations creates the SLSA attestations associated with a rebuild.
-func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, prebuildLoc, buildDefLoc rebuild.Location) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
-	t, manualStrategy := input.Target, input.Strategy
+func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.BuildDefinition, strategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, prebuildLoc, buildDefLoc rebuild.Location) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
 	var dockerfile []byte
 	{
 		r, err := metadata.Reader(ctx, rebuild.DockerfileAsset.For(t))
@@ -102,7 +101,7 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 		},
 	}
 	var rd []slsa1.ResourceDescriptor
-	inst, err := finalStrategy.GenerateFor(t, rebuild.BuildEnv{})
+	inst, err := strategy.GenerateFor(t, rebuild.BuildEnv{})
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "retrieving repo")
 	}
@@ -125,7 +124,7 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "marshalling GCB steps")
 	}
-	finalStrategyBytes, err := json.Marshal(schema.NewStrategyOneOf(finalStrategy))
+	finalStrategyBytes, err := json.Marshal(schema.NewStrategyOneOf(strategy))
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "marshalling Strategy")
 	}
@@ -136,12 +135,12 @@ func CreateAttestations(ctx context.Context, input rebuild.Input, finalStrategy 
 		"artifact":  t.Artifact,
 	}
 	// Only add manual strategy field if it was used.
-	if manualStrategy != nil {
-		rawStrategy, err := json.Marshal(schema.NewStrategyOneOf(manualStrategy))
+	if defn != nil {
+		rawDefinition, err := json.Marshal(*defn)
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "marshalling manual strategy")
+			return nil, nil, errors.Wrap(err, "marshalling build definition")
 		}
-		rd = append(rd, slsa1.ResourceDescriptor{Name: "build.fix.json", Content: rawStrategy})
+		rd = append(rd, slsa1.ResourceDescriptor{Name: "build.fix.json", Content: rawDefinition})
 		externalParams["buildConfigSource"] = map[string]string{
 			"ref":        buildDefLoc.Ref,
 			"repository": buildDefLoc.Repo,
