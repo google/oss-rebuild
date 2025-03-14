@@ -46,6 +46,7 @@ func (FakeSigner) KeyID() (string, error) {
 // a strategy type that's dependent on artifact.
 func TestRebuildPackage(t *testing.T) {
 	for _, tc := range []struct {
+		name        string
 		target      rebuild.Target
 		calls       []httpxtest.Call
 		strategy    rebuild.Strategy
@@ -53,6 +54,7 @@ func TestRebuildPackage(t *testing.T) {
 		expectedMsg string
 	}{
 		{
+			name:   "python wheel success",
 			target: rebuild.Target{Ecosystem: rebuild.PyPI, Package: "absl-py", Version: "2.0.0", Artifact: "absl_py-2.0.0-py3-none-any.whl"},
 			calls: []httpxtest.Call{
 				{
@@ -91,6 +93,7 @@ func TestRebuildPackage(t *testing.T) {
 			})),
 		},
 		{
+			name:   "python wheel mismatch",
 			target: rebuild.Target{Ecosystem: rebuild.PyPI, Package: "absl-py", Version: "2.0.0", Artifact: "absl_py-2.0.0-py3-none-any.whl"},
 			calls: []httpxtest.Call{
 				{
@@ -130,6 +133,7 @@ func TestRebuildPackage(t *testing.T) {
 			expectedMsg: "rebuild content mismatch",
 		},
 		{
+			name:   "rust crate success",
 			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
 			calls: []httpxtest.Call{
 				{
@@ -158,6 +162,7 @@ func TestRebuildPackage(t *testing.T) {
 			})),
 		},
 		{
+			name:   "npm package success",
 			target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "express", Version: "4.18.2", Artifact: "express-4.18.2.tgz"},
 			calls: []httpxtest.Call{
 				{
@@ -186,6 +191,7 @@ func TestRebuildPackage(t *testing.T) {
 			})),
 		},
 		{
+			name:   "deb binary-only release success",
 			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4-1+b1", Artifact: "xz-utils_5.2.4-1+b1_amd64.deb"},
 			calls: []httpxtest.Call{
 				{
@@ -243,6 +249,7 @@ RLpmHHG1JOVdOA==
 			file: bytes.NewBuffer([]byte("deb_contents")),
 		},
 		{
+			name:   "deb native package success",
 			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4", Artifact: "xz-utils_5.2.4_amd64.deb"},
 			calls: []httpxtest.Call{
 				{
@@ -294,7 +301,7 @@ RLpmHHG1JOVdOA==
 			file: bytes.NewBuffer([]byte("deb_contents")),
 		},
 	} {
-		t.Run(string(tc.target.Ecosystem), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			var d RebuildPackageDeps
 			d.HTTPClient = &httpxtest.MockClient{
