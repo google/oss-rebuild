@@ -23,6 +23,7 @@ import (
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
@@ -147,9 +148,9 @@ type RebuildPackageDeps struct {
 }
 
 type repoEntry struct {
-	// The strategy that was pulled from the build def repo.
-	Strategy rebuild.Strategy
-	// Details about which build def repo this strategy was pulled from.
+	// BuildDefinition found in the build def repo.
+	schema.BuildDefinition
+	// BuildDefLoc is the repo where the build def was accessed.
 	BuildDefLoc rebuild.Location
 }
 
@@ -190,18 +191,18 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 				Dir:  pth,
 			},
 		}
-		oneof, err := defs.Get(ctx, t)
+		entry.BuildDefinition, err = defs.Get(ctx, t)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "accessing build definition")
 		}
-		entry.Strategy, err = oneof.Strategy()
+		defnStrategy, err := entry.BuildDefinition.Strategy()
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "accessing strategy")
 		}
-		if hint, ok := entry.Strategy.(*rebuild.LocationHint); ok && hint != nil {
+		if hint, ok := defnStrategy.(*rebuild.LocationHint); ok && hint != nil {
 			ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
-		} else if entry.Strategy != nil {
-			strategy = entry.Strategy
+		} else {
+			strategy = defnStrategy
 		}
 	}
 	if strategy == nil {
@@ -227,6 +228,12 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, id)
 	if err != nil {
 		return errors.Wrap(err, "creating rebuild store")
+	}
+	var buildDefRepo rebuild.Location
+	var buildDef *schema.BuildDefinition
+	if entry != nil {
+		buildDefRepo = entry.BuildDefLoc
+		buildDef = &entry.BuildDefinition
 	}
 	hashes := []crypto.Hash{crypto.SHA256}
 	opts := rebuild.RemoteOptions{
@@ -260,7 +267,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if err != nil {
 		return errors.Wrap(err, "rebuilding")
 	}
-	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes)
+	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes, archive.AllStabilizers)
 	if err != nil {
 		return errors.Wrap(err, "comparing artifacts")
 	}
@@ -269,18 +276,12 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if !exactMatch && !stabilizedMatch {
 		return api.AsStatus(codes.FailedPrecondition, errors.New("rebuild content mismatch"))
 	}
-	input := rebuild.Input{Target: t}
-	var buildDefRepo rebuild.Location
-	if entry != nil {
-		input.Strategy = entry.Strategy
-		buildDefRepo = entry.BuildDefLoc
-	}
 	if u, err := url.Parse(deps.ServiceRepo.Repo); err != nil {
 		return errors.Wrap(err, "bad ServiceRepo URL")
 	} else if (u.Scheme == "file" || u.Scheme == "") && !deps.PublishForLocalServiceRepo {
 		return errors.Wrap(err, "disallowed file:// ServiceRepo URL")
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, input, strategy, id, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, id, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
