@@ -20,7 +20,7 @@ import (
 
 // BuildDefinitionSet represents a collection of build definitions.
 type BuildDefinitionSet interface {
-	Get(ctx context.Context, target rebuild.Target) (schema.StrategyOneOf, error)
+	Get(ctx context.Context, target rebuild.Target) (schema.BuildDefinition, error)
 }
 
 // FilesystemBuildDefinitionSet implements BuildDefinitionSet using a filesystem.
@@ -32,21 +32,21 @@ func NewFilesystemBuildDefinitionSet(fs billy.Filesystem) *FilesystemBuildDefini
 	return &FilesystemBuildDefinitionSet{fs: fs}
 }
 
-func (s *FilesystemBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target) (schema.StrategyOneOf, error) {
+func (s *FilesystemBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target) (schema.BuildDefinition, error) {
 	definitions := rebuild.NewFilesystemAssetStore(s.fs)
 	r, err := definitions.Reader(ctx, rebuild.BuildDef.For(t))
 	if err != nil {
 		if errors.Is(err, rebuild.ErrAssetNotFound) {
-			return schema.StrategyOneOf{}, fs.ErrNotExist
+			return schema.BuildDefinition{}, fs.ErrNotExist
 		}
-		return schema.StrategyOneOf{}, errors.Wrap(err, "reading build definition")
+		return schema.BuildDefinition{}, errors.Wrap(err, "reading build definition")
 	}
 	defer r.Close()
-	var oneof schema.StrategyOneOf
-	if err := yaml.NewDecoder(r).Decode(&oneof); err != nil {
-		return schema.StrategyOneOf{}, errors.Wrap(err, "parsing build definition")
+	var defn schema.BuildDefinition
+	if err := yaml.NewDecoder(r).Decode(&defn); err != nil {
+		return schema.BuildDefinition{}, errors.Wrap(err, "parsing build definition")
 	}
-	return oneof, nil
+	return defn, nil
 }
 
 func (s *FilesystemBuildDefinitionSet) Path(ctx context.Context, t rebuild.Target) (string, error) {
@@ -99,7 +99,7 @@ func NewBuildDefinitionSetFromGit(opts *GitBuildDefinitionSetOptions) (*GitBuild
 	return &GitBuildDefinitionSet{fs: defnfs, ref: ref.Hash()}, nil
 }
 
-func (s *GitBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target) (schema.StrategyOneOf, error) {
+func (s *GitBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target) (schema.BuildDefinition, error) {
 	return (&FilesystemBuildDefinitionSet{fs: s.fs}).Get(ctx, t)
 }
 
