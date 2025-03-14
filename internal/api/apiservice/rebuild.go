@@ -23,6 +23,7 @@ import (
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
@@ -266,7 +267,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if err != nil {
 		return errors.Wrap(err, "rebuilding")
 	}
-	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes)
+	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes, archive.AllStabilizers)
 	if err != nil {
 		return errors.Wrap(err, "comparing artifacts")
 	}

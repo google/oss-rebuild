@@ -58,7 +58,7 @@ func TestSummarizeArtifacts(t *testing.T) {
 			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Modified: time.UnixMilli(0)}, Body: []byte("data")},
 		}))
 		must(stabilizedHash.Write(stabilizedZip.Bytes()))
-		rb, up, err := SummarizeArtifacts(ctx, metadata, target, upstreamURI, []crypto.Hash{crypto.SHA256})
+		rb, up, err := SummarizeArtifacts(ctx, metadata, target, upstreamURI, []crypto.Hash{crypto.SHA256}, archive.AllStabilizers)
 		if err != nil {
 			t.Fatalf("SummarizeArtifacts() returned error: %v", err)
 		}
