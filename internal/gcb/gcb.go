@@ -20,6 +20,7 @@ import (
 type Client interface {
 	CreateBuild(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error)
 	WaitForOperation(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error)
+	CancelOperation(op *cloudbuild.Operation) error
 }
 
 // clientImpl is a concrete implementation of the Client interface using the Cloud Build service.
@@ -59,15 +60,41 @@ func (c *clientImpl) WaitForOperation(ctx context.Context, op *cloudbuild.Operat
 	return op, nil
 }
 
+func (c *clientImpl) CancelOperation(op *cloudbuild.Operation) error {
+	log.Printf("Cancelling build %s", op.Name)
+	_, err := c.service.Operations.Cancel(op.Name, &cloudbuild.CancelOperationRequest{}).Do()
+	return err
+}
+
 // DoBuild executes a build on Cloud Build, waits for completion and returns the Build.
-func DoBuild(ctx context.Context, client Client, project string, build *cloudbuild.Build) (*cloudbuild.Build, error) {
+func DoBuild(ctx context.Context, client Client, project string, build *cloudbuild.Build, deadline time.Time) (*cloudbuild.Build, error) {
 	op, err := client.CreateBuild(ctx, project, build)
 	if err != nil {
 		return nil, err
 	}
-	op, err = client.WaitForOperation(ctx, op)
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching operation")
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		op, err = client.WaitForOperation(ctx, op)
+		if err != nil {
+			done <- errors.Wrap(err, "fetching operation")
+		} else {
+			done <- nil
+		}
+	}()
+	select {
+	case err := <-done:
+		log.Printf("Finished op: %v", err)
+	case <-ctx.Done():
+		if err := ctx.Err(); err == context.DeadlineExceeded {
+			if err := client.CancelOperation(op); err != nil {
+				log.Printf("Best effort GCB cancellation failed: %v", err)
+				// After cancelling, wait for the operation one more time to update the op.Error and the op.Status
+			} else if op, err = client.WaitForOperation(ctx, op); err != nil {
+				log.Printf("Failed update operation after cancellation: %v", err)
+			}
+		}
 	}
 	// NOTE: Build status check will handle failures with better error messages.
 	if op.Error != nil {
@@ -84,9 +111,13 @@ func ToError(build *cloudbuild.Build) error {
 	switch build.Status {
 	case "SUCCESS":
 		return nil
-	case "FAILURE", "TIMEOUT":
+	case "FAILURE":
 		return errors.Errorf("GCB build failed: %s", build.StatusDetail)
-	case "INTERNAL_ERROR", "CANCELLED", "EXPIRED":
+	case "TIMEOUT":
+		return errors.Errorf("GCB build timeout: %s", build.StatusDetail)
+	case "CANCELLED":
+		return errors.Errorf("GCB build cancelled: %s", build.StatusDetail)
+	case "INTERNAL_ERROR", "EXPIRED":
 		return errors.Errorf("GCB build internal error: %s", build.StatusDetail)
 	default:
 		return errors.Errorf("Unexpected build status: %s", build.Status)
