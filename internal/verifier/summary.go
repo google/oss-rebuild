@@ -24,7 +24,7 @@ type ArtifactSummary struct {
 }
 
 // SummarizeArtifacts fetches and summarizes the rebuild and upstream artifacts.
-func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStore, t rebuild.Target, upstreamURI string, hashes []crypto.Hash) (rb, up ArtifactSummary, err error) {
+func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStore, t rebuild.Target, upstreamURI string, hashes []crypto.Hash, stabilizers []archive.Stabilizer) (rb, up ArtifactSummary, err error) {
 	rb = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), StabilizedHash: hashext.NewMultiHash(hashes...)}
 	up = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), StabilizedHash: hashext.NewMultiHash(hashes...), URI: upstreamURI}
 	// Fetch and process rebuild.
@@ -36,7 +36,7 @@ func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStor
 		return rb, up, errors.Wrap(err, "reading artifact")
 	}
 	defer checkClose(r)
-	err = archive.Stabilize(rb.StabilizedHash, io.TeeReader(r, rb.Hash), t.ArchiveType())
+	err = archive.StabilizeWithOpts(rb.StabilizedHash, io.TeeReader(r, rb.Hash), t.ArchiveType(), archive.StabilizeOpts{Stabilizers: stabilizers})
 	if err != nil {
 		return rb, up, errors.Wrap(err, "fingerprinting rebuild")
 	}
