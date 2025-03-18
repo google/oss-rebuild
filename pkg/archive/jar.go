@@ -5,7 +5,7 @@ package archive
 
 import (
 	"bytes"
-	"regexp"
+	"path"
 	"sort"
 	"strings"
 )
@@ -189,13 +189,11 @@ var StableGitProperties = ZipEntryStabilizer{
 		// By default, these file are created in ${project.build.outputDirectory} and are hence at the root of the jar.
 		// We assume that the file name is 'git' as this is the default value for the plugin.
 		// We don't handle the case where the file name is changed by the user.
-		gitJsonRegex := regexp.MustCompile(`\bgit\.json$`)
-		if gitJsonRegex.MatchString(zf.Name) {
+		if path.Base(zf.Name) == "git.json" {
 			zf.SetContent([]byte("{}"))
 		}
 
-		gitPropertiesRegex := regexp.MustCompile(`\bgit\.properties$`)
-		if gitPropertiesRegex.MatchString(zf.Name) {
+		if path.Base(zf.Name) == "git.properties" {
 			zf.SetContent([]byte{})
 		}
 	},
