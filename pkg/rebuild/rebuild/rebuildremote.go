@@ -479,7 +479,18 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 }
 
 func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Build, opts RemoteOptions, bi *BuildInfo) error {
-	build, err := gcb.DoBuild(ctx, client, opts.Project, build)
+	var deadline time.Time
+	if d, ok := ctx.Value(GCBDeadlineID).(time.Time); ok {
+		deadline = d
+	}
+	buildCtx := ctx
+	if !deadline.IsZero() {
+		// TODO: We will need to use build.Timeout for builds over 60 minutes, because this calling code cannot wait around, and also to extend the GCB default.
+		bctx, cancel := context.WithDeadline(ctx, deadline)
+		defer cancel()
+		buildCtx = bctx
+	}
+	build, err := gcb.DoBuild(buildCtx, client, opts.Project, build)
 	if err != nil {
 		return errors.Wrap(err, "doing build")
 	}
