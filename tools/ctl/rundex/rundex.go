@@ -251,7 +251,6 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Reb
 	}
 	if req.Opts.Pattern != "" {
 		pat := regexp.MustCompile(req.Opts.Pattern)
-		fmt.Println(pat)
 		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
 			if pat.MatchString(in.Message) {
 				out <- in
