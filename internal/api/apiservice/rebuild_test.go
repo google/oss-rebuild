@@ -324,6 +324,40 @@ RLpmHHG1JOVdOA==
 			file: bytes.NewBuffer([]byte("deb_contents")),
 		},
 		{
+			name:   "debrebuild success",
+			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4", Artifact: "xz-utils_5.2.4_amd64.deb"},
+			calls: []httpxtest.Call{
+				{
+					URL: "https://snapshot.debian.org/mr/package/xz-utils/5.2.4/binfiles/xz-utils/5.2.4?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.2.4_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"deadbeef"}]}`))),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/file/deadbeef",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
+					},
+				},
+				{
+					URL: "https://buildinfos.debian.net/buildinfo-pool/x/xz-utils/xz-utils_5.2.4-1_all-amd64-source.buildinfo",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte("buildinfo content"))),
+					},
+				},
+			},
+			strategy: &debian.Debrebuild{
+				BuildInfo: debian.FileWithChecksum{
+					URL: "https://buildinfos.debian.net/buildinfo-pool/x/xz-utils/xz-utils_5.2.4-1_all-amd64-source.buildinfo",
+					MD5: "deadcafe",
+				},
+			},
+			file: bytes.NewBuffer([]byte("deb_contents")),
+		},
+		{
 			name:   "manual build def success",
 			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
 			calls: []httpxtest.Call{
