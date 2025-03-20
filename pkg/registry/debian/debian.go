@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -297,22 +298,47 @@ func (r HTTPRegistry) ArtifactURL(ctx context.Context, name, artifact string) (s
 		return "", err
 	}
 	var response fileInfo
-	fileinfoURL := urlx.Copy(snapshotURL)
-	{
-		fileinfoURL.Path = path.Join(fileinfoURL.Path, "mr/package", name, a.Version.BinaryIndependentString(), "binfiles", a.Name, a.Version.String())
-		query := fileinfoURL.Query()
-		query.Add("fileinfo", "1")
-		fileinfoURL.RawQuery = query.Encode()
-	}
-	{
-		r, err := r.get(ctx, fileinfoURL.String())
+	var fileinfoURL *url.URL
+	// Epochs are used when the source version scheme has changed.
+	// Frequently the epoch is dropped from the version identifier used by the package manager
+	// (when only one or two versions are available for a given distribution, the source version schemes don't need to be disambiguated).
+	// If the artifact doesn't exist under an empty epoch, we try again with epoch "1" which frequently works.
+	// If this proves to be insufficient, we can get it from the .buildinfo file (which is stored at a URL missing the epoch but contains a version identifier that includes the epoch).
+	// We have not added the buildinfo parsing yet to avoid making an extra call to the build info service if possible.
+	for _, epoch := range []string{"", "1"} {
+		a.Version.Epoch = epoch
+		fileinfoURL = urlx.Copy(snapshotURL)
+		{
+			fileinfoURL.Path = path.Join(fileinfoURL.Path, "mr/package", name, a.Version.BinaryIndependentString(), "binfiles", a.Name, a.Version.String())
+			query := fileinfoURL.Query()
+			query.Add("fileinfo", "1")
+			fileinfoURL.RawQuery = query.Encode()
+		}
+		var req *http.Request
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, fileinfoURL.String(), nil)
 		if err != nil {
+			return "", errors.Wrap(err, "building fileinfo request")
+		}
+		var resp *http.Response
+		resp, err = r.Client.Do(req)
+		if err != nil {
+			return "", errors.Wrap(err, "fetching fileinfo")
+		} else if resp.StatusCode == 404 {
+			// That fileinfo doesn't exist, try the next epoch.
+			continue
+		} else if resp.StatusCode != 200 {
+			return "", errors.Wrap(errors.New(resp.Status), "fetching fileinfo")
+		}
+		defer resp.Body.Close()
+		if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
 			return "", err
 		}
-		defer r.Close()
-		if err = json.NewDecoder(r).Decode(&response); err != nil {
-			return "", err
-		}
+		err = nil
+		// If we succeeded, break out of the loop.
+		break
+	}
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to get fileinfo for %s", fileinfoURL.String())
 	}
 	var hash string
 	for _, f := range response.Result {

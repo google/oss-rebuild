@@ -324,6 +324,73 @@ RLpmHHG1JOVdOA==
 			file: bytes.NewBuffer([]byte("deb_contents")),
 		},
 		{
+			name:   "deb guess epoch 1 on fileinfo not found",
+			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4", Artifact: "xz-utils_5.2.4_amd64.deb"},
+			calls: []httpxtest.Call{
+				{
+					URL: "https://snapshot.debian.org/mr/package/xz-utils/5.2.4/binfiles/xz-utils/5.2.4?fileinfo=1",
+					Response: &http.Response{
+						Status:     "404 Not Found",
+						StatusCode: 404,
+						Body:       io.NopCloser(bytes.NewReader([]byte(`404 Not Found`))),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/mr/package/xz-utils/1:5.2.4/binfiles/xz-utils/1:5.2.4?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte(`{"fileinfo":{"deadbeef":[{"name":"xz-utils_5.2.4_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"deadbeef"}]}`))),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/file/deadbeef",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
+					},
+				},
+				{
+					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.dsc",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(bytes.NewReader([]byte(`-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Format: 3.0 (quilt)
+Source: xz-utils
+Binary: bin-a, bin-b, xz-utils
+Build-Depends: debhelper (>= 8.9.0), autopoint | gettext (<< 0.18-1)
+Build-Depends-Indep: doxygen
+Package-List:
+ liblzma-dev deb libdevel optional arch=any
+ liblzma-doc deb doc optional arch=all
+Files:
+ 003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.tar.xz
+
+-----BEGIN PGP SIGNATURE-----
+
+iQJHBAEBCAAxFiEEUh5Y8X6W1xKqD/EC38Zx7rMz+iUFAlxOW5QTHGpybmllZGVy
+RLpmHHG1JOVdOA==
+=WDR2
+-----END PGP SIGNATURE-----`,
+						))),
+					},
+				},
+			},
+			strategy: &debian.DebianPackage{
+				DSC: debian.FileWithChecksum{
+					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
+					MD5: "",
+				},
+				Native: debian.FileWithChecksum{
+					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.tar.xz",
+					MD5: "003e4d0b1b1899fc6e3000b24feddf7c",
+				},
+				Requirements: []string{"debhelper", "autopoint", "doxygen"},
+			},
+			file: bytes.NewBuffer([]byte("deb_contents")),
+		},
+		{
 			name:   "manual build def success",
 			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
 			calls: []httpxtest.Call{
