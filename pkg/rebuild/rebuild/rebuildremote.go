@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -224,6 +225,7 @@ var standardBuildTpl = template.Must(
 		textwrap.Dedent(`
 				#!/usr/bin/env bash
 				set -eux
+				echo 'Starting rebuild for {{.TargetStr}}'
 				{{- if .UseSyscallMonitor}}
 				touch /workspace/tetragon.jsonl
 				mkdir /workspace/tetragon/
@@ -295,6 +297,7 @@ var proxyBuildTpl = template.Must(
 	}).Parse(
 		textwrap.Dedent(`
 				set -eux
+				echo 'Starting rebuild for {{.TargetStr}}'
 				{{- if .UtilPrebuildAuth}}
 				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@{{.Project}}.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
 				(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
@@ -395,6 +398,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	}
 	if opts.UseNetworkProxy {
 		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
+			"TargetStr":          fmt.Sprintf("%+v", t),
 			"UtilPrebuildBucket": opts.UtilPrebuildBucket,
 			"UtilPrebuildDir":    opts.UtilPrebuildDir,
 			"UtilPrebuildAuth":   opts.UtilPrebuildAuth,
@@ -432,6 +436,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		uploads = append(uploads, upload{From: "/workspace/netlog.json", To: opts.RemoteMetadataStore.URL(ProxyNetlogAsset.For(t)).String()})
 	} else {
 		err := standardBuildTpl.Execute(&buildScript, map[string]any{
+			"TargetStr":         fmt.Sprintf("%+v", t),
 			"Dockerfile":        dockerfile,
 			"UseSyscallMonitor": opts.UseSyscallMonitor,
 			"SyscallPolicies":   tetragonPoliciesJSON,
