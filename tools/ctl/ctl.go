@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/csv"
@@ -21,6 +22,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/cheggaaa/pb"
@@ -51,6 +53,28 @@ var rootCmd = &cobra.Command{
 	Short: "A debugging tool for OSS-Rebuild",
 }
 
+var debuildShellScript = template.Must(
+	template.New(
+		"rebuild shell script",
+	).Funcs(template.FuncMap{
+		"join": func(sep string, s []string) string { return strings.Join(s, sep) },
+	}).Parse(
+		textwrap.Dedent(`
+# Install dependencies.
+set -eux
+apt update
+apt install -y {{join " " .SystemDeps}}
+
+mkdir /src && cd /src
+{{.Source}}
+{{.Deps}}
+
+# Run the build.
+{{.Build}}
+mkdir /out && cp /src/{{.OutputPath}} /out/
+`)[1:], // remove leading newline
+	))
+
 func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean bool) (*rundex.FetchRebuildRequest, error) {
 	var runs []string
 	if run != "" {
@@ -78,6 +102,24 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean bool) (*
 		log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
 	}
 	return &req, nil
+}
+
+func makeShellScript(input rebuild.Input) (string, error) {
+	env := rebuild.BuildEnv{HasRepo: false, PreferPreciseToolchain: true}
+	instructions, err := input.Strategy.GenerateFor(input.Target, env)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to generate strategy")
+	}
+	shellScript := new(bytes.Buffer)
+	if input.Target.Ecosystem == rebuild.Debian {
+		err = debuildShellScript.Execute(shellScript, instructions)
+	} else {
+		err = fmt.Errorf("unknown ecosystem %v", input.Target.Ecosystem)
+	}
+	if err != nil {
+		return "", errors.Wrap(err, "populating template")
+	}
+	return shellScript.String(), nil
 }
 
 var tui = &cobra.Command{
@@ -613,6 +655,26 @@ var infer = &cobra.Command{
 			if err := enc.Encode(b); err != nil {
 				log.Fatal(errors.Wrap(err, "encoding build steps"))
 			}
+		case "shell-script":
+			t := rebuild.Target{
+				Ecosystem: rebuild.Ecosystem(*ecosystem),
+				Package:   *pkg,
+				Version:   *version,
+				Artifact:  *artifact,
+			}
+			s, err := resp.Strategy()
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "parsing strategy"))
+			}
+			if s == nil {
+				log.Fatal("no strategy")
+			}
+			in := rebuild.Input{Target: t, Strategy: s}
+			script, err := makeShellScript(in)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "generating shell script"))
+			}
+			cmd.OutOrStdout().Write([]byte(script))
 
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
