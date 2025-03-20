@@ -376,6 +376,7 @@ func TestMakeBuild(t *testing.T) {
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `#!/usr/bin/env bash
 set -eux
+echo 'Starting rebuild for npm!pkg!version!pkg-version.tgz'
 cat <<'EOS' | docker buildx build --tag=img -
 FROM docker.io/library/alpine:3.19
 EOS
@@ -422,6 +423,7 @@ chmod +x gsutil_writeonly
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `#!/usr/bin/env bash
 set -eux
+echo 'Starting rebuild for npm!pkg!version!pkg-version.tgz'
 touch /workspace/tetragon.jsonl
 mkdir /workspace/tetragon/
 echo '{"apiVersion":"cilium.io/v1alpha1","kind":"TracingPolicy","metadata":{"name":"process-and-memory"},"spec":{"kprobes":[{"args":[{"index":0,"type":"file"},{"index":1,"type":"int"}],"call":"security_file_permission","return":true,"returnArg":{"index":0,"type":"int"},"returnArgAction":"Post","syscall":false},{"args":[{"index":0,"type":"file"},{"index":1,"type":"uint64"},{"index":2,"type":"uint32"}],"call":"security_mmap_file","return":true,"returnArg":{"index":0,"type":"int"},"returnArgAction":"Post","syscall":false},{"args":[{"index":0,"type":"path"}],"call":"security_path_truncate","return":true,"returnArg":{"index":0,"type":"int"},"returnArgAction":"Post","syscall":false}]}}' > "/workspace/tetragon/policy_0.json"
@@ -477,6 +479,7 @@ chmod +x gsutil_writeonly
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `#!/usr/bin/env bash
 set -eux
+echo 'Starting rebuild for npm!pkg!version!pkg-version.tgz'
 apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@test-project.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
 (printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 cat <<'EOS' | docker buildx build --secret id=auth_header,src=/tmp/auth_header --tag=img -
@@ -526,6 +529,7 @@ chmod +x gsutil_writeonly
 					{
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `set -eux
+echo 'Starting rebuild for npm!pkg!version!pkg-version.tgz'
 curl -O https://test-bootstrap.storage.googleapis.com/proxy
 chmod +x proxy
 docker network create proxynet
@@ -610,6 +614,7 @@ chmod +x gsutil_writeonly
 					{
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `set -eux
+echo 'Starting rebuild for npm!pkg!version!pkg-version.tgz'
 curl -O https://test-bootstrap.storage.googleapis.com/v0.0.0-202501010000-feeddeadbeef00/proxy
 chmod +x proxy
 docker network create proxynet
@@ -695,6 +700,7 @@ chmod +x gsutil_writeonly
 					{
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `set -eux
+echo 'Starting rebuild for npm!pkg!version!pkg-version.tgz'
 apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@test-project.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
 (printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 curl -O -H @/tmp/auth_header https://test-bootstrap.storage.googleapis.com/proxy
