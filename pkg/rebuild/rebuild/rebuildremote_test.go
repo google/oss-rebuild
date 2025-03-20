@@ -422,6 +422,7 @@ chmod +x gsutil_writeonly
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `#!/usr/bin/env bash
 set -eux
+touch /workspace/tetragon.jsonl
 mkdir /workspace/tetragon/
 echo '{"apiVersion":"cilium.io/v1alpha1","kind":"TracingPolicy","metadata":{"name":"process-and-memory"},"spec":{"kprobes":[{"args":[{"index":0,"type":"file"},{"index":1,"type":"int"}],"call":"security_file_permission","return":true,"returnArg":{"index":0,"type":"int"},"returnArgAction":"Post","syscall":false},{"args":[{"index":0,"type":"file"},{"index":1,"type":"uint64"},{"index":2,"type":"uint32"}],"call":"security_mmap_file","return":true,"returnArg":{"index":0,"type":"int"},"returnArgAction":"Post","syscall":false},{"args":[{"index":0,"type":"path"}],"call":"security_path_truncate","return":true,"returnArg":{"index":0,"type":"int"},"returnArgAction":"Post","syscall":false}]}}' > "/workspace/tetragon/policy_0.json"
 echo '{"apiVersion":"cilium.io/v1alpha1","kind":"TracingPolicy","metadata":{"name":"file-open-at"},"spec":{"tracepoints":[{"args":[{"index":5,"type":"int32"},{"index":6,"type":"string"},{"index":7,"type":"uint32"},{"index":8,"type":"uint32"}],"event":"sys_enter_openat","subsystem":"syscalls"}]}}' > "/workspace/tetragon/policy_1.json"
