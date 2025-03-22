@@ -42,14 +42,14 @@ import (
 )
 
 func doDebianRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
-	component, name, err := debianrb.ParseComponent(t.Package)
+	_, name, err := debianrb.ParseComponent(t.Package)
 	if err != nil {
 		return "", err
 	}
 	if err := debianrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
 		return "", errors.Wrap(err, "rebuild failed")
 	}
-	return debianreg.PoolURL(component, name, t.Artifact), nil
+	return mux.Debian.ArtifactURL(ctx, name, t.Artifact)
 }
 
 func doNPMRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
