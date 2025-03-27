@@ -225,6 +225,7 @@ var standardBuildTpl = template.Must(
 				#!/usr/bin/env bash
 				set -eux
 				{{- if .UseSyscallMonitor}}
+				touch /workspace/tetragon.jsonl
 				mkdir /workspace/tetragon/
 				{{- range $i, $policy := .SyscallPolicies}}
 				echo '{{$policy}}' > "/workspace/tetragon/policy_{{ $i }}.json"
@@ -334,6 +335,7 @@ var proxyBuildTpl = template.Must(
 					iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':{{.TLSPort}}
 				'
 				{{- if .UseSyscallMonitor}}
+				touch /workspace/tetragon.jsonl
 				mkdir /workspace/tetragon/
 				{{- range $i, $policy := .SyscallPolicies}}
 				echo '{{$policy}}' > "/workspace/tetragon/policy_{{ $i }}.json"
