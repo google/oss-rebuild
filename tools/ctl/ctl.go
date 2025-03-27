@@ -114,7 +114,7 @@ func makeShellScript(input rebuild.Input) (string, error) {
 	if input.Target.Ecosystem == rebuild.Debian {
 		err = debuildShellScript.Execute(shellScript, instructions)
 	} else {
-		err = fmt.Errorf("unknown ecosystem %v", input.Target.Ecosystem)
+		err = errors.Errorf("unimplemented ecosystem %v", input.Target.Ecosystem)
 	}
 	if err != nil {
 		return "", errors.Wrap(err, "populating template")
