@@ -325,6 +325,7 @@ func TestDoCloudBuild(t *testing.T) {
 					Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: afterBuild})),
 				}, nil
 			},
+			CancelOperationFunc: func(op *cloudbuild.Operation) error { return nil },
 		}
 		opts := RemoteOptions{Project: "test-project", LogsBucket: "test-logs-bucket", BuildServiceAccount: "test-service-account", UtilPrebuildBucket: "test-bootstrap"}
 		target := Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"}

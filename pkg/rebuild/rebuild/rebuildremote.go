@@ -479,7 +479,11 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 }
 
 func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Build, opts RemoteOptions, bi *BuildInfo) error {
-	build, err := gcb.DoBuild(ctx, client, opts.Project, build)
+	deadline := time.Now().Add(55 * time.Minute)
+	if d, ok := ctx.Value(GCBDeadlineID).(time.Time); ok {
+		deadline = d
+	}
+	build, err := gcb.DoBuild(ctx, client, opts.Project, build, deadline)
 	if err != nil {
 		return errors.Wrap(err, "doing build")
 	}

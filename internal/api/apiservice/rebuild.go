@@ -353,6 +353,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
 	started := time.Now()
 	ctx = context.WithValue(ctx, rebuild.RunID, req.ID)
+	ctx = context.WithValue(ctx, rebuild.GCBDeadlineID, time.Now().Add(req.BuildTimeout))
 	v, err := rebuildPackage(ctx, req, deps)
 	if err != nil {
 		return nil, err
