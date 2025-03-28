@@ -1,0 +1,8 @@
+npm_custom_build:
+  location:
+    repo: https://github.com/polymerelements/app-route
+    ref: d21b496c1206e7858dd692b36d07914d549bbc59
+  node_version: 8.16.0
+  npm_version: 6.4.1
+  command: prepare
+  registry_time: "2018-09-13T19:55:58Z"
