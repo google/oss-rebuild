@@ -4,7 +4,6 @@
 package cratesio
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -30,7 +29,7 @@ func TestHTTPRegistry_Crate(t *testing.T) {
 				URL: "https://crates.io/api/v1/crates/serde",
 				Response: &http.Response{
 					StatusCode: 200,
-					Body: io.NopCloser(bytes.NewReader([]byte(`{
+					Body: httpxtest.Body(`{
                         "crate": {
                             "id": "serde",
                             "repository": "https://github.com/serde-rs/serde"
@@ -38,7 +37,7 @@ func TestHTTPRegistry_Crate(t *testing.T) {
                         "versions": [
                             {"num": "1.0.150", "dl_path": "/api/v1/crates/serde/1.0.150/download"}
                         ]
-                    }`))),
+                    }`),
 				},
 			},
 			expected: &Crate{
@@ -78,7 +77,7 @@ func TestHTTPRegistry_Crate(t *testing.T) {
 			pkg:  "bad-json-package",
 			call: httpxtest.Call{
 				URL:      "https://crates.io/api/v1/crates/bad-json-package",
-				Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
+				Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"invalid": "json",,}`)},
 			},
 			expectedErr: errors.New("invalid character ',' looking for beginning of object key string"),
 		},
@@ -121,7 +120,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 			call: httpxtest.Call{URL: "https://crates.io/api/v1/crates/serde/1.0.150",
 				Response: &http.Response{
 					StatusCode: 200,
-					Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+					Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
 				},
 			},
 			expected: &CrateVersion{
@@ -155,7 +154,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 			pkg:     "serde",
 			version: "1.0.150",
 			call: httpxtest.Call{URL: "https://crates.io/api/v1/crates/serde/1.0.150",
-				Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json"}`)))},
+				Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"invalid": "json"}`)},
 			},
 			expectedErr: errors.New("decoding error: invalid character 'i' looking for beginning of object key string"),
 		},
@@ -200,18 +199,18 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
 					},
 				},
 				{
 					URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
+						Body:       httpxtest.Body("This is the artifact content"),
 					},
 				},
 			},
-			expectedReadCloser: io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
+			expectedReadCloser: httpxtest.Body("This is the artifact content"),
 		},
 		{
 			name:    "Version Fetch Error",
@@ -245,7 +244,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
 					},
 				},
 				{

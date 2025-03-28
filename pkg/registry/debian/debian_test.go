@@ -134,14 +134,14 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					URL: "https://snapshot.debian.org/mr/package/xz-utils/5.4.1-0.2/binfiles/xz-utils/5.4.1-0.2?fileinfo=1",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.4.1-0.2_amd64.deb"}]}","result":[{"architecture":"amd64","hash":"deadbeef"}]`))),
+						Body:       httpxtest.Body(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.4.1-0.2_amd64.deb"}]}","result":[{"architecture":"amd64","hash":"deadbeef"}]`),
 					},
 				},
 				{
 					URL: "https://snapshot.debian.org/file/deadbeef",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte("artifact_contents"))),
+						Body:       httpxtest.Body("artifact_contents"),
 					},
 				},
 			},

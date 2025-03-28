@@ -4,7 +4,6 @@
 package npm
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -30,7 +29,7 @@ func TestHTTPRegistry_Package(t *testing.T) {
 				URL: "https://registry.npmjs.org/express",
 				Response: &http.Response{
 					StatusCode: 200,
-					Body:       io.NopCloser(bytes.NewReader([]byte(`{"name":"express","dist-tags":{"latest":"4.18.2"},"versions":{"4.18.2":{"version":"4.18.2","repository":{"type":"git","url":"https://github.com/expressjs/express"}}}}`))),
+					Body:       httpxtest.Body(`{"name":"express","dist-tags":{"latest":"4.18.2"},"versions":{"4.18.2":{"version":"4.18.2","repository":{"type":"git","url":"https://github.com/expressjs/express"}}}}`),
 				},
 			},
 			expected: &NPMPackage{
@@ -53,7 +52,7 @@ func TestHTTPRegistry_Package(t *testing.T) {
 				URL: "https://registry.npmjs.org/express",
 				Response: &http.Response{
 					StatusCode: 200,
-					Body:       io.NopCloser(bytes.NewReader([]byte(`{"name":"express","dist-tags":{"latest":"4.18.2"},"versions":{"4.18.2":{"version":"4.18.2","repository":"https://github.com/expressjs/express"}}}`))),
+					Body:       httpxtest.Body(`{"name":"express","dist-tags":{"latest":"4.18.2"},"versions":{"4.18.2":{"version":"4.18.2","repository":"https://github.com/expressjs/express"}}}`),
 				},
 			},
 			expected: &NPMPackage{
@@ -92,7 +91,7 @@ func TestHTTPRegistry_Package(t *testing.T) {
 			pkg:  "bad-json-package",
 			call: httpxtest.Call{
 				URL:      "https://registry.npmjs.org/bad-json-package",
-				Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
+				Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"invalid": "json",,}`)},
 			},
 			expectedErr: errors.New("invalid character ',' looking for beginning of object key string"),
 		},
@@ -137,7 +136,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 				URL: "https://registry.npmjs.org/express/4.18.2",
 				Response: &http.Response{
 					StatusCode: 200,
-					Body:       io.NopCloser(bytes.NewReader([]byte(`{"name":"express","dist-tags":{"latest":"4.18.2"},"version":"4.18.2","repository":{"type":"git","url":"https://github.com/expressjs/express"}}`))),
+					Body:       httpxtest.Body(`{"name":"express","dist-tags":{"latest":"4.18.2"},"version":"4.18.2","repository":{"type":"git","url":"https://github.com/expressjs/express"}}`),
 				},
 			},
 			expected: &NPMVersion{
@@ -157,7 +156,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 				URL: "https://registry.npmjs.org/express/4.18.2",
 				Response: &http.Response{
 					StatusCode: 200,
-					Body:       io.NopCloser(bytes.NewReader([]byte(`{"name":"express","dist-tags":{"latest":"4.18.2"},"version":"4.18.2","repository":"https://github.com/expressjs/express"}`))),
+					Body:       httpxtest.Body(`{"name":"express","dist-tags":{"latest":"4.18.2"},"version":"4.18.2","repository":"https://github.com/expressjs/express"}`),
 				},
 			},
 			expected: &NPMVersion{
@@ -195,7 +194,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 			version: "1.0.0",
 			call: httpxtest.Call{
 				URL:      "https://registry.npmjs.org/bad-json-package/1.0.0",
-				Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
+				Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"invalid": "json",,}`)},
 			},
 			expectedErr: errors.New("invalid character ',' looking for beginning of object key string"),
 		},
@@ -241,18 +240,18 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					URL: "https://registry.npmjs.org/express/4.18.2",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"name":"express","dist-tags":{"latest":"4.18.2"},"dist":{"tarball":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}}`))),
+						Body:       httpxtest.Body(`{"name":"express","dist-tags":{"latest":"4.18.2"},"dist":{"tarball":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}}`),
 					},
 				},
 				{
 					URL: "https://registry.npmjs.org/express/-/express-4.18.2.tgz",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
+						Body:       httpxtest.Body("This is the artifact content"),
 					},
 				},
 			},
-			expectedReadCloser: io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
+			expectedReadCloser: httpxtest.Body("This is the artifact content"),
 		},
 		{
 			name:    "Version Fetch Error",
@@ -287,7 +286,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					URL: "https://registry.npmjs.org/express/4.18.2",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"name":"express","dist-tags":{"latest":"4.18.2"},"dist":{"tarball":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}}`))),
+						Body:       httpxtest.Body(`{"name":"express","dist-tags":{"latest":"4.18.2"},"dist":{"tarball":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}}`),
 					},
 				},
 				{
