@@ -28,8 +28,12 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 		if hint, ok := input.Strategy.(*LocationHint); ok && hint != nil {
 			repoURI = hint.Repo
 		} else {
+			var timewarpHost string
+			if host, ok := ctx.Value(TimewarpID).(string); ok && host != "" {
+				timewarpHost = host
+			}
 			var inst Instructions
-			inst, err = input.Strategy.GenerateFor(t, BuildEnv{})
+			inst, err = input.Strategy.GenerateFor(t, BuildEnv{TimewarpHost: timewarpHost})
 			if err != nil {
 				return verdict, nil, err
 			}
