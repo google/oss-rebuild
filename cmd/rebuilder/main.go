@@ -72,7 +72,11 @@ func main() {
 	flag.Parse()
 	if *useTimewarp {
 		go func() {
-			if err := http.ListenAndServe(fmt.Sprintf(":%d", *timewarpPort), timewarp.Handler{}); err != nil {
+			client, err := httpegress.MakeClient(context.Background(), httpcfg)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			if err := http.ListenAndServe(fmt.Sprintf(":%d", *timewarpPort), timewarp.Handler{Client: client}); err != nil {
 				log.Fatalln(err)
 			}
 		}()
