@@ -6,9 +6,11 @@ package debian
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -21,6 +23,7 @@ import (
 var (
 	registryURL           = urlx.MustParse("https://deb.debian.org/debian/pool/")
 	buildinfoURL          = urlx.MustParse("https://buildinfos.debian.net/buildinfo-pool/")
+	snapshotURL           = urlx.MustParse("https://snapshot.debian.org/")
 	debRegex              = regexp.MustCompile(`^(?P<name>[^_]+)_(?P<version>[^_]+)_(?P<arch>[^_]+)\.deb$`)
 	nativeVersionRegex    = regexp.MustCompile(`^((?P<epoch>[0-9]+):)?(?P<upstream_version>[0-9][A-Za-z0-9\.\+\~]*)$`)
 	nonNativeVersionRegex = regexp.MustCompile(`^((?P<epoch>[0-9]+):)?(?P<upstream_version>[0-9][A-Za-z0-9\.\+\~\-]*)\-(?P<debian_revision>[A-Za-z0-9\+\.\~]+)$`) // upstream_version is only allowed to contain "-" if debian_revision is non-empty
@@ -145,6 +148,7 @@ type DSC struct {
 
 // Registry is a debian package registry.
 type Registry interface {
+	ArtifactURL(context.Context, string, string) (string, error)
 	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
 	DSC(context.Context, string, string, string) (string, *DSC, error)
 }
@@ -266,9 +270,115 @@ func (r HTTPRegistry) DSC(ctx context.Context, component, name, version string) 
 	return DSCURI, d, err
 }
 
+// fileInfo is the response from the binfiles endpoint on the snapshot service.
+type fileInfo struct {
+	// FileInfo is a map from file hash to extra info, such as name, first time seen, file size, and which archive it was seen as part of.
+	// We are only interested in Name at the moment.
+	FileInfo map[string][]struct {
+		Name string
+	}
+	// Result maps the architecture to a file hash, allowing you to look up the FileInfo or fetch the file itself.
+	Result []struct {
+		Architecture string
+		Hash         string
+	}
+}
+
+func (r HTTPRegistry) ArtifactURL(ctx context.Context, name, artifact string) (string, error) {
+	// To determine the ArtifactURL, there are a few steps. The following is an example of fetching an artifact from the acl package at version 2.3.2-1+b1
+	// First you might need to fetch a list of all versions:
+	// https://snapshot.debian.org/mr/binary/acl/
+	// However in our case, we already know the version.
+	// Next, you need to determine the hash of the correct artifact (architecture and artifact name), which can be found using the /binfiles/ endpoint:
+	// https://snapshot.debian.org/mr/package/acl/2.3.2-2/binfiles/libacl1/2.3.2-2+b1?fileinfo=1
+	// Finally you have the URL of the artifact directly:
+	// https://snapshot.debian.org/file/53f2b0612c8ed8a60970f9a206ae65eb84681f6e
+	a, err := ParseDebianArtifact(artifact)
+	if err != nil {
+		return "", err
+	}
+	var response fileInfo
+	var fileinfoURL *url.URL
+	// Epochs are used when the source version scheme has changed.
+	// Frequently the epoch is dropped from the version identifier used by the package manager
+	// (when only one or two versions are available for a given distribution, the source version schemes don't need to be disambiguated).
+	// If the artifact doesn't exist under an empty epoch, we try again with epoch "1" which frequently works.
+	// If this proves to be insufficient, we can get it from the .buildinfo file (which is stored at a URL missing the epoch but contains a version identifier that includes the epoch).
+	// We have not added the buildinfo parsing yet to avoid making an extra call to the build info service if possible.
+	for _, epoch := range []string{"", "1"} {
+		a.Version.Epoch = epoch
+		fileinfoURL = urlx.Copy(snapshotURL)
+		{
+			fileinfoURL.Path = path.Join(fileinfoURL.Path, "mr/package", name, a.Version.BinaryIndependentString(), "binfiles", a.Name, a.Version.String())
+			query := fileinfoURL.Query()
+			query.Add("fileinfo", "1")
+			fileinfoURL.RawQuery = query.Encode()
+		}
+		var req *http.Request
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, fileinfoURL.String(), nil)
+		if err != nil {
+			return "", errors.Wrap(err, "building fileinfo request")
+		}
+		var resp *http.Response
+		resp, err = r.Client.Do(req)
+		if err != nil {
+			return "", errors.Wrap(err, "fetching fileinfo")
+		} else if resp.StatusCode == 404 {
+			// That fileinfo doesn't exist, try the next epoch.
+			continue
+		} else if resp.StatusCode != 200 {
+			return "", errors.Wrap(errors.New(resp.Status), "fetching fileinfo")
+		}
+		defer resp.Body.Close()
+		if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			return "", err
+		}
+		err = nil
+		// If we succeeded, break out of the loop.
+		break
+	}
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to get fileinfo for %s", fileinfoURL.String())
+	}
+	var hash string
+	for _, f := range response.Result {
+		if f.Architecture == a.Arch {
+			hash = f.Hash
+			break
+		}
+	}
+	if hash == "" {
+		return "", errors.New("no matching architecture found")
+	}
+	// Verify we found the correct artifact
+	{
+		verified := false
+		found, ok := response.FileInfo[hash]
+		if !ok {
+			return "", errors.Errorf("no fileinfo at %s, for the hash %s", fileinfoURL, hash)
+		}
+		for i := range found {
+			if found[i].Name == artifact {
+				verified = true
+				break
+			}
+		}
+		if !verified {
+			return "", errors.Errorf("artifact name %s not found in fileinfo:%+v", artifact, response.FileInfo)
+		}
+	}
+	artifactURL := urlx.Copy(snapshotURL)
+	artifactURL.Path += path.Join("file", hash)
+	return artifactURL.String(), nil
+}
+
 // Artifact returns the package artifact for the given package version.
 func (r HTTPRegistry) Artifact(ctx context.Context, component, name, artifact string) (io.ReadCloser, error) {
-	return r.get(ctx, PoolURL(component, name, artifact))
+	url, err := r.ArtifactURL(ctx, name, artifact)
+	if err != nil {
+		return nil, err
+	}
+	return r.get(ctx, url)
 }
 
 var _ Registry = &HTTPRegistry{}
