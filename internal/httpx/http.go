@@ -7,7 +7,6 @@ package httpx
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"net/http"
 	"time"
 
@@ -55,9 +54,6 @@ func (cc *CachedClient) Do(req *http.Request) (*http.Response, error) {
 		resp, err := cc.BasicClient.Do(req)
 		if err != nil {
 			return nil, err
-		}
-		if resp.StatusCode != http.StatusOK {
-			return nil, errors.New(resp.Status)
 		}
 		defer resp.Body.Close()
 		foo := new(bytes.Buffer)
