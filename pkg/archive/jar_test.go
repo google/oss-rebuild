@@ -6,10 +6,10 @@ package archive
 import (
 	"archive/zip"
 	"bytes"
-	"github.com/google/go-cmp/cmp"
 	"io"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/textwrap"
 )
 
