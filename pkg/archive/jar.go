@@ -177,7 +177,6 @@ func splitPreservingQuotes(s string, sep rune) []string {
 	return result
 }
 
-var StableGitProperties = ZipArchiveStabilizer{
 var StableGitProperties = ZipEntryStabilizer{
 	Name: "jar-git-properties",
 	Func: func(zf *MutableZipFile) {
