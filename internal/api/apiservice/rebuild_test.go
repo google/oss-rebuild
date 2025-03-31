@@ -70,7 +70,7 @@ func TestRebuildPackage(t *testing.T) {
 					URL: "https://pypi.org/pypi/absl-py/2.0.0/json",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body: io.NopCloser(bytes.NewReader([]byte(`{
+						Body: httpxtest.Body(`{
               "info": {
                   "name": "absl-py",
                   "version": "2.0.0"
@@ -81,7 +81,7 @@ func TestRebuildPackage(t *testing.T) {
                       "url": "https://files.pythonhosted.org/packages/01/e4/abcd.../absl_py-2.0.0-py3-none-any.whl"
                   }
               ]
-          }`))),
+          }`),
 					},
 				},
 				{
@@ -109,7 +109,7 @@ func TestRebuildPackage(t *testing.T) {
 					URL: "https://pypi.org/pypi/absl-py/2.0.0/json",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body: io.NopCloser(bytes.NewReader([]byte(`{
+						Body: httpxtest.Body(`{
               "info": {
                   "name": "absl-py",
                   "version": "2.0.0"
@@ -120,7 +120,7 @@ func TestRebuildPackage(t *testing.T) {
                       "url": "https://files.pythonhosted.org/packages/01/e4/abcd.../absl_py-2.0.0-py3-none-any.whl"
                   }
               ]
-          }`))),
+          }`),
 					},
 				},
 				{
@@ -149,7 +149,7 @@ func TestRebuildPackage(t *testing.T) {
 					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
 					},
 				},
 				{
@@ -178,7 +178,7 @@ func TestRebuildPackage(t *testing.T) {
 					URL: "https://registry.npmjs.org/express/4.18.2",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"name":"express","dist-tags":{"latest":"4.18.2"},"dist":{"tarball":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}}`))),
+						Body:       httpxtest.Body(`{"name":"express","dist-tags":{"latest":"4.18.2"},"dist":{"tarball":"https://registry.npmjs.org/express/-/express-4.18.2.tgz"}}`),
 					},
 				},
 				{
@@ -207,21 +207,21 @@ func TestRebuildPackage(t *testing.T) {
 					URL: "https://snapshot.debian.org/mr/package/xz-utils/5.2.4-1/binfiles/xz-utils/5.2.4-1+b1?fileinfo=1",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.2.4-1+b1_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"deadbeef"}]}`))),
+						Body:       httpxtest.Body(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.2.4-1+b1_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"deadbeef"}]}`),
 					},
 				},
 				{
 					URL: "https://snapshot.debian.org/file/deadbeef",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
+						Body:       httpxtest.Body("deb_contents"),
 					},
 				},
 				{
 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body: io.NopCloser(bytes.NewReader([]byte(`-----BEGIN PGP SIGNED MESSAGE-----
+						Body: httpxtest.Body(`-----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA256
 
 Format: 3.0 (quilt)
@@ -243,7 +243,7 @@ iQJHBAEBCAAxFiEEUh5Y8X6W1xKqD/EC38Zx7rMz+iUFAlxOW5QTHGpybmllZGVy
 RLpmHHG1JOVdOA==
 =WDR2
 -----END PGP SIGNATURE-----`,
-						))),
+						),
 					},
 				},
 			},
@@ -272,21 +272,21 @@ RLpmHHG1JOVdOA==
 					URL: "https://snapshot.debian.org/mr/package/xz-utils/5.2.4/binfiles/xz-utils/5.2.4?fileinfo=1",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.2.4_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"deadbeef"}]}`))),
+						Body:       httpxtest.Body(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.2.4_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"deadbeef"}]}`),
 					},
 				},
 				{
 					URL: "https://snapshot.debian.org/file/deadbeef",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
+						Body:       httpxtest.Body("deb_contents"),
 					},
 				},
 				{
 					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.dsc",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body: io.NopCloser(bytes.NewReader([]byte(`-----BEGIN PGP SIGNED MESSAGE-----
+						Body: httpxtest.Body(`-----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA256
 
 Format: 3.0 (quilt)
@@ -306,7 +306,7 @@ iQJHBAEBCAAxFiEEUh5Y8X6W1xKqD/EC38Zx7rMz+iUFAlxOW5QTHGpybmllZGVy
 RLpmHHG1JOVdOA==
 =WDR2
 -----END PGP SIGNATURE-----`,
-						))),
+						),
 					},
 				},
 			},
@@ -365,7 +365,7 @@ RLpmHHG1JOVdOA==
 					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
 					},
 				},
 				{
@@ -398,7 +398,7 @@ RLpmHHG1JOVdOA==
 					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`))),
+						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
 					},
 				},
 				{

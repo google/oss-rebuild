@@ -4,7 +4,6 @@
 package pypi
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -30,7 +29,7 @@ func TestHTTPRegistry_Project(t *testing.T) {
 				URL: "https://pypi.org/pypi/requests/json",
 				Response: &http.Response{
 					StatusCode: 200,
-					Body: io.NopCloser(bytes.NewReader([]byte(`{
+					Body: httpxtest.Body(`{
                         "info": {
                             "name": "requests",
                             "version": "2.31.0"
@@ -40,7 +39,7 @@ func TestHTTPRegistry_Project(t *testing.T) {
                                 {"filename": "requests-2.31.0-py3-none-any.whl"}
                             ]
                         }
-                    }`))),
+                    }`),
 				},
 			},
 			expected: &Project{
@@ -78,7 +77,7 @@ func TestHTTPRegistry_Project(t *testing.T) {
 			pkg:  "bad-json-package",
 			call: httpxtest.Call{
 				URL:      "https://pypi.org/pypi/bad-json-package/json",
-				Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
+				Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"invalid": "json",,}`)},
 			},
 			expectedErr: errors.New("invalid character ',' looking for beginning of object key string"),
 		},
@@ -122,7 +121,7 @@ func TestHTTPRegistry_Release(t *testing.T) {
 				URL: "https://pypi.org/pypi/requests/2.31.0/json",
 				Response: &http.Response{
 					StatusCode: 200,
-					Body: io.NopCloser(bytes.NewReader([]byte(`{
+					Body: httpxtest.Body(`{
                         "info": {
                             "name": "requests",
                             "version": "2.31.0"
@@ -130,7 +129,7 @@ func TestHTTPRegistry_Release(t *testing.T) {
                         "urls": [
                             {"filename": "requests-2.31.0-py3-none-any.whl"}
                         ]
-                    }`))),
+                    }`),
 				},
 			},
 			expected: &Release{
@@ -169,7 +168,7 @@ func TestHTTPRegistry_Release(t *testing.T) {
 			version: "1.0.0",
 			call: httpxtest.Call{
 				URL:      "https://pypi.org/pypi/bad-json-pkg/1.0.0/json",
-				Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"invalid": "json",,}`)))},
+				Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"invalid": "json",,}`)},
 			},
 			expectedErr: errors.New("invalid character ',' looking for beginning of object key string"),
 		},
@@ -216,23 +215,23 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					URL: "https://pypi.org/pypi/requests/2.31.0/json",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body: io.NopCloser(bytes.NewReader([]byte(`{
+						Body: httpxtest.Body(`{
                             "info": {"name": "requests", "version": "2.31.0"},
                             "urls": [
                                 {"filename": "requests-2.31.0-py3-none-any.whl", "url": "https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl"}
                             ]
-                        }`))),
+                        }`),
 					},
 				},
 				{
 					URL: "https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body:       io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
+						Body:       httpxtest.Body("This is the artifact content"),
 					},
 				},
 			},
-			expectedReadCloser: io.NopCloser(bytes.NewReader([]byte("This is the artifact content"))),
+			expectedReadCloser: httpxtest.Body("This is the artifact content"),
 		},
 		{
 			name:     "Release Fetch Error",
@@ -257,12 +256,12 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					URL: "https://pypi.org/pypi/requests/2.31.0/json",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body: io.NopCloser(bytes.NewReader([]byte(`{
+						Body: httpxtest.Body(`{
                             "info": {"name": "requests", "version": "2.31.0"},
                             "urls": [
                                 {"filename": "requests-2.31.0-py3-none-any.whl"}
                             ]
-                        }`))),
+                        }`),
 					},
 				},
 			},
@@ -278,12 +277,12 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 					URL: "https://pypi.org/pypi/requests/2.31.0/json",
 					Response: &http.Response{
 						StatusCode: 200,
-						Body: io.NopCloser(bytes.NewReader([]byte(`{
+						Body: httpxtest.Body(`{
                             "info": {"name": "requests", "version": "2.31.0"},
                             "urls": [
                                 {"filename": "requests-2.31.0-py3-none-any.whl", "url": "https://files.pythonhosted.org/packages/00/00/00000000/requests-2.31.0-py3-none-any.whl"}
                             ]
-                        }`))),
+                        }`),
 					},
 				},
 				{
