@@ -7,7 +7,6 @@ package httpx
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"net/http"
 	"time"
 
@@ -51,22 +50,22 @@ func (cc *CachedClient) Do(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		return cc.BasicClient.Do(req)
 	}
-	respBytes, err := cc.ch.GetOrSet(req.URL.String(), func() (any, error) {
+	respBytes, err := cc.ch.Get(req.URL.String())
+	if err == cache.ErrNotExist { // Cache not set
 		resp, err := cc.BasicClient.Do(req)
 		if err != nil {
 			return nil, err
-		}
-		if resp.StatusCode != http.StatusOK {
-			return nil, errors.New(resp.Status)
 		}
 		defer resp.Body.Close()
 		foo := new(bytes.Buffer)
 		if err := resp.Write(foo); err != nil {
 			return nil, err
 		}
-		return foo.Bytes(), nil
-	})
-	if err != nil {
+		if isServer := (resp.StatusCode >= 500 && resp.StatusCode <= 599); !isServer {
+			cc.ch.Set(req.URL.String(), func() (any, error) { return foo.Bytes(), nil })
+		}
+		respBytes = foo.Bytes()
+	} else if err != nil {
 		return nil, err
 	}
 	return http.ReadResponse(bufio.NewReader(bytes.NewReader(respBytes.([]byte))), req)

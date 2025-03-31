@@ -17,6 +17,14 @@ type Call struct {
 	Error    error
 }
 
+func (c Call) Request() *http.Request {
+	req, err := http.NewRequest(c.Method, c.URL, nil)
+	if err != nil {
+		panic(err)
+	}
+	return req
+}
+
 type MockClient struct {
 	Calls             []Call
 	URLValidator      func(expected, actual string)
