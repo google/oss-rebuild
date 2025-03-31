@@ -204,7 +204,14 @@ func TestRebuildPackage(t *testing.T) {
 			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4-1+b1", Artifact: "xz-utils_5.2.4-1+b1_amd64.deb"},
 			calls: []httpxtest.Call{
 				{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1+b1_amd64.deb",
+					URL: "https://snapshot.debian.org/mr/package/xz-utils/5.2.4-1/binfiles/xz-utils/5.2.4-1+b1?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.2.4-1+b1_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"deadbeef"}]}`))),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/file/deadbeef",
 					Response: &http.Response{
 						StatusCode: 200,
 						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
@@ -262,7 +269,14 @@ RLpmHHG1JOVdOA==
 			target: rebuild.Target{Ecosystem: rebuild.Debian, Package: "main/xz-utils", Version: "5.2.4", Artifact: "xz-utils_5.2.4_amd64.deb"},
 			calls: []httpxtest.Call{
 				{
-					URL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4_amd64.deb",
+					URL: "https://snapshot.debian.org/mr/package/xz-utils/5.2.4/binfiles/xz-utils/5.2.4?fileinfo=1",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte(`{"fileinfo":{"deadbeef":[{"archive_name":"debian","name":"xz-utils_5.2.4_amd64.deb"}]},"result":[{"architecture":"amd64","hash":"deadbeef"}]}`))),
+					},
+				},
+				{
+					URL: "https://snapshot.debian.org/file/deadbeef",
 					Response: &http.Response{
 						StatusCode: 200,
 						Body:       io.NopCloser(bytes.NewReader([]byte("deb_contents"))),
