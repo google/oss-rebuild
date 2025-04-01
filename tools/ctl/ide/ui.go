@@ -194,7 +194,20 @@ func diffArtifacts(ctx context.Context, butler localfiles.Butler, example rundex
 			}
 		}
 	}
-	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("diffoscope --text-color=always %s %s 2>&1 | less -R", rba, usa))
+	var script string
+	args := fmt.Sprintf(" --no-progress --text-color=always %s %s 2>&1 | less -R", rba, usa)
+	if _, err := exec.LookPath("diffoscope"); err == nil {
+		script = "diffoscope" + args
+	} else if _, err := exec.LookPath("uvx"); err == nil {
+		script = "uvx diffoscope" + args
+	} else if _, err := exec.LookPath("docker"); err == nil {
+		dir := filepath.Dir(usa)
+		script = fmt.Sprintf("docker run --rm -t --user $(id -u):$(id -g) -v %s:%s:ro registry.salsa.debian.org/reproducible-builds/diffoscope", dir, dir) + args
+	} else {
+		log.Println("No execution option found for diffoscope. Attempted {diffoscope,uvx,docker}")
+		return errors.New("failed to run diffoscope")
+	}
+	cmd := exec.Command("tmux", "new-window", script)
 	if err := cmd.Run(); err != nil {
 		if err.Error() == "exit status 1" {
 			log.Println("Maybe you're not running inside a tmux session?")
