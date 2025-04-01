@@ -7,6 +7,7 @@ package schema
 
 import (
 	"encoding/hex"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/pkg/archive"
@@ -189,6 +190,7 @@ type RebuildPackageRequest struct {
 	UseRepoDefinition bool              `form:""`
 	UseSyscallMonitor bool              `form:""`
 	UseNetworkProxy   bool              `form:""`
+	BuildTimeout      time.Duration     `form:""`
 }
 
 var _ api.Message = RebuildPackageRequest{}
