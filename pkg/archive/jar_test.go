@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/textwrap"
 )
 
 func TestStableJARBuildMetadata(t *testing.T) {
@@ -359,6 +360,169 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 					t.Errorf("%v: ZipEntry[%d].Name got %v, want %v", tc.test, i, ent.Name, tc.expected[i].Name)
 				} else if diff := cmp.Diff(string(tc.expected[i].Body), string(must(io.ReadAll(must(ent.Open()))))); diff != "" {
 					t.Errorf("ZipEntry[%d].Body mismatch (-want +got):\n%s", i, diff)
+				}
+			}
+		})
+	}
+}
+
+func TestStableGitProperties(t *testing.T) {
+	testCases := []struct {
+		test     string
+		input    []*ZipEntry
+		expected []*ZipEntry
+	}{
+		{
+			test: "delete_git_properties",
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: root\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "git.properties"},
+					[]byte("git.build.user.email=foo@bar.baz\r\ngit.build.user.name=foo bar\r\n\r\n"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: root\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "git.properties"},
+					[]byte{},
+				},
+			},
+		},
+		{
+			test: "delete_git_json",
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: root\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "git.json"},
+					[]byte(textwrap.Dedent(`
+						{
+							"git.branch": "master",
+							"git.commit.id.abbrev": "e646d22",
+							"git.commit.id.describe": "e646d22",
+							"git.total.commit.count": "1"
+						}`)),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: root\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "git.json"},
+					[]byte("{}"),
+				},
+			},
+		},
+		{
+			test: "delete_git_json_from_custom_location",
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: root\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "classes/foo"},
+					[]byte("bar"),
+				},
+				{
+					&zip.FileHeader{Name: "classes/git.json"},
+					[]byte(textwrap.Dedent(`
+						{
+							"git.branch": "main",
+							"git.build.host": "ort",
+							"git.build.user.email": xmlchai@maven",
+							"git.build.user.name": "XMLChai Maven",
+							"git.build.version": "0.1.0",
+							"git.closest.tag.commit.count": "0",
+							"git.closest.tag.name": "v1_0_1",
+							"git.commit.author.time": "2022-01-06T10:16:03Z",
+							"git.commit.committer.time": "2022-01-06T10:16:03Z",
+							"git.commit.id": "b8b0e095af45ed8b3212b934ce46f2dcb54fdea6",
+							"git.commit.id.abbrev": "b8b0e09",
+							"git.commit.id.describe": "v1_0_1",
+							"git.commit.id.describe-short": "v1_0_1",
+							"git.commit.message.full": "0.1.0 release",
+							"git.commit.message.short": "0.1.0 release",
+							"git.commit.time": "2022-01-06T10:16:03Z",
+							"git.commit.user.email": "xmlchai@maven",
+							"git.commit.user.name": "XMLChai Maven",
+							"git.dirty": "false",
+							"git.local.branch.ahead": "5",
+							"git.local.branch.behind": "0",
+							"git.remote.origin.url": "https://github.com/jrivard/chaixml",
+							"git.tags": "v1_0_1",
+							"git.total.commit.count": "8"
+						}`)),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					[]byte("Built-By: root\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "classes/foo"},
+					[]byte("bar"),
+				},
+				{
+					&zip.FileHeader{Name: "classes/git.json"},
+					[]byte("{}"),
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.test, func(t *testing.T) {
+			// Create input zip
+			var input bytes.Buffer
+			{
+				zw := zip.NewWriter(&input)
+				for _, entry := range tc.input {
+					orDie(entry.WriteTo(zw))
+				}
+				orDie(zw.Close())
+			}
+
+			// Process with stabilizer
+			var output bytes.Buffer
+			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
+			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
+				Stabilizers: []Stabilizer{StableGitProperties},
+			})
+			if err != nil {
+				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
+			}
+
+			// Check output
+			var got []ZipEntry
+			{
+				zr := must(zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len())))
+				for _, ent := range zr.File {
+					got = append(got, ZipEntry{&ent.FileHeader, must(io.ReadAll(must(ent.Open())))})
+				}
+			}
+
+			if len(got) != len(tc.expected) {
+				t.Fatalf("StabilizeZip(%v) got %v entries, want %v", tc.test, len(got), len(tc.expected))
+			}
+
+			for i := range got {
+				if !all(
+					got[i].FileHeader.Name == tc.expected[i].FileHeader.Name,
+					bytes.Equal(got[i].Body, tc.expected[i].Body),
+				) {
+					t.Errorf("Entry %d of %v:\r\ngot:  %+v\r\nwant: %+v", i, tc.test, got[i], tc.expected[i])
 				}
 			}
 		})
