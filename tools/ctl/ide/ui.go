@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -122,6 +123,23 @@ func makeCommandNode(name string, handler func()) *tview.TreeNode {
 	return tview.NewTreeNode(name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(handler)
 }
 
+func stabilizeArtifact(in, out string, t rebuild.Target) error {
+	orig, err := os.Open(in)
+	if err != nil {
+		return errors.Wrap(err, "opening input")
+	}
+	defer orig.Close()
+	stabilized, err := os.OpenFile(out, os.O_RDWR|os.O_CREATE, os.ModePerm)
+	if err != nil {
+		return errors.Wrap(err, "opening output")
+	}
+	defer stabilized.Close()
+	if err := archive.Stabilize(stabilized, orig, t.ArchiveType()); err != nil {
+		return errors.Wrap(err, "running stabilize")
+	}
+	return nil
+}
+
 func diffArtifacts(ctx context.Context, butler localfiles.Butler, example rundex.Rebuild) error {
 	if example.Artifact == "" {
 		return errors.New("Firestore does not have the artifact, cannot find GCS path.")
@@ -140,15 +158,40 @@ func diffArtifacts(ctx context.Context, butler localfiles.Butler, example rundex
 			if err != nil {
 				return errors.Wrap(err, "fetching rebuild asset")
 			}
-		} else {
-			rba, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.RebuildAsset.For(t))
+			usa, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(t))
 			if err != nil {
-				return errors.Wrap(err, "fetching rebuild asset")
+				return errors.Wrap(err, "fetching upstream asset")
 			}
-		}
-		usa, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(t))
-		if err != nil {
-			return errors.Wrap(err, "fetching upstream asset")
+		} else {
+			dir, err := os.MkdirTemp("", "*")
+			if err != nil {
+				return errors.Wrap(err, "creating tempdir")
+			}
+			defer os.RemoveAll(dir)
+			{
+				rba, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.RebuildAsset.For(t))
+				if err != nil {
+					return errors.Wrap(err, "fetching rebuild asset")
+				}
+				// TODO: We should use the version of Stabilize used in the rebuild.
+				stabilized := filepath.Join(dir, "stabilized-"+filepath.Base(rba))
+				if err := stabilizeArtifact(rba, stabilized, t); err != nil {
+					return errors.Wrap(err, "stabilizing rebuild")
+				}
+				rba = stabilized
+			}
+			{
+				usa, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(t))
+				if err != nil {
+					return errors.Wrap(err, "fetching upstream asset")
+				}
+				// TODO: We should use the version of Stabilize used in the rebuild.
+				stabilized := filepath.Join(dir, "stabilized-"+filepath.Base(usa))
+				if err := stabilizeArtifact(usa, stabilized, t); err != nil {
+					return errors.Wrap(err, "stabilizing upstream")
+				}
+				usa = stabilized
+			}
 		}
 	}
 	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("diffoscope --text-color=always %s %s 2>&1 | less -R", rba, usa))
