@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -163,7 +165,7 @@ func (r HTTPRegistry) get(ctx context.Context, url string) (io.ReadCloser, error
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return nil, errors.Wrap(errors.New(resp.Status), "fetching artifact")
 	}
 	return resp.Body, nil
@@ -300,22 +302,46 @@ func (r HTTPRegistry) ArtifactURL(ctx context.Context, name, artifact string) (s
 		return "", err
 	}
 	var response fileInfoResponse
-	fileinfoURL := urlx.Copy(snapshotURL)
-	{
-		fileinfoURL.Path = path.Join(fileinfoURL.Path, "mr/package", name, a.Version.BinaryIndependentString(), "binfiles", a.Name, a.Version.String())
-		query := fileinfoURL.Query()
-		query.Add("fileinfo", "1")
-		fileinfoURL.RawQuery = query.Encode()
-	}
-	{
-		r, err := r.get(ctx, fileinfoURL.String())
+	var fileinfoURL *url.URL
+	// NOTE: Epochs are used when the source version scheme has changed.
+	// Frequently the epoch is dropped from the version identifier used by the package manager
+	// (when only one or two versions are available for a given distribution, the source version schemes don't need to be disambiguated).
+	// If the artifact doesn't exist under an empty epoch, we try again with epoch "1" which frequently works.
+	// If this proves to be insufficient, we can get it from the .buildinfo file (which is stored at a URL missing the epoch but contains a version identifier that includes the epoch).
+	// We have not added the buildinfo parsing yet to avoid making an extra call to the build info service if possible.
+	for _, epoch := range []string{"", "1"} {
+		a.Version.Epoch = epoch
+		guessFileinfoURL := urlx.Copy(snapshotURL)
+		{
+			guessFileinfoURL.Path = path.Join(guessFileinfoURL.Path, "mr/package", name, a.Version.BinaryIndependentString(), "binfiles", a.Name, a.Version.String())
+			query := guessFileinfoURL.Query()
+			query.Add("fileinfo", "1")
+			guessFileinfoURL.RawQuery = query.Encode()
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, guessFileinfoURL.String(), nil)
 		if err != nil {
+			return "", errors.Wrap(err, "building fileinfo request")
+		}
+		resp, err := r.Client.Do(req)
+		if err != nil {
+			return "", errors.Wrap(err, "fetching fileinfo")
+		} else if resp.StatusCode == http.StatusNotFound {
+			// That fileinfo doesn't exist, try the next epoch.
+			log.Printf("Fileinfo url not found: %s", guessFileinfoURL.String())
+			continue
+		} else if resp.StatusCode != http.StatusOK {
+			return "", errors.Wrap(errors.New(resp.Status), "fetching fileinfo")
+		}
+		defer resp.Body.Close()
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 			return "", err
 		}
-		defer r.Close()
-		if err = json.NewDecoder(r).Decode(&response); err != nil {
-			return "", err
-		}
+		// If we succeeded, break out of the loop.
+		fileinfoURL = guessFileinfoURL
+		break
+	}
+	if fileinfoURL == nil {
+		return "", errors.New("no valid fileinfo")
 	}
 	var hash string
 	for _, f := range response.Result {
