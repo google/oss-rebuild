@@ -13,6 +13,7 @@ import (
 var AllJarStabilizers []Stabilizer = []Stabilizer{
 	StableJARBuildMetadata,
 	StableJAROrderOfAttributeValues,
+	StableGitProperties,
 }
 
 var StableJARBuildMetadata = ZipEntryStabilizer{
