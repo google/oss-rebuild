@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/oss-rebuild/internal/urlx"
@@ -164,4 +165,42 @@ func TestHandlerWithError(t *testing.T) {
 	if string(b) != expectedBody {
 		t.Errorf("Expected body '%s', got '%s'", expectedBody, string(b))
 	}
+}
+
+type fakeHandler struct {
+	got *http.Request
+}
+
+func (h *fakeHandler) handle(_ http.ResponseWriter, r *http.Request) {
+	h.got = r
+}
+
+type fakeTransltor struct {
+	got  string
+	send FooRequest
+}
+
+func (t *fakeTransltor) translate(r io.ReadCloser) (FooRequest, error) {
+	t.got = string(must(io.ReadAll(r)))
+	return t.send, nil
+}
+
+func TestTranslate(t *testing.T) {
+	h := &fakeHandler{}
+	ft := &fakeTransltor{send: FooRequest{Foo: "foo"}}
+	handler := Translate(ft.translate, h.handle)
+	handler(nil, &http.Request{URL: must(url.Parse("http://example.com")), Body: io.NopCloser(strings.NewReader("foo"))})
+	if ft.got != "foo" {
+		t.Errorf("Expected ft.got 'foo', got '%s'", ft.got)
+	}
+	if h.got.URL.RawQuery != "foo=foo" {
+		t.Errorf("Expected h.got.URL.RawQuery 'foo=foo', got '%s'", h.got.URL.RawQuery)
+	}
+}
+
+func must[T any](t T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return t
 }
