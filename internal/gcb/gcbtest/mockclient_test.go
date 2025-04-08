@@ -3,6 +3,12 @@
 
 package gcbtest
 
-import "github.com/google/oss-rebuild/internal/gcb"
+import (
+	"testing"
 
-var _ gcb.Client = &MockClient{}
+	"github.com/google/oss-rebuild/internal/gcb"
+)
+
+func TestBuild(t *testing.T) {
+	var _ gcb.Client = &MockClient{}
+}
