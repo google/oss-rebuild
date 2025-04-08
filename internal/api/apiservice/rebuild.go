@@ -31,6 +31,7 @@ import (
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
@@ -231,8 +232,10 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if err != nil {
 		return errors.Wrap(err, "creating rebuild store")
 	}
-	var stabilizers []archive.Stabilizer
-	stabilizers = append(stabilizers, archive.AllStabilizers...)
+	stabilizers, err := stability.StabilizersForTarget(t)
+	if err != nil {
+		return errors.Wrap(err, "getting stabilizers for target")
+	}
 	if entry != nil && len(entry.BuildDefinition.CustomStabilizers) > 0 {
 		customStabilizers, err := archive.CreateCustomStabilizers(entry.BuildDefinition.CustomStabilizers, t.ArchiveType())
 		if err != nil {

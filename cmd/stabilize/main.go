@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	"github.com/pkg/errors"
 )
 
@@ -21,6 +23,7 @@ var (
 	outfile       = flag.String("outfile", "", "Output path to which the stabilized file will be written.")
 	enablePasses  = flag.String("enable-passes", "all", "Enable the comma-separated set of stabilizers or 'all'. -help for full list of options")
 	disablePasses = flag.String("disable-passes", "none", "Disable only the comma-separated set of stabilizers or 'none'. -help for full list of options")
+	ecosystem     = flag.String("ecosystem", "", "The package ecosystem of the artifact. Required when ambiguous from the file extension.")
 )
 
 func getName(san archive.Stabilizer) string {
@@ -88,12 +91,12 @@ func (reg StabilizerRegistry) GetAll() []archive.Stabilizer {
 // - Preserves the order specified in enableSpec. Order of "all" is impl-defined.
 // - Disable has precedence over enable.
 // - Duplicates are retained and respected.
-func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string) ([]archive.Stabilizer, error) {
+func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string, eligible []archive.Stabilizer) ([]archive.Stabilizer, error) {
 	var toRun []archive.Stabilizer
 	enabled := make(map[string]bool)
 	switch enableSpec {
 	case "all":
-		for _, pass := range reg.GetAll() {
+		for _, pass := range eligible {
 			toRun = append(toRun, pass)
 			enabled[getName(pass)] = true
 		}
@@ -104,6 +107,8 @@ func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string) ([]
 			cleanName := strings.TrimSpace(name)
 			if san, ok := reg.Get(cleanName); !ok {
 				return nil, errors.Errorf("unknown pass name: %s", cleanName)
+			} else if !slices.Contains(eligible, san) {
+				return nil, errors.Errorf("ineligible pass for artifact: %s", cleanName)
 			} else {
 				toRun = append(toRun, san)
 				enabled[cleanName] = true
@@ -134,6 +139,56 @@ func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string) ([]
 	return toRun, nil
 }
 
+func candidateEcosystems(filename string) []rebuild.Ecosystem {
+	ext := filepath.Ext(filename)
+	switch ext {
+	case ".jar":
+		return []rebuild.Ecosystem{rebuild.Maven}
+	case ".pom":
+		return []rebuild.Ecosystem{rebuild.Maven}
+	case ".whl", ".egg":
+		return []rebuild.Ecosystem{rebuild.PyPI}
+	case ".crate":
+		return []rebuild.Ecosystem{rebuild.CratesIO}
+	case ".tgz":
+		return []rebuild.Ecosystem{rebuild.NPM, rebuild.PyPI}
+	case ".gz":
+		if strings.HasSuffix(filename, ".tar.gz") {
+			return []rebuild.Ecosystem{rebuild.NPM, rebuild.PyPI}
+		} else {
+			return []rebuild.Ecosystem{rebuild.PyPI}
+		}
+	case ".tar":
+		return []rebuild.Ecosystem{rebuild.PyPI}
+	case ".zip":
+		return []rebuild.Ecosystem{rebuild.PyPI}
+	default:
+		return nil
+	}
+}
+
+var ErrAmbiguousEcosystem = errors.New("ambiguous ecosystem detection for file")
+
+func eligiblePasses(filename string) ([]archive.Stabilizer, error) {
+	candidates := candidateEcosystems(filename)
+	if len(candidates) == 0 {
+		return nil, errors.New("no eligible ecosystems for file")
+	}
+	var result []archive.Stabilizer
+	for i, e := range candidates {
+		stabs, err := stability.StabilizersForTarget(rebuild.Target{Ecosystem: e, Artifact: filename})
+		if err != nil {
+			return nil, errors.Wrapf(err, "getting stabilizers for %s candidate ecosystem", e)
+		}
+		if i == 0 {
+			result = stabs
+		} else if !slices.Equal(result, stabs) {
+			return nil, errors.Wrapf(ErrAmbiguousEcosystem, "ecosystem %s suggests different stabilizers than %s", candidates[0], e)
+		}
+	}
+	return result, nil
+}
+
 func run() error {
 	stabilizers := NewStabilizerRegistry(archive.AllStabilizers...)
 
@@ -153,7 +208,14 @@ func run() error {
 		flag.Usage()
 		return errors.New("both -infile and -outfile are required")
 	}
-	toRun, err := determinePasses(stabilizers, *enablePasses, *disablePasses)
+
+	candidates, err := eligiblePasses(*infile)
+	if err != nil {
+		flag.Usage()
+		return err
+	}
+
+	toRun, err := determinePasses(stabilizers, *enablePasses, *disablePasses, candidates)
 	if err != nil {
 		flag.Usage()
 		return err
