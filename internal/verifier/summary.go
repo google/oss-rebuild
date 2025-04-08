@@ -49,7 +49,7 @@ func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStor
 	if resp.StatusCode != 200 {
 		return rb, up, errors.Wrap(errors.New(resp.Status), "fetching upstream artifact")
 	}
-	err = archive.Stabilize(up.StabilizedHash, io.TeeReader(resp.Body, up.Hash), t.ArchiveType())
+	err = archive.StabilizeWithOpts(up.StabilizedHash, io.TeeReader(resp.Body, up.Hash), t.ArchiveType(), archive.StabilizeOpts{Stabilizers: stabilizers})
 	checkClose(resp.Body)
 	if err != nil {
 		return rb, up, errors.Wrap(err, "fingerprinting upstream")
