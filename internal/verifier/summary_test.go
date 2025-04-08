@@ -9,6 +9,7 @@ import (
 	"crypto"
 	"io"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -38,16 +39,23 @@ func TestSummarizeArtifacts(t *testing.T) {
 		origHash := hashext.NewMultiHash(crypto.SHA256)
 		origZip := must(archivetest.ZipFile([]archive.ZipEntry{
 			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Comment: "foo"}, Body: []byte("data")},
+			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/REBUILD"}, Body: []byte("data")},
 		}))
 		must(io.MultiWriter(w, origHash).Write(origZip.Bytes()))
 		upstreamURI := "https://example.com/foo-1.0.0.whl"
+		upstreamHash := hashext.NewMultiHash(crypto.SHA256)
+		upstreamZip := must(archivetest.ZipFile([]archive.ZipEntry{
+			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Comment: "bar"}, Body: []byte("data")},
+			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/UPSTREAM"}, Body: []byte("data")},
+		}))
+		must(upstreamHash.Write(upstreamZip.Bytes()))
 		ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, &httpxtest.MockClient{
 			Calls: []httpxtest.Call{
 				{
 					URL: upstreamURI,
 					Response: &http.Response{
 						StatusCode: http.StatusOK,
-						Body:       io.NopCloser(origZip),
+						Body:       io.NopCloser(upstreamZip),
 					},
 				},
 			},
@@ -58,7 +66,11 @@ func TestSummarizeArtifacts(t *testing.T) {
 			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Modified: time.UnixMilli(0)}, Body: []byte("data")},
 		}))
 		must(stabilizedHash.Write(stabilizedZip.Bytes()))
-		rb, up, err := SummarizeArtifacts(ctx, metadata, target, upstreamURI, []crypto.Hash{crypto.SHA256}, archive.AllStabilizers)
+		customStabilizers := must(archive.CreateCustomStabilizers([]archive.CustomStabilizerEntry{
+			{Config: archive.CustomStabilizerConfigOneOf{ExcludePath: &archive.ExcludePath{Paths: []string{"**/REBUILD"}}}, Reason: "not supposed to be there"},
+			{Config: archive.CustomStabilizerConfigOneOf{ExcludePath: &archive.ExcludePath{Paths: []string{"**/UPSTREAM"}}}, Reason: "not supposed to be there"},
+		}, archive.ZipFormat))
+		rb, up, err := SummarizeArtifacts(ctx, metadata, target, upstreamURI, []crypto.Hash{crypto.SHA256}, slices.Concat(archive.AllStabilizers, customStabilizers))
 		if err != nil {
 			t.Fatalf("SummarizeArtifacts() returned error: %v", err)
 		}
@@ -74,7 +86,7 @@ func TestSummarizeArtifacts(t *testing.T) {
 		if up.URI != upstreamURI {
 			t.Errorf("SummarizeArtifacts() returned diff for up.URI: want %q, got %q", upstreamURI, up.URI)
 		}
-		if diff := cmp.Diff(origHash.Sum(nil), up.Hash.Sum(nil)); diff != "" {
+		if diff := cmp.Diff(upstreamHash.Sum(nil), up.Hash.Sum(nil)); diff != "" {
 			t.Errorf("SummarizeArtifacts() returned diff for up.Hash (-want +got):\n%s", diff)
 		}
 		if diff := cmp.Diff(stabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil)); diff != "" {
