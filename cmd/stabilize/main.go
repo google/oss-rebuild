@@ -46,8 +46,13 @@ func filetype(path string) archive.Format {
 	switch ext {
 	case ".tar":
 		return archive.TarFormat
-	case ".tgz", ".crate", ".gz", ".Z":
+	case ".tgz", ".crate":
 		return archive.TarGzFormat
+	case ".gz", ".Z":
+		if filepath.Ext(strings.TrimSuffix(path, ext)) == ".tar" {
+			return archive.TarGzFormat
+		}
+		return archive.UnknownFormat
 	case ".zip", ".whl", ".egg", ".jar":
 		return archive.ZipFormat
 	default:
