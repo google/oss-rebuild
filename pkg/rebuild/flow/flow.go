@@ -6,6 +6,7 @@ package flow
 import (
 	"bytes"
 	"cmp"
+	"maps"
 	"regexp"
 	"strings"
 	"text/template"
@@ -51,12 +52,8 @@ func resolveTemplate(buf *bytes.Buffer, tmpl string, data any) error {
 
 func joinMaps[K comparable, V any](base map[K]V, overrides map[K]V) map[K]V {
 	result := make(map[K]V, len(base))
-	for k, v := range base {
-		result[k] = v
-	}
-	for k, v := range overrides {
-		result[k] = v
-	}
+	maps.Copy(result, base)
+	maps.Copy(result, overrides)
 	return result
 }
 

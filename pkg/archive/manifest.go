@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -53,7 +54,7 @@ func (s *Section) Delete(name string) {
 	delete(s.attributes, name)
 	for i, n := range s.Names {
 		if n == name {
-			s.Names = append(s.Names[:i], s.Names[i+1:]...)
+			s.Names = slices.Delete(s.Names, i, i+1)
 			break
 		}
 	}
