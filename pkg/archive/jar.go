@@ -10,10 +10,10 @@ import (
 	"strings"
 )
 
-var AllJarStabilizers []Stabilizer = []Stabilizer{
+var AllJarStabilizers = []Stabilizer{
 	StableJARBuildMetadata,
 	StableJAROrderOfAttributeValues,
-	StableGitProperties,
+	StableJARGitProperties,
 }
 
 var StableJARBuildMetadata = ZipEntryStabilizer{
@@ -183,7 +183,7 @@ func splitPreservingQuotes(s string, sep rune) []string {
 	return result
 }
 
-var StableGitProperties = ZipEntryStabilizer{
+var StableJARGitProperties = ZipEntryStabilizer{
 	Name: "jar-git-properties",
 	Func: func(zf *MutableZipFile) {
 		// These files contain git properties set by git-commit-id-maven-plugin.
