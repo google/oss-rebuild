@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-var AllJarStabilizers []Stabilizer = []Stabilizer{
+var AllJarStabilizers = []Stabilizer{
 	StableJARBuildMetadata,
 	StableJAROrderOfAttributeValues,
 	StableGitProperties,
