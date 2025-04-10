@@ -88,31 +88,31 @@ func showModal(app *tview.Application, container *tview.Pages, contents inputCap
 
 // The explorer is the Tree structure on the left side of the TUI
 type explorer struct {
-	ctx           context.Context
-	app           *tview.Application
-	container     *tview.Pages
-	tree          *tview.TreeView
-	root          *tview.TreeNode
-	rb            *Rebuilder
-	firestore     rundex.Reader
-	firestoreOpts rundex.FetchRebuildOpts
-	runs          map[string]rundex.Run
-	buildDefs     rebuild.LocatableAssetStore
-	butler        localfiles.Butler
+	ctx        context.Context
+	app        *tview.Application
+	container  *tview.Pages
+	tree       *tview.TreeView
+	root       *tview.TreeNode
+	rb         *Rebuilder
+	dex        rundex.Reader
+	rundexOpts rundex.FetchRebuildOpts
+	runs       map[string]rundex.Run
+	buildDefs  rebuild.LocatableAssetStore
+	butler     localfiles.Butler
 }
 
-func newExplorer(ctx context.Context, app *tview.Application, firestore rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, rb *Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *explorer {
+func newExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *explorer {
 	e := explorer{
-		ctx:           ctx,
-		app:           app,
-		container:     tview.NewPages(),
-		tree:          tview.NewTreeView(),
-		root:          tview.NewTreeNode("root").SetColor(tcell.ColorRed),
-		rb:            rb,
-		firestore:     firestore,
-		firestoreOpts: firestoreOpts,
-		buildDefs:     buildDefs,
-		butler:        butler,
+		ctx:        ctx,
+		app:        app,
+		container:  tview.NewPages(),
+		tree:       tview.NewTreeView(),
+		root:       tview.NewTreeNode("root").SetColor(tcell.ColorRed),
+		rb:         rb,
+		dex:        dex,
+		rundexOpts: rundexOpts,
+		buildDefs:  buildDefs,
+		butler:     butler,
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
 	e.container.AddPage("explorer", e.tree, true, true)
@@ -142,7 +142,7 @@ func stabilizeArtifact(in, out string, t rebuild.Target) error {
 
 func diffArtifacts(ctx context.Context, butler localfiles.Butler, example rundex.Rebuild) error {
 	if example.Artifact == "" {
-		return errors.New("Firestore does not have the artifact, cannot find GCS path.")
+		return errors.New("Rundex does not have the artifact, cannot find GCS path.")
 	}
 	t := rebuild.Target{
 		Ecosystem: rebuild.Ecosystem(example.Ecosystem),
@@ -244,7 +244,7 @@ func (e *explorer) showDetails(example rundex.Rebuild) {
 
 func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 	if example.Artifact == "" {
-		log.Println("Firestore does not have the artifact, cannot find GCS path.")
+		log.Println("Rundex does not have the artifact, cannot find GCS path.")
 		return
 	}
 	t := rebuild.Target{
@@ -411,7 +411,7 @@ func (e *explorer) makeRunNode(runid string) *tview.TreeNode {
 		children := node.GetChildren()
 		if len(children) == 0 {
 			log.Printf("Fetching rebuilds...")
-			rebuilds, err := e.firestore.FetchRebuilds(e.ctx, &rundex.FetchRebuildRequest{Runs: []string{runid}, Opts: e.firestoreOpts})
+			rebuilds, err := e.dex.FetchRebuilds(e.ctx, &rundex.FetchRebuildRequest{Runs: []string{runid}, Opts: e.rundexOpts, LatestOnly: true})
 			if err != nil {
 				log.Println(errors.Wrapf(err, "failed to get rebuilds for runid: %s", runid))
 				return
@@ -444,11 +444,11 @@ func (e *explorer) makeRunGroupNode(benchName string, runs []string) *tview.Tree
 	return node
 }
 
-// LoadTree will query firestore for all the runs, then display them.
+// LoadTree will query rundex for all the runs, then display them.
 func (e *explorer) LoadTree() error {
 	e.root.ClearChildren()
 	log.Printf("Fetching runs...")
-	runs, err := e.firestore.FetchRuns(e.ctx, rundex.FetchRunsOpts{})
+	runs, err := e.dex.FetchRuns(e.ctx, rundex.FetchRunsOpts{})
 	if err != nil {
 		return err
 	}
@@ -493,7 +493,7 @@ type TuiApp struct {
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rundex.FetchRebuildOpts, benchmarkDir string, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *TuiApp {
+func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benchmarkDir string, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -509,7 +509,7 @@ func NewTuiApp(ctx context.Context, fireClient rundex.Reader, firestoreOpts rund
 		t = &TuiApp{
 			Ctx:      ctx,
 			app:      app,
-			explorer: newExplorer(ctx, app, fireClient, firestoreOpts, rb, buildDefs, butler),
+			explorer: newExplorer(ctx, app, dex, rundexOpts, rb, buildDefs, butler),
 			// When the widgets are updated, we should refresh the application.
 			statusBox:    tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
 			logs:         logs,
@@ -647,9 +647,9 @@ func (t *TuiApp) modalText(content string) {
 }
 
 func (t *TuiApp) runBenchmark(bench string) {
-	fire, ok := t.explorer.firestore.(rundex.Writer)
+	wdex, ok := t.explorer.dex.(rundex.Writer)
 	if !ok {
-		log.Println("Cannot run benchmark with non-local firestore client.")
+		log.Println("Cannot run benchmark with non-local rundex client.")
 		return
 	}
 	set, err := benchmark.ReadBenchmark(bench)
@@ -659,7 +659,7 @@ func (t *TuiApp) runBenchmark(bench string) {
 	}
 	ts := time.Now().UTC()
 	runID := ts.Format(time.RFC3339)
-	fire.WriteRun(t.Ctx, rundex.FromRun(schema.Run{
+	wdex.WriteRun(t.Ctx, rundex.FromRun(schema.Run{
 		ID:            runID,
 		BenchmarkName: filepath.Base(bench),
 		BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
@@ -677,7 +677,7 @@ func (t *TuiApp) runBenchmark(bench string) {
 			successes += 1
 		}
 		now := time.Now().UnixMilli()
-		fire.WriteRebuild(t.Ctx, rundex.Rebuild{
+		wdex.WriteRebuild(t.Ctx, rundex.Rebuild{
 			RebuildAttempt: schema.RebuildAttempt{
 				Ecosystem:       string(v.Target.Ecosystem),
 				Package:         v.Target.Package,
