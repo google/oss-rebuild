@@ -180,7 +180,7 @@ func TestStableJARBuildMetadata(t *testing.T) {
 	}
 }
 
-func TestStableJAROrderOfAttributeValues(t *testing.T) {
+func TestStableOrderOfAttributeValues(t *testing.T) {
 	testCases := []struct {
 		test          string
 		attributeName []string
@@ -366,7 +366,7 @@ func TestStableJAROrderOfAttributeValues(t *testing.T) {
 	}
 }
 
-func TestStableJARGitProperties(t *testing.T) {
+func TestStableGitProperties(t *testing.T) {
 	testCases := []struct {
 		test     string
 		input    []*ZipEntry
@@ -498,7 +498,7 @@ func TestStableJARGitProperties(t *testing.T) {
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
 			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
-				Stabilizers: []Stabilizer{StableJARGitProperties},
+				Stabilizers: []Stabilizer{StableGitProperties},
 			})
 			if err != nil {
 				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
