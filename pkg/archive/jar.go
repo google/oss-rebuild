@@ -10,6 +10,12 @@ import (
 	"strings"
 )
 
+var AllJarStabilizers = []Stabilizer{
+	StableJARBuildMetadata,
+	StableJAROrderOfAttributeValues,
+	StableGitProperties,
+}
+
 var StableJARBuildMetadata = ZipEntryStabilizer{
 	Name: "jar-build-metadata",
 	Func: func(zf *MutableZipFile) {
