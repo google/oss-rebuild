@@ -29,7 +29,7 @@ func StabilizersForTarget(t rebuild.Target) ([]archive.Stabilizer, error) {
 	switch t.Ecosystem {
 	case rebuild.Maven:
 		if format == archive.ZipFormat {
-			stabilizers = append(stabilizers, archive.StableJARBuildMetadata, archive.StableJAROrderOfAttributeValues, archive.StableGitProperties)
+			stabilizers = append(stabilizers, archive.AllJarStabilizers)
 		}
 	}
 	return stabilizers, nil
