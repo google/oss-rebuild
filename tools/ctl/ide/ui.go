@@ -35,6 +35,21 @@ const (
 	defaultModalBackground = tcell.ColorDarkCyan
 )
 
+func tmuxWait(cmd string) error {
+	// Send a "tmux wait -S" signal once the cmd is complete.
+	done := fmt.Sprintf("done%d", time.Now().UnixNano())
+	c := exec.Command("tmux", "new-window", fmt.Sprintf("%s; tmux wait -S %s", cmd, done))
+	if _, err := c.Output(); err != nil {
+		log.Println("Maybe you're not running inside a tmux session?")
+		return errors.Wrap(err, "opening tmux window")
+	}
+	// Wait to receive the tmux signal.
+	if _, err := exec.Command("tmux", "wait", done).Output(); err != nil {
+		return errors.Wrap(err, "failed to wait for tmux signal")
+	}
+	return nil
+}
+
 // Returns a new primitive which puts the provided primitive in the center and
 // adds vertical and horizontal margin.
 func modal(p tview.Primitive, vertMargin, horizMargin int) tview.Primitive {
@@ -207,12 +222,8 @@ func diffArtifacts(ctx context.Context, butler localfiles.Butler, example rundex
 		log.Println("No execution option found for diffoscope. Attempted {diffoscope,uvx,docker}")
 		return errors.New("failed to run diffoscope")
 	}
-	cmd := exec.Command("tmux", "new-window", script)
-	if err := cmd.Run(); err != nil {
-		if err.Error() == "exit status 1" {
-			log.Println("Maybe you're not running inside a tmux session?")
-		}
-		return errors.Wrap(err, "failed to run diffoscope")
+	if err := tmuxWait(script); err != nil {
+		return errors.Wrap(err, "running diffoscope")
 	}
 	return nil
 }
@@ -306,14 +317,8 @@ func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error
 		if editor == "" {
 			editor = "vim"
 		}
-		// Send a "tmux wait -S" signal once the edit is complete.
-		cmd := exec.Command("tmux", "new-window", fmt.Sprintf("%s %s; tmux wait -S editing", editor, e.buildDefs.URL(buildDefAsset).Path))
-		if _, err := cmd.Output(); err != nil {
-			return errors.Wrap(err, "failed to edit build definition")
-		}
-		// Wait to receive the tmux signal.
-		if _, err := exec.Command("tmux", "wait", "editing").Output(); err != nil {
-			return errors.Wrap(err, "failed to wait for tmux signal")
+		if err := tmuxWait(fmt.Sprintf("%s %s", editor, e.buildDefs.URL(buildDefAsset).Path)); err != nil {
+			return errors.Wrap(err, "editing build definition")
 		}
 		r, err := e.buildDefs.Reader(ctx, buildDefAsset)
 		if err != nil {
