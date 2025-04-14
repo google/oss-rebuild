@@ -24,16 +24,17 @@ import (
 // The strategies are pointers because omitempty does not treat an empty struct as empty, but it
 // does treat nil pointers as empty.
 type StrategyOneOf struct {
-	LocationHint         *rebuild.LocationHint          `json:"rebuild_location_hint,omitempty" yaml:"rebuild_location_hint,omitempty"`
-	PureWheelBuild       *pypi.PureWheelBuild           `json:"pypi_pure_wheel_build,omitempty" yaml:"pypi_pure_wheel_build,omitempty"`
-	NPMPackBuild         *npm.NPMPackBuild              `json:"npm_pack_build,omitempty" yaml:"npm_pack_build,omitempty"`
-	NPMCustomBuild       *npm.NPMCustomBuild            `json:"npm_custom_build,omitempty" yaml:"npm_custom_build,omitempty"`
-	CratesIOCargoPackage *cratesio.CratesIOCargoPackage `json:"cratesio_cargo_package,omitempty" yaml:"cratesio_cargo_package,omitempty"`
-	MavenBuild           *maven.MavenBuild              `json:"maven_build,omitempty" yaml:"maven_build,omitempty"`
-	DebianPackage        *debian.DebianPackage          `json:"debian_package,omitempty" yaml:"debian_package,omitempty"`
-	Debrebuild           *debian.Debrebuild             `json:"debrebuild,omitempty" yaml:"debrebuild,omitempty"`
-	ManualStrategy       *rebuild.ManualStrategy        `json:"manual,omitempty" yaml:"manual,omitempty"`
-	WorkflowStrategy     *rebuild.WorkflowStrategy      `json:"flow,omitempty" yaml:"flow,omitempty"`
+	LocationHint            *rebuild.LocationHint          `json:"rebuild_location_hint,omitempty" yaml:"rebuild_location_hint,omitempty"`
+	PureWheelBuild          *pypi.PureWheelBuild           `json:"pypi_pure_wheel_build,omitempty" yaml:"pypi_pure_wheel_build,omitempty"`
+	SourceDistributionBuild *pypi.SourceDistributionBuild  `json:"pypi_source_distribution_build,omitempty" yaml:"pypi_source_distribution_build,omitempty"`
+	NPMPackBuild            *npm.NPMPackBuild              `json:"npm_pack_build,omitempty" yaml:"npm_pack_build,omitempty"`
+	NPMCustomBuild          *npm.NPMCustomBuild            `json:"npm_custom_build,omitempty" yaml:"npm_custom_build,omitempty"`
+	CratesIOCargoPackage    *cratesio.CratesIOCargoPackage `json:"cratesio_cargo_package,omitempty" yaml:"cratesio_cargo_package,omitempty"`
+	MavenBuild              *maven.MavenBuild              `json:"maven_build,omitempty" yaml:"maven_build,omitempty"`
+	DebianPackage           *debian.DebianPackage          `json:"debian_package,omitempty" yaml:"debian_package,omitempty"`
+	Debrebuild              *debian.Debrebuild             `json:"debrebuild,omitempty" yaml:"debrebuild,omitempty"`
+	ManualStrategy          *rebuild.ManualStrategy        `json:"manual,omitempty" yaml:"manual,omitempty"`
+	WorkflowStrategy        *rebuild.WorkflowStrategy      `json:"flow,omitempty" yaml:"flow,omitempty"`
 }
 
 // NewStrategyOneOf creates a StrategyOneOf from a rebuild.Strategy, using typecasting to put the strategy in the right place.
@@ -44,6 +45,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.LocationHint = t
 	case *pypi.PureWheelBuild:
 		oneof.PureWheelBuild = t
+	case *pypi.SourceDistributionBuild:
+		oneof.SourceDistributionBuild = t
 	case *maven.MavenBuild:
 		oneof.MavenBuild = t
 	case *npm.NPMPackBuild:
@@ -76,6 +79,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.PureWheelBuild != nil {
 			num++
 			s = oneof.PureWheelBuild
+		}
+		if oneof.SourceDistributionBuild != nil {
+			num++
+			s = oneof.SourceDistributionBuild
 		}
 		if oneof.NPMPackBuild != nil {
 			num++
