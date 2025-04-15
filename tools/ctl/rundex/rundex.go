@@ -390,7 +390,7 @@ func (f *LocalClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run,
 	return runs, nil
 }
 
-// FetchRebuilds fetches the Rebuild objects out of firestore.
+// FetchRebuilds fetches the Rebuild objects from local paths.
 func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) ([]Rebuild, error) {
 	walkErr := make(chan error, 1)
 	all := make(chan Rebuild, 1)
