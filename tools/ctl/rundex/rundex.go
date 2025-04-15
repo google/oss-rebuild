@@ -266,6 +266,7 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 	}
 	p = p.Do(func(in Rebuild, out chan<- Rebuild) {
 		in.Message = strings.ReplaceAll(in.Message, "\n", "\\n")
+		out <- in
 	})
 	var res []Rebuild
 	if req.LatestPerPackage {
