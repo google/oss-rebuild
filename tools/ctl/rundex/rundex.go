@@ -187,10 +187,11 @@ type FetchRebuildOpts struct {
 
 // FetchRebuildRequest describes which Rebuild results you would like to fetch from firestore.
 type FetchRebuildRequest struct {
-	Bench     *benchmark.PackageSet
-	Executors []string
-	Runs      []string
-	Opts      FetchRebuildOpts
+	Bench            *benchmark.PackageSet
+	Executors        []string
+	Runs             []string
+	Opts             FetchRebuildOpts
+	LatestPerPackage bool
 }
 
 // FetchRunsOpts describes which Runs you would like to fetch from firestore.
@@ -201,7 +202,7 @@ type FetchRunsOpts struct {
 
 type Reader interface {
 	FetchRuns(context.Context, FetchRunsOpts) ([]Run, error)
-	FetchRebuilds(context.Context, *FetchRebuildRequest) (map[string]Rebuild, error)
+	FetchRebuilds(context.Context, *FetchRebuildRequest) ([]Rebuild, error)
 }
 
 type Writer interface {
@@ -229,7 +230,7 @@ func NewFirestore(ctx context.Context, project string) (*FirestoreClient, error)
 	return &FirestoreClient{Client: client}, nil
 }
 
-func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Rebuild {
+func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 	p := pipe.From(all)
 	if req.Bench != nil {
 		benchMap := make(map[string]benchmark.Package)
@@ -263,19 +264,31 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Reb
 			out <- in
 		})
 	}
-	rebuilds := make(map[string]Rebuild)
-	for r := range p.Out() {
-		if existing, seen := rebuilds[r.ID()]; seen && existing.Created.After(r.Created) {
-			continue
+	p = p.Do(func(in Rebuild, out chan<- Rebuild) {
+		in.Message = strings.ReplaceAll(in.Message, "\n", "\\n")
+	})
+	var res []Rebuild
+	if req.LatestPerPackage {
+		rebuilds := make(map[string]Rebuild)
+		for r := range p.Out() {
+			if existing, seen := rebuilds[r.ID()]; seen && existing.Created.After(r.Created) {
+				continue
+			}
+			rebuilds[r.ID()] = r
 		}
-		r.Message = strings.ReplaceAll(r.Message, "\n", "\\n")
-		rebuilds[r.ID()] = r
+		for _, r := range rebuilds {
+			res = append(res, r)
+		}
+	} else {
+		for r := range p.Out() {
+			res = append(res, r)
+		}
 	}
-	return rebuilds
+	return res
 }
 
 // FetchRebuilds fetches the Rebuild objects out of firestore.
-func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (map[string]Rebuild, error) {
+func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) ([]Rebuild, error) {
 	if len(req.Executors) != 0 && len(req.Runs) != 0 {
 		return nil, errors.New("only provide one of executors and runs")
 	}
@@ -377,7 +390,7 @@ func (f *LocalClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run,
 }
 
 // FetchRebuilds fetches the Rebuild objects out of firestore.
-func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (map[string]Rebuild, error) {
+func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) ([]Rebuild, error) {
 	walkErr := make(chan error, 1)
 	all := make(chan Rebuild, 1)
 	go func() {
@@ -455,7 +468,7 @@ type VerdictGroup struct {
 }
 
 // GroupRebuilds will create VerdictGroup objects, grouping rebuilds by Message.
-func GroupRebuilds(rebuilds map[string]Rebuild) (byCount []*VerdictGroup) {
+func GroupRebuilds(rebuilds []Rebuild) (byCount []*VerdictGroup) {
 	msgs := make(map[string]*VerdictGroup)
 	for _, r := range rebuilds {
 		if _, seen := msgs[r.Message]; !seen {

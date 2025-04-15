@@ -267,7 +267,7 @@ func main() {
 	}
 
 	// Query rebuilds
-	rebuilds := must(dex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{Runs: []string{run.ID}}))
+	rebuilds := must(dex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{Runs: []string{run.ID}, LatestPerPackage: true}))
 	c := make(chan rundex.Rebuild, 50)
 	go func() {
 		defer close(c)

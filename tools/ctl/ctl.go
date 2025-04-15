@@ -75,7 +75,7 @@ mkdir /out && cp /src/{{.OutputPath}} /out/
 `)[1:], // remove leading newline
 	))
 
-func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean bool) (*rundex.FetchRebuildRequest, error) {
+func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestPerPackage bool) (*rundex.FetchRebuildRequest, error) {
 	var runs []string
 	if run != "" {
 		runs = strings.Split(run, ",")
@@ -87,6 +87,7 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean bool) (*
 			Pattern: pattern,
 			Clean:   clean,
 		},
+		LatestPerPackage: latestPerPackage,
 	}
 	if len(req.Runs) == 0 {
 		return nil, errors.New("'run' must be supplied")
@@ -192,7 +193,7 @@ var getResults = &cobra.Command{
 	Short: "Analyze rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		req, err := buildFetchRebuildRequest(*bench, *runFlag, *prefix, *pattern, *clean)
+		req, err := buildFetchRebuildRequest(*bench, *runFlag, *prefix, *pattern, *clean, true)
 		if err != nil {
 			log.Fatal(err)
 		}
