@@ -127,6 +127,7 @@ resource "google_service_account" "gateway" {
   description = "Identity serving gateway endpoint."
 }
 resource "google_service_account" "attestation-pubsub-reader" {
+  count       = var.public ? 0 : 1
   account_id  = "attestation-pubsub-reader"
   description = "Identity for reading the attestation pubsub topic."
 }
@@ -701,9 +702,10 @@ resource "google_pubsub_topic_iam_binding" "can-publish-to-attestation-topic" {
   members = ["serviceAccount:${data.google_storage_project_service_account.attestation-pubsub-publisher.email_address}"]
 }
 resource "google_pubsub_topic_iam_binding" "readers-can-read-from-attestation-topic" {
+  count   = var.public ? 0 : 1
   topic   = google_pubsub_topic.attestation-topic.id
   role    = "roles/pubsub.subscriber"
-  members = ["serviceAccount:${google_service_account.attestation-pubsub-reader.email}"]
+  members = ["serviceAccount:${google_service_account.attestation-pubsub-reader[0].email}"]
 }
 
 ## Public resources
@@ -724,5 +726,11 @@ resource "google_storage_bucket_iam_binding" "bootstrap-bucket-is-public" {
   count   = var.public ? 1 : 0
   bucket  = google_storage_bucket.bootstrap-tools.name
   role    = "roles/storage.objectViewer"
+  members = ["allUsers"]
+}
+resource "google_pubsub_topic_iam_binding" "attestation-bucket-topic-is-public" {
+  count   = var.public ? 1 : 0
+  topic   = google_pubsub_topic.attestation-topic.id
+  role    = "roles/pubsub.subscriber"
   members = ["allUsers"]
 }
