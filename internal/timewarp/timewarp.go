@@ -168,7 +168,7 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 		// registry requests will contain this top-level field.
 		// Reference: https://github.com/npm/registry/blob/master/docs/REGISTRY-API.md
 		// TODO: Find a better (path-based?) heuristic for identifying package API.
-		if obj["time"] != nil {
+		if obj["_id"] != nil {
 			if err := timeWarpNPMPackageRequest(obj, *t); err != nil {
 				return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 			}
