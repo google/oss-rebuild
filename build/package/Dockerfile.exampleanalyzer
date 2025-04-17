@@ -1,0 +1,13 @@
+FROM golang:1.23-alpine as binary
+ARG DEBUG=false
+ARG BUILD_REPO
+ARG BUILD_VERSION
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build \
+    -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w') -X main.BuildRepo=${BUILD_REPO} -X main.BuildVersion=${BUILD_VERSION}" \
+    -gcflags="-l=4" \
+    ./analyzer/example/analyzer
+FROM alpine
+COPY --from=binary /src/analyzer /
+ENTRYPOINT ["/analyzer"]
