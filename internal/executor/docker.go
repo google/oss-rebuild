@@ -60,15 +60,13 @@ func (d *DockerExecutor) Setup(ctx context.Context, projectFs billy.Filesystem, 
 }
 
 func (d *DockerExecutor) Run(ctx context.Context, dockerfile []byte, pkgName, version string) error {
-	// Write Dockerfile
-	dockerfilePath := filepath.Join(d.root, "Dockerfile")
-	if err := os.WriteFile(dockerfilePath, dockerfile, 0644); err != nil {
-		return fmt.Errorf("failed to write Dockerfile: %v", err)
-	}
-
 	// Build Docker image
-	imageTag := fmt.Sprintf("%s-%s:%s", pkgName, version, "build")
-	buildCmd := exec.CommandContext(ctx, "docker", "buildx", "build", "--no-cache", "-f", dockerfilePath, "-t", imageTag, d.root)
+	imageID := fmt.Sprintf("%s-%s:%s", pkgName, version, "build")
+	buildCmd := exec.CommandContext(ctx, "docker", "buildx", "build", "--no-cache", "-f", "-", "-t", imageID, d.root)
+	buildCmd.Stdin = io.NopCloser(bytes.NewReader(dockerfile))
+	if buildCmd.Stdin == nil {
+		return fmt.Errorf("failed to create stdin for docker build")
+	}
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
 	if err := buildCmd.Run(); err != nil {
@@ -76,7 +74,7 @@ func (d *DockerExecutor) Run(ctx context.Context, dockerfile []byte, pkgName, ve
 	}
 
 	// Run Docker container
-	runCmd := exec.CommandContext(ctx, "docker", "run", "--rm", "-v", fmt.Sprintf("%s:/out", filepath.Join(d.root, "out")), imageTag)
+	runCmd := exec.CommandContext(ctx, "docker", "run", "--rm", "-v", fmt.Sprintf("%s:/out", filepath.Join(d.root, "out")), imageID)
 	runCmd.Stdout = os.Stdout
 	runCmd.Stderr = os.Stderr
 	if err := runCmd.Run(); err != nil {
