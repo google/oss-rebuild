@@ -133,9 +133,9 @@ var tui = &cobra.Command{
 			log.Fatal(errors.New("TUI should either be local (--benchmark-dir) or remote (--project, --debug-storage)"))
 		}
 		tctx := cmd.Context()
-		var fireClient rundex.Reader
+		var dex rundex.Reader
 		if *benchmarkDir != "" {
-			fireClient = rundex.NewLocalClient(localfiles.Rundex())
+			dex = rundex.NewLocalClient(localfiles.Rundex())
 			tctx = context.WithValue(tctx, rebuild.DebugStoreID, "file://"+localfiles.AssetsPath())
 		} else {
 			if *debugStorage != "" {
@@ -153,7 +153,7 @@ var tui = &cobra.Command{
 			}
 			// TODO: Support filtering in the UI on TUI.
 			var err error
-			fireClient, err = rundex.NewFirestore(tctx, *project)
+			dex, err = rundex.NewFirestore(tctx, *project)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -179,7 +179,7 @@ var tui = &cobra.Command{
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
 		}
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
-		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir, buildDefs, butler)
+		tapp := ide.NewTuiApp(tctx, dex, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir, buildDefs, butler)
 		if err := tapp.Run(); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
