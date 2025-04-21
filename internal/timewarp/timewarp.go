@@ -116,9 +116,6 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 		// Let our HTTP client set the encoding to use (by default, gzip) and
 		// transparently decode it in the response.
 		nr.Header.Del("Accept-Encoding")
-		// While we could persist connections with the upstream registries, it's
-		// easier for us to remove that possibility to limit complexity.
-		nr.Header.Set("Connection", "close")
 		// The application/vnd.npm.install-v1 content type indicates that this must
 		// be an NPM install request. However for NPM API requests, this install-v1
 		// data format does not contain the requisite fields to filter by time. For
