@@ -142,6 +142,22 @@ var toolkit = []*flow.Tool{
 			Needs: []string{},
 		}},
 	},
+	{
+		Name: "npm/install",
+		Steps: []flow.Step{
+			{
+				Uses: "npm/npx",
+				With: map[string]string{
+					"command": `
+						{{- if ne .With.registryTime ""}}npm_config_registry={{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}} {{end -}}
+						npm install --force`,
+					"npmVersion": "{{.With.npmVersion}}",
+					"dir":        "{{.Location.Dir}}",
+					"locator":    "{{.With.locator}}",
+				},
+			},
+		},
+	},
 
 	// Composite tools for common dependency setups
 	{
@@ -154,14 +170,11 @@ var toolkit = []*flow.Tool{
 				},
 			},
 			{
-				Uses: "npm/npx",
+				Uses: "npm/install",
 				With: map[string]string{
-					"command": `
-						{{- if ne .With.registryTime ""}}npm_config_registry={{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}} {{end -}}
-						npm install --force`,
-					"npmVersion": "{{.With.npmVersion}}",
-					"dir":        "{{.Location.Dir}}",
-					"locator":    "/usr/local/bin/",
+					"npmVersion":   "{{.With.npmVersion}}",
+					"registryTime": "{{.With.registryTime}}",
+					"locator":      "/usr/local/bin/",
 				},
 			},
 		},
