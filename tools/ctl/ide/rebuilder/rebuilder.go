@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package ide
+package rebuilder
 
 import (
 	"bufio"
@@ -70,7 +70,7 @@ func (in *Instance) Run(ctx context.Context) {
 	in.state = starting
 	ctx, in.cancel = context.WithCancel(ctx)
 	// Make the rebuilder write out to the log widget with a [rebuilder] prefix.
-	rblog := log.New(log.Default().Writer(), logPrefix("rebuilder"), 0)
+	rblog := log.New(log.Default().Writer(), fmt.Sprintf("[%-9s]", "rebuilder"), 0)
 	go func() {
 		in.state = building
 		err := container.Build(ctx, "rebuilder")
