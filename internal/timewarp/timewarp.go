@@ -18,6 +18,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -103,6 +104,20 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return herror{err, http.StatusBadRequest}
 	}
+	// Determine whether to reroute the request based on the path structure.
+	{
+		parts := strings.Split(strings.Trim(path.Clean(r.URL.Path), "/"), "/")
+		switch {
+		// Reference: https://github.com/npm/registry/blob/master/docs/REGISTRY-API.md
+		case platform == "npm" && len(parts) == 1 && parts[0] != "": // /{pkg}
+		case platform == "npm" && len(parts) == 2 && strings.HasPrefix(parts[0], "@"): // /@{org}/{pkg}
+		// Reference: https://warehouse.pypa.io/api-reference/json.html
+		case platform == "pypi" && len(parts) == 3 && parts[0] == "pypi" && parts[2] == "json": // /pypi/{pkg}/json
+		default:
+			http.Redirect(rw, r, r.URL.String(), http.StatusFound)
+			return nil
+		}
+	}
 	// Create a new request based on the provided method, path, and body but
 	// directed at the upstream registry.
 	nr, _ := http.NewRequest(r.Method, r.URL.String(), r.Body)
@@ -158,25 +173,14 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 	if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
 		return herror{errors.Wrap(err, "parsing response"), http.StatusBadGateway}
 	}
-	if platform == "npm" {
-		// NOTE: This is a rough heuristic for NPM package requests since no other
-		// registry requests will contain this top-level field.
-		// Reference: https://github.com/npm/registry/blob/master/docs/REGISTRY-API.md
-		// TODO: Find a better (path-based?) heuristic for identifying package API.
-		if obj["_id"] != nil {
-			if err := timeWarpNPMPackageRequest(obj, *t); err != nil {
-				return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
-			}
+	// NOTE: Only apply warping if the JSON looks like a non-error response.
+	if platform == "npm" && obj["_id"] != nil {
+		if err := timeWarpNPMPackageRequest(obj, *t); err != nil {
+			return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 		}
-	} else if platform == "pypi" {
-		// NOTE: This is a rough heuristic for PyPI project requests since no other
-		// requests will contain this top-level field.
-		// Reference: https://warehouse.pypa.io/api-reference/json.html
-		// TODO: Find a better (path-based?) heuristic for identifying project API.
-		if obj["releases"] != nil {
-			if err := timeWarpPyPIProjectRequest(h.Client, obj, *t); err != nil {
-				return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
-			}
+	} else if platform == "pypi" && obj["releases"] != nil {
+		if err := timeWarpPyPIProjectRequest(h.Client, obj, *t); err != nil {
+			return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 		}
 	}
 	if err := json.NewEncoder(rw).Encode(obj); err != nil {
