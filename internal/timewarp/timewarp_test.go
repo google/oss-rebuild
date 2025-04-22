@@ -38,6 +38,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 								"Content-Type": []string{"application/json"},
 							},
 							Body: io.NopCloser(bytes.NewBufferString(`{
+								"_id": "some-package",
 								"time": {
 									"created": "2021-01-01T00:00:00Z",
 									"modified": "2023-01-01T00:00:00Z",
@@ -68,6 +69,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 					"Content-Type": []string{"application/json"},
 				},
 				Body: io.NopCloser(bytes.NewBufferString(`{
+					"_id": "some-package",
 					"time": {
 						"created": "2021-01-01T00:00:00Z",
 						"modified": "2021-06-01T00:00:00Z",
@@ -85,6 +87,40 @@ func TestHandler_ServeHTTP(t *testing.T) {
 					"dist-tags": {
 						"latest": "1.0.0"
 					}
+				}`)),
+			},
+		},
+		{
+			name:      "npm search request - skipped time warp",
+			url:       "http://localhost:8081/-/v1/search?text=some-package",
+			basicAuth: "npm:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://registry.npmjs.org/-/v1/search?text=some-package",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header: http.Header{
+								"Content-Type": []string{"application/json"},
+							},
+							Body: io.NopCloser(bytes.NewBufferString(`{
+								"time": "2022-06-01T00:00:00Z",
+								"objects": []
+							}`)),
+						},
+					},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`{
+					"time": "2022-06-01T00:00:00Z",
+					"objects": []
 				}`)),
 			},
 		},
