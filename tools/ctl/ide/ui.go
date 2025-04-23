@@ -340,12 +340,12 @@ func (e *explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 		children := node.GetChildren()
 		if len(children) == 0 {
 			node.AddChild(makeCommandNode("run local", func() {
-				go e.rb.RunLocal(e.ctx, example, RunLocalOpts{})
+				go e.doRun(example)
 			}))
 			node.AddChild(makeCommandNode("restart && run local", func() {
 				go func() {
 					e.rb.Restart(e.ctx)
-					e.rb.RunLocal(e.ctx, example, RunLocalOpts{})
+					e.doRun(example)
 				}()
 			}))
 			node.AddChild(makeCommandNode("edit and run local", func() {
@@ -700,6 +700,34 @@ func (t *TuiApp) runBenchmark(bench string) {
 		})
 	}
 	log.Printf("Finished benchmark %s with %d successes.", bench, successes)
+}
+
+func (e *explorer) doRun(example rundex.Rebuild) {
+	var finished bool
+	results := tview.NewTextView()
+	results.SetBackgroundColor(defaultModalBackground).SetBorder(true)
+	results.SetText("Executing, please wait...").SetTitle("Run Local Results").SetBackgroundColor(tcell.ColorDarkCyan)
+	showModal(e.app, e.container, results, modalOpts{Margin: 10})
+	smkResp, err := e.rb.RunLocal(e.ctx, example, RunLocalOpts{})
+	if err != nil {
+		log.Println(errors.Wrap(err, "failed to run local rebuild"))
+		return
+	}
+	if smkResp == nil || len(smkResp.Verdicts) < 1 {
+		log.Printf("No verdict returned: %v\n", *smkResp)
+		return
+	}
+	verdictYaml, err := yaml.Marshal(smkResp.Verdicts[0])
+	if err != nil {
+		log.Println(errors.Wrap(err, "failed to marshal smkResp"))
+		return
+	}
+	e.app.QueueUpdateDraw(func() {
+		if finished {
+			return
+		}
+		results.SetText(string(verdictYaml))
+	})
 }
 
 func (t *TuiApp) selectBenchmark() {

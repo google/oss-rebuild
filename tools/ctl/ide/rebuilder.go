@@ -201,11 +201,11 @@ type RunLocalOpts struct {
 }
 
 // RunLocal runs the rebuilder for the given example.
-func (rb *Rebuilder) RunLocal(ctx context.Context, r rundex.Rebuild, opts RunLocalOpts) {
+func (rb *Rebuilder) RunLocal(ctx context.Context, r rundex.Rebuild, opts RunLocalOpts) (*schema.SmoketestResponse, error) {
 	inst, err := rb.runningInstance(ctx)
 	if err != nil {
 		log.Println(errors.Wrap(err, "getting running instance"))
-		return
+		return nil, err
 	}
 	u := inst.URL.JoinPath("smoketest")
 	log.Println("Requesting a smoketest from: " + u.String())
@@ -220,13 +220,14 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r rundex.Rebuild, opts RunLoc
 	})
 	if err != nil {
 		log.Println(err.Error())
-		return
+		return nil, err
 	}
 	msg := "FAILED"
 	if len(resp.Verdicts) == 1 && resp.Verdicts[0].Message == "" {
 		msg = "SUCCESS"
 	}
 	log.Printf("Smoketest %s:\n%v", msg, resp)
+	return resp, nil
 }
 
 // RunBench executes the benchmark against the local rebuilder.
