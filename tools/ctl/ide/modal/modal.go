@@ -28,6 +28,7 @@ func center(p tview.Primitive, vertMargin, horizMargin int) tview.Primitive {
 
 type InputCaptureable interface {
 	tview.Primitive
+	GetInputCapture() func(event *tcell.EventKey) *tcell.EventKey
 	SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey) *tview.Box
 }
 
@@ -42,9 +43,13 @@ func Show(app *tview.Application, container *tview.Pages, contents InputCapturea
 	exitFunc = func() {
 		container.RemovePage(pageName)
 	}
+	oldCapture := contents.GetInputCapture()
 	contents.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyESC {
+			contents.SetInputCapture(oldCapture)
 			exitFunc()
+			// Returning nil prevents further primatives from receiving this event.
+			return nil
 		}
 		return event
 	})

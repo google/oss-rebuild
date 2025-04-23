@@ -62,7 +62,7 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 		t = &TuiApp{
 			ctx:      ctx,
 			app:      app,
-			explorer: explorer.NewExplorer(ctx, app, dex, rundexOpts, rb, buildDefs, butler),
+			explorer: explorer.NewExplorer(ctx, app, dex, rundexOpts, rb, buildDefs, butler, benches),
 			// When the widgets are updated, we should refresh the application.
 			statusBox: tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
 			logs:      logs,
@@ -118,7 +118,13 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 			Name: "benchmark",
 			Rune: 'b',
 			Func: func() {
-				t.selectBenchmark()
+				if b, err := t.promptForBenchmark(); err != nil {
+					t.modalText(err.Error())
+				} else {
+					go func() {
+						t.explorer.RunBenchmark(<-b)
+					}()
+				}
 			},
 		},
 	}
@@ -194,29 +200,26 @@ func (t *TuiApp) modalText(content string) {
 	modal.Text(t.app, t.root, content)
 }
 
-func (t *TuiApp) selectBenchmark() {
-	if t.benches == nil {
-		t.modalText("No benchmarks provided.")
-		return
-	}
+func (t *TuiApp) promptForBenchmark() (<-chan string, error) {
 	all, err := t.benches.List()
 	if err != nil {
-		t.modalText(errors.Wrap(err, "listing benchmarks").Error())
-		return
+		return nil, errors.Wrap(err, "listing benchmarks")
 	}
 	options := tview.NewList()
 	options.SetBackgroundColor(defaultBackground).SetBorder(true).SetTitle("Select a benchmark to execute.")
 	// exitFunc will be populated once the modal has been created.
 	var exitFunc func()
+	selected := make(chan string, 1)
 	for _, path := range all {
 		options.AddItem(path, "", 0, func() {
-			go t.explorer.RunBenchmark(path)
 			if exitFunc != nil {
 				exitFunc()
 			}
+			selected <- path
 		})
 	}
 	exitFunc = modal.Show(t.app, t.root, options, modal.ModalOpts{Height: (options.GetItemCount() * 2) + 2, Margin: 10})
+	return selected, nil
 }
 
 // Run runs the underlying tview app.

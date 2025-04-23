@@ -12,9 +12,11 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -30,6 +32,20 @@ import (
 	"github.com/rivo/tview"
 	"gopkg.in/yaml.v3"
 )
+
+const (
+	defaultBackground = tcell.ColorGray
+	TreePageName      = "treeView"
+	TablePageName     = "tableView"
+)
+
+func verdictAsEmoji(r rundex.Rebuild) string {
+	if r.Success || r.Message == "" {
+		return "✅"
+	} else {
+		return "❌"
+	}
+}
 
 func tmuxWait(cmd string) error {
 	// Send a "tmux wait -S" signal once the cmd is complete.
@@ -51,6 +67,7 @@ type Explorer struct {
 	ctx        context.Context
 	app        *tview.Application
 	container  *tview.Pages
+	table      *tview.Table
 	tree       *tview.TreeView
 	root       *tview.TreeNode
 	rb         *rebuilder.Rebuilder
@@ -59,13 +76,15 @@ type Explorer struct {
 	runs       map[string]rundex.Run
 	buildDefs  rebuild.LocatableAssetStore
 	butler     localfiles.Butler
+	benches    benchmark.Repository
 }
 
-func NewExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *rebuilder.Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *Explorer {
+func NewExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *rebuilder.Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, benches benchmark.Repository) *Explorer {
 	e := Explorer{
 		ctx:        ctx,
 		app:        app,
 		container:  tview.NewPages(),
+		table:      tview.NewTable().SetBorders(true),
 		tree:       tview.NewTreeView(),
 		root:       tview.NewTreeNode("root").SetColor(tcell.ColorRed),
 		rb:         rb,
@@ -73,14 +92,30 @@ func NewExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader,
 		rundexOpts: rundexOpts,
 		buildDefs:  buildDefs,
 		butler:     butler,
+		benches:    benches,
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
-	e.container.AddPage("explorer", e.tree, true, true)
+	e.table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyESC {
+			e.SelectTree()
+			// Return nil to stop further primatives from receiving the event.
+			return nil
+		}
+		return event
+	})
+	resize, show := true, true
+	e.container.AddPage(TablePageName, e.table, resize, !show)
+	e.container.AddPage(TreePageName, e.tree, resize, show)
+	e.SelectTree()
 	return &e
 }
 
 func (e *Explorer) Container() tview.Primitive {
 	return e.container
+}
+
+func (e *Explorer) modalText(content string) {
+	modal.Text(e.app, e.container, content)
 }
 
 func makeCommandNode(name string, handler func()) *tview.TreeNode {
@@ -177,9 +212,8 @@ func diffArtifacts(ctx context.Context, butler localfiles.Butler, example rundex
 	return nil
 }
 
-func (e *Explorer) showDetails(example rundex.Rebuild) {
-	details := tview.NewTextView()
-	type detailsStruct struct {
+func makeDetailsString(example rundex.Rebuild) (string, error) {
+	type deets struct {
 		Success  bool
 		Message  string
 		Timings  rebuild.Timings
@@ -188,18 +222,26 @@ func (e *Explorer) showDetails(example rundex.Rebuild) {
 	detailsYaml := new(bytes.Buffer)
 	enc := yaml.NewEncoder(detailsYaml)
 	enc.SetIndent(2)
-	err := enc.Encode(detailsStruct{
+	err := enc.Encode(deets{
 		Success:  example.Success,
 		Message:  example.Message,
 		Timings:  example.Timings,
 		Strategy: example.Strategy,
 	})
 	if err != nil {
-		log.Println(errors.Wrap(err, "failed to marshal details"))
-		return
+		return "", errors.Wrap(err, "marshalling details")
 	}
-	details.SetText(detailsYaml.String()).SetBackgroundColor(tcell.ColorDarkCyan).SetTitle("Execution details")
-	modal.Show(e.app, e.container, details, modal.ModalOpts{Margin: 10})
+	return detailsYaml.String(), nil
+}
+
+func makeDetails(example rundex.Rebuild) (modal.InputCaptureable, error) {
+	details := tview.NewTextView()
+	text, err := makeDetailsString(example)
+	if err != nil {
+		return nil, err
+	}
+	details.SetText(text).SetBackgroundColor(defaultBackground).SetTitle("Execution details")
+	return details, nil
 }
 
 func (e *Explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
@@ -355,7 +397,14 @@ func (e *Explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 				}()
 			}))
 			node.AddChild(makeCommandNode("details", func() {
-				go e.showDetails(example)
+				go func() {
+					if details, err := makeDetails(example); err != nil {
+						log.Println(err.Error())
+						return
+					} else {
+						modal.Show(e.app, e.container, details, modal.ModalOpts{Margin: 10})
+					}
+				}()
 			}))
 			node.AddChild(makeCommandNode("logs", func() {
 				go e.showLogs(e.ctx, example)
@@ -433,11 +482,87 @@ func (e *Explorer) makeRunNode(runid string) *tview.TreeNode {
 	return node
 }
 
+func (e *Explorer) benchHistory(benchPath string) ([]rundex.Rebuild, error) {
+	tracked := make(map[string]bool)
+	{
+		set, err := e.benches.Load(benchPath)
+		if err != nil {
+			return nil, errors.Wrap(err, "reading benchmark")
+		}
+		for _, p := range set.Packages {
+			for i, v := range p.Versions {
+				var a string
+				if i < len(p.Artifacts) {
+					a = p.Artifacts[i]
+				}
+				tracked[(&rundex.Rebuild{
+					RebuildAttempt: schema.RebuildAttempt{
+						Ecosystem: string(p.Ecosystem),
+						Package:   p.Name,
+						Version:   v,
+						Artifact:  a,
+					},
+				}).ID()] = true
+			}
+		}
+	}
+	var rebuilds []rundex.Rebuild
+	{
+		log.Printf("Fetching rebuilds...")
+		start := time.Now()
+		var err error
+		// TODO: Filter by runs that matched the benchmark instead.
+		rebuilds, err = e.dex.FetchRebuilds(e.ctx, &rundex.FetchRebuildRequest{Opts: e.rundexOpts, LatestPerPackage: true})
+		if err != nil {
+			return nil, errors.Wrapf(err, "loading rebuilds")
+		}
+		log.Printf("Fetched %d rebuilds in %v", len(rebuilds), time.Since(start))
+		slices.SortFunc(rebuilds, func(a, b rundex.Rebuild) int {
+			return strings.Compare(a.ID(), b.ID())
+		})
+		rebuilds = slices.DeleteFunc(rebuilds, func(r rundex.Rebuild) bool {
+			return !tracked[r.ID()]
+		})
+	}
+	return rebuilds, nil
+}
+
 func (e *Explorer) makeRunGroupNode(benchName string, runs []string) *tview.TreeNode {
 	node := tview.NewTreeNode(fmt.Sprintf("%3d %s", len(runs), benchName)).SetColor(tcell.ColorGreen).SetSelectable(true)
 	node.SetSelectedFunc(func() {
 		children := node.GetChildren()
 		if len(children) == 0 {
+			node.AddChild(makeCommandNode("View by target", func() {
+				go func() {
+					all, err := e.benches.List()
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					var benchPath string
+					for _, p := range all {
+						if path.Base(p) == benchName {
+							benchPath = p
+							break
+						}
+					}
+					if benchPath == "" {
+						log.Printf("Benchmark %s not found", benchName)
+						return
+					}
+					rebuilds, err := e.benchHistory(benchPath)
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					e.app.QueueUpdateDraw(func() {
+						if err := e.populateTable(rebuilds); err != nil {
+							e.modalText(err.Error())
+						}
+						e.SelectTable()
+					})
+				}()
+			}))
 			for _, run := range runs {
 				node.AddChild(e.makeRunNode(run))
 			}
@@ -456,6 +581,7 @@ func (e *Explorer) LoadTree() error {
 	if err != nil {
 		return err
 	}
+	log.Printf("Found %d runs", len(runs))
 	byBench := make(map[string][]string)
 	e.runs = make(map[string]rundex.Run)
 	for _, run := range runs {
@@ -475,4 +601,153 @@ func (e *Explorer) LoadTree() error {
 		e.root.AddChild(e.makeRunGroupNode(benchName, byBench[benchName]))
 	}
 	return nil
+}
+
+func (e *Explorer) SelectTree() {
+	e.container.SwitchToPage(TreePageName)
+}
+
+func (e *Explorer) rebuildHistory(r rundex.Rebuild) (modal.InputCaptureable, error) {
+	log.Println("Loading history for", r.ID())
+	t := r.Target()
+	rebuilds, err := e.dex.FetchRebuilds(e.ctx, &rundex.FetchRebuildRequest{
+		Target: &t,
+		Opts:   e.rundexOpts,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching rebuilds for target")
+	}
+	slices.SortFunc(rebuilds, func(a, b rundex.Rebuild) int {
+		return -strings.Compare(a.RunID, b.RunID)
+	})
+	details := tview.NewTextView()
+	runs := tview.NewTreeView()
+	{
+		root := tview.NewTreeNode("runs").SetColor(tcell.ColorRed)
+		runs.SetRoot(root)
+		for _, r := range rebuilds {
+			node := tview.NewTreeNode(r.RunID + verdictAsEmoji(r)).SetReference(r)
+			node.SetSelectedFunc(func() {
+				children := node.GetChildren()
+				if len(children) == 0 {
+					node.SetExpanded(true)
+					// TODO: Share this set of commands with the treeview.
+					// This is functionality we probably want to expose to an AI agent as well.
+					node.AddChild(makeCommandNode("run", func() {
+						go e.rb.RunLocal(e.ctx, r, rebuilder.RunLocalOpts{})
+					}))
+					node.AddChild(makeCommandNode("restart-run", func() {
+						go func() {
+							e.rb.Restart(e.ctx)
+							e.rb.RunLocal(e.ctx, r, rebuilder.RunLocalOpts{})
+						}()
+					}))
+					node.AddChild(makeCommandNode("edit-run", func() {
+						go func() {
+							if err := e.editAndRun(e.ctx, r); err != nil {
+								log.Println(err.Error())
+							}
+						}()
+					}))
+					node.AddChild(makeCommandNode("logs", func() {
+						go e.showLogs(e.ctx, r)
+					}))
+					node.AddChild(makeCommandNode("diff", func() {
+						go func() {
+							if err := diffArtifacts(e.ctx, e.butler, r); err != nil {
+								log.Println(err.Error())
+							}
+						}()
+					}))
+				} else {
+					node.SetExpanded(!node.IsExpanded())
+				}
+				// If we expanded this node, collapse the others.
+				if node.IsExpanded() {
+					for _, c := range root.GetChildren() {
+						if c == node {
+							continue
+						}
+						if c.IsExpanded() {
+							c.SetExpanded(false)
+						}
+					}
+				}
+			})
+			root.AddChild(node)
+		}
+		runs.SetBackgroundColor(defaultBackground)
+		populateDetails := func(node *tview.TreeNode) {
+			if node == root {
+				details.SetText("")
+				return
+			}
+			r, ok := node.GetReference().(rundex.Rebuild)
+			if !ok {
+				log.Println("Node missing rebuild reference")
+				return
+			}
+			text, err := makeDetailsString(r)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			details.SetText(text)
+		}
+		runs.SetChangedFunc(populateDetails)
+		if len(rebuilds) > 0 {
+			first := root.GetChildren()[0]
+			if first != nil {
+				runs.SetCurrentNode(first)
+				populateDetails(first)
+			}
+		}
+	}
+	history := tview.NewFlex().SetDirection(tview.FlexColumn).AddItem(runs, 25, 0, true).AddItem(details, 0, 1, false)
+	return history, nil
+}
+
+func addHeader(table *tview.Table, headers []string) {
+	for i, h := range headers {
+		table.SetCell(0, i, tview.NewTableCell(h).SetTextColor(tcell.ColorYellow).SetSelectable(false))
+	}
+	table.SetFixed(1, 0)
+}
+
+func addRow(table *tview.Table, row int, elems []string) {
+	for i, e := range elems {
+		table.SetCellSimple(row, i, e)
+	}
+}
+
+func (e *Explorer) populateTable(rebuilds []rundex.Rebuild) error {
+	e.table.Clear()
+	addHeader(e.table, []string{"ID", "Success", "Run"})
+	for i, r := range rebuilds {
+		addRow(e.table, i+1, []string{r.ID(), verdictAsEmoji(r), r.RunID})
+	}
+	// Configure selection behavior
+	if len(rebuilds) > 0 {
+		e.table.Select(1, 0)
+	}
+	e.table.ScrollToBeginning()
+	e.table.SetSelectable(true, false)
+	e.table.SetSelectedFunc(func(row int, column int) {
+		r := rebuilds[row-1]
+		hist, err := e.rebuildHistory(r)
+		if err != nil {
+			log.Println(errors.Wrap(err, "browsing target's history"))
+			return
+		}
+		if hist == nil {
+			log.Println(errors.Wrap(err, "nil history"))
+			return
+		}
+		go modal.Show(e.app, e.container, hist, modal.ModalOpts{Margin: 10})
+	})
+	return nil
+}
+
+func (e *Explorer) SelectTable() {
+	e.container.SwitchToPage(TablePageName)
 }

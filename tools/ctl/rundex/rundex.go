@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -40,7 +41,11 @@ func NewRebuildFromFirestore(doc *firestore.DocumentSnapshot) Rebuild {
 	}
 	var rb Rebuild
 	rb.RebuildAttempt = sa
-	rb.Created = time.UnixMilli(sa.Created)
+	rb.Created = time.Unix(sa.Created, 0)
+	if rb.Created.After(time.Date(3000, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		rb.Created = time.UnixMilli(sa.Created)
+	}
+
 	return rb
 }
 
@@ -187,6 +192,7 @@ type FetchRebuildOpts struct {
 
 // FetchRebuildRequest describes which Rebuild results you would like to fetch from firestore.
 type FetchRebuildRequest struct {
+	Target           *rebuild.Target
 	Bench            *benchmark.PackageSet
 	Executors        []string
 	Runs             []string
@@ -287,6 +293,9 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 	}
 	return res
 }
+func sanitize(key string) string {
+	return strings.ReplaceAll(key, "/", "!")
+}
 
 // FetchRebuilds fetches the Rebuild objects out of firestore.
 func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) ([]Rebuild, error) {
@@ -297,6 +306,13 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 		return nil, errors.New("empty bench provided")
 	}
 	q := f.Client.CollectionGroup("attempts").Query
+	if req.Target != nil {
+		if req.Target.Artifact == "" {
+			return nil, errors.New("target missing artifact name")
+		}
+		t := req.Target
+		q = f.Client.Collection(path.Join("ecosystem", string(t.Ecosystem), "packages", sanitize(t.Package), "versions", t.Version, "artifacts", t.Artifact, "attempts")).Query
+	}
 	if len(req.Executors) != 0 {
 		q = q.Where("executor_version", "in", req.Executors)
 	}
