@@ -24,6 +24,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
@@ -32,7 +33,7 @@ import (
 )
 
 const (
-	defaultModalBackground = tcell.ColorDarkCyan
+	defaultBackground = tcell.ColorDarkCyan
 )
 
 func tmuxWait(cmd string) error {
@@ -48,57 +49,6 @@ func tmuxWait(cmd string) error {
 		return errors.Wrap(err, "failed to wait for tmux signal")
 	}
 	return nil
-}
-
-// Returns a new primitive which puts the provided primitive in the center and
-// adds vertical and horizontal margin.
-func modal(p tview.Primitive, vertMargin, horizMargin int) tview.Primitive {
-	return tview.NewFlex().
-		AddItem(nil, horizMargin, 0, false).
-		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(nil, vertMargin, 0, false).
-			AddItem(p, 0, 1, true).
-			AddItem(nil, vertMargin, 0, false), 0, 1, true).
-		AddItem(nil, horizMargin, 0, false)
-}
-
-type inputCaptureable interface {
-	tview.Primitive
-	SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey) *tview.Box
-}
-
-type modalOpts struct {
-	Height int
-	Width  int
-	Margin int
-}
-
-func showModal(app *tview.Application, container *tview.Pages, contents inputCaptureable, opts modalOpts) (exitFunc func()) {
-	pageName := fmt.Sprintf("modal%d", container.GetPageCount()+1)
-	exitFunc = func() {
-		container.RemovePage(pageName)
-	}
-	contents.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyESC {
-			exitFunc()
-		}
-		return event
-	})
-	_, _, containerWidth, containerHeight := container.GetInnerRect()
-	// If opts.Width or opts.Height is zero, assume the full container size.
-	if opts.Width == 0 {
-		opts.Width = containerWidth
-	}
-	if opts.Height == 0 {
-		opts.Height = containerHeight
-	}
-	// Always apply the margin (default is zero).
-	opts.Height = min(opts.Height, containerHeight-(2*opts.Margin))
-	opts.Width = min(opts.Width, containerWidth-(2*opts.Margin))
-	app.QueueUpdateDraw(func() {
-		container.AddPage(pageName, modal(contents, (containerHeight-opts.Height)/2, (containerWidth-opts.Width)/2), true, true)
-	})
-	return exitFunc
 }
 
 // The explorer is the Tree structure on the left side of the TUI
@@ -249,8 +199,8 @@ func (e *explorer) showDetails(example rundex.Rebuild) {
 		log.Println(errors.Wrap(err, "failed to marshal details"))
 		return
 	}
-	details.SetText(detailsYaml.String()).SetBackgroundColor(defaultModalBackground).SetTitle("Execution details")
-	showModal(e.app, e.container, details, modalOpts{Margin: 10})
+	details.SetText(detailsYaml.String()).SetBackgroundColor(defaultBackground).SetTitle("Execution details")
+	modal.Show(e.app, e.container, details, modal.ModalOpts{Margin: 10})
 }
 
 func (e *explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
@@ -643,12 +593,7 @@ func (t *TuiApp) updateStatus() {
 }
 
 func (t *TuiApp) modalText(content string) {
-	tv := tview.NewTextView()
-	tv.SetText("\n" + content + "\n").
-		SetTextAlign(tview.AlignCenter).
-		SetTextColor(tcell.ColorWhite).
-		SetBackgroundColor(defaultModalBackground)
-	showModal(t.app, t.root, tv, modalOpts{Height: 3, Margin: 10})
+	modal.Text(t.app, t.root, content)
 }
 
 func (t *TuiApp) runBenchmark(bench string) {
@@ -708,7 +653,7 @@ func (t *TuiApp) selectBenchmark() {
 		return
 	}
 	options := tview.NewList()
-	options.SetBackgroundColor(defaultModalBackground).SetBorder(true).SetTitle("Select a benchmark to execute.")
+	options.SetBackgroundColor(defaultBackground).SetBorder(true).SetTitle("Select a benchmark to execute.")
 	// exitFunc will be populated once the modal has been created.
 	var exitFunc func()
 	err := filepath.Walk(t.benchmarkDir, func(path string, info os.FileInfo, err error) error {
@@ -732,7 +677,7 @@ func (t *TuiApp) selectBenchmark() {
 		t.modalText(errors.Wrap(err, "walking benchmark dir").Error())
 		return
 	}
-	exitFunc = showModal(t.app, t.root, options, modalOpts{Height: (options.GetItemCount() * 2) + 2, Margin: 10})
+	exitFunc = modal.Show(t.app, t.root, options, modal.ModalOpts{Height: (options.GetItemCount() * 2) + 2, Margin: 10})
 }
 
 // Run runs the underlying tview app.
