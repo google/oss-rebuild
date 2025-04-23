@@ -18,7 +18,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"path"
 	"slices"
 	"strings"
 	"time"
@@ -91,7 +90,6 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 	case "pypi":
 		r.URL.Host = pypiRegistry.Host
 		r.URL.Scheme = pypiRegistry.Scheme
-		r.URL.Path = path.Join(pypiRegistry.Path, r.URL.Path)
 	default:
 		return herror{errors.New("unsupported platform"), http.StatusBadRequest}
 	}
