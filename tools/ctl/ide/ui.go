@@ -437,7 +437,7 @@ type tuiAppCmd struct {
 
 // TuiApp represents the entire IDE, containing UI widgets and worker processes.
 type TuiApp struct {
-	Ctx          context.Context
+	ctx          context.Context
 	app          *tview.Application
 	root         *tview.Pages
 	explorer     *explorer
@@ -463,7 +463,7 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 		logs.ScrollToEnd()
 		rb := &rebuilder.Rebuilder{}
 		t = &TuiApp{
-			Ctx:      ctx,
+			ctx:      ctx,
 			app:      app,
 			explorer: newExplorer(ctx, app, dex, rundexOpts, rb, buildDefs, butler),
 			// When the widgets are updated, we should refresh the application.
@@ -477,7 +477,7 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 		{
 			Name: "restart rebuilder",
 			Rune: 'r',
-			Func: func() { t.rb.Restart(t.Ctx) },
+			Func: func() { t.rb.Restart(t.ctx) },
 		},
 		{
 			Name: "kill rebuilder",
@@ -490,7 +490,7 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 			Name: "attach",
 			Rune: 'a',
 			Func: func() {
-				if err := t.rb.Attach(t.Ctx); err != nil {
+				if err := t.rb.Attach(t.ctx); err != nil {
 					log.Println(err)
 				}
 				t.updateStatus()
@@ -610,14 +610,14 @@ func (t *TuiApp) runBenchmark(bench string) {
 	}
 	ts := time.Now().UTC()
 	runID := ts.Format(time.RFC3339)
-	wdex.WriteRun(t.Ctx, rundex.FromRun(schema.Run{
+	wdex.WriteRun(t.ctx, rundex.FromRun(schema.Run{
 		ID:            runID,
 		BenchmarkName: filepath.Base(bench),
 		BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
 		Type:          string(schema.SmoketestMode),
 		Created:       ts.UnixMilli(),
 	}))
-	verdictChan, err := t.rb.RunBench(t.Ctx, set, runID)
+	verdictChan, err := t.rb.RunBench(t.ctx, set, runID)
 	if err != nil {
 		log.Println(err.Error())
 		return
@@ -628,7 +628,7 @@ func (t *TuiApp) runBenchmark(bench string) {
 			successes += 1
 		}
 		now := time.Now().UnixMilli()
-		wdex.WriteRebuild(t.Ctx, rundex.Rebuild{
+		wdex.WriteRebuild(t.ctx, rundex.Rebuild{
 			RebuildAttempt: schema.RebuildAttempt{
 				Ecosystem:       string(v.Target.Ecosystem),
 				Package:         v.Target.Package,
