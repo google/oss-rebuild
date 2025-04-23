@@ -25,6 +25,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
+	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
@@ -58,7 +59,7 @@ type explorer struct {
 	container  *tview.Pages
 	tree       *tview.TreeView
 	root       *tview.TreeNode
-	rb         *Rebuilder
+	rb         *rebuilder.Rebuilder
 	dex        rundex.Reader
 	rundexOpts rundex.FetchRebuildOpts
 	runs       map[string]rundex.Run
@@ -66,7 +67,7 @@ type explorer struct {
 	butler     localfiles.Butler
 }
 
-func newExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *explorer {
+func newExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *rebuilder.Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *explorer {
 	e := explorer{
 		ctx:        ctx,
 		app:        app,
@@ -279,7 +280,7 @@ func (e *explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error
 			return errors.Wrap(err, "manual strategy oneof failed to parse")
 		}
 	}
-	e.rb.RunLocal(e.ctx, example, RunLocalOpts{Strategy: &newStrat})
+	e.rb.RunLocal(e.ctx, example, rebuilder.RunLocalOpts{Strategy: &newStrat})
 	return nil
 }
 
@@ -290,12 +291,12 @@ func (e *explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 		children := node.GetChildren()
 		if len(children) == 0 {
 			node.AddChild(makeCommandNode("run local", func() {
-				go e.rb.RunLocal(e.ctx, example, RunLocalOpts{})
+				go e.rb.RunLocal(e.ctx, example, rebuilder.RunLocalOpts{})
 			}))
 			node.AddChild(makeCommandNode("restart && run local", func() {
 				go func() {
 					e.rb.Restart(e.ctx)
-					e.rb.RunLocal(e.ctx, example, RunLocalOpts{})
+					e.rb.RunLocal(e.ctx, example, rebuilder.RunLocalOpts{})
 				}()
 			}))
 			node.AddChild(makeCommandNode("edit and run local", func() {
@@ -444,7 +445,7 @@ type TuiApp struct {
 	logs         *tview.TextView
 	cmds         []tuiAppCmd
 	benchmarkDir string
-	rb           *Rebuilder
+	rb           *rebuilder.Rebuilder
 }
 
 // NewTuiApp creates a new tuiApp object.
@@ -456,11 +457,11 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 		logs := tview.NewTextView().SetChangedFunc(func() { app.Draw() })
 		// TODO: Also log to stdout, because currently a panic/fatal message is silent.
 		log.Default().SetOutput(logs)
-		log.Default().SetPrefix(logPrefix("ctl"))
+		log.Default().SetPrefix(fmt.Sprintf("[%-9s]", "ctl"))
 		log.Default().SetFlags(0)
 		logs.SetBorder(true).SetTitle("Logs")
 		logs.ScrollToEnd()
-		rb := &Rebuilder{}
+		rb := &rebuilder.Rebuilder{}
 		t = &TuiApp{
 			Ctx:      ctx,
 			app:      app,
