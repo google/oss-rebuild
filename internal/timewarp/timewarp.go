@@ -164,10 +164,7 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	if resp.Header.Get("Content-Type") != "application/json" {
-		if _, err := io.Copy(rw, resp.Body); err != nil {
-			log.Printf("error: %+v", errors.Wrap(err, "transmitting non-json response"))
-		}
-		return nil
+		return herror{errors.Wrap(err, "unexpected content type"), http.StatusBadGateway}
 	}
 	obj := make(map[string]any)
 	if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
