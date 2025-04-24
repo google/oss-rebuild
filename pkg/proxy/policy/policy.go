@@ -152,7 +152,7 @@ func (rule URLMatchRule) Allows(req *http.Request) bool {
 		// Avoid matching partial domain names and only match full domain parts.
 		// That is, notgoogle.com must not match google.com, but is.google.com matches google.com.
 		host := rule.Host
-		if !strings.HasPrefix(".", host) {
+		if !strings.HasPrefix(host, ".") {
 			host = "." + host
 		}
 		if !strings.HasSuffix(url.Hostname(), host) {
