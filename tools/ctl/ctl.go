@@ -128,35 +128,32 @@ var tui = &cobra.Command{
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Exactly one of benchmarkDir or project should be set.
-		if (*benchmarkDir != "") == (*project != "" || *debugStorage != "") {
-			log.Fatal(errors.New("TUI should either be local (--benchmark-dir) or remote (--project, --debug-storage)"))
-		}
 		tctx := cmd.Context()
 		var dex rundex.Reader
-		if *benchmarkDir != "" {
-			dex = rundex.NewLocalClient(localfiles.Rundex())
-			tctx = context.WithValue(tctx, rebuild.DebugStoreID, "file://"+localfiles.AssetsPath())
-		} else {
-			if *debugStorage != "" {
-				u, err := url.Parse(*debugStorage)
-				if err != nil {
-					log.Fatal(errors.Wrap(err, "parsing --debug-storage as url"))
-				}
-				if u.Scheme == "gs" {
-					prefix := strings.TrimPrefix(u.Path, "/")
-					if prefix != "" {
-						log.Fatalf("--debug-storage cannot have additional path elements, found %s", prefix)
-					}
-				}
-				tctx = context.WithValue(tctx, rebuild.DebugStoreID, *debugStorage)
+		if *debugStorage != "" {
+			u, err := url.Parse(*debugStorage)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "parsing --debug-storage as url"))
 			}
-			// TODO: Support filtering in the UI on TUI.
+			if u.Scheme == "gs" {
+				prefix := strings.TrimPrefix(u.Path, "/")
+				if prefix != "" {
+					log.Fatalf("--debug-storage cannot have additional path elements, found %s", prefix)
+				}
+			}
+			tctx = context.WithValue(tctx, rebuild.DebugStoreID, *debugStorage)
+		}
+		// Prefer the firestore based rundex where possible, local otherwise.
+		// NOTE: We may eventually want to support firestore as a starting point, then local for quick debugging after that.
+		if *project != "" {
 			var err error
 			dex, err = rundex.NewFirestore(tctx, *project)
 			if err != nil {
 				log.Fatal(err)
 			}
+		} else {
+			dex = rundex.NewLocalClient(localfiles.Rundex())
+			tctx = context.WithValue(tctx, rebuild.DebugStoreID, "file://"+localfiles.AssetsPath())
 		}
 		var buildDefs *rebuild.FilesystemAssetStore
 		if *defDir != "" {
