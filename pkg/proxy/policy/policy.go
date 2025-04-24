@@ -91,7 +91,7 @@ func (p Policy) Apply(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, 
 			return blockedResponse(req)
 		}
 	}
-	if p.AllOf != nil && (p.AnyOf == nil || len(p.AnyOf) == 0) {
+	if len(p.AllOf) != 0 && len(p.AnyOf) == 0 {
 		return req, nil
 	}
 	for _, rule := range p.AnyOf {
@@ -152,7 +152,7 @@ func (rule URLMatchRule) Allows(req *http.Request) bool {
 		// Avoid matching partial domain names and only match full domain parts.
 		// That is, notgoogle.com must not match google.com, but is.google.com matches google.com.
 		host := rule.Host
-		if !strings.HasPrefix(host, ".") {
+		if !strings.HasPrefix(".", host) {
 			host = "." + host
 		}
 		if !strings.HasSuffix(url.Hostname(), host) {
