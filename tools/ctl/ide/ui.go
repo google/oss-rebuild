@@ -29,12 +29,11 @@ const (
 type tuiAppCmd struct {
 	Name string
 	Rune rune
-	Func func()
+	Func func(context.Context)
 }
 
 // TuiApp represents the entire IDE, containing UI widgets and worker processes.
 type TuiApp struct {
-	ctx       context.Context
 	app       *tview.Application
 	root      *tview.Pages
 	explorer  *explorer.Explorer
@@ -46,7 +45,7 @@ type TuiApp struct {
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *TuiApp {
+func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -60,9 +59,8 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 		logs.ScrollToEnd()
 		rb := &rebuilder.Rebuilder{}
 		t = &TuiApp{
-			ctx:      ctx,
 			app:      app,
-			explorer: explorer.NewExplorer(ctx, app, dex, rundexOpts, rb, buildDefs, butler, benches),
+			explorer: explorer.NewExplorer(app, dex, rundexOpts, rb, buildDefs, butler, benches),
 			// When the widgets are updated, we should refresh the application.
 			statusBox: tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
 			logs:      logs,
@@ -74,20 +72,20 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 		{
 			Name: "restart rebuilder",
 			Rune: 'r',
-			Func: func() { t.rb.Restart(t.ctx) },
+			Func: func(ctx context.Context) { t.rb.Restart(ctx) },
 		},
 		{
 			Name: "kill rebuilder",
 			Rune: 'x',
-			Func: func() {
+			Func: func(_ context.Context) {
 				t.rb.Kill()
 			},
 		},
 		{
 			Name: "attach",
 			Rune: 'a',
-			Func: func() {
-				if err := t.rb.Attach(t.ctx); err != nil {
+			Func: func(ctx context.Context) {
+				if err := t.rb.Attach(ctx); err != nil {
 					log.Println(err)
 				}
 				t.updateStatus()
@@ -96,7 +94,7 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 		{
 			Name: "logs up",
 			Rune: '^',
-			Func: func() {
+			Func: func(_ context.Context) {
 				curRow, _ := t.logs.GetScrollOffset()
 				_, _, _, height := t.logs.GetInnerRect()
 				newRow := curRow - (height - 5)
@@ -110,19 +108,19 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 		{
 			Name: "logs bottom",
 			Rune: 'v',
-			Func: func() {
+			Func: func(_ context.Context) {
 				t.logs.ScrollToEnd()
 			},
 		},
 		{
 			Name: "benchmark",
 			Rune: 'b',
-			Func: func() {
+			Func: func(ctx context.Context) {
 				if b, err := t.promptForBenchmark(); err != nil {
 					t.modalText(err.Error())
 				} else {
 					go func() {
-						t.explorer.RunBenchmark(<-b)
+						t.explorer.RunBenchmark(ctx, <-b)
 					}()
 				}
 			},
@@ -171,7 +169,7 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 		}
 		for _, cmd := range t.cmds {
 			if event.Rune() == cmd.Rune {
-				go cmd.Func()
+				go cmd.Func(context.Background())
 				break
 			}
 		}
@@ -223,9 +221,9 @@ func (t *TuiApp) promptForBenchmark() (<-chan string, error) {
 }
 
 // Run runs the underlying tview app.
-func (t *TuiApp) Run() error {
+func (t *TuiApp) Run(ctx context.Context) error {
 	go func() {
-		if err := t.explorer.LoadTree(); err != nil {
+		if err := t.explorer.LoadTree(ctx); err != nil {
 			log.Println(err)
 			return
 		}

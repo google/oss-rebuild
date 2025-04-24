@@ -66,12 +66,11 @@ func tmuxWait(cmd string) error {
 // These commands will be called as goroutines to avoid blocking the TUI loop
 type rebuildCmd struct {
 	Name string
-	Func func(rundex.Rebuild)
+	Func func(context.Context, rundex.Rebuild)
 }
 
 // The Explorer is the Tree structure on the left side of the TUI
 type Explorer struct {
-	ctx             context.Context
 	app             *tview.Application
 	container       *tview.Pages
 	table           *tview.Table
@@ -87,9 +86,8 @@ type Explorer struct {
 	exampleCommands []rebuildCmd
 }
 
-func NewExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *rebuilder.Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, benches benchmark.Repository) *Explorer {
+func NewExplorer(app *tview.Application, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *rebuilder.Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, benches benchmark.Repository) *Explorer {
 	e := Explorer{
-		ctx:             ctx,
 		app:             app,
 		container:       tview.NewPages(),
 		table:           tview.NewTable().SetBorders(true),
@@ -115,28 +113,28 @@ func NewExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader,
 	e.exampleCommands = []rebuildCmd{
 		{
 			Name: "run local",
-			Func: func(example rundex.Rebuild) {
-				e.rb.RunLocal(e.ctx, example, rebuilder.RunLocalOpts{})
+			Func: func(ctx context.Context, example rundex.Rebuild) {
+				e.rb.RunLocal(ctx, example, rebuilder.RunLocalOpts{})
 			},
 		},
 		{
 			Name: "restart && run local",
-			Func: func(example rundex.Rebuild) {
-				e.rb.Restart(e.ctx)
-				e.rb.RunLocal(e.ctx, example, rebuilder.RunLocalOpts{})
+			Func: func(ctx context.Context, example rundex.Rebuild) {
+				e.rb.Restart(ctx)
+				e.rb.RunLocal(ctx, example, rebuilder.RunLocalOpts{})
 			},
 		},
 		{
 			Name: "edit and run local",
-			Func: func(example rundex.Rebuild) {
-				if err := e.editAndRun(e.ctx, example); err != nil {
+			Func: func(ctx context.Context, example rundex.Rebuild) {
+				if err := e.editAndRun(ctx, example); err != nil {
 					log.Println(err.Error())
 				}
 			},
 		},
 		{
 			Name: "details",
-			Func: func(example rundex.Rebuild) {
+			Func: func(ctx context.Context, example rundex.Rebuild) {
 				if details, err := makeDetails(example); err != nil {
 					log.Println(err.Error())
 					return
@@ -147,14 +145,14 @@ func NewExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader,
 		},
 		{
 			Name: "logs",
-			Func: func(example rundex.Rebuild) {
-				e.showLogs(e.ctx, example)
+			Func: func(ctx context.Context, example rundex.Rebuild) {
+				e.showLogs(ctx, example)
 			},
 		},
 		{
 			Name: "diff",
-			Func: func(example rundex.Rebuild) {
-				if err := diffArtifacts(e.ctx, e.butler, example); err != nil {
+			Func: func(ctx context.Context, example rundex.Rebuild) {
+				if err := diffArtifacts(ctx, e.butler, example); err != nil {
 					log.Println(err.Error())
 				}
 			},
@@ -377,10 +375,10 @@ func (e *Explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error
 			return errors.Wrap(err, "manual strategy oneof failed to parse")
 		}
 	}
-	e.rb.RunLocal(e.ctx, example, rebuilder.RunLocalOpts{Strategy: &newStrat})
+	e.rb.RunLocal(ctx, example, rebuilder.RunLocalOpts{Strategy: &newStrat})
 	return nil
 }
-func (e *Explorer) RunBenchmark(bench string) {
+func (e *Explorer) RunBenchmark(ctx context.Context, bench string) {
 	wdex, ok := e.dex.(rundex.Writer)
 	if !ok {
 		log.Println("Cannot run benchmark with non-local rundex client.")
@@ -393,14 +391,14 @@ func (e *Explorer) RunBenchmark(bench string) {
 	}
 	ts := time.Now().UTC()
 	runID := ts.Format(time.RFC3339)
-	wdex.WriteRun(e.ctx, rundex.FromRun(schema.Run{
+	wdex.WriteRun(ctx, rundex.FromRun(schema.Run{
 		ID:            runID,
 		BenchmarkName: filepath.Base(bench),
 		BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
 		Type:          string(schema.SmoketestMode),
 		Created:       ts.UnixMilli(),
 	}))
-	verdictChan, err := e.rb.RunBench(e.ctx, set, runID)
+	verdictChan, err := e.rb.RunBench(ctx, set, runID)
 	if err != nil {
 		log.Println(err.Error())
 		return
@@ -411,7 +409,7 @@ func (e *Explorer) RunBenchmark(bench string) {
 			successes += 1
 		}
 		now := time.Now().UnixMilli()
-		wdex.WriteRebuild(e.ctx, rundex.Rebuild{
+		wdex.WriteRebuild(ctx, rundex.Rebuild{
 			RebuildAttempt: schema.RebuildAttempt{
 				Ecosystem:       string(v.Target.Ecosystem),
 				Package:         v.Target.Package,
@@ -439,7 +437,7 @@ func (e *Explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 		if len(children) == 0 {
 			for _, cmd := range e.exampleCommands {
 				node.AddChild(
-					tview.NewTreeNode(cmd.Name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(example) }),
+					tview.NewTreeNode(cmd.Name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), example) }),
 				)
 			}
 		} else {
@@ -490,7 +488,7 @@ func (e *Explorer) makeRunNode(runid string) *tview.TreeNode {
 		children := node.GetChildren()
 		if len(children) == 0 {
 			log.Printf("Fetching rebuilds...")
-			rebuilds, err := e.dex.FetchRebuilds(e.ctx, &rundex.FetchRebuildRequest{Runs: []string{runid}, Opts: e.rundexOpts, LatestPerPackage: true})
+			rebuilds, err := e.dex.FetchRebuilds(context.Background(), &rundex.FetchRebuildRequest{Runs: []string{runid}, Opts: e.rundexOpts, LatestPerPackage: true})
 			if err != nil {
 				log.Println(errors.Wrapf(err, "failed to get rebuilds for runid: %s", runid))
 				return
@@ -508,7 +506,7 @@ func (e *Explorer) makeRunNode(runid string) *tview.TreeNode {
 	return node
 }
 
-func (e *Explorer) benchHistory(benchPath string) ([]rundex.Rebuild, error) {
+func (e *Explorer) benchHistory(ctx context.Context, benchPath string) ([]rundex.Rebuild, error) {
 	tracked := make(map[string]bool)
 	{
 		set, err := e.benches.Load(benchPath)
@@ -538,7 +536,7 @@ func (e *Explorer) benchHistory(benchPath string) ([]rundex.Rebuild, error) {
 		start := time.Now()
 		var err error
 		// TODO: Filter by runs that matched the benchmark instead.
-		rebuilds, err = e.dex.FetchRebuilds(e.ctx, &rundex.FetchRebuildRequest{Opts: e.rundexOpts, LatestPerPackage: true})
+		rebuilds, err = e.dex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{Opts: e.rundexOpts, LatestPerPackage: true})
 		if err != nil {
 			return nil, errors.Wrapf(err, "loading rebuilds")
 		}
@@ -576,7 +574,7 @@ func (e *Explorer) makeRunGroupNode(benchName string, runs []string) *tview.Tree
 						log.Printf("Benchmark %s not found", benchName)
 						return
 					}
-					rebuilds, err := e.benchHistory(benchPath)
+					rebuilds, err := e.benchHistory(context.Background(), benchPath)
 					if err != nil {
 						log.Println(err)
 						return
@@ -600,10 +598,10 @@ func (e *Explorer) makeRunGroupNode(benchName string, runs []string) *tview.Tree
 }
 
 // LoadTree will query rundex for all the runs, then display them.
-func (e *Explorer) LoadTree() error {
+func (e *Explorer) LoadTree(ctx context.Context) error {
 	e.root.ClearChildren()
 	log.Printf("Fetching runs...")
-	runs, err := e.dex.FetchRuns(e.ctx, rundex.FetchRunsOpts{})
+	runs, err := e.dex.FetchRuns(ctx, rundex.FetchRunsOpts{})
 	if err != nil {
 		return err
 	}
@@ -633,16 +631,7 @@ func (e *Explorer) SelectTree() {
 	e.container.SwitchToPage(TreePageName)
 }
 
-func (e *Explorer) rebuildHistory(r rundex.Rebuild) (modal.InputCaptureable, error) {
-	log.Println("Loading history for", r.ID())
-	t := r.Target()
-	rebuilds, err := e.dex.FetchRebuilds(e.ctx, &rundex.FetchRebuildRequest{
-		Target: &t,
-		Opts:   e.rundexOpts,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching rebuilds for target")
-	}
+func (e *Explorer) rebuildHistory(rebuilds []rundex.Rebuild) (modal.InputCaptureable, error) {
 	slices.SortFunc(rebuilds, func(a, b rundex.Rebuild) int {
 		return -strings.Compare(a.RunID, b.RunID)
 	})
@@ -659,7 +648,7 @@ func (e *Explorer) rebuildHistory(r rundex.Rebuild) (modal.InputCaptureable, err
 					node.SetExpanded(true)
 					for _, cmd := range e.exampleCommands {
 						node.AddChild(
-							tview.NewTreeNode(cmd.Name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(r) }),
+							tview.NewTreeNode(cmd.Name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), r) }),
 						)
 					}
 				} else {
@@ -737,13 +726,21 @@ func (e *Explorer) populateTable(rebuilds []rundex.Rebuild) error {
 	e.table.SetSelectable(true, false)
 	e.table.SetSelectedFunc(func(row int, column int) {
 		r := rebuilds[row-1]
-		hist, err := e.rebuildHistory(r)
+		// Load the rundex.Rebuilds for this particular target
+		log.Println("Loading history for", r.ID())
+		t := r.Target()
+		rebuildsOfTarget, err := e.dex.FetchRebuilds(context.Background(), &rundex.FetchRebuildRequest{
+			Target: &t,
+			Opts:   e.rundexOpts,
+		})
 		if err != nil {
-			log.Println(errors.Wrap(err, "browsing target's history"))
+			log.Println(errors.Wrap(err, "fetching rebuilds for target"))
 			return
 		}
-		if hist == nil {
-			log.Println(errors.Wrap(err, "nil history"))
+		// Build the UI
+		hist, err := e.rebuildHistory(rebuildsOfTarget)
+		if err != nil {
+			log.Println(errors.Wrap(err, "browsing target's history"))
 			return
 		}
 		go modal.Show(e.app, e.container, hist, modal.ModalOpts{Margin: 10})
