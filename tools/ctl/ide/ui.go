@@ -8,12 +8,11 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide/explorer"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
@@ -35,19 +34,19 @@ type tuiAppCmd struct {
 
 // TuiApp represents the entire IDE, containing UI widgets and worker processes.
 type TuiApp struct {
-	ctx          context.Context
-	app          *tview.Application
-	root         *tview.Pages
-	explorer     *explorer.Explorer
-	statusBox    *tview.TextView
-	logs         *tview.TextView
-	cmds         []tuiAppCmd
-	benchmarkDir string
-	rb           *rebuilder.Rebuilder
+	ctx       context.Context
+	app       *tview.Application
+	root      *tview.Pages
+	explorer  *explorer.Explorer
+	statusBox *tview.TextView
+	logs      *tview.TextView
+	cmds      []tuiAppCmd
+	benches   benchmark.Repository
+	rb        *rebuilder.Rebuilder
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benchmarkDir string, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *TuiApp {
+func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -65,10 +64,10 @@ func NewTuiApp(ctx context.Context, dex rundex.Reader, rundexOpts rundex.FetchRe
 			app:      app,
 			explorer: explorer.NewExplorer(ctx, app, dex, rundexOpts, rb, buildDefs, butler),
 			// When the widgets are updated, we should refresh the application.
-			statusBox:    tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
-			logs:         logs,
-			benchmarkDir: benchmarkDir,
-			rb:           rb,
+			statusBox: tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
+			logs:      logs,
+			benches:   benches,
+			rb:        rb,
 		}
 	}
 	t.cmds = []tuiAppCmd{
@@ -196,34 +195,26 @@ func (t *TuiApp) modalText(content string) {
 }
 
 func (t *TuiApp) selectBenchmark() {
-	if t.benchmarkDir == "" {
-		t.modalText("No benchmark dir provided.")
+	if t.benches == nil {
+		t.modalText("No benchmarks provided.")
+		return
+	}
+	all, err := t.benches.List()
+	if err != nil {
+		t.modalText(errors.Wrap(err, "listing benchmarks").Error())
 		return
 	}
 	options := tview.NewList()
 	options.SetBackgroundColor(defaultBackground).SetBorder(true).SetTitle("Select a benchmark to execute.")
 	// exitFunc will be populated once the modal has been created.
 	var exitFunc func()
-	err := filepath.Walk(t.benchmarkDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			// Best effort reading, skip failures.
-			return nil
-		}
-		if filepath.Ext(path) != ".json" {
-			return nil
-		}
-		name := strings.TrimSuffix(filepath.Base(path), ".json")
-		options.AddItem(name, "", 0, func() {
+	for _, path := range all {
+		options.AddItem(path, "", 0, func() {
 			go t.explorer.RunBenchmark(path)
 			if exitFunc != nil {
 				exitFunc()
 			}
 		})
-		return nil
-	})
-	if err != nil {
-		t.modalText(errors.Wrap(err, "walking benchmark dir").Error())
-		return
 	}
 	exitFunc = modal.Show(t.app, t.root, options, modal.ModalOpts{Height: (options.GetItemCount() * 2) + 2, Margin: 10})
 }

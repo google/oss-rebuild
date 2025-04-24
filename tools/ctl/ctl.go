@@ -179,7 +179,8 @@ var tui = &cobra.Command{
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
 		}
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
-		tapp := ide.NewTuiApp(tctx, dex, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir, buildDefs, butler)
+		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
+		tapp := ide.NewTuiApp(tctx, dex, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler)
 		if err := tapp.Run(); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
