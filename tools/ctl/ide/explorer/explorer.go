@@ -20,10 +20,10 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
@@ -152,8 +152,44 @@ func NewExplorer(app *tview.Application, dex rundex.Reader, rundexOpts rundex.Fe
 		{
 			Name: "diff",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
-				if err := diffArtifacts(ctx, e.butler, example); err != nil {
-					log.Println(err.Error())
+				var rba, usa string
+				{
+					var err error
+					rba, err = e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.RebuildAsset.For(example.Target()))
+					if err != nil {
+						log.Println(errors.Wrap(err, "fetching rebuild asset"))
+					}
+					usa, err = e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(example.Target()))
+					if err != nil {
+						log.Println(errors.Wrap(err, "fetching upstream asset"))
+					}
+				}
+				contents, err := diffoscope.DiffArtifacts(ctx, rba, usa, example.Target())
+				if err != nil {
+					log.Println(errors.Wrap(err, "executing diff"))
+				}
+				dir, err := os.MkdirTemp("", "*")
+				if err != nil {
+					log.Println(errors.Wrap(err, "creating tempdir"))
+				}
+				defer os.RemoveAll(dir)
+				f, err := os.CreateTemp(dir, "diff")
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				if _, err := f.Write(contents); err != nil {
+					log.Println(err)
+					return
+				}
+				if err := f.Close(); err != nil {
+					log.Println(err)
+					return
+				}
+				path := f.Name()
+				if err := tmuxWait(fmt.Sprintf("less -R %s", path)); err != nil {
+					log.Println(errors.Wrap(err, "running diffoscope"))
+					return
 				}
 			},
 		},
@@ -175,84 +211,6 @@ func (e *Explorer) modalText(content string) {
 
 func makeCommandNode(name string, handler func()) *tview.TreeNode {
 	return tview.NewTreeNode(name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(handler)
-}
-
-func stabilizeArtifact(in, out string, t rebuild.Target) error {
-	orig, err := os.Open(in)
-	if err != nil {
-		return errors.Wrap(err, "opening input")
-	}
-	defer orig.Close()
-	stabilized, err := os.OpenFile(out, os.O_RDWR|os.O_CREATE, os.ModePerm)
-	if err != nil {
-		return errors.Wrap(err, "opening output")
-	}
-	defer stabilized.Close()
-	if err := archive.Stabilize(stabilized, orig, t.ArchiveType()); err != nil {
-		return errors.Wrap(err, "running stabilize")
-	}
-	return nil
-}
-
-func diffArtifacts(ctx context.Context, butler localfiles.Butler, example rundex.Rebuild) error {
-	if example.Artifact == "" {
-		return errors.New("Rundex does not have the artifact, cannot find GCS path.")
-	}
-	t := rebuild.Target{
-		Ecosystem: rebuild.Ecosystem(example.Ecosystem),
-		Package:   example.Package,
-		Version:   example.Version,
-		Artifact:  example.Artifact,
-	}
-	var rba, usa string
-	{
-		dir, err := os.MkdirTemp("", "*")
-		if err != nil {
-			return errors.Wrap(err, "creating tempdir")
-		}
-		defer os.RemoveAll(dir)
-		{
-			rba, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.RebuildAsset.For(t))
-			if err != nil {
-				return errors.Wrap(err, "fetching rebuild asset")
-			}
-			// TODO: We should use the version of Stabilize used in the rebuild.
-			stabilized := filepath.Join(dir, "stabilized-"+filepath.Base(rba))
-			if err := stabilizeArtifact(rba, stabilized, t); err != nil {
-				return errors.Wrap(err, "stabilizing rebuild")
-			}
-			rba = stabilized
-		}
-		{
-			usa, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(t))
-			if err != nil {
-				return errors.Wrap(err, "fetching upstream asset")
-			}
-			// TODO: We should use the version of Stabilize used in the rebuild.
-			stabilized := filepath.Join(dir, "stabilized-"+filepath.Base(usa))
-			if err := stabilizeArtifact(usa, stabilized, t); err != nil {
-				return errors.Wrap(err, "stabilizing upstream")
-			}
-			usa = stabilized
-		}
-	}
-	var script string
-	args := fmt.Sprintf(" --no-progress --text-color=always %s %s 2>&1 | less -R", rba, usa)
-	if _, err := exec.LookPath("diffoscope"); err == nil {
-		script = "diffoscope" + args
-	} else if _, err := exec.LookPath("uvx"); err == nil {
-		script = "uvx diffoscope" + args
-	} else if _, err := exec.LookPath("docker"); err == nil {
-		dir := filepath.Dir(usa)
-		script = fmt.Sprintf("docker run --rm -t --user $(id -u):$(id -g) -v %s:%s:ro registry.salsa.debian.org/reproducible-builds/diffoscope", dir, dir) + args
-	} else {
-		log.Println("No execution option found for diffoscope. Attempted {diffoscope,uvx,docker}")
-		return errors.New("failed to run diffoscope")
-	}
-	if err := tmuxWait(script); err != nil {
-		return errors.Wrap(err, "running diffoscope")
-	}
-	return nil
 }
 
 func makeDetailsString(example rundex.Rebuild) (string, error) {
