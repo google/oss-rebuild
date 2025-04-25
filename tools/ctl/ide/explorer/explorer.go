@@ -206,46 +206,34 @@ func diffArtifacts(ctx context.Context, butler localfiles.Butler, example rundex
 	}
 	var rba, usa string
 	{
-		var err error
-		if example.WasSmoketest() {
-			rba, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugRebuildAsset.For(t))
+		dir, err := os.MkdirTemp("", "*")
+		if err != nil {
+			return errors.Wrap(err, "creating tempdir")
+		}
+		defer os.RemoveAll(dir)
+		{
+			rba, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.RebuildAsset.For(t))
 			if err != nil {
 				return errors.Wrap(err, "fetching rebuild asset")
 			}
+			// TODO: We should use the version of Stabilize used in the rebuild.
+			stabilized := filepath.Join(dir, "stabilized-"+filepath.Base(rba))
+			if err := stabilizeArtifact(rba, stabilized, t); err != nil {
+				return errors.Wrap(err, "stabilizing rebuild")
+			}
+			rba = stabilized
+		}
+		{
 			usa, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(t))
 			if err != nil {
 				return errors.Wrap(err, "fetching upstream asset")
 			}
-		} else {
-			dir, err := os.MkdirTemp("", "*")
-			if err != nil {
-				return errors.Wrap(err, "creating tempdir")
+			// TODO: We should use the version of Stabilize used in the rebuild.
+			stabilized := filepath.Join(dir, "stabilized-"+filepath.Base(usa))
+			if err := stabilizeArtifact(usa, stabilized, t); err != nil {
+				return errors.Wrap(err, "stabilizing upstream")
 			}
-			defer os.RemoveAll(dir)
-			{
-				rba, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.RebuildAsset.For(t))
-				if err != nil {
-					return errors.Wrap(err, "fetching rebuild asset")
-				}
-				// TODO: We should use the version of Stabilize used in the rebuild.
-				stabilized := filepath.Join(dir, "stabilized-"+filepath.Base(rba))
-				if err := stabilizeArtifact(rba, stabilized, t); err != nil {
-					return errors.Wrap(err, "stabilizing rebuild")
-				}
-				rba = stabilized
-			}
-			{
-				usa, err = butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(t))
-				if err != nil {
-					return errors.Wrap(err, "fetching upstream asset")
-				}
-				// TODO: We should use the version of Stabilize used in the rebuild.
-				stabilized := filepath.Join(dir, "stabilized-"+filepath.Base(usa))
-				if err := stabilizeArtifact(usa, stabilized, t); err != nil {
-					return errors.Wrap(err, "stabilizing upstream")
-				}
-				usa = stabilized
-			}
+			usa = stabilized
 		}
 	}
 	var script string
