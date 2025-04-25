@@ -4,6 +4,7 @@
 package gitxtest
 
 import (
+	"bytes"
 	"io"
 	"path"
 	"slices"
@@ -50,8 +51,9 @@ type RepositoryOptions struct {
 
 func CreateRepoFromYAML(content string, opts *RepositoryOptions) (*Repository, error) {
 	var history GitHistory
-	err := yaml.Unmarshal([]byte(content), &history)
-	if err != nil {
+	d := yaml.NewDecoder(bytes.NewReader([]byte(content)))
+	d.KnownFields(true) // Fail on unknown fields
+	if err := d.Decode(&history); err != nil {
 		return nil, err
 	}
 	return CreateRepo(history.Commits, opts)
