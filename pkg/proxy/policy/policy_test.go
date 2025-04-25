@@ -122,6 +122,21 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 			wantResp: http.StatusOK,
 		},
 		{
+			name: "host policy rule allows matching tld suffix",
+			policy: Policy{
+				AnyOf: []Rule{
+					URLMatchRule{
+						Host:      ".com",
+						HostMatch: SuffixMatch,
+						Path:      "/path",
+						PathMatch: PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/path/with/prefix",
+			wantResp: http.StatusOK,
+		},
+		{
 			name: "host policy rule blocks non matching domain suffix",
 			policy: Policy{
 				AnyOf: []Rule{
