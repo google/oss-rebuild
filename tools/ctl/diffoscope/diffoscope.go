@@ -16,6 +16,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	// DiffAsset captures the diff between rebuild and upstream.
+	DiffAsset rebuild.AssetType = "diff"
+)
+
 func stabilizeArtifact(in, out string, t rebuild.Target) error {
 	orig, err := os.Open(in)
 	if err != nil {

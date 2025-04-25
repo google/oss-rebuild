@@ -152,41 +152,11 @@ func NewExplorer(app *tview.Application, dex rundex.Reader, rundexOpts rundex.Fe
 		{
 			Name: "diff",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
-				var rba, usa string
-				{
-					var err error
-					rba, err = e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.RebuildAsset.For(example.Target()))
-					if err != nil {
-						log.Println(errors.Wrap(err, "fetching rebuild asset"))
-					}
-					usa, err = e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(example.Target()))
-					if err != nil {
-						log.Println(errors.Wrap(err, "fetching upstream asset"))
-					}
-				}
-				contents, err := diffoscope.DiffArtifacts(ctx, rba, usa, example.Target())
+				path, err := e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), diffoscope.DiffAsset.For(example.Target()))
 				if err != nil {
-					log.Println(errors.Wrap(err, "executing diff"))
-				}
-				dir, err := os.MkdirTemp("", "*")
-				if err != nil {
-					log.Println(errors.Wrap(err, "creating tempdir"))
-				}
-				defer os.RemoveAll(dir)
-				f, err := os.CreateTemp(dir, "diff")
-				if err != nil {
-					log.Println(err)
+					log.Println(errors.Wrap(err, "fetching diff"))
 					return
 				}
-				if _, err := f.Write(contents); err != nil {
-					log.Println(err)
-					return
-				}
-				if err := f.Close(); err != nil {
-					log.Println(err)
-					return
-				}
-				path := f.Name()
 				if err := tmuxWait(fmt.Sprintf("less -R %s", path)); err != nil {
 					log.Println(errors.Wrap(err, "running diffoscope"))
 					return
