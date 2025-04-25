@@ -39,7 +39,10 @@ func (b *butler) Fetch(ctx context.Context, runID string, wasSmoketest bool, wan
 	if _, err := localAssets.Reader(ctx, want); err == nil {
 		return localAssets.URL(want).Path, nil
 	}
-	forRun := b.metaAssetstore.For(ctx, runID, wasSmoketest)
+	forRun, err := b.metaAssetstore.For(ctx, runID, wasSmoketest)
+	if err != nil {
+		return "", errors.Wrap(err, "creating asset store")
+	}
 	if err := rebuild.AssetCopy(ctx, localAssets, forRun, want); err != nil {
 		return "", errors.Wrap(err, "copying asset to local store")
 	}
