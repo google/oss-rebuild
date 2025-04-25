@@ -128,8 +128,6 @@ var tui = &cobra.Command{
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		tctx := cmd.Context()
-		var dex rundex.Reader
 		if *debugStorage != "" {
 			u, err := url.Parse(*debugStorage)
 			if err != nil {
@@ -141,19 +139,20 @@ var tui = &cobra.Command{
 					log.Fatalf("--debug-storage cannot have additional path elements, found %s", prefix)
 				}
 			}
-			tctx = context.WithValue(tctx, rebuild.DebugStoreID, *debugStorage)
 		}
-		// Prefer the firestore based rundex where possible, local otherwise.
-		// NOTE: We may eventually want to support firestore as a starting point, then local for quick debugging after that.
-		if *project != "" {
-			var err error
-			dex, err = rundex.NewFirestore(tctx, *project)
-			if err != nil {
-				log.Fatal(err)
+		var dex rundex.Reader
+		{
+			// Prefer the firestore based rundex where possible, local otherwise.
+			// NOTE: We may eventually want to support firestore as a starting point, then local for quick debugging after that.
+			if *project != "" {
+				var err error
+				dex, err = rundex.NewFirestore(cmd.Context(), *project)
+				if err != nil {
+					log.Fatal(err)
+				}
+			} else {
+				dex = rundex.NewLocalClient(localfiles.Rundex())
 			}
-		} else {
-			dex = rundex.NewLocalClient(localfiles.Rundex())
-			tctx = context.WithValue(tctx, rebuild.DebugStoreID, "file://"+localfiles.AssetsPath())
 		}
 		var buildDefs *rebuild.FilesystemAssetStore
 		if *defDir != "" {
@@ -177,8 +176,8 @@ var tui = &cobra.Command{
 		}
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
 		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
-		tapp := ide.NewTuiApp(tctx, dex, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler)
-		if err := tapp.Run(); err != nil {
+		tapp := ide.NewTuiApp(dex, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler)
+		if err := tapp.Run(cmd.Context()); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
 			log.Fatal(err)
