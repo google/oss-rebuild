@@ -62,37 +62,46 @@ func tmuxWait(cmd string) error {
 	return nil
 }
 
+// rebuildCmd is a command that operates on an individual rundex.Rebuild
+// These commands will be called as goroutines to avoid blocking the TUI loop
+type rebuildCmd struct {
+	Name string
+	Func func(rundex.Rebuild)
+}
+
 // The Explorer is the Tree structure on the left side of the TUI
 type Explorer struct {
-	ctx        context.Context
-	app        *tview.Application
-	container  *tview.Pages
-	table      *tview.Table
-	tree       *tview.TreeView
-	root       *tview.TreeNode
-	rb         *rebuilder.Rebuilder
-	dex        rundex.Reader
-	rundexOpts rundex.FetchRebuildOpts
-	runs       map[string]rundex.Run
-	buildDefs  rebuild.LocatableAssetStore
-	butler     localfiles.Butler
-	benches    benchmark.Repository
+	ctx             context.Context
+	app             *tview.Application
+	container       *tview.Pages
+	table           *tview.Table
+	tree            *tview.TreeView
+	root            *tview.TreeNode
+	rb              *rebuilder.Rebuilder
+	dex             rundex.Reader
+	rundexOpts      rundex.FetchRebuildOpts
+	runs            map[string]rundex.Run
+	buildDefs       rebuild.LocatableAssetStore
+	butler          localfiles.Butler
+	benches         benchmark.Repository
+	exampleCommands []rebuildCmd
 }
 
 func NewExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *rebuilder.Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, benches benchmark.Repository) *Explorer {
 	e := Explorer{
-		ctx:        ctx,
-		app:        app,
-		container:  tview.NewPages(),
-		table:      tview.NewTable().SetBorders(true),
-		tree:       tview.NewTreeView(),
-		root:       tview.NewTreeNode("root").SetColor(tcell.ColorRed),
-		rb:         rb,
-		dex:        dex,
-		rundexOpts: rundexOpts,
-		buildDefs:  buildDefs,
-		butler:     butler,
-		benches:    benches,
+		ctx:             ctx,
+		app:             app,
+		container:       tview.NewPages(),
+		table:           tview.NewTable().SetBorders(true),
+		tree:            tview.NewTreeView(),
+		root:            tview.NewTreeNode("root").SetColor(tcell.ColorRed),
+		rb:              rb,
+		dex:             dex,
+		rundexOpts:      rundexOpts,
+		buildDefs:       buildDefs,
+		butler:          butler,
+		benches:         benches,
+		exampleCommands: nil,
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
 	e.table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -103,6 +112,54 @@ func NewExplorer(ctx context.Context, app *tview.Application, dex rundex.Reader,
 		}
 		return event
 	})
+	e.exampleCommands = []rebuildCmd{
+		{
+			Name: "run local",
+			Func: func(example rundex.Rebuild) {
+				e.rb.RunLocal(e.ctx, example, rebuilder.RunLocalOpts{})
+			},
+		},
+		{
+			Name: "restart && run local",
+			Func: func(example rundex.Rebuild) {
+				e.rb.Restart(e.ctx)
+				e.rb.RunLocal(e.ctx, example, rebuilder.RunLocalOpts{})
+			},
+		},
+		{
+			Name: "edit and run local",
+			Func: func(example rundex.Rebuild) {
+				if err := e.editAndRun(e.ctx, example); err != nil {
+					log.Println(err.Error())
+				}
+			},
+		},
+		{
+			Name: "details",
+			Func: func(example rundex.Rebuild) {
+				if details, err := makeDetails(example); err != nil {
+					log.Println(err.Error())
+					return
+				} else {
+					modal.Show(e.app, e.container, details, modal.ModalOpts{Margin: 10})
+				}
+			},
+		},
+		{
+			Name: "logs",
+			Func: func(example rundex.Rebuild) {
+				e.showLogs(e.ctx, example)
+			},
+		},
+		{
+			Name: "diff",
+			Func: func(example rundex.Rebuild) {
+				if err := diffArtifacts(e.ctx, e.butler, example); err != nil {
+					log.Println(err.Error())
+				}
+			},
+		},
+	}
 	resize, show := true, true
 	e.container.AddPage(TablePageName, e.table, resize, !show)
 	e.container.AddPage(TreePageName, e.tree, resize, show)
@@ -380,42 +437,11 @@ func (e *Explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 	node.SetSelectedFunc(func() {
 		children := node.GetChildren()
 		if len(children) == 0 {
-			node.AddChild(makeCommandNode("run local", func() {
-				go e.rb.RunLocal(e.ctx, example, rebuilder.RunLocalOpts{})
-			}))
-			node.AddChild(makeCommandNode("restart && run local", func() {
-				go func() {
-					e.rb.Restart(e.ctx)
-					e.rb.RunLocal(e.ctx, example, rebuilder.RunLocalOpts{})
-				}()
-			}))
-			node.AddChild(makeCommandNode("edit and run local", func() {
-				go func() {
-					if err := e.editAndRun(e.ctx, example); err != nil {
-						log.Println(err.Error())
-					}
-				}()
-			}))
-			node.AddChild(makeCommandNode("details", func() {
-				go func() {
-					if details, err := makeDetails(example); err != nil {
-						log.Println(err.Error())
-						return
-					} else {
-						modal.Show(e.app, e.container, details, modal.ModalOpts{Margin: 10})
-					}
-				}()
-			}))
-			node.AddChild(makeCommandNode("logs", func() {
-				go e.showLogs(e.ctx, example)
-			}))
-			node.AddChild(makeCommandNode("diff", func() {
-				go func() {
-					if err := diffArtifacts(e.ctx, e.butler, example); err != nil {
-						log.Println(err.Error())
-					}
-				}()
-			}))
+			for _, cmd := range e.exampleCommands {
+				node.AddChild(
+					tview.NewTreeNode(cmd.Name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(example) }),
+				)
+			}
 		} else {
 			node.SetExpanded(!node.IsExpanded())
 		}
@@ -631,34 +657,11 @@ func (e *Explorer) rebuildHistory(r rundex.Rebuild) (modal.InputCaptureable, err
 				children := node.GetChildren()
 				if len(children) == 0 {
 					node.SetExpanded(true)
-					// TODO: Share this set of commands with the treeview.
-					// This is functionality we probably want to expose to an AI agent as well.
-					node.AddChild(makeCommandNode("run", func() {
-						go e.rb.RunLocal(e.ctx, r, rebuilder.RunLocalOpts{})
-					}))
-					node.AddChild(makeCommandNode("restart-run", func() {
-						go func() {
-							e.rb.Restart(e.ctx)
-							e.rb.RunLocal(e.ctx, r, rebuilder.RunLocalOpts{})
-						}()
-					}))
-					node.AddChild(makeCommandNode("edit-run", func() {
-						go func() {
-							if err := e.editAndRun(e.ctx, r); err != nil {
-								log.Println(err.Error())
-							}
-						}()
-					}))
-					node.AddChild(makeCommandNode("logs", func() {
-						go e.showLogs(e.ctx, r)
-					}))
-					node.AddChild(makeCommandNode("diff", func() {
-						go func() {
-							if err := diffArtifacts(e.ctx, e.butler, r); err != nil {
-								log.Println(err.Error())
-							}
-						}()
-					}))
+					for _, cmd := range e.exampleCommands {
+						node.AddChild(
+							tview.NewTreeNode(cmd.Name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(r) }),
+						)
+					}
 				} else {
 					node.SetExpanded(!node.IsExpanded())
 				}
