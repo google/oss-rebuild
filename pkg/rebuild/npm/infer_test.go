@@ -313,9 +313,10 @@ func TestInferStrategy_NPM(t *testing.T) {
 						Ref:  commitID,
 						Dir:  ".",
 					},
-					NPMVersion:   "9.0.0",
-					NodeVersion:  "10.17.0",
-					RegistryTime: must(time.Parse(time.RFC3339, "2023-03-01T11:00:00.000Z")),
+					NPMVersion:        "9.0.0",
+					NodeVersion:       "10.17.0",
+					RegistryTime:      must(time.Parse(time.RFC3339, "2023-03-01T11:00:00.000Z")),
+					PrepackRemoveDeps: true,
 				}
 			},
 		},
