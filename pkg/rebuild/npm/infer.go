@@ -262,8 +262,11 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		log.Println("error fetching package.json:", err.Error())
 	} else if pkgJSON.Scripts != nil {
-		// TODO: Expand beyond just scripts named "build".
-		if _, ok := pkgJSON.Scripts["build"]; ok {
+		_, hasPrepare := pkgJSON.Scripts["prepare"]
+		_, hasPrepack := pkgJSON.Scripts["prepack"]
+		// TODO: Detect similarly named scripts
+		_, hasBuild := pkgJSON.Scripts["build"]
+		if hasPrepack || hasPrepare || hasBuild {
 			// TODO: Consider limiting this case to only packages with a 'dist/' dir.
 			pmeta, err := mux.NPM.Package(ctx, name)
 			if err != nil {
@@ -279,14 +282,17 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			}
 			// TODO: detect and install pnpm
 			// TODO: detect and install yarn
-			return &NPMCustomBuild{
+			b := &NPMCustomBuild{
 				NPMVersion:      npmv,
 				NodeVersion:     nodeVersion,
 				VersionOverride: versionOverride,
-				Command:         "build",
 				RegistryTime:    ut,
 				Location:        loc,
-			}, nil
+			}
+			if hasBuild {
+				b.Command = "build"
+			}
+			return b, nil
 		}
 	}
 	return &NPMPackBuild{
