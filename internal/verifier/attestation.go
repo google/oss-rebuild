@@ -101,12 +101,18 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 		},
 	}
 	var rd []slsa1.ResourceDescriptor
-	inst, err := strategy.GenerateFor(t, rebuild.BuildEnv{})
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "retrieving repo")
+	var loc rebuild.Location
+	{
+		// NOTE: Workaround the lack of a proper means of accessing Location on Strategy.
+		// A timewarp host value is required to not break TimewarpURLFromString calls.
+		inst, err := strategy.GenerateFor(t, rebuild.BuildEnv{TimewarpHost: "example.internal"})
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "retrieving repo")
+		}
+		loc = inst.Location
 	}
-	if inst.Location.Ref != "" {
-		rd = append(rd, slsa1.ResourceDescriptor{Name: "git+" + inst.Location.Repo, Digest: gitDigestSet(inst.Location)})
+	if loc.Ref != "" {
+		rd = append(rd, slsa1.ResourceDescriptor{Name: "git+" + loc.Repo, Digest: gitDigestSet(loc)})
 	}
 	for n, s := range buildInfo.BuildImages {
 		if !strings.HasPrefix(s, "sha256:") {
