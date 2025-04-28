@@ -50,7 +50,7 @@ type NPMCustomBuild struct {
 	NPMVersion      string    `json:"npm_version" yaml:"npm_version"`
 	NodeVersion     string    `json:"node_version" yaml:"node_version"`
 	VersionOverride string    `json:"version_override,omitempty" yaml:"version_override,omitempty"`
-	Command         string    `json:"command" yaml:"command"`
+	Command         string    `json:"command" yaml:"command,omitempty"`
 	RegistryTime    time.Time `json:"registry_time" yaml:"registry_time"`
 }
 
@@ -209,7 +209,9 @@ var toolkit = []*flow.Tool{
 			{
 				Uses: "npm/npx",
 				With: map[string]string{
-					"command":    "npm run {{.With.command}} && rm -rf node_modules && npm pack",
+					"command": `
+						{{- if ne .With.command ""}}npm run {{.With.command}} && {{end -}}
+						rm -rf node_modules && npm pack`,
 					"npmVersion": "{{.With.npmVersion}}",
 					"dir":        "{{.Location.Dir}}",
 					"locator":    "/usr/local/bin/",

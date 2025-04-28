@@ -169,6 +169,25 @@ func TestNPMCustomBuild(t *testing.T) {
 				OutputPath: "the_artifact",
 			},
 		},
+		{
+			"CustomBuildNoCommand",
+			&NPMCustomBuild{
+				Location:     defaultLocation,
+				NPMVersion:   "red",
+				NodeVersion:  "blue",
+				Command:      "",
+				RegistryTime: time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+			},
+			rebuild.Instructions{
+				Location:   defaultLocation,
+				SystemDeps: []string{"git", "npm"},
+				Source:     "git checkout --force 'the_ref'",
+				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && rm -rf node_modules && npm pack'`,
+				OutputPath: "the_dir/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
