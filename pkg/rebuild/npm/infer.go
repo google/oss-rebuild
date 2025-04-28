@@ -295,6 +295,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			if !(hasPrepare || hasPrepack) {
 				b.PrepackRemoveDeps = true
 			}
+			if v, _ := semver.New(npmv); v.Major <= 6 { // NOTE: PickNPMVersion guarantees a valid semver
+				b.KeepRoot = true
+			}
 			return b, nil
 		}
 	}

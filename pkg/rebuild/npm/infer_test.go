@@ -321,6 +321,37 @@ func TestInferStrategy_NPM(t *testing.T) {
 			},
 		},
 		{
+			name:    "NPMCustomBuild - from build script",
+			pkg:     "test-package",
+			version: "1.0.0",
+			repoYAML: `commits:
+  - id: initial-commit
+  - id: version-bump
+    parent: initial-commit
+    files:
+      package.json: |
+        {"name": "test-package", "version": "1.0.0", "scripts": {"build": "tsc"}}
+`,
+			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"6.2.0","nodeVersion": "16.13.0", "dist":{"tarball":"url4"},"gitHead":"INSERT_COMMIT_ID"}`,
+			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-02-10T10:00:00.000Z"}}`,
+			wantCommitID:    "version-bump",
+			wantStrategyFn: func(commitID string) rebuild.Strategy {
+				return &NPMCustomBuild{
+					Location: rebuild.Location{
+						Repo: "https://github.com/test-org/test-package",
+						Ref:  commitID,
+						Dir:  ".",
+					},
+					NPMVersion:        "6.2.0",
+					NodeVersion:       "10.17.0",
+					Command:           "build",
+					RegistryTime:      must(time.Parse(time.RFC3339, "2023-02-10T10:00:00.000Z")),
+					PrepackRemoveDeps: true,
+					KeepRoot:          true,
+				}
+			},
+		},
+		{
 			name:    "Error - unreadable package.json in commit",
 			pkg:     "test-package",
 			version: "1.0.0",

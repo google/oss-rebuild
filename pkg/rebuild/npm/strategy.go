@@ -54,6 +54,7 @@ type NPMCustomBuild struct {
 	Command           string    `json:"command" yaml:"command,omitempty"`
 	RegistryTime      time.Time `json:"registry_time" yaml:"registry_time"`
 	PrepackRemoveDeps bool      `json:"prepack_remove_deps,omitempty" yaml:"prepack_remove_deps,omitempty"`
+	KeepRoot          bool      `json:"keep_root,omitempty" yaml:"keep_root,omitempty"`
 }
 
 var _ rebuild.Strategy = &NPMCustomBuild{}
@@ -81,6 +82,7 @@ func (b *NPMCustomBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 			With: map[string]string{
 				"npmVersion":      b.NPMVersion,
 				"versionOverride": b.VersionOverride,
+				"keepRoot":        fmt.Sprintf("%t", b.KeepRoot),
 				"removeDeps":      fmt.Sprintf("%t", b.PrepackRemoveDeps),
 				"command":         b.Command,
 			},
@@ -213,6 +215,7 @@ var toolkit = []*flow.Tool{
 				Uses: "npm/npx",
 				With: map[string]string{
 					"command": `
+						{{- if eq .With.keepRoot "true"}}npm config set unsafe-perm true && {{end -}}
 						{{- if ne .With.command ""}}npm run {{.With.command}} && {{end -}}
 						{{- if eq .With.removeDeps "true"}}rm -rf node_modules && {{end -}}
 						npm pack`,

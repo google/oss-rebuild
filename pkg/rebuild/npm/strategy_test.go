@@ -192,6 +192,34 @@ func TestNPMCustomBuild(t *testing.T) {
 				OutputPath: "the_dir/the_artifact",
 			},
 		},
+		{
+			"CustomBuildKeepRoot",
+			&NPMCustomBuild{
+				Location: rebuild.Location{
+					Dir:  ".",
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				NPMVersion:   "red",
+				NodeVersion:  "blue",
+				Command:      "yellow",
+				RegistryTime: time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+				KeepRoot:     true,
+			},
+			rebuild.Instructions{
+				Location: rebuild.Location{
+					Dir:  ".",
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				SystemDeps: []string{"git", "npm"},
+				Source:     "git checkout --force 'the_ref'",
+				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+/usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm config set unsafe-perm true && npm run yellow && npm pack'`,
+				OutputPath: "the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
