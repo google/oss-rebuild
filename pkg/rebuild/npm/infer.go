@@ -292,7 +292,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			if hasBuild {
 				b.Command = "build"
 			}
-			if hasPrepare || hasPrepack {
+			if !(hasPrepare || hasPrepack) {
 				b.PrepackRemoveDeps = true
 			}
 			return b, nil
