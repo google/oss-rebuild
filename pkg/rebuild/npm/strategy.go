@@ -150,7 +150,7 @@ var toolkit = []*flow.Tool{
 				With: map[string]string{
 					"command": `
 						{{- if ne .With.registryTime ""}}npm_config_registry={{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}} {{end -}}
-						npm install --force`,
+						npm install --force --no-audit`,
 					"npmVersion": "{{.With.npmVersion}}",
 					"dir":        "{{.Location.Dir}}",
 					"locator":    "{{.With.locator}}",
