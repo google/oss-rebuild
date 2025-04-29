@@ -113,8 +113,29 @@ func resolveContainerID(c *UDSHTTPClient, id string) (string, error) {
 	}
 }
 
+type dockerTruststoreFS struct {
+	*dockerfs.Filesystem
+}
+
+func (dfs *dockerTruststoreFS) Read(path string) ([]byte, error) {
+	f, err := dfs.OpenAndResolve(path)
+	if err != nil {
+		return nil, err
+	}
+	return f.Contents, nil
+}
+
+func (dfs *dockerTruststoreFS) Exists(path string) bool {
+	_, err := dfs.Stat(path)
+	return err == nil
+}
+
 func truststoreCertPatch(fs dockerfs.Filesystem, cert []byte) (*patch, error) {
-	truststore, err := locateTruststore(&fs)
+	truststorePath, err := TruststorePath(&dockerTruststoreFS{&fs})
+	if err != nil {
+		return nil, errors.Wrap(err, "locating truststore")
+	}
+	truststore, err := fs.OpenAndResolve(truststorePath)
 	if err != nil {
 		return nil, errors.Wrap(err, "locating truststore")
 	}
