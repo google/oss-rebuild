@@ -145,18 +145,6 @@ var toolkit = []*flow.Tool{
 
 	// Composite tools for common dependency setups
 	{
-		Name: "npm/deps/basic",
-		Steps: []flow.Step{{
-			Uses: "npm/npx",
-			With: map[string]string{
-				"command":    "npm install --force",
-				"npmVersion": "{{.With.npmVersion}}",
-				"dir":        "{{.Location.Dir}}",
-				"locator":    "/usr/local/bin/",
-			},
-		}},
-	},
-	{
 		Name: "npm/deps/custom",
 		Steps: []flow.Step{
 			{
