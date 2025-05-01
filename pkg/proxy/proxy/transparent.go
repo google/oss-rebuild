@@ -279,7 +279,7 @@ func (t *TransparentProxyService) policyHandler(w http.ResponseWriter, r *http.R
 	t.mx.Lock()
 	defer t.mx.Unlock()
 	switch r.Method {
-	case http.MethodGet:
+	case http.MethodGet, http.MethodHead:
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(t.Policy); err != nil {
