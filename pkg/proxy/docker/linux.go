@@ -4,26 +4,22 @@
 package docker
 
 import (
+	"io/fs"
 	re "regexp"
 
 	"github.com/pkg/errors"
 )
 
-type truststoreFS interface {
-	Exists(path string) bool
-	Read(path string) ([]byte, error)
-}
-
 var distroPattern = re.MustCompile(`\bID=["'']?([^\r\n]+?)["'']?[\r\n]`)
 
 // distro returns the given container's distribution identifier.
-func distro(dfs truststoreFS) (string, error) {
+func distro(dfs fs.FS) (string, error) {
 	// Kaniko images are built from scratch and do not have the /etc/os-release file.
 	// The /kaniko directory is present in all Kaniko images and also contains its own trust store.
-	if dfs.Exists("/kaniko") {
+	if _, err := fs.Stat(dfs, "/kaniko"); err == nil {
 		return "kaniko", nil
 	}
-	contents, err := dfs.Read("/etc/os-release")
+	contents, err := fs.ReadFile(dfs, "/etc/os-release")
 	if err != nil {
 		return "", err
 	}
@@ -34,7 +30,7 @@ func distro(dfs truststoreFS) (string, error) {
 	return string(matches[1]), nil
 }
 
-func TruststorePath(dfs truststoreFS) (string, error) {
+func TruststorePath(dfs fs.FS) (string, error) {
 	d, err := distro(dfs)
 	if err != nil {
 		return "", err

@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -146,7 +147,7 @@ func TestTruststorePath(t *testing.T) {
 	}
 }
 
-func newFakeFS(t *testing.T, files map[string][]byte) *fakeFS {
+func newFakeFS(t *testing.T, files map[string][]byte) fs.FS {
 	tmpDir := t.TempDir()
 	for name, content := range files {
 		path := filepath.Join(tmpDir, name)
@@ -164,11 +165,6 @@ type fakeFS struct {
 	rootDir string
 }
 
-func (f *fakeFS) Read(path string) ([]byte, error) {
-	return os.ReadFile(filepath.Join(f.rootDir, path))
-}
-
-func (f *fakeFS) Exists(path string) bool {
-	_, err := os.Stat(filepath.Join(f.rootDir, path))
-	return err == nil
+func (f *fakeFS) Open(path string) (fs.File, error) {
+	return os.Open(filepath.Join(f.rootDir, path))
 }
