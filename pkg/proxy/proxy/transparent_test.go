@@ -20,6 +20,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 		mode     PolicyMode
 		policy   policy.Policy
 		url      string
+		method   string
 		wantResp int
 	}{
 		{
@@ -36,6 +37,24 @@ func TestApplyNetworkPolicy(t *testing.T) {
 				},
 			},
 			url:      "https://host.com/path/with/compliance",
+			method:   http.MethodGet,
+			wantResp: http.StatusOK,
+		},
+		{
+			name: "EnforcementMode passes compliant HEAD request through",
+			mode: EnforcementMode,
+			policy: policy.Policy{
+				AnyOf: []policy.Rule{
+					policy.URLMatchRule{
+						Host:      "host.com",
+						HostMatch: policy.FullMatch,
+						Path:      "/path",
+						PathMatch: policy.PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/path/with/compliance",
+			method:   http.MethodHead,
 			wantResp: http.StatusOK,
 		},
 		{
@@ -52,6 +71,24 @@ func TestApplyNetworkPolicy(t *testing.T) {
 				},
 			},
 			url:      "https://host.com/non/compliant/path",
+			method:   http.MethodGet,
+			wantResp: http.StatusForbidden,
+		},
+		{
+			name: "EnforcementMode rejects non-compliant HEAD request",
+			mode: EnforcementMode,
+			policy: policy.Policy{
+				AnyOf: []policy.Rule{
+					policy.URLMatchRule{
+						Host:      "host.com",
+						HostMatch: policy.FullMatch,
+						Path:      "/path",
+						PathMatch: policy.PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/non/compliant/path",
+			method:   http.MethodHead,
 			wantResp: http.StatusForbidden,
 		},
 		{
@@ -68,6 +105,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 				},
 			},
 			url:      "https://host.com/path/with/compliance",
+			method:   http.MethodGet,
 			wantResp: http.StatusOK,
 		},
 		{
@@ -84,6 +122,24 @@ func TestApplyNetworkPolicy(t *testing.T) {
 				},
 			},
 			url:      "https://host.com/non/compliant/path",
+			method:   http.MethodGet,
+			wantResp: http.StatusOK,
+		},
+		{
+			name: "DisabledMode passes non-compliant HEAD request through",
+			mode: DisabledMode,
+			policy: policy.Policy{
+				AnyOf: []policy.Rule{
+					policy.URLMatchRule{
+						Host:      "host.com",
+						HostMatch: policy.FullMatch,
+						Path:      "/path",
+						PathMatch: policy.PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/non/compliant/path",
+			method:   http.MethodHead,
 			wantResp: http.StatusOK,
 		},
 	}
@@ -92,7 +148,7 @@ func TestApplyNetworkPolicy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			proxyService.Mode = tc.mode
 			proxyService.Policy = &tc.policy
-			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
+			req := httptest.NewRequest(tc.method, tc.url, nil)
 
 			_, gotResp := proxyService.ApplyNetworkPolicy(req, nil)
 			// nil response means request allowed through proxy. Assume 200 status.
