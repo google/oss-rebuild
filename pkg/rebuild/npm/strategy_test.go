@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestNPMCustomBuild(t *testing.T) {
+func TestNPMStrategies(t *testing.T) {
 	defaultLocation := rebuild.Location{
 		Dir:  "the_dir",
 		Ref:  "the_ref",
@@ -97,7 +97,7 @@ func TestNPMCustomBuild(t *testing.T) {
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build: `PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix the_dir --no-git-tag-version green
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
@@ -119,7 +119,7 @@ func TestNPMCustomBuild(t *testing.T) {
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
 			},
@@ -139,7 +139,7 @@ func TestNPMCustomBuild(t *testing.T) {
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm install --force'`,
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
 			},
@@ -168,7 +168,7 @@ func TestNPMCustomBuild(t *testing.T) {
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+/usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_artifact",
 			},
@@ -187,7 +187,7 @@ func TestNPMCustomBuild(t *testing.T) {
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
 			},
@@ -215,7 +215,7 @@ func TestNPMCustomBuild(t *testing.T) {
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+/usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm config set unsafe-perm true && npm run yellow && npm pack'`,
 				OutputPath: "the_artifact",
 			},
