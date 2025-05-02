@@ -31,13 +31,16 @@ type Message struct {
 // The input handler is responsible for echoing the input into `out` if desired.
 // If the handler decides the chat UI should be closed, the handler should return ErrCloseChat
 // The chatbox will notify the handler of any cancellation via the ctx.
-type HandleInputFunc func(ctx context.Context, in string, out chan<- *Message) error
+type ChatBackend interface {
+	HandleInput(ctx context.Context, in string, out chan<- *Message) error
+}
 
 type ChatBox struct {
+	app                 *tview.Application
 	widget              *tview.Flex
 	history             *tview.TextView
 	inputBox            *tview.TextArea
-	inputFn             HandleInputFunc
+	handler             ChatBackend
 	previousInputCancel func()
 	exit                chan bool
 }
@@ -47,35 +50,24 @@ type ChatBoxOpts struct {
 	Welcome     string
 }
 
-func NewChatbox(userInputFn HandleInputFunc, opts ChatBoxOpts) *ChatBox {
+func NewChatbox(app *tview.Application, handler ChatBackend, opts ChatBoxOpts) *ChatBox {
 	cb := &ChatBox{
-		inputFn:  userInputFn,
+		app:      app,
+		handler:  handler,
 		history:  tview.NewTextView(),
 		inputBox: tview.NewTextArea(),
 		exit:     make(chan bool),
 	}
-	cb.history.ScrollToEnd()
 	if opts.Welcome != "" {
-		cb.RenderMessage(&Message{Who: System, Content: opts.Welcome})
+		cb.renderMessage(&Message{Who: System, Content: opts.Welcome})
 	}
+	cb.history.ScrollToEnd()
 	cb.inputBox.SetBorder(true).SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEnter {
 			ctx, cancel := context.WithCancel(context.Background())
+			input := cb.inputBox.GetText()
 			cb.inputBox.SetText("", true)
-			go func() {
-				out := make(chan *Message)
-				go func() {
-					for msg := range out {
-						cb.RenderMessage(msg)
-					}
-				}()
-				err := cb.inputFn(ctx, cb.inputBox.GetText(), out)
-				if errors.Is(err, ErrCloseChat) {
-					cb.exit <- true
-				} else if err != nil {
-					cb.RenderMessage(&Message{Who: System, Content: errors.Wrap(err, "handling input").Error()})
-				}
-			}()
+			go cb.HandleInput(ctx, input)
 			if cb.previousInputCancel != nil {
 				cb.previousInputCancel()
 			}
@@ -97,7 +89,26 @@ func NewChatbox(userInputFn HandleInputFunc, opts ChatBoxOpts) *ChatBox {
 	return cb
 }
 
-func (cb *ChatBox) RenderMessage(msg *Message) {
+func (cb *ChatBox) HandleInput(ctx context.Context, in string) {
+	out := make(chan *Message)
+	go func() {
+		for msg := range out {
+			cb.app.QueueUpdateDraw(func() {
+				cb.renderMessage(msg)
+			})
+		}
+	}()
+	err := cb.handler.HandleInput(ctx, in, out)
+	if errors.Is(err, ErrCloseChat) {
+		cb.exit <- true
+	} else if err != nil {
+		go cb.app.QueueUpdateDraw(func() {
+			cb.renderMessage(&Message{Who: System, Content: errors.Wrap(err, "handling input").Error()})
+		})
+	}
+}
+
+func (cb *ChatBox) renderMessage(msg *Message) {
 	cb.history.Write([]byte(fmt.Sprintf("\n%s: %s", string(msg.Who), msg.Content)))
 }
 

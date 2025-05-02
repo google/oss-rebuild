@@ -23,6 +23,8 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
+	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
+	"github.com/google/oss-rebuild/tools/ctl/ide/chatbox"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
 	"github.com/google/oss-rebuild/tools/ctl/ide/tmux"
@@ -54,6 +56,9 @@ type rebuildCmd struct {
 	Func func(context.Context, rundex.Rebuild)
 }
 
+// A modalFnType can be used to show an InputCaptureable. It returns an exit function that can be used to close the modal.
+type modalFnType func(modal.InputCaptureable, modal.ModalOpts) func()
+
 // The Explorer is the Tree structure on the left side of the TUI
 type Explorer struct {
 	app             *tview.Application
@@ -67,11 +72,13 @@ type Explorer struct {
 	runs            map[string]rundex.Run
 	buildDefs       rebuild.LocatableAssetStore
 	butler          localfiles.Butler
+	asst            assistant.Assistant
 	benches         benchmark.Repository
 	exampleCommands []rebuildCmd
+	modalFn         modalFnType
 }
 
-func NewExplorer(app *tview.Application, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *rebuilder.Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, benches benchmark.Repository) *Explorer {
+func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *rebuilder.Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, asst assistant.Assistant, benches benchmark.Repository) *Explorer {
 	e := Explorer{
 		app:             app,
 		container:       tview.NewPages(),
@@ -83,8 +90,10 @@ func NewExplorer(app *tview.Application, dex rundex.Reader, rundexOpts rundex.Fe
 		rundexOpts:      rundexOpts,
 		buildDefs:       buildDefs,
 		butler:          butler,
+		asst:            asst,
 		benches:         benches,
 		exampleCommands: nil,
+		modalFn:         modalFn,
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
 	e.table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -124,7 +133,7 @@ func NewExplorer(app *tview.Application, dex rundex.Reader, rundexOpts rundex.Fe
 					log.Println(err.Error())
 					return
 				} else {
-					modal.Show(e.app, e.container, details, modal.ModalOpts{Margin: 10})
+					e.modalFn(details, modal.ModalOpts{Margin: 10})
 				}
 			},
 		},
@@ -148,6 +157,23 @@ func NewExplorer(app *tview.Application, dex rundex.Reader, rundexOpts rundex.Fe
 				}
 			},
 		},
+		{
+			Name: "debug with ✨AI✨",
+			Func: func(ctx context.Context, example rundex.Rebuild) {
+				s, err := e.asst.Session(ctx, example)
+				if err != nil {
+					log.Println(errors.Wrap(err, "creating session"))
+					return
+				}
+				cb := chatbox.NewChatbox(e.app, s, chatbox.ChatBoxOpts{Welcome: "Debug with AI! Type /help for a list of commands.", InputHeader: "Ask the AI"})
+				modalExit := e.modalFn(cb.Widget(), modal.ModalOpts{Margin: 10})
+				go cb.HandleInput(ctx, "/debug")
+				go func() {
+					<-cb.Done()
+					modalExit()
+				}()
+			},
+		},
 	}
 	resize, show := true, true
 	e.container.AddPage(TablePageName, e.table, resize, !show)
@@ -161,7 +187,12 @@ func (e *Explorer) Container() tview.Primitive {
 }
 
 func (e *Explorer) modalText(content string) {
-	modal.Text(e.app, e.container, content)
+	tv := tview.NewTextView()
+	tv.SetText("\n" + content + "\n").
+		SetTextAlign(tview.AlignCenter).
+		SetTextColor(tcell.ColorWhite).
+		SetBackgroundColor(defaultBackground)
+	e.modalFn(tv, modal.ModalOpts{Height: 3, Margin: 10})
 }
 
 func makeCommandNode(name string, handler func()) *tview.TreeNode {
@@ -634,7 +665,7 @@ func (e *Explorer) populateTable(rebuilds []rundex.Rebuild) error {
 			log.Println(errors.Wrap(err, "browsing target's history"))
 			return
 		}
-		go modal.Show(e.app, e.container, hist, modal.ModalOpts{Margin: 10})
+		go e.modalFn(hist, modal.ModalOpts{Margin: 10})
 	})
 	return nil
 }

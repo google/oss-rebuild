@@ -25,6 +25,7 @@ import (
 	"text/template"
 	"time"
 
+	"cloud.google.com/go/vertexai/genai"
 	"github.com/cheggaaa/pb"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
@@ -40,6 +41,7 @@ import (
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
+	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
@@ -124,7 +126,7 @@ func makeShellScript(input rebuild.Input) (string, error) {
 }
 
 var tui = &cobra.Command{
-	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean]",
+	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project]",
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -175,8 +177,13 @@ var tui = &cobra.Command{
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
 		}
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
+		aiClient, err := genai.NewClient(cmd.Context(), *llmProject, "us-central1")
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "failed to create a genai client"))
+		}
+		asst := assistant.NewAssistant(butler, aiClient)
 		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
-		tapp := ide.NewTuiApp(dex, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler)
+		tapp := ide.NewTuiApp(dex, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, asst)
 		if err := tapp.Run(cmd.Context()); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -714,6 +721,7 @@ var (
 	//TUI
 	benchmarkDir = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 	defDir       = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
+	llmProject   = flag.String("llm-project", "", "the GCP project to use for LLM execution")
 )
 
 func init() {
@@ -751,6 +759,7 @@ func init() {
 	getResults.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
 
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
+	tui.Flags().AddGoFlag(flag.Lookup("llm-project"))
 	tui.Flags().AddGoFlag(flag.Lookup("debug-storage"))
 	tui.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
 	tui.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))

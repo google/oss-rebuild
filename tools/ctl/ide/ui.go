@@ -13,6 +13,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
 	"github.com/google/oss-rebuild/tools/ctl/ide/explorer"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
@@ -45,7 +46,7 @@ type TuiApp struct {
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler) *TuiApp {
+func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, asst assistant.Assistant) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -59,15 +60,19 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 		logs.ScrollToEnd()
 		rb := &rebuilder.Rebuilder{}
 		t = &TuiApp{
-			app:      app,
-			explorer: explorer.NewExplorer(app, dex, rundexOpts, rb, buildDefs, butler, benches),
+			app: app,
 			// When the widgets are updated, we should refresh the application.
 			statusBox: tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
 			logs:      logs,
 			benches:   benches,
 			rb:        rb,
+			root:      tview.NewPages(),
 		}
 	}
+	modalFn := func(input modal.InputCaptureable, opts modal.ModalOpts) func() {
+		return modal.Show(t.app, t.root, input, opts)
+	}
+	t.explorer = explorer.NewExplorer(t.app, modalFn, dex, rundexOpts, t.rb, buildDefs, butler, asst, benches)
 	t.cmds = []tuiAppCmd{
 		{
 			Name: "restart rebuilder",
@@ -127,7 +132,6 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 		},
 	}
 
-	var root *tview.Pages
 	{
 		/*             window
 		┌───────────────────────────────────┐
@@ -156,25 +160,24 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 			AddItem(t.logs, flexed, unit, !focused)                 // logs
 		window := tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(mainPane, flexed, unit, focused).
-			AddItem(bottomBar, unit, 0, !focused)
-		container := tview.NewPages().AddPage("main window", window, true, true)
-		root = container
-	}
-	t.root = root
-	t.app.SetRoot(root, true).SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyCtrlC {
-			// Clean up the rebuilder docker container.
-			t.rb.Kill()
-			return event
-		}
-		for _, cmd := range t.cmds {
-			if event.Rune() == cmd.Rune {
-				go cmd.Func(context.Background())
-				break
+			AddItem(bottomBar, 1, 0, !focused) // bottomBar is non-flexed, fixed height 1
+		window.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+			if event.Key() == tcell.KeyCtrlC {
+				// Clean up the rebuilder docker container.
+				t.rb.Kill()
+				return event
 			}
-		}
-		return event
-	})
+			for _, cmd := range t.cmds {
+				if event.Rune() == cmd.Rune {
+					go cmd.Func(context.Background())
+					return nil
+				}
+			}
+			return event
+		})
+		t.root.AddPage("main window", window, true, true)
+	}
+	t.app.SetRoot(t.root, true)
 	return t
 }
 
