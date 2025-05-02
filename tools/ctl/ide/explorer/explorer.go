@@ -205,13 +205,7 @@ func (e *Explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 		log.Println("Rundex does not have the artifact, cannot find GCS path.")
 		return
 	}
-	t := rebuild.Target{
-		Ecosystem: rebuild.Ecosystem(example.Ecosystem),
-		Package:   example.Package,
-		Version:   example.Version,
-		Artifact:  example.Artifact,
-	}
-	logs, err := e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugLogsAsset.For(t))
+	logs, err := e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugLogsAsset.For(example.Target()))
 	if err != nil {
 		log.Println(errors.Wrap(err, "downloading logs"))
 		return
