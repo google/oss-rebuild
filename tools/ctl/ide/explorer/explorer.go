@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"slices"
@@ -26,6 +25,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
+	"github.com/google/oss-rebuild/tools/ctl/ide/tmux"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
@@ -45,21 +45,6 @@ func verdictAsEmoji(r rundex.Rebuild) string {
 	} else {
 		return "❌"
 	}
-}
-
-func tmuxWait(cmd string) error {
-	// Send a "tmux wait -S" signal once the cmd is complete.
-	done := fmt.Sprintf("done%d", time.Now().UnixNano())
-	c := exec.Command("tmux", "new-window", fmt.Sprintf("%s; tmux wait -S %s", cmd, done))
-	if _, err := c.Output(); err != nil {
-		log.Println("Maybe you're not running inside a tmux session?")
-		return errors.Wrap(err, "opening tmux window")
-	}
-	// Wait to receive the tmux signal.
-	if _, err := exec.Command("tmux", "wait", done).Output(); err != nil {
-		return errors.Wrap(err, "failed to wait for tmux signal")
-	}
-	return nil
 }
 
 // rebuildCmd is a command that operates on an individual rundex.Rebuild
@@ -157,7 +142,7 @@ func NewExplorer(app *tview.Application, dex rundex.Reader, rundexOpts rundex.Fe
 					log.Println(errors.Wrap(err, "fetching diff"))
 					return
 				}
-				if err := tmuxWait(fmt.Sprintf("less -R %s", path)); err != nil {
+				if err := tmux.Wait(fmt.Sprintf("less -R %s", path)); err != nil {
 					log.Println(errors.Wrap(err, "running diffoscope"))
 					return
 				}
@@ -231,12 +216,8 @@ func (e *Explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
 		log.Println(errors.Wrap(err, "downloading logs"))
 		return
 	}
-	cmd := exec.Command("tmux", "new-window", fmt.Sprintf("cat %s | less", logs))
-	if err := cmd.Run(); err != nil {
+	if err := tmux.Start(fmt.Sprintf("cat %s | less", logs)); err != nil {
 		log.Println(errors.Wrap(err, "failed to read logs"))
-		if err.Error() == "exit status 1" {
-			log.Println("Maybe you're not running inside a tmux session?")
-		}
 	}
 }
 
@@ -279,7 +260,7 @@ func (e *Explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error
 		if editor == "" {
 			editor = "vim"
 		}
-		if err := tmuxWait(fmt.Sprintf("%s %s", editor, e.buildDefs.URL(buildDefAsset).Path)); err != nil {
+		if err := tmux.Wait(fmt.Sprintf("%s %s", editor, e.buildDefs.URL(buildDefAsset).Path)); err != nil {
 			return errors.Wrap(err, "editing build definition")
 		}
 		r, err := e.buildDefs.Reader(ctx, buildDefAsset)
