@@ -333,22 +333,7 @@ func (e *Explorer) RunBenchmark(ctx context.Context, bench string) {
 		if v.Message == "" {
 			successes += 1
 		}
-		now := time.Now().UTC()
-		wdex.WriteRebuild(ctx, rundex.Rebuild{
-			RebuildAttempt: schema.RebuildAttempt{
-				Ecosystem:       string(v.Target.Ecosystem),
-				Package:         v.Target.Package,
-				Version:         v.Target.Version,
-				Artifact:        v.Target.Artifact,
-				Success:         v.Message == "",
-				Message:         v.Message,
-				Strategy:        v.StrategyOneof,
-				Timings:         v.Timings,
-				ExecutorVersion: "local",
-				RunID:           runID,
-				Created:         now,
-			},
-		})
+		wdex.WriteRebuild(ctx, rundex.NewRebuildFromVerdict(v, "local", runID, time.Now().UTC()))
 	}
 	log.Printf("Finished benchmark %s with %d successes.", bench, successes)
 }

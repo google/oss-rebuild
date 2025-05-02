@@ -343,8 +343,20 @@ var runBenchmark = &cobra.Command{
 			client = http.DefaultClient
 		}
 		var run string
+		var dex rundex.Writer
 		if *buildLocal {
-			run = time.Now().UTC().Format(time.RFC3339)
+			now := time.Now().UTC()
+			run = now.Format(time.RFC3339)
+			dex = rundex.NewLocalClient(localfiles.Rundex())
+			if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
+				ID:            run,
+				BenchmarkName: filepath.Base(args[1]),
+				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
+				Type:          string(schema.SmoketestMode),
+				Created:       now,
+			})); err != nil {
+				log.Println(errors.Wrap(err, "writing run to rundex"))
+			}
 		} else {
 			stub := api.Stub[schema.CreateRunRequest, schema.Run](client, *apiURL.JoinPath("runs"))
 			resp, err := stub(ctx, schema.CreateRunRequest{
@@ -386,6 +398,11 @@ var runBenchmark = &cobra.Command{
 			bar.Increment()
 			if *verbose && v.Message != "" {
 				fmt.Printf("\n%v: %s\n", v.Target, v.Message)
+			}
+			if dex != nil {
+				if err := dex.WriteRebuild(ctx, rundex.NewRebuildFromVerdict(v, "local", run, time.Now().UTC())); err != nil {
+					log.Println(errors.Wrap(err, "writing rebuild to rundex"))
+				}
 			}
 			verdicts = append(verdicts, v)
 		}
