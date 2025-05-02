@@ -231,14 +231,7 @@ Focus on identifying the build process from package.json scripts and any build c
 Provide clear, executable shell commands that would successfully build the package.`),
 	}
 	model = llm.WithSystemPrompt(*model, systemPrompt...)
-	conversation := make(chan genai.Content)
-	go func(conversation <-chan genai.Content) {
-		for content := range conversation {
-			log.Printf("%s\n\n", llm.FormatContent(content))
-		}
-		log.Println("Conversation channel closed and processing finished.")
-	}(conversation)
-	chat, err := llm.NewChat(model, &llm.ChatOpts{Tools: functionDefinitions, Notify: conversation})
+	chat, err := llm.NewChat(model, &llm.ChatOpts{Tools: functionDefinitions})
 	if err != nil {
 		log.Fatalf("NewChat error: %v", err)
 	}
@@ -261,11 +254,13 @@ Only include commands that are needed to build the package, excluding things lik
 `, loc.Repo, loc.Ref)[1:]
 		contentParts := []genai.Part{genai.Text(initialPrompt)}
 		log.Println("Requesting build instructions from Gemini...")
-		resp, err := chat.SendMessage(ctx, contentParts...)
-		if err != nil {
-			log.Fatalf("Chat error: %v", err)
+		for content, err := range chat.SendMessageStream(ctx, contentParts...) {
+			if err != nil {
+				log.Fatalf("Chat error: %v", err)
+			}
+			log.Printf("%s\n\n", llm.FormatContent(*content))
+			response = *content
 		}
-		response = *resp.Candidates[0].Content
 	}
 	toScript := func(instructions genai.Text) (*llm.ScriptResponse, error) {
 		prompt := fmt.Sprintf(`
@@ -364,11 +359,13 @@ Again, the end goal should be the commands that are needed to build the package,
 			contentParts := []genai.Part{genai.Text(recoveryPrompt)}
 			// Get build instructions from Gemini
 			log.Println("Requesting updated build instructions from Gemini...")
-			resp, err := chat.SendMessage(ctx, contentParts...)
-			if err != nil {
-				log.Fatalf("Chat error: %v", err)
+			for content, err := range chat.SendMessageStream(ctx, contentParts...) {
+				if err != nil {
+					log.Fatalf("Chat error: %v", err)
+				}
+				log.Printf("%s\n\n", llm.FormatContent(*content))
+				response = *content
 			}
-			response = *resp.Candidates[0].Content
 		}
 		script, err = toScript(response.Parts[0].(genai.Text))
 		if err != nil {
