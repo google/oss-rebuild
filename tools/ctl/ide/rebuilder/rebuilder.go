@@ -21,6 +21,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/google/oss-rebuild/tools/docker"
@@ -235,7 +236,7 @@ func (rb *Rebuilder) RunBench(ctx context.Context, set benchmark.PackageSet, run
 	if err != nil {
 		return nil, errors.Wrap(err, "getting running instance")
 	}
-	return benchmark.RunBench(ctx, http.DefaultClient, inst.URL, set, benchmark.RunBenchOpts{
+	return run.RunBench(ctx, http.DefaultClient, inst.URL, set, run.RunBenchOpts{
 		Mode:           schema.SmoketestMode,
 		RunID:          runID,
 		MaxConcurrency: 1,
