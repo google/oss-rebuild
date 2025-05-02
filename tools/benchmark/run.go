@@ -74,7 +74,7 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schem
 	if len(p.Artifacts) > 0 && len(p.Artifacts) != len(p.Versions) {
 		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
 	}
-	stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](w.client, *w.url.JoinPath("rebuild"))
+	stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](w.client, w.url.JoinPath("rebuild"))
 	for i, v := range p.Versions {
 		<-w.limiters[p.Ecosystem]
 		var artifact string
@@ -116,7 +116,7 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 		// First, warm up the instances to ensure it can handle actual load.
 		// Warm up requires the service fulfill sequentially successful version
 		// requests (which hit both the API and the builder jobs).
-		stub := api.Stub[schema.VersionRequest, schema.VersionResponse](w.client, *w.url.JoinPath("version"))
+		stub := api.Stub[schema.VersionRequest, schema.VersionResponse](w.client, w.url.JoinPath("version"))
 		req := schema.VersionRequest{Service: "build-local"}
 		for i := 0; i < 5; {
 			if _, err := stub(ctx, req); err != nil {
@@ -130,7 +130,7 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 
 func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
 	<-w.limiters[p.Ecosystem]
-	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](w.client, *w.url.JoinPath("smoketest"))
+	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](w.client, w.url.JoinPath("smoketest"))
 	req := schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 		Package:   p.Name,

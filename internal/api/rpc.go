@@ -33,7 +33,7 @@ type NoReturn struct{}
 
 var ErrNotOK = errors.New("non-OK response")
 
-func Stub[I Message, O any](client httpx.BasicClient, u url.URL) StubT[I, O] {
+func Stub[I Message, O any](client httpx.BasicClient, u *url.URL) StubT[I, O] {
 	return func(ctx context.Context, i I) (*O, error) {
 		values, err := form.Marshal(i)
 		if err != nil {
@@ -63,7 +63,7 @@ func Stub[I Message, O any](client httpx.BasicClient, u url.URL) StubT[I, O] {
 	}
 }
 
-func StubFromHandler[I Message, O any, D Dependencies](client httpx.BasicClient, u url.URL, handler HandlerT[I, O, D]) StubT[I, O] {
+func StubFromHandler[I Message, O any, D Dependencies](client httpx.BasicClient, u *url.URL, handler HandlerT[I, O, D]) StubT[I, O] {
 	return Stub[I, O](client, u)
 }
 
