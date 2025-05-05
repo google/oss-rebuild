@@ -4,35 +4,24 @@
 package explorer
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"log"
-	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
-	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
-	"github.com/google/oss-rebuild/tools/ctl/ide/chatbox"
+	"github.com/google/oss-rebuild/tools/ctl/ide/commands"
+	detailsui "github.com/google/oss-rebuild/tools/ctl/ide/details"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
-	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
-	"github.com/google/oss-rebuild/tools/ctl/ide/tmux"
-	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -49,14 +38,6 @@ func verdictAsEmoji(r rundex.Rebuild) string {
 	}
 }
 
-// rebuildCmd is a command that operates on an individual rundex.Rebuild
-// These commands will be called as goroutines to avoid blocking the TUI loop
-type rebuildCmd struct {
-	Hotkey rune
-	Name   string
-	Func   func(context.Context, rundex.Rebuild)
-}
-
 // A modalFnType can be used to show an InputCaptureable. It returns an exit function that can be used to close the modal.
 type modalFnType func(modal.InputCaptureable, modal.ModalOpts) func()
 
@@ -67,33 +48,25 @@ type Explorer struct {
 	table      *tview.Table
 	tree       *tview.TreeView
 	root       *tview.TreeNode
-	rb         *rebuilder.Rebuilder
 	dex        rundex.Reader
 	rundexOpts rundex.FetchRebuildOpts
 	runs       map[string]rundex.Run
-	buildDefs  rebuild.LocatableAssetStore
-	butler     localfiles.Butler
-	asst       assistant.Assistant
 	benches    benchmark.Repository
-	cmds       []rebuildCmd
+	cmdReg     commands.Registry
 	modalFn    modalFnType
 }
 
-func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *rebuilder.Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, asst assistant.Assistant, benches benchmark.Repository) *Explorer {
+func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, cmdReg commands.Registry) *Explorer {
 	e := Explorer{
 		app:        app,
 		container:  tview.NewPages(),
 		table:      tview.NewTable().SetBorders(true),
 		tree:       tview.NewTreeView(),
 		root:       tview.NewTreeNode("root").SetColor(tcell.ColorRed),
-		rb:         rb,
 		dex:        dex,
 		rundexOpts: rundexOpts,
-		buildDefs:  buildDefs,
-		butler:     butler,
-		asst:       asst,
 		benches:    benches,
-		cmds:       nil,
+		cmdReg:     cmdReg,
 		modalFn:    modalFn,
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
@@ -105,80 +78,6 @@ func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader,
 		}
 		return e.commandHotkeys(event, *example)
 	})
-	e.cmds = []rebuildCmd{
-		{
-			Name: "run local",
-			Func: func(ctx context.Context, example rundex.Rebuild) {
-				e.rb.RunLocal(ctx, example, rebuilder.RunLocalOpts{})
-			},
-		},
-		{
-			Name: "restart && run local",
-			Func: func(ctx context.Context, example rundex.Rebuild) {
-				e.rb.Restart(ctx)
-				e.rb.RunLocal(ctx, example, rebuilder.RunLocalOpts{})
-			},
-		},
-		{
-			Name: "edit and run local",
-			Func: func(ctx context.Context, example rundex.Rebuild) {
-				if err := e.editAndRun(ctx, example); err != nil {
-					log.Println(err.Error())
-				}
-			},
-		},
-		{
-			Hotkey: 'm',
-			Name:   "metadata",
-			Func: func(ctx context.Context, example rundex.Rebuild) {
-				if details, err := makeDetails(example); err != nil {
-					log.Println(err.Error())
-					return
-				} else {
-					e.modalFn(details, modal.ModalOpts{Margin: 10})
-				}
-			},
-		},
-		{
-			Hotkey: 'l',
-			Name:   "logs",
-			Func: func(ctx context.Context, example rundex.Rebuild) {
-				e.showLogs(ctx, example)
-			},
-		},
-		{
-			Hotkey: 'd',
-			Name:   "diff",
-			Func: func(ctx context.Context, example rundex.Rebuild) {
-				path, err := e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), diffoscope.DiffAsset.For(example.Target()))
-				if err != nil {
-					log.Println(errors.Wrap(err, "fetching diff"))
-					return
-				}
-				if err := tmux.Wait(fmt.Sprintf("less -R %s", path)); err != nil {
-					log.Println(errors.Wrap(err, "running diffoscope"))
-					return
-				}
-			},
-		},
-		{
-			Name: "debug with ✨AI✨",
-			Func: func(ctx context.Context, example rundex.Rebuild) {
-				s, err := e.asst.Session(ctx, example)
-				if err != nil {
-					log.Println(errors.Wrap(err, "creating session"))
-					return
-				}
-				cb := chatbox.NewChatbox(e.app, s, chatbox.ChatBoxOpts{Welcome: "Debug with AI! Type /help for a list of commands.", InputHeader: "Ask the AI"})
-				modalExit := e.modalFn(cb.Widget(), modal.ModalOpts{Margin: 10})
-				go cb.HandleInput(ctx, "/debug")
-				go func() {
-					<-cb.Done()
-					modalExit()
-				}()
-			},
-		},
-	}
 	resize, show := true, true
 	e.container.AddPage(TablePageName, e.table, resize, !show)
 	e.container.AddPage(TreePageName, e.tree, resize, show)
@@ -192,17 +91,17 @@ func (e *Explorer) Container() tview.Primitive {
 
 func (e *Explorer) commandNodes(example rundex.Rebuild) []*tview.TreeNode {
 	var res []*tview.TreeNode
-	for _, cmd := range e.cmds {
+	for _, cmd := range e.cmdReg.RebuildCommands() {
 		if cmd.Func == nil {
 			continue
 		}
-		res = append(res, tview.NewTreeNode(cmd.Name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), example) }))
+		res = append(res, tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), example) }))
 	}
 	return res
 }
 
 func (e *Explorer) commandHotkeys(event *tcell.EventKey, example rundex.Rebuild) *tcell.EventKey {
-	for _, cmd := range e.cmds {
+	for _, cmd := range e.cmdReg.RebuildCommands() {
 		if cmd.Func == nil || cmd.Hotkey == 0 {
 			continue
 		}
@@ -212,158 +111,6 @@ func (e *Explorer) commandHotkeys(event *tcell.EventKey, example rundex.Rebuild)
 		}
 	}
 	return event
-}
-
-func (e *Explorer) modalText(content string) {
-	tv := tview.NewTextView()
-	tv.SetText("\n" + content + "\n").
-		SetTextAlign(tview.AlignCenter).
-		SetTextColor(tcell.ColorWhite).
-		SetBackgroundColor(defaultBackground)
-	e.modalFn(tv, modal.ModalOpts{Height: 3, Margin: 10})
-}
-
-func makeCommandNode(name string, handler func()) *tview.TreeNode {
-	return tview.NewTreeNode(name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(handler)
-}
-
-func makeDetailsString(example rundex.Rebuild) (string, error) {
-	type deets struct {
-		Success  bool
-		Message  string
-		Timings  rebuild.Timings
-		Strategy schema.StrategyOneOf
-	}
-	detailsYaml := new(bytes.Buffer)
-	enc := yaml.NewEncoder(detailsYaml)
-	enc.SetIndent(2)
-	err := enc.Encode(deets{
-		Success:  example.Success,
-		Message:  example.Message,
-		Timings:  example.Timings,
-		Strategy: example.Strategy,
-	})
-	if err != nil {
-		return "", errors.Wrap(err, "marshalling details")
-	}
-	return detailsYaml.String(), nil
-}
-
-func makeDetails(example rundex.Rebuild) (modal.InputCaptureable, error) {
-	details := tview.NewTextView()
-	text, err := makeDetailsString(example)
-	if err != nil {
-		return nil, err
-	}
-	details.SetText(text).SetBackgroundColor(defaultBackground).SetTitle("Execution details")
-	return details, nil
-}
-
-func (e *Explorer) showLogs(ctx context.Context, example rundex.Rebuild) {
-	if example.Artifact == "" {
-		log.Println("Rundex does not have the artifact, cannot find GCS path.")
-		return
-	}
-	logs, err := e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugLogsAsset.For(example.Target()))
-	if err != nil {
-		log.Println(errors.Wrap(err, "downloading logs"))
-		return
-	}
-	if err := tmux.Start(fmt.Sprintf("cat %s | less", logs)); err != nil {
-		log.Println(errors.Wrap(err, "failed to read logs"))
-	}
-}
-
-func (e *Explorer) editAndRun(ctx context.Context, example rundex.Rebuild) error {
-	buildDefAsset := rebuild.BuildDef.For(example.Target())
-	var currentStrat schema.StrategyOneOf
-	{
-		if r, err := e.buildDefs.Reader(ctx, buildDefAsset); err == nil {
-			d := yaml.NewDecoder(r)
-			if d.Decode(&currentStrat) != nil {
-				return errors.Wrap(err, "failed to read existing build definition")
-			}
-		} else {
-			currentStrat = example.Strategy
-			s, err := currentStrat.Strategy()
-			if err != nil {
-				return errors.Wrap(err, "unpacking StrategyOneOf")
-			}
-			// Convert this strategy to a workflow strategy if possible.
-			if fable, ok := s.(rebuild.Flowable); ok {
-				currentStrat = schema.NewStrategyOneOf(fable.ToWorkflow())
-			}
-		}
-	}
-	var newStrat schema.StrategyOneOf
-	{
-		w, err := e.buildDefs.Writer(ctx, buildDefAsset)
-		if err != nil {
-			return errors.Wrapf(err, "opening build definition")
-		}
-		if _, err = w.Write([]byte("# Edit the build definition below, then save and exit the file to begin a rebuild.\n")); err != nil {
-			return errors.Wrapf(err, "writing comment to build definition file")
-		}
-		enc := yaml.NewEncoder(w)
-		if enc.Encode(&currentStrat) != nil {
-			return errors.Wrapf(err, "populating build definition")
-		}
-		w.Close()
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = "vim"
-		}
-		if err := tmux.Wait(fmt.Sprintf("%s %s", editor, e.buildDefs.URL(buildDefAsset).Path)); err != nil {
-			return errors.Wrap(err, "editing build definition")
-		}
-		r, err := e.buildDefs.Reader(ctx, buildDefAsset)
-		if err != nil {
-			return errors.Wrap(err, "failed to open build definition after edits")
-		}
-		d := yaml.NewDecoder(r)
-		if err := d.Decode(&newStrat); err != nil {
-			return errors.Wrap(err, "manual strategy oneof failed to parse")
-		}
-	}
-	e.rb.RunLocal(ctx, example, rebuilder.RunLocalOpts{Strategy: &newStrat})
-	return nil
-}
-func (e *Explorer) RunBenchmark(ctx context.Context, bench string) {
-	wdex, ok := e.dex.(rundex.Writer)
-	if !ok {
-		log.Println("Cannot run benchmark with non-local rundex client.")
-		return
-	}
-	set, err := benchmark.ReadBenchmark(bench)
-	if err != nil {
-		log.Println(errors.Wrap(err, "reading benchmark"))
-		return
-	}
-	var runID string
-	{
-		now := time.Now().UTC()
-		runID = now.Format(time.RFC3339)
-		wdex.WriteRun(ctx, rundex.FromRun(schema.Run{
-			ID:            runID,
-			BenchmarkName: filepath.Base(bench),
-			BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-			Type:          string(schema.SmoketestMode),
-			Created:       now,
-		}))
-	}
-	verdictChan, err := e.rb.RunBench(ctx, set, runID)
-	if err != nil {
-		log.Println(err.Error())
-		return
-	}
-	var successes int
-	for v := range verdictChan {
-		if v.Message == "" {
-			successes += 1
-		}
-		wdex.WriteRebuild(ctx, rundex.NewRebuildFromVerdict(v, "local", runID, time.Now().UTC()))
-	}
-	log.Printf("Finished benchmark %s with %d successes.", bench, successes)
 }
 
 func (e *Explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
@@ -516,7 +263,7 @@ func (e *Explorer) makeRunGroupNode(benchName string, runs []string) *tview.Tree
 					}
 					e.app.QueueUpdateDraw(func() {
 						if err := e.populateTable(rebuilds); err != nil {
-							e.modalText(err.Error())
+							log.Println(err)
 						}
 						e.SelectTable()
 					})
@@ -620,7 +367,7 @@ func (e *Explorer) rebuildHistory(rebuilds []rundex.Rebuild) (modal.InputCapture
 				log.Println("Node missing rebuild reference")
 				return
 			}
-			text, err := makeDetailsString(*r)
+			text, err := detailsui.Format(*r)
 			if err != nil {
 				log.Println(err)
 				return
