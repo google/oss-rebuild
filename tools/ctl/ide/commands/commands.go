@@ -19,7 +19,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/glob"
 	"github.com/google/oss-rebuild/internal/llm"
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -172,6 +174,133 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 				if err := tmux.Wait(fmt.Sprintf("less -R %s", path)); err != nil {
 					log.Println(errors.Wrap(err, "running diffoscope"))
 					return
+				}
+			},
+		},
+		{
+			Short: "generate stabilizers from diff",
+			Func: func(ctx context.Context, example rundex.Rebuild) {
+				// Generate the path exclusion stabilizers.
+				var customStabs []archive.CustomStabilizerEntry
+				{
+					if _, err := butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(example.Target())); err != nil {
+						log.Println(errors.Wrap(err, "downloading upstream"))
+						return
+					}
+					if _, err := butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.RebuildAsset.For(example.Target())); err != nil {
+						log.Println(errors.Wrap(err, "downloading rebuild"))
+						return
+					}
+					// TODO: This would be unecessary if butler returned an AssetStore.
+					assets, err := localfiles.AssetStore(example.RunID)
+					if err != nil {
+						log.Println(errors.Wrap(err, "creating asset store"))
+						return
+					}
+					var upCS *archive.ContentSummary
+					{
+						usr, err := assets.Reader(ctx, rebuild.DebugUpstreamAsset.For(example.Target()))
+						if err != nil {
+							log.Println(errors.Wrap(err, "opening upstream"))
+							return
+						}
+						defer usr.Close()
+						upCS, err = archive.NewContentSummary(usr, example.Target().ArchiveType())
+						if err != nil {
+							log.Println(errors.Wrap(err, "summarizing upstream"))
+							return
+						}
+					}
+					var rbCS *archive.ContentSummary
+					{
+						rbr, err := assets.Reader(ctx, rebuild.RebuildAsset.For(example.Target()))
+						if err != nil {
+							log.Println(errors.Wrap(err, "opening rebuild"))
+							return
+						}
+						defer rbr.Close()
+						rbCS, err = archive.NewContentSummary(rbr, example.Target().ArchiveType())
+						if err != nil {
+							log.Println(errors.Wrap(err, "summarizing rebuild"))
+							return
+						}
+					}
+					exclusionStab := func(path, reason string) archive.CustomStabilizerEntry {
+						return archive.CustomStabilizerEntry{
+							Config: archive.CustomStabilizerConfigOneOf{
+								ExcludePath: &archive.ExcludePath{
+									Paths: []string{path},
+								},
+							},
+							Reason: reason,
+						}
+					}
+					left, diff, right := rbCS.Diff(upCS)
+					for _, p := range left {
+						customStabs = append(customStabs, exclusionStab(p, "Found in rebuild.\nFIXME: Explain why it's safe to ignore."))
+					}
+					for _, p := range diff {
+						customStabs = append(customStabs, exclusionStab(p, "Found in both.\nFIXME: Explain why it's safe to ignore."))
+					}
+					for _, p := range right {
+						customStabs = append(customStabs, exclusionStab(p, "Found in Upstream.\nFIXME: Explain why it's safe to ignore."))
+					}
+				}
+				buildDefAsset := rebuild.BuildDef.For(example.Target())
+				// Read current definition.
+				var currentDef schema.BuildDefinition
+				{
+					if r, err := buildDefs.Reader(ctx, buildDefAsset); err == nil {
+						d := yaml.NewDecoder(r)
+						if d.Decode(&currentDef) != nil {
+							log.Println(errors.Wrap(err, "failed to read existing build definition"))
+							return
+						}
+					}
+				}
+				// Avoid adding a path exclusion if it already exists.
+				existing := map[string]bool{}
+				for _, s := range currentDef.CustomStabilizers {
+					if s.Config.ExcludePath != nil {
+						for _, p := range s.Config.ExcludePath.Paths {
+							existing[p] = true
+						}
+					}
+				}
+				// Add the exclusions.
+				for _, s := range customStabs {
+					matchesExisting := false
+					for pattern := range existing {
+						if match, err := glob.Match(pattern, s.Config.ExcludePath.Paths[0]); err == nil && match {
+							matchesExisting = true
+							break
+						}
+					}
+					if !matchesExisting {
+						currentDef.CustomStabilizers = append(currentDef.CustomStabilizers, s)
+					}
+				}
+				// Write the strategy and open for editing.
+				{
+					w, err := buildDefs.Writer(ctx, buildDefAsset)
+					if err != nil {
+						log.Println(errors.Wrapf(err, "opening build definition"))
+						return
+					}
+					enc := yaml.NewEncoder(w)
+					if enc.Encode(&currentDef) != nil {
+						log.Println(errors.Wrapf(err, "populating build definition"))
+						return
+					}
+					w.Close()
+					editor := os.Getenv("EDITOR")
+					if editor == "" {
+						editor = "vim"
+					}
+					if err := tmux.Wait(fmt.Sprintf("%s %s", editor, buildDefs.URL(buildDefAsset).Path)); err != nil {
+						log.Println(errors.Wrap(err, "editing build definition"))
+						return
+					}
 				}
 			},
 		},
