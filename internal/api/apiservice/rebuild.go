@@ -354,7 +354,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 }
 
 func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
-	started := time.Now()
+	started := time.Now().UTC()
 	ctx = context.WithValue(ctx, rebuild.RunID, req.ID)
 	var timeout time.Duration
 	if req.BuildTimeout == 0 {
@@ -397,8 +397,8 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		RunID:           req.ID,
 		BuildID:         bi.BuildID,
 		ObliviousID:     bi.ID,
-		Started:         started.Unix(),
-		Created:         time.Now().Unix(),
+		Started:         started,
+		Created:         time.Now().UTC(),
 	})
 	if err != nil {
 		log.Print(errors.Wrap(err, "storing results in firestore"))

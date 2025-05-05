@@ -26,7 +26,7 @@ func CreateRun(ctx context.Context, req schema.CreateRunRequest, deps *CreateRun
 		Type:          req.Type,
 	}
 	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
-		run.Created = time.Now().UTC().UnixMilli()
+		run.Created = time.Now().UTC()
 		return t.Create(deps.FirestoreClient.Collection("runs").Doc(run.ID), run)
 	})
 	if err != nil {
