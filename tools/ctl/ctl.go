@@ -25,6 +25,8 @@ import (
 	"text/template"
 	"time"
 
+	"cloud.google.com/go/firestore"
+	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	"cloud.google.com/go/vertexai/genai"
 	"github.com/cheggaaa/pb"
 	"github.com/go-git/go-billy/v5/osfs"
@@ -43,10 +45,12 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide"
 	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
+	"github.com/google/oss-rebuild/tools/ctl/migrations"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/iterator"
 	"gopkg.in/yaml.v3"
 )
 
@@ -548,6 +552,72 @@ var listRuns = &cobra.Command{
 	},
 }
 
+var migrate = &cobra.Command{
+	Use:   "migrate --project <project> [--dryrun] <migration-name>",
+	Short: "Migrate firestore entries",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		if *project == "" {
+			log.Fatal("project not provided")
+		}
+		client, err := firestore.NewClient(cmd.Context(), *project)
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "creating firestore client"))
+		}
+		migration, ok := migrations.All[args[0]]
+		if !ok {
+			log.Fatalf("Unknown migration: %s", args[0])
+		}
+		q := client.CollectionGroup(migration.CollectionGroup).Query
+		bw := client.BulkWriter(cmd.Context())
+		var total, updated int
+		{
+			ag := q.NewAggregationQuery()
+			ag = ag.WithCount("total-count")
+			res, err := ag.Get(cmd.Context())
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "getting count"))
+			}
+			totalV, ok := res["total-count"].(*firestorepb.Value)
+			if !ok {
+				log.Fatalf("Couldn't get total count: %+v", res)
+			}
+			total = int(totalV.GetIntegerValue())
+		}
+		iter := q.Documents(cmd.Context())
+		bar := pb.New(total)
+		bar.Output = cmd.OutOrStderr()
+		bar.ShowTimeLeft = true
+		bar.Start()
+		defer bar.Finish()
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			bar.Increment()
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "iterating over attempts"))
+			}
+			updates, err := migration.Transform(doc)
+			if errors.Is(err, migrations.ErrSkip) {
+				continue
+			} else if err != nil {
+				log.Fatal(errors.Wrap(err, "transforming field"))
+			}
+			updated++
+			if !*dryrun {
+				if _, err := bw.Update(doc.Ref, updates); err != nil {
+					log.Fatal(errors.Wrap(err, "updating field"))
+				}
+			}
+		}
+		bar.Finish()
+		bw.End()
+		log.Printf("Updated %d/%d entries (%2.1f%%)", updated, total, 100.*float64(updated)/float64(total))
+	},
+}
+
 var infer = &cobra.Command{
 	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
 	Short: "Run inference",
@@ -718,10 +788,12 @@ var (
 	project      = flag.String("project", "", "the project from which to fetch the Firestore data")
 	clean        = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
 	debugStorage = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
-	//TUI
+	// TUI
 	benchmarkDir = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 	defDir       = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
 	llmProject   = flag.String("llm-project", "", "the GCP project to use for LLM execution")
+	// Migrate
+	dryrun = flag.Bool("dryrun", false, "true if this migration is a dryrun")
 )
 
 func init() {
@@ -777,12 +849,16 @@ func init() {
 	infer.Flags().AddGoFlag(flag.Lookup("version"))
 	infer.Flags().AddGoFlag(flag.Lookup("artifact"))
 
+	migrate.Flags().AddGoFlag(flag.Lookup("project"))
+	migrate.Flags().AddGoFlag(flag.Lookup("dryrun"))
+
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
 	rootCmd.AddCommand(getResults)
 	rootCmd.AddCommand(tui)
 	rootCmd.AddCommand(listRuns)
 	rootCmd.AddCommand(infer)
+	rootCmd.AddCommand(migrate)
 }
 
 func main() {
