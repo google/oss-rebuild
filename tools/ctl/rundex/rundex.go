@@ -43,6 +43,24 @@ func NewRebuildFromFirestore(doc *firestore.DocumentSnapshot) Rebuild {
 	return rb
 }
 
+func NewRebuildFromVerdict(v schema.Verdict, executor string, runID string, created time.Time) Rebuild {
+	return Rebuild{
+		RebuildAttempt: schema.RebuildAttempt{
+			Ecosystem:       string(v.Target.Ecosystem),
+			Package:         v.Target.Package,
+			Version:         v.Target.Version,
+			Artifact:        v.Target.Artifact,
+			Success:         v.Message == "",
+			Message:         v.Message,
+			Strategy:        v.StrategyOneof,
+			Timings:         v.Timings,
+			ExecutorVersion: executor,
+			RunID:           runID,
+			Created:         created,
+		},
+	}
+}
+
 func (r Rebuild) Target() rebuild.Target {
 	return rebuild.Target{
 		Ecosystem: rebuild.Ecosystem(r.Ecosystem),
