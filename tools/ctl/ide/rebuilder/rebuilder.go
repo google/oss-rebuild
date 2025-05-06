@@ -209,7 +209,7 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r rundex.Rebuild, opts RunLoc
 	}
 	u := inst.URL.JoinPath("smoketest")
 	log.Println("Requesting a smoketest from: " + u.String())
-	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](http.DefaultClient, *u)
+	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](http.DefaultClient, u)
 	// TODO: Should this use benchmark.RunBench?
 	resp, err := stub(ctx, schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(r.Ecosystem),

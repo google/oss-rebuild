@@ -358,7 +358,7 @@ var runBenchmark = &cobra.Command{
 				log.Println(errors.Wrap(err, "writing run to rundex"))
 			}
 		} else {
-			stub := api.Stub[schema.CreateRunRequest, schema.Run](client, *apiURL.JoinPath("runs"))
+			stub := api.Stub[schema.CreateRunRequest, schema.Run](client, apiURL.JoinPath("runs"))
 			resp, err := stub(ctx, schema.CreateRunRequest{
 				BenchmarkName: filepath.Base(args[1]),
 				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
@@ -488,7 +488,7 @@ var runOne = &cobra.Command{
 		var verdicts []schema.Verdict
 		{
 			if mode == schema.SmoketestMode {
-				stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, *apiURL.JoinPath("smoketest"))
+				stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, apiURL.JoinPath("smoketest"))
 				resp, err := stub(ctx, schema.SmoketestRequest{
 					Ecosystem: rebuild.Ecosystem(*ecosystem),
 					Package:   *pkg,
@@ -500,7 +500,7 @@ var runOne = &cobra.Command{
 				}
 				verdicts = resp.Verdicts
 			} else {
-				stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, *apiURL.JoinPath("rebuild"))
+				stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, apiURL.JoinPath("rebuild"))
 				resp, err := stub(ctx, schema.RebuildPackageRequest{
 					Ecosystem:         rebuild.Ecosystem(*ecosystem),
 					Package:           *pkg,
@@ -664,7 +664,7 @@ var infer = &cobra.Command{
 			} else {
 				client = http.DefaultClient
 			}
-			stub := api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, *apiURL.JoinPath("/infer"))
+			stub := api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, apiURL.JoinPath("/infer"))
 			resp, err = stub(cmd.Context(), req)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "executing inference"))
