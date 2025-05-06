@@ -52,8 +52,9 @@ func verdictAsEmoji(r rundex.Rebuild) string {
 // rebuildCmd is a command that operates on an individual rundex.Rebuild
 // These commands will be called as goroutines to avoid blocking the TUI loop
 type rebuildCmd struct {
-	Name string
-	Func func(context.Context, rundex.Rebuild)
+	Hotkey rune
+	Name   string
+	Func   func(context.Context, rundex.Rebuild)
 }
 
 // A modalFnType can be used to show an InputCaptureable. It returns an exit function that can be used to close the modal.
@@ -61,50 +62,50 @@ type modalFnType func(modal.InputCaptureable, modal.ModalOpts) func()
 
 // The Explorer is the Tree structure on the left side of the TUI
 type Explorer struct {
-	app             *tview.Application
-	container       *tview.Pages
-	table           *tview.Table
-	tree            *tview.TreeView
-	root            *tview.TreeNode
-	rb              *rebuilder.Rebuilder
-	dex             rundex.Reader
-	rundexOpts      rundex.FetchRebuildOpts
-	runs            map[string]rundex.Run
-	buildDefs       rebuild.LocatableAssetStore
-	butler          localfiles.Butler
-	asst            assistant.Assistant
-	benches         benchmark.Repository
-	exampleCommands []rebuildCmd
-	modalFn         modalFnType
+	app        *tview.Application
+	container  *tview.Pages
+	table      *tview.Table
+	tree       *tview.TreeView
+	root       *tview.TreeNode
+	rb         *rebuilder.Rebuilder
+	dex        rundex.Reader
+	rundexOpts rundex.FetchRebuildOpts
+	runs       map[string]rundex.Run
+	buildDefs  rebuild.LocatableAssetStore
+	butler     localfiles.Butler
+	asst       assistant.Assistant
+	benches    benchmark.Repository
+	cmds       []rebuildCmd
+	modalFn    modalFnType
 }
 
 func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, rb *rebuilder.Rebuilder, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, asst assistant.Assistant, benches benchmark.Repository) *Explorer {
 	e := Explorer{
-		app:             app,
-		container:       tview.NewPages(),
-		table:           tview.NewTable().SetBorders(true),
-		tree:            tview.NewTreeView(),
-		root:            tview.NewTreeNode("root").SetColor(tcell.ColorRed),
-		rb:              rb,
-		dex:             dex,
-		rundexOpts:      rundexOpts,
-		buildDefs:       buildDefs,
-		butler:          butler,
-		asst:            asst,
-		benches:         benches,
-		exampleCommands: nil,
-		modalFn:         modalFn,
+		app:        app,
+		container:  tview.NewPages(),
+		table:      tview.NewTable().SetBorders(true),
+		tree:       tview.NewTreeView(),
+		root:       tview.NewTreeNode("root").SetColor(tcell.ColorRed),
+		rb:         rb,
+		dex:        dex,
+		rundexOpts: rundexOpts,
+		buildDefs:  buildDefs,
+		butler:     butler,
+		asst:       asst,
+		benches:    benches,
+		cmds:       nil,
+		modalFn:    modalFn,
 	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
-	e.table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyESC {
-			e.SelectTree()
-			// Return nil to stop further primatives from receiving the event.
-			return nil
+	e.tree.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		current := e.tree.GetCurrentNode().GetReference()
+		example, ok := current.(*rundex.Rebuild)
+		if !ok || example == nil {
+			return event
 		}
-		return event
+		return e.commandHotkeys(event, *example)
 	})
-	e.exampleCommands = []rebuildCmd{
+	e.cmds = []rebuildCmd{
 		{
 			Name: "run local",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
@@ -127,7 +128,8 @@ func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader,
 			},
 		},
 		{
-			Name: "details",
+			Hotkey: 'm',
+			Name:   "metadata",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
 				if details, err := makeDetails(example); err != nil {
 					log.Println(err.Error())
@@ -138,13 +140,15 @@ func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader,
 			},
 		},
 		{
-			Name: "logs",
+			Hotkey: 'l',
+			Name:   "logs",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
 				e.showLogs(ctx, example)
 			},
 		},
 		{
-			Name: "diff",
+			Hotkey: 'd',
+			Name:   "diff",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
 				path, err := e.butler.Fetch(ctx, example.RunID, example.WasSmoketest(), diffoscope.DiffAsset.For(example.Target()))
 				if err != nil {
@@ -184,6 +188,30 @@ func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader,
 
 func (e *Explorer) Container() tview.Primitive {
 	return e.container
+}
+
+func (e *Explorer) commandNodes(example rundex.Rebuild) []*tview.TreeNode {
+	var res []*tview.TreeNode
+	for _, cmd := range e.cmds {
+		if cmd.Func == nil {
+			continue
+		}
+		res = append(res, tview.NewTreeNode(cmd.Name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), example) }))
+	}
+	return res
+}
+
+func (e *Explorer) commandHotkeys(event *tcell.EventKey, example rundex.Rebuild) *tcell.EventKey {
+	for _, cmd := range e.cmds {
+		if cmd.Func == nil || cmd.Hotkey == 0 {
+			continue
+		}
+		if event.Rune() == cmd.Hotkey {
+			go cmd.Func(context.Background(), example)
+			return nil
+		}
+	}
+	return event
 }
 
 func (e *Explorer) modalText(content string) {
@@ -340,14 +368,12 @@ func (e *Explorer) RunBenchmark(ctx context.Context, bench string) {
 
 func (e *Explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 	name := fmt.Sprintf("%s [%ds]", example.ID(), int(example.Timings.EstimateCleanBuild().Seconds()))
-	node := tview.NewTreeNode(name).SetColor(tcell.ColorYellow)
+	node := tview.NewTreeNode(name).SetColor(tcell.ColorYellow).SetReference(&example)
 	node.SetSelectedFunc(func() {
 		children := node.GetChildren()
 		if len(children) == 0 {
-			for _, cmd := range e.exampleCommands {
-				node.AddChild(
-					tview.NewTreeNode(cmd.Name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), example) }),
-				)
+			for _, c := range e.commandNodes(example) {
+				node.AddChild(c)
 			}
 		} else {
 			node.SetExpanded(!node.IsExpanded())
@@ -465,7 +491,7 @@ func (e *Explorer) makeRunGroupNode(benchName string, runs []string) *tview.Tree
 	node.SetSelectedFunc(func() {
 		children := node.GetChildren()
 		if len(children) == 0 {
-			node.AddChild(makeCommandNode("View by target", func() {
+			node.AddChild(tview.NewTreeNode("View by target").SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() {
 				go func() {
 					all, err := e.benches.List()
 					if err != nil {
@@ -550,15 +576,13 @@ func (e *Explorer) rebuildHistory(rebuilds []rundex.Rebuild) (modal.InputCapture
 		root := tview.NewTreeNode("runs").SetColor(tcell.ColorRed)
 		runs.SetRoot(root)
 		for _, r := range rebuilds {
-			node := tview.NewTreeNode(r.RunID + verdictAsEmoji(r)).SetReference(r)
+			node := tview.NewTreeNode(r.RunID + verdictAsEmoji(r)).SetReference(&r)
 			node.SetSelectedFunc(func() {
 				children := node.GetChildren()
 				if len(children) == 0 {
 					node.SetExpanded(true)
-					for _, cmd := range e.exampleCommands {
-						node.AddChild(
-							tview.NewTreeNode(cmd.Name).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), r) }),
-						)
+					for _, c := range e.commandNodes(r) {
+						node.AddChild(c)
 					}
 				} else {
 					node.SetExpanded(!node.IsExpanded())
@@ -578,17 +602,25 @@ func (e *Explorer) rebuildHistory(rebuilds []rundex.Rebuild) (modal.InputCapture
 			root.AddChild(node)
 		}
 		runs.SetBackgroundColor(defaultBackground)
+		runs.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+			current := runs.GetCurrentNode().GetReference()
+			example, ok := current.(*rundex.Rebuild)
+			if !ok || example == nil {
+				return event
+			}
+			return e.commandHotkeys(event, *example)
+		})
 		populateDetails := func(node *tview.TreeNode) {
 			if node == root {
 				details.SetText("")
 				return
 			}
-			r, ok := node.GetReference().(rundex.Rebuild)
+			r, ok := node.GetReference().(*rundex.Rebuild)
 			if !ok {
 				log.Println("Node missing rebuild reference")
 				return
 			}
-			text, err := makeDetailsString(r)
+			text, err := makeDetailsString(*r)
 			if err != nil {
 				log.Println(err)
 				return
@@ -653,6 +685,19 @@ func (e *Explorer) populateTable(rebuilds []rundex.Rebuild) error {
 			return
 		}
 		go e.modalFn(hist, modal.ModalOpts{Margin: 10})
+	})
+	e.table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyESC {
+			e.SelectTree()
+			// Return nil to stop further primatives from receiving the event.
+			return nil
+		}
+		row, _ := e.table.GetSelection()
+		if row == 0 || row > len(rebuilds) {
+			return event
+		}
+		example := rebuilds[row-1]
+		return e.commandHotkeys(event, example)
 	})
 	return nil
 }
