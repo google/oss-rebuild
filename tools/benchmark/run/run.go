@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package benchmark
+package run
 
 import (
 	"context"
@@ -17,12 +17,13 @@ import (
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/pkg/errors"
 )
 
 type packageWorker interface {
 	Setup(ctx context.Context)
-	ProcessOne(ctx context.Context, p Package, out chan schema.Verdict)
+	ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict)
 }
 
 type executor struct {
@@ -30,9 +31,9 @@ type executor struct {
 	Worker      packageWorker
 }
 
-func (ex *executor) Process(ctx context.Context, out chan schema.Verdict, packages []Package) {
+func (ex *executor) Process(ctx context.Context, out chan schema.Verdict, packages []benchmark.Package) {
 	ex.Worker.Setup(ctx)
-	jobs := make(chan Package)
+	jobs := make(chan benchmark.Package)
 	go func() {
 		for _, p := range packages {
 			jobs <- p
@@ -70,7 +71,7 @@ var _ packageWorker = &attestWorker{}
 
 func (w *attestWorker) Setup(ctx context.Context) {}
 
-func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
+func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	if len(p.Artifacts) > 0 && len(p.Artifacts) != len(p.Versions) {
 		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
 	}
@@ -128,7 +129,7 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 	}
 }
 
-func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
+func (w *smoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	<-w.limiters[p.Ecosystem]
 	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](w.client, w.url.JoinPath("smoketest"))
 	req := schema.SmoketestRequest{
@@ -181,7 +182,7 @@ type RunBenchOpts struct {
 	UseNetworkProxy   bool
 }
 
-func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set PackageSet, opts RunBenchOpts) (<-chan schema.Verdict, error) {
+func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set benchmark.PackageSet, opts RunBenchOpts) (<-chan schema.Verdict, error) {
 	if opts.RunID == "" {
 		return nil, errors.New("opts.RunID must be set")
 	}
@@ -215,7 +216,7 @@ func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set Pac
 	return verdictChan, nil
 }
 
-func RunBenchAsync(ctx context.Context, set PackageSet, mode schema.ExecutionMode, apiURL *url.URL, runID string, queue taskqueue.Queue) error {
+func RunBenchAsync(ctx context.Context, set benchmark.PackageSet, mode schema.ExecutionMode, apiURL *url.URL, runID string, queue taskqueue.Queue) error {
 	for _, p := range set.Packages {
 		if mode == schema.AttestMode {
 			for i, v := range p.Versions {

@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package benchmark
+package run
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api/form"
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/pkg/errors"
 )
 
@@ -38,14 +39,14 @@ func TestRunBenchAsync(t *testing.T) {
 	testCases := []struct {
 		name     string
 		mode     schema.ExecutionMode
-		set      PackageSet
+		set      benchmark.PackageSet
 		expected []queueCall
 	}{
 		{
 			name: "attest",
 			mode: schema.AttestMode,
-			set: PackageSet{
-				Packages: []Package{
+			set: benchmark.PackageSet{
+				Packages: []benchmark.Package{
 					{
 						Ecosystem: "npm",
 						Name:      "package_name",
@@ -67,8 +68,8 @@ func TestRunBenchAsync(t *testing.T) {
 		{
 			name: "smoketest",
 			mode: schema.SmoketestMode,
-			set: PackageSet{
-				Packages: []Package{
+			set: benchmark.PackageSet{
+				Packages: []benchmark.Package{
 					{
 						Ecosystem: "npm",
 						Name:      "package_name",

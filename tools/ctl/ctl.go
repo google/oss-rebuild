@@ -42,6 +42,7 @@ import (
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
 	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
@@ -342,14 +343,14 @@ var runBenchmark = &cobra.Command{
 		} else {
 			client = http.DefaultClient
 		}
-		var run string
+		var runID string
 		var dex rundex.Writer
 		if *buildLocal {
 			now := time.Now().UTC()
-			run = now.Format(time.RFC3339)
+			runID = now.Format(time.RFC3339)
 			dex = rundex.NewLocalClient(localfiles.Rundex())
 			if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
-				ID:            run,
+				ID:            runID,
 				BenchmarkName: filepath.Base(args[1]),
 				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
 				Type:          string(schema.SmoketestMode),
@@ -367,14 +368,14 @@ var runBenchmark = &cobra.Command{
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "creating run"))
 			}
-			run = resp.ID
+			runID = resp.ID
 		}
 		if *async {
 			queue, err := taskqueue.NewQueue(ctx, *taskQueuePath, *taskQueueEmail)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "making taskqueue client"))
 			}
-			if err := benchmark.RunBenchAsync(ctx, set, mode, apiURL, run, queue); err != nil {
+			if err := run.RunBenchAsync(ctx, set, mode, apiURL, runID, queue); err != nil {
 				log.Fatal(errors.Wrap(err, "adding benchmark to queue"))
 			}
 			return
@@ -382,9 +383,9 @@ var runBenchmark = &cobra.Command{
 		bar := pb.New(set.Count)
 		bar.Output = cmd.OutOrStderr()
 		bar.ShowTimeLeft = true
-		verdictChan, err := benchmark.RunBench(ctx, client, apiURL, set, benchmark.RunBenchOpts{
+		verdictChan, err := run.RunBench(ctx, client, apiURL, set, run.RunBenchOpts{
 			Mode:              mode,
-			RunID:             run,
+			RunID:             runID,
 			MaxConcurrency:    *maxConcurrency,
 			UseSyscallMonitor: *useSyscallMonitor,
 			UseNetworkProxy:   *useNetworkProxy,
@@ -400,7 +401,7 @@ var runBenchmark = &cobra.Command{
 				fmt.Printf("\n%v: %s\n", v.Target, v.Message)
 			}
 			if dex != nil {
-				if err := dex.WriteRebuild(ctx, rundex.NewRebuildFromVerdict(v, "local", run, time.Now().UTC())); err != nil {
+				if err := dex.WriteRebuild(ctx, rundex.NewRebuildFromVerdict(v, "local", runID, time.Now().UTC())); err != nil {
 					log.Println(errors.Wrap(err, "writing rebuild to rundex"))
 				}
 			}
