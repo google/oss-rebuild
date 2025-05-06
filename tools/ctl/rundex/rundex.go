@@ -30,7 +30,6 @@ import (
 // Rebuild represents the result of a specific rebuild.
 type Rebuild struct {
 	schema.RebuildAttempt
-	Created time.Time
 }
 
 // NewRebuildFromFirestore creates a Rebuild instance from a "attempt" collection document.
@@ -41,11 +40,6 @@ func NewRebuildFromFirestore(doc *firestore.DocumentSnapshot) Rebuild {
 	}
 	var rb Rebuild
 	rb.RebuildAttempt = sa
-	rb.Created = time.Unix(sa.Created, 0)
-	if rb.Created.After(time.Date(3000, 1, 1, 0, 0, 0, 0, time.UTC)) {
-		rb.Created = time.UnixMilli(sa.Created)
-	}
-
 	return rb
 }
 
@@ -80,7 +74,7 @@ func FromRun(r schema.Run) Run {
 	var rb Run
 	rb.Run = r
 	rb.Type = schema.ExecutionMode(r.Type)
-	rb.Created = time.UnixMilli(r.Created)
+	rb.Created = r.Created
 	return rb
 }
 

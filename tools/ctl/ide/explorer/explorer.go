@@ -311,15 +311,18 @@ func (e *Explorer) RunBenchmark(ctx context.Context, bench string) {
 		log.Println(errors.Wrap(err, "reading benchmark"))
 		return
 	}
-	ts := time.Now().UTC()
-	runID := ts.Format(time.RFC3339)
-	wdex.WriteRun(ctx, rundex.FromRun(schema.Run{
-		ID:            runID,
-		BenchmarkName: filepath.Base(bench),
-		BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-		Type:          string(schema.SmoketestMode),
-		Created:       ts.UnixMilli(),
-	}))
+	var runID string
+	{
+		now := time.Now().UTC()
+		runID = now.Format(time.RFC3339)
+		wdex.WriteRun(ctx, rundex.FromRun(schema.Run{
+			ID:            runID,
+			BenchmarkName: filepath.Base(bench),
+			BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
+			Type:          string(schema.SmoketestMode),
+			Created:       now,
+		}))
+	}
 	verdictChan, err := e.rb.RunBench(ctx, set, runID)
 	if err != nil {
 		log.Println(err.Error())
@@ -330,7 +333,7 @@ func (e *Explorer) RunBenchmark(ctx context.Context, bench string) {
 		if v.Message == "" {
 			successes += 1
 		}
-		now := time.Now().UnixMilli()
+		now := time.Now().UTC()
 		wdex.WriteRebuild(ctx, rundex.Rebuild{
 			RebuildAttempt: schema.RebuildAttempt{
 				Ecosystem:       string(v.Target.Ecosystem),
@@ -345,7 +348,6 @@ func (e *Explorer) RunBenchmark(ctx context.Context, bench string) {
 				RunID:           runID,
 				Created:         now,
 			},
-			Created: time.UnixMilli(now),
 		})
 	}
 	log.Printf("Finished benchmark %s with %d successes.", bench, successes)

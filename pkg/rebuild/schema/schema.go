@@ -257,17 +257,17 @@ type RebuildAttempt struct {
 	RunID           string          `firestore:"run_id,omitempty"`
 	BuildID         string          `firestore:"build_id,omitempty"`
 	ObliviousID     string          `firestore:"oblivious_id,omitempty"`
-	Started         int64           `firestore:"started,omitempty"` // The time rebuild started
-	Created         int64           `firestore:"created,omitempty"` // The time this record was created
+	Started         time.Time       `firestore:"started,omitempty"` // The time rebuild started
+	Created         time.Time       `firestore:"created,omitempty"` // The time this record was created
 }
 
 // Run stores metadata on an execution grouping.
 type Run struct {
-	ID            string `firestore:"id,omitempty"`
-	BenchmarkName string `firestore:"benchmark_name,omitempty"`
-	BenchmarkHash string `firestore:"benchmark_hash,omitempty"`
-	Type          string `firestore:"run_type,omitempty"`
-	Created       int64  `firestore:"created,omitempty"`
+	ID            string    `firestore:"id,omitempty"`
+	BenchmarkName string    `firestore:"benchmark_name,omitempty"`
+	BenchmarkHash string    `firestore:"benchmark_hash,omitempty"`
+	Type          string    `firestore:"run_type,omitempty"`
+	Created       time.Time `firestore:"created,omitempty"`
 }
 
 type ReleaseEvent struct {
