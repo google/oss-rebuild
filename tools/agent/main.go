@@ -459,7 +459,7 @@ cp /src/{{.Inst.OutputPath}} /out/rebuild`)).Execute(buf, map[string]any{"Inst":
 	defer os.RemoveAll(tmp)
 	logbuf := &bytes.Buffer{}
 	outw := io.MultiWriter(os.Stdout, logbuf)
-	cmd := exec.CommandContext(ctx, "docker", "run", "-i", "--rm", "-v", tmp+":/out", "-v", "alpine", "sh")
+	cmd := exec.CommandContext(ctx, "docker", "run", "-i", "--rm", "-v", tmp+":/out", "alpine", "sh")
 	cmd.Stdin = buf
 	cmd.Stdout = outw
 	cmd.Stderr = outw
