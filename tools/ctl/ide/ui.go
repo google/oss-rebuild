@@ -14,24 +14,14 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
+	"github.com/google/oss-rebuild/tools/ctl/ide/commands"
 	"github.com/google/oss-rebuild/tools/ctl/ide/explorer"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
-	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 )
-
-const (
-	defaultBackground = tcell.ColorDarkCyan
-)
-
-type tuiAppCmd struct {
-	Name string
-	Rune rune
-	Func func(context.Context)
-}
 
 // TuiApp represents the entire IDE, containing UI widgets and worker processes.
 type TuiApp struct {
@@ -40,7 +30,6 @@ type TuiApp struct {
 	explorer  *explorer.Explorer
 	statusBox *tview.TextView
 	logs      *tview.TextView
-	cmds      []tuiAppCmd
 	benches   benchmark.Repository
 	rb        *rebuilder.Rebuilder
 }
@@ -72,33 +61,17 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 	modalFn := func(input modal.InputCaptureable, opts modal.ModalOpts) func() {
 		return modal.Show(t.app, t.root, input, opts)
 	}
-	t.explorer = explorer.NewExplorer(t.app, modalFn, dex, rundexOpts, t.rb, buildDefs, butler, asst, benches)
-	t.cmds = []tuiAppCmd{
+	cmdReg := commands.Registry{}
+	if err := cmdReg.AddGlobals(commands.NewGlobalCmds(t.app, t.rb, modalFn, butler, asst, buildDefs, dex, benches)...); err != nil {
+		log.Fatal(err)
+	}
+	if err := cmdReg.AddRebuilds(commands.NewRebuildCmds(t.app, t.rb, modalFn, butler, asst, buildDefs, dex, benches)...); err != nil {
+		log.Fatal(err)
+	}
+	err := cmdReg.AddGlobals([]commands.GlobalCmd{
 		{
-			Name: "restart rebuilder",
-			Rune: 'r',
-			Func: func(ctx context.Context) { t.rb.Restart(ctx) },
-		},
-		{
-			Name: "kill rebuilder",
-			Rune: 'x',
-			Func: func(_ context.Context) {
-				t.rb.Kill()
-			},
-		},
-		{
-			Name: "attach",
-			Rune: 'a',
-			Func: func(ctx context.Context) {
-				if err := t.rb.Attach(ctx); err != nil {
-					log.Println(err)
-				}
-				t.updateStatus()
-			},
-		},
-		{
-			Name: "logs up",
-			Rune: '^',
+			Short:  "logs up",
+			Hotkey: '^',
 			Func: func(_ context.Context) {
 				curRow, _ := t.logs.GetScrollOffset()
 				_, _, _, height := t.logs.GetInnerRect()
@@ -111,27 +84,23 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 			},
 		},
 		{
-			Name: "logs bottom",
-			Rune: 'v',
+			Short:  "logs bottom",
+			Hotkey: 'v',
 			Func: func(_ context.Context) {
 				t.logs.ScrollToEnd()
 			},
 		},
-		{
-			Name: "benchmark",
-			Rune: 'b',
-			Func: func(ctx context.Context) {
-				if b, err := t.promptForBenchmark(); err != nil {
-					t.modalText(err.Error())
-				} else {
-					go func() {
-						t.explorer.RunBenchmark(ctx, <-b)
-					}()
-				}
-			},
-		},
+	}...)
+	if err != nil {
+		log.Fatal(err)
 	}
-
+	t.explorer = explorer.NewExplorer(t.app, modalFn, dex, rundexOpts, benches, cmdReg)
+	gcmds := cmdReg.GlobalCommands()
+	inst := make([]string, 0, len(gcmds))
+	for _, cmd := range gcmds {
+		inst = append(inst, fmt.Sprintf("%c: %s", cmd.Hotkey, cmd.Short))
+	}
+	instructions := tview.NewTextView().SetText(strings.Join(inst, " "))
 	{
 		/*             window
 		┌───────────────────────────────────┐
@@ -141,7 +110,7 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 		││          ◄-mainPane-►           ││
 		││               .                 ││
 		││               .                 ││
-		││    tree       .      logs       ││
+		││    explorer   .      logs       ││
 		││               .                 ││
 		││               .                 ││
 		│┼─────────────────────────────────┼│
@@ -153,10 +122,10 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 		unit := 1
 		focused := true
 		bottomBar := tview.NewFlex().SetDirection(tview.FlexColumn).
-			AddItem(t.instructions(), flexed, unit, !focused). // instr
-			AddItem(t.statusBox, flexed, unit, !focused)       // status
+			AddItem(instructions, flexed, unit, !focused). // instr
+			AddItem(t.statusBox, flexed, unit, !focused)   // status
 		mainPane := tview.NewFlex().SetDirection(tview.FlexColumn).
-			AddItem(t.explorer.Container(), flexed, unit, focused). // tree
+			AddItem(t.explorer.Container(), flexed, unit, focused). // explorer
 			AddItem(t.logs, flexed, unit, !focused)                 // logs
 		window := tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(mainPane, flexed, unit, focused).
@@ -167,8 +136,8 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 				t.rb.Kill()
 				return event
 			}
-			for _, cmd := range t.cmds {
-				if event.Rune() == cmd.Rune {
+			for _, cmd := range gcmds {
+				if cmd.Hotkey != 0 && event.Rune() == cmd.Hotkey {
 					go cmd.Func(context.Background())
 					return nil
 				}
@@ -179,48 +148,6 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 	}
 	t.app.SetRoot(t.root, true)
 	return t
-}
-
-func (t *TuiApp) instructions() *tview.TextView {
-	inst := make([]string, 0, len(t.cmds))
-	for _, cmd := range t.cmds {
-		inst = append(inst, fmt.Sprintf("%c: %s", cmd.Rune, cmd.Name))
-	}
-	return tview.NewTextView().SetText(strings.Join(inst, " "))
-}
-
-func (t *TuiApp) updateStatus() {
-	cid := "N/A"
-	if inst := t.rb.Instance(); inst.Serving() {
-		cid = string(inst.ID)
-	}
-	t.statusBox.SetText(fmt.Sprintf("rebuilder cid: %s", cid))
-}
-
-func (t *TuiApp) modalText(content string) {
-	modal.Text(t.app, t.root, content)
-}
-
-func (t *TuiApp) promptForBenchmark() (<-chan string, error) {
-	all, err := t.benches.List()
-	if err != nil {
-		return nil, errors.Wrap(err, "listing benchmarks")
-	}
-	options := tview.NewList()
-	options.SetBackgroundColor(defaultBackground).SetBorder(true).SetTitle("Select a benchmark to execute.")
-	// exitFunc will be populated once the modal has been created.
-	var exitFunc func()
-	selected := make(chan string, 1)
-	for _, path := range all {
-		options.AddItem(path, "", 0, func() {
-			if exitFunc != nil {
-				exitFunc()
-			}
-			selected <- path
-		})
-	}
-	exitFunc = modal.Show(t.app, t.root, options, modal.ModalOpts{Height: (options.GetItemCount() * 2) + 2, Margin: 10})
-	return selected, nil
 }
 
 // Run runs the underlying tview app.
