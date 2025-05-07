@@ -146,6 +146,9 @@ func (e *Explorer) makeVerdictGroupNode(vg *rundex.VerdictGroup, percent float32
 	node.SetSelectedFunc(func() {
 		children := node.GetChildren()
 		if len(children) == 0 {
+			for _, cmd := range e.cmdReg.RebuildGroupCommands() {
+				node.AddChild(tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), vg.Examples) }))
+			}
 			for _, example := range vg.Examples {
 				node.AddChild(e.makeExampleNode(example))
 			}
