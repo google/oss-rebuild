@@ -16,6 +16,11 @@ type RebuildCmd struct {
 	Func   func(context.Context, rundex.Rebuild)
 }
 
+type RebuildGroupCmd struct {
+	Short string
+	Func  func(context.Context, []rundex.Rebuild)
+}
+
 type GlobalCmd struct {
 	Short  string
 	Hotkey rune
@@ -23,8 +28,9 @@ type GlobalCmd struct {
 }
 
 type Registry struct {
-	rebuildCmds []RebuildCmd
-	globalCmds  []GlobalCmd
+	rebuildCmds      []RebuildCmd
+	rebuildGroupCmds []RebuildGroupCmd
+	globalCmds       []GlobalCmd
 }
 
 func (reg *Registry) AddGlobals(cmds ...GlobalCmd) error {
@@ -33,6 +39,17 @@ func (reg *Registry) AddGlobals(cmds ...GlobalCmd) error {
 	err := reg.Validate()
 	if err != nil {
 		reg.globalCmds = old
+		return err
+	}
+	return nil
+}
+
+func (reg *Registry) AddRebuildGroups(cmds ...RebuildGroupCmd) error {
+	old := reg.rebuildGroupCmds
+	reg.rebuildGroupCmds = append(reg.rebuildGroupCmds, cmds...)
+	err := reg.Validate()
+	if err != nil {
+		reg.rebuildGroupCmds = old
 		return err
 	}
 	return nil
@@ -72,6 +89,10 @@ func (reg *Registry) Validate() error {
 
 func (reg *Registry) RebuildCommands() []RebuildCmd {
 	return reg.rebuildCmds
+}
+
+func (reg *Registry) RebuildGroupCommands() []RebuildGroupCmd {
+	return reg.rebuildGroupCmds
 }
 
 func (reg *Registry) GlobalCommands() []GlobalCmd {
