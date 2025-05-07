@@ -289,6 +289,20 @@ func (e ReleaseEvent) From(t rebuild.Target) ReleaseEvent {
 
 var _ api.Message = ReleaseEvent{}
 
+// AnalyzeRebuildRequest is a request to analyze a rebuilt package.
+type AnalyzeRebuildRequest struct {
+	Ecosystem rebuild.Ecosystem `form:",required"`
+	Package   string            `form:",required"`
+	Version   string            `form:",required"`
+	Artifact  string            `form:",required"`
+	Extras    string            `form:""`
+	Timeout   time.Duration     `form:""`
+}
+
+var _ api.Message = AnalyzeRebuildRequest{}
+
+func (req AnalyzeRebuildRequest) Validate() error { return nil }
+
 // Execution mode describes the manner in which a rebuild happens.
 type ExecutionMode string
 
