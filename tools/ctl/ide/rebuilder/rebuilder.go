@@ -236,7 +236,8 @@ func (rb *Rebuilder) RunBench(ctx context.Context, set benchmark.PackageSet, run
 	if err != nil {
 		return nil, errors.Wrap(err, "getting running instance")
 	}
-	return run.RunBench(ctx, http.DefaultClient, inst.URL, set, run.RunBenchOpts{
+	return run.RunBench(ctx, set, run.RunBenchOpts{
+		ExecService:    run.NewRemoteExecutionService(http.DefaultClient, inst.URL),
 		Mode:           schema.SmoketestMode,
 		RunID:          runID,
 		MaxConcurrency: 1,
