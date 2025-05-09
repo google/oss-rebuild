@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>io.github.chains-project</groupId>
+    <artifactId>a</artifactId>
+
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>pl.project13.maven</groupId>
+                        <artifactId>git-commit-id-plugin</artifactId>
+                        <version>4.9.10</version>
+                        <executions>
+                            <execution>
+                                <id>get-the-git-infos</id>
+                                <goals>
+                                    <goal>revision</goal>
+                                </goals>
+                                <phase>initialize</phase>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <generateGitPropertiesFile>true</generateGitPropertiesFile>
+                            <generateGitPropertiesFilename>${project.build.directory}/foobar/custom-git.properties</generateGitPropertiesFilename>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>
