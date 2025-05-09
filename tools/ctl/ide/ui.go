@@ -140,7 +140,7 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 		window := tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(mainPane, flexed, unit, focused).
 			AddItem(bottomBar, 1, 0, !focused) // bottomBar is non-flexed, fixed height 1
-		window.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		t.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 			if event.Key() == tcell.KeyCtrlC {
 				// Clean up the rebuilder docker container.
 				t.rb.Kill()
