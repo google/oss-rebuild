@@ -16,14 +16,19 @@ const (
 
 // Returns a new primitive which puts the provided primitive in the center and
 // adds vertical and horizontal margin.
+// vertMargin and horizMargin are total margin. If margin is odd (can't be evenly split on either side), the primitive goes to the top and left.
 func center(p tview.Primitive, vertMargin, horizMargin int) tview.Primitive {
+	topMargin := vertMargin / 2
+	bottomMargin := vertMargin - topMargin
+	leftMargin := horizMargin / 2
+	rightMargin := horizMargin - leftMargin
 	return tview.NewFlex().
-		AddItem(nil, horizMargin, 0, false).
+		AddItem(nil, leftMargin, 0, false).
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(nil, vertMargin, 0, false).
+			AddItem(nil, topMargin, 0, false).
 			AddItem(p, 0, 1, true).
-			AddItem(nil, vertMargin, 0, false), 0, 1, true).
-		AddItem(nil, horizMargin, 0, false)
+			AddItem(nil, bottomMargin, 0, false), 0, 1, true).
+		AddItem(nil, rightMargin, 0, false)
 }
 
 type InputCaptureable interface {
@@ -65,7 +70,7 @@ func Show(app *tview.Application, container *tview.Pages, contents InputCapturea
 	opts.Height = min(opts.Height, containerHeight-(2*opts.Margin))
 	opts.Width = min(opts.Width, containerWidth-(2*opts.Margin))
 	app.QueueUpdateDraw(func() {
-		container.AddPage(pageName, center(contents, (containerHeight-opts.Height)/2, (containerWidth-opts.Width)/2), true, true)
+		container.AddPage(pageName, center(contents, containerHeight-opts.Height, containerWidth-opts.Width), true, true)
 	})
 	return exitFunc
 }
