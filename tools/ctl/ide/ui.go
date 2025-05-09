@@ -10,10 +10,10 @@ import (
 	"log"
 	"strings"
 
+	"cloud.google.com/go/vertexai/genai"
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
 	"github.com/google/oss-rebuild/tools/ctl/ide/commands"
 	"github.com/google/oss-rebuild/tools/ctl/ide/explorer"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
@@ -35,7 +35,7 @@ type TuiApp struct {
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, asst assistant.Assistant) *TuiApp {
+func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, aiClient *genai.Client) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -62,13 +62,13 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 		return modal.Show(t.app, t.root, input, opts)
 	}
 	cmdReg := commands.Registry{}
-	if err := cmdReg.AddGlobals(commands.NewGlobalCmds(t.app, t.rb, modalFn, butler, asst, buildDefs, dex, benches)...); err != nil {
+	if err := cmdReg.AddGlobals(commands.NewGlobalCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches)...); err != nil {
 		log.Fatal(err)
 	}
-	if err := cmdReg.AddRebuildGroups(commands.NewRebuildGroupCmds(t.app, t.rb, modalFn, butler, asst, buildDefs, dex, benches)...); err != nil {
+	if err := cmdReg.AddRebuildGroups(commands.NewRebuildGroupCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches)...); err != nil {
 		log.Fatal(err)
 	}
-	if err := cmdReg.AddRebuilds(commands.NewRebuildCmds(t.app, t.rb, modalFn, butler, asst, buildDefs, dex, benches)...); err != nil {
+	if err := cmdReg.AddRebuilds(commands.NewRebuildCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches)...); err != nil {
 		log.Fatal(err)
 	}
 	err := cmdReg.AddGlobals([]commands.GlobalCmd{
