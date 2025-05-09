@@ -9,12 +9,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"time"
 
+	"cloud.google.com/go/vertexai/genai"
+	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -37,12 +40,13 @@ import (
 
 const (
 	RundexReadParallelism = 10
+	LLMRequestParallelism = 10
 )
 
 // A modalFnType can be used to show an InputCaptureable. It returns an exit function that can be used to close the modal.
 type modalFnType func(modal.InputCaptureable, modal.ModalOpts) func()
 
-func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, asst assistant.Assistant, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildCmd {
+func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, model *genai.GenerativeModel, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildCmd {
 	return []RebuildCmd{
 		{
 			Short: "run local",
@@ -169,7 +173,7 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 		{
 			Short: "debug with ✨AI✨",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
-				s, err := asst.Session(ctx, example)
+				s, err := assistant.NewAssistant(butler, model).Session(ctx, example)
 				if err != nil {
 					log.Println(errors.Wrap(err, "creating session"))
 					return
@@ -186,7 +190,7 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 	}
 }
 
-func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, asst assistant.Assistant, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildGroupCmd {
+func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, model *genai.GenerativeModel, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildGroupCmd {
 	return []RebuildGroupCmd{
 		{
 			Short: "Find pattern",
@@ -242,11 +246,115 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 				log.Printf("Found in %d/%d (%2.0f%%)", found, len(rebuilds), float32(found)/float32(len(rebuilds))*100)
 			},
 		},
+		{
+			Short: "Cluster using AI",
+			Func: func(ctx context.Context, rebuilds []rundex.Rebuild) {
+				p := pipe.FromSlice(rebuilds)
+				p = p.ParDo(RundexReadParallelism, func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
+					_, err := butler.Fetch(context.Background(), in.RunID, in.WasSmoketest(), rebuild.DebugLogsAsset.For(in.Target()))
+					if err != nil {
+						log.Println(errors.Wrap(err, "downloading logs"))
+						return
+					}
+					out <- in
+				})
+				ticker := time.Tick(1 * time.Second)
+				type summarizedRebuild struct {
+					Rebuild rundex.Rebuild
+					Summary string
+				}
+				summaries := pipe.ParInto(LLMRequestParallelism, p, func(in rundex.Rebuild, out chan<- summarizedRebuild) {
+					const uploadBytesLimit = 10000
+					assets, err := localfiles.AssetStore(in.RunID)
+					if err != nil {
+						log.Println(errors.Wrapf(err, "creating asset store for runid: %s", in.RunID))
+						return
+					}
+					r, err := assets.Reader(ctx, rebuild.DebugLogsAsset.For(in.Target()))
+					if err != nil {
+						log.Println(errors.Wrapf(err, "opening logs for %s", in.ID()))
+						return
+					}
+					defer r.Close()
+					content, err := io.ReadAll(r)
+					if err != nil {
+						log.Println(errors.Wrap(err, "reading logs"))
+						return
+					}
+					logs := string(content)
+					if len(logs) > uploadBytesLimit {
+						logs = "...(truncated)..." + logs[len(logs)-uploadBytesLimit:]
+					}
+					parts := []genai.Part{
+						genai.Text("Please summarize this rebuild failure in one sentence."),
+						genai.Text(logs),
+					}
+					chat, err := llm.NewChat(model, &llm.ChatOpts{})
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					<-ticker
+					for content, err := range chat.SendMessageStream(context.Background(), parts...) {
+						if err != nil {
+							log.Println(errors.Wrap(err, "sending message"))
+							return
+						}
+						if content.Role == "user" {
+							continue
+						}
+						if len(content.Parts) > 0 {
+							txt, ok := content.Parts[0].(genai.Text)
+							if !ok {
+								continue
+							}
+							out <- summarizedRebuild{Rebuild: in, Summary: string(txt)}
+							log.Println("Summary: ", string(txt))
+							break
+						}
+					}
+				})
+				var parts []genai.Part
+				log.Printf("Summarizing %d rebuild failures", len(rebuilds))
+				for s := range summaries.Out() {
+					if s.Summary == "" {
+						continue
+					}
+					parts = append(parts, genai.Text(s.Summary))
+				}
+				log.Println("Finished summarizing")
+				chat, err := llm.NewChat(model, &llm.ChatOpts{})
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				log.Printf("Asking for categories based on %d summaries.", len(parts))
+				parts = append([]genai.Part{genai.Text("Based on the following error summaries, please provide 1 to 5 classes of failures you think are happening.")}, parts...)
+				<-ticker
+				for content, err := range chat.SendMessageStream(context.Background(), parts...) {
+					if err != nil {
+						log.Println(errors.Wrap(err, "sending message"))
+						return
+					}
+					if content.Role == "user" {
+						continue
+					}
+					if len(content.Parts) > 0 {
+						txt, ok := content.Parts[0].(genai.Text)
+						if !ok {
+							continue
+						}
+						log.Println(string(txt))
+					}
+				}
+				log.Println("Grouping completed.")
+			},
+		},
 	}
 
 }
 
-func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, asst assistant.Assistant, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []GlobalCmd {
+func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, model *genai.GenerativeModel, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []GlobalCmd {
 	return []GlobalCmd{
 		{
 			Short:  "restart rebuilder",
