@@ -142,7 +142,8 @@ func (a *session) evidence(ctx context.Context, attempt rundex.Rebuild) *attempt
 			}
 		}
 		if len(logs) > uploadBytesLimit {
-			logs = logs[len(logs)-uploadBytesLimit:] + "...(truncated)"
+			offset := len(logs) - uploadBytesLimit
+			logs = fmt.Sprintf("...(truncated %d bytes)...\n%s", offset, logs[offset:])
 		}
 	}
 	var diff string
@@ -158,7 +159,8 @@ func (a *session) evidence(ctx context.Context, attempt rundex.Rebuild) *attempt
 			}
 		}
 		if len(diff) > uploadBytesLimit {
-			diff = diff[len(diff)-uploadBytesLimit:] + "...(truncated)"
+			offset := len(diff) - uploadBytesLimit
+			diff = fmt.Sprintf("...(truncated %d bytes)...\n%s", offset, diff[offset:])
 		}
 	}
 	return &attemptEvidence{metadata: metadata, builddef: builddef, logs: logs, diff: diff}
