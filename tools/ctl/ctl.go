@@ -148,6 +148,7 @@ var tui = &cobra.Command{
 			}
 		}
 		var dex rundex.Reader
+		var watcher rundex.Watcher
 		{
 			// Prefer the firestore based rundex where possible, local otherwise.
 			// NOTE: We may eventually want to support firestore as a starting point, then local for quick debugging after that.
@@ -158,7 +159,9 @@ var tui = &cobra.Command{
 					log.Fatal(err)
 				}
 			} else {
-				dex = rundex.NewLocalClient(localfiles.Rundex())
+				lc := rundex.NewLocalClient(localfiles.Rundex())
+				dex = lc
+				watcher = lc
 			}
 		}
 		var buildDefs *rebuild.FilesystemAssetStore
@@ -188,7 +191,7 @@ var tui = &cobra.Command{
 		}
 		asst := assistant.NewAssistant(butler, aiClient)
 		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
-		tapp := ide.NewTuiApp(dex, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, asst)
+		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, asst)
 		if err := tapp.Run(cmd.Context()); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
