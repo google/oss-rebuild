@@ -214,8 +214,8 @@ func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn moda
 					}
 					choice, opts, selected := choice.Choice(all)
 					exitFunc := modalFn(choice, opts)
-					defer exitFunc()
 					bench = <-selected
+					go app.QueueUpdateDraw(exitFunc)
 				}
 				wdex, ok := dex.(rundex.Writer)
 				if !ok {
