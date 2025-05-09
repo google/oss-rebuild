@@ -95,6 +95,16 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 		log.Fatal(err)
 	}
 	t.explorer = explorer.NewExplorer(t.app, modalFn, dex, rundexOpts, benches, cmdReg)
+	err = cmdReg.AddGlobals([]commands.GlobalCmd{{
+		Short:  "update view",
+		Hotkey: 'u',
+		Func: func(ctx context.Context) {
+			t.explorer.LoadTree(ctx)
+		},
+	}}...)
+	if err != nil {
+		log.Fatal(err)
+	}
 	gcmds := cmdReg.GlobalCommands()
 	inst := make([]string, 0, len(gcmds))
 	for _, cmd := range gcmds {
