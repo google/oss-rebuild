@@ -90,6 +90,16 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 				t.logs.ScrollToEnd()
 			},
 		},
+		{
+			Short:  "refresh",
+			Hotkey: 'f',
+			Func: func(ctx context.Context) {
+				if err := t.explorer.LoadTree(ctx); err != nil {
+					log.Println(err)
+					return
+				}
+			},
+		},
 	}...)
 	if err != nil {
 		log.Fatal(err)
