@@ -122,6 +122,21 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 			wantResp: http.StatusOK,
 		},
 		{
+			name: "host policy rule allows matching tld suffix",
+			policy: Policy{
+				AnyOf: []Rule{
+					URLMatchRule{
+						Host:      ".com",
+						HostMatch: SuffixMatch,
+						Path:      "/path",
+						PathMatch: PrefixMatch,
+					},
+				},
+			},
+			url:      "https://host.com/path/with/prefix",
+			wantResp: http.StatusOK,
+		},
+		{
 			name: "host policy rule blocks non matching domain suffix",
 			policy: Policy{
 				AnyOf: []Rule{
@@ -209,6 +224,71 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 				},
 			},
 			url:      "https://host.com/path/that/does/not/match",
+			wantResp: http.StatusForbidden,
+		},
+		{
+			name: "url satisfies AllOf Rules",
+			policy: Policy{
+				AllOf: []Rule{
+					URLMatchRule{
+						Host:      "host.com",
+						HostMatch: FullMatch,
+						Path:      "",
+						PathMatch: PrefixMatch,
+					},
+					URLMatchRule{
+						Host:      "host.com",
+						HostMatch: FullMatch,
+						Path:      "",
+						PathMatch: FullMatch,
+					},
+				},
+			},
+			url:      "https://host.com",
+			wantResp: http.StatusOK,
+		},
+		{
+			name: "url blocked by AllOf Rules",
+			policy: Policy{
+				AllOf: []Rule{
+					URLMatchRule{
+						Host:      "host.com",
+						HostMatch: FullMatch,
+						Path:      "",
+						PathMatch: PrefixMatch,
+					},
+					URLMatchRule{
+						Host:      "host.com",
+						HostMatch: FullMatch,
+						Path:      "",
+						PathMatch: FullMatch,
+					},
+				},
+			},
+			url:      "https://host.com/path/not/allowed",
+			wantResp: http.StatusForbidden,
+		},
+		{
+			name: "AllOf prioritized over AnyOf",
+			policy: Policy{
+				AnyOf: []Rule{
+					URLMatchRule{
+						Host:      "",
+						HostMatch: SuffixMatch,
+						Path:      "",
+						PathMatch: PrefixMatch,
+					},
+				},
+				AllOf: []Rule{
+					URLMatchRule{
+						Host:      "host.com",
+						HostMatch: FullMatch,
+						Path:      "",
+						PathMatch: PrefixMatch,
+					},
+				},
+			},
+			url:      "https://nothost.com",
 			wantResp: http.StatusForbidden,
 		},
 	}

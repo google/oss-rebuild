@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 
 	"github.com/google/oss-rebuild/internal/api"
@@ -265,6 +266,7 @@ func (w *dockerWorker) Cleanup(ctx context.Context) {
 	w.executors = nil
 }
 
+
 func defaultLimiters() map[string]<-chan time.Time {
 	return map[string]<-chan time.Time{
 		"debian": time.Tick(time.Second),
@@ -315,6 +317,7 @@ func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set ben
 			useSyscallMonitor: opts.UseSyscallMonitor,
 			useNetworkProxy:   opts.UseNetworkProxy,
 		}
+
 	case schema.DockerMode:
 		ex.Worker = &dockerWorker{
 			runID: opts.RunID,

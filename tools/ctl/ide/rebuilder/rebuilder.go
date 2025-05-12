@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package ide
+package rebuilder
 
 import (
 	"bufio"
@@ -21,6 +21,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/google/oss-rebuild/tools/docker"
@@ -70,7 +71,7 @@ func (in *Instance) Run(ctx context.Context) {
 	in.state = starting
 	ctx, in.cancel = context.WithCancel(ctx)
 	// Make the rebuilder write out to the log widget with a [rebuilder] prefix.
-	rblog := log.New(log.Default().Writer(), logPrefix("rebuilder"), 0)
+	rblog := log.New(log.Default().Writer(), fmt.Sprintf("[%-9s]", "rebuilder"), 0)
 	go func() {
 		in.state = building
 		err := container.Build(ctx, "rebuilder")
@@ -209,7 +210,7 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r rundex.Rebuild, opts RunLoc
 	}
 	u := inst.URL.JoinPath("smoketest")
 	log.Println("Requesting a smoketest from: " + u.String())
-	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](http.DefaultClient, *u)
+	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](http.DefaultClient, u)
 	// TODO: Should this use benchmark.RunBench?
 	resp, err := stub(ctx, schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(r.Ecosystem),
@@ -235,7 +236,7 @@ func (rb *Rebuilder) RunBench(ctx context.Context, set benchmark.PackageSet, run
 	if err != nil {
 		return nil, errors.Wrap(err, "getting running instance")
 	}
-	return benchmark.RunBench(ctx, http.DefaultClient, inst.URL, set, benchmark.RunBenchOpts{
+	return run.RunBench(ctx, http.DefaultClient, inst.URL, set, run.RunBenchOpts{
 		Mode:           schema.SmoketestMode,
 		RunID:          runID,
 		MaxConcurrency: 1,

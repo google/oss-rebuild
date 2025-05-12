@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestNPMCustomBuild(t *testing.T) {
+func TestNPMStrategies(t *testing.T) {
 	defaultLocation := rebuild.Location{
 		Dir:  "the_dir",
 		Ref:  "the_ref",
@@ -84,19 +84,20 @@ func TestNPMCustomBuild(t *testing.T) {
 		{
 			"CustomBuildVersionOverride",
 			&NPMCustomBuild{
-				Location:        defaultLocation,
-				NPMVersion:      "red",
-				NodeVersion:     "blue",
-				VersionOverride: "green",
-				Command:         "yellow",
-				RegistryTime:    time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+				Location:          defaultLocation,
+				NPMVersion:        "red",
+				NodeVersion:       "blue",
+				VersionOverride:   "green",
+				Command:           "yellow",
+				RegistryTime:      time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+				PrepackRemoveDeps: true,
 			},
 			rebuild.Instructions{
 				Location:   defaultLocation,
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build: `PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix the_dir --no-git-tag-version green
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
@@ -105,19 +106,20 @@ func TestNPMCustomBuild(t *testing.T) {
 		{
 			"CustomBuildNoVersionOverride",
 			&NPMCustomBuild{
-				Location:        defaultLocation,
-				NPMVersion:      "red",
-				NodeVersion:     "blue",
-				VersionOverride: "",
-				Command:         "yellow",
-				RegistryTime:    time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+				Location:          defaultLocation,
+				NPMVersion:        "red",
+				NodeVersion:       "blue",
+				VersionOverride:   "",
+				Command:           "yellow",
+				RegistryTime:      time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+				PrepackRemoveDeps: true,
 			},
 			rebuild.Instructions{
 				Location:   defaultLocation,
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
 			},
@@ -125,18 +127,19 @@ func TestNPMCustomBuild(t *testing.T) {
 		{
 			"CustomBuildNoRegistryTime",
 			&NPMCustomBuild{
-				Location:        defaultLocation,
-				NPMVersion:      "red",
-				NodeVersion:     "blue",
-				VersionOverride: "",
-				Command:         "yellow",
+				Location:          defaultLocation,
+				NPMVersion:        "red",
+				NodeVersion:       "blue",
+				VersionOverride:   "",
+				Command:           "yellow",
+				PrepackRemoveDeps: true,
 			},
 			rebuild.Instructions{
 				Location:   defaultLocation,
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm install --force'`,
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
 			},
@@ -149,11 +152,12 @@ func TestNPMCustomBuild(t *testing.T) {
 					Ref:  "the_ref",
 					Repo: "the_repo",
 				},
-				NPMVersion:      "red",
-				NodeVersion:     "blue",
-				VersionOverride: "",
-				Command:         "yellow",
-				RegistryTime:    time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+				NPMVersion:        "red",
+				NodeVersion:       "blue",
+				VersionOverride:   "",
+				Command:           "yellow",
+				RegistryTime:      time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+				PrepackRemoveDeps: true,
 			},
 			rebuild.Instructions{
 				Location: rebuild.Location{
@@ -164,8 +168,55 @@ func TestNPMCustomBuild(t *testing.T) {
 				SystemDeps: []string{"git", "npm"},
 				Source:     "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force'`,
+/usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm run yellow && rm -rf node_modules && npm pack'`,
+				OutputPath: "the_artifact",
+			},
+		},
+		{
+			"CustomBuildNoCommand",
+			&NPMCustomBuild{
+				Location:     defaultLocation,
+				NPMVersion:   "red",
+				NodeVersion:  "blue",
+				Command:      "",
+				RegistryTime: time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+			},
+			rebuild.Instructions{
+				Location:   defaultLocation,
+				SystemDeps: []string{"git", "npm"},
+				Source:     "git checkout --force 'the_ref'",
+				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
+				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm pack'`,
+				OutputPath: "the_dir/the_artifact",
+			},
+		},
+		{
+			"CustomBuildKeepRoot",
+			&NPMCustomBuild{
+				Location: rebuild.Location{
+					Dir:  ".",
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				NPMVersion:   "red",
+				NodeVersion:  "blue",
+				Command:      "yellow",
+				RegistryTime: time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+				KeepRoot:     true,
+			},
+			rebuild.Instructions{
+				Location: rebuild.Location{
+					Dir:  ".",
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				SystemDeps: []string{"git", "npm"},
+				Source:     "git checkout --force 'the_ref'",
+				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+/usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
+				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm config set unsafe-perm true && npm run yellow && npm pack'`,
 				OutputPath: "the_artifact",
 			},
 		},

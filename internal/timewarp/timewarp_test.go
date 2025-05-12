@@ -38,6 +38,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 								"Content-Type": []string{"application/json"},
 							},
 							Body: io.NopCloser(bytes.NewBufferString(`{
+								"_id": "some-package",
 								"time": {
 									"created": "2021-01-01T00:00:00Z",
 									"modified": "2023-01-01T00:00:00Z",
@@ -68,6 +69,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 					"Content-Type": []string{"application/json"},
 				},
 				Body: io.NopCloser(bytes.NewBufferString(`{
+					"_id": "some-package",
 					"time": {
 						"created": "2021-01-01T00:00:00Z",
 						"modified": "2021-06-01T00:00:00Z",
@@ -86,6 +88,109 @@ func TestHandler_ServeHTTP(t *testing.T) {
 						"latest": "1.0.0"
 					}
 				}`)),
+			},
+		},
+		{
+			name:      "npm package request with org - successful time warp",
+			url:       "http://localhost:8081/@org/some-package",
+			basicAuth: "npm:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://registry.npmjs.org/@org/some-package",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header: http.Header{
+								"Content-Type": []string{"application/json"},
+							},
+							Body: io.NopCloser(bytes.NewBufferString(`{
+								"_id": "@org/some-package",
+								"time": {
+									"created": "2021-01-01T00:00:00Z",
+									"modified": "2023-01-01T00:00:00Z",
+									"1.0.0": "2021-06-01T00:00:00Z",
+									"2.0.0": "2022-06-01T00:00:00Z"
+								},
+								"versions": {
+									"1.0.0": {
+										"version": "1.0.0",
+										"description": "v1 desc",
+										"repository": "repo1"
+									},
+									"2.0.0": {
+										"version": "2.0.0",
+										"description": "v2 desc",
+										"repository": "repo2"
+									}
+								}
+							}`)),
+						},
+					},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`{
+					"_id": "@org/some-package",
+					"time": {
+						"created": "2021-01-01T00:00:00Z",
+						"modified": "2021-06-01T00:00:00Z",
+						"1.0.0": "2021-06-01T00:00:00Z"
+					},
+					"versions": {
+						"1.0.0": {
+							"version": "1.0.0",
+							"description": "v1 desc",
+							"repository": "repo1"
+						}
+					},
+					"description": "v1 desc",
+					"repository": "repo1",
+					"dist-tags": {
+						"latest": "1.0.0"
+					}
+				}`)),
+			},
+		},
+		{
+			name:      "npm version request - skipped time warp",
+			url:       "http://localhost:8081/some-package/2.0.0",
+			basicAuth: "npm:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls:        []httpxtest.Call{},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusFound,
+				Header: http.Header{
+					"Content-Type": []string{"text/html; charset=utf-8"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`<a href="https://registry.npmjs.org/some-package/2.0.0">Found</a>.
+
+`)),
+			},
+		},
+		{
+			name:      "npm search request - skipped time warp",
+			url:       "http://localhost:8081/-/v1/search?text=some-package",
+			basicAuth: "npm:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls:        []httpxtest.Call{},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusFound,
+				Header: http.Header{
+					"Content-Type": []string{"text/html; charset=utf-8"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`<a href="https://registry.npmjs.org/-/v1/search?text=some-package">Found</a>.
+
+`)),
 			},
 		},
 		{
@@ -237,6 +342,24 @@ func TestHandler_ServeHTTP(t *testing.T) {
 					},
 					"releases": {}
 				}`)),
+			},
+		},
+		{
+			name:      "pypi version request - skipped time warp",
+			url:       "http://localhost:8081/pypi/some-package/2.0.0/json",
+			basicAuth: "pypi:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls:        []httpxtest.Call{},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusFound,
+				Header: http.Header{
+					"Content-Type": []string{"text/html; charset=utf-8"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`<a href="https://pypi.org/pypi/some-package/2.0.0/json">Found</a>.
+
+`)),
 			},
 		},
 		{

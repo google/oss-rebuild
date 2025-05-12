@@ -58,7 +58,7 @@ func TestStub(t *testing.T) {
 	defer server.Close()
 
 	u := urlx.MustParse(server.URL)
-	stub := Stub[FooRequest, FooResponse](server.Client(), *u)
+	stub := Stub[FooRequest, FooResponse](server.Client(), u)
 
 	ctx := context.Background()
 	result, err := stub(ctx, FooRequest{Foo: "foo"})
@@ -83,7 +83,7 @@ func TestStubFromHandler(t *testing.T) {
 	defer server.Close()
 
 	u := urlx.MustParse(server.URL)
-	stub := StubFromHandler(server.Client(), *u, h)
+	stub := StubFromHandler(server.Client(), u, h)
 
 	ctx := context.Background()
 	result, err := stub(ctx, FooRequest{Foo: "foo"})

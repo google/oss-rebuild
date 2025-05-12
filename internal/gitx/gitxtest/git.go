@@ -4,8 +4,10 @@
 package gitxtest
 
 import (
+	"bytes"
 	"io"
 	"path"
+	"slices"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -28,6 +30,7 @@ type Commit struct {
 	Parent  string      `yaml:"parent,omitempty"`
 	Parents []string    `yaml:"parents,omitempty"`
 	Branch  string      `yaml:"branch.omitempty"`
+	Tag     string      `yaml:"tag,omitempty"`
 	Tags    []string    `yaml:"tags,omitempty"`
 	Files   FileContent `yaml:"files"`
 }
@@ -48,8 +51,9 @@ type RepositoryOptions struct {
 
 func CreateRepoFromYAML(content string, opts *RepositoryOptions) (*Repository, error) {
 	var history GitHistory
-	err := yaml.Unmarshal([]byte(content), &history)
-	if err != nil {
+	d := yaml.NewDecoder(bytes.NewReader([]byte(content)))
+	d.KnownFields(true) // Fail on unknown fields
+	if err := d.Decode(&history); err != nil {
 		return nil, err
 	}
 	return CreateRepo(history.Commits, opts)
@@ -134,7 +138,11 @@ func CreateRepo(commits []Commit, opts *RepositoryOptions) (*Repository, error) 
 		}
 
 		// Create tags
-		for _, tagName := range c.Tags {
+		tags := slices.Clone(c.Tags)
+		if c.Tag != "" {
+			tags = append(tags, c.Tag)
+		}
+		for _, tagName := range tags {
 			_, err := repo.CreateTag(tagName, commitHash, nil)
 			if err != nil {
 				return nil, errors.Wrap(err, "create tags")

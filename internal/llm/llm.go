@@ -14,8 +14,8 @@ import (
 var (
 	// Model names supported by VertexAI.
 
-	GeminiPro   = "gemini-2.0-pro-exp-02-05"
-	GeminiFlash = "gemini-2.0-flash-001"
+	GeminiPro   = "gemini-2.5-pro-preview-03-25"
+	GeminiFlash = "gemini-2.5-flash-preview-04-17"
 
 	// Roles used for demarcating speakers.
 
@@ -39,8 +39,15 @@ func WithSystemPrompt(model genai.GenerativeModel, prompt ...genai.Part) *genai.
 var ScriptResponseSchema = &genai.Schema{
 	Type: genai.TypeObject,
 	Properties: map[string]*genai.Schema{
-		"reason":   {Type: genai.TypeString},
-		"commands": {Type: genai.TypeArray, Items: &genai.Schema{Type: genai.TypeString}},
+		"reason": {
+			Type:        genai.TypeString,
+			Description: "The rationale and justification for provided commands",
+		},
+		"commands": {
+			Type:        genai.TypeArray,
+			Items:       &genai.Schema{Type: genai.TypeString, Description: "A shell command"},
+			Description: "The shell commands that accomplish the requested task",
+		},
 	},
 	Required: []string{"reason", "commands"},
 }

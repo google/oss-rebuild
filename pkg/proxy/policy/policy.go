@@ -28,6 +28,9 @@ func RegisterRule(rulename string, constructor func() Rule) {
 type Policy struct {
 	// AnyOf expects incoming requests to satisfy one of these Rules.
 	AnyOf []Rule `json:"anyOf"`
+
+	// AllOf expects incoming requests to satisfy all of these Rules.
+	AllOf []Rule `json:"allOf"`
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface for the Policy class.
@@ -36,6 +39,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 	var policywrapper struct {
 		Policy struct {
 			AnyOf []json.RawMessage
+			AllOf []json.RawMessage
 		}
 	}
 	if err := json.Unmarshal(data, &policywrapper); err != nil {
@@ -46,6 +50,13 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 			return err
 		} else {
 			p.AnyOf = append(p.AnyOf, rule)
+		}
+	}
+	for _, r := range policywrapper.Policy.AllOf {
+		if rule, err := newRuleFromJson(r); err != nil {
+			return err
+		} else {
+			p.AllOf = append(p.AllOf, rule)
 		}
 	}
 	return nil
@@ -75,11 +86,23 @@ func newRuleFromJson(rule json.RawMessage) (Rule, error) {
 // Apply enforces the policy on the request. Returns http.StatusForbidden if the
 // request does not satisfy the policy rules.
 func (p Policy) Apply(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	for _, rule := range p.AllOf {
+		if !rule.Allows(req) {
+			return blockedResponse(req)
+		}
+	}
+	if len(p.AllOf) != 0 && len(p.AnyOf) == 0 {
+		return req, nil
+	}
 	for _, rule := range p.AnyOf {
 		if rule.Allows(req) {
 			return req, nil
 		}
 	}
+	return blockedResponse(req)
+}
+
+func blockedResponse(req *http.Request) (*http.Request, *http.Response) {
 	log.Printf("Request to %s blocked by network policy", req.URL.String())
 	errorMessage := fmt.Sprintf("Access to %s is blocked by the proxy's network policy", req.URL.String())
 	return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, errorMessage)
@@ -129,7 +152,7 @@ func (rule URLMatchRule) Allows(req *http.Request) bool {
 		// Avoid matching partial domain names and only match full domain parts.
 		// That is, notgoogle.com must not match google.com, but is.google.com matches google.com.
 		host := rule.Host
-		if !strings.HasPrefix(".", host) {
+		if !strings.HasPrefix(host, ".") {
 			host = "." + host
 		}
 		if !strings.HasSuffix(url.Hostname(), host) {

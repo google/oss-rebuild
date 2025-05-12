@@ -25,6 +25,9 @@ import (
 	"text/template"
 	"time"
 
+	"cloud.google.com/go/firestore"
+	"cloud.google.com/go/firestore/apiv1/firestorepb"
+	"cloud.google.com/go/vertexai/genai"
 	"github.com/cheggaaa/pb"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
@@ -39,12 +42,16 @@ import (
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
+	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
+	"github.com/google/oss-rebuild/tools/ctl/migrations"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/iterator"
 	"gopkg.in/yaml.v3"
 )
 
@@ -75,7 +82,7 @@ mkdir /out && cp /src/{{.OutputPath}} /out/
 `)[1:], // remove leading newline
 	))
 
-func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean bool) (*rundex.FetchRebuildRequest, error) {
+func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestPerPackage bool) (*rundex.FetchRebuildRequest, error) {
 	var runs []string
 	if run != "" {
 		runs = strings.Split(run, ",")
@@ -87,6 +94,7 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean bool) (*
 			Pattern: pattern,
 			Clean:   clean,
 		},
+		LatestPerPackage: latestPerPackage,
 	}
 	if len(req.Runs) == 0 {
 		return nil, errors.New("'run' must be supplied")
@@ -123,38 +131,34 @@ func makeShellScript(input rebuild.Input) (string, error) {
 }
 
 var tui = &cobra.Command{
-	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean]",
+	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project]",
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Exactly one of benchmarkDir or project should be set.
-		if (*benchmarkDir != "") == (*project != "" || *debugStorage != "") {
-			log.Fatal(errors.New("TUI should either be local (--benchmark-dir) or remote (--project, --debug-storage)"))
-		}
-		tctx := cmd.Context()
-		var fireClient rundex.Reader
-		if *benchmarkDir != "" {
-			fireClient = rundex.NewLocalClient(localfiles.Rundex())
-			tctx = context.WithValue(tctx, rebuild.DebugStoreID, "file://"+localfiles.AssetsPath())
-		} else {
-			if *debugStorage != "" {
-				u, err := url.Parse(*debugStorage)
-				if err != nil {
-					log.Fatal(errors.Wrap(err, "parsing --debug-storage as url"))
-				}
-				if u.Scheme == "gs" {
-					prefix := strings.TrimPrefix(u.Path, "/")
-					if prefix != "" {
-						log.Fatalf("--debug-storage cannot have additional path elements, found %s", prefix)
-					}
-				}
-				tctx = context.WithValue(tctx, rebuild.DebugStoreID, *debugStorage)
-			}
-			// TODO: Support filtering in the UI on TUI.
-			var err error
-			fireClient, err = rundex.NewFirestore(tctx, *project)
+		if *debugStorage != "" {
+			u, err := url.Parse(*debugStorage)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal(errors.Wrap(err, "parsing --debug-storage as url"))
+			}
+			if u.Scheme == "gs" {
+				prefix := strings.TrimPrefix(u.Path, "/")
+				if prefix != "" {
+					log.Fatalf("--debug-storage cannot have additional path elements, found %s", prefix)
+				}
+			}
+		}
+		var dex rundex.Reader
+		{
+			// Prefer the firestore based rundex where possible, local otherwise.
+			// NOTE: We may eventually want to support firestore as a starting point, then local for quick debugging after that.
+			if *project != "" {
+				var err error
+				dex, err = rundex.NewFirestore(cmd.Context(), *project)
+				if err != nil {
+					log.Fatal(err)
+				}
+			} else {
+				dex = rundex.NewLocalClient(localfiles.Rundex())
 			}
 		}
 		var buildDefs *rebuild.FilesystemAssetStore
@@ -178,8 +182,14 @@ var tui = &cobra.Command{
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
 		}
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
-		tapp := ide.NewTuiApp(tctx, fireClient, rundex.FetchRebuildOpts{Clean: *clean}, *benchmarkDir, buildDefs, butler)
-		if err := tapp.Run(); err != nil {
+		aiClient, err := genai.NewClient(cmd.Context(), *llmProject, "us-central1")
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "failed to create a genai client"))
+		}
+		asst := assistant.NewAssistant(butler, aiClient)
+		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
+		tapp := ide.NewTuiApp(dex, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, asst)
+		if err := tapp.Run(cmd.Context()); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
 			log.Fatal(err)
@@ -192,7 +202,7 @@ var getResults = &cobra.Command{
 	Short: "Analyze rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		req, err := buildFetchRebuildRequest(*bench, *runFlag, *prefix, *pattern, *clean)
+		req, err := buildFetchRebuildRequest(*bench, *runFlag, *prefix, *pattern, *clean, true)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -333,11 +343,23 @@ var runBenchmark = &cobra.Command{
 		} else {
 			client = http.DefaultClient
 		}
-		var run string
+		var runID string
+		var dex rundex.Writer
 		if *buildLocal {
-			run = time.Now().UTC().Format(time.RFC3339)
+			now := time.Now().UTC()
+			runID = now.Format(time.RFC3339)
+			dex = rundex.NewLocalClient(localfiles.Rundex())
+			if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
+				ID:            runID,
+				BenchmarkName: filepath.Base(args[1]),
+				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
+				Type:          string(schema.SmoketestMode),
+				Created:       now,
+			})); err != nil {
+				log.Println(errors.Wrap(err, "writing run to rundex"))
+			}
 		} else {
-			stub := api.Stub[schema.CreateRunRequest, schema.Run](client, *apiURL.JoinPath("runs"))
+			stub := api.Stub[schema.CreateRunRequest, schema.Run](client, apiURL.JoinPath("runs"))
 			resp, err := stub(ctx, schema.CreateRunRequest{
 				BenchmarkName: filepath.Base(args[1]),
 				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
@@ -346,14 +368,14 @@ var runBenchmark = &cobra.Command{
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "creating run"))
 			}
-			run = resp.ID
+			runID = resp.ID
 		}
 		if *async {
 			queue, err := taskqueue.NewQueue(ctx, *taskQueuePath, *taskQueueEmail)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "making taskqueue client"))
 			}
-			if err := benchmark.RunBenchAsync(ctx, set, mode, apiURL, run, queue); err != nil {
+			if err := run.RunBenchAsync(ctx, set, mode, apiURL, runID, queue); err != nil {
 				log.Fatal(errors.Wrap(err, "adding benchmark to queue"))
 			}
 			return
@@ -361,9 +383,9 @@ var runBenchmark = &cobra.Command{
 		bar := pb.New(set.Count)
 		bar.Output = cmd.OutOrStderr()
 		bar.ShowTimeLeft = true
-		verdictChan, err := benchmark.RunBench(ctx, client, apiURL, set, benchmark.RunBenchOpts{
+		verdictChan, err := run.RunBench(ctx, client, apiURL, set, run.RunBenchOpts{
 			Mode:              mode,
-			RunID:             run,
+			RunID:             runID,
 			MaxConcurrency:    *maxConcurrency,
 			UseSyscallMonitor: *useSyscallMonitor,
 			UseNetworkProxy:   *useNetworkProxy,
@@ -377,6 +399,11 @@ var runBenchmark = &cobra.Command{
 			bar.Increment()
 			if *verbose && v.Message != "" {
 				fmt.Printf("\n%v: %s\n", v.Target, v.Message)
+			}
+			if dex != nil {
+				if err := dex.WriteRebuild(ctx, rundex.NewRebuildFromVerdict(v, "local", runID, time.Now().UTC())); err != nil {
+					log.Println(errors.Wrap(err, "writing rebuild to rundex"))
+				}
 			}
 			verdicts = append(verdicts, v)
 		}
@@ -462,7 +489,7 @@ var runOne = &cobra.Command{
 		var verdicts []schema.Verdict
 		{
 			if mode == schema.SmoketestMode {
-				stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, *apiURL.JoinPath("smoketest"))
+				stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, apiURL.JoinPath("smoketest"))
 				resp, err := stub(ctx, schema.SmoketestRequest{
 					Ecosystem: rebuild.Ecosystem(*ecosystem),
 					Package:   *pkg,
@@ -474,7 +501,7 @@ var runOne = &cobra.Command{
 				}
 				verdicts = resp.Verdicts
 			} else {
-				stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, *apiURL.JoinPath("rebuild"))
+				stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, apiURL.JoinPath("rebuild"))
 				resp, err := stub(ctx, schema.RebuildPackageRequest{
 					Ecosystem:         rebuild.Ecosystem(*ecosystem),
 					Package:           *pkg,
@@ -543,6 +570,72 @@ var listRuns = &cobra.Command{
 	},
 }
 
+var migrate = &cobra.Command{
+	Use:   "migrate --project <project> [--dryrun] <migration-name>",
+	Short: "Migrate firestore entries",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		if *project == "" {
+			log.Fatal("project not provided")
+		}
+		client, err := firestore.NewClient(cmd.Context(), *project)
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "creating firestore client"))
+		}
+		migration, ok := migrations.All[args[0]]
+		if !ok {
+			log.Fatalf("Unknown migration: %s", args[0])
+		}
+		q := client.CollectionGroup(migration.CollectionGroup).Query
+		bw := client.BulkWriter(cmd.Context())
+		var total, updated int
+		{
+			ag := q.NewAggregationQuery()
+			ag = ag.WithCount("total-count")
+			res, err := ag.Get(cmd.Context())
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "getting count"))
+			}
+			totalV, ok := res["total-count"].(*firestorepb.Value)
+			if !ok {
+				log.Fatalf("Couldn't get total count: %+v", res)
+			}
+			total = int(totalV.GetIntegerValue())
+		}
+		iter := q.Documents(cmd.Context())
+		bar := pb.New(total)
+		bar.Output = cmd.OutOrStderr()
+		bar.ShowTimeLeft = true
+		bar.Start()
+		defer bar.Finish()
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			bar.Increment()
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "iterating over attempts"))
+			}
+			updates, err := migration.Transform(doc)
+			if errors.Is(err, migrations.ErrSkip) {
+				continue
+			} else if err != nil {
+				log.Fatal(errors.Wrap(err, "transforming field"))
+			}
+			updated++
+			if !*dryrun {
+				if _, err := bw.Update(doc.Ref, updates); err != nil {
+					log.Fatal(errors.Wrap(err, "updating field"))
+				}
+			}
+		}
+		bar.Finish()
+		bw.End()
+		log.Printf("Updated %d/%d entries (%2.1f%%)", updated, total, 100.*float64(updated)/float64(total))
+	},
+}
+
 var infer = &cobra.Command{
 	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
 	Short: "Run inference",
@@ -572,7 +665,7 @@ var infer = &cobra.Command{
 			} else {
 				client = http.DefaultClient
 			}
-			stub := api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, *apiURL.JoinPath("/infer"))
+			stub := api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, apiURL.JoinPath("/infer"))
 			resp, err = stub(cmd.Context(), req)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "executing inference"))
@@ -713,9 +806,12 @@ var (
 	project      = flag.String("project", "", "the project from which to fetch the Firestore data")
 	clean        = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
 	debugStorage = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
-	//TUI
+	// TUI
 	benchmarkDir = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 	defDir       = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
+	llmProject   = flag.String("llm-project", "", "the GCP project to use for LLM execution")
+	// Migrate
+	dryrun = flag.Bool("dryrun", false, "true if this migration is a dryrun")
 )
 
 func init() {
@@ -753,6 +849,7 @@ func init() {
 	getResults.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
 
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
+	tui.Flags().AddGoFlag(flag.Lookup("llm-project"))
 	tui.Flags().AddGoFlag(flag.Lookup("debug-storage"))
 	tui.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
 	tui.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
@@ -770,12 +867,16 @@ func init() {
 	infer.Flags().AddGoFlag(flag.Lookup("version"))
 	infer.Flags().AddGoFlag(flag.Lookup("artifact"))
 
+	migrate.Flags().AddGoFlag(flag.Lookup("project"))
+	migrate.Flags().AddGoFlag(flag.Lookup("dryrun"))
+
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
 	rootCmd.AddCommand(getResults)
 	rootCmd.AddCommand(tui)
 	rootCmd.AddCommand(listRuns)
 	rootCmd.AddCommand(infer)
+	rootCmd.AddCommand(migrate)
 }
 
 func main() {

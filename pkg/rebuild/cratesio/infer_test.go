@@ -103,7 +103,7 @@ func TestInferStrategy(t *testing.T) {
         [package]
         name = "serde"
         version = "1.0.0"
-  - id: version-bump
+  - id: tagged-target
     parent: initial-commit
     tag: v1.0.150
     files:
@@ -118,7 +118,7 @@ func TestInferStrategy(t *testing.T) {
 				return &CratesIOCargoPackage{
 					Location: rebuild.Location{
 						Repo: "https://github.com/serde-rs/serde",
-						Ref:  repo.Commits["version-bump"].String(),
+						Ref:  repo.Commits["tagged-target"].String(),
 						Dir:  ".",
 					},
 					RustVersion: "1.13",

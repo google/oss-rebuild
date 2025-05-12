@@ -256,7 +256,7 @@ func main() {
 	var runID string
 	if !*dryRun {
 		log.Println("Creating run id...")
-		createRun := api.StubFromHandler(idclient, *apiURL.JoinPath("runs"), apiservice.CreateRun)
+		createRun := api.StubFromHandler(idclient, apiURL.JoinPath("runs"), apiservice.CreateRun)
 		res := must(createRun(ctx, schema.CreateRunRequest{
 			BenchmarkName: run.BenchmarkName,
 			BenchmarkHash: run.BenchmarkHash,
@@ -267,7 +267,7 @@ func main() {
 	}
 
 	// Query rebuilds
-	rebuilds := must(dex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{Runs: []string{run.ID}}))
+	rebuilds := must(dex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{Runs: []string{run.ID}, LatestPerPackage: true}))
 	c := make(chan rundex.Rebuild, 50)
 	go func() {
 		defer close(c)
@@ -428,7 +428,7 @@ func main() {
 	}
 
 	// Evaluate recoveries
-	rebuildSmoketest := api.StubFromHandler(idclient, *apiURL.JoinPath("smoketest"), apiservice.RebuildSmoketest)
+	rebuildSmoketest := api.StubFromHandler(idclient, apiURL.JoinPath("smoketest"), apiservice.RebuildSmoketest)
 	sp = sp.ParDo(50, func(rec Recovery, _ chan<- Recovery) {
 		if *dryRun {
 			log.Printf("Dry run would execute build for %s: %s", rec.Rebuild.ID(), strings.Join(rec.NewScript.Commands, "; "))

@@ -126,24 +126,28 @@ func PickNPMVersion(meta *npmreg.NPMVersion) (string, error) {
 	return npmv, nil
 }
 
-func inferFromRepo(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.RepoConfig) (ref, dir, versionOverride string, err error) {
-	// Determine dir for build.
+func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.RepoConfig) (loc rebuild.Location, versionOverride string, err error) {
+	// Initialize location with repo URI from config
+	loc = rebuild.Location{
+		Repo: rcfg.URI,
+	}
+	// Determine dir for build
 	if vmeta.Directory != "" {
 		if rcfg.Dir != "" && rcfg.Dir != vmeta.Directory {
 			log.Printf("package.json path disagreement [metadata=%s,heuristic=%s]\n", vmeta.Directory, rcfg.Dir)
 		}
-		dir = vmeta.Directory
+		loc.Dir = vmeta.Directory
 	} else if rcfg.Dir != "" {
-		dir = rcfg.Dir
+		loc.Dir = rcfg.Dir
 	} else {
-		dir = "."
+		loc.Dir = "."
 	}
-	// Determine git ref to rebuild.
+	// Determine git ref to rebuild
 	registryRef := vmeta.GitHEAD
 	pkgJSONGuess := rcfg.RefMap[t.Version]
 	tagGuess, err := rebuild.FindTagMatch(t.Package, t.Version, rcfg.Repository)
 	if err != nil {
-		return "", "", "", errors.Wrapf(err, "[INTERNAL] tag heuristic error")
+		return loc, "", errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
 	var c *object.Commit
 	var badVersionRef string
@@ -151,73 +155,73 @@ func inferFromRepo(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 	case registryRef != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(registryRef))
 		if err == nil {
-			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, dir); err != nil {
+			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, loc.Dir); err != nil {
 				log.Printf("registry ref invalid: %v", err)
 				if strings.HasPrefix(err.Error(), "mismatched version") {
 					badVersionRef = registryRef
 				}
 			} else {
 				log.Printf("using registry ref: %s", registryRef[:9])
-				ref = registryRef
-				dir = filepath.Dir(newPath)
-				return ref, dir, "", nil
+				loc.Ref = registryRef
+				loc.Dir = filepath.Dir(newPath)
+				return loc, "", nil
 			}
 		} else if err == plumbing.ErrObjectNotFound {
 			log.Printf("registry ref not found in repo")
 		} else {
-			return "", "", "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from registry [repo=%s,ref=%s]", rcfg.URI, registryRef)
+			return loc, "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from registry [repo=%s,ref=%s]", rcfg.URI, registryRef)
 		}
 		fallthrough
 	case tagGuess != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagGuess))
 		if err == nil {
-			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, dir); err != nil {
+			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, loc.Dir); err != nil {
 				log.Printf("registry heuristic tag invalid: %v", err)
 				if strings.HasPrefix(err.Error(), "mismatched version") {
 					badVersionRef = tagGuess
 				}
 			} else {
 				log.Printf("using tag heuristic ref: %s", tagGuess[:9])
-				ref = tagGuess
-				dir = filepath.Dir(newPath)
-				return ref, dir, "", nil
+				loc.Ref = tagGuess
+				loc.Dir = filepath.Dir(newPath)
+				return loc, "", nil
 			}
 		} else if err == plumbing.ErrObjectNotFound {
 			log.Printf("tag heuristic ref not found in repo")
 		} else {
-			return "", "", "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from tag [repo=%s,ref=%s]", rcfg.URI, tagGuess)
+			return loc, "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from tag [repo=%s,ref=%s]", rcfg.URI, tagGuess)
 		}
 		fallthrough
 	case pkgJSONGuess != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(pkgJSONGuess))
 		if err == nil {
-			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, dir); err != nil {
+			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, loc.Dir); err != nil {
 				log.Printf("registry heuristic git log invalid: %v", err)
 				// NOTE: Omit badVersionRef default since the existing heuristic should
 				// never select a ref with the version mismatch.
 			} else {
 				log.Printf("using git log heuristic ref: %s", pkgJSONGuess[:9])
-				ref = pkgJSONGuess
-				dir = filepath.Dir(newPath)
-				return ref, dir, "", nil
+				loc.Ref = pkgJSONGuess
+				loc.Dir = filepath.Dir(newPath)
+				return loc, "", nil
 			}
 		} else if err == plumbing.ErrObjectNotFound {
 			log.Printf("git log heuristic ref not found in repo")
 		} else {
-			return "", "", "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from git log [repo=%s,ref=%s]", rcfg.URI, pkgJSONGuess)
+			return loc, "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from git log [repo=%s,ref=%s]", rcfg.URI, pkgJSONGuess)
 		}
 		fallthrough
 	default:
 		if badVersionRef != "" {
 			log.Printf("using version override recovery: %s", badVersionRef[:9])
 			c, _ = rcfg.Repository.CommitObject(plumbing.NewHash(badVersionRef))
-			ref = badVersionRef
+			loc.Ref = badVersionRef
 			versionOverride = t.Version
-			return ref, dir, versionOverride, nil
+			return loc, versionOverride, nil
 		} else if registryRef == "" && tagGuess == "" && pkgJSONGuess == "" {
-			return "", "", "", errors.Errorf("no git ref")
+			return loc, "", errors.Errorf("no git ref")
 		} else {
-			return "", "", "", errors.Errorf("no valid git ref")
+			return loc, "", errors.Errorf("no valid git ref")
 		}
 	}
 }
@@ -232,37 +236,37 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, err
 	}
-	var ref, dir, override string
-	lh, ok := hint.(*rebuild.LocationHint)
-	if hint != nil && !ok {
+	var versionOverride string
+	loc := rebuild.Location{Repo: rcfg.URI, Dir: rcfg.Dir}
+	if lh, ok := hint.(*rebuild.LocationHint); hint != nil && !ok {
 		return nil, errors.Errorf("unsupported hint type: %T", hint)
-	}
-	if lh != nil && lh.Ref != "" {
-		ref = lh.Ref
+	} else if lh != nil && lh.Ref != "" {
+		loc.Ref = lh.Ref
 		if lh.Dir != "" {
-			dir = lh.Dir
-		} else {
-			dir = rcfg.Dir
+			loc.Dir = lh.Dir
 		}
 	} else {
-		ref, dir, override, err = inferFromRepo(t, vmeta, rcfg)
+		loc, versionOverride, err = InferLocation(t, vmeta, rcfg)
 		if err != nil {
 			return nil, err
 		}
 	}
-	c, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref))
+	c, err := rcfg.Repository.CommitObject(plumbing.NewHash(loc.Ref))
 	if err != nil {
 		return nil, err
 	}
 	tree, _ := c.Tree()
 	// If the package.json contains a build script, run that script with its
 	// required dependencies prior to `npm pack`.
-	pkgJSON, err := getPackageJSON(tree, path.Join(dir, "package.json"))
+	pkgJSON, err := getPackageJSON(tree, path.Join(loc.Dir, "package.json"))
 	if err != nil {
 		log.Println("error fetching package.json:", err.Error())
 	} else if pkgJSON.Scripts != nil {
-		// TODO: Expand beyond just scripts named "build".
-		if _, ok := pkgJSON.Scripts["build"]; ok {
+		_, hasPrepare := pkgJSON.Scripts["prepare"]
+		_, hasPrepack := pkgJSON.Scripts["prepack"]
+		// TODO: Detect similarly named scripts
+		_, hasBuild := pkgJSON.Scripts["build"]
+		if hasPrepack || hasPrepare || hasBuild {
 			// TODO: Consider limiting this case to only packages with a 'dist/' dir.
 			pmeta, err := mux.NPM.Package(ctx, name)
 			if err != nil {
@@ -278,28 +282,29 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			}
 			// TODO: detect and install pnpm
 			// TODO: detect and install yarn
-			return &NPMCustomBuild{
+			b := &NPMCustomBuild{
 				NPMVersion:      npmv,
 				NodeVersion:     nodeVersion,
-				VersionOverride: override,
-				Command:         "build",
+				VersionOverride: versionOverride,
 				RegistryTime:    ut,
-				Location: rebuild.Location{
-					Repo: rcfg.URI,
-					Ref:  ref,
-					Dir:  dir,
-				},
-			}, nil
+				Location:        loc,
+			}
+			if hasBuild {
+				b.Command = "build"
+			}
+			if !(hasPrepare || hasPrepack) {
+				b.PrepackRemoveDeps = true
+			}
+			if v, _ := semver.New(npmv); v.Major <= 6 { // NOTE: PickNPMVersion guarantees a valid semver
+				b.KeepRoot = true
+			}
+			return b, nil
 		}
 	}
 	return &NPMPackBuild{
 		NPMVersion:      npmv,
-		VersionOverride: override,
-		Location: rebuild.Location{
-			Repo: rcfg.URI,
-			Ref:  ref,
-			Dir:  dir,
-		},
+		VersionOverride: versionOverride,
+		Location:        loc,
 	}, nil
 }
 

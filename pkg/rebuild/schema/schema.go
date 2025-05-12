@@ -257,17 +257,17 @@ type RebuildAttempt struct {
 	RunID           string          `firestore:"run_id,omitempty"`
 	BuildID         string          `firestore:"build_id,omitempty"`
 	ObliviousID     string          `firestore:"oblivious_id,omitempty"`
-	Started         int64           `firestore:"started,omitempty"` // The time rebuild started
-	Created         int64           `firestore:"created,omitempty"` // The time this record was created
+	Started         time.Time       `firestore:"started,omitempty"` // The time rebuild started
+	Created         time.Time       `firestore:"created,omitempty"` // The time this record was created
 }
 
 // Run stores metadata on an execution grouping.
 type Run struct {
-	ID            string `firestore:"id,omitempty"`
-	BenchmarkName string `firestore:"benchmark_name,omitempty"`
-	BenchmarkHash string `firestore:"benchmark_hash,omitempty"`
-	Type          string `firestore:"run_type,omitempty"`
-	Created       int64  `firestore:"created,omitempty"`
+	ID            string    `firestore:"id,omitempty"`
+	BenchmarkName string    `firestore:"benchmark_name,omitempty"`
+	BenchmarkHash string    `firestore:"benchmark_hash,omitempty"`
+	Type          string    `firestore:"run_type,omitempty"`
+	Created       time.Time `firestore:"created,omitempty"`
 }
 
 type ReleaseEvent struct {
@@ -288,6 +288,20 @@ func (e ReleaseEvent) From(t rebuild.Target) ReleaseEvent {
 }
 
 var _ api.Message = ReleaseEvent{}
+
+// AnalyzeRebuildRequest is a request to analyze a rebuilt package.
+type AnalyzeRebuildRequest struct {
+	Ecosystem rebuild.Ecosystem `form:",required"`
+	Package   string            `form:",required"`
+	Version   string            `form:",required"`
+	Artifact  string            `form:",required"`
+	Extras    string            `form:""`
+	Timeout   time.Duration     `form:""`
+}
+
+var _ api.Message = AnalyzeRebuildRequest{}
+
+func (req AnalyzeRebuildRequest) Validate() error { return nil }
 
 // Execution mode describes the manner in which a rebuild happens.
 type ExecutionMode string

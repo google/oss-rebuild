@@ -1,0 +1,8 @@
+FROM golang:1.23-alpine as binary
+ARG DEBUG=false
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w')" -gcflags="-l=4" ./analyzer/example/subscriber
+FROM alpine
+COPY --from=binary /src/subscriber /
+ENTRYPOINT ["/subscriber"]

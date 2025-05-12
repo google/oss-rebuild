@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 variable "project" {
-  type = string
+  type        = string
   description = "Google Cloud project ID to be used to deploy resources"
 }
 variable "host" {
-  type = string
+  type        = string
   description = "Name of the host of the rebuild instance"
   validation {
     condition     = can(regex("^[a-z][a-z-]*[a-z]$", var.host))
@@ -14,9 +14,9 @@ variable "host" {
   }
 }
 variable "repo" {
-  type = string
+  type        = string
   description = "Repository URI to be resolved for building and deploying services"
-  default = "https://github.com/google/oss-rebuild"
+  default     = "https://github.com/google/oss-rebuild"
   validation {
     condition = can(regex((
       # v--------- scheme ----------vv----------------- host -----------------------vv-- port --vv-- path -->
@@ -26,64 +26,64 @@ variable "repo" {
   }
   validation {
     condition = can(startswith(var.repo, "file://")
-        ? fileexists(join("/", [substr(var.repo, 7, -1), ".git/config"])) ||  fileexists(join("/", [substr(var.repo, 7, -1), ".jj/repo/store/git/config"]))
-        : true)
+      ? fileexists(join("/", [substr(var.repo, 7, -1), ".git/config"])) || fileexists(join("/", [substr(var.repo, 7, -1), ".jj/repo/store/git/config"]))
+    : true)
     error_message = "file:// URIs must point to valid git repos"
   }
 }
 variable "service_version" {
-  type = string
+  type        = string
   description = "Version identifier to be resolved for building and deploying services. Format must conform to go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions"
   validation {
-    condition = can(regex("^v0.0.0-[0-9]{14}-[0-9a-f]{12}$", var.service_version))
+    condition     = can(regex("^v0.0.0-[0-9]{14}-[0-9a-f]{12}$", var.service_version))
     error_message = "The version must be valid a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions"
   }
   // TODO: Validate that this is a valid pseudo-version (for external repos).
 }
 variable "service_commit" {
-  type = string
+  type        = string
   description = "Version commit hash to be resolved for building and deploying services. Format must conform to a git full commit hash."
   validation {
-    condition = can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", var.service_commit))
+    condition     = can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", var.service_commit))
     error_message = "The commit must be a valid git commit hash"
   }
   validation {
-    condition = substr(var.service_commit, 0, 12) == substr(var.service_version, 22, 12)
+    condition     = substr(var.service_commit, 0, 12) == substr(var.service_version, 22, 12)
     error_message = "The commit must correspond to service_version"
   }
   // TODO: Validate that this commit exists in repo.
 }
 variable "prebuild_version" {
-  type = string
+  type        = string
   description = "Version identifier to be resolved for building and deploying prebuild resources. Format must conform to go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions"
   validation {
-    condition = can(regex("^v0.0.0-[0-9]{14}-[0-9a-f]{12}$", var.prebuild_version))
+    condition     = can(regex("^v0.0.0-[0-9]{14}-[0-9a-f]{12}$", var.prebuild_version))
     error_message = "The version must be valid a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions"
   }
   // TODO: Validate that this is a valid pseudo-version (for external repos).
 }
 variable "prebuild_commit" {
-  type = string
+  type        = string
   description = "Version commit hash to be resolved for building and deploying prebuild resources. Format must conform to a git full commit hash."
   validation {
-    condition = can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", var.prebuild_commit))
+    condition     = can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", var.prebuild_commit))
     error_message = "The commit must be a valid git commit hash"
   }
   validation {
-    condition = substr(var.prebuild_commit, 0, 12) == substr(var.prebuild_version, 22, 12)
+    condition     = substr(var.prebuild_commit, 0, 12) == substr(var.prebuild_version, 22, 12)
     error_message = "The commit must correspond to prebuild_version"
   }
   // TODO: Validate that this commit exists in repo.
 }
 variable "public" {
-  type = bool
+  type        = bool
   description = "Whether to enable public access to certain resources like attestations and prebuild resources."
-  default = true
+  default     = true
 }
 variable "debug" {
-  type = bool
+  type        = bool
   description = "Whether to build and deploy services from debug builds."
-  default = false
+  default     = false
 }
 
 data "google_project" "project" {
@@ -127,6 +127,7 @@ resource "google_service_account" "gateway" {
   description = "Identity serving gateway endpoint."
 }
 resource "google_service_account" "attestation-pubsub-reader" {
+  count       = var.public ? 0 : 1
   account_id  = "attestation-pubsub-reader"
   description = "Identity for reading the attestation pubsub topic."
 }
@@ -139,8 +140,8 @@ resource "google_project_service" "cloudkms" {
   service = "cloudkms.googleapis.com"
 }
 resource "google_kms_key_ring" "ring" {
-  name     = "ring"
-  location = "global"
+  name       = "ring"
+  location   = "global"
   depends_on = [google_project_service.cloudkms]
 }
 resource "google_kms_crypto_key" "signing-key" {
@@ -171,35 +172,35 @@ resource "google_storage_bucket" "attestations" {
   location                    = "us-central1"
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
-  depends_on = [google_project_service.storage]
+  depends_on                  = [google_project_service.storage]
 }
 resource "google_storage_bucket" "metadata" {
   name                        = "${var.host}-rebuild-metadata"
   location                    = "us-central1"
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
-  depends_on = [google_project_service.storage]
+  depends_on                  = [google_project_service.storage]
 }
 resource "google_storage_bucket" "logs" {
   name                        = "${var.host}-rebuild-logs"
   location                    = "us-central1"
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
-  depends_on = [google_project_service.storage]
+  depends_on                  = [google_project_service.storage]
 }
 resource "google_storage_bucket" "debug" {
   name                        = "${var.host}-rebuild-debug"
   location                    = "us-central1"
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
-  depends_on = [google_project_service.storage]
+  depends_on                  = [google_project_service.storage]
 }
 resource "google_storage_bucket" "git-cache" {
   name                        = "${var.host}-rebuild-git-cache"
   location                    = "us-central1"
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
-  depends_on = [google_project_service.storage]
+  depends_on                  = [google_project_service.storage]
 }
 resource "google_storage_bucket" "bootstrap-tools" {
   name                        = "${var.host}-rebuild-bootstrap-tools"
@@ -208,7 +209,7 @@ resource "google_storage_bucket" "bootstrap-tools" {
   uniform_bucket_level_access = true
   # Objects should not be deleted or replaced.
   default_event_based_hold = true
-  depends_on = [google_project_service.storage]
+  depends_on               = [google_project_service.storage]
 }
 
 ## Firestore
@@ -230,7 +231,7 @@ resource "google_app_engine_application" "dummy_app" {
 ## PubSub
 
 resource "google_pubsub_topic" "attestation-topic" {
-  name     = "oss-rebuild-attestation-topic"
+  name = "oss-rebuild-attestation-topic"
 }
 
 resource "google_storage_notification" "attestation-notification" {
@@ -244,9 +245,9 @@ resource "google_storage_notification" "attestation-notification" {
 ## Container resources
 
 resource "google_artifact_registry_repository" "registry" {
-  location = "us-central1"
+  location      = "us-central1"
   repository_id = "service-images"
-  format  = "DOCKER"
+  format        = "DOCKER"
   docker_config {
     immutable_tags = true
   }
@@ -269,7 +270,7 @@ resource "terraform_data" "git_dir" {
     !startswith(var.repo, "file://") ? "!remote!" :
     fileexists(join("/", [substr(var.repo, 7, -1), ".git/config"])) ? join("/", [substr(var.repo, 7, -1), ".git"]) :
     fileexists(join("/", [substr(var.repo, 7, -1), ".jj/repo/store/git/config"])) ? join("/", [substr(var.repo, 7, -1), ".jj/repo/store/git"]) :
-    "")
+  "")
 }
 
 locals {
@@ -280,58 +281,58 @@ locals {
   )
   repo_docker_context = (
     startswith(var.repo, "file:")
-      ? "- < <(GIT_DIR=${terraform_data.git_dir.output} git archive --format=tar ${var.service_commit})"
-      : "${local.repo_with_git}#${var.service_commit}")
+    ? "- < <(GIT_DIR=${terraform_data.git_dir.output} git archive --format=tar ${var.service_commit})"
+  : "${local.repo_with_git}#${var.service_commit}")
 }
 
 resource "terraform_data" "image" {
   for_each = {
     "gateway" = {
-      name = "gateway"
-      image = "${local.registry_url}/gateway"
-      version = terraform_data.service_version.output
+      name      = "gateway"
+      image     = "${local.registry_url}/gateway"
+      version   = terraform_data.service_version.output
       buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "git-cache" = {
-      name = "git_cache"
-      image = "${local.registry_url}/git_cache"
-      version = terraform_data.service_version.output
+      name      = "git_cache"
+      image     = "${local.registry_url}/git_cache"
+      version   = terraform_data.service_version.output
       buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "rebuilder" = {
-      name = "rebuilder"
-      image = "${local.registry_url}/rebuilder"
-      version = terraform_data.service_version.output
+      name      = "rebuilder"
+      image     = "${local.registry_url}/rebuilder"
+      version   = terraform_data.service_version.output
       buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "inference" = {
-      name = "inference"
-      image = "${local.registry_url}/inference"
-      version = terraform_data.service_version.output
+      name      = "inference"
+      image     = "${local.registry_url}/inference"
+      version   = terraform_data.service_version.output
       buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "api" = {
-      name = "api"
-      image = "${local.registry_url}/api"
-      version = terraform_data.service_version.output
+      name      = "api"
+      image     = "${local.registry_url}/api"
+      version   = terraform_data.service_version.output
       buildargs = ["DEBUG=${terraform_data.debug.output}", "BUILD_REPO=${var.repo}", "BUILD_VERSION=${terraform_data.service_version.output}"]
     }
     "gsutil_writeonly" = {
-      name = "gsutil_writeonly"
-      image = "${local.registry_url}/gsutil_writeonly"
-      version = terraform_data.prebuild_version.output
+      name      = "gsutil_writeonly"
+      image     = "${local.registry_url}/gsutil_writeonly"
+      version   = terraform_data.prebuild_version.output
       buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "proxy" = {
-      name = "proxy"
-      image = "${local.registry_url}/proxy"
-      version = terraform_data.prebuild_version.output
+      name      = "proxy"
+      image     = "${local.registry_url}/proxy"
+      version   = terraform_data.prebuild_version.output
       buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
     "timewarp" = {
-      name = "timewarp"
-      image = "${local.registry_url}/timewarp"
-      version = terraform_data.prebuild_version.output
+      name      = "timewarp"
+      image     = "${local.registry_url}/timewarp"
+      version   = terraform_data.prebuild_version.output
       buildargs = ["DEBUG=${terraform_data.debug.output}"]
     }
   }
@@ -344,7 +345,7 @@ resource "terraform_data" "image" {
         echo Found $path
       else
         echo Building $path
-        docker build --quiet ${join(" ", [for arg in each.value.buildargs: "--build-arg ${arg}"])} -f build/package/Dockerfile.${each.value.name} -t $path ${local.repo_docker_context} && \
+        docker build --quiet ${join(" ", [for arg in each.value.buildargs : "--build-arg ${arg}"])} -f build/package/Dockerfile.${each.value.name} -t $path ${local.repo_docker_context} && \
           docker push --quiet $path
       fi
     EOT
@@ -361,18 +362,18 @@ resource "terraform_data" "image" {
 resource "terraform_data" "binary" {
   for_each = {
     "gsutil_writeonly" = {
-      name = "gsutil_writeonly"
-      image = "${local.registry_url}/gsutil_writeonly"
+      name    = "gsutil_writeonly"
+      image   = "${local.registry_url}/gsutil_writeonly"
       version = terraform_data.prebuild_version.output
     }
     "proxy" = {
-      name = "proxy"
-      image = "${local.registry_url}/proxy"
+      name    = "proxy"
+      image   = "${local.registry_url}/proxy"
       version = terraform_data.prebuild_version.output
     }
     "timewarp" = {
-      name = "timewarp"
-      image = "${local.registry_url}/timewarp"
+      name    = "timewarp"
+      image   = "${local.registry_url}/timewarp"
       version = terraform_data.prebuild_version.output
     }
   }
@@ -403,38 +404,38 @@ resource "terraform_data" "binary" {
 }
 
 data "google_artifact_registry_docker_image" "gateway" {
-  location = google_artifact_registry_repository.registry.location
+  location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name = "gateway:${terraform_data.service_version.output}"
-  depends_on = [terraform_data.image["gateway"]]
+  image_name    = "gateway:${terraform_data.service_version.output}"
+  depends_on    = [terraform_data.image["gateway"]]
 }
 
 data "google_artifact_registry_docker_image" "git-cache" {
-  location = google_artifact_registry_repository.registry.location
+  location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name = "git_cache:${terraform_data.service_version.output}"
-  depends_on = [terraform_data.image["git-cache"]]
+  image_name    = "git_cache:${terraform_data.service_version.output}"
+  depends_on    = [terraform_data.image["git-cache"]]
 }
 
 data "google_artifact_registry_docker_image" "rebuilder" {
-  location = google_artifact_registry_repository.registry.location
+  location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name = "rebuilder:${terraform_data.service_version.output}"
-  depends_on = [terraform_data.image["rebuilder"]]
+  image_name    = "rebuilder:${terraform_data.service_version.output}"
+  depends_on    = [terraform_data.image["rebuilder"]]
 }
 
 data "google_artifact_registry_docker_image" "inference" {
-  location = google_artifact_registry_repository.registry.location
+  location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name = "inference:${terraform_data.service_version.output}"
-  depends_on = [terraform_data.image["inference"]]
+  image_name    = "inference:${terraform_data.service_version.output}"
+  depends_on    = [terraform_data.image["inference"]]
 }
 
 data "google_artifact_registry_docker_image" "api" {
-  location = google_artifact_registry_repository.registry.location
+  location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name = "api:${terraform_data.service_version.output}"
-  depends_on = [terraform_data.image["api"]]
+  image_name    = "api:${terraform_data.service_version.output}"
+  depends_on    = [terraform_data.image["api"]]
 }
 
 ## Compute resources
@@ -518,8 +519,8 @@ resource "google_cloud_run_v2_service" "inference" {
   name     = "inference"
   location = "us-central1"
   template {
-    service_account       = google_service_account.inference.email
-    timeout               = "${14 * 60}s" // 14 minutes
+    service_account = google_service_account.inference.email
+    timeout         = "${14 * 60}s" // 14 minutes
     containers {
       image = data.google_artifact_registry_docker_image.inference.self_link
       args = [
@@ -605,8 +606,8 @@ resource "google_storage_bucket_iam_binding" "orchestrator-manages-metadata" {
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
 resource "google_storage_bucket_iam_binding" "orchestrator-and-local-build-write-debug" {
-  bucket  = google_storage_bucket.debug.name
-  role    = "roles/storage.objectCreator"
+  bucket = google_storage_bucket.debug.name
+  role   = "roles/storage.objectCreator"
   members = [
     "serviceAccount:${google_service_account.orchestrator.email}",
     "serviceAccount:${google_service_account.builder-local.email}",
@@ -638,7 +639,7 @@ resource "google_project_iam_binding" "orchestrator-uses-datastore" {
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
 resource "google_storage_bucket_iam_binding" "remote-build-views-bootstrap-bucket" {
-  count = var.public ? 0 : 1  // NOTE: Non-public objects must still be visible to the builder.
+  count   = var.public ? 0 : 1 // NOTE: Non-public objects must still be visible to the builder.
   bucket  = google_storage_bucket.bootstrap-tools.name
   role    = "roles/storage.objectViewer"
   members = ["serviceAccount:${google_service_account.builder-remote.email}"]
@@ -689,40 +690,47 @@ resource "google_cloud_run_v2_service_iam_binding" "api-and-local-build-and-infe
   project  = google_cloud_run_v2_service.gateway.project
   name     = google_cloud_run_v2_service.gateway.name
   role     = "roles/run.invoker"
-  members  = [
+  members = [
     "serviceAccount:${google_service_account.builder-local.email}",
     "serviceAccount:${google_service_account.inference.email}",
     "serviceAccount:${google_service_account.orchestrator.email}",
   ]
 }
 resource "google_pubsub_topic_iam_binding" "can-publish-to-attestation-topic" {
-  topic    = google_pubsub_topic.attestation-topic.id
-  role     = "roles/pubsub.publisher"
-  members  = ["serviceAccount:${data.google_storage_project_service_account.attestation-pubsub-publisher.email_address}"]
+  topic   = google_pubsub_topic.attestation-topic.id
+  role    = "roles/pubsub.publisher"
+  members = ["serviceAccount:${data.google_storage_project_service_account.attestation-pubsub-publisher.email_address}"]
 }
 resource "google_pubsub_topic_iam_binding" "readers-can-read-from-attestation-topic" {
-  topic    = google_pubsub_topic.attestation-topic.id
-  role     = "roles/pubsub.subscriber"
-  members  = ["serviceAccount:${google_service_account.attestation-pubsub-reader.email}"]
+  count   = var.public ? 0 : 1
+  topic   = google_pubsub_topic.attestation-topic.id
+  role    = "roles/pubsub.subscriber"
+  members = ["serviceAccount:${google_service_account.attestation-pubsub-reader[0].email}"]
 }
 
 ## Public resources
 
 resource "google_kms_crypto_key_iam_binding" "signing-key-is-public" {
-  count = var.public ? 1 : 0
+  count         = var.public ? 1 : 0
   crypto_key_id = google_kms_crypto_key.signing-key.id
   role          = "roles/cloudkms.verifier"
   members       = ["allUsers"]
 }
 resource "google_storage_bucket_iam_binding" "attestation-bucket-is-public" {
-  count = var.public ? 1 : 0
+  count   = var.public ? 1 : 0
   bucket  = google_storage_bucket.attestations.name
   role    = "roles/storage.objectViewer"
   members = ["allUsers"]
 }
 resource "google_storage_bucket_iam_binding" "bootstrap-bucket-is-public" {
-  count = var.public ? 1 : 0
+  count   = var.public ? 1 : 0
   bucket  = google_storage_bucket.bootstrap-tools.name
   role    = "roles/storage.objectViewer"
+  members = ["allUsers"]
+}
+resource "google_pubsub_topic_iam_binding" "attestation-bucket-topic-is-public" {
+  count   = var.public ? 1 : 0
+  topic   = google_pubsub_topic.attestation-topic.id
+  role    = "roles/pubsub.subscriber"
   members = ["allUsers"]
 }

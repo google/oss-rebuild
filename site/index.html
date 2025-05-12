@@ -1,0 +1,664 @@
+<!doctype html>
+<!--
+ Copyright 2025 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OSS Rebuild - Securing Open Source Supply Chains</title>
+    <style>
+      :root {
+        --primary: #3740ff;
+        --primary-dark: #2930cc;
+        --secondary: #ff5e5b;
+        --light: #f5f7fa;
+        --dark: #2d3748;
+        --gray: #718096;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+          Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+        line-height: 1.6;
+        color: var(--dark);
+        background-color: var(--light);
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 2rem;
+      }
+
+      header {
+        background-color: white;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+
+      nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem 0;
+      }
+
+      .logo {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .logo-icon {
+        width: 2rem;
+        height: 2rem;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 2rem;
+      }
+
+      .nav-links a {
+        text-decoration: none;
+        color: var(--dark);
+        font-weight: 500;
+        transition: color 0.2s ease;
+      }
+
+      .nav-links a:hover {
+        color: var(--primary);
+      }
+
+      .github-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background-color: var(--dark);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        text-decoration: none;
+        font-weight: 500;
+        transition: background-color 0.2s ease;
+      }
+
+      .github-btn:hover {
+        background-color: black;
+      }
+
+      .hero {
+        padding: 6rem 0 3rem;
+        text-align: center;
+        background: linear-gradient(to bottom, white, var(--light));
+      }
+
+      .hero h1 {
+        font-size: 3rem;
+        margin-bottom: 1.5rem;
+        line-height: 1.2;
+      }
+
+      .hero p {
+        font-size: 1.25rem;
+        max-width: 700px;
+        margin: 0 auto 2rem;
+        color: var(--gray);
+      }
+
+      .cta-buttons {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        margin-bottom: 3rem;
+      }
+
+      .btn {
+        display: inline-block;
+        padding: 0.75rem 1.5rem;
+        border-radius: 4px;
+        font-weight: 500;
+        text-decoration: none;
+        transition: all 0.2s ease;
+      }
+
+      .btn-primary {
+        background-color: var(--primary);
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background-color: var(--primary-dark);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      .btn-secondary {
+        background-color: white;
+        color: var(--primary);
+        border: 1px solid var(--primary);
+      }
+
+      .btn-secondary:hover {
+        background-color: var(--light);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      .features {
+        padding: 5rem 0;
+      }
+
+      .section-title {
+        text-align: center;
+        margin-bottom: 3rem;
+        font-size: 2rem;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+      }
+
+      .feature-card {
+        background-color: white;
+        border-radius: 8px;
+        padding: 2rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        transition:
+          transform 0.3s ease,
+          box-shadow 0.3s ease;
+      }
+
+      .feature-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+      }
+
+      .feature-icon {
+        color: var(--primary);
+        font-size: 2rem;
+        margin-bottom: 1rem;
+      }
+
+      .feature-title {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .feature-desc {
+        color: var(--gray);
+      }
+
+      .ecosystems {
+        padding: 5rem 0;
+        background-color: white;
+      }
+
+      .ecosystem-logos {
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 3rem;
+        margin-top: 2rem;
+      }
+
+      .ecosystem-logo {
+        filter: grayscale(100%);
+        opacity: 0.6;
+        transition: all 0.3s ease;
+        height: 60px;
+      }
+
+      .ecosystem-logo:hover {
+        filter: grayscale(0%);
+        opacity: 1;
+      }
+
+      .badges {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        margin-top: 3rem;
+      }
+
+      .how-it-works {
+        padding: 5rem 0;
+      }
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 3rem;
+        counter-reset: step-counter;
+      }
+
+      .step {
+        position: relative;
+        padding-left: 3rem;
+      }
+
+      .step::before {
+        counter-increment: step-counter;
+        content: counter(step-counter);
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 2rem;
+        height: 2rem;
+        background-color: var(--primary);
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+      }
+
+      .step-title {
+        font-size: 1.25rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .step-desc {
+        color: var(--gray);
+      }
+
+      .cta {
+        padding: 5rem 0;
+        text-align: center;
+        background-color: var(--primary);
+        color: white;
+      }
+
+      .cta h2 {
+        font-size: 2.5rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .cta p {
+        font-size: 1.25rem;
+        max-width: 700px;
+        margin: 0 auto 2rem;
+        opacity: 0.9;
+      }
+
+      .btn-white {
+        background-color: white;
+        color: var(--primary);
+      }
+
+      .btn-white:hover {
+        background-color: var(--light);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      footer {
+        background-color: var(--dark);
+        color: white;
+        padding: 3rem 0;
+      }
+
+      .footer-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 3rem;
+      }
+
+      .footer-col h3 {
+        margin-bottom: 1.5rem;
+        font-size: 1.25rem;
+      }
+
+      .footer-links {
+        list-style: none;
+      }
+
+      .footer-links li {
+        margin-bottom: 0.75rem;
+      }
+
+      .footer-links a {
+        text-decoration: none;
+        color: var(--light);
+        opacity: 0.8;
+        transition: opacity 0.2s ease;
+      }
+
+      .footer-links a:hover {
+        opacity: 1;
+      }
+
+      .copyright {
+        text-align: center;
+        padding-top: 3rem;
+        color: var(--light);
+        opacity: 0.6;
+        font-size: 0.875rem;
+      }
+
+      @media (max-width: 768px) {
+        .cta-buttons {
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .nav-links {
+          display: none;
+        }
+
+        .hero h1 {
+          font-size: 2.5rem;
+        }
+      }
+
+      .code-sample {
+        background-color: #1e1e1e;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 2rem auto;
+        color: #d4d4d4;
+        font-family: "Fira Code", monospace;
+        font-size: 0.875rem;
+        line-height: 1.5;
+        overflow-x: auto;
+        text-align: left;
+        max-width: 700px;
+      }
+
+      .code-comment {
+        color: #6a9955;
+      }
+
+      .code-keyword {
+        color: #569cd6;
+      }
+
+      .code-string {
+        color: #ce9178;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="container">
+        <nav>
+          <div class="logo">OSS Rebuild</div>
+
+          <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#ecosystems">Ecosystems</a>
+            <a href="#how-it-works">How It Works</a>
+            <a href="https://docs.oss-rebuild.dev">Documentation</a>
+          </div>
+
+          <a href="https://github.com/google/oss-rebuild" class="github-btn">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 2C6.477 2 2 6.477 2 12C2 16.418 4.865 20.166 8.84 21.494C9.34 21.591 9.52 21.268 9.52 20.99C9.52 20.737 9.512 20.141 9.508 19.308C6.726 19.91 6.139 17.86 6.139 17.86C5.685 16.68 5.029 16.357 5.029 16.357C4.132 15.727 5.097 15.739 5.097 15.739C6.091 15.812 6.627 16.799 6.627 16.799C7.52 18.355 8.97 17.908 9.54 17.638C9.638 17.013 9.914 16.567 10.217 16.319C7.99 16.068 5.662 15.258 5.662 11.577C5.662 10.49 6.057 9.598 6.647 8.898C6.539 8.631 6.195 7.642 6.747 6.237C6.747 6.237 7.587 5.956 9.497 7.276C10.295 7.046 11.15 6.931 12 6.926C12.85 6.931 13.705 7.046 14.504 7.276C16.413 5.956 17.251 6.237 17.251 6.237C17.804 7.642 17.461 8.631 17.353 8.898C17.944 9.598 18.337 10.49 18.337 11.577C18.337 15.268 16.005 16.065 13.772 16.311C14.142 16.613 14.482 17.214 14.482 18.131C14.482 19.439 14.469 20.646 14.469 20.99C14.469 21.271 14.648 21.597 15.154 21.494C19.125 20.163 22 16.418 22 12C22 6.477 17.523 2 12 2Z"
+                fill="currentColor"
+              />
+            </svg>
+            GitHub
+          </a>
+        </nav>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="container">
+        <h1>Secure Open Source Supply Chains<br />Through Reproducible Builds</h1>
+        <p>
+          OSS Rebuild validates software package integrity by rebuilding artifacts from source and
+          comparing results, detecting potential supply chain attacks and building trust in open
+          source.
+        </p>
+
+        <div class="cta-buttons">
+          <a href="https://github.com/google/oss-rebuild" class="btn btn-primary">Get Started</a>
+          <a href="https://docs.oss-rebuild.dev" class="btn btn-secondary">Documentation</a>
+        </div>
+
+        <div class="badges">
+          <a href="https://github.com/google/oss-rebuild/blob/main/LICENSE">
+            <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" />
+          </a>
+          <a href="https://goreportcard.com/report/google/oss-rebuild">
+            <img src="https://goreportcard.com/badge/google/oss-rebuild" alt="Go Report Card" />
+          </a>
+          <a href="https://pkg.go.dev/github.com/google/oss-rebuild">
+            <img
+              src="https://pkg.go.dev/badge/github.com/google/oss-rebuild.svg"
+              alt="Go Reference"
+            />
+          </a>
+        </div>
+
+        <div class="code-sample">
+          <div><span class="code-comment"># Get attestations for a package</span></div>
+          <div>
+            <span class="code-keyword">$</span> go install
+            github.com/google/oss-rebuild/cmd/oss-rebuild@latest
+          </div>
+          <div><span class="code-keyword">$</span> oss-rebuild get pypi absl-py 2.0.0</div>
+          <div></div>
+          <div><span class="code-comment"># View the Dockerfile</span></div>
+          <div>
+            <span class="code-keyword">$</span> oss-rebuild get pypi absl-py 2.0.0
+            --output=dockerfile
+          </div>
+          <div></div>
+          <div><span class="code-comment"># Run a rebuild locally</span></div>
+          <div>
+            <span class="code-keyword">$</span> oss-rebuild get pypi absl-py 2.0.0
+            --output=dockerfile | docker run $(docker buildx build -q -)
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="container">
+        <h2 class="section-title">Key Features</h2>
+
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-icon">🔍</div>
+            <h3 class="feature-title">Supply Chain Verification</h3>
+            <p class="feature-desc">
+              Detect discrepancies between published artifacts and source code, helping identify
+              potential compromises before they impact your systems.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">🛡️</div>
+            <h3 class="feature-title">Cryptographic Attestations</h3>
+            <p class="feature-desc">
+              Generate and verify cryptographically signed attestations that provide evidence of
+              build reproducibility.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">🔄</div>
+            <h3 class="feature-title">Automated Rebuilding</h3>
+            <p class="feature-desc">
+              Continuously rebuild popular packages to ensure they remain free from tampering
+              throughout their lifecycle.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">📊</div>
+            <h3 class="feature-title">Ecosystem Analytics</h3>
+            <p class="feature-desc">
+              Gain insights into ecosystem health, package reproducibility rates, and common build
+              issues.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">🌐</div>
+            <h3 class="feature-title">Cross-Ecosystem Support</h3>
+            <p class="feature-desc">
+              Uniform approach across multiple package ecosystems including NPM, PyPI, and
+              Crates.io.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">🧩</div>
+            <h3 class="feature-title">Integration-Ready</h3>
+            <p class="feature-desc">
+              Designed to integrate with CI/CD pipelines and policy enforcement systems.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ecosystems" id="ecosystems">
+      <div class="container">
+        <h2 class="section-title">Supported Ecosystems</h2>
+
+        <div class="ecosystem-logos">
+          <img
+            src="https://upload.wikimedia.org/wikipedia/commons/d/db/Npm-logo.svg"
+            alt="NPM"
+            class="ecosystem-logo"
+          />
+          <img
+            src="https://upload.wikimedia.org/wikipedia/commons/c/c3/Python-logo-notext.svg"
+            alt="Python"
+            class="ecosystem-logo"
+          />
+          <img
+            src="https://upload.wikimedia.org/wikipedia/commons/d/d5/Rust_programming_language_black_logo.svg"
+            alt="Rust"
+            class="ecosystem-logo"
+          />
+        </div>
+      </div>
+    </section>
+
+    <section class="how-it-works" id="how-it-works">
+      <div class="container">
+        <h2 class="section-title">How It Works</h2>
+
+        <div class="steps">
+          <div class="step">
+            <h3 class="step-title">Source Analysis</h3>
+            <p class="step-desc">
+              Analysis of package metadata to identify source repositories, versions, and build
+              parameters.
+            </p>
+          </div>
+
+          <div class="step">
+            <h3 class="step-title">Containerized Rebuild</h3>
+            <p class="step-desc">
+              Secure, isolated rebuilding of packages from source in reproducible environments.
+            </p>
+          </div>
+
+          <div class="step">
+            <h3 class="step-title">Artifact Comparison</h3>
+            <p class="step-desc">
+              Normalization and comparison of rebuilt artifacts against originals to detect
+              differences.
+            </p>
+          </div>
+
+          <div class="step">
+            <h3 class="step-title">Attestation</h3>
+            <p class="step-desc">
+              Generation of cryptographically signed attestations for successful rebuilds.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="container">
+        <h2>Ready to Secure Your Supply Chain?</h2>
+        <p>Start validating your dependencies today with OSS Rebuild.</p>
+        <a href="https://github.com/google/oss-rebuild" class="btn btn-white">Get Started</a>
+      </div>
+    </section>
+
+    <footer>
+      <div class="container">
+        <div class="footer-grid">
+          <div class="footer-col">
+            <h3>Project</h3>
+            <ul class="footer-links">
+              <li><a href="https://github.com/google/oss-rebuild">GitHub</a></li>
+              <li><a href="https://docs.oss-rebuild.dev">Documentation</a></li>
+              <li><a href="https://github.com/google/oss-rebuild/blob/main/LICENSE">License</a></li>
+              <li>
+                <a href="https://github.com/google/oss-rebuild/blob/main/CONTRIBUTING.md"
+                  >Contributing</a
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div class="footer-col">
+            <h3>Resources</h3>
+            <ul class="footer-links">
+              <li><a href="https://docs.oss-rebuild.dev/trust.md">Trust and Rebuilds</a></li>
+              <li>
+                <a href="https://docs.oss-rebuild.dev/builds/Rebuild@v0.1.md">Attestation Format</a>
+              </li>
+              <li><a href="https://slsa.dev/">SLSA Framework</a></li>
+              <li><a href="https://reproducible-builds.org/">Reproducible Builds</a></li>
+            </ul>
+          </div>
+
+          <div class="footer-col">
+            <h3>Related Projects</h3>
+            <ul class="footer-links">
+              <li>
+                <a href="https://github.com/jvm-repo-rebuild/reproducible-central"
+                  >reproducible-central</a
+                >
+              </li>
+              <li><a href="https://github.com/kpcyrd/rebuilderd">rebuilderd</a></li>
+              <li><a href="https://sigstore.dev/">Sigstore</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="copyright">
+          <p>This is not an officially supported Google product.</p>
+          <p>&copy; 2025 OSS Rebuild Contributors. Licensed under Apache 2.0.</p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

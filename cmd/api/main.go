@@ -80,8 +80,8 @@ func RebuildSmoketestInit(ctx context.Context) (*apiservice.RebuildSmoketestDeps
 	if err != nil {
 		return nil, errors.Wrap(err, "initializing build local client")
 	}
-	d.SmoketestStub = api.StubFromHandler(runclient, *u.JoinPath("smoketest"), rebuilderservice.RebuildSmoketest)
-	d.VersionStub = api.StubFromHandler(runclient, *u.JoinPath("version"), rebuilderservice.Version)
+	d.SmoketestStub = api.StubFromHandler(runclient, u.JoinPath("smoketest"), rebuilderservice.RebuildSmoketest)
+	d.VersionStub = api.StubFromHandler(runclient, u.JoinPath("version"), rebuilderservice.Version)
 	return &d, nil
 }
 
@@ -203,7 +203,7 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "initializing inference client")
 	}
-	d.InferStub = api.StubFromHandler(runclient, *u, inferenceservice.Infer)
+	d.InferStub = api.StubFromHandler(runclient, u, inferenceservice.Infer)
 	return &d, nil
 }
 
@@ -223,7 +223,7 @@ func VersionInit(ctx context.Context) (*apiservice.VersionDeps, error) {
 		if err != nil {
 			return nil, errors.Wrap(err, "initializing build local client")
 		}
-		d.BuildLocalVersionStub = api.StubFromHandler(runclient, *u.JoinPath("version"), rebuilderservice.Version)
+		d.BuildLocalVersionStub = api.StubFromHandler(runclient, u.JoinPath("version"), rebuilderservice.Version)
 	}
 	{
 		u, err := url.Parse(*inferenceURL)
@@ -234,7 +234,7 @@ func VersionInit(ctx context.Context) (*apiservice.VersionDeps, error) {
 		if err != nil {
 			return nil, errors.Wrap(err, "initializing inference client")
 		}
-		d.InferenceVersionStub = api.StubFromHandler(runclient, *u.JoinPath("version"), inferenceservice.Version)
+		d.InferenceVersionStub = api.StubFromHandler(runclient, u.JoinPath("version"), inferenceservice.Version)
 	}
 	return &d, nil
 }
