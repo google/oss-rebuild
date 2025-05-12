@@ -13,7 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+
 	"github.com/google/oss-rebuild/internal/api"
+	internalExecutor "github.com/google/oss-rebuild/internal/executor"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -158,6 +161,110 @@ func (w *smoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, o
 	}
 }
 
+type dockerWorker struct {
+	runID     string
+	executors map[string]*internalExecutor.DockerExecutor
+	execMutex sync.Mutex
+}
+
+var _ packageWorker = &dockerWorker{}
+
+func (w *dockerWorker) Setup(ctx context.Context) {
+	w.executors = make(map[string]*internalExecutor.DockerExecutor)
+}
+
+func (w *dockerWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
+	for i, version := range p.Versions {
+		var artifact string
+		if len(p.Artifacts) > 0 {
+			artifact = p.Artifacts[i]
+		}
+
+		target := rebuild.Target{
+			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+			Package:   p.Name,
+			Version:   version,
+			Artifact:  artifact,
+		}
+
+		verdict := schema.Verdict{
+			Target: target,
+		}
+
+		// Infer the strategy
+		req := schema.InferenceRequest{
+			Ecosystem: target.Ecosystem,
+			Package:   target.Package,
+			Version:   target.Version,
+			Artifact:  target.Artifact,
+		}
+		deps := &inferenceservice.InferDeps{
+			HTTPClient: http.DefaultClient, // Provide an HTTP client if needed
+		}
+		strategyOneOf, err := inferenceservice.Infer(ctx, req, deps)
+		if err != nil {
+			verdict.Message = fmt.Sprintf("Inference failed: %v", err)
+			out <- verdict
+			continue
+		}
+
+		// Extract the strategy
+		strategy, err := strategyOneOf.Strategy()
+		if err != nil {
+			verdict.Message = fmt.Sprintf("Strategy extraction failed: %v", err)
+			out <- verdict
+			continue
+		}
+
+		// Get or create a DockerExecutor for the package
+		w.execMutex.Lock()
+		exec, exists := w.executors[p.Name]
+		if !exists {
+			exec, err = internalExecutor.NewDockerExecutor(p.Name)
+			if err != nil {
+				w.execMutex.Unlock()
+				verdict.Message = fmt.Sprintf("Failed to create DockerExecutor: %v", err)
+				out <- verdict
+				continue
+			}
+			w.executors[p.Name] = exec
+		}
+		w.execMutex.Unlock()
+
+		// Start the container if it doesn't already exist
+		if !exists {
+			if err := exec.StartContainer(ctx, strategy, target); err != nil {
+				verdict.Message = fmt.Sprintf("Failed to start container: %v", err)
+				out <- verdict
+				continue
+			}
+		}
+
+		// Execute the build with the strategy
+		if err := exec.ExecuteWithStrategy(ctx, strategy, target); err != nil {
+			verdict.Message = fmt.Sprintf("Build execution failed: %v", err)
+			out <- verdict
+			continue
+		}
+
+		// If we reach here, the build was successful
+		//verdict.Success = true
+		out <- verdict
+	}
+}
+
+func (w *dockerWorker) Cleanup(ctx context.Context) {
+	w.execMutex.Lock()
+	defer w.execMutex.Unlock()
+
+	for _, exec := range w.executors {
+		if err := exec.StopContainer(ctx); err != nil {
+			log.Printf("Failed to stop container: %v", err)
+		}
+	}
+	w.executors = nil
+}
+
 func defaultLimiters() map[string]<-chan time.Time {
 	return map[string]<-chan time.Time{
 		"debian": time.Tick(time.Second),
@@ -208,9 +315,14 @@ func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set ben
 			useSyscallMonitor: opts.UseSyscallMonitor,
 			useNetworkProxy:   opts.UseNetworkProxy,
 		}
+	case schema.DockerMode:
+		ex.Worker = &dockerWorker{
+			runID: opts.RunID,
+		}
 	default:
 		return nil, fmt.Errorf("invalid mode: %s", string(opts.Mode))
 	}
+
 	verdictChan := make(chan schema.Verdict)
 	go ex.Process(ctx, verdictChan, set.Packages)
 	return verdictChan, nil
