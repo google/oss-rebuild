@@ -84,15 +84,13 @@ func (r Rebuild) WasSmoketest() bool {
 // Run represents a group of one or more rebuild executions.
 type Run struct {
 	schema.Run
-	Type    schema.ExecutionMode
-	Created time.Time
+	Type schema.ExecutionMode
 }
 
 func FromRun(r schema.Run) Run {
 	var rb Run
 	rb.Run = r
 	rb.Type = schema.ExecutionMode(r.Type)
-	rb.Created = r.Created
 	return rb
 }
 
