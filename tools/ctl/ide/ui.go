@@ -65,6 +65,9 @@ func NewTuiApp(dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches be
 	if err := cmdReg.AddGlobals(commands.NewGlobalCmds(t.app, t.rb, modalFn, butler, asst, buildDefs, dex, benches)...); err != nil {
 		log.Fatal(err)
 	}
+	if err := cmdReg.AddRebuildGroups(commands.NewRebuildGroupCmds(t.app, t.rb, modalFn, butler, asst, buildDefs, dex, benches)...); err != nil {
+		log.Fatal(err)
+	}
 	if err := cmdReg.AddRebuilds(commands.NewRebuildCmds(t.app, t.rb, modalFn, butler, asst, buildDefs, dex, benches)...); err != nil {
 		log.Fatal(err)
 	}
