@@ -1,10 +1,11 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package benchmark
+package run
 
 import (
 	"context"
+	"net/url"
 	"testing"
 
 	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api/form"
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/pkg/errors"
 )
 
@@ -38,14 +40,14 @@ func TestRunBenchAsync(t *testing.T) {
 	testCases := []struct {
 		name     string
 		mode     schema.ExecutionMode
-		set      PackageSet
+		set      benchmark.PackageSet
 		expected []queueCall
 	}{
 		{
 			name: "attest",
 			mode: schema.AttestMode,
-			set: PackageSet{
-				Packages: []Package{
+			set: benchmark.PackageSet{
+				Packages: []benchmark.Package{
 					{
 						Ecosystem: "npm",
 						Name:      "package_name",
@@ -67,8 +69,8 @@ func TestRunBenchAsync(t *testing.T) {
 		{
 			name: "smoketest",
 			mode: schema.SmoketestMode,
-			set: PackageSet{
-				Packages: []Package{
+			set: benchmark.PackageSet{
+				Packages: []benchmark.Package{
 					{
 						Ecosystem: "npm",
 						Name:      "package_name",
@@ -96,4 +98,62 @@ func TestRunBenchAsync(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunBenchDockerExecution(t *testing.T) {
+	ctx := context.Background()
+
+	// Define a package set for testing
+	packageSet := benchmark.PackageSet{
+		Packages: []benchmark.Package{
+			{
+				Ecosystem: "pypi",
+				Name:      "beautifulsoup4",
+				Versions:  []string{"4.12.2"},
+			},
+			//{
+			//	Ecosystem: "pypi",
+			//	Name:      "requests",
+			//	Versions:  []string{"2.28.1", "2.32.3"},
+			//},
+			//{
+			//	Ecosystem: "pypi",
+			//	Name:      "aiohttp",
+			//	Versions:  []string{"3.11.18"},
+			//},
+		},
+	}
+
+	// Define RunBench options
+	opts := RunBenchOpts{
+		Mode:           schema.ExecutionMode("docker"),
+		RunID:          "test-run-id",
+		MaxConcurrency: 1,
+	}
+
+	// Mock API URL
+	apiURL, _ := url.Parse("http://localhost:8080")
+
+	// Run the benchmark
+	verdictChan, err := RunBench(ctx, nil, apiURL, packageSet, opts)
+	if err != nil {
+		t.Fatalf("RunBench failed: %v", err)
+	}
+
+	// Collect verdicts
+	var verdicts []schema.Verdict
+	for verdict := range verdictChan {
+		verdicts = append(verdicts, verdict)
+	}
+
+	// Verify the verdicts
+	if len(verdicts) != 3 {
+		t.Fatalf("Expected 3 verdict, got %d", len(verdicts))
+	}
+
+	verdict := verdicts[0]
+	if verdict.Target.Package != "requests" || verdict.Target.Version != "2.28.1" {
+		t.Errorf("Unexpected verdict target: %+v", verdict.Target)
+	}
+
 }

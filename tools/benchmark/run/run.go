@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package benchmark
+package run
 
 import (
 	"context"
@@ -13,16 +13,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+
 	"github.com/google/oss-rebuild/internal/api"
+	internalExecutor "github.com/google/oss-rebuild/internal/executor"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/pkg/errors"
 )
 
 type packageWorker interface {
 	Setup(ctx context.Context)
-	ProcessOne(ctx context.Context, p Package, out chan schema.Verdict)
+	ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict)
 }
 
 type executor struct {
@@ -30,9 +34,9 @@ type executor struct {
 	Worker      packageWorker
 }
 
-func (ex *executor) Process(ctx context.Context, out chan schema.Verdict, packages []Package) {
+func (ex *executor) Process(ctx context.Context, out chan schema.Verdict, packages []benchmark.Package) {
 	ex.Worker.Setup(ctx)
-	jobs := make(chan Package)
+	jobs := make(chan benchmark.Package)
 	go func() {
 		for _, p := range packages {
 			jobs <- p
@@ -70,11 +74,11 @@ var _ packageWorker = &attestWorker{}
 
 func (w *attestWorker) Setup(ctx context.Context) {}
 
-func (w *attestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
+func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	if len(p.Artifacts) > 0 && len(p.Artifacts) != len(p.Versions) {
 		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
 	}
-	stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](w.client, *w.url.JoinPath("rebuild"))
+	stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](w.client, w.url.JoinPath("rebuild"))
 	for i, v := range p.Versions {
 		<-w.limiters[p.Ecosystem]
 		var artifact string
@@ -116,7 +120,7 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 		// First, warm up the instances to ensure it can handle actual load.
 		// Warm up requires the service fulfill sequentially successful version
 		// requests (which hit both the API and the builder jobs).
-		stub := api.Stub[schema.VersionRequest, schema.VersionResponse](w.client, *w.url.JoinPath("version"))
+		stub := api.Stub[schema.VersionRequest, schema.VersionResponse](w.client, w.url.JoinPath("version"))
 		req := schema.VersionRequest{Service: "build-local"}
 		for i := 0; i < 5; {
 			if _, err := stub(ctx, req); err != nil {
@@ -128,9 +132,9 @@ func (w *smoketestWorker) Setup(ctx context.Context) {
 	}
 }
 
-func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan schema.Verdict) {
+func (w *smoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	<-w.limiters[p.Ecosystem]
-	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](w.client, *w.url.JoinPath("smoketest"))
+	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](w.client, w.url.JoinPath("smoketest"))
 	req := schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 		Package:   p.Name,
@@ -157,6 +161,110 @@ func (w *smoketestWorker) ProcessOne(ctx context.Context, p Package, out chan sc
 	}
 }
 
+type dockerWorker struct {
+	runID     string
+	executors map[string]*internalExecutor.DockerExecutor
+	execMutex sync.Mutex
+}
+
+var _ packageWorker = &dockerWorker{}
+
+func (w *dockerWorker) Setup(ctx context.Context) {
+	w.executors = make(map[string]*internalExecutor.DockerExecutor)
+}
+
+func (w *dockerWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
+	for i, version := range p.Versions {
+		var artifact string
+		if len(p.Artifacts) > 0 {
+			artifact = p.Artifacts[i]
+		}
+
+		target := rebuild.Target{
+			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+			Package:   p.Name,
+			Version:   version,
+			Artifact:  artifact,
+		}
+
+		verdict := schema.Verdict{
+			Target: target,
+		}
+
+		// Infer the strategy
+		req := schema.InferenceRequest{
+			Ecosystem: target.Ecosystem,
+			Package:   target.Package,
+			Version:   target.Version,
+			Artifact:  target.Artifact,
+		}
+		deps := &inferenceservice.InferDeps{
+			HTTPClient: http.DefaultClient, // Provide an HTTP client if needed
+		}
+		strategyOneOf, err := inferenceservice.Infer(ctx, req, deps)
+		if err != nil {
+			verdict.Message = fmt.Sprintf("Inference failed: %v", err)
+			out <- verdict
+			continue
+		}
+
+		// Extract the strategy
+		strategy, err := strategyOneOf.Strategy()
+		if err != nil {
+			verdict.Message = fmt.Sprintf("Strategy extraction failed: %v", err)
+			out <- verdict
+			continue
+		}
+
+		// Get or create a DockerExecutor for the package
+		w.execMutex.Lock()
+		exec, exists := w.executors[p.Name]
+		if !exists {
+			exec, err = internalExecutor.NewDockerExecutor(p.Name)
+			if err != nil {
+				w.execMutex.Unlock()
+				verdict.Message = fmt.Sprintf("Failed to create DockerExecutor: %v", err)
+				out <- verdict
+				continue
+			}
+			w.executors[p.Name] = exec
+		}
+		w.execMutex.Unlock()
+
+		// Start the container if it doesn't already exist
+		if !exists {
+			if err := exec.StartContainer(ctx, strategy, target); err != nil {
+				verdict.Message = fmt.Sprintf("Failed to start container: %v", err)
+				out <- verdict
+				continue
+			}
+		}
+
+		// Execute the build with the strategy
+		if err := exec.ExecuteWithStrategy(ctx, strategy, target); err != nil {
+			verdict.Message = fmt.Sprintf("Build execution failed: %v", err)
+			out <- verdict
+			continue
+		}
+
+		// If we reach here, the build was successful
+		//verdict.Success = true
+		out <- verdict
+	}
+}
+
+func (w *dockerWorker) Cleanup(ctx context.Context) {
+	w.execMutex.Lock()
+	defer w.execMutex.Unlock()
+
+	for _, exec := range w.executors {
+		if err := exec.StopContainer(ctx); err != nil {
+			log.Printf("Failed to stop container: %v", err)
+		}
+	}
+	w.executors = nil
+}
+
 func defaultLimiters() map[string]<-chan time.Time {
 	return map[string]<-chan time.Time{
 		"debian": time.Tick(time.Second),
@@ -181,7 +289,7 @@ type RunBenchOpts struct {
 	UseNetworkProxy   bool
 }
 
-func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set PackageSet, opts RunBenchOpts) (<-chan schema.Verdict, error) {
+func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set benchmark.PackageSet, opts RunBenchOpts) (<-chan schema.Verdict, error) {
 	if opts.RunID == "" {
 		return nil, errors.New("opts.RunID must be set")
 	}
@@ -207,15 +315,20 @@ func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set Pac
 			useSyscallMonitor: opts.UseSyscallMonitor,
 			useNetworkProxy:   opts.UseNetworkProxy,
 		}
+	case schema.DockerMode:
+		ex.Worker = &dockerWorker{
+			runID: opts.RunID,
+		}
 	default:
 		return nil, fmt.Errorf("invalid mode: %s", string(opts.Mode))
 	}
+
 	verdictChan := make(chan schema.Verdict)
 	go ex.Process(ctx, verdictChan, set.Packages)
 	return verdictChan, nil
 }
 
-func RunBenchAsync(ctx context.Context, set PackageSet, mode schema.ExecutionMode, apiURL *url.URL, runID string, queue taskqueue.Queue) error {
+func RunBenchAsync(ctx context.Context, set benchmark.PackageSet, mode schema.ExecutionMode, apiURL *url.URL, runID string, queue taskqueue.Queue) error {
 	for _, p := range set.Packages {
 		if mode == schema.AttestMode {
 			for i, v := range p.Versions {
