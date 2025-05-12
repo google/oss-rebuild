@@ -306,13 +306,13 @@ func isCloudRun(u *url.URL) bool {
 }
 
 var runBenchmark = &cobra.Command{
-	Use:   "run-bench smoketest|attest -api <URI>  [-local] [-format=summary|csv] <benchmark.json>",
+	Use:   "run-bench smoketest|attest|docker -api <URI>  [-local] [-format=summary|csv] <benchmark.json>",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := cmd.Context()
 		mode := schema.ExecutionMode(args[0])
-		if mode != schema.SmoketestMode && mode != schema.AttestMode {
+		if mode != schema.SmoketestMode && mode != schema.AttestMode && mode != schema.DockerMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
 		if *apiUri == "" {
@@ -353,8 +353,9 @@ var runBenchmark = &cobra.Command{
 				ID:            runID,
 				BenchmarkName: filepath.Base(args[1]),
 				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-				Type:          string(schema.SmoketestMode),
-				Created:       now,
+				//Type:          string(schema.SmoketestMode),
+				Type:    string(schema.DockerMode),
+				Created: now,
 			})); err != nil {
 				log.Println(errors.Wrap(err, "writing run to rundex"))
 			}
