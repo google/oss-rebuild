@@ -11,6 +11,7 @@ require (
 	cloud.google.com/go/vertexai v0.13.2
 	github.com/cheggaaa/pb v1.0.29
 	github.com/elazarl/goproxy v1.2.3
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gdamore/tcell/v2 v2.7.4
 	github.com/go-git/go-billy/v5 v5.6.1
 	github.com/go-git/go-git/v5 v5.13.1
