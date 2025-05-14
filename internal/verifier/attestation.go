@@ -99,7 +99,7 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 		loc = inst.Location
 	}
 	if loc.Ref != "" {
-		deps.Source = &slsa1.ResourceDescriptor{Name: "git+" + loc.Repo, Digest: gitDigestSet(loc)}
+		deps.Source = &slsa1.ResourceDescriptor{Name: "git+" + loc.Repo, Digest: GitDigestSet(loc)}
 	}
 	for n, s := range buildInfo.BuildImages {
 		if !strings.HasPrefix(s, "sha256:") {
