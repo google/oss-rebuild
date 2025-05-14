@@ -185,7 +185,11 @@ var tui = &cobra.Command{
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
 		}
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
-		aiClient, err := genai.NewClient(cmd.Context(), *llmProject, "us-central1")
+		aiProject := *project
+		if *llmProject != "" {
+			aiProject = *llmProject
+		}
+		aiClient, err := genai.NewClient(cmd.Context(), aiProject, "us-central1")
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "failed to create a genai client"))
 		}
@@ -834,7 +838,7 @@ var (
 	// TUI
 	benchmarkDir = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 	defDir       = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
-	llmProject   = flag.String("llm-project", "", "the GCP project to use for LLM execution")
+	llmProject   = flag.String("llm-project", "", "if provided, the GCP project to prefer over --project for use with the Vertext AI API")
 	// Migrate
 	dryrun = flag.Bool("dryrun", false, "true if this migration is a dryrun")
 )
