@@ -154,37 +154,45 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			cmd.OutOrStdout().Write(bundleBytes)
 			return
 		case "payload":
-			payloads := bundle.Payloads()
 			encoder := json.NewEncoder(cmd.OutOrStdout())
 			encoder.SetIndent("", "  ")
-			for _, p := range payloads {
-				if err := encoder.Encode(p); err != nil {
+			for _, s := range bundle.Statements() {
+				if err := encoder.Encode(s); err != nil {
 					log.Fatal(errors.Wrap(err, "pprinting payload"))
 				}
 			}
 		case "dockerfile":
-			dockerfile, err := bundle.Byproduct(attestation.ByproductDockerfile)
+			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "getting dockerfile"))
+				log.Fatal(err)
 			}
-			if _, err := cmd.OutOrStdout().Write(dockerfile); err != nil {
+			dockerfile := rb.Predicate.RunDetails.Byproducts.Dockerfile
+			if _, err := cmd.OutOrStdout().Write(dockerfile.Content); err != nil {
 				log.Fatal(errors.Wrap(err, "writing dockerfile"))
 			}
 		case "build":
-			build, err := bundle.Byproduct(attestation.ByproductBuildStrategy)
+			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "getting build.json"))
+				log.Fatal(err)
 			}
-			if err := writeIndentedJson(cmd.OutOrStdout(), build); err != nil {
-				log.Fatal(errors.Wrap(err, "encoding build.json"))
+			strategy := rb.Predicate.RunDetails.Byproducts.BuildStrategy
+			if err := writeIndentedJson(cmd.OutOrStdout(), strategy.Content); err != nil {
+				log.Fatal(errors.Wrap(err, "writing dockerfile"))
 			}
 		case "steps":
-			steps, err := bundle.Byproduct(attestation.ByproductBuildSteps)
+			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "getting steps.json"))
+				log.Fatal(err)
 			}
-			if err := writeIndentedJson(cmd.OutOrStdout(), steps); err != nil {
-				log.Fatal(errors.Wrap(err, "encoding steps.json"))
+			steps := rb.Predicate.RunDetails.Byproducts.BuildSteps
+			if err := writeIndentedJson(cmd.OutOrStdout(), steps.Content); err != nil {
+				log.Fatal(errors.Wrap(err, "writing dockerfile"))
 			}
 		default:
 			log.Fatal(errors.New("unsupported format: " + *output))
