@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -19,7 +20,7 @@ import (
 func GCSEventToTargetEvent(event schema.GCSObjectEvent) (*schema.TargetEvent, error) {
 	// Expected form: ecosystem/package/version/artifact/rebuild.intoto.jsonl
 	// TODO: Use logic from AssetStore.
-	parts := filepath.SplitList(event.Name)
+	parts := strings.Split(filepath.Clean(event.Name), "/")
 	if len(parts) != 5 {
 		return nil, errors.Errorf("unexpected object path length: %s", event.Name)
 	}
