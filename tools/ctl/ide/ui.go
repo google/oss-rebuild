@@ -143,17 +143,20 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 		window := tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(mainPane, flexed, unit, focused).
 			AddItem(bottomBar, 1, 0, !focused) // bottomBar is non-flexed, fixed height 1
-		t.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-			if event.Key() == tcell.KeyCtrlC {
-				// Clean up the rebuilder docker container.
-				t.rb.Kill()
-				return event
-			}
+		window.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 			for _, cmd := range gcmds {
 				if cmd.Hotkey != 0 && event.Rune() == cmd.Hotkey {
 					go cmd.Func(context.Background())
 					return nil
 				}
+			}
+			return event
+		})
+		t.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+			if event.Key() == tcell.KeyCtrlC {
+				// Clean up the rebuilder docker container.
+				t.rb.Kill()
+				return event
 			}
 			return event
 		})
