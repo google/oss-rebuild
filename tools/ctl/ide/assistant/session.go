@@ -45,7 +45,7 @@ func newSession(butler localfiles.Butler, chat *llm.Chat, attempt rundex.Rebuild
 			return chatbox.ErrCloseChat
 		},
 		"logs": func(ctx context.Context, out chan<- *chatbox.Message) error {
-			logs, err := a.butler.Fetch(context.Background(), attempt.RunID, attempt.WasSmoketest(), rebuild.DebugLogsAsset.For(attempt.Target()))
+			logs, err := a.butler.Fetch(ctx, attempt.RunID, attempt.WasSmoketest(), rebuild.DebugLogsAsset.For(attempt.Target()))
 			if err != nil {
 				return errors.Wrap(err, "downloading logs")
 			}
@@ -55,7 +55,7 @@ func newSession(butler localfiles.Butler, chat *llm.Chat, attempt rundex.Rebuild
 			return nil
 		},
 		"diff": func(ctx context.Context, out chan<- *chatbox.Message) error {
-			diff, err := a.butler.Fetch(context.Background(), attempt.RunID, attempt.WasSmoketest(), diffoscope.DiffAsset.For(attempt.Target()))
+			diff, err := a.butler.Fetch(ctx, attempt.RunID, attempt.WasSmoketest(), diffoscope.DiffAsset.For(attempt.Target()))
 			if err != nil {
 				return errors.Wrap(err, "generating diff")
 			}
@@ -131,7 +131,7 @@ func (a *session) evidence(ctx context.Context, attempt rundex.Rebuild) *attempt
 	}
 	var logs string
 	{
-		path, err := a.butler.Fetch(context.Background(), attempt.RunID, attempt.WasSmoketest(), rebuild.DebugLogsAsset.For(attempt.Target()))
+		path, err := a.butler.Fetch(ctx, attempt.RunID, attempt.WasSmoketest(), rebuild.DebugLogsAsset.For(attempt.Target()))
 		if err != nil {
 			logs = errors.Wrap(err, "downloading logs").Error()
 		} else {
@@ -148,7 +148,7 @@ func (a *session) evidence(ctx context.Context, attempt rundex.Rebuild) *attempt
 	}
 	var diff string
 	{
-		path, err := a.butler.Fetch(context.Background(), attempt.RunID, attempt.WasSmoketest(), diffoscope.DiffAsset.For(attempt.Target()))
+		path, err := a.butler.Fetch(ctx, attempt.RunID, attempt.WasSmoketest(), diffoscope.DiffAsset.For(attempt.Target()))
 		if err != nil {
 			diff = errors.Wrap(err, "generating diff").Error()
 		} else {
