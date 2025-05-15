@@ -410,6 +410,10 @@ func runDiffoscope(rebuildPath, upstreamPath string) ([]byte, error) {
 	cmd.Stdout = io.MultiWriter(os.Stdout, buf)
 	cmd.Stderr = os.Stdout
 	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ProcessState.ExitCode() == 1 {
+			// Normal exit with diff
+			return buf.Bytes(), nil
+		}
 		return nil, err
 	}
 	return buf.Bytes(), nil
