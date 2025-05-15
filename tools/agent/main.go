@@ -297,6 +297,47 @@ From the following llm response, extract only the shell commands to be run and e
 			log.Fatalf("Failed to generate strategy: %v", err)
 		}
 		err = execute(ctx, tg, *strat, store)
+		if _, ok := err.(*exec.ExitError); ok {
+			var response genai.Content
+			{
+				logsReader, err := store.Reader(ctx, rebuild.DebugLogsAsset.For(tg))
+				if err != nil {
+					log.Fatalf("Failed to read build logs: %v", err)
+				}
+				logsData, err := io.ReadAll(logsReader)
+				if err != nil {
+					log.Fatalf("Failed to read build logs: %v", err)
+				}
+				recoveryPrompt := fmt.Sprintf(`
+The previous build exited with an error.
+
+Tasks:
+- Understand the failure and explore possible causes.
+- Propose a new set of commands for the build that might resolve this issue.
+
+Here is the log of the build that produced this artifact:
+
+%s
+
+Again, the end goal should be the commands that are needed to build the package, excluding things like linting and testing. Focus on standard npm procedures.
+`, string(logsData))[1:]
+				contentParts := []genai.Part{genai.Text(recoveryPrompt)}
+				// Get build instructions from Gemini
+				log.Println("Requesting updated build instructions from Gemini...")
+				for content, err := range chat.SendMessageStream(ctx, contentParts...) {
+					if err != nil {
+						log.Fatalf("Chat error: %v", err)
+					}
+					log.Printf("%s\n\n", llm.FormatContent(*content))
+					response = *content
+				}
+			}
+			script, err = toScript(response.Parts[0].(genai.Text))
+			if err != nil {
+				log.Fatalf("Recovery generation error: %s", err)
+			}
+			continue
+		}
 		if err != nil {
 			log.Fatalf("Failed to execute strategy: %v", err)
 		}
