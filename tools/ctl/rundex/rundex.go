@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
+	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -17,6 +19,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/fsnotify/fsnotify"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -394,15 +397,129 @@ func (f *FirestoreClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]
 	return runSlice, nil
 }
 
-// LocalClient reads rebuilds from the local filesystem.
-type LocalClient struct {
+type LocalWatcher struct {
 	fs                 billy.Filesystem
+	watcher            *fsnotify.Watcher
 	runSubscribers     []chan<- *Run
 	rebuildSubscribers []chan<- *Rebuild
 }
 
+func NewLocalWatcher(fs billy.Filesystem) (*LocalWatcher, error) {
+	w := &LocalWatcher{
+		fs: fs,
+	}
+	var err error
+	w.watcher, err = fsnotify.NewWatcher()
+	if err != nil {
+		return nil, errors.Wrap(err, "making fsnotify watcher")
+	}
+	go func() {
+		for {
+			select {
+			case event, ok := <-w.watcher.Events:
+				if !ok {
+					return
+				}
+				log.Println("event:", event)
+				if event.Op&fsnotify.Create == fsnotify.Create {
+					log.Printf("Creation: %+v", event)
+					fileInfo, err := os.Stat(event.Name)
+					if err != nil {
+						continue
+					}
+					if !fileInfo.IsDir() { // Check if it's a file, not a directory
+						w.handleNewFile(event.Name)
+					}
+				}
+			case _, ok := <-w.watcher.Errors:
+				if !ok {
+					return
+				}
+			}
+		}
+	}()
+	log.Println("watching: ", fs.Root())
+	w.watcher.Add(fs.Root())
+	return w, err
+}
+
+func (f *LocalWatcher) handleNewFile(path string) error {
+	path = filepath.Clean(path)
+	parts := filepath.SplitList(path)
+	if len(parts) < 1 {
+		return errors.New("path has no parts")
+	}
+	switch parts[0] {
+	case localRunsMetaDir:
+		if filepath.Ext(path) != ".json" {
+			return errors.Errorf("unexpected run file: %s", filepath.Base(path))
+		}
+		file, err := f.fs.Open(path)
+		if err != nil {
+			return errors.Wrap(err, "opening run file")
+		}
+		defer file.Close()
+		var r Run
+		if err := json.NewDecoder(file).Decode(&r); err != nil {
+			return errors.Wrap(err, "decoding run file")
+		}
+		for _, sub := range f.runSubscribers {
+			go func() {
+				sub <- &r
+			}()
+		}
+	case localRunsDir:
+		if filepath.Base(path) != rebuildFileName {
+			return errors.Errorf("unexpected rebuild file: %s", filepath.Base(path))
+		}
+		file, err := f.fs.Open(path)
+		if err != nil {
+			return errors.Wrap(err, "opening rebuild file")
+		}
+		defer file.Close()
+		var r Rebuild
+		if err := json.NewDecoder(file).Decode(&r); err != nil {
+			return errors.Wrap(err, "decoding rebuild file")
+		}
+		for _, sub := range f.rebuildSubscribers {
+			go func() {
+				sub <- &r
+			}()
+		}
+	default:
+		return errors.Errorf("unexected leading path: %s", parts[0])
+	}
+	return nil
+}
+
+func (f *LocalWatcher) Close() error {
+	for _, sub := range f.runSubscribers {
+		close(sub)
+	}
+	for _, sub := range f.rebuildSubscribers {
+		close(sub)
+	}
+	return f.watcher.Close()
+}
+
+func (f *LocalWatcher) WatchRuns() <-chan *Run {
+	n := make(chan *Run, 1)
+	f.runSubscribers = append(f.runSubscribers, n)
+	return n
+}
+
+func (f *LocalWatcher) WatchRebuilds() <-chan *Rebuild {
+	n := make(chan *Rebuild, 1)
+	f.rebuildSubscribers = append(f.rebuildSubscribers, n)
+	return n
+}
+
+// LocalClient reads rebuilds from the local filesystem.
+type LocalClient struct {
+	fs billy.Filesystem
+}
+
 var _ Reader = &LocalClient{}
-var _ Watcher = &LocalClient{}
 var _ Writer = &LocalClient{}
 
 func NewLocalClient(fs billy.Filesystem) *LocalClient {
@@ -505,18 +622,6 @@ func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReques
 	return rebuilds, nil
 }
 
-func (f *LocalClient) WatchRuns() <-chan *Run {
-	n := make(chan *Run, 1)
-	f.runSubscribers = append(f.runSubscribers, n)
-	return n
-}
-
-func (f *LocalClient) WatchRebuilds() <-chan *Rebuild {
-	n := make(chan *Rebuild, 1)
-	f.rebuildSubscribers = append(f.rebuildSubscribers, n)
-	return n
-}
-
 func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
 	path := filepath.Join(localRunsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
 	file, err := f.fs.Create(path)
@@ -526,11 +631,6 @@ func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
 	defer file.Close()
 	if err := json.NewEncoder(file).Encode(r); err != nil {
 		return err
-	}
-	for _, sub := range f.rebuildSubscribers {
-		go func() {
-			sub <- &r
-		}()
 	}
 	return nil
 }
@@ -544,11 +644,6 @@ func (f *LocalClient) WriteRun(ctx context.Context, r Run) error {
 	defer file.Close()
 	if err := json.NewEncoder(file).Encode(r); err != nil {
 		return err
-	}
-	for _, sub := range f.runSubscribers {
-		go func() {
-			sub <- &r
-		}()
 	}
 	return nil
 }

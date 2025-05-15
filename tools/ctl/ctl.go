@@ -159,9 +159,13 @@ var tui = &cobra.Command{
 					log.Fatal(err)
 				}
 			} else {
-				lc := rundex.NewLocalClient(localfiles.Rundex())
-				dex = lc
-				watcher = lc
+				fs := localfiles.Rundex()
+				dex = rundex.NewLocalClient(fs)
+				var err error
+				watcher, err = rundex.NewLocalWatcher(fs)
+				if err != nil {
+					log.Fatal(err)
+				}
 			}
 		}
 		var buildDefs *rebuild.FilesystemAssetStore
