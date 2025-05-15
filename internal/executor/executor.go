@@ -4,11 +4,13 @@ import (
 	"archive/tar"
 	"context"
 	"fmt"
-	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/pkg/errors"
 	"io"
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/google/oss-rebuild/internal/textwrap"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -37,20 +39,13 @@ func NewDockerExecutor(packageName string) (*DockerExecutor, error) {
 }
 
 // StartContainer starts a Docker container for the package if not already running.
-func (d *DockerExecutor) StartContainer(ctx context.Context, strategy rebuild.Strategy, target rebuild.Target) error {
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
+func (d *DockerExecutor) StartContainer(ctx context.Context, instructions rebuild.Instructions) error {
 
 	if d.containerID != "" {
 		// Container is already running
 		return nil
 	}
 
-	instructions, err := strategy.GenerateFor(target, rebuild.BuildEnv{})
-	if err != nil {
-		return fmt.Errorf("failed to generate build instructions: %v", err)
-	}
-	//FROM ghcr.io/awesome-containers/alpine-build-essential:latest
 	dockerfile := fmt.Sprintf(`
 FROM docker.io/library/alpine:3.19
 RUN apk add %s
@@ -103,7 +98,7 @@ WORKDIR %s
 }
 
 // ExecuteWithStrategy checks out the correct commit and executes the build inside the container.
-func (d *DockerExecutor) ExecuteWithStrategy(ctx context.Context, strategy rebuild.Strategy, target rebuild.Target) error {
+func (d *DockerExecutor) ExecuteWithStrategy(ctx context.Context, instructions rebuild.Instructions, target rebuild.Target, assetStore rebuild.LocatableAssetStore) error {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
@@ -112,23 +107,105 @@ func (d *DockerExecutor) ExecuteWithStrategy(ctx context.Context, strategy rebui
 	}
 
 	// Generate build instructions from the strategy
-	instructions, err := strategy.GenerateFor(target, rebuild.BuildEnv{})
-	if err != nil {
-		return fmt.Errorf("failed to generate build instructions: %v", err)
-	}
+	//instructions, err := strategy.GenerateFor(target, rebuild.BuildEnv{})
+	//if err != nil {
+	//	return fmt.Errorf("failed to generate build instructions: %v", err)
+	//}
 
-	if err = d.executeCommand(ctx, []string{"sh", "-c", instructions.Deps}); err != nil {
+	// TODO: relying on instruction.Source would make sense
+	if err := d.executeCommand(ctx, []string{"sh", "-c", instructions.Deps}); err != nil {
 	}
 	// Checkout the correct commit
 	checkoutCmd := []string{"git", "checkout", "--force", instructions.Location.Ref}
 	if err := d.executeCommand(ctx, checkoutCmd); err != nil {
-		return fmt.Errorf("failed to checkout commit: %v", err)
+		return errors.Wrap(err, "failed to checkout commit")
 	}
 
 	// Execute the build commands
 
 	if err := d.executeCommand(ctx, []string{"sh", "-c", instructions.Build}); err != nil {
-		return fmt.Errorf("build command failed: %v", err)
+		return errors.Wrap(err, "build command failed")
+	}
+
+	// Copy the built artifact from the container
+	//localArtifactPath := fmt.Sprintf("/tmp/%s", target.Artifact)
+	if err := d.copyArtifactToAssetStore(ctx, fmt.Sprintf("%s/%s", target.Package, instructions.OutputPath), target, assetStore); err != nil {
+		return errors.Wrap(err, "failed to copy artifact")
+	}
+
+	return nil
+}
+
+func (d *DockerExecutor) copyArtifactToAssetStore(ctx context.Context, containerPath string, t rebuild.Target, assetStore rebuild.LocatableAssetStore) error {
+	// Use the Docker API to copy the file from the container
+	reader, _, err := d.client.CopyFromContainer(ctx, d.containerID, containerPath)
+	if err != nil {
+		return fmt.Errorf("failed to copy from container")
+		//return errors.Wrap(err, "failed to copy from container")
+	}
+	defer reader.Close()
+
+	// Extract the file from the tar archive and write it to the assetStore
+	tarReader := tar.NewReader(reader)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break // End of tar archive
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar archive: %v", err)
+		}
+
+		if header.Typeflag == tar.TypeReg {
+			// Create the file in the assetStore
+			file, err := assetStore.Writer(ctx, rebuild.RebuildAsset.For(t))
+			if err != nil {
+				return fmt.Errorf("failed to create file in assetStore: %v", err)
+			}
+
+			// Copy the file content to the assetStore
+			if _, err := io.Copy(file, tarReader); err != nil {
+				return fmt.Errorf("failed to write file to assetStore: %v", err)
+			}
+			break
+		}
+	}
+
+	return nil
+}
+
+func (d *DockerExecutor) copyArtifactFromContainer(ctx context.Context, containerPath, hostPath string) error {
+	// Use the Docker API to copy the file from the container
+	reader, _, err := d.client.CopyFromContainer(ctx, d.containerID, containerPath)
+	if err != nil {
+		return fmt.Errorf("failed to copy from container: %v", err)
+	}
+	defer reader.Close()
+
+	// Create the destination file on the host
+	outFile, err := os.Create(hostPath)
+	if err != nil {
+		return fmt.Errorf("failed to create file on host: %v", err)
+	}
+	defer outFile.Close()
+
+	// Extract the file from the tar archive
+	tarReader := tar.NewReader(reader)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break // End of tar archive
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar archive: %v", err)
+		}
+
+		if header.Typeflag == tar.TypeReg {
+			if _, err := io.Copy(outFile, tarReader); err != nil {
+				return fmt.Errorf("failed to copy file content: %v", err)
+			}
+			break
+		}
 	}
 
 	return nil

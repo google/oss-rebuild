@@ -9,20 +9,63 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/oss-rebuild/internal/api/inferenceservice"
-
 	"github.com/google/oss-rebuild/internal/api"
-	internalExecutor "github.com/google/oss-rebuild/internal/executor"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/pkg/errors"
 )
+
+// ExecutionService defines the contract for services that can execute rebuilds or smoketests.
+type ExecutionService interface {
+	RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error)
+	SmoketestPackage(ctx context.Context, req schema.SmoketestRequest) (*schema.SmoketestResponse, error)
+	// Warmup can be called to prepare the service, e.g., for remote Cloud Run instances.
+	Warmup(ctx context.Context)
+}
+
+// remoteExecutionService interacts with a remote benchmark execution API.
+type remoteExecutionService struct {
+	rebuildStub   api.StubT[schema.RebuildPackageRequest, schema.Verdict]
+	smoketestStub api.StubT[schema.SmoketestRequest, schema.SmoketestResponse]
+	versionStub   api.StubT[schema.VersionRequest, schema.VersionResponse]
+}
+
+// NewRemoteExecutionService creates a new service for remote API execution.
+func NewRemoteExecutionService(client *http.Client, baseURL *url.URL) ExecutionService {
+	return &remoteExecutionService{
+		rebuildStub:   api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, baseURL.JoinPath("rebuild")),
+		smoketestStub: api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, baseURL.JoinPath("smoketest")),
+		versionStub:   api.Stub[schema.VersionRequest, schema.VersionResponse](client, baseURL.JoinPath("version")),
+	}
+}
+
+func (s *remoteExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
+	return s.rebuildStub(ctx, req)
+}
+
+func (s *remoteExecutionService) SmoketestPackage(ctx context.Context, req schema.SmoketestRequest) (*schema.SmoketestResponse, error) {
+	return s.smoketestStub(ctx, req)
+}
+
+func (s *remoteExecutionService) Warmup(ctx context.Context) {
+	log.Println("Warming up remote service...")
+	req := schema.VersionRequest{Service: "build-local"}
+	for i := 0; i < 5; {
+		if _, err := s.versionStub(ctx, req); err != nil {
+			log.Printf("Warmup attempt failed: %v. Retrying...\n", err)
+			i = 0
+			time.Sleep(1 * time.Second)
+		} else {
+			i++
+		}
+	}
+	log.Println("Warmup complete.")
+}
 
 type packageWorker interface {
 	Setup(ctx context.Context)
@@ -58,10 +101,9 @@ func (ex *executor) Process(ctx context.Context, out chan schema.Verdict, packag
 }
 
 type workerConfig struct {
-	client   *http.Client
-	url      *url.URL
-	limiters map[string]<-chan time.Time
-	run      string
+	execService ExecutionService
+	limiters    map[string]<-chan time.Time
+	runID       string
 }
 
 type attestWorker struct {
@@ -72,13 +114,14 @@ type attestWorker struct {
 
 var _ packageWorker = &attestWorker{}
 
-func (w *attestWorker) Setup(ctx context.Context) {}
+func (w *attestWorker) Setup(ctx context.Context) {
+	w.execService.Warmup(ctx)
+}
 
 func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	if len(p.Artifacts) > 0 && len(p.Artifacts) != len(p.Versions) {
 		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
 	}
-	stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](w.client, w.url.JoinPath("rebuild"))
 	for i, v := range p.Versions {
 		<-w.limiters[p.Ecosystem]
 		var artifact string
@@ -90,17 +133,18 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 			Package:           p.Name,
 			Version:           v,
 			Artifact:          artifact,
-			ID:                w.run,
+			ID:                w.runID,
 			UseSyscallMonitor: w.useSyscallMonitor,
 			UseNetworkProxy:   w.useNetworkProxy,
 		}
-		verdict, err := stub(ctx, req)
+		verdict, err := w.execService.RebuildPackage(ctx, req)
 		if err != nil {
 			out <- schema.Verdict{
 				Target: rebuild.Target{
 					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 					Package:   p.Name,
 					Version:   v,
+					Artifact:  artifact,
 				},
 				Message: err.Error(),
 			}
@@ -112,36 +156,23 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 
 type smoketestWorker struct {
 	workerConfig
-	warmup bool
 }
 
+var _ packageWorker = &smoketestWorker{}
+
 func (w *smoketestWorker) Setup(ctx context.Context) {
-	if w.warmup {
-		// First, warm up the instances to ensure it can handle actual load.
-		// Warm up requires the service fulfill sequentially successful version
-		// requests (which hit both the API and the builder jobs).
-		stub := api.Stub[schema.VersionRequest, schema.VersionResponse](w.client, w.url.JoinPath("version"))
-		req := schema.VersionRequest{Service: "build-local"}
-		for i := 0; i < 5; {
-			if _, err := stub(ctx, req); err != nil {
-				i = 0
-			} else {
-				i++
-			}
-		}
-	}
+	w.execService.Warmup(ctx)
 }
 
 func (w *smoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
 	<-w.limiters[p.Ecosystem]
-	stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](w.client, w.url.JoinPath("smoketest"))
 	req := schema.SmoketestRequest{
 		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 		Package:   p.Name,
 		Versions:  p.Versions,
-		ID:        w.run,
+		ID:        w.runID,
 	}
-	resp, err := stub(ctx, req)
+	resp, err := w.execService.SmoketestPackage(ctx, req)
 	if err != nil {
 		errMsg := err.Error()
 		for _, v := range p.Versions {
@@ -156,113 +187,9 @@ func (w *smoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, o
 		}
 		return
 	}
-	for _, v := range resp.Verdicts {
-		out <- v
-	}
-}
-
-type dockerWorker struct {
-	runID     string
-	executors map[string]*internalExecutor.DockerExecutor
-	execMutex sync.Mutex
-}
-
-var _ packageWorker = &dockerWorker{}
-
-func (w *dockerWorker) Setup(ctx context.Context) {
-	w.executors = make(map[string]*internalExecutor.DockerExecutor)
-}
-
-func (w *dockerWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
-	for i, version := range p.Versions {
-		var artifact string
-		if len(p.Artifacts) > 0 {
-			artifact = p.Artifacts[i]
-		}
-
-		target := rebuild.Target{
-			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-			Package:   p.Name,
-			Version:   version,
-			Artifact:  artifact,
-		}
-
-		verdict := schema.Verdict{
-			Target: target,
-		}
-
-		// Infer the strategy
-		req := schema.InferenceRequest{
-			Ecosystem: target.Ecosystem,
-			Package:   target.Package,
-			Version:   target.Version,
-			Artifact:  target.Artifact,
-		}
-		deps := &inferenceservice.InferDeps{
-			HTTPClient: http.DefaultClient, // Provide an HTTP client if needed
-		}
-		strategyOneOf, err := inferenceservice.Infer(ctx, req, deps)
-		if err != nil {
-			verdict.Message = fmt.Sprintf("Inference failed: %v", err)
-			out <- verdict
-			continue
-		}
-
-		// Extract the strategy
-		strategy, err := strategyOneOf.Strategy()
-		if err != nil {
-			verdict.Message = fmt.Sprintf("Strategy extraction failed: %v", err)
-			out <- verdict
-			continue
-		}
-
-		// Get or create a DockerExecutor for the package
-		w.execMutex.Lock()
-		exec, exists := w.executors[p.Name]
-		if !exists {
-			exec, err = internalExecutor.NewDockerExecutor(p.Name)
-			if err != nil {
-				w.execMutex.Unlock()
-				verdict.Message = fmt.Sprintf("Failed to create DockerExecutor: %v", err)
-				out <- verdict
-				continue
-			}
-			w.executors[p.Name] = exec
-		}
-		w.execMutex.Unlock()
-
-		// Start the container if it doesn't already exist
-		if !exists {
-			if err := exec.StartContainer(ctx, strategy, target); err != nil {
-				verdict.Message = fmt.Sprintf("Failed to start container: %v", err)
-				out <- verdict
-				continue
-			}
-		}
-
-		// Execute the build with the strategy
-		if err := exec.ExecuteWithStrategy(ctx, strategy, target); err != nil {
-			verdict.Message = fmt.Sprintf("Build execution failed: %v", err)
-			out <- verdict
-			continue
-		}
-
-		// If we reach here, the build was successful
-		//verdict.Success = true
+	for _, verdict := range resp.Verdicts {
 		out <- verdict
 	}
-}
-
-func (w *dockerWorker) Cleanup(ctx context.Context) {
-	w.execMutex.Lock()
-	defer w.execMutex.Unlock()
-
-	for _, exec := range w.executors {
-		if err := exec.StopContainer(ctx); err != nil {
-			log.Printf("Failed to stop container: %v", err)
-		}
-	}
-	w.executors = nil
 }
 
 func defaultLimiters() map[string]<-chan time.Time {
@@ -277,37 +204,35 @@ func defaultLimiters() map[string]<-chan time.Time {
 	}
 }
 
-func isCloudRun(u *url.URL) bool {
-	return u != nil && strings.HasSuffix(u.Host, ".run.app")
-}
-
 type RunBenchOpts struct {
 	Mode              schema.ExecutionMode
 	RunID             string
 	MaxConcurrency    int
 	UseSyscallMonitor bool
 	UseNetworkProxy   bool
+	ExecService       ExecutionService
 }
 
-func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set benchmark.PackageSet, opts RunBenchOpts) (<-chan schema.Verdict, error) {
+func RunBench(ctx context.Context, set benchmark.PackageSet, opts RunBenchOpts) (<-chan schema.Verdict, error) {
 	if opts.RunID == "" {
 		return nil, errors.New("opts.RunID must be set")
+	}
+	if opts.ExecService == nil {
+		return nil, errors.New("opts.ExecService must be set")
 	}
 	if (opts.UseNetworkProxy || opts.UseSyscallMonitor) && opts.Mode != schema.AttestMode {
 		return nil, errors.New("cannot enable network proxy or syscall monitor for non-attest mode")
 	}
 	conf := workerConfig{
-		client:   client,
-		url:      apiURL,
-		limiters: defaultLimiters(),
-		run:      opts.RunID,
+		execService: opts.ExecService,
+		limiters:    defaultLimiters(),
+		runID:       opts.RunID,
 	}
 	ex := executor{Concurrency: opts.MaxConcurrency}
 	switch opts.Mode {
 	case schema.SmoketestMode:
 		ex.Worker = &smoketestWorker{
 			workerConfig: conf,
-			warmup:       isCloudRun(apiURL),
 		}
 	case schema.AttestMode:
 		ex.Worker = &attestWorker{
@@ -315,20 +240,20 @@ func RunBench(ctx context.Context, client *http.Client, apiURL *url.URL, set ben
 			useSyscallMonitor: opts.UseSyscallMonitor,
 			useNetworkProxy:   opts.UseNetworkProxy,
 		}
-	case schema.DockerMode:
-		ex.Worker = &dockerWorker{
-			runID: opts.RunID,
-		}
 	default:
 		return nil, fmt.Errorf("invalid mode: %s", string(opts.Mode))
 	}
+	verdicts := make(chan schema.Verdict)
 
-	verdictChan := make(chan schema.Verdict)
-	go ex.Process(ctx, verdictChan, set.Packages)
-	return verdictChan, nil
+	go ex.Process(ctx, verdicts, set.Packages)
+
+	return verdicts, nil
 }
 
 func RunBenchAsync(ctx context.Context, set benchmark.PackageSet, mode schema.ExecutionMode, apiURL *url.URL, runID string, queue taskqueue.Queue) error {
+	if apiURL == nil {
+		return errors.New("apiURL must be provided for RunBenchAsync")
+	}
 	for _, p := range set.Packages {
 		if mode == schema.AttestMode {
 			for i, v := range p.Versions {
