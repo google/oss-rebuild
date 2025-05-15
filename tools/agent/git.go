@@ -42,16 +42,24 @@ func getRepoFile(tree *object.Tree, path string) (string, error) {
 }
 
 func listRepoFiles(tree *object.Tree, path string) ([]string, error) {
-	ent, err := tree.FindEntry(path)
-	if err != nil {
-		return nil, err
+	if path == "" {
+		path = "."
 	}
-	if ent.Mode != filemode.Dir {
-		return nil, errors.New("path does not refer to a dir")
-	}
-	pathTree, err := tree.Tree(path)
-	if err != nil {
-		return nil, err
+	var pathTree *object.Tree
+	if path != "." {
+		ent, err := tree.FindEntry(path)
+		if err != nil {
+			return nil, err
+		}
+		if ent.Mode != filemode.Dir {
+			return nil, errors.New("path does not refer to a dir")
+		}
+		pathTree, err = tree.Tree(path)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		pathTree = tree
 	}
 	var names []string
 	for _, ent := range pathTree.Entries {
