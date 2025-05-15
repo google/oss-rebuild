@@ -148,6 +148,7 @@ var tui = &cobra.Command{
 			}
 		}
 		var dex rundex.Reader
+		var watcher rundex.Watcher
 		{
 			// Prefer the firestore based rundex where possible, local otherwise.
 			// NOTE: We may eventually want to support firestore as a starting point, then local for quick debugging after that.
@@ -158,7 +159,9 @@ var tui = &cobra.Command{
 					log.Fatal(err)
 				}
 			} else {
-				dex = rundex.NewLocalClient(localfiles.Rundex())
+				lc := rundex.NewLocalClient(localfiles.Rundex())
+				dex = lc
+				watcher = lc
 			}
 		}
 		var buildDefs *rebuild.FilesystemAssetStore
@@ -182,13 +185,17 @@ var tui = &cobra.Command{
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
 		}
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
-		aiClient, err := genai.NewClient(cmd.Context(), *llmProject, "us-central1")
+		aiProject := *project
+		if *llmProject != "" {
+			aiProject = *llmProject
+		}
+		aiClient, err := genai.NewClient(cmd.Context(), aiProject, "us-central1")
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "failed to create a genai client"))
 		}
 		asst := assistant.NewAssistant(butler, aiClient)
 		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
-		tapp := ide.NewTuiApp(dex, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, asst)
+		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, asst)
 		if err := tapp.Run(cmd.Context()); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -306,23 +313,18 @@ func isCloudRun(u *url.URL) bool {
 }
 
 var runBenchmark = &cobra.Command{
-	Use:   "run-bench smoketest|attest|docker -api <URI>  [-local] [-format=summary|csv] <benchmark.json>",
+	Use:   "run-bench smoketest|attest -api <URI>  [-local -prebuild-bucket <BUCKET> -prebuild-version <VERSION>] [-format=summary|csv] <benchmark.json>",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := cmd.Context()
 		mode := schema.ExecutionMode(args[0])
-		if mode != schema.SmoketestMode && mode != schema.AttestMode && mode != schema.DockerMode {
+		if mode != schema.SmoketestMode && mode != schema.AttestMode {
 			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
 		}
-		if *apiUri == "" {
-			log.Fatal("API endpoint not provided")
-		}
-		apiURL, err := url.Parse(*apiUri)
-		if err != nil {
-			log.Fatal(errors.Wrap(err, "parsing API endpoint"))
-		}
+		var apiURL *url.URL
 		var set benchmark.PackageSet
+		var err error
 		{
 			path := args[1]
 			log.Printf("Extracting benchmark %s...\n", filepath.Base(path))
@@ -332,34 +334,54 @@ var runBenchmark = &cobra.Command{
 			}
 			log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
 		}
-		var client *http.Client
-		if isCloudRun(apiURL) {
-			// If the api is on Cloud Run, we need to use an authorized client.
-			apiURL.Scheme = "https"
-			client, err = oauth.AuthorizedUserIDClient(ctx)
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
-			}
-		} else {
-			client = http.DefaultClient
-		}
 		var runID string
 		var dex rundex.Writer
+		var executor run.ExecutionService
+		concurrency := *maxConcurrency
 		if *buildLocal {
 			now := time.Now().UTC()
 			runID = now.Format(time.RFC3339)
+			if concurrency != 1 {
+				log.Println("Note: dropping max concurrency to 1 due to local execution")
+			}
+			concurrency = 1
+			store, err := localfiles.AssetStore(runID)
+			if err != nil {
+				log.Fatalf("Failed to create temp directory: %v", err)
+			}
+			// TODO: Validate this.
+			prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", *prebuildBucket, *prebuildVersion)
+			executor = run.NewLocalExecutionService(prebuildURL, store, cmd.OutOrStdout())
 			dex = rundex.NewLocalClient(localfiles.Rundex())
 			if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
 				ID:            runID,
 				BenchmarkName: filepath.Base(args[1]),
 				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-				//Type:          string(schema.SmoketestMode),
-				Type:    string(schema.DockerMode),
-				Created: now,
+				Type:          string(schema.SmoketestMode),
+				Created:       now,
 			})); err != nil {
 				log.Println(errors.Wrap(err, "writing run to rundex"))
 			}
 		} else {
+			if *apiUri == "" {
+				log.Fatal("API endpoint not provided")
+			}
+			apiURL, err := url.Parse(*apiUri)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "parsing API endpoint"))
+			}
+			var client *http.Client
+			if isCloudRun(apiURL) {
+				// If the api is on Cloud Run, we need to use an authorized client.
+				apiURL.Scheme = "https"
+				client, err = oauth.AuthorizedUserIDClient(ctx)
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
+				}
+			} else {
+				client = http.DefaultClient
+			}
+			executor = run.NewRemoteExecutionService(client, apiURL)
 			stub := api.Stub[schema.CreateRunRequest, schema.Run](client, apiURL.JoinPath("runs"))
 			resp, err := stub(ctx, schema.CreateRunRequest{
 				BenchmarkName: filepath.Base(args[1]),
@@ -372,6 +394,9 @@ var runBenchmark = &cobra.Command{
 			runID = resp.ID
 		}
 		if *async {
+			if *buildLocal {
+				log.Fatal("Unsupported async local execution")
+			}
 			queue, err := taskqueue.NewQueue(ctx, *taskQueuePath, *taskQueueEmail)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "making taskqueue client"))
@@ -384,10 +409,11 @@ var runBenchmark = &cobra.Command{
 		bar := pb.New(set.Count)
 		bar.Output = cmd.OutOrStderr()
 		bar.ShowTimeLeft = true
-		verdictChan, err := run.RunBench(ctx, client, apiURL, set, run.RunBenchOpts{
+		verdictChan, err := run.RunBench(ctx, set, run.RunBenchOpts{
+			ExecService:       executor,
 			Mode:              mode,
 			RunID:             runID,
-			MaxConcurrency:    *maxConcurrency,
+			MaxConcurrency:    concurrency,
 			UseSyscallMonitor: *useSyscallMonitor,
 			UseNetworkProxy:   *useNetworkProxy,
 		})
@@ -789,11 +815,13 @@ var (
 	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
 	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request syscall monitoring")
 	// run-bench
-	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
-	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
-	async          = flag.Bool("async", false, "true if this benchmark should run asynchronously")
-	taskQueuePath  = flag.String("task-queue", "", "the path identifier of the task queue to use")
-	taskQueueEmail = flag.String("task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
+	maxConcurrency  = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
+	buildLocal      = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
+	prebuildBucket  = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
+	prebuildVersion = flag.String("prebuild-version", "", "golang version identifier of the prebuild binary builds")
+	async           = flag.Bool("async", false, "true if this benchmark should run asynchronously")
+	taskQueuePath   = flag.String("task-queue", "", "the path identifier of the task queue to use")
+	taskQueueEmail  = flag.String("task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
 	// run-one
 	strategyPath = flag.String("strategy", "", "the strategy file to use")
 	// get-results
@@ -810,7 +838,7 @@ var (
 	// TUI
 	benchmarkDir = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 	defDir       = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
-	llmProject   = flag.String("llm-project", "", "the GCP project to use for LLM execution")
+	llmProject   = flag.String("llm-project", "", "if provided, the GCP project to prefer over --project for use with the Vertext AI API")
 	// Migrate
 	dryrun = flag.Bool("dryrun", false, "true if this migration is a dryrun")
 )
@@ -819,6 +847,8 @@ func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("local"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("prebuild-bucket"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("prebuild-version"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("format"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("v"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("async"))

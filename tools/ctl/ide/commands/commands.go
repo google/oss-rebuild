@@ -4,6 +4,7 @@
 package commands
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -23,12 +25,18 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide/details"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
+	"github.com/google/oss-rebuild/tools/ctl/ide/textinput"
 	"github.com/google/oss-rebuild/tools/ctl/ide/tmux"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
+	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	RundexReadParallelism = 10
 )
 
 // A modalFnType can be used to show an InputCaptureable. It returns an exit function that can be used to close the modal.
@@ -178,6 +186,66 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 	}
 }
 
+func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, asst assistant.Assistant, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildGroupCmd {
+	return []RebuildGroupCmd{
+		{
+			Short: "Find pattern",
+			Func: func(ctx context.Context, rebuilds []rundex.Rebuild) {
+				pattern, mopts, inputChan := textinput.TextInput(textinput.TextInputOpts{Header: "Search Regex"})
+				exitFunc := modalFn(pattern, mopts)
+				input := <-inputChan
+				log.Printf("Finding pattern \"%s\"", input)
+				exitFunc()
+				regex, err := regexp.Compile(input)
+				if err != nil {
+					log.Println(err.Error())
+					return
+				}
+				p := pipe.FromSlice(rebuilds)
+				p = p.ParDo(RundexReadParallelism, func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
+					_, err := butler.Fetch(context.Background(), in.RunID, in.WasSmoketest(), rebuild.DebugLogsAsset.For(in.Target()))
+					if err != nil {
+						log.Println(errors.Wrap(err, "downloading logs"))
+						return
+					}
+					out <- in
+				})
+				var found int
+				p = p.Do(func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
+					assets, err := localfiles.AssetStore(in.RunID)
+					if err != nil {
+						log.Println(errors.Wrapf(err, "creating asset store for runid: %s", in.RunID))
+						return
+					}
+					r, err := assets.Reader(ctx, rebuild.DebugLogsAsset.For(in.Target()))
+					if err != nil {
+						log.Println(errors.Wrapf(err, "opening logs for %s", in.ID()))
+						return
+					}
+					defer r.Close()
+					// TODO: Maybe read the whole file into memory and do multi-line matching?
+					scanner := bufio.NewScanner(r)
+					for scanner.Scan() {
+						line := scanner.Text()
+						if regex.MatchString(line) {
+							log.Printf("%s\n\t%s", in.ID(), line)
+							out <- in
+							break
+						}
+					}
+					if err := scanner.Err(); err != nil {
+						log.Println(errors.Wrap(err, "reading logs"))
+					}
+				})
+				for range p.Out() {
+				}
+				log.Printf("Found in %d/%d (%2.0f%%)", found, len(rebuilds), float32(found)/float32(len(rebuilds))*100)
+			},
+		},
+	}
+
+}
+
 func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, asst assistant.Assistant, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []GlobalCmd {
 	return []GlobalCmd{
 		{
@@ -214,8 +282,8 @@ func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn moda
 					}
 					choice, opts, selected := choice.Choice(all)
 					exitFunc := modalFn(choice, opts)
-					defer exitFunc()
 					bench = <-selected
+					go app.QueueUpdateDraw(exitFunc)
 				}
 				wdex, ok := dex.(rundex.Writer)
 				if !ok {

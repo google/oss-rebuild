@@ -219,7 +219,7 @@ resource "terraform_data" "image" {
       version   = terraform_data.service_version.output
       buildargs = ["DEBUG=${terraform_data.debug.output}", "BUILD_REPO=${var.repo}", "BUILD_VERSION=${terraform_data.service_version.output}"]
     }
-    "analyzer" = {
+    "subscriber" = {
       name    = "examplesubscriber"
       image   = "${local.registry_url}/subscriber"
       version = terraform_data.service_version.output

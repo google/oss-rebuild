@@ -56,8 +56,5 @@ func (a *assistant) Session(ctx context.Context, attempt rundex.Rebuild) (Sessio
 	if err != nil {
 		return nil, errors.Wrap(err, "creating chat")
 	}
-	if err != nil {
-		return nil, errors.Wrap(err, "creating llm chat session")
-	}
 	return newSession(a.butler, chat, attempt), nil
 }

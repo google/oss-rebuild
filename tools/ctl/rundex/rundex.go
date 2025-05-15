@@ -84,15 +84,13 @@ func (r Rebuild) WasSmoketest() bool {
 // Run represents a group of one or more rebuild executions.
 type Run struct {
 	schema.Run
-	Type    schema.ExecutionMode
-	Created time.Time
+	Type schema.ExecutionMode
 }
 
 func FromRun(r schema.Run) Run {
 	var rb Run
 	rb.Run = r
 	rb.Type = schema.ExecutionMode(r.Type)
-	rb.Created = r.Created
 	return rb
 }
 
@@ -228,6 +226,14 @@ type Writer interface {
 	WriteRun(ctx context.Context, r Run) error
 }
 
+// Watcher provides channels to notify about rundex object creation.
+// The Watcher is expected to manage the lifecycle of the channels, closing them if necessary.
+type Watcher interface {
+	// TODO: We might want to add filter parameters similar to the Fecth* methods on Reader.
+	WatchRuns() <-chan *Run
+	WatchRebuilds() <-chan *Rebuild
+}
+
 // FirestoreClient is a wrapper around the external firestore client.
 type FirestoreClient struct {
 	Client *firestore.Client
@@ -305,8 +311,31 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 	}
 	return res
 }
+
 func sanitize(key string) string {
 	return strings.ReplaceAll(key, "/", "!")
+}
+
+func (f *FirestoreClient) findArtifactName(ctx context.Context, t rebuild.Target) (string, error) {
+	iter := f.Client.Collection(path.Join("ecosystem", string(t.Ecosystem), "packages", sanitize(t.Package), "versions", t.Version, "artifacts")).DocumentRefs(ctx)
+	var artifacts []string
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		artifacts = append(artifacts, doc.ID)
+	}
+	if len(artifacts) == 0 {
+		return "", errors.New("no artifact documents found")
+	}
+	if len(artifacts) > 1 {
+		return "", errors.New("multiple artifact documents found")
+	}
+	return artifacts[0], nil
 }
 
 // FetchRebuilds fetches the Rebuild objects out of firestore.
@@ -319,10 +348,14 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 	}
 	q := f.Client.CollectionGroup("attempts").Query
 	if req.Target != nil {
-		if req.Target.Artifact == "" {
-			return nil, errors.New("target missing artifact name")
+		t := *req.Target
+		if t.Artifact == "" {
+			if a, err := f.findArtifactName(ctx, t); err != nil {
+				return nil, errors.Wrap(err, "inferring missing artifact")
+			} else {
+				t.Artifact = a
+			}
 		}
-		t := req.Target
 		q = f.Client.Collection(path.Join("ecosystem", string(t.Ecosystem), "packages", sanitize(t.Package), "versions", t.Version, "artifacts", t.Artifact, "attempts")).Query
 	}
 	if len(req.Executors) != 0 {
@@ -363,10 +396,13 @@ func (f *FirestoreClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]
 
 // LocalClient reads rebuilds from the local filesystem.
 type LocalClient struct {
-	fs billy.Filesystem
+	fs                 billy.Filesystem
+	runSubscribers     []chan<- *Run
+	rebuildSubscribers []chan<- *Rebuild
 }
 
 var _ Reader = &LocalClient{}
+var _ Watcher = &LocalClient{}
 var _ Writer = &LocalClient{}
 
 func NewLocalClient(fs billy.Filesystem) *LocalClient {
@@ -469,6 +505,18 @@ func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReques
 	return rebuilds, nil
 }
 
+func (f *LocalClient) WatchRuns() <-chan *Run {
+	n := make(chan *Run, 1)
+	f.runSubscribers = append(f.runSubscribers, n)
+	return n
+}
+
+func (f *LocalClient) WatchRebuilds() <-chan *Rebuild {
+	n := make(chan *Rebuild, 1)
+	f.rebuildSubscribers = append(f.rebuildSubscribers, n)
+	return n
+}
+
 func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
 	path := filepath.Join(localRunsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
 	file, err := f.fs.Create(path)
@@ -476,7 +524,15 @@ func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
 		return errors.Wrap(err, "creating file")
 	}
 	defer file.Close()
-	return json.NewEncoder(file).Encode(r)
+	if err := json.NewEncoder(file).Encode(r); err != nil {
+		return err
+	}
+	for _, sub := range f.rebuildSubscribers {
+		go func() {
+			sub <- &r
+		}()
+	}
+	return nil
 }
 
 func (f *LocalClient) WriteRun(ctx context.Context, r Run) error {
@@ -486,7 +542,15 @@ func (f *LocalClient) WriteRun(ctx context.Context, r Run) error {
 		return errors.Wrap(err, "creating file")
 	}
 	defer file.Close()
-	return json.NewEncoder(file).Encode(r)
+	if err := json.NewEncoder(file).Encode(r); err != nil {
+		return err
+	}
+	for _, sub := range f.runSubscribers {
+		go func() {
+			sub <- &r
+		}()
+	}
+	return nil
 }
 
 // VerdictGroup is a collection of Rebuild objects, grouped by the same Message.
