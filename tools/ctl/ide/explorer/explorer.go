@@ -105,7 +105,7 @@ func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader,
 			}
 		}()
 	} else {
-		log.Println("Fail to register watcher :(")
+		log.Println("Failed to register watcher, TUI will not dynamically refresh")
 	}
 	return &e
 }
