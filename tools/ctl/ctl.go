@@ -32,6 +32,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -44,7 +45,6 @@ import (
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
-	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/migrations"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
@@ -54,6 +54,8 @@ import (
 	"google.golang.org/api/iterator"
 	"gopkg.in/yaml.v3"
 )
+
+const expertPrompt = `You are an expert in diagnosing build issues in multiple open source ecosystems. You will help diagnose why builds failed, or why the builds might have produced an artifact that differs from the upstream open source package. Provide clear and concise explantions of why the rebuild failed, and suggest changes that could fix the rebuild`
 
 var rootCmd = &cobra.Command{
 	Use:   "ctl",
@@ -193,9 +195,20 @@ var tui = &cobra.Command{
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "failed to create a genai client"))
 		}
-		asst := assistant.NewAssistant(butler, aiClient)
+		var model *genai.GenerativeModel
+		{
+			model = aiClient.GenerativeModel(llm.GeminiFlash)
+			model.GenerationConfig = genai.GenerationConfig{
+				Temperature:     genai.Ptr[float32](.1),
+				MaxOutputTokens: genai.Ptr[int32](16000),
+			}
+			systemPrompt := []genai.Part{
+				genai.Text(expertPrompt),
+			}
+			model = llm.WithSystemPrompt(*model, systemPrompt...)
+		}
 		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
-		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, asst)
+		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, model)
 		if err := tapp.Run(cmd.Context()); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
