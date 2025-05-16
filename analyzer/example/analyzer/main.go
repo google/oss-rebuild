@@ -46,6 +46,7 @@ func EnqueueInit(ctx context.Context) (*analyzerservice.EnqueueDeps, error) {
 }
 
 func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
+	ctx = context.WithValue(ctx, rebuild.RunID, "")
 	findings, err := rebuild.NewGCSStore(ctx, "gcs://"+*findingsBucket)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating findings asset store")
