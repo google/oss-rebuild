@@ -7,18 +7,10 @@ import (
 	"bytes"
 	"context"
 	"crypto"
-	"io"
-	"log"
-	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"text/template"
-
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/cache"
+	internalExecutor "github.com/google/oss-rebuild/internal/executor"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
@@ -33,16 +25,20 @@ import (
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
+	"io"
+	"log"
+	"net/http"
 )
 
 type localExecutionService struct {
 	prebuildURL string
 	store       rebuild.LocatableAssetStore
 	logsink     io.Writer
+	containers  map[string]internalExecutor.DockerExecutor
 }
 
 func NewLocalExecutionService(prebuildURL string, store rebuild.LocatableAssetStore, logsink io.Writer) ExecutionService {
-	return &localExecutionService{prebuildURL: prebuildURL, store: store, logsink: logsink}
+	return &localExecutionService{prebuildURL: prebuildURL, store: store, logsink: logsink, containers: make(map[string]internalExecutor.DockerExecutor)}
 }
 
 func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
@@ -63,6 +59,7 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		PyPI:     pypireg.HTTPRegistry{Client: regClient},
 	}
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
+	verdict := &schema.Verdict{Target: t}
 	if req.Artifact == "" {
 		switch t.Ecosystem {
 		case rebuild.NPM:
@@ -70,11 +67,18 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		case rebuild.PyPI:
 			release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
 			if err != nil {
-				return nil, errors.Wrap(err, "fetching pypi release")
+				verdict.Message = err.Error()
+				return verdict, nil
+				//return nil, errors.Wrap(err, "fetching pypi release")
 			}
 			wheel, err := pypi.FindPureWheel(release.Artifacts)
 			if err != nil {
-				return nil, errors.Wrap(err, "locating wheel")
+				// TODO: requires PR #468
+				//wheel, err = pypi.FindSourceDistribution(release.Artifacts)
+				//if err != nil {
+				verdict.Message = err.Error()
+				return verdict, nil
+				//}
 			}
 			t.Artifact = wheel.Filename
 		case rebuild.CratesIO:
@@ -87,18 +91,22 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 			return nil, errors.New("unsupported ecosystem")
 		}
 	}
-	verdict := &schema.Verdict{Target: t}
+	verdict.Target.Artifact = t.Artifact
 	strategy, err := s.infer(ctx, t, mux)
 	if err != nil {
 		verdict.Message = err.Error()
 		return verdict, nil
 	}
 	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
-	if err := build(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}); err != nil {
+	var comparisonOutcome error
+	if err := s.build(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}); err != nil {
 		verdict.Message = err.Error()
-	} else if err := compare(ctx, t, s.store, mux); err != nil {
+	} else if comparisonOutcome, err = compare(ctx, t, s.store, mux); err != nil {
 		verdict.Message = err.Error()
+	} else if comparisonOutcome != nil {
+		verdict.Message = comparisonOutcome.Error()
 	}
+
 	return verdict, nil
 }
 
@@ -136,103 +144,70 @@ type buildOpts struct {
 	LogSink     io.Writer
 }
 
-func build(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts) error {
+func (s *localExecutionService) build(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts) error {
 	inst, err := strategy.GenerateFor(t, rebuild.BuildEnv{TimewarpHost: "localhost:8081"})
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed generating strategy")
 	}
-	var install, container string
-	if t.Ecosystem == rebuild.Debian {
-		install = "apt install -y"
-		container = "debian:trixie-20250203-slim"
-	} else {
-		install = "apk add"
-		container = "alpine:3.19"
-	}
-	buf := &bytes.Buffer{}
-	// TODO: Use MakeDockerfile along with `docker build` for a more representative run.
-	err = template.Must(template.New("").Parse(
-		`set -eux
-{{.InstallCmd}} curl
-curl `+opts.PrebuildURL+`/timewarp > timewarp
-chmod +x timewarp
-./timewarp -port 8081 &
-while ! nc -z localhost 8081;do sleep 1;done
-mkdir /src && cd /src
-{{.InstallCmd}} {{.SystemDeps}}
-{{.Inst.Source}}
-{{.Inst.Deps}}
-{{.Inst.Build}}
-cp /src/{{.Inst.OutputPath}} /out/rebuild`)).Execute(buf, map[string]any{
-		"Inst":       inst,
-		"InstallCmd": install,
-		"SystemDeps": strings.Join(inst.SystemDeps, " "),
-	})
-	if err != nil {
-		return err
-	}
-	tmp, err := os.MkdirTemp("/tmp", "rebuild*")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-	logbuf := &bytes.Buffer{}
-	var outw io.Writer = logbuf
-	if opts.LogSink != nil {
-		outw = io.MultiWriter(opts.LogSink, outw)
-	}
-	cmd := exec.CommandContext(ctx, "docker", "run", "-i", "--rm", "-v", tmp+":/out", container, "sh")
-	cmd.Stdin = buf
-	cmd.Stdout = outw
-	cmd.Stderr = outw
-	if err := cmd.Run(); err != nil {
-		if logw, err := out.Writer(ctx, rebuild.DebugLogsAsset.For(t)); err == nil {
-			defer logw.Close()
-			io.Copy(logw, logbuf)
+
+	var outbuffer bytes.Buffer
+	var outb io.Reader = &outbuffer
+
+	container, ok := s.containers[t.Package]
+	if ok {
+		if outbuffer, err = container.ExecuteWithStrategy(ctx, inst, t, out); err != nil {
+			return errors.Wrap(err, "failed to execute build with strategy")
 		}
-		return err
+	} else {
+		newContainer, err := internalExecutor.NewDockerExecutor(t.Package)
+		if err != nil {
+			return errors.Wrap(err, "failed to create DockerExecutor")
+		}
+
+		if err := newContainer.StartContainer(ctx, inst); err != nil {
+			return errors.Wrap(err, "failed to start container")
+		}
+		s.containers[t.Package] = *newContainer
+		// Execute the build inside the container
+		if outbuffer, err = newContainer.ExecuteWithStrategy(ctx, inst, t, out); err != nil {
+			return errors.Wrap(err, "failed to execute build with strategy")
+		}
 	}
+
 	logw, err := out.Writer(ctx, rebuild.DebugLogsAsset.For(t))
 	if err != nil {
 		return err
 	}
 	defer logw.Close()
-	if _, err := io.Copy(logw, logbuf); err != nil {
+
+	if _, err := io.Copy(logw, outb); err != nil {
 		return err
 	}
-	f, err := os.Open(filepath.Join(tmp, "rebuild"))
-	if err != nil {
-		return err
-	}
-	w, err := out.Writer(ctx, rebuild.RebuildAsset.For(t))
-	if err != nil {
-		return err
-	}
-	defer w.Close()
-	_, err = io.Copy(w, f)
-	return err
+
+	return nil
 }
 
-func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAssetStore, mux rebuild.RegistryMux) error {
+// returns True, nil for exactMatch, returns False, nil for stabilizedMatch
+func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAssetStore, mux rebuild.RegistryMux) (error, error) {
 	if _, err := store.Reader(ctx, rebuild.RebuildAsset.For(t)); err != nil {
-		return errors.Wrap(err, "accessing rebuild artifact")
+		return nil, errors.Wrap(err, "accessing rebuild artifact")
 	}
 	stabilizers, err := stability.StabilizersForTarget(t)
 	if err != nil {
-		return errors.Wrap(err, "getting stabilizers")
+		return nil, errors.Wrap(err, "getting stabilizers")
 	}
 	var upstreamURL string
 	switch t.Ecosystem {
 	case rebuild.NPM:
 		vmeta, err := mux.NPM.Version(ctx, t.Package, t.Version)
 		if err != nil {
-			return errors.Wrap(err, "fetching npm metadata")
+			return nil, errors.Wrap(err, "fetching npm metadata")
 		}
 		upstreamURL = vmeta.Dist.URL
 	case rebuild.PyPI:
 		release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
 		if err != nil {
-			return errors.Wrap(err, "fetching pypi metadata")
+			return nil, errors.Wrap(err, "fetching pypi metadata")
 		}
 		for _, r := range release.Artifacts {
 			if r.Filename == t.Artifact {
@@ -241,30 +216,30 @@ func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAsset
 			}
 		}
 		if upstreamURL == "" {
-			return errors.Errorf("artifact %s not found in release", t.Artifact)
+			return nil, errors.Errorf("artifact %s not found in release", t.Artifact)
 		}
 	case rebuild.CratesIO:
 		vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
 		if err != nil {
-			return errors.Wrap(err, "fetching crates.io metadata")
+			return nil, errors.Wrap(err, "fetching crates.io metadata")
 		}
 		upstreamURL = vmeta.DownloadURL
 	case rebuild.Debian:
 		_, name, err := debian.ParseComponent(t.Package)
 		if err != nil {
-			return errors.Wrap(err, "parsing debian component")
+			return nil, errors.Wrap(err, "parsing debian component")
 		}
 		upstreamURL, err = mux.Debian.ArtifactURL(ctx, name, t.Artifact)
 		if err != nil {
-			return errors.Wrap(err, "getting debian artifact URL")
+			return nil, errors.Wrap(err, "getting debian artifact URL")
 		}
 	case rebuild.Maven:
-		return errors.New("maven comparison not implemented")
+		return nil, errors.New("maven comparison not implemented")
 	default:
-		return errors.Errorf("unsupported ecosystem: %s", t.Ecosystem)
+		return nil, errors.Errorf("unsupported ecosystem: %s", t.Ecosystem)
 	}
 	if upstreamURL == "" {
-		return errors.New("couldn't determine upstream URL")
+		return nil, errors.New("couldn't determine upstream URL")
 	}
 	hashes := []crypto.Hash{crypto.SHA256}
 	if t.Ecosystem == rebuild.NPM {
@@ -272,23 +247,83 @@ func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAsset
 	}
 	rbSummary, upSummary, err := verifier.SummarizeArtifacts(ctx, store, t, upstreamURL, hashes, stabilizers)
 	if err != nil {
-		return errors.Wrap(err, "summarizing artifacts")
+		return nil, errors.Wrap(err, "summarizing artifacts")
 	}
 	exactMatch := bytes.Equal(rbSummary.Hash.Sum(nil), upSummary.Hash.Sum(nil))
 	stabilizedMatch := bytes.Equal(rbSummary.StabilizedHash.Sum(nil), upSummary.StabilizedHash.Sum(nil))
 	if exactMatch {
 		log.Printf("Exact match found for %s %s %s", t.Ecosystem, t.Package, t.Artifact)
-		return nil
+		return errors.New("Exact match"), nil
 	}
 	if stabilizedMatch {
 		log.Printf("Stabilized match found for %s %s %s", t.Ecosystem, t.Package, t.Artifact)
-		return nil
+		return errors.New("Stabilized match"), nil
 	}
-	return errors.New("rebuild does not match upstream artifact")
+
+	// TODO: Code duplication with SummarizeArtifacts
+	req, _ := http.NewRequest(http.MethodGet, upSummary.URI, nil)
+	resp, err := rebuild.DoContext(ctx, req)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching upstream artifact")
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching upstream artifact")
+	}
+
+	file, err := store.Writer(ctx, rebuild.DebugUpstreamAsset.For(t))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create file in assetStore")
+	}
+
+	// Copy the file content to the assetStore
+	if _, err := io.Copy(file, resp.Body); err != nil {
+		return nil, errors.Wrap(err, "failed to write file to assetStore")
+	}
+
+	rb, up, err := rebuild.Summarize(ctx, t, rebuild.RebuildAsset.For(t), rebuild.DebugUpstreamAsset.For(t), store)
+	verdict, err := pypi.CompareTwoFiles(rb, up)
+	return verdict, nil
 }
 
 func (s *localExecutionService) SmoketestPackage(ctx context.Context, req schema.SmoketestRequest) (*schema.SmoketestResponse, error) {
-	return nil, errors.New("Not implemented")
+	var verdicts []schema.Verdict
+
+	for _, ver := range req.Versions {
+
+		rebReq := schema.RebuildPackageRequest{
+			Ecosystem: req.Ecosystem,
+			Package:   req.Package,
+			Version:   ver,
+			ID:        req.ID,
+		}
+
+		reb, err := s.RebuildPackage(ctx, rebReq)
+		if err != nil {
+			// cannot find the artifact
+			verdicts = append(verdicts, schema.Verdict{
+				Target: rebuild.Target{
+					Ecosystem: rebReq.Ecosystem,
+					Package:   rebReq.Package,
+					Version:   rebReq.Version},
+				Message: err.Error()})
+			//return nil, errors.Wrap(err, "rebuilding package")
+		} else {
+			verdicts = append(verdicts, *reb)
+		}
+	}
+
+	for _, c := range s.containers {
+		err := c.StopContainer(ctx)
+		if err != nil {
+			log.Printf("failed to stop container: %v", err)
+		}
+	}
+
+	return &schema.SmoketestResponse{
+		Verdicts: verdicts,
+		Executor: "docker",
+	}, nil
+	//return nil, errors.New("Not implemented")
 }
 
 func (s *localExecutionService) Warmup(ctx context.Context) { /* no-op */ }

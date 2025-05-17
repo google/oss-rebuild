@@ -41,7 +41,7 @@ var (
 	verdictContentDiff     = errors.New("content differences found")
 )
 
-func compareTwoFiles(csRB, csUP *archive.ContentSummary) (verdict error, err error) {
+func CompareTwoFiles(csRB, csUP *archive.ContentSummary) (verdict error, err error) {
 	upOnly, diffs, rbOnly := csUP.Diff(csRB)
 	log.Println(upOnly, diffs, rbOnly)
 	var foundDSStore bool
@@ -79,7 +79,7 @@ func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.A
 	if err != nil {
 		return nil, errors.Wrapf(err, "summarizing assets")
 	}
-	verdict, err = compareTwoFiles(csRB, csUP)
+	verdict, err = CompareTwoFiles(csRB, csUP)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to compare %v to %v", rb, up)
 	}
