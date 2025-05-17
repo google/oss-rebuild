@@ -201,6 +201,9 @@ var StableGitProperties = ZipArchiveStabilizer{
 					continue
 				}
 				content, err := io.ReadAll(reader)
+				if err != nil {
+					panic("Unparsable pom.xml present in the jar file")
+				}
 				gitPropertiesFiles = append(gitPropertiesFiles, getAllGitPropertiesFileInPom(content)...)
 			}
 		}
