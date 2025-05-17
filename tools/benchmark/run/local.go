@@ -98,11 +98,15 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		return verdict, nil
 	}
 	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
+	var comparisonOutcome error
 	if err := s.build(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}); err != nil {
 		verdict.Message = err.Error()
-	} else if err := compare(ctx, t, s.store, mux); err != nil {
+	} else if comparisonOutcome, err = compare(ctx, t, s.store, mux); err != nil {
 		verdict.Message = err.Error()
+	} else if comparisonOutcome != nil {
+		verdict.Message = comparisonOutcome.Error()
 	}
+
 	return verdict, nil
 }
 
@@ -146,9 +150,12 @@ func (s *localExecutionService) build(ctx context.Context, t rebuild.Target, str
 		return errors.Wrap(err, "failed generating strategy")
 	}
 
+	var outbuffer bytes.Buffer
+	var outb io.Reader = &outbuffer
+
 	container, ok := s.containers[t.Package]
 	if ok {
-		if err := container.ExecuteWithStrategy(ctx, inst, t, out); err != nil {
+		if outbuffer, err = container.ExecuteWithStrategy(ctx, inst, t, out); err != nil {
 			return errors.Wrap(err, "failed to execute build with strategy")
 		}
 	} else {
@@ -162,35 +169,45 @@ func (s *localExecutionService) build(ctx context.Context, t rebuild.Target, str
 		}
 		s.containers[t.Package] = *newContainer
 		// Execute the build inside the container
-		if err := newContainer.ExecuteWithStrategy(ctx, inst, t, out); err != nil {
-
+		if outbuffer, err = newContainer.ExecuteWithStrategy(ctx, inst, t, out); err != nil {
 			return errors.Wrap(err, "failed to execute build with strategy")
 		}
+	}
+
+	logw, err := out.Writer(ctx, rebuild.DebugLogsAsset.For(t))
+	if err != nil {
+		return err
+	}
+	defer logw.Close()
+
+	if _, err := io.Copy(logw, outb); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAssetStore, mux rebuild.RegistryMux) error {
+// returns True, nil for exactMatch, returns False, nil for stabilizedMatch
+func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAssetStore, mux rebuild.RegistryMux) (error, error) {
 	if _, err := store.Reader(ctx, rebuild.RebuildAsset.For(t)); err != nil {
-		return errors.Wrap(err, "accessing rebuild artifact")
+		return nil, errors.Wrap(err, "accessing rebuild artifact")
 	}
 	stabilizers, err := stability.StabilizersForTarget(t)
 	if err != nil {
-		return errors.Wrap(err, "getting stabilizers")
+		return nil, errors.Wrap(err, "getting stabilizers")
 	}
 	var upstreamURL string
 	switch t.Ecosystem {
 	case rebuild.NPM:
 		vmeta, err := mux.NPM.Version(ctx, t.Package, t.Version)
 		if err != nil {
-			return errors.Wrap(err, "fetching npm metadata")
+			return nil, errors.Wrap(err, "fetching npm metadata")
 		}
 		upstreamURL = vmeta.Dist.URL
 	case rebuild.PyPI:
 		release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
 		if err != nil {
-			return errors.Wrap(err, "fetching pypi metadata")
+			return nil, errors.Wrap(err, "fetching pypi metadata")
 		}
 		for _, r := range release.Artifacts {
 			if r.Filename == t.Artifact {
@@ -199,30 +216,30 @@ func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAsset
 			}
 		}
 		if upstreamURL == "" {
-			return errors.Errorf("artifact %s not found in release", t.Artifact)
+			return nil, errors.Errorf("artifact %s not found in release", t.Artifact)
 		}
 	case rebuild.CratesIO:
 		vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
 		if err != nil {
-			return errors.Wrap(err, "fetching crates.io metadata")
+			return nil, errors.Wrap(err, "fetching crates.io metadata")
 		}
 		upstreamURL = vmeta.DownloadURL
 	case rebuild.Debian:
 		_, name, err := debian.ParseComponent(t.Package)
 		if err != nil {
-			return errors.Wrap(err, "parsing debian component")
+			return nil, errors.Wrap(err, "parsing debian component")
 		}
 		upstreamURL, err = mux.Debian.ArtifactURL(ctx, name, t.Artifact)
 		if err != nil {
-			return errors.Wrap(err, "getting debian artifact URL")
+			return nil, errors.Wrap(err, "getting debian artifact URL")
 		}
 	case rebuild.Maven:
-		return errors.New("maven comparison not implemented")
+		return nil, errors.New("maven comparison not implemented")
 	default:
-		return errors.Errorf("unsupported ecosystem: %s", t.Ecosystem)
+		return nil, errors.Errorf("unsupported ecosystem: %s", t.Ecosystem)
 	}
 	if upstreamURL == "" {
-		return errors.New("couldn't determine upstream URL")
+		return nil, errors.New("couldn't determine upstream URL")
 	}
 	hashes := []crypto.Hash{crypto.SHA256}
 	if t.Ecosystem == rebuild.NPM {
@@ -230,19 +247,42 @@ func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAsset
 	}
 	rbSummary, upSummary, err := verifier.SummarizeArtifacts(ctx, store, t, upstreamURL, hashes, stabilizers)
 	if err != nil {
-		return errors.Wrap(err, "summarizing artifacts")
+		return nil, errors.Wrap(err, "summarizing artifacts")
 	}
 	exactMatch := bytes.Equal(rbSummary.Hash.Sum(nil), upSummary.Hash.Sum(nil))
 	stabilizedMatch := bytes.Equal(rbSummary.StabilizedHash.Sum(nil), upSummary.StabilizedHash.Sum(nil))
 	if exactMatch {
 		log.Printf("Exact match found for %s %s %s", t.Ecosystem, t.Package, t.Artifact)
-		return nil
+		return errors.New("Exact match"), nil
 	}
 	if stabilizedMatch {
 		log.Printf("Stabilized match found for %s %s %s", t.Ecosystem, t.Package, t.Artifact)
-		return nil
+		return errors.New("Stabilized match"), nil
 	}
-	return errors.New("rebuild does not match upstream artifact")
+
+	// TODO: Code duplication with SummarizeArtifacts
+	req, _ := http.NewRequest(http.MethodGet, upSummary.URI, nil)
+	resp, err := rebuild.DoContext(ctx, req)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching upstream artifact")
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching upstream artifact")
+	}
+
+	file, err := store.Writer(ctx, rebuild.DebugUpstreamAsset.For(t))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create file in assetStore")
+	}
+
+	// Copy the file content to the assetStore
+	if _, err := io.Copy(file, resp.Body); err != nil {
+		return nil, errors.Wrap(err, "failed to write file to assetStore")
+	}
+
+	rb, up, err := rebuild.Summarize(ctx, t, rebuild.RebuildAsset.For(t), rebuild.DebugUpstreamAsset.For(t), store)
+	verdict, err := pypi.CompareTwoFiles(rb, up)
+	return verdict, nil
 }
 
 func (s *localExecutionService) SmoketestPackage(ctx context.Context, req schema.SmoketestRequest) (*schema.SmoketestResponse, error) {
@@ -269,6 +309,13 @@ func (s *localExecutionService) SmoketestPackage(ctx context.Context, req schema
 			//return nil, errors.Wrap(err, "rebuilding package")
 		} else {
 			verdicts = append(verdicts, *reb)
+		}
+	}
+
+	for _, c := range s.containers {
+		err := c.StopContainer(ctx)
+		if err != nil {
+			log.Printf("failed to stop container: %v", err)
 		}
 	}
 

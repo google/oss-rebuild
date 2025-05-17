@@ -2,6 +2,7 @@ package executor
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/pkg/errors"
@@ -76,7 +77,7 @@ WORKDIR %s
 	defer buildResponse.Body.Close()
 
 	// Consume the build output to ensure the image is fully built
-	if _, err := io.Copy(os.Stdout, buildResponse.Body); err != nil {
+	if _, err := io.Copy(io.Discard, buildResponse.Body); err != nil {
 		return fmt.Errorf("failed to read build output: %v", err)
 	}
 
@@ -98,42 +99,35 @@ WORKDIR %s
 }
 
 // ExecuteWithStrategy checks out the correct commit and executes the build inside the container.
-func (d *DockerExecutor) ExecuteWithStrategy(ctx context.Context, instructions rebuild.Instructions, target rebuild.Target, assetStore rebuild.LocatableAssetStore) error {
+func (d *DockerExecutor) ExecuteWithStrategy(ctx context.Context, instructions rebuild.Instructions, target rebuild.Target, assetStore rebuild.LocatableAssetStore) (bytes.Buffer, error) {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
+	outbuf := &bytes.Buffer{}
 
 	if d.containerID == "" {
-		return fmt.Errorf("container is not running for package %s", d.packageName)
+		return *outbuf, fmt.Errorf("container is not running for package %s", d.packageName)
 	}
 
-	// Generate build instructions from the strategy
-	//instructions, err := strategy.GenerateFor(target, rebuild.BuildEnv{})
-	//if err != nil {
-	//	return fmt.Errorf("failed to generate build instructions: %v", err)
-	//}
-
 	// TODO: relying on instruction.Source would make sense
-	if err := d.executeCommand(ctx, []string{"sh", "-c", instructions.Deps}); err != nil {
+	if err := d.executeCommand(ctx, []string{"sh", "-c", instructions.Deps}, outbuf); err != nil {
 	}
 	// Checkout the correct commit
 	checkoutCmd := []string{"git", "checkout", "--force", instructions.Location.Ref}
-	if err := d.executeCommand(ctx, checkoutCmd); err != nil {
-		return errors.Wrap(err, "failed to checkout commit")
+	if err := d.executeCommand(ctx, checkoutCmd, outbuf); err != nil {
+		return *outbuf, errors.Wrap(err, "failed to checkout commit")
 	}
 
 	// Execute the build commands
-
-	if err := d.executeCommand(ctx, []string{"sh", "-c", instructions.Build}); err != nil {
-		return errors.Wrap(err, "build command failed")
+	if err := d.executeCommand(ctx, []string{"sh", "-c", instructions.Build}, outbuf); err != nil {
+		return *outbuf, errors.Wrap(err, "build command failed")
 	}
 
 	// Copy the built artifact from the container
-	//localArtifactPath := fmt.Sprintf("/tmp/%s", target.Artifact)
 	if err := d.copyArtifactToAssetStore(ctx, fmt.Sprintf("%s/%s", target.Package, instructions.OutputPath), target, assetStore); err != nil {
-		return errors.Wrap(err, "failed to copy artifact")
+		return *outbuf, errors.Wrap(err, "failed to copy artifact")
 	}
 
-	return nil
+	return *outbuf, nil
 }
 
 func (d *DockerExecutor) copyArtifactToAssetStore(ctx context.Context, containerPath string, t rebuild.Target, assetStore rebuild.LocatableAssetStore) error {
@@ -141,7 +135,6 @@ func (d *DockerExecutor) copyArtifactToAssetStore(ctx context.Context, container
 	reader, _, err := d.client.CopyFromContainer(ctx, d.containerID, containerPath)
 	if err != nil {
 		return fmt.Errorf("failed to copy from container")
-		//return errors.Wrap(err, "failed to copy from container")
 	}
 	defer reader.Close()
 
@@ -212,7 +205,7 @@ func (d *DockerExecutor) copyArtifactFromContainer(ctx context.Context, containe
 }
 
 // executeCommand runs a command inside the Docker container.
-func (d *DockerExecutor) executeCommand(ctx context.Context, command []string) error {
+func (d *DockerExecutor) executeCommand(ctx context.Context, command []string, output *bytes.Buffer) error {
 	execConfig := container.ExecOptions{
 		Cmd:          command,
 		AttachStdout: true,
@@ -230,7 +223,7 @@ func (d *DockerExecutor) executeCommand(ctx context.Context, command []string) e
 	defer resp.Close()
 
 	// Stream the output
-	_, err = io.Copy(os.Stdout, resp.Reader)
+	_, err = io.Copy(output, resp.Reader)
 	return err
 }
 
