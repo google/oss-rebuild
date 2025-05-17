@@ -16,7 +16,9 @@ const (
 	RawFormat
 )
 
-type Stabilizer any
+type Stabilizer interface {
+	Stabilize(any)
+}
 
 // StabilizeOpts aggregates stabilizers to be used in stabilization.
 type StabilizeOpts struct {

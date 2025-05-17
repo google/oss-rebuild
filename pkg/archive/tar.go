@@ -46,9 +46,21 @@ type TarArchiveStabilizer struct {
 	Func func(*TarArchive)
 }
 
+func (t TarArchiveStabilizer) Stabilize(arg any) {
+	if t.Func != nil {
+		t.Func(arg.(*TarArchive))
+	}
+}
+
 type TarEntryStabilizer struct {
 	Name string
 	Func func(*TarEntry)
+}
+
+func (t TarEntryStabilizer) Stabilize(arg any) {
+	if t.Func != nil {
+		t.Func(arg.(*TarEntry))
+	}
 }
 
 var AllTarStabilizers = []Stabilizer{
@@ -146,10 +158,10 @@ func StabilizeTar(tr *tar.Reader, tw *tar.Writer, opts StabilizeOpts) error {
 	for _, s := range opts.Stabilizers {
 		switch s.(type) {
 		case TarArchiveStabilizer:
-			s.(TarArchiveStabilizer).Func(&f)
+			s.(TarArchiveStabilizer).Stabilize(&f)
 		case TarEntryStabilizer:
 			for _, ent := range f.Files {
-				s.(TarEntryStabilizer).Func(ent)
+				s.(TarEntryStabilizer).Stabilize(ent)
 			}
 		}
 	}
