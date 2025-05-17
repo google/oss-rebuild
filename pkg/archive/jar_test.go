@@ -431,7 +431,7 @@ func TestStableGitProperties(t *testing.T) {
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/maven/org.example/foo/pom.xml"},
-					readFileAndHandleException(filepath.Join("archive_testdata", "git", "custom", "path", "in", "build", "pom.xml")),
+					readFileAndHandleException(filepath.Join("testdata", "custom_build_path_pom.xml")),
 				},
 				{
 					&zip.FileHeader{Name: "classes/git.json"},
@@ -474,7 +474,7 @@ func TestStableGitProperties(t *testing.T) {
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/maven/org.example/foo/pom.xml"},
-					readFileAndHandleException(filepath.Join("archive_testdata", "git", "custom", "path", "in", "build", "pom.xml")),
+					readFileAndHandleException(filepath.Join("testdata", "custom_build_path_pom.xml")),
 				},
 				{
 					&zip.FileHeader{Name: "classes/git.json"},
@@ -494,7 +494,7 @@ func TestStableGitProperties(t *testing.T) {
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/maven/org.example/foo/pom.xml"},
-					readFileAndHandleException(filepath.Join("archive_testdata", "git", "custom", "path", "in", "profile", "pom.xml")),
+					readFileAndHandleException(filepath.Join("testdata", "custom_profile_path_pom.xml")),
 				},
 				{
 					&zip.FileHeader{Name: "foobar/custom-git.properties"},
@@ -508,7 +508,7 @@ func TestStableGitProperties(t *testing.T) {
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/maven/org.example/foo/pom.xml"},
-					readFileAndHandleException(filepath.Join("archive_testdata", "git", "custom", "path", "in", "profile", "pom.xml")),
+					readFileAndHandleException(filepath.Join("testdata", "custom_profile_path_pom.xml")),
 				},
 				{
 					&zip.FileHeader{Name: "foobar/custom-git.properties"},
