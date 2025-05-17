@@ -569,9 +569,6 @@ func TestStableGitProperties(t *testing.T) {
 }
 
 func readFileAndHandleException(path string) []byte {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		panic(err)
-	}
+	data := must(os.ReadFile(path))
 	return data
 }
