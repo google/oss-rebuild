@@ -42,7 +42,7 @@ func getAllGitPropertiesFileInPom(pom []byte) []string {
 		gitPropertiesFiles = append(gitPropertiesFiles, getGitPropertiesFilename(profile.Build)...)
 	}
 	if len(gitPropertiesFiles) == 0 {
-		addDefaultPaths(&gitPropertiesFiles)
+		gitPropertiesFiles = append(gitPropertiesFiles, defaultGitPaths...)
 	}
 	return gitPropertiesFiles
 }
@@ -68,11 +68,7 @@ func parsePomProperties(property string) string {
 	return propertyRegex.ReplaceAllString(property, defaultProperties[property])
 }
 
-func addDefaultPaths(paths *[]string) {
-	// This function adds default paths to the given list of paths.
-	// If the given list of paths is empty, it adds the default paths.
-	// Only JSON and properties file formats are available as documented
-	// [here](https://github.com/git-commit-id/git-commit-id-maven-plugin/blob/95d616fc7e16018deff3f17e2d03a4b217e55294/src/main/java/pl/project13/maven/git/GitCommitIdMojo.java#L454).
-	*paths = append(*paths, "git.properties")
-	*paths = append(*paths, "git.json")
+var defaultGitPaths = []string{
+	"git.properties",
+	"git.json",
 }
