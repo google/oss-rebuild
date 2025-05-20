@@ -47,9 +47,10 @@ type TarArchiveStabilizer struct {
 }
 
 func (t TarArchiveStabilizer) Stabilize(arg any) {
-	if t.Func != nil {
-		t.Func(arg.(*TarArchive))
+	if t.Func == nil {
+		panic(t.Name + " stabilizer not implemented")
 	}
+	t.Func(arg.(*TarArchive))
 }
 
 type TarEntryStabilizer struct {
@@ -58,9 +59,10 @@ type TarEntryStabilizer struct {
 }
 
 func (t TarEntryStabilizer) Stabilize(arg any) {
-	if t.Func != nil {
-		t.Func(arg.(*TarEntry))
+	if t.Func == nil {
+		panic(t.Name + " stabilizer not implemented")
 	}
+	t.Func(arg.(*TarEntry))
 }
 
 var AllTarStabilizers = []Stabilizer{

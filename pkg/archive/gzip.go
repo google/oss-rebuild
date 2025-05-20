@@ -48,9 +48,10 @@ type GzipStabilizer struct {
 }
 
 func (g GzipStabilizer) Stabilize(arg any) {
-	if g.Func != nil {
-		g.Func(arg.(*MutableGzipHeader))
+	if g.Func == nil {
+		panic(g.Name + " stabilizer not implemented")
 	}
+	g.Func(arg.(*MutableGzipHeader))
 }
 
 var AllGzipStabilizers = []Stabilizer{

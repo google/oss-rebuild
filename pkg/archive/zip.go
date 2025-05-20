@@ -119,9 +119,7 @@ type ZipArchiveStabilizer struct {
 }
 
 func (z ZipArchiveStabilizer) Stabilize(arg any) {
-	if z.Func != nil {
-		z.Func(arg.(*MutableZipReader))
-	}
+	z.Func(arg.(*MutableZipReader))
 }
 
 type ZipEntryStabilizer struct {
@@ -130,9 +128,10 @@ type ZipEntryStabilizer struct {
 }
 
 func (z ZipEntryStabilizer) Stabilize(arg any) {
-	if z.Func != nil {
-		z.Func(arg.(*MutableZipFile))
+	if z.Func == nil {
+		panic(z.Name + " stabilizer not implemented")
 	}
+	z.Func(arg.(*MutableZipFile))
 }
 
 var AllZipStabilizers = []Stabilizer{
