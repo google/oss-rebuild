@@ -61,11 +61,13 @@
         display: flex;
         align-items: center;
         gap: 0.5rem;
+        text-decoration: none;
       }
 
       .logo-icon {
-        width: 2rem;
-        height: 2rem;
+        width: 6rem;
+        height: 2.5rem;
+        fill: var(--primary);
       }
 
       .nav-links {
@@ -354,7 +356,7 @@
         font-size: 0.875rem;
       }
 
-      @media (max-width: 768px) {
+      @media (max-width: 930px) {
         .cta-buttons {
           flex-direction: column;
           align-items: center;
@@ -400,7 +402,10 @@
     <header>
       <div class="container">
         <nav>
-          <div class="logo">OSS Rebuild</div>
+          <a href="#" class="logo">
+            <img src="logo.svg" alt="OSS Rebuild Logo" class="logo-icon" />
+            OSS Rebuild
+          </a>
 
           <div class="nav-links">
             <a href="#features">Features</a>
