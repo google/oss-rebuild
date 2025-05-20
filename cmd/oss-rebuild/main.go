@@ -163,7 +163,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 				}
 			}
 		case "dockerfile":
-			dockerfile, err := bundle.Byproduct("Dockerfile")
+			dockerfile, err := bundle.Byproduct(attestation.ByproductDockerfile)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "getting dockerfile"))
 			}
@@ -171,7 +171,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 				log.Fatal(errors.Wrap(err, "writing dockerfile"))
 			}
 		case "build":
-			build, err := bundle.Byproduct("build.json")
+			build, err := bundle.Byproduct(attestation.ByproductBuildStrategy)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "getting build.json"))
 			}
@@ -179,7 +179,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 				log.Fatal(errors.Wrap(err, "encoding build.json"))
 			}
 		case "steps":
-			steps, err := bundle.Byproduct("steps.json")
+			steps, err := bundle.Byproduct(attestation.ByproductBuildSteps)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "getting steps.json"))
 			}

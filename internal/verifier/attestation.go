@@ -10,19 +10,13 @@ import (
 	"path"
 	"strings"
 
+	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
 	slsa1 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v1"
 	"github.com/pkg/errors"
-)
-
-const (
-	// RebuildBuildType is the SLSA build type used for rebuild attestations.
-	RebuildBuildType = "https://docs.oss-rebuild.dev/builds/Rebuild@v0.1"
-	// ArtifactEquivalenceBuildType is the SLSA build type used for artifact equivalence attestations.
-	ArtifactEquivalenceBuildType = "https://docs.oss-rebuild.dev/builds/ArtifactEquivalence@v0.1"
 )
 
 // CreateAttestations creates the SLSA attestations associated with a rebuild.
@@ -52,7 +46,7 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 	}
 	builder := slsa1.Builder{
 		// TODO: Make the host configurable.
-		ID: "https://docs.oss-rebuild.dev/hosts/Google",
+		ID: attestation.HostGoogle,
 		// TODO: Include build repository associated with this builder.
 	}
 	internalParams := map[string]any{
@@ -77,7 +71,7 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 		},
 		Predicate: slsa1.ProvenancePredicate{
 			BuildDefinition: slsa1.ProvenanceBuildDefinition{
-				BuildType: ArtifactEquivalenceBuildType,
+				BuildType: attestation.BuildTypeArtifactEquivalenceV01,
 				ExternalParameters: map[string]string{
 					"candidate": publicRebuildURI,
 					"target":    up.URI,
@@ -146,7 +140,7 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "marshalling build definition")
 		}
-		rd = append(rd, slsa1.ResourceDescriptor{Name: "build.fix.json", Content: rawDefinition})
+		rd = append(rd, slsa1.ResourceDescriptor{Name: attestation.DependencyBuildFix, Content: rawDefinition})
 		externalParams["buildConfigSource"] = map[string]string{
 			"ref":        buildDefLoc.Ref,
 			"repository": buildDefLoc.Repo,
@@ -161,7 +155,7 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 		},
 		Predicate: slsa1.ProvenancePredicate{
 			BuildDefinition: slsa1.ProvenanceBuildDefinition{
-				BuildType:            RebuildBuildType,
+				BuildType:            attestation.BuildTypeRebuildV01,
 				ExternalParameters:   externalParams,
 				ResolvedDependencies: rd,
 				InternalParameters:   internalParams,
@@ -174,10 +168,9 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 					FinishedOn:   &buildInfo.BuildEnd,
 				},
 				Byproducts: []slsa1.ResourceDescriptor{
-					// NOTE: We use "build" externally instead of "strategy".
-					{Name: "build.json", Content: finalStrategyBytes},
-					{Name: "Dockerfile", Content: dockerfile},
-					{Name: "steps.json", Content: stepsBytes},
+					{Name: attestation.ByproductBuildStrategy, Content: finalStrategyBytes},
+					{Name: attestation.ByproductDockerfile, Content: dockerfile},
+					{Name: attestation.ByproductBuildSteps, Content: stepsBytes},
 				},
 			},
 		},
