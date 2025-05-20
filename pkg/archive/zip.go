@@ -128,9 +128,6 @@ type ZipEntryStabilizer struct {
 }
 
 func (z ZipEntryStabilizer) Stabilize(arg any) {
-	if z.Func == nil {
-		panic(z.Name + " stabilizer not implemented")
-	}
 	z.Func(arg.(*MutableZipFile))
 }
 

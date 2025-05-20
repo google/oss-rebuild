@@ -47,9 +47,6 @@ type TarArchiveStabilizer struct {
 }
 
 func (t TarArchiveStabilizer) Stabilize(arg any) {
-	if t.Func == nil {
-		panic(t.Name + " stabilizer not implemented")
-	}
 	t.Func(arg.(*TarArchive))
 }
 
@@ -59,9 +56,6 @@ type TarEntryStabilizer struct {
 }
 
 func (t TarEntryStabilizer) Stabilize(arg any) {
-	if t.Func == nil {
-		panic(t.Name + " stabilizer not implemented")
-	}
 	t.Func(arg.(*TarEntry))
 }
 
