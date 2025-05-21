@@ -26,7 +26,7 @@ func NewStabilizedGzipWriter(gr *gzip.Reader, w io.Writer, opts StabilizeOpts) (
 	for _, s := range opts.Stabilizers {
 		switch s.(type) {
 		case GzipStabilizer:
-			s.(GzipStabilizer).Func(&mh)
+			s.(GzipStabilizer).Stabilize(&mh)
 		}
 	}
 	gw, err := gzip.NewWriterLevel(w, mh.Compression)
@@ -45,6 +45,10 @@ type MutableGzipHeader struct {
 type GzipStabilizer struct {
 	Name string
 	Func func(*MutableGzipHeader)
+}
+
+func (g GzipStabilizer) Stabilize(arg any) {
+	g.Func(arg.(*MutableGzipHeader))
 }
 
 var AllGzipStabilizers = []Stabilizer{
