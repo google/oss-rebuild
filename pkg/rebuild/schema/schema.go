@@ -309,4 +309,5 @@ type ExecutionMode string
 const (
 	SmoketestMode ExecutionMode = "smoketest" // No attestations, faster.
 	AttestMode    ExecutionMode = "attest"    // Creates attestations, slower.
+	DockerMode    ExecutionMode = "docker"
 )
