@@ -48,52 +48,46 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 		// TODO: Make the host configurable.
 		ID: attestation.HostGoogle,
 	}
-	internalParams := map[string]any{
-		"serviceSource": map[string]string{
-			"ref":        serviceLoc.Ref,
-			"repository": serviceLoc.Repo,
-		},
-		"prebuildSource": map[string]string{
-			"ref":        prebuildLoc.Ref,
-			"repository": prebuildLoc.Repo,
-		},
+	internalParams := attestation.ServiceInternalParams{
+		ServiceSource:  attestation.SourceLocationFromLocation(serviceLoc),
+		PrebuildSource: attestation.SourceLocationFromLocation(prebuildLoc),
 	}
 	publicRebuildURI := path.Join("rebuild", buildInfo.Target.Artifact)
 	// TODO: Change from "normalized" to "stabilized".
 	publicNormalizedURI := path.Join("normalized", buildInfo.Target.Artifact)
 	// Create comparison attestation.
-	eqStmt := &in_toto.ProvenanceStatementSLSA1{
+	eqStmt, err := (&attestation.ArtifactEquivalenceAttestation{
 		StatementHeader: in_toto.StatementHeader{
 			Type:          in_toto.StatementInTotoV1,
 			Subject:       []in_toto.Subject{{Name: buildInfo.Target.Artifact, Digest: makeDigestSet(up.Hash...)}},
 			PredicateType: slsa1.PredicateSLSAProvenance,
 		},
-		Predicate: slsa1.ProvenancePredicate{
-			BuildDefinition: slsa1.ProvenanceBuildDefinition{
+		Predicate: attestation.ArtifactEquivalencePredicate{
+			BuildDefinition: attestation.ArtifactEquivalenceBuildDef{
 				BuildType: attestation.BuildTypeArtifactEquivalenceV01,
-				ExternalParameters: map[string]string{
-					"candidate": publicRebuildURI,
-					"target":    up.URI,
+				ExternalParameters: attestation.ArtifactEquivalenceParams{
+					Candidate: publicRebuildURI,
+					Target:    up.URI,
 				},
-				// NOTE: Could include comparison settings here when they're non-trivial.
 				InternalParameters: internalParams,
-				ResolvedDependencies: []slsa1.ResourceDescriptor{
-					{Name: publicRebuildURI, Digest: makeDigestSet(rb.Hash...)},
-					{Name: up.URI, Digest: makeDigestSet(up.Hash...)},
+				ResolvedDependencies: attestation.ArtifactEquivalenceDeps{
+					RebuiltArtifact:  slsa1.ResourceDescriptor{Name: publicRebuildURI, Digest: makeDigestSet(rb.Hash...)},
+					UpstreamArtifact: slsa1.ResourceDescriptor{Name: up.URI, Digest: makeDigestSet(up.Hash...)},
 				},
 			},
-			RunDetails: slsa1.ProvenanceRunDetails{
-				Builder: builder,
-				BuildMetadata: slsa1.BuildMetadata{
-					InvocationID: id,
-				},
-				Byproducts: []slsa1.ResourceDescriptor{
-					{Name: publicNormalizedURI, Digest: makeDigestSet(up.StabilizedHash...)},
+			RunDetails: attestation.ArtifactEquivalenceRunDetails{
+				Builder:       builder,
+				BuildMetadata: slsa1.BuildMetadata{InvocationID: id},
+				Byproducts: attestation.ArtifactEquivalenceByproducts{
+					NormalizedArtifact: slsa1.ResourceDescriptor{Name: publicNormalizedURI, Digest: makeDigestSet(up.StabilizedHash...)},
 				},
 			},
 		},
+	}).ToStatement()
+	if err != nil {
+		return nil, nil, err
 	}
-	var rd []slsa1.ResourceDescriptor
+	var deps attestation.RebuildDeps
 	var loc rebuild.Location
 	{
 		// NOTE: Workaround the lack of a proper means of accessing Location on Strategy.
@@ -105,13 +99,13 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 		loc = inst.Location
 	}
 	if loc.Ref != "" {
-		rd = append(rd, slsa1.ResourceDescriptor{Name: "git+" + loc.Repo, Digest: gitDigestSet(loc)})
+		deps.Source = &slsa1.ResourceDescriptor{Name: "git+" + loc.Repo, Digest: gitDigestSet(loc)}
 	}
 	for n, s := range buildInfo.BuildImages {
 		if !strings.HasPrefix(s, "sha256:") {
 			return nil, nil, errors.New("buildInfo.BuildImages contains non-sha256 digest")
 		}
-		rd = append(rd, slsa1.ResourceDescriptor{Name: n, Digest: common.DigestSet{"sha256": strings.TrimPrefix(s, "sha256:")}})
+		deps.Images = append(deps.Images, slsa1.ResourceDescriptor{Name: n, Digest: common.DigestSet{"sha256": strings.TrimPrefix(s, "sha256:")}})
 	}
 	// Empty the PullTiming and Status fields since they are superfluous to
 	// downstream users.
@@ -127,11 +121,11 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "marshalling Strategy")
 	}
-	externalParams := map[string]any{
-		"ecosystem": string(t.Ecosystem),
-		"package":   t.Package,
-		"version":   t.Version,
-		"artifact":  t.Artifact,
+	externalParams := attestation.RebuildParams{
+		Ecosystem: string(t.Ecosystem),
+		Package:   t.Package,
+		Version:   t.Version,
+		Artifact:  t.Artifact,
 	}
 	// Only add manual strategy field if it was used.
 	if defn != nil {
@@ -139,40 +133,40 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "marshalling build definition")
 		}
-		rd = append(rd, slsa1.ResourceDescriptor{Name: attestation.DependencyBuildFix, Content: rawDefinition})
-		externalParams["buildConfigSource"] = map[string]string{
-			"ref":        buildDefLoc.Ref,
-			"repository": buildDefLoc.Repo,
-			"path":       buildDefLoc.Dir,
-		}
+		deps.BuildFix = &slsa1.ResourceDescriptor{Name: attestation.DependencyBuildFix, Content: rawDefinition}
+		src := attestation.SourceLocationFromLocation(buildDefLoc)
+		externalParams.BuildConfigSource = &src
 	}
-	stmt := &in_toto.ProvenanceStatementSLSA1{
+	stmt, err := (&attestation.RebuildAttestation{
 		StatementHeader: in_toto.StatementHeader{
 			Type:          in_toto.StatementInTotoV1,
 			Subject:       []in_toto.Subject{{Name: publicRebuildURI, Digest: makeDigestSet(rb.Hash...)}},
 			PredicateType: slsa1.PredicateSLSAProvenance,
 		},
-		Predicate: slsa1.ProvenancePredicate{
-			BuildDefinition: slsa1.ProvenanceBuildDefinition{
+		Predicate: attestation.RebuildPredicate{
+			BuildDefinition: attestation.RebuildBuildDef{
 				BuildType:            attestation.BuildTypeRebuildV01,
 				ExternalParameters:   externalParams,
-				ResolvedDependencies: rd,
 				InternalParameters:   internalParams,
+				ResolvedDependencies: deps,
 			},
-			RunDetails: slsa1.ProvenanceRunDetails{
+			RunDetails: attestation.RebuildRunDetails{
 				Builder: builder,
 				BuildMetadata: slsa1.BuildMetadata{
 					InvocationID: id,
 					StartedOn:    &buildInfo.BuildStart,
 					FinishedOn:   &buildInfo.BuildEnd,
 				},
-				Byproducts: []slsa1.ResourceDescriptor{
-					{Name: attestation.ByproductBuildStrategy, Content: finalStrategyBytes},
-					{Name: attestation.ByproductDockerfile, Content: dockerfile},
-					{Name: attestation.ByproductBuildSteps, Content: stepsBytes},
+				Byproducts: attestation.RebuildByproducts{
+					BuildStrategy: slsa1.ResourceDescriptor{Name: attestation.ByproductBuildStrategy, Content: finalStrategyBytes},
+					Dockerfile:    slsa1.ResourceDescriptor{Name: attestation.ByproductDockerfile, Content: dockerfile},
+					BuildSteps:    slsa1.ResourceDescriptor{Name: attestation.ByproductBuildSteps, Content: stepsBytes},
 				},
 			},
 		},
+	}).ToStatement()
+	if err != nil {
+		return nil, nil, err
 	}
 	return eqStmt, stmt, nil
 }
