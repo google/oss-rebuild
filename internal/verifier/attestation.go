@@ -47,7 +47,6 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 	builder := slsa1.Builder{
 		// TODO: Make the host configurable.
 		ID: attestation.HostGoogle,
-		// TODO: Include build repository associated with this builder.
 	}
 	internalParams := map[string]any{
 		"serviceSource": map[string]string{
