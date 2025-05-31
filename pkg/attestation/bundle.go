@@ -11,10 +11,24 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/pkg/errors"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
+)
+
+const (
+	// BuildTypeRebuildV01 is the SLSA build type used for rebuild attestations.
+	BuildTypeRebuildV01 = "https://docs.oss-rebuild.dev/builds/Rebuild@v0.1"
+	// BuildTypeArtifactEquivalenceV01 is the SLSA build type used for artifact equivalence attestations.
+	BuildTypeArtifactEquivalenceV01 = "https://docs.oss-rebuild.dev/builds/ArtifactEquivalence@v0.1"
+
+	HostGoogle = "https://docs.oss-rebuild.dev/hosts/Google"
+
+	DependencyBuildFix = "build.fix.json"
+
+	ByproductBuildStrategy = "build.json"
+	ByproductBuildSteps    = "steps.json"
+	ByproductDockerfile    = "Dockerfile"
 )
 
 type VerifiedEnvelope struct {
@@ -77,7 +91,7 @@ func (b *Bundle) Payloads() []*in_toto.ProvenanceStatementSLSA1 {
 
 func (b *Bundle) RebuildAttestation() (*in_toto.ProvenanceStatementSLSA1, error) {
 	for _, env := range b.envelopes {
-		if env.Payload.Predicate.BuildDefinition.BuildType == verifier.RebuildBuildType {
+		if env.Payload.Predicate.BuildDefinition.BuildType == BuildTypeRebuildV01 {
 			return env.Payload, nil
 		}
 	}
