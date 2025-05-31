@@ -13,6 +13,21 @@ import (
 	slsa1 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v1"
 )
 
+const (
+	// BuildTypeRebuildV01 is the SLSA build type used for rebuild attestations.
+	BuildTypeRebuildV01 = "https://docs.oss-rebuild.dev/builds/Rebuild@v0.1"
+	// BuildTypeArtifactEquivalenceV01 is the SLSA build type used for artifact equivalence attestations.
+	BuildTypeArtifactEquivalenceV01 = "https://docs.oss-rebuild.dev/builds/ArtifactEquivalence@v0.1"
+
+	HostGoogle = "https://docs.oss-rebuild.dev/hosts/Google"
+
+	DependencyBuildFix = "build.fix.json"
+
+	ByproductBuildStrategy = "build.json"
+	ByproductBuildSteps    = "steps.json"
+	ByproductDockerfile    = "Dockerfile"
+)
+
 // SourceLocation describes a source code reference and optional path
 type SourceLocation struct {
 	// Path is the source repository relative path

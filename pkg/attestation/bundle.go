@@ -16,21 +16,6 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 )
 
-const (
-	// BuildTypeRebuildV01 is the SLSA build type used for rebuild attestations.
-	BuildTypeRebuildV01 = "https://docs.oss-rebuild.dev/builds/Rebuild@v0.1"
-	// BuildTypeArtifactEquivalenceV01 is the SLSA build type used for artifact equivalence attestations.
-	BuildTypeArtifactEquivalenceV01 = "https://docs.oss-rebuild.dev/builds/ArtifactEquivalence@v0.1"
-
-	HostGoogle = "https://docs.oss-rebuild.dev/hosts/Google"
-
-	DependencyBuildFix = "build.fix.json"
-
-	ByproductBuildStrategy = "build.json"
-	ByproductBuildSteps    = "steps.json"
-	ByproductDockerfile    = "Dockerfile"
-)
-
 type VerifiedEnvelope[T any] struct {
 	envelope *dsse.Envelope
 	payload  *T
