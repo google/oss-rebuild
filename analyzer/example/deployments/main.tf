@@ -191,74 +191,49 @@ resource "terraform_data" "debug" {
   input = var.debug
 }
 
-resource "terraform_data" "git_dir" {
-  input = (
-    !startswith(var.repo, "file://") ? "!remote!" :
-    fileexists(join("/", [substr(var.repo, 7, -1), ".git/config"])) ? join("/", [substr(var.repo, 7, -1), ".git"]) :
-    fileexists(join("/", [substr(var.repo, 7, -1), ".jj/repo/store/git/config"])) ? join("/", [substr(var.repo, 7, -1), ".jj/repo/store/git"]) :
-  "")
-}
-
 locals {
   registry_url = "${google_artifact_registry_repository.registry.location}-docker.pkg.dev/${var.project}/${google_artifact_registry_repository.registry.repository_id}"
-  # Add .git suffix if it's a GitHub URL and doesn't already end with .git
-  repo_with_git = (
-    can(regex("^https://github\\.com/", var.repo)) && !endswith(var.repo, ".git") ? "${var.repo}.git" : var.repo
-  )
-  repo_docker_context = (
-    startswith(var.repo, "file:")
-    ? "- < <(GIT_DIR=${terraform_data.git_dir.output} git archive --format=tar ${var.service_commit})"
-  : "${local.repo_with_git}#${var.service_commit}")
+
+  service_images = {
+    analyzer = {
+      name       = "exampleanalyzer"
+      dockerfile = "build/package/Dockerfile.exampleanalyzer"
+      build_args = ["DEBUG=${terraform_data.debug.output}", "BUILD_REPO=${var.repo}", "BUILD_VERSION=${terraform_data.service_version.output}"]
+    }
+    subscriber = {
+      name       = "examplesubscriber"
+      dockerfile = "build/package/Dockerfile.examplesubscriber"
+      build_args = ["DEBUG=${terraform_data.debug.output}"]
+    }
+  }
 }
 
-resource "terraform_data" "image" {
-  for_each = {
-    "analyzer" = {
-      name      = "exampleanalyzer"
-      image     = "${local.registry_url}/analyzer"
-      version   = terraform_data.service_version.output
-      buildargs = ["DEBUG=${terraform_data.debug.output}", "BUILD_REPO=${var.repo}", "BUILD_VERSION=${terraform_data.service_version.output}"]
-    }
-    "subscriber" = {
-      name    = "examplesubscriber"
-      image   = "${local.registry_url}/subscriber"
-      version = terraform_data.service_version.output
-    }
-  }
-  provisioner "local-exec" {
-    command = <<-EOT
-      path=${each.value.image}:${each.value.version}
-      cmd="gcloud artifacts docker images describe $path"
-      # Suppress stdout, show first line of stderr, return cmd's status.
-      if ($cmd 2>&1 1>/dev/null | head -n1 >&2; exit $PIPESTATUS); then
-        echo Found $path
-      else
-        echo Building $path
-        docker build --quiet ${join(" ", [for arg in each.value.buildargs : "--build-arg ${arg}"])} -f build/package/Dockerfile.${each.value.name} -t $path ${local.repo_docker_context} && \
-          docker push --quiet $path
-      fi
-    EOT
-  }
-  lifecycle {
-    replace_triggered_by = [
-      terraform_data.service_version.output,
-      terraform_data.git_dir.output,
-    ]
-  }
+module "service_images" {
+  source = "../../../deployments/modules/container_build_push"
+
+  for_each = local.service_images
+
+  name            = each.key
+  image_url       = "${local.registry_url}/${each.key}"
+  image_version   = terraform_data.service_version.output
+  repo_url        = var.repo
+  commit          = var.service_commit
+  dockerfile_path = each.value.dockerfile
+  build_args      = each.value.build_args
 }
 
 data "google_artifact_registry_docker_image" "analyzer" {
   location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "analyzer:${terraform_data.service_version.output}"
-  depends_on    = [terraform_data.image["analyzer"]]
+  depends_on    = [module.serivce_images["analyzer"]]
 }
 
 data "google_artifact_registry_docker_image" "subscriber" {
   location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "subscriber:${terraform_data.service_version.output}"
-  depends_on    = [terraform_data.image["subscriber"]]
+  depends_on    = [module.serivce_images["subscriber"]]
 }
 
 ## Compute resources
