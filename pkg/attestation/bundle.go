@@ -31,16 +31,22 @@ const (
 	ByproductDockerfile    = "Dockerfile"
 )
 
-type VerifiedEnvelope struct {
-	Raw     *dsse.Envelope
-	Payload *in_toto.ProvenanceStatementSLSA1
+type VerifiedEnvelope[T any] struct {
+	envelope *dsse.Envelope
+	payload  *T
 }
 
-type Bundle struct {
-	envelopes []VerifiedEnvelope
+func (ve *VerifiedEnvelope[T]) Envelope() *dsse.Envelope {
+	return ve.envelope
 }
 
-func decodeEnvelopePayload(e *dsse.Envelope) (*in_toto.ProvenanceStatementSLSA1, error) {
+func NewVerifiedEnvelope[T any](ctx context.Context, e *dsse.Envelope, verifier *dsse.EnvelopeVerifier) (*VerifiedEnvelope[T], error) {
+	if _, err := verifier.Verify(ctx, e); err != nil {
+		return nil, errors.Wrap(err, "verifying envelope")
+	}
+	if e.PayloadType != in_toto.StatementInTotoV1 {
+		return nil, errors.New("unexpected payload type")
+	}
 	if e.Payload == "" {
 		return nil, errors.New("empty payload")
 	}
@@ -48,16 +54,28 @@ func decodeEnvelopePayload(e *dsse.Envelope) (*in_toto.ProvenanceStatementSLSA1,
 	if err != nil {
 		return nil, errors.Wrap(err, "decoding base64 payload")
 	}
-	var decoded in_toto.ProvenanceStatementSLSA1
+	var decoded T
 	if err := json.Unmarshal(b, &decoded); err != nil {
 		return nil, errors.Wrap(err, "unmarshaling payload")
 	}
-	return &decoded, nil
+	return &VerifiedEnvelope[T]{envelope: e, payload: &decoded}, nil
+}
+
+type Bundle struct {
+	envelopes []VerifiedEnvelope[in_toto.Statement]
+}
+
+func (b Bundle) Statements() []*in_toto.Statement {
+	var s []*in_toto.Statement
+	for _, env := range b.envelopes {
+		s = append(s, env.payload)
+	}
+	return s
 }
 
 func NewBundle(ctx context.Context, data []byte, verifier *dsse.EnvelopeVerifier) (*Bundle, error) {
 	d := json.NewDecoder(bytes.NewBuffer(data))
-	var envelopes []VerifiedEnvelope
+	var envelopes []VerifiedEnvelope[in_toto.Statement]
 	for {
 		var env dsse.Envelope
 		if err := d.Decode(&env); err != nil {
@@ -66,47 +84,11 @@ func NewBundle(ctx context.Context, data []byte, verifier *dsse.EnvelopeVerifier
 			}
 			return nil, errors.Wrap(err, "decoding envelope")
 		}
-		if _, err := verifier.Verify(ctx, &env); err != nil {
-			return nil, errors.Wrap(err, "verifying envelope")
-		}
-		payload, err := decodeEnvelopePayload(&env)
+		ve, err := NewVerifiedEnvelope[in_toto.Statement](ctx, &env, verifier)
 		if err != nil {
 			return nil, errors.Wrap(err, "decoding payload")
 		}
-		envelopes = append(envelopes, VerifiedEnvelope{
-			Raw:     &env,
-			Payload: payload,
-		})
+		envelopes = append(envelopes, *ve)
 	}
 	return &Bundle{envelopes: envelopes}, nil
-}
-
-func (b *Bundle) Payloads() []*in_toto.ProvenanceStatementSLSA1 {
-	result := make([]*in_toto.ProvenanceStatementSLSA1, len(b.envelopes))
-	for i, env := range b.envelopes {
-		result[i] = env.Payload
-	}
-	return result
-}
-
-func (b *Bundle) RebuildAttestation() (*in_toto.ProvenanceStatementSLSA1, error) {
-	for _, env := range b.envelopes {
-		if env.Payload.Predicate.BuildDefinition.BuildType == BuildTypeRebuildV01 {
-			return env.Payload, nil
-		}
-	}
-	return nil, errors.New("no rebuild attestation found")
-}
-
-func (b *Bundle) Byproduct(name string) ([]byte, error) {
-	att, err := b.RebuildAttestation()
-	if err != nil {
-		return nil, errors.Wrap(err, "getting rebuild attestation")
-	}
-	for _, b := range att.Predicate.RunDetails.Byproducts {
-		if b.Name == name {
-			return b.Content, nil
-		}
-	}
-	return nil, errors.Errorf("byproduct %q not found", name)
 }
