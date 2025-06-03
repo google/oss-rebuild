@@ -337,47 +337,16 @@ module "prebuild_images" {
   build_args      = each.value.build_args
 }
 
-resource "terraform_data" "binary" {
-  for_each = {
-    "gsutil_writeonly" = {
-      name    = "gsutil_writeonly"
-      image   = module.prebuild_images["gsutil_writeonly"].image_url
-      version = module.prebuild_images["gsutil_writeonly"].image_version
-    }
-    "proxy" = {
-      name    = "proxy"
-      image   = module.prebuild_images["proxy"].image_url
-      version = module.prebuild_images["proxy"].image_version
-    }
-    "timewarp" = {
-      name    = "timewarp"
-      image   = module.prebuild_images["timewarp"].image_url
-      version = module.prebuild_images["timewarp"].image_version
-    }
-  }
-  provisioner "local-exec" {
-    command = <<-EOT
-      path=gs://${google_storage_bucket.bootstrap-tools.name}/${each.value.version}/${each.value.name}
-      cmd="gcloud storage objects describe $path"
-      # Suppress stdout, show first line of stderr, return cmd's status.
-      if ($cmd 2>&1 1>/dev/null | head -n1 >&2; exit $PIPESTATUS); then
-        echo "Binary already exists in GCS"
-      else
-        echo "Extracting and uploading binary"
-        set -o pipefail
-        docker save ${each.value.image}:${each.value.version} | \
-          tar -xO --wildcards "*/layer.tar" | \
-          tar -xO ${each.value.name} | \
-          gcloud storage cp - $path && \
-          gcloud storage objects update $path --custom-metadata=goog-reserved-posix-mode=750
-      fi
-    EOT
-  }
-  lifecycle {
-    replace_triggered_by = [
-      google_storage_bucket.bootstrap-tools.name,
-    ]
-  }
+module "prebuild_binaries" {
+  source = "./modules/container_binary_upload"
+
+  for_each = local.prebuild_images
+
+  source_image_url = module.prebuild_images[each.key].full_image_url
+  binary_name      = each.key
+  gcs_destination  = "gs://${google_storage_bucket.bootstrap-tools.name}/${module.prebuild_images[each.key].image_version}/${each.key}"
+
+  depends_on = [module.prebuild_images]
 }
 
 data "google_artifact_registry_docker_image" "gateway" {
@@ -552,7 +521,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
     }
     max_instance_request_concurrency = 25
   }
-  depends_on = [google_project_service.run, terraform_data.binary]
+  depends_on = [google_project_service.run, module.prebuild_binaries]
 }
 
 ## IAM Bindings
