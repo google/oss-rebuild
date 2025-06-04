@@ -42,56 +42,11 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-func doDebianRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
-	_, name, err := debianrb.ParseComponent(t.Package)
-	if err != nil {
-		return "", err
-	}
-	if err := debianrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
-		return "", errors.Wrap(err, "rebuild failed")
-	}
-	return mux.Debian.ArtifactURL(ctx, name, t.Artifact)
-}
-
-func doNPMRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
-	if err := npmrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
-		return "", errors.Wrap(err, "rebuild failed")
-	}
-	vmeta, err := mux.NPM.Version(ctx, t.Package, t.Version)
-	if err != nil {
-		return "", errors.Wrap(err, "fetching metadata failed")
-	}
-	return vmeta.Dist.URL, nil
-}
-
-func doCratesRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
-	if err := cratesrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
-		return "", errors.Wrap(err, "rebuild failed")
-	}
-	vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
-	if err != nil {
-		return "", errors.Wrap(err, "fetching metadata failed")
-	}
-	return vmeta.DownloadURL, nil
-}
-
-func doPyPIRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
-	release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
-	if err != nil {
-		return "", errors.Wrap(err, "fetching metadata failed")
-	}
-	for _, r := range release.Artifacts {
-		if r.Filename == t.Artifact {
-			upstreamURL = r.URL
-		}
-	}
-	if upstreamURL == "" {
-		return "", errors.New("artifact not found in release")
-	}
-	if err := pypirb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
-		return "", errors.Wrap(err, "rebuild failed")
-	}
-	return upstreamURL, nil
+var rebuilders = map[rebuild.Ecosystem]rebuild.Rebuilder{
+	rebuild.NPM:      &npmrb.Rebuilder{},
+	rebuild.PyPI:     &pypirb.Rebuilder{},
+	rebuild.CratesIO: &cratesrb.Rebuilder{},
+	rebuild.Debian:   &debianrb.Rebuilder{},
 }
 
 func sanitize(key string) string {
@@ -264,22 +219,16 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		UseSyscallMonitor:   useSyscallMonitor,
 		UseNetworkProxy:     useProxy,
 	}
-	var upstreamURI string
-	switch t.Ecosystem {
-	case rebuild.NPM:
-		hashes = append(hashes, crypto.SHA512)
-		upstreamURI, err = doNPMRebuild(ctx, t, id, mux, strategy, opts)
-	case rebuild.CratesIO:
-		upstreamURI, err = doCratesRebuild(ctx, t, id, mux, strategy, opts)
-	case rebuild.PyPI:
-		upstreamURI, err = doPyPIRebuild(ctx, t, id, mux, strategy, opts)
-	case rebuild.Debian:
-		upstreamURI, err = doDebianRebuild(ctx, t, id, mux, strategy, opts)
-	default:
+	rebuilder, ok := rebuilders[t.Ecosystem]
+	if !ok {
 		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
+	if err := rebuilder.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: strategy}, id, opts); err != nil {
+		return errors.Wrap(err, "executing rebuild")
+	}
+	upstreamURI, err := rebuilder.UpstreamURL(ctx, t, mux)
 	if err != nil {
-		return errors.Wrap(err, "rebuilding")
+		return errors.Wrap(err, "getting upstream url")
 	}
 	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes, stabilizers)
 	if err != nil {
