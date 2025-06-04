@@ -6,10 +6,10 @@
 
 <div align="center">
   <picture>
-    <!--TODO: Add a dark-themed logo -->
-    <source media="(prefers-color-scheme: dark)" srcset="site/logo.svg">
-    <source media="(prefers-color-scheme: light)" srcset="site/logo.svg">
-    <img alt="OSS Rebuild logo" src="site/logo.svg" height="100" width="230">
+    <!--TODO: make these permalinks -->
+    <source media="(prefers-color-scheme: dark)" srcset="site/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="site/logo-light.svg">
+    <img alt="OSS Rebuild logo" src="site/logo-light.svg" height="100" width="230">
   </picture>
 </div>
 
