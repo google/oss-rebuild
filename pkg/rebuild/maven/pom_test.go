@@ -31,6 +31,10 @@ func (r TestRegistry) ReleaseFile(_ context.Context, _, _, _ string) (io.ReadClo
 	return io.NopCloser(reader), nil
 }
 
+func (r TestRegistry) ReleaseURL(_ context.Context, _, _, _ string) (string, error) {
+	return "", nil
+}
+
 func TestNewPomXML(t *testing.T) {
 	tests := []struct {
 		testName string
