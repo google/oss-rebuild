@@ -14,6 +14,7 @@
         --primary: #3740ff;
         --primary-dark: #2930cc;
         --secondary: #ff5e5b;
+        --logo: #333;
         --light: #f5f7fa;
         --dark: #2d3748;
         --gray: #718096;
@@ -57,7 +58,7 @@
       .logo {
         font-size: 1.5rem;
         font-weight: 700;
-        color: var(--primary);
+        color: var(--logo);
         display: flex;
         align-items: center;
         gap: 0.5rem;
@@ -67,7 +68,7 @@
       .logo-icon {
         width: 6rem;
         height: 2.5rem;
-        fill: var(--primary);
+        color: var(--logo);
       }
 
       .nav-links {
@@ -403,7 +404,9 @@
       <div class="container">
         <nav>
           <a href="#" class="logo">
-            <img src="logo.svg" alt="OSS Rebuild Logo" class="logo-icon" />
+            <svg alt="OSS Rebuild Logo" class="logo-icon">
+              <use href="logo.svg#logo">
+            </svg>
             OSS Rebuild
           </a>
 
