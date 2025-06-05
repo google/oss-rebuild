@@ -53,6 +53,8 @@ type ServiceInternalParams struct {
 	PrebuildSource SourceLocation `json:"prebuildSource"`
 	// ServiceSource is the service code source metadata
 	ServiceSource SourceLocation `json:"serviceSource"`
+	// PrebuildConfig is the deployment-specific prebuild configuration
+	PrebuildConfig rebuild.PrebuildConfig `json:"prebuildConfig"`
 }
 
 // Rebuild attestation type definitions
