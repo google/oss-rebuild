@@ -16,6 +16,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// PrivatePoolConfig holds configuration for using GCB private pools.
+type PrivatePoolConfig struct {
+	// Resource name of the private pool (e.g., "projects/PROJECT_ID/locations/LOCATION/workerPools/POOL_NAME")
+	Name string
+	// Region where the private pool builds should be run (e.g., "us-central1")
+	Region string
+}
+
 // Client interface abstracts Cloud Build service interactions.
 type Client interface {
 	CreateBuild(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error)
@@ -25,21 +33,47 @@ type Client interface {
 
 // clientImpl is a concrete implementation of the Client interface using the Cloud Build service.
 type clientImpl struct {
-	service      *cloudbuild.Service
-	pollInterval time.Duration
+	service           *cloudbuild.Service
+	pollInterval      time.Duration
+	privatePoolConfig *PrivatePoolConfig
 }
 
 // NewClient creates a new Client with the given options.
 func NewClient(s *cloudbuild.Service) Client {
 	// TODO: Add optional configuration of poll value if/when needed.
 	return &clientImpl{
-		service:      s,
-		pollInterval: 10 * time.Second, // default GCB API quota is low
+		service:           s,
+		pollInterval:      10 * time.Second, // default GCB API quota is low
+		privatePoolConfig: nil,
+	}
+}
+
+// NewClientWithPrivatePool creates a new Client with private pool support.
+func NewClientWithPrivatePool(s *cloudbuild.Service, privatePool *PrivatePoolConfig) Client {
+	return &clientImpl{
+		service:           s,
+		pollInterval:      10 * time.Second, // default GCB API quota is low
+		privatePoolConfig: privatePool,
 	}
 }
 
 // CreateBuild creates and starts a GCB Build.
 func (c *clientImpl) CreateBuild(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
+	if c.privatePoolConfig != nil {
+		if c.privatePoolConfig.Name == "" {
+			return nil, errors.New("no private pool name configured")
+		}
+		if build.Options == nil {
+			build.Options = &cloudbuild.BuildOptions{}
+		}
+		build.Options.Pool = &cloudbuild.PoolOption{
+			Name: c.privatePoolConfig.Name,
+		}
+	}
+	if c.privatePoolConfig != nil && c.privatePoolConfig.Region != "" {
+		// For private pools, use the regional API endpoint if specified
+		return c.service.Projects.Locations.Builds.Create(fmt.Sprintf("projects/%s/locations/%s", project, c.privatePoolConfig.Region), build).Context(ctx).Do()
+	}
 	return c.service.Projects.Builds.Create(project, build).Context(ctx).Do()
 }
 
