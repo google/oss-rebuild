@@ -190,7 +190,7 @@ type RebuildPackageRequest struct {
 	UseRepoDefinition bool              `form:""`
 	UseSyscallMonitor bool              `form:""`
 	UseNetworkProxy   bool              `form:""`
-	BuildTimeout      time.Duration     `form:""`
+	BuildTimeout      time.Duration     `form:""` // Cancel the build after this amount of time.
 }
 
 var _ api.Message = RebuildPackageRequest{}
