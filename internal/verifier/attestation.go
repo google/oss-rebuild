@@ -20,7 +20,7 @@ import (
 )
 
 // CreateAttestations creates the SLSA attestations associated with a rebuild.
-func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.BuildDefinition, strategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, prebuildLoc, buildDefLoc rebuild.Location) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
+func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.BuildDefinition, strategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, prebuildLoc, buildDefLoc rebuild.Location, prebuildConfig rebuild.PrebuildConfig) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
 	var dockerfile []byte
 	{
 		r, err := metadata.Reader(ctx, rebuild.DockerfileAsset.For(t))
@@ -51,6 +51,7 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 	internalParams := attestation.ServiceInternalParams{
 		ServiceSource:  attestation.SourceLocationFromLocation(serviceLoc),
 		PrebuildSource: attestation.SourceLocationFromLocation(prebuildLoc),
+		PrebuildConfig: prebuildConfig,
 	}
 	publicRebuildURI := path.Join("rebuild", buildInfo.Target.Artifact)
 	// TODO: Change from "normalized" to "stabilized".
