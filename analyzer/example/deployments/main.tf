@@ -226,14 +226,14 @@ data "google_artifact_registry_docker_image" "analyzer" {
   location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "analyzer:${terraform_data.service_version.output}"
-  depends_on    = [module.serivce_images["analyzer"]]
+  depends_on    = [module.service_images["analyzer"]]
 }
 
 data "google_artifact_registry_docker_image" "subscriber" {
   location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "subscriber:${terraform_data.service_version.output}"
-  depends_on    = [module.serivce_images["subscriber"]]
+  depends_on    = [module.service_images["subscriber"]]
 }
 
 ## Compute resources
