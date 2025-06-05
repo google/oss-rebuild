@@ -15,9 +15,9 @@ type Rebuilder struct{}
 
 var _ rebuild.Rebuilder = Rebuilder{}
 
-func (r Rebuilder) RebuildRemote(ctx context.Context, input rebuild.Input, id string, opts rebuild.RemoteOptions) error {
+func (r Rebuilder) RebuildRemote(ctx context.Context, input rebuild.Input, opts rebuild.RemoteOptions) error {
 	opts.UseTimewarp = false
-	return rebuild.RebuildRemote(ctx, input, id, opts)
+	return rebuild.RebuildRemote(ctx, input, opts)
 }
 
 func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Instructions, fs billy.Filesystem) error {

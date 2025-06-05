@@ -182,8 +182,8 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if err != nil {
 		return errors.Wrap(err, "creating debug store")
 	}
-	id := uuid.New().String()
-	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, id)
+	obID := uuid.New().String()
+	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, obID)
 	if err != nil {
 		return errors.Wrap(err, "creating rebuild store")
 	}
@@ -206,6 +206,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	}
 	hashes := []crypto.Hash{crypto.SHA256}
 	opts := rebuild.RemoteOptions{
+		ObliviousID:         obID,
 		GCBClient:           deps.GCBClient,
 		Project:             deps.BuildProject,
 		BuildServiceAccount: deps.BuildServiceAccount,
@@ -223,7 +224,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if !ok {
 		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
-	if err := rebuilder.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: strategy}, id, opts); err != nil {
+	if err := rebuilder.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: strategy}, opts); err != nil {
 		return errors.Wrap(err, "executing rebuild")
 	}
 	upstreamURI, err := rebuilder.UpstreamURL(ctx, t, mux)
@@ -244,7 +245,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	} else if (u.Scheme == "file" || u.Scheme == "") && !deps.PublishForLocalServiceRepo {
 		return errors.Wrap(err, "disallowed file:// ServiceRepo URL")
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, id, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, obID, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
