@@ -11,7 +11,7 @@ import (
 
 type BuildInfo struct {
 	Target      Target
-	ID          string
+	ObliviousID string `json:"ID,omitempty"` // Stored as "ID" for backwards compatibility.
 	Builder     string
 	BuildID     string
 	BuildStart  time.Time

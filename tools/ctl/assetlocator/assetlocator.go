@@ -85,7 +85,7 @@ func (m *assetStore) Reader(ctx context.Context, a rebuild.Asset) (io.ReadCloser
 			if err != nil {
 				return nil, err
 			}
-			metadata, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, bi.ID), fmt.Sprintf("gs://%s", m.metaAssetStore.MetadataBucket))
+			metadata, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, bi.ObliviousID), fmt.Sprintf("gs://%s", m.metaAssetStore.MetadataBucket))
 			if err != nil {
 				return nil, errors.Wrap(err, "creating metadata store")
 			}

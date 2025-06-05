@@ -554,10 +554,10 @@ func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 // RebuildRemote executes the given target strategy on a remote builder.
 func RebuildRemote(ctx context.Context, input Input, opts RemoteOptions) error {
 	t := input.Target
-	bi := BuildInfo{Target: t, ID: opts.ObliviousID, Builder: os.Getenv("K_REVISION"), BuildStart: time.Now()}
 	if opts.ObliviousID == "" {
 		return errors.New("ObliviousID must be set")
 	}
+	bi := BuildInfo{Target: t, ObliviousID: opts.ObliviousID, Builder: os.Getenv("K_REVISION"), BuildStart: time.Now()}
 	dockerfile, err := MakeDockerfile(input, opts)
 	if err != nil {
 		return errors.Wrap(err, "creating dockerfile")
