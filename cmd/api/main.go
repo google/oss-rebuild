@@ -49,6 +49,8 @@ var (
 	buildDefRepoDir       = flag.String("build-def-repo-dir", ".", "relpath within the build definitions repository")
 	overwriteAttestations = flag.Bool("overwrite-attestations", false, "whether to overwrite existing attestations when writing to GCS")
 	blockLocalRepoPublish = flag.Bool("block-local-repo-publish", true, "whether to prevent attestation publishing when the BuildRepo property points to a file:// URI")
+	gcbPrivatePoolName    = flag.String("gcb-private-pool-name", "", "Resoure name of GCB private pool to use, if configured")
+	gcbPrivatePoolRegion  = flag.String("gcb-private-pool-region", "", "GCP location to use for GCB private pool builds, if configured. Note: This should generally be the same as the region where the private pool is located.")
 )
 
 // Link-time configured service identity
@@ -120,7 +122,16 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "creating CloudBuild service")
 	}
-	d.GCBClient = gcb.NewClient(svc)
+	var privatePoolConfig *gcb.PrivatePoolConfig
+	if *gcbPrivatePoolName != "" {
+		privatePoolConfig = &gcb.PrivatePoolConfig{
+			Name:   *gcbPrivatePoolName,
+			Region: *gcbPrivatePoolRegion,
+		}
+		d.GCBClient = gcb.NewClientWithPrivatePool(svc, privatePoolConfig)
+	} else {
+		d.GCBClient = gcb.NewClient(svc)
+	}
 	d.BuildProject = *project
 	d.BuildServiceAccount = *buildRemoteIdentity
 	d.UtilPrebuildBucket = *prebuildBucket
