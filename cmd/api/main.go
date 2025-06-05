@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"regexp"
 
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
@@ -23,6 +22,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api/rebuilderservice"
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/httpegress"
+	"github.com/google/oss-rebuild/internal/serviceid"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -57,10 +57,6 @@ var (
 	BuildRepo string
 	// Golang version identifier of the service container builds
 	BuildVersion string
-)
-
-var (
-	goPseudoVersion = regexp.MustCompile("^v0.0.0-[0-9]{14}-[0-9a-f]{12}$")
 )
 
 var httpcfg = httpegress.Config{}
@@ -130,41 +126,15 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	d.UtilPrebuildBucket = *prebuildBucket
 	d.UtilPrebuildAuth = *prebuildAuth
 	d.BuildLogsBucket = *logsBucket
-	var serviceRepo string
-	if BuildRepo == "" {
-		return nil, errors.New("empty service repo")
-	}
-	if repoURI, err := url.Parse(BuildRepo); err != nil {
-		return nil, errors.Wrap(err, "parsing service repo URI")
-	} else {
-		switch repoURI.Scheme {
-		case "file":
-			serviceRepo = repoURI.String()
-		case "http", "https":
-			if canonicalized, err := uri.CanonicalizeRepoURI(BuildRepo); err != nil {
-				serviceRepo = repoURI.String()
-			} else {
-				serviceRepo = canonicalized
-			}
-			// TODO: Support more schemes as necessary.
-		default:
-			return nil, errors.Errorf("unsupported scheme for service repo '%s'", BuildRepo)
-		}
-	}
-	if !goPseudoVersion.MatchString(BuildVersion) {
-		return nil, errors.New("service version must be a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions")
-	}
-	d.ServiceRepo = rebuild.Location{
-		Repo: serviceRepo,
-		Ref:  BuildVersion,
+	d.ServiceRepo, err = serviceid.ParseLocation(BuildRepo, BuildVersion)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing service location")
 	}
 	d.PublishForLocalServiceRepo = !*blockLocalRepoPublish
-	if !goPseudoVersion.MatchString(*prebuildVersion) {
-		return nil, errors.New("prebuild version must be a go mod pseudo-version: https://go.dev/ref/mod#pseudo-versions")
-	}
-	d.PrebuildRepo = rebuild.Location{
-		Repo: serviceRepo,
-		Ref:  *prebuildVersion,
+	// TODO: Should we require/support a separate repo here?
+	d.PrebuildRepo, err = serviceid.ParseLocation(BuildRepo, *prebuildVersion)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing prebuild location")
 	}
 	buildDefRepo, err := uri.CanonicalizeRepoURI(*buildDefRepo)
 	if err != nil {
