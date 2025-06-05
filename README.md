@@ -8,7 +8,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/google/oss-rebuild/main/site/logo-light.svg">
     <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/google/oss-rebuild/main/site/logo-dark.svg">
-    <img alt="OSS Rebuild logo" src="https://raw.githubusercontent.com/google/oss-rebuild/main/site/logo-dark.svg" height="100" width="230">
+    <img alt="OSS Rebuild logo" src="https://raw.githubusercontent.com/google/oss-rebuild/main/site/logo-dark.svg" height="110" width="230">
   </picture>
 </div>
 
