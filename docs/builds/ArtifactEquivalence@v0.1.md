@@ -118,11 +118,18 @@ The `internalParameters` provide deployment-specific configuration and source me
 | `prebuildSource`            | Source metadata for the prebuild utilities.                                 |
 | `prebuildSource.repository` | The repository URL for the prebuild utilities source code.                  |
 | `prebuildSource.ref`        | The git reference for the prebuild utilities source.                        |
+| `prebuildConfig`            | Deployment-specific prebuild configuration.                                 |
+| `prebuildConfig.bucket`     | The Google Cloud Storage bucket containing prebuild utilities.              |
+| `prebuildConfig.dir`        | The directory path within the bucket for prebuild utilities (optional).     |
 
 Example:
 
 ```
       "internalParameters": {
+        "prebuildConfig": {
+          "bucket": "test-bucket",
+          "dir": "test-dir"
+        },
         "prebuildSource": {
           "ref": "v0.0.0-202401010000-feeddeadbeef99",
           "repository": "https://github.com/google/oss-rebuild"

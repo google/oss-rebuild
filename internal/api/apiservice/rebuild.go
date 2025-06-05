@@ -88,8 +88,7 @@ type RebuildPackageDeps struct {
 	GCBClient                  gcb.Client
 	BuildProject               string
 	BuildServiceAccount        string
-	UtilPrebuildBucket         string
-	UtilPrebuildAuth           bool
+	PrebuildConfig             rebuild.PrebuildConfig
 	BuildLogsBucket            string
 	ServiceRepo                rebuild.Location
 	PrebuildRepo               rebuild.Location
@@ -210,9 +209,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		GCBClient:           deps.GCBClient,
 		Project:             deps.BuildProject,
 		BuildServiceAccount: deps.BuildServiceAccount,
-		UtilPrebuildBucket:  deps.UtilPrebuildBucket,
-		UtilPrebuildDir:     deps.PrebuildRepo.Ref,
-		UtilPrebuildAuth:    deps.UtilPrebuildAuth,
+		PrebuildConfig:      deps.PrebuildConfig,
 		LogsBucket:          deps.BuildLogsBucket,
 		LocalMetadataStore:  deps.LocalMetadataStore,
 		DebugStore:          debugStore,
@@ -245,7 +242,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	} else if (u.Scheme == "file" || u.Scheme == "") && !deps.PublishForLocalServiceRepo {
 		return errors.Wrap(err, "disallowed file:// ServiceRepo URL")
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, obID, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, obID, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo, opts.PrebuildConfig)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
