@@ -4,6 +4,15 @@
 [![Go Report Card](https://goreportcard.com/badge/google/oss-rebuild)](https://goreportcard.com/report/google/oss-rebuild)
 [![Go Reference](https://pkg.go.dev/badge/github.com/google/oss-rebuild.svg)](https://pkg.go.dev/github.com/google/oss-rebuild)
 
+<div align="center">
+  <picture>
+    <!--TODO: Add a dark-themed logo -->
+    <source media="(prefers-color-scheme: dark)" srcset="site/logo.svg">
+    <source media="(prefers-color-scheme: light)" srcset="site/logo.svg">
+    <img alt="OSS Rebuild logo" src="site/logo.svg" height="100" width="230">
+  </picture>
+</div>
+
 Secure open-source package ecosystems by originating, validating, and augmenting
 build attestations.
 
