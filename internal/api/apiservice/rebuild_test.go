@@ -614,7 +614,7 @@ RLpmHHG1JOVdOA==
 					Steps:       buildSteps,
 				},
 				mustJSON[rebuild.BuildInfo](buildinfo),
-				cmpopts.IgnoreFields(rebuild.BuildInfo{}, "ID", "Builder", "BuildStart", "BuildEnd"),
+				cmpopts.IgnoreFields(rebuild.BuildInfo{}, "ObliviousID", "Builder", "BuildStart", "BuildEnd"),
 			)
 			if diff != "" {
 				t.Errorf("BuildInfo diff: %s", diff)

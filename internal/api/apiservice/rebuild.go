@@ -346,7 +346,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		ExecutorVersion: os.Getenv("K_REVISION"),
 		RunID:           req.ID,
 		BuildID:         bi.BuildID,
-		ObliviousID:     bi.ID,
+		ObliviousID:     bi.ObliviousID,
 		Started:         started,
 		Created:         time.Now().UTC(),
 	})

@@ -45,9 +45,9 @@ func TestCreateAttestations(t *testing.T) {
 				PullTiming: &cloudbuild.TimeSpan{StartTime: "2024-01-01T00:00:00Z", EndTime: "2024-01-01T00:00:00Z"},
 			},
 		},
-		BuildID: "build-id",
-		Builder: "builder",
-		ID:      "id",
+		BuildID:     "build-id",
+		Builder:     "builder",
+		ObliviousID: "id",
 	}
 
 	t.Run("Success", func(t *testing.T) {
