@@ -101,14 +101,22 @@ func (c *clientImpl) CancelOperation(op *cloudbuild.Operation) error {
 	return err
 }
 
+type DoBuildOpts struct {
+	TerminateOnTimeout bool
+}
+
 // DoBuild executes a build on Cloud Build, waits for completion and returns the Build.
-func DoBuild(ctx context.Context, client Client, project string, build *cloudbuild.Build) (*cloudbuild.Build, error) {
+func DoBuild(ctx context.Context, client Client, project string, build *cloudbuild.Build, opts DoBuildOpts) (*cloudbuild.Build, error) {
 	initOp, err := client.CreateBuild(ctx, project, build)
 	if err != nil {
 		return nil, err
 	}
+	var bm cloudbuild.BuildOperationMetadata
+	if err := json.Unmarshal(initOp.Metadata, &bm); err != nil {
+		return nil, err
+	}
 	doneOp, err := client.WaitForOperation(ctx, initOp)
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.DeadlineExceeded) && opts.TerminateOnTimeout {
 		log.Printf("GCB deadline exceeded, cancelling build %s", initOp.Name)
 		if err := client.CancelOperation(initOp); err != nil {
 			log.Printf("Best effort GCB cancellation failed: %v", err)
@@ -117,9 +125,14 @@ func DoBuild(ctx context.Context, client Client, project string, build *cloudbui
 		// We can wait 10 more seconds for operation to be updated
 		newCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		// Wait for the now-cancelled op, then proceed normally.
 		if doneOp, err = client.WaitForOperation(newCtx, initOp); err != nil {
 			return nil, errors.Wrap(err, "fetching operation after cancel")
 		}
+	} else if errors.Is(err, context.DeadlineExceeded) {
+		log.Printf("GCB deadline exceeded, allowing the build to continue")
+		// Note: This is the Build metadata returned by CreateBuild
+		return bm.Build, nil
 	} else if err != nil {
 		// NOTE: We could potentially also cancel these unknown error cases, not just DeadlineExceeded
 		return nil, errors.Wrap(err, "fetching operation")
@@ -128,7 +141,6 @@ func DoBuild(ctx context.Context, client Client, project string, build *cloudbui
 	if doneOp.Error != nil {
 		log.Printf("Cloud Build error: %v", status.Error(codes.Code(doneOp.Error.Code), doneOp.Error.Message))
 	}
-	var bm cloudbuild.BuildOperationMetadata
 	if err := json.Unmarshal(doneOp.Metadata, &bm); err != nil {
 		return nil, err
 	}
