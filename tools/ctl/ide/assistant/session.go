@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
@@ -18,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 )
 
 const (
@@ -90,7 +90,7 @@ func (a *session) HandleInput(ctx context.Context, in string, out chan<- *chatbo
 		return nil
 	} else {
 		out <- &chatbox.Message{Who: chatbox.User, Content: in}
-		contentParts := []genai.Part{genai.Text(in)}
+		contentParts := []*genai.Part{genai.NewPartFromText(in)}
 		for content, err := range a.chat.SendMessageStream(context.Background(), contentParts...) {
 			if content.Role == "user" {
 				continue
@@ -168,8 +168,8 @@ func (a *session) evidence(ctx context.Context, attempt rundex.Rebuild) *attempt
 
 func (a *session) debug(ctx context.Context, out chan<- *chatbox.Message) error {
 	evidence := a.evidence(ctx, a.attempt)
-	contentParts := []genai.Part{
-		genai.Text((`Here are the details from my most recent attempt to rebuild. In order they are:
+	contentParts := []*genai.Part{
+		genai.NewPartFromText((`Here are the details from my most recent attempt to rebuild. In order they are:
 1: Metadata about the rebuild attempt
 2: The build definition
 3: The build logs
@@ -181,10 +181,10 @@ Please briefly answer the following questions, keeping your answer limited to tw
 2) Were there any errors in the logs? What caused them?
 3) What caused the diff in the output artifact?
 4) What should we change in our instructions to fix the rebuild and resolve any diffs?`)),
-		genai.Text(evidence.metadata),
-		genai.Text(evidence.builddef),
-		genai.Text(evidence.logs),
-		genai.Text(evidence.diff),
+		genai.NewPartFromText(evidence.metadata),
+		genai.NewPartFromText(evidence.builddef),
+		genai.NewPartFromText(evidence.logs),
+		genai.NewPartFromText(evidence.diff),
 	}
 	out <- &chatbox.Message{Who: chatbox.System, Content: "Sending a debug request including metadata, build def, logs, and diff"}
 	for content, err := range a.chat.SendMessageStream(ctx, contentParts...) {
@@ -207,17 +207,16 @@ func formatContent(content *genai.Content) string {
 				break
 			}
 			msg += fmt.Sprintf("\n>>> Type: %T\n\n", part)
-			switch part.(type) {
-			case genai.Text:
-				s := string(part.(genai.Text))
+			if part.Text != "" {
+				s := part.Text
 				msg += "  " + strings.ReplaceAll(s, "\n", "\n  ")
-			case genai.FunctionCall:
-				call := part.(genai.FunctionCall)
+			} else if part.FunctionCall != nil {
+				call := part.FunctionCall
 				msg += fmt.Sprintf("%s(%v)", call.Name, call.Args)
-			case genai.FunctionResponse:
-				resp := part.(genai.FunctionResponse)
+			} else if part.FunctionResponse != nil {
+				resp := part.FunctionResponse
 				msg += fmt.Sprintf("%s(...) => %v", resp.Name, resp.Response)
-			default:
+			} else {
 				msg += "<unprintable type>"
 			}
 		}

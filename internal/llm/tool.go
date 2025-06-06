@@ -3,7 +3,7 @@
 
 package llm
 
-import "cloud.google.com/go/vertexai/genai"
+import "google.golang.org/genai"
 
 // Function is an implementation of an LLM tool.
 type Function func(args map[string]any) genai.FunctionResponse
@@ -14,8 +14,11 @@ type FunctionDefinition struct {
 	Function Function
 }
 
-// WithTools configures a copy of the provided model with the given function definitions.
-func WithTools(baseModel genai.GenerativeModel, defs []*FunctionDefinition) *genai.GenerativeModel {
+// WithTools configures the provided config with the given function definitions.
+func WithTools(config *genai.GenerateContentConfig, defs []*FunctionDefinition) *genai.GenerateContentConfig {
+	if config == nil {
+		config = &genai.GenerateContentConfig{}
+	}
 	declarations := make([]*genai.FunctionDeclaration, 0, len(defs))
 	for _, def := range defs {
 		if def != nil {
@@ -23,9 +26,9 @@ func WithTools(baseModel genai.GenerativeModel, defs []*FunctionDefinition) *gen
 		}
 	}
 	if len(declarations) > 0 {
-		baseModel.Tools = []*genai.Tool{{FunctionDeclarations: declarations}}
+		config.Tools = []*genai.Tool{{FunctionDeclarations: declarations}}
 	} else {
-		baseModel.Tools = nil
+		config.Tools = nil
 	}
-	return &baseModel
+	return config
 }
