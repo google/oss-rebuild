@@ -9,12 +9,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"time"
 
+	"cloud.google.com/go/vertexai/genai"
+	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -37,12 +40,14 @@ import (
 
 const (
 	RundexReadParallelism = 10
+	LLMRequestParallelism = 50
+	expertPrompt          = `You are an expert in diagnosing build issues in multiple open source ecosystems. You will help diagnose why builds failed, or why the builds might have produced an artifact that differs from the upstream open source package. Provide clear and concise explantions of why the rebuild failed, and suggest changes that could fix the rebuild`
 )
 
 // A modalFnType can be used to show an InputCaptureable. It returns an exit function that can be used to close the modal.
 type modalFnType func(modal.InputCaptureable, modal.ModalOpts) func()
 
-func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, asst assistant.Assistant, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildCmd {
+func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildCmd {
 	return []RebuildCmd{
 		{
 			Short: "run local",
@@ -169,7 +174,19 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 		{
 			Short: "debug with ✨AI✨",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
-				s, err := asst.Session(ctx, example)
+				var model *genai.GenerativeModel
+				{
+					model = aiClient.GenerativeModel(llm.GeminiFlash)
+					model.GenerationConfig = genai.GenerationConfig{
+						Temperature:     genai.Ptr[float32](.1),
+						MaxOutputTokens: genai.Ptr[int32](16000),
+					}
+					systemPrompt := []genai.Part{
+						genai.Text(expertPrompt),
+					}
+					model = llm.WithSystemPrompt(*model, systemPrompt...)
+				}
+				s, err := assistant.NewAssistant(butler, model).Session(ctx, example)
 				if err != nil {
 					log.Println(errors.Wrap(err, "creating session"))
 					return
@@ -186,7 +203,7 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 	}
 }
 
-func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, asst assistant.Assistant, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildGroupCmd {
+func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildGroupCmd {
 	return []RebuildGroupCmd{
 		{
 			Short: "Find pattern",
@@ -242,11 +259,97 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 				log.Printf("Found in %d/%d (%2.0f%%)", found, len(rebuilds), float32(found)/float32(len(rebuilds))*100)
 			},
 		},
+		{
+			Short: "Cluster using AI",
+			Func: func(ctx context.Context, rebuilds []rundex.Rebuild) {
+				var model *genai.GenerativeModel
+				{
+					model = aiClient.GenerativeModel(llm.GeminiFlash)
+					model.GenerationConfig = genai.GenerationConfig{
+						Temperature:     genai.Ptr[float32](.1),
+						MaxOutputTokens: genai.Ptr[int32](16000),
+					}
+					systemPrompt := []genai.Part{
+						genai.Text(expertPrompt),
+					}
+					model = llm.WithSystemPrompt(*model, systemPrompt...)
+				}
+				p := pipe.FromSlice(rebuilds)
+				p = p.ParDo(RundexReadParallelism, func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
+					_, err := butler.Fetch(context.Background(), in.RunID, in.WasSmoketest(), rebuild.DebugLogsAsset.For(in.Target()))
+					if err != nil {
+						log.Println(errors.Wrap(err, "downloading logs"))
+						return
+					}
+					out <- in
+				})
+				// TODO: Instead of a ticker, gracefully handle retriable errors on the API.
+				ticker := time.Tick(time.Second / 15) // The Gemini Flash limit is around 15 QPS.
+				type summarizedRebuild struct {
+					Rebuild rundex.Rebuild
+					Summary string
+				}
+				summaries := pipe.ParInto(LLMRequestParallelism, p, func(in rundex.Rebuild, out chan<- summarizedRebuild) {
+					const uploadBytesLimit = 100_000
+					assets, err := localfiles.AssetStore(in.RunID)
+					if err != nil {
+						log.Println(errors.Wrapf(err, "creating asset store for runid: %s", in.RunID))
+						return
+					}
+					r, err := assets.Reader(ctx, rebuild.DebugLogsAsset.For(in.Target()))
+					if err != nil {
+						log.Println(errors.Wrapf(err, "opening logs for %s", in.ID()))
+						return
+					}
+					defer r.Close()
+					content, err := io.ReadAll(r)
+					if err != nil {
+						log.Println(errors.Wrap(err, "reading logs"))
+						return
+					}
+					logs := string(content)
+					if len(logs) > uploadBytesLimit {
+						logs = "...(truncated)..." + logs[len(logs)-uploadBytesLimit:]
+					}
+					parts := []genai.Part{
+						genai.Text("Please summarize this rebuild failure in one sentence."),
+						genai.Text(logs),
+					}
+					<-ticker
+					txt, err := llm.GenerateTextContent(ctx, model, parts...)
+					if err != nil {
+						log.Println(errors.Wrap(err, "sending message"))
+						return
+					}
+					out <- summarizedRebuild{Rebuild: in, Summary: string(txt)}
+					log.Println("Summary: ", txt)
+				})
+				var parts []genai.Part
+				log.Printf("Summarizing %d rebuild failures", len(rebuilds))
+				for s := range summaries.Out() {
+					if s.Summary == "" {
+						continue
+					}
+					parts = append(parts, genai.Text(s.Summary))
+				}
+				log.Printf("Finished summarizing, Asking for categories based on %d summaries.", len(parts))
+				// TODO: Give more structure to the expected output format to make it easier parsing the response.
+				parts = append([]genai.Part{genai.Text("Based on the following error summaries, please provide 1 to 5 classes of failures you think are happening.")}, parts...)
+				<-ticker
+				txt, err := llm.GenerateTextContent(ctx, model, parts...)
+				if err != nil {
+					log.Println(errors.Wrap(err, "classifying summaries"))
+					return
+				}
+				log.Println(string(txt))
+				log.Println("Grouping completed.")
+			},
+		},
 	}
 
 }
 
-func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, asst assistant.Assistant, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []GlobalCmd {
+func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []GlobalCmd {
 	return []GlobalCmd{
 		{
 			Short:  "restart rebuilder",

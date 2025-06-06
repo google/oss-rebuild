@@ -30,29 +30,20 @@ type cmdFunc func(ctx context.Context, out chan<- *chatbox.Message) error
 
 type assistant struct {
 	butler localfiles.Butler
-	client *genai.Client
+	model  *genai.GenerativeModel
 }
 
 var _ Assistant = (*assistant)(nil)
 
-func NewAssistant(butler localfiles.Butler, client *genai.Client) *assistant {
+func NewAssistant(butler localfiles.Butler, model *genai.GenerativeModel) *assistant {
 	return &assistant{
 		butler: butler,
-		client: client,
+		model:  model,
 	}
 }
 
 func (a *assistant) Session(ctx context.Context, attempt rundex.Rebuild) (Session, error) {
-	model := a.client.GenerativeModel(llm.GeminiFlash)
-	model.GenerationConfig = genai.GenerationConfig{
-		Temperature:     genai.Ptr[float32](.1),
-		MaxOutputTokens: genai.Ptr[int32](16000),
-	}
-	systemPrompt := []genai.Part{
-		genai.Text(`You are an expert in diagnosing build issues in multiple open source ecosystems. You will help diagnose why builds failed, or why the builds might have produced an artifact that differs from the upstream open source package. Provide clear and concise explantions of why the rebuild failed, and suggest changes that could fix the rebuild`),
-	}
-	model = llm.WithSystemPrompt(*model, systemPrompt...)
-	chat, err := llm.NewChat(model, &llm.ChatOpts{})
+	chat, err := llm.NewChat(a.model, &llm.ChatOpts{})
 	if err != nil {
 		return nil, errors.Wrap(err, "creating chat")
 	}
