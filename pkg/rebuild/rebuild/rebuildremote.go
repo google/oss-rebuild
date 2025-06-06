@@ -36,9 +36,7 @@ type RemoteOptions struct {
 	DebugStore AssetStore
 	// RemoteMetadataStore stores the rebuilt artifact. Cloud build needs access to upload assets here. It should be keyed by the unguessable UUID to sandbox each build.
 	RemoteMetadataStore LocatableAssetStore
-	UtilPrebuildBucket  string
-	UtilPrebuildDir     string
-	UtilPrebuildAuth    bool
+	PrebuildConfig      PrebuildConfig
 	// TODO: Consider moving these to Strategy.
 	UseTimewarp       bool
 	UseNetworkProxy   bool
@@ -400,9 +398,9 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	if opts.UseNetworkProxy {
 		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
 			"TargetStr":          fmt.Sprintf("%+v", t),
-			"UtilPrebuildBucket": opts.UtilPrebuildBucket,
-			"UtilPrebuildDir":    opts.UtilPrebuildDir,
-			"UtilPrebuildAuth":   opts.UtilPrebuildAuth,
+			"UtilPrebuildBucket": opts.PrebuildConfig.Bucket,
+			"UtilPrebuildDir":    opts.PrebuildConfig.Dir,
+			"UtilPrebuildAuth":   opts.PrebuildConfig.Auth,
 			"Project":            opts.Project,
 			"Dockerfile":         dockerfile,
 			"UseSyscallMonitor":  opts.UseSyscallMonitor,
@@ -441,7 +439,7 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 			"Dockerfile":        dockerfile,
 			"UseSyscallMonitor": opts.UseSyscallMonitor,
 			"SyscallPolicies":   tetragonPoliciesJSON,
-			"UtilPrebuildAuth":  opts.UtilPrebuildAuth,
+			"UtilPrebuildAuth":  opts.PrebuildConfig.Auth,
 			"Project":           opts.Project,
 		})
 		if err != nil {
@@ -450,9 +448,9 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	}
 	var assetUploadScript bytes.Buffer
 	err := assetUploadTpl.Execute(&assetUploadScript, map[string]any{
-		"UtilPrebuildBucket": opts.UtilPrebuildBucket,
-		"UtilPrebuildDir":    opts.UtilPrebuildDir,
-		"UtilPrebuildAuth":   opts.UtilPrebuildAuth,
+		"UtilPrebuildBucket": opts.PrebuildConfig.Bucket,
+		"UtilPrebuildDir":    opts.PrebuildConfig.Dir,
+		"UtilPrebuildAuth":   opts.PrebuildConfig.Auth,
 		"Project":            opts.Project,
 		"Uploads":            uploads,
 	})
@@ -531,17 +529,17 @@ func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 	if input.Target.Ecosystem == Debian {
 		err = debuildContainerTpl.Execute(dockerfile, rebuildContainerArgs{
 			UseTimewarp:        opts.UseTimewarp,
-			UtilPrebuildBucket: opts.UtilPrebuildBucket,
-			UtilPrebuildDir:    opts.UtilPrebuildDir,
-			UtilPrebuildAuth:   opts.UtilPrebuildAuth,
+			UtilPrebuildBucket: opts.PrebuildConfig.Bucket,
+			UtilPrebuildDir:    opts.PrebuildConfig.Dir,
+			UtilPrebuildAuth:   opts.PrebuildConfig.Auth,
 			Instructions:       instructions,
 		})
 	} else {
 		err = alpineContainerTpl.Execute(dockerfile, rebuildContainerArgs{
 			UseTimewarp:        opts.UseTimewarp,
-			UtilPrebuildBucket: opts.UtilPrebuildBucket,
-			UtilPrebuildDir:    opts.UtilPrebuildDir,
-			UtilPrebuildAuth:   opts.UtilPrebuildAuth,
+			UtilPrebuildBucket: opts.PrebuildConfig.Bucket,
+			UtilPrebuildDir:    opts.PrebuildConfig.Dir,
+			UtilPrebuildAuth:   opts.PrebuildConfig.Auth,
 			Instructions:       instructions,
 		})
 	}
