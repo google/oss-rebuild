@@ -385,7 +385,7 @@ var assetUploadTpl = template.Must(
 				`)[1:], // remove leading newline
 	))
 
-func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Build, error) {
+func MakeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Build, error) {
 	_, serviceAccountEmail := path.Split(opts.BuildServiceAccount)
 	var buildScript bytes.Buffer
 	uploads := []upload{
@@ -589,7 +589,7 @@ func RebuildRemote(ctx context.Context, input Input, opts RemoteOptions) error {
 			return errors.Wrap(err, "writing Dockerfile")
 		}
 	}
-	build, err := makeBuild(t, dockerfile, opts)
+	build, err := MakeBuild(t, dockerfile, opts)
 	if err != nil {
 		return errors.Wrap(err, "creating build")
 	}
