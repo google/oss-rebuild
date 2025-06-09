@@ -7,9 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
+	gcs "cloud.google.com/go/storage"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/grpc/codes"
@@ -29,6 +31,55 @@ type Client interface {
 	CreateBuild(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error)
 	WaitForOperation(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error)
 	CancelOperation(op *cloudbuild.Operation) error
+}
+
+// LogsClient interface abstracts Cloud Build logs access from GCS.
+type LogsClient interface {
+	// ReadBuildLogs reads the complete build logs for a given build ID from the specified bucket
+	ReadBuildLogs(ctx context.Context, bucket, buildID string) (io.ReadCloser, error)
+	// ReadStepLogs reads logs for a specific step within a build from the specified bucket
+	ReadStepLogs(ctx context.Context, bucket, buildID string, stepIndex int) (io.ReadCloser, error)
+	// ListStepLogs returns the available step log files for a build in the specified bucket
+	ListStepLogs(ctx context.Context, bucket, buildID string) (int, error)
+}
+
+// gcsLogsClient implements LogsClient using Google Cloud Storage.
+type gcsLogsClient struct {
+	gcsClient *gcs.Client
+}
+
+// NewGCSLogsClient creates a new LogsClient that reads from Google Cloud Storage.
+func NewGCSLogsClient(gcsClient *gcs.Client) LogsClient {
+	return &gcsLogsClient{
+		gcsClient: gcsClient,
+	}
+}
+
+// ReadBuildLogs reads the complete build logs for a given build ID from the specified bucket.
+func (c *gcsLogsClient) ReadBuildLogs(ctx context.Context, bucket, buildID string) (io.ReadCloser, error) {
+	objectName := fmt.Sprintf("log-%s.txt", buildID)
+	return c.gcsClient.Bucket(bucket).Object(objectName).NewReader(ctx)
+}
+
+// ReadStepLogs reads logs for a specific step within a build from the specified bucket.
+func (c *gcsLogsClient) ReadStepLogs(ctx context.Context, bucket, buildID string, stepIndex int) (io.ReadCloser, error) {
+	objectName := fmt.Sprintf("log-%s.%d.txt", buildID, stepIndex)
+	return c.gcsClient.Bucket(bucket).Object(objectName).NewReader(ctx)
+}
+
+// ListStepLogs returns the available step log files for a build in the specified bucket.
+func (c *gcsLogsClient) ListStepLogs(ctx context.Context, bucket, buildID string) (int, error) {
+	maxSteps := 100
+	for i := range maxSteps {
+		objectName := fmt.Sprintf("log-%s.%d.txt", buildID, i)
+		_, err := c.gcsClient.Bucket(bucket).Object(objectName).Attrs(ctx)
+		if errors.Is(err, gcs.ErrObjectNotExist) {
+			return i - 1, nil
+		} else if err != nil {
+			return 0, err
+		}
+	}
+	return maxSteps, nil
 }
 
 // clientImpl is a concrete implementation of the Client interface using the Cloud Build service.
