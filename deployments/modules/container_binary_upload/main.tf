@@ -1,11 +1,19 @@
 # Copyright 2025 Google LLC
 # SPDX-License-Identifier: Apache-2.0
 
-resource "terraform_data" "extract" {
+resource "terraform_data" "extract_deps" {
   input = {
     source_image = var.source_image_url
     binary_name = var.binary_name
     gcs_path = var.gcs_destination
+  }
+}
+
+resource "terraform_data" "extract" {
+  input = terraform_data.extract_deps.output
+
+  lifecycle {
+    replace_triggered_by =  [terraform_data.extract_deps]
   }
 
   provisioner "local-exec" {
