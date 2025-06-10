@@ -19,7 +19,6 @@ import (
 	"text/template"
 	"time"
 
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
@@ -35,6 +34,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 	"gopkg.in/yaml.v3"
 )
 
@@ -62,11 +62,14 @@ func main() {
 
 	ctx := context.Background()
 
-	client, err := genai.NewClient(ctx, *projectID, *location)
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		Backend:  genai.BackendVertexAI,
+		Project:  *projectID,
+		Location: *location,
+	})
 	if err != nil {
-		log.Fatalf("Failed to initialize Vertex AI client: %v", err)
+		log.Fatalf("Failed to initialize client: %v", err)
 	}
-	defer client.Close()
 
 	tg := rebuild.Target{Ecosystem: rebuild.NPM, Package: *pkg, Version: *version}
 	tg.Artifact = npm.ArtifactName(tg)
@@ -217,21 +220,20 @@ func main() {
 		},
 	}
 	// Create the model with appropriate configuration
-	model := client.GenerativeModel(llm.GeminiFlash)
-	model.GenerationConfig = genai.GenerationConfig{
-		Temperature:     genai.Ptr[float32](.1),
-		MaxOutputTokens: genai.Ptr[int32](16000),
-	}
-	model.ToolConfig = &genai.ToolConfig{
-		FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: genai.FunctionCallingAuto},
-	}
-	systemPrompt := []genai.Part{
-		genai.Text(`You are an expert in building npm packages from source. Given a git repository with a JavaScript/TypeScript project, you will analyze the code to determine how to build an npm package from it.
+	systemPrompt := []*genai.Part{
+		genai.NewPartFromText(`You are an expert in building npm packages from source. Given a git repository with a JavaScript/TypeScript project, you will analyze the code to determine how to build an npm package from it.
 Focus on identifying the build process from package.json scripts and any build configuration files.
 Provide clear, executable shell commands that would successfully build the package.`),
 	}
-	model = llm.WithSystemPrompt(*model, systemPrompt...)
-	chat, err := llm.NewChat(model, &llm.ChatOpts{Tools: functionDefinitions})
+	config := &genai.GenerateContentConfig{
+		Temperature:     genai.Ptr[float32](.1),
+		MaxOutputTokens: 16000,
+		ToolConfig: &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: "AUTO"},
+		},
+	}
+	config = llm.WithSystemPrompt(config, systemPrompt...)
+	chat, err := llm.NewChat(ctx, client, llm.GeminiFlash, config, &llm.ChatOpts{Tools: functionDefinitions})
 	if err != nil {
 		log.Fatalf("NewChat error: %v", err)
 	}
@@ -252,7 +254,7 @@ Commit Hash: %s
 
 Only include commands that are needed to build the package, excluding things like linting and testing. Focus on standard npm procedures.
 `, loc.Repo, loc.Ref)[1:]
-		contentParts := []genai.Part{genai.Text(initialPrompt)}
+		contentParts := []*genai.Part{genai.NewPartFromText(initialPrompt)}
 		log.Println("Requesting build instructions from Gemini...")
 		for content, err := range chat.SendMessageStream(ctx, contentParts...) {
 			if err != nil {
@@ -262,24 +264,26 @@ Only include commands that are needed to build the package, excluding things lik
 			response = *content
 		}
 	}
-	toScript := func(instructions genai.Text) (*llm.ScriptResponse, error) {
+	toScript := func(instructions string) (*llm.ScriptResponse, error) {
 		prompt := fmt.Sprintf(`
 From the following llm response, extract only the shell commands to be run and exclude any commands used to clone, checkout, and navigate to the git repo:
 
 %s
 `, instructions)[1:]
-		contentParts := []genai.Part{genai.Text(prompt)}
-		log.Println(llm.FormatContent(*genai.NewUserContent(contentParts...)))
-		model.GenerationConfig.ResponseSchema = llm.ScriptResponseSchema
-		model.GenerationConfig.ResponseMIMEType = llm.JSONMIMEType
+		contentParts := []*genai.Part{genai.NewPartFromText(prompt)}
+		log.Println(llm.FormatContent(genai.Content{Parts: contentParts}))
+		scriptConfig := &genai.GenerateContentConfig{
+			ResponseSchema:   llm.ScriptResponseSchema,
+			ResponseMIMEType: llm.JSONMIMEType,
+		}
 		script := llm.ScriptResponse{}
-		err := llm.GenerateTypedContent(ctx, model, &script, contentParts...)
+		err := llm.GenerateTypedContent(ctx, client, llm.GeminiFlash, scriptConfig, &script, contentParts...)
 		if err != nil {
 			return nil, err
 		}
 		return &script, nil
 	}
-	script, err := toScript(response.Parts[0].(genai.Text))
+	script, err := toScript(response.Parts[0].Text)
 	if err != nil {
 		log.Fatalf("model error: %v", err)
 	}
@@ -321,7 +325,7 @@ Here is the log of the build that produced this artifact:
 
 Again, the end goal should be the commands that are needed to build the package, excluding things like linting and testing. Focus on standard npm procedures.
 `, string(logsData))[1:]
-				contentParts := []genai.Part{genai.Text(recoveryPrompt)}
+				contentParts := []*genai.Part{genai.NewPartFromText(recoveryPrompt)}
 				// Get build instructions from Gemini
 				log.Println("Requesting updated build instructions from Gemini...")
 				for content, err := range chat.SendMessageStream(ctx, contentParts...) {
@@ -332,7 +336,7 @@ Again, the end goal should be the commands that are needed to build the package,
 					response = *content
 				}
 			}
-			script, err = toScript(response.Parts[0].(genai.Text))
+			script, err = toScript(response.Parts[0].Text)
 			if err != nil {
 				log.Fatalf("Recovery generation error: %s", err)
 			}
@@ -397,7 +401,7 @@ And here is the log of the build that produced this artifact:
 
 Again, the end goal should be the commands that are needed to build the package, excluding things like linting and testing. Focus on standard npm procedures.
 `, diff, string(logsData))[1:]
-			contentParts := []genai.Part{genai.Text(recoveryPrompt)}
+			contentParts := []*genai.Part{genai.NewPartFromText(recoveryPrompt)}
 			// Get build instructions from Gemini
 			log.Println("Requesting updated build instructions from Gemini...")
 			for content, err := range chat.SendMessageStream(ctx, contentParts...) {
@@ -408,7 +412,7 @@ Again, the end goal should be the commands that are needed to build the package,
 				response = *content
 			}
 		}
-		script, err = toScript(response.Parts[0].(genai.Text))
+		script, err = toScript(response.Parts[0].Text)
 		if err != nil {
 			log.Fatalf("Recovery generation error: %s", err)
 		}

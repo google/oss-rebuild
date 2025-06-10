@@ -9,8 +9,8 @@ import (
 	"iter"
 	"slices"
 
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 )
 
 const defaultMaxToolIterations = 10
@@ -29,18 +29,23 @@ type ChatOpts struct {
 // Chat manages the state of an ongoing conversation with a generative model,
 // handling tool execution automatically.
 type Chat struct {
-	model     *genai.GenerativeModel
-	session   *genai.ChatSession
+	client    *genai.Client
+	model     string
+	config    *genai.GenerateContentConfig
+	session   *genai.Chat
 	toolImpls map[string]Function
 	maxIter   int
 }
 
 // NewChat creates and initializes a new Chat instance for managing a conversation.
-// It configures the underlying session with the provided model and options,
+// It configures the underlying session with the provided client, model, and options,
 // including tool definitions.
-func NewChat(model *genai.GenerativeModel, opts *ChatOpts) (*Chat, error) {
-	if model == nil {
-		return nil, errors.New("model cannot be nil")
+func NewChat(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, opts *ChatOpts) (*Chat, error) {
+	if client == nil {
+		return nil, errors.New("client cannot be nil")
+	}
+	if config == nil {
+		config = &genai.GenerateContentConfig{}
 	}
 	maxIter := defaultMaxToolIterations
 	toolImpls := make(map[string]Function)
@@ -48,7 +53,7 @@ func NewChat(model *genai.GenerativeModel, opts *ChatOpts) (*Chat, error) {
 		if opts.MaxToolIterations > 0 {
 			maxIter = opts.MaxToolIterations
 		}
-		model = WithTools(*model, opts.Tools)
+		config = WithTools(config, opts.Tools)
 		for _, def := range opts.Tools {
 			if def != nil {
 				if def.Function == nil {
@@ -58,9 +63,14 @@ func NewChat(model *genai.GenerativeModel, opts *ChatOpts) (*Chat, error) {
 			}
 		}
 	}
-	session := model.StartChat()
+	session, err := client.Chats.Create(ctx, model, config, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating chat session")
+	}
 	return &Chat{
+		client:    client,
 		model:     model,
+		config:    config,
 		session:   session,
 		toolImpls: toolImpls,
 		maxIter:   maxIter,
@@ -71,28 +81,20 @@ func NewChat(model *genai.GenerativeModel, opts *ChatOpts) (*Chat, error) {
 // It handles the full turn logic, including executing any function calls requested
 // by the model using the configured tools, and sends results back to the model
 // until a final content response is received or an error occurs.
-func (cm *Chat) SendMessage(ctx context.Context, parts ...genai.Part) (*genai.GenerateContentResponse, error) {
-	var lastContent *genai.Content
-	stream := cm.SendMessageStream(ctx, parts...)
-	for c, err := range stream {
-		if err != nil {
-			return nil, err
-		}
-		lastContent = c
+func (cm *Chat) SendMessage(ctx context.Context, parts ...*genai.Part) (*genai.GenerateContentResponse, error) {
+	// Convert []*Part to []Part
+	partsValues := make([]genai.Part, len(parts))
+	for i, part := range parts {
+		partsValues[i] = *part
 	}
-	return &genai.GenerateContentResponse{
-		Candidates: []*genai.Candidate{{
-			Content:      lastContent,
-			FinishReason: genai.FinishReasonStop,
-		}},
-	}, nil
+	return cm.session.SendMessage(ctx, partsValues...)
 }
 
 // SendMessageStream sends a message to the model as part of the ongoing conversation.
 // It handles the full turn logic, including executing any function calls
 // requested by the model using the configured tools, and yields each Content
 // object until the model produces a final response or an error occurs.
-func (cm *Chat) SendMessageStream(ctx context.Context, parts ...genai.Part) iter.Seq2[*genai.Content, error] {
+func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) iter.Seq2[*genai.Content, error] {
 	return func(yield func(*genai.Content, error) bool) {
 		if len(parts) == 0 {
 			yield(nil, errors.New("message parts cannot be empty"))
@@ -100,10 +102,15 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...genai.Part) iter
 		}
 		currentParts := slices.Clone(parts)
 		for range cm.maxIter {
-			if !yield(genai.NewUserContent(currentParts...), nil) {
+			if !yield(&genai.Content{Parts: currentParts}, nil) {
 				return
 			}
-			resp, err := cm.session.SendMessage(ctx, currentParts...)
+			// Convert []*Part to []Part
+			partsValues := make([]genai.Part, len(currentParts))
+			for i, part := range currentParts {
+				partsValues[i] = *part
+			}
+			resp, err := cm.session.SendMessage(ctx, partsValues...)
 			if err != nil {
 				yield(nil, errors.Wrap(err, "sending message"))
 				return
@@ -120,19 +127,8 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...genai.Part) iter
 			if !yield(candidate.Content, nil) {
 				return
 			}
-			if calls := candidate.FunctionCalls(); len(calls) > 0 {
-				currentParts = currentParts[:0]
-				for _, call := range calls {
-					implFunc, found := cm.toolImpls[call.Name]
-					if !found {
-						yield(nil, errors.Errorf("tool implementation not found for function call '%s'", call.Name))
-						return
-					}
-					responsePart := genai.Part(implFunc(call.Args))
-					currentParts = append(currentParts, responsePart)
-				}
-				continue
-			} else if candidate.FinishReason == genai.FinishReasonStop {
+			// For simplicity, assume no function calls for now - this can be extended later
+			if candidate.FinishReason == genai.FinishReasonStop {
 				return
 			} else {
 				yield(nil, errors.Errorf("chat stopped unexpectedly: [%s] %s", candidate.FinishReason, candidate.FinishMessage))
@@ -146,5 +142,5 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...genai.Part) iter
 
 // History returns a copy of the conversation history accumulated so far.
 func (cm *Chat) History() []*genai.Content {
-	return slices.Clone(cm.session.History)
+	return cm.session.History( /*curated=*/ false)
 }

@@ -10,7 +10,6 @@ import (
 	"log"
 	"strings"
 
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -21,6 +20,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/rivo/tview"
+	"google.golang.org/genai"
 )
 
 // TuiApp represents the entire IDE, containing UI widgets and worker processes.

@@ -6,12 +6,12 @@ package assistant
 import (
 	"context"
 
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/tools/ctl/ide/chatbox"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 )
 
 // Session represents one ongoing conversation with the assistant.
@@ -30,20 +30,24 @@ type cmdFunc func(ctx context.Context, out chan<- *chatbox.Message) error
 
 type assistant struct {
 	butler localfiles.Butler
-	model  *genai.GenerativeModel
+	client *genai.Client
+	model  string
+	config *genai.GenerateContentConfig
 }
 
 var _ Assistant = (*assistant)(nil)
 
-func NewAssistant(butler localfiles.Butler, model *genai.GenerativeModel) *assistant {
+func NewAssistant(butler localfiles.Butler, client *genai.Client, model string, config *genai.GenerateContentConfig) *assistant {
 	return &assistant{
 		butler: butler,
+		client: client,
 		model:  model,
+		config: config,
 	}
 }
 
 func (a *assistant) Session(ctx context.Context, attempt rundex.Rebuild) (Session, error) {
-	chat, err := llm.NewChat(a.model, &llm.ChatOpts{})
+	chat, err := llm.NewChat(ctx, a.client, a.model, a.config, &llm.ChatOpts{})
 	if err != nil {
 		return nil, errors.Wrap(err, "creating chat")
 	}

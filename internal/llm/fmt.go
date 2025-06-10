@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"cloud.google.com/go/vertexai/genai"
+	"google.golang.org/genai"
 )
 
 func FormatContent(content genai.Content) string {
@@ -17,17 +17,16 @@ func FormatContent(content genai.Content) string {
 	} else {
 		for _, part := range content.Parts {
 			msg += fmt.Sprintf("\n>>> Type: %T\n\n", part)
-			switch part.(type) {
-			case genai.Text:
-				s := string(part.(genai.Text))
+			if part.Text != "" {
+				s := part.Text
 				msg += "  " + strings.ReplaceAll(s, "\n", "\n  ")
-			case genai.FunctionCall:
-				call := part.(genai.FunctionCall)
+			} else if part.FunctionCall != nil {
+				call := part.FunctionCall
 				msg += fmt.Sprintf("%s(%v)", call.Name, call.Args)
-			case genai.FunctionResponse:
-				resp := part.(genai.FunctionResponse)
+			} else if part.FunctionResponse != nil {
+				resp := part.FunctionResponse
 				msg += fmt.Sprintf("%s(...) => %v", resp.Name, resp.Response)
-			default:
+			} else {
 				msg += "<unprintable type>"
 			}
 		}

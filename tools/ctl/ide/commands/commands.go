@@ -16,7 +16,6 @@ import (
 	"regexp"
 	"time"
 
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -35,6 +34,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
+	"google.golang.org/genai"
 	"gopkg.in/yaml.v3"
 )
 
@@ -174,19 +174,18 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 		{
 			Short: "debug with ✨AI✨",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
-				var model *genai.GenerativeModel
+				var config *genai.GenerateContentConfig
 				{
-					model = aiClient.GenerativeModel(llm.GeminiFlash)
-					model.GenerationConfig = genai.GenerationConfig{
-						Temperature:     genai.Ptr[float32](.1),
-						MaxOutputTokens: genai.Ptr[int32](16000),
+					config = &genai.GenerateContentConfig{
+						Temperature:     genai.Ptr(float32(0.1)),
+						MaxOutputTokens: int32(16000),
 					}
-					systemPrompt := []genai.Part{
-						genai.Text(expertPrompt),
+					systemPrompt := []*genai.Part{
+						{Text: expertPrompt},
 					}
-					model = llm.WithSystemPrompt(*model, systemPrompt...)
+					config = llm.WithSystemPrompt(config, systemPrompt...)
 				}
-				s, err := assistant.NewAssistant(butler, model).Session(ctx, example)
+				s, err := assistant.NewAssistant(butler, aiClient, llm.GeminiFlash, config).Session(ctx, example)
 				if err != nil {
 					log.Println(errors.Wrap(err, "creating session"))
 					return
@@ -262,17 +261,16 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 		{
 			Short: "Cluster using AI",
 			Func: func(ctx context.Context, rebuilds []rundex.Rebuild) {
-				var model *genai.GenerativeModel
+				var config *genai.GenerateContentConfig
 				{
-					model = aiClient.GenerativeModel(llm.GeminiFlash)
-					model.GenerationConfig = genai.GenerationConfig{
-						Temperature:     genai.Ptr[float32](.1),
-						MaxOutputTokens: genai.Ptr[int32](16000),
+					config = &genai.GenerateContentConfig{
+						Temperature:     genai.Ptr(float32(0.1)),
+						MaxOutputTokens: int32(16000),
 					}
-					systemPrompt := []genai.Part{
-						genai.Text(expertPrompt),
+					systemPrompt := []*genai.Part{
+						{Text: expertPrompt},
 					}
-					model = llm.WithSystemPrompt(*model, systemPrompt...)
+					config = llm.WithSystemPrompt(config, systemPrompt...)
 				}
 				p := pipe.FromSlice(rebuilds)
 				p = p.ParDo(RundexReadParallelism, func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
@@ -311,12 +309,12 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 					if len(logs) > uploadBytesLimit {
 						logs = "...(truncated)..." + logs[len(logs)-uploadBytesLimit:]
 					}
-					parts := []genai.Part{
-						genai.Text("Please summarize this rebuild failure in one sentence."),
-						genai.Text(logs),
+					parts := []*genai.Part{
+						{Text: "Please summarize this rebuild failure in one sentence."},
+						{Text: logs},
 					}
 					<-ticker
-					txt, err := llm.GenerateTextContent(ctx, model, parts...)
+					txt, err := llm.GenerateTextContent(ctx, aiClient, llm.GeminiFlash, config, parts...)
 					if err != nil {
 						log.Println(errors.Wrap(err, "sending message"))
 						return
@@ -324,19 +322,19 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 					out <- summarizedRebuild{Rebuild: in, Summary: string(txt)}
 					log.Println("Summary: ", txt)
 				})
-				var parts []genai.Part
+				var parts []*genai.Part
 				log.Printf("Summarizing %d rebuild failures", len(rebuilds))
 				for s := range summaries.Out() {
 					if s.Summary == "" {
 						continue
 					}
-					parts = append(parts, genai.Text(s.Summary))
+					parts = append(parts, &genai.Part{Text: s.Summary})
 				}
 				log.Printf("Finished summarizing, Asking for categories based on %d summaries.", len(parts))
 				// TODO: Give more structure to the expected output format to make it easier parsing the response.
-				parts = append([]genai.Part{genai.Text("Based on the following error summaries, please provide 1 to 5 classes of failures you think are happening.")}, parts...)
+				parts = append([]*genai.Part{{Text: "Based on the following error summaries, please provide 1 to 5 classes of failures you think are happening."}}, parts...)
 				<-ticker
-				txt, err := llm.GenerateTextContent(ctx, model, parts...)
+				txt, err := llm.GenerateTextContent(ctx, aiClient, llm.GeminiFlash, config, parts...)
 				if err != nil {
 					log.Println(errors.Wrap(err, "classifying summaries"))
 					return

@@ -8,7 +8,6 @@ require (
 	cloud.google.com/go/firestore v1.17.0
 	cloud.google.com/go/kms v1.20.0
 	cloud.google.com/go/storage v1.43.0
-	cloud.google.com/go/vertexai v0.13.2
 	github.com/cheggaaa/pb v1.0.29
 	github.com/elazarl/goproxy v1.2.3
 	github.com/gdamore/tcell/v2 v2.7.4
@@ -26,13 +25,13 @@ require (
 	golang.org/x/crypto v0.36.0
 	golang.org/x/oauth2 v0.26.0
 	google.golang.org/api v0.220.0
+	google.golang.org/genai v1.10.0
 	google.golang.org/grpc v1.70.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	cloud.google.com/go v0.116.0 // indirect
-	cloud.google.com/go/aiplatform v1.68.0 // indirect
 	cloud.google.com/go/auth v0.14.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.7 // indirect
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
@@ -56,6 +55,7 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/in-toto/attestation v1.0.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect

@@ -27,7 +27,6 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/cheggaaa/pb"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
@@ -51,6 +50,7 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/iterator"
+	"google.golang.org/genai"
 	"gopkg.in/yaml.v3"
 )
 
@@ -188,7 +188,11 @@ var tui = &cobra.Command{
 		if *llmProject != "" {
 			aiProject = *llmProject
 		}
-		aiClient, err := genai.NewClient(cmd.Context(), aiProject, "us-central1")
+		aiClient, err := genai.NewClient(cmd.Context(), &genai.ClientConfig{
+			Backend:  genai.BackendVertexAI,
+			Project:  aiProject,
+			Location: "us-central1",
+		})
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "failed to create a genai client"))
 		}
