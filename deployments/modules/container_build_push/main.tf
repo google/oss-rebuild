@@ -25,7 +25,7 @@ locals {
   build_args_str = join(" ", [for arg in var.build_args : "--build-arg ${arg}"])
 }
 
-resource "terraform_data" "image" {
+resource "terraform_data" "image_deps" {
   input = {
     name          = var.name
     image_url     = var.image_url
@@ -33,6 +33,14 @@ resource "terraform_data" "image" {
     repo          = local.repo
     commit        = var.commit,
     # NOTE: Exclude var.build_args and var.dockerfile_path since they don't affect the image URL.
+  }
+}
+
+resource "terraform_data" "image" {
+  input = terraform_data.image_deps.output
+
+  lifecycle {
+    replace_triggered_by =  [terraform_data.image_deps]
   }
 
   provisioner "local-exec" {

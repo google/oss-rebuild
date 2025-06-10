@@ -352,35 +352,35 @@ module "prebuild_binaries" {
 data "google_artifact_registry_docker_image" "gateway" {
   location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name    = "gateway:${terraform_data.service_version.output}"
+  image_name = "gateway:${module.service_images["gateway"].image_version}"
   depends_on    = [module.service_images["gateway"]]
 }
 
 data "google_artifact_registry_docker_image" "git-cache" {
   location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name    = "git_cache:${terraform_data.service_version.output}"
+  image_name    = "git_cache:${module.service_images["git_cache"].image_version}"
   depends_on    = [module.service_images["git_cache"]]
 }
 
 data "google_artifact_registry_docker_image" "rebuilder" {
   location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name    = "rebuilder:${terraform_data.service_version.output}"
+  image_name    = "rebuilder:${module.service_images["rebuilder"].image_version}"
   depends_on    = [module.service_images["rebuilder"]]
 }
 
 data "google_artifact_registry_docker_image" "inference" {
   location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name    = "inference:${terraform_data.service_version.output}"
+  image_name    = "inference:${module.service_images["inference"].image_version}"
   depends_on    = [module.service_images["inference"]]
 }
 
 data "google_artifact_registry_docker_image" "api" {
   location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name    = "api:${terraform_data.service_version.output}"
+  image_name    = "api:${module.service_images["api"].image_version}"
   depends_on    = [module.service_images["api"]]
 }
 
