@@ -1,0 +1,37 @@
+---
+---
+
+/**
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+@import '{{ site.theme }}';
+
+/* Improves adaptive width resizing for larger screens */
+
+/* Fluid expansion using clamp() for smooth scaling */
+@media screen and (min-width: 1200px) {
+  .wrapper {
+    /* Smoothly scales from 1100px at 1200px screen to 1500px at 1600px screen */
+    width: #{'clamp(1100px, 60vw + 380px, 1500px)'};
+    margin: 0 auto;
+  }
+  section {
+    /* Smoothly scales from 740px at 1200px screen to 1140px at 1600px screen */
+    width: #{'clamp(740px, 45vw + 200px, 1140px)'};
+  }
+}
+
+/* Text content width remains compact while tables can scale */
+section p {
+  max-width: 85ch;
+}
+section ul,
+section ol {
+  max-width: 78ch;
+}
+section pre,
+section table {
+  max-width: none;
+}
