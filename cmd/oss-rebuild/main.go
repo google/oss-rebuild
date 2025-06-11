@@ -14,6 +14,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/fatih/color"
@@ -27,7 +28,7 @@ import (
 )
 
 var (
-	output       = flag.String("output", "payload", "Output format [bundle, payload, dockerfile, build, steps]")
+	output       = flag.String("output", "summary", "Output format [summary, bundle, payload, dockerfile, build, steps]")
 	bucket       = flag.String("bucket", "google-rebuild-attestations", "GCS bucket from which to pull rebuild attestations")
 	verify       = flag.Bool("verify", true, "whether to verify rebuild attestation signatures")
 	verifyWith   = flag.String("verify-with", ossRebuildKeyURI, "comma-separated list of key URIs used to verify rebuild attestation signatures")
@@ -36,6 +37,7 @@ var (
 
 var (
 	yellow = color.New(color.FgYellow).SprintFunc()
+	green  = color.New(color.FgGreen).SprintFunc()
 	white  = color.New(color.FgWhite).SprintFunc()
 )
 
@@ -58,7 +60,7 @@ func writeIndentedJson(out io.Writer, b []byte) error {
 }
 
 var getCmd = &cobra.Command{
-	Use:   "get <ecosystem> <package> <version> [<artifact>]",
+	Use:   "get <ecosystem> <package> <version> [<artifact>] [-output=summary|bundle|payload|dockerfile|build|steps]",
 	Short: "Get rebuild attestation for a specific artifact.",
 	Long: `Get rebuild attestation for a specific ecosystem/package/version/artifact.
 The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <package>-<version>.tar.gz file. For pypi the artifact is the wheel file. For cratesio the artifact is the <package>-<version>.crate file.`,
@@ -70,8 +72,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 	// RunE because we want errors to affect the return status.
 	RunE: func(cmd *cobra.Command, args []string) error {
 		printlnAll := func(all ...string) {
-			all = append(all, "\n")
-			cmd.OutOrStdout().Write([]byte(strings.Join(all, "")))
+			fmt.Fprintln(cmd.OutOrStdout(), strings.Join(all, ""))
 		}
 		if len(args) > 4 {
 			return errors.New("Too many arguments")
@@ -93,7 +94,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 				default:
 					return errors.Errorf("Unsupported ecosystem: \"%s\"", ecosystem)
 				}
-				printlnAll(yellow("NOTE:"), white(fmt.Sprintf(" artifact is being inferred as \"%s\"", artifact)))
+				fmt.Fprintln(cmd.OutOrStderr(), yellow("NOTE:"), white(fmt.Sprintf(" artifact is being inferred as \"%s\"", artifact)))
 			} else {
 				artifact = args[3]
 			}
@@ -164,6 +165,34 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			}
 		}
 		switch *output {
+		case "summary":
+			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
+			if err != nil {
+				return err
+			}
+			ae, err := attestation.FilterForOne[attestation.ArtifactEquivalenceAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeArtifactEquivalenceV01))
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStderr(), green("Rebuild found!"))
+			pp := func(label string, value any) {
+				printlnAll(yellow(label), ": ", white(value))
+			}
+			pp("Rebuilt at", "\""+rb.Predicate.RunDetails.BuildMetadata.FinishedOn.Format(time.RFC3339)+"\"")
+			pp("Upstream target", ae.Predicate.BuildDefinition.ResolvedDependencies.UpstreamArtifact.Name)
+			digest, err := json.Marshal(ae.Predicate.BuildDefinition.ResolvedDependencies.UpstreamArtifact.Digest)
+			if err != nil {
+				return errors.Wrap(err, "marshalling digest")
+			}
+			// TODO: Include the stabilizers that were used to match
+			pp("Upstream target digest", string(digest))
+			dockerfile := string(rb.Predicate.RunDetails.Byproducts.Dockerfile.Content)
+			// Indent the dockerfile in a block string literal.
+			pp("Dockerfile", "|-"+strings.Replace("\n"+dockerfile, "\n", "\n  ", -1))
 		case "bundle":
 			cmd.OutOrStdout().Write(bundleBytes)
 		case "payload":
