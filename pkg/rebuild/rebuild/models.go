@@ -92,6 +92,13 @@ func (t Timings) EstimateCleanBuild() time.Duration {
 	return t.CloneEstimate + t.Infer + t.Build
 }
 
+// PrebuildConfig contains deployment-specific prebuild configuration
+type PrebuildConfig struct {
+	Bucket string `json:"bucket"`
+	Dir    string `json:"dir,omitempty"`
+	Auth   bool   `json:"auth,omitempty"`
+}
+
 // Verdict is the result of a single rebuild attempt.
 type Verdict struct {
 	Target   Target

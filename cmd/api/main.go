@@ -134,8 +134,8 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	}
 	d.BuildProject = *project
 	d.BuildServiceAccount = *buildRemoteIdentity
-	d.UtilPrebuildBucket = *prebuildBucket
-	d.UtilPrebuildAuth = *prebuildAuth
+	d.PrebuildConfig.Bucket = *prebuildBucket
+	d.PrebuildConfig.Auth = *prebuildAuth
 	d.BuildLogsBucket = *logsBucket
 	d.ServiceRepo, err = serviceid.ParseLocation(BuildRepo, BuildVersion)
 	if err != nil {

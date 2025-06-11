@@ -552,7 +552,7 @@ RLpmHHG1JOVdOA==
 			}
 			d.BuildProject = "foo-project"
 			d.BuildServiceAccount = "foo-role"
-			d.UtilPrebuildBucket = "foo-prebuild-bucket"
+			d.PrebuildConfig.Bucket = "foo-prebuild-bucket"
 			d.BuildLogsBucket = "foo-logs-bucket"
 			tempDir := must(os.MkdirTemp("", "test-*"))
 			defer os.RemoveAll(tempDir)

@@ -74,8 +74,8 @@ ENTRYPOINT ["/bin/sh","/build"]
 				},
 			},
 			opts: RemoteOptions{
-				UseTimewarp:        true,
-				UtilPrebuildBucket: "my-bucket",
+				UseTimewarp:    true,
+				PrebuildConfig: PrebuildConfig{Bucket: "my-bucket"},
 			},
 			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
@@ -116,10 +116,9 @@ ENTRYPOINT ["/bin/sh","/build"]
 				},
 			},
 			opts: RemoteOptions{
-				UseTimewarp:        true,
-				UtilPrebuildBucket: "my-bucket",
-				UtilPrebuildAuth:   true,
-				Project:            "my-project",
+				UseTimewarp:    true,
+				PrebuildConfig: PrebuildConfig{Bucket: "my-bucket", Auth: true},
+				Project:        "my-project",
 			},
 			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
@@ -160,9 +159,8 @@ ENTRYPOINT ["/bin/sh","/build"]
 				},
 			},
 			opts: RemoteOptions{
-				UseTimewarp:        true,
-				UtilPrebuildBucket: "my-bucket",
-				UtilPrebuildDir:    "v0.0.0-202501010000-feeddeadbeef00",
+				UseTimewarp:    true,
+				PrebuildConfig: PrebuildConfig{Bucket: "my-bucket", Dir: "v0.0.0-202501010000-feeddeadbeef00"},
 			},
 			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
@@ -327,7 +325,7 @@ func TestDoCloudBuild(t *testing.T) {
 			},
 			CancelOperationFunc: func(op *cloudbuild.Operation) error { return nil },
 		}
-		opts := RemoteOptions{Project: "test-project", LogsBucket: "test-logs-bucket", BuildServiceAccount: "test-service-account", UtilPrebuildBucket: "test-bootstrap"}
+		opts := RemoteOptions{Project: "test-project", LogsBucket: "test-logs-bucket", BuildServiceAccount: "test-service-account", PrebuildConfig: PrebuildConfig{Bucket: "test-bootstrap"}}
 		target := Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"}
 		bi := &BuildInfo{Target: target}
 		err := doCloudBuild(context.Background(), client, beforeBuild, opts, bi)
@@ -365,7 +363,7 @@ func TestMakeBuild(t *testing.T) {
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
 				BuildServiceAccount: "test-service-account",
-				UtilPrebuildBucket:  "test-bootstrap",
+				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap"},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 			},
 			expected: &cloudbuild.Build{
@@ -411,7 +409,7 @@ chmod +x gsutil_writeonly
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
 				BuildServiceAccount: "test-service-account",
-				UtilPrebuildBucket:  "test-bootstrap",
+				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap"},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 				UseSyscallMonitor:   true,
 			},
@@ -466,9 +464,8 @@ chmod +x gsutil_writeonly
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
 				BuildServiceAccount: "test-service-account",
-				UtilPrebuildBucket:  "test-bootstrap",
+				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap", Auth: true},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
-				UtilPrebuildAuth:    true,
 				Project:             "test-project",
 			},
 			expected: &cloudbuild.Build{
@@ -518,7 +515,7 @@ chmod +x gsutil_writeonly
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
 				BuildServiceAccount: "test-service-account",
-				UtilPrebuildBucket:  "test-bootstrap",
+				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap"},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 				UseNetworkProxy:     true,
 			},
@@ -602,8 +599,7 @@ chmod +x gsutil_writeonly
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
 				BuildServiceAccount: "test-service-account",
-				UtilPrebuildBucket:  "test-bootstrap",
-				UtilPrebuildDir:     "v0.0.0-202501010000-feeddeadbeef00",
+				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap", Dir: "v0.0.0-202501010000-feeddeadbeef00"},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 				UseNetworkProxy:     true,
 			},
@@ -687,10 +683,9 @@ chmod +x gsutil_writeonly
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
 				BuildServiceAccount: "test-service-account",
-				UtilPrebuildBucket:  "test-bootstrap",
+				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap", Auth: true},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 				UseNetworkProxy:     true,
-				UtilPrebuildAuth:    true,
 				Project:             "test-project",
 			},
 			expected: &cloudbuild.Build{
