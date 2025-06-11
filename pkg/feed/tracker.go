@@ -8,19 +8,19 @@ import (
 )
 
 type Tracker interface {
-	IsTracked(schema.ReleaseEvent) (bool, error)
+	IsTracked(schema.TargetEvent) (bool, error)
 }
 
 type funcTracker struct {
-	isTracked func(schema.ReleaseEvent) (bool, error)
+	isTracked func(schema.TargetEvent) (bool, error)
 }
 
-func (f *funcTracker) IsTracked(e schema.ReleaseEvent) (bool, error) {
+func (f *funcTracker) IsTracked(e schema.TargetEvent) (bool, error) {
 	return f.isTracked(e)
 }
 
 var _ Tracker = &funcTracker{}
 
-func TrackerFromFunc(isTracked func(schema.ReleaseEvent) (bool, error)) Tracker {
+func TrackerFromFunc(isTracked func(schema.TargetEvent) (bool, error)) Tracker {
 	return &funcTracker{isTracked: isTracked}
 }

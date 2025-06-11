@@ -55,7 +55,7 @@ func main() {
 				tracked[rebuild.PyPI][p.Name] = true
 			}
 		}
-		tracker = feed.TrackerFromFunc(func(e schema.ReleaseEvent) (bool, error) {
+		tracker = feed.TrackerFromFunc(func(e schema.TargetEvent) (bool, error) {
 			if _, ok := tracked[e.Ecosystem]; !ok {
 				return false, nil
 			}
