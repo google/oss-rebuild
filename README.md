@@ -36,10 +36,19 @@ ecosystem are currently rebuilt.
 
 ## Usage
 
-The `oss-rebuild` CLI tool can be used to inspect attestations:
+The `oss-rebuild` CLI tool provides access to OSS Rebuild data:
 
 ```bash
+$ go run github.com/google/oss-rebuild/cmd/oss-rebuild@latest --help
+$ # Alternatively, install the binary locally.
+$ # Just make sure it's on your PATH: https://go.dev/ref/mod#go-install
 $ go install github.com/google/oss-rebuild/cmd/oss-rebuild@latest
+$ oss-rebuild --help
+```
+
+To view the attestation for a given package, use the `get` command:
+
+```bash
 $ oss-rebuild get pypi absl-py 2.0.0
 ```
 
