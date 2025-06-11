@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	output       = flag.String("output", "payload", "Output format [bundle, payload, dockerfile, build, steps]")
+	output       = flag.String("output", "summary", "Output format [summary, bundle, payload, dockerfile, build, steps]")
 	bucket       = flag.String("bucket", "google-rebuild-attestations", "GCS bucket from which to pull rebuild attestations")
 	verify       = flag.Bool("verify", true, "whether to verify rebuild attestation signatures")
 	verifyWith   = flag.String("verify-with", ossRebuildKeyURI, "comma-separated list of key URIs used to verify rebuild attestation signatures")
@@ -36,6 +36,7 @@ var (
 
 var (
 	yellow = color.New(color.FgYellow).SprintFunc()
+	green  = color.New(color.FgGreen).SprintFunc()
 	white  = color.New(color.FgWhite).SprintFunc()
 )
 
@@ -58,7 +59,7 @@ func writeIndentedJson(out io.Writer, b []byte) error {
 }
 
 var getCmd = &cobra.Command{
-	Use:   "get <ecosystem> <package> <version> [<artifact>]",
+	Use:   "get <ecosystem> <package> <version> [<artifact>] [-output=summary|bundle|payload|dockerfile|build|steps]",
 	Short: "Get rebuild attestation for a specific artifact.",
 	Long: `Get rebuild attestation for a specific ecosystem/package/version/artifact.
 The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <package>-<version>.tar.gz file. For pypi the artifact is the wheel file. For cratesio the artifact is the <package>-<version>.crate file.`,
@@ -164,6 +165,33 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			}
 		}
 		switch *output {
+		case "summary":
+			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
+			if err != nil {
+				return err
+			}
+			ae, err := attestation.FilterForOne[attestation.ArtifactEquivalenceAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeArtifactEquivalenceV01))
+			if err != nil {
+				return err
+			}
+			printlnAll(green("Rebuild found!"))
+			pp := func(label string, value any) {
+				printlnAll(yellow(label), ": ", white(value))
+			}
+			pp("Rebuilt at", rb.Predicate.RunDetails.BuildMetadata.FinishedOn)
+			pp("Upstream target", ae.Predicate.BuildDefinition.ResolvedDependencies.UpstreamArtifact.Name)
+			digest, err := json.Marshal(ae.Predicate.BuildDefinition.ResolvedDependencies.UpstreamArtifact.Digest)
+			if err != nil {
+				return errors.Wrap(err, "marshalling digest")
+			}
+			pp("Upstream target digest", string(digest))
+			// Add indentation to the dockerfile.
+			dockerfile := strings.Replace("\n"+string(rb.Predicate.RunDetails.Byproducts.Dockerfile.Content), "\n", "\n  ", -1)
+			pp("Dockerfile", dockerfile)
 		case "bundle":
 			cmd.OutOrStdout().Write(bundleBytes)
 		case "payload":
