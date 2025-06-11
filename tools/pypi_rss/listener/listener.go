@@ -95,7 +95,7 @@ func (l *listener) handle(ctx context.Context, events []Event) error {
 			// TODO: Inlude the artifact from the event.
 			Artifact: "",
 		}
-		tracked, err := l.tracker.IsTracked(schema.ReleaseEvent{}.From(t))
+		tracked, err := l.tracker.IsTracked(schema.TargetEvent{}.From(t))
 		if err != nil {
 			return errors.Wrap(err, "checking if tracked")
 		}

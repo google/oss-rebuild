@@ -27,7 +27,7 @@ type FakeTracker struct {
 	Tracked map[rebuild.Ecosystem]map[string]bool
 }
 
-func (f *FakeTracker) IsTracked(e schema.ReleaseEvent) (bool, error) {
+func (f *FakeTracker) IsTracked(e schema.TargetEvent) (bool, error) {
 	if _, ok := f.Tracked[e.Ecosystem]; !ok {
 		return false, nil
 	}
@@ -179,7 +179,7 @@ func TestListenerHandle(t *testing.T) {
 			l := &listener{
 				rssURL:  "test-url", // Not actually used in this test
 				handled: tt.handled,
-				tracker: feed.TrackerFromFunc(func(e schema.ReleaseEvent) (bool, error) {
+				tracker: feed.TrackerFromFunc(func(e schema.TargetEvent) (bool, error) {
 					if _, ok := tt.tracked[e.Ecosystem]; !ok {
 						return false, nil
 					}
