@@ -9,3 +9,5 @@ exclude:
   - Gemfile
   - Dockerfile
   - run.sh
+logo: https://raw.githubusercontent.com/google/oss-rebuild/main/site/logo-dark.svg
+title: OSS Rebuild

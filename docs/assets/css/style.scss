@@ -8,6 +8,11 @@
 
 @import '{{ site.theme }}';
 
+/* Limit the size of the logo to not exceed the title width */
+header img {
+  max-width: 175px;
+}
+
 /* Improves adaptive width resizing for larger screens */
 
 /* Fluid expansion using clamp() for smooth scaling */
