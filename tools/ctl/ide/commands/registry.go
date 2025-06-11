@@ -11,20 +11,44 @@ import (
 )
 
 type RebuildCmd struct {
-	Short  string
-	Hotkey rune
-	Func   func(context.Context, rundex.Rebuild)
+	Short       string
+	Hotkey      rune
+	Func        func(context.Context, rundex.Rebuild)
+	DisabledMsg func() string
+}
+
+func (c RebuildCmd) IsDisabled() bool {
+	if c.DisabledMsg == nil {
+		return false
+	}
+	return c.DisabledMsg() != ""
 }
 
 type RebuildGroupCmd struct {
-	Short string
-	Func  func(context.Context, []rundex.Rebuild)
+	Short       string
+	Func        func(context.Context, []rundex.Rebuild)
+	DisabledMsg func() string
+}
+
+func (c RebuildGroupCmd) IsDisabled() bool {
+	if c.DisabledMsg == nil {
+		return false
+	}
+	return c.DisabledMsg() != ""
 }
 
 type GlobalCmd struct {
-	Short  string
-	Hotkey rune
-	Func   func(context.Context)
+	Short       string
+	Hotkey      rune
+	Func        func(context.Context)
+	DisabledMsg func() string
+}
+
+func (c GlobalCmd) IsDisabled() bool {
+	if c.DisabledMsg == nil {
+		return false
+	}
+	return c.DisabledMsg() != ""
 }
 
 type Registry struct {

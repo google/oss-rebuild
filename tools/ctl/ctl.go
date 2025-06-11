@@ -50,9 +50,13 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
+	"google.golang.org/api/serviceusage/v1"
 	"google.golang.org/genai"
 	"gopkg.in/yaml.v3"
 )
+
+const vertexAIService = "aiplatform.googleapis.com"
 
 var rootCmd = &cobra.Command{
 	Use:   "ctl",
@@ -184,17 +188,28 @@ var tui = &cobra.Command{
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
 		}
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
-		aiProject := *project
-		if *llmProject != "" {
-			aiProject = *llmProject
-		}
-		aiClient, err := genai.NewClient(cmd.Context(), &genai.ClientConfig{
-			Backend:  genai.BackendVertexAI,
-			Project:  aiProject,
-			Location: "us-central1",
-		})
-		if err != nil {
-			log.Fatal(errors.Wrap(err, "failed to create a genai client"))
+		var aiClient *genai.Client
+		{
+			aiProject := *project
+			if *llmProject != "" {
+				aiProject = *llmProject
+			}
+			serviceUsageClient, err := serviceusage.NewService(cmd.Context(), option.WithScopes(serviceusage.CloudPlatformScope))
+			if err != nil {
+				log.Fatalf("Failed to create Service Usage client: %v", err)
+			}
+			if service, err := serviceUsageClient.Services.Get(fmt.Sprintf("projects/%s/services/%s", aiProject, vertexAIService)).Do(); err != nil {
+				log.Fatalf("Failed to check for vertex AI service: %v", err)
+			} else if service.State == "ENABLED" {
+				aiClient, err = genai.NewClient(cmd.Context(), &genai.ClientConfig{
+					Backend:  genai.BackendVertexAI,
+					Project:  aiProject,
+					Location: "us-central1",
+				})
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "failed to create a genai client"))
+				}
+			}
 		}
 		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
 		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, aiClient)
