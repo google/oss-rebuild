@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"path"
 	"slices"
 	"strings"
@@ -57,9 +58,14 @@ var getCmd = &cobra.Command{
 	Long: `Get rebuild attestation for a specific ecosystem/package/version/artifact.
 The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <package>-<version>.tar.gz file. For pypi the artifact is the wheel file. For cratesio the artifact is the <package>-<version>.crate file.`,
 	Args: cobra.MinimumNArgs(3),
-	Run: func(cmd *cobra.Command, args []string) {
+	// Silence errors because we will print the error ourselves in main.
+	SilenceErrors: true,
+	// Don't show usage for every error.
+	SilenceUsage: true,
+	// RunE because we want errors to affect the return status.
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 4 {
-			log.Fatal("Too many arguments")
+			return errors.New("Too many arguments")
 		}
 		var t rebuild.Target
 		{
@@ -78,7 +84,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 				case rebuild.NPM:
 					artifact = fmt.Sprintf("%s-%s.tgz", pkg, version)
 				default:
-					log.Fatalf("Unsupported ecosystem: \"%s\"", ecosystem)
+					return errors.Errorf("Unsupported ecosystem: \"%s\"", ecosystem)
 				}
 			} else {
 				artifact = args[3]
@@ -98,7 +104,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			ctx = context.WithValue(ctx, rebuild.GCSClientOptionsID, []option.ClientOption{option.WithoutAuthentication()})
 			attestations, err := rebuild.NewGCSStore(ctx, "gs://"+*bucket)
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "initializing GCS store"))
+				return errors.Wrap(err, "initializing GCS store")
 			}
 			var verifiers []dsse.Verifier
 			if !*verify {
@@ -123,42 +129,41 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 					case strings.HasPrefix(uri, kmsV1API):
 						verifier, err := makeKMSVerifier(ctx, ossRebuildKeyResource)
 						if err != nil {
-							log.Fatal(err)
+							return err
 						}
 						verifiers = append(verifiers, verifier)
 					default:
-						log.Fatalf("unsupported key URI: %s", uri)
+						return errors.Errorf("unsupported key URI: %s", uri)
 					}
 					keysAdded = append(keysAdded, uri)
 				}
 			}
 			dsseVerifier, err := dsse.NewEnvelopeVerifier(verifiers...)
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating EnvelopeVerifier"))
+				return errors.Wrap(err, "creating EnvelopeVerifier")
 			}
 			r, err := attestations.Reader(ctx, rebuild.AttestationBundleAsset.For(t))
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating attestation reader"))
+				return errors.Wrap(err, "creating attestation reader")
 			}
 			bundleBytes, err = io.ReadAll(r)
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating attestation reader"))
+				return errors.Wrap(err, "creating attestation reader")
 			}
 			bundle, err = attestation.NewBundle(ctx, bundleBytes, dsseVerifier)
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating bundle"))
+				return errors.Wrap(err, "creating bundle")
 			}
 		}
 		switch *output {
 		case "bundle":
 			cmd.OutOrStdout().Write(bundleBytes)
-			return
 		case "payload":
 			encoder := json.NewEncoder(cmd.OutOrStdout())
 			encoder.SetIndent("", "  ")
 			for _, s := range bundle.Statements() {
 				if err := encoder.Encode(s); err != nil {
-					log.Fatal(errors.Wrap(err, "pprinting payload"))
+					return errors.Wrap(err, "pprinting payload")
 				}
 			}
 		case "dockerfile":
@@ -166,37 +171,38 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 				bundle,
 				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 			dockerfile := rb.Predicate.RunDetails.Byproducts.Dockerfile
 			if _, err := cmd.OutOrStdout().Write(dockerfile.Content); err != nil {
-				log.Fatal(errors.Wrap(err, "writing dockerfile"))
+				return errors.Wrap(err, "writing dockerfile")
 			}
 		case "build":
 			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
 				bundle,
 				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 			strategy := rb.Predicate.RunDetails.Byproducts.BuildStrategy
 			if err := writeIndentedJson(cmd.OutOrStdout(), strategy.Content); err != nil {
-				log.Fatal(errors.Wrap(err, "writing dockerfile"))
+				return errors.Wrap(err, "writing dockerfile")
 			}
 		case "steps":
 			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
 				bundle,
 				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 			steps := rb.Predicate.RunDetails.Byproducts.BuildSteps
 			if err := writeIndentedJson(cmd.OutOrStdout(), steps.Content); err != nil {
-				log.Fatal(errors.Wrap(err, "writing dockerfile"))
+				return errors.Wrap(err, "writing dockerfile")
 			}
 		default:
-			log.Fatal(errors.New("unsupported format: " + *output))
+			return errors.New("unsupported format: " + *output)
 		}
+		return nil
 	},
 }
 
@@ -204,13 +210,18 @@ var listCmd = &cobra.Command{
 	Use:   "list <ecosystem> <package> [<version>]",
 	Short: "List artifacts with rebuild attestations for a given query",
 	Args:  cobra.MaximumNArgs(3),
-	Run: func(cmd *cobra.Command, args []string) {
+	// Silence errors because we will print the error ourselves in main.
+	SilenceErrors: true,
+	// Don't show usage for every error.
+	SilenceUsage: true,
+	// RunE because we want errors to affect the return status.
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) < 2 {
-			log.Fatal("Please include at least an ecosystem and package")
+			return errors.New("Please include at least an ecosystem and package")
 		}
 		gcsClient, err := gcs.NewClient(cmd.Context(), option.WithoutAuthentication())
 		if err != nil {
-			log.Fatal(errors.Wrap(err, "initializing GCS client"))
+			return errors.Wrap(err, "initializing GCS client")
 		}
 		query := &gcs.Query{
 			Prefix: path.Join(args...),
@@ -223,10 +234,11 @@ var listCmd = &cobra.Command{
 				break
 			}
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "listing objects"))
+				return errors.Wrap(err, "listing objects")
 			}
 			io.WriteString(cmd.OutOrStdout(), obj.Name+"\n")
 		}
+		return nil
 	},
 }
 
@@ -246,6 +258,7 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
 	}
 }
