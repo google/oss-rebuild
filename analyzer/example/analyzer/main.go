@@ -13,6 +13,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/urlx"
+	"github.com/google/oss-rebuild/pkg/analyzer"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -39,7 +40,7 @@ func EnqueueInit(ctx context.Context) (*analyzerservice.EnqueueDeps, error) {
 		return nil, errors.Wrap(err, "creating task queue")
 	}
 	return &analyzerservice.EnqueueDeps{
-		Tracker:  feed.TrackerFromFunc(func(schema.ReleaseEvent) (bool, error) { return true, nil }),
+		Tracker:  feed.TrackerFromFunc(func(schema.TargetEvent) (bool, error) { return true, nil }),
 		Analyzer: urlx.MustParse("/analyze"),
 		Queue:    queue,
 	}, nil
@@ -60,7 +61,7 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 
 func main() {
 	flag.Parse()
-	http.HandleFunc("/enqueue", api.Translate(analyzerservice.RebuildMessageToReleaseEvent, api.Handler(EnqueueInit, analyzerservice.Enqueue)))
+	http.HandleFunc("/enqueue", api.Translate(analyzer.GCSEventBodyToTargetEvent, api.Handler(EnqueueInit, analyzerservice.Enqueue)))
 	http.HandleFunc("/analyze", api.Handler(AnalyzerInit, analyzerservice.Analyze))
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalln(err)

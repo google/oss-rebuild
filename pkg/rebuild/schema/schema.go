@@ -270,16 +270,16 @@ type Run struct {
 	Created       time.Time `firestore:"created,omitempty"`
 }
 
-type ReleaseEvent struct {
+type TargetEvent struct {
 	Ecosystem rebuild.Ecosystem `form:",required"`
 	Package   string            `form:",required"`
 	Version   string            `form:",required"`
 	Artifact  string            `form:""`
 }
 
-func (ReleaseEvent) Validate() error { return nil }
+func (TargetEvent) Validate() error { return nil }
 
-func (e ReleaseEvent) From(t rebuild.Target) ReleaseEvent {
+func (e TargetEvent) From(t rebuild.Target) TargetEvent {
 	e.Ecosystem = t.Ecosystem
 	e.Package = t.Package
 	e.Version = t.Version
@@ -287,7 +287,7 @@ func (e ReleaseEvent) From(t rebuild.Target) ReleaseEvent {
 	return e
 }
 
-var _ api.Message = ReleaseEvent{}
+var _ api.Message = TargetEvent{}
 
 // AnalyzeRebuildRequest is a request to analyze a rebuilt package.
 type AnalyzeRebuildRequest struct {
