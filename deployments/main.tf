@@ -511,6 +511,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
         "--build-def-repo=https://github.com/google/oss-rebuild",
         "--build-def-repo-dir=definitions",
+        "--block-local-repo-publish=${var.public}",
       ]
       resources {
         limits = {
