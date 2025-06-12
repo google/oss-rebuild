@@ -134,8 +134,6 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	}
 	d.BuildProject = *project
 	d.BuildServiceAccount = *buildRemoteIdentity
-	d.UtilPrebuildBucket = *prebuildBucket
-	d.UtilPrebuildAuth = *prebuildAuth
 	d.BuildLogsBucket = *logsBucket
 	d.ServiceRepo, err = serviceid.ParseLocation(BuildRepo, BuildVersion)
 	if err != nil {
@@ -147,6 +145,10 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing prebuild location")
 	}
+	d.PrebuildConfig.Bucket = *prebuildBucket
+	d.PrebuildConfig.Auth = *prebuildAuth
+	// NOTE: The subdir will match the version identifier used for the service version.
+	d.PrebuildConfig.Dir = d.PrebuildRepo.Ref
 	buildDefRepo, err := uri.CanonicalizeRepoURI(*buildDefRepo)
 	if err != nil {
 		return nil, errors.Wrap(err, "canonicalizing build def repo")
