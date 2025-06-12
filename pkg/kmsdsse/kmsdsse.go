@@ -55,7 +55,7 @@ func (s *CloudKMSSignerVerifier) Sign(ctx context.Context, data []byte) ([]byte,
 	}
 	resp, err := s.client.AsymmetricSign(ctx, req)
 	if err != nil {
-		return []byte{}, err
+		return nil, err
 	}
 	return resp.Signature, nil
 }
@@ -63,13 +63,12 @@ func (s *CloudKMSSignerVerifier) Sign(ctx context.Context, data []byte) ([]byte,
 func (s *CloudKMSSignerVerifier) Verify(ctx context.Context, data, sig []byte) error {
 	switch s.pubpb.Algorithm {
 	case kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256:
-		h := sha256.New()
 		ecKey, ok := s.pub.(*ecdsa.PublicKey)
 		if !ok {
 			return errors.New("unexpected public key type")
 		}
-		h.Write(data)
-		if !ecdsa.VerifyASN1(ecKey, h.Sum(nil), sig) {
+		sum := sha256.Sum256(data)
+		if !ecdsa.VerifyASN1(ecKey, sum[:], sig) {
 			return errors.New("signature verification failed")
 		}
 		return nil
