@@ -46,14 +46,20 @@ $ go install github.com/google/oss-rebuild/cmd/oss-rebuild@latest
 $ oss-rebuild --help
 ```
 
-To view the attestation for a given package, use the `get` command:
+To view the rebuild summary for a given package, use the `get` command:
 
 ```bash
 $ oss-rebuild get pypi absl-py 2.0.0
 ```
 
-The default output contains the rebuild's Dockerfile in base64-encoded form. To
-view this Dockerfile alone, we provide an option in the `--output` flag:
+The default output is just a summary. You can view the entire attestation payload using `--output=payload`:
+
+```bash
+$ oss-rebuild get pypi absl-py 2.0.0 --output=payload
+```
+
+That payload contains the rebuild's Dockerfile in base64-encoded form. To
+view this Dockerfile alone, use `--output=dockerfile`:
 
 ```bash
 $ oss-rebuild get pypi absl-py 2.0.0 --output=dockerfile
@@ -65,15 +71,15 @@ This can be chained with the `docker` command to execute a rebuild locally:
 $ oss-rebuild get pypi absl-py 2.0.0 --output=dockerfile | docker run $(docker buildx build -q -)
 ```
 
-While the default `--output=payload` option produces more human-readable
+While the above `--output=payload` option produces more human-readable
 content, the entire signed attestation can be accessed as follows:
 
 ```bash
 $ oss-rebuild get pypi absl-py 2.0.0 --output=bundle
 ```
 
-The `list` command can be used to view the versions of a package that have been
-rebuilt:
+To explore more packages, the `list` command can be used to view the versions of
+a package that have been rebuilt:
 
 ```bash
 $ oss-rebuild list pypi absl-py
