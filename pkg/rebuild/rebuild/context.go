@@ -16,5 +16,6 @@ const (
 	TimewarpID
 	RunID
 	GCSClientOptionsID
-	GCBDeadlineID
+	GCBCancelDeadlineID
+	GCBWaitDeadlineID
 )

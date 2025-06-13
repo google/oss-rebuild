@@ -303,14 +303,11 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
 	started := time.Now().UTC()
 	ctx = context.WithValue(ctx, rebuild.RunID, req.ID)
-	var timeout time.Duration
-	if req.BuildTimeout == 0 {
-		// Cloud Run times out after 60 minutes, give ourselves 5 minutes to cleanup and log results.
-		timeout = 55 * time.Minute
-	} else {
-		timeout = req.BuildTimeout
+	// Cloud Run times out after 60 minutes, give ourselves 5 minutes to cleanup and log results.
+	ctx = context.WithValue(ctx, rebuild.GCBWaitDeadlineID, time.Now().Add(55*time.Minute))
+	if req.BuildTimeout != 0 {
+		ctx = context.WithValue(ctx, rebuild.GCBCancelDeadlineID, time.Now().Add(req.BuildTimeout))
 	}
-	ctx = context.WithValue(ctx, rebuild.GCBDeadlineID, time.Now().Add(timeout))
 	v, err := rebuildPackage(ctx, req, deps)
 	if err != nil {
 		return nil, err

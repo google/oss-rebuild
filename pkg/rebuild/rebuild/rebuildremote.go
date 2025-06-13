@@ -484,8 +484,16 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 
 func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Build, opts RemoteOptions, bi *BuildInfo) error {
 	var deadline time.Time
-	if d, ok := ctx.Value(GCBDeadlineID).(time.Time); ok {
+	terminateOnTimeout := false
+	if d, ok := ctx.Value(GCBWaitDeadlineID).(time.Time); ok {
 		deadline = d
+	}
+	if d, ok := ctx.Value(GCBCancelDeadlineID).(time.Time); ok {
+		// If both GCBWaitDeadlineID and GCBCancelDeadlineID are provided, take the time and behavior of the earliest one.
+		if deadline.IsZero() || d.Before(deadline) {
+			deadline = d
+			terminateOnTimeout = true
+		}
 	}
 	buildCtx := ctx
 	if !deadline.IsZero() {
@@ -494,7 +502,9 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 		defer cancel()
 		buildCtx = bctx
 	}
-	build, err := gcb.DoBuild(buildCtx, client, opts.Project, build)
+	build, err := gcb.DoBuild(buildCtx, client, opts.Project, build, gcb.DoBuildOpts{TerminateOnTimeout: terminateOnTimeout})
+	bi.BuildID = build.Id
+	bi.Steps = build.Steps
 	if err != nil {
 		return errors.Wrap(err, "doing build")
 	}
@@ -502,8 +512,6 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 	if err != nil {
 		return errors.Wrap(err, "extracting FinishTime")
 	}
-	bi.BuildID = build.Id
-	bi.Steps = build.Steps
 	bi.BuildImages = make(map[string]string)
 	buildErr := gcb.ToError(build)
 	// Don't try to read BuildStepImages if the build failed.
