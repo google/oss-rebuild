@@ -173,6 +173,12 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 		},
 		{
 			Short: "debug with ✨AI✨",
+			DisabledMsg: func() string {
+				if aiClient == nil {
+					return "To enable AI features, provide a gcloud project with Vertex AI API enabled."
+				}
+				return ""
+			},
 			Func: func(ctx context.Context, example rundex.Rebuild) {
 				var config *genai.GenerateContentConfig
 				{
@@ -260,6 +266,12 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 		},
 		{
 			Short: "Cluster using AI",
+			DisabledMsg: func() string {
+				if aiClient == nil {
+					return "To enable AI features, provide a gcloud project with Vertex AI API enabled."
+				}
+				return ""
+			},
 			Func: func(ctx context.Context, rebuilds []rundex.Rebuild) {
 				var config *genai.GenerateContentConfig
 				{

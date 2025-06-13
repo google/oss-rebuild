@@ -120,14 +120,18 @@ func (e *Explorer) commandNodes(example rundex.Rebuild) []*tview.TreeNode {
 		if cmd.Func == nil {
 			continue
 		}
-		res = append(res, tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), example) }))
+		if cmd.IsDisabled() {
+			res = append(res, tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorGrey).SetSelectedFunc(func() { go e.modalFn(tview.NewTextView().SetText(cmd.DisabledMsg()), modal.ModalOpts{Margin: 10}) }))
+		} else {
+			res = append(res, tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), example) }))
+		}
 	}
 	return res
 }
 
 func (e *Explorer) commandHotkeys(event *tcell.EventKey, example rundex.Rebuild) *tcell.EventKey {
 	for _, cmd := range e.cmdReg.RebuildCommands() {
-		if cmd.Func == nil || cmd.Hotkey == 0 {
+		if cmd.Func == nil || cmd.Hotkey == 0 || cmd.IsDisabled() {
 			continue
 		}
 		if event.Rune() == cmd.Hotkey {
@@ -183,7 +187,11 @@ func (e *Explorer) makeVerdictGroupNode(vg *rundex.VerdictGroup, percent float32
 		children := node.GetChildren()
 		if len(children) == 0 {
 			for _, cmd := range e.cmdReg.RebuildGroupCommands() {
-				node.AddChild(tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), vg.Examples) }))
+				if cmd.IsDisabled() {
+					node.AddChild(tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorGrey).SetSelectedFunc(func() { go e.modalFn(tview.NewTextView().SetText(cmd.DisabledMsg()), modal.ModalOpts{Margin: 10}) }))
+				} else {
+					node.AddChild(tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), vg.Examples) }))
+				}
 			}
 			for _, example := range vg.Examples {
 				node.AddChild(e.makeExampleNode(example))
