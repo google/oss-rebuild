@@ -10,13 +10,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path"
 	"slices"
 	"strings"
 
 	gcs "cloud.google.com/go/storage"
+	"github.com/fatih/color"
 	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -32,6 +32,11 @@ var (
 	verify       = flag.Bool("verify", true, "whether to verify rebuild attestation signatures")
 	verifyWith   = flag.String("verify-with", ossRebuildKeyURI, "comma-separated list of key URIs used to verify rebuild attestation signatures")
 	verifyOnline = flag.Bool("verify-online", false, "whether to always fetch --verify-with key contents, ignoring embedded contents")
+)
+
+var (
+	yellow = color.New(color.FgYellow).SprintFunc()
+	white  = color.New(color.FgWhite).SprintFunc()
 )
 
 var rootCmd = &cobra.Command{
@@ -64,6 +69,10 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 	SilenceUsage: true,
 	// RunE because we want errors to affect the return status.
 	RunE: func(cmd *cobra.Command, args []string) error {
+		printlnAll := func(all ...string) {
+			all = append(all, "\n")
+			cmd.OutOrStdout().Write([]byte(strings.Join(all, "")))
+		}
 		if len(args) > 4 {
 			return errors.New("Too many arguments")
 		}
@@ -79,13 +88,12 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 					artifact = fmt.Sprintf("%s-%s.crate", pkg, version)
 				case rebuild.PyPI:
 					artifact = fmt.Sprintf("%s-%s-py3-none-any.whl", strings.ReplaceAll(pkg, "-", "_"), version)
-					l := log.New(cmd.OutOrStderr(), "", 0)
-					l.Printf("pypi artifact is being inferred as %s\n", artifact)
 				case rebuild.NPM:
 					artifact = fmt.Sprintf("%s-%s.tgz", pkg, version)
 				default:
 					return errors.Errorf("Unsupported ecosystem: \"%s\"", ecosystem)
 				}
+				printlnAll(yellow("NOTE:"), white(fmt.Sprintf(" artifact is being inferred as \"%s\"", artifact)))
 			} else {
 				artifact = args[3]
 			}
@@ -258,7 +266,7 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Printf("Error: %v\n", err)
+		color.New(color.FgRed).Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 }
