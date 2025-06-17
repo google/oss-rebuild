@@ -30,6 +30,7 @@ import (
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/cheggaaa/pb"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
@@ -862,7 +863,7 @@ var setTrackedPackagesCmd = &cobra.Command{
 		if err != nil {
 			return errors.Wrap(err, "creating gcs client")
 		}
-		obj := gcsClient.Bucket(bucket).Object("tracked.json.gz")
+		obj := gcsClient.Bucket(bucket).Object(feed.TrackedPackagesFile)
 		w := obj.NewWriter(ctx)
 		defer logFailure(w.Close)
 		gzw := gzip.NewWriter(w)
@@ -870,6 +871,29 @@ var setTrackedPackagesCmd = &cobra.Command{
 		if err := json.NewEncoder(gzw).Encode(data); err != nil {
 			log.Fatal(errors.Wrap(err, "compressing and uploading tracked packages"))
 		}
+		return nil
+	},
+}
+
+var getTrackedPackagesCmd = &cobra.Command{
+	Use:   "get-tracked <gcs-bucket>",
+	Short: "Get the list of tracked packages",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		bucket := args[len(args)-1]
+		gcsClient, err := gcs.NewClient(ctx)
+		if err != nil {
+			return errors.Wrap(err, "creating gcs client")
+		}
+		// TODO: Allow the user to specify a generation.
+		obj := gcsClient.Bucket(bucket).Object(feed.TrackedPackagesFile)
+		fs := memfs.New()
+		tracker, err := feed.NewGCSTracker(cmd.Context(), obj, fs)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println(tracker.IsTracked(schema.TargetEvent{}))
 		return nil
 	},
 }
@@ -983,6 +1007,7 @@ func init() {
 	rootCmd.AddCommand(infer)
 	rootCmd.AddCommand(migrate)
 	rootCmd.AddCommand(setTrackedPackagesCmd)
+	rootCmd.AddCommand(getTrackedPackagesCmd)
 }
 
 func main() {
