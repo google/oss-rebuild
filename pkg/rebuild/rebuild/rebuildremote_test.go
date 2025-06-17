@@ -325,7 +325,7 @@ func TestDoCloudBuild(t *testing.T) {
 			},
 			CancelOperationFunc: func(op *cloudbuild.Operation) error { return nil },
 		}
-		opts := RemoteOptions{Project: "test-project", LogsBucket: "test-logs-bucket", BuildServiceAccount: "test-service-account", PrebuildConfig: PrebuildConfig{Bucket: "test-bootstrap"}}
+		opts := RemoteOptions{Project: "test-project", LogsBucket: "test-logs-bucket", BuildServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com", PrebuildConfig: PrebuildConfig{Bucket: "test-bootstrap"}}
 		target := Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"}
 		bi := &BuildInfo{Target: target}
 		err := doCloudBuild(context.Background(), client, beforeBuild, opts, bi)
@@ -362,14 +362,14 @@ func TestMakeBuild(t *testing.T) {
 			dockerfile: "FROM docker.io/library/alpine:3.19",
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
-				BuildServiceAccount: "test-service-account",
+				BuildServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap"},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 			},
 			expected: &cloudbuild.Build{
 				LogsBucket:     "test-logs-bucket",
 				Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
-				ServiceAccount: "test-service-account",
+				ServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				Steps: []*cloudbuild.BuildStep{
 					{
 						Name: "gcr.io/cloud-builders/docker",
@@ -408,7 +408,7 @@ chmod +x gsutil_writeonly
 			dockerfile: "FROM docker.io/library/alpine:3.19",
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
-				BuildServiceAccount: "test-service-account",
+				BuildServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap"},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 				UseSyscallMonitor:   true,
@@ -416,7 +416,7 @@ chmod +x gsutil_writeonly
 			expected: &cloudbuild.Build{
 				LogsBucket:     "test-logs-bucket",
 				Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
-				ServiceAccount: "test-service-account",
+				ServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				Steps: []*cloudbuild.BuildStep{
 					{
 						Name: "gcr.io/cloud-builders/docker",
@@ -463,7 +463,7 @@ chmod +x gsutil_writeonly
 			dockerfile: "FROM docker.io/library/alpine:3.19",
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
-				BuildServiceAccount: "test-service-account",
+				BuildServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap", Auth: true},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 				Project:             "test-project",
@@ -471,14 +471,14 @@ chmod +x gsutil_writeonly
 			expected: &cloudbuild.Build{
 				LogsBucket:     "test-logs-bucket",
 				Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
-				ServiceAccount: "test-service-account",
+				ServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				Steps: []*cloudbuild.BuildStep{
 					{
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `#!/usr/bin/env bash
 set -eux
 echo 'Starting rebuild for {Ecosystem:npm Package:pkg Version:version Artifact:pkg-version.tgz}'
-apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@test-project.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test-service-account@test-project.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
 (printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 cat <<'EOS' | docker buildx build --secret id=auth_header,src=/tmp/auth_header --tag=img -
 FROM docker.io/library/alpine:3.19
@@ -497,7 +497,7 @@ docker run --name=container img
 					{
 						Name: "docker.io/library/alpine:3.19",
 						Script: `set -eux
-apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@test-project.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test-service-account@test-project.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
 (printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 curl -O -H @/tmp/auth_header https://test-bootstrap.storage.googleapis.com/gsutil_writeonly
 chmod +x gsutil_writeonly
@@ -514,7 +514,7 @@ chmod +x gsutil_writeonly
 			dockerfile: "FROM docker.io/library/alpine:3.19",
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
-				BuildServiceAccount: "test-service-account",
+				BuildServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap"},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 				UseNetworkProxy:     true,
@@ -522,7 +522,7 @@ chmod +x gsutil_writeonly
 			expected: &cloudbuild.Build{
 				LogsBucket:     "test-logs-bucket",
 				Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
-				ServiceAccount: "test-service-account",
+				ServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				Steps: []*cloudbuild.BuildStep{
 					{
 						Name: "gcr.io/cloud-builders/docker",
@@ -598,7 +598,7 @@ chmod +x gsutil_writeonly
 			dockerfile: "FROM docker.io/library/alpine:3.19",
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
-				BuildServiceAccount: "test-service-account",
+				BuildServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap", Dir: "v0.0.0-202501010000-feeddeadbeef00"},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 				UseNetworkProxy:     true,
@@ -606,7 +606,7 @@ chmod +x gsutil_writeonly
 			expected: &cloudbuild.Build{
 				LogsBucket:     "test-logs-bucket",
 				Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
-				ServiceAccount: "test-service-account",
+				ServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				Steps: []*cloudbuild.BuildStep{
 					{
 						Name: "gcr.io/cloud-builders/docker",
@@ -682,7 +682,7 @@ chmod +x gsutil_writeonly
 			dockerfile: "FROM docker.io/library/alpine:3.19",
 			opts: RemoteOptions{
 				LogsBucket:          "test-logs-bucket",
-				BuildServiceAccount: "test-service-account",
+				BuildServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap", Auth: true},
 				RemoteMetadataStore: NewFilesystemAssetStore(memfs.New()),
 				UseNetworkProxy:     true,
@@ -691,13 +691,13 @@ chmod +x gsutil_writeonly
 			expected: &cloudbuild.Build{
 				LogsBucket:     "test-logs-bucket",
 				Options:        &cloudbuild.BuildOptions{Logging: "GCS_ONLY"},
-				ServiceAccount: "test-service-account",
+				ServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
 				Steps: []*cloudbuild.BuildStep{
 					{
 						Name: "gcr.io/cloud-builders/docker",
 						Script: `set -eux
 echo 'Starting rebuild for {Ecosystem:npm Package:pkg Version:version Artifact:pkg-version.tgz}'
-apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@test-project.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test-service-account@test-project.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
 (printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 curl -O -H @/tmp/auth_header https://test-bootstrap.storage.googleapis.com/proxy
 chmod +x proxy
@@ -754,7 +754,7 @@ curl http://proxy:3127/summary > /workspace/netlog.json
 					{
 						Name: "docker.io/library/alpine:3.19",
 						Script: `set -eux
-apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@test-project.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test-service-account@test-project.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
 (printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 curl -O -H @/tmp/auth_header https://test-bootstrap.storage.googleapis.com/gsutil_writeonly
 chmod +x gsutil_writeonly

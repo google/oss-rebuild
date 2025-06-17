@@ -235,7 +235,7 @@ var standardBuildTpl = template.Must(
 				grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 				{{- end}}
 				{{- if .PrebuildAuth}}
-				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@{{.Project}}.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 				(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 				{{- end}}
 				cat <<'EOS' | docker buildx build {{if .PrebuildAuth}}--secret id=auth_header,src=/tmp/auth_header {{end}}--tag=img -
@@ -298,7 +298,7 @@ var proxyBuildTpl = template.Must(
 				set -eux
 				echo 'Starting rebuild for {{.TargetStr}}'
 				{{- if .PrebuildAuth}}
-				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@{{.Project}}.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 				(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 				{{- end}}
 				curl -O {{if .PrebuildAuth}}-H @/tmp/auth_header {{end -}}
@@ -374,7 +374,7 @@ var assetUploadTpl = template.Must(
 		textwrap.Dedent(`
 				set -eux
 				{{- if .PrebuildAuth}}
-				apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@{{.Project}}.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+				apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 				(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 				{{- end}}
 				{{if .PrebuildAuth}}curl -O -H @/tmp/auth_header {{else}}wget {{end -}}
@@ -387,6 +387,7 @@ var assetUploadTpl = template.Must(
 	))
 
 func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Build, error) {
+	_, serviceAccountEmail := path.Split(opts.BuildServiceAccount)
 	var buildScript bytes.Buffer
 	uploads := []upload{
 		{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(ContainerImageAsset.For(t)).String()},
@@ -397,19 +398,20 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	}
 	if opts.UseNetworkProxy {
 		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
-			"TargetStr":         fmt.Sprintf("%+v", t),
-			"PrebuildBucket":    opts.PrebuildConfig.Bucket,
-			"PrebuildDir":       opts.PrebuildConfig.Dir,
-			"PrebuildAuth":      opts.PrebuildConfig.Auth,
-			"Project":           opts.Project,
-			"Dockerfile":        dockerfile,
-			"UseSyscallMonitor": opts.UseSyscallMonitor,
-			"SyscallPolicies":   tetragonPoliciesJSON,
-			"HTTPPort":          "3128",
-			"TLSPort":           "3129",
-			"CtrlPort":          "3127",
-			"DockerPort":        "3130",
-			"User":              "proxyu",
+			"TargetStr":           fmt.Sprintf("%+v", t),
+			"PrebuildBucket":      opts.PrebuildConfig.Bucket,
+			"PrebuildDir":         opts.PrebuildConfig.Dir,
+			"PrebuildAuth":        opts.PrebuildConfig.Auth,
+			"Project":             opts.Project,
+			"ServiceAccountEmail": serviceAccountEmail,
+			"Dockerfile":          dockerfile,
+			"UseSyscallMonitor":   opts.UseSyscallMonitor,
+			"SyscallPolicies":     tetragonPoliciesJSON,
+			"HTTPPort":            "3128",
+			"TLSPort":             "3129",
+			"CtrlPort":            "3127",
+			"DockerPort":          "3130",
+			"User":                "proxyu",
 			"CertEnvVars": []string{
 				// Used by pip.
 				// See https://pip.pypa.io/en/stable/topics/https-certificates/#using-a-specific-certificate-store
@@ -435,12 +437,13 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		uploads = append(uploads, upload{From: "/workspace/netlog.json", To: opts.RemoteMetadataStore.URL(ProxyNetlogAsset.For(t)).String()})
 	} else {
 		err := standardBuildTpl.Execute(&buildScript, map[string]any{
-			"TargetStr":         fmt.Sprintf("%+v", t),
-			"Dockerfile":        dockerfile,
-			"UseSyscallMonitor": opts.UseSyscallMonitor,
-			"SyscallPolicies":   tetragonPoliciesJSON,
-			"PrebuildAuth":      opts.PrebuildConfig.Auth,
-			"Project":           opts.Project,
+			"TargetStr":           fmt.Sprintf("%+v", t),
+			"Dockerfile":          dockerfile,
+			"UseSyscallMonitor":   opts.UseSyscallMonitor,
+			"SyscallPolicies":     tetragonPoliciesJSON,
+			"PrebuildAuth":        opts.PrebuildConfig.Auth,
+			"Project":             opts.Project,
+			"ServiceAccountEmail": serviceAccountEmail,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "expanding standard build template")
@@ -448,11 +451,12 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	}
 	var assetUploadScript bytes.Buffer
 	err := assetUploadTpl.Execute(&assetUploadScript, map[string]any{
-		"PrebuildBucket": opts.PrebuildConfig.Bucket,
-		"PrebuildDir":    opts.PrebuildConfig.Dir,
-		"PrebuildAuth":   opts.PrebuildConfig.Auth,
-		"Project":        opts.Project,
-		"Uploads":        uploads,
+		"PrebuildBucket":      opts.PrebuildConfig.Bucket,
+		"PrebuildDir":         opts.PrebuildConfig.Dir,
+		"PrebuildAuth":        opts.PrebuildConfig.Auth,
+		"Project":             opts.Project,
+		"ServiceAccountEmail": serviceAccountEmail,
+		"Uploads":             uploads,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "expanding asset upload template")
