@@ -480,7 +480,7 @@ var runBenchmark = &cobra.Command{
 }
 
 var runOne = &cobra.Command{
-	Use:   "run-one smoketest|attest --api <URI> --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--strategy <strategy.yaml>] [--strategy-from-repo]",
+	Use:   "run-one smoketest|attest|analyze --api <URI> --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--strategy <strategy.yaml>] [--strategy-from-repo]",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -488,8 +488,8 @@ var runOne = &cobra.Command{
 			log.Fatal("ecosystem, package, and version must be provided")
 		}
 		mode := schema.ExecutionMode(args[0])
-		if mode != schema.SmoketestMode && mode != schema.AttestMode {
-			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
+		if mode != schema.SmoketestMode && mode != schema.AttestMode && args[0] != "analyze" {
+			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest', 'attest', or 'analyze'", string(mode))
 		}
 		if *apiUri == "" {
 			log.Fatal("API endpoint not provided")
@@ -518,6 +518,9 @@ var runOne = &cobra.Command{
 				if mode == schema.AttestMode {
 					log.Fatal("--strategy not supported in attest mode, use --strategy-from-repo")
 				}
+				if mode == "analyze" {
+					log.Fatal("--strategy not supported in analyze mode")
+				}
 				f, err := os.Open(*strategyPath)
 				if err != nil {
 					return
@@ -529,6 +532,20 @@ var runOne = &cobra.Command{
 					log.Fatal(errors.Wrap(err, "reading strategy file"))
 				}
 			}
+		}
+		if args[0] == "analyze" {
+			stub := api.Stub[schema.AnalyzeRebuildRequest, api.NoReturn](client, apiURL.JoinPath("analyze"))
+			_, err := stub(ctx, schema.AnalyzeRebuildRequest{
+				Ecosystem: rebuild.Ecosystem(*ecosystem),
+				Package:   *pkg,
+				Version:   *version,
+				Artifact:  *artifact,
+			})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "running analyze"))
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Analysis completed successfully")
+			return
 		}
 		var verdicts []schema.Verdict
 		{
