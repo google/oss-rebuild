@@ -187,6 +187,18 @@ func NewGCSTracker(ctx context.Context, obj *gcs.ObjectHandle, generation int64)
 	return NewTracker(ctx, source, generation)
 }
 
+func ReadTrackedIndex[T comparable](ctx context.Context, obj DataSource[T], ver T) (TrackedPackageIndex, error) {
+	_, err := NewTracker(ctx, obj, ver)
+	if err != nil {
+		return nil, err
+	}
+	<-sharedIndexes[obj.GetIdentifier()].(*VersionedIndex[T]).Ready
+	if sharedIndexes[obj.GetIdentifier()].(*VersionedIndex[T]).Err != nil {
+		return nil, sharedIndexes[obj.GetIdentifier()].(*VersionedIndex[T]).Err
+	}
+	return sharedIndexes[obj.GetIdentifier()].(*VersionedIndex[T]).Index, nil
+}
+
 func logFailure(f func() error) {
 	if err := f(); err != nil {
 		log.Println(err)
