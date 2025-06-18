@@ -60,7 +60,7 @@ type ScriptResponse struct {
 }
 
 func GenerateTextContent(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, prompt ...*genai.Part) (string, error) {
-	contents := []*genai.Content{{Parts: prompt}}
+	contents := []*genai.Content{{Parts: prompt, Role: "user"}}
 	resp, err := client.Models.GenerateContent(ctx, model, contents, config)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to generate content")
