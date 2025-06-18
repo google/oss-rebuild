@@ -4,6 +4,7 @@
 package feed
 
 import (
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
 
@@ -24,3 +25,9 @@ var _ Tracker = &funcTracker{}
 func TrackerFromFunc(isTracked func(schema.TargetEvent) (bool, error)) Tracker {
 	return &funcTracker{isTracked: isTracked}
 }
+
+// TrackedPackageSet is a map from ecosystem to list of packages. Optimized for storage, not access.
+type TrackedPackageSet map[rebuild.Ecosystem][]string
+
+// TrackedPackageIndex is a map from ecosystem to a set of tracked package names. Optimized for access, not storage.
+type TrackedPackageIndex map[rebuild.Ecosystem]map[string]bool
