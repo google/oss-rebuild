@@ -345,14 +345,15 @@ var proxyBuildTpl = template.Must(
 				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
 				grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 				{{- end}}
+				cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" > /Dockerfile
+				{{.Dockerfile}}
+				EOS
+				docker cp /Dockerfile build:/Dockerfile
 				docker exec build /bin/sh -euxc '
 					curl http://proxy:{{.CtrlPort}}/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
 					export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt{{if .PrebuildAuth}} HEADER{{end}}
 					docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
-					cat <<EOS | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" | \
-						docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT {{if .PrebuildAuth}}--secret id=auth_header,env=HEADER {{end}}--load --tag=img -
-				{{.Dockerfile}}
-				EOS
+					cat /Dockerfile | docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT {{if .PrebuildAuth}}--secret id=auth_header,env=HEADER {{end}}--load --tag=img -
 					docker run --name=container img
 				'
 				{{- if .UseSyscallMonitor}}
