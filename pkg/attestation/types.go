@@ -247,13 +247,13 @@ func (d *ArtifactEquivalenceDeps) UnmarshalJSON(data []byte) error {
 
 // ArtifactEquivalenceByproducts contains byproducts from artifact equivalence verification.
 type ArtifactEquivalenceByproducts struct {
-	// NormalizedArtifact is the normalized candidate artifact used in comparison
-	NormalizedArtifact slsa1.ResourceDescriptor
+	// StabilizedArtifact is the stabilized candidate artifact used in comparison
+	StabilizedArtifact slsa1.ResourceDescriptor
 }
 
 // MarshalJSON flattens the byproducts into a ResourceDescriptors slice for compatibility with SLSA Provenance.
 func (d ArtifactEquivalenceByproducts) MarshalJSON() ([]byte, error) {
-	return json.Marshal([]slsa1.ResourceDescriptor{d.NormalizedArtifact})
+	return json.Marshal([]slsa1.ResourceDescriptor{d.StabilizedArtifact})
 }
 
 // UnmarshalJSON extracts byproducts from a ResourceDescriptors slice for compatibility with SLSA Provenance.
@@ -265,7 +265,7 @@ func (d *ArtifactEquivalenceByproducts) UnmarshalJSON(data []byte) error {
 	if len(descriptors) != 1 {
 		return errors.New("unexpected descriptor count")
 	}
-	d.NormalizedArtifact = descriptors[0]
+	d.StabilizedArtifact = descriptors[0]
 	return nil
 }
 

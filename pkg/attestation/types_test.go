@@ -269,9 +269,9 @@ func TestArtifactEquivalenceByproducts_JSONRoundtrip(t *testing.T) {
 		{
 			name: "complete byproducts",
 			input: ArtifactEquivalenceByproducts{
-				NormalizedArtifact: slsa1.ResourceDescriptor{
-					Name:   "normalized/package.tar.gz",
-					Digest: common.DigestSet{"sha256": "normalized123456"},
+				StabilizedArtifact: slsa1.ResourceDescriptor{
+					Name:   "stabilized/package.tar.gz",
+					Digest: common.DigestSet{"sha256": "stabilized123456"},
 				},
 			},
 		},
@@ -523,8 +523,8 @@ func TestArtifactEquivalenceAttestation_SLSACompatibility(t *testing.T) {
 							InvocationID: "test-equivalence-123",
 						},
 						Byproducts: ArtifactEquivalenceByproducts{
-							NormalizedArtifact: slsa1.ResourceDescriptor{
-								Name:   "normalized/package-1.0.0.tar.gz",
+							StabilizedArtifact: slsa1.ResourceDescriptor{
+								Name:   "stabilized/package-1.0.0.tar.gz",
 								Digest: common.DigestSet{"sha1": "f1234"},
 							},
 						},
