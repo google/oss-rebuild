@@ -401,7 +401,7 @@ func createNetworkAttestations(ctx context.Context, t rebuild.Target, strategy r
 		upstreamDigests[verifier.ToNISTName(hash.Algorithm)] = hex.EncodeToString(hash.Sum(nil))
 	}
 	publicRebuildURI := path.Join("rebuild", t.Artifact)
-	publicNormalizedURI := path.Join("normalized", t.Artifact)
+	publicStabilizedURI := path.Join("stabilized", t.Artifact)
 	equivalence, err = (&attestation.ArtifactEquivalenceAttestation{
 		StatementHeader: in_toto.StatementHeader{
 			Type:          in_toto.StatementInTotoV1,
@@ -413,19 +413,19 @@ func createNetworkAttestations(ctx context.Context, t rebuild.Target, strategy r
 				BuildType: attestation.BuildTypeArtifactEquivalenceV01,
 				ExternalParameters: attestation.ArtifactEquivalenceParams{
 					Candidate: publicRebuildURI,
-					Target:    publicNormalizedURI,
+					Target:    publicStabilizedURI,
 				},
 				InternalParameters: internalParams,
 				ResolvedDependencies: attestation.ArtifactEquivalenceDeps{
 					RebuiltArtifact:  slsa1.ResourceDescriptor{Name: publicRebuildURI, Digest: rebuiltDigests},
-					UpstreamArtifact: slsa1.ResourceDescriptor{Name: publicNormalizedURI, Digest: upstreamDigests},
+					UpstreamArtifact: slsa1.ResourceDescriptor{Name: publicStabilizedURI, Digest: upstreamDigests},
 				},
 			},
 			RunDetails: attestation.ArtifactEquivalenceRunDetails{
 				Builder:       builder,
 				BuildMetadata: metadata,
 				Byproducts: attestation.ArtifactEquivalenceByproducts{
-					NormalizedArtifact: slsa1.ResourceDescriptor{Name: publicRebuildURI, Digest: rebuiltDigests},
+					StabilizedArtifact: slsa1.ResourceDescriptor{Name: publicRebuildURI, Digest: rebuiltDigests},
 				},
 			},
 		},
