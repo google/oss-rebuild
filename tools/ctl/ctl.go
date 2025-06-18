@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/csv"
@@ -27,6 +28,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
+	gcs "cloud.google.com/go/storage"
 	"github.com/cheggaaa/pb"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
@@ -34,6 +36,7 @@ import (
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
@@ -819,6 +822,58 @@ var infer = &cobra.Command{
 	},
 }
 
+func logFailure(f func() error) {
+	if err := f(); err != nil {
+		log.Println(err)
+	}
+}
+
+var setTrackedPackagesCmd = &cobra.Command{
+	Use:   "set-tracked --bench <benchmark.json> <gcs-bucket>",
+	Short: "Set the list of tracked packages",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if *bench == "" {
+			return errors.New("bench must be provided")
+		}
+		bucket := args[len(args)-1]
+		set, err := benchmark.ReadBenchmark(*bench)
+		if err != nil {
+			return errors.Wrap(err, "reading benchmark file")
+		}
+		packageMap := make(feed.TrackedPackageIndex)
+		for _, p := range set.Packages {
+			eco := rebuild.Ecosystem(p.Ecosystem)
+			if _, ok := packageMap[eco]; !ok {
+				packageMap[eco] = make(map[string]bool)
+			}
+			packageMap[eco][p.Name] = true
+		}
+		data := make(feed.TrackedPackageSet)
+		for ecoStr, packages := range packageMap {
+			ecosystem := rebuild.Ecosystem(ecoStr)
+			data[ecosystem] = make([]string, 0, len(packages))
+			for pkg := range packages {
+				data[ecosystem] = append(data[ecosystem], pkg)
+			}
+		}
+		gcsClient, err := gcs.NewClient(ctx)
+		if err != nil {
+			return errors.Wrap(err, "creating gcs client")
+		}
+		obj := gcsClient.Bucket(bucket).Object("tracked.json.gz")
+		w := obj.NewWriter(ctx)
+		defer logFailure(w.Close)
+		gzw := gzip.NewWriter(w)
+		defer logFailure(gzw.Close)
+		if err := json.NewEncoder(gzw).Encode(data); err != nil {
+			log.Fatal(errors.Wrap(err, "compressing and uploading tracked packages"))
+		}
+		return nil
+	},
+}
+
 var (
 	// Shared
 	apiUri            = flag.String("api", "", "OSS Rebuild API endpoint URI")
@@ -827,6 +882,7 @@ var (
 	version           = flag.String("version", "", "the version of the package")
 	artifact          = flag.String("artifact", "", "the artifact name")
 	verbose           = flag.Bool("v", false, "verbose output")
+	bench             = flag.String("bench", "", "a path to a benchmark file for filtering or execution")
 	logsBucket        = flag.String("logs-bucket", "", "the gcs bucket where gcb logs are stored")
 	metadataBucket    = flag.String("metadata-bucket", "", "the gcs bucket where rebuild output is stored")
 	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
@@ -843,7 +899,6 @@ var (
 	strategyPath = flag.String("strategy", "", "the strategy file to use")
 	// get-results
 	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
-	bench        = flag.String("bench", "", "a path to a benchmark file. if provided, only results from that benchmark will be fetched")
 	format       = flag.String("format", "", "format of the output, options are command specific")
 	assetType    = flag.String("asset-type", "", "the type of asset that should be fetched")
 	prefix       = flag.String("prefix", "", "filter results to those matching this prefix ")
@@ -918,6 +973,8 @@ func init() {
 	migrate.Flags().AddGoFlag(flag.Lookup("project"))
 	migrate.Flags().AddGoFlag(flag.Lookup("dryrun"))
 
+	setTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("bench"))
+
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
 	rootCmd.AddCommand(getResults)
@@ -925,6 +982,7 @@ func init() {
 	rootCmd.AddCommand(listRuns)
 	rootCmd.AddCommand(infer)
 	rootCmd.AddCommand(migrate)
+	rootCmd.AddCommand(setTrackedPackagesCmd)
 }
 
 func main() {

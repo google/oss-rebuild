@@ -211,6 +211,17 @@ resource "google_storage_bucket" "bootstrap-tools" {
   default_event_based_hold = true
   depends_on               = [google_project_service.storage]
 }
+# Stores the list of "tracked" packages that are elligible for automatic rebuilds.
+resource "google_storage_bucket" "tracked-packages" {
+  name                        = "${var.host}-rebuild-tracked-packages"
+  location                    = "us-central1"
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  depends_on                  = [google_project_service.storage]
+  versioning {
+    enabled = true
+  }
+}
 
 ## Firestore
 
