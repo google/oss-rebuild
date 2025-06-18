@@ -85,6 +85,11 @@ variable "debug" {
   description = "Whether to build and deploy services from debug builds."
   default     = false
 }
+variable "enable_network_analyzer" {
+  type        = bool
+  description = "Whether to deploy the network analyzer service"
+  default     = false
+}
 
 data "google_project" "project" {
   project_id = var.project
@@ -130,6 +135,16 @@ resource "google_service_account" "attestation-pubsub-reader" {
   count       = var.public ? 0 : 1
   account_id  = "attestation-pubsub-reader"
   description = "Identity for reading the attestation pubsub topic."
+}
+resource "google_service_account" "network-analyzer" {
+  count       = var.enable_network_analyzer ? 1 : 0
+  account_id  = "network-analyzer"
+  description = "Primary API identity for the network analyzer"
+}
+resource "google_service_account" "network-analyzer-build" {
+  count       = var.enable_network_analyzer ? 1 : 0
+  account_id  = "network-analyzer-build"
+  description = "Build identity for the network analyzer"
 }
 data "google_storage_project_service_account" "attestation-pubsub-publisher" {
 }
@@ -211,6 +226,14 @@ resource "google_storage_bucket" "bootstrap-tools" {
   default_event_based_hold = true
   depends_on               = [google_project_service.storage]
 }
+resource "google_storage_bucket" "network-analyzer-attestations" {
+  count                       = var.enable_network_analyzer ? 1 : 0
+  name                        = "${var.host}-network-analyzer-attestations"
+  location                    = "us-central1"
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  depends_on                  = [google_project_service.storage]
+}
 
 ## Firestore
 
@@ -231,6 +254,7 @@ resource "google_app_engine_application" "dummy_app" {
 ## PubSub
 
 resource "google_pubsub_topic" "attestation-topic" {
+  // TODO: Might want to make this ${var.host}-attestation-topic
   name = "oss-rebuild-attestation-topic"
 }
 
@@ -240,6 +264,44 @@ resource "google_storage_notification" "attestation-notification" {
   topic          = google_pubsub_topic.attestation-topic.id
   event_types    = ["OBJECT_FINALIZE"]
   depends_on     = [google_pubsub_topic_iam_binding.readers-can-read-from-attestation-topic, google_pubsub_topic_iam_binding.can-publish-to-attestation-topic]
+}
+
+resource "google_project_service" "cloudtasks" {
+  service = "cloudtasks.googleapis.com"
+}
+
+resource "google_cloud_tasks_queue" "network-analyzer-queue" {
+  count    = var.enable_network_analyzer ? 1 : 0
+  name     = "network-analyzer-queue"
+  location = "us-central1"
+  rate_limits {
+    max_concurrent_dispatches = 50
+    max_dispatches_per_second = 5
+  }
+  retry_config {
+    max_attempts       = 1
+    min_backoff        = "10s"
+    max_backoff        = "300s"
+    max_retry_duration = "600s"
+  }
+  depends_on = [google_project_service.cloudtasks]
+}
+
+resource "google_pubsub_subscription" "network-analyzer-feed" {
+  count = var.enable_network_analyzer ? 1 : 0
+  name  = "network-analyzer-feed"
+  topic = google_pubsub_topic.attestation-topic.id
+  push_config {
+    push_endpoint = "${google_cloud_run_v2_service.network-subscriber[0].uri}/enqueue"
+    no_wrapper   {
+      write_metadata = false
+    }
+    oidc_token {
+      service_account_email = google_service_account.network-analyzer[0].email
+    }
+  }
+  message_retention_duration = "${7 * 24 * 60 * 60}s" # 7 days
+  ack_deadline_seconds       = 600
 }
 
 ## Container resources
@@ -267,7 +329,7 @@ resource "terraform_data" "debug" {
 
 locals {
   registry_url = "${google_artifact_registry_repository.registry.location}-docker.pkg.dev/${var.project}/${google_artifact_registry_repository.registry.repository_id}"
-  service_images = {
+  service_images = merge({
     gateway = {
       dockerfile = "build/package/Dockerfile.gateway"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
@@ -292,7 +354,20 @@ locals {
         "BUILD_VERSION=${terraform_data.service_version.output}"
       ]
     }
-  }
+  }, var.enable_network_analyzer ? {
+    network-analyzer = {
+      dockerfile = "build/package/Dockerfile.networkanalyzer"
+      build_args = [
+        "DEBUG=${terraform_data.debug.output}",
+        "BUILD_REPO=${var.repo}",
+        "BUILD_VERSION=${terraform_data.service_version.output}"
+      ]
+    }
+    network-subscriber = {
+      dockerfile = "build/package/Dockerfile.networksubscriber"
+      build_args = ["DEBUG=${terraform_data.debug.output}"]
+    }
+  } : {})
   prebuild_images = {
     gsutil_writeonly = {
       dockerfile = "build/package/Dockerfile.gsutil_writeonly"
@@ -382,6 +457,22 @@ data "google_artifact_registry_docker_image" "api" {
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "api:${module.service_images["api"].image_version}"
   depends_on    = [module.service_images["api"]]
+}
+
+data "google_artifact_registry_docker_image" "network-analyzer" {
+  count         = var.enable_network_analyzer ? 1 : 0
+  location      = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name    = "network-analyzer:${module.service_images["network-analyzer"].image_version}"
+  depends_on    = [module.service_images["network-analyzer"]]
+}
+
+data "google_artifact_registry_docker_image" "network-subscriber" {
+  count         = var.enable_network_analyzer ? 1 : 0
+  location      = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name    = "network-subscriber:${module.service_images["network-subscriber"].image_version}"
+  depends_on    = [module.service_images["network-subscriber"]]
 }
 
 ## Compute resources
@@ -524,6 +615,63 @@ resource "google_cloud_run_v2_service" "orchestrator" {
   }
   depends_on = [google_project_service.run, module.prebuild_binaries]
 }
+resource "google_cloud_run_v2_service" "network-analyzer" {
+  count    = var.enable_network_analyzer ? 1 : 0
+  name     = "network-analyzer"
+  location = "us-central1"
+  template {
+    service_account = google_service_account.network-analyzer[0].email
+    timeout         = "${59 * 60}s" // 59 minutes
+    containers {
+      image = data.google_artifact_registry_docker_image.network-analyzer[0].self_link
+      args = [
+        "--project=${var.project}",
+        "--analysis-bucket=${google_storage_bucket.network-analyzer-attestations[0].name}",
+        "--build-remote-identity=${google_service_account.network-analyzer-build[0].name}",
+        "--logs-bucket=${google_storage_bucket.logs.name}",
+        "--metadata-bucket=${google_storage_bucket.metadata.name}",
+        "--attestation-bucket=${google_storage_bucket.attestations.name}",
+        "--debug-storage=gs://${google_storage_bucket.debug.name}",
+        "--signing-key-version=${data.google_kms_crypto_key_version.signing-key-version.name}",
+        "--verifying-key-version=${data.google_kms_crypto_key_version.signing-key-version.name}",
+        "--overwrite-attestations=false",
+      ]
+      resources {
+        limits = {
+          cpu    = "1000m"
+          memory = "2G"
+        }
+      }
+    }
+    scaling { max_instance_count = 10 }
+  }
+  depends_on = [google_project_service.run]
+}
+resource "google_cloud_run_v2_service" "network-subscriber" {
+  count    = var.enable_network_analyzer ? 1 : 0
+  name     = "network-subscriber"
+  location = "us-central1"
+  template {
+    service_account = google_service_account.network-analyzer[0].email
+    timeout         = "${2 * 60}s" // 2 minutes
+    containers {
+      image = data.google_artifact_registry_docker_image.network-subscriber[0].self_link
+      args = [
+        "--analyzer-url=${google_cloud_run_v2_service.network-analyzer[0].uri}",
+        "--task-queue=${google_cloud_tasks_queue.network-analyzer-queue[0].id}",
+        "--task-queue-email=${google_service_account.network-analyzer[0].email}",
+      ]
+      resources {
+        limits = {
+          cpu    = "1000m"
+          memory = "512Mi"
+        }
+      }
+    }
+    scaling { max_instance_count = 1 }
+  }
+  depends_on = [google_project_service.run]
+}
 
 ## IAM Bindings
 
@@ -547,33 +695,51 @@ resource "google_storage_bucket_iam_binding" "orchestrator-writes-attestations" 
   role    = "roles/storage.objectCreator"
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
-resource "google_storage_bucket_iam_binding" "orchestrator-manages-metadata" {
+resource "google_storage_bucket_iam_binding" "attestors-manage-metadata" {
   bucket  = google_storage_bucket.metadata.name
   role    = "roles/storage.objectAdmin"
-  members = ["serviceAccount:${google_service_account.orchestrator.email}"]
+  members       = concat([
+    "serviceAccount:${google_service_account.orchestrator.email}",
+  ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [])
 }
-resource "google_storage_bucket_iam_binding" "orchestrator-and-local-build-write-debug" {
+resource "google_storage_bucket_iam_binding" "attestors-and-local-build-write-debug" {
   bucket = google_storage_bucket.debug.name
   role   = "roles/storage.objectCreator"
-  members = [
+  members = concat([
     "serviceAccount:${google_service_account.orchestrator.email}",
     "serviceAccount:${google_service_account.builder-local.email}",
-  ]
+  ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [])
 }
-resource "google_storage_bucket_iam_binding" "remote-build-writes-metadata" {
+resource "google_storage_bucket_iam_binding" "builders-write-metadata" {
   bucket  = google_storage_bucket.metadata.name
   role    = "roles/storage.objectCreator"
-  members = ["serviceAccount:${google_service_account.builder-remote.email}"]
+  members = concat([
+    "serviceAccount:${google_service_account.builder-remote.email}",
+  ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
+  ] : [])
 }
-resource "google_storage_bucket_iam_binding" "remote-build-uses-logs" {
+resource "google_storage_bucket_iam_binding" "builders-use-logs" {
   bucket  = google_storage_bucket.logs.name
   role    = "roles/storage.objectUser"
-  members = ["serviceAccount:${google_service_account.builder-remote.email}"]
+  members = concat([
+    "serviceAccount:${google_service_account.builder-remote.email}",
+  ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
+  ] : [])
 }
-resource "google_storage_bucket_iam_binding" "remote-build-views-logs-bucket" {
+resource "google_storage_bucket_iam_binding" "builders-view-logs" {
   bucket  = google_storage_bucket.logs.name
   role    = google_project_iam_custom_role.bucket-viewer-role.name
-  members = ["serviceAccount:${google_service_account.builder-remote.email}"]
+  members = concat([
+    "serviceAccount:${google_service_account.builder-remote.email}",
+  ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
+  ] : [])
 }
 resource "google_storage_bucket_iam_binding" "orchestrator-manages-attestations" {
   bucket  = google_storage_bucket.attestations.name
@@ -585,11 +751,15 @@ resource "google_project_iam_binding" "orchestrator-uses-datastore" {
   role    = "roles/datastore.user"
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
-resource "google_storage_bucket_iam_binding" "remote-build-views-bootstrap-bucket" {
+resource "google_storage_bucket_iam_binding" "builders-view-bootstrap-bucket" {
   count   = var.public ? 0 : 1 // NOTE: Non-public objects must still be visible to the builder.
   bucket  = google_storage_bucket.bootstrap-tools.name
   role    = "roles/storage.objectViewer"
-  members = ["serviceAccount:${google_service_account.builder-remote.email}"]
+  members = concat([
+    "serviceAccount:${google_service_account.builder-remote.email}",
+  ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
+  ] : [])
 }
 resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-build-local" {
   location = google_cloud_run_v2_service.build-local.location
@@ -598,15 +768,23 @@ resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-build-loc
   role     = "roles/run.invoker"
   members  = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
-resource "google_project_iam_binding" "orchestrator-runs-workloads-as-others" {
+resource "google_project_iam_binding" "orchestrators-run-workloads-as-others" {
   project = var.project
   role    = "roles/iam.serviceAccountUser"
-  members = ["serviceAccount:${google_service_account.orchestrator.email}"]
+  members = concat([
+    "serviceAccount:${google_service_account.orchestrator.email}",
+  ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [])
 }
-resource "google_project_iam_binding" "orchestrator-runs-gcb-builds" {
+resource "google_project_iam_binding" "orchestrators-run-gcb-builds" {
   project = var.project
   role    = "roles/cloudbuild.builds.editor"
-  members = ["serviceAccount:${google_service_account.orchestrator.email}"]
+  members = concat([
+    "serviceAccount:${google_service_account.orchestrator.email}",
+  ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [])
 }
 resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-inference" {
   location = google_cloud_run_v2_service.inference.location
@@ -615,15 +793,23 @@ resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-inference
   role     = "roles/run.invoker"
   members  = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
-resource "google_kms_crypto_key_iam_binding" "orchestrator-reads-signing-key" {
+resource "google_kms_crypto_key_iam_binding" "attestors-read-signing-key" {
   crypto_key_id = google_kms_crypto_key.signing-key.id
   role          = "roles/cloudkms.viewer"
-  members       = ["serviceAccount:${google_service_account.orchestrator.email}"]
+  members       = concat([
+    "serviceAccount:${google_service_account.orchestrator.email}",
+  ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [])
 }
-resource "google_kms_crypto_key_iam_binding" "orchestrator-uses-signing-key" {
+resource "google_kms_crypto_key_iam_binding" "attestors-uses-signing-key" {
   crypto_key_id = google_kms_crypto_key.signing-key.id
   role          = "roles/cloudkms.signerVerifier"
-  members       = ["serviceAccount:${google_service_account.orchestrator.email}"]
+  members       = concat([
+    "serviceAccount:${google_service_account.orchestrator.email}",
+  ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [])
 }
 resource "google_cloud_run_v2_service_iam_binding" "local-build-calls-git-cache" {
   location = google_cloud_run_v2_service.git-cache.location
@@ -654,6 +840,52 @@ resource "google_pubsub_topic_iam_binding" "readers-can-read-from-attestation-to
   role    = "roles/pubsub.subscriber"
   members = ["serviceAccount:${google_service_account.attestation-pubsub-reader[0].email}"]
 }
+resource "google_storage_bucket_iam_binding" "network-analyzer-writes-analysis" {
+  count   = var.enable_network_analyzer ? 1 : 0
+  bucket  = google_storage_bucket.network-analyzer-attestations[0].name
+  role    = "roles/storage.objectCreator"
+  members = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
+}
+resource "google_storage_bucket_iam_binding" "network-analyzer-reads-attestations" {
+  count   = !var.public && var.enable_network_analyzer ? 1 : 0
+  bucket  = google_storage_bucket.attestations.name
+  role    = "roles/storage.objectViewer"
+  members = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
+}
+resource "google_storage_bucket_iam_binding" "network-analyzer-reads-network-analyzer-attestations" {
+  count   = !var.public && var.enable_network_analyzer ? 1 : 0
+  bucket  = google_storage_bucket.network-analyzer-attestations[0].name
+  role    = "roles/storage.objectViewer"
+  members = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
+}
+resource "google_cloud_tasks_queue_iam_binding" "network-analyzer-enqueues-tasks" {
+  count   = var.enable_network_analyzer ? 1 : 0
+  name    = google_cloud_tasks_queue.network-analyzer-queue[0].name
+  role    = "roles/cloudtasks.enqueuer"
+  members = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
+}
+resource "google_cloud_run_v2_service_iam_binding" "network-analyzer-calls-analyzer" {
+  count    = var.enable_network_analyzer ? 1 : 0
+  location = google_cloud_run_v2_service.network-analyzer[0].location
+  project  = google_cloud_run_v2_service.network-analyzer[0].project
+  name     = google_cloud_run_v2_service.network-analyzer[0].name
+  role     = "roles/run.invoker"
+  members  = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
+}
+resource "google_cloud_run_v2_service_iam_binding" "network-analyzer-calls-subscriber" {
+  count    = var.enable_network_analyzer ? 1 : 0
+  location = google_cloud_run_v2_service.network-subscriber[0].location
+  project  = google_cloud_run_v2_service.network-subscriber[0].project
+  name     = google_cloud_run_v2_service.network-subscriber[0].name
+  role     = "roles/run.invoker"
+  members  = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
+}
+resource "google_service_account_iam_binding" "network-analyzer-acts-as-itself" {
+  count              = var.enable_network_analyzer ? 1 : 0
+  service_account_id = google_service_account.network-analyzer[0].name
+  role               = "roles/iam.serviceAccountUser"
+  members            = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
+}
 
 ## Public resources
 
@@ -679,5 +911,11 @@ resource "google_pubsub_topic_iam_binding" "attestation-bucket-topic-is-public" 
   count   = var.public ? 1 : 0
   topic   = google_pubsub_topic.attestation-topic.id
   role    = "roles/pubsub.subscriber"
+  members = ["allUsers"]
+}
+resource "google_storage_bucket_iam_binding" "network-analyzer-attestations-bucket-is-public" {
+  count   = var.enable_network_analyzer && var.public ? 1 : 0
+  bucket  = google_storage_bucket.network-analyzer-attestations[0].name
+  role    = "roles/storage.objectViewer"
   members = ["allUsers"]
 }
