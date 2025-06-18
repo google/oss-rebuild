@@ -97,7 +97,7 @@ func TestCompare(t *testing.T) {
 			expected: verdictCargoVersionGit,
 		},
 		{
-			test:   "normalized_toml_diff",
+			test:   "stabilized_toml_diff",
 			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "foo", Version: "0.0.1", Artifact: "foo-0.0.1.crate"},
 			rebuild: []*archive.TarEntry{
 				{Header: &tar.Header{Name: "foo-0.0.1/.cargo_vcs_info.json", Typeflag: tar.TypeReg, Size: 22, Mode: 0644}, Body: []byte(`{"git":{"sha1":"abc"}}`)},

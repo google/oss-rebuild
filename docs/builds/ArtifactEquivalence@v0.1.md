@@ -101,7 +101,7 @@ Example:
           "digest": {
             "sha256": "21a8a58d3786c8c63993ca71121b0bccf193ebf6c21f890a3702a055025a4949"
           },
-          "name": "normalized/absl_py-2.0.0-py3-none-any.whl"
+          "name": "stabilized/absl_py-2.0.0-py3-none-any.whl"
         }
       ]
 ```
@@ -110,17 +110,17 @@ Example:
 
 The `internalParameters` provide deployment-specific configuration and source metadata used by the rebuild service:
 
-| field                       | details                                                                      |
-| --------------------------- | ---------------------------------------------------------------------------- |
-| `serviceSource`             | Source metadata for the rebuild service code.                               |
-| `serviceSource.repository`  | The repository URL for the rebuild service source code.                     |
-| `serviceSource.ref`         | The git reference (commit hash, tag, or branch) for the service source.     |
-| `prebuildSource`            | Source metadata for the prebuild utilities.                                 |
-| `prebuildSource.repository` | The repository URL for the prebuild utilities source code.                  |
-| `prebuildSource.ref`        | The git reference for the prebuild utilities source.                        |
-| `prebuildConfig`            | Deployment-specific prebuild configuration.                                 |
-| `prebuildConfig.bucket`     | The Google Cloud Storage bucket containing prebuild utilities.              |
-| `prebuildConfig.dir`        | The directory path within the bucket for prebuild utilities (optional).     |
+| field                       | details                                                                 |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `serviceSource`             | Source metadata for the rebuild service code.                           |
+| `serviceSource.repository`  | The repository URL for the rebuild service source code.                 |
+| `serviceSource.ref`         | The git reference (commit hash, tag, or branch) for the service source. |
+| `prebuildSource`            | Source metadata for the prebuild utilities.                             |
+| `prebuildSource.repository` | The repository URL for the prebuild utilities source code.              |
+| `prebuildSource.ref`        | The git reference for the prebuild utilities source.                    |
+| `prebuildConfig`            | Deployment-specific prebuild configuration.                             |
+| `prebuildConfig.bucket`     | The Google Cloud Storage bucket containing prebuild utilities.          |
+| `prebuildConfig.dir`        | The directory path within the bucket for prebuild utilities (optional). |
 
 Example:
 
