@@ -10,17 +10,14 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"text/template"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
@@ -94,7 +91,7 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		return verdict, nil
 	}
 	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
-	if err := build(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}); err != nil {
+	if err := executeBuild(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}); err != nil {
 		verdict.Message = err.Error()
 	} else if err := compare(ctx, t, s.store, mux); err != nil {
 		verdict.Message = err.Error()
@@ -136,81 +133,42 @@ type buildOpts struct {
 	LogSink     io.Writer
 }
 
-func build(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts) error {
-	inst, err := strategy.GenerateFor(t, rebuild.BuildEnv{TimewarpHost: "localhost:8081"})
-	if err != nil {
-		return err
-	}
-	var install, container string
-	if t.Ecosystem == rebuild.Debian {
-		install = "apt install -y"
-		container = "debian:trixie-20250203-slim"
-	} else {
-		install = "apk add"
-		container = "alpine:3.19"
-	}
-	buf := &bytes.Buffer{}
-	// TODO: Use MakeDockerfile along with `docker build` for a more representative run.
-	err = template.Must(template.New("").Parse(
-		`set -eux
-{{.InstallCmd}} curl
-curl `+opts.PrebuildURL+`/timewarp > timewarp
-chmod +x timewarp
-./timewarp -port 8081 &
-while ! nc -z localhost 8081;do sleep 1;done
-mkdir /src && cd /src
-{{.InstallCmd}} {{.SystemDeps}}
-{{.Inst.Source}}
-{{.Inst.Deps}}
-{{.Inst.Build}}
-cp /src/{{.Inst.OutputPath}} /out/rebuild`)).Execute(buf, map[string]any{
-		"Inst":       inst,
-		"InstallCmd": install,
-		"SystemDeps": strings.Join(inst.SystemDeps, " "),
+func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts) error {
+	executor, err := local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
+		Planner:     local.NewDockerRunPlanner(),
+		MaxParallel: 1,
 	})
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to create executor")
 	}
-	tmp, err := os.MkdirTemp("/tmp", "rebuild*")
+	defer executor.Close(ctx)
+	input := rebuild.Input{
+		Target:   t,
+		Strategy: strategy,
+	}
+	buildOpts := build.Options{
+		Resources: build.Resources{
+			AssetStore: out,
+			ToolURLs: map[build.ToolType]string{
+				build.TimewarpTool: opts.PrebuildURL + "/timewarp",
+			},
+		},
+	}
+	handle, err := executor.Start(ctx, input, buildOpts)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to start build")
 	}
-	defer os.RemoveAll(tmp)
-	logbuf := &bytes.Buffer{}
-	var outw io.Writer = logbuf
 	if opts.LogSink != nil {
-		outw = io.MultiWriter(opts.LogSink, outw)
+		go io.Copy(opts.LogSink, handle.OutputStream())
 	}
-	cmd := exec.CommandContext(ctx, "docker", "run", "-i", "--rm", "-v", tmp+":/out", container, "sh")
-	cmd.Stdin = buf
-	cmd.Stdout = outw
-	cmd.Stderr = outw
-	if err := cmd.Run(); err != nil {
-		if logw, err := out.Writer(ctx, rebuild.DebugLogsAsset.For(t)); err == nil {
-			defer logw.Close()
-			io.Copy(logw, logbuf)
-		}
-		return err
-	}
-	logw, err := out.Writer(ctx, rebuild.DebugLogsAsset.For(t))
+	result, err := handle.Wait(ctx)
 	if err != nil {
 		return err
 	}
-	defer logw.Close()
-	if _, err := io.Copy(logw, logbuf); err != nil {
-		return err
+	if result.Error != nil {
+		return errors.Wrap(err, "build failed")
 	}
-	f, err := os.Open(filepath.Join(tmp, "rebuild"))
-	if err != nil {
-		return err
-	}
-	w, err := out.Writer(ctx, rebuild.RebuildAsset.For(t))
-	if err != nil {
-		return err
-	}
-	defer w.Close()
-	_, err = io.Copy(w, f)
-	return err
+	return nil
 }
 
 func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAssetStore, mux rebuild.RegistryMux) error {
