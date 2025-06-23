@@ -90,6 +90,11 @@ variable "enable_network_analyzer" {
   description = "Whether to deploy the network analyzer service"
   default     = false
 }
+variable "enable_private_build_pool" {
+  type        = bool
+  description = "Whether to create and use a private Cloud Build worker pool for rebuilds"
+  default     = false
+}
 
 data "google_project" "project" {
   project_id = var.project
@@ -491,6 +496,18 @@ data "google_artifact_registry_docker_image" "network-subscriber" {
 resource "google_project_service" "cloudbuild" {
   service = "cloudbuild.googleapis.com"
 }
+
+resource "google_cloudbuild_worker_pool" "private-pool" {
+  count    = var.enable_private_build_pool ? 1 : 0
+  name     = "${var.host}-rebuild-pool"
+  location = "us-central1"
+  worker_config {
+    machine_type = "e2-standard-4"
+    disk_size_gb = 100
+  }
+  depends_on = [google_project_service.cloudbuild]
+}
+
 resource "google_project_service" "run" {
   service = "run.googleapis.com"
 }
@@ -596,7 +613,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
     timeout         = "${59 * 60}s" // 59 minutes
     containers {
       image = data.google_artifact_registry_docker_image.api.self_link
-      args = [
+      args = concat([
         "--project=${var.project}",
         "--build-local-url=${google_cloud_run_v2_service.build-local.uri}",
         "--build-remote-identity=${google_service_account.builder-remote.name}",
@@ -614,7 +631,10 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--build-def-repo=https://github.com/google/oss-rebuild",
         "--build-def-repo-dir=definitions",
         "--block-local-repo-publish=${var.public}",
-      ]
+        ], var.enable_private_build_pool ? [
+        "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
+        "--gcb-private-pool-region=us-central1",
+      ] : [])
       resources {
         limits = {
           cpu    = "1000m"
@@ -635,7 +655,7 @@ resource "google_cloud_run_v2_service" "network-analyzer" {
     timeout         = "${59 * 60}s" // 59 minutes
     containers {
       image = data.google_artifact_registry_docker_image.network-analyzer[0].self_link
-      args = [
+      args = concat([
         "--project=${var.project}",
         "--analysis-bucket=${google_storage_bucket.network-analyzer-attestations[0].name}",
         "--build-remote-identity=${google_service_account.network-analyzer-build[0].name}",
@@ -646,7 +666,10 @@ resource "google_cloud_run_v2_service" "network-analyzer" {
         "--signing-key-version=${data.google_kms_crypto_key_version.signing-key-version.name}",
         "--verifying-key-version=${data.google_kms_crypto_key_version.signing-key-version.name}",
         "--overwrite-attestations=false",
-      ]
+        ], var.enable_private_build_pool ? [
+        "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
+        "--gcb-private-pool-region=us-central1",
+      ] : [])
       resources {
         limits = {
           cpu    = "1000m"
@@ -896,6 +919,16 @@ resource "google_service_account_iam_binding" "network-analyzer-acts-as-itself" 
   service_account_id = google_service_account.network-analyzer[0].name
   role               = "roles/iam.serviceAccountUser"
   members            = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
+}
+resource "google_project_iam_binding" "orchestrators-use-worker-pool" {
+  count   = var.enable_private_build_pool ? 1 : 0
+  project = var.project
+  role    = "roles/cloudbuild.workerPoolUser"
+  members = concat([
+    "serviceAccount:${google_service_account.orchestrator.email}",
+    ], var.enable_network_analyzer ? [
+    "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [])
 }
 
 ## Public resources
