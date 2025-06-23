@@ -35,6 +35,8 @@ var (
 	signingKeyVersion     = flag.String("signing-key-version", "", "KMS crypto key version for signing")
 	verifyingKeyVersion   = flag.String("verifying-key-version", "", "KMS crypto key version for verification")
 	overwriteAttestations = flag.Bool("overwrite-attestations", false, "whether to overwrite existing attestations")
+	gcbPrivatePoolName    = flag.String("gcb-private-pool-name", "", "Resource name of GCB private pool to use, if configured")
+	gcbPrivatePoolRegion  = flag.String("gcb-private-pool-region", "", "GCP location to use for GCB private pool builds, if configured. Note: This should generally be the same as the region where the private pool is located.")
 )
 
 // Link-time configured service identity
@@ -103,7 +105,16 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "creating Cloud Build service")
 	}
-	gcbClient := gcb.NewClient(cloudbuildService)
+	var gcbClient gcb.Client
+	if *gcbPrivatePoolName != "" {
+		privatePoolConfig := &gcb.PrivatePoolConfig{
+			Name:   *gcbPrivatePoolName,
+			Region: *gcbPrivatePoolRegion,
+		}
+		gcbClient = gcb.NewClientWithPrivatePool(cloudbuildService, privatePoolConfig)
+	} else {
+		gcbClient = gcb.NewClient(cloudbuildService)
+	}
 	// Storage setup
 	inputAttestationStore, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, ""), "gs://"+*attestationBucket)
 	if err != nil {
