@@ -54,8 +54,7 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 		PrebuildConfig: prebuildConfig,
 	}
 	publicRebuildURI := path.Join("rebuild", buildInfo.Target.Artifact)
-	// TODO: Change from "normalized" to "stabilized".
-	publicNormalizedURI := path.Join("normalized", buildInfo.Target.Artifact)
+	publicStabilizedURI := path.Join("stabilized", buildInfo.Target.Artifact)
 	// Create comparison attestation.
 	eqStmt, err := (&attestation.ArtifactEquivalenceAttestation{
 		StatementHeader: in_toto.StatementHeader{
@@ -80,7 +79,7 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 				Builder:       builder,
 				BuildMetadata: slsa1.BuildMetadata{InvocationID: id},
 				Byproducts: attestation.ArtifactEquivalenceByproducts{
-					NormalizedArtifact: slsa1.ResourceDescriptor{Name: publicNormalizedURI, Digest: makeDigestSet(up.StabilizedHash...)},
+					StabilizedArtifact: slsa1.ResourceDescriptor{Name: publicStabilizedURI, Digest: makeDigestSet(up.StabilizedHash...)},
 				},
 			},
 		},
