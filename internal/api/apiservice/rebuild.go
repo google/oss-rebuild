@@ -98,6 +98,7 @@ type RebuildPackageDeps struct {
 	LocalMetadataStore         rebuild.AssetStore
 	DebugStoreBuilder          func(ctx context.Context) (rebuild.AssetStore, error)
 	RemoteMetadataStoreBuilder func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error)
+	AptCacheIP                 string
 	OverwriteAttestations      bool
 	InferStub                  api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
 }
@@ -214,6 +215,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		LocalMetadataStore:  deps.LocalMetadataStore,
 		DebugStore:          debugStore,
 		RemoteMetadataStore: remoteMetadata,
+		AptCacheIP:          deps.AptCacheIP,
 		UseSyscallMonitor:   useSyscallMonitor,
 		UseNetworkProxy:     useProxy,
 	}
