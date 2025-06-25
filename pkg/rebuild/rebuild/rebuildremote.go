@@ -508,8 +508,11 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 		buildCtx = bctx
 	}
 	build, err := gcb.DoBuild(buildCtx, client, opts.Project, build, gcb.DoBuildOpts{TerminateOnTimeout: terminateOnTimeout})
-	bi.BuildID = build.Id
-	bi.Steps = build.Steps
+	if build != nil {
+		// Set all the values of BuildInfo we can, regardless of the error response.
+		bi.BuildID = build.Id
+		bi.Steps = build.Steps
+	}
 	if err != nil {
 		return errors.Wrap(err, "doing build")
 	}
