@@ -304,7 +304,7 @@ resource "google_pubsub_subscription" "network-analyzer-feed" {
   topic = google_pubsub_topic.attestation-topic.id
   push_config {
     push_endpoint = "${google_cloud_run_v2_service.network-subscriber[0].uri}/enqueue"
-    no_wrapper   {
+    no_wrapper {
       write_metadata = false
     }
     oidc_token {
@@ -365,7 +365,7 @@ locals {
         "BUILD_VERSION=${terraform_data.service_version.output}"
       ]
     }
-  }, var.enable_network_analyzer ? {
+    }, var.enable_network_analyzer ? {
     network-analyzer = {
       dockerfile = "build/package/Dockerfile.networkanalyzer"
       build_args = [
@@ -438,7 +438,7 @@ module "prebuild_binaries" {
 data "google_artifact_registry_docker_image" "gateway" {
   location      = google_artifact_registry_repository.registry.location
   repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name = "gateway:${module.service_images["gateway"].image_version}"
+  image_name    = "gateway:${module.service_images["gateway"].image_version}"
   depends_on    = [module.service_images["gateway"]]
 }
 
@@ -707,11 +707,11 @@ resource "google_storage_bucket_iam_binding" "orchestrator-writes-attestations" 
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
 resource "google_storage_bucket_iam_binding" "attestors-manage-metadata" {
-  bucket  = google_storage_bucket.metadata.name
-  role    = "roles/storage.objectAdmin"
-  members       = concat([
+  bucket = google_storage_bucket.metadata.name
+  role   = "roles/storage.objectAdmin"
+  members = concat([
     "serviceAccount:${google_service_account.orchestrator.email}",
-  ], var.enable_network_analyzer ? [
+    ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
   ] : [])
 }
@@ -721,34 +721,34 @@ resource "google_storage_bucket_iam_binding" "attestors-and-local-build-write-de
   members = concat([
     "serviceAccount:${google_service_account.orchestrator.email}",
     "serviceAccount:${google_service_account.builder-local.email}",
-  ], var.enable_network_analyzer ? [
+    ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
   ] : [])
 }
 resource "google_storage_bucket_iam_binding" "builders-write-metadata" {
-  bucket  = google_storage_bucket.metadata.name
-  role    = "roles/storage.objectCreator"
+  bucket = google_storage_bucket.metadata.name
+  role   = "roles/storage.objectCreator"
   members = concat([
     "serviceAccount:${google_service_account.builder-remote.email}",
-  ], var.enable_network_analyzer ? [
+    ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
   ] : [])
 }
 resource "google_storage_bucket_iam_binding" "builders-use-logs" {
-  bucket  = google_storage_bucket.logs.name
-  role    = "roles/storage.objectUser"
+  bucket = google_storage_bucket.logs.name
+  role   = "roles/storage.objectUser"
   members = concat([
     "serviceAccount:${google_service_account.builder-remote.email}",
-  ], var.enable_network_analyzer ? [
+    ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
   ] : [])
 }
 resource "google_storage_bucket_iam_binding" "builders-view-logs" {
-  bucket  = google_storage_bucket.logs.name
-  role    = google_project_iam_custom_role.bucket-viewer-role.name
+  bucket = google_storage_bucket.logs.name
+  role   = google_project_iam_custom_role.bucket-viewer-role.name
   members = concat([
     "serviceAccount:${google_service_account.builder-remote.email}",
-  ], var.enable_network_analyzer ? [
+    ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
   ] : [])
 }
@@ -763,12 +763,12 @@ resource "google_project_iam_binding" "orchestrator-uses-datastore" {
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
 resource "google_storage_bucket_iam_binding" "builders-view-bootstrap-bucket" {
-  count   = var.public ? 0 : 1 // NOTE: Non-public objects must still be visible to the builder.
-  bucket  = google_storage_bucket.bootstrap-tools.name
-  role    = "roles/storage.objectViewer"
+  count  = var.public ? 0 : 1 // NOTE: Non-public objects must still be visible to the builder.
+  bucket = google_storage_bucket.bootstrap-tools.name
+  role   = "roles/storage.objectViewer"
   members = concat([
     "serviceAccount:${google_service_account.builder-remote.email}",
-  ], var.enable_network_analyzer ? [
+    ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
   ] : [])
 }
@@ -784,7 +784,7 @@ resource "google_project_iam_binding" "orchestrators-run-workloads-as-others" {
   role    = "roles/iam.serviceAccountUser"
   members = concat([
     "serviceAccount:${google_service_account.orchestrator.email}",
-  ], var.enable_network_analyzer ? [
+    ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
   ] : [])
 }
@@ -793,7 +793,7 @@ resource "google_project_iam_binding" "orchestrators-run-gcb-builds" {
   role    = "roles/cloudbuild.builds.editor"
   members = concat([
     "serviceAccount:${google_service_account.orchestrator.email}",
-  ], var.enable_network_analyzer ? [
+    ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
   ] : [])
 }
@@ -807,18 +807,18 @@ resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-inference
 resource "google_kms_crypto_key_iam_binding" "attestors-read-signing-key" {
   crypto_key_id = google_kms_crypto_key.signing-key.id
   role          = "roles/cloudkms.viewer"
-  members       = concat([
+  members = concat([
     "serviceAccount:${google_service_account.orchestrator.email}",
-  ], var.enable_network_analyzer ? [
+    ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
   ] : [])
 }
 resource "google_kms_crypto_key_iam_binding" "attestors-uses-signing-key" {
   crypto_key_id = google_kms_crypto_key.signing-key.id
   role          = "roles/cloudkms.signerVerifier"
-  members       = concat([
+  members = concat([
     "serviceAccount:${google_service_account.orchestrator.email}",
-  ], var.enable_network_analyzer ? [
+    ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
   ] : [])
 }
