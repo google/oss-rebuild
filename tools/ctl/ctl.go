@@ -482,8 +482,10 @@ var runBenchmark = &cobra.Command{
 	},
 }
 
+const analyzeMode = schema.ExecutionMode("analyze")
+
 var runOne = &cobra.Command{
-	Use:   "run-one smoketest|attest --api <URI> --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--strategy <strategy.yaml>] [--strategy-from-repo]",
+	Use:   "run-one smoketest|attest|analyze --api <URI> --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--strategy <strategy.yaml>] [--strategy-from-repo]",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -491,8 +493,8 @@ var runOne = &cobra.Command{
 			log.Fatal("ecosystem, package, and version must be provided")
 		}
 		mode := schema.ExecutionMode(args[0])
-		if mode != schema.SmoketestMode && mode != schema.AttestMode {
-			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
+		if mode != schema.SmoketestMode && mode != schema.AttestMode && mode != analyzeMode {
+			log.Fatalf("Unknown mode: %s. Expected one of 'smoketest', 'attest', or 'analyze'", string(mode))
 		}
 		if *apiUri == "" {
 			log.Fatal("API endpoint not provided")
@@ -521,6 +523,9 @@ var runOne = &cobra.Command{
 				if mode == schema.AttestMode {
 					log.Fatal("--strategy not supported in attest mode, use --strategy-from-repo")
 				}
+				if mode == analyzeMode {
+					log.Fatal("--strategy not supported in analyze mode")
+				}
 				f, err := os.Open(*strategyPath)
 				if err != nil {
 					return
@@ -533,41 +538,52 @@ var runOne = &cobra.Command{
 				}
 			}
 		}
-		var verdicts []schema.Verdict
-		{
-			if mode == schema.SmoketestMode {
-				stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, apiURL.JoinPath("smoketest"))
-				resp, err := stub(ctx, schema.SmoketestRequest{
-					Ecosystem: rebuild.Ecosystem(*ecosystem),
-					Package:   *pkg,
-					Versions:  []string{*version},
-					Strategy:  strategy,
-				})
-				if err != nil {
-					log.Fatal(errors.Wrap(err, "running smoketest"))
-				}
-				verdicts = resp.Verdicts
-			} else {
-				stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, apiURL.JoinPath("rebuild"))
-				resp, err := stub(ctx, schema.RebuildPackageRequest{
-					Ecosystem:         rebuild.Ecosystem(*ecosystem),
-					Package:           *pkg,
-					Version:           *version,
-					Artifact:          *artifact,
-					UseNetworkProxy:   *useNetworkProxy,
-					UseSyscallMonitor: *useSyscallMonitor,
-					ID:                time.Now().UTC().Format(time.RFC3339),
-				})
-				if err != nil {
-					log.Fatal(errors.Wrap(err, "running attest"))
-				}
-				verdicts = []schema.Verdict{*resp}
-			}
-		}
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")
-		for _, v := range verdicts {
-			if err := enc.Encode(v); err != nil {
+		switch mode {
+		case analyzeMode:
+			stub := api.Stub[schema.AnalyzeRebuildRequest, api.NoReturn](client, apiURL.JoinPath("analyze"))
+			_, err := stub(ctx, schema.AnalyzeRebuildRequest{
+				Ecosystem: rebuild.Ecosystem(*ecosystem),
+				Package:   *pkg,
+				Version:   *version,
+				Artifact:  *artifact,
+			})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "running analyze"))
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Analysis completed successfully")
+		case schema.SmoketestMode:
+			stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, apiURL.JoinPath("smoketest"))
+			resp, err := stub(ctx, schema.SmoketestRequest{
+				Ecosystem: rebuild.Ecosystem(*ecosystem),
+				Package:   *pkg,
+				Versions:  []string{*version},
+				Strategy:  strategy,
+			})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "running smoketest"))
+			}
+			for _, v := range resp.Verdicts {
+				if err := enc.Encode(v); err != nil {
+					log.Fatal(errors.Wrap(err, "encoding results"))
+				}
+			}
+		case schema.AttestMode:
+			stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, apiURL.JoinPath("rebuild"))
+			resp, err := stub(ctx, schema.RebuildPackageRequest{
+				Ecosystem:         rebuild.Ecosystem(*ecosystem),
+				Package:           *pkg,
+				Version:           *version,
+				Artifact:          *artifact,
+				UseNetworkProxy:   *useNetworkProxy,
+				UseSyscallMonitor: *useSyscallMonitor,
+				ID:                time.Now().UTC().Format(time.RFC3339),
+			})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "running attest"))
+			}
+			if err := enc.Encode(resp); err != nil {
 				log.Fatal(errors.Wrap(err, "encoding result"))
 			}
 		}
