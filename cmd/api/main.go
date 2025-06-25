@@ -51,6 +51,7 @@ var (
 	blockLocalRepoPublish = flag.Bool("block-local-repo-publish", true, "whether to prevent attestation publishing when the BuildRepo property points to a file:// URI")
 	gcbPrivatePoolName    = flag.String("gcb-private-pool-name", "", "Resoure name of GCB private pool to use, if configured")
 	gcbPrivatePoolRegion  = flag.String("gcb-private-pool-region", "", "GCP location to use for GCB private pool builds, if configured. Note: This should generally be the same as the region where the private pool is located.")
+	aptCacheIP            = flag.String("apt-cache", "", "IP address of the apt cache server to use. This must be accessible from the GCB runner, usually requiring a private pool.")
 )
 
 // Link-time configured service identity
@@ -145,6 +146,7 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing prebuild location")
 	}
+	d.AptCacheIP = *aptCacheIP
 	d.PrebuildConfig.Bucket = *prebuildBucket
 	d.PrebuildConfig.Auth = *prebuildAuth
 	// NOTE: The subdir will match the version identifier used for the service version.

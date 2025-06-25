@@ -32,6 +32,7 @@ type Instructions struct {
 // BuildEnv contains resources provided by the build environment that a strategy may use.
 type BuildEnv struct {
 	TimewarpHost           string
+	AptCacheIP             string
 	HasRepo                bool
 	PreferPreciseToolchain bool
 }
