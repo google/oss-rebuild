@@ -95,6 +95,11 @@ variable "enable_private_build_pool" {
   description = "Whether to create and use a private Cloud Build worker pool for rebuilds"
   default     = false
 }
+variable "enable_vpc" {
+  type        = bool
+  description = "Whether to create and use VPC infrastructure for private build pools"
+  default     = false
+}
 
 data "google_project" "project" {
   project_id = var.project
@@ -491,6 +496,83 @@ data "google_artifact_registry_docker_image" "network-subscriber" {
   depends_on    = [module.service_images["network-subscriber"]]
 }
 
+## Network resources
+
+resource "google_project_service" "servicenetworking" {
+  count   = var.enable_vpc ? 1 : 0
+  service = "servicenetworking.googleapis.com"
+}
+resource "google_compute_network" "vpc" {
+  count                   = var.enable_vpc ? 1 : 0
+  name                    = "${var.host}-rebuild-vpc"
+  auto_create_subnetworks = false
+}
+resource "google_compute_subnetwork" "subnet" {
+  count         = var.enable_vpc ? 1 : 0
+  name          = "${var.host}-rebuild-subnet"
+  ip_cidr_range = "10.10.1.0/24"
+  region        = "us-central1"
+  network       = google_compute_network.vpc[0].name
+}
+resource "google_service_networking_connection" "private_service_access" {
+  count                   = var.enable_vpc ? 1 : 0
+  network                 = google_compute_network.vpc[0].id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_service_access[0].name]
+}
+# Reserve IP range for Google services to connect to your VPC
+resource "google_compute_global_address" "private_service_access" {
+  count         = var.enable_vpc ? 1 : 0
+  name          = "${var.host}-rebuild-private-service-access"
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 20 # 4k IPs
+  network       = google_compute_network.vpc[0].id
+}
+# NAT for outbound internet access from private build pools
+resource "google_compute_router" "router" {
+  count   = var.enable_vpc ? 1 : 0
+  name    = "${var.host}-rebuild-router"
+  region  = "us-central1"
+  network = google_compute_network.vpc[0].id
+}
+resource "google_compute_router_nat" "nat" {
+  count  = var.enable_vpc ? 1 : 0
+  name   = "${var.host}-rebuild-nat"
+  router = google_compute_router.router[0].name
+  region = "us-central1"
+  # Auto-allocate for all IPs
+  nat_ip_allocate_option             = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+}
+resource "google_compute_firewall" "allow_internal" {
+  count   = var.enable_vpc ? 1 : 0
+  name    = "${var.host}-rebuild-allow-internal"
+  network = google_compute_network.vpc[0].name
+  allow {
+    protocol = "tcp"
+    ports    = ["0-65535"]
+  }
+  allow {
+    protocol = "udp"
+    ports    = ["0-65535"]
+  }
+  source_ranges = ["${google_compute_global_address.private_service_access[0].address}/${google_compute_global_address.private_service_access[0].prefix_length}"]
+}
+resource "google_compute_firewall" "allow_outbound" {
+  count     = var.enable_vpc ? 1 : 0
+  name      = "${var.host}-rebuild-allow-outbound"
+  network   = google_compute_network.vpc[0].name
+  direction = "EGRESS"
+  allow {
+    protocol = "tcp"
+  }
+  allow {
+    protocol = "udp"
+  }
+  destination_ranges = ["0.0.0.0/0"]
+}
+
 ## Compute resources
 
 resource "google_project_service" "cloudbuild" {
@@ -504,6 +586,13 @@ resource "google_cloudbuild_worker_pool" "private-pool" {
   worker_config {
     machine_type = "e2-standard-4"
     disk_size_gb = 100
+  }
+  dynamic "network_config" {
+    for_each = var.enable_vpc ? [1] : []
+    content {
+      peered_network          = google_compute_network.vpc[0].id
+      peered_network_ip_range = "/22" # 1k IPs
+    }
   }
   depends_on = [google_project_service.cloudbuild]
 }
