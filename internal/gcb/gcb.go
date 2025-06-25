@@ -87,7 +87,7 @@ func (c *clientImpl) WaitForOperation(ctx context.Context, op *cloudbuild.Operat
 			return nil, ctx.Err()
 		case <-time.After(c.pollInterval):
 			var err error
-			op, err = c.service.Operations.Get(op.Name).Context(ctx).Do()
+			op, err = c.operations().Get(op.Name).Context(ctx).Do()
 			if err != nil {
 				return nil, errors.Wrap(err, "fetching operation")
 			}
@@ -96,8 +96,20 @@ func (c *clientImpl) WaitForOperation(ctx context.Context, op *cloudbuild.Operat
 	return op, nil
 }
 
+func (c *clientImpl) operations() *cloudbuild.OperationsService {
+	if c.privatePoolConfig != nil && c.privatePoolConfig.Region != "" {
+		// NOTE: There is currently no resource name routing to regional backends due to GCB's legacy operation ID format.
+		// This workaround encodes the proper regional backend in the domain so we query the right db.
+		regionalService := *c.service
+		regionalService.BasePath = fmt.Sprintf("https://%s-cloudbuild.googleapis.com", c.privatePoolConfig.Region)
+		return cloudbuild.NewOperationsService(&regionalService)
+	} else {
+		return c.service.Operations
+	}
+}
+
 func (c *clientImpl) CancelOperation(op *cloudbuild.Operation) error {
-	_, err := c.service.Operations.Cancel(op.Name, &cloudbuild.CancelOperationRequest{}).Do()
+	_, err := c.operations().Cancel(op.Name, &cloudbuild.CancelOperationRequest{}).Do()
 	return err
 }
 
@@ -135,7 +147,7 @@ func DoBuild(ctx context.Context, client Client, project string, build *cloudbui
 		return bm.Build, nil
 	} else if err != nil {
 		// NOTE: We could potentially also cancel these unknown error cases, not just DeadlineExceeded
-		return nil, errors.Wrap(err, "fetching operation")
+		return nil, errors.Wrap(err, "waiting for operation")
 	}
 	// NOTE: Build status check will handle failures with better error messages.
 	if doneOp.Error != nil {
