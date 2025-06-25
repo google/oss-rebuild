@@ -259,7 +259,7 @@ func createAndPublishAttestations(ctx context.Context, deps *AnalyzerDeps, mux r
 		return errors.Wrap(err, "comparing artifacts")
 	}
 	// Create network attestations
-	networkStmt, eqStmt, err := createNetworkAttestations(ctx, t, strategy, obID, deps.ServiceRepo, deps.OutputAnalysisStore, deps.InputAttestationStore, remoteStore, rebuildAttestation, *rebuiltSummary, *upstreamSummary)
+	networkStmt, eqStmt, err := createNetworkAttestations(ctx, t, strategy, obID, deps.ServiceRepo, deps.OutputAnalysisStore, deps.InputAttestationStore, deps.LocalMetadataStore, rebuildAttestation, *rebuiltSummary, *upstreamSummary)
 	if err != nil {
 		return errors.Wrap(err, "creating network attestations")
 	}
@@ -288,7 +288,7 @@ func copyNetworkLog(ctx context.Context, remoteStore, analysisStore rebuild.Loca
 	return err
 }
 
-func createNetworkAttestations(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, obID string, serviceLoc rebuild.Location, analysisStore rebuild.LocatableAssetStore, inputAttestationStore rebuild.AssetStore, remoteMetadataStore rebuild.LocatableAssetStore, rebuildAttestation *attestation.RebuildAttestation, rebuiltSummary, upstreamSummary verifier.ArtifactSummary) (network, equivalence *in_toto.ProvenanceStatementSLSA1, err error) {
+func createNetworkAttestations(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, obID string, serviceLoc rebuild.Location, analysisStore rebuild.LocatableAssetStore, inputAttestationStore rebuild.AssetStore, metadataStore rebuild.AssetStore, rebuildAttestation *attestation.RebuildAttestation, rebuiltSummary, upstreamSummary verifier.ArtifactSummary) (network, equivalence *in_toto.ProvenanceStatementSLSA1, err error) {
 	subjectDigest := rebuildAttestation.Subject[0].Digest
 	// Calculate network log digest
 	netlogReader, err := analysisStore.Reader(ctx, NetworkLogAsset.For(t))
@@ -338,7 +338,7 @@ func createNetworkAttestations(ctx context.Context, t rebuild.Target, strategy r
 	var buildStepsBytes []byte
 	{
 		var bi rebuild.BuildInfo
-		reader, err := remoteMetadataStore.Reader(ctx, rebuild.BuildInfoAsset.For(t))
+		reader, err := metadataStore.Reader(ctx, rebuild.BuildInfoAsset.For(t))
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "reading build info")
 		}
