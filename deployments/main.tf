@@ -565,6 +565,13 @@ resource "google_compute_firewall" "allow_outbound" {
   }
   destination_ranges = ["0.0.0.0/0"]
 }
+resource "google_compute_subnetwork" "rebuild_subnet" {
+  count     = var.enable_vpc ? 1 : 0
+  name          = "${var.host}-rebuild-subnet"
+  ip_cidr_range = "10.10.1.0/24"
+  region        = "us-central1"
+  network       = google_compute_network.vpc[0].name
+}
 
 ## Compute resources
 
