@@ -469,7 +469,7 @@ func (d *ContainerTruststorePatcher) leasePatchSet(container string) *patchSet {
 
 // Proxy serves the Docker API while patching the container truststore.
 func (d *ContainerTruststorePatcher) Proxy(srvAddr, dockerAddr string) {
-	dockerProxyChan := make(chan net.Conn, 1)
+	proxyChan := make(chan net.Conn, 1)
 	udsChan := make(chan net.Conn, 1)
 
 	network := "tcp"
@@ -477,11 +477,8 @@ func (d *ContainerTruststorePatcher) Proxy(srvAddr, dockerAddr string) {
 	if strings.HasPrefix(address, "unix://") {
 		network = "unix"
 		address = strings.TrimPrefix(address, "unix://")
-		if _, err := os.Stat(address); err == nil {
-			if err := os.RemoveAll(address); err != nil {
-				log.Fatal(err)
-			}
-		}
+	} else if strings.HasPrefix(address, "tcp://") {
+		address = strings.TrimPrefix(address, "tcp://")
 	}
 	tl, err := net.Listen(network, address)
 	if err != nil {
@@ -494,7 +491,7 @@ func (d *ContainerTruststorePatcher) Proxy(srvAddr, dockerAddr string) {
 				log.Printf("Failed to establish connection: %s", err)
 				continue
 			}
-			dockerProxyChan <- c
+			proxyChan <- c
 		}
 	}()
 	if d.proxySocket != "" {
@@ -519,7 +516,7 @@ func (d *ContainerTruststorePatcher) Proxy(srvAddr, dockerAddr string) {
 	for {
 		var c net.Conn
 		select {
-		case c = <-dockerProxyChan:
+		case c = <-proxyChan:
 		case c = <-udsChan:
 		}
 		s, err := net.Dial("unix", dockerAddr)
