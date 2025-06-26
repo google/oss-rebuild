@@ -24,11 +24,12 @@ import (
 )
 
 var (
-	verbose                    = flag.Bool("verbose", true, "whether to output log events for each request")
-	httpProxyAddr              = flag.String("http_addr", "localhost:3128", "address for HTTP proxy")
-	tlsProxyAddr               = flag.String("tls_addr", "localhost:3129", "address for TLS proxy")
-	ctrlAddr                   = flag.String("ctrl_addr", "localhost:3127", "address for administrative endpoint")
-	dockerAddr                 = flag.String("docker_addr", "", "address for docker proxy endpoint")
+	verbose       = flag.Bool("verbose", true, "whether to output log events for each request")
+	httpProxyAddr = flag.String("http_addr", "localhost:3128", "address for HTTP proxy")
+	tlsProxyAddr  = flag.String("tls_addr", "localhost:3129", "address for TLS proxy")
+	ctrlAddr      = flag.String("ctrl_addr", "localhost:3127", "address for administrative endpoint")
+	dockerAddr    = flag.String("docker_addr", "", "address for docker proxy endpoint in the format host:port or tcp://host:port for tcp, or unix:///file for unix domain sockets.")
+	// TODO: Add support for tcp sockets.
 	dockerSocket               = flag.String("docker_socket", "/var/run/docker.sock", "path to the docker socket")
 	dockerNetwork              = flag.String("docker_network", "", "if provided, the docker network to use for all proxied containers")
 	dockerEnvVars              = flag.String("docker_env_vars", "", "comma-separated key-value pair env vars to patch into containers")
