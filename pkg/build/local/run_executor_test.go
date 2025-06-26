@@ -390,7 +390,8 @@ func TestDockerRunExecutorConcurrency(t *testing.T) {
 
 func TestDockerRunExecutorConfig(t *testing.T) {
 	executor, err := NewDockerRunExecutor(DockerRunExecutorConfig{
-		MaxParallel: 3,
+		MaxParallel:     3,
+		CommandExecutor: NewMockCommandExecutor(),
 	})
 	if err != nil {
 		t.Fatalf("Failed to create executor with config: %v", err)
