@@ -37,6 +37,7 @@ type RemoteOptions struct {
 	// RemoteMetadataStore stores the rebuilt artifact. Cloud build needs access to upload assets here. It should be keyed by the unguessable UUID to sandbox each build.
 	RemoteMetadataStore LocatableAssetStore
 	PrebuildConfig      PrebuildConfig
+	AptCacheIP          string
 	// TODO: Consider moving these to Strategy.
 	UseTimewarp       bool
 	UseNetworkProxy   bool
@@ -533,7 +534,7 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 }
 
 func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
-	env := BuildEnv{HasRepo: false, PreferPreciseToolchain: true}
+	env := BuildEnv{HasRepo: false, PreferPreciseToolchain: true, AptCacheIP: opts.AptCacheIP}
 	if opts.UseTimewarp {
 		env.TimewarpHost = "localhost:8080"
 	}

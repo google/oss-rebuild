@@ -145,7 +145,11 @@ var toolkit = []*flow.Tool{
 	{
 		Name: "debian/deps/add-snapshot",
 		Steps: []flow.Step{{
-			Runs: fmt.Sprintf("echo %s | base64 -d > /etc/apt/sources.list.d/debian.sources", base64.StdEncoding.EncodeToString([]byte(`Types: deb
+			// TODO: Only add the proxy line if CACHE_SERVER_IP is not empty.
+			// TODO: Make sure BuildEnv.AptCacheIP is properly escaped to avoid breaking the sed command (no slashes)
+			Runs: fmt.Sprintf("echo %s | base64 -d > /etc/apt/sources.list.d/debian.sources && sed -i 's/CACHE_SERVER_IP/{{.BuildEnv.AptCacheIP}}/g' /etc/apt/sources.list.d/debian.sources", base64.StdEncoding.EncodeToString([]byte(`Acquire::http::proxy "http://CACHE_SERVER_IP:3142";
+
+Types: deb
 URIs: http://snapshot.debian.org/archive/debian/20250305T000000Z
 Suites: testing testing-updates
 Components: main
