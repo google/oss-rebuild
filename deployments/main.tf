@@ -550,7 +550,7 @@ resource "google_compute_firewall" "allow_internal" {
     protocol = "udp"
     ports    = ["0-65535"]
   }
-  source_ranges = ["10.0.0.0/20"]
+  source_ranges = ["${google_compute_global_address.private_service_access[0].address}/${google_compute_global_address.private_service_access[0].prefix_length}"]
 }
 resource "google_compute_firewall" "allow_outbound" {
   count     = var.enable_vpc ? 1 : 0
