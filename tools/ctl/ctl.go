@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -878,7 +879,7 @@ var setTrackedPackagesCmd = &cobra.Command{
 		if err != nil {
 			return errors.Wrap(err, "creating gcs client")
 		}
-		obj := gcsClient.Bucket(bucket).Object("tracked.json.gz")
+		obj := gcsClient.Bucket(bucket).Object(feed.TrackedPackagesFile)
 		w := obj.NewWriter(ctx)
 		defer logFailure(w.Close)
 		gzw := gzip.NewWriter(w)
@@ -887,6 +888,56 @@ var setTrackedPackagesCmd = &cobra.Command{
 			log.Fatal(errors.Wrap(err, "compressing and uploading tracked packages"))
 		}
 		return nil
+	},
+}
+
+var getTrackedPackagesCmd = &cobra.Command{
+	Use:   "get-tracked [--format=index|bench] <gcs-bucket> <generation-num>",
+	Short: "Get the list of tracked packages",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		bucket := args[len(args)-2]
+		gcsClient, err := gcs.NewClient(ctx)
+		if err != nil {
+			return errors.Wrap(err, "creating gcs client")
+		}
+		obj := gcsClient.Bucket(bucket).Object(feed.TrackedPackagesFile)
+		gen, err := strconv.ParseInt(args[len(args)-1], 10, 64)
+		if err != nil {
+			return errors.Wrap(err, "parsing generation number")
+		}
+		idx, err := feed.ReadTrackedIndex(ctx, feed.NewGCSObjectDataSource(obj), gen)
+		if err != nil {
+			return err
+		}
+		switch *format {
+		case "", "index":
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(idx); err != nil {
+				log.Fatal(errors.Wrap(err, "encoding tracked package index"))
+			}
+			return nil
+		case "bench":
+			var b benchmark.PackageSet
+			for eco, packages := range idx {
+				for pkg := range packages {
+					b.Packages = append(b.Packages, benchmark.Package{
+						Name:      pkg,
+						Ecosystem: string(eco),
+					})
+				}
+			}
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(b); err != nil {
+				log.Fatal(errors.Wrap(err, "encoding tracked package benchmark"))
+			}
+			return nil
+		default:
+			return errors.Errorf("Unknown --format type: %s", *format)
+		}
 	},
 }
 
@@ -990,6 +1041,7 @@ func init() {
 	migrate.Flags().AddGoFlag(flag.Lookup("dryrun"))
 
 	setTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("bench"))
+	setTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("format"))
 
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
@@ -999,6 +1051,7 @@ func init() {
 	rootCmd.AddCommand(infer)
 	rootCmd.AddCommand(migrate)
 	rootCmd.AddCommand(setTrackedPackagesCmd)
+	rootCmd.AddCommand(getTrackedPackagesCmd)
 }
 
 func main() {
