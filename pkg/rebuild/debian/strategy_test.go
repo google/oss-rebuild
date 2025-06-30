@@ -175,6 +175,32 @@ echo QEAgLTcyNSwyICs3MjUsMyBAQAogICAgICAgICApLAorICAgICAgICAnLS1jdXN0b21pemUtaG9
 				SystemDeps: []string{"wget"},
 			},
 		},
+		{
+			name: "WithAptCache",
+			strategy: Debrebuild{
+				BuildInfo: FileWithChecksum{
+					URL: "https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo",
+					MD5: "deadbeef",
+				},
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.Debian,
+				Package:   "main/acl",
+				Version:   "2.3.1-3",
+				Artifact:  "acl_2.3.1-3_amd64.deb",
+			},
+			env: rebuild.BuildEnv{AptCacheIP: "10.10.2.1"},
+			want: rebuild.Instructions{
+				Source: `wget https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo`,
+				Deps: `echo VHlwZXM6IGRlYgpVUklzOiBodHRwOi8vc25hcHNob3QuZGViaWFuLm9yZy9hcmNoaXZlL2RlYmlhbi8yMDI1MDMwNVQwMDAwMDBaClN1aXRlczogdGVzdGluZyB0ZXN0aW5nLXVwZGF0ZXMKQ29tcG9uZW50czogbWFpbgpTaWduZWQtQnk6IC91c3Ivc2hhcmUva2V5cmluZ3MvZGViaWFuLWFyY2hpdmUta2V5cmluZy5ncGcKClR5cGVzOiBkZWIKVVJJczogaHR0cDovL3NuYXBzaG90LmRlYmlhbi5vcmcvYXJjaGl2ZS9kZWJpYW4tc2VjdXJpdHkvMjAyNTAzMDVUMDAwMDAwWgpTdWl0ZXM6IHRlc3Rpbmctc2VjdXJpdHkKQ29tcG9uZW50czogbWFpbgpTaWduZWQtQnk6IC91c3Ivc2hhcmUva2V5cmluZ3MvZGViaWFuLWFyY2hpdmUta2V5cmluZy5ncGc= | base64 -d > /etc/apt/sources.list.d/debian.sources && echo 'Acquire::http::proxy "http://10.10.2.1:3142";' > /etc/apt/apt.conf.d/02proxy.conf
+apt -o Acquire::Check-Valid-Until=false update
+apt install -y devscripts mmdebstrap apt-utils
+echo QEAgLTcyNSwyICs3MjUsMyBAQAogICAgICAgICApLAorICAgICAgICAnLS1jdXN0b21pemUtaG9vaz1zbGVlcCAxMCcsCiAgICAgICAgICctLWN1c3RvbWl6ZS1ob29rPWNocm9vdCAiJDEiIHNoIC1jICIn | base64 -d | patch /usr/bin/debrebuild`,
+				Build:      `debrebuild --buildresult=./out --builder=mmdebstrap acl_2.3.2-2_amd64.buildinfo`,
+				OutputPath: "out/acl_2.3.1-3_amd64.deb",
+				SystemDeps: []string{"wget"},
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
