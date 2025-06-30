@@ -148,6 +148,8 @@ func cleanVerdict(m string) string {
 		m = `npm install: unsupported scheme "workspace:"`
 	case strings.Contains(m, `Unsupported URL Type "patch:"`):
 		m = `npm install: unsupported scheme "patch:"`
+	case strings.Contains(m, `getting strategy: fetching inference: making http request:`) && strings.Contains(m, `connection reset by peer`):
+		m = `getting strategy: fetching inference: making http request to inference service: connection reset by peer`
 	// NPM
 	case strings.HasPrefix(m, "unknown npm pack failure:"):
 		if strings.Contains(m, ": not found") {
