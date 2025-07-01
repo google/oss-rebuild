@@ -24,6 +24,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
 	"github.com/google/oss-rebuild/tools/ctl/ide/chatbox"
 	"github.com/google/oss-rebuild/tools/ctl/ide/choice"
+	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
 	"github.com/google/oss-rebuild/tools/ctl/ide/details"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
@@ -47,8 +48,8 @@ const (
 // A modalFnType can be used to show an InputCaptureable. It returns an exit function that can be used to close the modal.
 type modalFnType func(modal.InputCaptureable, modal.ModalOpts) func()
 
-func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildCmd {
-	return []RebuildCmd{
+func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []commandreg.RebuildCmd {
+	return []commandreg.RebuildCmd{
 		{
 			Short: "run local",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
@@ -208,8 +209,8 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 	}
 }
 
-func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []RebuildGroupCmd {
-	return []RebuildGroupCmd{
+func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []commandreg.RebuildGroupCmd {
+	return []commandreg.RebuildGroupCmd{
 		{
 			Short: "Find pattern",
 			Func: func(ctx context.Context, rebuilds []rundex.Rebuild) {
@@ -359,8 +360,8 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 
 }
 
-func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []GlobalCmd {
-	return []GlobalCmd{
+func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modalFnType, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []commandreg.GlobalCmd {
+	return []commandreg.GlobalCmd{
 		{
 			Short:  "restart rebuilder",
 			Hotkey: 'r',
