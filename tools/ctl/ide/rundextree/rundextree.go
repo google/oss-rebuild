@@ -77,6 +77,16 @@ func (t *Tree) LoadTree(ctx context.Context) error {
 	return nil
 }
 
+// LoadRebuilds will group and display the provided rebuilds.
+func (t *Tree) LoadRebuilds(rebuilds []rundex.Rebuild) {
+	t.root.ClearChildren()
+	byCount := rundex.GroupRebuilds(rebuilds)
+	for i := len(byCount) - 1; i >= 0; i-- {
+		vgnode := t.makeVerdictGroupNode(byCount[i], 100*float32(byCount[i].Count)/float32(len(rebuilds)))
+		t.root.AddChild(vgnode)
+	}
+}
+
 func (t *Tree) commandNodes(example rundex.Rebuild) []*tview.TreeNode {
 	var res []*tview.TreeNode
 	for _, cmd := range t.cmdReg.RebuildCommands() {

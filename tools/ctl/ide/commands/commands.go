@@ -33,6 +33,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuildhistory"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rundextable"
+	"github.com/google/oss-rebuild/tools/ctl/ide/rundextree"
 	"github.com/google/oss-rebuild/tools/ctl/ide/textinput"
 	"github.com/google/oss-rebuild/tools/ctl/ide/tmux"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
@@ -287,8 +288,8 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 					}
 					config = llm.WithSystemPrompt(config, systemPrompt...)
 				}
-				p := pipe.FromSlice(rebuilds)
-				p = p.ParDo(RundexReadParallelism, func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
+				p1 := pipe.FromSlice(rebuilds)
+				p1.ParDo(RundexReadParallelism, func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
 					_, err := butler.Fetch(context.Background(), in.RunID, in.WasSmoketest(), rebuild.DebugLogsAsset.For(in.Target()))
 					if err != nil {
 						log.Println(errors.Wrap(err, "downloading logs"))
@@ -302,7 +303,7 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 					Rebuild rundex.Rebuild
 					Summary string
 				}
-				summaries := pipe.ParInto(LLMRequestParallelism, p, func(in rundex.Rebuild, out chan<- summarizedRebuild) {
+				p2 := pipe.ParInto(LLMRequestParallelism, p1, func(in rundex.Rebuild, out chan<- summarizedRebuild) {
 					const uploadBytesLimit = 100_000
 					assets, err := localfiles.AssetStore(in.RunID)
 					if err != nil {
@@ -337,9 +338,11 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 					out <- summarizedRebuild{Rebuild: in, Summary: string(txt)}
 					log.Println("Summary: ", txt)
 				})
+				var summaries []summarizedRebuild
 				var parts []*genai.Part
 				log.Printf("Summarizing %d rebuild failures", len(rebuilds))
-				for s := range summaries.Out() {
+				for s := range p2.Out() {
+					summaries = append(summaries, s)
 					if s.Summary == "" {
 						continue
 					}
@@ -349,13 +352,44 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 				// TODO: Give more structure to the expected output format to make it easier parsing the response.
 				parts = append([]*genai.Part{{Text: "Based on the following error summaries, please provide 1 to 5 classes of failures you think are happening."}}, parts...)
 				<-ticker
-				txt, err := llm.GenerateTextContent(ctx, aiClient, llm.GeminiFlash, config, parts...)
+				rawFailureClasses, err := llm.GenerateTextContent(ctx, aiClient, llm.GeminiFlash, config, parts...)
 				if err != nil {
 					log.Println(errors.Wrap(err, "classifying summaries"))
 					return
 				}
-				log.Println(string(txt))
-				log.Println("Grouping completed.")
+				log.Println(rawFailureClasses)
+				parts = []*genai.Part{{Text: "Please format this list of summaries into one line per summary. Do not include any of the following: syntax highlighting, numbering, bullet points, or other markdown."}, {Text: rawFailureClasses}}
+				<-ticker
+				failuresClasses, err := llm.GenerateTextContent(ctx, aiClient, llm.GeminiFlash, config, parts...)
+				if err != nil {
+					log.Println(errors.Wrap(err, "formatting classes"))
+					return
+				}
+				classes := strings.Split(string(failuresClasses), "\n")
+				log.Printf("Found %d classes: %s", len(classes), strings.Join(classes, "\n"))
+				p3 := pipe.ParInto(LLMRequestParallelism, pipe.FromSlice(summaries), func(in summarizedRebuild, out chan<- rundex.Rebuild) {
+					if in.Summary == "" {
+						return
+					}
+					prompt := fmt.Sprintf("Given the following failure classes:\n%s\n\nAnd the following error summary:\n%s\n\nPlease classify the summary into one of the classes. Respond with only the class name.", string(failuresClasses), in.Summary)
+					<-ticker
+					className, err := llm.GenerateTextContent(ctx, aiClient, llm.GeminiFlash, config, &genai.Part{Text: prompt})
+					if err != nil {
+						log.Printf("Failed to classify summary for %s: %v", in.Rebuild.ID(), err)
+						return
+					}
+					in.Rebuild.Message = strings.TrimSpace(string(className))
+					out <- in.Rebuild
+				})
+				// TODO: Make the tree-generation code on explorer public and use that here, passing it into modalFn
+				// Maybe the explorer should just have a factory method to generate a tree obj?
+				tree := rundextree.New(app, modalFn, dex, rundex.FetchRebuildOpts{}, benches, cmdReg)
+				var clusteredRebuilds []rundex.Rebuild
+				for r := range p3.Out() {
+					clusteredRebuilds = append(clusteredRebuilds, r)
+				}
+				tree.LoadRebuilds(clusteredRebuilds)
+				modalFn(tree, modal.ModalOpts{Margin: 10})
 			},
 		},
 	}
