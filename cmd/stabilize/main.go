@@ -182,7 +182,9 @@ func eligiblePasses(filename string) ([]archive.Stabilizer, error) {
 		}
 		if i == 0 {
 			result = stabs
-		} else if !slices.Equal(result, stabs) {
+		} else if !slices.EqualFunc(result, stabs, func(s1, s2 archive.Stabilizer) bool {
+			return getName(s1) == getName(s2)
+		}) {
 			return nil, errors.Wrapf(ErrAmbiguousEcosystem, "ecosystem %s suggests different stabilizers than %s", candidates[0], e)
 		}
 	}
