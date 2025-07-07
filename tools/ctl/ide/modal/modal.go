@@ -14,6 +14,9 @@ const (
 	defaultModalBackground = tcell.ColorDarkCyan
 )
 
+// Fn can be used to show an InputCaptureable. It returns an exit function that can be used to close the modal.
+type Fn func(InputCaptureable, ModalOpts) func()
+
 // Returns a new primitive which puts the provided primitive in the center and
 // adds vertical and horizontal margin.
 // vertMargin and horizMargin are total margin. If margin is odd (can't be evenly split on either side), the primitive goes to the top and left.
@@ -55,6 +58,9 @@ func Show(app *tview.Application, container *tview.Pages, contents InputCapturea
 			exitFunc()
 			// Returning nil prevents further primatives from receiving this event.
 			return nil
+		}
+		if oldCapture != nil {
+			return oldCapture(event)
 		}
 		return event
 	})
