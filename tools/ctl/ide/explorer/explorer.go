@@ -26,7 +26,6 @@ import (
 const (
 	defaultBackground = tcell.ColorGray
 	TreePageName      = "treeView"
-	TablePageName     = "tableView"
 )
 
 func verdictAsEmoji(r rundex.Rebuild) string {
@@ -41,7 +40,6 @@ func verdictAsEmoji(r rundex.Rebuild) string {
 type Explorer struct {
 	app        *tview.Application
 	container  *tview.Pages
-	table      *tview.Table
 	tree       *rundextree.Tree
 	dex        rundex.Reader
 	watcher    rundex.Watcher
@@ -55,7 +53,6 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 	e := Explorer{
 		app:        app,
 		container:  tview.NewPages(),
-		table:      tview.NewTable().SetBorders(true),
 		dex:        dex,
 		watcher:    watcher,
 		rundexOpts: rundexOpts,
@@ -87,12 +84,12 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 				log.Println(err)
 				return
 			}
-			e.app.QueueUpdateDraw(func() {
-				if err := e.populateTable(rebuilds); err != nil {
-					log.Println(err)
-				}
-				e.SelectTable()
-			})
+			table, err := e.newPopulatedTable(rebuilds)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			e.modalFn(table, modal.ModalOpts{Margin: 10})
 		},
 	})
 	if err != nil {
@@ -107,7 +104,6 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 		return e.commandHotkeys(event, *data.Rebuilds[0])
 	})
 	resize, show := true, true
-	e.container.AddPage(TablePageName, e.table, resize, !show)
 	e.container.AddPage(TreePageName, e.tree, resize, show)
 	e.SelectTree()
 	if e.watcher != nil {
@@ -311,19 +307,19 @@ func addRow(table *tview.Table, row int, elems []string) {
 	}
 }
 
-func (e *Explorer) populateTable(rebuilds []rundex.Rebuild) error {
-	e.table.Clear()
-	addHeader(e.table, []string{"ID", "Success", "Run"})
+func (e *Explorer) newPopulatedTable(rebuilds []rundex.Rebuild) (*tview.Table, error) {
+	table := tview.NewTable().SetBorders(true)
+	addHeader(table, []string{"ID", "Success", "Run"})
 	for i, r := range rebuilds {
-		addRow(e.table, i+1, []string{r.ID(), verdictAsEmoji(r), r.RunID})
+		addRow(table, i+1, []string{r.ID(), verdictAsEmoji(r), r.RunID})
 	}
 	// Configure selection behavior
 	if len(rebuilds) > 0 {
-		e.table.Select(1, 0)
+		table.Select(1, 0)
 	}
-	e.table.ScrollToBeginning()
-	e.table.SetSelectable(true, false)
-	e.table.SetSelectedFunc(func(row int, column int) {
+	table.ScrollToBeginning()
+	table.SetSelectable(true, false)
+	table.SetSelectedFunc(func(row int, column int) {
 		r := rebuilds[row-1]
 		// Load the rundex.Rebuilds for this particular target
 		log.Println("Loading history for", r.ID())
@@ -344,22 +340,18 @@ func (e *Explorer) populateTable(rebuilds []rundex.Rebuild) error {
 		}
 		go e.modalFn(hist, modal.ModalOpts{Margin: 10})
 	})
-	e.table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+	table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyESC {
 			e.SelectTree()
 			// Return nil to stop further primatives from receiving the event.
 			return nil
 		}
-		row, _ := e.table.GetSelection()
+		row, _ := table.GetSelection()
 		if row == 0 || row > len(rebuilds) {
 			return event
 		}
 		example := rebuilds[row-1]
 		return e.commandHotkeys(event, example)
 	})
-	return nil
-}
-
-func (e *Explorer) SelectTable() {
-	e.container.SwitchToPage(TablePageName)
+	return table, nil
 }
