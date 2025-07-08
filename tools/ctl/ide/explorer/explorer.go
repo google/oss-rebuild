@@ -470,7 +470,7 @@ func (e *Explorer) rebuildHistory(rebuilds []rundex.Rebuild) (modal.InputCapture
 		root := tview.NewTreeNode("runs").SetColor(tcell.ColorRed)
 		runs.SetRoot(root)
 		for _, r := range rebuilds {
-			node := tview.NewTreeNode(r.RunID + verdictAsEmoji(r)).SetReference(&r)
+			node := tview.NewTreeNode(r.RunID + verdictAsEmoji(r)).SetReference(nodeData{NodeID: r.ID(), Rebuilds: []*rundex.Rebuild{&r}})
 			node.SetSelectedFunc(func() {
 				children := node.GetChildren()
 				if len(children) == 0 {
