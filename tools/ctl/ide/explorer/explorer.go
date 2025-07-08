@@ -17,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
 	detailsui "github.com/google/oss-rebuild/tools/ctl/ide/details"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
+	"github.com/google/oss-rebuild/tools/ctl/ide/rundextable"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rundextree"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
@@ -27,14 +28,6 @@ const (
 	defaultBackground = tcell.ColorGray
 	TreePageName      = "treeView"
 )
-
-func verdictAsEmoji(r rundex.Rebuild) string {
-	if r.Success || r.Message == "" {
-		return "✅"
-	} else {
-		return "❌"
-	}
-}
 
 // The Explorer is the Tree structure on the left side of the TUI
 type Explorer struct {
@@ -84,7 +77,25 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 				log.Println(err)
 				return
 			}
-			table, err := e.newPopulatedTable(rebuilds)
+			onSelect := func(rebuild rundex.Rebuild) {
+				log.Println("Loading history for", rebuild.ID())
+				t := rebuild.Target()
+				rebuildsOfTarget, err := e.dex.FetchRebuilds(context.Background(), &rundex.FetchRebuildRequest{
+					Target: &t,
+					Opts:   e.rundexOpts,
+				})
+				if err != nil {
+					log.Println(errors.Wrap(err, "fetching rebuilds for target"))
+					return
+				}
+				hist, err := e.rebuildHistory(rebuildsOfTarget)
+				if err != nil {
+					log.Println(errors.Wrap(err, "browsing target's history"))
+					return
+				}
+				go e.modalFn(hist, modal.ModalOpts{Margin: 10})
+			}
+			table, err := rundextable.New(rebuilds, cmdReg, onSelect)
 			if err != nil {
 				log.Println(err)
 				return
@@ -217,6 +228,14 @@ func (e *Explorer) LoadTree(ctx context.Context) error {
 
 func (e *Explorer) SelectTree() {
 	e.container.SwitchToPage(TreePageName)
+}
+
+func verdictAsEmoji(r rundex.Rebuild) string {
+	if r.Success || r.Message == "" {
+		return "✅"
+	} else {
+		return "❌"
+	}
 }
 
 func (e *Explorer) rebuildHistory(rebuilds []rundex.Rebuild) (modal.InputCaptureable, error) {
