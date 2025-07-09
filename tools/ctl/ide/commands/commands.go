@@ -12,8 +12,11 @@ import (
 	"io"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/llm"
@@ -28,6 +31,8 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide/details"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
+	"github.com/google/oss-rebuild/tools/ctl/ide/rebuildhistory"
+	"github.com/google/oss-rebuild/tools/ctl/ide/rundextable"
 	"github.com/google/oss-rebuild/tools/ctl/ide/textinput"
 	"github.com/google/oss-rebuild/tools/ctl/ide/tmux"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
@@ -45,7 +50,7 @@ const (
 	expertPrompt          = `You are an expert in diagnosing build issues in multiple open source ecosystems. You will help diagnose why builds failed, or why the builds might have produced an artifact that differs from the upstream open source package. Provide clear and concise explantions of why the rebuild failed, and suggest changes that could fix the rebuild`
 )
 
-func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []commandreg.RebuildCmd {
+func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.RebuildCmd {
 	return []commandreg.RebuildCmd{
 		{
 			Short: "run local",
@@ -206,7 +211,7 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 	}
 }
 
-func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []commandreg.RebuildGroupCmd {
+func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.RebuildGroupCmd {
 	return []commandreg.RebuildGroupCmd{
 		{
 			Short: "Find pattern",
@@ -357,7 +362,7 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 
 }
 
-func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository) []commandreg.GlobalCmd {
+func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.GlobalCmd {
 	return []commandreg.GlobalCmd{
 		{
 			Short:  "restart rebuilder",
@@ -431,6 +436,94 @@ func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn moda
 					wdex.WriteRebuild(ctx, rundex.NewRebuildFromVerdict(v, "local", runID, time.Now().UTC()))
 				}
 				log.Printf("Finished benchmark %s with %d successes.", bench, successes)
+			},
+		},
+	}
+}
+
+func NewBenchmarkCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.BenchmarkCmd {
+	return []commandreg.BenchmarkCmd{
+		{
+			Short: "View by target",
+			Func: func(ctx context.Context, benchName string) {
+				all, err := benches.List()
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				var benchPath string
+				for _, p := range all {
+					if path.Base(p) == benchName {
+						benchPath = p
+						break
+					}
+				}
+				if benchPath == "" {
+					log.Printf("Benchmark %s not found", benchName)
+					return
+				}
+				tracked := make(map[string]bool)
+				{
+					set, err := benches.Load(benchPath)
+					if err != nil {
+						log.Println(errors.Wrap(err, "reading benchmark"))
+						return
+					}
+					for _, p := range set.Packages {
+						for i, v := range p.Versions {
+							var a string
+							if i < len(p.Artifacts) {
+								a = p.Artifacts[i]
+							}
+							tracked[(&rundex.Rebuild{
+								RebuildAttempt: schema.RebuildAttempt{
+									Ecosystem: string(p.Ecosystem),
+									Package:   p.Name,
+									Version:   v,
+									Artifact:  a,
+								},
+							}).ID()] = true
+						}
+					}
+				}
+				var rebuilds []rundex.Rebuild
+				{
+					log.Printf("Fetching rebuilds...")
+					start := time.Now()
+					var err error
+					// TODO: Filter by runs that matched the benchmark instead.
+					rebuilds, err = dex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{Opts: rundex.FetchRebuildOpts{}, LatestPerPackage: true})
+					if err != nil {
+						log.Println(errors.Wrapf(err, "loading rebuilds"))
+						return
+					}
+					log.Printf("Fetched %d rebuilds in %v", len(rebuilds), time.Since(start))
+					slices.SortFunc(rebuilds, func(a, b rundex.Rebuild) int {
+						return strings.Compare(a.ID(), b.ID())
+					})
+					rebuilds = slices.DeleteFunc(rebuilds, func(r rundex.Rebuild) bool {
+						return !tracked[r.ID()]
+					})
+				}
+				onSelect := func(rebuild rundex.Rebuild) {
+					log.Println("Loading history for", rebuild.ID())
+					t := rebuild.Target()
+					rebuildsOfTarget, err := dex.FetchRebuilds(context.Background(), &rundex.FetchRebuildRequest{
+						Target: &t,
+						Opts:   rundex.FetchRebuildOpts{},
+					})
+					if err != nil {
+						log.Println(errors.Wrap(err, "fetching rebuilds for target"))
+						return
+					}
+					modalFn(rebuildhistory.New(modalFn, cmdReg, rebuildsOfTarget), modal.ModalOpts{Margin: 10})
+				}
+				table, err := rundextable.New(rebuilds, cmdReg, onSelect)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				modalFn(table, modal.ModalOpts{Margin: 10})
 			},
 		},
 	}

@@ -63,13 +63,16 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 		return modal.Show(t.app, t.root, input, opts)
 	}
 	cmdReg := &commandreg.Registry{}
-	if err := cmdReg.AddGlobals(commands.NewGlobalCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches)...); err != nil {
+	if err := cmdReg.AddGlobals(commands.NewGlobalCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
 		log.Fatal(err)
 	}
-	if err := cmdReg.AddRebuildGroups(commands.NewRebuildGroupCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches)...); err != nil {
+	if err := cmdReg.AddBenchmarks(commands.NewBenchmarkCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
 		log.Fatal(err)
 	}
-	if err := cmdReg.AddRebuilds(commands.NewRebuildCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches)...); err != nil {
+	if err := cmdReg.AddRebuildGroups(commands.NewRebuildGroupCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
+		log.Fatal(err)
+	}
+	if err := cmdReg.AddRebuilds(commands.NewRebuildCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
 		log.Fatal(err)
 	}
 	err := cmdReg.AddGlobals([]commandreg.GlobalCmd{
