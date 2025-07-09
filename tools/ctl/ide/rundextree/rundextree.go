@@ -28,11 +28,11 @@ type Tree struct {
 	rundexOpts rundex.FetchRebuildOpts
 	runs       map[string]rundex.Run
 	benches    benchmark.Repository
-	cmdReg     commandreg.Registry
+	cmdReg     *commandreg.Registry
 	modalFn    modal.Fn
 }
 
-func New(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, cmdReg commandreg.Registry) *Tree {
+func New(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, cmdReg *commandreg.Registry) *Tree {
 	root := tview.NewTreeNode("root").SetColor(tcell.ColorRed)
 	t := &Tree{
 		TreeView:   tview.NewTreeView().SetRoot(root).SetCurrentNode(root),

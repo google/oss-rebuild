@@ -37,11 +37,11 @@ type Explorer struct {
 	watcher    rundex.Watcher
 	rundexOpts rundex.FetchRebuildOpts
 	benches    benchmark.Repository
-	cmdReg     commandreg.Registry
+	cmdReg     *commandreg.Registry
 	modalFn    modal.Fn
 }
 
-func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, cmdReg commandreg.Registry) *Explorer {
+func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, cmdReg *commandreg.Registry) *Explorer {
 	e := Explorer{
 		app:        app,
 		container:  tview.NewPages(),
