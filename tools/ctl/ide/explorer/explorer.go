@@ -5,11 +5,9 @@ package explorer
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"path"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
 	detailsui "github.com/google/oss-rebuild/tools/ctl/ide/details"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
+	"github.com/google/oss-rebuild/tools/ctl/ide/rundextree"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
@@ -43,12 +42,10 @@ type Explorer struct {
 	app        *tview.Application
 	container  *tview.Pages
 	table      *tview.Table
-	tree       *tview.TreeView
-	root       *tview.TreeNode
+	tree       *rundextree.Tree
 	dex        rundex.Reader
 	watcher    rundex.Watcher
 	rundexOpts rundex.FetchRebuildOpts
-	runs       map[string]rundex.Run
 	benches    benchmark.Repository
 	cmdReg     commandreg.Registry
 	modalFn    modal.Fn
@@ -59,8 +56,6 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 		app:        app,
 		container:  tview.NewPages(),
 		table:      tview.NewTable().SetBorders(true),
-		tree:       tview.NewTreeView(),
-		root:       tview.NewTreeNode("root").SetColor(tcell.ColorRed),
 		dex:        dex,
 		watcher:    watcher,
 		rundexOpts: rundexOpts,
@@ -103,9 +98,9 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 	if err != nil {
 		log.Println("Adding benchmark command failed:", err)
 	}
-	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
+	e.tree = rundextree.New(app, modalFn, dex, rundexOpts, benches, e.cmdReg)
 	e.tree.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		data, ok := e.tree.GetCurrentNode().GetReference().(*nodeData)
+		data, ok := e.tree.GetCurrentNode().GetReference().(*rundextree.NodeData)
 		if !ok || len(data.Rebuilds) != 1 {
 			return event
 		}
@@ -120,7 +115,7 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 		go func() {
 			for r := range rebuildNotify {
 				app.QueueUpdateDraw(func() {
-					if err := e.handleRebuildUpdate(r); err != nil {
+					if err := e.tree.HandleRebuildUpdate(r); err != nil {
 						log.Println(err)
 					}
 				})
@@ -130,7 +125,7 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 		go func() {
 			for r := range runNotify {
 				app.QueueUpdateDraw(func() {
-					if err := e.handleRunUpdate(r); err != nil {
+					if err := e.tree.HandleRunUpdate(r); err != nil {
 						log.Println(err)
 					}
 				})
@@ -172,109 +167,6 @@ func (e *Explorer) commandHotkeys(event *tcell.EventKey, example rundex.Rebuild)
 		}
 	}
 	return event
-}
-
-type nodeData struct {
-	NodeID   string
-	Rebuilds []*rundex.Rebuild
-}
-
-func (e *Explorer) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
-	name := fmt.Sprintf("%s [%ds]", example.ID(), int(example.Timings.EstimateCleanBuild().Seconds()))
-	node := tview.NewTreeNode(name).SetColor(tcell.ColorYellow)
-	node.SetReference(&nodeData{NodeID: example.ID(), Rebuilds: []*rundex.Rebuild{&example}})
-	node.SetSelectedFunc(func() {
-		children := node.GetChildren()
-		if len(children) == 0 {
-			for _, c := range e.commandNodes(example) {
-				node.AddChild(c)
-			}
-		} else {
-			node.SetExpanded(!node.IsExpanded())
-		}
-	})
-	return node
-}
-
-func (e *Explorer) makeVerdictGroupNode(vg *rundex.VerdictGroup, percent float32) *tview.TreeNode {
-	var msg string
-	if vg.Msg == "" {
-		msg = "Success!"
-	} else {
-		msg = vg.Msg
-	}
-	var pct string
-	if percent < 1. {
-		pct = fmt.Sprintf(" <1%%")
-	} else {
-		pct = fmt.Sprintf("%3.0f%%", percent)
-	}
-	node := tview.NewTreeNode(fmt.Sprintf("%4d %s %s", vg.Count, pct, msg)).SetColor(tcell.ColorGreen).SetSelectable(true).SetReference(vg)
-	data := &nodeData{NodeID: vg.Msg, Rebuilds: nil}
-	for _, r := range vg.Examples {
-		data.Rebuilds = append(data.Rebuilds, &r)
-	}
-	node.SetReference(data)
-	node.SetSelectedFunc(func() {
-		children := node.GetChildren()
-		if len(children) == 0 {
-			for _, cmd := range e.cmdReg.RebuildGroupCommands() {
-				if cmd.IsDisabled() {
-					node.AddChild(tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorGrey).SetSelectedFunc(func() { go e.modalFn(tview.NewTextView().SetText(cmd.DisabledMsg()), modal.ModalOpts{Margin: 10}) }))
-				} else {
-					node.AddChild(tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), vg.Examples) }))
-				}
-			}
-			for _, example := range vg.Examples {
-				node.AddChild(e.makeExampleNode(example))
-			}
-		} else {
-			node.SetExpanded(!node.IsExpanded())
-		}
-	})
-	return node
-}
-
-func (e *Explorer) makeRunNode(runid string) *tview.TreeNode {
-	var title string
-	if run, ok := e.runs[runid]; ok && run.Type == schema.AttestMode {
-		title = fmt.Sprintf("%s (publish)", runid)
-	} else if run, ok := e.runs[runid]; ok && run.Type == schema.SmoketestMode {
-		title = fmt.Sprintf("%s (evaluate)", runid)
-	} else {
-		title = fmt.Sprintf("%s (unknown)", runid)
-	}
-	node := tview.NewTreeNode(title).SetColor(tcell.ColorGreen).SetSelectable(true)
-	node.SetReference(&nodeData{NodeID: runid, Rebuilds: nil})
-	node.SetSelectedFunc(func() {
-		children := node.GetChildren()
-		if len(children) == 0 {
-			log.Printf("Fetching rebuilds...")
-			rebuilds, err := e.dex.FetchRebuilds(context.Background(), &rundex.FetchRebuildRequest{Runs: []string{runid}, Opts: e.rundexOpts, LatestPerPackage: true})
-			if err != nil {
-				log.Println(errors.Wrapf(err, "failed to get rebuilds for runid: %s", runid))
-				return
-			}
-			log.Printf("Fetched %d rebuilds", len(rebuilds))
-			data, ok := node.GetReference().(*nodeData)
-			if !ok {
-				log.Println("Node missing reference")
-				return
-			} else {
-				for _, r := range rebuilds {
-					data.Rebuilds = append(data.Rebuilds, &r)
-				}
-			}
-			byCount := rundex.GroupRebuilds(rebuilds)
-			for i := len(byCount) - 1; i >= 0; i-- {
-				vgnode := e.makeVerdictGroupNode(byCount[i], 100*float32(byCount[i].Count)/float32(len(rebuilds)))
-				node.AddChild(vgnode)
-			}
-		} else {
-			node.SetExpanded(!node.IsExpanded())
-		}
-	})
-	return node
 }
 
 func (e *Explorer) benchHistory(ctx context.Context, benchPath string) ([]rundex.Rebuild, error) {
@@ -322,153 +214,13 @@ func (e *Explorer) benchHistory(ctx context.Context, benchPath string) ([]rundex
 	return rebuilds, nil
 }
 
-func (e *Explorer) makeRunGroupNode(benchName string, runs []string) *tview.TreeNode {
-	node := tview.NewTreeNode(fmt.Sprintf("%3d %s", len(runs), benchName)).SetColor(tcell.ColorGreen).SetSelectable(true)
-	node.SetReference(&nodeData{NodeID: benchName, Rebuilds: nil})
-	for _, cmd := range e.cmdReg.BenchmarkCommands() {
-		if cmd.IsDisabled() {
-			node.AddChild(tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorGrey).SetSelectedFunc(func() { go e.modalFn(tview.NewTextView().SetText(cmd.DisabledMsg()), modal.ModalOpts{Margin: 10}) }))
-		} else {
-			node.AddChild(tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), benchName) }))
-		}
-	}
-	for _, run := range runs {
-		node.AddChild(e.makeRunNode(run))
-	}
-	node.SetExpanded(false)
-	node.SetSelectedFunc(func() {
-		node.SetExpanded(!node.IsExpanded())
-	})
-	return node
-}
-
 // LoadTree will query rundex for all the runs, then display them.
 func (e *Explorer) LoadTree(ctx context.Context) error {
-	e.root.ClearChildren()
-	log.Printf("Fetching runs...")
-	runs, err := e.dex.FetchRuns(ctx, rundex.FetchRunsOpts{})
-	if err != nil {
-		return err
-	}
-	log.Printf("Found %d runs", len(runs))
-	byBench := make(map[string][]string)
-	e.runs = make(map[string]rundex.Run)
-	for _, run := range runs {
-		byBench[run.BenchmarkName] = append(byBench[run.BenchmarkName], run.ID)
-		e.runs[run.ID] = run
-	}
-	sortedBenchNames := make([]string, 0, len(byBench))
-	for benchName := range byBench {
-		sortedBenchNames = append(sortedBenchNames, benchName)
-		// Also sort the order of runs.
-		slices.Sort(byBench[benchName])
-		// Reverse to make sure recent is at the top.
-		slices.Reverse(byBench[benchName])
-	}
-	sort.Strings(sortedBenchNames)
-	for _, benchName := range sortedBenchNames {
-		e.root.AddChild(e.makeRunGroupNode(benchName, byBench[benchName]))
-	}
-	return nil
+	return e.tree.LoadTree(ctx)
 }
 
 func (e *Explorer) SelectTree() {
 	e.container.SwitchToPage(TreePageName)
-}
-
-func find(root *tview.TreeNode, nodeID string) (node *tview.TreeNode) {
-	children := root.GetChildren()
-	for _, child := range children {
-		data, ok := child.GetReference().(*nodeData)
-		if !ok {
-			continue
-		}
-		if data.NodeID == nodeID {
-			return child
-		}
-	}
-	return nil
-}
-
-func findOrAdd(root *tview.TreeNode, nodeID string, nodeFn func() *tview.TreeNode) (node *tview.TreeNode, added bool) {
-	target := find(root, nodeID)
-	if target != nil {
-		return target, false
-	}
-	children := root.GetChildren()
-	node = nodeFn()
-	for i, child := range children {
-		data, ok := child.GetReference().(*nodeData)
-		if !ok {
-			continue
-		}
-		if nodeID > data.NodeID {
-			children = slices.Insert(children, i, node)
-			root.SetChildren(children)
-			return node, true
-		}
-	}
-	children = append(children, node)
-	root.SetChildren(children)
-	return node, true
-}
-
-func (e *Explorer) handleRunUpdate(r *rundex.Run) error {
-	e.runs[r.ID] = *r
-	rg, added := findOrAdd(e.root, r.BenchmarkName, func() *tview.TreeNode {
-		return e.makeRunGroupNode(r.BenchmarkName, []string{r.ID})
-	})
-	if added {
-		return nil
-	}
-	findOrAdd(rg, r.ID, func() *tview.TreeNode {
-		return e.makeRunNode(r.ID)
-	})
-	// TODO: Update the run group's number of runs.
-	return nil
-}
-
-func (e *Explorer) handleRebuildUpdate(r *rundex.Rebuild) error {
-	run, ok := e.runs[r.RunID]
-	if !ok {
-		return errors.Errorf("rebuild update from unknown run %s", r.RunID)
-	}
-	rg := find(e.root, run.BenchmarkName)
-	if rg == nil {
-		return errors.Errorf("Unable to find rungroup for  %s", run.BenchmarkName)
-	}
-	runNode := find(rg, run.ID)
-	if runNode == nil {
-		return errors.Errorf("Unable to find run node for  %s", run.ID)
-	}
-	runNodeData, ok := runNode.GetReference().(*nodeData)
-	if !ok {
-		return errors.Errorf("Run node missing reference")
-	}
-	runNodeData.Rebuilds = append(runNodeData.Rebuilds, r)
-	if len(runNode.GetChildren()) == 0 {
-		return nil
-	}
-	// TODO: Update the verdict group's stats (percent, count)
-	vg, added := findOrAdd(runNode, r.Message, func() *tview.TreeNode {
-		return e.makeVerdictGroupNode(&rundex.VerdictGroup{Msg: r.Message, Count: 1, Examples: nil}, 100*float32(1)/float32(len(runNodeData.Rebuilds)))
-	})
-	vgData, ok := vg.GetReference().(*nodeData)
-	if !ok {
-		return errors.Errorf("Verdict group node missing reference")
-	}
-	vgData.Rebuilds = append(vgData.Rebuilds, r)
-	if len(vg.GetChildren()) == 0 {
-		// TOOD: Update the other verdict group's percentages
-		return nil
-	}
-	if added {
-		return nil
-	}
-	findOrAdd(vg, r.ID(), func() *tview.TreeNode {
-		return e.makeExampleNode(*r)
-	})
-	return nil
 }
 
 func (e *Explorer) rebuildHistory(rebuilds []rundex.Rebuild) (modal.InputCaptureable, error) {
@@ -481,7 +233,7 @@ func (e *Explorer) rebuildHistory(rebuilds []rundex.Rebuild) (modal.InputCapture
 		root := tview.NewTreeNode("runs").SetColor(tcell.ColorRed)
 		runs.SetRoot(root)
 		for _, r := range rebuilds {
-			node := tview.NewTreeNode(r.RunID + verdictAsEmoji(r)).SetReference(nodeData{NodeID: r.ID(), Rebuilds: []*rundex.Rebuild{&r}})
+			node := tview.NewTreeNode(r.RunID + verdictAsEmoji(r)).SetReference(&r)
 			node.SetSelectedFunc(func() {
 				children := node.GetChildren()
 				if len(children) == 0 {
@@ -508,24 +260,24 @@ func (e *Explorer) rebuildHistory(rebuilds []rundex.Rebuild) (modal.InputCapture
 		}
 		runs.SetBackgroundColor(defaultBackground)
 		runs.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-			data, ok := runs.GetCurrentNode().GetReference().(nodeData)
-			if !ok || len(data.Rebuilds) != 1 {
+			data, ok := runs.GetCurrentNode().GetReference().(*rundex.Rebuild)
+			if !ok {
 				return event
 			}
-			return e.commandHotkeys(event, *data.Rebuilds[0])
+			return e.commandHotkeys(event, *data)
 		})
 		populateDetails := func(node *tview.TreeNode) {
 			if node == root {
 				details.SetText("")
 				return
 			}
-			d, ok := node.GetReference().(nodeData)
-			if !ok || len(d.Rebuilds) != 1 {
-				log.Println("Node has unexpected number of associated rebuilds: ", len(d.Rebuilds))
+			d, ok := node.GetReference().(*rundex.Rebuild)
+			if !ok {
+				log.Println("Node has unexpected reference")
 				details.SetText("ERROR")
 				return
 			}
-			text, err := detailsui.Format(*d.Rebuilds[0])
+			text, err := detailsui.Format(*d)
 			if err != nil {
 				log.Println(err)
 				details.SetText("ERROR")
