@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -346,6 +347,82 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 	if req.Bench != nil && req.Bench.Count == 0 {
 		return nil, errors.New("empty bench provided")
 	}
+	// If a benchmark is provided, we can optimize by querying for specific packages.
+	if req.Bench != nil {
+		packagesByEcosystem := make(map[string][]string)
+		for _, p := range req.Bench.Packages {
+			if !slices.Contains(packagesByEcosystem[p.Ecosystem], p.Name) {
+				packagesByEcosystem[p.Ecosystem] = append(packagesByEcosystem[p.Ecosystem], p.Name)
+			}
+		}
+
+		type queryBatch struct {
+			ecosystem string
+			packages  []string
+		}
+		var batches []queryBatch
+		const batchSize = 30 // Firestore 'in' queries are limited to 30 values.
+		for eco, pkgs := range packagesByEcosystem {
+			for i := 0; i < len(pkgs); i += batchSize {
+				end := i + batchSize
+				if end > len(pkgs) {
+					end = len(pkgs)
+				}
+				batches = append(batches, queryBatch{ecosystem: eco, packages: pkgs[i:end]})
+			}
+		}
+
+		p := pipe.FromSlice(batches)
+
+		var queryErr error
+		var once sync.Once
+		pctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		const queryConcurrency = 10
+		rebuildsPipe := pipe.ParInto(queryConcurrency, p, func(batch queryBatch, out chan<- Rebuild) {
+			if pctx.Err() != nil {
+				return
+			}
+			q := f.Client.CollectionGroup("attempts").Query.Where("ecosystem", "==", batch.ecosystem).Where("package", "in", batch.packages)
+			if len(req.Executors) != 0 {
+				q = q.Where("executor_version", "in", req.Executors)
+			}
+			if len(req.Runs) != 0 {
+				q = q.Where("run_id", "in", req.Runs)
+			}
+			iter := q.Documents(pctx)
+			for {
+				doc, err := iter.Next()
+				if err == iterator.Done {
+					break
+				}
+				if err != nil {
+					once.Do(func() {
+						queryErr = errors.Wrap(err, "query error")
+						cancel()
+					})
+					break
+				}
+				out <- NewRebuildFromFirestore(doc)
+			}
+		})
+		var allUnfilteredRebuilds []Rebuild
+		for r := range rebuildsPipe.Out() {
+			allUnfilteredRebuilds = append(allUnfilteredRebuilds, r)
+		}
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		// Now filter all results at once.
+		allChan := make(chan Rebuild, len(allUnfilteredRebuilds))
+		for _, r := range allUnfilteredRebuilds {
+			allChan <- r
+		}
+		close(allChan)
+		return filterRebuilds(allChan, req), nil
+	}
+
 	q := f.Client.CollectionGroup("attempts").Query
 	if req.Target != nil {
 		t := *req.Target

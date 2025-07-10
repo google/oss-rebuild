@@ -463,8 +463,9 @@ func NewBenchmarkCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn m
 					return
 				}
 				tracked := make(map[string]bool)
+				var set benchmark.PackageSet
 				{
-					set, err := benches.Load(benchPath)
+					set, err = benches.Load(benchPath)
 					if err != nil {
 						log.Println(errors.Wrap(err, "reading benchmark"))
 						return
@@ -491,8 +492,7 @@ func NewBenchmarkCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn m
 					log.Printf("Fetching rebuilds...")
 					start := time.Now()
 					var err error
-					// TODO: Filter by runs that matched the benchmark instead.
-					rebuilds, err = dex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{Opts: rundex.FetchRebuildOpts{}, LatestPerPackage: true})
+					rebuilds, err = dex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{Bench: &set, Opts: rundex.FetchRebuildOpts{}, LatestPerPackage: true})
 					if err != nil {
 						log.Println(errors.Wrapf(err, "loading rebuilds"))
 						return
