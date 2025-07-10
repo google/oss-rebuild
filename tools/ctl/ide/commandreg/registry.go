@@ -37,6 +37,19 @@ func (c RebuildGroupCmd) IsDisabled() bool {
 	return c.DisabledMsg() != ""
 }
 
+type BenchmarkCmd struct {
+	Short       string
+	Func        func(context.Context, string)
+	DisabledMsg func() string
+}
+
+func (c BenchmarkCmd) IsDisabled() bool {
+	if c.DisabledMsg == nil {
+		return false
+	}
+	return c.DisabledMsg() != ""
+}
+
 type GlobalCmd struct {
 	Short       string
 	Hotkey      rune
@@ -54,6 +67,7 @@ func (c GlobalCmd) IsDisabled() bool {
 type Registry struct {
 	rebuildCmds      []RebuildCmd
 	rebuildGroupCmds []RebuildGroupCmd
+	benchmarkCmds    []BenchmarkCmd
 	globalCmds       []GlobalCmd
 }
 
@@ -90,6 +104,17 @@ func (reg *Registry) AddRebuilds(cmds ...RebuildCmd) error {
 	return nil
 }
 
+func (reg *Registry) AddBenchmarks(cmds ...BenchmarkCmd) error {
+	old := reg.benchmarkCmds
+	reg.benchmarkCmds = append(reg.benchmarkCmds, cmds...)
+	err := reg.Validate()
+	if err != nil {
+		reg.benchmarkCmds = old
+		return err
+	}
+	return nil
+}
+
 func (reg *Registry) Validate() error {
 	hotkeys := make(map[rune]bool)
 	for _, cmd := range reg.rebuildCmds {
@@ -117,6 +142,10 @@ func (reg *Registry) RebuildCommands() []RebuildCmd {
 
 func (reg *Registry) RebuildGroupCommands() []RebuildGroupCmd {
 	return reg.rebuildGroupCmds
+}
+
+func (reg *Registry) BenchmarkCommands() []BenchmarkCmd {
+	return reg.benchmarkCmds
 }
 
 func (reg *Registry) GlobalCommands() []GlobalCmd {
