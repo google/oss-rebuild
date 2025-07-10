@@ -15,8 +15,8 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
-	detailsui "github.com/google/oss-rebuild/tools/ctl/ide/details"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
+	"github.com/google/oss-rebuild/tools/ctl/ide/rebuildhistory"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rundextable"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rundextree"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
@@ -25,8 +25,7 @@ import (
 )
 
 const (
-	defaultBackground = tcell.ColorGray
-	TreePageName      = "treeView"
+	TreePageName = "treeView"
 )
 
 // The Explorer is the Tree structure on the left side of the TUI
@@ -88,12 +87,7 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 					log.Println(errors.Wrap(err, "fetching rebuilds for target"))
 					return
 				}
-				hist, err := e.rebuildHistory(rebuildsOfTarget)
-				if err != nil {
-					log.Println(errors.Wrap(err, "browsing target's history"))
-					return
-				}
-				go e.modalFn(hist, modal.ModalOpts{Margin: 10})
+				e.modalFn(rebuildhistory.New(modalFn, cmdReg, rebuildsOfTarget), modal.ModalOpts{Margin: 10})
 			}
 			table, err := rundextable.New(rebuilds, cmdReg, onSelect)
 			if err != nil {
@@ -146,21 +140,6 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 
 func (e *Explorer) Container() tview.Primitive {
 	return e.container
-}
-
-func (e *Explorer) commandNodes(example rundex.Rebuild) []*tview.TreeNode {
-	var res []*tview.TreeNode
-	for _, cmd := range e.cmdReg.RebuildCommands() {
-		if cmd.Func == nil {
-			continue
-		}
-		if cmd.IsDisabled() {
-			res = append(res, tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorGrey).SetSelectedFunc(func() { go e.modalFn(tview.NewTextView().SetText(cmd.DisabledMsg()), modal.ModalOpts{Margin: 10}) }))
-		} else {
-			res = append(res, tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), example) }))
-		}
-	}
-	return res
 }
 
 func (e *Explorer) commandHotkeys(event *tcell.EventKey, example rundex.Rebuild) *tcell.EventKey {
@@ -228,149 +207,4 @@ func (e *Explorer) LoadTree(ctx context.Context) error {
 
 func (e *Explorer) SelectTree() {
 	e.container.SwitchToPage(TreePageName)
-}
-
-func verdictAsEmoji(r rundex.Rebuild) string {
-	if r.Success || r.Message == "" {
-		return "✅"
-	} else {
-		return "❌"
-	}
-}
-
-func (e *Explorer) rebuildHistory(rebuilds []rundex.Rebuild) (modal.InputCaptureable, error) {
-	slices.SortFunc(rebuilds, func(a, b rundex.Rebuild) int {
-		return -strings.Compare(a.RunID, b.RunID)
-	})
-	details := tview.NewTextView()
-	runs := tview.NewTreeView()
-	{
-		root := tview.NewTreeNode("runs").SetColor(tcell.ColorRed)
-		runs.SetRoot(root)
-		for _, r := range rebuilds {
-			node := tview.NewTreeNode(r.RunID + verdictAsEmoji(r)).SetReference(&r)
-			node.SetSelectedFunc(func() {
-				children := node.GetChildren()
-				if len(children) == 0 {
-					node.SetExpanded(true)
-					for _, c := range e.commandNodes(r) {
-						node.AddChild(c)
-					}
-				} else {
-					node.SetExpanded(!node.IsExpanded())
-				}
-				// If we expanded this node, collapse the others.
-				if node.IsExpanded() {
-					for _, c := range root.GetChildren() {
-						if c == node {
-							continue
-						}
-						if c.IsExpanded() {
-							c.SetExpanded(false)
-						}
-					}
-				}
-			})
-			root.AddChild(node)
-		}
-		runs.SetBackgroundColor(defaultBackground)
-		runs.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-			data, ok := runs.GetCurrentNode().GetReference().(*rundex.Rebuild)
-			if !ok {
-				return event
-			}
-			return e.commandHotkeys(event, *data)
-		})
-		populateDetails := func(node *tview.TreeNode) {
-			if node == root {
-				details.SetText("")
-				return
-			}
-			d, ok := node.GetReference().(*rundex.Rebuild)
-			if !ok {
-				log.Println("Node has unexpected reference")
-				details.SetText("ERROR")
-				return
-			}
-			text, err := detailsui.Format(*d)
-			if err != nil {
-				log.Println(err)
-				details.SetText("ERROR")
-				return
-			}
-			details.SetText(text)
-		}
-		runs.SetChangedFunc(populateDetails)
-		if len(rebuilds) > 0 {
-			first := root.GetChildren()[0]
-			if first != nil {
-				runs.SetCurrentNode(first)
-				populateDetails(first)
-			}
-		}
-	}
-	history := tview.NewFlex().SetDirection(tview.FlexColumn).AddItem(runs, 25, 0, true).AddItem(details, 0, 1, false)
-	return history, nil
-}
-
-func addHeader(table *tview.Table, headers []string) {
-	for i, h := range headers {
-		table.SetCell(0, i, tview.NewTableCell(h).SetTextColor(tcell.ColorYellow).SetSelectable(false))
-	}
-	table.SetFixed(1, 0)
-}
-
-func addRow(table *tview.Table, row int, elems []string) {
-	for i, e := range elems {
-		table.SetCellSimple(row, i, e)
-	}
-}
-
-func (e *Explorer) newPopulatedTable(rebuilds []rundex.Rebuild) (*tview.Table, error) {
-	table := tview.NewTable().SetBorders(true)
-	addHeader(table, []string{"ID", "Success", "Run"})
-	for i, r := range rebuilds {
-		addRow(table, i+1, []string{r.ID(), verdictAsEmoji(r), r.RunID})
-	}
-	// Configure selection behavior
-	if len(rebuilds) > 0 {
-		table.Select(1, 0)
-	}
-	table.ScrollToBeginning()
-	table.SetSelectable(true, false)
-	table.SetSelectedFunc(func(row int, column int) {
-		r := rebuilds[row-1]
-		// Load the rundex.Rebuilds for this particular target
-		log.Println("Loading history for", r.ID())
-		t := r.Target()
-		rebuildsOfTarget, err := e.dex.FetchRebuilds(context.Background(), &rundex.FetchRebuildRequest{
-			Target: &t,
-			Opts:   e.rundexOpts,
-		})
-		if err != nil {
-			log.Println(errors.Wrap(err, "fetching rebuilds for target"))
-			return
-		}
-		// Build the UI
-		hist, err := e.rebuildHistory(rebuildsOfTarget)
-		if err != nil {
-			log.Println(errors.Wrap(err, "browsing target's history"))
-			return
-		}
-		go e.modalFn(hist, modal.ModalOpts{Margin: 10})
-	})
-	table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyESC {
-			e.SelectTree()
-			// Return nil to stop further primatives from receiving the event.
-			return nil
-		}
-		row, _ := table.GetSelection()
-		if row == 0 || row > len(rebuilds) {
-			return event
-		}
-		example := rebuilds[row-1]
-		return e.commandHotkeys(event, example)
-	})
-	return table, nil
 }
