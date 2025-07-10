@@ -38,9 +38,6 @@ func verdictAsEmoji(r rundex.Rebuild) string {
 	}
 }
 
-// A modalFnType can be used to show an InputCaptureable. It returns an exit function that can be used to close the modal.
-type modalFnType func(modal.InputCaptureable, modal.ModalOpts) func()
-
 // The Explorer is the Tree structure on the left side of the TUI
 type Explorer struct {
 	app        *tview.Application
@@ -54,10 +51,10 @@ type Explorer struct {
 	runs       map[string]rundex.Run
 	benches    benchmark.Repository
 	cmdReg     commandreg.Registry
-	modalFn    modalFnType
+	modalFn    modal.Fn
 }
 
-func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, cmdReg commandreg.Registry) *Explorer {
+func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, cmdReg commandreg.Registry) *Explorer {
 	e := Explorer{
 		app:        app,
 		container:  tview.NewPages(),
