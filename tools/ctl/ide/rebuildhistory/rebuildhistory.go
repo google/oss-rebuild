@@ -31,7 +31,7 @@ func verdictAsEmoji(r rundex.Rebuild) string {
 }
 
 // New creates a new RebuildHistory viewer.
-func New(modalFn modal.Fn, cmdReg commandreg.Registry, rebuilds []rundex.Rebuild) modal.InputCaptureable {
+func New(modalFn modal.Fn, cmdReg *commandreg.Registry, rebuilds []rundex.Rebuild) modal.InputCaptureable {
 	slices.SortFunc(rebuilds, func(a, b rundex.Rebuild) int {
 		return -strings.Compare(a.RunID, b.RunID)
 	})

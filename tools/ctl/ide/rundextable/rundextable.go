@@ -33,7 +33,7 @@ func addRow(table *tview.Table, row int, elems []string) {
 	}
 }
 
-func New(rebuilds []rundex.Rebuild, cmdReg commandreg.Registry, onSelect func(rebuild rundex.Rebuild)) (*tview.Table, error) {
+func New(rebuilds []rundex.Rebuild, cmdReg *commandreg.Registry, onSelect func(rebuild rundex.Rebuild)) (*tview.Table, error) {
 	table := tview.NewTable().SetBorders(true)
 	addHeader(table, []string{"ID", "Success", "Run"})
 	for i, r := range rebuilds {

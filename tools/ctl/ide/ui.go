@@ -62,7 +62,7 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 	modalFn := func(input modal.InputCaptureable, opts modal.ModalOpts) func() {
 		return modal.Show(t.app, t.root, input, opts)
 	}
-	cmdReg := commandreg.Registry{}
+	cmdReg := &commandreg.Registry{}
 	if err := cmdReg.AddGlobals(commands.NewGlobalCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches)...); err != nil {
 		log.Fatal(err)
 	}
