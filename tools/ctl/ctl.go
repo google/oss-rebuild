@@ -226,7 +226,7 @@ var tui = &cobra.Command{
 }
 
 var getResults = &cobra.Command{
-	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-prefix <prefix>] [-pattern <regex>] [-sample N] [-format=summary|bench|assets] [-asset=<assetType>]",
+	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-prefix <prefix>] [-pattern <regex>] [-sample N] [-format=summary|bench|assets|csv] [-asset=<assetType>]",
 	Short: "Analyze rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -304,6 +304,14 @@ var getResults = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "marshalling benchmark"))
 			}
 			fmt.Println(string(b))
+		case "csv":
+			w := csv.NewWriter(cmd.OutOrStdout())
+			defer w.Flush()
+			for _, r := range rebuilds {
+				if err := w.Write([]string{r.Ecosystem, r.Package, r.Version, r.Artifact, r.RunID, r.Message}); err != nil {
+					log.Fatal(errors.Wrap(err, "writing CSV"))
+				}
+			}
 		case "assets":
 			regclient := http.DefaultClient
 			mux := rebuild.RegistryMux{
