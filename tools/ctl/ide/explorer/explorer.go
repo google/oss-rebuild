@@ -16,7 +16,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/ide/commands"
+	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
 	detailsui "github.com/google/oss-rebuild/tools/ctl/ide/details"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
@@ -53,11 +53,11 @@ type Explorer struct {
 	rundexOpts rundex.FetchRebuildOpts
 	runs       map[string]rundex.Run
 	benches    benchmark.Repository
-	cmdReg     commands.Registry
+	cmdReg     commandreg.Registry
 	modalFn    modalFnType
 }
 
-func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, cmdReg commands.Registry) *Explorer {
+func NewExplorer(app *tview.Application, modalFn modalFnType, dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, cmdReg commandreg.Registry) *Explorer {
 	e := Explorer{
 		app:        app,
 		container:  tview.NewPages(),

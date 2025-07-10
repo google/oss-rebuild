@@ -13,6 +13,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
 	"github.com/google/oss-rebuild/tools/ctl/ide/commands"
 	"github.com/google/oss-rebuild/tools/ctl/ide/explorer"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
@@ -61,7 +62,7 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 	modalFn := func(input modal.InputCaptureable, opts modal.ModalOpts) func() {
 		return modal.Show(t.app, t.root, input, opts)
 	}
-	cmdReg := commands.Registry{}
+	cmdReg := commandreg.Registry{}
 	if err := cmdReg.AddGlobals(commands.NewGlobalCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches)...); err != nil {
 		log.Fatal(err)
 	}
@@ -71,7 +72,7 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 	if err := cmdReg.AddRebuilds(commands.NewRebuildCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches)...); err != nil {
 		log.Fatal(err)
 	}
-	err := cmdReg.AddGlobals([]commands.GlobalCmd{
+	err := cmdReg.AddGlobals([]commandreg.GlobalCmd{
 		{
 			Short:  "logs up",
 			Hotkey: '^',
