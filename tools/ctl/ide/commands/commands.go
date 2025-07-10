@@ -212,7 +212,7 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 	}
 }
 
-func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.RebuildGroupCmd {
+func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry, lfs *localfiles.LocalFileStore) []commandreg.RebuildGroupCmd {
 	return []commandreg.RebuildGroupCmd{
 		{
 			Short: "Find pattern",
@@ -238,7 +238,7 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 				})
 				var found int
 				p = p.Do(func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
-					assets, err := localfiles.AssetStore(in.RunID)
+					assets, err := lfs.AssetStore(in.RunID)
 					if err != nil {
 						log.Println(errors.Wrapf(err, "creating asset store for runid: %s", in.RunID))
 						return
@@ -305,7 +305,7 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 				}
 				p2 := pipe.ParInto(LLMRequestParallelism, p1, func(in rundex.Rebuild, out chan<- summarizedRebuild) {
 					const uploadBytesLimit = 100_000
-					assets, err := localfiles.AssetStore(in.RunID)
+					assets, err := lfs.AssetStore(in.RunID)
 					if err != nil {
 						log.Println(errors.Wrapf(err, "creating asset store for runid: %s", in.RunID))
 						return
@@ -353,7 +353,7 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 				parts = append([]*genai.Part{{Text: "Based on the following error summaries, please provide 1 to 5 classes of failures you think are happening."}}, parts...)
 				<-ticker
 				rawFailureClasses, err := llm.GenerateTextContent(ctx, aiClient, llm.GeminiFlash, config, parts...)
-				if err != nil {
+					if err != nil {
 					log.Println(errors.Wrap(err, "classifying summaries"))
 					return
 				}
@@ -361,7 +361,7 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 				parts = []*genai.Part{{Text: "Please format this list of summaries into one line per summary. Do not include any of the following: syntax highlighting, numbering, bullet points, or other markdown."}, {Text: rawFailureClasses}}
 				<-ticker
 				failuresClasses, err := llm.GenerateTextContent(ctx, aiClient, llm.GeminiFlash, config, parts...)
-				if err != nil {
+					if err != nil {
 					log.Println(errors.Wrap(err, "formatting classes"))
 					return
 				}
