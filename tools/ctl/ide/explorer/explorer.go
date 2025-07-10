@@ -68,6 +68,41 @@ func NewExplorer(app *tview.Application, modalFn modal.Fn, dex rundex.Reader, wa
 		cmdReg:     cmdReg,
 		modalFn:    modalFn,
 	}
+	err := e.cmdReg.AddBenchmarks(commandreg.BenchmarkCmd{
+		Short: "View by target",
+		Func: func(ctx context.Context, benchName string) {
+			all, err := e.benches.List()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			var benchPath string
+			for _, p := range all {
+				if path.Base(p) == benchName {
+					benchPath = p
+					break
+				}
+			}
+			if benchPath == "" {
+				log.Printf("Benchmark %s not found", benchName)
+				return
+			}
+			rebuilds, err := e.benchHistory(context.Background(), benchPath)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			e.app.QueueUpdateDraw(func() {
+				if err := e.populateTable(rebuilds); err != nil {
+					log.Println(err)
+				}
+				e.SelectTable()
+			})
+		},
+	})
+	if err != nil {
+		log.Println("Adding benchmark command failed:", err)
+	}
 	e.tree.SetRoot(e.root).SetCurrentNode(e.root)
 	e.tree.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		data, ok := e.tree.GetCurrentNode().GetReference().(*nodeData)
@@ -290,37 +325,13 @@ func (e *Explorer) benchHistory(ctx context.Context, benchPath string) ([]rundex
 func (e *Explorer) makeRunGroupNode(benchName string, runs []string) *tview.TreeNode {
 	node := tview.NewTreeNode(fmt.Sprintf("%3d %s", len(runs), benchName)).SetColor(tcell.ColorGreen).SetSelectable(true)
 	node.SetReference(&nodeData{NodeID: benchName, Rebuilds: nil})
-	node.AddChild(tview.NewTreeNode("View by target").SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() {
-		go func() {
-			all, err := e.benches.List()
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			var benchPath string
-			for _, p := range all {
-				if path.Base(p) == benchName {
-					benchPath = p
-					break
-				}
-			}
-			if benchPath == "" {
-				log.Printf("Benchmark %s not found", benchName)
-				return
-			}
-			rebuilds, err := e.benchHistory(context.Background(), benchPath)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			e.app.QueueUpdateDraw(func() {
-				if err := e.populateTable(rebuilds); err != nil {
-					log.Println(err)
-				}
-				e.SelectTable()
-			})
-		}()
-	}))
+	for _, cmd := range e.cmdReg.BenchmarkCommands() {
+		if cmd.IsDisabled() {
+			node.AddChild(tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorGrey).SetSelectedFunc(func() { go e.modalFn(tview.NewTextView().SetText(cmd.DisabledMsg()), modal.ModalOpts{Margin: 10}) }))
+		} else {
+			node.AddChild(tview.NewTreeNode(cmd.Short).SetColor(tcell.ColorDarkCyan).SetSelectedFunc(func() { go cmd.Func(context.Background(), benchName) }))
+		}
+	}
 	for _, run := range runs {
 		node.AddChild(e.makeRunNode(run))
 	}
