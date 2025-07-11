@@ -288,8 +288,7 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 					}
 					config = llm.WithSystemPrompt(config, systemPrompt...)
 				}
-				p1 := pipe.FromSlice(rebuilds)
-				p1.ParDo(RundexReadParallelism, func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
+				p1 := pipe.FromSlice(rebuilds).ParDo(RundexReadParallelism, func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
 					_, err := butler.Fetch(context.Background(), in.RunID, in.WasSmoketest(), rebuild.DebugLogsAsset.For(in.Target()))
 					if err != nil {
 						log.Println(errors.Wrap(err, "downloading logs"))
@@ -328,6 +327,23 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 					parts := []*genai.Part{
 						{Text: "Please summarize this rebuild failure in one sentence."},
 						{Text: logs},
+					}
+					if strings.Contains(in.Message, "content mismatch") {
+						diffPath, err := butler.Fetch(ctx, in.RunID, in.WasSmoketest(), diffoscope.DiffAsset.For(in.Target()))
+						if err != nil {
+							log.Println(errors.Wrap(err, "fetching diff"))
+						} else {
+							diffContent, err := os.ReadFile(diffPath)
+							if err != nil {
+								log.Println(errors.Wrap(err, "reading diff"))
+							} else {
+								diffStr := string(diffContent)
+								if len(diffStr) > uploadBytesLimit {
+									diffStr = "...(truncated)..." + diffStr[len(diffStr)-uploadBytesLimit:]
+								}
+								parts = append(parts, &genai.Part{Text: "The following is the diff of the rebuilt artifact against the original:\n" + diffStr})
+							}
+						}
 					}
 					<-ticker
 					txt, err := llm.GenerateTextContent(ctx, aiClient, llm.GeminiFlash, config, parts...)
