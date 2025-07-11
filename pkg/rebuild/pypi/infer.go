@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/verdicts"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
@@ -117,9 +118,9 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	case nil:
 		return r, nil
 	case transport.ErrAuthenticationRequired:
-		return r, errors.Errorf("repo invalid or private [repo=%s]", r.URI)
+		return r, errors.Errorf("%s [repo=%s]", verdicts.RepoInvalidOrPrivate, r.URI)
 	default:
-		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
+		return r, errors.Wrapf(err, "%s [repo=%s]", verdicts.CloneFailed, r.URI)
 	}
 }
 
@@ -171,7 +172,7 @@ func findGitRef(pkg string, version string, rcfg *rebuild.RepoConfig) (string, e
 		case plumbing.ErrObjectNotFound:
 			return "", errors.Errorf("[INTERNAL] Commit ref from tag heuristic not found in repo [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
 		default:
-			return "", errors.Wrapf(err, "Checkout failed [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
+			return "", errors.Wrapf(err, "%s [repo=%s,ref=%s]", verdicts.CheckoutFailed, rcfg.URI, tagHeuristic)
 		}
 	}
 	return tagHeuristic, nil
@@ -193,11 +194,11 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 	wheelPath := fmt.Sprintf("%s-%s.dist-info/WHEEL", strings.ReplaceAll(name, "-", "_"), strings.ReplaceAll(version, "-", "_"))
 	wheel, err := getFile(wheelPath, zr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", wheelPath)
+		return nil, errors.Wrapf(err, "[INTERNAL] %s %s", verdicts.FailedToExtractUpstream, wheelPath)
 	}
 	reqs, err := getGenerator(wheel)
 	if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to get upstream generator")
+		return nil, errors.Wrapf(err, "[INTERNAL] %s", verdicts.FailedToGetUpstreamGenerator)
 	}
 	// Determine setuptools version.
 	if slices.ContainsFunc(reqs, func(s string) bool { return strings.HasPrefix(s, "setuptools==") }) {
@@ -208,7 +209,7 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 	metadataPath := fmt.Sprintf("%s-%s.dist-info/METADATA", strings.ReplaceAll(name, "-", "_"), strings.ReplaceAll(version, "-", "_"))
 	metadata, err := getFile(metadataPath, zr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream dist-info/METADATA")
+		return nil, errors.Wrapf(err, "[INTERNAL] %s dist-info/METADATA", verdicts.FailedToExtractUpstream)
 	}
 	switch {
 	case !bytes.Contains(metadata, []byte("License-File")):
@@ -286,7 +287,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			return cfg, errors.Wrapf(err, "Failed to get tree")
 		}
 		if pyprojReqs, err := extractPyProjectRequirements(ctx, tree); err != nil {
-			log.Println(errors.Wrap(err, "Failed to extract reqs from pyproject.toml."))
+			log.Println(errors.Wrap(err, verdicts.FailedToExtractReqsFromPyproject))
 		} else {
 			existing := make(map[string]bool)
 			pkgname := func(req string) string {
@@ -346,7 +347,7 @@ func getGenerator(wheel []byte) (reqs []string, err error) {
 			} else if matches := poetryCorePat.FindSubmatch(line); matches != nil {
 				return []string{"poetry-core==" + string(matches[1])}, nil
 			} else {
-				return nil, errors.Errorf("unsupported generator: %s", value)
+				return nil, errors.Errorf("%s: %s", verdicts.UnsupportedGenerator, value)
 			}
 		}
 	}

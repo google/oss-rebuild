@@ -22,6 +22,7 @@ import (
 	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/verdicts"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	"github.com/pkg/errors"
 )
@@ -52,9 +53,9 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	switch err {
 	case nil:
 	case transport.ErrAuthenticationRequired:
-		return r, errors.Errorf("repo invalid or private [repo=%s]", r.URI)
+		return r, errors.Errorf("%s [repo=%s]", verdicts.RepoInvalidOrPrivate, r.URI)
 	default:
-		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
+		return r, errors.Wrapf(err, "%s [repo=%s]", verdicts.CloneFailed, r.URI)
 	}
 	// Do package.json search.
 	head, _ := r.Repository.Head()
@@ -112,7 +113,7 @@ func PickNPMVersion(meta *npmreg.NPMVersion) (string, error) {
 	}
 	s, err := semver.New(npmv)
 	if err != nil || s.Prerelease != "" || s.Build != "" {
-		return "", errors.Errorf("Unsupported NPM version '%s'", npmv)
+		return "", errors.Errorf("%s '%s'", verdicts.UnsupportedNPMVersion, npmv)
 	}
 	if s.Major < 5 {
 		// NOTE: Upgrade all previous versions to 5.0.4 to fix incompatibilities.
@@ -157,7 +158,7 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 		if err == nil {
 			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, loc.Dir); err != nil {
 				log.Printf("registry ref invalid: %v", err)
-				if strings.HasPrefix(err.Error(), "mismatched version") {
+				if strings.HasPrefix(err.Error(), verdicts.MismatchedVersion) {
 					badVersionRef = registryRef
 				}
 			} else {
@@ -177,7 +178,7 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 		if err == nil {
 			if newPath, err := findAndValidatePackageJSON(rcfg.Repository, c, t.Package, t.Version, loc.Dir); err != nil {
 				log.Printf("registry heuristic tag invalid: %v", err)
-				if strings.HasPrefix(err.Error(), "mismatched version") {
+				if strings.HasPrefix(err.Error(), verdicts.MismatchedVersion) {
 					badVersionRef = tagGuess
 				}
 			} else {
@@ -319,15 +320,15 @@ func findAndValidatePackageJSON(repo *git.Repository, c *object.Commit, name, ve
 		pkgJSON, path, err = findPackageJSON(repo, c, name)
 	}
 	if err == object.ErrFileNotFound {
-		return path, errors.Errorf("package.json file not found [path=%s]", guess)
+		return path, errors.Errorf("%s [path=%s]", verdicts.PackageJSONNotFound, guess)
 	} else if _, ok := err.(*json.SyntaxError); ok {
 		return path, errors.Wrapf(err, "failed to parse package.json")
 	} else if err != nil {
 		return path, errors.Wrapf(err, "unknown package.json error")
 	} else if pkgJSON.Name != name {
-		return path, errors.Errorf("mismatched name [expected=%s,actual=%s,path=%s]", name, pkgJSON.Name, guess)
+		return path, errors.Errorf("%s [expected=%s,actual=%s,path=%s]", verdicts.MismatchedName, name, pkgJSON.Name, guess)
 	} else if pkgJSON.Version != version {
-		return path, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, pkgJSON.Version)
+		return path, errors.Errorf("%s [expected=%s,actual=%s]", verdicts.MismatchedVersion, version, pkgJSON.Version)
 	}
 	return path, nil
 }

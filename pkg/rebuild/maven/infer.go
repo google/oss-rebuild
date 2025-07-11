@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/verdicts"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/pkg/errors"
 )
@@ -42,9 +43,9 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	case nil:
 		return r, nil
 	case transport.ErrAuthenticationRequired:
-		return r, errors.Errorf("repo invalid or private [repo=%s]", r.URI)
+		return r, errors.Errorf("%s [repo=%s]", verdicts.RepoInvalidOrPrivate, r.URI)
 	default:
-		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
+		return r, errors.Wrapf(err, "%s [repo=%s]", verdicts.CloneFailed, r.URI)
 	}
 }
 
@@ -193,9 +194,9 @@ func findAndValidatePomXML(commit *object.Commit, name, version, dir string) (st
 	} else if err != nil {
 		return path, errors.Wrapf(err, "unknown pom.xml error")
 	} else if pomXML.Name() != name {
-		return path, errors.Errorf("mismatched name [expected=%s,actual=%s,path=%s]", name, pomXML.Name(), path)
+		return path, errors.Errorf("%s [expected=%s,actual=%s,path=%s]", verdicts.MismatchedName, name, pomXML.Name(), path)
 	} else if pomXML.Version() != version {
-		return path, errors.Errorf("mismatched version [expected=%s,actual=%s,path=%s]", version, pomXML.Version(), path)
+		return path, errors.Errorf("%s, [expected=%s,actual=%s,path=%s]", verdicts.MismatchedVersion, version, pomXML.Version(), path)
 	}
 	return path, nil
 }

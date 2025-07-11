@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/verdicts"
 	"github.com/pkg/errors"
 )
 
@@ -102,7 +103,7 @@ func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Ins
 			return errors.Errorf("pack command not found: %s", output[startIdx+2:endIdx])
 		// TODO: Classify with newly-observed cases.
 		default:
-			return errors.Wrapf(err, "unknown npm pack failure:\n%s", output)
+			return errors.Wrap(err, verdicts.UnknownNpmPackFailure+":\n%s"+output)
 		}
 	}
 	return nil

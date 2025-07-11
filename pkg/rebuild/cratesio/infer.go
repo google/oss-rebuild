@@ -27,6 +27,7 @@ import (
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/verdicts"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
@@ -58,9 +59,9 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	switch err {
 	case nil:
 	case transport.ErrAuthenticationRequired:
-		return r, errors.Errorf("repo invalid or private [repo=%s]", r.URI)
+		return r, errors.Errorf("%s [repo=%s]", verdicts.RepoInvalidOrPrivate, r.URI)
 	default:
-		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
+		return r, errors.Wrapf(err, "%s [repo=%s]", verdicts.CloneFailed, r.URI)
 	}
 	// Do Cargo.toml search.
 	head, _ := r.Repository.Head()
@@ -97,9 +98,9 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 	if errors.Is(err, fs.ErrNotExist) {
 		log.Printf("No .cargo_vcs_info.json file found")
 	} else if err != nil {
-		return "", "", errors.Wrapf(err, "[INTERNAL] Failed to extract upstream .cargo_vcs_info.json")
+		return "", "", errors.Wrapf(err, "[INTERNAL] %s .cargo_vcs_info.json", verdicts.FailedToExtractUpstream)
 	} else if err := json.Unmarshal(vcsInfo, &info); err != nil {
-		return "", "", errors.Wrapf(err, "[INTERNAL] Failed to extract upstream .cargo_vcs_info.json")
+		return "", "", errors.Wrapf(err, "[INTERNAL] %s upstream .cargo_vcs_info.json", verdicts.FailedToExtractUpstream)
 	} else {
 		cargoVCSGuess = info.GitInfo.SHA1
 	}
@@ -209,15 +210,15 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	tree, _ := c.Tree()
 	ct, err := getCargoTOML(tree, path.Join(dir, "Cargo.toml"))
 	if err == object.ErrFileNotFound {
-		return nil, errors.Errorf("Cargo.toml file not found [heuristic=%s]", rcfg.Dir)
+		return nil, errors.Errorf("%s [heuristic=%s]", verdicts.CargoTOMLNotFound, rcfg.Dir)
 	} else if _, ok := err.(*toml.DecodeError); ok {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to parse Cargo.toml")
 	}
 	if ct.Name != name {
-		return nil, errors.Errorf("mismatched name [expected=%s,actual=%s,heuristic=%s]", name, ct.Name, rcfg.Dir)
+		return nil, errors.Errorf("%s [expected=%s,actual=%s,heuristic=%s]", verdicts.MismatchedName, name, ct.Name, rcfg.Dir)
 	}
 	if ct.Version() != version && ct.Version() != reg.WorkspaceVersion {
-		return nil, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, ct.Version())
+		return nil, errors.Errorf("%s [expected=%s,actual=%s]", verdicts.MismatchedVersion, version, ct.Version())
 	}
 	topLevel := t.Package + "-" + vmeta.Version.Version
 	lockContent, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.lock")
@@ -225,7 +226,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if errors.Is(err, fs.ErrNotExist) {
 		lock = nil
 	} else if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream Cargo.lock")
+		return nil, errors.Wrapf(err, "[INTERNAL] %s Cargo.lock", verdicts.FailedToExtractUpstream)
 	} else {
 		lock = &ExplicitLockfile{
 			LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
@@ -286,15 +287,15 @@ func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, vers
 		cargoTOML, path, err = findCargoTOML(repo, c, name)
 	}
 	if err == object.ErrFileNotFound {
-		return path, errors.Errorf("Cargo.toml file not found [path=%s]", guess)
+		return path, errors.Errorf("%s [path=%s]", verdicts.CargoTOMLNotFound, guess)
 	} else if _, ok := err.(*toml.DecodeError); ok {
 		return path, errors.Wrapf(err, "failed to parse Cargo.toml")
 	} else if err != nil {
 		return path, errors.Wrapf(err, "unknown Cargo.toml error")
 	} else if cargoTOML.Name != name {
-		return path, errors.Errorf("mismatched name [expected=%s,actual=%s,path=%s]", name, cargoTOML.Name, guess)
+		return path, errors.Errorf("%s [expected=%s,actual=%s,path=%s]", verdicts.MismatchedName, name, cargoTOML.Name, guess)
 	} else if cargoTOML.Version() != version && cargoTOML.Version() != reg.WorkspaceVersion {
-		return path, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, cargoTOML.Version())
+		return path, errors.Errorf("%s [expected=%s,actual=%s]", verdicts.MismatchedVersion, version, cargoTOML.Version())
 	}
 	return path, nil
 }
