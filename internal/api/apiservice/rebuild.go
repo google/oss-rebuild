@@ -32,6 +32,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	"github.com/google/oss-rebuild/pkg/rebuild/verdicts"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
@@ -65,17 +66,17 @@ func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.Regist
 	case rebuild.PyPI:
 		release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
 		if err != nil {
-			return errors.Wrap(err, "fetching metadata failed")
+			return errors.Wrap(err, verdicts.FetchingMetadata)
 		}
 		a, err := pypirb.FindPureWheel(release.Artifacts)
 		if err != nil {
-			return errors.Wrap(err, "locating pure wheel failed")
+			return errors.Wrap(err, verdicts.LocatingPureWheel)
 		}
 		t.Artifact = a.Filename
 	case rebuild.Debian:
-		return errors.New("debian requires explicit artifact")
+		return errors.New(verdicts.DebianRequiresArtifact)
 	default:
-		return errors.New("unknown ecosystem")
+		return errors.New(verdicts.UnknownEcosystem)
 	}
 	return nil
 }
@@ -136,7 +137,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 			SparseCheckoutDirs: sparseDirs,
 		})
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "creating build definition repo reader")
+			return nil, nil, errors.Wrap(err, verdicts.CreatingBuildDefRepoReader)
 		}
 		pth, _ := defs.Path(ctx, t)
 		entry = &repoEntry{
@@ -148,12 +149,12 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		}
 		entry.BuildDefinition, err = defs.Get(ctx, t)
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "accessing build definition")
+			return nil, nil, errors.Wrap(err, verdicts.AccessingBuildDefinition)
 		}
 		if entry.BuildDefinition.StrategyOneOf != nil {
 			defnStrategy, err := entry.BuildDefinition.Strategy()
 			if err != nil {
-				return nil, nil, errors.Wrap(err, "accessing strategy")
+				return nil, nil, errors.Wrap(err, verdicts.AccessingStrategy)
 			}
 			if hint, ok := defnStrategy.(*rebuild.LocationHint); ok && hint != nil {
 				ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
@@ -166,11 +167,11 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		s, err := deps.InferStub(ctx, ireq)
 		if err != nil {
 			// TODO: Surface better error than Internal.
-			return nil, nil, errors.Wrap(err, "fetching inference")
+			return nil, nil, errors.Wrap(err, verdicts.FetchingInference)
 		}
 		strategy, err = s.Strategy()
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "reading strategy")
+			return nil, nil, errors.Wrap(err, verdicts.ReadingStrategy)
 		}
 	}
 	return strategy, entry, nil
@@ -179,21 +180,21 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, useProxy bool, useSyscallMonitor bool) (err error) {
 	debugStore, err := deps.DebugStoreBuilder(ctx)
 	if err != nil {
-		return errors.Wrap(err, "creating debug store")
+		return errors.Wrap(err, verdicts.CreatingDebugStore)
 	}
 	obID := uuid.New().String()
 	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, obID)
 	if err != nil {
-		return errors.Wrap(err, "creating rebuild store")
+		return errors.Wrap(err, verdicts.CreatingRebuildStore)
 	}
 	stabilizers, err := stability.StabilizersForTarget(t)
 	if err != nil {
-		return errors.Wrap(err, "getting stabilizers for target")
+		return errors.Wrap(err, verdicts.GettingStabilizers)
 	}
 	if entry != nil && len(entry.BuildDefinition.CustomStabilizers) > 0 {
 		customStabilizers, err := archive.CreateCustomStabilizers(entry.BuildDefinition.CustomStabilizers, t.ArchiveType())
 		if err != nil {
-			return errors.Wrap(err, "creating stabilizers")
+			return errors.Wrap(err, verdicts.CreatingStabilizers)
 		}
 		stabilizers = append(stabilizers, customStabilizers...)
 	}
@@ -219,35 +220,35 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	}
 	rebuilder, ok := rebuilders[t.Ecosystem]
 	if !ok {
-		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
+		return api.AsStatus(codes.InvalidArgument, errors.New(verdicts.UnsupportedEcosystem))
 	}
 	if err := rebuilder.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: strategy}, opts); err != nil {
-		return errors.Wrap(err, "executing rebuild")
+		return errors.Wrap(err, verdicts.ExecutingRebuild)
 	}
 	upstreamURI, err := rebuilder.UpstreamURL(ctx, t, mux)
 	if err != nil {
-		return errors.Wrap(err, "getting upstream url")
+		return errors.Wrap(err, verdicts.GettingUpstreamURL)
 	}
 	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes, stabilizers)
 	if err != nil {
-		return errors.Wrap(err, "comparing artifacts")
+		return errors.Wrap(err, verdicts.ComparingArtifacts)
 	}
 	exactMatch := bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
 	stabilizedMatch := bytes.Equal(rb.StabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil))
 	if !exactMatch && !stabilizedMatch {
-		return api.AsStatus(codes.FailedPrecondition, errors.New("rebuild content mismatch"))
+		return api.AsStatus(codes.FailedPrecondition, errors.New(verdicts.ContentMismatch))
 	}
 	if u, err := url.Parse(deps.ServiceRepo.Repo); err != nil {
-		return errors.Wrap(err, "bad ServiceRepo URL")
+		return errors.Wrap(err, verdicts.BadServiceRepoURL)
 	} else if (u.Scheme == "file" || u.Scheme == "") && !deps.PublishForLocalServiceRepo {
-		return errors.New("disallowed file:// ServiceRepo URL")
+		return errors.New(verdicts.DisallowedFileServiceRepoURL)
 	}
 	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, obID, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo, opts.PrebuildConfig)
 	if err != nil {
-		return errors.Wrap(err, "creating attestations")
+		return errors.Wrap(err, verdicts.CreatingAttestations)
 	}
 	if err := a.PublishBundle(ctx, t, eqStmt, buildStmt); err != nil {
-		return errors.Wrap(err, "publishing bundle")
+		return errors.Wrap(err, verdicts.PublishingBundle)
 	}
 	return nil
 }
@@ -255,7 +256,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
 	if req.Ecosystem == rebuild.Debian && strings.TrimSpace(req.Artifact) == "" {
-		return nil, api.AsStatus(codes.InvalidArgument, errors.New("debian requires artifact"))
+		return nil, api.AsStatus(codes.InvalidArgument, errors.New(verdicts.DebianRequiresArtifact))
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	regclient := httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
@@ -268,7 +269,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if err := populateArtifact(ctx, &t, mux); err != nil {
 		// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
 		// For this reason, we don't return a nil error and expect no verdict to be written.
-		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "selecting artifact"))
+		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, verdicts.SelectingArtifact))
 	}
 	v := schema.Verdict{
 		Target: t,
@@ -277,16 +278,16 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	a := verifier.Attestor{Store: deps.AttestationStore, Signer: signer, AllowOverwrite: deps.OverwriteAttestations}
 	if !deps.OverwriteAttestations {
 		if exists, err := a.BundleExists(ctx, t); err != nil {
-			v.Message = errors.Wrap(err, "checking existing bundle").Error()
+			v.Message = errors.Wrap(err, verdicts.CheckingExistingBundle).Error()
 			return &v, nil
 		} else if exists {
-			v.Message = api.AsStatus(codes.AlreadyExists, errors.New("conflict with existing attestation bundle")).Error()
+			v.Message = api.AsStatus(codes.AlreadyExists, errors.New(verdicts.ExistingBundle)).Error()
 			return &v, nil
 		}
 	}
 	strategy, entry, err := getStrategy(ctx, deps, t, req.UseRepoDefinition)
 	if err != nil {
-		v.Message = errors.Wrap(err, "getting strategy").Error()
+		v.Message = errors.Wrap(err, verdicts.GettingStrategy).Error()
 		return &v, nil
 	}
 	if strategy != nil {
@@ -294,7 +295,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	}
 	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, req.UseNetworkProxy, req.UseSyscallMonitor)
 	if err != nil {
-		v.Message = errors.Wrap(err, "executing rebuild").Error()
+		v.Message = errors.Wrap(err, verdicts.ExecutingRebuild).Error()
 		return &v, nil
 	}
 	return &v, nil

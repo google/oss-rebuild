@@ -329,6 +329,7 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 						{Text: "Please summarize this rebuild failure in one sentence."},
 						{Text: logs},
 					}
+					// if strings.Contains(in.Message, "
 					<-ticker
 					txt, err := llm.GenerateTextContent(ctx, aiClient, llm.GeminiFlash, config, parts...)
 					if err != nil {

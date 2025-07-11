@@ -22,6 +22,7 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/verdicts"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
@@ -134,9 +135,9 @@ func DoQuery[T any](ctx context.Context, q firestore.Query, fn func(*firestore.D
 func cleanVerdict(m string) string {
 	switch {
 	// Generic
-	case strings.HasPrefix(m, `mismatched version `):
+	case strings.HasPrefix(m, verdicts.MismatchedVersion):
 		m = "wrong package version in manifest"
-	case strings.HasPrefix(m, `mismatched name `):
+	case strings.HasPrefix(m, verdicts.MismatchedName):
 		m = "wrong package name in manifest"
 	case strings.Contains(m, `using existing: Failed to checkout: reference not found`):
 		m = "unable to checkout main branch on reused repo"
@@ -150,8 +151,14 @@ func cleanVerdict(m string) string {
 		m = `npm install: unsupported scheme "patch:"`
 	case strings.Contains(m, `getting strategy: fetching inference: making http request:`) && strings.Contains(m, `connection reset by peer`):
 		m = `getting strategy: fetching inference: making http request to inference service: connection reset by peer`
+	case strings.Contains(m, verdicts.RepoInvalidOrPrivate):
+		m = "repo invalid or private"
+	case strings.Contains(m, verdicts.CloneFailed):
+		m = "clone failed"
+	case strings.HasPrefix(m, verdicts.CheckoutFailed):
+		m = "git checkout failed"
 	// NPM
-	case strings.HasPrefix(m, "unknown npm pack failure:"):
+	case strings.HasPrefix(m, verdicts.UnknownNpmPackFailure):
 		if strings.Contains(m, ": not found") {
 			i := strings.Index(m, ": not found")
 			cmd := m[strings.LastIndex(m[:i], " ")+1 : i]
@@ -159,40 +166,34 @@ func cleanVerdict(m string) string {
 		} else {
 			m = "unknown pack failure"
 		}
-	case strings.HasPrefix(m, `Unsupported NPM version 'lerna/`):
+	case strings.HasPrefix(m, verdicts.UnsupportedNPMVersion+` 'lerna/`):
 		m = "missing pack tool: lerna"
-	case strings.HasPrefix(m, "package.json file not found"):
+	case strings.HasPrefix(m, verdicts.PackageJSONNotFound):
 		m = "manifest file not found"
 	case strings.Contains(m, "files in the working directory contain changes"):
 		m = "cargo failure: dirty working dir"
 	case strings.Contains(m, `cloning repo: authentication require`):
 		m = "authenticated repo"
-	case strings.HasPrefix(m, "[INTERNAL] version heuristic checkout failed"):
+	case strings.HasPrefix(m, "[INTERNAL] version heuristic checkout failed"): // TODO: Is this still used?
 		m = "version heuristic checkout failed"
 	// PyPI
-	case strings.Contains(m, `unsupported generator`):
+	case strings.Contains(m, verdicts.UnsupportedGenerator):
 		m = "unsupported generator: " + m[strings.LastIndex(m, ":")+3:len(m)-2]
-	case strings.HasPrefix(m, `built version does not match requested version`):
+	case strings.HasPrefix(m, `built version does not match requested version`): // TODO: Is this still used?
 		m = "built version does not match requested version"
-	case strings.HasPrefix(strings.ToLower(m), "rebuild failure: repo invalid or private"):
-		m = "repo invalid or private"
-	case strings.HasPrefix(strings.ToLower(m), "rebuild failure: clone failed"):
-		m = "clone failed"
-	case strings.Contains(m, "Failed to extract upstream") && strings.Contains(m, ".dist-info/WHEEL: file does not exist"):
+	case strings.Contains(m, verdicts.FailedToExtractUpstream) && strings.Contains(m, ".dist-info/WHEEL: file does not exist"):
 		m = "failed to extract upstream WHEEL"
 	// Cargo
-	case strings.HasPrefix(m, `Cargo.toml file not found`):
+	case strings.HasPrefix(m, verdicts.CargoTOMLNotFound):
 		m = "manifest file not found"
-	case strings.HasPrefix(m, `[INTERNAL] Failed to find generated crate`):
+	case strings.HasPrefix(m, `[INTERNAL] Failed to find generated crate`): // TODO: Is this still used?
 		m = "missing generated crate"
-	case strings.Contains(m, `Failed to request URL:`) && strings.Contains(m, `https://gateway`):
+	case strings.Contains(m, `Failed to request URL:`) && strings.Contains(m, `https://gateway`): // TODO: Is this still used?
 		m = "connection to gateway failed"
-	case strings.Contains(m, `Failed to request URL:`) && strings.Contains(m, `crates.io`):
+	case strings.Contains(m, `Failed to request URL:`) && strings.Contains(m, `crates.io`): // TODO: Is this still used?
 		m = "connection to crates.io failed"
 	case strings.Contains(m, `believes it's in a workspace when it's not`):
 		m = "cargo workspace error"
-	case strings.HasPrefix(m, `Checkout failed`):
-		m = "git checkout failed"
 	}
 	return m
 }
