@@ -168,8 +168,6 @@ var debuildContainerTpl = template.Must(
 				RUN cat <<'EOF' >/build
 				 set -eux
 				 {{.Instructions.Build | indent}}
-				 ls
-				 ls /src/
 				 mkdir /out && cp /src/{{.Instructions.OutputPath}} /out/
 				EOF
 				WORKDIR "/src"
