@@ -154,6 +154,10 @@ var tui = &cobra.Command{
 				}
 			}
 		}
+		lfs, err := localfiles.NewLocalFileStore(*assetDir)
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "creating local file store"))
+		}
 		var dex rundex.Reader
 		var watcher rundex.Watcher
 		{
@@ -166,7 +170,11 @@ var tui = &cobra.Command{
 					log.Fatal(err)
 				}
 			} else {
-				lc := rundex.NewLocalClient(localfiles.Rundex())
+				rundexFS, err := lfs.Rundex()
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "getting rundex filesystem"))
+				}
+				lc := rundex.NewLocalClient(rundexFS)
 				dex = lc
 				watcher = lc
 			}
@@ -180,7 +188,7 @@ var tui = &cobra.Command{
 			}
 		} else {
 			var err error
-			if buildDefs, err = localfiles.BuildDefs(); err != nil {
+			if buildDefs, err = lfs.BuildDefs(); err != nil {
 				log.Fatal(errors.Wrap(err, "failed to create local build def asset store"))
 			}
 		}
@@ -191,7 +199,7 @@ var tui = &cobra.Command{
 			NPM:      npmreg.HTTPRegistry{Client: regclient},
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
 		}
-		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
+		butler := localfiles.NewButler(lfs, *metadataBucket, *logsBucket, *debugStorage, mux)
 		var aiClient *genai.Client
 		{
 			aiProject := *project
@@ -216,7 +224,7 @@ var tui = &cobra.Command{
 			}
 		}
 		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
-		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, aiClient)
+		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, aiClient, lfs)
 		if err := tapp.Run(cmd.Context()); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -313,6 +321,10 @@ var getResults = &cobra.Command{
 				}
 			}
 		case "assets":
+			lfs, err := localfiles.NewLocalFileStore(*assetDir)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "creating local file store"))
+			}
 			regclient := http.DefaultClient
 			mux := rebuild.RegistryMux{
 				Debian:   debianreg.HTTPRegistry{Client: regclient},
@@ -320,7 +332,7 @@ var getResults = &cobra.Command{
 				NPM:      npmreg.HTTPRegistry{Client: regclient},
 				PyPI:     pypireg.HTTPRegistry{Client: regclient},
 			}
-			butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
+			butler := localfiles.NewButler(lfs, *metadataBucket, *logsBucket, *debugStorage, mux)
 			atype := rebuild.AssetType(*assetType)
 			ctx := cmd.Context()
 			for _, r := range rebuilds {
@@ -368,20 +380,28 @@ var runBenchmark = &cobra.Command{
 		var executor run.ExecutionService
 		concurrency := *maxConcurrency
 		if *buildLocal {
+			lfs, err := localfiles.NewLocalFileStore(*assetDir)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "creating local file store"))
+			}
 			now := time.Now().UTC()
 			runID = now.Format(time.RFC3339)
 			if concurrency != 1 {
 				log.Println("Note: dropping max concurrency to 1 due to local execution")
 			}
 			concurrency = 1
-			store, err := localfiles.AssetStore(runID)
+			store, err := lfs.AssetStore(runID)
 			if err != nil {
 				log.Fatalf("Failed to create temp directory: %v", err)
 			}
 			// TODO: Validate this.
 			prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", *prebuildBucket, *prebuildVersion)
 			executor = run.NewLocalExecutionService(prebuildURL, store, cmd.OutOrStdout())
-			dex = rundex.NewLocalClient(localfiles.Rundex())
+			rundexFS, err := lfs.Rundex()
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "getting rundex filesystem"))
+			}
+			dex = rundex.NewLocalClient(rundexFS)
 			if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
 				ID:            runID,
 				BenchmarkName: filepath.Base(args[1]),
@@ -962,6 +982,7 @@ var (
 	metadataBucket    = flag.String("metadata-bucket", "", "the gcs bucket where rebuild output is stored")
 	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
 	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request syscall monitoring")
+	assetDir          = flag.String("asset-dir", "/tmp/oss-rebuild", "the directory to store local assets")
 	// run-bench
 	maxConcurrency  = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
 	buildLocal      = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
@@ -991,6 +1012,8 @@ var (
 )
 
 func init() {
+	rootCmd.PersistentFlags().AddGoFlag(flag.Lookup("asset-dir"))
+
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("local"))
@@ -1061,6 +1084,7 @@ func init() {
 	rootCmd.AddCommand(setTrackedPackagesCmd)
 	rootCmd.AddCommand(getTrackedPackagesCmd)
 }
+
 
 func main() {
 	flag.Parse()

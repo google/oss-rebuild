@@ -58,6 +58,7 @@ const (
 type Instance struct {
 	ID     string
 	URL    *url.URL
+	lfs    *localfiles.LocalFileStore
 	cancel func()
 	state  instanceState
 }
@@ -83,7 +84,7 @@ func (in *Instance) Run(ctx context.Context) {
 		in.state = running
 		idchan := make(chan string)
 		go func() {
-			assetDir := localfiles.AssetsPath()
+			assetDir := in.lfs.AssetsPath()
 			err = docker.RunServer(
 				ctx,
 				"rebuilder",
@@ -149,7 +150,13 @@ func (in *Instance) Wait(ctx context.Context) <-chan error {
 // Rebuilder manages a local instance of the rebuilder docker container.
 type Rebuilder struct {
 	instance *Instance
+	lfs      *localfiles.LocalFileStore
 	m        sync.Mutex
+}
+
+// NewRebuilder creates a new Rebuilder.
+func NewRebuilder(lfs *localfiles.LocalFileStore) *Rebuilder {
+	return &Rebuilder{lfs: lfs}
 }
 
 // Kill does a non-blocking shutdown of the rebuilder container.
@@ -169,7 +176,7 @@ func (rb *Rebuilder) Instance() *Instance {
 	rb.m.Lock()
 	defer rb.m.Unlock()
 	if rb.instance == nil || rb.instance.Dead() {
-		rb.instance = &Instance{}
+		rb.instance = &Instance{lfs: rb.lfs}
 	}
 	return rb.instance
 }
@@ -231,7 +238,8 @@ func (rb *Rebuilder) RunLocal(ctx context.Context, r rundex.Rebuild, opts RunLoc
 }
 
 // RunBench executes the benchmark against the local rebuilder.
-func (rb *Rebuilder) RunBench(ctx context.Context, set benchmark.PackageSet, runID string) (<-chan schema.Verdict, error) {
+func (rb *Rebuilder) RunBench(ctx context.Context, set benchmark.PackageSet, runID string) (<-
+	chan schema.Verdict, error) {
 	inst, err := rb.runningInstance(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting running instance")
