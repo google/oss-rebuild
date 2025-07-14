@@ -141,6 +141,14 @@ resource "google_service_account" "gateway" {
   account_id  = "gateway"
   description = "Identity serving gateway endpoint."
 }
+resource "google_service_account" "agent-job" {
+  account_id  = "agent-job"
+  description = "Identity for AI agent Cloud Run Jobs."
+}
+resource "google_service_account" "builder-agent" {
+  account_id  = "builder-agent"
+  description = "Build identity for AI agent rebuilds with oblivious access pattern."
+}
 resource "google_service_account" "attestation-pubsub-reader" {
   count       = var.public ? 0 : 1
   account_id  = "attestation-pubsub-reader"
@@ -254,6 +262,31 @@ resource "google_storage_bucket" "tracked-packages" {
   versioning {
     enabled = true
   }
+}
+
+# Agent-related GCS buckets for AI agent feature
+resource "google_storage_bucket" "agent-sessions" {
+  name                        = "${var.host}-rebuild-agent-sessions"
+  location                    = "us-central1"
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  depends_on                  = [google_project_service.storage]
+}
+
+resource "google_storage_bucket" "agent-logs" {
+  name                        = "${var.host}-rebuild-agent-logs"
+  location                    = "us-central1"
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  depends_on                  = [google_project_service.storage]
+}
+
+resource "google_storage_bucket" "agent-metadata" {
+  name                        = "${var.host}-rebuild-agent-metadata"
+  location                    = "us-central1"
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  depends_on                  = [google_project_service.storage]
 }
 
 ## Firestore
@@ -375,6 +408,18 @@ locals {
         "BUILD_VERSION=${terraform_data.service_version.output}"
       ]
     }
+    agent-api = {
+      dockerfile = "build/package/Dockerfile.agent-api"
+      build_args = [
+        "DEBUG=${terraform_data.debug.output}",
+        "BUILD_REPO=${var.repo}",
+        "BUILD_VERSION=${terraform_data.service_version.output}"
+      ]
+    }
+    agent = {
+      dockerfile = "build/package/Dockerfile.agent"
+      build_args = ["DEBUG=${terraform_data.debug.output}"]
+    }
     }, var.enable_network_analyzer ? {
     network-analyzer = {
       dockerfile = "build/package/Dockerfile.networkanalyzer"
@@ -478,6 +523,20 @@ data "google_artifact_registry_docker_image" "api" {
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "api:${module.service_images["api"].image_version}"
   depends_on    = [module.service_images["api"]]
+}
+
+data "google_artifact_registry_docker_image" "agent-api" {
+  location      = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name    = "agent-api:${module.service_images["agent-api"].image_version}"
+  depends_on    = [module.service_images["agent-api"]]
+}
+
+data "google_artifact_registry_docker_image" "agent" {
+  location      = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name    = "agent:${module.service_images["agent"].image_version}"
+  depends_on    = [module.service_images["agent"]]
 }
 
 data "google_artifact_registry_docker_image" "network-analyzer" {
@@ -720,6 +779,11 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--build-def-repo=https://github.com/google/oss-rebuild",
         "--build-def-repo-dir=definitions",
         "--block-local-repo-publish=${var.public}",
+        "--agent-job-name=${google_cloud_run_v2_job.agent.id}",
+        "--agent-api-url=${google_cloud_run_v2_service.agent-api.uri}",
+        "--agent-timeout-seconds=3600", // 1 hour
+        "--agent-sessions-bucket=${google_storage_bucket.agent-sessions.name}",
+        "--agent-metadata-bucket=${google_storage_bucket.agent-metadata.name}",
         ], var.enable_private_build_pool ? [
         "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
         "--gcb-private-pool-region=us-central1",
@@ -792,6 +856,65 @@ resource "google_cloud_run_v2_service" "network-subscriber" {
       }
     }
     scaling { max_instance_count = 1 }
+  }
+  depends_on = [google_project_service.run]
+}
+resource "google_cloud_run_v2_service" "agent-api" {
+  name     = "agent-api"
+  location = "us-central1"
+  template {
+    service_account = google_service_account.orchestrator.email
+    timeout         = "${59 * 60}s" // 59 minutes
+    containers {
+      image = data.google_artifact_registry_docker_image.agent-api.self_link
+      args = concat([
+        "--project=${var.project}",
+        "--build-remote-identity=${google_service_account.builder-agent.name}",
+        "--logs-bucket=${google_storage_bucket.agent-logs.name}",
+        "--metadata-bucket=${google_storage_bucket.agent-metadata.name}",
+        "--prebuild-bucket=${google_storage_bucket.bootstrap-tools.name}",
+        "--prebuild-version=${var.prebuild_version}",
+        "--prebuild-auth=${var.public ? "false" : "true"}",
+        ], var.enable_private_build_pool ? [
+        "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
+        "--gcb-private-pool-region=us-central1",
+      ] : [])
+      resources {
+        limits = {
+          cpu    = "1000m"
+          memory = "1G"
+        }
+      }
+    }
+    scaling { max_instance_count = 10 }
+  }
+  depends_on = [google_project_service.run]
+}
+
+resource "google_cloud_run_v2_job" "agent" {
+  name     = "agent"
+  location = "us-central1"
+  deletion_protection = false
+  template {
+    template {
+      service_account = google_service_account.agent-job.email
+      timeout         = "3600s" // 1 hour default
+      max_retries     = 0
+      containers {
+        image = data.google_artifact_registry_docker_image.agent.self_link
+        resources {
+          limits = {
+            cpu    = "1000m"
+            memory = "4G"
+          }
+        }
+      }
+    }
+  }
+  lifecycle {
+    ignore_changes = [
+      launch_stage,
+    ]
   }
   depends_on = [google_project_service.run]
 }
@@ -1018,6 +1141,44 @@ resource "google_project_iam_binding" "orchestrators-use-worker-pool" {
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
   ] : [])
+}
+# Agent-specific IAM bindings
+resource "google_project_iam_binding" "agent-uses-aiplatform" {
+  project = var.project
+  role    = "roles/aiplatform.user"
+  members = ["serviceAccount:${google_service_account.agent-job.email}"]
+}
+resource "google_storage_bucket_iam_binding" "agent-manages-sessions" {
+  bucket  = google_storage_bucket.agent-sessions.name
+  role    = "roles/storage.objectCreator"
+  members = ["serviceAccount:${google_service_account.agent-job.email}"]
+}
+resource "google_storage_bucket_iam_binding" "agent-reads-metadata" {
+  bucket  = google_storage_bucket.agent-metadata.name
+  role    = "roles/storage.objectViewer"
+  members = ["serviceAccount:${google_service_account.agent-job.email}"]
+}
+resource "google_project_iam_binding" "orchestrator-creates-run-jobs" {
+  project = var.project
+  role    = "roles/run.jobsExecutorWithOverrides"
+  members = ["serviceAccount:${google_service_account.orchestrator.email}"]
+}
+resource "google_cloud_run_v2_service_iam_binding" "agent-calls-agent-api" {
+  location = google_cloud_run_v2_service.agent-api.location
+  project  = google_cloud_run_v2_service.agent-api.project
+  name     = google_cloud_run_v2_service.agent-api.name
+  role     = "roles/run.invoker"
+  members  = ["serviceAccount:${google_service_account.agent-job.email}"]
+}
+resource "google_storage_bucket_iam_binding" "builder-agent-uses-logs" {
+  bucket  = google_storage_bucket.agent-logs.name
+  role   = "roles/storage.objectUser"
+  members = ["serviceAccount:${google_service_account.builder-agent.email}"]
+}
+resource "google_storage_bucket_iam_binding" "builder-agent-writes-metadata" {
+  bucket  = google_storage_bucket.agent-metadata.name
+  role    = "roles/storage.objectCreator"
+  members = ["serviceAccount:${google_service_account.builder-agent.email}"]
 }
 
 ## Public resources

@@ -310,3 +310,117 @@ const (
 	SmoketestMode ExecutionMode = "smoketest" // No attestations, faster.
 	AttestMode    ExecutionMode = "attest"    // Creates attestations, slower.
 )
+
+// Agent-related constants and types for AI agent feature
+
+// Agent session status constants
+const (
+	AgentSessionStatusInitializing = "INITIALIZING"
+	AgentSessionStatusRunning      = "RUNNING"
+	AgentSessionStatusCompleted    = "COMPLETED"
+)
+
+// Agent iteration status constants
+const (
+	AgentIterationStatusPending  = "PENDING"
+	AgentIterationStatusBuilding = "BUILDING"
+	AgentIterationStatusSuccess  = "SUCCESS"
+	AgentIterationStatusFailed   = "FAILED"
+	AgentIterationStatusError    = "ERROR"
+)
+
+// AgentCreateRequest creates a new agent session
+type AgentCreateRequest struct {
+	Target        rebuild.Target `form:",required"`
+	MaxIterations int            `form:""`
+	Context       *AgentContext  `form:""`
+}
+
+var _ api.Message = AgentCreateRequest{}
+
+func (r AgentCreateRequest) Validate() error {
+	if r.Target.Ecosystem == "" || r.Target.Package == "" || r.Target.Version == "" || r.Target.Artifact == "" {
+		return errors.New("target must be fully specified")
+	}
+	return nil
+}
+
+// AgentContext provides context for agent execution
+type AgentContext struct {
+	PriorSessions []string `json:"prior_sessions,omitempty"`
+}
+
+// AgentCreateResponse returns the session ID and job name
+type AgentCreateResponse struct {
+	SessionID string `json:"session_id"`
+	JobName   string `json:"job_name"`
+}
+
+// AgentCreateIterationRequest records iteration and triggers build
+type AgentCreateIterationRequest struct {
+	SessionID       string         `form:",required"`
+	IterationNumber int            `form:",required"`
+	Strategy        *StrategyOneOf `form:",required"`
+}
+
+var _ api.Message = AgentCreateIterationRequest{}
+
+func (AgentCreateIterationRequest) Validate() error { return nil }
+
+// AgentCreateIterationResponse returns iteration and build IDs
+type AgentCreateIterationResponse struct {
+	IterationID string `json:"iteration_id"`
+	ObliviousID string `json:"oblivious_id"`
+}
+
+// AgentBuildResult contains build result with success status and optional error
+type AgentBuildResult struct {
+	BuildSuccess bool   `json:"build_success"`
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// AgentCompleteRequest finalizes session with results
+type AgentCompleteRequest struct {
+	SessionID          string `form:",required"`
+	StopReason         string `form:",required"`
+	SuccessIterationID string `form:""`
+	Summary            string `form:""`
+}
+
+var _ api.Message = AgentCompleteRequest{}
+
+func (AgentCompleteRequest) Validate() error { return nil }
+
+// AgentCompleteResponse is returned when completing an agent session
+type AgentCompleteResponse struct {
+	Success bool `json:"success"`
+}
+
+// AgentSession stores agent session metadata in Firestore
+type AgentSession struct {
+	ID               string         `firestore:"id,omitempty"`
+	Target           rebuild.Target `firestore:"target,omitempty"`
+	MaxIterations    int            `firestore:"max_iterations,omitempty"`
+	TimeoutSeconds   int            `firestore:"timeout_seconds,omitempty"`
+	Context          *AgentContext  `firestore:"context,omitempty"`
+	Status           string         `firestore:"status,omitempty"`
+	JobName          string         `firestore:"job_name,omitempty"`
+	Created          time.Time      `firestore:"created,omitempty"`
+	Updated          time.Time      `firestore:"updated,omitempty"`
+	StopReason       string         `firestore:"stop_reason,omitempty"`
+	SuccessIteration string         `firestore:"success_iteration,omitempty"`
+	Summary          string         `firestore:"summary,omitempty"`
+}
+
+// AgentIteration stores iteration metadata in Firestore
+type AgentIteration struct {
+	ID          string            `firestore:"id,omitempty"`
+	SessionID   string            `firestore:"session_id,omitempty"`
+	Number      int               `firestore:"number,omitempty"`
+	Strategy    *StrategyOneOf    `firestore:"strategy,omitempty"`
+	ObliviousID string            `firestore:"build_id,omitempty"`
+	Status      string            `firestore:"status,omitempty"`
+	Result      *AgentBuildResult `firestore:"result,omitempty"`
+	Created     time.Time         `firestore:"created,omitempty"`
+	Updated     time.Time         `firestore:"updated,omitempty"`
+}

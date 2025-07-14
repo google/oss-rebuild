@@ -30,6 +30,7 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/idtoken"
+	"google.golang.org/api/run/v2"
 )
 
 var (
@@ -51,6 +52,11 @@ var (
 	blockLocalRepoPublish = flag.Bool("block-local-repo-publish", true, "whether to prevent attestation publishing when the BuildRepo property points to a file:// URI")
 	gcbPrivatePoolName    = flag.String("gcb-private-pool-name", "", "Resoure name of GCB private pool to use, if configured")
 	gcbPrivatePoolRegion  = flag.String("gcb-private-pool-region", "", "GCP location to use for GCB private pool builds, if configured. Note: This should generally be the same as the region where the private pool is located.")
+	agentJobName          = flag.String("agent-job-name", "", "Name of the pre-created Cloud Run Job for AI agent")
+	agentAPIURL           = flag.String("agent-api-url", "", "URL of the agent API service")
+	agentSessionsBucket   = flag.String("agent-sessions-bucket", "", "GCS bucket for agent session data")
+	agentMetadataBucket   = flag.String("agent-metadata-bucket", "", "GCS bucket for agent build metadata")
+	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
 )
 
 // Link-time configured service identity
@@ -232,6 +238,26 @@ func CreateRunInit(ctx context.Context) (*apiservice.CreateRunDeps, error) {
 	return &d, nil
 }
 
+func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
+	var d apiservice.AgentCreateDeps
+	var err error
+	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating firestore client")
+	}
+	d.RunService, err = run.NewService(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating Cloud Run service")
+	}
+	d.Project = *project
+	d.AgentJobName = *agentJobName
+	d.AgentAPIURL = *agentAPIURL
+	d.AgentTimeoutSeconds = *agentTimeoutSeconds
+	d.SessionsBucket = *agentSessionsBucket
+	d.MetadataBucket = *agentMetadataBucket
+	return &d, nil
+}
+
 func main() {
 	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
@@ -239,6 +265,7 @@ func main() {
 	http.HandleFunc("/rebuild", api.Handler(RebuildPackageInit, apiservice.RebuildPackage))
 	http.HandleFunc("/version", api.Handler(VersionInit, apiservice.Version))
 	http.HandleFunc("/runs", api.Handler(CreateRunInit, apiservice.CreateRun))
+	http.HandleFunc("/agent", api.Handler(AgentCreateInit, apiservice.AgentCreate))
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatalln(err)
 	}
