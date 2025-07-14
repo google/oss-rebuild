@@ -148,8 +148,8 @@ var debuildContainerTpl = template.Must(
 				RUN {{if .PrebuildAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
-				 curl {{if .PrebuildAuth}}-H @/run/secrets/auth_header {{end -}}
-				 https://{{.PrebuildBucket}}.storage.googleapis.com/{{if .PrebuildDir}}{{.PrebuildDir}}/{{end}}timewarp > timewarp
+				 curl -O {{if .PrebuildAuth}}-H @/run/secrets/auth_header {{end -}}
+				 https://{{.PrebuildBucket}}.storage.googleapis.com/{{if .PrebuildDir}}{{.PrebuildDir}}/{{end}}timewarp
 				 chmod +x timewarp
 				{{- end}}
 				 apt update
