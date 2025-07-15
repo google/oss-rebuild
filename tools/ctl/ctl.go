@@ -191,7 +191,7 @@ var tui = &cobra.Command{
 			NPM:      npmreg.HTTPRegistry{Client: regclient},
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
 		}
-		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
+		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, localfiles.AssetStore)
 		var aiClient *genai.Client
 		{
 			aiProject := *project
@@ -320,7 +320,7 @@ var getResults = &cobra.Command{
 				NPM:      npmreg.HTTPRegistry{Client: regclient},
 				PyPI:     pypireg.HTTPRegistry{Client: regclient},
 			}
-			butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux)
+			butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, localfiles.AssetStore)
 			atype := rebuild.AssetType(*assetType)
 			ctx := cmd.Context()
 			for _, r := range rebuilds {
