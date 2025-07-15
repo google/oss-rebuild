@@ -226,7 +226,7 @@ var tui = &cobra.Command{
 }
 
 var getResults = &cobra.Command{
-	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-prefix <prefix>] [-pattern <regex>] [-sample N] [-format=summary|bench|assets|csv] [-asset=<assetType>]",
+	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-prefix <prefix>] [-pattern <regex>] [-sample N] [-format=summary|bench|assets|csv|rundex] [-asset=<assetType>]",
 	Short: "Analyze rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -330,6 +330,26 @@ var getResults = &cobra.Command{
 					continue
 				}
 				cmd.OutOrStdout().Write([]byte(path + "\n"))
+			}
+		case "rundex":
+			dex := rundex.NewLocalClient(localfiles.Rundex())
+			ctx := cmd.Context()
+			runs, err := fireClient.FetchRuns(ctx, rundex.FetchRunsOpts{IDs: req.Runs})
+			if err != nil {
+				log.Printf("fetching runs failed: %v", err)
+			} else {
+				for _, run := range runs {
+					if err := dex.WriteRun(ctx, run); err != nil {
+						log.Printf("writing run %s failed: %v", run.ID, err)
+					}
+				}
+			}
+			for _, r := range rebuilds {
+				if err := dex.WriteRebuild(ctx, r); err != nil {
+					cmd.OutOrStderr().Write([]byte(err.Error() + "\n"))
+					continue
+				}
+				cmd.OutOrStdout().Write([]byte(r.ID() + "\n"))
 			}
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
