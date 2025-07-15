@@ -189,6 +189,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		rebuild.ProxyNetlogAsset:        remoteMetadata,
 		rebuild.DockerfileAsset:         deps.LocalMetadataStore,
 		rebuild.BuildInfoAsset:          deps.LocalMetadataStore,
+		// NOTE: Omit rebuild.DebugLogsAsset for now since we're not using it.
 	})
 	in := rebuild.Input{
 		Target:   t,

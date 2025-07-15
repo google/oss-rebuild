@@ -30,6 +30,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
+	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/gcb/gcbtest"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
@@ -583,8 +584,20 @@ RLpmHHG1JOVdOA==
 			d.GCBExecutor = must(buildgcb.NewExecutor(buildgcb.ExecutorConfig{
 				Project:        "foo-project",
 				ServiceAccount: "foo-role",
-				LogsBucket:     "foo-logs-bucket",
-				Client:         gcbclient,
+				Planner: buildgcb.NewPlanner(buildgcb.PlannerConfig{
+					Project:         "foo-project",
+					ServiceAccount:  "foo-role",
+					AllowPrivileged: true,
+				}),
+				LogsBucket: "foo-logs-bucket",
+				LogsClientFunc: func(bucket string) gcb.LogsClient {
+					return &gcbtest.MockLogsClient{
+						ReadBuildLogsFunc: func(ctx context.Context, buildID string) (io.ReadCloser, error) {
+							return io.NopCloser(bytes.NewBuffer(nil)), nil
+						},
+					}
+				},
+				Client: gcbclient,
 			}))
 			d.PrebuildConfig.Bucket = "foo-prebuild-bucket"
 			tempDir := must(os.MkdirTemp("", "test-*"))

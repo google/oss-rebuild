@@ -22,6 +22,7 @@ func TestGCBHandle(t *testing.T) {
 		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 		LogsBucket:     "test-bucket",
+		LogsClientFunc: mockLogsClientFunc,
 	}
 
 	executor, err := NewExecutor(config)
@@ -104,6 +105,7 @@ func TestGCBHandleWait(t *testing.T) {
 		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 		LogsBucket:     "test-bucket",
+		LogsClientFunc: mockLogsClientFunc,
 	}
 
 	executor, err := NewExecutor(config)
@@ -144,6 +146,7 @@ func TestGCBHandleWaitSuccess(t *testing.T) {
 		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 		LogsBucket:     "test-bucket",
+		LogsClientFunc: mockLogsClientFunc,
 	}
 
 	executor, err := NewExecutor(config)
@@ -191,6 +194,7 @@ func TestGCBHandleCancelPolicies(t *testing.T) {
 		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 		LogsBucket:     "test-bucket",
+		LogsClientFunc: mockLogsClientFunc,
 	}
 
 	executor, err := NewExecutor(config)

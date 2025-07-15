@@ -364,7 +364,6 @@ type Planner struct {
 	// GCB-specific configuration
 	project        string
 	serviceAccount string
-	logsBucket     string
 	privatePool    *gcb.PrivatePoolConfig
 
 	// Internal configuration - not exposed to users
@@ -378,7 +377,6 @@ func NewPlanner(config PlannerConfig) *Planner {
 	return &Planner{
 		project:         config.Project,
 		serviceAccount:  config.ServiceAccount,
-		logsBucket:      config.LogsBucket,
 		privatePool:     config.PrivatePool,
 		timewarpHost:    "localhost:8080", // Internal default
 		hasRepo:         false,            // Repository needs to be cloned in container
@@ -390,7 +388,6 @@ func NewPlanner(config PlannerConfig) *Planner {
 type PlannerConfig struct {
 	Project         string
 	ServiceAccount  string
-	LogsBucket      string
 	PrivatePool     *gcb.PrivatePoolConfig
 	AllowPrivileged bool
 }
