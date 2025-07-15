@@ -267,8 +267,6 @@ EOF
 RUN cat <<'EOF' >/build
  set -eux
  make build ...
- ls
- ls /src/
  mkdir /out && cp /src/output/foo.tgz /out/
 EOF
 WORKDIR "/src"
