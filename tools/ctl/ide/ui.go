@@ -36,7 +36,7 @@ type TuiApp struct {
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, aiClient *genai.Client) *TuiApp {
+func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, aiClient *genai.Client, lfs *localfiles.LocalFileStore) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -48,7 +48,7 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 		log.Default().SetFlags(0)
 		logs.SetBorder(true).SetTitle("Logs")
 		logs.ScrollToEnd()
-		rb := &rebuilder.Rebuilder{}
+		rb := rebuilder.NewRebuilder(lfs)
 		t = &TuiApp{
 			app: app,
 			// When the widgets are updated, we should refresh the application.
@@ -69,7 +69,7 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 	if err := cmdReg.AddBenchmarks(commands.NewBenchmarkCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
 		log.Fatal(err)
 	}
-	if err := cmdReg.AddRebuildGroups(commands.NewRebuildGroupCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
+	if err := cmdReg.AddRebuildGroups(commands.NewRebuildGroupCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg, lfs)...); err != nil {
 		log.Fatal(err)
 	}
 	if err := cmdReg.AddRebuilds(commands.NewRebuildCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {

@@ -18,11 +18,13 @@ type Butler interface {
 }
 
 type butler struct {
+	lfs            *LocalFileStore
 	metaAssetstore assetlocator.MetaAssetStore
 }
 
-func NewButler(metadataBucket, logsBucket, debugBucket string, mux rebuild.RegistryMux) Butler {
+func NewButler(lfs *LocalFileStore, metadataBucket, logsBucket, debugBucket string, mux rebuild.RegistryMux) Butler {
 	return &butler{
+		lfs: lfs,
 		metaAssetstore: assetlocator.MetaAssetStore{
 			MetadataBucket: metadataBucket,
 			LogsBucket:     logsBucket,
@@ -33,7 +35,7 @@ func NewButler(metadataBucket, logsBucket, debugBucket string, mux rebuild.Regis
 }
 
 func (b *butler) Fetch(ctx context.Context, runID string, wasSmoketest bool, want rebuild.Asset) (path string, err error) {
-	localAssets, err := AssetStore(runID)
+	localAssets, err := b.lfs.AssetStore(runID)
 	if err != nil {
 		return "", err
 	}
