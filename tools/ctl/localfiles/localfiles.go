@@ -43,7 +43,7 @@ func BuildDefs() (*rebuild.FilesystemAssetStore, error) {
 }
 
 func AssetStore(runID string) (rebuild.LocatableAssetStore, error) {
-	dir := filepath.Join(tempRoot, assets, runID)
+	dir := filepath.Join(tempRoot, assets)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, errors.Wrapf(err, "failed to create directory %s", dir)
 	}
@@ -51,5 +51,5 @@ func AssetStore(runID string) (rebuild.LocatableAssetStore, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to chroot into directory %s", dir)
 	}
-	return rebuild.NewFilesystemAssetStore(assetsFS), nil
+	return rebuild.NewFilesystemAssetStoreWithRunID(assetsFS, runID), nil
 }
