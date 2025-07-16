@@ -155,20 +155,8 @@ type GCSStore struct {
 	runID     string
 }
 
-// NewGCSStore creates a new GCSStore.
-func NewGCSStore(ctx context.Context, uploadPrefix string) (*GCSStore, error) {
-	s := &GCSStore{}
-	{
-		var err error
-		var gcsOpts []option.ClientOption
-		if opts, ok := ctx.Value(GCSClientOptionsID).([]option.ClientOption); ok {
-			gcsOpts = append(gcsOpts, opts...)
-		}
-		s.gcsClient, err = gcs.NewClient(ctx, gcsOpts...)
-		if err != nil {
-			return nil, errors.Wrap(err, "Failed to create GCS client")
-		}
-	}
+func NewGCSStoreFromClient(ctx context.Context, client *gcs.Client, uploadPrefix string) (*GCSStore, error) {
+	s := &GCSStore{gcsClient: client}
 	s.bucket, s.prefix, _ = strings.Cut(strings.TrimPrefix(uploadPrefix, "gs://"), string(filepath.Separator))
 	{
 		var ok bool
@@ -178,6 +166,19 @@ func NewGCSStore(ctx context.Context, uploadPrefix string) (*GCSStore, error) {
 		}
 	}
 	return s, nil
+}
+
+// NewGCSStore creates a new GCSStore.
+func NewGCSStore(ctx context.Context, uploadPrefix string) (*GCSStore, error) {
+	var gcsOpts []option.ClientOption
+	if opts, ok := ctx.Value(GCSClientOptionsID).([]option.ClientOption); ok {
+		gcsOpts = append(gcsOpts, opts...)
+	}
+	client, err := gcs.NewClient(ctx, gcsOpts...)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to create GCS client")
+	}
+	return NewGCSStoreFromClient(ctx, client, uploadPrefix)
 }
 
 func (s *GCSStore) URL(a Asset) *url.URL {

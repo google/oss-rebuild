@@ -78,6 +78,7 @@ func (r *Rebuild) ID() string {
 }
 
 // WasSmoketest returns true if this rebuild was part of a smoketest run.
+// NOTE: This will incorrectly appear to be Smoketest if an attestation failed during inference.
 func (r Rebuild) WasSmoketest() bool {
 	// TODO: Should we store the type of execution directly on the Rebuild? A more explicit check would involve looking up the Run object.
 	return r.ObliviousID == ""
