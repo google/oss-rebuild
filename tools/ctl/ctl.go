@@ -139,7 +139,7 @@ func makeShellScript(input rebuild.Input) (string, error) {
 }
 
 var tui = &cobra.Command{
-	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>]",
+	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>] [--merged-asset-store <path>]",
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -207,7 +207,31 @@ var tui = &cobra.Command{
 			NPM:      npmreg.HTTPRegistry{Client: regclient},
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
 		}
-		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, localfiles.AssetStore)
+		var assetStoreFn func(runID string) (rebuild.LocatableAssetStore, error)
+		if *sharedAssetStore != "" {
+			u, err := url.Parse(*sharedAssetStore)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "parsing --merged-asset-store"))
+			}
+			// TODO: Add support for local filesystem based merged-asset-store
+			if u.Scheme != "gs" {
+				log.Fatal("--merged-asset-store currently only supports gs:// URLs")
+			}
+			assetStoreFn = func(runID string) (rebuild.LocatableAssetStore, error) {
+				frontline, err := localfiles.AssetStore(runID)
+				if err != nil {
+					return nil, err
+				}
+				backline, err := rebuild.NewGCSStore(context.WithValue(cmd.Context(), rebuild.RunID, runID), *sharedAssetStore)
+				if err != nil {
+					return nil, err
+				}
+				return rebuild.NewCachedAssetStore(frontline, backline), nil
+			}
+		} else {
+			assetStoreFn = localfiles.AssetStore
+		}
+		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, assetStoreFn)
 		var aiClient *genai.Client
 		{
 			aiProject := *project
@@ -1023,10 +1047,11 @@ var (
 	clean        = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
 	debugStorage = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
 	// TUI
-	benchmarkDir  = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
-	defDir        = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
-	llmProject    = flag.String("llm-project", "", "if provided, the GCP project to prefer over --project for use with the Vertext AI API")
-	rundexGCSPath = flag.String("rundex-gcs-path", "", "if provided, use a GCS path as the rundex")
+	benchmarkDir     = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
+	defDir           = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
+	llmProject       = flag.String("llm-project", "", "if provided, the GCP project to prefer over --project for use with the Vertext AI API")
+	rundexGCSPath    = flag.String("rundex-gcs-path", "", "if provided, use a GCS path as the rundex")
+	sharedAssetStore = flag.String("merged-asset-store", "", "if provided, use a GCS path as a shared asset store")
 	// Migrate
 	dryrun = flag.Bool("dryrun", false, "true if this migration is a dryrun")
 )
@@ -1076,6 +1101,7 @@ func init() {
 	tui.Flags().AddGoFlag(flag.Lookup("clean"))
 	tui.Flags().AddGoFlag(flag.Lookup("def-dir"))
 	tui.Flags().AddGoFlag(flag.Lookup("rundex-gcs-path"))
+	tui.Flags().AddGoFlag(flag.Lookup("merged-asset-store"))
 
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
