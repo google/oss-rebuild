@@ -26,17 +26,43 @@ func TestGCBExecutorStart(t *testing.T) {
 	mockClient := &gcbtest.MockClient{}
 
 	// Setup mock responses
-	operation := &cloudbuild.Operation{
-		Name: "projects/test-project/operations/test-build-123",
+	buildResult := &cloudbuild.Build{
+		Id:         "test-build-gcb-123",
+		Status:     "SUCCESS",
+		StartTime:  time.Now().Format(time.RFC3339),
+		FinishTime: time.Now().Format(time.RFC3339),
+		Steps: []*cloudbuild.BuildStep{
+			{
+				Name: "gcr.io/cloud-builders/docker",
+				Args: []string{"build", "-t", "test-image", "."},
+			},
+		},
+		Results: &cloudbuild.Results{
+			BuildStepImages: []string{"gcr.io/test-project/test-image:latest"},
+		},
 	}
+	// Create operation metadata
+	metadata := &cloudbuild.BuildOperationMetadata{
+		Build: buildResult,
+	}
+	metadataBytes, _ := json.Marshal(metadata)
+	operation := &cloudbuild.Operation{
+		Name:     "projects/test-project/operations/test-build-123",
+		Metadata: googleapi.RawMessage(metadataBytes),
+	}
+	doneOperation := &cloudbuild.Operation{
+		Name:     "projects/test-project/operations/test-build-123",
+		Done:     true,
+		Metadata: googleapi.RawMessage(metadataBytes),
+	}
+	createChan := make(chan struct{})
+	defer close(createChan)
 	mockClient.CreateBuildFunc = func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
+		<-createChan
 		return operation, nil
 	}
 	mockClient.WaitForOperationFunc = func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
-		return &cloudbuild.Operation{
-			Name: "projects/test-project/operations/test-build-123",
-			Done: true,
-		}, nil
+		return doneOperation, nil
 	}
 
 	// Create executor
@@ -88,24 +114,26 @@ func TestGCBExecutorStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
-
 	if handle == nil {
 		t.Fatal("Handle should not be nil")
 	}
-
 	if handle.BuildID() != "test-build-123" {
 		t.Errorf("Expected BuildID 'test-build-123', got '%s'", handle.BuildID())
 	}
-
-	// Test that the handle implements the expected interface
-	if handle.Status() != build.BuildStateStarting {
-		t.Errorf("Expected initial status %v, got %v", build.BuildStateStarting, handle.Status())
-	}
-
-	// Test OutputStream
 	outputStream := handle.OutputStream()
 	if outputStream == nil {
 		t.Error("OutputStream should not be nil")
+	}
+	if handle.Status() != build.BuildStateStarting {
+		t.Errorf("Expected initial status %v, got %v", build.BuildStateStarting, handle.Status())
+	}
+	createChan <- struct{}{} // let create complete
+	result, err := handle.Wait(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Error != nil {
+		t.Fatal(result.Error)
 	}
 
 	// Clean up
