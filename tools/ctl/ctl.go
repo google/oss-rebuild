@@ -139,7 +139,7 @@ func makeShellScript(input rebuild.Input) (string, error) {
 }
 
 var tui = &cobra.Command{
-	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project]",
+	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>]",
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -158,9 +158,24 @@ var tui = &cobra.Command{
 		var dex rundex.Reader
 		var watcher rundex.Watcher
 		{
-			// Prefer the firestore based rundex where possible, local otherwise.
-			// NOTE: We may eventually want to support firestore as a starting point, then local for quick debugging after that.
-			if *project != "" {
+			if *rundexGCSPath != "" {
+				u, err := url.Parse(*rundexGCSPath)
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "parsing --rundex-gcs-path"))
+				}
+				if u.Scheme != "gs" {
+					log.Fatal("--rundex-gcs-path must be a gs:// URL")
+				}
+				gcsClient, err := gcs.NewClient(cmd.Context())
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating GCS client"))
+				}
+				dex, err = rundex.NewGCSClient(cmd.Context(), gcsClient, u.Host, strings.TrimPrefix(u.Path, "/"))
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating GCS rundex client"))
+				}
+				// GCS watcher is not implemented.
+			} else if *project != "" {
 				var err error
 				dex, err = rundex.NewFirestore(cmd.Context(), *project)
 				if err != nil {
@@ -1008,9 +1023,10 @@ var (
 	clean        = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
 	debugStorage = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
 	// TUI
-	benchmarkDir = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
-	defDir       = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
-	llmProject   = flag.String("llm-project", "", "if provided, the GCP project to prefer over --project for use with the Vertext AI API")
+	benchmarkDir  = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
+	defDir        = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
+	llmProject    = flag.String("llm-project", "", "if provided, the GCP project to prefer over --project for use with the Vertext AI API")
+	rundexGCSPath = flag.String("rundex-gcs-path", "", "if provided, use a GCS path as the rundex")
 	// Migrate
 	dryrun = flag.Bool("dryrun", false, "true if this migration is a dryrun")
 )
@@ -1059,6 +1075,7 @@ func init() {
 	tui.Flags().AddGoFlag(flag.Lookup("benchmark-dir"))
 	tui.Flags().AddGoFlag(flag.Lookup("clean"))
 	tui.Flags().AddGoFlag(flag.Lookup("def-dir"))
+	tui.Flags().AddGoFlag(flag.Lookup("rundex-gcs-path"))
 
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
