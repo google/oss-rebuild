@@ -6,6 +6,7 @@ package rebuild
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -289,58 +290,237 @@ ENTRYPOINT ["/bin/sh","/build"]
 }
 
 func TestDoCloudBuild(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		beforeBuild := &cloudbuild.Build{
-			Id:     "build-id",
-			Status: "QUEUED",
-			Steps: []*cloudbuild.BuildStep{
-				{Name: "gcr.io/foo/bar", Script: "./bar"},
+	baseBeforeBuild := &cloudbuild.Build{
+		Id:     "build-id",
+		Status: "QUEUED",
+		Steps: []*cloudbuild.BuildStep{
+			{Name: "gcr.io/foo/bar", Script: "./bar"},
+		},
+	}
+
+	successAfterBuild := &cloudbuild.Build{
+		Id:         "build-id",
+		Status:     "SUCCESS",
+		FinishTime: "2024-05-08T15:23:00Z",
+		Steps: []*cloudbuild.BuildStep{
+			{Name: "gcr.io/foo/bar", Script: "./bar"},
+		},
+		Results: &cloudbuild.Results{BuildStepImages: []string{"sha256:abcd"}},
+	}
+
+	failureAfterBuild := &cloudbuild.Build{
+		Id:         "build-id",
+		Status:     "FAILURE",
+		FinishTime: "2024-05-08T15:23:00Z",
+		Steps: []*cloudbuild.BuildStep{
+			{Name: "gcr.io/foo/bar", Script: "./bar"},
+		},
+	}
+
+	cancelledAfterBuild := &cloudbuild.Build{
+		Id:         "build-id",
+		Status:     "CANCELLED",
+		FinishTime: "2024-05-08T15:23:00Z",
+		Steps: []*cloudbuild.BuildStep{
+			{Name: "gcr.io/foo/bar", Script: "./bar"},
+		},
+	}
+
+	tests := []struct {
+		name              string
+		createBuildErr    error
+		createBuildOp     *cloudbuild.Operation
+		waitOpErr         error
+		waitOpResult      *cloudbuild.Operation
+		expectedErr       bool
+		expectedBuildInfo *BuildInfo
+	}{
+		{
+			name:           "Success",
+			createBuildErr: nil,
+			createBuildOp: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     false,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: baseBeforeBuild})),
 			},
-		}
-		afterBuild := &cloudbuild.Build{
-			Id:         "build-id",
-			Status:     "SUCCESS",
-			FinishTime: "2024-05-08T15:23:00Z",
-			Steps: []*cloudbuild.BuildStep{
-				{Name: "gcr.io/foo/bar", Script: "./bar"},
+			waitOpErr: nil,
+			waitOpResult: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     true,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: successAfterBuild})),
 			},
-			Results: &cloudbuild.Results{BuildStepImages: []string{"sha256:abcd"}},
-		}
-		client := &gcbtest.MockClient{
-			CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
-				return &cloudbuild.Operation{
-					Name:     "operations/build-id",
-					Done:     false,
-					Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: beforeBuild})),
-				}, nil
+			expectedErr: false,
+			expectedBuildInfo: &BuildInfo{
+				Target:      Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+				BuildID:     "build-id",
+				BuildEnd:    must(time.Parse(time.RFC3339, "2024-05-08T15:23:00Z")),
+				Steps:       successAfterBuild.Steps,
+				BuildImages: map[string]string{"gcr.io/foo/bar": "sha256:abcd"},
 			},
-			WaitForOperationFunc: func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
-				return &cloudbuild.Operation{
-					Name:     "operations/build-id",
-					Done:     true,
-					Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: afterBuild})),
-				}, nil
+		},
+		{
+			name:           "CreateBuild returns error",
+			createBuildErr: errors.New("failed to create build"),
+			createBuildOp:  nil,
+			waitOpErr:      nil,
+			waitOpResult:   nil,
+			expectedErr:    true,
+			expectedBuildInfo: &BuildInfo{
+				Target: Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
 			},
-			CancelOperationFunc: func(op *cloudbuild.Operation) error { return nil },
-		}
-		opts := RemoteOptions{Project: "test-project", LogsBucket: "test-logs-bucket", BuildServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com", PrebuildConfig: PrebuildConfig{Bucket: "test-bootstrap"}}
-		target := Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"}
-		bi := &BuildInfo{Target: target}
-		err := doCloudBuild(context.Background(), client, beforeBuild, opts, bi)
-		if err != nil {
-			t.Errorf("Unexpected doCLoudBuildError %v", err)
-		}
-		expectedBI := &BuildInfo{
-			Target:      target,
-			BuildID:     "build-id",
-			BuildEnd:    must(time.Parse(time.RFC3339, "2024-05-08T15:23:00Z")),
-			Steps:       afterBuild.Steps,
-			BuildImages: map[string]string{"gcr.io/foo/bar": "sha256:abcd"},
-		}
-		if diff := cmp.Diff(bi, expectedBI); diff != "" {
-			t.Errorf("Unexpected BuildInfo: diff %v", diff)
-		}
-	})
+		},
+		{
+			name:           "CreateBuild succeeds but WaitForOperation hits timeout",
+			createBuildErr: nil,
+			createBuildOp: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     false,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: baseBeforeBuild})),
+			},
+			waitOpErr: context.DeadlineExceeded,
+			waitOpResult: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     true,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: cancelledAfterBuild})),
+			},
+			expectedErr: true,
+			expectedBuildInfo: &BuildInfo{
+				Target:  Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+				BuildID: "build-id", // Should be set from initial operation
+				Steps:   cancelledAfterBuild.Steps,
+			},
+		},
+		{
+			name:           "CreateBuild succeeds but WaitForOperation fails but no result",
+			createBuildErr: nil,
+			createBuildOp: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     false,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: baseBeforeBuild})),
+			},
+			waitOpErr:    errors.New("operation wait failed"),
+			waitOpResult: nil,
+			expectedErr:  true,
+			expectedBuildInfo: &BuildInfo{
+				Target: Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+			},
+		},
+		{
+			name:           "Build completes but with FAILURE status",
+			createBuildErr: nil,
+			createBuildOp: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     false,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: baseBeforeBuild})),
+			},
+			waitOpErr: nil,
+			waitOpResult: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     true,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: failureAfterBuild})),
+			},
+			expectedErr: true,
+			expectedBuildInfo: &BuildInfo{
+				Target:      Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+				BuildID:     "build-id",
+				BuildEnd:    must(time.Parse(time.RFC3339, "2024-05-08T15:23:00Z")),
+				Steps:       failureAfterBuild.Steps,
+				BuildImages: map[string]string{},
+			},
+		},
+		{
+			name:           "Build completes but with CANCELLED status",
+			createBuildErr: nil,
+			createBuildOp: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     false,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: baseBeforeBuild})),
+			},
+			waitOpErr: nil,
+			waitOpResult: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     true,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: cancelledAfterBuild})),
+			},
+			expectedErr: true,
+			expectedBuildInfo: &BuildInfo{
+				Target:      Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+				BuildID:     "build-id",
+				BuildEnd:    must(time.Parse(time.RFC3339, "2024-05-08T15:23:00Z")),
+				Steps:       cancelledAfterBuild.Steps,
+				BuildImages: map[string]string{},
+			},
+		},
+		{
+			name:           "Operation completes but is still not done",
+			createBuildErr: nil,
+			createBuildOp: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     false,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: baseBeforeBuild})),
+			},
+			waitOpErr: nil,
+			waitOpResult: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     false, // Still not done
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: baseBeforeBuild})),
+			},
+			expectedErr: true,
+			expectedBuildInfo: &BuildInfo{
+				Target:  Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+				BuildID: "build-id",
+				Steps:   baseBeforeBuild.Steps,
+			},
+		},
+		{
+			name:           "Operation metadata is malformed",
+			createBuildErr: nil,
+			createBuildOp: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     false,
+				Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: baseBeforeBuild})),
+			},
+			waitOpErr: nil,
+			waitOpResult: &cloudbuild.Operation{
+				Name:     "operations/build-id",
+				Done:     true,
+				Metadata: []byte("invalid json"), // Malformed metadata
+			},
+			expectedErr: true,
+			expectedBuildInfo: &BuildInfo{
+				Target: Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &gcbtest.MockClient{
+				CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
+					return tt.createBuildOp, tt.createBuildErr
+				},
+				WaitForOperationFunc: func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
+					return tt.waitOpResult, tt.waitOpErr
+				},
+				CancelOperationFunc: func(op *cloudbuild.Operation) error { return nil },
+			}
+			opts := RemoteOptions{
+				Project:             "test-project",
+				LogsBucket:          "test-logs-bucket",
+				BuildServiceAccount: "projects/test-project/serviceAccounts/test-service-account@test-project.iam.gserviceaccount.com",
+				PrebuildConfig:      PrebuildConfig{Bucket: "test-bootstrap"},
+			}
+			target := Target{Ecosystem: NPM, Package: "pkg", Version: "version", Artifact: "pkg-version.tgz"}
+			bi := &BuildInfo{Target: target}
+			err := doCloudBuild(context.Background(), client, baseBeforeBuild, opts, bi)
+			if (err != nil) != tt.expectedErr {
+				t.Errorf("doCloudBuild() error = %v, expectedErr = %v", err, tt.expectedErr)
+			}
+			if diff := cmp.Diff(bi, tt.expectedBuildInfo); diff != "" {
+				t.Errorf("Unexpected BuildInfo: diff %v", diff)
+			}
+		})
+	}
 }
 
 func TestMakeBuild(t *testing.T) {
