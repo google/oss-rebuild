@@ -49,6 +49,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/migrations"
+	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -323,12 +324,16 @@ var getResults = &cobra.Command{
 			butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, localfiles.AssetStore)
 			atype := rebuild.AssetType(*assetType)
 			ctx := cmd.Context()
-			for _, r := range rebuilds {
+			p := pipe.FromSlice(rebuilds)
+			assetPipe := pipe.ParInto(50, p, func(r rundex.Rebuild, out chan<- string) {
 				path, err := butler.Fetch(ctx, *runFlag, r.WasSmoketest(), atype.For(r.Target()))
 				if err != nil {
-					cmd.OutOrStderr().Write([]byte(err.Error() + "\n"))
-					continue
+					out <- err.Error()
+					return
 				}
+				out <- path
+			})
+			for path := range assetPipe.Out() {
 				cmd.OutOrStdout().Write([]byte(path + "\n"))
 			}
 		case "rundex":
