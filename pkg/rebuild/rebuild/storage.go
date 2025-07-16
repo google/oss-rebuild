@@ -174,10 +174,10 @@ func (s *GCSStore) resourcePath(a Asset) string {
 }
 
 // Reader returns a reader for the given asset.
-func (s *GCSStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, err error) {
+func (s *GCSStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
 	path := s.resourcePath(a)
 	obj := s.gcsClient.Bucket(s.bucket).Object(path)
-	r, err = obj.NewReader(ctx)
+	r, err := obj.NewReader(ctx)
 	if err != nil {
 		if err == gcs.ErrObjectNotExist {
 			err = stderrors.Join(err, ErrAssetNotFound)
@@ -188,7 +188,7 @@ func (s *GCSStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, err er
 }
 
 // Writer returns a writer for the given asset.
-func (s *GCSStore) Writer(ctx context.Context, a Asset) (r io.WriteCloser, err error) {
+func (s *GCSStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
 	objectPath := s.resourcePath(a)
 	obj := s.gcsClient.Bucket(s.bucket).Object(objectPath)
 	w := obj.NewWriter(ctx)
@@ -216,7 +216,7 @@ func (s *FilesystemAssetStore) URL(a Asset) *url.URL {
 }
 
 // Reader returns a reader for the given asset.
-func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, err error) {
+func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
 	path := s.resourcePath(a)
 	f, err := s.fs.Open(path)
 	if err != nil {
@@ -229,7 +229,7 @@ func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (r io.ReadCl
 }
 
 // Writer returns a writer for the given asset.
-func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (r io.WriteCloser, err error) {
+func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
 	path := s.resourcePath(a)
 	f, err := s.fs.Create(path)
 	if err != nil {
