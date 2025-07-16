@@ -770,7 +770,7 @@ chmod +x gsutil_writeonly
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			build, err := makeBuild(tc.target, tc.dockerfile, tc.opts)
+			build, err := MakeBuild(tc.target, tc.dockerfile, tc.opts)
 			if (err != nil) != tc.expectedErr {
 				t.Errorf("Unexpected error: %v", err)
 			} else if diff := cmp.Diff(build, tc.expected); diff != "" {
