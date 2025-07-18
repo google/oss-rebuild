@@ -39,7 +39,10 @@ func (b *butler) Fetch(ctx context.Context, runID string, wasSmoketest bool, wan
 	if err != nil {
 		return "", err
 	}
-	if _, err := dest.Reader(ctx, want); err == nil {
+	if r, err := dest.Reader(ctx, want); err == nil {
+		if err := r.Close(); err != nil {
+			return "", err
+		}
 		return dest.URL(want).Path, nil
 	}
 	switch want.Type {
