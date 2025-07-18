@@ -70,6 +70,15 @@ type Asset struct {
 	Target Target
 }
 
+// assetPath describes the general layout of assets shared by most hierarchy-based AssetStore types. The runID
+func assetPath(a Asset, runID string) string {
+	name := string(a.Type)
+	if a.Type == RebuildAsset {
+		name = a.Target.Artifact
+	}
+	return filepath.Join(string(a.Target.Ecosystem), a.Target.Package, a.Target.Version, a.Target.Artifact, runID, name)
+}
+
 // ReadOnlyAssetStore is a storage mechanism for debug assets.
 type ReadOnlyAssetStore interface {
 	Reader(ctx context.Context, a Asset) (io.ReadCloser, error)
@@ -166,11 +175,7 @@ func (s *GCSStore) URL(a Asset) *url.URL {
 }
 
 func (s *GCSStore) resourcePath(a Asset) string {
-	name := string(a.Type)
-	if a.Type == RebuildAsset {
-		name = a.Target.Artifact
-	}
-	return filepath.Join(s.prefix, string(a.Target.Ecosystem), a.Target.Package, a.Target.Version, a.Target.Artifact, s.runID, name)
+	return filepath.Join(s.prefix, assetPath(a, s.runID))
 }
 
 // Reader returns a reader for the given asset.
@@ -199,16 +204,13 @@ var _ LocatableAssetStore = &GCSStore{}
 
 // FilesystemAssetStore will store assets in a billy.Filesystem
 type FilesystemAssetStore struct {
-	fs billy.Filesystem
+	fs    billy.Filesystem
+	runID string
 }
 
 // TODO: Maybe this should include a runID?
 func (s *FilesystemAssetStore) resourcePath(a Asset) string {
-	name := string(a.Type)
-	if a.Type == RebuildAsset {
-		name = a.Target.Artifact
-	}
-	return filepath.Join(string(a.Target.Ecosystem), a.Target.Package, a.Target.Version, a.Target.Artifact, name)
+	return assetPath(a, s.runID)
 }
 
 func (s *FilesystemAssetStore) URL(a Asset) *url.URL {
@@ -240,7 +242,12 @@ func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (io.WriteClo
 
 var _ LocatableAssetStore = &FilesystemAssetStore{}
 
+// NewFilesystemAssetStoreWithRunID creates a new FilesystemAssetStore.
+func NewFilesystemAssetStoreWithRunID(fs billy.Filesystem, runID string) *FilesystemAssetStore {
+	return &FilesystemAssetStore{fs: fs, runID: runID}
+}
+
 // NewFilesystemAssetStore creates a new FilesystemAssetStore.
 func NewFilesystemAssetStore(fs billy.Filesystem) *FilesystemAssetStore {
-	return &FilesystemAssetStore{fs: fs}
+	return NewFilesystemAssetStoreWithRunID(fs, "")
 }
