@@ -19,9 +19,10 @@ type Butler interface {
 
 type butler struct {
 	metaAssetstore assetlocator.MetaAssetStore
+	assetStoreFn   func(runID string) (rebuild.LocatableAssetStore, error)
 }
 
-func NewButler(metadataBucket, logsBucket, debugBucket string, mux rebuild.RegistryMux) Butler {
+func NewButler(metadataBucket, logsBucket, debugBucket string, mux rebuild.RegistryMux, assetStoreFn func(runID string) (rebuild.LocatableAssetStore, error)) Butler {
 	return &butler{
 		metaAssetstore: assetlocator.MetaAssetStore{
 			MetadataBucket: metadataBucket,
@@ -29,16 +30,17 @@ func NewButler(metadataBucket, logsBucket, debugBucket string, mux rebuild.Regis
 			DebugStorage:   debugBucket,
 			Mux:            mux,
 		},
+		assetStoreFn: assetStoreFn,
 	}
 }
 
 func (b *butler) Fetch(ctx context.Context, runID string, wasSmoketest bool, want rebuild.Asset) (path string, err error) {
-	localAssets, err := AssetStore(runID)
+	dest, err := b.assetStoreFn(runID)
 	if err != nil {
 		return "", err
 	}
-	if _, err := localAssets.Reader(ctx, want); err == nil {
-		return localAssets.URL(want).Path, nil
+	if _, err := dest.Reader(ctx, want); err == nil {
+		return dest.URL(want).Path, nil
 	}
 	switch want.Type {
 	case diffoscope.DiffAsset:
@@ -57,7 +59,7 @@ func (b *butler) Fetch(ctx context.Context, runID string, wasSmoketest bool, wan
 		if err != nil {
 			return "", errors.Wrap(err, "executing diff")
 		}
-		w, err := localAssets.Writer(ctx, want)
+		w, err := dest.Writer(ctx, want)
 		if err != nil {
 			return "", err
 		}
@@ -71,9 +73,9 @@ func (b *butler) Fetch(ctx context.Context, runID string, wasSmoketest bool, wan
 		if err != nil {
 			return "", errors.Wrap(err, "creating asset store")
 		}
-		if err := rebuild.AssetCopy(ctx, localAssets, forRun, want); err != nil {
+		if err := rebuild.AssetCopy(ctx, dest, forRun, want); err != nil {
 			return "", errors.Wrap(err, "copying asset to local store")
 		}
 	}
-	return localAssets.URL(want).Path, nil
+	return dest.URL(want).Path, nil
 }

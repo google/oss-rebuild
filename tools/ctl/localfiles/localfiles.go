@@ -42,7 +42,7 @@ func BuildDefs() (*rebuild.FilesystemAssetStore, error) {
 	return rebuild.NewFilesystemAssetStore(assetsFS), nil
 }
 
-func AssetStore(runID string) (*rebuild.FilesystemAssetStore, error) {
+func AssetStore(runID string) (rebuild.LocatableAssetStore, error) {
 	dir := filepath.Join(tempRoot, assets, runID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, errors.Wrapf(err, "failed to create directory %s", dir)
