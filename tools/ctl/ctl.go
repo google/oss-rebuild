@@ -166,11 +166,12 @@ var tui = &cobra.Command{
 				if u.Scheme != "gs" {
 					log.Fatal("--rundex-gcs-path must be a gs:// URL")
 				}
-				gcsClient, err := gcs.NewClient(cmd.Context())
+				ctx := context.WithValue(cmd.Context(), rebuild.GCSClientOptionsID, []option.ClientOption{option.WithoutAuthentication()})
+				gcsClient, err := gcs.NewClient(ctx)
 				if err != nil {
 					log.Fatal(errors.Wrap(err, "creating GCS client"))
 				}
-				dex, err = rundex.NewGCSClient(cmd.Context(), gcsClient, u.Host, strings.TrimPrefix(u.Path, "/"))
+				dex, err = rundex.NewGCSClient(ctx, gcsClient, u.Host, strings.TrimPrefix(u.Path, "/"))
 				if err != nil {
 					log.Fatal(errors.Wrap(err, "creating GCS rundex client"))
 				}
@@ -222,7 +223,9 @@ var tui = &cobra.Command{
 				if err != nil {
 					return nil, err
 				}
-				backline, err := rebuild.NewGCSStore(context.WithValue(cmd.Context(), rebuild.RunID, runID), *sharedAssetStore)
+				ctx := context.WithValue(cmd.Context(), rebuild.GCSClientOptionsID, []option.ClientOption{option.WithoutAuthentication()})
+				ctx = context.WithValue(ctx, rebuild.RunID, runID)
+				backline, err := rebuild.NewGCSStore(ctx, *sharedAssetStore)
 				if err != nil {
 					return nil, err
 				}
