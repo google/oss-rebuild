@@ -251,3 +251,97 @@ func NewFilesystemAssetStoreWithRunID(fs billy.Filesystem, runID string) *Filesy
 func NewFilesystemAssetStore(fs billy.Filesystem) *FilesystemAssetStore {
 	return NewFilesystemAssetStoreWithRunID(fs, "")
 }
+
+// CachedAssetStore implements a pullthrough cache with backline only being read if the asset isn't present in frontline.
+type CachedAssetStore struct {
+	frontline LocatableAssetStore
+	backline  AssetStore
+}
+
+func NewCachedAssetStore(frontline LocatableAssetStore, backline AssetStore) *CachedAssetStore {
+	return &CachedAssetStore{frontline: frontline, backline: backline}
+}
+
+type cachedReader struct {
+	tee        io.Reader
+	writeClose func() error
+	readClose  func() error
+}
+
+func (cr *cachedReader) Read(p []byte) (int, error) {
+	return cr.tee.Read(p)
+}
+
+func (cr *cachedReader) Close() error {
+	// Read the remaining tee, otherwise the frontline might be only partially populated.
+	_, flushErr := io.ReadAll(cr.tee)
+	writeErr := cr.writeClose()
+	readErr := cr.readClose()
+	if flushErr != nil && flushErr != io.EOF {
+		return flushErr
+	}
+	if writeErr != nil {
+		return writeErr
+	}
+	return readErr
+}
+
+// Reader reads from the frontline, unless the frontline returns ErrAssetNotFound
+func (s *CachedAssetStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
+	if r, err := s.frontline.Reader(ctx, a); !errors.Is(err, ErrAssetNotFound) {
+		return r, err
+	}
+	// Cache miss, fetch from the backline
+	br, err := s.backline.Reader(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	fw, err := s.frontline.Writer(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	return &cachedReader{
+		tee:        io.TeeReader(br, fw),
+		writeClose: fw.Close,
+		readClose:  br.Close,
+	}, nil
+}
+
+type multiWriterCloser struct {
+	w        io.Writer
+	closeFns []func() error
+}
+
+func (mwc *multiWriterCloser) Write(p []byte) (int, error) {
+	return mwc.w.Write(p)
+}
+
+func (mwc *multiWriterCloser) Close() error {
+	var errs []error
+	for _, closer := range mwc.closeFns {
+		errs = append(errs, closer())
+	}
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Wrtier writes to both the frontline and the backline of the cache.
+func (s *CachedAssetStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
+	fw, err := s.frontline.Writer(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	bw, err := s.backline.Writer(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	return &multiWriterCloser{io.MultiWriter(fw, bw), []func() error{fw.Close, bw.Close}}, nil
+}
+
+func (s *CachedAssetStore) URL(a Asset) *url.URL {
+	return s.frontline.URL(a)
+}
