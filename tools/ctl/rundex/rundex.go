@@ -492,7 +492,7 @@ func NewLocalClient(fs billy.Filesystem) *LocalClient {
 
 const (
 	rebuildFileName  = "firestore.json"
-	localRunsDir     = "runs"
+	runsDir          = "runs"
 	localRunsMetaDir = "runs_metadata"
 )
 
@@ -541,10 +541,10 @@ func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReques
 		var toWalk []string
 		if len(req.Runs) != 0 {
 			for _, r := range req.Runs {
-				toWalk = append(toWalk, filepath.Join(localRunsDir, r))
+				toWalk = append(toWalk, filepath.Join(runsDir, r))
 			}
 		} else {
-			toWalk = []string{localRunsDir}
+			toWalk = []string{runsDir}
 		}
 		defer close(all)
 		for _, p := range toWalk {
@@ -597,7 +597,7 @@ func (f *LocalClient) WatchRebuilds() <-chan *Rebuild {
 }
 
 func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
-	path := filepath.Join(localRunsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
+	path := filepath.Join(runsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")
