@@ -36,8 +36,23 @@ func RustVersionAt(t time.Time) (string, error) {
 }
 
 // List generated with the following script:
-// curl -L https://github.com/rust-lang/rust/raw/4739948/RELEASES.md | rg --replace='newRelease("$1", "$2"),' -o 'Version (\S+) \(([^)]+)\)'
+// curl -L https://github.com/rust-lang/rust/raw/3ca41e2/RELEASES.md | rg --replace='newRelease("$1", "$2"),' -o 'Version (\S+) \(([^)]+)\)'
 var releases []release = []release{
+	newRelease("1.87.0", "2025-05-15"),
+	newRelease("1.86.0", "2025-04-03"),
+	newRelease("1.85.1", "2025-03-18"),
+	newRelease("1.85.0", "2025-02-20"),
+	newRelease("1.84.1", "2025-01-30"),
+	newRelease("1.84.0", "2025-01-09"),
+	newRelease("1.83.0", "2024-11-28"),
+	newRelease("1.82.0", "2024-10-17"),
+	newRelease("1.81.0", "2024-09-05"),
+	newRelease("1.80.1", "2024-08-08"),
+	newRelease("1.80.0", "2024-07-25"),
+	newRelease("1.79.0", "2024-06-13"),
+	newRelease("1.78.0", "2024-05-02"),
+	newRelease("1.77.2", "2024-04-09"),
+	newRelease("1.77.1", "2024-03-28"),
 	newRelease("1.77.0", "2024-03-21"),
 	newRelease("1.76.0", "2024-02-08"),
 	newRelease("1.75.0", "2023-12-28"),
