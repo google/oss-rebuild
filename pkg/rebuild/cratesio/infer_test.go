@@ -47,7 +47,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.13"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -60,7 +60,7 @@ func TestInferStrategy(t *testing.T) {
 						Ref:  repo.Commits["version-bump"].String(),
 						Dir:  ".",
 					},
-					RustVersion: "1.13",
+					RustVersion: "1.35.0",
 				}
 			},
 		},
@@ -112,7 +112,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.13"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
 			files:    []archive.TarEntry{},
 			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
 				return &CratesIOCargoPackage{
@@ -121,7 +121,7 @@ func TestInferStrategy(t *testing.T) {
 						Ref:  repo.Commits["tagged-target"].String(),
 						Dir:  ".",
 					},
-					RustVersion: "1.13",
+					RustVersion: "1.35.0",
 				}
 			},
 		},
@@ -142,7 +142,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.13"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
 			files:    []archive.TarEntry{},
 			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
 				return &CratesIOCargoPackage{
@@ -151,7 +151,7 @@ func TestInferStrategy(t *testing.T) {
 						Ref:  repo.Commits["version-bump"].String(),
 						Dir:  ".",
 					},
-					RustVersion: "1.13",
+					RustVersion: "1.35.0",
 				}
 			},
 		},
@@ -170,7 +170,7 @@ func TestInferStrategy(t *testing.T) {
       Cargo.toml: |
         -asd;lkjasd;lkjasd
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.13"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
 			files:    []archive.TarEntry{},
 			wantErr:  true,
 		},
@@ -191,11 +191,32 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.13"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
 			files: []archive.TarEntry{
 				{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`broken json`)},
 			},
 			wantErr: true,
+		},
+		{
+			name: "rust_version no MUSL",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","updated_at":"2014-12-12T00:25:28.357Z"}}`,
+			files:    []archive.TarEntry{},
+			wantErr:  true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
