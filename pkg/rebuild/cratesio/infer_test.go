@@ -156,6 +156,82 @@ func TestInferStrategy(t *testing.T) {
 			},
 		},
 		{
+			name: "virtual manifest uses subdir",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [workspace]
+        members = ["serde"]
+      serde/Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "serde",
+					},
+					RustVersion: "1.35.0",
+				}
+			},
+		},
+		{
+			name: "hybrid manifest uses subdir",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "not-serde"
+        [workspace]
+        members = ["serde"]
+      serde/Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "serde",
+					},
+					RustVersion: "1.35.0",
+				}
+			},
+		},
+		{
 			name: "unreadable Cargo.toml",
 			repo: `commits:
   - id: initial-commit
