@@ -125,6 +125,7 @@ Check out these related projects contributing to the reproducible builds effort:
   Java, Kotlin reproducibility.
 - [kpcyrd/rebuilderd](https://github.com/kpcyrd/rebuilderd): Rebuild scheduler
   with support for several distros.
+- [johnbillion/rave-wordpress](https://github.com/johnbillion/rave-wordpress): Reproduces and verifies official and unofficial WordPress packages.
 
 ## Disclaimer
 
