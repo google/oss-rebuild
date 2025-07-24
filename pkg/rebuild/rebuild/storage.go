@@ -117,6 +117,9 @@ func AssetCopy(ctx context.Context, to AssetStore, from ReadOnlyAssetStore, a As
 // DebugStoreFromContext constructs a DebugStorer using values from the given context.
 func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
 	if uploadpath, ok := ctx.Value(DebugStoreID).(string); ok {
+		if uploadpath == "" {
+			return nil, errors.New("DebugStore cannot be an empty string")
+		}
 		u, err := url.Parse(uploadpath)
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing DesbugStoreID as url")
@@ -132,7 +135,7 @@ func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
 			os.MkdirAll(path, 0755)
 			return NewFilesystemAssetStore(osfs.New(path)), nil
 		}
-		return nil, errors.New("unsupported upload path")
+		return nil, errors.Errorf("DebugStore URI contians unsupported scheme: '%s'", u.Scheme)
 	}
 	return nil, ErrNoUploadPath
 }
