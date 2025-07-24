@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
+	"regexp"
 
 	kms "cloud.google.com/go/kms/apiv1"
 	"cloud.google.com/go/kms/apiv1/kmspb"
@@ -18,15 +19,23 @@ import (
 )
 
 type CloudKMSSignerVerifier struct {
-	client *kms.KeyManagementClient
-	key    *kmspb.CryptoKeyVersion
-	pubpb  *kmspb.PublicKey
-	pub    crypto.PublicKey
+	client  *kms.KeyManagementClient
+	keyName string
+	pubpb   *kmspb.PublicKey
+	pub     crypto.PublicKey
 }
 
-func NewCloudKMSSignerVerifier(ctx context.Context, c *kms.KeyManagementClient, k *kmspb.CryptoKeyVersion) (*CloudKMSSignerVerifier, error) {
+// keyNameRegex is a compiled regular expression to validate the format of a Cloud KMS CryptoKeyVersion resource name.
+var keyNameRegex = regexp.MustCompile(
+	`^projects/[^/]+/locations/[^/]+/keyRings/[^/]+/cryptoKeys/[^/]+/cryptoKeyVersions/[^/]+$`,
+)
+
+func NewCloudKMSSignerVerifier(ctx context.Context, c *kms.KeyManagementClient, keyName string) (*CloudKMSSignerVerifier, error) {
+	if !keyNameRegex.MatchString(keyName) {
+		return nil, errors.Errorf("invalid key name format: %q; expected format: %s", keyName, keyNameRegex.String())
+	}
 	req := &kmspb.GetPublicKeyRequest{
-		Name: k.Name,
+		Name: keyName,
 	}
 	pubpb, err := c.GetPublicKey(ctx, req)
 	if err != nil {
@@ -40,7 +49,12 @@ func NewCloudKMSSignerVerifier(ctx context.Context, c *kms.KeyManagementClient, 
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse PEM public key")
 	}
-	return &CloudKMSSignerVerifier{c, k, pubpb, pub}, nil
+	return &CloudKMSSignerVerifier{
+		client:  c,
+		keyName: keyName,
+		pubpb:   pubpb,
+		pub:     pub,
+	}, nil
 }
 
 func (s *CloudKMSSignerVerifier) Public() crypto.PublicKey {
@@ -50,7 +64,7 @@ func (s *CloudKMSSignerVerifier) Public() crypto.PublicKey {
 func (s *CloudKMSSignerVerifier) Sign(ctx context.Context, data []byte) ([]byte, error) {
 	// NOTE: We could pass Digest here instead to shrink the RPC size.
 	req := &kmspb.AsymmetricSignRequest{
-		Name: s.key.Name,
+		Name: s.keyName,
 		Data: data,
 	}
 	resp, err := s.client.AsymmetricSign(ctx, req)
@@ -79,7 +93,7 @@ func (s *CloudKMSSignerVerifier) Verify(ctx context.Context, data, sig []byte) e
 }
 
 func (s CloudKMSSignerVerifier) KeyID() (string, error) {
-	return "https://cloudkms.googleapis.com/v1/" + s.key.Name, nil
+	return "https://cloudkms.googleapis.com/v1/" + s.keyName, nil
 }
 
 var _ dsse.SignerVerifier = (*CloudKMSSignerVerifier)(nil)
