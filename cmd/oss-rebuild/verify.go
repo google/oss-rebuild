@@ -69,11 +69,7 @@ func makeKMSVerifier(ctx context.Context, cryptoKeyVersion string) (dsse.Verifie
 	if err != nil {
 		return nil, errors.Wrap(err, "creating KMS client")
 	}
-	ckv, err := kc.GetCryptoKeyVersion(ctx, &kmspb.GetCryptoKeyVersionRequest{Name: cryptoKeyVersion})
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching CryptoKeyVersion")
-	}
-	kmsVerifier, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, ckv)
+	kmsVerifier, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, cryptoKeyVersion)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating Cloud KMS verifier")
 	}

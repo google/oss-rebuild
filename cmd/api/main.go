@@ -13,7 +13,6 @@ import (
 
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
-	"cloud.google.com/go/kms/apiv1/kmspb"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
@@ -94,11 +93,7 @@ func makeKMSSigner(ctx context.Context, cryptoKeyVersion string) (*dsse.Envelope
 	if err != nil {
 		return nil, errors.Wrap(err, "creating KMS client")
 	}
-	ckv, err := kc.GetCryptoKeyVersion(ctx, &kmspb.GetCryptoKeyVersionRequest{Name: cryptoKeyVersion})
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching CryptoKeyVersion")
-	}
-	kmsSigner, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, ckv)
+	kmsSigner, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, cryptoKeyVersion)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating Cloud KMS signer")
 	}
