@@ -142,9 +142,9 @@ func DoBuild(ctx context.Context, client Client, project string, build *cloudbui
 			return nil, errors.Wrap(err, "fetching operation after cancel")
 		}
 	} else if errors.Is(err, context.DeadlineExceeded) {
-		log.Printf("GCB deadline exceeded, allowing the build to continue")
-		// Note: This is the Build metadata returned by CreateBuild
-		return bm.Build, nil
+		log.Printf("Deadline exceeded waiting for GCB, allowing build to continue")
+		// NOTE: This is the Build metadata returned by CreateBuild
+		return bm.Build, err
 	} else if err != nil {
 		// NOTE: We could potentially also cancel these unknown error cases, not just DeadlineExceeded
 		return nil, errors.Wrap(err, "waiting for operation")
