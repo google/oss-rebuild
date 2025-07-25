@@ -35,6 +35,7 @@ var (
 	dockerEnvVars              = flag.String("docker_env_vars", "", "comma-separated key-value pair env vars to patch into containers")
 	dockerTruststoreEnvVars    = flag.String("docker_truststore_env_vars", "", "comma-separated env vars to populate with the proxy cert and patch into containers")
 	dockerJavaTruststoreEnvVar = flag.Bool("docker_java_truststore", false, "whether to patch containers with Java proxy cert truststore file and env var")
+	dockerBazelTruststore      = flag.Bool("docker_bazel_truststore", false, "whether to patch containers with global .bazelrc file pointing to the Java proxy cert truststore")
 	dockerProxySocket          = flag.Bool("docker_recursive_proxy", false, "whether to patch containers with a unix domain socket which proxies docker requests from created containers")
 	policyMode                 = flag.String("policy_mode", "disabled", "mode to run the proxy in. Options: disabled, enforce")
 	policyFile                 = flag.String("policy_file", "", "path to a json file specifying the policy to apply to the proxy")
@@ -88,6 +89,7 @@ func main() {
 			EnvVars:              envVars,
 			TruststoreEnvVars:    truststoreEnvVars,
 			JavaTruststoreEnvVar: *dockerJavaTruststoreEnvVar,
+			BazelTruststore:      *dockerBazelTruststore,
 			RecursiveProxy:       *dockerProxySocket,
 			NetworkOverride:      *dockerNetwork,
 		})
