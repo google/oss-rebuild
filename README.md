@@ -27,7 +27,7 @@ of the upstream artifact and eliminating many possible sources of compromise.
 
 We currently support the following ecosystems:
 
-- NPM (JavaScript/TypeScript)
+- npm (JavaScript/TypeScript)
 - PyPI (Python)
 - Crates.io (Rust)
 
