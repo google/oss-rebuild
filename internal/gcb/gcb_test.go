@@ -5,6 +5,7 @@ package gcb
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -72,8 +73,8 @@ func TestDoBuildTimeoutNoTerminate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	b, err := DoBuild(ctx, c, "project", &cloudbuild.Build{}, DoBuildOpts{TerminateOnTimeout: false})
-	if err != nil {
-		t.Errorf("DoBuild unexpected error: %v", err)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("DoBuild expected DeadlineExceeded: got %v", err)
 	}
 	if opWasCancelled {
 		t.Errorf("DoBuild unexpectedly cancelled the operation")
