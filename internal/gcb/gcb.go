@@ -129,7 +129,7 @@ func DoBuild(ctx context.Context, client Client, project string, build *cloudbui
 	}
 	doneOp, err := client.WaitForOperation(ctx, initOp)
 	if errors.Is(err, context.DeadlineExceeded) && opts.TerminateOnTimeout {
-		log.Printf("GCB deadline exceeded, cancelling build %s", initOp.Name)
+		log.Printf("GCB deadline exceeded, cancelling build %s", bm.Build.Id)
 		if err := client.CancelOperation(initOp); err != nil {
 			log.Printf("Best effort GCB cancellation failed: %v", err)
 			return nil, errors.Wrap(err, "cancelling operation")
@@ -142,7 +142,7 @@ func DoBuild(ctx context.Context, client Client, project string, build *cloudbui
 			return nil, errors.Wrap(err, "fetching operation after cancel")
 		}
 	} else if errors.Is(err, context.DeadlineExceeded) {
-		log.Printf("Deadline exceeded waiting for GCB, allowing build to continue")
+		log.Printf("Deadline exceeded waiting for GCB, allowing build %s to continue", bm.Build.Id)
 		// NOTE: This is the Build metadata returned by CreateBuild
 		return bm.Build, err
 	} else if err != nil {
