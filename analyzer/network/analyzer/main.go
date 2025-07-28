@@ -10,7 +10,6 @@ import (
 	"net/http"
 
 	kms "cloud.google.com/go/kms/apiv1"
-	"cloud.google.com/go/kms/apiv1/kmspb"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/analyzer/network/analyzerservice"
 	"github.com/google/oss-rebuild/internal/api"
@@ -62,13 +61,7 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 		return nil, errors.Wrap(err, "creating KMS client")
 	}
 	// Signing key
-	signingKey, err := kmsClient.GetCryptoKeyVersion(ctx, &kmspb.GetCryptoKeyVersionRequest{
-		Name: *signingKeyVersion,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "getting signing key")
-	}
-	signerVerifier, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kmsClient, signingKey)
+	signerVerifier, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kmsClient, *signingKeyVersion)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating signer/verifier")
 	}
@@ -79,13 +72,7 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 	// Verification key (if different from signing key)
 	var verifier *dsse.EnvelopeVerifier
 	if *verifyingKeyVersion != "" {
-		verifyingKey, err := kmsClient.GetCryptoKeyVersion(ctx, &kmspb.GetCryptoKeyVersionRequest{
-			Name: *verifyingKeyVersion,
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "getting verifying key")
-		}
-		verifyingSignerVerifier, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kmsClient, verifyingKey)
+		verifyingSignerVerifier, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kmsClient, *verifyingKeyVersion)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating verifying signer/verifier")
 		}
