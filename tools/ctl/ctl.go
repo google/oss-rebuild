@@ -241,20 +241,22 @@ var tui = &cobra.Command{
 			if *llmProject != "" {
 				aiProject = *llmProject
 			}
-			serviceUsageClient, err := serviceusage.NewService(cmd.Context(), option.WithScopes(serviceusage.CloudPlatformScope))
-			if err != nil {
-				log.Fatalf("Failed to create Service Usage client: %v", err)
-			}
-			if service, err := serviceUsageClient.Services.Get(fmt.Sprintf("projects/%s/services/%s", aiProject, vertexAIService)).Do(); err != nil {
-				log.Fatalf("Failed to check for vertex AI service: %v", err)
-			} else if service.State == "ENABLED" {
-				aiClient, err = genai.NewClient(cmd.Context(), &genai.ClientConfig{
-					Backend:  genai.BackendVertexAI,
-					Project:  aiProject,
-					Location: "us-central1",
-				})
+			if aiProject != "" {
+				serviceUsageClient, err := serviceusage.NewService(cmd.Context(), option.WithScopes(serviceusage.CloudPlatformScope))
 				if err != nil {
-					log.Fatal(errors.Wrap(err, "failed to create a genai client"))
+					log.Fatalf("Failed to create Service Usage client: %v", err)
+				}
+				if service, err := serviceUsageClient.Services.Get(fmt.Sprintf("projects/%s/services/%s", aiProject, vertexAIService)).Do(); err != nil {
+					log.Fatalf("Failed to check for vertex AI service: %v", err)
+				} else if service.State == "ENABLED" {
+					aiClient, err = genai.NewClient(cmd.Context(), &genai.ClientConfig{
+						Backend:  genai.BackendVertexAI,
+						Project:  aiProject,
+						Location: "us-central1",
+					})
+					if err != nil {
+						log.Fatal(errors.Wrap(err, "failed to create a genai client"))
+					}
 				}
 			}
 		}
