@@ -7,7 +7,6 @@ import (
 	"archive/tar"
 	"bufio"
 	"bytes"
-	"cmp"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -16,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -208,19 +206,7 @@ func findCommitWithVersions(repo *git.Repository, packages []Package, published 
 	blobHashes := make(map[string]plumbing.Hash)
 	present := make(map[string]bool)
 	// TODO: detect yanking
-	matchesAt := func(ts int) int {
-		t := time.Unix(int64(ts), 0)
-		// NOTE: Log ordering shouldn't be an issue with the index's linear history.
-		commitIter, err := repo.Log(&git.LogOptions{Until: &t})
-		if err != nil {
-			panic(err)
-		}
-		commit, err := commitIter.Next()
-		if err == io.EOF {
-			return 0
-		} else if err != nil {
-			panic(err)
-		}
+	matchesFor := func(commit *object.Commit) int {
 		fmt.Printf("Analyzing %s [time: %s]... ", commit.Hash.String(), commit.Committer.When)
 		tree, err := commit.Tree()
 		if err != nil {
@@ -257,6 +243,21 @@ func findCommitWithVersions(repo *git.Repository, packages []Package, published 
 		fmt.Println("Found", found)
 		return found
 	}
+	matchesAt := func(ts int) int {
+		t := time.Unix(int64(ts), 0)
+		// NOTE: Log ordering shouldn't be an issue with the index's linear history.
+		commitIter, err := repo.Log(&git.LogOptions{Until: &t})
+		if err != nil {
+			panic(err)
+		}
+		commit, err := commitIter.Next()
+		if err == io.EOF {
+			return 0
+		} else if err != nil {
+			panic(err)
+		}
+		return matchesFor(commit)
+	}
 	maxFound := matchesAt(int(published.Unix()))
 	// Linear scan backwards in days to find the one containing the target registry state.
 	day := 24 * time.Hour
@@ -266,20 +267,22 @@ func findCommitWithVersions(repo *git.Repository, packages []Package, published 
 			break
 		}
 	}
-	lowerBound := int(published.Add(-dayBound).Unix())
-	// Binary search through the day's commits to find the earliest target registry state.
-	ts, found := sort.Find(int(day.Seconds()), func(ts int) int {
-		f := matchesAt(lowerBound + ts)
-		return -cmp.Compare(f, maxFound)
-	})
-	if !found {
-		panic("not found")
-	}
-	// Repeat the commit query to find the same commit found above.
-	t := time.Unix(int64(lowerBound+ts), 0)
-	commitIter, err := repo.Log(&git.LogOptions{Until: &t})
+	upperBoundT := published.Add(-dayBound + day)
+	lowerBoundT := published.Add(-dayBound)
+	commitIter, err := repo.Log(&git.LogOptions{Since: &lowerBoundT, Until: &upperBoundT})
 	if err != nil {
 		panic(err)
 	}
-	return commitIter.Next()
+	var lastCommit *object.Commit
+	for {
+		commit, err := commitIter.Next()
+		if err != nil {
+			return nil, err
+		}
+		if matchesFor(commit) < maxFound {
+			break
+		}
+		lastCommit = commit
+	}
+	return lastCommit, nil
 }
