@@ -63,9 +63,10 @@ func (s *CloudKMSSignerVerifier) Public() crypto.PublicKey {
 
 func (s *CloudKMSSignerVerifier) Sign(ctx context.Context, data []byte) ([]byte, error) {
 	// NOTE: We could pass Digest here instead to shrink the RPC size.
+	digest := sha256.Sum256(data)
 	req := &kmspb.AsymmetricSignRequest{
-		Name: s.keyName,
-		Data: data,
+		Name:   s.keyName,
+		Digest: &kmspb.Digest{Digest: &kmspb.Digest_Sha256{Sha256: digest[:]}},
 	}
 	resp, err := s.client.AsymmetricSign(ctx, req)
 	if err != nil {
