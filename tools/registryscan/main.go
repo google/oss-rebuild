@@ -273,24 +273,43 @@ func setupSnapshotRepo(repoPath, branchName string) (*git.Repository, error) {
 
 func findCommitWithVersionsInCache(cache *RepoCache, packages []Package, published time.Time) (*object.Commit, *git.Repository, error) {
 	// First try the current repo if it exists (most likely to have recent packages)
+	var lastResult *searchResult
+	var lastResultRepo *git.Repository
+	var err error
 	if cache.Current != nil {
 		fmt.Printf("Searching in current repository...\n")
-		if commit, err := findCommitWithVersions(cache.Current, packages, published); err == nil && commit != nil {
-			return commit, cache.Current, nil
-		} else if err != nil {
+		if lastResult, err = findCommitWithVersions(cache.Current, packages, published); err == nil {
+			if lastResult.PriorCommit != nil {
+				return lastResult.ResolutionCommit, cache.Current, nil
+			}
+			lastResultRepo = cache.Current
+		} else {
 			fmt.Printf("Error searching current repo: %v\n", err)
+			return nil, nil, errors.New("failed to search")
 		}
 	}
 	// Then try snapshot repositories
 	for snapshotName, repo := range cache.Snapshots {
 		fmt.Printf("Searching in snapshot repository: %s...\n", snapshotName)
-		if commit, err := findCommitWithVersions(repo, packages, published); err == nil && commit != nil {
-			return commit, repo, nil
-		} else if err != nil {
+		if result, err := findCommitWithVersions(repo, packages, published); err == nil {
+			if lastResult != nil {
+				if result.ResolvableCrates < lastResult.ResolvableCrates {
+					return result.ResolutionCommit, repo, nil
+				} else {
+					return lastResult.ResolutionCommit, lastResultRepo, nil
+				}
+			}
+			if result.PriorCommit != nil {
+				return result.ResolutionCommit, repo, nil
+			}
+			lastResult = result
+			lastResultRepo = repo
+		} else {
 			fmt.Printf("Error searching snapshot %s: %v\n", snapshotName, err)
+			return nil, nil, errors.New("failed to search")
 		}
 	}
-	return nil, nil, nil
+	return nil, nil, errors.New("failed to find match")
 }
 
 func getRepoName(cache *RepoCache, repo *git.Repository) string {
@@ -409,7 +428,13 @@ func getPackageFilePath(packageName string) string {
 	}
 }
 
-func findCommitWithVersions(repo *git.Repository, packages []Package, published time.Time) (*object.Commit, error) {
+type searchResult struct {
+	ResolutionCommit *object.Commit
+	ResolvableCrates int
+	PriorCommit      *object.Commit
+}
+
+func findCommitWithVersions(repo *git.Repository, packages []Package, published time.Time) (*searchResult, error) {
 	fmt.Println("Calculating commits...")
 	blobHashes := make(map[string]plumbing.Hash)
 	present := make(map[string]bool)
@@ -443,7 +468,6 @@ func findCommitWithVersions(repo *git.Repository, packages []Package, published 
 				blobHashes[pkg.Path] = entry.Hash
 				present[pkg.Path] = bytes.Contains(content, []byte(`"vers":"`+pkg.Version+`"`))
 			}
-
 			if present[pkg.Path] {
 				found++
 			}
@@ -484,13 +508,23 @@ func findCommitWithVersions(repo *git.Repository, packages []Package, published 
 	var lastCommit *object.Commit
 	for {
 		commit, err := commitIter.Next()
+		if err == io.EOF {
+			return &searchResult{
+				ResolutionCommit: lastCommit,
+				ResolvableCrates: maxFound,
+				PriorCommit:      nil,
+			}, nil
+		}
 		if err != nil {
 			return nil, err
 		}
 		if matchesFor(commit) < maxFound {
-			break
+			return &searchResult{
+				ResolutionCommit: lastCommit,
+				ResolvableCrates: maxFound,
+				PriorCommit:      commit,
+			}, nil
 		}
 		lastCommit = commit
 	}
-	return lastCommit, nil
 }
