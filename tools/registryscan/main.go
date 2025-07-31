@@ -491,6 +491,9 @@ func findCommitWithVersions(repo *git.Repository, packages []Package, published 
 		return matchesFor(commit)
 	}
 	maxFound := matchesAt(int(published.Unix()))
+	if maxFound == 0 {
+		return nil, errors.New("not found")
+	}
 	// Linear scan backwards in days to find the one containing the target registry state.
 	day := 24 * time.Hour
 	dayBound := day
