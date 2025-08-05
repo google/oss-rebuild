@@ -208,7 +208,6 @@ type FilesystemAssetStore struct {
 	runID string
 }
 
-// TODO: Maybe this should include a runID?
 func (s *FilesystemAssetStore) resourcePath(a Asset) string {
 	return assetPath(a, s.runID)
 }
