@@ -43,97 +43,6 @@ func TestGetPackageFilePath(t *testing.T) {
 func TestFindRegistryResolution(t *testing.T) {
 	tests := []struct {
 		name           string
-		repoYAML       string
-		packages       []cargolock.Package
-		cratePublished time.Time
-		wantCommit     string // commit ID from test repo
-		wantNil        bool
-		wantErr        bool
-	}{
-		{
-			name: "find packages in registry",
-			repoYAML: `commits:
-  - id: initial-commit
-    files:
-      se/rd/serde: |
-        {"name":"serde","vers":"1.0.0","deps":[],"cksum":"abc123","features":{},"yanked":false}
-      to/ki/tokio: |
-        {"name":"tokio","vers":"1.0.0","deps":[],"cksum":"def456","features":{},"yanked":false}
-  - id: serde-update
-    parent: initial-commit
-    files:
-      se/rd/serde: |
-        {"name":"serde","vers":"1.0.0","deps":[],"cksum":"abc123","features":{},"yanked":false}
-        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"new123","features":{},"yanked":false}
-      to/ki/tokio: |
-        {"name":"tokio","vers":"1.0.0","deps":[],"cksum":"def456","features":{},"yanked":false}
-  - id: tokio-update
-    parent: serde-update
-    files:
-      se/rd/serde: |
-        {"name":"serde","vers":"1.0.0","deps":[],"cksum":"abc123","features":{},"yanked":false}
-        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"new123","features":{},"yanked":false}
-      to/ki/tokio: |
-        {"name":"tokio","vers":"1.0.0","deps":[],"cksum":"def456","features":{},"yanked":false}
-        {"name":"tokio","vers":"1.35.1","deps":[],"cksum":"new456","features":{},"yanked":false}
-`,
-			packages: []cargolock.Package{
-				{Name: "serde", Version: "1.0.193"},
-				{Name: "tokio", Version: "1.35.1"},
-			},
-			cratePublished: time.Now(),
-			wantCommit:     "tokio-update",
-		},
-		{
-			name: "packages not found",
-			repoYAML: `commits:
-  - id: initial-commit
-    files:
-      se/rd/serde: |
-        {"name":"serde","vers":"1.0.0","deps":[],"cksum":"abc123","features":{},"yanked":false}
-`,
-			packages: []cargolock.Package{
-				{Name: "nonexistent", Version: "1.0.0"},
-			},
-			cratePublished: time.Now(),
-			wantNil:        true,
-			wantErr:        true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repo, err := gitxtest.CreateRepoFromYAML(tt.repoYAML, nil)
-			if err != nil {
-				t.Fatalf("Failed to create test repo: %v", err)
-			}
-			got, err := FindRegistryResolution(repo.Repository, tt.packages, tt.cratePublished)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("FindRegistryResolution() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if tt.wantNil {
-				if got != nil {
-					t.Errorf("FindRegistryResolution() = %v, want nil", got)
-				}
-				return
-			}
-			if got == nil {
-				t.Errorf("FindRegistryResolution() = nil, want non-nil")
-				return
-			}
-			if tt.wantCommit != "" {
-				wantHash := repo.Commits[tt.wantCommit]
-				if got.CommitHash != wantHash {
-					t.Errorf("FindRegistryResolution().CommitHash = %v, want %v", got.CommitHash, wantHash)
-				}
-			}
-		})
-	}
-}
-
-func TestFindRegistryResolutionMultiRepo(t *testing.T) {
-	tests := []struct {
-		name           string
 		repoYAMLs      []string
 		packages       []cargolock.Package
 		cratePublished time.Time
@@ -283,25 +192,25 @@ func TestFindRegistryResolutionMultiRepo(t *testing.T) {
 				repos = append(repos, repo)
 				indices = append(indices, repo.Repository)
 			}
-			got, err := FindRegistryResolutionMultiRepo(indices, tt.packages, tt.cratePublished)
+			got, err := FindRegistryResolution(indices, tt.packages, tt.cratePublished)
 			if err != nil {
-				t.Errorf("FindRegistryResolutionMultiRepo() error = %v", err)
+				t.Errorf("FindRegistryResolution() error = %v", err)
 				return
 			}
 			if tt.wantNil {
 				if got != nil {
-					t.Errorf("FindRegistryResolutionMultiRepo() = %v, want nil", got)
+					t.Errorf("FindRegistryResolution() = %v, want nil", got)
 				}
 				return
 			}
 			if got == nil {
-				t.Errorf("FindRegistryResolutionMultiRepo() = nil, want non-nil")
+				t.Errorf("FindRegistryResolution() = nil, want non-nil")
 				return
 			}
 			if tt.wantCommit != "" {
 				wantHash := repos[tt.wantRepoIndex].Commits[tt.wantCommit]
 				if got.CommitHash != wantHash {
-					t.Errorf("FindRegistryResolutionMultiRepo().CommitHash = %v, want %v", got.CommitHash, wantHash)
+					t.Errorf("FindRegistryResolution().CommitHash = %v, want %v", got.CommitHash, wantHash)
 				}
 			}
 		})
