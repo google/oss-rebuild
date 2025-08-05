@@ -49,6 +49,7 @@ func TestFindRegistryResolution(t *testing.T) {
 		wantRepoIndex  int    // which repo should contain the result
 		wantCommit     string // commit ID from test repo
 		wantNil        bool
+		wantErr        bool
 	}{
 		{
 			name: "find in first repo and only repo",
@@ -179,6 +180,24 @@ func TestFindRegistryResolution(t *testing.T) {
 			wantRepoIndex:  1,
 			wantCommit:     "snapshot-commit",
 		},
+		{
+			name: "empty packages is an error",
+			repoYAMLs: []string{
+				`commits:
+  - id: initial-commit
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.0","deps":[],"cksum":"abc123","features":{},"yanked":false}
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"new123","features":{},"yanked":false}
+      to/ki/tokio: |
+        {"name":"tokio","vers":"1.0.0","deps":[],"cksum":"def456","features":{},"yanked":false}
+        {"name":"tokio","vers":"1.35.1","deps":[],"cksum":"new456","features":{},"yanked":false}
+`,
+			},
+			packages:       []cargolock.Package{},
+			cratePublished: time.Now(),
+			wantErr:        true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -193,8 +212,10 @@ func TestFindRegistryResolution(t *testing.T) {
 				indices = append(indices, repo.Repository)
 			}
 			got, err := FindRegistryResolution(indices, tt.packages, tt.cratePublished)
-			if err != nil {
-				t.Errorf("FindRegistryResolution() error = %v", err)
+			if err != nil || tt.wantErr {
+				if err != nil != tt.wantErr {
+					t.Errorf("FindRegistryResolution() want error = %t, error = %v", tt.wantErr, err)
+				}
 				return
 			}
 			if tt.wantNil {
