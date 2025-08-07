@@ -4,13 +4,18 @@
 package main
 
 import (
+	"archive/tar"
 	"bufio"
 	"bytes"
 	"cmp"
+	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +23,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	"github.com/pkg/errors"
 )
 
 type Package struct {
@@ -28,16 +35,44 @@ type Package struct {
 
 func main() {
 	if len(os.Args) != 3 {
-		fmt.Println("Usage: go run main.go <path_to_lock_file> <path_to_git_repo>")
+		fmt.Println("Usage:")
+		fmt.Println("  go run main.go <path_to_lock_file> <path_to_git_repo>")
+		fmt.Println("  go run main.go <package@version> <path_to_git_repo>")
+		fmt.Println("Examples:")
+		fmt.Println("  go run main.go ./Cargo.lock /path/to/crates-index")
+		fmt.Println("  go run main.go serde@1.0.2 /path/to/crates-index")
 		os.Exit(1)
 	}
 
-	lockFilePath := os.Args[1]
+	firstArg := os.Args[1]
 	repoPath := os.Args[2]
 
-	packages, err := parseCargoLock(lockFilePath)
+	ctx := context.Background()
+	var lockfile string
+	var err error
+	if packageAtVersionRegex.MatchString(firstArg) {
+		lockfile, err = downloadCargoLock(ctx, firstArg)
+		if err != nil {
+			fmt.Printf("Error downloading package: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		file, err := os.Open(firstArg)
+		if err != nil {
+			fmt.Printf("Error opening Cargo.lock file: %v\n", err)
+			os.Exit(1)
+		}
+		defer file.Close()
+		contentBytes, err := io.ReadAll(file)
+		if err != nil {
+			fmt.Printf("Error reading Cargo.lock file: %v\n", err)
+			os.Exit(1)
+		}
+		lockfile = string(contentBytes)
+	}
+	packages, err := parseCargoLockContent(lockfile)
 	if err != nil {
-		fmt.Printf("Error parsing Cargo.lock: %v\n", err)
+		fmt.Printf("Error parsing packages: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -62,15 +97,62 @@ func main() {
 	}
 }
 
-func parseCargoLock(filePath string) ([]Package, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+var packageAtVersionRegex = regexp.MustCompile(`^([a-zA-Z0-9_-]+)@([0-9]+\.[0-9]+\.[0-9]+.*)$`)
 
+func downloadCargoLock(ctx context.Context, packageSpec string) (string, error) {
+	matches := packageAtVersionRegex.FindStringSubmatch(packageSpec)
+	if len(matches) != 3 {
+		return "", fmt.Errorf("invalid package specification: %s (expected format: package@version)", packageSpec)
+	}
+	name := matches[1]
+	version := matches[2]
+	fmt.Printf("Downloading %s@%s...\n", name, version)
+	registry := &reg.HTTPRegistry{Client: http.DefaultClient}
+	reader, err := registry.Artifact(ctx, name, version)
+	if err != nil {
+		return "", fmt.Errorf("failed to download crate: %v", err)
+	}
+	defer reader.Close()
+	cargoLockContent, err := extractCargoLockFromTarGz(reader)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to extract Cargo.lock")
+	}
+	if cargoLockContent == "" {
+		return "", errors.Errorf("crate %s@%s does not contain a Cargo.lock file", name, version)
+	}
+	fmt.Printf("Successfully extracted Cargo.lock\n")
+	return cargoLockContent, nil
+}
+
+func extractCargoLockFromTarGz(reader io.Reader) (string, error) {
+	gzipReader, err := gzip.NewReader(reader)
+	if err != nil {
+		return "", err
+	}
+	defer gzipReader.Close()
+	tarReader := tar.NewReader(gzipReader)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		if strings.HasSuffix(header.Name, "/Cargo.lock") || header.Name == "Cargo.lock" {
+			content, err := io.ReadAll(tarReader)
+			if err != nil {
+				return "", err
+			}
+			return string(content), nil
+		}
+	}
+	return "", nil // No Cargo.lock found
+}
+
+func parseCargoLockContent(content string) ([]Package, error) {
 	var packages []Package
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(strings.NewReader(content))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "name = ") {
