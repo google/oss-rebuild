@@ -9,13 +9,31 @@ import (
 )
 
 func TestReleaseURL(t *testing.T) {
-	r := HTTPRegistry{}
-	url, err := r.ReleaseURL(context.Background(), "com.google.guava:guava", "33.4.8-jre", TypePOM)
-	if err != nil {
-		t.Fatalf("ReleaseURL() error = %v", err)
+	testCases := []struct {
+		test     string
+		artifact string
+		version  string
+		filetype string
+		want     string
+	}{
+		{
+			test:     "guava_pom",
+			artifact: "com.google.guava:guava",
+			version:  "33.4.8-jre",
+			filetype: TypePOM,
+			want:     "https://repo1.maven.org/maven2/com/google/guava/guava/33.4.8-jre/guava-33.4.8-jre.pom",
+		},
 	}
-	expected := "https://repo1.maven.org/maven2/com/google/guava/guava/33.4.8-jre/guava-33.4.8-jre.pom"
-	if url != expected {
-		t.Errorf("ReleaseURL() = %v, want %v", url, expected)
+	for _, tc := range testCases {
+		t.Run(tc.test, func(t *testing.T) {
+			r := HTTPRegistry{}
+			url, err := r.ReleaseURL(context.Background(), tc.artifact, tc.version, tc.filetype)
+			if err != nil {
+				t.Fatalf("ReleaseURL() error = %v", err)
+			}
+			if url != tc.want {
+				t.Errorf("ReleaseURL() = %v, want %v", url, tc.want)
+			}
+		})
 	}
 }
