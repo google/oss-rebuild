@@ -170,6 +170,6 @@ func (r HTTPRegistry) ReleaseURL(ctx context.Context, pkg, version, typ string) 
 		return "", errors.New("package identifier not of form 'group:artifact'")
 	}
 	artifactPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
-	artifactURL := releaseURL.ResolveReference(urlx.MustParse(artifactPath))
-	return artifactURL.String(), nil
+	artifactURL := releaseURL.JoinPath(artifactPath).String()
+	return artifactURL, nil
 }
