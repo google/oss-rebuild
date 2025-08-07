@@ -6,13 +6,11 @@ package maven
 import (
 	"context"
 	"testing"
-
-	"github.com/google/oss-rebuild/pkg/registry/maven"
 )
 
 func TestReleaseURL(t *testing.T) {
 	r := HTTPRegistry{}
-	url, err := r.ReleaseURL(context.Background(), "com.google.guava:guava", "33.4.8-jre", maven.TypePOM)
+	url, err := r.ReleaseURL(context.Background(), "com.google.guava:guava", "33.4.8-jre", TypePOM)
 	if err != nil {
 		t.Fatalf("ReleaseURL() error = %v", err)
 	}
