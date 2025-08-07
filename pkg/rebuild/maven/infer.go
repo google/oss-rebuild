@@ -168,7 +168,7 @@ func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMu
 		return "", errors.Wrap(err, "reading manifest file")
 	}
 	for _, line := range strings.Split(string(manifestReader), "\n") {
-		if strings.HasPrefix(line, "Build-Jdk:") {
+		if strings.HasPrefix(line, "Build-Jdk:") || strings.HasPrefix(line, "Build-Jdk-Spec:") {
 			_, value, _ := strings.Cut(line, ":")
 			return strings.TrimSpace(value), nil
 		}
