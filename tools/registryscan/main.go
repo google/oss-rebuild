@@ -49,9 +49,10 @@ func main() {
 
 	ctx := context.Background()
 	var lockfile string
+	var published time.Time
 	var err error
 	if packageAtVersionRegex.MatchString(firstArg) {
-		lockfile, err = downloadCargoLock(ctx, firstArg)
+		lockfile, published, err = downloadCargoLockWithDate(ctx, firstArg)
 		if err != nil {
 			fmt.Printf("Error downloading package: %v\n", err)
 			os.Exit(1)
@@ -69,6 +70,7 @@ func main() {
 			os.Exit(1)
 		}
 		lockfile = string(contentBytes)
+		published = time.Now() // Default to current time for file-based input
 	}
 	packages, err := parseCargoLockContent(lockfile)
 	if err != nil {
@@ -82,8 +84,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// XXX: Needs to be manually adjusted to account for published date.
-	published := time.Now()
 	commit, err := findCommitWithVersions(repo, packages, published)
 	if err != nil {
 		fmt.Printf("Error finding commit: %v\n", err)
@@ -99,29 +99,47 @@ func main() {
 
 var packageAtVersionRegex = regexp.MustCompile(`^([a-zA-Z0-9_-]+)@([0-9]+\.[0-9]+\.[0-9]+.*)$`)
 
-func downloadCargoLock(ctx context.Context, packageSpec string) (string, error) {
+func downloadCargoLockWithDate(ctx context.Context, packageSpec string) (string, time.Time, error) {
 	matches := packageAtVersionRegex.FindStringSubmatch(packageSpec)
 	if len(matches) != 3 {
-		return "", fmt.Errorf("invalid package specification: %s (expected format: package@version)", packageSpec)
+		return "", time.Time{}, fmt.Errorf("invalid package specification: %s (expected format: package@version)", packageSpec)
 	}
 	name := matches[1]
 	version := matches[2]
-	fmt.Printf("Downloading %s@%s...\n", name, version)
 	registry := &reg.HTTPRegistry{Client: http.DefaultClient}
+	fmt.Printf("Fetching metadata for %s@%s...\n", name, version)
+	crate, err := registry.Crate(ctx, name)
+	if err != nil {
+		return "", time.Time{}, errors.Wrap(err, "failed to fetch crate metadata")
+	}
+	var publishDate time.Time
+	found := false
+	for _, v := range crate.Versions {
+		if v.Version == version {
+			publishDate = v.Created
+			found = true
+			break
+		}
+	}
+	if !found {
+		return "", time.Time{}, errors.Errorf("version %s not found for crate %s", version, name)
+	}
+	fmt.Printf("Found publish date: %s\n", publishDate.Format(time.RFC3339))
+	fmt.Printf("Downloading %s@%s...\n", name, version)
 	reader, err := registry.Artifact(ctx, name, version)
 	if err != nil {
-		return "", fmt.Errorf("failed to download crate: %v", err)
+		return "", time.Time{}, errors.Wrap(err, "failed to download crate")
 	}
 	defer reader.Close()
 	cargoLockContent, err := extractCargoLockFromTarGz(reader)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to extract Cargo.lock")
+		return "", time.Time{}, errors.Wrap(err, "failed to extract Cargo.lock")
 	}
 	if cargoLockContent == "" {
-		return "", errors.Errorf("crate %s@%s does not contain a Cargo.lock file", name, version)
+		return "", time.Time{}, errors.Errorf("crate %s@%s does not contain a Cargo.lock file", name, version)
 	}
 	fmt.Printf("Successfully extracted Cargo.lock\n")
-	return cargoLockContent, nil
+	return cargoLockContent, publishDate, nil
 }
 
 func extractCargoLockFromTarGz(reader io.Reader) (string, error) {
