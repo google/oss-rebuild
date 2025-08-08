@@ -105,6 +105,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 			num++
 			s = oneof.WorkflowStrategy
 		}
+		if oneof.MavenBuild != nil {
+			num++
+			s = oneof.MavenBuild
+		}
 	}
 	if num != 1 {
 		return nil, errors.Errorf("serialized StrategyOneOf should have exactly one strategy, found: %d", num)
