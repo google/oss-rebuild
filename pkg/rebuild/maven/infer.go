@@ -173,12 +173,18 @@ func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMu
 			return strings.TrimSpace(value), nil
 		}
 	}
-	return approximateJarJDK(zipReader)
+	jdkInt, err := inferJDKFromBytecode(zipReader)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d", jdkInt), nil
 }
 
-func approximateJarJDK(jarZip *zip.Reader) (string, error) {
+func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
 	// This is a fallback if the JDK version cannot be determined from the JAR manifest.
-	// It looks for a .class file in the JAR to analyze the bytecode version.
+	// We look for the major version of the first .class file found in the JAR as it corresponds to the *lowest* JDK version that can run the bytecode.
+	// This JDK version can be then used to run the build that would ensure that the sources at least compile successfully.
+	// If the we choose a version lower than this, we risk compilation failure during rebuild.
 
 	// Find a .class file in the zip
 	for _, file := range jarZip.File {
@@ -197,34 +203,36 @@ func approximateJarJDK(jarZip *zip.Reader) (string, error) {
 
 			majorVersion, err := getClassFileMajorVersion(classBytes)
 			if err != nil {
-				continue
+				log.Fatal(err)
+				return 0, err
 			}
 
 			return majorVersion, nil
 		}
 	}
 
-	return "", errors.New("no .class files found in jar")
+	return 0, errors.New("no .class files found in jar")
 }
 
 // getClassFileMajorVersion extracts the major version from Java class file bytes
-func getClassFileMajorVersion(classBytes []byte) (string, error) {
+func getClassFileMajorVersion(classBytes []byte) (int, error) {
 	if len(classBytes) < 8 {
-		return "", errors.New("class file too short")
+		return 0, errors.New("class file too short")
 	}
 
 	// Check magic number (0xCAFEBABE)
 	if classBytes[0] != 0xCA || classBytes[1] != 0xFE || classBytes[2] != 0xBA || classBytes[3] != 0xBE {
-		return "", errors.New("invalid class file magic number")
+		return 0, errors.New("invalid class file magic number")
 	}
 
-	// Skip minor version (bytes 4-5) and read major version (bytes 6-7)
-	// Reference: https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-4.html
-	offsetBetweenBytecodeAndJavaVersion := uint16(44)
+	// Skip minor version (bytes 4-5) as it is always 0 since Java 1.1 and read major version (bytes 6-7)
+	// JDK and classfile versions: https://javaalmanac.io/bytecode/versions/
+	// Position of bytes for version in classfile: https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-4.html
+	bytecodeToVersionOffset := uint16(44)
 
-	majorVersion := (uint16(classBytes[6]) << 8) | uint16(classBytes[7]) - offsetBetweenBytecodeAndJavaVersion
+	majorVersion := (uint16(classBytes[6]) << 8) | uint16(classBytes[7]) - bytecodeToVersionOffset
 
-	return fmt.Sprintf("%d", majorVersion), nil
+	return int(majorVersion), nil
 }
 
 // findAndValidatePomXML ensures the package config has the expected name and version,
