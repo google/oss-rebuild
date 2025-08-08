@@ -5,8 +5,6 @@ package main
 
 import (
 	"archive/tar"
-	"bufio"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -22,17 +20,12 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/pkg/errors"
 )
-
-type Package struct {
-	Name    string
-	Version string
-	Path    string
-}
 
 type RepoCache struct {
 	CacheDir  string
@@ -83,7 +76,7 @@ func main() {
 		lockfile = string(contentBytes)
 		published = time.Now() // Default to current time for file-based input
 	}
-	packages, err := parseCargoLockContent(lockfile)
+	packages, err := cargolock.Parse(lockfile)
 	if err != nil {
 		fmt.Printf("Error parsing packages: %v\n", err)
 		os.Exit(1)
@@ -93,13 +86,13 @@ func main() {
 		fmt.Printf("Error setting up repo cache: %v\n", err)
 		os.Exit(1)
 	}
-	commit, repo, err := findCommitWithVersionsInCache(cache, packages, published)
+	resolution, err := findRegistryResolution(cache, packages, published)
 	if err != nil {
-		fmt.Printf("Error finding commit: %v\n", err)
+		fmt.Printf("Error finding resolution: %v\n", err)
 		os.Exit(1)
 	}
-	if commit != nil {
-		fmt.Printf("Found commit: %s in repo: %s\n", commit.Hash, getRepoName(cache, repo))
+	if resolution != nil {
+		fmt.Printf("Found commit: %s at time: %s\n", resolution.CommitHash, resolution.CommitTime)
 	} else {
 		fmt.Println("No commit found containing all package versions")
 	}
@@ -271,57 +264,29 @@ func setupSnapshotRepo(repoPath, branchName string) (*git.Repository, error) {
 	return repo, nil
 }
 
-func findCommitWithVersionsInCache(cache *RepoCache, packages []Package, published time.Time) (*object.Commit, *git.Repository, error) {
-	// First try the current repo if it exists (most likely to have recent packages)
-	var lastResult *searchResult
-	var lastResultRepo *git.Repository
-	var err error
+func findRegistryResolution(cache *RepoCache, packages []cargolock.Package, published time.Time) (*index.RegistryResolution, error) {
+	// Build list of repositories in order (current first, then snapshots)
+	var repos []*git.Repository
 	if cache.Current != nil {
-		fmt.Printf("Searching in current repository...\n")
-		if lastResult, err = findCommitWithVersions(cache.Current, packages, published); err == nil {
-			if lastResult.PriorCommit != nil {
-				return lastResult.ResolutionCommit, cache.Current, nil
-			}
-			lastResultRepo = cache.Current
-		} else {
-			fmt.Printf("Error searching current repo: %v\n", err)
-			return nil, nil, errors.New("failed to search")
-		}
+		fmt.Printf("Including current repository in search...\n")
+		repos = append(repos, cache.Current)
 	}
-	// Then try snapshot repositories
-	for snapshotName, repo := range cache.Snapshots {
-		fmt.Printf("Searching in snapshot repository: %s...\n", snapshotName)
-		if result, err := findCommitWithVersions(repo, packages, published); err == nil {
-			if lastResult != nil {
-				if result.ResolvableCrates < lastResult.ResolvableCrates {
-					return result.ResolutionCommit, repo, nil
-				} else {
-					return lastResult.ResolutionCommit, lastResultRepo, nil
-				}
-			}
-			if result.PriorCommit != nil {
-				return result.ResolutionCommit, repo, nil
-			}
-			lastResult = result
-			lastResultRepo = repo
-		} else {
-			fmt.Printf("Error searching snapshot %s: %v\n", snapshotName, err)
-			return nil, nil, errors.New("failed to search")
-		}
+	// Add snapshots in chronological order (newest first to match library expectations)
+	var snapshotNames []string
+	for name := range cache.Snapshots {
+		snapshotNames = append(snapshotNames, name)
 	}
-	return nil, nil, errors.New("failed to find match")
-}
-
-func getRepoName(cache *RepoCache, repo *git.Repository) string {
-	if repo == cache.Current {
-		return "current"
+	sort.Strings(snapshotNames) // snapshot-YYYY-MM-DD format sorts chronologically
+	// Reverse to get newest first
+	for i := len(snapshotNames) - 1; i >= 0; i-- {
+		name := snapshotNames[i]
+		fmt.Printf("Including snapshot repository %s in search...\n", name)
+		repos = append(repos, cache.Snapshots[name])
 	}
-	for snapshotName, snapshotRepo := range cache.Snapshots {
-		if repo == snapshotRepo {
-			return snapshotName
-		}
+	if len(repos) == 0 {
+		return nil, fmt.Errorf("no repositories available for search")
 	}
-	return "unknown"
+	return index.FindRegistryResolutionMultiRepo(repos, packages, published)
 }
 
 func downloadCargoLockWithDate(ctx context.Context, packageSpec string) (string, time.Time, error) {
@@ -391,143 +356,4 @@ func extractCargoLockFromTarGz(reader io.Reader) (string, error) {
 		}
 	}
 	return "", nil // No Cargo.lock found
-}
-
-func parseCargoLockContent(content string) ([]Package, error) {
-	var packages []Package
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "name = ") {
-			name := strings.Trim(strings.TrimPrefix(line, "name = "), "\"")
-			if scanner.Scan() {
-				versionLine := scanner.Text()
-				if strings.HasPrefix(versionLine, "version = ") {
-					version := strings.Trim(strings.TrimPrefix(versionLine, "version = "), "\"")
-					packages = append(packages, Package{Name: name, Version: version, Path: getPackageFilePath(name)})
-				}
-			}
-		}
-	}
-	fmt.Println(packages)
-
-	return packages, scanner.Err()
-}
-
-func getPackageFilePath(packageName string) string {
-	packageName = strings.ToLower(packageName)
-	switch len(packageName) {
-	case 1:
-		return filepath.Join("1", packageName)
-	case 2:
-		return filepath.Join("2", packageName)
-	case 3:
-		return filepath.Join("3", string(packageName[0]), packageName)
-	default:
-		return filepath.Join(packageName[:2], packageName[2:4], packageName)
-	}
-}
-
-type searchResult struct {
-	ResolutionCommit *object.Commit
-	ResolvableCrates int
-	PriorCommit      *object.Commit
-}
-
-func findCommitWithVersions(repo *git.Repository, packages []Package, published time.Time) (*searchResult, error) {
-	fmt.Println("Calculating commits...")
-	blobHashes := make(map[string]plumbing.Hash)
-	present := make(map[string]bool)
-	// TODO: detect yanking
-	matchesFor := func(commit *object.Commit) int {
-		fmt.Printf("Analyzing %s [time: %s]... ", commit.Hash.String(), commit.Committer.When)
-		tree, err := commit.Tree()
-		if err != nil {
-			panic(err)
-		}
-		var found int
-		for _, pkg := range packages {
-			entry, err := tree.FindEntry(pkg.Path)
-			if err != nil {
-				continue
-			}
-			if entry.Hash != blobHashes[pkg.Path] {
-				blob, err := repo.BlobObject(entry.Hash)
-				if err != nil {
-					panic(err)
-				}
-				reader, err := blob.Reader()
-				if err != nil {
-					panic(err)
-				}
-				defer reader.Close()
-				content, err := io.ReadAll(reader)
-				if err != nil {
-					panic(err)
-				}
-				blobHashes[pkg.Path] = entry.Hash
-				present[pkg.Path] = bytes.Contains(content, []byte(`"vers":"`+pkg.Version+`"`))
-			}
-			if present[pkg.Path] {
-				found++
-			}
-		}
-		fmt.Println("Found", found)
-		return found
-	}
-	matchesAt := func(ts int) int {
-		t := time.Unix(int64(ts), 0)
-		// NOTE: Log ordering shouldn't be an issue with the index's linear history.
-		commitIter, err := repo.Log(&git.LogOptions{Until: &t})
-		if err != nil {
-			panic(err)
-		}
-		commit, err := commitIter.Next()
-		if err == io.EOF {
-			return 0
-		} else if err != nil {
-			panic(err)
-		}
-		return matchesFor(commit)
-	}
-	maxFound := matchesAt(int(published.Unix()))
-	if maxFound == 0 {
-		return nil, errors.New("not found")
-	}
-	// Linear scan backwards in days to find the one containing the target registry state.
-	day := 24 * time.Hour
-	dayBound := day
-	for ; ; dayBound += day {
-		if matchesAt(int(published.Add(-dayBound).Unix())) < maxFound {
-			break
-		}
-	}
-	upperBoundT := published.Add(-dayBound + day)
-	lowerBoundT := published.Add(-dayBound)
-	commitIter, err := repo.Log(&git.LogOptions{Since: &lowerBoundT, Until: &upperBoundT})
-	if err != nil {
-		panic(err)
-	}
-	var lastCommit *object.Commit
-	for {
-		commit, err := commitIter.Next()
-		if err == io.EOF {
-			return &searchResult{
-				ResolutionCommit: lastCommit,
-				ResolvableCrates: maxFound,
-				PriorCommit:      nil,
-			}, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		if matchesFor(commit) < maxFound {
-			return &searchResult{
-				ResolutionCommit: lastCommit,
-				ResolvableCrates: maxFound,
-				PriorCommit:      commit,
-			}, nil
-		}
-		lastCommit = commit
-	}
 }
