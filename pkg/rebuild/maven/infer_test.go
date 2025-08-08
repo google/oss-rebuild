@@ -28,7 +28,7 @@ func (m *mockMavenRegistry) ReleaseFile(ctx context.Context, name string, versio
 	return m.releaseFileContent, nil
 }
 
-func TestGetJarJDK(t *testing.T) {
+func Test_getJarJDK(t *testing.T) {
 	testCases := []struct {
 		name        string
 		jarPath     string
