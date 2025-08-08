@@ -117,22 +117,27 @@ func AssetCopy(ctx context.Context, to AssetStore, from ReadOnlyAssetStore, a As
 // DebugStoreFromContext constructs a DebugStorer using values from the given context.
 func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
 	if uploadpath, ok := ctx.Value(DebugStoreID).(string); ok {
+		if uploadpath == "" {
+			return nil, ErrNoUploadPath
+		}
 		u, err := url.Parse(uploadpath)
 		if err != nil {
-			return nil, errors.Wrap(err, "parsing DesbugStoreID as url")
+			return nil, errors.Wrap(err, "parsing as url")
 		}
-		if u.Scheme == "gs" {
+		switch u.Scheme {
+		case "gs":
 			storer, err := NewGCSStore(ctx, uploadpath)
-			return storer, errors.Wrapf(err, "Failed to create GCS storer")
-		} else if u.Scheme == "file" {
+			return storer, errors.Wrapf(err, "creating GCS storer")
+		case "file":
 			path := u.Path
 			if runID, ok := ctx.Value(RunID).(string); ok {
 				path = filepath.Join(path, runID)
 			}
 			os.MkdirAll(path, 0755)
 			return NewFilesystemAssetStore(osfs.New(path)), nil
+		default:
+			return nil, errors.Errorf("unsupported scheme: '%s'", u.Scheme)
 		}
-		return nil, errors.New("unsupported upload path")
 	}
 	return nil, ErrNoUploadPath
 }
