@@ -4,8 +4,71 @@
 package maven
 
 import (
+	"bytes"
+	"context"
+	"io"
+	"os"
 	"testing"
+
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/registry/maven"
 )
+
+// mockMavenRegistry is a mock implementation of the maven.Registry interface for testing.
+type mockMavenRegistry struct {
+	maven.Registry
+	releaseFileContent io.ReadCloser
+	releaseFileError   error
+}
+
+func (m *mockMavenRegistry) ReleaseFile(ctx context.Context, name string, version string, fileType string) (io.ReadCloser, error) {
+	if m.releaseFileError != nil {
+		return nil, m.releaseFileError
+	}
+	return m.releaseFileContent, nil
+}
+
+func TestGetJarJDK(t *testing.T) {
+	testCases := []struct {
+		name        string
+		jarPath     string
+		expectedJDK string
+	}{
+		{
+			name:        "Jar with bytecode version 52 (Java 8)",
+			jarPath:     "testdata/ldapchai-0.8.7.jar",
+			expectedJDK: "8",
+		},
+		{
+			name:        "Jar with MANIFEST declared JDK 11",
+			jarPath:     "testdata/shiro-crypto-cipher-1.9.0.jar",
+			expectedJDK: "11.0.13",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			jarContent, err := os.ReadFile(tc.jarPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mockMux := rebuild.RegistryMux{
+				Maven: &mockMavenRegistry{
+					releaseFileContent: io.NopCloser(bytes.NewReader(jarContent)),
+				},
+			}
+
+			jdk, err := getJarJDK(context.Background(), tc.jarPath, "", mockMux)
+			if err != nil {
+				t.Fatalf("getJarJDK() error = %v", err)
+			}
+
+			if jdk != tc.expectedJDK {
+				t.Errorf("getJarJDK() = %v, want %v", jdk, tc.expectedJDK)
+			}
+		})
+	}
+}
 
 func Test_getClassFileMajorVersion(t *testing.T) {
 	testCases := []struct {
