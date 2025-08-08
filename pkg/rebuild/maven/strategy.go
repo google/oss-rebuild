@@ -55,7 +55,12 @@ var toolkit = []*flow.Tool{
 			Runs: "apk add openjdk{{.With.version}}",
 		}},
 	},
-
+	{
+		Name: "maven/setup-maven",
+		Steps: []flow.Step{{
+			Runs: "apk add maven",
+		}},
+	},
 	{
 		Name: "maven/deps/basic",
 		Steps: []flow.Step{
@@ -64,6 +69,9 @@ var toolkit = []*flow.Tool{
 				With: map[string]string{
 					"version": "{{.With.version}}",
 				},
+			},
+			{
+				Uses: "maven/setup-maven",
 			},
 		},
 	},
