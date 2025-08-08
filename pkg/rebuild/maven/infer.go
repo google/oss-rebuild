@@ -186,10 +186,8 @@ func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
 	// This JDK version can be then used to run the build that would ensure that the sources at least compile successfully.
 	// If the we choose a version lower than this, we risk compilation failure during rebuild.
 
-	// Find a .class file in the zip
 	for _, file := range jarZip.File {
 		if strings.HasSuffix(file.Name, ".class") && !strings.Contains(file.Name, "$") {
-			// Found a class file, read its bytes and extract major version
 			classFile, err := file.Open()
 			if err != nil {
 				continue
