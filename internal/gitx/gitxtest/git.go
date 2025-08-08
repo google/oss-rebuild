@@ -29,7 +29,7 @@ type Commit struct {
 	Author  string      `yaml:"author,omitempty"`
 	Parent  string      `yaml:"parent,omitempty"`
 	Parents []string    `yaml:"parents,omitempty"`
-	Branch  string      `yaml:"branch.omitempty"`
+	Branch  string      `yaml:"branch,omitempty"`
 	Tag     string      `yaml:"tag,omitempty"`
 	Tags    []string    `yaml:"tags,omitempty"`
 	Files   FileContent `yaml:"files"`
