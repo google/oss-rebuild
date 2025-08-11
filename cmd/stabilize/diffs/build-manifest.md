@@ -43,8 +43,7 @@
 ```
 [URL](http://130.237.222.185/chains-reproducible-central/org.spdx/spdx-maven-plugin/0.7.0/spdx-maven-plugin-0.7.0.jar.diffoscope.json)
 
-DIfference: The properties `m2e` are created by the built-in version of Maven in Eclipse IDE.
-
+These attributes can be removed by running the stabilizer.
 
 ## Dynamic Properties
 
