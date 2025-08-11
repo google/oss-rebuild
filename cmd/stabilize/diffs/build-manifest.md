@@ -45,6 +45,26 @@
 
 These attributes can be removed by running the stabilizer.
 
+## Rebuild Process
+
+```diff
+-Created-By: 17.0.8.1+0 (Homebrew)
++Created-By: 17.0.12+7-Ubuntu-1ubuntu222.04 (Ubuntu)
+```
+[URL](http://130.237.222.185/chains-reproducible-central/commons-net/commons-net/3.10.0/commons-net-3.10.0-ftp.jar.diffoscope.json)
+
+```diff
+-Implementation-Build-Java-Vendor: AdoptOpenJDK\r
+-Implementation-Build-Java-Version: 15\r
++Implementation-Build-Java-Vendor: Oracle Corporation\r
++Implementation-Build-Java-Version: 15.0.2\r
+ Implementation-Title: LDAP Chai Library\r
+ Implementation-URL: https://github.com/ldapchai/ldapchai\r
+ Implementation-Vendor: LDAP Chai Project\r
+ Implementation-Version: 0.8.0\r
+```
+[URL](http://130.237.222.185/chains-reproducible-central/com.github.ldapchai/ldapchai/0.8.0/ldapchai-0.8.0.jar.diffoscope.json)
+
 ## Dynamic Properties
 
 ```diff
