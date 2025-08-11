@@ -4,8 +4,10 @@
 package maven
 
 import (
-	"strconv"
+	"os"
 	"strings"
+
+	"github.com/google/oss-rebuild/internal/textwrap"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -29,7 +31,7 @@ func (b *MavenBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Deps: []flow.Step{{
 			Uses: "maven/deps/basic",
 			With: map[string]string{
-				"version": getOnlyMajorVersion(b.JDKVersion),
+				"versionURL": getVersionURL(b.JDKVersion),
 			},
 		}},
 		Build: []flow.Step{{
@@ -52,27 +54,38 @@ var toolkit = []*flow.Tool{
 	{
 		Name: "maven/setup-java",
 		Steps: []flow.Step{{
-			Runs: "apk add openjdk{{.With.version}}",
+			Runs: textwrap.Dedent(`
+			mkdir -p /opt/jdk
+			wget -q -O - "{{.With.versionURL}}" | tar -xzf - --strip-components=1 -C /opt/jdk
+			export JAVA_HOME=/opt/jdk
+			export PATH=$JAVA_HOME/bin:$PATH`),
+			Needs: []string{"wget"},
 		}},
 	},
-
 	{
 		Name: "maven/deps/basic",
 		Steps: []flow.Step{
 			{
 				Uses: "maven/setup-java",
 				With: map[string]string{
-					"version": "{{.With.version}}",
+					"versionURL": "{{.With.versionURL}}",
 				},
 			},
 		},
 	},
 }
 
-func getOnlyMajorVersion(version string) string {
-	if major, err := strconv.Atoi(version); err == nil {
-		return strconv.Itoa(major)
+func getVersionURL(version string) string {
+	versionToURLCSV, err := os.ReadFile("pkg/rebuild/maven/versionToUrl.csv")
+	if err != nil {
+		return ""
 	}
-	parts := strings.Split(version, ".")
-	return parts[0]
+	lines := strings.Split(string(versionToURLCSV), "\n")
+	for _, line := range lines {
+		parts := strings.Split(line, ",")
+		if len(parts) == 2 && parts[0] == version {
+			return parts[1]
+		}
+	}
+	return ""
 }
