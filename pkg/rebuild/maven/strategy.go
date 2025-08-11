@@ -4,9 +4,6 @@
 package maven
 
 import (
-	"os"
-	"strings"
-
 	"github.com/google/oss-rebuild/internal/textwrap"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
@@ -76,16 +73,9 @@ var toolkit = []*flow.Tool{
 }
 
 func getVersionURL(version string) string {
-	versionToURLCSV, err := os.ReadFile("pkg/rebuild/maven/versionToUrl.csv")
-	if err != nil {
-		return ""
-	}
-	lines := strings.Split(string(versionToURLCSV), "\n")
-	for _, line := range lines {
-		parts := strings.Split(line, ",")
-		if len(parts) == 2 && parts[0] == version {
-			return parts[1]
-		}
+	url, exists := JDKDownloadURLs[version]
+	if exists {
+		return url
 	}
 	return ""
 }
