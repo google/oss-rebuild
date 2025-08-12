@@ -5,6 +5,7 @@ package maven
 
 import (
 	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/pkg/errors"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -19,7 +20,11 @@ type MavenBuild struct {
 
 var _ rebuild.Strategy = &MavenBuild{}
 
-func (b *MavenBuild) ToWorkflow() *rebuild.WorkflowStrategy {
+func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
+	jdkVersionURL, err := getVersionURL(b.JDKVersion)
+	if err != nil {
+		return nil, err
+	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Source: []flow.Step{{
@@ -28,17 +33,21 @@ func (b *MavenBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Deps: []flow.Step{{
 			Uses: "maven/deps/basic",
 			With: map[string]string{
-				"versionURL": getVersionURL(b.JDKVersion),
+				"versionURL": jdkVersionURL,
 			},
 		}},
 		Build: []flow.Step{{
 			Runs: "echo 'Building Maven project'",
 		}},
-	}
+	}, nil
 }
 
 func (b *MavenBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
-	return b.ToWorkflow().GenerateFor(t, be)
+	workflow, err := b.ToWorkflow()
+	if err != nil {
+		return rebuild.Instructions{}, err
+	}
+	return workflow.GenerateFor(t, be)
 }
 
 func init() {
@@ -72,10 +81,10 @@ var toolkit = []*flow.Tool{
 	},
 }
 
-func getVersionURL(version string) string {
+func getVersionURL(version string) (string, error) {
 	url, exists := JDKDownloadURLs[version]
 	if exists {
-		return url
+		return url, nil
 	}
-	return ""
+	return "", errors.Errorf("no download URL for JDK version %s", version)
 }
