@@ -51,10 +51,11 @@ var toolkit = []*flow.Tool{
 	{
 		Name: "maven/setup-java",
 		Steps: []flow.Step{{
-			Runs: textwrap.Dedent(`mkdir -p /opt/jdk
-wget -q -O - "{{.With.versionURL}}" | tar -xzf - --strip-components=1 -C /opt/jdk
-export JAVA_HOME=/opt/jdk
-export PATH=$JAVA_HOME/bin:$PATH`),
+			Runs: textwrap.Dedent(`
+				mkdir -p /opt/jdk
+				wget -q -O - "{{.With.versionURL}}" | tar -xzf - --strip-components=1 -C /opt/jdk
+				export JAVA_HOME=/opt/jdk
+				export PATH=$JAVA_HOME/bin:$PATH`[1:]),
 			Needs: []string{"wget"},
 		}},
 	},
