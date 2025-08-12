@@ -35,14 +35,16 @@ func Test_getJarJDK(t *testing.T) {
 		expectedJDK string
 	}{
 		{
-			name:        "Jar with bytecode version 52 (Java 8)",
-			jarPath:     "testdata/ldapchai-0.8.7.jar",
+			name: "Jar with bytecode version 52 (Java 8)",
+			// create this by running `mvn clean package` in the bytecode-8 directory
+			jarPath:     "testdata/bytecode-8/target/bytecode-8-example-1.0.0.jar",
 			expectedJDK: "8",
 		},
 		{
-			name:        "Jar with MANIFEST declared JDK 11",
-			jarPath:     "testdata/shiro-crypto-cipher-1.9.0.jar",
-			expectedJDK: "11.0.13",
+			name: "Jar with MANIFEST declared JDK 21",
+			// create this by running `mvn clean package` in the manifest-21 directory
+			jarPath:     "testdata/manifest-21/target/manifest-21-1.0.0.jar",
+			expectedJDK: "21",
 		},
 	}
 
