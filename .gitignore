@@ -32,3 +32,6 @@ terraform.rc
 
 # Node
 node_modules/
+
+# Java
+target/
