@@ -10,24 +10,10 @@ import (
 	"io"
 	"testing"
 
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
 )
-
-// ZipEntry is a helper struct for in-memory zip creation.
-type ZipEntry struct {
-	Header *zip.FileHeader
-	Body   []byte
-}
-
-func (z *ZipEntry) WriteTo(zw *zip.Writer) error {
-	w, err := zw.CreateHeader(z.Header)
-	if err != nil {
-		return err
-	}
-	_, err = w.Write(z.Body)
-	return err
-}
 
 // mockMavenRegistry is a mock implementation of the maven.Registry interface for testing.
 type mockMavenRegistry struct {
@@ -46,35 +32,35 @@ func (m *mockMavenRegistry) ReleaseFile(ctx context.Context, name string, versio
 func Test_JDKVersionInference(t *testing.T) {
 	testCases := []struct {
 		name        string
-		input       []*ZipEntry
+		input       []*archive.ZipEntry
 		wantVersion string
 	}{
 		{
 			name: "Manifest declares JDK 17",
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					// such a manifest is created by `maven-shade-plugin` which sets `Build-Jdk-Spec` by default.
-					[]byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 17.0.2\r\n\r\n"),
+					Body: []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 17.0.2\r\n\r\n"),
 				},
 				{
-					&zip.FileHeader{Name: "com/example/Main.class"},
-					[]byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34, 0x01, 0x02}, // Java 8, but manifest should take precedence
+					FileHeader: &zip.FileHeader{Name: "com/example/Main.class"},
+					Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34, 0x01, 0x02}, // Java 8, but manifest should take precedence
 				},
 			},
 			wantVersion: "17.0.2",
 		},
 		{
 			name: "Infer from bytecode (Java 11)",
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					// attribute for JDK version is omitted if `addDefaultEntries` is set to false if running `maven-jar-plugin`
-					[]byte("Manifest-Version: 1.0\r\n\r\n"),
+					Body: []byte("Manifest-Version: 1.0\r\n\r\n"),
 				},
 				{
-					&zip.FileHeader{Name: "com/example/Main.class"},
-					[]byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x37, 0x01, 0x02}, // Java 11
+					FileHeader: &zip.FileHeader{Name: "com/example/Main.class"},
+					Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x37, 0x01, 0x02}, // Java 11
 				},
 			},
 			wantVersion: "11",
