@@ -202,21 +202,17 @@ func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
 				continue
 			}
 			defer classFile.Close()
-
 			classBytes, err := io.ReadAll(classFile)
 			if err != nil {
 				continue
 			}
-
 			majorVersion, err := getClassFileMajorVersion(classBytes)
 			if err != nil {
 				return 0, errors.Wrap(err, "parsing class file for major version")
 			}
-
 			return majorVersion, nil
 		}
 	}
-
 	return 0, errors.New("no .class files found in jar")
 }
 
@@ -225,19 +221,15 @@ func getClassFileMajorVersion(classBytes []byte) (int, error) {
 	if len(classBytes) < 8 {
 		return 0, errors.New("class file too short")
 	}
-
 	// Check magic number (0xCAFEBABE)
 	if classBytes[0] != 0xCA || classBytes[1] != 0xFE || classBytes[2] != 0xBA || classBytes[3] != 0xBE {
 		return 0, errors.New("invalid class file magic number")
 	}
-
 	// Skip minor version (bytes 4-5) as it is always 0 since Java 1.1 and read major version (bytes 6-7)
 	// JDK and classfile versions: https://javaalmanac.io/bytecode/versions/
 	// Position of bytes for version in classfile: https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-4.html
 	bytecodeToVersionOffset := uint16(44)
-
 	majorVersion := (uint16(classBytes[6]) << 8) | uint16(classBytes[7]) - bytecodeToVersionOffset
-
 	return int(majorVersion), nil
 }
 
