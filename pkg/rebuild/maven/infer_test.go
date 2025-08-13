@@ -15,7 +15,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/registry/maven"
 )
 
-// mockMavenRegistry is a mock implementation of the maven.Registry interface for testing.
 type mockMavenRegistry struct {
 	maven.Registry
 	releaseFileContent io.ReadCloser
@@ -87,7 +86,6 @@ func TestJDKVersionInference(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create in-memory zip (JAR)
 			var buf bytes.Buffer
 			zw := zip.NewWriter(&buf)
 			for _, entry := range tc.input {
