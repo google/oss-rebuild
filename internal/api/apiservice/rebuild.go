@@ -24,6 +24,8 @@ import (
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/google/oss-rebuild/pkg/build"
+	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
@@ -86,6 +88,7 @@ type RebuildPackageDeps struct {
 	FirestoreClient            *firestore.Client
 	Signer                     *dsse.EnvelopeSigner
 	GCBClient                  gcb.Client
+	GCBExecutor                *buildgcb.Executor
 	BuildProject               string
 	BuildServiceAccount        string
 	PrebuildConfig             rebuild.PrebuildConfig
@@ -95,7 +98,7 @@ type RebuildPackageDeps struct {
 	BuildDefRepo               rebuild.Location
 	PublishForLocalServiceRepo bool
 	AttestationStore           rebuild.AssetStore
-	LocalMetadataStore         rebuild.AssetStore
+	LocalMetadataStore         rebuild.LocatableAssetStore
 	DebugStoreBuilder          func(ctx context.Context) (rebuild.AssetStore, error)
 	RemoteMetadataStoreBuilder func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error)
 	OverwriteAttestations      bool
@@ -203,7 +206,54 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		buildDefRepo = entry.BuildDefLoc
 		buildDef = &entry.BuildDefinition
 	}
-	hashes := []crypto.Hash{crypto.SHA256}
+
+	// New way ========================
+	toolURLs := map[build.ToolType]string{
+		build.TimewarpTool: "gs://" + deps.PrebuildConfig.Bucket + "/" + deps.PrebuildConfig.Dir + "/timewarp",
+		build.GSUtilTool:   "gs://" + deps.PrebuildConfig.Bucket + "/" + deps.PrebuildConfig.Dir + "/gsutil-writeonly",
+	}
+	var authRequired []string
+	if deps.PrebuildConfig.Auth {
+		authRequired = append(authRequired, "gs://"+deps.PrebuildConfig.Bucket)
+	}
+	buildStore, err := rebuild.NewMixedAssetStore(deps.LocalMetadataStore, map[rebuild.AssetType]rebuild.LocatableAssetStore{
+		rebuild.ContainerImageAsset: remoteMetadata,
+		rebuild.RebuildAsset:        remoteMetadata,
+		rebuild.TetragonLogAsset:    remoteMetadata,
+		rebuild.ProxyNetlogAsset:    remoteMetadata,
+	})
+	h, err := deps.GCBExecutor.Start(ctx, rebuild.Input{
+		Target:   t,
+		Strategy: strategy,
+	}, build.Options{
+		BuildID: obID,
+		// TODO: This needs to be configured by the ecosystem-specific code.
+		UseTimewarp:       true,
+		UseNetworkProxy:   useProxy,
+		UseSyscallMonitor: useSyscallMonitor,
+		Resources: build.Resources{
+			AssetStore:       buildStore,
+			ToolURLs:         toolURLs,
+			ToolAuthRequired: authRequired,
+			BaseImageConfig:  build.DefaultBaseImageConfig(),
+		},
+	})
+	if err != nil {
+		return api.AsStatus(codes.Internal, errors.Wrap(err, "starting build"))
+	}
+	// Even if we fail, try to copy theses assets to the debug store.
+	defer func() {
+		for _, a := range []rebuild.AssetType{rebuild.DockerfileAsset, rebuild.BuildInfoAsset} {
+			rebuild.AssetCopy(ctx, debugStore, deps.LocalMetadataStore, a.For(t))
+		}
+	}()
+	result, err := h.Wait(ctx)
+	if err != nil {
+		return errors.Wrap(err, "waiting for build")
+	} else if result.Error != nil {
+		return errors.Wrap(result.Error, "executing rebuild")
+	}
+	// Old way =========================
 	opts := rebuild.RemoteOptions{
 		ObliviousID:         obID,
 		GCBClient:           deps.GCBClient,
@@ -224,10 +274,13 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if err := rebuilder.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: strategy}, opts); err != nil {
 		return errors.Wrap(err, "executing rebuild")
 	}
+	// ======================
+
 	upstreamURI, err := rebuilder.UpstreamURL(ctx, t, mux)
 	if err != nil {
 		return errors.Wrap(err, "getting upstream url")
 	}
+	hashes := []crypto.Hash{crypto.SHA256}
 	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes, stabilizers)
 	if err != nil {
 		return errors.Wrap(err, "comparing artifacts")

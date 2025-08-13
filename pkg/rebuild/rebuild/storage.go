@@ -349,3 +349,41 @@ func (s *CachedAssetStore) Writer(ctx context.Context, a Asset) (io.WriteCloser,
 func (s *CachedAssetStore) URL(a Asset) *url.URL {
 	return s.frontline.URL(a)
 }
+
+type MixedAssetStore struct {
+	routing  map[AssetType]LocatableAssetStore
+	fallback LocatableAssetStore
+}
+
+func NewMixedAssetStore(fallback LocatableAssetStore, routing map[AssetType]LocatableAssetStore) (*MixedAssetStore, error) {
+	if fallback == nil {
+		return nil, errors.New("fallback cannot be nil")
+	}
+	return &MixedAssetStore{
+		routing:  routing,
+		fallback: fallback,
+	}, nil
+}
+
+var _ LocatableAssetStore = &MixedAssetStore{}
+var _ AssetStore = &MixedAssetStore{}
+
+func (m *MixedAssetStore) find(t AssetType) LocatableAssetStore {
+	if s, ok := m.routing[t]; ok {
+		return s
+	} else {
+		return m.fallback
+	}
+}
+
+func (m *MixedAssetStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
+	return m.find(a.Type).Reader(ctx, a)
+}
+
+func (m *MixedAssetStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
+	return m.find(a.Type).Writer(ctx, a)
+}
+
+func (m *MixedAssetStore) URL(a Asset) *url.URL {
+	return m.find(a.Type).URL(a)
+}
