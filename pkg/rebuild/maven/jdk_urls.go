@@ -5,6 +5,7 @@ package maven
 
 // JDKDownloadURLs maps Java version strings to their download URLs
 var JDKDownloadURLs = map[string]string{
+	// URLs of OpenJDK hosted on the official jdk.java.net repository.
 	"24.0.1":   "https://download.java.net/java/GA/jdk24.0.1/24a58e0e276943138bf3e963e6291ac2/9/GPL/openjdk-24.0.1_linux-x64_bin.tar.gz",
 	"24":       "https://download.java.net/java/GA/jdk24/1f9ff9062db4449d8ca828c504ffae90/36/GPL/openjdk-24_linux-x64_bin.tar.gz",
 	"23.0.2":   "https://download.java.net/java/GA/jdk23.0.2/6da2a6609d6e406f85c491fcb119101b/7/GPL/openjdk-23.0.2_linux-x64_bin.tar.gz",
