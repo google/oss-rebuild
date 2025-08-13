@@ -144,6 +144,7 @@ func getPomXML(tree *object.Tree, path string) (pomXML PomXML, err error) {
 	return pomXML, xml.Unmarshal([]byte(p), &pomXML)
 }
 
+// getJarJDK gets the JDK version that is used to compile the original artifact on registry.
 func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
 	releaseFile, err := mux.Maven.ReleaseFile(ctx, name, version, maven.TypeJar)
 	if err != nil {
@@ -157,6 +158,22 @@ func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMu
 	if err != nil {
 		return "", errors.Wrap(err, "unzipping jar file")
 	}
+	jdk, err := inferJDKFromManifest(zipReader)
+	if err != nil {
+		return "", err
+	}
+	if jdk != "" {
+		return jdk, nil
+	}
+	jdkInt, err := inferJDKFromBytecode(zipReader)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d", jdkInt), nil
+}
+
+// inferJDKFromManifest extracts the JDK version from the MANIFEST.MF file in the JAR.
+func inferJDKFromManifest(zipReader *zip.Reader) (string, error) {
 	manifestFile, err := zipReader.Open("META-INF/MANIFEST.MF")
 	if err != nil {
 		return "", errors.Wrap(err, "opening manifest file")
@@ -173,11 +190,7 @@ func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMu
 			return strings.TrimSpace(value), nil
 		}
 	}
-	jdkInt, err := inferJDKFromBytecode(zipReader)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%d", jdkInt), nil
+	return "", nil
 }
 
 // inferJDKFromBytecode identifies the lowest JDK version that can run the provided JAR's bytecode.
