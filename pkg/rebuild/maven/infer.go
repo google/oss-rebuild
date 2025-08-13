@@ -160,14 +160,14 @@ func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMu
 	}
 	jdk, err := inferJDKFromManifest(zipReader)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "inferring JDK from manifest")
 	}
 	if jdk != "" {
 		return jdk, nil
 	}
 	jdkInt, err := inferJDKFromBytecode(zipReader)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "inferring JDK from bytecode")
 	}
 	return fmt.Sprintf("%d", jdkInt), nil
 }
@@ -210,8 +210,7 @@ func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
 
 			majorVersion, err := getClassFileMajorVersion(classBytes)
 			if err != nil {
-				log.Fatal(err)
-				return 0, err
+				return 0, errors.Wrap(err, "parsing class file for major version")
 			}
 
 			return majorVersion, nil
