@@ -4,15 +4,30 @@
 package maven
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"io"
-	"os"
 	"testing"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
 )
+
+// ZipEntry is a helper struct for in-memory zip creation.
+type ZipEntry struct {
+	Header *zip.FileHeader
+	Body   []byte
+}
+
+func (z *ZipEntry) WriteTo(zw *zip.Writer) error {
+	w, err := zw.CreateHeader(z.Header)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(z.Body)
+	return err
+}
 
 // mockMavenRegistry is a mock implementation of the maven.Registry interface for testing.
 type mockMavenRegistry struct {
@@ -28,45 +43,69 @@ func (m *mockMavenRegistry) ReleaseFile(ctx context.Context, name string, versio
 	return m.releaseFileContent, nil
 }
 
-func Test_getJarJDK(t *testing.T) {
+func Test_JDKVersionInference(t *testing.T) {
 	testCases := []struct {
 		name        string
-		jarPath     string
-		expectedJDK string
+		input       []*ZipEntry
+		wantVersion string
 	}{
 		{
-			name: "Jar with bytecode version 52 (Java 8)",
-			// create this by running `mvn clean package` in the bytecode-8 directory
-			jarPath:     "testdata/bytecode-8/target/bytecode-8-example-1.0.0.jar",
-			expectedJDK: "8",
+			name: "Manifest declares JDK 17",
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					// such a manifest is created by `maven-shade-plugin` which sets `Build-Jdk-Spec` by default.
+					[]byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 17.0.2\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "com/example/Main.class"},
+					[]byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34, 0x01, 0x02}, // Java 8, but manifest should take precedence
+				},
+			},
+			wantVersion: "17.0.2",
 		},
 		{
-			name: "Jar with MANIFEST declared JDK 21",
-			// create this by running `mvn clean package` in the manifest-21 directory
-			jarPath:     "testdata/manifest-21/target/manifest-21-1.0.0.jar",
-			expectedJDK: "21",
+			name: "Infer from bytecode (Java 11)",
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					// attribute for JDK version is omitted if `addDefaultEntries` is set to false if running `maven-jar-plugin`
+					[]byte("Manifest-Version: 1.0\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "com/example/Main.class"},
+					[]byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x37, 0x01, 0x02}, // Java 11
+				},
+			},
+			wantVersion: "11",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			jarContent, err := os.ReadFile(tc.jarPath)
-			if err != nil {
-				t.Fatal(err)
+			// Create in-memory zip (JAR)
+			var buf bytes.Buffer
+			zw := zip.NewWriter(&buf)
+			for _, entry := range tc.input {
+				if err := entry.WriteTo(zw); err != nil {
+					t.Fatalf("WriteTo() error: %v", err)
+				}
 			}
-			mockMux := rebuild.RegistryMux{
-				Maven: &mockMavenRegistry{
-					releaseFileContent: io.NopCloser(bytes.NewReader(jarContent)),
-				},
+			if err := zw.Close(); err != nil {
+				t.Fatalf("zip.Close() error: %v", err)
 			}
 
-			jdk, err := getJarJDK(context.Background(), tc.jarPath, "", mockMux)
+			mockMux := rebuild.RegistryMux{
+				Maven: &mockMavenRegistry{
+					releaseFileContent: io.NopCloser(bytes.NewReader(buf.Bytes())),
+				},
+			}
+			got, err := getJarJDK(context.Background(), "dummy", "dummy", mockMux)
 			if err != nil {
 				t.Fatalf("getJarJDK() error = %v", err)
 			}
-
-			if jdk != tc.expectedJDK {
-				t.Errorf("getJarJDK() = %v, want %v", jdk, tc.expectedJDK)
+			if got != tc.wantVersion {
+				t.Errorf("JDK version = %v, want %v", got, tc.wantVersion)
 			}
 		})
 	}
