@@ -183,7 +183,7 @@ func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMu
 // inferJDKFromBytecode identifies the lowest JDK version that can run the provided JAR's bytecode.
 func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
 	for _, file := range jarZip.File {
-		if strings.HasSuffix(file.Name, ".class") && !strings.Contains(file.Name, "$") {
+		if strings.HasSuffix(file.Name, ".class") {
 			classFile, err := file.Open()
 			if err != nil {
 				continue
