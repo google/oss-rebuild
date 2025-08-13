@@ -180,12 +180,8 @@ func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMu
 	return fmt.Sprintf("%d", jdkInt), nil
 }
 
+// inferJDKFromBytecode identifies the lowest JDK version that can run the provided JAR's bytecode.
 func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
-	// This is a fallback if the JDK version cannot be determined from the JAR manifest.
-	// We look for the major version of the first .class file found in the JAR as it corresponds to the *lowest* JDK version that can run the bytecode.
-	// This JDK version can be then used to run the build that would ensure that the sources at least compile successfully.
-	// If the we choose a version lower than this, we risk compilation failure during rebuild.
-
 	for _, file := range jarZip.File {
 		if strings.HasSuffix(file.Name, ".class") && !strings.Contains(file.Name, "$") {
 			classFile, err := file.Open()
