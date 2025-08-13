@@ -53,7 +53,7 @@ var JDKDownloadURLs = map[string]string{
 	"9":        "https://download.java.net/java/GA/jdk9/9/binaries/openjdk-9_linux-x64_bin.tar.gz",
 	"8":        "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u462-b08/OpenJDK8U-jdk_x64_linux_hotspot_8u462b08.tar.gz",
 
-	// See https://github.com/google/oss-rebuild/issues/686 for how we ge this list and how to improve it further.
+	// See https://github.com/google/oss-rebuild/issues/686 for how we got this list and how to improve it further.
 	"8u441": "https://cfdownload.adobe.com/pub/adobe/coldfusion/java/java8/java8u441/jdk/jdk-8u441-linux-x64.tar.gz",
 	"8u431": "https://cfdownload.adobe.com/pub/adobe/coldfusion/java/java8/java8u431/jdk/jdk-8u431-linux-x64.tar.gz",
 	"8u421": "https://cfdownload.adobe.com/pub/adobe/coldfusion/java/java8/java8u421/jdk/jdk-8u421-linux-x64.tar.gz",
