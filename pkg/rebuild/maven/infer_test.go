@@ -36,7 +36,7 @@ func TestJDKVersionInference(t *testing.T) {
 		wantVersion string
 	}{
 		{
-			name: "manifest only",
+			name: "build-jdk-spec attribute from manifest",
 			input: []*archive.ZipEntry{
 				{
 					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
@@ -44,6 +44,16 @@ func TestJDKVersionInference(t *testing.T) {
 				},
 			},
 			wantVersion: "17.0.1",
+		},
+		{
+			name: "build-jdk attribute from manifest",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk: 21.0.1\r\n\r\n"),
+				},
+			},
+			wantVersion: "21.0.1",
 		},
 		{
 			name: "manifest takes precedence",
