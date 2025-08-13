@@ -21,9 +21,9 @@ type MavenBuild struct {
 var _ rebuild.Strategy = &MavenBuild{}
 
 func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
-	jdkVersionURL, err := getVersionURL(b.JDKVersion)
-	if err != nil {
-		return nil, err
+	jdkVersionURL, exists := JDKDownloadURLs[b.JDKVersion]
+	if !exists {
+		return nil, errors.Errorf("no download URL for JDK version %s", b.JDKVersion)
 	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
@@ -79,12 +79,4 @@ var toolkit = []*flow.Tool{
 			},
 		},
 	},
-}
-
-func getVersionURL(version string) (string, error) {
-	url, exists := JDKDownloadURLs[version]
-	if exists {
-		return url, nil
-	}
-	return "", errors.Errorf("no download URL for JDK version %s", version)
 }
