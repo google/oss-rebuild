@@ -29,38 +29,46 @@ func (m *mockMavenRegistry) ReleaseFile(ctx context.Context, name string, versio
 	return m.releaseFileContent, nil
 }
 
-func Test_JDKVersionInference(t *testing.T) {
+func TestJDKVersionInference(t *testing.T) {
 	testCases := []struct {
 		name        string
 		input       []*archive.ZipEntry
 		wantVersion string
 	}{
 		{
-			name: "Manifest declares JDK 17",
+			name: "manifest only",
 			input: []*archive.ZipEntry{
 				{
 					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					// such a manifest is created by `maven-shade-plugin` which sets `Build-Jdk-Spec` by default.
-					Body: []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 17.0.2\r\n\r\n"),
+					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 17.0.1\r\n\r\n"),
+				},
+			},
+			wantVersion: "17.0.1",
+		},
+		{
+			name: "manifest takes precedence",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 17.0.2\r\n\r\n"),
 				},
 				{
 					FileHeader: &zip.FileHeader{Name: "com/example/Main.class"},
-					Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34, 0x01, 0x02}, // Java 8, but manifest should take precedence
+					Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34, 0x01, 0x02},
 				},
 			},
 			wantVersion: "17.0.2",
 		},
 		{
-			name: "Infer from bytecode (Java 11)",
+			name: "fallback to classfile",
 			input: []*archive.ZipEntry{
 				{
 					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					// attribute for JDK version is omitted if `addDefaultEntries` is set to false if running `maven-jar-plugin`
-					Body: []byte("Manifest-Version: 1.0\r\n\r\n"),
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\n"),
 				},
 				{
 					FileHeader: &zip.FileHeader{Name: "com/example/Main.class"},
-					Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x37, 0x01, 0x02}, // Java 11
+					Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x37, 0x01, 0x02},
 				},
 			},
 			wantVersion: "11",
@@ -97,7 +105,7 @@ func Test_JDKVersionInference(t *testing.T) {
 	}
 }
 
-func Test_getClassFileMajorVersion(t *testing.T) {
+func TestGetClassFileMajorVersion(t *testing.T) {
 	testCases := []struct {
 		name       string
 		classBytes []byte
