@@ -144,6 +144,7 @@ func getPomXML(tree *object.Tree, path string) (pomXML PomXML, err error) {
 	return pomXML, xml.Unmarshal([]byte(p), &pomXML)
 }
 
+// getJarJDK gets the JDK version that is used to compile the original artifact on registry.
 func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
 	releaseFile, err := mux.Maven.ReleaseFile(ctx, name, version, maven.TypeJar)
 	if err != nil {
@@ -157,6 +158,22 @@ func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMu
 	if err != nil {
 		return "", errors.Wrap(err, "unzipping jar file")
 	}
+	jdk, err := inferJDKFromManifest(zipReader)
+	if err != nil {
+		return "", errors.Wrap(err, "inferring JDK from manifest")
+	}
+	if jdk != "" {
+		return jdk, nil
+	}
+	jdkInt, err := inferJDKFromBytecode(zipReader)
+	if err != nil {
+		return "", errors.Wrap(err, "inferring JDK from bytecode")
+	}
+	return fmt.Sprintf("%d", jdkInt), nil
+}
+
+// inferJDKFromManifest extracts the JDK version from the MANIFEST.MF file in the JAR.
+func inferJDKFromManifest(zipReader *zip.Reader) (string, error) {
 	manifestFile, err := zipReader.Open("META-INF/MANIFEST.MF")
 	if err != nil {
 		return "", errors.Wrap(err, "opening manifest file")
@@ -168,12 +185,52 @@ func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMu
 		return "", errors.Wrap(err, "reading manifest file")
 	}
 	for _, line := range strings.Split(string(manifestReader), "\n") {
-		if strings.HasPrefix(line, "Build-Jdk:") {
+		if strings.HasPrefix(line, "Build-Jdk:") || strings.HasPrefix(line, "Build-Jdk-Spec:") {
 			_, value, _ := strings.Cut(line, ":")
 			return strings.TrimSpace(value), nil
 		}
 	}
 	return "", nil
+}
+
+// inferJDKFromBytecode identifies the lowest JDK version that can run the provided JAR's bytecode.
+func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
+	for _, file := range jarZip.File {
+		if strings.HasSuffix(file.Name, ".class") {
+			classFile, err := file.Open()
+			if err != nil {
+				continue
+			}
+			defer classFile.Close()
+			classBytes, err := io.ReadAll(classFile)
+			if err != nil {
+				continue
+			}
+			majorVersion, err := getClassFileMajorVersion(classBytes)
+			if err != nil {
+				return 0, errors.Wrap(err, "parsing class file for major version")
+			}
+			return majorVersion, nil
+		}
+	}
+	return 0, errors.New("no .class files found in jar")
+}
+
+// getClassFileMajorVersion extracts the major version from Java class file bytes
+func getClassFileMajorVersion(classBytes []byte) (int, error) {
+	if len(classBytes) < 8 {
+		return 0, errors.New("class file too short")
+	}
+	// Check magic number (0xCAFEBABE)
+	if classBytes[0] != 0xCA || classBytes[1] != 0xFE || classBytes[2] != 0xBA || classBytes[3] != 0xBE {
+		return 0, errors.New("invalid class file magic number")
+	}
+	// Skip minor version (bytes 4-5) as it is always 0 since Java 1.1 and read major version (bytes 6-7)
+	// JDK and classfile versions: https://javaalmanac.io/bytecode/versions/
+	// Position of bytes for version in classfile: https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-4.html
+	bytecodeToVersionOffset := uint16(44)
+	majorVersion := (uint16(classBytes[6]) << 8) | uint16(classBytes[7]) - bytecodeToVersionOffset
+	return int(majorVersion), nil
 }
 
 // findAndValidatePomXML ensures the package config has the expected name and version,
