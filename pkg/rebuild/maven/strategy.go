@@ -31,14 +31,20 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 			Uses: "git-checkout",
 		}},
 		Deps: []flow.Step{{
-			Uses: "maven/deps/basic",
+			Uses: "maven/setup-java",
 			With: map[string]string{
 				"versionURL": jdkVersionURL,
 			},
 		}},
-		Build: []flow.Step{{
-			Runs: "echo 'Building Maven project'",
-		}},
+		Build: []flow.Step{
+			{
+				Uses: "maven/export-java",
+			},
+			{
+				Runs:  "mvn -version",
+				Needs: []string{"maven"},
+			},
+		},
 	}, nil
 }
 
@@ -59,25 +65,22 @@ func init() {
 var toolkit = []*flow.Tool{
 	{
 		Name: "maven/setup-java",
-		Steps: []flow.Step{{
-			// TODO: ensure that the environment variables JAVA_HOME and PATH are also available for the build step of strategy
-			Runs: textwrap.Dedent(`
-				mkdir -p /opt/jdk
-				wget -q -O - "{{.With.versionURL}}" | tar -xzf - --strip-components=1 -C /opt/jdk
-				export JAVA_HOME=/opt/jdk
-				export PATH=$JAVA_HOME/bin:$PATH`[1:]),
-			Needs: []string{"wget"},
-		}},
-	},
-	{
-		Name: "maven/deps/basic",
 		Steps: []flow.Step{
 			{
-				Uses: "maven/setup-java",
-				With: map[string]string{
-					"versionURL": "{{.With.versionURL}}",
-				},
+				Runs: textwrap.Dedent(`
+				mkdir -p /opt/jdk
+				wget -q -O - "{{.With.versionURL}}" | tar -xzf - --strip-components=1 -C /opt/jdk`[1:]),
+				Needs: []string{"wget"},
 			},
 		},
+	},
+	{
+		Name: "maven/export-java",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				export JAVA_HOME=/opt/jdk
+				export PATH=$JAVA_HOME/bin:$PATH
+			`[1:]),
+		}},
 	},
 }
