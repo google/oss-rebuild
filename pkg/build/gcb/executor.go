@@ -107,7 +107,6 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 		id:           buildID,
 		executor:     e,
 		output:       pipe,
-		outputChan:   make(chan string, 100),
 		resultChan:   make(chan build.Result, 1),
 		cancelPolicy: opts.CancelPolicy,
 		status:       build.BuildStateStarting,
@@ -166,7 +165,6 @@ func (e *Executor) Close(ctx context.Context) error {
 
 // executeBuild runs the actual build process using Cloud Build
 func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBuild *cloudbuild.Build, input rebuild.Input, opts build.Options, plan *Plan) {
-	defer close(handle.outputChan)
 	// Construct BuildInfo to be incrementally set.
 	buildInfo := rebuild.BuildInfo{
 		Target:      input.Target,
