@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
@@ -33,13 +34,14 @@ func TestMavenStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				SystemDeps: []string{"git", "wget"},
+				SystemDeps: []string{"git", "wget", "maven"},
 				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: `mkdir -p /opt/jdk
-wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
-export JAVA_HOME=/opt/jdk
-export PATH=$JAVA_HOME/bin:$PATH`,
-				Build:      "echo 'Building Maven project'", // TODO: Replace with actual Maven build command
+wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`,
+				Build: textwrap.Dedent(`
+					export JAVA_HOME=/opt/jdk
+					export PATH=$JAVA_HOME/bin:$PATH
+					mvn clean package -DskipTests`[1:]),
 				OutputPath: "ldapchai-0.8.6.jar",
 			},
 			false,

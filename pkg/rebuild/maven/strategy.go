@@ -79,8 +79,7 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				export JAVA_HOME=/opt/jdk
-				export PATH=$JAVA_HOME/bin:$PATH
-			`[1:]),
+				export PATH=$JAVA_HOME/bin:$PATH`[1:]),
 		}},
 	},
 }
