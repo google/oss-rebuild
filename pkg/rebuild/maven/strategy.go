@@ -41,7 +41,7 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				Uses: "maven/export-java",
 			},
 			{
-				Runs:  "mvn -version",
+				Runs:  "mvn clean package -DskipTests",
 				Needs: []string{"maven"},
 			},
 		},
