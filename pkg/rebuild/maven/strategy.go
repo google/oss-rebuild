@@ -41,8 +41,9 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				Uses: "maven/export-java",
 			},
 			{
-				// Java 9 does not automatically pickup path to the certificate file
-				Runs:  "mvn clean package -DskipTests -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts",
+				// TODO: Java 9 needs additional certificate installed in /etc/ssl/certs/java/cacerts
+				// It can be passed to maven command via -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
+				Runs:  "mvn clean package -DskipTests",
 				Needs: []string{"maven"},
 			},
 		},

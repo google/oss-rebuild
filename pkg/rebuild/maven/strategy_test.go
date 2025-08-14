@@ -41,7 +41,7 @@ wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linu
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
-					mvn clean package -DskipTests -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts`[1:]),
+					mvn clean package -DskipTests`[1:]),
 				OutputPath: "target/ldapchai-0.8.6.jar",
 			},
 			false,
