@@ -18,25 +18,25 @@ func TestMavenStrategies(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			"MavenBuildLDAPChai",
+			"return build instructions for a valid JDK version",
 			&MavenBuild{
 				Location: rebuild.Location{
-					Repo: "https://github.com/ldapchai/ldapchai.git",
-					Ref:  "a9de4ccc8db9a4862f3819f3dfb63e57a6450bdf",
-					Dir:  "ldapchai",
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
 				},
-				JDKVersion: "8",
+				JDKVersion: "11.0.1",
 			},
 			rebuild.Instructions{
 				Location: rebuild.Location{
-					Repo: "https://github.com/ldapchai/ldapchai.git",
-					Ref:  "a9de4ccc8db9a4862f3819f3dfb63e57a6450bdf",
-					Dir:  "ldapchai",
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
 				},
 				SystemDeps: []string{"git", "wget"},
-				Source:     "git clone https://github.com/ldapchai/ldapchai.git .\ngit checkout --force 'a9de4ccc8db9a4862f3819f3dfb63e57a6450bdf'",
+				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: `mkdir -p /opt/jdk
-wget -q -O - "https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u462-b08/OpenJDK8U-jdk_x64_linux_hotspot_8u462b08.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
+wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
 export JAVA_HOME=/opt/jdk
 export PATH=$JAVA_HOME/bin:$PATH`,
 				Build:      "echo 'Building Maven project'", // TODO: Replace with actual Maven build command
@@ -45,7 +45,7 @@ export PATH=$JAVA_HOME/bin:$PATH`,
 			false,
 		},
 		{
-			"throw an error if there is no installation candidate for the JDK",
+			"throw an error if JDK installation candidate is not found",
 			&MavenBuild{
 				Location: rebuild.Location{
 					Repo: "https://foo.bar",
