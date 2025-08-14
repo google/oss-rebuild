@@ -166,11 +166,7 @@ func (e *Executor) Close(ctx context.Context) error {
 
 // executeBuild runs the actual build process using Cloud Build
 func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBuild *cloudbuild.Build, input rebuild.Input, opts build.Options, plan *Plan) {
-	defer func() {
-		e.activeBuilds.Delete(handle.id)
-		handle.output.Close()
-		close(handle.outputChan)
-	}()
+	defer close(handle.outputChan)
 	// Construct BuildInfo to be incrementally set.
 	buildInfo := rebuild.BuildInfo{
 		Target:      input.Target,
@@ -212,6 +208,8 @@ func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBui
 		}
 	}
 	handle.updateStatus(build.BuildStateCompleted)
+	// NOTE: Delete before setResult so handle.Wait returns *after* executor considers it retired.
+	e.activeBuilds.Delete(handle.id)
 	handle.setResult(build.Result{
 		Error: buildErr,
 	})
