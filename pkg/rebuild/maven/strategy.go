@@ -60,6 +60,7 @@ var toolkit = []*flow.Tool{
 	{
 		Name: "maven/setup-java",
 		Steps: []flow.Step{{
+			// TODO: ensure that the environment variables JAVA_HOME and PATH are also available for the build step of strategy
 			Runs: textwrap.Dedent(`
 				mkdir -p /opt/jdk
 				wget -q -O - "{{.With.versionURL}}" | tar -xzf - --strip-components=1 -C /opt/jdk
