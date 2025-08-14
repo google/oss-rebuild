@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -71,12 +72,12 @@ type Asset struct {
 }
 
 // assetPath describes the general layout of assets shared by most hierarchy-based AssetStore types. The runID
-func assetPath(a Asset, runID string) string {
+func assetPath(a Asset, runID string) []string {
 	name := string(a.Type)
 	if a.Type == RebuildAsset {
 		name = a.Target.Artifact
 	}
-	return filepath.Join(string(a.Target.Ecosystem), a.Target.Package, a.Target.Version, a.Target.Artifact, runID, name)
+	return []string{string(a.Target.Ecosystem), a.Target.Package, a.Target.Version, a.Target.Artifact, runID, name}
 }
 
 // ReadOnlyAssetStore is a storage mechanism for debug assets.
@@ -180,7 +181,7 @@ func (s *GCSStore) URL(a Asset) *url.URL {
 }
 
 func (s *GCSStore) resourcePath(a Asset) string {
-	return filepath.Join(s.prefix, assetPath(a, s.runID))
+	return path.Join(append([]string{s.prefix}, assetPath(a, s.runID)...)...)
 }
 
 // Reader returns a reader for the given asset.
@@ -214,7 +215,7 @@ type FilesystemAssetStore struct {
 }
 
 func (s *FilesystemAssetStore) resourcePath(a Asset) string {
-	return assetPath(a, s.runID)
+	return filepath.Join(assetPath(a, s.runID)...)
 }
 
 func (s *FilesystemAssetStore) URL(a Asset) *url.URL {
