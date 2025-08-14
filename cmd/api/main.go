@@ -23,6 +23,7 @@ import (
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	"github.com/google/oss-rebuild/internal/uri"
+	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -123,16 +124,27 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "creating CloudBuild service")
 	}
+	executorConfig := buildgcb.ExecutorConfig{
+		Project:        *project,
+		ServiceAccount: *buildRemoteIdentity,
+		LogsBucket:     *logsBucket,
+		Client:         nil, // Defined depending on gcbPrivatePoolName
+	}
 	var privatePoolConfig *gcb.PrivatePoolConfig
 	if *gcbPrivatePoolName != "" {
-		privatePoolConfig = &gcb.PrivatePoolConfig{
+		executorConfig.Client = gcb.NewClientWithPrivatePool(svc, privatePoolConfig)
+		executorConfig.PrivatePool = &gcb.PrivatePoolConfig{
 			Name:   *gcbPrivatePoolName,
 			Region: *gcbPrivatePoolRegion,
 		}
-		d.GCBClient = gcb.NewClientWithPrivatePool(svc, privatePoolConfig)
 	} else {
-		d.GCBClient = gcb.NewClient(svc)
+		executorConfig.Client = gcb.NewClient(svc)
 	}
+	d.GCBExecutor, err = buildgcb.NewExecutor(executorConfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating GCB executor")
+	}
+	d.GCBClient = nil // TODO: Delete this.
 	d.BuildProject = *project
 	d.BuildServiceAccount = *buildRemoteIdentity
 	d.BuildLogsBucket = *logsBucket
