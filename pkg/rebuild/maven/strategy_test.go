@@ -45,12 +45,12 @@ export PATH=$JAVA_HOME/bin:$PATH`,
 			false,
 		},
 		{
-			"InvalidJDK",
+			"throw an error if there is no installation candidate for the JDK",
 			&MavenBuild{
 				Location: rebuild.Location{
 					Repo: "https://foo.bar",
-					Ref:  "invalid-ref",
-					Dir:  "invalid-dir",
+					Ref:  "ref",
+					Dir:  "repo-dir",
 				},
 				JDKVersion: "30",
 			},
