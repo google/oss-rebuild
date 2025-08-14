@@ -18,7 +18,6 @@ type gcbHandle struct {
 	executor     *Executor
 	operation    *cloudbuild.Operation
 	output       io.ReadWriteCloser // BufferedPipe for streaming output
-	outputChan   chan string
 	resultChan   chan build.Result
 	cancelPolicy build.CancelPolicy
 
