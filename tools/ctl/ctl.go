@@ -127,7 +127,7 @@ func makeShellScript(input rebuild.Input) (string, error) {
 		return "", errors.Wrap(err, "failed to generate strategy")
 	}
 	shellScript := new(bytes.Buffer)
-	if input.Target.Ecosystem == rebuild.Debian {
+	if input.Target.Ecosystem == rebuild.Debian || input.Target.Ecosystem == rebuild.Maven {
 		err = debuildShellScript.Execute(shellScript, instructions)
 	} else {
 		err = errors.Errorf("unimplemented ecosystem %v", input.Target.Ecosystem)
