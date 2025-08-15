@@ -5,6 +5,7 @@ package archive
 
 import (
 	"bytes"
+	"io"
 	"path"
 	"sort"
 	"strings"
@@ -204,18 +205,71 @@ var StableGitProperties = ZipEntryStabilizer{
 	},
 }
 
-var StablePomProperties = ZipEntryStabilizer{
-	Name: "jar-pom-properties",
+var StableProperties = ZipEntryStabilizer{
+	Name: "jar-properties",
 	Func: func(zf *MutableZipFile) {
-		// pom.properties files contain attributes set by Maven Archiver.
-		// Source: https://maven.apache.org/shared/maven-archiver/#pom-properties-content
-		// They contain two unreproducible features:
-		// 1) The timestamp of generation is set to the time of build
-		// 2) The order of attributes "groupId", "artifactId", and "version" is not stable.
-		// It is created under META-INF/maven/${groupId}/${artifactId}/pom.properties so we delete that specifically.
-		// And not any pom.properties file in the jar (for example, ones under src/main/resources).
-		if strings.Contains(zf.Name, "META-INF/") && path.Base(zf.Name) == "pom.properties" {
-			zf.SetContent([]byte{})
+		if strings.HasSuffix(zf.Name, ".properties") {
+			r, err := zf.Open()
+			if err != nil {
+				return
+			}
+			content, err := io.ReadAll(r)
+			if err != nil {
+				return
+			}
+			ordered := orderPropertiesFile(content)
+			zf.SetContent(ordered)
 		}
 	},
+}
+
+func orderPropertiesFile(content []byte) []byte {
+	lines := strings.Split(string(content), "\n")
+	var comments []string
+	var keys []string
+	props := make(map[string]string)
+
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			comments = append(comments, line)
+			continue
+		}
+		if idx := strings.Index(line, "="); idx != -1 {
+			key := line[:idx]
+			val := line[idx+1:]
+			keys = append(keys, key)
+			props[key] = val
+		} else {
+			keys = append(keys, line)
+			props[line] = ""
+		}
+	}
+
+	// Check if keys are already sorted
+	alreadySorted := sort.SliceIsSorted(keys, func(i, j int) bool {
+		return keys[i] < keys[j]
+	})
+	if alreadySorted {
+		return content
+	}
+
+	sort.Strings(keys)
+
+	var buf bytes.Buffer
+	for _, c := range comments {
+		buf.WriteString(c + "\r\n")
+	}
+	for _, k := range keys {
+		if v := props[k]; v != "" {
+			buf.WriteString(k + "=" + v + "\r\n")
+		} else {
+			buf.WriteString(k + "\r\n")
+		}
+	}
+	buf.WriteString("\r\n")
+	return buf.Bytes()
 }

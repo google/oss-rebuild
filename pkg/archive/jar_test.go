@@ -529,14 +529,14 @@ func TestStableGitProperties(t *testing.T) {
 	}
 }
 
-func TestStablePomProperties(t *testing.T) {
+func TestStableProperties(t *testing.T) {
 	testCases := []struct {
 		test     string
 		input    []*ZipEntry
 		expected []*ZipEntry
 	}{
 		{
-			test: "delete_correct_pom_properties",
+			test: "reorder pom properties lexicographically",
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/maven/foo.bar/baz/pom.properties"},
@@ -550,11 +550,26 @@ func TestStablePomProperties(t *testing.T) {
 			expected: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/maven/foo.bar/baz/pom.properties"},
-					[]byte{},
+					[]byte("#Fri Oct 18 03:03:44 UTC 2024\r\nartifactId=baz\r\ngroupId=foo.bar\r\npackaging=jar\r\nversion=1.0.0\r\n\r\n"),
 				},
 				{
 					&zip.FileHeader{Name: "pom.properties"},
 					[]byte("debug=true"),
+				},
+			},
+		},
+		{
+			test: "reorder properties when there is no separator",
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/maven/foo.bar/baz/pom.properties"},
+					[]byte("a\r\nc\r\nb\r\n\r\n"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/maven/foo.bar/baz/pom.properties"},
+					[]byte("a\r\nb\r\nc\r\n\r\n"),
 				},
 			},
 		},
@@ -575,7 +590,7 @@ func TestStablePomProperties(t *testing.T) {
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
 			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
-				Stabilizers: []Stabilizer{StablePomProperties},
+				Stabilizers: []Stabilizer{StableProperties},
 			})
 			if err != nil {
 				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
