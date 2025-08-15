@@ -208,6 +208,8 @@ var StableGitProperties = ZipEntryStabilizer{
 var StableProperties = ZipEntryStabilizer{
 	Name: "jar-properties",
 	Func: func(zf *MutableZipFile) {
+		// *.properties files are used as configuration files in Java application
+		// See: https://en.wikipedia.org/wiki/.properties
 		if strings.HasSuffix(zf.Name, ".properties") {
 			r, err := zf.Open()
 			if err != nil {
