@@ -536,7 +536,7 @@ func TestStableProperties(t *testing.T) {
 		expected []*ZipEntry
 	}{
 		{
-			test: "reorder pom properties lexicographically",
+			test: "sort pom properties lexicographically",
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/maven/foo.bar/baz/pom.properties"},
@@ -559,16 +559,16 @@ func TestStableProperties(t *testing.T) {
 			},
 		},
 		{
-			test: "reorder properties when there is no separator",
+			test: "sorting should work without separator",
 			input: []*ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/maven/foo.bar/baz/pom.properties"},
+					&zip.FileHeader{Name: "foo.properties"},
 					[]byte("a\r\nc\r\nb\r\n\r\n"),
 				},
 			},
 			expected: []*ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/maven/foo.bar/baz/pom.properties"},
+					&zip.FileHeader{Name: "foo.properties"},
 					[]byte("a\r\nb\r\nc\r\n\r\n"),
 				},
 			},
