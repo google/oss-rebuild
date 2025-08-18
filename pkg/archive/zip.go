@@ -35,7 +35,8 @@ func NewContentSummaryFromZip(zr *zip.Reader) (*ContentSummary, error) {
 		}
 		cs.Files = append(cs.Files, f.Name)
 		cs.CRLFCount += bytes.Count(buf, []byte{'\r', '\n'})
-		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(sha256.New().Sum(buf)))
+		h := sha256.Sum256(buf)
+		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(h[:]))
 	}
 	return &cs, nil
 }
