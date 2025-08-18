@@ -32,6 +32,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/builddef"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
+	"github.com/google/oss-rebuild/pkg/rebuild/maven"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -497,6 +498,31 @@ RLpmHHG1JOVdOA==
 			file: must(archivetest.TgzFile([]archive.TarEntry{
 				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
 			})),
+		},
+		{
+			name:   "maven jar success",
+			target: rebuild.Target{Ecosystem: rebuild.Maven, Package: "com.google.guava:guava", Version: "33.4.8-jre", Artifact: "guava-33.4.8-jre.jar"},
+			calls: []httpxtest.Call{
+				{
+					URL: "https://repo1.maven.org/maven2/com/google/guava/guava/33.4.8-jre/guava-33.4.8-jre.jar",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(must(archivetest.ZipFile([]archive.ZipEntry{
+							{FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"}, Body: []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x38}},
+							{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\nCreated-By: 11.0.2 (Oracle Corporation)\n\n")}},
+						))),
+					},
+				},
+			},
+			strategy: &maven.MavenBuild{
+				Location:   rebuild.Location{Repo: "https://github.com/google/guava", Ref: "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcd", Dir: "."},
+				JDKVersion: "11",
+			},
+			file: must(archivetest.ZipFile([]archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"}, Body: []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x38}},
+				// checks for stabilize too
+				{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\n\n")}},
+			)),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
