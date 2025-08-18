@@ -27,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/builddef"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
+	mavenrb "github.com/google/oss-rebuild/pkg/rebuild/maven"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -34,6 +35,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/uuid"
@@ -47,6 +49,7 @@ var rebuilders = map[rebuild.Ecosystem]rebuild.Rebuilder{
 	rebuild.PyPI:     &pypirb.Rebuilder{},
 	rebuild.CratesIO: &cratesrb.Rebuilder{},
 	rebuild.Debian:   &debianrb.Rebuilder{},
+	rebuild.Maven:    &mavenrb.Rebuilder{},
 }
 
 func sanitize(key string) string {
@@ -264,6 +267,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		CratesIO: cratesreg.HTTPRegistry{Client: regclient},
 		NPM:      npmreg.HTTPRegistry{Client: regclient},
 		PyPI:     pypireg.HTTPRegistry{Client: regclient},
+		Maven:    mavenreg.HTTPRegistry{Client: regclient},
 	}
 	if err := populateArtifact(ctx, &t, mux); err != nil {
 		// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
