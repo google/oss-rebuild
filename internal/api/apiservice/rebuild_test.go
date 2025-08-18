@@ -508,18 +508,18 @@ RLpmHHG1JOVdOA==
 					Response: &http.Response{
 						StatusCode: 200,
 						Body: io.NopCloser(must(archivetest.ZipFile([]archive.ZipEntry{
-							{FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"}, Body: []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x38}},
-							{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\nCreated-By: 11.0.2 (Oracle Corporation)\n\n")}},
+							{FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"}, Body: []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x40}},
+							{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.2\n\n")}},
 						))),
 					},
 				},
 			},
 			strategy: &maven.MavenBuild{
 				Location:   rebuild.Location{Repo: "https://github.com/google/guava", Ref: "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcd", Dir: "."},
-				JDKVersion: "11",
+				JDKVersion: "11.0.2",
 			},
 			file: must(archivetest.ZipFile([]archive.ZipEntry{
-				{FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"}, Body: []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x38}},
+				{FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"}, Body: []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x40}},
 				// checks for stabilize too
 				{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\n\n")}},
 			)),
