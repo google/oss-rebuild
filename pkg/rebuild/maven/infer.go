@@ -32,7 +32,7 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 	if err != nil {
 		return "", err
 	}
-	return uri.CanonicalizeRepoURI(pom.URL)
+	return uri.CanonicalizeRepoURI(pom.Repo())
 }
 
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, fs billy.Filesystem, s storage.Storer) (r rebuild.RepoConfig, err error) {
