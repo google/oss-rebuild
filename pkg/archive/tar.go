@@ -254,7 +254,8 @@ func NewContentSummaryFromTar(tr *tar.Reader) (*ContentSummary, error) {
 		}
 		cs.Files = append(cs.Files, header.Name)
 		cs.CRLFCount += bytes.Count(buf, []byte{'\r', '\n'})
-		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(sha256.New().Sum(buf)))
+		h := sha256.Sum256(buf)
+		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(h[:]))
 	}
 	return &cs, nil
 }
