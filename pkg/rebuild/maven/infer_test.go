@@ -7,7 +7,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/google/oss-rebuild/pkg/archive"
@@ -155,6 +157,108 @@ func TestGetClassFileMajorVersion(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("getClassFileMajorVersion() = %v, want %v", got, tc.want)
 			}
+		})
+	}
+}
+
+func TestSourceRepositoryURLInference(t *testing.T) {
+	testCases := []struct {
+		name string
+		pom  []PomXML
+		url  string
+	}{
+		{
+			name: "get SCM URL",
+			pom: []PomXML{
+				{
+					GroupID:    "org.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					SCMURL:     "https://github.com/example/child",
+					URL:        "https://example.com/child",
+				},
+			},
+			url: "https://github.com/example/child",
+		},
+		{
+			name: "get URL",
+			pom: []PomXML{
+				{
+					GroupID:    "com.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					URL:        "https://example.com/child",
+				},
+			},
+			url: "https://example.com/child",
+		},
+		{
+			name: "get parent SCM URL",
+			pom: []PomXML{
+				{
+					GroupID:    "com.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					Parent: Parent{
+						GroupID:    "com.example.parent",
+						ArtifactID: "parent",
+						VersionID:  "1.0.0",
+					},
+				},
+				{
+					GroupID:    "com.example.parent",
+					ArtifactID: "parent",
+					VersionID:  "1.0.0",
+					SCMURL:     "https://github.com/example/parent",
+				},
+			},
+			url: "https://github.com/example/parent",
+		},
+		{
+			name: "get URL of parent and not child",
+			pom: []PomXML{
+				{
+					GroupID:    "com.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					URL:        "https://example.com/child",
+					Parent: Parent{
+						GroupID:    "com.example.parent",
+						ArtifactID: "parent",
+						VersionID:  "1.0.0",
+					},
+				},
+				{
+					GroupID:    "com.example.parent",
+					ArtifactID: "parent",
+					VersionID:  "2.0.0",
+					URL:        "https://example.com/parent",
+				},
+			},
+			url: "https://example.com/parent",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			for idx, pom := range tc.pom {
+				mockMux := rebuild.RegistryMux{
+					Maven: &mockMavenRegistry{
+						releaseFileContent: io.NopCloser(strings.NewReader("<project xmlns=\"http://maven.apache.org/POM/4.0.0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd\"><groupId>" + pom.GroupID + "</groupId><artifactId>" + pom.ArtifactID + "</artifactId><version>" + pom.VersionID + "</version><url>" + pom.URL + "</url><scm><url>" + pom.SCMURL + "</url></scm></project>")),
+					},
+				}
+				got, err := Rebuilder{}.InferRepo(context.Background(), rebuild.Target{
+					Ecosystem: rebuild.Maven,
+					Package:   fmt.Sprintf("%s:%s", pom.GroupID, pom.ArtifactID),
+					Version:   pom.VersionID,
+				}, mockMux)
+				if err != nil && idx == len(tc.pom)-1 {
+					t.Fatalf("InferRepo() error = %v", err)
+				}
+				if got != tc.url && idx == len(tc.pom)-1 {
+					t.Errorf("InferRepo() = %q, want %q", got, tc.url)
+				}
+			}
+
 		})
 	}
 }
