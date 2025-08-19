@@ -820,6 +820,13 @@ LIMIT 2500
 			if len(psp.Versions) >= 5 {
 				continue
 			}
+			nameParts := strings.SplitN(p.Package, ":", 2)
+			if len(nameParts) != 2 {
+				fmt.Println("Agh unexpected: ", p.Package)
+				return
+			}
+			// TODO: Find the artifact name from a real source, don't just guess.
+			psp.Artifacts = append(psp.Artifacts, fmt.Sprintf("%s-%s.jar", nameParts[1], p.Version))
 			psp.Versions = append(psp.Versions, p.Version)
 		}
 		for _, psp := range ps.Packages {
