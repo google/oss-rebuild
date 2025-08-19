@@ -32,7 +32,45 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 	if err != nil {
 		return "", err
 	}
+	for pom.Repo() == "" && pom.Parent.ArtifactID != "" {
+		pom, err = resolveParentPom(ctx, pom, t, mux)
+		if err != nil {
+			return "", errors.Errorf("failed to resolve parent POM for %s: %v", t.Package, err)
+		}
+	}
 	return uri.CanonicalizeRepoURI(pom.Repo())
+}
+
+func resolveParentPom(ctx context.Context, pom PomXML, t rebuild.Target, mux rebuild.RegistryMux) (PomXML, error) {
+	if pom.Parent.ArtifactID == "" {
+		return pom, nil
+	}
+	parent, err := NewPomXML(ctx, rebuild.Target{
+		Ecosystem: t.Ecosystem,
+		Package:   fmt.Sprintf("%s:%s", getGroupID(pom, pom.Parent), pom.Parent.ArtifactID),
+		Version:   getVersionID(pom, pom.Parent),
+		Artifact:  t.Artifact,
+	}, mux)
+	if err != nil {
+		return PomXML{}, err
+	}
+	return parent, nil
+}
+
+func getGroupID(pom PomXML, parent Parent) string {
+	// prioritize the groupID of parent
+	if parent.GroupID != "" {
+		return parent.GroupID
+	}
+	return pom.GroupID
+}
+
+func getVersionID(pom PomXML, parent Parent) string {
+	// prioritize the versionID of parent
+	if parent.VersionID != "" {
+		return parent.VersionID
+	}
+	return pom.VersionID
 }
 
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, fs billy.Filesystem, s storage.Storer) (r rebuild.RepoConfig, err error) {
