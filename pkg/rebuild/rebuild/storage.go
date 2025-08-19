@@ -60,6 +60,8 @@ var (
 	ErrNoUploadPath = errors.New("no artifact upload path provided")
 	// ErrAssetNotFound indicates the asset requested to be read could not be found.
 	ErrAssetNotFound = errors.New("asset not found")
+	// AssetTypeNotSupported indicates that the asset store does not support assets of that type.
+	ErrAssetTypeNotSupported = errors.New("asset type not found")
 )
 
 // Asset represents one of many side effects of rebuilding a single artifact.
@@ -93,6 +95,8 @@ type AssetStore interface {
 // LocatableAssetStore is an asset store whose assets can be identified with a URL.
 type LocatableAssetStore interface {
 	AssetStore
+	// TODO: Should URL() return an error?
+	// Not many places actually check the return value, but they just delay inevitible failure.
 	URL(a Asset) *url.URL
 }
 
@@ -348,4 +352,40 @@ func (s *CachedAssetStore) Writer(ctx context.Context, a Asset) (io.WriteCloser,
 
 func (s *CachedAssetStore) URL(a Asset) *url.URL {
 	return s.frontline.URL(a)
+}
+
+// MixedAssetStore configures routing on a per-AssetType basis.
+type MixedAssetStore struct {
+	routing map[AssetType]LocatableAssetStore
+}
+
+func NewMixedAssetStore(routing map[AssetType]LocatableAssetStore) *MixedAssetStore {
+	return &MixedAssetStore{routing: routing}
+}
+
+var _ LocatableAssetStore = &MixedAssetStore{}
+var _ AssetStore = &MixedAssetStore{}
+
+func (m *MixedAssetStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
+	s, ok := m.routing[a.Type]
+	if !ok {
+		return nil, errors.Wrapf(ErrAssetTypeNotSupported, "AssetType: %s", a.Type)
+	}
+	return s.Reader(ctx, a)
+}
+
+func (m *MixedAssetStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
+	s, ok := m.routing[a.Type]
+	if !ok {
+		return nil, errors.Wrapf(ErrAssetTypeNotSupported, "AssetType: %s", a.Type)
+	}
+	return s.Writer(ctx, a)
+}
+
+func (m *MixedAssetStore) URL(a Asset) *url.URL {
+	s, ok := m.routing[a.Type]
+	if !ok {
+		return nil
+	}
+	return s.URL(a)
 }
