@@ -504,7 +504,7 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 		for _, assetType := range assetTypes {
 			url := opts.Resources.AssetStore.URL(assetType.For(target))
 			if url == nil {
-				continue
+				return "", errors.Errorf("no valid upload path for %s", assetType)
 			}
 			switch assetType {
 			case rebuild.ContainerImageAsset:
