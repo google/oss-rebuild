@@ -61,7 +61,7 @@ func TestNewPomXML(t *testing.T) {
 			input:    "<project><parent><groupId>PARENT_GROUP_ID</groupId></parent><groupId>GROUP_ID</groupId></project>",
 			expected: PomXML{
 				GroupID: "GROUP_ID",
-				Parent: &PomXML{
+				Parent: Parent{
 					GroupID: "PARENT_GROUP_ID",
 				},
 			},
