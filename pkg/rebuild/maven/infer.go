@@ -32,6 +32,12 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 	if err != nil {
 		return "", err
 	}
+	for pom.SCMURL == "" && pom.Parent.ArtifactID != "" {
+		pom, err = ResolveParentPom(ctx, pom, mux)
+		if err != nil {
+			return "", errors.Errorf("failed to resolve parent POM for %s: %v", t.Package, err)
+		}
+	}
 	return uri.CanonicalizeRepoURI(pom.Repo())
 }
 

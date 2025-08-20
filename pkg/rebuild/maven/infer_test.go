@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"testing"
 
@@ -17,15 +18,15 @@ import (
 
 type mockMavenRegistry struct {
 	maven.Registry
-	releaseFileContent io.ReadCloser
-	releaseFileError   error
+	artifactCoordinates map[struct{ PackageName, VersionID, FileType string }][]byte
+	releaseFileError    error
 }
 
 func (m *mockMavenRegistry) ReleaseFile(ctx context.Context, name string, version string, fileType string) (io.ReadCloser, error) {
 	if m.releaseFileError != nil {
 		return nil, m.releaseFileError
 	}
-	return m.releaseFileContent, nil
+	return io.NopCloser(bytes.NewReader(m.artifactCoordinates[struct{ PackageName, VersionID, FileType string }{PackageName: name, VersionID: version, FileType: fileType}])), nil
 }
 
 func TestJDKVersionInference(t *testing.T) {
@@ -99,7 +100,9 @@ func TestJDKVersionInference(t *testing.T) {
 
 			mockMux := rebuild.RegistryMux{
 				Maven: &mockMavenRegistry{
-					releaseFileContent: io.NopCloser(bytes.NewReader(buf.Bytes())),
+					artifactCoordinates: map[struct{ PackageName, VersionID, FileType string }][]byte{
+						{"dummy", "dummy", maven.TypeJar}: buf.Bytes(),
+					},
 				},
 			}
 			got, err := getJarJDK(context.Background(), "dummy", "dummy", mockMux)
@@ -157,4 +160,173 @@ func TestGetClassFileMajorVersion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSourceRepositoryURLInference(t *testing.T) {
+	testCases := []struct {
+		name        string
+		pom         []PomXML
+		targetPom   rebuild.Target
+		expectedURL string
+		wantErr     bool
+	}{
+		{
+			name: "get SCM URL",
+			pom: []PomXML{
+				{
+					GroupID:    "org.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					SCMURL:     "https://github.com/example/child",
+					URL:        "https://example.com/child",
+				},
+			},
+			targetPom: rebuild.Target{
+				Package: "org.example:child",
+				Version: "1.0.0",
+			},
+			expectedURL: "https://github.com/example/child",
+			wantErr:     false,
+		},
+		{
+			name: "get URL",
+			pom: []PomXML{
+				{
+					GroupID:    "com.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					URL:        "https://example.com/child",
+				},
+			},
+			targetPom: rebuild.Target{
+				Package: "com.example:child",
+				Version: "1.0.0",
+			},
+			expectedURL: "https://example.com/child",
+			wantErr:     false,
+		},
+		{
+			name: "get parent SCM URL",
+			pom: []PomXML{
+				{
+					GroupID:    "com.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					Parent: Parent{
+						GroupID:    "com.example.parent",
+						ArtifactID: "parent",
+						VersionID:  "1.0.0",
+					},
+				},
+				{
+					GroupID:    "com.example.parent",
+					ArtifactID: "parent",
+					VersionID:  "1.0.0",
+					SCMURL:     "https://github.com/example/parent",
+				},
+			},
+			targetPom: rebuild.Target{
+				Package: "com.example:child",
+				Version: "1.0.0",
+			},
+			expectedURL: "https://github.com/example/parent",
+			wantErr:     false,
+		},
+		{
+			name: "get URL of parent and not child",
+			pom: []PomXML{
+				{
+					GroupID:    "com.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					URL:        "https://example.com/child",
+					Parent: Parent{
+						GroupID:    "com.example.parent",
+						ArtifactID: "parent",
+						VersionID:  "1.0.0",
+					},
+				},
+				{
+					GroupID:    "com.example.parent",
+					ArtifactID: "parent",
+					VersionID:  "1.0.0",
+					URL:        "https://example.com/parent",
+				},
+			},
+			targetPom: rebuild.Target{
+				Package: "com.example:child",
+				Version: "1.0.0",
+			},
+			expectedURL: "https://example.com/parent",
+			wantErr:     false,
+		},
+		{
+			name: "should throw an error for no valid URL",
+			pom: []PomXML{
+				{
+					GroupID:    "com.example",
+					ArtifactID: "child",
+					VersionID:  "1.0.0",
+					Parent: Parent{
+						GroupID:    "com.example.parent",
+						ArtifactID: "parent",
+						VersionID:  "1.0.0",
+					},
+				},
+				{
+					GroupID:    "com.example.parent",
+					ArtifactID: "parent",
+					VersionID:  "1.0.0",
+				},
+			},
+			targetPom: rebuild.Target{
+				Package: "com.example:child",
+				Version: "1.0.0",
+			},
+			expectedURL: "",
+			wantErr:     true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockRegistry := &mockMavenRegistry{
+				artifactCoordinates: make(map[struct{ PackageName, VersionID, FileType string }][]byte),
+			}
+			for _, pom := range tc.pom {
+				addPomArtifact(mockRegistry, &pom)
+			}
+			mockMux := rebuild.RegistryMux{
+				Maven: mockRegistry,
+			}
+			got, err := Rebuilder{}.InferRepo(context.Background(), tc.targetPom, mockMux)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("InferRepo() = %q, want error", got)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("InferRepo() error = %v", err)
+				}
+				if got != tc.expectedURL {
+					t.Errorf("InferRepo() = %q, want %q", got, tc.expectedURL)
+				}
+			}
+
+		})
+	}
+}
+
+func addPomArtifact(mavenRegistry *mockMavenRegistry, pom *PomXML) {
+	key := struct{ PackageName, VersionID, FileType string }{
+		PackageName: fmt.Sprintf("%s:%s", pom.GroupID, pom.ArtifactID),
+		VersionID:   pom.VersionID,
+		FileType:    maven.TypePOM,
+	}
+	xml := "<project xmlns=\"http://maven.apache.org/POM/4.0.0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd\"><groupId>" + pom.GroupID + "</groupId><artifactId>" + pom.ArtifactID + "</artifactId><version>" + pom.VersionID + "</version>"
+	// Add parent if present
+	if pom.Parent.GroupID != "" && pom.Parent.ArtifactID != "" && pom.Parent.VersionID != "" {
+		xml += "<parent><groupId>" + pom.Parent.GroupID + "</groupId><artifactId>" + pom.Parent.ArtifactID + "</artifactId><version>" + pom.Parent.VersionID + "</version></parent>"
+	}
+	xml += "<url>" + pom.URL + "</url><scm><url>" + pom.SCMURL + "</url></scm></project>"
+	mavenRegistry.artifactCoordinates[key] = []byte(xml)
 }
