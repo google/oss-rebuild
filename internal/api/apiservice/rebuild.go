@@ -11,7 +11,6 @@ import (
 	"io"
 	"log"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -341,7 +340,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Message:         v.Message,
 		Strategy:        v.StrategyOneof,
 		Dockerfile:      dockerfile,
-		ExecutorVersion: os.Getenv("K_REVISION"),
+		ExecutorVersion: deps.ServiceRepo.Ref,
 		RunID:           req.ID,
 		BuildID:         bi.BuildID,
 		ObliviousID:     bi.ObliviousID,
