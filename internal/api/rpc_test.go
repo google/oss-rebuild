@@ -144,26 +144,44 @@ func TestAsStatus(t *testing.T) {
 }
 
 func TestHandlerWithError(t *testing.T) {
-	handler := func(ctx context.Context, req FooRequest, _ *NoDeps) (*FooResponse, error) {
-		return nil, AsStatus(codes.InvalidArgument, errors.New("foo"))
+	tests := []struct {
+		name           string
+		handlerErr     error
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:           "normal error",
+			handlerErr:     errors.New("foo"),
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   "foo\n",
+		},
+		{
+			name:           "grpc error",
+			handlerErr:     AsStatus(codes.InvalidArgument, errors.New("foo")),
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "foo\n",
+		},
 	}
-
-	server := httptest.NewServer(Handler(NoDepsInit, handler))
-	defer server.Close()
-
-	resp, err := http.PostForm(server.URL, url.Values{"foo": {"foo"}})
-
-	if err != nil {
-		t.Errorf("Request returned an error: %v", err)
-	}
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("Expected status code %d, got %d", http.StatusBadRequest, resp.StatusCode)
-	}
-
-	expectedBody := "Bad Request\n"
-	b, _ := io.ReadAll(resp.Body)
-	if string(b) != expectedBody {
-		t.Errorf("Expected body '%s', got '%s'", expectedBody, string(b))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := func(ctx context.Context, req FooRequest, _ *NoDeps) (*FooResponse, error) {
+				return nil, tc.handlerErr
+			}
+			server := httptest.NewServer(Handler(NoDepsInit, handler))
+			defer server.Close()
+			resp, err := http.PostForm(server.URL, url.Values{"foo": {"foo"}})
+			if err != nil {
+				t.Errorf("Request returned an error: %v", err)
+			}
+			if resp.StatusCode != tc.expectedStatus {
+				t.Errorf("Expected status code %d (%s), got %d (%s)", tc.expectedStatus, http.StatusText(tc.expectedStatus), resp.StatusCode, http.StatusText(resp.StatusCode))
+			}
+			b, _ := io.ReadAll(resp.Body)
+			if string(b) != tc.expectedBody {
+				t.Errorf("Expected body '%s', got '%s'", tc.expectedBody, string(b))
+			}
+		})
 	}
 }
 

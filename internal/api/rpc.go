@@ -53,7 +53,8 @@ func Stub[I Message, O any](client httpx.BasicClient, u *url.URL) StubT[I, O] {
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			return nil, errors.Wrap(ErrNotOK, resp.Status)
+			b, _ := io.ReadAll(resp.Body)
+			return nil, errors.Wrap(errors.Wrap(ErrNotOK, resp.Status), string(b))
 		}
 		var o O
 		if err := json.NewDecoder(resp.Body).Decode(&o); err != nil {
@@ -122,7 +123,13 @@ func Handler[I Message, O any, D Dependencies](initDeps InitT[D], handler Handle
 		}
 		if status != http.StatusOK {
 			log.Println(s.Err())
-			http.Error(rw, http.StatusText(status), status)
+			// NOTE: Use s.Message() as the body, instead of err.Error() This is
+			// in case err was already a grpc status, then calling err.Error()
+			// would be a verbose grpc error message.
+			// TODO: Use a structured error type to avoid including unwanted
+			// data. grpc status objects is one option. Another might be using
+			// constant error messages with no dynamic information
+			http.Error(rw, s.Message(), status)
 			return
 		}
 		if o != nil {
