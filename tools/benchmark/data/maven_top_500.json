@@ -1,5 +1,5 @@
 {
-  "Count": 1402,
+  "Count": 1332,
   "Updated": "2025-08-18T21:39:20.554475312Z",
   "Packages": [
     {
@@ -636,24 +636,6 @@
     },
     {
       "Ecosystem": "maven",
-      "Name": "org.jetbrains.kotlin:kotlin-stdlib-common",
-      "Versions": [
-        "1.9.10",
-        "1.8.10",
-        "1.6.10",
-        "1.6.21",
-        "1.8.22"
-      ],
-      "Artifacts": [
-        "kotlin-stdlib-common-1.9.10.jar",
-        "kotlin-stdlib-common-1.8.10.jar",
-        "kotlin-stdlib-common-1.6.10.jar",
-        "kotlin-stdlib-common-1.6.21.jar",
-        "kotlin-stdlib-common-1.8.22.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
       "Name": "com.google.guava:guava",
       "Versions": [
         "18.0",
@@ -1008,24 +990,6 @@
     },
     {
       "Ecosystem": "maven",
-      "Name": "org.scala-lang:scala3-library_3",
-      "Versions": [
-        "3.3.5",
-        "3.1.1",
-        "3.1.0",
-        "3.2.1",
-        "3.3.1"
-      ],
-      "Artifacts": [
-        "scala3-library_3-3.3.5.jar",
-        "scala3-library_3-3.1.1.jar",
-        "scala3-library_3-3.1.0.jar",
-        "scala3-library_3-3.2.1.jar",
-        "scala3-library_3-3.3.1.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
       "Name": "org.apache.commons:commons-text",
       "Versions": [
         "1.9",
@@ -1058,24 +1022,6 @@
         "guice-6.0.0.jar",
         "guice-4.0.jar",
         "guice-5.1.0.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
-      "Name": "org.jetbrains.kotlin:kotlin-stdlib-jdk8",
-      "Versions": [
-        "1.6.10",
-        "1.6.21",
-        "1.7.10",
-        "1.8.21",
-        "1.9.10"
-      ],
-      "Artifacts": [
-        "kotlin-stdlib-jdk8-1.6.10.jar",
-        "kotlin-stdlib-jdk8-1.6.21.jar",
-        "kotlin-stdlib-jdk8-1.7.10.jar",
-        "kotlin-stdlib-jdk8-1.8.21.jar",
-        "kotlin-stdlib-jdk8-1.9.10.jar"
       ]
     },
     {
@@ -2848,60 +2794,6 @@
     },
     {
       "Ecosystem": "maven",
-      "Name": "dev.zio:zio-streams_3",
-      "Versions": [
-        "2.1.16",
-        "2.0.5",
-        "2.1.15",
-        "2.1.17",
-        "2.0.14"
-      ],
-      "Artifacts": [
-        "zio-streams_3-2.1.16.jar",
-        "zio-streams_3-2.0.5.jar",
-        "zio-streams_3-2.1.15.jar",
-        "zio-streams_3-2.1.17.jar",
-        "zio-streams_3-2.0.14.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
-      "Name": "dev.zio:zio-streams_2.13",
-      "Versions": [
-        "2.1.16",
-        "2.0.5",
-        "2.1.15",
-        "2.1.17",
-        "2.0.14"
-      ],
-      "Artifacts": [
-        "zio-streams_2.13-2.1.16.jar",
-        "zio-streams_2.13-2.0.5.jar",
-        "zio-streams_2.13-2.1.15.jar",
-        "zio-streams_2.13-2.1.17.jar",
-        "zio-streams_2.13-2.0.14.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
-      "Name": "dev.zio:zio-streams_2.12",
-      "Versions": [
-        "2.1.16",
-        "2.0.5",
-        "2.1.15",
-        "2.1.17",
-        "2.0.14"
-      ],
-      "Artifacts": [
-        "zio-streams_2.12-2.1.16.jar",
-        "zio-streams_2.12-2.0.5.jar",
-        "zio-streams_2.12-2.1.15.jar",
-        "zio-streams_2.12-2.1.17.jar",
-        "zio-streams_2.12-2.0.14.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
       "Name": "org.webjars.bowergithub.vaadin:vaadin-element-mixin",
       "Versions": [
         "2.4.2"
@@ -3032,60 +2924,6 @@
       "Artifacts": [
         "gwt-user-2.8.2.jar",
         "gwt-user-2.9.0.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
-      "Name": "dev.zio:zio-test_2.12",
-      "Versions": [
-        "1.0.12",
-        "1.0.9",
-        "1.0.11",
-        "1.0.10",
-        "1.0.13"
-      ],
-      "Artifacts": [
-        "zio-test_2.12-1.0.12.jar",
-        "zio-test_2.12-1.0.9.jar",
-        "zio-test_2.12-1.0.11.jar",
-        "zio-test_2.12-1.0.10.jar",
-        "zio-test_2.12-1.0.13.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
-      "Name": "dev.zio:zio-test_2.13",
-      "Versions": [
-        "1.0.12",
-        "1.0.9",
-        "1.0.11",
-        "1.0.10",
-        "1.0.13"
-      ],
-      "Artifacts": [
-        "zio-test_2.13-1.0.12.jar",
-        "zio-test_2.13-1.0.9.jar",
-        "zio-test_2.13-1.0.11.jar",
-        "zio-test_2.13-1.0.10.jar",
-        "zio-test_2.13-1.0.13.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
-      "Name": "dev.zio:zio-test_3",
-      "Versions": [
-        "1.0.12",
-        "1.0.9",
-        "1.0.11",
-        "1.0.10",
-        "1.0.13"
-      ],
-      "Artifacts": [
-        "zio-test_3-1.0.12.jar",
-        "zio-test_3-1.0.9.jar",
-        "zio-test_3-1.0.11.jar",
-        "zio-test_3-1.0.10.jar",
-        "zio-test_3-1.0.13.jar"
       ]
     },
     {
@@ -3314,24 +3152,6 @@
     },
     {
       "Ecosystem": "maven",
-      "Name": "org.springframework.boot:spring-boot-starter-data-jdbc",
-      "Versions": [
-        "2.7.5",
-        "3.4.4",
-        "3.2.5",
-        "3.4.3",
-        "3.2.0"
-      ],
-      "Artifacts": [
-        "spring-boot-starter-data-jdbc-2.7.5.jar",
-        "spring-boot-starter-data-jdbc-3.4.4.jar",
-        "spring-boot-starter-data-jdbc-3.2.5.jar",
-        "spring-boot-starter-data-jdbc-3.4.3.jar",
-        "spring-boot-starter-data-jdbc-3.2.0.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
       "Name": "org.slf4j:slf4j-simple",
       "Versions": [
         "1.7.25",
@@ -3438,24 +3258,6 @@
         "scala-compiler-2.11.12.jar",
         "scala-compiler-2.10.6.jar",
         "scala-compiler-2.11.8.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
-      "Name": "org.jetbrains.kotlin:kotlin-reflect",
-      "Versions": [
-        "1.6.21",
-        "1.6.10",
-        "1.3.61",
-        "1.7.10",
-        "1.9.22"
-      ],
-      "Artifacts": [
-        "kotlin-reflect-1.6.21.jar",
-        "kotlin-reflect-1.6.10.jar",
-        "kotlin-reflect-1.3.61.jar",
-        "kotlin-reflect-1.7.10.jar",
-        "kotlin-reflect-1.9.22.jar"
       ]
     },
     {
@@ -4934,24 +4736,6 @@
     },
     {
       "Ecosystem": "maven",
-      "Name": "org.jetbrains.kotlin:kotlin-stdlib-js",
-      "Versions": [
-        "1.6.10",
-        "1.9.22",
-        "1.9.23",
-        "2.0.0",
-        "1.8.20"
-      ],
-      "Artifacts": [
-        "kotlin-stdlib-js-1.6.10.jar",
-        "kotlin-stdlib-js-1.9.22.jar",
-        "kotlin-stdlib-js-1.9.23.jar",
-        "kotlin-stdlib-js-2.0.0.jar",
-        "kotlin-stdlib-js-1.8.20.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
       "Name": "org.springframework:spring-webmvc",
       "Versions": [
         "5.3.22",
@@ -5346,24 +5130,6 @@
         "groovy-xml-3.0.9.jar",
         "groovy-xml-3.0.7.jar",
         "groovy-xml-3.0.4.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
-      "Name": "org.scala-lang:scala3-library_sjs1_3",
-      "Versions": [
-        "3.1.0",
-        "3.3.3",
-        "3.3.1",
-        "3.2.2",
-        "3.3.0"
-      ],
-      "Artifacts": [
-        "scala3-library_sjs1_3-3.1.0.jar",
-        "scala3-library_sjs1_3-3.3.3.jar",
-        "scala3-library_sjs1_3-3.3.1.jar",
-        "scala3-library_sjs1_3-3.2.2.jar",
-        "scala3-library_sjs1_3-3.3.0.jar"
       ]
     },
     {
@@ -6308,24 +6074,6 @@
       "Artifacts": [
         "streams-1.9.1.jar",
         "streams-2.1.0.jar"
-      ]
-    },
-    {
-      "Ecosystem": "maven",
-      "Name": "org.jetbrains.kotlin:kotlin-dom-api-compat",
-      "Versions": [
-        "1.9.23",
-        "2.0.0",
-        "1.9.22",
-        "2.1.10",
-        "2.0.21"
-      ],
-      "Artifacts": [
-        "kotlin-dom-api-compat-1.9.23.jar",
-        "kotlin-dom-api-compat-2.0.0.jar",
-        "kotlin-dom-api-compat-1.9.22.jar",
-        "kotlin-dom-api-compat-2.1.10.jar",
-        "kotlin-dom-api-compat-2.0.21.jar"
       ]
     },
     {
