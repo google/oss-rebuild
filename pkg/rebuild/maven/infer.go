@@ -27,6 +27,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+const fallbackJDK = "11"
+
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	pom, err := NewPomXML(ctx, t, mux)
 	if err != nil {
@@ -121,12 +123,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		}
 		return cfg, errors.Errorf("no valid git ref")
 	}
-	jdk, err := getJarJDK(ctx, name, version, mux)
+	jdk, err := inferOrFallbackToDefaultJDK(ctx, name, version, mux)
 	if err != nil {
 		return cfg, errors.Wrap(err, "fetching JDK")
-	}
-	if jdk == "" {
-		return cfg, errors.New("no JDK found")
 	}
 	return &MavenBuild{
 		Location: rebuild.Location{
@@ -150,8 +149,24 @@ func getPomXML(tree *object.Tree, path string) (pomXML PomXML, err error) {
 	return pomXML, xml.Unmarshal([]byte(p), &pomXML)
 }
 
-// getJarJDK gets the JDK version that is used to compile the original artifact on registry.
-func getJarJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
+// inferOrFallbackToDefaultJDK tries to infer the JDK version from the artifact's metadata, falling back to a default if necessary.
+func inferOrFallbackToDefaultJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
+	jdk, err := inferJDKVersion(ctx, name, version, mux)
+	if err != nil {
+		return "", errors.Wrap(err, "fetching JDK")
+	}
+	if jdk == "" {
+		log.Printf("no JDK version inferred, falling back to JDK %s", fallbackJDK)
+		jdk = fallbackJDK
+	} else if JDKDownloadURLs[jdk] == "" {
+		log.Printf("%s has no associated JDK URL, falling back to JDK %s", jdk, fallbackJDK)
+		jdk = fallbackJDK
+	}
+	return jdk, nil
+}
+
+// inferJDKVersion gets the JDK version from the MANIFEST or Java bytecode.
+func inferJDKVersion(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
 	releaseFile, err := mux.Maven.ReleaseFile(ctx, name, version, maven.TypeJar)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching jar file")
