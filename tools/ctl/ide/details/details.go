@@ -22,19 +22,21 @@ const (
 
 func Format(example rundex.Rebuild) (string, error) {
 	type deets struct {
-		Success  bool
-		Message  string
-		Timings  rebuild.Timings
-		Strategy schema.StrategyOneOf
+		Success         bool
+		Message         string
+		ExecutorVersion string
+		Timings         rebuild.Timings
+		Strategy        schema.StrategyOneOf
 	}
 	detailsYaml := new(bytes.Buffer)
 	enc := yaml.NewEncoder(detailsYaml)
 	enc.SetIndent(2)
 	err := enc.Encode(deets{
-		Success:  example.Success,
-		Message:  example.Message,
-		Timings:  example.Timings,
-		Strategy: example.Strategy,
+		Success:         example.Success,
+		Message:         example.Message,
+		ExecutorVersion: example.ExecutorVersion,
+		Timings:         example.Timings,
+		Strategy:        example.Strategy,
 	})
 	if err != nil {
 		return "", errors.Wrap(err, "marshalling details")
