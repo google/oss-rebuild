@@ -283,7 +283,10 @@ func findPomXML(commit *object.Commit, pkg string) (*PomXML, string, error) {
 	var names []string
 	var pomXMLs []PomXML
 	commitTree.Files().ForEach(func(f *object.File) error {
-		if !strings.HasSuffix(f.Name, "pom.xml") {
+		// Per Maven conventions, skip non-"pom.xml" files and those inside a `src` directory (unlikely to contain metadata).
+		// Reference: https://maven.apache.org/guides/introduction/introduction-to-the-standard-directory-layout.html
+		// Note: This will miss pom files, with name other than "pom.xml", whose paths are explicitly passed during build via "-f".
+		if path.Base(f.Name) != "pom.xml" || strings.HasPrefix(f.Name, "src/") || strings.Contains(f.Name, "/src/") {
 			return nil
 		}
 		pomXML, err := getPomXML(commitTree, f.Name)
