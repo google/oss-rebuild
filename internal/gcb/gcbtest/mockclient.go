@@ -5,6 +5,7 @@ package gcbtest
 
 import (
 	"context"
+	"io"
 
 	"google.golang.org/api/cloudbuild/v1"
 )
@@ -26,4 +27,23 @@ func (mc *MockClient) WaitForOperation(ctx context.Context, op *cloudbuild.Opera
 
 func (mc *MockClient) CancelOperation(op *cloudbuild.Operation) error {
 	return mc.CancelOperationFunc(op)
+}
+
+// MockLogsClient implements gcb.LogsClient for testing.
+type MockLogsClient struct {
+	ReadBuildLogsFunc func(ctx context.Context, buildID string) (io.ReadCloser, error)
+	ReadStepLogsFunc  func(ctx context.Context, buildID string, stepIndex int) (io.ReadCloser, error)
+	ListStepLogsFunc  func(ctx context.Context, buildID string) (int, error)
+}
+
+func (mlc *MockLogsClient) ReadBuildLogs(ctx context.Context, buildID string) (io.ReadCloser, error) {
+	return mlc.ReadBuildLogsFunc(ctx, buildID)
+}
+
+func (mlc *MockLogsClient) ReadStepLogs(ctx context.Context, buildID string, stepIndex int) (io.ReadCloser, error) {
+	return mlc.ReadStepLogsFunc(ctx, buildID, stepIndex)
+}
+
+func (mlc *MockLogsClient) ListStepLogs(ctx context.Context, buildID string) (int, error) {
+	return mlc.ListStepLogsFunc(ctx, buildID)
 }
