@@ -83,6 +83,16 @@ func TestJDKVersionInference(t *testing.T) {
 			},
 			wantVersion: "11",
 		},
+		{
+			name: "fallback to default JDK version",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 1.8.0_121\r\n\r\n"),
+				},
+			},
+			wantVersion: "11",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -105,7 +115,7 @@ func TestJDKVersionInference(t *testing.T) {
 					},
 				},
 			}
-			got, err := getJarJDK(context.Background(), "dummy", "dummy", mockMux)
+			got, err := inferOrFallbackToDefaultJDK(context.Background(), "dummy", "dummy", mockMux)
 			if err != nil {
 				t.Fatalf("getJarJDK() error = %v", err)
 			}
