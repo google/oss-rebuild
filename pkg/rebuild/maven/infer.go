@@ -283,7 +283,13 @@ func findPomXML(commit *object.Commit, pkg string) (*PomXML, string, error) {
 	var names []string
 	var pomXMLs []PomXML
 	commitTree.Files().ForEach(func(f *object.File) error {
-		if !strings.HasSuffix(f.Name, "pom.xml") {
+		// The standard layout of a Maven project recommends to place "pom.xml" file at the root of the project.
+		// We also exclude scanning src directory as this directory is convention for storing the source code.
+		// Reference: https://maven.apache.org/guides/introduction/introduction-to-the-standard-directory-layout.html
+		// We miss two really narrow edge cases here:
+		// 1) pom.xml is inside a module called "src".
+		// 2) a custom named pom file is passed to the maven build command via -f argument.
+		if path.Base(f.Name) != "pom.xml" || strings.Contains(f.Name, "src/") {
 			return nil
 		}
 		pomXML, err := getPomXML(commitTree, f.Name)
