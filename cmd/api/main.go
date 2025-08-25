@@ -130,13 +130,13 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 		LogsBucket:     *logsBucket,
 		Client:         nil, // Defined depending on gcbPrivatePoolName
 	}
-	var privatePoolConfig *gcb.PrivatePoolConfig
 	if *gcbPrivatePoolName != "" {
-		executorConfig.Client = gcb.NewClientWithPrivatePool(svc, privatePoolConfig)
-		executorConfig.PrivatePool = &gcb.PrivatePoolConfig{
+		pool := &gcb.PrivatePoolConfig{
 			Name:   *gcbPrivatePoolName,
 			Region: *gcbPrivatePoolRegion,
 		}
+		executorConfig.PrivatePool = pool
+		executorConfig.Client = gcb.NewClientWithPrivatePool(svc, pool)
 	} else {
 		executorConfig.Client = gcb.NewClient(svc)
 	}
