@@ -93,7 +93,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	// Build tool URLs using prebuild bucket configuration
 	toolURLs := map[build.ToolType]string{
 		build.TimewarpTool: "gs://" + deps.PrebuildConfig.Bucket + "/" + deps.PrebuildConfig.Dir + "/timewarp",
-		build.GSUtilTool:   "gs://" + deps.PrebuildConfig.Bucket + "/" + deps.PrebuildConfig.Dir + "/gsutil-writeonly",
+		build.GSUtilTool:   "gs://" + deps.PrebuildConfig.Bucket + "/" + deps.PrebuildConfig.Dir + "/gsutil_writeonly",
 	}
 	var authRequired []string
 	if deps.PrebuildConfig.Auth {
