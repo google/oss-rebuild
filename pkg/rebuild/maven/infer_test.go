@@ -9,8 +9,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path"
 	"testing"
+	"time"
 
+	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
@@ -339,4 +345,78 @@ func addPomArtifact(mavenRegistry *mockMavenRegistry, pom *PomXML) {
 	}
 	xml += "<url>" + pom.URL + "</url><scm><url>" + pom.SCMURL + "</url></scm></project>"
 	mavenRegistry.artifactCoordinates[key] = []byte(xml)
+}
+
+func TestFindPomXMLHeuristic(t *testing.T) {
+	testCases := []struct {
+		name        string
+		poms        []string
+		expectedPom string
+	}{
+		{
+			name:        "single pom.xml at root",
+			poms:        []string{"pom.xml"},
+			expectedPom: "pom.xml",
+		},
+		{
+			name:        "select pom.xml in subdir",
+			poms:        []string{"subdir/pom.xml"},
+			expectedPom: "subdir/pom.xml",
+		},
+		{
+			name:        "select a non-test resource pom.xml",
+			poms:        []string{"moduleA/pom.xml", "src/test/resource/pom.xml"},
+			expectedPom: "moduleA/pom.xml",
+		},
+		{
+			name:        "select pom.xml with basename match",
+			poms:        []string{"moduleA/test-pom.xml", "moduleB/pom.xml"},
+			expectedPom: "moduleB/pom.xml",
+		},
+		{
+			name:        "select pom.xml with src prefix in directory name",
+			poms:        []string{"srcmoduleA/pom.xml", "src/moduleB/pom.xml"},
+			expectedPom: "srcmoduleA/pom.xml",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := memfs.New()
+			repo, _ := git.Init(memory.NewStorage(), fs)
+			w, _ := repo.Worktree()
+			for _, pomPath := range tc.poms {
+				dir := path.Dir(pomPath)
+				if dir != "." {
+					fs.MkdirAll(dir, 0755)
+				}
+				// Write a minimal valid pom.xml content to memfs
+				f, err := fs.Create(pomPath)
+				if err != nil {
+					t.Fatalf("failed to create file: %v", err)
+				}
+				content := `<project><groupId>group</groupId><artifactId>artifact</artifactId><version>1.0.0</version></project>`
+				_, err = f.Write([]byte(content))
+				if err != nil {
+					t.Fatalf("failed to write file: %v", err)
+				}
+				f.Close()
+				w.Add(pomPath)
+			}
+			commitHash, _ := w.Commit("add multiple pom files", &git.CommitOptions{
+				Author: &object.Signature{
+					Name:  "Foo Bar",
+					Email: "foo@bar",
+					When:  time.Now(),
+				},
+			})
+			commit, _ := repo.CommitObject(commitHash)
+			_, name, err := findPomXML(commit, "group:artifact")
+			if err != nil {
+				t.Fatalf("findPomXML() error = %v", err)
+			}
+			if name != tc.expectedPom {
+				t.Errorf("findPomXML() = %q, want %q", name, tc.expectedPom)
+			}
+		})
+	}
 }
