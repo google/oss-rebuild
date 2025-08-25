@@ -87,6 +87,10 @@ func (r Rebuilder) RebuildRemote(ctx context.Context, input rebuild.Input, opts 
 	return rebuild.RebuildRemote(ctx, input, opts)
 }
 
+func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
+	return false
+}
+
 func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	_, name, err := ParseComponent(t.Package)
 	if err != nil {

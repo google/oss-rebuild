@@ -182,6 +182,10 @@ func (r Rebuilder) RebuildRemote(ctx context.Context, input rebuild.Input, opts 
 	return rebuild.RebuildRemote(ctx, input, opts)
 }
 
+func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
+	return true
+}
+
 func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	vmeta, err := mux.NPM.Version(ctx, t.Package, t.Version)
 	if err != nil {

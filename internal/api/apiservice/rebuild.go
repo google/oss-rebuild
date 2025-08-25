@@ -224,13 +224,13 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		rebuild.DockerfileAsset:     deps.LocalMetadataStore,
 		rebuild.BuildInfoAsset:      deps.LocalMetadataStore,
 	})
-	h, err := deps.GCBExecutor.Start(ctx, rebuild.Input{
+	in := rebuild.Input{
 		Target:   t,
 		Strategy: strategy,
-	}, build.Options{
-		BuildID: obID,
-		// TODO: This needs to be configured by the ecosystem-specific code.
-		UseTimewarp:       true,
+	}
+	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
+		BuildID:           obID,
+		UseTimewarp:       rebuilders[t.Ecosystem].UsesTimewarp(in),
 		UseNetworkProxy:   useProxy,
 		UseSyscallMonitor: useSyscallMonitor,
 		Resources: build.Resources{
