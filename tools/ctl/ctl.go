@@ -1119,6 +1119,47 @@ var getTrackedPackagesCmd = &cobra.Command{
 	},
 }
 
+var runAgent = &cobra.Command{
+	Use:   "run-agent --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name>",
+	Short: "Run benchmark",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if *ecosystem == "" || *pkg == "" || *version == "" || *artifact == "" {
+			log.Fatal("ecosystem, package, version, and artifact must be provided")
+		}
+		t := rebuild.Target{Ecosystem: rebuild.Ecosystem(*ecosystem), Package: *pkg, Version: *version, Artifact: *artifact}
+		if *apiUri == "" {
+			log.Fatal("API endpoint not provided")
+		}
+		apiURL, err := url.Parse(*apiUri)
+		if err != nil {
+			return errors.Wrap(err, "parsing API endpoint")
+		}
+		ctx := cmd.Context()
+		var client *http.Client
+		{
+			if strings.Contains(apiURL.Host, "run.app") {
+				// If the api is on Cloud Run, we need to use an authorized client.
+				apiURL.Scheme = "https"
+				client, err = oauth.AuthorizedUserIDClient(ctx)
+				if err != nil {
+					return errors.Wrap(err, "creating authorized HTTP client")
+				}
+			} else {
+				client = http.DefaultClient
+			}
+		}
+		stub := api.Stub[schema.AgentCreateRequest, schema.AgentCreateResponse](client, apiURL.JoinPath("agent"))
+		resp, err := stub(ctx, schema.AgentCreateRequest{
+			Target: t,
+		})
+		if err != nil {
+			return errors.Wrap(err, "running attest")
+		}
+		log.Printf("Successfully started session %s", resp.SessionID)
+		return nil
+	},
+}
 var (
 	// Shared
 	apiUri            = flag.String("api", "", "OSS Rebuild API endpoint URI")
@@ -1237,6 +1278,12 @@ func init() {
 	setTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("bench"))
 	setTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("format"))
 
+	runAgent.Flags().AddGoFlag(flag.Lookup("api"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("ecosystem"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("package"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("version"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
+
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
 	rootCmd.AddCommand(getResults)
@@ -1247,6 +1294,7 @@ func init() {
 	rootCmd.AddCommand(migrate)
 	rootCmd.AddCommand(setTrackedPackagesCmd)
 	rootCmd.AddCommand(getTrackedPackagesCmd)
+	rootCmd.AddCommand(runAgent)
 }
 
 func main() {
