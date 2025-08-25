@@ -29,6 +29,7 @@ import (
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
+	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
@@ -547,7 +548,7 @@ RLpmHHG1JOVdOA==
 			buildSteps := []*cloudbuild.BuildStep{
 				{Name: "gcr.io/foo/bar", Script: "./bar"},
 			}
-			d.GCBClient = &gcbtest.MockClient{
+			gcbclient := &gcbtest.MockClient{
 				CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
 					c := must(remoteMetadata.Writer(ctx, rebuild.RebuildAsset.For(tc.target)))
 					defer func() { must1(c.Close()) }()
@@ -569,6 +570,7 @@ RLpmHHG1JOVdOA==
 						Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: &cloudbuild.Build{
 							Id:         "build-id",
 							Status:     "SUCCESS",
+							StartTime:  "2024-05-08T15:00:00Z",
 							FinishTime: "2024-05-08T15:23:00Z",
 							Steps:      buildSteps,
 							Results:    &cloudbuild.Results{BuildStepImages: []string{"sha256:abcd"}},
@@ -576,10 +578,14 @@ RLpmHHG1JOVdOA==
 					}, nil
 				},
 			}
-			d.BuildProject = "foo-project"
-			d.BuildServiceAccount = "foo-role"
+			var err error
+			d.GCBExecutor = must(buildgcb.NewExecutor(buildgcb.ExecutorConfig{
+				Project:        "foo-project",
+				ServiceAccount: "foo-role",
+				LogsBucket:     "foo-logs-bucket",
+				Client:         gcbclient,
+			}))
 			d.PrebuildConfig.Bucket = "foo-prebuild-bucket"
-			d.BuildLogsBucket = "foo-logs-bucket"
 			tempDir := must(os.MkdirTemp("", "test-*"))
 			defer os.RemoveAll(tempDir)
 			var gfs osfs.BoundOS
