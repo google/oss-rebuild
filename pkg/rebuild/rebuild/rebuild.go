@@ -18,5 +18,6 @@ type Rebuilder interface {
 	Rebuild(context.Context, Target, Instructions, billy.Filesystem) error
 	Compare(context.Context, Target, Asset, Asset, AssetStore, Instructions) (error, error)
 	RebuildRemote(context.Context, Input, RemoteOptions) error
+	UsesTimewarp(Input) bool
 	UpstreamURL(context.Context, Target, RegistryMux) (string, error)
 }

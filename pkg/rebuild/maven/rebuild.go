@@ -21,6 +21,10 @@ func (r Rebuilder) RebuildRemote(ctx context.Context, input rebuild.Input, opts 
 	return rebuild.RebuildRemote(ctx, input, opts)
 }
 
+func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
+	return false
+}
+
 func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Instructions, fs billy.Filesystem) error {
 	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Source); err != nil {
 		return errors.Wrap(err, "fetching source")
