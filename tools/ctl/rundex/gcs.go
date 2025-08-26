@@ -35,10 +35,12 @@ func NewGCSClient(ctx context.Context, client *gcs.Client, bucket, prefix string
 }
 
 var _ Reader = &GCSClient{}
+var _ Writer = &GCSClient{}
 
 // FetchRuns fetches Runs out of GCS.
 func (g *GCSClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
 	var runs []Run
+	// TODO: If opts specifies specific runs, we can query for those directly.
 	query := &gcs.Query{Prefix: path.Join(g.prefix, layout.RundexRunsPath) + "/"}
 	it := g.client.Bucket(g.bucket).Objects(ctx, query)
 	for {
@@ -52,20 +54,17 @@ func (g *GCSClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, e
 		if !strings.HasSuffix(attrs.Name, ".json") {
 			continue
 		}
-
 		obj := g.client.Bucket(g.bucket).Object(attrs.Name)
 		r, err := obj.NewReader(ctx)
 		if err != nil {
 			return nil, errors.Wrapf(err, "creating reader for %s", attrs.Name)
 		}
-
 		var run Run
 		if err := json.NewDecoder(r).Decode(&run); err != nil {
 			r.Close()
 			return nil, errors.Wrapf(err, "decoding run file %s", attrs.Name)
 		}
 		r.Close()
-
 		if len(opts.IDs) != 0 && !slices.Contains(opts.IDs, run.ID) {
 			continue
 		}
@@ -87,10 +86,8 @@ func (g *GCSClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest)
 	} else {
 		prefixes = append(prefixes, path.Join(g.prefix, layout.RundexRebuildsPath)+"/")
 	}
-
 	attrChan := make(chan *gcs.ObjectAttrs)
 	errChan := make(chan error, 1)
-
 	go func() {
 		defer close(attrChan)
 		for _, p := range prefixes {
@@ -135,4 +132,30 @@ func (g *GCSClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest)
 		return nil, err
 	}
 	return rebuilds, nil
+}
+
+func (g *GCSClient) WriteRebuild(ctx context.Context, r Rebuild) error {
+	path := path.Join(g.prefix, layout.RundexRebuildsPath, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
+	obj := g.client.Bucket(g.bucket).Object(path)
+	w := obj.NewWriter(ctx)
+	if err := json.NewEncoder(w).Encode(r); err != nil {
+		return errors.Wrap(err, "encoding rebuild")
+	}
+	if err := w.Close(); err != nil {
+		return errors.Wrap(err, "closing writer")
+	}
+	return nil
+}
+
+func (g *GCSClient) WriteRun(ctx context.Context, r Run) error {
+	path := path.Join(g.prefix, layout.RundexRunsPath, r.ID+".json")
+	obj := g.client.Bucket(g.bucket).Object(path)
+	w := obj.NewWriter(ctx)
+	if err := json.NewEncoder(w).Encode(r); err != nil {
+		return errors.Wrap(err, "encoding run")
+	}
+	if err := w.Close(); err != nil {
+		return errors.Wrap(err, "closing writer")
+	}
+	return nil
 }
