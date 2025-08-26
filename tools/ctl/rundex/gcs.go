@@ -6,6 +6,7 @@ package rundex
 import (
 	"context"
 	"encoding/json"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -37,7 +38,7 @@ var _ Reader = &GCSClient{}
 // FetchRuns fetches Runs out of GCS.
 func (g *GCSClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
 	var runs []Run
-	query := &gcs.Query{Prefix: filepath.Join(g.prefix, localRunsMetaDir) + "/"}
+	query := &gcs.Query{Prefix: path.Join(g.prefix, localRunsMetaDir) + "/"}
 	it := g.client.Bucket(g.bucket).Objects(ctx, query)
 	for {
 		attrs, err := it.Next()
@@ -80,10 +81,10 @@ func (g *GCSClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest)
 	var prefixes []string
 	if len(req.Runs) != 0 {
 		for _, r := range req.Runs {
-			prefixes = append(prefixes, filepath.Join(g.prefix, runsDir, r)+"/")
+			prefixes = append(prefixes, path.Join(g.prefix, runsDir, r)+"/")
 		}
 	} else {
-		prefixes = append(prefixes, filepath.Join(g.prefix, runsDir)+"/")
+		prefixes = append(prefixes, path.Join(g.prefix, runsDir)+"/")
 	}
 
 	attrChan := make(chan *gcs.ObjectAttrs)
