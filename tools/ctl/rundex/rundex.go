@@ -132,8 +132,12 @@ func DoQuery[T any](ctx context.Context, q firestore.Query, fn func(*firestore.D
 }
 
 func cleanVerdict(m string) string {
+	// strip the leading error message of an inference failure to fit the latter, finer-grained error messages, on screen.
+	m = strings.Replace(m, "getting strategy: fetching inference: failed to infer strategy:", "inference failure:", -1)
 	switch {
 	// Generic
+	case strings.Contains(m, "clone failed"):
+		m = "clone failed"
 	case strings.HasPrefix(m, `mismatched version `):
 		m = "wrong package version in manifest"
 	case strings.HasPrefix(m, `mismatched name `):
@@ -148,6 +152,8 @@ func cleanVerdict(m string) string {
 		m = `npm install: unsupported scheme "workspace:"`
 	case strings.Contains(m, `Unsupported URL Type "patch:"`):
 		m = `npm install: unsupported scheme "patch:"`
+	case strings.Contains(m, "no download URL for JDK version"):
+		m = `no download URL for JDK version`
 	case strings.Contains(m, `getting strategy: fetching inference: making http request:`) && strings.Contains(m, `connection reset by peer`):
 		m = `getting strategy: fetching inference: making http request to inference service: connection reset by peer`
 	// NPM
