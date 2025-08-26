@@ -157,7 +157,7 @@ type GCSStore struct {
 
 func NewGCSStoreFromClient(ctx context.Context, client *gcs.Client, uploadPrefix string) (*GCSStore, error) {
 	s := &GCSStore{gcsClient: client}
-	s.bucket, s.prefix, _ = strings.Cut(strings.TrimPrefix(uploadPrefix, "gs://"), string(filepath.Separator))
+	s.bucket, s.prefix, _ = strings.Cut(strings.TrimPrefix(uploadPrefix, "gs://"), "/")
 	{
 		var ok bool
 		s.runID, ok = ctx.Value(RunID).(string)
