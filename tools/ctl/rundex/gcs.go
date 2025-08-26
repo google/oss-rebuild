@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	gcs "cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -38,7 +39,7 @@ var _ Reader = &GCSClient{}
 // FetchRuns fetches Runs out of GCS.
 func (g *GCSClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
 	var runs []Run
-	query := &gcs.Query{Prefix: path.Join(g.prefix, localRunsMetaDir) + "/"}
+	query := &gcs.Query{Prefix: path.Join(g.prefix, layout.RundexRunsPath) + "/"}
 	it := g.client.Bucket(g.bucket).Objects(ctx, query)
 	for {
 		attrs, err := it.Next()
@@ -81,10 +82,10 @@ func (g *GCSClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest)
 	var prefixes []string
 	if len(req.Runs) != 0 {
 		for _, r := range req.Runs {
-			prefixes = append(prefixes, path.Join(g.prefix, runsDir, r)+"/")
+			prefixes = append(prefixes, path.Join(g.prefix, layout.RundexRebuildsPath, r)+"/")
 		}
 	} else {
-		prefixes = append(prefixes, path.Join(g.prefix, runsDir)+"/")
+		prefixes = append(prefixes, path.Join(g.prefix, layout.RundexRebuildsPath)+"/")
 	}
 
 	attrChan := make(chan *gcs.ObjectAttrs)
