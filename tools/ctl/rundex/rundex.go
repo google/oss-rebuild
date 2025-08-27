@@ -23,6 +23,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -497,15 +498,13 @@ func NewLocalClient(fs billy.Filesystem) *LocalClient {
 }
 
 const (
-	rebuildFileName  = "firestore.json"
-	runsDir          = "runs"
-	localRunsMetaDir = "runs_metadata"
+	rebuildFileName = "firestore.json"
 )
 
 // FetchRuns fetches Runs out of firestore.
 func (f *LocalClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
 	runs := make([]Run, 0)
-	err := util.Walk(f.fs, localRunsMetaDir, func(path string, info fs.FileInfo, err error) error {
+	err := util.Walk(f.fs, layout.RundexRunsPath, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -547,10 +546,10 @@ func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReques
 		var toWalk []string
 		if len(req.Runs) != 0 {
 			for _, r := range req.Runs {
-				toWalk = append(toWalk, filepath.Join(runsDir, r))
+				toWalk = append(toWalk, filepath.Join(layout.RundexRebuildsPath, r))
 			}
 		} else {
-			toWalk = []string{runsDir}
+			toWalk = []string{layout.RundexRebuildsPath}
 		}
 		defer close(all)
 		for _, p := range toWalk {
@@ -603,7 +602,7 @@ func (f *LocalClient) WatchRebuilds() <-chan *Rebuild {
 }
 
 func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
-	path := filepath.Join(runsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
+	path := filepath.Join(layout.RundexRebuildsPath, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")
@@ -621,7 +620,7 @@ func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
 }
 
 func (f *LocalClient) WriteRun(ctx context.Context, r Run) error {
-	path := filepath.Join(localRunsMetaDir, fmt.Sprintf("%s.json", r.ID))
+	path := filepath.Join(layout.RundexRunsPath, fmt.Sprintf("%s.json", r.ID))
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")
