@@ -7,7 +7,6 @@ package analyzer
 import (
 	"encoding/json"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -18,13 +17,21 @@ import (
 // GCSEventToTargetEvent converts GCS object event data to a TargetEvent.
 // This is used by analyzer services to process GCS bucket notifications for attestation bundles.
 func GCSEventToTargetEvent(event schema.GCSObjectEvent) (*schema.TargetEvent, error) {
-	// Expected form: ecosystem/package/version/artifact/rebuild.intoto.jsonl
-	// TODO: Use logic from AssetStore.
-	parts := strings.Split(filepath.Clean(event.Name), "/")
-	if len(parts) != 5 {
+	parts := strings.Split(event.Name, "/")
+	var ecosystem, pkg, version, artifact, obj string
+	if len(parts) == 6 {
+		// Format: ecosystem/@scope/package/version/artifact/rebuild.intoto.jsonl
+		scope := parts[1]
+		if !strings.HasPrefix(scope, "@") {
+			return nil, errors.Errorf("unexpected package scope for scoped object path: %s", event.Name)
+		}
+		ecosystem, pkg, version, artifact, obj = parts[0], scope+"/"+parts[2], parts[3], parts[4], parts[5]
+	} else if len(parts) == 5 {
+		// Format: ecosystem/package/version/artifact/rebuild.intoto.jsonl
+		ecosystem, pkg, version, artifact, obj = parts[0], parts[1], parts[2], parts[3], parts[4]
+	} else {
 		return nil, errors.Errorf("unexpected object path length: %s", event.Name)
 	}
-	ecosystem, pkg, version, artifact, obj := parts[0], parts[1], parts[2], parts[3], parts[4]
 	if obj != string(rebuild.AttestationBundleAsset) {
 		return nil, errors.Errorf("unexpected object name: %s", obj)
 	}
