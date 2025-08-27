@@ -4,8 +4,6 @@
 package maven
 
 import (
-	"path"
-
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/pkg/errors"
 
@@ -16,6 +14,8 @@ import (
 type MavenBuild struct {
 	rebuild.Location
 
+	// Directory where we expect the output artifact to be.
+	OutputArtifactDir string `json:"output_dir" yaml:"output_dir"`
 	// JDKVersion is the version of the JDK to use for the build.
 	JDKVersion string `json:"jdk_version" yaml:"jdk_version"`
 }
@@ -50,7 +50,7 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				Needs: []string{"maven"},
 			},
 		},
-		OutputDir: path.Join(b.Dir, "target"),
+		OutputDir: b.OutputArtifactDir,
 	}, nil
 }
 

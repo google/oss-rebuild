@@ -24,15 +24,14 @@ func TestMavenStrategies(t *testing.T) {
 				Location: rebuild.Location{
 					Repo: "https://foo.bar",
 					Ref:  "ref",
-					Dir:  "dir",
 				},
 				JDKVersion: "11.0.1",
+				OutputDir:  "dir",
 			},
 			rebuild.Instructions{
 				Location: rebuild.Location{
 					Repo: "https://foo.bar",
 					Ref:  "ref",
-					Dir:  "dir",
 				},
 				SystemDeps: []string{"git", "wget", "maven"},
 				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",

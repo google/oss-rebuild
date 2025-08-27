@@ -130,10 +130,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	return &MavenBuild{
 		Location: rebuild.Location{
 			Repo: repoConfig.URI,
-			Dir:  dir,
 			Ref:  ref,
 		},
-		JDKVersion: jdk,
+		JDKVersion:        jdk,
+		OutputArtifactDir: path.Join(dir, "target"),
 	}, nil
 }
 
