@@ -7,7 +7,6 @@ package analyzer
 import (
 	"encoding/json"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -18,13 +17,33 @@ import (
 // GCSEventToTargetEvent converts GCS object event data to a TargetEvent.
 // This is used by analyzer services to process GCS bucket notifications for attestation bundles.
 func GCSEventToTargetEvent(event schema.GCSObjectEvent) (*schema.TargetEvent, error) {
-	// Expected form: ecosystem/package/version/artifact/rebuild.intoto.jsonl
-	// TODO: Use logic from AssetStore.
-	parts := strings.Split(filepath.Clean(event.Name), "/")
-	if len(parts) != 5 {
-		return nil, errors.Errorf("unexpected object path length: %s", event.Name)
+	parts := strings.Split(event.Name, "/")
+	if len(parts) < 5 {
+		return nil, errors.Errorf("unexpected object path length: path=%s parts=%d", event.Name, len(parts))
 	}
-	ecosystem, pkg, version, artifact, obj := parts[0], parts[1], parts[2], parts[3], parts[4]
+	var ecosystem, pkg, version, artifact, obj string
+	switch rebuild.Ecosystem(parts[0]) {
+	case rebuild.NPM:
+		if len(parts) == 6 && !strings.HasPrefix(parts[1], "@") {
+			// Assert pkgscope has a @ prefix
+			return nil, errors.Errorf("unexpected package scope for scoped object path: path=%s scope=%s", event.Name, parts[1])
+		}
+		fallthrough
+	case rebuild.Debian:
+		if len(parts) == 6 {
+			// Format: ecosystem/pkgscope/package/version/artifact/rebuild.intoto.jsonl
+			ecosystem, pkg, version, artifact, obj = parts[0], parts[1]+"/"+parts[2], parts[3], parts[4], parts[5]
+			break
+		} else if len(parts) != 5 {
+			return nil, errors.Errorf("unexpected object path length: path=%s parts=%d", event.Name, len(parts))
+		}
+		fallthrough
+	case rebuild.CratesIO, rebuild.PyPI, rebuild.Maven:
+		// Format: ecosystem/package/version/artifact/rebuild.intoto.jsonl
+		ecosystem, pkg, version, artifact, obj = parts[0], parts[1], parts[2], parts[3], parts[4]
+	default:
+		return nil, errors.Errorf("unexpected ecosystem: '%s'", event.Name)
+	}
 	if obj != string(rebuild.AttestationBundleAsset) {
 		return nil, errors.Errorf("unexpected object name: %s", obj)
 	}
