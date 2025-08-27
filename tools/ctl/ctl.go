@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -37,6 +38,7 @@ import (
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -47,6 +49,7 @@ import (
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
+	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/migrations"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
@@ -171,10 +174,7 @@ var tui = &cobra.Command{
 				if err != nil {
 					log.Fatal(errors.Wrap(err, "creating GCS client"))
 				}
-				dex, err = rundex.NewGCSClient(ctx, gcsClient, u.Host, strings.TrimPrefix(u.Path, "/"))
-				if err != nil {
-					log.Fatal(errors.Wrap(err, "creating GCS rundex client"))
-				}
+				dex = rundex.NewGCSClient(ctx, gcsClient, u.Host, strings.TrimPrefix(u.Path, "/"))
 				// GCS watcher is not implemented.
 			} else if *project != "" {
 				var err error
@@ -271,16 +271,13 @@ var tui = &cobra.Command{
 }
 
 var getResults = &cobra.Command{
-	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-prefix <prefix>] [-pattern <regex>] [-sample N] [-format=summary|bench|assets|csv|rundex] [-asset=<assetType>]",
+	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-prefix <prefix>] [-pattern <regex>] [-sample N] [-format=summary|bench|csv]",
 	Short: "Analyze rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		req, err := buildFetchRebuildRequest(*bench, *runFlag, *prefix, *pattern, *clean, true)
 		if err != nil {
 			log.Fatal(err)
-		}
-		if (*format == "" || *format == "summary") && *sample > 0 {
-			log.Fatal("--sample option incompatible with --format=summary")
 		}
 		fireClient, err := rundex.NewFirestore(cmd.Context(), *project)
 		if err != nil {
@@ -357,52 +354,156 @@ var getResults = &cobra.Command{
 					log.Fatal(errors.Wrap(err, "writing CSV"))
 				}
 			}
-		case "assets":
-			regclient := http.DefaultClient
-			mux := rebuild.RegistryMux{
-				Debian:   debianreg.HTTPRegistry{Client: regclient},
-				CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-				NPM:      npmreg.HTTPRegistry{Client: regclient},
-				PyPI:     pypireg.HTTPRegistry{Client: regclient},
-			}
-			butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, localfiles.AssetStore)
-			atype := rebuild.AssetType(*assetType)
-			ctx := cmd.Context()
-			p := pipe.FromSlice(rebuilds)
-			assetPipe := pipe.ParInto(50, p, func(r rundex.Rebuild, out chan<- string) {
-				path, err := butler.Fetch(ctx, *runFlag, r.WasSmoketest(), atype.For(r.Target()))
-				if err != nil {
-					out <- err.Error()
-					return
-				}
-				out <- path
-			})
-			for path := range assetPipe.Out() {
-				cmd.OutOrStdout().Write([]byte(path + "\n"))
-			}
-		case "rundex":
-			dex := rundex.NewLocalClient(localfiles.Rundex())
-			ctx := cmd.Context()
-			runs, err := fireClient.FetchRuns(ctx, rundex.FetchRunsOpts{IDs: req.Runs})
-			if err != nil {
-				log.Printf("fetching runs failed: %v", err)
-			} else {
-				for _, run := range runs {
-					if err := dex.WriteRun(ctx, run); err != nil {
-						log.Printf("writing run %s failed: %v", run.ID, err)
-					}
-				}
-			}
-			for _, r := range rebuilds {
-				if err := dex.WriteRebuild(ctx, r); err != nil {
-					cmd.OutOrStderr().Write([]byte(err.Error() + "\n"))
-					continue
-				}
-				cmd.OutOrStdout().Write([]byte(r.ID() + "\n"))
-			}
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
 		}
+	},
+}
+
+var export = &cobra.Command{
+	Use:   "export -project <ID> -run <ID> -destination <url> [-pattern <regex>] [-rundex] [-asset-types <type1>,<type2>] -",
+	Short: "Export rebuild results",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if *runFlag == "" {
+			log.Fatal("--run must be provided")
+		}
+		runID := *runFlag
+		ctx := cmd.Context()
+		var destDex rundex.Writer
+		var destStore rebuild.LocatableAssetStore
+		{
+			destURL, err := url.Parse(*destination)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "parsing destination"))
+			}
+			switch destURL.Scheme {
+			case "gs":
+				client, err := gcs.NewClient(ctx)
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating gcs client"))
+				}
+				// Add the layout.AssetsDir to the path
+				destStoreURL := urlx.MustParse(destURL.String())
+				destStoreURL.Path = path.Join(destStoreURL.Path, layout.AssetsDir)
+				destStore, err = rebuild.NewGCSStoreFromClient(context.WithValue(ctx, rebuild.RunID, runID), client, destStoreURL.String())
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating gcs asset store"))
+				}
+				// rundex.NewGCSClient already adds layout.RundexDir to the path
+				destDex = rundex.NewGCSClient(ctx, client, destURL.Host, destURL.Path)
+			case "file":
+				dir := filepath.Join(destURL.Path, layout.AssetsDir)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					log.Fatal(errors.Wrapf(err, "failed to create directory %s", dir))
+				}
+				assetsFS, err := osfs.New("/").Chroot(dir)
+				if err != nil {
+					log.Fatal(errors.Wrapf(err, "failed to chroot into directory %s", dir))
+				}
+				destStore = rebuild.NewFilesystemAssetStoreWithRunID(assetsFS, runID)
+				// TODO: Find a helper to re-use for these two dirs
+				dir = filepath.Join(destURL.Path, layout.RundexDir)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					log.Fatal(errors.Wrapf(err, "failed to create directory %s", dir))
+				}
+				rundexFS, err := osfs.New("/").Chroot(dir)
+				if err != nil {
+					log.Fatal(errors.Wrapf(err, "failed to chroot into directory %s", dir))
+				}
+				destDex = rundex.NewLocalClient(rundexFS)
+			default:
+				log.Fatal("destination must be a gs:// or file:// URL")
+			}
+		}
+		var assetTypes []rebuild.AssetType
+		if *assetTypesFlag != "" {
+			for _, at := range strings.Split(*assetTypesFlag, ",") {
+				assetTypes = append(assetTypes, rebuild.AssetType(at))
+			}
+		}
+		var fireDex rundex.Reader
+		var err error
+		fireDex, err = rundex.NewFirestore(ctx, *project)
+		if err != nil {
+			log.Fatal(err)
+		}
+		regclient := http.DefaultClient
+		mux := rebuild.RegistryMux{
+			Debian:   debianreg.HTTPRegistry{Client: regclient},
+			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
+			NPM:      npmreg.HTTPRegistry{Client: regclient},
+			PyPI:     pypireg.HTTPRegistry{Client: regclient},
+		}
+		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, func(_ string) (rebuild.LocatableAssetStore, error) { return destStore, nil })
+		// Write the metadata about the run.
+		if *exportRundex {
+			log.Println("Exporting run_metadata")
+			runs, err := fireDex.FetchRuns(ctx, rundex.FetchRunsOpts{IDs: []string{runID}})
+			if err != nil {
+				log.Printf("fetching runs failed: %v", err)
+			} else {
+				if len(runs) != 1 {
+					log.Fatalf("expected exactly one run, got %d", len(runs))
+				}
+				for _, run := range runs {
+					if err := destDex.WriteRun(ctx, run); err != nil {
+						log.Fatalf("writing run %s failed: %v", run.ID, err)
+					}
+				}
+			}
+			log.Printf("Exported run_metadata for run: %s", runID)
+		}
+		// Read all the rebuild objects.
+		var rebuilds []rundex.Rebuild
+		{
+			req, err := buildFetchRebuildRequest("", runID, "", *pattern, false, false)
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("Querying results for [run=%v,pattern=%s]", req.Runs, req.Opts.Pattern)
+			rebuilds, err = fireDex.FetchRebuilds(ctx, req)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		log.Printf("Fetched %d rebuilds", len(rebuilds))
+		// Export all the run objects.
+		rundexReadParallelism := 50
+		type rebuildExport struct {
+			rebuild rundex.Rebuild
+			errs    []error
+		}
+		p := pipe.ParInto(rundexReadParallelism, pipe.FromSlice(rebuilds), func(in rundex.Rebuild, out chan<- rebuildExport) {
+			res := rebuildExport{rebuild: in}
+			defer func() { out <- res }()
+			if *exportRundex {
+				if err := destDex.WriteRebuild(ctx, in); err != nil {
+					res.errs = append(res.errs, errors.Wrap(err, "writing rebuild to rundex"))
+				}
+			}
+			for _, at := range assetTypes {
+				// NOTE: We hardcode wasSmoketest=false, because in.WasSmoketest() incorrectly returns true if the attempt failed during rebuild, resulting in an empty ObliviousID
+				if _, err := butler.Fetch(ctx, runID, false, at.For(in.Target())); err != nil {
+					res.errs = append(res.errs, errors.Wrapf(err, "fetching %s", at))
+				}
+			}
+		})
+		log.Println("Beginning export of rebuilds...")
+		errOut := cmd.OutOrStdout()
+		bar := pb.New(len(rebuilds))
+		bar.Output = cmd.OutOrStderr()
+		bar.ShowTimeLeft = true
+		bar.Start()
+		for re := range p.Out() {
+			if len(re.errs) > 0 {
+				for _, err := range re.errs {
+					fmt.Fprintf(errOut, "%s: %v\n", re.rebuild.ID(), err)
+				}
+			}
+			bar.Increment()
+		}
+		bar.Finish()
 	},
 }
 
@@ -1027,10 +1128,12 @@ var (
 	artifact          = flag.String("artifact", "", "the artifact name")
 	verbose           = flag.Bool("v", false, "verbose output")
 	bench             = flag.String("bench", "", "a path to a benchmark file for filtering or execution")
+	debugStorage      = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
 	logsBucket        = flag.String("logs-bucket", "", "the gcs bucket where gcb logs are stored")
 	metadataBucket    = flag.String("metadata-bucket", "", "the gcs bucket where rebuild output is stored")
 	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
 	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request syscall monitoring")
+	assetTypesFlag    = flag.String("asset-types", "", "a comma-separated list of asset types to export")
 	// run-bench
 	maxConcurrency  = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
 	buildLocal      = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
@@ -1042,15 +1145,13 @@ var (
 	// run-one
 	strategyPath = flag.String("strategy", "", "the strategy file to use")
 	// get-results
-	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
-	format       = flag.String("format", "", "format of the output, options are command specific")
-	assetType    = flag.String("asset-type", "", "the type of asset that should be fetched")
-	prefix       = flag.String("prefix", "", "filter results to those matching this prefix ")
-	pattern      = flag.String("pattern", "", "filter results to those matching this regex pattern")
-	sample       = flag.Int("sample", -1, "if provided, only N results will be displayed")
-	project      = flag.String("project", "", "the project from which to fetch the Firestore data")
-	clean        = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
-	debugStorage = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
+	runFlag = flag.String("run", "", "the run(s) from which to fetch results")
+	format  = flag.String("format", "", "format of the output, options are command specific")
+	prefix  = flag.String("prefix", "", "filter results to those matching this prefix ")
+	pattern = flag.String("pattern", "", "filter results to those matching this regex pattern")
+	sample  = flag.Int("sample", -1, "if provided, only N results will be displayed")
+	project = flag.String("project", "", "the project from which to fetch the Firestore data")
+	clean   = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
 	// TUI
 	benchmarkDir     = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 	defDir           = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
@@ -1059,6 +1160,9 @@ var (
 	sharedAssetStore = flag.String("merged-asset-store", "", "if provided, use a GCS path as a shared asset store")
 	// Migrate
 	dryrun = flag.Bool("dryrun", false, "true if this migration is a dryrun")
+	// Export
+	destination  = flag.String("destination", "", "the destination for the export, e.g. gs://bucket/prefix")
+	exportRundex = flag.Bool("rundex", false, "whether to include the rundex in the export")
 )
 
 func init() {
@@ -1092,10 +1196,19 @@ func init() {
 	getResults.Flags().AddGoFlag(flag.Lookup("project"))
 	getResults.Flags().AddGoFlag(flag.Lookup("clean"))
 	getResults.Flags().AddGoFlag(flag.Lookup("format"))
-	getResults.Flags().AddGoFlag(flag.Lookup("asset-type"))
 	getResults.Flags().AddGoFlag(flag.Lookup("debug-storage"))
 	getResults.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
 	getResults.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
+
+	export.Flags().AddGoFlag(flag.Lookup("run"))
+	export.Flags().AddGoFlag(flag.Lookup("pattern"))
+	export.Flags().AddGoFlag(flag.Lookup("project"))
+	export.Flags().AddGoFlag(flag.Lookup("debug-storage"))
+	export.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
+	export.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
+	export.Flags().AddGoFlag(flag.Lookup("asset-types"))
+	export.Flags().AddGoFlag(flag.Lookup("destination"))
+	export.Flags().AddGoFlag(flag.Lookup("rundex"))
 
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
 	tui.Flags().AddGoFlag(flag.Lookup("llm-project"))
@@ -1127,6 +1240,7 @@ func init() {
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
 	rootCmd.AddCommand(getResults)
+	rootCmd.AddCommand(export)
 	rootCmd.AddCommand(tui)
 	rootCmd.AddCommand(listRuns)
 	rootCmd.AddCommand(infer)

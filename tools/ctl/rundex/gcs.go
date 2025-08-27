@@ -26,12 +26,12 @@ type GCSClient struct {
 }
 
 // NewGCSClient creates a new GCSClient.
-func NewGCSClient(ctx context.Context, client *gcs.Client, bucket, prefix string) (*GCSClient, error) {
+func NewGCSClient(ctx context.Context, client *gcs.Client, bucket, prefix string) *GCSClient {
 	return &GCSClient{
 		client: client,
 		bucket: bucket,
 		prefix: prefix,
-	}, nil
+	}
 }
 
 var _ Reader = &GCSClient{}
