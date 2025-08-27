@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -343,6 +344,51 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 
 func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.RebuildGroupCmd {
 	return []commandreg.RebuildGroupCmd{
+		{
+			Short: "Make benchmark",
+			Func: func(ctx context.Context, rebuilds []rundex.Rebuild) {
+				set := benchmark.PackageSet{}
+				var total int
+				packages := map[string]map[string]*benchmark.Package{}
+				for _, r := range rebuilds {
+					if packages[r.Ecosystem] == nil {
+						packages[r.Ecosystem] = map[string]*benchmark.Package{}
+					}
+					if _, ok := packages[r.Ecosystem][r.Package]; !ok {
+						packages[r.Ecosystem][r.Package] = &benchmark.Package{
+							Ecosystem: r.Ecosystem,
+							Name:      r.Package,
+							Versions:  []string{},
+							Artifacts: []string{},
+						}
+					}
+					packages[r.Ecosystem][r.Package].Versions = append(packages[r.Ecosystem][r.Package].Versions, r.Version)
+					if r.Artifact != "" {
+						packages[r.Ecosystem][r.Package].Artifacts = append(packages[r.Ecosystem][r.Package].Artifacts, r.Artifact)
+					}
+					total++
+				}
+				for _, e := range packages {
+					for _, p := range e {
+						set.Packages = append(set.Packages, *p)
+					}
+				}
+				set.Count = total
+				tempFile, err := os.CreateTemp("", "benchmark-*.json")
+				if err != nil {
+					log.Println(errors.Wrap(err, "creating benchmark file"))
+					return
+				}
+				defer tempFile.Close()
+				e := json.NewEncoder(tempFile)
+				e.SetIndent("", "  ")
+				if err := e.Encode(set); err != nil {
+					log.Println(errors.Wrap(err, "encoding benchmark file"))
+					return
+				}
+				log.Println("Benchmark saved to: ", tempFile.Name())
+			},
+		},
 		{
 			Short: "Find pattern",
 			Func: func(ctx context.Context, rebuilds []rundex.Rebuild) {
