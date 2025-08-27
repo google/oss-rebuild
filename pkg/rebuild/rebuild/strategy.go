@@ -10,7 +10,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Location is where a set of rebuild instruction should be executed.
+// Location defines the source code to be used for a rebuild, specifying the Git
+// repository, a reference (like a commit hash or tag), and an optional
+// subdirectory for executing the build and/or for expected output.
 type Location struct {
 	Repo string `json:"repo" yaml:"repo"`
 	Ref  string `json:"ref" yaml:"ref"`

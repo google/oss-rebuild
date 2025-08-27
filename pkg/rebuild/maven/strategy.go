@@ -4,6 +4,8 @@
 package maven
 
 import (
+	"path"
+
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/pkg/errors"
 
@@ -48,7 +50,7 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				Needs: []string{"maven"},
 			},
 		},
-		OutputDir: "target/",
+		OutputDir: path.Join(b.Dir, "target"),
 	}, nil
 }
 
