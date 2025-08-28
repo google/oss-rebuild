@@ -76,7 +76,7 @@ func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb rebuild.Asset
 
 func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	// Assuming the primary artifact is a .jar file.
-	return mux.Maven.ReleaseURL(ctx, t.Package, t.Version, ".jar")
+	return mux.Maven.ReleaseURL(ctx, t.Package, t.Version, t.Artifact)
 }
 
 func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {

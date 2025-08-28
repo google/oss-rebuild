@@ -18,15 +18,15 @@ import (
 
 type mockMavenRegistry struct {
 	maven.Registry
-	artifactCoordinates map[struct{ PackageName, VersionID, FileType string }][]byte
+	artifactCoordinates map[struct{ PackageName, VersionID, Artifact string }][]byte
 	releaseFileError    error
 }
 
-func (m *mockMavenRegistry) ReleaseFile(ctx context.Context, name string, version string, fileType string) (io.ReadCloser, error) {
+func (m *mockMavenRegistry) Artifact(ctx context.Context, pkg string, version string, artifact string) (io.ReadCloser, error) {
 	if m.releaseFileError != nil {
 		return nil, m.releaseFileError
 	}
-	return io.NopCloser(bytes.NewReader(m.artifactCoordinates[struct{ PackageName, VersionID, FileType string }{PackageName: name, VersionID: version, FileType: fileType}])), nil
+	return io.NopCloser(bytes.NewReader(m.artifactCoordinates[struct{ PackageName, VersionID, Artifact string }{PackageName: pkg, VersionID: version, Artifact: artifact}])), nil
 }
 
 func TestJDKVersionInference(t *testing.T) {
@@ -108,14 +108,23 @@ func TestJDKVersionInference(t *testing.T) {
 				t.Fatalf("zip.Close() error: %v", err)
 			}
 
+			mockPkg, mockVersion := "dummy:dummy", "dummy"
+			artifact, err := maven.TypeJar(mockPkg, mockVersion)
+			if err != nil {
+				t.Fatalf("TypeJar() error = %v", err)
+			}
 			mockMux := rebuild.RegistryMux{
 				Maven: &mockMavenRegistry{
-					artifactCoordinates: map[struct{ PackageName, VersionID, FileType string }][]byte{
-						{"dummy", "dummy", maven.TypeJar}: buf.Bytes(),
+					artifactCoordinates: map[struct{ PackageName, VersionID, Artifact string }][]byte{
+						{mockPkg, mockVersion, artifact}: buf.Bytes(),
 					},
 				},
 			}
-			got, err := inferOrFallbackToDefaultJDK(context.Background(), "dummy", "dummy", mockMux)
+			got, err := inferOrFallbackToDefaultJDK(context.Background(), rebuild.Target{
+				Package:  mockPkg,
+				Version:  mockVersion,
+				Artifact: artifact,
+			}, mockMux)
 			if err != nil {
 				t.Fatalf("getJarJDK() error = %v", err)
 			}

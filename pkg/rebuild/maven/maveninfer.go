@@ -83,7 +83,7 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}
 		return nil, errors.Errorf("no valid git ref")
 	}
-	jdk, err := inferOrFallbackToDefaultJDK(ctx, name, version, mux)
+	jdk, err := inferOrFallbackToDefaultJDK(ctx, t, mux)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching JDK")
 	}
