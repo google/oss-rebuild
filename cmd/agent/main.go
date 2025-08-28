@@ -9,7 +9,9 @@ import (
 	"log"
 	"net/url"
 
+	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/api/idtoken"
 )
@@ -28,7 +30,6 @@ var (
 
 func main() {
 	flag.Parse()
-
 	if *sessionID == "" {
 		log.Fatal("session-id flag is required")
 	}
@@ -53,9 +54,10 @@ func main() {
 	if *targetArtifact == "" {
 		log.Fatal("target-artifact flag is required")
 	}
-
+	if *maxIterations <= 0 {
+		log.Fatal("max-iterations flag must be positive")
+	}
 	ctx := context.Background()
-
 	// Create HTTP client and API URL
 	client, err := idtoken.NewClient(ctx, *agentAPIURL)
 	if err != nil {
@@ -65,27 +67,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to parse agent API URL: %v", err)
 	}
-
-	// Create agent API client stub
-	completeStub := api.Stub[schema.AgentCompleteRequest, any](client, baseURL.JoinPath("agent/session/complete"))
-
-	// Run the agent as a no-op but call Complete to properly work with the system
-	log.Printf("Agent running for session %s", *sessionID)
-	log.Printf("Target: ecosystem=%s package=%s version=%s artifact=%s", *targetEcosystem, *targetPackage, *targetVersion, *targetArtifact)
-
-	// TODO: Implement actual agent logic here
-	// TODO: Make sure complete gets invoked on any failure!
-	// For now, just complete immediately as a no-op
-	req := schema.AgentCompleteRequest{
-		SessionID:  *sessionID,
-		StopReason: "NO_OP",
-		Summary:    "Agent completed as no-op stub",
+	// Create agent API client stubs
+	iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
+	completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
+	deps := agent.RunSessionDeps{
+		IterationStub: iterationStub,
+		CompleteStub:  completeStub,
+		// TODO: Should the agent logic be configurable?
+		Agent:          agent.NewDefaultAgentLogic(),
+		SessionsBucket: *sessionsBucket,
+		MetadataBucket: *metadataBucket,
 	}
-
-	_, err = completeStub(ctx, req)
-	if err != nil {
-		log.Fatalf("Failed to complete agent session: %v", err)
+	req := agent.RunSessionReq{
+		SessionID:     *sessionID,
+		Target:        rebuild.Target{Ecosystem: rebuild.Ecosystem(*targetEcosystem), Package: *targetPackage, Version: *targetVersion, Artifact: *targetArtifact},
+		MaxIterations: *maxIterations,
 	}
-
-	log.Printf("Agent session %s completed successfully", *sessionID)
+	log.Printf("Agent running for session %s, target: %+v", req.SessionID, req.Target)
+	agent.RunSession(ctx, req, deps)
 }
