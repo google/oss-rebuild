@@ -11,23 +11,23 @@ import (
 func TestReleaseURL(t *testing.T) {
 	testCases := []struct {
 		test     string
-		artifact string
+		pkg      string
 		version  string
-		filetype string
+		artifact string
 		want     string
 	}{
 		{
 			test:     "guava_pom",
-			artifact: "com.google.guava:guava",
+			pkg:      "com.google.guava:guava",
 			version:  "33.4.8-jre",
-			filetype: TypePOM,
+			artifact: "guava-33.4.8-jre.pom",
 			want:     "https://repo1.maven.org/maven2/com/google/guava/guava/33.4.8-jre/guava-33.4.8-jre.pom",
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.test, func(t *testing.T) {
 			r := HTTPRegistry{}
-			url, err := r.ReleaseURL(context.Background(), tc.artifact, tc.version, tc.filetype)
+			url, err := r.ReleaseURL(context.Background(), tc.pkg, tc.version, tc.artifact)
 			if err != nil {
 				t.Fatalf("ReleaseURL() error = %v", err)
 			}

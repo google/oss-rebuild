@@ -23,7 +23,6 @@ import (
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/pkg/errors"
 )
 
@@ -123,7 +122,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		}
 		return cfg, errors.Errorf("no valid git ref")
 	}
-	jdk, err := inferOrFallbackToDefaultJDK(ctx, name, version, mux)
+	jdk, err := inferOrFallbackToDefaultJDK(ctx, t, mux)
 	if err != nil {
 		return cfg, errors.Wrap(err, "fetching JDK")
 	}
@@ -150,8 +149,8 @@ func getPomXML(tree *object.Tree, path string) (pomXML PomXML, err error) {
 }
 
 // inferOrFallbackToDefaultJDK tries to infer the JDK version from the artifact's metadata, falling back to a default if necessary.
-func inferOrFallbackToDefaultJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
-	jdk, err := inferJDKVersion(ctx, name, version, mux)
+func inferOrFallbackToDefaultJDK(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
+	jdk, err := inferJDKVersion(ctx, t, mux)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching JDK")
 	}
@@ -166,8 +165,8 @@ func inferOrFallbackToDefaultJDK(ctx context.Context, name, version string, mux 
 }
 
 // inferJDKVersion gets the JDK version from the MANIFEST or Java bytecode.
-func inferJDKVersion(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
-	releaseFile, err := mux.Maven.ReleaseFile(ctx, name, version, maven.TypeJar)
+func inferJDKVersion(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
+	releaseFile, err := mux.Maven.Artifact(ctx, t.Package, t.Version, t.Artifact)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching jar file")
 	}
