@@ -60,7 +60,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 	}
 	// Create session in Firestore
 	err = deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
-		// NOTE: This would fail if the
+		// NOTE: This would fail if the session already exists.
 		return t.Create(deps.FirestoreClient.Collection("agent_sessions").Doc(sessionID), session)
 	})
 	if err != nil {
