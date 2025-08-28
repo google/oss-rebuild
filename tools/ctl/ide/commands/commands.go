@@ -5,34 +5,35 @@ package commands
 
 import (
 	"bufio"
+	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/glob"
 	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
 	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
 	"github.com/google/oss-rebuild/tools/ctl/ide/chatbox"
-	"github.com/google/oss-rebuild/tools/ctl/ide/choice"
 	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
 	"github.com/google/oss-rebuild/tools/ctl/ide/details"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
-	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rebuildhistory"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rundextable"
 	"github.com/google/oss-rebuild/tools/ctl/ide/rundextree"
@@ -51,21 +52,66 @@ const (
 	RundexReadParallelism = 10
 	LLMRequestParallelism = 50
 	expertPrompt          = `You are an expert in diagnosing build issues in multiple open source ecosystems. You will help diagnose why builds failed, or why the builds might have produced an artifact that differs from the upstream open source package. Provide clear and concise explantions of why the rebuild failed, and suggest changes that could fix the rebuild`
+	containerName         = "oss-rebuild-debug-temp"
 )
 
-func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.RebuildCmd {
+func runLocalInput(ctx context.Context, executor *local.DockerRunExecutor, dex rundex.Reader, inp rebuild.Input) error {
+	assets := rebuild.NewFilesystemAssetStore(memfs.New())
+	h, err := executor.Start(ctx, inp, build.Options{
+		// Use a constant BuildID to make sure we overwrite the container each run
+		BuildID: containerName,
+		Resources: build.Resources{
+			AssetStore: assets,
+		},
+	})
+	if err != nil {
+		return errors.Wrap(err, "starting build")
+	}
+	go io.Copy(log.Default().Writer(), h.OutputStream())
+	res, err := h.Wait(ctx)
+	if err != nil {
+		return errors.Wrap(err, "error while waiting")
+	} else if res.Error != nil {
+		return errors.Wrap(res.Error, "build failed")
+	}
+	// TODO: How should we the artifacts? Maybe butler?
+	// TODO: Log results to dex if it's writable
+	return nil
+}
+
+func runLocal(ctx context.Context, executor *local.DockerRunExecutor, dex rundex.Reader, target rebuild.Target) error {
+	cmd := exec.CommandContext(ctx, "go", "run", "tools/ctl/ctl.go", "infer", "--ecosystem", string(target.Ecosystem), "--package", target.Package, "--version", target.Version, "--artifact", target.Artifact)
+	cmd.Stderr = log.Default().Writer()
+	out, err := cmd.Output()
+	if err != nil {
+		return errors.Wrap(err, "running inference")
+	}
+	var stratOneOf schema.StrategyOneOf
+	err = json.NewDecoder(bytes.NewBuffer(out)).Decode(&stratOneOf)
+	if err != nil {
+		log.Println("Broken strategy: " + string(out))
+		return errors.Wrap(err, "decoding strategy")
+	}
+	strat, err := stratOneOf.Strategy()
+	if err != nil {
+		return errors.Wrap(err, "decoding strategy")
+	}
+	inp := rebuild.Input{
+		Target:   target,
+		Strategy: strat,
+	}
+	return runLocalInput(ctx, executor, dex, inp)
+}
+
+func NewRebuildCmds(app *tview.Application, executor *local.DockerRunExecutor, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.RebuildCmd {
 	return []commandreg.RebuildCmd{
 		{
 			Short: "run local",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
-				rb.RunLocal(ctx, example, rebuilder.RunLocalOpts{})
-			},
-		},
-		{
-			Short: "restart && run local",
-			Func: func(ctx context.Context, example rundex.Rebuild) {
-				rb.Restart(ctx)
-				rb.RunLocal(ctx, example, rebuilder.RunLocalOpts{})
+				if err := runLocal(ctx, executor, dex, example.Target()); err != nil {
+					log.Println(err)
+					return
+				}
 			},
 		},
 		{
@@ -129,7 +175,15 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 						return
 					}
 				}
-				rb.RunLocal(ctx, example, rebuilder.RunLocalOpts{Strategy: &newStrat})
+				strat, err := newStrat.Strategy()
+				if err != nil {
+					log.Println(errors.Wrap(err, "decoding strategy"))
+					return
+				}
+				if err := runLocalInput(ctx, executor, dex, rebuild.Input{Target: example.Target(), Strategy: strat}); err != nil {
+					log.Println(err)
+					return
+				}
 			},
 		},
 		{
@@ -341,7 +395,7 @@ func NewRebuildCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn mod
 	}
 }
 
-func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.RebuildGroupCmd {
+func NewRebuildGroupCmds(app *tview.Application, executor *local.DockerRunExecutor, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.RebuildGroupCmd {
 	return []commandreg.RebuildGroupCmd{
 		{
 			Short: "Find pattern",
@@ -541,86 +595,22 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 
 }
 
-func NewGlobalCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.GlobalCmd {
+func NewGlobalCmds(app *tview.Application, executor *local.DockerRunExecutor, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.GlobalCmd {
 	return []commandreg.GlobalCmd{
-		{
-			Short:  "restart rebuilder",
-			Hotkey: 'r',
-			Func:   func(ctx context.Context) { rb.Restart(ctx) },
-		},
-		{
-			Short:  "kill rebuilder",
-			Hotkey: 'x',
-			Func: func(_ context.Context) {
-				rb.Kill()
-			},
-		},
 		{
 			Short:  "attach",
 			Hotkey: 'a',
 			Func: func(ctx context.Context) {
-				if err := rb.Attach(ctx); err != nil {
+				if err := tmux.Start(fmt.Sprintf("docker exec -it %s sh", containerName)); err != nil {
 					log.Println(err)
-				}
-			},
-		},
-		{
-			Short:  "benchmark",
-			Hotkey: 'b',
-			Func: func(ctx context.Context) {
-				var bench string
-				{
-					all, err := benches.List()
-					if err != nil {
-						log.Println(errors.Wrap(err, "listing benchmarks"))
-						return
-					}
-					choice, opts, selected := choice.Choice(all)
-					exitFunc := modalFn(choice, opts)
-					bench = <-selected
-					go app.QueueUpdateDraw(exitFunc)
-				}
-				wdex, ok := dex.(rundex.Writer)
-				if !ok {
-					log.Println(errors.New("Cannot run benchmark with non-local rundex client."))
 					return
 				}
-				set, err := benchmark.ReadBenchmark(bench)
-				if err != nil {
-					log.Println(errors.Wrap(err, "reading benchmark"))
-					return
-				}
-				var runID string
-				{
-					now := time.Now().UTC()
-					runID = now.Format(time.RFC3339)
-					wdex.WriteRun(ctx, rundex.FromRun(schema.Run{
-						ID:            runID,
-						BenchmarkName: filepath.Base(bench),
-						BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-						Type:          string(schema.SmoketestMode),
-						Created:       now,
-					}))
-				}
-				verdictChan, err := rb.RunBench(ctx, set, runID)
-				if err != nil {
-					log.Println(errors.Wrap(err, "running benchmark"))
-					return
-				}
-				var successes int
-				for v := range verdictChan {
-					if v.Message == "" {
-						successes += 1
-					}
-					wdex.WriteRebuild(ctx, rundex.NewRebuildFromVerdict(v, "local", runID, time.Now().UTC()))
-				}
-				log.Printf("Finished benchmark %s with %d successes.", bench, successes)
 			},
 		},
 	}
 }
 
-func NewBenchmarkCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.BenchmarkCmd {
+func NewBenchmarkCmds(app *tview.Application, executor *local.DockerRunExecutor, modalFn modal.Fn, butler localfiles.Butler, aiClient *genai.Client, buildDefs rebuild.LocatableAssetStore, dex rundex.Reader, benches benchmark.Repository, cmdReg *commandreg.Registry) []commandreg.BenchmarkCmd {
 	return []commandreg.BenchmarkCmd{
 		{
 			Short: "View by target",
