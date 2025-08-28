@@ -195,7 +195,7 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		runArgs = append(runArgs, "-w", plan.WorkingDir)
 	}
 	runArgs = append(runArgs, plan.Image)
-	runArgs = append(runArgs, plan.Command...)
+	runArgs = append(runArgs, "/bin/sh", "-c", plan.Script)
 	// Execute the Docker run command with streaming output
 	handle.updateStatus(build.BuildStateRunning)
 	outbuf := &bytes.Buffer{}
