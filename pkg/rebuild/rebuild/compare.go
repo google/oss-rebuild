@@ -29,6 +29,8 @@ func UpstreamArtifactReader(ctx context.Context, t Target, mux RegistryMux) (io.
 			return nil, errors.Errorf("failed to parse debian component: %s", t.Package)
 		}
 		return mux.Debian.Artifact(ctx, component, name, t.Artifact)
+	case Maven:
+		return mux.Maven.Artifact(ctx, t.Package, t.Version, t.Artifact)
 	default:
 		return nil, errors.New("unsupported ecosystem")
 	}
