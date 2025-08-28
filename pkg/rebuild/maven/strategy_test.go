@@ -42,7 +42,7 @@ wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linu
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
 					mvn clean package -DskipTests`[1:]),
-				OutputPath: "target/ldapchai-0.8.6.jar",
+				OutputPath: "dir/target/ldapchai-0.8.6.jar",
 			},
 			false,
 		},
