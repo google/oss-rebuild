@@ -18,8 +18,8 @@ import (
 type DockerRunPlanner struct {
 }
 
-// dockerRunScriptArgs holds template arguments for the run script
-type dockerRunScriptArgs struct {
+// BuildScriptArgs holds template arguments for the run script
+type BuildScriptArgs struct {
 	Inst           rebuild.Instructions
 	PackageManager build.PackageManagerCommands
 	UseTimewarp    bool
@@ -27,8 +27,8 @@ type dockerRunScriptArgs struct {
 	TimewarpAuth   bool
 }
 
-// dockerRunScriptTpl is the template for the script executed in the container
-var dockerRunScriptTpl = template.Must(
+// BuildScriptTpl is the template for the script executed in the container
+var BuildScriptTpl = template.Must(
 	template.New("docker run script").Funcs(template.FuncMap{
 		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
 		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
@@ -97,7 +97,7 @@ func (p *DockerRunPlanner) generateCommand(instructions rebuild.Instructions, in
 	}
 	// Execute template to generate script
 	var buf strings.Builder
-	if err := dockerRunScriptTpl.Execute(&buf, dockerRunScriptArgs{
+	if err := BuildScriptTpl.Execute(&buf, BuildScriptArgs{
 		Inst:           instructions,
 		PackageManager: pkgMgr,
 		UseTimewarp:    timewarpURL != "",
