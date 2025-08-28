@@ -20,10 +20,7 @@ import (
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/attestation"
-	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
-	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
-	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
-	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
@@ -165,7 +162,7 @@ func getBuildDefinition(rebuildAttestation *attestation.RebuildAttestation) (*sc
 }
 
 func compareArtifacts(ctx context.Context, mux rebuild.RegistryMux, t rebuild.Target, remoteStore rebuild.LocatableAssetStore, rebuildAttestation *attestation.RebuildAttestation) (*verifier.ArtifactSummary, *verifier.ArtifactSummary, error) {
-	rebuilder, ok := rebuilders[t.Ecosystem]
+	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
 	if !ok {
 		return nil, nil, errors.New("unsupported ecosystem")
 	}
@@ -203,15 +200,8 @@ func compareArtifacts(ctx context.Context, mux rebuild.RegistryMux, t rebuild.Ta
 	return &rb, &up, nil
 }
 
-var rebuilders = map[rebuild.Ecosystem]rebuild.Rebuilder{
-	rebuild.NPM:      &npmrb.Rebuilder{},
-	rebuild.PyPI:     &pypirb.Rebuilder{},
-	rebuild.CratesIO: &cratesrb.Rebuilder{},
-	rebuild.Debian:   &debianrb.Rebuilder{},
-}
-
 func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Target, strategy rebuild.Strategy, rebuildAttestation *attestation.RebuildAttestation) (string, error) {
-	rebuilder, ok := rebuilders[t.Ecosystem]
+	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
 	if !ok {
 		return "", errors.New("unsupported ecosystem")
 	}
