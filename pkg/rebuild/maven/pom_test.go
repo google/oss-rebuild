@@ -26,13 +26,17 @@ func (TestRegistry) PackageVersion(_ context.Context, _, _ string) (*mavenreg.Ma
 	return nil, nil
 }
 
-func (r TestRegistry) Artifact(_ context.Context, _, _, _ string) (io.ReadCloser, error) {
+func (r TestRegistry) ReleaseFile(_ context.Context, _, _, _ string) (io.ReadCloser, error) {
 	reader := strings.NewReader(r.releaseFile)
 	return io.NopCloser(reader), nil
 }
 
 func (r TestRegistry) ReleaseURL(_ context.Context, _, _, _ string) (string, error) {
 	return "", nil
+}
+
+func (r TestRegistry) Artifact(_ context.Context, _, _, _ string) (io.ReadCloser, error) {
+	return nil, nil
 }
 
 func TestNewPomXML(t *testing.T) {

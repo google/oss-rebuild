@@ -354,11 +354,7 @@ func main() {
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "fetching version metadata"))
 		}
-		artifact, err := mavenreg.TypeSources(*pkg, *version)
-		if err != nil {
-			log.Fatal(errors.Wrap(err, "creating artifact name for source jar"))
-		}
-		f, err = mavenreg.HTTPRegistry{}.Artifact(ctx, *pkg, *version, artifact)
+		f, err = mavenreg.HTTPRegistry{}.ReleaseFile(ctx, *pkg, *version, mavenreg.TypeSources)
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "fetching source jar"))
 		}
