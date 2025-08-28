@@ -35,8 +35,9 @@ type AgentCreateDeps struct {
 }
 
 func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *AgentCreateDeps) (*schema.AgentCreateResponse, error) {
-	sessionID := uuid.New().String()
-	jobName := fmt.Sprintf("agent-%s", sessionID)
+	sessionTime := time.Now().UTC()
+	sessionID := fmt.Sprintf("session-%s-%d", sessionTime.Format(time.RFC3339), uuid.New().ID()) // TODO: Is there a more compact way to encode the UUID?
+	jobName := fmt.Sprintf("agent-%s", sessionTime.Format(time.RFC3339))
 	// Set defaults for configuration
 	maxIterations := req.MaxIterations
 	if maxIterations == 0 {
@@ -50,8 +51,8 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		Context:        req.Context,
 		Status:         schema.AgentSessionStatusInitializing,
 		JobName:        jobName,
-		Created:        time.Now().UTC(),
-		Updated:        time.Now().UTC(),
+		Created:        sessionTime,
+		Updated:        sessionTime,
 	}
 	// Create session in Firestore
 	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {

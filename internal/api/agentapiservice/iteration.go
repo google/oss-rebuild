@@ -5,6 +5,7 @@ package agentapiservice
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"time"
 
@@ -37,7 +38,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	}
 	obliviousID := uuid.New().String()
 	iterTime := time.Now().UTC()
-	iterationID := iterTime.Format(time.RFC3339)
+	iterationID := fmt.Sprintf("iteration-%s", iterTime.Format(time.RFC3339))
 	var iteration schema.AgentIteration
 	var session schema.AgentSession
 	// Create iteration record and fetch session in a transaction
@@ -159,5 +160,6 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	return &schema.AgentCreateIterationResponse{
 		IterationID: iterationID,
 		ObliviousID: obliviousID,
+		Iteration:   &iteration,
 	}, nil
 }
