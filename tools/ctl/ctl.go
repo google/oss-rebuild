@@ -41,6 +41,7 @@ import (
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/internal/urlx"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -1046,7 +1047,7 @@ var getGradleGAV = &cobra.Command{
 			return errors.Wrap(err, "failed to checkout commit")
 		}
 
-		gradleProject, err := gradle.RunPrintCoordinates(cmd.Context(), *repo)
+		gradleProject, err := gradle.RunPrintCoordinates(cmd.Context(), *repo, local.NewRealCommandExecutor())
 		if err != nil {
 			return errors.Wrap(err, "running printCoordinates")
 		}
