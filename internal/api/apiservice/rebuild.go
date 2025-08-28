@@ -27,11 +27,10 @@ import (
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
-	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
-	mavenrb "github.com/google/oss-rebuild/pkg/rebuild/maven"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuilders"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
@@ -44,14 +43,6 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/grpc/codes"
 )
-
-var rebuilders = map[rebuild.Ecosystem]rebuild.Rebuilder{
-	rebuild.NPM:      &npmrb.Rebuilder{},
-	rebuild.PyPI:     &pypirb.Rebuilder{},
-	rebuild.CratesIO: &cratesrb.Rebuilder{},
-	rebuild.Debian:   &debianrb.Rebuilder{},
-	rebuild.Maven:    &mavenrb.Rebuilder{},
-}
 
 func sanitize(key string) string {
 	return strings.ReplaceAll(key, "/", "!")
@@ -204,7 +195,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		buildDefRepo = entry.BuildDefLoc
 		buildDef = &entry.BuildDefinition
 	}
-	rebuilder, ok := rebuilders[t.Ecosystem]
+	rebuilder, ok := rebuilders.All[t.Ecosystem]
 	if !ok {
 		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
@@ -230,7 +221,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	}
 	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
 		BuildID:           obID,
-		UseTimewarp:       rebuilders[t.Ecosystem].UsesTimewarp(in),
+		UseTimewarp:       rebuilders.All[t.Ecosystem].UsesTimewarp(in),
 		UseNetworkProxy:   useProxy,
 		UseSyscallMonitor: useSyscallMonitor,
 		Resources: build.Resources{
