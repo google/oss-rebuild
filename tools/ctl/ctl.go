@@ -39,8 +39,11 @@ import (
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/internal/urlx"
+	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuilders"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
@@ -71,7 +74,7 @@ var rootCmd = &cobra.Command{
 	Short: "A debugging tool for OSS-Rebuild",
 }
 
-var debuildShellScript = template.Must(
+var debianShellScript = template.Must(
 	template.New(
 		"rebuild shell script",
 	).Funcs(template.FuncMap{
@@ -123,20 +126,21 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestP
 	return &req, nil
 }
 
-func makeShellScript(input rebuild.Input) (string, error) {
-	env := rebuild.BuildEnv{HasRepo: false, PreferPreciseToolchain: true}
+func makeShellScript(input rebuild.Input, timewarpURL string) (string, error) {
+	env := rebuild.BuildEnv{TimewarpHost: "localhost:8081", HasRepo: false, PreferPreciseToolchain: true}
 	instructions, err := input.Strategy.GenerateFor(input.Target, env)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to generate strategy")
 	}
 	shellScript := new(bytes.Buffer)
-	if input.Target.Ecosystem == rebuild.Debian || input.Target.Ecosystem == rebuild.Maven {
-		err = debuildShellScript.Execute(shellScript, instructions)
-	} else {
-		err = errors.Errorf("unimplemented ecosystem %v", input.Target.Ecosystem)
-	}
-	if err != nil {
-		return "", errors.Wrap(err, "populating template")
+	if err := local.BuildScriptTpl.Execute(shellScript, local.BuildScriptArgs{
+		Inst:           instructions,
+		PackageManager: build.GetPackageManagerCommands(build.Debian), // Assume we're running the script on debian
+		UseTimewarp:    timewarpURL != "",
+		TimewarpURL:    timewarpURL,
+		TimewarpAuth:   false,
+	}); err != nil {
+		return "", errors.Wrap(err, "executing run script template")
 	}
 	return shellScript.String(), nil
 }
@@ -1005,7 +1009,15 @@ var infer = &cobra.Command{
 				log.Fatal("no strategy")
 			}
 			in := rebuild.Input{Target: t, Strategy: s}
-			script, err := makeShellScript(in)
+			rebuilder, ok := rebuilders.All[t.Ecosystem]
+			if !ok {
+				log.Fatalf("Unknown ecosystem: %s", t.Ecosystem)
+			}
+			timewarpURL := ""
+			if rebuilder.UsesTimewarp(in) {
+				timewarpURL = "https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20250428204534-b35098b3c7b7/timewarp"
+			}
+			script, err := makeShellScript(in, timewarpURL)
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "generating shell script"))
 			}

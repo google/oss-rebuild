@@ -23,6 +23,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuilders"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
@@ -102,19 +103,8 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (rebuild.Strategy, error) {
 	mem := memory.NewStorage()
 	fs := memfs.New()
-	var rebuilder rebuild.Rebuilder
-	switch t.Ecosystem {
-	case rebuild.NPM:
-		rebuilder = npm.Rebuilder{}
-	case rebuild.PyPI:
-		rebuilder = pypi.Rebuilder{}
-	case rebuild.CratesIO:
-		rebuilder = cratesio.Rebuilder{}
-	case rebuild.Debian:
-		rebuilder = debian.Rebuilder{}
-	case rebuild.Maven:
-		return nil, errors.New("maven not implemented")
-	default:
+	rebuilder, ok := rebuilders.All[t.Ecosystem]
+	if !ok {
 		return nil, errors.New("unsupported ecosystem")
 	}
 	repo, err := rebuilder.InferRepo(ctx, t, mux)
