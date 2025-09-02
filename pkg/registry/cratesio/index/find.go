@@ -26,43 +26,22 @@ type RegistryResolution struct {
 	CommitTime time.Time
 }
 
-// FindRegistryResolution searches a single registry index for the earliest possible state a registry resolution could have taken place.
-// This represents the best point to reconstruct a Cargo.lock file for a crate published at the provided time.
-func FindRegistryResolution(index *git.Repository, lockfileCrates []cargolock.Package, cratePublished time.Time) (*RegistryResolution, error) {
-	// Convert to internal format with registry paths
-	internalPackages := make([]internalPackage, len(lockfileCrates))
-	for i, pkg := range lockfileCrates {
-		internalPackages[i] = internalPackage{
-			Package: pkg,
-			Path:    getPackageFilePath(pkg.Name),
-		}
-	}
-	// Use the existing implementation
-	result, err := findCommitWithVersions(index, internalPackages, cratePublished)
-	if err != nil {
-		return nil, errors.Wrap(err, "searching index")
-	}
-	// Convert to public API format
-	return &RegistryResolution{
-		CommitHash: result.ResolutionCommit.Hash,
-		CommitTime: result.ResolutionCommit.Committer.When,
-	}, nil
-}
-
-// FindRegistryResolutionMultiRepo searches across multiple sequential registry indices for the earliest possible state a registry resolution could have taken place.
+// FindRegistryResolution searches across multiple sequential registry indices for the earliest possible state a registry resolution could have taken place.
 // Indices should be ordered from newest to oldest (e.g., current index first, then previous snapshot(s)).
-func FindRegistryResolutionMultiRepo(indices []*git.Repository, lockfileCrates []cargolock.Package, cratePublished time.Time) (*RegistryResolution, error) {
+func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargolock.Package, cratePublished time.Time) (*RegistryResolution, error) {
+	if len(lockfileCrates) == 0 {
+		return nil, errors.New("no crates to resolve")
+	}
 	// Convert to internal format
 	internalPackages := make([]internalPackage, len(lockfileCrates))
 	for i, pkg := range lockfileCrates {
 		internalPackages[i] = internalPackage{
 			Package: pkg,
-			Path:    getPackageFilePath(pkg.Name),
+			Path:    getRegistryFilePath(pkg.Name),
 		}
 	}
-	var lastResult *searchResult
-	var bestResult *searchResult
-	// Search each index in order
+	var lastResult, bestResult *searchResult
+	// Search each index in order until found
 	for i, index := range indices {
 		result, err := findCommitWithVersions(index, internalPackages, cratePublished)
 		if err != nil {
@@ -82,7 +61,7 @@ func FindRegistryResolutionMultiRepo(indices []*git.Repository, lockfileCrates [
 			}
 		}
 		bestResult = result
-		// If we found a boundary within this repo, we're done
+		// If we found a boundary within this index, we're done
 		if result.PriorCommit != nil {
 			break
 		}
@@ -108,8 +87,8 @@ type searchResult struct {
 	PriorCommit      *object.Commit
 }
 
-// getPackageFilePath computes the crates registry path for a crate
-func getPackageFilePath(packageName string) string {
+// getRegistryFilePath computes the crates registry path for a crate
+func getRegistryFilePath(packageName string) string {
 	packageName = strings.ToLower(packageName)
 	switch len(packageName) {
 	case 1:
