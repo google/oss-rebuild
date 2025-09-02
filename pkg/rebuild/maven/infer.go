@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	mavenBuildTool = "maven"
+	mavenBuildTool  = "maven"
+	gradleBuildTool = "gradle"
 )
 
 const fallbackJDK = "11"
@@ -72,6 +73,8 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	switch buildTool {
 	case mavenBuildTool:
 		return MavenInfer(ctx, t, mux, repoConfig)
+	case gradleBuildTool:
+		return GradleInfer(ctx, t, mux, repoConfig)
 	default:
 		return nil, errors.Errorf("unsupported build tool: %s", buildTool)
 	}
@@ -92,6 +95,12 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 			currentDepth = strings.Count(f.Name, "/")
 		}
 
+		// Check for Gradle's build file
+		if path.Base(f.Name) == "gradlew" {
+			currentBuildTool = gradleBuildTool
+			currentDepth = strings.Count(f.Name, "/")
+		}
+
 		// If a supported build file was found, compare its depth to the current minimum
 		if currentBuildTool != "" {
 			if minDepth == -1 || currentDepth < minDepth {
@@ -107,7 +116,7 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 		return bestBuildTool, nil
 	}
 
-	return "", errors.Errorf("only Maven is supported, but no pom.xml found")
+	return "", errors.Errorf("neither Maven nor Gradle supported build files were found")
 }
 
 // inferOrFallbackToDefaultJDK tries to infer the JDK version from the artifact's metadata, falling back to a default if necessary.
