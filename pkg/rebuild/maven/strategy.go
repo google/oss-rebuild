@@ -7,10 +7,10 @@ import (
 	"path"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
-	"github.com/pkg/errors"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/pkg/errors"
 )
 
 type MavenBuild struct {
@@ -74,8 +74,8 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{
 			{
 				Runs: textwrap.Dedent(`
-				mkdir -p /opt/jdk
-				wget -q -O - "{{.With.versionURL}}" | tar -xzf - --strip-components=1 -C /opt/jdk`[1:]),
+					mkdir -p /opt/jdk
+					wget -q -O - "{{.With.versionURL}}" | tar -xzf - --strip-components=1 -C /opt/jdk`[1:]),
 				Needs: []string{"wget"},
 			},
 		},
