@@ -19,7 +19,7 @@ func TestMavenStrategies(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			"return build instructions for a valid JDK version",
+			"return maven build instructions for a valid JDK version",
 			&MavenBuild{
 				Location: rebuild.Location{
 					Repo: "https://foo.bar",
@@ -36,8 +36,9 @@ func TestMavenStrategies(t *testing.T) {
 				},
 				SystemDeps: []string{"git", "wget", "maven"},
 				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
-				Deps: `mkdir -p /opt/jdk
-wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`,
+				Deps: textwrap.Dedent(`
+					mkdir -p /opt/jdk
+					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
