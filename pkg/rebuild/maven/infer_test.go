@@ -212,6 +212,32 @@ func TestBuildToolInference(t *testing.T) {
 			expectedBuildTool: mavenBuildTool,
 			wantErr:           true,
 		},
+		{
+			name: "gradle over maven",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  gradlew: |
+                    #!/bin/sh
+                  api/core/pom.xml: |
+                    <project></project>`,
+			expectedBuildTool: gradleBuildTool,
+			wantErr:           false,
+		},
+		{
+			name: "maven over gradle",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  pom.xml: |
+                      <project></project>
+                  api/core/gradlew: |
+                      #!/bin/sh`,
+			expectedBuildTool: mavenBuildTool,
+			wantErr:           false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repo, nil))
