@@ -30,6 +30,7 @@ type StrategyOneOf struct {
 	NPMCustomBuild       *npm.NPMCustomBuild            `json:"npm_custom_build,omitempty" yaml:"npm_custom_build,omitempty"`
 	CratesIOCargoPackage *cratesio.CratesIOCargoPackage `json:"cratesio_cargo_package,omitempty" yaml:"cratesio_cargo_package,omitempty"`
 	MavenBuild           *maven.MavenBuild              `json:"maven_build,omitempty" yaml:"maven_build,omitempty"`
+	GradleBuild          *maven.GradleBuild             `json:"gradle_build,omitempty" yaml:"gradle_build,omitempty"`
 	DebianPackage        *debian.DebianPackage          `json:"debian_package,omitempty" yaml:"debian_package,omitempty"`
 	Debrebuild           *debian.Debrebuild             `json:"debrebuild,omitempty" yaml:"debrebuild,omitempty"`
 	ManualStrategy       *rebuild.ManualStrategy        `json:"manual,omitempty" yaml:"manual,omitempty"`
@@ -46,6 +47,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.PureWheelBuild = t
 	case *maven.MavenBuild:
 		oneof.MavenBuild = t
+	case *maven.GradleBuild:
+		oneof.GradleBuild = t
 	case *npm.NPMPackBuild:
 		oneof.NPMPackBuild = t
 	case *npm.NPMCustomBuild:
@@ -108,6 +111,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.MavenBuild != nil {
 			num++
 			s = oneof.MavenBuild
+		}
+		if oneof.GradleBuild != nil {
+			num++
+			s = oneof.GradleBuild
 		}
 	}
 	if num != 1 {
