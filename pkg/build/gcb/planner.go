@@ -28,7 +28,7 @@ type upload struct {
 	To   string
 }
 
-// tetragonPoliciesYaml contains the same Tetragon policies as rebuildremote.go
+// tetragonPoliciesYaml contains the Tetragon policy used for build syscall monitoring
 var tetragonPoliciesYaml = []string{`apiVersion: cilium.io/v1alpha1
 kind: TracingPolicy
 metadata:
@@ -111,7 +111,6 @@ func init() {
 	}
 }
 
-// gcbContainerArgs matches the structure used in rebuildremote.go for consistency
 type gcbContainerArgs struct {
 	rebuild.Instructions
 	BaseImage       string
@@ -125,7 +124,7 @@ type gcbContainerArgs struct {
 	ProxyAuth       bool
 }
 
-// gcbDockerfileTpl generates Dockerfiles consistent with rebuildremote.go
+// gcbDockerfileTpl generates Dockerfiles for use in GCB
 var gcbDockerfileTpl = template.Must(
 	template.New("gcb dockerfile").Funcs(template.FuncMap{
 		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
@@ -174,7 +173,7 @@ var gcbDockerfileTpl = template.Must(
 			`)[1:], // remove leading newline
 	))
 
-// gcbStandardBuildTpl generates standard build scripts for Cloud Build steps (matching rebuildremote.go)
+// gcbStandardBuildTpl generates standard build scripts for Cloud Build steps
 var gcbStandardBuildTpl = template.Must(
 	template.New("gcb standard build script").Parse(
 		textwrap.Dedent(`
@@ -204,7 +203,7 @@ var gcbStandardBuildTpl = template.Must(
 			`)[1:], // remove leading newline
 	))
 
-// gcbProxyBuildTpl generates proxy-enabled build scripts for Cloud Build steps (matching rebuildremote.go)
+// gcbProxyBuildTpl generates proxy-enabled build scripts for Cloud Build steps
 // NOTE(impl): There are a number of factors complicating this harness that warrant some explanation.
 //   - Overview: The proxy and build are executed in separate containers. All
 //     HTTP traffic is redirected to the proxy from the build AND containers
@@ -591,7 +590,7 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 	return buf.String(), nil
 }
 
-// gcbAssetUploadTpl for asset upload script (matching rebuildremote.go exactly)
+// gcbAssetUploadTpl for asset upload script
 var gcbAssetUploadTpl = template.Must(
 	template.New("gcb asset upload").Parse(
 		textwrap.Dedent(`
