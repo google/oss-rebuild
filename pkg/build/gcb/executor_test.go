@@ -423,3 +423,99 @@ func must[T any](t T, err error) T {
 	}
 	return t
 }
+
+func TestGCBExecutorFailedBuild(t *testing.T) {
+	ctx := context.Background()
+	// Create mock client
+	mockClient := &gcbtest.MockClient{}
+	// Setup mock responses
+	buildResult := &cloudbuild.Build{
+		Id:         "test-build-gcb-123",
+		Status:     "FAILURE",
+		StartTime:  time.Now().Format(time.RFC3339),
+		FinishTime: time.Now().Format(time.RFC3339),
+	}
+	// Create operation metadata
+	createMetadataBytes, _ := json.Marshal(cloudbuild.BuildOperationMetadata{})
+	operation := &cloudbuild.Operation{
+		Name:     "projects/test-project/operations/test-build-123",
+		Metadata: googleapi.RawMessage(createMetadataBytes),
+	}
+	doneMetadata := &cloudbuild.BuildOperationMetadata{
+		Build: buildResult,
+	}
+	doneMetadataBytes, _ := json.Marshal(doneMetadata)
+	doneOperation := &cloudbuild.Operation{
+		Name:     "projects/test-project/operations/test-build-123",
+		Done:     true,
+		Metadata: googleapi.RawMessage(doneMetadataBytes),
+	}
+	createChan := make(chan struct{})
+	defer close(createChan)
+	mockClient.CreateBuildFunc = func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
+		<-createChan
+		return operation, nil
+	}
+	mockClient.WaitForOperationFunc = func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
+		return doneOperation, nil
+	}
+	// Create executor
+	config := ExecutorConfig{
+		Client:           mockClient,
+		Project:          "test-project",
+		ServiceAccount:   "test@test.iam.gserviceaccount.com",
+		LogsBucket:       "test-bucket",
+		OutputBufferSize: 1024,
+	}
+	executor, err := NewExecutor(config)
+	if err != nil {
+		t.Fatalf("NewGCBExecutor failed: %v", err)
+	}
+	// Create test input
+	input := rebuild.Input{
+		Target: rebuild.Target{
+			Ecosystem: rebuild.NPM,
+			Package:   "test-package",
+			Version:   "1.0.0",
+			Artifact:  "test-package-1.0.0.tgz",
+		},
+		Strategy: &rebuild.ManualStrategy{
+			Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			SystemDeps: []string{"git", "node", "npm"},
+			Deps:       "npm install",
+			Build:      "npm run build",
+			OutputPath: "dist/test-package-1.0.0.tgz",
+		},
+	}
+	baseImageConfig := build.BaseImageConfig{
+		Default: "docker.io/library/alpine:3.19",
+	}
+	opts := build.Options{
+		BuildID:         "test-build-123",
+		UseTimewarp:     false,
+		UseNetworkProxy: false,
+		Resources: build.Resources{
+			BaseImageConfig: baseImageConfig,
+		},
+	}
+	// Test Start method
+	handle, err := executor.Start(ctx, input, opts)
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if handle == nil {
+		t.Fatal("Handle should not be nil")
+	}
+	createChan <- struct{}{} // let create complete
+	result, err := handle.Wait(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Error == nil {
+		t.Fatal("Expected a non-nil error for a failed build")
+	}
+	// Clean up
+	if err := executor.Close(ctx); err != nil {
+		t.Errorf("Close failed: %v", err)
+	}
+}
