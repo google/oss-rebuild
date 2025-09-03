@@ -1003,6 +1003,7 @@ resource "google_storage_bucket_iam_binding" "builders-view-bootstrap-bucket" {
   role   = "roles/storage.objectViewer"
   members = concat([
     "serviceAccount:${google_service_account.builder-remote.email}",
+    "serviceAccount:${google_service_account.builder-agent.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
   ] : [])
