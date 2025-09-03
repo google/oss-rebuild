@@ -1175,6 +1175,11 @@ resource "google_storage_bucket_iam_binding" "builder-agent-uses-logs" {
   role   = "roles/storage.objectUser"
   members = ["serviceAccount:${google_service_account.builder-agent.email}"]
 }
+resource "google_storage_bucket_iam_binding" "builder-agent-view-logs" {
+  bucket  = google_storage_bucket.agent-logs.name
+  role   = google_project_iam_custom_role.bucket-viewer-role.name
+  members = ["serviceAccount:${google_service_account.builder-agent.email}"]
+}
 resource "google_storage_bucket_iam_binding" "builder-agent-writes-metadata" {
   bucket  = google_storage_bucket.agent-metadata.name
   role    = "roles/storage.objectCreator"
