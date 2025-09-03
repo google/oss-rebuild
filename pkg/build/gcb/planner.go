@@ -205,6 +205,46 @@ var gcbStandardBuildTpl = template.Must(
 	))
 
 // gcbProxyBuildTpl generates proxy-enabled build scripts for Cloud Build steps (matching rebuildremote.go)
+// NOTE(impl): There are a number of factors complicating this harness that warrant some explanation.
+//   - Overview: The proxy and build are executed in separate containers. All
+//     HTTP traffic is redirected to the proxy from the build AND containers
+//     created from the build (i.e. buildx workers).
+//   - Network basics: The top-level container uses the pre-allocated
+//     "cloudbuild" network on GCB. We create a separate "proxynet" network to
+//     bridge the build and the proxy. The proxy is also connected to the
+//     "cloudbuild" network so its admin server is accessible from the
+//     top-level container to retrieve the network log.
+//   - Network namespaces: We use iptables to redirect traffic to the proxy.
+//     iptables is configured per-network namespace. Crucially, Docker networks
+//     are not the same as network namespaces! By default, though, each
+//     container is allocated its own namespace even if they're connected to
+//     the same network. So to apply iptables rules to the build container, we
+//     need to ensure they all execute the iptables rules (which requires root)
+//     in that same container. But to ensure the same for all derivative
+//     containers of the build, we need those same iptables rules. Luckily,
+//     Docker does allow you to specify "container:<NAME>" as the container
+//     network which joins both the same network AND the same network
+//     namespace. So we use the proxy to enforce that all new containers use
+//     the "container:build" network.
+//   - User setup: We use the iptables' owner module feature of redirecting
+//     traffic based on the UID of the originating process. To do so here,
+//     though, we need a user/uid that's shared across the proxy and build
+//     containers. The user namespaces are not shared between the containers so
+//     we cannot refer to the user by name from one if it's created by the
+//     other. Creating a user at the top-level, recreating it in the proxy, and
+//     using the uid in the build satisfies our constraints.
+//   - Docker socket access: For the proxy to read and write to the docker
+//     socket, it needs to be part of the owning user (root) or group
+//     (host-defined "docker" group unknown within the container). Associating
+//     the proxy with a shadowed "docker" group does not seem to work. Changing
+//     ownership of the socket resolves this, albeit suboptimally.
+//   - Docker build: To ensure the proxy cert is trusted during the build, each
+//     execution (i.e. RUN instruction) must be patched to mount the proxy
+//     certificate and add truststore env vars. This is currently done
+//     lexically on the input Dockerfile but could be modified to operate on
+//     the lower-level build representation.
+//
+// TODO: Support IPv6.
 var gcbProxyBuildTpl = template.Must(
 	template.New("gcb proxy build script").Funcs(template.FuncMap{
 		"join": func(sep string, s []string) string { return strings.Join(s, sep) },
