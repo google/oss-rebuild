@@ -178,17 +178,21 @@ func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBui
 	}
 	// Submit and wait for the build
 	buildResult, buildErr := e.doBuild(ctx, handle, cloudBuild)
+	// If the build itself failed, that will be stored in buildResult.Status
+	if buildErr == nil {
+		buildErr = gcb.ToError(buildResult)
+	}
 	// Extract additional build information from GCB results if available
 	if buildResult != nil {
 		buildInfo.BuildID = buildResult.Id
 		buildInfo.Steps = buildResult.Steps
 		var err error
 		buildInfo.BuildStart, err = time.Parse(time.RFC3339, buildResult.StartTime)
-		if err != nil {
+		if buildErr == nil && err != nil {
 			buildErr = errors.Wrap(err, "parsing build start time")
 		}
 		buildInfo.BuildEnd, err = time.Parse(time.RFC3339, buildResult.FinishTime)
-		if err != nil {
+		if buildErr == nil && err != nil {
 			buildErr = errors.Wrap(err, "parsing build end time")
 		}
 		if buildResult.Results != nil {
