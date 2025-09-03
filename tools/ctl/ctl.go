@@ -61,6 +61,8 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/serviceusage/v1"
 	"google.golang.org/genai"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1120,14 +1122,17 @@ var getTrackedPackagesCmd = &cobra.Command{
 }
 
 var runAgent = &cobra.Command{
-	Use:   "run-agent --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name>",
+	Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name>",
 	Short: "Run benchmark",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if *ecosystem == "" || *pkg == "" || *version == "" || *artifact == "" {
-			log.Fatal("ecosystem, package, version, and artifact must be provided")
+		if *project == "" {
+			return errors.New("project must be provided")
 		}
-		t := rebuild.Target{Ecosystem: rebuild.Ecosystem(*ecosystem), Package: *pkg, Version: *version, Artifact: *artifact}
+		fire, err := firestore.NewClient(cmd.Context(), *project)
+		if err != nil {
+			return errors.Wrap(err, "creating firestore client")
+		}
 		if *apiUri == "" {
 			log.Fatal("API endpoint not provided")
 		}
@@ -1135,6 +1140,10 @@ var runAgent = &cobra.Command{
 		if err != nil {
 			return errors.Wrap(err, "parsing API endpoint")
 		}
+		if *ecosystem == "" || *pkg == "" || *version == "" || *artifact == "" {
+			log.Fatal("ecosystem, package, version, and artifact must be provided")
+		}
+		t := rebuild.Target{Ecosystem: rebuild.Ecosystem(*ecosystem), Package: *pkg, Version: *version, Artifact: *artifact}
 		ctx := cmd.Context()
 		var client *http.Client
 		{
@@ -1157,6 +1166,33 @@ var runAgent = &cobra.Command{
 			return errors.Wrap(err, "running attest")
 		}
 		log.Printf("Successfully started session %s", resp.SessionID)
+		sessionDoc := fire.Collection("agent_sessions").Doc(resp.SessionID)
+		var session schema.AgentSession
+		for {
+			time.Sleep(5 * time.Second)
+			if session.Status != schema.AgentSessionStatusCompleted {
+				sessionSnap, err := sessionDoc.Get(ctx)
+				if err != nil && status.Code(err) == codes.NotFound {
+					continue
+				} else if err != nil {
+					log.Fatal(errors.Wrap(err, "getting session document"))
+				}
+				var newSession schema.AgentSession
+				if err := sessionSnap.DataTo(&newSession); err != nil {
+					log.Fatal("deserializing session data")
+				}
+				// As a proxy for iterations running, log any updates on the session.
+				// TODO: Fetch iteration records as the come in and log those either instead of or in addition to this.
+				if newSession.Updated != session.Updated {
+					log.Printf("Session updated: %+v", newSession)
+					session = newSession
+				}
+			}
+			if session.Status == schema.AgentSessionStatusCompleted {
+				log.Printf("Session %s completed", session.ID)
+				break
+			}
+		}
 		return nil
 	},
 }
@@ -1279,6 +1315,7 @@ func init() {
 	setTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("format"))
 
 	runAgent.Flags().AddGoFlag(flag.Lookup("api"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("project"))
 	runAgent.Flags().AddGoFlag(flag.Lookup("ecosystem"))
 	runAgent.Flags().AddGoFlag(flag.Lookup("package"))
 	runAgent.Flags().AddGoFlag(flag.Lookup("version"))
