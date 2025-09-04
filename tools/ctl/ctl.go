@@ -33,12 +33,15 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"github.com/cheggaaa/pb"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/internal/urlx"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -48,6 +51,7 @@ import (
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/benchmark/run"
+	"github.com/google/oss-rebuild/tools/ctl/gradle"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
@@ -1019,6 +1023,43 @@ var infer = &cobra.Command{
 	},
 }
 
+var getGradleGAV = &cobra.Command{
+	Use:   "get-gradle-gav --repository <URI> --ref <ref>",
+	Short: "Extracts GAV coordinates from a Gradle project at a given commit",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoURL := *repository
+		sha := *ref
+
+		tempDir, err := os.MkdirTemp("", "gradle-gav-")
+		if err != nil {
+			return errors.Wrap(err, "failed to create temp directory")
+		}
+		defer os.RemoveAll(tempDir)
+
+		repo, err := git.PlainClone(tempDir, false, &git.CloneOptions{URL: repoURL})
+		if err != nil {
+			return errors.Wrap(err, "failed to clone repository")
+		}
+		wt, err := repo.Worktree()
+		if err != nil {
+			return errors.Wrap(err, "failed to get worktree")
+		}
+		if err := wt.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(sha)}); err != nil {
+			return errors.Wrap(err, "failed to checkout commit")
+		}
+
+		gradleProject, err := gradle.RunPrintCoordinates(cmd.Context(), *repo, local.NewRealCommandExecutor())
+		if err != nil {
+			return errors.Wrap(err, "running printCoordinates")
+		}
+
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(gradleProject)
+	},
+}
+
 func logFailure(f func() error) {
 	if err := f(); err != nil {
 		log.Println(err)
@@ -1229,6 +1270,9 @@ var (
 	sample  = flag.Int("sample", -1, "if provided, only N results will be displayed")
 	project = flag.String("project", "", "the project from which to fetch the Firestore data")
 	clean   = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
+	// get-gradle-gav
+	repository = flag.String("repository", "", "the repository URI")
+	ref        = flag.String("ref", "", "the git reference (branch, tag, commit)")
 	// TUI
 	benchmarkDir     = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 	defDir           = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
@@ -1308,6 +1352,9 @@ func init() {
 	infer.Flags().AddGoFlag(flag.Lookup("version"))
 	infer.Flags().AddGoFlag(flag.Lookup("artifact"))
 
+	getGradleGAV.Flags().AddGoFlag(flag.Lookup("repository"))
+	getGradleGAV.Flags().AddGoFlag(flag.Lookup("ref"))
+
 	migrate.Flags().AddGoFlag(flag.Lookup("project"))
 	migrate.Flags().AddGoFlag(flag.Lookup("dryrun"))
 
@@ -1332,6 +1379,7 @@ func init() {
 	rootCmd.AddCommand(setTrackedPackagesCmd)
 	rootCmd.AddCommand(getTrackedPackagesCmd)
 	rootCmd.AddCommand(runAgent)
+	rootCmd.AddCommand(getGradleGAV)
 }
 
 func main() {
