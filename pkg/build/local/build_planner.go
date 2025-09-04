@@ -41,7 +41,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			 set -eux
 			{{- if .UseTimewarp}}
 			 {{- $hasCurl := or (eq .OS "debian") (eq .OS "ubuntu")}}
-       {{- $hasWget := eq .OS "alpine"}}
+			 {{- $hasWget := eq .OS "alpine"}}
 			 {{- if .TimewarpAuth}}
 			 {{if not $hasCurl}}{{.PackageManager.InstallCommand (list "curl")}} && {{end}}curl -H @/run/secrets/auth_header
 			 {{- else if $hasWget}}
