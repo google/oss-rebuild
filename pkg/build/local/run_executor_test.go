@@ -86,7 +86,7 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "--name", "test-build-123", "-v", "/tmp/oss-rebuild-test-build-123:/out", "-w", "/workspace", "alpine:3.19", "echo", "hello"},
+					Args: []string{"run", "--rm", "--name", "test-build-123", "-v", "/tmp/oss-rebuild-test-build-123:/out", "-w", "/workspace", "alpine:3.19", "/bin/sh", "-c", "echo hello"},
 				},
 			},
 			expectSuccess: true,
@@ -138,7 +138,7 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name:  "docker",
-					Args:  []string{"run", "--rm", "--name", "test-build-789", "-v", "/tmp/oss-rebuild-test-build-789:/out", "alpine:3.19", "false"},
+					Args:  []string{"run", "--rm", "--name", "test-build-789", "-v", "/tmp/oss-rebuild-test-build-789:/out", "alpine:3.19", "/bin/sh", "-c", "false"},
 					Error: errors.New("exit status 1"),
 				},
 			},
@@ -217,7 +217,7 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "--name", "test-build-workdir", "-v", "/tmp/oss-rebuild-test-build-workdir:/out", "-w", "/custom/workdir", "ubuntu:20.04", "pwd"},
+					Args: []string{"run", "--rm", "--name", "test-build-workdir", "-v", "/tmp/oss-rebuild-test-build-workdir:/out", "-w", "/custom/workdir", "ubuntu:20.04", "/bin/sh", "-c", "pwd"},
 				},
 			},
 			expectSuccess: true,
