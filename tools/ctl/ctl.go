@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -25,7 +24,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -41,8 +39,10 @@ import (
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/internal/urlx"
+	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/feed"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
@@ -77,28 +77,6 @@ var rootCmd = &cobra.Command{
 	Short: "A debugging tool for OSS-Rebuild",
 }
 
-var debuildShellScript = template.Must(
-	template.New(
-		"rebuild shell script",
-	).Funcs(template.FuncMap{
-		"join": func(sep string, s []string) string { return strings.Join(s, sep) },
-	}).Parse(
-		textwrap.Dedent(`
-# Install dependencies.
-set -eux
-apt update
-apt install -y {{join " " .SystemDeps}}
-
-mkdir /src && cd /src
-{{.Source}}
-{{.Deps}}
-
-# Run the build.
-{{.Build}}
-mkdir /out && cp /src/{{.OutputPath}} /out/
-`)[1:], // remove leading newline
-	))
-
 func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestPerPackage bool) (*rundex.FetchRebuildRequest, error) {
 	var runs []string
 	if run != "" {
@@ -127,24 +105,6 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestP
 		log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
 	}
 	return &req, nil
-}
-
-func makeShellScript(input rebuild.Input) (string, error) {
-	env := rebuild.BuildEnv{HasRepo: false, PreferPreciseToolchain: true}
-	instructions, err := input.Strategy.GenerateFor(input.Target, env)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to generate strategy")
-	}
-	shellScript := new(bytes.Buffer)
-	if input.Target.Ecosystem == rebuild.Debian || input.Target.Ecosystem == rebuild.Maven {
-		err = debuildShellScript.Execute(shellScript, instructions)
-	} else {
-		err = errors.Errorf("unimplemented ecosystem %v", input.Target.Ecosystem)
-	}
-	if err != nil {
-		return "", errors.Wrap(err, "populating template")
-	}
-	return shellScript.String(), nil
 }
 
 var tui = &cobra.Command{
@@ -929,6 +889,47 @@ var infer = &cobra.Command{
 				log.Fatal(err)
 			}
 		}
+		s, err := resp.Strategy()
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "parsing strategy"))
+		}
+		if s == nil {
+			log.Fatal("no strategy")
+		}
+		inp := rebuild.Input{Target: rebuild.Target{
+			Ecosystem: rebuild.Ecosystem(*ecosystem),
+			Package:   *pkg,
+			Version:   *version,
+			Artifact:  *artifact,
+		}, Strategy: s}
+		resources := build.Resources{
+			ToolURLs: map[build.ToolType]string{
+				// Ex: https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20250428204534-b35098b3c7b7/timewarp
+				build.TimewarpTool: fmt.Sprintf("https://storage.googleapis.com/%s/%s/timewarp", *bootstrapBucket, *bootstrapVersion),
+			},
+		}
+		var dockerfile string
+		{
+			plan, err := local.NewDockerBuildPlanner().GeneratePlan(cmd.Context(), inp, build.PlanOptions{
+				UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
+				Resources:   resources,
+			})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "generating plan"))
+			}
+			dockerfile = plan.Dockerfile
+		}
+		var buildScript string
+		{
+			plan, err := local.NewDockerRunPlanner().GeneratePlan(cmd.Context(), inp, build.PlanOptions{
+				UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
+				Resources:   resources,
+			})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "generating plan"))
+			}
+			buildScript = plan.Script
+		}
 		switch *format {
 		case "", "strategy":
 			enc := json.NewEncoder(cmd.OutOrStdout())
@@ -937,44 +938,8 @@ var infer = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "encoding result"))
 			}
 		case "dockerfile":
-			t := rebuild.Target{
-				Ecosystem: rebuild.Ecosystem(*ecosystem),
-				Package:   *pkg,
-				Version:   *version,
-				Artifact:  *artifact,
-			}
-			s, err := resp.Strategy()
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "parsing strategy"))
-			}
-			if s == nil {
-				log.Fatal("no strategy")
-			}
-			in := rebuild.Input{Target: t, Strategy: s}
-			dockerfile, err := rebuild.MakeDockerfile(in, rebuild.RemoteOptions{})
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "generating dockerfile"))
-			}
 			cmd.OutOrStdout().Write([]byte(dockerfile))
 		case "debug-steps":
-			t := rebuild.Target{
-				Ecosystem: rebuild.Ecosystem(*ecosystem),
-				Package:   *pkg,
-				Version:   *version,
-				Artifact:  *artifact,
-			}
-			s, err := resp.Strategy()
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "parsing strategy"))
-			}
-			if s == nil {
-				log.Fatal("no strategy")
-			}
-			in := rebuild.Input{Target: t, Strategy: s}
-			dockerfile, err := rebuild.MakeDockerfile(in, rebuild.RemoteOptions{})
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "generating dockerfile"))
-			}
 			buildScript := fmt.Sprintf(textwrap.Dedent(`
 				#!/usr/bin/env bash
 				set -eux
@@ -997,26 +962,7 @@ var infer = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "encoding build steps"))
 			}
 		case "shell-script":
-			t := rebuild.Target{
-				Ecosystem: rebuild.Ecosystem(*ecosystem),
-				Package:   *pkg,
-				Version:   *version,
-				Artifact:  *artifact,
-			}
-			s, err := resp.Strategy()
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "parsing strategy"))
-			}
-			if s == nil {
-				log.Fatal("no strategy")
-			}
-			in := rebuild.Input{Target: t, Strategy: s}
-			script, err := makeShellScript(in)
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "generating shell script"))
-			}
-			cmd.OutOrStdout().Write([]byte(script))
-
+			cmd.OutOrStdout().Write([]byte(buildScript))
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
 		}
@@ -1249,6 +1195,8 @@ var (
 	debugStorage      = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
 	logsBucket        = flag.String("logs-bucket", "", "the gcs bucket where gcb logs are stored")
 	metadataBucket    = flag.String("metadata-bucket", "", "the gcs bucket where rebuild output is stored")
+	bootstrapBucket   = flag.String("bootstrap-bucket", "", "the gcs bucket where bootstrap tools are stored")
+	bootstrapVersion  = flag.String("bootstrap-version", "", "the version of bootstrap tools to use")
 	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
 	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request syscall monitoring")
 	assetTypesFlag    = flag.String("asset-types", "", "a comma-separated list of asset types to export")
@@ -1351,6 +1299,8 @@ func init() {
 	infer.Flags().AddGoFlag(flag.Lookup("package"))
 	infer.Flags().AddGoFlag(flag.Lookup("version"))
 	infer.Flags().AddGoFlag(flag.Lookup("artifact"))
+	infer.Flags().AddGoFlag(flag.Lookup("bootstrap-bucket"))
+	infer.Flags().AddGoFlag(flag.Lookup("bootstrap-version"))
 
 	getGradleGAV.Flags().AddGoFlag(flag.Lookup("repository"))
 	getGradleGAV.Flags().AddGoFlag(flag.Lookup("ref"))

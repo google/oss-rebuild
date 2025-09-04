@@ -73,19 +73,19 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 		return nil, errors.Wrap(err, "failed to generate rebuild instructions")
 	}
 	image := opts.Resources.BaseImageConfig.SelectFor(input)
-	command, err := p.generateCommand(instructions, input, opts)
+	script, err := p.generateScript(instructions, input, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate command")
 	}
 	return &DockerRunPlan{
 		Image:      image,
-		Command:    command,
+		Script:     script,
 		WorkingDir: "/workspace",
 		OutputPath: "/out/rebuild",
 	}, nil
 }
 
-func (p *DockerRunPlanner) generateCommand(instructions rebuild.Instructions, input rebuild.Input, opts build.PlanOptions) ([]string, error) {
+func (p *DockerRunPlanner) generateScript(instructions rebuild.Instructions, input rebuild.Input, opts build.PlanOptions) (string, error) {
 	// Select base image and detect OS for package management
 	baseImage := opts.Resources.BaseImageConfig.SelectFor(input)
 	os := build.DetectOS(baseImage)
@@ -93,7 +93,7 @@ func (p *DockerRunPlanner) generateCommand(instructions rebuild.Instructions, in
 	// Extract tool URLs and auth requirements
 	timewarpURL, timewarpAuth, err := p.getToolURL(build.TimewarpTool, opts)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get timewarp URL")
+		return "", errors.Wrap(err, "failed to get timewarp URL")
 	}
 	// Execute template to generate script
 	var buf strings.Builder
@@ -104,9 +104,9 @@ func (p *DockerRunPlanner) generateCommand(instructions rebuild.Instructions, in
 		TimewarpURL:    timewarpURL,
 		TimewarpAuth:   timewarpAuth,
 	}); err != nil {
-		return nil, errors.Wrap(err, "executing run script template")
+		return "", errors.Wrap(err, "executing run script template")
 	}
-	return []string{"/bin/sh", "-c", buf.String()}, nil
+	return buf.String(), nil
 }
 
 func (p *DockerRunPlanner) getToolURL(toolType build.ToolType, opts build.PlanOptions) (toolURL string, needsAuth bool, err error) {

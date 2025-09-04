@@ -54,8 +54,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				Image:      "alpine:3.19",
 				WorkingDir: "/workspace",
 				OutputPath: "/out/rebuild",
-				Command: []string{"/bin/sh", "-c",
-					textwrap.Dedent(`
+				Script: textwrap.Dedent(`
 			set -eux
 			apk update
 			mkdir /src && cd /src
@@ -64,7 +63,7 @@ func TestDockerRunPlanner(t *testing.T) {
 			git checkout --force 'v1.0.0'
 			npm install
 			npm pack
-			cp /src/test-package-1.0.0.tgz /out/rebuild`)[1:]},
+			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
 			},
 		},
 		{
@@ -102,8 +101,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				Image:      "alpine:3.19",
 				WorkingDir: "/workspace",
 				OutputPath: "/out/rebuild",
-				Command: []string{"/bin/sh", "-c",
-					textwrap.Dedent(`
+				Script: textwrap.Dedent(`
 			set -eux
 			apk update
 			apk add curl
@@ -117,7 +115,7 @@ func TestDockerRunPlanner(t *testing.T) {
 			git checkout --force 'v1.0.0'
 			npm install
 			npm pack
-			cp /src/test-package-1.0.0.tgz /out/rebuild`)[1:]},
+			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
 			},
 		},
 		{
