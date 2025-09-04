@@ -64,7 +64,7 @@ func (p *PomXML) Version() string {
 // TODO: This will ensure that we can simply resolve parent POM by only changing the target, thus eliminating the need for `ResolveParentPom`.
 func NewPomXML(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (PomXML, error) {
 	var p PomXML
-	r, err := mux.Maven.ReleaseFile(ctx, t.Package, t.Version, maven.TypePOM)
+	r, err := mux.Maven.Artifact(ctx, t.Package, t.Version, t.Artifact)
 	if err != nil {
 		return p, err
 	}
@@ -88,7 +88,12 @@ func ResolveParentPom(ctx context.Context, pom PomXML, mux rebuild.RegistryMux) 
 		group = pom.GroupID
 	}
 	var parent PomXML
-	r, err := mux.Maven.ReleaseFile(ctx, fmt.Sprintf("%s:%s", group, pom.Parent.ArtifactID), ver, maven.TypePOM)
+	pkgName := fmt.Sprintf("%s:%s", group, pom.Parent.ArtifactID)
+	artifact, err := maven.TypePOM(pkgName, ver)
+	if err != nil {
+		return parent, err
+	}
+	r, err := mux.Maven.Artifact(ctx, pkgName, ver, artifact)
 	if err != nil {
 		return parent, err
 	}
