@@ -44,9 +44,15 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	iterDoc := sessionDoc.Collection("agent_iterations").Doc(iterationID)
 	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
 		// Fetch session to get Target and validate it exists
-		_, err := t.Get(sessionDoc)
+		sessionSnap, err := t.Get(sessionDoc)
 		if err != nil {
 			return errors.Wrap(err, "fetching session")
+		}
+		if err := sessionSnap.DataTo(&session); err != nil {
+			return errors.Wrap(err, "decoding session")
+		}
+		if session.Status != schema.AgentSessionStatusRunning {
+			return errors.Errorf("session %s is not running", req.SessionID)
 		}
 		// Get the highest iteration number for this session to increment it
 		iterQuery := sessionDoc.Collection("agent_iterations").
