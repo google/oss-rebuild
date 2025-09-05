@@ -74,6 +74,8 @@ func (m *assetStore) Reader(ctx context.Context, a rebuild.Asset) (io.ReadCloser
 		}
 	} else {
 		switch a.Type {
+		case rebuild.DockerfileAsset, rebuild.BuildInfoAsset:
+			return m.debug.Reader(ctx, a)
 		case rebuild.DebugUpstreamAsset:
 			// NOTE: RebuildRemote doesn't store the upstream, so we have to re-download it.
 			// If RebuildRemote stored the upstream in the debug bucket, this wouldn't be necessary.
