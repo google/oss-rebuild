@@ -5,6 +5,7 @@ package agentapiservice
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -36,7 +38,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	}
 	obliviousID := uuid.New().String()
 	iterTime := time.Now().UTC()
-	iterationID := iterTime.Format(time.RFC3339)
+	iterationID := fmt.Sprintf("iteration-%s", iterTime.Format(time.RFC3339))
 	var iteration schema.AgentIteration
 	var session schema.AgentSession
 	// Create iteration record and fetch session in a transaction
@@ -59,7 +61,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 			Where("session_id", "==", req.SessionID).
 			Where("number", "==", req.IterationNumber).
 			Limit(1)
-		if _, err := t.Documents(iterQuery).Next(); err != nil && status.Code(err) != codes.NotFound {
+		if _, err := t.Documents(iterQuery).Next(); err != nil && err != iterator.Done {
 			return errors.Wrap(err, "checking for existing iteration")
 		} else if err == nil {
 			return errors.Wrap(fs.ErrExist, "checking for existing iteration")
@@ -158,5 +160,6 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	return &schema.AgentCreateIterationResponse{
 		IterationID: iterationID,
 		ObliviousID: obliviousID,
+		Iteration:   &iteration,
 	}, nil
 }
