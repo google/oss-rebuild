@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -44,16 +45,22 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	iterDoc := sessionDoc.Collection("agent_iterations").Doc(iterationID)
 	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
 		// Fetch session to get Target and validate it exists
-		_, err := t.Get(sessionDoc)
+		sessionSnap, err := t.Get(sessionDoc)
 		if err != nil {
 			return errors.Wrap(err, "fetching session")
+		}
+		if err := sessionSnap.DataTo(&session); err != nil {
+			return errors.Wrap(err, "decoding session")
+		}
+		if session.Status != schema.AgentSessionStatusRunning {
+			return errors.Errorf("session %s is not running", req.SessionID)
 		}
 		// Get the highest iteration number for this session to increment it
 		iterQuery := sessionDoc.Collection("agent_iterations").
 			Where("session_id", "==", req.SessionID).
 			Where("number", "==", req.IterationNumber).
 			Limit(1)
-		if _, err := t.Documents(iterQuery).Next(); err != nil && status.Code(err) != codes.NotFound {
+		if _, err := t.Documents(iterQuery).Next(); err != nil && err != iterator.Done {
 			return errors.Wrap(err, "checking for existing iteration")
 		} else if err == nil {
 			return errors.Wrap(fs.ErrExist, "checking for existing iteration")
