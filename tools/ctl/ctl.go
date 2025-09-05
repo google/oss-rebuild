@@ -907,6 +907,7 @@ var infer = &cobra.Command{
 				// Ex: https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20250428204534-b35098b3c7b7/timewarp
 				build.TimewarpTool: fmt.Sprintf("https://storage.googleapis.com/%s/%s/timewarp", *bootstrapBucket, *bootstrapVersion),
 			},
+			BaseImageConfig: build.DefaultBaseImageConfig(),
 		}
 		var dockerfile string
 		{
