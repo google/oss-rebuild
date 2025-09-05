@@ -411,7 +411,6 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 					}
 					out <- in
 				})
-				var found int
 				p = p.Do(func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
 					assets, err := localfiles.AssetStore(in.RunID)
 					if err != nil {
@@ -438,7 +437,9 @@ func NewRebuildGroupCmds(app *tview.Application, rb *rebuilder.Rebuilder, modalF
 						log.Println(errors.Wrap(err, "reading logs"))
 					}
 				})
+				var found int
 				for range p.Out() {
+					found++
 				}
 				log.Printf("Found in %d/%d (%2.0f%%)", found, len(rebuilds), float32(found)/float32(len(rebuilds))*100)
 			},
