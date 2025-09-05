@@ -104,9 +104,9 @@ func LoadRepo(ctx context.Context, pkg string, s storage.Storer, fs billy.Filesy
 	r, err := gitx.Reuse(ctx, s, fs, &opt)
 	switch err {
 	case nil:
-		log.Printf("Reusing already cloned repository [pkg=%s]\n", pkg)
+		log.Printf("Reusing already cloned repository [pkg=%s,repoURL=%s]\n", pkg, opt.URL)
 	case gitx.ErrRemoteNotTracked:
-		log.Printf("Cannot reuse already cloned repository [pkg=%s]. Cleaning up...\n", pkg)
+		log.Printf("Cannot reuse already cloned repository [pkg=%s,repoURL=%s]. Cleaning up...\n", pkg, opt.URL)
 		is, ok := s.(*gitx.Storer)
 		if !ok {
 			return nil, errors.New("cleaning up unsupported Storer")
@@ -130,13 +130,13 @@ func LoadRepo(ctx context.Context, pkg string, s storage.Storer, fs billy.Filesy
 			if err != nil {
 				return nil, errors.Wrap(err, "using repo cache")
 			}
-			log.Printf("Using cached repository [pkg=%s]\n", pkg)
+			log.Printf("Using cached repository [pkg=%s,repoURL=%s]\n", pkg, opt.URL)
 		} else {
 			r, err = gitx.Clone(ctx, s, fs, &opt)
 			if err != nil {
 				return nil, errors.Wrap(err, "cloning repo")
 			}
-			log.Printf("Using cloned repository [pkg=%s]\n", pkg)
+			log.Printf("Using cloned repository [pkg=%s,repoURL=%s]\n", pkg, opt.URL)
 		}
 	default:
 		return nil, errors.Wrap(err, "using existing")
