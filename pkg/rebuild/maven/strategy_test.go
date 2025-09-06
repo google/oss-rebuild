@@ -11,7 +11,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
-func TestMavenStrategies(t *testing.T) {
+func TestStrategies(t *testing.T) {
 	tests := []struct {
 		name     string
 		strategy rebuild.Strategy
@@ -19,7 +19,7 @@ func TestMavenStrategies(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			"return build instructions for a valid JDK version",
+			"return maven build instructions for a valid JDK version",
 			&MavenBuild{
 				Location: rebuild.Location{
 					Repo: "https://foo.bar",
@@ -43,6 +43,36 @@ wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linu
 					export PATH=$JAVA_HOME/bin:$PATH
 					mvn clean package -DskipTests`[1:]),
 				OutputPath: "dir/target/ldapchai-0.8.6.jar",
+			},
+			false,
+		},
+		{
+			"return gradle build instructions for a valid JDK version",
+			&GradleBuild{
+				Target: rebuild.Target{Ecosystem: rebuild.Maven, Package: "com.github.ldapchai:ldapchai", Version: "0.8.6", Artifact: "ldapchai-0.8.6.jar"},
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
+				},
+				JDKVersion: "11.0.1",
+			},
+			rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
+				},
+				SystemDeps: []string{"git", "wget"},
+				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Deps: `mkdir -p /opt/jdk
+wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`,
+				Build: textwrap.Dedent(`
+					export JAVA_HOME=/opt/jdk
+					export PATH=$JAVA_HOME/bin:$PATH
+					./gradlew build -x test --no-daemon
+					find . -name ldapchai-0.8.6.jar -type f -exec mv {} /src/ \;`[1:]),
+				OutputPath: "ldapchai-0.8.6.jar",
 			},
 			false,
 		},
