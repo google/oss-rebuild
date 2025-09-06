@@ -4,9 +4,11 @@
 package rebuild
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/pkg/errors"
 )
 
@@ -58,6 +60,10 @@ func (b *BuildEnv) TimewarpURLFromString(ecosystem string, rfc3339Time string) (
 // Strategy generates instructions to execute a rebuild.
 type Strategy interface {
 	GenerateFor(Target, BuildEnv) (Instructions, error)
+}
+
+type StrategyInferer interface {
+	Infer(context.Context, Target, RegistryMux, *RepoConfig, *object.Commit) (Strategy, error)
 }
 
 // LocationHint is a partial strategy used to provide a hint (git repo, git ref) to the inference machinery, but it is not sufficient for execution.
