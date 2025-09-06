@@ -48,6 +48,7 @@ var all = []RebuildBenchmark{
 	npmTop500,
 	npmTop2500,
 	mavenTop500,
+	mavenTop500UniqueGroups,
 }
 
 const (
@@ -801,6 +802,140 @@ LIMIT 2500
 				// Non-release version.
 				continue
 			}
+			idx := -1
+			for i, psp := range ps.Packages {
+				if psp.Name == p.Package {
+					idx = i
+					break
+				}
+			}
+			if idx == -1 {
+				if len(ps.Packages) >= 500 {
+					// If we're already at the max project count, skip.
+					continue
+				}
+				ps.Packages = append(ps.Packages, benchmark.Package{Name: p.Package, Ecosystem: "maven"})
+				idx = len(ps.Packages) - 1
+			}
+			psp := &ps.Packages[idx]
+			if len(psp.Versions) >= 5 {
+				continue
+			}
+			nameParts := strings.SplitN(p.Package, ":", 2)
+			if len(nameParts) != 2 {
+				fmt.Println("Agh unexpected: ", p.Package)
+				return
+			}
+			// TODO: Find the artifact name from a real source, don't just guess.
+			psp.Artifacts = append(psp.Artifacts, fmt.Sprintf("%s-%s.jar", nameParts[1], p.Version))
+			psp.Versions = append(psp.Versions, p.Version)
+		}
+		for _, psp := range ps.Packages {
+			ps.Count += len(psp.Versions)
+		}
+		ps.Updated = now
+		return
+	},
+}
+
+var mavenTop500UniqueGroups = RebuildBenchmark{
+	Filename: "maven_top_500_unique_groups.json",
+	Generator: func(ctx context.Context) (ps benchmark.PackageSet) {
+		now := time.Now()
+		client, err := bigquery.NewClient(ctx, *project, option.WithQuotaProject(*project))
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		query := client.Query(`
+SELECT
+  COUNT(*) AS Downloads,
+  Name AS Package,
+  Version
+FROM (
+  SELECT
+    T.` + "`" + `From` + "`" + `.Name AS FName,
+    T.` + "`" + `From` + "`" + `.Version AS FVersion,
+    T.` + "`" + `To` + "`" + `.Name AS Name,
+    T.` + "`" + `To` + "`" + `.Version AS Version
+  FROM
+    ` + "`" + `bigquery-public-data.deps_dev_v1.DependencyGraphEdges` + "`" + ` T
+  INNER JOIN (
+    SELECT
+      Time
+    FROM
+      ` + "`" + `bigquery-public-data.deps_dev_v1.Snapshots` + "`" + `
+    ORDER BY
+      Time DESC
+    LIMIT
+      1) S
+  ON
+    S.Time = T.SnapshotAt
+  WHERE
+    T.System = "MAVEN"
+  GROUP BY
+    T.` + "`" + `From` + "`" + `.Name,
+    T.` + "`" + `From` + "`" + `.Version,
+    T.` + "`" + `To` + "`" + `.Name,
+    T.` + "`" + `To` + "`" + `.Version)
+GROUP BY
+  Name,
+  Version
+ORDER BY
+  Downloads DESC
+LIMIT 5000
+`)
+		pkgs := make(chan struct {
+			Downloads int64
+			Package   string
+			Version   string
+		}, 100)
+		// Get download-ordered package versions from deps.dev's dependency table.
+		go func() {
+			j, err := query.Run(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			s, err := j.Wait(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			if s.Err() != nil {
+				log.Fatal(s.Err().Error())
+			}
+			it, err := j.Read(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			var entry struct {
+				Downloads int64
+				Package   string
+				Version   string
+			}
+			for {
+				err := it.Next(&entry)
+				if err == iterator.Done {
+					break
+				}
+				if err != nil {
+					log.Fatal(err.Error())
+				}
+				pkgs <- entry
+			}
+			close(pkgs)
+		}()
+		seenGroups := make(map[string]struct{})
+		// Select packages with versions that satisfy our criteria.
+		for p := range pkgs {
+			if strings.ContainsRune(p.Version, '-') {
+				// Non-release version.
+				continue
+			}
+			g, _, _ := strings.Cut(p.Package, ":")
+			if _, ok := seenGroups[g]; ok {
+				// Skip groups that have already been seen
+				continue
+			}
+			seenGroups[g] = struct{}{}
 			idx := -1
 			for i, psp := range ps.Packages {
 				if psp.Name == p.Package {

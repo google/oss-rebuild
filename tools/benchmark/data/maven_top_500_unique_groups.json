@@ -1,0 +1,5006 @@
+{
+  "Count": 500,
+  "Updated": "2025-09-04T11:44:19.071769602-04:00",
+  "Packages": [
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.annotation:javax.annotation-api",
+      "Versions": [
+        "1.3.2"
+      ],
+      "Artifacts": [
+        "javax.annotation-api-1.3.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.code.findbugs:jsr305",
+      "Versions": [
+        "3.0.2"
+      ],
+      "Artifacts": [
+        "jsr305-3.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.slf4j:slf4j-api",
+      "Versions": [
+        "1.7.36"
+      ],
+      "Artifacts": [
+        "slf4j-api-1.7.36.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.commons:commons-lang3",
+      "Versions": [
+        "3.12.0"
+      ],
+      "Artifacts": [
+        "commons-lang3-3.12.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.servlet:javax.servlet-api",
+      "Versions": [
+        "3.1.0"
+      ],
+      "Artifacts": [
+        "javax.servlet-api-3.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-lang:commons-lang",
+      "Versions": [
+        "2.6"
+      ],
+      "Artifacts": [
+        "commons-lang-2.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jetbrains:annotations",
+      "Versions": [
+        "19.0.0"
+      ],
+      "Artifacts": [
+        "annotations-19.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.inject:javax.inject",
+      "Versions": [
+        "1"
+      ],
+      "Artifacts": [
+        "javax.inject-1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.felix:org.apache.felix.scr.ds-annotations",
+      "Versions": [
+        "1.2.8"
+      ],
+      "Artifacts": [
+        "org.apache.felix.scr.ds-annotations-1.2.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "software.amazon.jsii:jsii-runtime",
+      "Versions": [
+        "1.113.0"
+      ],
+      "Artifacts": [
+        "jsii-runtime-1.113.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "ch.qos.logback:logback-classic",
+      "Versions": [
+        "1.2.3"
+      ],
+      "Artifacts": [
+        "logback-classic-1.2.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scala-lang:scala-library",
+      "Versions": [
+        "2.11.12"
+      ],
+      "Artifacts": [
+        "scala-library-2.11.12.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-io:commons-io",
+      "Versions": [
+        "2.11.0"
+      ],
+      "Artifacts": [
+        "commons-io-2.11.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-collections:commons-collections",
+      "Versions": [
+        "3.2.2"
+      ],
+      "Artifacts": [
+        "commons-collections-3.2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jetbrains.kotlin:kotlin-stdlib",
+      "Versions": [
+        "2.1.0"
+      ],
+      "Artifacts": [
+        "kotlin-stdlib-2.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.validation:validation-api",
+      "Versions": [
+        "2.0.1.Final"
+      ],
+      "Artifacts": [
+        "validation-api-2.0.1.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.collections:eclipse-collections-api",
+      "Versions": [
+        "10.2.0"
+      ],
+      "Artifacts": [
+        "eclipse-collections-api-10.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-logging:commons-logging",
+      "Versions": [
+        "1.2"
+      ],
+      "Artifacts": [
+        "commons-logging-1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.xml.bind:jaxb-api",
+      "Versions": [
+        "2.3.0"
+      ],
+      "Artifacts": [
+        "jaxb-api-2.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-codec:commons-codec",
+      "Versions": [
+        "1.15"
+      ],
+      "Artifacts": [
+        "commons-codec-1.15.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.fasterxml.jackson.core:jackson-databind",
+      "Versions": [
+        "2.10.0"
+      ],
+      "Artifacts": [
+        "jackson-databind-2.10.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.httpcomponents:httpclient",
+      "Versions": [
+        "4.5.13"
+      ],
+      "Artifacts": [
+        "httpclient-4.5.13.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "log4j:log4j",
+      "Versions": [
+        "1.2.17"
+      ],
+      "Artifacts": [
+        "log4j-1.2.17.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "junit:junit",
+      "Versions": [
+        "4.12"
+      ],
+      "Artifacts": [
+        "junit-4.12.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.xml.bind:jaxb-impl",
+      "Versions": [
+        "2.3.0"
+      ],
+      "Artifacts": [
+        "jaxb-impl-2.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.projectlombok:lombok",
+      "Versions": [
+        "1.18.22"
+      ],
+      "Artifacts": [
+        "lombok-1.18.22.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-beanutils:commons-beanutils",
+      "Versions": [
+        "1.9.4"
+      ],
+      "Artifacts": [
+        "commons-beanutils-1.9.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.fasterxml.jackson.datatype:jackson-datatype-jsr310",
+      "Versions": [
+        "2.10.0"
+      ],
+      "Artifacts": [
+        "jackson-datatype-jsr310-2.10.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "software.constructs:constructs",
+      "Versions": [
+        "10.4.2"
+      ],
+      "Artifacts": [
+        "constructs-10.4.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.code.gson:gson",
+      "Versions": [
+        "2.10.1"
+      ],
+      "Artifacts": [
+        "gson-2.10.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.xml.ws:jakarta.xml.ws-api",
+      "Versions": [
+        "2.3.3"
+      ],
+      "Artifacts": [
+        "jakarta.xml.ws-api-2.3.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.xml.bind:jakarta.xml.bind-api",
+      "Versions": [
+        "4.0.2"
+      ],
+      "Artifacts": [
+        "jakarta.xml.bind-api-4.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.annotation:jakarta.annotation-api",
+      "Versions": [
+        "1.3.5"
+      ],
+      "Artifacts": [
+        "jakarta.annotation-api-1.3.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.quartz-scheduler:quartz",
+      "Versions": [
+        "2.3.2"
+      ],
+      "Artifacts": [
+        "quartz-2.3.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springmodules:spring-modules-cache",
+      "Versions": [
+        "0.8"
+      ],
+      "Artifacts": [
+        "spring-modules-cache-0.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.guava:guava",
+      "Versions": [
+        "18.0"
+      ],
+      "Artifacts": [
+        "guava-18.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-cli:commons-cli",
+      "Versions": [
+        "1.4"
+      ],
+      "Artifacts": [
+        "commons-cli-1.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scalaz:scalaz-core_2.13",
+      "Versions": [
+        "7.2.33"
+      ],
+      "Artifacts": [
+        "scalaz-core_2.13-7.2.33.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.el:javax.el-api",
+      "Versions": [
+        "3.0.0"
+      ],
+      "Artifacts": [
+        "javax.el-api-3.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.jaxb:jaxb-runtime",
+      "Versions": [
+        "4.0.5"
+      ],
+      "Artifacts": [
+        "jaxb-runtime-4.0.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.hjson:hjson",
+      "Versions": [
+        "3.0.0"
+      ],
+      "Artifacts": [
+        "hjson-3.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.persistence:javax.persistence-api",
+      "Versions": [
+        "2.2"
+      ],
+      "Artifacts": [
+        "javax.persistence-api-2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.web:el-impl",
+      "Versions": [
+        "2.2"
+      ],
+      "Artifacts": [
+        "el-impl-2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "software.amazon.awscdk:aws-cdk-lib",
+      "Versions": [
+        "2.212.0"
+      ],
+      "Artifacts": [
+        "aws-cdk-lib-2.212.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.xml.soap:javax.xml.soap-api",
+      "Versions": [
+        "1.4.0"
+      ],
+      "Artifacts": [
+        "javax.xml.soap-api-1.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jooq:jool",
+      "Versions": [
+        "0.9.14"
+      ],
+      "Artifacts": [
+        "jool-0.9.14.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.reflections:reflections",
+      "Versions": [
+        "0.9.11"
+      ],
+      "Artifacts": [
+        "reflections-0.9.11.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.main.javaee-api:javax.jws",
+      "Versions": [
+        "3.1.2.2"
+      ],
+      "Artifacts": [
+        "javax.jws-3.1.2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework.webflow:spring-webflow",
+      "Versions": [
+        "2.5.1.RELEASE"
+      ],
+      "Artifacts": [
+        "spring-webflow-2.5.1.RELEASE.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.xml.ws:jaxws-api",
+      "Versions": [
+        "2.3.1"
+      ],
+      "Artifacts": [
+        "jaxws-api-2.3.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.ws.rs:jakarta.ws.rs-api",
+      "Versions": [
+        "2.1.6"
+      ],
+      "Artifacts": [
+        "jakarta.ws.rs-api-2.1.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.webjars:webjars-locator",
+      "Versions": [
+        "0.52"
+      ],
+      "Artifacts": [
+        "webjars-locator-0.52.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mapstruct:mapstruct-processor",
+      "Versions": [
+        "1.3.1.Final"
+      ],
+      "Artifacts": [
+        "mapstruct-processor-1.3.1.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.inject:jakarta.inject-api",
+      "Versions": [
+        "2.0.1"
+      ],
+      "Artifacts": [
+        "jakarta.inject-api-2.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-validator:commons-validator",
+      "Versions": [
+        "1.7"
+      ],
+      "Artifacts": [
+        "commons-validator-1.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.j2objc:j2objc-annotations",
+      "Versions": [
+        "1.3"
+      ],
+      "Artifacts": [
+        "j2objc-annotations-1.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.servlet:jakarta.servlet-api",
+      "Versions": [
+        "6.0.0"
+      ],
+      "Artifacts": [
+        "jakarta.servlet-api-6.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.inject:guice",
+      "Versions": [
+        "4.2.2"
+      ],
+      "Artifacts": [
+        "guice-4.2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.h2database:h2",
+      "Versions": [
+        "2.3.232"
+      ],
+      "Artifacts": [
+        "h2-2.3.232.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.osgi:org.osgi.core",
+      "Versions": [
+        "6.0.0"
+      ],
+      "Artifacts": [
+        "org.osgi.core-6.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.transaction:jakarta.transaction-api",
+      "Versions": [
+        "2.0.1"
+      ],
+      "Artifacts": [
+        "jakarta.transaction-api-2.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.github.microutils:kotlin-logging-jvm",
+      "Versions": [
+        "3.0.5"
+      ],
+      "Artifacts": [
+        "kotlin-logging-jvm-3.0.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.ws.rs:javax.ws.rs-api",
+      "Versions": [
+        "2.0.1"
+      ],
+      "Artifacts": [
+        "javax.ws.rs-api-2.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.persistence:jakarta.persistence-api",
+      "Versions": [
+        "3.1.0"
+      ],
+      "Artifacts": [
+        "jakarta.persistence-api-3.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.logging.log4j:log4j-core",
+      "Versions": [
+        "2.17.1"
+      ],
+      "Artifacts": [
+        "log4j-core-2.17.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.validation:jakarta.validation-api",
+      "Versions": [
+        "3.0.2"
+      ],
+      "Artifacts": [
+        "jakarta.validation-api-3.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.protobuf:protobuf-java",
+      "Versions": [
+        "3.25.5"
+      ],
+      "Artifacts": [
+        "protobuf-java-3.25.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm",
+      "Versions": [
+        "1.6.4"
+      ],
+      "Artifacts": [
+        "kotlinx-coroutines-core-jvm-1.6.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.bytebuddy:byte-buddy",
+      "Versions": [
+        "1.15.11"
+      ],
+      "Artifacts": [
+        "byte-buddy-1.15.11.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework:spring-context",
+      "Versions": [
+        "5.3.23"
+      ],
+      "Artifacts": [
+        "spring-context-5.3.23.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.codehaus.mojo:animal-sniffer-annotations",
+      "Versions": [
+        "1.21"
+      ],
+      "Artifacts": [
+        "animal-sniffer-annotations-1.21.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-configuration:commons-configuration",
+      "Versions": [
+        "1.10"
+      ],
+      "Artifacts": [
+        "commons-configuration-1.10.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.ben-manes.caffeine:caffeine",
+      "Versions": [
+        "3.1.8"
+      ],
+      "Artifacts": [
+        "caffeine-3.1.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.jdt:org.eclipse.jdt.annotation",
+      "Versions": [
+        "2.2.600"
+      ],
+      "Artifacts": [
+        "org.eclipse.jdt.annotation-2.2.600.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.squareup.okhttp3:okhttp",
+      "Versions": [
+        "4.12.0"
+      ],
+      "Artifacts": [
+        "okhttp-4.12.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.awaitility:awaitility",
+      "Versions": [
+        "4.2.0"
+      ],
+      "Artifacts": [
+        "awaitility-4.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.activation:activation",
+      "Versions": [
+        "1.1.1"
+      ],
+      "Artifacts": [
+        "activation-1.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.enterprise:cdi-api",
+      "Versions": [
+        "1.2"
+      ],
+      "Artifacts": [
+        "cdi-api-1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "joda-time:joda-time",
+      "Versions": [
+        "2.9.9"
+      ],
+      "Artifacts": [
+        "joda-time-2.9.9.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "dom4j:dom4j",
+      "Versions": [
+        "1.6.1"
+      ],
+      "Artifacts": [
+        "dom4j-1.6.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.logging:jboss-logging-processor",
+      "Versions": [
+        "2.2.1.Final"
+      ],
+      "Artifacts": [
+        "jboss-logging-processor-2.2.1.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-jexl:commons-jexl",
+      "Versions": [
+        "1.1"
+      ],
+      "Artifacts": [
+        "commons-jexl-1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.android:annotations",
+      "Versions": [
+        "4.1.1.4"
+      ],
+      "Artifacts": [
+        "annotations-4.1.1.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.maven:maven-project",
+      "Versions": [
+        "2.2.1"
+      ],
+      "Artifacts": [
+        "maven-project-2.2.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.expressly:expressly",
+      "Versions": [
+        "5.0.0"
+      ],
+      "Artifacts": [
+        "expressly-5.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.auto.value:auto-value-annotations",
+      "Versions": [
+        "1.11.0"
+      ],
+      "Artifacts": [
+        "auto-value-annotations-1.11.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.errorprone:error_prone_annotations",
+      "Versions": [
+        "2.10.0"
+      ],
+      "Artifacts": [
+        "error_prone_annotations-2.10.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.jcip:jcip-annotations",
+      "Versions": [
+        "1.0"
+      ],
+      "Artifacts": [
+        "jcip-annotations-1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scala-sbt:test-interface",
+      "Versions": [
+        "1.0"
+      ],
+      "Artifacts": [
+        "test-interface-1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.api-client:google-api-client",
+      "Versions": [
+        "1.22.0"
+      ],
+      "Artifacts": [
+        "google-api-client-1.22.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.cxf:cxf-rt-frontend-jaxrs",
+      "Versions": [
+        "3.4.2"
+      ],
+      "Artifacts": [
+        "cxf-rt-frontend-jaxrs-3.4.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.aspectj:aspectjweaver",
+      "Versions": [
+        "1.9.7"
+      ],
+      "Artifacts": [
+        "aspectjweaver-1.9.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.activation:javax.activation",
+      "Versions": [
+        "1.2.0"
+      ],
+      "Artifacts": [
+        "javax.activation-1.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.lihaoyi:acyclic_2.12",
+      "Versions": [
+        "0.2.0"
+      ],
+      "Artifacts": [
+        "acyclic_2.12-0.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.squareup.retrofit2:retrofit",
+      "Versions": [
+        "2.9.0"
+      ],
+      "Artifacts": [
+        "retrofit-2.9.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.reactivestreams:reactive-streams",
+      "Versions": [
+        "1.0.3"
+      ],
+      "Artifacts": [
+        "reactive-streams-1.0.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.palantir.safe-logging:safe-logging",
+      "Versions": [
+        "3.7.0"
+      ],
+      "Artifacts": [
+        "safe-logging-3.7.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework.security:spring-security-rsa",
+      "Versions": [
+        "1.0.11.RELEASE"
+      ],
+      "Artifacts": [
+        "spring-security-rsa-1.0.11.RELEASE.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.jcr:jcr",
+      "Versions": [
+        "2.0"
+      ],
+      "Artifacts": [
+        "jcr-2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.velocity:velocity",
+      "Versions": [
+        "1.7"
+      ],
+      "Artifacts": [
+        "velocity-1.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.xml.stream.buffer:streambuffer",
+      "Versions": [
+        "2.1.0"
+      ],
+      "Artifacts": [
+        "streambuffer-2.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.swagger:swagger-annotations",
+      "Versions": [
+        "1.5.20"
+      ],
+      "Artifacts": [
+        "swagger-annotations-1.5.20.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework.retry:spring-retry",
+      "Versions": [
+        "1.3.1"
+      ],
+      "Artifacts": [
+        "spring-retry-1.3.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.conscrypt:conscrypt-openjdk-uber",
+      "Versions": [
+        "2.5.2"
+      ],
+      "Artifacts": [
+        "conscrypt-openjdk-uber-2.5.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "aws.smithy.kotlin:runtime-core-jvm",
+      "Versions": [
+        "1.4.16"
+      ],
+      "Artifacts": [
+        "runtime-core-jvm-1.4.16.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.hamcrest:hamcrest-core",
+      "Versions": [
+        "1.3"
+      ],
+      "Artifacts": [
+        "hamcrest-core-1.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.maven.plugin-tools:maven-plugin-annotations",
+      "Versions": [
+        "3.6.0"
+      ],
+      "Artifacts": [
+        "maven-plugin-annotations-3.6.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.webjars.bowergithub.polymer:polymer",
+      "Versions": [
+        "2.6.1"
+      ],
+      "Artifacts": [
+        "polymer-2.6.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.opencensus:opencensus-api",
+      "Versions": [
+        "0.31.1"
+      ],
+      "Artifacts": [
+        "opencensus-api-0.31.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.squareup:javapoet",
+      "Versions": [
+        "1.13.0"
+      ],
+      "Artifacts": [
+        "javapoet-1.13.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.alibaba:fastjson",
+      "Versions": [
+        "1.2.83"
+      ],
+      "Artifacts": [
+        "fastjson-1.2.83.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework.boot:spring-boot-starter-web",
+      "Versions": [
+        "3.4.4"
+      ],
+      "Artifacts": [
+        "spring-boot-starter-web-3.4.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.typelevel:scalac-compat-annotation_3",
+      "Versions": [
+        "0.1.4"
+      ],
+      "Artifacts": [
+        "scalac-compat-annotation_3-0.1.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.gaul:modernizer-maven-annotations",
+      "Versions": [
+        "2.2.0"
+      ],
+      "Artifacts": [
+        "modernizer-maven-annotations-2.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.enterprise:jakarta.enterprise.cdi-api",
+      "Versions": [
+        "2.0.2"
+      ],
+      "Artifacts": [
+        "jakarta.enterprise.cdi-api-2.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.lmax:disruptor",
+      "Versions": [
+        "3.3.7"
+      ],
+      "Artifacts": [
+        "disruptor-3.3.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.webjars.bowergithub.webcomponents:webcomponentsjs",
+      "Versions": [
+        "1.2.6"
+      ],
+      "Artifacts": [
+        "webcomponentsjs-1.2.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apereo:spring-webflow-client-repo",
+      "Versions": [
+        "1.0.3"
+      ],
+      "Artifacts": [
+        "spring-webflow-client-repo-1.0.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.inject.extensions:guice-persist",
+      "Versions": [
+        "4.2.2"
+      ],
+      "Artifacts": [
+        "guice-persist-4.2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "dev.zio:zio_3",
+      "Versions": [
+        "2.1.16"
+      ],
+      "Artifacts": [
+        "zio_3-2.1.16.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.opentracing:opentracing-util",
+      "Versions": [
+        "0.32.0"
+      ],
+      "Artifacts": [
+        "opentracing-util-0.32.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.activation:jakarta.activation-api",
+      "Versions": [
+        "1.2.2"
+      ],
+      "Artifacts": [
+        "jakarta.activation-api-1.2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.webjars.bowergithub.vaadin:vaadin-element-mixin",
+      "Versions": [
+        "2.4.2"
+      ],
+      "Artifacts": [
+        "vaadin-element-mixin-2.4.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.istack:istack-commons-runtime",
+      "Versions": [
+        "4.0.1"
+      ],
+      "Artifacts": [
+        "istack-commons-runtime-4.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.bval:bval-jsr",
+      "Versions": [
+        "2.0.5"
+      ],
+      "Artifacts": [
+        "bval-jsr-2.0.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-httpclient:commons-httpclient",
+      "Versions": [
+        "3.1"
+      ],
+      "Artifacts": [
+        "commons-httpclient-3.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.prometheus:simpleclient",
+      "Versions": [
+        "0.16.0"
+      ],
+      "Artifacts": [
+        "simpleclient-0.16.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scala-js:scalajs-library_2.13",
+      "Versions": [
+        "1.16.0"
+      ],
+      "Artifacts": [
+        "scalajs-library_2.13-1.16.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.pac4j:pac4j-core",
+      "Versions": [
+        "3.7.0"
+      ],
+      "Artifacts": [
+        "pac4j-core-3.7.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.lalyos:jfiglet",
+      "Versions": [
+        "0.0.8"
+      ],
+      "Artifacts": [
+        "jfiglet-0.0.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.gwt:gwt-user",
+      "Versions": [
+        "2.8.2"
+      ],
+      "Artifacts": [
+        "gwt-user-2.8.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.googlecode.json-simple:json-simple",
+      "Versions": [
+        "1.1.1"
+      ],
+      "Artifacts": [
+        "json-simple-1.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.el:jakarta.el-api",
+      "Versions": [
+        "5.0.1"
+      ],
+      "Artifacts": [
+        "jakarta.el-api-5.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.typesafe:config",
+      "Versions": [
+        "1.4.2"
+      ],
+      "Artifacts": [
+        "config-1.4.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-pool:commons-pool",
+      "Versions": [
+        "1.6"
+      ],
+      "Artifacts": [
+        "commons-pool-1.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springdoc:springdoc-openapi-ui",
+      "Versions": [
+        "1.7.0"
+      ],
+      "Artifacts": [
+        "springdoc-openapi-ui-1.7.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.codehaus.plexus:plexus-container-default",
+      "Versions": [
+        "1.6"
+      ],
+      "Artifacts": [
+        "plexus-container-default-1.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.api.grpc:proto-google-common-protos",
+      "Versions": [
+        "2.0.1"
+      ],
+      "Artifacts": [
+        "proto-google-common-protos-2.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.bouncycastle:bcprov-jdk15on",
+      "Versions": [
+        "1.56"
+      ],
+      "Artifacts": [
+        "bcprov-jdk15on-1.56.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.oltu.oauth2:org.apache.oltu.oauth2.client",
+      "Versions": [
+        "1.0.2"
+      ],
+      "Artifacts": [
+        "org.apache.oltu.oauth2.client-1.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "xml-apis:xml-apis",
+      "Versions": [
+        "1.4.01"
+      ],
+      "Artifacts": [
+        "xml-apis-1.4.01.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "ch.qos.logback.contrib:logback-json-classic",
+      "Versions": [
+        "0.1.5"
+      ],
+      "Artifacts": [
+        "logback-json-classic-0.1.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.dropwizard.metrics:metrics-core",
+      "Versions": [
+        "4.1.2"
+      ],
+      "Artifacts": [
+        "metrics-core-4.1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.servlet.jsp.jstl:jakarta.servlet.jsp.jstl-api",
+      "Versions": [
+        "3.0.0"
+      ],
+      "Artifacts": [
+        "jakarta.servlet.jsp.jstl-api-3.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.checkerframework:checker-qual",
+      "Versions": [
+        "3.42.0"
+      ],
+      "Artifacts": [
+        "checker-qual-3.42.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.transaction:jta",
+      "Versions": [
+        "1.1"
+      ],
+      "Artifacts": [
+        "jta-1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml",
+      "Versions": [
+        "2.13.4"
+      ],
+      "Artifacts": [
+        "jackson-dataformat-yaml-2.13.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.yaml:snakeyaml",
+      "Versions": [
+        "2.0"
+      ],
+      "Artifacts": [
+        "snakeyaml-2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.hsqldb:hsqldb",
+      "Versions": [
+        "2.3.2"
+      ],
+      "Artifacts": [
+        "hsqldb-2.3.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.spray:spray-json_2.13",
+      "Versions": [
+        "1.3.6"
+      ],
+      "Artifacts": [
+        "spray-json_2.13-1.3.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.grpc:grpc-api",
+      "Versions": [
+        "1.44.0"
+      ],
+      "Artifacts": [
+        "grpc-api-1.44.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.sshd:sshd-core",
+      "Versions": [
+        "1.2.0"
+      ],
+      "Artifacts": [
+        "sshd-core-1.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.geronimo.specs:geronimo-jta_1.1_spec",
+      "Versions": [
+        "1.1.1"
+      ],
+      "Artifacts": [
+        "geronimo-jta_1.1_spec-1.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.typesafe.scala-logging:scala-logging_2.13",
+      "Versions": [
+        "3.9.5"
+      ],
+      "Artifacts": [
+        "scala-logging_2.13-3.9.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax:javaee-api",
+      "Versions": [
+        "7.0"
+      ],
+      "Artifacts": [
+        "javaee-api-7.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.portlet:portlet-api",
+      "Versions": [
+        "2.0"
+      ],
+      "Artifacts": [
+        "portlet-api-2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mobicents:checkstyle",
+      "Versions": [
+        "1.0.0.FINAL"
+      ],
+      "Artifacts": [
+        "checkstyle-1.0.0.FINAL.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.mail:mail",
+      "Versions": [
+        "1.4"
+      ],
+      "Artifacts": [
+        "mail-1.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.interceptor:javax.interceptor-api",
+      "Versions": [
+        "1.2"
+      ],
+      "Artifacts": [
+        "javax.interceptor-api-1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.squareup.okhttp:okhttp",
+      "Versions": [
+        "2.7.5"
+      ],
+      "Artifacts": [
+        "okhttp-2.7.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.freemarker:freemarker",
+      "Versions": [
+        "2.3.31"
+      ],
+      "Artifacts": [
+        "freemarker-2.3.31.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.websocket:javax.websocket-api",
+      "Versions": [
+        "1.1"
+      ],
+      "Artifacts": [
+        "javax.websocket-api-1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.lz4:lz4-java",
+      "Versions": [
+        "1.8.0"
+      ],
+      "Artifacts": [
+        "lz4-java-1.8.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.dom4j:dom4j",
+      "Versions": [
+        "2.1.1"
+      ],
+      "Artifacts": [
+        "dom4j-2.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.httpcomponents.client5:httpclient5",
+      "Versions": [
+        "5.3.1"
+      ],
+      "Artifacts": [
+        "httpclient5-5.3.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.typesafe.akka:akka-stream_2.13",
+      "Versions": [
+        "2.6.18"
+      ],
+      "Artifacts": [
+        "akka-stream_2.13-2.6.18.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.servlet.jsp:jsp-api",
+      "Versions": [
+        "2.1"
+      ],
+      "Artifacts": [
+        "jsp-api-2.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.tomcat:tomcat-coyote",
+      "Versions": [
+        "7.0.64"
+      ],
+      "Artifacts": [
+        "tomcat-coyote-7.0.64.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.xml.soap:jakarta.xml.soap-api",
+      "Versions": [
+        "3.0.2"
+      ],
+      "Artifacts": [
+        "jakarta.xml.soap-api-3.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.openjdk.jol:jol-core",
+      "Versions": [
+        "0.2"
+      ],
+      "Artifacts": [
+        "jol-core-0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.vavr:vavr",
+      "Versions": [
+        "0.10.4"
+      ],
+      "Artifacts": [
+        "vavr-0.10.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.sf.trove4j:trove4j",
+      "Versions": [
+        "3.0.3"
+      ],
+      "Artifacts": [
+        "trove4j-3.0.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "de.cronn:reflection-util",
+      "Versions": [
+        "2.14.0"
+      ],
+      "Artifacts": [
+        "reflection-util-2.14.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "aopalliance:aopalliance",
+      "Versions": [
+        "1.0"
+      ],
+      "Artifacts": [
+        "aopalliance-1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.codehaus.groovy:groovy",
+      "Versions": [
+        "3.0.9"
+      ],
+      "Artifacts": [
+        "groovy-3.0.9.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.airlift:units",
+      "Versions": [
+        "1.3"
+      ],
+      "Artifacts": [
+        "units-1.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.objenesis:objenesis",
+      "Versions": [
+        "3.2"
+      ],
+      "Artifacts": [
+        "objenesis-3.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.scopt:scopt_2.13",
+      "Versions": [
+        "4.1.0"
+      ],
+      "Artifacts": [
+        "scopt_2.13-4.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.pac4j.jax-rs:core",
+      "Versions": [
+        "3.0.0"
+      ],
+      "Artifacts": [
+        "core-3.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.openapitools:jackson-databind-nullable",
+      "Versions": [
+        "0.2.6"
+      ],
+      "Artifacts": [
+        "jackson-databind-nullable-0.2.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.javaparser:javaparser-core",
+      "Versions": [
+        "3.2.5"
+      ],
+      "Artifacts": [
+        "javaparser-core-3.2.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.zaxxer:HikariCP",
+      "Versions": [
+        "5.0.1"
+      ],
+      "Artifacts": [
+        "HikariCP-5.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.xml.ws:jaxws-rt",
+      "Versions": [
+        "4.0.3"
+      ],
+      "Artifacts": [
+        "jaxws-rt-4.0.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mortbay.jetty:jetty",
+      "Versions": [
+        "6.1.22"
+      ],
+      "Artifacts": [
+        "jetty-6.1.22.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.re2j:re2j",
+      "Versions": [
+        "1.7"
+      ],
+      "Artifacts": [
+        "re2j-1.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.auto.service:auto-service",
+      "Versions": [
+        "1.0.1"
+      ],
+      "Artifacts": [
+        "auto-service-1.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apereo.inspektr:inspektr-audit",
+      "Versions": [
+        "1.8.10.GA"
+      ],
+      "Artifacts": [
+        "inspektr-audit-1.8.10.GA.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.beust:jcommander",
+      "Versions": [
+        "1.78"
+      ],
+      "Artifacts": [
+        "jcommander-1.78.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework.cloud:spring-cloud-starter-bootstrap",
+      "Versions": [
+        "3.0.3"
+      ],
+      "Artifacts": [
+        "spring-cloud-starter-bootstrap-3.0.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.kohsuke.metainf-services:metainf-services",
+      "Versions": [
+        "1.7"
+      ],
+      "Artifacts": [
+        "metainf-services-1.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.servicemix.bundles:org.apache.servicemix.bundles.dom4j",
+      "Versions": [
+        "1.6.1_5"
+      ],
+      "Artifacts": [
+        "org.apache.servicemix.bundles.dom4j-1.6.1_5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.projectreactor:reactor-core",
+      "Versions": [
+        "3.4.18"
+      ],
+      "Artifacts": [
+        "reactor-core-3.4.18.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.httpcomponents.core5:httpcore5",
+      "Versions": [
+        "5.2.4"
+      ],
+      "Artifacts": [
+        "httpcore5-5.2.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.avro:avro",
+      "Versions": [
+        "1.10.2"
+      ],
+      "Artifacts": [
+        "avro-1.10.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.jms:jakarta.jms-api",
+      "Versions": [
+        "3.1.0"
+      ],
+      "Artifacts": [
+        "jakarta.jms-api-3.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.springfox:springfox-swagger2",
+      "Versions": [
+        "2.9.2"
+      ],
+      "Artifacts": [
+        "springfox-swagger2-2.9.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.hibernate:hibernate-validator",
+      "Versions": [
+        "5.4.1.Final"
+      ],
+      "Artifacts": [
+        "hibernate-validator-5.4.1.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.pathikrit:better-files_2.13",
+      "Versions": [
+        "3.9.1"
+      ],
+      "Artifacts": [
+        "better-files_2.13-3.9.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.perfmark:perfmark-api",
+      "Versions": [
+        "0.27.0"
+      ],
+      "Artifacts": [
+        "perfmark-api-0.27.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apereo.service.persondir:person-directory-impl",
+      "Versions": [
+        "3.0.1"
+      ],
+      "Artifacts": [
+        "person-directory-impl-3.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scala-lang.modules:scala-java8-compat_2.12",
+      "Versions": [
+        "0.9.0"
+      ],
+      "Artifacts": [
+        "scala-java8-compat_2.12-0.9.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.codehaus.jackson:jackson-mapper-asl",
+      "Versions": [
+        "1.9.13"
+      ],
+      "Artifacts": [
+        "jackson-mapper-asl-1.9.13.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.hibernate.javax.persistence:hibernate-jpa-2.1-api",
+      "Versions": [
+        "1.0.0.Final"
+      ],
+      "Artifacts": [
+        "hibernate-jpa-2.1-api-1.0.0.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.ow2.asm:asm",
+      "Versions": [
+        "5.0.3"
+      ],
+      "Artifacts": [
+        "asm-5.0.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.netty:netty-handler",
+      "Versions": [
+        "4.1.72.Final"
+      ],
+      "Artifacts": [
+        "netty-handler-4.1.72.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.json:json",
+      "Versions": [
+        "20090211"
+      ],
+      "Artifacts": [
+        "json-20090211.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.aliyun:endpoint-util",
+      "Versions": [
+        "0.0.7"
+      ],
+      "Artifacts": [
+        "endpoint-util-0.0.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.jcraft:jsch",
+      "Versions": [
+        "0.1.55"
+      ],
+      "Artifacts": [
+        "jsch-0.1.55.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider",
+      "Versions": [
+        "2.13.4"
+      ],
+      "Artifacts": [
+        "jackson-jaxrs-json-provider-2.13.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.assertj:assertj-core",
+      "Versions": [
+        "3.24.2"
+      ],
+      "Artifacts": [
+        "assertj-core-3.24.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.rholder:guava-retrying",
+      "Versions": [
+        "2.0.0"
+      ],
+      "Artifacts": [
+        "guava-retrying-2.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.jayway.jsonpath:json-path",
+      "Versions": [
+        "2.4.0"
+      ],
+      "Artifacts": [
+        "json-path-2.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scoverage:scalac-scoverage-plugin_2.11",
+      "Versions": [
+        "1.1.1"
+      ],
+      "Artifacts": [
+        "scalac-scoverage-plugin_2.11-1.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.graalvm.sdk:nativeimage",
+      "Versions": [
+        "23.1.2"
+      ],
+      "Artifacts": [
+        "nativeimage-23.1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.mail:javax.mail",
+      "Versions": [
+        "1.6.2"
+      ],
+      "Artifacts": [
+        "javax.mail-1.6.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.wildfly.common:wildfly-common",
+      "Versions": [
+        "1.5.4.Final"
+      ],
+      "Artifacts": [
+        "wildfly-common-1.5.4.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.immutables:value",
+      "Versions": [
+        "2.8.8"
+      ],
+      "Artifacts": [
+        "value-2.8.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "xerces:xercesImpl",
+      "Versions": [
+        "2.12.2"
+      ],
+      "Artifacts": [
+        "xercesImpl-2.12.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.gsonfire:gson-fire",
+      "Versions": [
+        "1.8.5"
+      ],
+      "Artifacts": [
+        "gson-fire-1.8.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.swagger.core.v3:swagger-annotations",
+      "Versions": [
+        "2.2.2"
+      ],
+      "Artifacts": [
+        "swagger-annotations-2.2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.jpountz.lz4:lz4",
+      "Versions": [
+        "1.3.0"
+      ],
+      "Artifacts": [
+        "lz4-1.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-dbcp:commons-dbcp",
+      "Versions": [
+        "1.4"
+      ],
+      "Artifacts": [
+        "commons-dbcp-1.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.sonatype.plexus:plexus-build-api",
+      "Versions": [
+        "0.0.7"
+      ],
+      "Artifacts": [
+        "plexus-build-api-0.0.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.ghik:silencer-lib_2.12.10",
+      "Versions": [
+        "1.6.0"
+      ],
+      "Artifacts": [
+        "silencer-lib_2.12.10-1.6.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework.data:spring-data-commons",
+      "Versions": [
+        "2.7.2"
+      ],
+      "Artifacts": [
+        "spring-data-commons-2.7.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.groovy:groovy",
+      "Versions": [
+        "4.0.4"
+      ],
+      "Artifacts": [
+        "groovy-4.0.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.googlecode.java-diff-utils:diffutils",
+      "Versions": [
+        "1.3.0"
+      ],
+      "Artifacts": [
+        "diffutils-1.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apiguardian:apiguardian-api",
+      "Versions": [
+        "1.1.2"
+      ],
+      "Artifacts": [
+        "apiguardian-api-1.1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework.integration:spring-integration-core",
+      "Versions": [
+        "5.5.14"
+      ],
+      "Artifacts": [
+        "spring-integration-core-5.5.14.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.hibernate.validator:hibernate-validator",
+      "Versions": [
+        "6.1.6.Final"
+      ],
+      "Artifacts": [
+        "hibernate-validator-6.1.6.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.intellij:annotations",
+      "Versions": [
+        "12.0"
+      ],
+      "Artifacts": [
+        "annotations-12.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "androidx.annotation:annotation",
+      "Versions": [
+        "1.1.0"
+      ],
+      "Artifacts": [
+        "annotation-1.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jline:jline-terminal",
+      "Versions": [
+        "3.14.1"
+      ],
+      "Artifacts": [
+        "jline-terminal-3.14.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mockito:mockito-core",
+      "Versions": [
+        "1.10.19"
+      ],
+      "Artifacts": [
+        "mockito-core-1.10.19.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "oro:oro",
+      "Versions": [
+        "2.0.8"
+      ],
+      "Artifacts": [
+        "oro-2.0.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.pekko:pekko-actor_2.13",
+      "Versions": [
+        "1.0.1"
+      ],
+      "Artifacts": [
+        "pekko-actor_2.13-1.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.fasterxml.jackson.module:jackson-module-parameter-names",
+      "Versions": [
+        "2.16.1"
+      ],
+      "Artifacts": [
+        "jackson-module-parameter-names-2.16.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.junit.jupiter:junit-jupiter-api",
+      "Versions": [
+        "5.8.2"
+      ],
+      "Artifacts": [
+        "junit-jupiter-api-5.8.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.threeten:threetenbp",
+      "Versions": [
+        "1.6.8"
+      ],
+      "Artifacts": [
+        "threetenbp-1.6.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.circe:circe-core_2.13",
+      "Versions": [
+        "0.14.2"
+      ],
+      "Artifacts": [
+        "circe-core_2.13-0.14.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "redis.clients:jedis",
+      "Versions": [
+        "2.9.0"
+      ],
+      "Artifacts": [
+        "jedis-2.9.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.axet:wget",
+      "Versions": [
+        "1.4.9"
+      ],
+      "Artifacts": [
+        "wget-1.4.9.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.palantir.refreshable:refreshable",
+      "Versions": [
+        "2.2.0"
+      ],
+      "Artifacts": [
+        "refreshable-2.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-fileupload:commons-fileupload",
+      "Versions": [
+        "1.4"
+      ],
+      "Artifacts": [
+        "commons-fileupload-1.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.reactivex.rxjava2:rxjava",
+      "Versions": [
+        "2.2.21"
+      ],
+      "Artifacts": [
+        "rxjava-2.2.21.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework.shell:spring-shell",
+      "Versions": [
+        "1.2.0.RELEASE"
+      ],
+      "Artifacts": [
+        "spring-shell-1.2.0.RELEASE.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.squareup.moshi:moshi",
+      "Versions": [
+        "1.15.2"
+      ],
+      "Artifacts": [
+        "moshi-1.15.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.interceptor:jakarta.interceptor-api",
+      "Versions": [
+        "2.1.0"
+      ],
+      "Artifacts": [
+        "jakarta.interceptor-api-2.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.esotericsoftware:minlog",
+      "Versions": [
+        "1.3.0"
+      ],
+      "Artifacts": [
+        "minlog-1.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.servlet.jsp:jakarta.servlet.jsp-api",
+      "Versions": [
+        "3.1.1"
+      ],
+      "Artifacts": [
+        "jakarta.servlet.jsp-api-3.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.palantir.common:streams",
+      "Versions": [
+        "1.9.1"
+      ],
+      "Artifacts": [
+        "streams-1.9.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.weakref:jmxutils",
+      "Versions": [
+        "1.19"
+      ],
+      "Artifacts": [
+        "jmxutils-1.19.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.spotbugs:spotbugs-annotations",
+      "Versions": [
+        "4.2.0"
+      ],
+      "Artifacts": [
+        "spotbugs-annotations-4.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.antlr:antlr4-runtime",
+      "Versions": [
+        "4.7"
+      ],
+      "Artifacts": [
+        "antlr4-runtime-4.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jspecify:jspecify",
+      "Versions": [
+        "1.0.0"
+      ],
+      "Artifacts": [
+        "jspecify-1.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.liferay.portal:com.liferay.portal.impl",
+      "Versions": [
+        "2.0.0"
+      ],
+      "Artifacts": [
+        "com.liferay.portal.impl-2.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.gwtbootstrap3:gwtbootstrap3",
+      "Versions": [
+        "1.0.1"
+      ],
+      "Artifacts": [
+        "gwtbootstrap3-1.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scalacheck:scalacheck_2.13",
+      "Versions": [
+        "1.15.4"
+      ],
+      "Artifacts": [
+        "scalacheck_2.13-1.15.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.api:api-common",
+      "Versions": [
+        "2.2.1"
+      ],
+      "Artifacts": [
+        "api-common-2.2.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.reactivex:rxjava",
+      "Versions": [
+        "1.3.8"
+      ],
+      "Artifacts": [
+        "rxjava-1.3.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.poi:poi-ooxml",
+      "Versions": [
+        "4.1.2"
+      ],
+      "Artifacts": [
+        "poi-ooxml-4.1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scalatest:scalatest-core_2.13",
+      "Versions": [
+        "3.2.11"
+      ],
+      "Artifacts": [
+        "scalatest-core_2.13-3.2.11.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.jsonwebtoken:jjwt",
+      "Versions": [
+        "0.9.1"
+      ],
+      "Artifacts": [
+        "jjwt-0.9.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scalactic:scalactic_2.13",
+      "Versions": [
+        "3.2.9"
+      ],
+      "Artifacts": [
+        "scalactic_2.13-3.2.9.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.hdrhistogram:HdrHistogram",
+      "Versions": [
+        "2.1.12"
+      ],
+      "Artifacts": [
+        "HdrHistogram-2.1.12.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.codahale.metrics:metrics-core",
+      "Versions": [
+        "3.0.2"
+      ],
+      "Artifacts": [
+        "metrics-core-3.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "biz.aQute.bnd:biz.aQute.bndlib",
+      "Versions": [
+        "3.1.0"
+      ],
+      "Artifacts": [
+        "biz.aQute.bndlib-3.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.spec.javax.ws.rs:jboss-jaxrs-api_2.1_spec",
+      "Versions": [
+        "2.0.1.Final"
+      ],
+      "Artifacts": [
+        "jboss-jaxrs-api_2.1_spec-2.0.1.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mobicents.servlet.sip.containers:sip-servlets-catalina-7",
+      "Versions": [
+        "3.1.761"
+      ],
+      "Artifacts": [
+        "sip-servlets-catalina-7-3.1.761.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mobicents.servlet.sip:sip-servlets-application-router",
+      "Versions": [
+        "3.1.761"
+      ],
+      "Artifacts": [
+        "sip-servlets-application-router-3.1.761.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.json:javax.json-api",
+      "Versions": [
+        "1.1.4"
+      ],
+      "Artifacts": [
+        "javax.json-api-1.1.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.wildfly.checkstyle:wildfly-checkstyle-config",
+      "Versions": [
+        "1.0.4.Final"
+      ],
+      "Artifacts": [
+        "wildfly-checkstyle-config-1.0.4.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.yetus:audience-annotations",
+      "Versions": [
+        "0.5.0"
+      ],
+      "Artifacts": [
+        "audience-annotations-0.5.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "args4j:args4j",
+      "Versions": [
+        "2.33"
+      ],
+      "Artifacts": [
+        "args4j-2.33.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-net:commons-net",
+      "Versions": [
+        "3.6"
+      ],
+      "Artifacts": [
+        "commons-net-3.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.sf.kxml:kxml2",
+      "Versions": [
+        "2.3.0"
+      ],
+      "Artifacts": [
+        "kxml2-2.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.beachape:enumeratum_2.12",
+      "Versions": [
+        "1.5.13"
+      ],
+      "Artifacts": [
+        "enumeratum_2.12-1.5.13.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.squareup.retrofit:retrofit",
+      "Versions": [
+        "1.9.0"
+      ],
+      "Artifacts": [
+        "retrofit-1.9.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.spec.javax.servlet:jboss-servlet-api_3.1_spec",
+      "Versions": [
+        "1.0.0.Final"
+      ],
+      "Artifacts": [
+        "jboss-servlet-api_3.1_spec-1.0.0.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scalamacros:quasiquotes_2.10",
+      "Versions": [
+        "2.0.1"
+      ],
+      "Artifacts": [
+        "quasiquotes_2.10-2.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jsoup:jsoup",
+      "Versions": [
+        "1.15.3"
+      ],
+      "Artifacts": [
+        "jsoup-1.15.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.jersey.inject:jersey-hk2",
+      "Versions": [
+        "2.34"
+      ],
+      "Artifacts": [
+        "jersey-hk2-2.34.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.chuusai:shapeless_2.13",
+      "Versions": [
+        "2.3.3"
+      ],
+      "Artifacts": [
+        "shapeless_2.13-2.3.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.sf.opencsv:opencsv",
+      "Versions": [
+        "2.3"
+      ],
+      "Artifacts": [
+        "opencsv-2.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "software.amazon.eventstream:eventstream",
+      "Versions": [
+        "1.0.1"
+      ],
+      "Artifacts": [
+        "eventstream-1.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.cdk8s:cdk8s",
+      "Versions": [
+        "2.70.9"
+      ],
+      "Artifacts": [
+        "cdk8s-2.70.9.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.jws:jakarta.jws-api",
+      "Versions": [
+        "2.1.0"
+      ],
+      "Artifacts": [
+        "jakarta.jws-api-2.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish:javax.el",
+      "Versions": [
+        "3.0.0"
+      ],
+      "Artifacts": [
+        "javax.el-3.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.squareup.okio:okio-jvm",
+      "Versions": [
+        "3.7.0"
+      ],
+      "Artifacts": [
+        "okio-jvm-3.7.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.sf.json-lib:json-lib",
+      "Versions": [
+        "2.4"
+      ],
+      "Artifacts": [
+        "json-lib-2.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.seleniumhq.selenium:selenium-java",
+      "Versions": [
+        "3.141.59"
+      ],
+      "Artifacts": [
+        "selenium-java-3.141.59.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.errai:errai-bus",
+      "Versions": [
+        "4.6.0.Final"
+      ],
+      "Artifacts": [
+        "errai-bus-4.6.0.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.opentelemetry:opentelemetry-api",
+      "Versions": [
+        "1.12.0"
+      ],
+      "Artifacts": [
+        "opentelemetry-api-1.12.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.scala-native:scala3lib_native0.4_3",
+      "Versions": [
+        "0.4.17"
+      ],
+      "Artifacts": [
+        "scala3lib_native0.4_3-0.4.17.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.ini4j:ini4j",
+      "Versions": [
+        "0.5.4"
+      ],
+      "Artifacts": [
+        "ini4j-0.5.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.netflix.spectator:spectator-api",
+      "Versions": [
+        "1.0.6"
+      ],
+      "Artifacts": [
+        "spectator-api-1.0.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.zafarkhaja:java-semver",
+      "Versions": [
+        "0.9.0"
+      ],
+      "Artifacts": [
+        "java-semver-0.9.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.auth0:java-jwt",
+      "Versions": [
+        "4.4.0"
+      ],
+      "Artifacts": [
+        "java-jwt-4.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.jms:javax.jms-api",
+      "Versions": [
+        "2.0.1"
+      ],
+      "Artifacts": [
+        "javax.jms-api-2.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.logstash.logback:logstash-logback-encoder",
+      "Versions": [
+        "4.11"
+      ],
+      "Artifacts": [
+        "logstash-logback-encoder-4.11.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.gravitee.common:gravitee-common",
+      "Versions": [
+        "3.4.1"
+      ],
+      "Artifacts": [
+        "gravitee-common-3.4.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "antlr:antlr",
+      "Versions": [
+        "2.7.7"
+      ],
+      "Artifacts": [
+        "antlr-2.7.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.projectreactor.netty:reactor-netty",
+      "Versions": [
+        "1.0.34"
+      ],
+      "Artifacts": [
+        "reactor-netty-1.0.34.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.spec.javax.rmi:jboss-rmi-api_1.0_spec",
+      "Versions": [
+        "1.0.6.Final"
+      ],
+      "Artifacts": [
+        "jboss-rmi-api_1.0_spec-1.0.6.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.cache:cache-api",
+      "Versions": [
+        "1.1.1"
+      ],
+      "Artifacts": [
+        "cache-api-1.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.pulumi:pulumi",
+      "Versions": [
+        "0.5.4"
+      ],
+      "Artifacts": [
+        "pulumi-0.5.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.palantir.tokens:auth-tokens",
+      "Versions": [
+        "3.18.0"
+      ],
+      "Artifacts": [
+        "auth-tokens-3.18.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.jersey.containers:jersey-container-servlet-core",
+      "Versions": [
+        "2.34"
+      ],
+      "Artifacts": [
+        "jersey-container-servlet-core-2.34.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.asynchttpclient:async-http-client",
+      "Versions": [
+        "2.12.1"
+      ],
+      "Artifacts": [
+        "async-http-client-2.12.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.eclipsesource.minimal-json:minimal-json",
+      "Versions": [
+        "0.9.4"
+      ],
+      "Artifacts": [
+        "minimal-json-0.9.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.fusesource.jansi:jansi",
+      "Versions": [
+        "2.4.0"
+      ],
+      "Artifacts": [
+        "jansi-2.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "ant:ant",
+      "Versions": [
+        "1.6.5"
+      ],
+      "Artifacts": [
+        "ant-1.6.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.thesamet.scalapb:scalapb-runtime_2.13",
+      "Versions": [
+        "0.11.8"
+      ],
+      "Artifacts": [
+        "scalapb-runtime_2.13-0.11.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "findbugs:annotations",
+      "Versions": [
+        "1.0.0"
+      ],
+      "Artifacts": [
+        "annotations-1.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.xml.messaging.saaj:saaj-impl",
+      "Versions": [
+        "1.5.3"
+      ],
+      "Artifacts": [
+        "saaj-impl-1.5.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jdom:jdom2",
+      "Versions": [
+        "2.0.6"
+      ],
+      "Artifacts": [
+        "jdom2-2.0.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.jersey:jersey-client",
+      "Versions": [
+        "1.19.4"
+      ],
+      "Artifacts": [
+        "jersey-client-1.19.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.jetty.toolchain:jetty-schemas",
+      "Versions": [
+        "5.2"
+      ],
+      "Artifacts": [
+        "jetty-schemas-5.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.amazonaws:aws-lambda-java-core",
+      "Versions": [
+        "1.2.1"
+      ],
+      "Artifacts": [
+        "aws-lambda-java-core-1.2.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.spark-project.spark:unused",
+      "Versions": [
+        "1.0.0"
+      ],
+      "Artifacts": [
+        "unused-1.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.vividsolutions:jts",
+      "Versions": [
+        "1.13"
+      ],
+      "Artifacts": [
+        "jts-1.13.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "wsdl4j:wsdl4j",
+      "Versions": [
+        "1.6.3"
+      ],
+      "Artifacts": [
+        "wsdl4j-1.6.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.owasp.encoder:encoder",
+      "Versions": [
+        "1.2.1"
+      ],
+      "Artifacts": [
+        "encoder-1.2.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.postgresql:postgresql",
+      "Versions": [
+        "42.6.0"
+      ],
+      "Artifacts": [
+        "postgresql-42.6.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.thoughtworks.xstream:xstream",
+      "Versions": [
+        "1.4.11.1"
+      ],
+      "Artifacts": [
+        "xstream-1.4.11.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.xerial.snappy:snappy-java",
+      "Versions": [
+        "1.1.7"
+      ],
+      "Artifacts": [
+        "snappy-java-1.1.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jline:jline",
+      "Versions": [
+        "2.12"
+      ],
+      "Artifacts": [
+        "jline-2.12.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.jersey.core:jersey-server",
+      "Versions": [
+        "2.34"
+      ],
+      "Artifacts": [
+        "jersey-server-2.34.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "taglibs:standard",
+      "Versions": [
+        "1.1.2"
+      ],
+      "Artifacts": [
+        "standard-1.1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.dirigible:dirigible-commons-config",
+      "Versions": [
+        "8.10.0"
+      ],
+      "Artifacts": [
+        "dirigible-commons-config-8.10.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.yahoo.datasketches:sketches-core",
+      "Versions": [
+        "0.8.3"
+      ],
+      "Artifacts": [
+        "sketches-core-0.8.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.json:jakarta.json-api",
+      "Versions": [
+        "2.1.3"
+      ],
+      "Artifacts": [
+        "jakarta.json-api-2.1.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.jersey.media:jersey-media-json-jackson",
+      "Versions": [
+        "2.34"
+      ],
+      "Artifacts": [
+        "jersey-media-json-jackson-2.34.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jaxen:jaxen",
+      "Versions": [
+        "1.1.1"
+      ],
+      "Artifacts": [
+        "jaxen-1.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.joda:joda-convert",
+      "Versions": [
+        "1.2"
+      ],
+      "Artifacts": [
+        "joda-convert-1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.minidev:json-smart",
+      "Versions": [
+        "2.3"
+      ],
+      "Artifacts": [
+        "json-smart-2.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "dev.forkhandles:result4k",
+      "Versions": [
+        "2.20.0.0"
+      ],
+      "Artifacts": [
+        "result4k-2.20.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.vertx:vertx-docgen",
+      "Versions": [
+        "0.9.4"
+      ],
+      "Artifacts": [
+        "vertx-docgen-0.9.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.jetty.orbit:javax.servlet",
+      "Versions": [
+        "3.0.0.v201112011016"
+      ],
+      "Artifacts": [
+        "javax.servlet-3.0.0.v201112011016.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "mysql:mysql-connector-java",
+      "Versions": [
+        "8.0.28"
+      ],
+      "Artifacts": [
+        "mysql-connector-java-8.0.28.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "software.amazon.ion:ion-java",
+      "Versions": [
+        "1.0.2"
+      ],
+      "Artifacts": [
+        "ion-java-1.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.jetty:jetty-websocket",
+      "Versions": [
+        "7.6.9.v20130131"
+      ],
+      "Artifacts": [
+        "jetty-websocket-7.6.9.v20130131.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "de.greenrobot:java-common",
+      "Versions": [
+        "2.3.1"
+      ],
+      "Artifacts": [
+        "java-common-2.3.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.spec.javax.annotation:jboss-annotations-api_1.2_spec",
+      "Versions": [
+        "1.0.0.Final"
+      ],
+      "Artifacts": [
+        "jboss-annotations-api_1.2_spec-1.0.0.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.palantir.nylon:nylon-threads",
+      "Versions": [
+        "0.3.0"
+      ],
+      "Artifacts": [
+        "nylon-threads-0.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.aether:aether-api",
+      "Versions": [
+        "1.1.0"
+      ],
+      "Artifacts": [
+        "aether-api-1.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.typesafe.play:play-json_2.12",
+      "Versions": [
+        "2.9.2"
+      ],
+      "Artifacts": [
+        "play-json_2.12-2.9.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.kaazing:community.license",
+      "Versions": [
+        "2.18"
+      ],
+      "Artifacts": [
+        "community.license-2.18.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jasypt:jasypt",
+      "Versions": [
+        "1.9.3"
+      ],
+      "Artifacts": [
+        "jasypt-1.9.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.gag:gag",
+      "Versions": [
+        "1.0.1"
+      ],
+      "Artifacts": [
+        "gag-1.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.karaf.features:org.apache.karaf.features.core",
+      "Versions": [
+        "3.0.8"
+      ],
+      "Artifacts": [
+        "org.apache.karaf.features.core-3.0.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.liferay:com.liferay.portal.upgrade",
+      "Versions": [
+        "2.0.0"
+      ],
+      "Artifacts": [
+        "com.liferay.portal.upgrade-2.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.karaf.system:org.apache.karaf.system.core",
+      "Versions": [
+        "3.0.8"
+      ],
+      "Artifacts": [
+        "org.apache.karaf.system.core-3.0.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.text:org.eclipse.text",
+      "Versions": [
+        "3.5.101"
+      ],
+      "Artifacts": [
+        "org.eclipse.text-3.5.101.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.java.dev.jna:jna",
+      "Versions": [
+        "5.13.0"
+      ],
+      "Artifacts": [
+        "jna-5.13.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.olingo:olingo-odata2-lib",
+      "Versions": [
+        "2.0.12"
+      ],
+      "Artifacts": [
+        "olingo-odata2-lib-2.0.12.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.openapitools.jackson.dataformat:jackson-dataformat-hal",
+      "Versions": [
+        "1.0.9"
+      ],
+      "Artifacts": [
+        "jackson-dataformat-hal-1.0.9.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "xml-resolver:xml-resolver",
+      "Versions": [
+        "1.2"
+      ],
+      "Artifacts": [
+        "xml-resolver-1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.webjars.bowergithub.polymerelements:iron-flex-layout",
+      "Versions": [
+        "2.0.3"
+      ],
+      "Artifacts": [
+        "iron-flex-layout-2.0.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mvnpm.at.polymer:polymer",
+      "Versions": [
+        "3.5.2"
+      ],
+      "Artifacts": [
+        "polymer-3.5.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.pureconfig:pureconfig_2.12",
+      "Versions": [
+        "0.13.0"
+      ],
+      "Artifacts": [
+        "pureconfig_2.12-0.13.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.ivy:ivy",
+      "Versions": [
+        "2.4.0"
+      ],
+      "Artifacts": [
+        "ivy-2.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.micrometer:micrometer-core",
+      "Versions": [
+        "1.11.1"
+      ],
+      "Artifacts": [
+        "micrometer-core-1.11.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.palantir.sls.versions:sls-versions",
+      "Versions": [
+        "1.4.0"
+      ],
+      "Artifacts": [
+        "sls-versions-1.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.danilopianini:thread-inheritable-resource-loader",
+      "Versions": [
+        "0.3.5"
+      ],
+      "Artifacts": [
+        "thread-inheritable-resource-loader-0.3.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.databricks:dbutils-api_2.12",
+      "Versions": [
+        "0.0.5"
+      ],
+      "Artifacts": [
+        "dbutils-api_2.12-0.0.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.http-client:google-http-client",
+      "Versions": [
+        "1.43.3"
+      ],
+      "Artifacts": [
+        "google-http-client-1.43.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "cglib:cglib",
+      "Versions": [
+        "3.3.0"
+      ],
+      "Artifacts": [
+        "cglib-3.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.jodah:typetools",
+      "Versions": [
+        "0.5.0"
+      ],
+      "Artifacts": [
+        "typetools-0.5.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.hadoop:hadoop-ozone-common",
+      "Versions": [
+        "1.1.0"
+      ],
+      "Artifacts": [
+        "hadoop-ozone-common-1.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.rogach:scallop_2.12",
+      "Versions": [
+        "3.3.0"
+      ],
+      "Artifacts": [
+        "scallop_2.12-3.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.dropwizard:dropwizard-core",
+      "Versions": [
+        "1.3.29"
+      ],
+      "Artifacts": [
+        "dropwizard-core-1.3.29.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.auth:google-auth-library-oauth2-http",
+      "Versions": [
+        "1.23.0"
+      ],
+      "Artifacts": [
+        "google-auth-library-oauth2-http-1.23.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.onosproject:onos-yang-datamodel",
+      "Versions": [
+        "1.11"
+      ],
+      "Artifacts": [
+        "onos-yang-datamodel-1.11.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.iheart:ficus_2.12",
+      "Versions": [
+        "1.4.7"
+      ],
+      "Artifacts": [
+        "ficus_2.12-1.4.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.graalvm.nativeimage:svm",
+      "Versions": [
+        "22.3.0"
+      ],
+      "Artifacts": [
+        "svm-22.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.slamdata:slamdata-predef_2.11",
+      "Versions": [
+        "0.0.2"
+      ],
+      "Artifacts": [
+        "slamdata-predef_2.11-0.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.beam:beam-vendor-guava-26_0-jre",
+      "Versions": [
+        "0.1"
+      ],
+      "Artifacts": [
+        "beam-vendor-guava-26_0-jre-0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.spec.javax.transaction:jboss-transaction-api_1.2_spec",
+      "Versions": [
+        "1.1.1.Final"
+      ],
+      "Artifacts": [
+        "jboss-transaction-api_1.2_spec-1.1.1.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.bettercloud:vault-java-driver",
+      "Versions": [
+        "5.1.0"
+      ],
+      "Artifacts": [
+        "vault-java-driver-5.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.get-coursier:interface",
+      "Versions": [
+        "1.0.16"
+      ],
+      "Artifacts": [
+        "interface-1.0.16.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.spec.javax.xml.bind:jboss-jaxb-api_2.3_spec",
+      "Versions": [
+        "2.0.0.Final"
+      ],
+      "Artifacts": [
+        "jboss-jaxb-api_2.3_spec-2.0.0.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.angus:angus-activation",
+      "Versions": [
+        "2.0.2"
+      ],
+      "Artifacts": [
+        "angus-activation-2.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.diffplug.spotless:spotless-eclipse-cdt",
+      "Versions": [
+        "10.5.0"
+      ],
+      "Artifacts": [
+        "spotless-eclipse-cdt-10.5.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.openeuler:bgmprovider",
+      "Versions": [
+        "1.0.4"
+      ],
+      "Artifacts": [
+        "bgmprovider-1.0.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.palantir.tracing:tracing",
+      "Versions": [
+        "6.18.0"
+      ],
+      "Artifacts": [
+        "tracing-6.18.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jdbi:jdbi3-core",
+      "Versions": [
+        "3.30.0"
+      ],
+      "Artifacts": [
+        "jdbi3-core-3.30.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.skife.config:config-magic",
+      "Versions": [
+        "0.14"
+      ],
+      "Artifacts": [
+        "config-magic-0.14.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "xalan:xalan",
+      "Versions": [
+        "2.7.2"
+      ],
+      "Artifacts": [
+        "xalan-2.7.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "software.amazon.smithy:smithy-aws-traits",
+      "Versions": [
+        "1.27.1"
+      ],
+      "Artifacts": [
+        "smithy-aws-traits-1.27.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.imgscalr:imgscalr-lib",
+      "Versions": [
+        "4.2"
+      ],
+      "Artifacts": [
+        "imgscalr-lib-4.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.nimbusds:nimbus-jose-jwt",
+      "Versions": [
+        "9.37.3"
+      ],
+      "Artifacts": [
+        "nimbus-jose-jwt-9.37.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.gwt.inject:gin",
+      "Versions": [
+        "2.1.2"
+      ],
+      "Artifacts": [
+        "gin-2.1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.zookeeper:zookeeper",
+      "Versions": [
+        "3.4.14"
+      ],
+      "Artifacts": [
+        "zookeeper-3.4.14.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.locationtech.jts:jts-core",
+      "Versions": [
+        "1.17.0"
+      ],
+      "Artifacts": [
+        "jts-core-1.17.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.ant:ant",
+      "Versions": [
+        "1.9.4"
+      ],
+      "Artifacts": [
+        "ant-1.9.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.rsocket:rsocket-transport-netty",
+      "Versions": [
+        "1.1.0"
+      ],
+      "Artifacts": [
+        "rsocket-transport-netty-1.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jvnet.jaxb2_commons:jaxb2-basics-runtime",
+      "Versions": [
+        "0.11.1"
+      ],
+      "Artifacts": [
+        "jaxb2-basics-runtime-0.11.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.testcontainers:testcontainers",
+      "Versions": [
+        "1.17.6"
+      ],
+      "Artifacts": [
+        "testcontainers-1.17.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.michaelrocks.bimap:bimap",
+      "Versions": [
+        "1.1.0"
+      ],
+      "Artifacts": [
+        "bimap-1.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.netflix.frigga:frigga",
+      "Versions": [
+        "0.24.0"
+      ],
+      "Artifacts": [
+        "frigga-0.24.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "de.brudaswen.kotlinx.serialization:kotlinx-serialization-csv",
+      "Versions": [
+        "2.0.0"
+      ],
+      "Artifacts": [
+        "kotlinx-serialization-csv-2.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jctools:jctools-core",
+      "Versions": [
+        "2.1.2"
+      ],
+      "Artifacts": [
+        "jctools-core-2.1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "stax:stax-api",
+      "Versions": [
+        "1.0.1"
+      ],
+      "Artifacts": [
+        "stax-api-1.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.opentest4j:opentest4j",
+      "Versions": [
+        "1.2.0"
+      ],
+      "Artifacts": [
+        "opentest4j-1.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.talend.sdk.component:component-api",
+      "Versions": [
+        "1.1.9"
+      ],
+      "Artifacts": [
+        "component-api-1.1.9.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.yammer.metrics:metrics-core",
+      "Versions": [
+        "2.2.0"
+      ],
+      "Artifacts": [
+        "metrics-core-2.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.bitbucket.bradleysmithllc.etlunit:module-signer",
+      "Versions": [
+        "48"
+      ],
+      "Artifacts": [
+        "module-signer-48.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.hashicorp:cdktf",
+      "Versions": [
+        "0.12.3"
+      ],
+      "Artifacts": [
+        "cdktf-0.12.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.javatuples:javatuples",
+      "Versions": [
+        "1.2"
+      ],
+      "Artifacts": [
+        "javatuples-1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.googlecode.juniversalchardet:juniversalchardet",
+      "Versions": [
+        "1.0.3"
+      ],
+      "Artifacts": [
+        "juniversalchardet-1.0.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "dev.failsafe:failsafe",
+      "Versions": [
+        "3.3.2"
+      ],
+      "Artifacts": [
+        "failsafe-3.3.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.github.classgraph:classgraph",
+      "Versions": [
+        "4.8.102"
+      ],
+      "Artifacts": [
+        "classgraph-4.8.102.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sksamuel.scapegoat:scalac-scapegoat-plugin_2.12",
+      "Versions": [
+        "1.3.8"
+      ],
+      "Artifacts": [
+        "scalac-scapegoat-plugin_2.12-1.3.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.codehaus.woodstox:stax2-api",
+      "Versions": [
+        "4.2.1"
+      ],
+      "Artifacts": [
+        "stax2-api-4.2.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.twdata.maven:mojo-executor",
+      "Versions": [
+        "2.2.0"
+      ],
+      "Artifacts": [
+        "mojo-executor-2.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss:staxmapper",
+      "Versions": [
+        "1.3.0.Final"
+      ],
+      "Artifacts": [
+        "staxmapper-1.3.0.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.st-js.bridge:jquery",
+      "Versions": [
+        "1.11.3.bv1"
+      ],
+      "Artifacts": [
+        "jquery-1.11.3.bv1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.testng:testng",
+      "Versions": [
+        "6.14.3"
+      ],
+      "Artifacts": [
+        "testng-6.14.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.michael-bull.kotlin-inline-logger:kotlin-inline-logger-jvm",
+      "Versions": [
+        "1.0.6"
+      ],
+      "Artifacts": [
+        "kotlin-inline-logger-jvm-1.0.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.tpolecat:sourcepos_3",
+      "Versions": [
+        "1.1.0"
+      ],
+      "Artifacts": [
+        "sourcepos_3-1.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "xmlunit:xmlunit",
+      "Versions": [
+        "1.3"
+      ],
+      "Artifacts": [
+        "xmlunit-1.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "cn.hutool:hutool-all",
+      "Versions": [
+        "5.8.27"
+      ],
+      "Artifacts": [
+        "hutool-all-5.8.27.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.curator:curator-recipes",
+      "Versions": [
+        "5.1.0"
+      ],
+      "Artifacts": [
+        "curator-recipes-5.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-jxpath:commons-jxpath",
+      "Versions": [
+        "1.3"
+      ],
+      "Artifacts": [
+        "commons-jxpath-1.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.spec.javax.ejb:jboss-ejb-api_3.2_spec",
+      "Versions": [
+        "1.0.0.Final"
+      ],
+      "Artifacts": [
+        "jboss-ejb-api_3.2_spec-1.0.0.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.datastax.cassandra:cassandra-driver-core",
+      "Versions": [
+        "3.8.0"
+      ],
+      "Artifacts": [
+        "cassandra-driver-core-3.8.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.sourceforge.jexcelapi:jxl",
+      "Versions": [
+        "2.6.12"
+      ],
+      "Artifacts": [
+        "jxl-2.6.12.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.fusesource.hawtjni:hawtjni-runtime",
+      "Versions": [
+        "1.18"
+      ],
+      "Artifacts": [
+        "hawtjni-runtime-1.18.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mindrot:jbcrypt",
+      "Versions": [
+        "0.4"
+      ],
+      "Artifacts": [
+        "jbcrypt-0.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.paho:org.eclipse.paho.client.mqttv3",
+      "Versions": [
+        "1.2.5"
+      ],
+      "Artifacts": [
+        "org.eclipse.paho.client.mqttv3-1.2.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.maven.reporting:maven-reporting-api",
+      "Versions": [
+        "3.0"
+      ],
+      "Artifacts": [
+        "maven-reporting-api-3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.chrisdavenport:log4cats-slf4j_2.13",
+      "Versions": [
+        "1.1.1"
+      ],
+      "Artifacts": [
+        "log4cats-slf4j_2.13-1.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.undertow:undertow-core",
+      "Versions": [
+        "2.2.24.Final"
+      ],
+      "Artifacts": [
+        "undertow-core-2.2.24.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.microprofile.config:microprofile-config-api",
+      "Versions": [
+        "1.3"
+      ],
+      "Artifacts": [
+        "microprofile-config-api-1.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.spy:spymemcached",
+      "Versions": [
+        "2.12.3"
+      ],
+      "Artifacts": [
+        "spymemcached-2.12.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.persistence:jakarta.persistence",
+      "Versions": [
+        "2.2.3"
+      ],
+      "Artifacts": [
+        "jakarta.persistence-2.2.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.googlecode.lambdaj:lambdaj",
+      "Versions": [
+        "2.3.3"
+      ],
+      "Artifacts": [
+        "lambdaj-2.3.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.mysql:mysql-connector-j",
+      "Versions": [
+        "8.0.33"
+      ],
+      "Artifacts": [
+        "mysql-connector-j-8.0.33.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mortbay.jasper:apache-jsp",
+      "Versions": [
+        "10.1.31"
+      ],
+      "Artifacts": [
+        "apache-jsp-10.1.31.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.jimfs:jimfs",
+      "Versions": [
+        "1.1"
+      ],
+      "Artifacts": [
+        "jimfs-1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.vaadin:vaadin-testbench-core",
+      "Versions": [
+        "6.4.0"
+      ],
+      "Artifacts": [
+        "vaadin-testbench-core-6.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javolution:javolution",
+      "Versions": [
+        "5.5.1"
+      ],
+      "Artifacts": [
+        "javolution-5.5.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.platform:org.eclipse.core.runtime",
+      "Versions": [
+        "3.33.100"
+      ],
+      "Artifacts": [
+        "org.eclipse.core.runtime-3.33.100.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "info.picocli:picocli",
+      "Versions": [
+        "4.4.0"
+      ],
+      "Artifacts": [
+        "picocli-4.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "xpp3:xpp3",
+      "Versions": [
+        "1.1.4c"
+      ],
+      "Artifacts": [
+        "xpp3-1.1.4c.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.thrift:libthrift",
+      "Versions": [
+        "0.10.0"
+      ],
+      "Artifacts": [
+        "libthrift-0.10.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.julienrf:play-json-derived-codecs_2.12",
+      "Versions": [
+        "8.0.0"
+      ],
+      "Artifacts": [
+        "play-json-derived-codecs_2.12-8.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.codehaus.janino:janino",
+      "Versions": [
+        "3.1.12"
+      ],
+      "Artifacts": [
+        "janino-3.1.12.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.kafka:kafka-clients",
+      "Versions": [
+        "2.0.0"
+      ],
+      "Artifacts": [
+        "kafka-clients-2.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.projectreactor.addons:reactor-extra",
+      "Versions": [
+        "3.4.2"
+      ],
+      "Artifacts": [
+        "reactor-extra-3.4.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.ejb:ejb-api",
+      "Versions": [
+        "3.0"
+      ],
+      "Artifacts": [
+        "ejb-api-3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.googlecode.jsonschema2pojo:jsonschema2pojo-core",
+      "Versions": [
+        "0.3.7"
+      ],
+      "Artifacts": [
+        "jsonschema2pojo-core-0.3.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.reactivex.rxjava3:rxjava",
+      "Versions": [
+        "3.1.8"
+      ],
+      "Artifacts": [
+        "rxjava-3.1.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.cloudimpl:error-lib",
+      "Versions": [
+        "2.0.0.20"
+      ],
+      "Artifacts": [
+        "error-lib-2.0.0.20.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.googlecode.concurrentlinkedhashmap:concurrentlinkedhashmap-lru",
+      "Versions": [
+        "1.4.2"
+      ],
+      "Artifacts": [
+        "concurrentlinkedhashmap-lru-1.4.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.scalecube:scalecube-cluster",
+      "Versions": [
+        "2.6.9"
+      ],
+      "Artifacts": [
+        "scalecube-cluster-2.6.9.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.bazaarvoice.ostrich:ostrich-core",
+      "Versions": [
+        "1.9.3"
+      ],
+      "Artifacts": [
+        "ostrich-core-1.9.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.cronutils:cron-utils",
+      "Versions": [
+        "9.2.1"
+      ],
+      "Artifacts": [
+        "cron-utils-9.2.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.agrona:agrona",
+      "Versions": [
+        "1.23.1"
+      ],
+      "Artifacts": [
+        "agrona-1.23.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jdom:jdom",
+      "Versions": [
+        "1.0"
+      ],
+      "Artifacts": [
+        "jdom-1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.palantir.tritium:tritium-registry",
+      "Versions": [
+        "0.88.0"
+      ],
+      "Artifacts": [
+        "tritium-registry-0.88.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.gravitee.plugin:gravitee-plugin-core",
+      "Versions": [
+        "2.0.2"
+      ],
+      "Artifacts": [
+        "gravitee-plugin-core-2.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-dbutils:commons-dbutils",
+      "Versions": [
+        "1.7"
+      ],
+      "Artifacts": [
+        "commons-dbutils-1.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.locationtech.spatial4j:spatial4j",
+      "Versions": [
+        "0.8"
+      ],
+      "Artifacts": [
+        "spatial4j-0.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.michael-bull.kotlin-retry:kotlin-retry",
+      "Versions": [
+        "1.0.9"
+      ],
+      "Artifacts": [
+        "kotlin-retry-1.0.9.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.i2p.crypto:eddsa",
+      "Versions": [
+        "0.3.0"
+      ],
+      "Artifacts": [
+        "eddsa-0.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.belerweb:pinyin4j",
+      "Versions": [
+        "2.5.1"
+      ],
+      "Artifacts": [
+        "pinyin4j-2.5.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "commons-digester:commons-digester",
+      "Versions": [
+        "2.1"
+      ],
+      "Artifacts": [
+        "commons-digester-2.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.redisson:redisson",
+      "Versions": [
+        "3.23.3"
+      ],
+      "Artifacts": [
+        "redisson-3.23.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.lingala.zip4j:zip4j",
+      "Versions": [
+        "2.11.5"
+      ],
+      "Artifacts": [
+        "zip4j-2.11.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mozilla:rhino",
+      "Versions": [
+        "1.7R4"
+      ],
+      "Artifacts": [
+        "rhino-1.7R4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.thoughtworks.enableIf:enableif_2.13",
+      "Versions": [
+        "1.1.7"
+      ],
+      "Artifacts": [
+        "enableif_2.13-1.1.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mvnpm.at.open-wc:dedupe-mixin",
+      "Versions": [
+        "1.4.0"
+      ],
+      "Artifacts": [
+        "dedupe-mixin-1.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.technologybrewery.baton:baton-maven-plugin",
+      "Versions": [
+        "1.1.1"
+      ],
+      "Artifacts": [
+        "baton-maven-plugin-1.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.querydsl:querydsl-apt",
+      "Versions": [
+        "5.0.0"
+      ],
+      "Artifacts": [
+        "querydsl-apt-5.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.javafaker:javafaker",
+      "Versions": [
+        "1.0.2"
+      ],
+      "Artifacts": [
+        "javafaker-1.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "info.cukes:cucumber-java",
+      "Versions": [
+        "1.2.4"
+      ],
+      "Artifacts": [
+        "cucumber-java-1.2.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "asm:asm",
+      "Versions": [
+        "3.3.1"
+      ],
+      "Artifacts": [
+        "asm-3.3.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.mifmif:generex",
+      "Versions": [
+        "1.0.2"
+      ],
+      "Artifacts": [
+        "generex-1.0.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.thoughtworks.paranamer:paranamer",
+      "Versions": [
+        "2.8"
+      ],
+      "Artifacts": [
+        "paranamer-2.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.cucumber:cucumber-core",
+      "Versions": [
+        "2.4.0"
+      ],
+      "Artifacts": [
+        "cucumber-core-2.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.java.dev.stax-utils:stax-utils",
+      "Versions": [
+        "20070216"
+      ],
+      "Artifacts": [
+        "stax-utils-20070216.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.eclipse.lsp4j:org.eclipse.lsp4j",
+      "Versions": [
+        "0.6.0"
+      ],
+      "Artifacts": [
+        "org.eclipse.lsp4j-0.6.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javax.slee:jain-slee",
+      "Versions": [
+        "1.0"
+      ],
+      "Artifacts": [
+        "jain-slee-1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jodd:jodd-http",
+      "Versions": [
+        "6.3.0"
+      ],
+      "Artifacts": [
+        "jodd-http-6.3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.threads:jboss-threads",
+      "Versions": [
+        "2.4.0.Final"
+      ],
+      "Artifacts": [
+        "jboss-threads-2.4.0.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jboss.spec.javax.resource:jboss-connector-api_1.7_spec",
+      "Versions": [
+        "1.0.0.Final"
+      ],
+      "Artifacts": [
+        "jboss-connector-api_1.7_spec-1.0.0.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.brsanthu:migbase64",
+      "Versions": [
+        "2.2"
+      ],
+      "Artifacts": [
+        "migbase64-2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "javassist:javassist",
+      "Versions": [
+        "3.12.1.GA"
+      ],
+      "Artifacts": [
+        "javassist-3.12.1.GA.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.jersey.contribs:jersey-multipart",
+      "Versions": [
+        "1.19.4"
+      ],
+      "Artifacts": [
+        "jersey-multipart-1.19.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.netbeans.api:org-openide-util-lookup",
+      "Versions": [
+        "RELEASE270"
+      ],
+      "Artifacts": [
+        "org-openide-util-lookup-RELEASE270.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.nifi:nifi-api",
+      "Versions": [
+        "2.0.0"
+      ],
+      "Artifacts": [
+        "nifi-api-2.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.gravitee.el:gravitee-expression-language",
+      "Versions": [
+        "3.1.0"
+      ],
+      "Artifacts": [
+        "gravitee-expression-language-3.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.facebook.drift:drift-api",
+      "Versions": [
+        "1.33"
+      ],
+      "Artifacts": [
+        "drift-api-1.33.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.jenkins-ci.main:jenkins-core",
+      "Versions": [
+        "1.625.3"
+      ],
+      "Artifacts": [
+        "jenkins-core-1.625.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "co.fs2:fs2-core_2.13",
+      "Versions": [
+        "3.7.0"
+      ],
+      "Artifacts": [
+        "fs2-core_2.13-3.7.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.openjdk.jmh:jmh-core",
+      "Versions": [
+        "1.37"
+      ],
+      "Artifacts": [
+        "jmh-core-1.37.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.mraa:mraa",
+      "Versions": [
+        "2.0.0"
+      ],
+      "Artifacts": [
+        "mraa-2.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "eu.bitwalker:UserAgentUtils",
+      "Versions": [
+        "1.21"
+      ],
+      "Artifacts": [
+        "UserAgentUtils-1.21.jar"
+      ]
+    }
+  ]
+}
