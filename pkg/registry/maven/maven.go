@@ -82,6 +82,7 @@ type Registry interface {
 	PackageVersion(context.Context, string, string) (*MavenVersion, error)
 	ReleaseFile(context.Context, string, string, string) (io.ReadCloser, error)
 	ReleaseURL(context.Context, string, string, string) (string, error)
+	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
 }
 
 // HTTPRegistry is a Registry implementation that uses the search.maven.org HTTP API.
@@ -172,4 +173,26 @@ func (r HTTPRegistry) ReleaseURL(ctx context.Context, pkg, version, typ string) 
 	artifactPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
 	artifactURL := releaseURL.JoinPath(artifactPath)
 	return artifactURL.String(), nil
+}
+
+// Artifact returns file that is part of the Maven release.
+func (r HTTPRegistry) Artifact(ctx context.Context, pkg, version, artifact string) (io.ReadCloser, error) {
+	g, a, found := strings.Cut(pkg, ":")
+	if !found {
+		return nil, errors.New("package identifier not of form 'group:artifact'")
+	}
+	artifactPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, artifact)
+	artifactURL := releaseURL.JoinPath(artifactPath)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, artifactURL.String(), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating artifact URL")
+	}
+	resp, err := r.Client.Do(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching artifact")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching artifact")
+	}
+	return resp.Body, nil
 }

@@ -47,6 +47,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -173,6 +174,7 @@ var tui = &cobra.Command{
 			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
 			NPM:      npmreg.HTTPRegistry{Client: regclient},
 			PyPI:     pypireg.HTTPRegistry{Client: regclient},
+			Maven:    mavenreg.HTTPRegistry{Client: regclient},
 		}
 		var assetStoreFn func(runID string) (rebuild.LocatableAssetStore, error)
 		if *sharedAssetStore != "" {
