@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,9 +27,16 @@ type RegistryResolution struct {
 	CommitTime time.Time
 }
 
+// FindConfig configures the behavior of FindRegistryResolution
+type FindConfig struct {
+	// VerboseLogging enables detailed logging of commit analysis during search
+	VerboseLogging bool
+}
+
 // FindRegistryResolution searches across multiple sequential registry indices for the earliest possible state a registry resolution could have taken place.
 // Indices should be ordered from newest to oldest (e.g., current index first, then previous snapshot(s)).
-func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargolock.Package, cratePublished time.Time) (*RegistryResolution, error) {
+// An optional config parameter can be provided to control logging and other behaviors.
+func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargolock.Package, cratePublished time.Time, cfg *FindConfig) (*RegistryResolution, error) {
 	if len(lockfileCrates) == 0 {
 		return nil, errors.New("no crates to resolve")
 	}
@@ -43,7 +51,7 @@ func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargoloc
 	var lastResult, bestResult *searchResult
 	// Search each index in order until found
 	for i, index := range indices {
-		result, err := findCommitWithVersions(index, internalPackages, cratePublished)
+		result, err := findCommitWithVersions(index, internalPackages, cratePublished, cfg)
 		if err != nil {
 			if i > 0 && err == errNoMatches {
 				// Edge case: For multi-index searches, subsequent indices may lack matches:
@@ -104,7 +112,7 @@ func EntryPath(name string) string {
 
 var errNoMatches = errors.New("no packages found at publish time")
 
-func findCommitWithVersions(repo *git.Repository, packages []internalPackage, published time.Time) (*searchResult, error) {
+func findCommitWithVersions(repo *git.Repository, packages []internalPackage, published time.Time, cfg *FindConfig) (*searchResult, error) {
 	blobHashes := make(map[string]plumbing.Hash)
 	present := make(map[string]bool)
 	matchesFor := func(commit *object.Commit) int {
@@ -138,6 +146,9 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 			if present[pkg.Path] {
 				found++
 			}
+		}
+		if cfg != nil && cfg.VerboseLogging {
+			log.Printf("Analyzed %s [%s]: Found %d matches", commit.Hash.String(), commit.Committer.When.UTC().Format(time.RFC3339), found)
 		}
 		return found
 	}
