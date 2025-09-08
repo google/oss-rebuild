@@ -1309,6 +1309,8 @@ func init() {
 	migrate.Flags().AddGoFlag(flag.Lookup("project"))
 	migrate.Flags().AddGoFlag(flag.Lookup("dryrun"))
 
+	getTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("format"))
+
 	setTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("bench"))
 	setTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("format"))
 
