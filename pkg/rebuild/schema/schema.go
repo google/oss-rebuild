@@ -373,8 +373,9 @@ func (AgentCreateIterationRequest) Validate() error { return nil }
 
 // AgentCreateIterationResponse returns iteration and build IDs
 type AgentCreateIterationResponse struct {
-	IterationID string `json:"iteration_id"`
-	ObliviousID string `json:"oblivious_id"`
+	IterationID string          `json:"iteration_id"`
+	ObliviousID string          `json:"oblivious_id"`
+	Iteration   *AgentIteration `json:"iteration"`
 }
 
 // AgentBuildResult contains build result with success status and optional error
@@ -382,6 +383,13 @@ type AgentBuildResult struct {
 	BuildSuccess bool   `json:"build_success"`
 	ErrorMessage string `json:"error_message,omitempty"`
 }
+
+// Agent session complete reasons
+const (
+	AgentCompleteReasonSuccess = "SUCCESS"
+	AgentCompleteReasonFailed  = "FAILED"
+	AgentCompleteReasonError   = "ERROR"
+)
 
 // AgentCompleteRequest finalizes session with results
 type AgentCompleteRequest struct {
