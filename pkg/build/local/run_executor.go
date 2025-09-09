@@ -200,16 +200,9 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	handle.updateStatus(build.BuildStateRunning)
 	outbuf := &bytes.Buffer{}
 	runWriter := io.MultiWriter(handle, outbuf)
-	err = e.cmdExecutor.Execute(ctx, CommandOptions{
+	buildErr := e.cmdExecutor.Execute(ctx, CommandOptions{
 		Output: runWriter,
 	}, e.dockerCmd, runArgs...)
-	if err != nil {
-		handle.updateStatus(build.BuildStateCompleted)
-		handle.setResult(build.Result{
-			Error: errors.Wrap(err, "docker run failed"),
-		})
-		return
-	}
 	// Upload assets to asset store
 	// NOTE: Upload failures don't fail the build
 	if opts.Resources.AssetStore != nil {
@@ -225,7 +218,7 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	}
 	handle.updateStatus(build.BuildStateCompleted)
 	handle.setResult(build.Result{
-		Error: nil, // Success
+		Error: errors.Wrap(buildErr, "docker run failed"),
 	})
 }
 
