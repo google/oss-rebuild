@@ -35,6 +35,10 @@ func (r TestRegistry) ReleaseURL(_ context.Context, _, _, _ string) (string, err
 	return "", nil
 }
 
+func (r TestRegistry) Artifact(_ context.Context, _, _, _ string) (io.ReadCloser, error) {
+	return nil, nil
+}
+
 func TestNewPomXML(t *testing.T) {
 	tests := []struct {
 		testName string
