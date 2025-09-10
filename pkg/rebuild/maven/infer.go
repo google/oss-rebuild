@@ -115,8 +115,14 @@ func inferOrFallbackToDefaultJDK(ctx context.Context, name, version string, mux 
 	}
 	if jdk == "" {
 		log.Printf("no JDK version inferred, falling back to JDK %s", fallbackJDK)
-		jdk = fallbackJDK
-	} else if JDKDownloadURLs[jdk] == "" {
+		// We know the fallback JDK has a URL because it's in the jdk_urls.go file.
+		return fallbackJDK, nil
+	}
+	if strings.HasPrefix(jdk, "1.") {
+		log.Printf("removing '1.' prefix from JDK version %s", jdk)
+		jdk = strings.Split(jdk, ".")[1]
+	}
+	if JDKDownloadURLs[jdk] == "" {
 		log.Printf("%s has no associated JDK URL, falling back to JDK %s", jdk, fallbackJDK)
 		jdk = fallbackJDK
 	}

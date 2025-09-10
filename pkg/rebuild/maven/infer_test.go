@@ -91,7 +91,7 @@ func TestJDKVersionInference(t *testing.T) {
 					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 1.8.0_121\r\n\r\n"),
 				},
 			},
-			wantVersion: "11",
+			wantVersion: "8",
 		},
 	}
 
