@@ -114,6 +114,15 @@ func (mr MutableZipReader) WriteTo(zw *zip.Writer) error {
 	return nil
 }
 
+type ZipArchiveStabilizerDebug struct {
+	Name string
+	Func func(*MutableZipReader) bool
+}
+
+func (z ZipArchiveStabilizerDebug) Stabilize(arg any) {
+	z.Func(arg.(*MutableZipReader))
+}
+
 type ZipArchiveStabilizer struct {
 	Name string
 	Func func(*MutableZipReader)
@@ -216,13 +225,21 @@ func StabilizeZip(zr *zip.Reader, zw *zip.Writer, opts StabilizeOpts) error {
 	}
 	mr := NewMutableReader(zr)
 	for _, s := range opts.Stabilizers {
+		var currentStabName string
+		originalArchiveHash := getArchiveHash(&mr)
 		switch s.(type) {
 		case ZipArchiveStabilizer:
+			currentStabName = s.(ZipArchiveStabilizer).Name
 			s.(ZipArchiveStabilizer).Stabilize(&mr)
 		case ZipEntryStabilizer:
+			currentStabName = s.(ZipEntryStabilizer).Name
 			for _, mf := range mr.File {
 				s.(ZipEntryStabilizer).Stabilize(mf)
 			}
+		}
+		newArchiveHash := getArchiveHash(&mr)
+		if originalArchiveHash != newArchiveHash {
+			println("Stabilizer taking effect:", currentStabName)
 		}
 	}
 	return mr.WriteTo(zw)
