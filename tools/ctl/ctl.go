@@ -1259,6 +1259,29 @@ var localAgent = &cobra.Command{
 			}
 			return errors.Wrap(err, "creating agent session")
 		}
+		var retryInitialIter *schema.AgentIteration
+		if *retrySession != "" {
+			sessionDoc := fire.Collection("agent_sessions").Doc(*retrySession)
+			iterQuery := sessionDoc.Collection("agent_iterations").
+				Where("session_id", "==", *retrySession).
+				Where("number", "==", 1).
+				Limit(1)
+			d, err := iterQuery.Documents(ctx).Next()
+			if err != nil {
+				return errors.Wrap(err, "getting iteration to retry")
+			}
+			retryInitialIter = &schema.AgentIteration{}
+			if err := d.DataTo(retryInitialIter); err != nil {
+				return errors.Wrap(err, "deserializing iteration data")
+			}
+			_, err = fire.Collection("agent_sessions").Doc(sessionID).
+				Collection("agent_iterations").
+				Doc(retryInitialIter.ID).
+				Create(ctx, *retryInitialIter)
+			if err != nil {
+				return errors.Wrap(err, "creating initial iteration")
+			}
+		}
 		// Run agent locally
 		client, err := oauth.AuthorizedUserIDClient(ctx)
 		if err != nil {
@@ -1281,9 +1304,10 @@ var localAgent = &cobra.Command{
 			LogsBucket:     *logsBucket,
 		}
 		req := agent.RunSessionReq{
-			SessionID:     sessionID,
-			Target:        t,
-			MaxIterations: maxIterations,
+			SessionID:        sessionID,
+			Target:           t,
+			MaxIterations:    maxIterations,
+			InitialIteration: retryInitialIter,
 		}
 		// TODO: Should RunSession return an error?
 		agent.RunSession(ctx, req, deps)
@@ -1341,6 +1365,7 @@ var (
 	// Export
 	destination  = flag.String("destination", "", "the destination for the export, e.g. gs://bucket/prefix")
 	exportRundex = flag.Bool("rundex", false, "whether to include the rundex in the export")
+	retrySession = flag.String("retry-session", "", "the session to retry")
 )
 
 func init() {
