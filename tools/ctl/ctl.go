@@ -30,9 +30,13 @@ import (
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/cheggaaa/pb"
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
@@ -886,6 +890,8 @@ var infer = &cobra.Command{
 			deps := &inferenceservice.InferDeps{
 				HTTPClient: http.DefaultClient,
 				GitCache:   nil,
+				WorktreeF:  func() billy.Filesystem { return memfs.New() },
+				StorageF:   func() storage.Storer { return memory.NewStorage() },
 			}
 			var err error
 			resp, err = inferenceservice.Infer(cmd.Context(), req, deps)

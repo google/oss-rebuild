@@ -7,8 +7,8 @@ import (
 	"context"
 	"log"
 
-	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
@@ -24,9 +24,7 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy) (rebuild.Strategy, error) {
-	s := memory.NewStorage()
-	mfs := memfs.New()
+func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy, s storage.Storer, fs billy.Filesystem) (rebuild.Strategy, error) {
 	var repo string
 	if lh, ok := hint.(*rebuild.LocationHint); ok && lh != nil {
 		repo = lh.Location.Repo
@@ -37,7 +35,7 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 			return nil, err
 		}
 	}
-	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, mfs, s)
+	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, fs, s)
 	if err != nil {
 		return nil, err
 	}
@@ -51,11 +49,21 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 type InferDeps struct {
 	HTTPClient httpx.BasicClient
 	GitCache   *gitx.Cache
+	StorageF   func() storage.Storer
+	WorktreeF  func() billy.Filesystem
 }
 
 func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*schema.StrategyOneOf, error) {
 	if req.LocationHint() != nil && req.LocationHint().Ref == "" && req.LocationHint().Dir != "" {
 		return nil, api.AsStatus(codes.Unimplemented, errors.New("location hint dir without ref not implemented"))
+	}
+	wt := deps.WorktreeF()
+	if wt == nil {
+		return nil, api.AsStatus(codes.Internal, errors.New("filesystem not provided"))
+	}
+	store := deps.StorageF()
+	if store == nil {
+		return nil, api.AsStatus(codes.Internal, errors.New("git storage not provided"))
 	}
 	if deps.GitCache != nil {
 		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, *deps.GitCache)
@@ -79,7 +87,7 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	if !ok {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
-	s, err := doInfer(ctx, rebuilder, t, mux, req.LocationHint())
+	s, err := doInfer(ctx, rebuilder, t, mux, req.LocationHint(), store, wt)
 	if err != nil {
 		log.Printf("No inference for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, err)
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to infer strategy"))
