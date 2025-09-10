@@ -22,7 +22,7 @@ var AllPypiStabilizers = []Stabilizer{
 	StableCommentsCollapse,
 	StableVersionFile2,
 	StableVersionFile,
-	// StableCrcf,
+	StableCrcf,
 	StablePypiRecord,
 }
 
@@ -421,7 +421,7 @@ var StablePypiMetadata = ZipArchiveStabilizer{
 			}
 			println("Processing file:", zf.Name)
 
-			zf.SetContent([]byte{})
+			zf.SetContent([]byte("This needed to change (metadata)"))
 
 		}
 	},
@@ -439,7 +439,7 @@ var StablePypiDescription = ZipArchiveStabilizer{
 			// rebuild the zip without the Description.rst file
 			// as it is not needed for stabilization.
 
-			zf.SetContent([]byte{})
+			zf.SetContent([]byte("This needed to change (description)"))
 
 		}
 	},
@@ -477,9 +477,24 @@ var StableWheelBuildMetadata = ZipEntryStabilizer{
 
 		// Serialize the updated metadata back to a string
 		var updatedMetadata strings.Builder
-		updatedMetadata.WriteString("Metadata-Version: " + manifest.MetadataVersion + "\r\n")
-		updatedMetadata.WriteString("Name: " + manifest.Name + "\r\n")
-		updatedMetadata.WriteString("Version: " + manifest.Version + "\r\n")
+		// Adding this to account for \r already being in the name
+		if strings.HasSuffix(manifest.MetadataVersion, "\r") {
+			updatedMetadata.WriteString("Metadata-Version: " + manifest.MetadataVersion + "\n")
+		} else {
+			updatedMetadata.WriteString("Metadata-Version: " + manifest.MetadataVersion + "\r\n")
+		}
+
+		if strings.HasSuffix(manifest.Name, "\r") {
+			updatedMetadata.WriteString("Name: " + manifest.Name + "\n")
+		} else {
+			updatedMetadata.WriteString("Name: " + manifest.Name + "\r\n")
+		}
+
+		if strings.HasSuffix(manifest.Version, "\r") {
+			updatedMetadata.WriteString("Version: " + manifest.Version + "\n")
+		} else {
+			updatedMetadata.WriteString("Version: " + manifest.Version + "\r\n")
+		}
 
 		// Add structured information (sorted)
 		if structuredInfo, ok := manifest.OtherFields["StructuredInfo"]; ok {
@@ -697,7 +712,7 @@ var StableVersionFile2 = ZipArchiveStabilizer{
 			// rebuild the zip without the Description.rst file
 			// as it is not needed for stabilization.
 
-			zf.SetContent([]byte{})
+			zf.SetContent([]byte("This needed to change (version file)"))
 
 		}
 
