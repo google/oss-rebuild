@@ -848,7 +848,7 @@ var mavenRecentTop500 = RebuildBenchmark{
 		}
 		query := client.Query(`
 WITH
-	LatestSnapshot AS (
+  LatestSnapshot AS (
     SELECT
       Time
     FROM
@@ -857,44 +857,50 @@ WITH
       Time DESC
     LIMIT
       1
-  )
+  ),
+  PackageVersionDownloads AS (
+    SELECT
+      COUNT(*) AS Downloads,
+      Name AS Package,
+      Version
+    FROM (
+      SELECT
+        T.` + "`" + `From` + "`" + `.Name AS FName,
+        T.` + "`" + `From` + "`" + `.Version AS FVersion,
+        T.` + "`" + `To` + "`" + `.Name AS Name,
+        T.` + "`" + `To` + "`" + `.Version AS Version
+      FROM
+        ` + "`" + `bigquery-public-data.deps_dev_v1.DependencyGraphEdges` + "`" + ` T
+      INNER JOIN LatestSnapshot
+      ON
+        LatestSnapshot.Time = T.SnapshotAt
+      INNER JOIN (
+        SELECT 
+          Name,
+          Version
+        FROM
+          ` + "`" + `bigquery-public-data.deps_dev_v1.PackageVersions` + "`" + ` as T
+        INNER JOIN LatestSnapshot
+        ON LatestSnapshot.Time = T.SnapshotAt
+        WHERE T.UpstreamPublishedAt > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2*365 DAY)
+      ) AS Recent
+      ON
+        Recent.Name = T.` + "`" + `To` + "`" + `.Name AND Recent.Version = T.` + "`" + `To` + "`" + `.Version
+      WHERE
+        T.System = "MAVEN"
+      GROUP BY
+        T.` + "`" + `From` + "`" + `.Name,
+        T.` + "`" + `From` + "`" + `.Version,
+        T.` + "`" + `To` + "`" + `.Name,
+        T.` + "`" + `To` + "`" + `.Version)
+    GROUP BY
+      Name,
+      Version
+    )
 SELECT
-  COUNT(*) AS Downloads,
-  Name AS Package,
-  Version
-FROM (
-  SELECT
-    T.` + "`" + `From` + "`" + `.Name AS FName,
-    T.` + "`" + `From` + "`" + `.Version AS FVersion,
-    T.` + "`" + `To` + "`" + `.Name AS Name,
-    T.` + "`" + `To` + "`" + `.Version AS Version
-  FROM
-    ` + "`" + `bigquery-public-data.deps_dev_v1.DependencyGraphEdges` + "`" + ` T
-  INNER JOIN LatestSnapshot
-  ON
-    LatestSnapshot.Time = T.SnapshotAt
-  INNER JOIN (
-    SELECT 
-		  Name,
-		  Version
-    FROM
-      ` + "`" + `bigquery-public-data.deps_dev_v1.PackageVersions` + "`" + ` as T
-		INNER JOIN LatestSnapshot
-		ON LatestSnapshot.Time = T.SnapshotAt
-    WHERE T.UpstreamPublishedAt > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2*365 DAY)
-	) AS Recent
-	ON
-	  Recent.Name = T.` + "`" + `From` + "`" + `.Name AND Recent.Version = T.` + "`" + `From` + "`" + `.Version
-  WHERE
-    T.System = "MAVEN"
-  GROUP BY
-    T.` + "`" + `From` + "`" + `.Name,
-    T.` + "`" + `From` + "`" + `.Version,
-    T.` + "`" + `To` + "`" + `.Name,
-    T.` + "`" + `To` + "`" + `.Version)
-GROUP BY
-  Name,
-  Version
+  *
+FROM PackageVersionDownloads
+QUALIFY ROW_NUMBER() OVER(PARTITION BY SPLIT(Package, ':')[OFFSET(0)] ORDER BY Downloads DESC) = 1
 ORDER BY
   Downloads DESC
 LIMIT 2500
@@ -939,6 +945,7 @@ LIMIT 2500
 			close(pkgs)
 		}()
 		// Select packages with versions that satisfy our criteria.
+		groups := make(map[string]bool)
 		for p := range pkgs {
 			if strings.ContainsRune(p.Version, '-') {
 				// Non-release version.
@@ -960,7 +967,7 @@ LIMIT 2500
 				idx = len(ps.Packages) - 1
 			}
 			psp := &ps.Packages[idx]
-			if len(psp.Versions) >= 5 {
+			if len(psp.Versions) >= 1 {
 				continue
 			}
 			nameParts := strings.SplitN(p.Package, ":", 2)
@@ -968,6 +975,10 @@ LIMIT 2500
 				fmt.Println("Agh unexpected: ", p.Package)
 				return
 			}
+			if groups[nameParts[0]] {
+				continue
+			}
+			groups[nameParts[0]] = true
 			// TODO: Find the artifact name from a real source, don't just guess.
 			psp.Artifacts = append(psp.Artifacts, fmt.Sprintf("%s-%s.jar", nameParts[1], p.Version))
 			psp.Versions = append(psp.Versions, p.Version)
