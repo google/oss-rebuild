@@ -33,6 +33,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/oauth"
@@ -59,6 +60,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/migrations"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"google.golang.org/api/cloudbuild/v1"
@@ -1186,9 +1188,98 @@ var runAgent = &cobra.Command{
 		return nil
 	},
 }
+
+var localAgent = &cobra.Command{
+	Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name>",
+	Short: "Run agent code locally",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		t := rebuild.Target{Ecosystem: rebuild.Ecosystem(*ecosystem), Package: *pkg, Version: *version, Artifact: *artifact}
+		if t.Ecosystem == "" || t.Package == "" || t.Version == "" || t.Artifact == "" {
+			log.Fatal("ecosystem, package, version, and artifact must be provided")
+		}
+		if *project == "" {
+			return errors.New("project must be provided")
+		}
+		if *agentApiUri == "" {
+			return errors.New("agent API endpoint not provided")
+		}
+		if *metadataBucket == "" {
+			return errors.New("metadata bucket not provided")
+		}
+		fire, err := firestore.NewClient(cmd.Context(), *project)
+		if err != nil {
+			return errors.Wrap(err, "creating firestore client")
+		}
+		sessionUUID, err := uuid.NewV7()
+		if err != nil {
+			return errors.Wrap(err, "making sessionID")
+		}
+		sessionID := sessionUUID.String()
+		sessionTime := time.Unix(sessionUUID.Time().UnixTime())
+		// Set defaults for configuration
+		maxIterations := 10
+		session := schema.AgentSession{
+			ID:             sessionID,
+			Target:         t,
+			MaxIterations:  maxIterations,
+			TimeoutSeconds: 60 * 60, // 1 hr
+			Context:        &schema.AgentContext{},
+			// Because we're going to start running the session locally immediately, we can mark it as Running from the start.
+			// This avoids needing to update the session record immediately after creation.
+			Status: schema.AgentSessionStatusRunning,
+			// There is no job name, because we're going to run the agent in-process.
+			JobName: "",
+			Created: sessionTime,
+			Updated: sessionTime,
+		}
+		// Create session in Firestore
+		err = fire.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
+			// NOTE: This would fail if the session record already exists.
+			return t.Create(fire.Collection("agent_sessions").Doc(sessionID), session)
+		})
+		if err != nil {
+			if status.Code(err) == codes.AlreadyExists {
+				return errors.Errorf("agent session %s already exists", sessionID)
+			}
+			return errors.Wrap(err, "creating agent session")
+		}
+		log.Println("Created session object")
+		// Run agent locally
+		client, err := oauth.AuthorizedUserIDClient(ctx)
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
+		}
+		baseURL, err := url.Parse(*agentApiUri)
+		if err != nil {
+			log.Fatalf("Failed to parse agent API URL: %v", err)
+		}
+		// Create agent API client stubs
+		iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
+		completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
+		deps := agent.RunSessionDeps{
+			IterationStub:  iterationStub,
+			CompleteStub:   completeStub,
+			Agent:          agent.NewDefaultAgentLogic(),
+			SessionsBucket: "", // TODO: Add this once it's being used.
+			MetadataBucket: *metadataBucket,
+		}
+		req := agent.RunSessionReq{
+			SessionID:     sessionID,
+			Target:        t,
+			MaxIterations: maxIterations,
+		}
+		// TODO: Should RunSession return an error?
+		agent.RunSession(ctx, req, deps)
+		return nil
+	},
+}
+
 var (
 	// Shared
 	apiUri            = flag.String("api", "", "OSS Rebuild API endpoint URI")
+	agentApiUri       = flag.String("agent-api", "", "Agent API endpoint URI")
 	ecosystem         = flag.String("ecosystem", "", "the ecosystem")
 	pkg               = flag.String("package", "", "the package name")
 	version           = flag.String("version", "", "the version of the package")
@@ -1323,6 +1414,14 @@ func init() {
 	runAgent.Flags().AddGoFlag(flag.Lookup("version"))
 	runAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
 
+	localAgent.Flags().AddGoFlag(flag.Lookup("project"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("agent-api"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("ecosystem"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("package"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("version"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
+
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
 	rootCmd.AddCommand(getResults)
@@ -1335,6 +1434,7 @@ func init() {
 	rootCmd.AddCommand(getTrackedPackagesCmd)
 	rootCmd.AddCommand(runAgent)
 	rootCmd.AddCommand(getGradleGAV)
+	rootCmd.AddCommand(localAgent)
 }
 
 func main() {
