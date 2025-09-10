@@ -76,10 +76,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 }
 
-// inferBuildTool scans the repository for known build files to determine the build tool used.
-// In a typical multi-module project, the root project's pom.xml (for Maven) or build.gradle (for Gradle) defines groupId for the entire project.
-// This parent groupId is then inherited by all sub-modules.
-// This structure ensures that all related modules are grouped under a common namespace, simplifying dependency management and versioning across the project.
+// inferBuildTool scans the repository for build tool indicators and returns the most probable build tool.
+// It checks for the presence of "pom.xml" (Maven) and "gradlew" (Gradle) files, prioritizing the tool found in the shallowest directory.
+// The build tool located in the directory closest to the repository root is chosen, as it likely represents the primary build system.
+// The deeper the file is in the directory structure, it is more likely to be a red herring (e.g., examples, test resources).
 func inferBuildTool(commit *object.Commit) (string, error) {
 	var bestBuildTool string
 	minDepth := math.MaxInt
@@ -88,7 +88,7 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 	fileIter.ForEach(func(f *object.File) error {
 		currentDepth := strings.Count(f.Name, "/")
 		if currentDepth >= minDepth {
-			// No need to check deeper files if we already have a shallower build file
+			// No need to check deeper files if we already have a shallower candidate
 			return nil
 		}
 		// Check for Maven's build file
