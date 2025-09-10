@@ -133,6 +133,30 @@ func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
 	return a
 }
 
+func (a *defaultAgent) InitializeFromIteration(ctx context.Context, initialIteration *schema.AgentIteration) error {
+	loc, err := locationFromStrategyOneOf(initialIteration.Strategy)
+	if err != nil {
+		return errors.Wrap(err, "parsing previous iteration")
+	}
+	a.repo, err = rebuild.LoadRepo(ctx, a.t.Package, memory.NewStorage(), memfs.New(), git.CloneOptions{URL: loc.Repo, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
+	if err != nil {
+		return errors.Wrap(err, "loading repo")
+	}
+	w, err := a.repo.Worktree()
+	if err != nil {
+		return errors.Wrap(err, "getting worktree")
+	}
+	err = w.Checkout(&git.CheckoutOptions{
+		Hash: plumbing.NewHash(loc.Ref),
+	})
+	if err != nil {
+		errors.Wrap(err, "checkout")
+	}
+	a.RecordIteration(initialIteration)
+	a.loc = *loc
+	return nil
+}
+
 func (a *defaultAgent) metadata(ctx context.Context, obliviousID string) (rebuild.ReadOnlyAssetStore, error) {
 	metadata, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, obliviousID), fmt.Sprintf("gs://%s", a.deps.MetadataBucket))
 	return metadata, errors.Wrap(err, "creating metadata store")
