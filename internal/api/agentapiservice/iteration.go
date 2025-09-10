@@ -37,7 +37,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	}
 	obliviousID := uuid.New().String()
 	iterTime := time.Now().UTC()
-	iterationID := iterTime.Format(time.RFC3339)
+	iterationID := iterTime.Format(time.RFC3339Nano)
 	var iteration schema.AgentIteration
 	var session schema.AgentSession
 	// Create iteration record and fetch session in a transaction
@@ -159,5 +159,6 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	return &schema.AgentCreateIterationResponse{
 		IterationID: iterationID,
 		ObliviousID: obliviousID,
+		Iteration:   &iteration,
 	}, nil
 }

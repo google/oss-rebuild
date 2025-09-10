@@ -35,7 +35,12 @@ type AgentCreateDeps struct {
 }
 
 func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *AgentCreateDeps) (*schema.AgentCreateResponse, error) {
-	sessionID := uuid.New().String()
+	sessionUUID, err := uuid.NewV7()
+	if err != nil {
+		return nil, errors.Wrap(err, "making sessionID")
+	}
+	sessionID := sessionUUID.String()
+	sessionTime := time.Unix(sessionUUID.Time().UnixTime())
 	jobName := fmt.Sprintf("agent-%s", sessionID)
 	// Set defaults for configuration
 	maxIterations := req.MaxIterations
@@ -50,11 +55,11 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		Context:        req.Context,
 		Status:         schema.AgentSessionStatusInitializing,
 		JobName:        jobName,
-		Created:        time.Now().UTC(),
-		Updated:        time.Now().UTC(),
+		Created:        sessionTime,
+		Updated:        sessionTime,
 	}
 	// Create session in Firestore
-	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
+	err = deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
 		// NOTE: This would fail if the
 		return t.Create(deps.FirestoreClient.Collection("agent_sessions").Doc(sessionID), session)
 	})
