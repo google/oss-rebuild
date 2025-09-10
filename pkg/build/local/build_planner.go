@@ -121,7 +121,7 @@ func (p *DockerBuildPlanner) generateDockerfile(input rebuild.Input, instruction
 		BaseImage:      baseImage,
 		OS:             os,
 		PackageManager: pkgMgr,
-		UseTimewarp:    timewarpURL != "",
+		UseTimewarp:    opts.UseTimewarp,
 		TimewarpURL:    timewarpURL,
 		TimewarpAuth:   timewarpAuth,
 	}
