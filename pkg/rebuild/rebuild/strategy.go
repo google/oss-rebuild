@@ -48,6 +48,12 @@ func (b *BuildEnv) TimewarpURL(ecosystem string, registryTime time.Time) (string
 
 // TimewarpURLFromString constructs the correct URL for an ecosystem and RFC 3339-formatted time.
 func (b *BuildEnv) TimewarpURLFromString(ecosystem string, rfc3339Time string) (string, error) {
+	if ecosystem == "cargosparse" {
+		if _, err := b.TimewarpURL(ecosystem, time.Now()); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("sparse+http://%s:%s@%s/", ecosystem, rfc3339Time, b.TimewarpHost), nil
+	}
 	registryTime, err := time.Parse(time.RFC3339, rfc3339Time)
 	if err != nil {
 		return "", errors.Wrap(err, "parsing time")
