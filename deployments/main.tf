@@ -763,6 +763,7 @@ resource "google_cloud_run_v2_service" "inference" {
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
+        "--crates-registry-service-url=${google_cloud_run_v2_service.crates-registry.uri}",
       ]
       resources {
         limits = {
