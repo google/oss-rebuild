@@ -18,4 +18,5 @@ const (
 	GCSClientOptionsID
 	GCBCancelDeadlineID
 	GCBWaitDeadlineID
+	CratesRegistryStubID
 )
