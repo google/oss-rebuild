@@ -146,7 +146,7 @@ func cleanVerdict(m string) string {
 		m = "wrong package name in manifest"
 	case strings.Contains(m, `using existing: Failed to checkout: reference not found`):
 		m = "unable to checkout main branch on reused repo"
-	case strings.HasPrefix(m, `Unknown repo URL type:`):
+	case strings.Contains(m, `unsupported repo type`):
 		m = "bad repo URL"
 	case strings.Contains(m, `npm is known not to run on Node.js`):
 		m = "npm install: incompatible Node version"
