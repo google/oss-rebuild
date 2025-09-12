@@ -16,7 +16,6 @@ import (
 	re "regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
@@ -152,9 +151,8 @@ func extractPyProjectRequirements(ctx context.Context, tree *object.Tree) ([]str
 		// TODO: Some of these requirements are probably already in rbcfg.Requirements, should we skip
 		// them? To even know which package we're looking at would require parsing the dependency spec.
 		// https://packaging.python.org/en/latest/specifications/dependency-specifiers/#dependency-specifiers
-		if strings.Contains(r, "python_version") {
-			r = strings.Split(r, ";")[0]
-		}
+		// Always split on ';' and take the first part (requirement specifier)
+		r = strings.Split(r, ";")[0]
 		reqs = append(reqs, strings.ReplaceAll(r, " ", ""))
 	}
 	log.Println("Added these reqs from pyproject.toml: " + strings.Join(reqs, ", "))
@@ -216,7 +214,6 @@ func inferRequirements(name, version string, zr interface{}) ([]string, error) {
 		wheel, err = getFile(wheelPath, reader)
 	case *tar.Reader:
 		return reqs, nil
-		// wheel, err = getFileFromTarGz(wheelPath, reader)
 	default:
 		return nil, errors.New("[INTERNAL] Unsupported archive reader type")
 	}
@@ -244,8 +241,6 @@ func inferRequirements(name, version string, zr interface{}) ([]string, error) {
 	switch reader := zr.(type) {
 	case *zip.Reader:
 		metadata, err = getFile(metadataPath, reader)
-	case *tar.Reader:
-		metadata, err = getFileFromTarGz(metadataPath, reader)
 	default:
 		return nil, errors.New("[INTERNAL] Unsupported archive reader type")
 	}
@@ -273,37 +268,18 @@ func inferRequirements(name, version string, zr interface{}) ([]string, error) {
 }
 
 func inferPythonVersion(artifact pypireg.Artifact) string {
-	var pythonVersions []string
-
-	t := artifact.UploadTime
-	switch {
-	case t.After(time.Date(2023, 10, 2, 0, 0, 0, 0, time.UTC)):
-		pythonVersions = append(pythonVersions, "3.12.4") // Python 3.12 release
-	case t.After(time.Date(2022, 10, 24, 0, 0, 0, 0, time.UTC)):
-		pythonVersions = append(pythonVersions, "3.11.8") // Python 3.11 release
-	case t.After(time.Date(2021, 10, 4, 0, 0, 0, 0, time.UTC)):
-		pythonVersions = append(pythonVersions, "3.10.13") // Python 3.10 release
-	case t.After(time.Date(2020, 10, 5, 0, 0, 0, 0, time.UTC)):
-		pythonVersions = append(pythonVersions, "3.9.18") // Python 3.9 release
-	case t.After(time.Date(2019, 10, 14, 0, 0, 0, 0, time.UTC)):
-		pythonVersions = append(pythonVersions, "3.8.18") // Python 3.8 release
-	case t.After(time.Date(2018, 6, 27, 0, 0, 0, 0, time.UTC)):
-		pythonVersions = append(pythonVersions, "3.7.17") // Python 3.7 release
-	case t.After(time.Date(2014, 3, 16, 0, 0, 0, 0, time.UTC)):
-		pythonVersions = append(pythonVersions, "3.6.15") // Python 3.6 release
-
-	// Those are exluded until a proper way to support older python distributions
-	// case t.After(time.Date(2016, 12, 23, 0, 0, 0, 0, time.UTC)):
-	// 	pythonVersions = append(pythonVersions, "3.6.15") // Python 3.6 release
-	// case t.After(time.Date(2015, 9, 13, 0, 0, 0, 0, time.UTC)):
-	// 	pythonVersions = append(pythonVersions, "3.5.10") // Python 3.5 release
-	// case t.After(time.Date(2014, 3, 16, 0, 0, 0, 0, time.UTC)):
-	// 	pythonVersions = append(pythonVersions, "3.4.10") // Python 3.4 release
-	default:
-		pythonVersions = append(pythonVersions, "3.12.4") // Default to newest supported version
+	upload := artifact.UploadTime
+	var bestVersion string
+	for _, rel := range pypireg.PythonReleases {
+		if !rel.Date.After(upload) {
+			bestVersion = rel.Version.String()
+		}
 	}
-
-	return pythonVersions[0]
+	if bestVersion == "" {
+		// Fallback to latest known version if none matched
+		bestVersion = pypireg.PythonReleases[len(pypireg.PythonReleases)-1].Version.String()
+	}
+	return bestVersion
 }
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
@@ -343,10 +319,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			return scfg, errors.Wrap(err, "Failed to find pure wheel and source distribution")
 		}
 	}
-	pythonVersion := inferPythonVersion(*a)
-	// if err != nil {
-	// 	return cfg, errors.Wrap(err, "finding pure wheel")
-	// }
+
 	log.Printf("Downloading artifact: %s", a.URL)
 	r, err := mux.PyPI.Artifact(ctx, name, version, a.Filename)
 	if err != nil {
@@ -411,8 +384,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 				Dir:  dir,
 				Ref:  ref,
 			},
-			Requirements:  reqs,
-			PythonVersion: pythonVersion,
+			Requirements: reqs,
 		}, nil
 	}
 	return &SourceDistributionBuild{
@@ -421,8 +393,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			Dir:  dir,
 			Ref:  ref,
 		},
-		Requirements:  reqs,
-		PythonVersion: pythonVersion,
+		Requirements: reqs,
 	}, nil
 }
 
