@@ -392,6 +392,55 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				Body:       io.NopCloser(bytes.NewBufferString("time set too far in the past\n")),
 			},
 		},
+		{
+			name:      "cargosparse config.json request",
+			url:       "http://localhost:8081/config.json",
+			basicAuth: "cargosparse:abc1234",
+			client: &httpxtest.MockClient{
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(`{"dl": "https://static.crates.io/crates","api": "/"}`)),
+			},
+		},
+		{
+			name:      "cargosparse index file request",
+			url:       "http://localhost:8081/so/me/some-crate",
+			basicAuth: "cargosparse:abc1234",
+			client: &httpxtest.MockClient{
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusFound,
+				Header: http.Header{
+					"Content-Type": []string{"text/html; charset=utf-8"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`<a href="https://raw.githubusercontent.com/rust-lang/crates.io-index/abc1234/so/me/some-crate">Found</a>.
+
+`)),
+			},
+		},
+		{
+			name:      "cargosparse missing commit hash",
+			url:       "http://localhost:8081/some-crate",
+			basicAuth: "cargosparse:",
+			client:    &httpxtest.MockClient{},
+			want: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(bytes.NewBufferString("no commit hash set\n")),
+			},
+		},
+		{
+			name:      "cargosparse invalid commit hash",
+			url:       "http://localhost:8081/some-crate",
+			basicAuth: "cargosparse:invalid-hash!",
+			client:    &httpxtest.MockClient{},
+			want: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(bytes.NewBufferString("invalid commit hash format\n")),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

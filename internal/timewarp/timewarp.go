@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -29,9 +30,11 @@ import (
 )
 
 var (
-	npmRegistry  = urlx.MustParse("https://registry.npmjs.org/")
-	pypiRegistry = urlx.MustParse("https://pypi.org/")
-	lowTimeBound = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	npmRegistry     = urlx.MustParse("https://registry.npmjs.org/")
+	pypiRegistry    = urlx.MustParse("https://pypi.org/")
+	cratesIndexURL  = urlx.MustParse("https://raw.githubusercontent.com/rust-lang/crates.io-index")
+	lowTimeBound    = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	commitHashRegex = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
 )
 
 func parseTime(ts string) (*time.Time, error) {
@@ -69,6 +72,10 @@ func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		if he, ok := err.(herror); ok {
 			status = he.status
 		}
+		if status/100 == 3 {
+			http.Redirect(rw, r, err.Error(), status)
+			return
+		}
 		log.Printf("error: %+v  [%s]", err, r.URL.String())
 		if status/100 == 4 { // Only surface messages for 4XX errors
 			http.Error(rw, err.Error(), status)
@@ -91,6 +98,26 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 	case "pypi":
 		r.URL.Host = pypiRegistry.Host
 		r.URL.Scheme = pypiRegistry.Scheme
+	case "cargosparse":
+		// For rust, we'll handle the request directly without changing URL
+		// The "timestamp" is actually a commit hash
+		indexCommit := ts
+		if indexCommit == "" {
+			return herror{errors.New("no commit hash set"), http.StatusBadRequest}
+		}
+		if !commitHashRegex.MatchString(indexCommit) {
+			return herror{errors.New("invalid commit hash format"), http.StatusBadRequest}
+		}
+		// config.json content shouldn't be used by the client but is checked for presence.
+		if r.URL.Path == "/config.json" {
+			if _, err := io.WriteString(rw, `{"dl": "https://static.crates.io/crates","api": "/"}`); err != nil {
+				return herror{errors.Wrap(err, "writing response"), http.StatusInternalServerError}
+			}
+			return nil
+		}
+		// Redirect to index repo
+		redirectURL := cratesIndexURL.JoinPath(indexCommit, r.URL.Path[1:]).String()
+		return herror{errors.New(redirectURL), http.StatusFound}
 	default:
 		return herror{errors.New("unsupported platform"), http.StatusBadRequest}
 	}
