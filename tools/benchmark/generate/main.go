@@ -482,7 +482,7 @@ var npmTop500 = RebuildBenchmark{
 		}
 		query := client.Query(`
 SELECT
-  COUNT(*) AS Downloads,
+  COUNT(*) AS DirectRdeps,
   Name AS Package,
   Version
 FROM (
@@ -515,13 +515,13 @@ GROUP BY
   Name,
   Version
 ORDER BY
-  Downloads DESC
+  DirectRdeps DESC
 LIMIT 2500
 `)
 		pkgs := make(chan struct {
-			Downloads int64
-			Package   string
-			Version   string
+			DirectRdeps int64
+			Package     string
+			Version     string
 		}, 100)
 		// Get download-ordered package versions from deps.dev's dependency table.
 		go func() {
@@ -541,9 +541,9 @@ LIMIT 2500
 				log.Fatal(err.Error())
 			}
 			var entry struct {
-				Downloads int64
-				Package   string
-				Version   string
+				DirectRdeps int64
+				Package     string
+				Version     string
 			}
 			for {
 				err := it.Next(&entry)
@@ -602,7 +602,7 @@ var npmTop2500 = RebuildBenchmark{
 		}
 		query := client.Query(`
 SELECT
-  COUNT(*) AS Downloads,
+  COUNT(*) AS DirectRdeps,
   Name AS Package,
   Version
 FROM (
@@ -635,13 +635,13 @@ GROUP BY
   Name,
   Version
 ORDER BY
-  Downloads DESC
+  DirectRdeps DESC
 LIMIT 10000
 `)
 		pkgs := make(chan struct {
-			Downloads int64
-			Package   string
-			Version   string
+			DirectRdeps int64
+			Package     string
+			Version     string
 		}, 100)
 		// Get download-ordered package versions from deps.dev's dependency table.
 		go func() {
@@ -661,9 +661,9 @@ LIMIT 10000
 				log.Fatal(err.Error())
 			}
 			var entry struct {
-				Downloads int64
-				Package   string
-				Version   string
+				DirectRdeps int64
+				Package     string
+				Version     string
 			}
 			for {
 				err := it.Next(&entry)
@@ -722,7 +722,7 @@ var mavenTop500 = RebuildBenchmark{
 		}
 		query := client.Query(`
 SELECT
-  COUNT(*) AS Downloads,
+  COUNT(*) AS DirectRdeps,
   Name AS Package,
   Version
 FROM (
@@ -755,13 +755,13 @@ GROUP BY
   Name,
   Version
 ORDER BY
-  Downloads DESC
+  DirectRdeps DESC
 LIMIT 2500
 `)
 		pkgs := make(chan struct {
-			Downloads int64
-			Package   string
-			Version   string
+			DirectRdeps int64
+			Package     string
+			Version     string
 		}, 100)
 		// Get download-ordered package versions from deps.dev's dependency table.
 		go func() {
@@ -781,9 +781,9 @@ LIMIT 2500
 				log.Fatal(err.Error())
 			}
 			var entry struct {
-				Downloads int64
-				Package   string
-				Version   string
+				DirectRdeps int64
+				Package     string
+				Version     string
 			}
 			for {
 				err := it.Next(&entry)
@@ -861,7 +861,7 @@ WITH
   ),
   PackageVersionDownloads AS (
     SELECT
-      COUNT(*) AS Downloads,
+      COUNT(*) AS DirectRdeps,
       Name AS Package,
       Version
     FROM (
@@ -901,15 +901,15 @@ WITH
 SELECT
   *
 FROM PackageVersionDownloads
-QUALIFY ROW_NUMBER() OVER(PARTITION BY SPLIT(Package, ':')[OFFSET(0)] ORDER BY Downloads DESC) = 1
+QUALIFY ROW_NUMBER() OVER(PARTITION BY SPLIT(Package, ':')[OFFSET(0)] ORDER BY DirectRdeps DESC) = 1
 ORDER BY
-  Downloads DESC
+  DirectRdeps DESC
 LIMIT 2500
 `)
 		pkgs := make(chan struct {
-			Downloads int64
-			Package   string
-			Version   string
+			DirectRdeps int64
+			Package     string
+			Version     string
 		}, 100)
 		// Get download-ordered package versions from deps.dev's dependency table.
 		go func() {
@@ -929,9 +929,9 @@ LIMIT 2500
 				log.Fatal(err.Error())
 			}
 			var entry struct {
-				Downloads int64
-				Package   string
-				Version   string
+				DirectRdeps int64
+				Package     string
+				Version     string
 			}
 			for {
 				err := it.Next(&entry)
