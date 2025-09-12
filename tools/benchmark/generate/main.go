@@ -49,6 +49,7 @@ var all = []RebuildBenchmark{
 	npmTop2500,
 	mavenTop500,
 	mavenRecentTop500,
+	mavenRecentAll,
 }
 
 const (
@@ -982,6 +983,104 @@ LIMIT 2500
 			// TODO: Find the artifact name from a real source, don't just guess.
 			psp.Artifacts = append(psp.Artifacts, fmt.Sprintf("%s-%s.jar", nameParts[1], p.Version))
 			psp.Versions = append(psp.Versions, p.Version)
+		}
+		for _, psp := range ps.Packages {
+			ps.Count += len(psp.Versions)
+		}
+		ps.Updated = now
+		return
+	},
+}
+
+var mavenRecentAll = RebuildBenchmark{
+	Filename: "maven_recent_all.json",
+	Generator: func(ctx context.Context) (ps benchmark.PackageSet) {
+		now := time.Now()
+		client, err := bigquery.NewClient(ctx, *project, option.WithQuotaProject(*project))
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		query := client.Query(`
+WITH
+	LatestSnapshot AS (
+    SELECT
+      Time
+    FROM
+      ` + "`" + `bigquery-public-data.deps_dev_v1.Snapshots` + "`" + `
+    ORDER BY
+      Time DESC
+    LIMIT
+      1
+  )
+SELECT
+  T.Name as Package,
+  T.Version as Version
+FROM
+	` + "`" + `bigquery-public-data.deps_dev_v1.PackageVersions` + "`" + ` T
+INNER JOIN
+  LatestSnapshot
+  ON LatestSnapshot.Time = T.SnapshotAt
+WHERE
+  T.System = "MAVEN" AND T.UpstreamPublishedAt IS NOT NULL AND EXTRACT(YEAR FROM UpstreamPublishedAt) >= 2020
+QUALIFY
+  ROW_NUMBER() OVER (PARTITION BY SPLIT(Package, ':')[OFFSET(0)] ORDER BY T.UpstreamPublishedAt DESC) = 1
+`)
+		pkgs := make(chan struct {
+			Package string
+			Version string
+		}, 100)
+		// Get package versions from deps.dev's dependency table.
+		go func() {
+			j, err := query.Run(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			s, err := j.Wait(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			if s.Err() != nil {
+				log.Fatal(s.Err().Error())
+			}
+			it, err := j.Read(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			var entry struct {
+				Package string
+				Version string
+			}
+			for {
+				err := it.Next(&entry)
+				if err == iterator.Done {
+					break
+				}
+				if err != nil {
+					log.Fatal(err.Error())
+				}
+				pkgs <- entry
+			}
+			close(pkgs)
+		}()
+		// Select packages with versions that satisfy our criteria.
+		for p := range pkgs {
+			if strings.ContainsRune(p.Version, '-') {
+				// Non-release version.
+				continue
+			}
+			nameParts := strings.SplitN(p.Package, ":", 2)
+			if len(nameParts) != 2 {
+				fmt.Println("Agh unexpected: ", p.Package)
+				return
+			}
+			// TODO: Find the artifact name from a real source, don't just guess.
+			pkg := benchmark.Package{
+				Name:      p.Package,
+				Ecosystem: "maven",
+				Versions:  []string{p.Version},
+				Artifacts: []string{fmt.Sprintf("%s-%s.jar", nameParts[1], p.Version)},
+			}
+			ps.Packages = append(ps.Packages, pkg)
 		}
 		for _, psp := range ps.Packages {
 			ps.Count += len(psp.Versions)
