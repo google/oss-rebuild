@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/apiservice"
@@ -40,6 +39,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 )
 
 var (
@@ -163,7 +163,7 @@ func fromSourceZip(ctx context.Context, ls rebuild.AssetStore, t rebuild.Target,
 	return string(b), nil
 }
 
-func generateRecovery(ctx context.Context, model *genai.GenerativeModel, cache rebuild.AssetStore, r rundex.Rebuild, commands []string) (*llm.ScriptResponse, error) {
+func generateRecovery(ctx context.Context, client *genai.Client, modelName string, cache rebuild.AssetStore, r rundex.Rebuild, commands []string) (*llm.ScriptResponse, error) {
 	outcome := classifyOutcome(r)
 	s, err := r.Strategy.Strategy()
 	if err != nil {
@@ -175,7 +175,7 @@ func generateRecovery(ctx context.Context, model *genai.GenerativeModel, cache r
 		if err != nil {
 			return nil, errors.Wrap(err, "reading package.json")
 		}
-		return llm.InferNPMBuild(ctx, *model, packageJSON)
+		return llm.InferNPMBuild(ctx, client, modelName, packageJSON)
 	case OutcomeFailedRunBuild:
 		packageJSON, err := fromSourceZip(ctx, cache, r.Target(), filepath.Join(location(s).Dir, "package.json"))
 		if err != nil {
@@ -190,7 +190,7 @@ func generateRecovery(ctx context.Context, model *genai.GenerativeModel, cache r
 			return nil, errors.Wrap(err, "reading build log")
 		}
 		buildLog := string(logBytes)
-		return llm.FixNPMBreakage(ctx, *model, strings.Join(commands, "\n"), packageJSON, buildLog)
+		return llm.FixNPMBreakage(ctx, client, modelName, strings.Join(commands, "\n"), packageJSON, buildLog)
 	default:
 		return nil, errors.Errorf("unhandled outcome '%s'", outcome)
 	}
@@ -236,9 +236,12 @@ func main() {
 	ctx := context.Background()
 
 	// Initialize dependencies
-	client := must(genai.NewClient(ctx, *modelProject, "us-central1"))
-	model := client.GenerativeModel(*baseModel)
-	model = llm.WithSystemPrompt(*model, llm.NPMSystemPrompt)
+	client := must(genai.NewClient(ctx, &genai.ClientConfig{
+		Backend:  genai.BackendVertexAI,
+		Project:  *modelProject,
+		Location: "us-central1",
+	}))
+	// Model configuration will be handled per call
 	apiURL := must(url.Parse(*apiURI))
 	idclient := must(oauth.AuthorizedUserIDClient(ctx))
 	dex := must(rundex.NewFirestore(ctx, *project))
@@ -256,7 +259,7 @@ func main() {
 	var runID string
 	if !*dryRun {
 		log.Println("Creating run id...")
-		createRun := api.StubFromHandler(idclient, *apiURL.JoinPath("runs"), apiservice.CreateRun)
+		createRun := api.StubFromHandler(idclient, apiURL.JoinPath("runs"), apiservice.CreateRun)
 		res := must(createRun(ctx, schema.CreateRunRequest{
 			BenchmarkName: run.BenchmarkName,
 			BenchmarkHash: run.BenchmarkHash,
@@ -267,7 +270,7 @@ func main() {
 	}
 
 	// Query rebuilds
-	rebuilds := must(dex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{Runs: []string{run.ID}}))
+	rebuilds := must(dex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{Runs: []string{run.ID}, LatestPerPackage: true}))
 	c := make(chan rundex.Rebuild, 50)
 	go func() {
 		defer close(c)
@@ -337,7 +340,7 @@ func main() {
 		} else if ns, ok := s.(*npm.NPMCustomBuild); ok {
 			commands = []string{"npm install --force", "npm run " + ns.Command, "rm -rf node_modules", "npm pack"}
 		}
-		candidate, err := generateRecovery(ctx, model, cache, r, commands)
+		candidate, err := generateRecovery(ctx, client, *baseModel, cache, r, commands)
 		if err != nil {
 			log.Printf("Skipping %s: %v", r.ID(), errors.Wrap(err, "generating candidate"))
 			return
@@ -428,7 +431,7 @@ func main() {
 	}
 
 	// Evaluate recoveries
-	rebuildSmoketest := api.StubFromHandler(idclient, *apiURL.JoinPath("smoketest"), apiservice.RebuildSmoketest)
+	rebuildSmoketest := api.StubFromHandler(idclient, apiURL.JoinPath("smoketest"), apiservice.RebuildSmoketest)
 	sp = sp.ParDo(50, func(rec Recovery, _ chan<- Recovery) {
 		if *dryRun {
 			log.Printf("Dry run would execute build for %s: %s", rec.Rebuild.ID(), strings.Join(rec.NewScript.Commands, "; "))

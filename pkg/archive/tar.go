@@ -46,9 +46,17 @@ type TarArchiveStabilizer struct {
 	Func func(*TarArchive)
 }
 
+func (t TarArchiveStabilizer) Stabilize(arg any) {
+	t.Func(arg.(*TarArchive))
+}
+
 type TarEntryStabilizer struct {
 	Name string
 	Func func(*TarEntry)
+}
+
+func (t TarEntryStabilizer) Stabilize(arg any) {
+	t.Func(arg.(*TarEntry))
 }
 
 var AllTarStabilizers = []Stabilizer{
@@ -146,10 +154,10 @@ func StabilizeTar(tr *tar.Reader, tw *tar.Writer, opts StabilizeOpts) error {
 	for _, s := range opts.Stabilizers {
 		switch s.(type) {
 		case TarArchiveStabilizer:
-			s.(TarArchiveStabilizer).Func(&f)
+			s.(TarArchiveStabilizer).Stabilize(&f)
 		case TarEntryStabilizer:
 			for _, ent := range f.Files {
-				s.(TarEntryStabilizer).Func(ent)
+				s.(TarEntryStabilizer).Stabilize(ent)
 			}
 		}
 	}
@@ -246,7 +254,8 @@ func NewContentSummaryFromTar(tr *tar.Reader) (*ContentSummary, error) {
 		}
 		cs.Files = append(cs.Files, header.Name)
 		cs.CRLFCount += bytes.Count(buf, []byte{'\r', '\n'})
-		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(sha256.New().Sum(buf)))
+		h := sha256.Sum256(buf)
+		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(h[:]))
 	}
 	return &cs, nil
 }

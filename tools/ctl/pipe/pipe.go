@@ -20,6 +20,18 @@ func From[T any](in <-chan T) Pipe[T] {
 	return Pipe[T]{steps: []<-chan T{in}, Width: cap(in)}
 }
 
+// FromSlice creates a Pipe from the given input slice.
+func FromSlice[T any](in []T) Pipe[T] {
+	out := make(chan T)
+	go func() {
+		for _, t := range in {
+			out <- t
+		}
+		close(out)
+	}()
+	return From(out)
+}
+
 // DoFor adds a pipeline combinator.
 // NOTE: fn is responsible for closing "in".
 func (p Pipe[T]) DoFor(fn func(in <-chan T, out chan<- T)) Pipe[T] {

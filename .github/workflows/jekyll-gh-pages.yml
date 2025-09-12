@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.repository == 'google/oss-rebuild' # Only run in the upstream repo
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,7 +40,10 @@ jobs:
           path: ./docs/_site
 
   deploy:
-    if: github.event_name == 'push'
+    # Only run on push, and in the upstream repo
+    if: >
+      github.event_name == 'push'
+      && github.repository == 'google/oss-rebuild' 
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

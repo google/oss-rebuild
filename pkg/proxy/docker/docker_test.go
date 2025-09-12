@@ -674,6 +674,168 @@ func TestPatchOnStartWithProxySocket(t *testing.T) {
 	}
 }
 
+func TestPatchOnStartWithExistingBazelRC(t *testing.T) {
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{JavaTruststoreEnvVar: true, BazelTruststore: true})
+	sock := tempSocketName(t)
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	osHeader, osTar := statAndOpen(t, "os-release", "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.16.0\n", "")
+	certHeader, certTar := statAndOpen(t, "cert.pem", "", "")
+	bazelRCHeader, bazelRCTar := statAndOpen(t, "bazel.bazelrc", "", "")
+	wants := []httpCall{
+		// Ping daemon.
+		{"/_ping", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		// Create container.
+		{"/containers/create?name=abc", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		// Start container.
+		{"/containers/abc/json", http.Response{StatusCode: http.StatusOK, Body: asBody([]byte(`{"Id": "def"}`))}},
+		{"/containers/def/archive?path=/var/cache/proxy.crt", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/def/archive?path=/var/cache", http.Response{StatusCode: http.StatusOK}},
+		{"/containers/def/archive?path=/var/cache/proxy.crt.jks", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/def/archive?path=/var/cache", http.Response{StatusCode: http.StatusOK}},
+		{"/containers/def/archive?path=/etc/bazel.bazelrc", http.Response{StatusCode: http.StatusOK, Header: bazelRCHeader}},
+		{"/containers/def/archive?path=/etc/bazel.bazelrc", http.Response{StatusCode: http.StatusOK, Body: bazelRCTar}},
+		{"/containers/def/archive?path=/etc", http.Response{StatusCode: http.StatusOK}},
+		{"/containers/def/archive?path=/kaniko", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/def/archive?path=/etc/os-release", http.Response{StatusCode: http.StatusOK, Header: osHeader}},
+		{"/containers/def/archive?path=/etc/os-release", http.Response{StatusCode: http.StatusOK, Body: osTar}},
+		{"/containers/def/archive?path=/etc/ssl/cert.pem", http.Response{StatusCode: http.StatusOK, Header: certHeader}},
+		{"/containers/def/archive?path=/etc/ssl/cert.pem", http.Response{StatusCode: http.StatusOK, Body: certTar}},
+		{"/containers/def/archive?path=/etc/ssl", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		{"/containers/abc/start", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+	}
+	outcome := make(chan error, 1)
+	go fakeHTTPCalls(l, wants, outcome)
+	// Ping daemon.
+	clientIn := setupProxy(t, sock, ctp)
+	req, err := http.NewRequest(http.MethodHead, "/_ping", http.NoBody)
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // HEAD /_ping
+	resp, err := http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+	// Create container.
+	clientIn = setupProxy(t, sock, ctp)
+	req, err = http.NewRequest(http.MethodPost, "/containers/create?name=abc", asBody([]byte(`{"HostConfig": {}}`)))
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // POST /containers/create?name=abc
+	resp, err = http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+	// Start container.
+	clientIn = setupProxy(t, sock, ctp)
+	req, err = http.NewRequest(http.MethodPost, "/containers/abc/start", http.NoBody)
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // GET /containers/abc/json
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/var/cache/proxy.crt
+	orFail(t, <-outcome) // PUT /containers/def/archive?path=/var/cache
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/var/cache/proxy.crt.jks
+	orFail(t, <-outcome) // PUT /containers/def/archive?path=/var/cache
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/etc/bazel.bazelrc
+	orFail(t, <-outcome) // GET /containers/def/archive?path=/etc/bazel.bazelrc
+	orFail(t, <-outcome) // PUT /containers/def/archive?path=/etc
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/etc/os-release
+	orFail(t, <-outcome) // GET /containers/def/archive?path=/etc/os-release
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/etc/ssl/cert.pem
+	orFail(t, <-outcome) // GET /containers/def/archive?path=/etc/ssl/cert.pem
+	orFail(t, <-outcome) // PUT /containers/def/archive?path=/etc/ssl
+	orFail(t, <-outcome) // POST /containers/abc/start
+	resp, err = http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+}
+
+func TestPatchOnStartWithNewBazelRC(t *testing.T) {
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{JavaTruststoreEnvVar: true, BazelTruststore: true})
+	sock := tempSocketName(t)
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	osHeader, osTar := statAndOpen(t, "os-release", "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.16.0\n", "")
+	certHeader, certTar := statAndOpen(t, "cert.pem", "", "")
+	wants := []httpCall{
+		// Ping daemon.
+		{"/_ping", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		// Create container.
+		{"/containers/create?name=abc", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		// Start container.
+		{"/containers/abc/json", http.Response{StatusCode: http.StatusOK, Body: asBody([]byte(`{"Id": "def"}`))}},
+		{"/containers/def/archive?path=/var/cache/proxy.crt", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/def/archive?path=/var/cache", http.Response{StatusCode: http.StatusOK}},
+		{"/containers/def/archive?path=/var/cache/proxy.crt.jks", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/def/archive?path=/var/cache", http.Response{StatusCode: http.StatusOK}},
+		{"/containers/def/archive?path=/etc/bazel.bazelrc", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/def/archive?path=/etc/bazel.bazelrc", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/def/archive?path=/etc", http.Response{StatusCode: http.StatusOK}},
+		{"/containers/def/archive?path=/kaniko", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/def/archive?path=/etc/os-release", http.Response{StatusCode: http.StatusOK, Header: osHeader}},
+		{"/containers/def/archive?path=/etc/os-release", http.Response{StatusCode: http.StatusOK, Body: osTar}},
+		{"/containers/def/archive?path=/etc/ssl/cert.pem", http.Response{StatusCode: http.StatusOK, Header: certHeader}},
+		{"/containers/def/archive?path=/etc/ssl/cert.pem", http.Response{StatusCode: http.StatusOK, Body: certTar}},
+		{"/containers/def/archive?path=/etc/ssl", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		{"/containers/abc/start", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+	}
+	outcome := make(chan error, 1)
+	go fakeHTTPCalls(l, wants, outcome)
+	// Ping daemon.
+	clientIn := setupProxy(t, sock, ctp)
+	req, err := http.NewRequest(http.MethodHead, "/_ping", http.NoBody)
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // HEAD /_ping
+	resp, err := http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+	// Create container.
+	clientIn = setupProxy(t, sock, ctp)
+	req, err = http.NewRequest(http.MethodPost, "/containers/create?name=abc", asBody([]byte(`{"HostConfig": {}}`)))
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // POST /containers/create?name=abc
+	resp, err = http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+	// Start container.
+	clientIn = setupProxy(t, sock, ctp)
+	req, err = http.NewRequest(http.MethodPost, "/containers/abc/start", http.NoBody)
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // GET /containers/abc/json
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/var/cache/proxy.crt
+	orFail(t, <-outcome) // PUT /containers/def/archive?path=/var/cache
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/var/cache/proxy.crt.jks
+	orFail(t, <-outcome) // PUT /containers/def/archive?path=/var/cache
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/etc/bazel.bazelrc
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/etc/bazel.bazelrc
+	orFail(t, <-outcome) // PUT /containers/def/archive?path=/etc
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/etc/os-release
+	orFail(t, <-outcome) // GET /containers/def/archive?path=/etc/os-release
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/etc/ssl/cert.pem
+	orFail(t, <-outcome) // GET /containers/def/archive?path=/etc/ssl/cert.pem
+	orFail(t, <-outcome) // PUT /containers/def/archive?path=/etc/ssl
+	orFail(t, <-outcome) // POST /containers/abc/start
+	resp, err = http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+}
 func TestAddBinding(t *testing.T) {
 	for _, tc := range [](struct {
 		Body []byte

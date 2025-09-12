@@ -23,6 +23,7 @@ import (
 var (
 	// Maven Central registry.
 	registryURL = urlx.MustParse("https://search.maven.org")
+	releaseURL  = urlx.MustParse("https://repo1.maven.org/maven2")
 	// Maven path component.
 	registryContentPathURL = urlx.MustParse("remotecontent")
 	registrySearchPathURL  = urlx.MustParse(path.Join("solrsearch", "select"))
@@ -80,6 +81,8 @@ type Registry interface {
 	PackageMetadata(context.Context, string) (*MavenPackage, error)
 	PackageVersion(context.Context, string, string) (*MavenVersion, error)
 	ReleaseFile(context.Context, string, string, string) (io.ReadCloser, error)
+	ReleaseURL(context.Context, string, string, string) (string, error)
+	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
 }
 
 // HTTPRegistry is a Registry implementation that uses the search.maven.org HTTP API.
@@ -145,15 +148,11 @@ func (r HTTPRegistry) PackageMetadata(ctx context.Context, pkg string) (result *
 
 // ReleaseFile returns a release file for a Maven package version.
 func (r HTTPRegistry) ReleaseFile(ctx context.Context, pkg, version string, typ string) (io.ReadCloser, error) {
-	g, a, found := strings.Cut(pkg, ":")
-	if !found {
-		return nil, errors.New("package identifier not of form 'group:artifact'")
+	releaseURL, err := r.ReleaseURL(ctx, pkg, version, typ)
+	if err != nil {
+		return nil, err
 	}
-	pathUrl := registryURL.ResolveReference(registryContentPathURL)
-	searchPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
-	// Note that search.maven expects the / tokens in the query parameter not to be HTML-encoded.
-	pathUrl.RawQuery = fmt.Sprintf("filepath=%s", searchPath)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, pathUrl.String(), nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
 	resp, err := r.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -162,5 +161,38 @@ func (r HTTPRegistry) ReleaseFile(ctx context.Context, pkg, version string, typ 
 		return nil, errors.Wrap(errors.New(resp.Status), "fetching release artifact")
 	}
 
+	return resp.Body, nil
+}
+
+// ReleaseURL returns the URL for the release file for a Maven package version.
+func (r HTTPRegistry) ReleaseURL(ctx context.Context, pkg, version, typ string) (string, error) {
+	g, a, found := strings.Cut(pkg, ":")
+	if !found {
+		return "", errors.New("package identifier not of form 'group:artifact'")
+	}
+	artifactPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
+	artifactURL := releaseURL.JoinPath(artifactPath)
+	return artifactURL.String(), nil
+}
+
+// Artifact returns file that is part of the Maven release.
+func (r HTTPRegistry) Artifact(ctx context.Context, pkg, version, artifact string) (io.ReadCloser, error) {
+	g, a, found := strings.Cut(pkg, ":")
+	if !found {
+		return nil, errors.New("package identifier not of form 'group:artifact'")
+	}
+	artifactPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, artifact)
+	artifactURL := releaseURL.JoinPath(artifactPath)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, artifactURL.String(), nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating artifact URL")
+	}
+	resp, err := r.Client.Do(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching artifact")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching artifact")
+	}
 	return resp.Body, nil
 }

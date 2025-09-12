@@ -11,7 +11,7 @@ import (
 	"io"
 	"log"
 	"net/url"
-	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -20,13 +20,14 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
-	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/google/oss-rebuild/pkg/build"
+	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
-	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -34,6 +35,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/uuid"
@@ -41,58 +43,6 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/grpc/codes"
 )
-
-func doDebianRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
-	_, name, err := debianrb.ParseComponent(t.Package)
-	if err != nil {
-		return "", err
-	}
-	if err := debianrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
-		return "", errors.Wrap(err, "rebuild failed")
-	}
-	return mux.Debian.ArtifactURL(ctx, name, t.Artifact)
-}
-
-func doNPMRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
-	if err := npmrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
-		return "", errors.Wrap(err, "rebuild failed")
-	}
-	vmeta, err := mux.NPM.Version(ctx, t.Package, t.Version)
-	if err != nil {
-		return "", errors.Wrap(err, "fetching metadata failed")
-	}
-	return vmeta.Dist.URL, nil
-}
-
-func doCratesRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
-	if err := cratesrb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
-		return "", errors.Wrap(err, "rebuild failed")
-	}
-	vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
-	if err != nil {
-		return "", errors.Wrap(err, "fetching metadata failed")
-	}
-	return vmeta.DownloadURL, nil
-}
-
-func doPyPIRebuild(ctx context.Context, t rebuild.Target, id string, mux rebuild.RegistryMux, s rebuild.Strategy, opts rebuild.RemoteOptions) (upstreamURL string, err error) {
-	release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
-	if err != nil {
-		return "", errors.Wrap(err, "fetching metadata failed")
-	}
-	for _, r := range release.Artifacts {
-		if r.Filename == t.Artifact {
-			upstreamURL = r.URL
-		}
-	}
-	if upstreamURL == "" {
-		return "", errors.New("artifact not found in release")
-	}
-	if err := pypirb.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: s}, id, opts); err != nil {
-		return "", errors.Wrap(err, "rebuild failed")
-	}
-	return upstreamURL, nil
-}
 
 func sanitize(key string) string {
 	return strings.ReplaceAll(key, "/", "!")
@@ -130,18 +80,14 @@ type RebuildPackageDeps struct {
 	HTTPClient                 httpx.BasicClient
 	FirestoreClient            *firestore.Client
 	Signer                     *dsse.EnvelopeSigner
-	GCBClient                  gcb.Client
-	BuildProject               string
-	BuildServiceAccount        string
-	UtilPrebuildBucket         string
-	UtilPrebuildAuth           bool
-	BuildLogsBucket            string
+	GCBExecutor                *buildgcb.Executor
+	PrebuildConfig             rebuild.PrebuildConfig
 	ServiceRepo                rebuild.Location
 	PrebuildRepo               rebuild.Location
 	BuildDefRepo               rebuild.Location
 	PublishForLocalServiceRepo bool
 	AttestationStore           rebuild.AssetStore
-	LocalMetadataStore         rebuild.AssetStore
+	LocalMetadataStore         rebuild.LocatableAssetStore
 	DebugStoreBuilder          func(ctx context.Context) (rebuild.AssetStore, error)
 	RemoteMetadataStoreBuilder func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error)
 	OverwriteAttestations      bool
@@ -227,8 +173,8 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if err != nil {
 		return errors.Wrap(err, "creating debug store")
 	}
-	id := uuid.New().String()
-	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, id)
+	obID := uuid.New().String()
+	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, obID)
 	if err != nil {
 		return errors.Wrap(err, "creating rebuild store")
 	}
@@ -249,38 +195,62 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		buildDefRepo = entry.BuildDefLoc
 		buildDef = &entry.BuildDefinition
 	}
-	hashes := []crypto.Hash{crypto.SHA256}
-	opts := rebuild.RemoteOptions{
-		GCBClient:           deps.GCBClient,
-		Project:             deps.BuildProject,
-		BuildServiceAccount: deps.BuildServiceAccount,
-		UtilPrebuildBucket:  deps.UtilPrebuildBucket,
-		UtilPrebuildDir:     deps.PrebuildRepo.Ref,
-		UtilPrebuildAuth:    deps.UtilPrebuildAuth,
-		LogsBucket:          deps.BuildLogsBucket,
-		LocalMetadataStore:  deps.LocalMetadataStore,
-		DebugStore:          debugStore,
-		RemoteMetadataStore: remoteMetadata,
-		UseSyscallMonitor:   useSyscallMonitor,
-		UseNetworkProxy:     useProxy,
-	}
-	var upstreamURI string
-	switch t.Ecosystem {
-	case rebuild.NPM:
-		hashes = append(hashes, crypto.SHA512)
-		upstreamURI, err = doNPMRebuild(ctx, t, id, mux, strategy, opts)
-	case rebuild.CratesIO:
-		upstreamURI, err = doCratesRebuild(ctx, t, id, mux, strategy, opts)
-	case rebuild.PyPI:
-		upstreamURI, err = doPyPIRebuild(ctx, t, id, mux, strategy, opts)
-	case rebuild.Debian:
-		upstreamURI, err = doDebianRebuild(ctx, t, id, mux, strategy, opts)
-	default:
+	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
+	if !ok {
 		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
-	if err != nil {
-		return errors.Wrap(err, "rebuilding")
+	toolURLs := map[build.ToolType]string{
+		build.TimewarpTool: "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "timewarp"),
+		build.GSUtilTool:   "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "gsutil_writeonly"),
 	}
+	var authRequired []string
+	if deps.PrebuildConfig.Auth {
+		authRequired = append(authRequired, "gs://"+deps.PrebuildConfig.Bucket)
+	}
+	buildStore := rebuild.NewMixedAssetStore(map[rebuild.AssetType]rebuild.LocatableAssetStore{
+		rebuild.ContainerImageAsset: remoteMetadata,
+		rebuild.RebuildAsset:        remoteMetadata,
+		rebuild.TetragonLogAsset:    remoteMetadata,
+		rebuild.ProxyNetlogAsset:    remoteMetadata,
+		rebuild.DockerfileAsset:     deps.LocalMetadataStore,
+		rebuild.BuildInfoAsset:      deps.LocalMetadataStore,
+	})
+	in := rebuild.Input{
+		Target:   t,
+		Strategy: strategy,
+	}
+	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
+		BuildID:           obID,
+		UseTimewarp:       meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
+		UseNetworkProxy:   useProxy,
+		UseSyscallMonitor: useSyscallMonitor,
+		Resources: build.Resources{
+			AssetStore:       buildStore,
+			ToolURLs:         toolURLs,
+			ToolAuthRequired: authRequired,
+			BaseImageConfig:  build.DefaultBaseImageConfig(),
+		},
+	})
+	if err != nil {
+		return api.AsStatus(codes.Internal, errors.Wrap(err, "starting build"))
+	}
+	// Even if we fail, try to copy theses assets to the debug store.
+	defer func() {
+		for _, a := range []rebuild.AssetType{rebuild.DockerfileAsset, rebuild.BuildInfoAsset} {
+			rebuild.AssetCopy(ctx, debugStore, deps.LocalMetadataStore, a.For(t))
+		}
+	}()
+	result, err := h.Wait(ctx)
+	if err != nil {
+		return errors.Wrap(err, "waiting for build")
+	} else if result.Error != nil {
+		return errors.Wrap(result.Error, "executing rebuild")
+	}
+	upstreamURI, err := rebuilder.UpstreamURL(ctx, t, mux)
+	if err != nil {
+		return errors.Wrap(err, "getting upstream url")
+	}
+	hashes := []crypto.Hash{crypto.SHA256}
 	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes, stabilizers)
 	if err != nil {
 		return errors.Wrap(err, "comparing artifacts")
@@ -293,9 +263,9 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	if u, err := url.Parse(deps.ServiceRepo.Repo); err != nil {
 		return errors.Wrap(err, "bad ServiceRepo URL")
 	} else if (u.Scheme == "file" || u.Scheme == "") && !deps.PublishForLocalServiceRepo {
-		return errors.Wrap(err, "disallowed file:// ServiceRepo URL")
+		return errors.New("disallowed file:// ServiceRepo URL")
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, id, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, obID, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo, deps.PrebuildConfig)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
@@ -317,6 +287,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		CratesIO: cratesreg.HTTPRegistry{Client: regclient},
 		NPM:      npmreg.HTTPRegistry{Client: regclient},
 		PyPI:     pypireg.HTTPRegistry{Client: regclient},
+		Maven:    mavenreg.HTTPRegistry{Client: regclient},
 	}
 	if err := populateArtifact(ctx, &t, mux); err != nil {
 		// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
@@ -354,16 +325,13 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 }
 
 func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
-	started := time.Now()
+	started := time.Now().UTC()
 	ctx = context.WithValue(ctx, rebuild.RunID, req.ID)
-	var timeout time.Duration
-	if req.BuildTimeout == 0 {
-		// Cloud Run times out after 60 minutes, give ourselves 5 minutes to cleanup and log results.
-		timeout = 55 * time.Minute
-	} else {
-		timeout = req.BuildTimeout
+	// Cloud Run times out after 60 minutes, give ourselves 5 minutes to cleanup and log results.
+	ctx = context.WithValue(ctx, rebuild.GCBWaitDeadlineID, time.Now().Add(55*time.Minute))
+	if req.BuildTimeout != 0 {
+		ctx = context.WithValue(ctx, rebuild.GCBCancelDeadlineID, time.Now().Add(req.BuildTimeout))
 	}
-	ctx = context.WithValue(ctx, rebuild.GCBDeadlineID, time.Now().Add(timeout))
 	v, err := rebuildPackage(ctx, req, deps)
 	if err != nil {
 		return nil, err
@@ -393,12 +361,12 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Message:         v.Message,
 		Strategy:        v.StrategyOneof,
 		Dockerfile:      dockerfile,
-		ExecutorVersion: os.Getenv("K_REVISION"),
+		ExecutorVersion: deps.ServiceRepo.Ref,
 		RunID:           req.ID,
 		BuildID:         bi.BuildID,
-		ObliviousID:     bi.ID,
-		Started:         started.Unix(),
-		Created:         time.Now().Unix(),
+		ObliviousID:     bi.ObliviousID,
+		Started:         started,
+		Created:         time.Now().UTC(),
 	})
 	if err != nil {
 		log.Print(errors.Wrap(err, "storing results in firestore"))

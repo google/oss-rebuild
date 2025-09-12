@@ -7,15 +7,15 @@ import (
 	"context"
 	"encoding/json"
 
-	"cloud.google.com/go/vertexai/genai"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 )
 
 var (
 	// Model names supported by VertexAI.
 
-	GeminiPro   = "gemini-2.0-pro-exp-02-05"
-	GeminiFlash = "gemini-2.0-flash-001"
+	GeminiPro   = "gemini-2.5-pro"
+	GeminiFlash = "gemini-2.5-flash"
 
 	// Roles used for demarcating speakers.
 
@@ -28,19 +28,28 @@ var (
 	TextMIMEType = "text/plain"
 )
 
-func WithSystemPrompt(model genai.GenerativeModel, prompt ...genai.Part) *genai.GenerativeModel {
-	model.SystemInstruction = &genai.Content{
-		Role:  ModelRole,
+func WithSystemPrompt(config *genai.GenerateContentConfig, prompt ...*genai.Part) *genai.GenerateContentConfig {
+	if config == nil {
+		config = &genai.GenerateContentConfig{}
+	}
+	config.SystemInstruction = &genai.Content{
 		Parts: prompt,
 	}
-	return &model
+	return config
 }
 
 var ScriptResponseSchema = &genai.Schema{
 	Type: genai.TypeObject,
 	Properties: map[string]*genai.Schema{
-		"reason":   {Type: genai.TypeString},
-		"commands": {Type: genai.TypeArray, Items: &genai.Schema{Type: genai.TypeString}},
+		"reason": {
+			Type:        genai.TypeString,
+			Description: "The rationale and justification for provided commands",
+		},
+		"commands": {
+			Type:        genai.TypeArray,
+			Items:       &genai.Schema{Type: genai.TypeString, Description: "A shell command"},
+			Description: "The shell commands that accomplish the requested task",
+		},
 	},
 	Required: []string{"reason", "commands"},
 }
@@ -50,8 +59,9 @@ type ScriptResponse struct {
 	Commands []string
 }
 
-func GenerateTextContent(ctx context.Context, model *genai.GenerativeModel, prompt ...genai.Part) (string, error) {
-	resp, err := model.GenerateContent(ctx, prompt...)
+func GenerateTextContent(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, prompt ...*genai.Part) (string, error) {
+	contents := []*genai.Content{{Parts: prompt, Role: "user"}}
+	resp, err := client.Models.GenerateContent(ctx, model, contents, config)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to generate content")
 	}
@@ -66,21 +76,24 @@ func GenerateTextContent(ctx context.Context, model *genai.GenerativeModel, prom
 	case 0:
 		return "", errors.New("empty response content")
 	case 1:
-		return string(candidate.Content.Parts[0].(genai.Text)), nil
+		if candidate.Content.Parts[0].Text != "" {
+			return candidate.Content.Parts[0].Text, nil
+		}
+		return "", errors.New("part is not text")
 	default:
 		return "", errors.New("multiple response parts")
 	}
 }
 
 // GenerateTypedContent extracts JSON data from text according to the provided schema.
-func GenerateTypedContent(ctx context.Context, model *genai.GenerativeModel, out any, prompt ...genai.Part) error {
-	if model.GenerationConfig.ResponseSchema == nil {
+func GenerateTypedContent(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, out any, prompt ...*genai.Part) error {
+	if config == nil || config.ResponseSchema == nil {
 		return errors.New("generate config must set a schema")
 	}
-	if model.GenerationConfig.ResponseMIMEType != JSONMIMEType {
+	if config.ResponseMIMEType != JSONMIMEType {
 		return errors.New("generate config must set a JSON MIME type")
 	}
-	text, err := GenerateTextContent(ctx, model, prompt...)
+	text, err := GenerateTextContent(ctx, client, model, config, prompt...)
 	if err != nil {
 		return err
 	}

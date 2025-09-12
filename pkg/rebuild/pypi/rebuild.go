@@ -109,7 +109,24 @@ func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.Regist
 }
 
 // RebuildRemote executes the given target strategy on a remote builder.
-func RebuildRemote(ctx context.Context, input rebuild.Input, id string, opts rebuild.RemoteOptions) error {
+func (r Rebuilder) RebuildRemote(ctx context.Context, input rebuild.Input, opts rebuild.RemoteOptions) error {
 	opts.UseTimewarp = true
-	return rebuild.RebuildRemote(ctx, input, id, opts)
+	return rebuild.RebuildRemote(ctx, input, opts)
+}
+
+func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
+	return true
+}
+
+func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
+	release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
+	if err != nil {
+		return "", errors.Wrap(err, "fetching project failed")
+	}
+	for _, a := range release.Artifacts {
+		if a.Filename == t.Artifact {
+			return a.URL, nil
+		}
+	}
+	return "", errors.New("artifact not found")
 }

@@ -5,6 +5,7 @@ provider "registry.opentofu.org/hashicorp/google" {
   version = "6.19.0"
   hashes = [
     "h1:8e1tE7H1fj5IAn5xOEkM4b3679N1mnY26MqQmmhGSnM=",
+    "h1:NyrcwiuG/v23iICv60VHrIrFwoiMiuqdQO/sV8aLy0w=",
     "zh:02c27ececc39c7b78b0c61059e0bc237520f4550ae6238c117f3bd32ea4d5ba2",
     "zh:40b6a82a0159d90456cf0b1b209976509e89b135936ef60b6fff5f453e051543",
     "zh:593da5017b7561604d5bc76e5c1d4eb83497e9e68d45206b3c724f7de9b86f4c",

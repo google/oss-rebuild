@@ -29,9 +29,11 @@ import (
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
+	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
+	"github.com/google/oss-rebuild/pkg/rebuild/maven"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -498,6 +500,31 @@ RLpmHHG1JOVdOA==
 				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
 			})),
 		},
+		{
+			name:   "maven jar success",
+			target: rebuild.Target{Ecosystem: rebuild.Maven, Package: "com.google.guava:guava", Version: "33.4.8-jre", Artifact: "guava-33.4.8-jre.jar"},
+			calls: []httpxtest.Call{
+				{
+					URL: "https://repo1.maven.org/maven2/com/google/guava/guava/33.4.8-jre/guava-33.4.8-jre.jar",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(must(archivetest.ZipFile([]archive.ZipEntry{
+							{FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"}, Body: []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x40}},
+							{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.2\n\n")}},
+						))),
+					},
+				},
+			},
+			strategy: &maven.MavenBuild{
+				Location:   rebuild.Location{Repo: "https://github.com/google/guava", Ref: "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcd", Dir: "."},
+				JDKVersion: "11.0.2",
+			},
+			file: must(archivetest.ZipFile([]archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"}, Body: []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x40}},
+				// checks for stabilize too
+				{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\n\n")}},
+			)),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -521,7 +548,7 @@ RLpmHHG1JOVdOA==
 			buildSteps := []*cloudbuild.BuildStep{
 				{Name: "gcr.io/foo/bar", Script: "./bar"},
 			}
-			d.GCBClient = &gcbtest.MockClient{
+			gcbclient := &gcbtest.MockClient{
 				CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
 					c := must(remoteMetadata.Writer(ctx, rebuild.RebuildAsset.For(tc.target)))
 					defer func() { must1(c.Close()) }()
@@ -543,6 +570,7 @@ RLpmHHG1JOVdOA==
 						Metadata: must(json.Marshal(cloudbuild.BuildOperationMetadata{Build: &cloudbuild.Build{
 							Id:         "build-id",
 							Status:     "SUCCESS",
+							StartTime:  "2024-05-08T15:00:00Z",
 							FinishTime: "2024-05-08T15:23:00Z",
 							Steps:      buildSteps,
 							Results:    &cloudbuild.Results{BuildStepImages: []string{"sha256:abcd"}},
@@ -550,10 +578,14 @@ RLpmHHG1JOVdOA==
 					}, nil
 				},
 			}
-			d.BuildProject = "foo-project"
-			d.BuildServiceAccount = "foo-role"
-			d.UtilPrebuildBucket = "foo-prebuild-bucket"
-			d.BuildLogsBucket = "foo-logs-bucket"
+			var err error
+			d.GCBExecutor = must(buildgcb.NewExecutor(buildgcb.ExecutorConfig{
+				Project:        "foo-project",
+				ServiceAccount: "foo-role",
+				LogsBucket:     "foo-logs-bucket",
+				Client:         gcbclient,
+			}))
+			d.PrebuildConfig.Bucket = "foo-prebuild-bucket"
 			tempDir := must(os.MkdirTemp("", "test-*"))
 			defer os.RemoveAll(tempDir)
 			var gfs osfs.BoundOS
@@ -614,7 +646,7 @@ RLpmHHG1JOVdOA==
 					Steps:       buildSteps,
 				},
 				mustJSON[rebuild.BuildInfo](buildinfo),
-				cmpopts.IgnoreFields(rebuild.BuildInfo{}, "ID", "Builder", "BuildStart", "BuildEnd"),
+				cmpopts.IgnoreFields(rebuild.BuildInfo{}, "ObliviousID", "Builder", "BuildStart", "BuildEnd"),
 			)
 			if diff != "" {
 				t.Errorf("BuildInfo diff: %s", diff)

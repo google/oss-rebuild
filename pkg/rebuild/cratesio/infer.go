@@ -239,6 +239,14 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			return nil, errors.New("rust version heuristic failed")
 		}
 	}
+	// TODO: This should be moved to build-time since strategies are intended to be, at least notionally, distro-independent.
+	hasMUSLBuild, err := reg.HasMUSLBuild(rustVersion)
+	if err != nil {
+		return nil, errors.Wrap(err, "rust version compatibility check failed")
+	}
+	if !hasMUSLBuild {
+		return nil, errors.New("rust version unsupported in MUSL builds")
+	}
 	return &CratesIOCargoPackage{
 		Location: rebuild.Location{
 			Repo: rcfg.URI,

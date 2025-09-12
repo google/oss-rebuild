@@ -25,6 +25,7 @@ import (
 
 // RemoteOptions provides the configuration to execute rebuilds on Cloud Build.
 type RemoteOptions struct {
+	ObliviousID         string
 	GCBClient           gcb.Client
 	Project             string
 	BuildServiceAccount string
@@ -35,9 +36,7 @@ type RemoteOptions struct {
 	DebugStore AssetStore
 	// RemoteMetadataStore stores the rebuilt artifact. Cloud build needs access to upload assets here. It should be keyed by the unguessable UUID to sandbox each build.
 	RemoteMetadataStore LocatableAssetStore
-	UtilPrebuildBucket  string
-	UtilPrebuildDir     string
-	UtilPrebuildAuth    bool
+	PrebuildConfig      PrebuildConfig
 	// TODO: Consider moving these to Strategy.
 	UseTimewarp       bool
 	UseNetworkProxy   bool
@@ -46,11 +45,11 @@ type RemoteOptions struct {
 
 type rebuildContainerArgs struct {
 	Instructions
-	UseTimewarp        bool
-	UseNetworkProxy    bool
-	UtilPrebuildBucket string
-	UtilPrebuildDir    string
-	UtilPrebuildAuth   bool
+	UseTimewarp     bool
+	UseNetworkProxy bool
+	PrebuildBucket  string
+	PrebuildDir     string
+	PrebuildAuth    bool
 }
 
 var tetragonPoliciesYaml = []string{`apiVersion: cilium.io/v1alpha1
@@ -146,11 +145,11 @@ var debuildContainerTpl = template.Must(
 		textwrap.Dedent(`
 				#syntax=docker/dockerfile:1.10
 				FROM docker.io/library/debian:trixie-20250203-slim
-				RUN {{if .UtilPrebuildAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
+				RUN {{if .PrebuildAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
-				 curl {{if .UtilPrebuildAuth}}-H @/run/secrets/auth_header {{end -}}
-				 https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}timewarp > timewarp
+				 curl -O {{if .PrebuildAuth}}-H @/run/secrets/auth_header {{end -}}
+				 https://{{.PrebuildBucket}}.storage.googleapis.com/{{if .PrebuildDir}}{{.PrebuildDir}}/{{end}}timewarp
 				 chmod +x timewarp
 				{{- end}}
 				 apt update
@@ -169,8 +168,6 @@ var debuildContainerTpl = template.Must(
 				RUN cat <<'EOF' >/build
 				 set -eux
 				 {{.Instructions.Build | indent}}
-				 ls
-				 ls /src/
 				 mkdir /out && cp /src/{{.Instructions.OutputPath}} /out/
 				EOF
 				WORKDIR "/src"
@@ -189,11 +186,11 @@ var alpineContainerTpl = template.Must(
 		textwrap.Dedent(`
 				#syntax=docker/dockerfile:1.10
 				FROM docker.io/library/alpine:3.19
-				RUN {{if .UtilPrebuildAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
+				RUN {{if .PrebuildAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
 				 set -eux
 				{{- if .UseTimewarp}}
-				 {{if .UtilPrebuildAuth}}apk add curl && curl -O -H @/run/secrets/auth_header {{else}}wget {{end -}}
-				  https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}timewarp
+				 {{if .PrebuildAuth}}apk add curl && curl -O -H @/run/secrets/auth_header {{else}}wget {{end -}}
+				  https://{{.PrebuildBucket}}.storage.googleapis.com/{{if .PrebuildDir}}{{.PrebuildDir}}/{{end}}timewarp
 				 chmod +x timewarp
 				{{- end}}
 				 apk add {{join " " .Instructions.SystemDeps}}
@@ -235,11 +232,11 @@ var standardBuildTpl = template.Must(
 				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
 				grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 				{{- end}}
-				{{- if .UtilPrebuildAuth}}
-				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@{{.Project}}.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+				{{- if .PrebuildAuth}}
+				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 				(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 				{{- end}}
-				cat <<'EOS' | docker buildx build {{if .UtilPrebuildAuth}}--secret id=auth_header,src=/tmp/auth_header {{end}}--tag=img -
+				cat <<'EOS' | docker buildx build {{if .PrebuildAuth}}--secret id=auth_header,src=/tmp/auth_header {{end}}--tag=img -
 				{{.Dockerfile}}
 				EOS
 				docker run --name=container img
@@ -298,12 +295,12 @@ var proxyBuildTpl = template.Must(
 		textwrap.Dedent(`
 				set -eux
 				echo 'Starting rebuild for {{.TargetStr}}'
-				{{- if .UtilPrebuildAuth}}
-				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@{{.Project}}.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+				{{- if .PrebuildAuth}}
+				apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 				(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 				{{- end}}
-				curl -O {{if .UtilPrebuildAuth}}-H @/tmp/auth_header {{end -}}
-					https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}proxy
+				curl -O {{if .PrebuildAuth}}-H @/tmp/auth_header {{end -}}
+					https://{{.PrebuildBucket}}.storage.googleapis.com/{{if .PrebuildDir}}{{.PrebuildDir}}/{{end}}proxy
 				chmod +x proxy
 				docker network create proxynet
 				useradd --system {{.User}}
@@ -326,10 +323,10 @@ var proxyBuildTpl = template.Must(
 				proxyIP=$(docker inspect -f '{{printf "%s" "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"}}' proxy)
 				docker network connect cloudbuild proxy
 				{{- /* NOTE: File-based mounting does not appear to work here so use an env var. */ -}}
-				{{- if .UtilPrebuildAuth}}
+				{{- if .PrebuildAuth}}
 				(printf 'HEADER='; cat /tmp/auth_header) > /tmp/envfile
 				{{- end}}
-				docker run --detach --name=build --network=proxynet --entrypoint=/bin/sh {{if .UtilPrebuildAuth}}--env-file /tmp/envfile {{end}}gcr.io/cloud-builders/docker -c 'sleep infinity'
+				docker run --detach --name=build --network=proxynet --entrypoint=/bin/sh {{if .PrebuildAuth}}--env-file /tmp/envfile {{end}}gcr.io/cloud-builders/docker -c 'sleep infinity'
 				docker exec --privileged build /bin/sh -euxc '
 					iptables -t nat -A OUTPUT -p tcp --dport {{.HTTPPort}} -j ACCEPT
 					iptables -t nat -A OUTPUT -p tcp --dport {{.TLSPort}} -j ACCEPT
@@ -346,14 +343,15 @@ var proxyBuildTpl = template.Must(
 				export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
 				grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 				{{- end}}
-				docker exec build /bin/sh -euxc '
-					curl http://proxy:{{.CtrlPort}}/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
-					export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt{{if .UtilPrebuildAuth}} HEADER{{end}}
-					docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
-					cat <<EOS | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" | \
-						docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT {{if .UtilPrebuildAuth}}--secret id=auth_header,env=HEADER {{end}}--load --tag=img -
+				cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" > /Dockerfile
 				{{.Dockerfile}}
 				EOS
+				docker cp /Dockerfile build:/Dockerfile
+				docker exec build /bin/sh -euxc '
+					curl http://proxy:{{.CtrlPort}}/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
+					export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt{{if .PrebuildAuth}} HEADER{{end}}
+					docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
+					cat /Dockerfile | docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT {{if .PrebuildAuth}}--secret id=auth_header,env=HEADER {{end}}--load --tag=img -
 					docker run --name=container img
 				'
 				{{- if .UseSyscallMonitor}}
@@ -374,12 +372,12 @@ var assetUploadTpl = template.Must(
 	).Parse(
 		textwrap.Dedent(`
 				set -eux
-				{{- if .UtilPrebuildAuth}}
-				apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/builder-remote@{{.Project}}.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+				{{- if .PrebuildAuth}}
+				apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 				(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 				{{- end}}
-				{{if .UtilPrebuildAuth}}curl -O -H @/tmp/auth_header {{else}}wget {{end -}}
-				 https://{{.UtilPrebuildBucket}}.storage.googleapis.com/{{if .UtilPrebuildDir}}{{.UtilPrebuildDir}}/{{end}}gsutil_writeonly
+				{{if .PrebuildAuth}}curl -O -H @/tmp/auth_header {{else}}wget {{end -}}
+				 https://{{.PrebuildBucket}}.storage.googleapis.com/{{if .PrebuildDir}}{{.PrebuildDir}}/{{end}}gsutil_writeonly
 				chmod +x gsutil_writeonly
 				{{- range .Uploads}}
 				./gsutil_writeonly cp {{.From}} {{.To}}
@@ -387,7 +385,8 @@ var assetUploadTpl = template.Must(
 				`)[1:], // remove leading newline
 	))
 
-func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Build, error) {
+func MakeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Build, error) {
+	_, serviceAccountEmail := path.Split(opts.BuildServiceAccount)
 	var buildScript bytes.Buffer
 	uploads := []upload{
 		{From: "/workspace/image.tgz", To: opts.RemoteMetadataStore.URL(ContainerImageAsset.For(t)).String()},
@@ -398,19 +397,20 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	}
 	if opts.UseNetworkProxy {
 		err := proxyBuildTpl.Execute(&buildScript, map[string]any{
-			"TargetStr":          fmt.Sprintf("%+v", t),
-			"UtilPrebuildBucket": opts.UtilPrebuildBucket,
-			"UtilPrebuildDir":    opts.UtilPrebuildDir,
-			"UtilPrebuildAuth":   opts.UtilPrebuildAuth,
-			"Project":            opts.Project,
-			"Dockerfile":         dockerfile,
-			"UseSyscallMonitor":  opts.UseSyscallMonitor,
-			"SyscallPolicies":    tetragonPoliciesJSON,
-			"HTTPPort":           "3128",
-			"TLSPort":            "3129",
-			"CtrlPort":           "3127",
-			"DockerPort":         "3130",
-			"User":               "proxyu",
+			"TargetStr":           fmt.Sprintf("%+v", t),
+			"PrebuildBucket":      opts.PrebuildConfig.Bucket,
+			"PrebuildDir":         opts.PrebuildConfig.Dir,
+			"PrebuildAuth":        opts.PrebuildConfig.Auth,
+			"Project":             opts.Project,
+			"ServiceAccountEmail": serviceAccountEmail,
+			"Dockerfile":          dockerfile,
+			"UseSyscallMonitor":   opts.UseSyscallMonitor,
+			"SyscallPolicies":     tetragonPoliciesJSON,
+			"HTTPPort":            "3128",
+			"TLSPort":             "3129",
+			"CtrlPort":            "3127",
+			"DockerPort":          "3130",
+			"User":                "proxyu",
 			"CertEnvVars": []string{
 				// Used by pip.
 				// See https://pip.pypa.io/en/stable/topics/https-certificates/#using-a-specific-certificate-store
@@ -436,12 +436,13 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 		uploads = append(uploads, upload{From: "/workspace/netlog.json", To: opts.RemoteMetadataStore.URL(ProxyNetlogAsset.For(t)).String()})
 	} else {
 		err := standardBuildTpl.Execute(&buildScript, map[string]any{
-			"TargetStr":         fmt.Sprintf("%+v", t),
-			"Dockerfile":        dockerfile,
-			"UseSyscallMonitor": opts.UseSyscallMonitor,
-			"SyscallPolicies":   tetragonPoliciesJSON,
-			"UtilPrebuildAuth":  opts.UtilPrebuildAuth,
-			"Project":           opts.Project,
+			"TargetStr":           fmt.Sprintf("%+v", t),
+			"Dockerfile":          dockerfile,
+			"UseSyscallMonitor":   opts.UseSyscallMonitor,
+			"SyscallPolicies":     tetragonPoliciesJSON,
+			"PrebuildAuth":        opts.PrebuildConfig.Auth,
+			"Project":             opts.Project,
+			"ServiceAccountEmail": serviceAccountEmail,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "expanding standard build template")
@@ -449,11 +450,12 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 	}
 	var assetUploadScript bytes.Buffer
 	err := assetUploadTpl.Execute(&assetUploadScript, map[string]any{
-		"UtilPrebuildBucket": opts.UtilPrebuildBucket,
-		"UtilPrebuildDir":    opts.UtilPrebuildDir,
-		"UtilPrebuildAuth":   opts.UtilPrebuildAuth,
-		"Project":            opts.Project,
-		"Uploads":            uploads,
+		"PrebuildBucket":      opts.PrebuildConfig.Bucket,
+		"PrebuildDir":         opts.PrebuildConfig.Dir,
+		"PrebuildAuth":        opts.PrebuildConfig.Auth,
+		"Project":             opts.Project,
+		"ServiceAccountEmail": serviceAccountEmail,
+		"Uploads":             uploads,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "expanding asset upload template")
@@ -485,8 +487,16 @@ func makeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Bui
 
 func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Build, opts RemoteOptions, bi *BuildInfo) error {
 	var deadline time.Time
-	if d, ok := ctx.Value(GCBDeadlineID).(time.Time); ok {
+	terminateOnTimeout := false
+	if d, ok := ctx.Value(GCBWaitDeadlineID).(time.Time); ok {
 		deadline = d
+	}
+	if d, ok := ctx.Value(GCBCancelDeadlineID).(time.Time); ok {
+		// If both GCBWaitDeadlineID and GCBCancelDeadlineID are provided, take the time and behavior of the earliest one.
+		if deadline.IsZero() || d.Before(deadline) {
+			deadline = d
+			terminateOnTimeout = true
+		}
 	}
 	buildCtx := ctx
 	if !deadline.IsZero() {
@@ -495,7 +505,12 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 		defer cancel()
 		buildCtx = bctx
 	}
-	build, err := gcb.DoBuild(buildCtx, client, opts.Project, build)
+	build, err := gcb.DoBuild(buildCtx, client, opts.Project, build, gcb.DoBuildOpts{TerminateOnTimeout: terminateOnTimeout})
+	if build != nil {
+		// Set all the values of BuildInfo we can, regardless of the error response.
+		bi.BuildID = build.Id
+		bi.Steps = build.Steps
+	}
 	if err != nil {
 		return errors.Wrap(err, "doing build")
 	}
@@ -503,8 +518,6 @@ func doCloudBuild(ctx context.Context, client gcb.Client, build *cloudbuild.Buil
 	if err != nil {
 		return errors.Wrap(err, "extracting FinishTime")
 	}
-	bi.BuildID = build.Id
-	bi.Steps = build.Steps
 	bi.BuildImages = make(map[string]string)
 	buildErr := gcb.ToError(build)
 	// Don't try to read BuildStepImages if the build failed.
@@ -527,21 +540,21 @@ func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 		return "", errors.Wrap(err, "failed to generate strategy")
 	}
 	dockerfile := new(bytes.Buffer)
-	if input.Target.Ecosystem == Debian {
+	if input.Target.Ecosystem == Debian || input.Target.Ecosystem == Maven {
 		err = debuildContainerTpl.Execute(dockerfile, rebuildContainerArgs{
-			UseTimewarp:        opts.UseTimewarp,
-			UtilPrebuildBucket: opts.UtilPrebuildBucket,
-			UtilPrebuildDir:    opts.UtilPrebuildDir,
-			UtilPrebuildAuth:   opts.UtilPrebuildAuth,
-			Instructions:       instructions,
+			UseTimewarp:    opts.UseTimewarp,
+			PrebuildBucket: opts.PrebuildConfig.Bucket,
+			PrebuildDir:    opts.PrebuildConfig.Dir,
+			PrebuildAuth:   opts.PrebuildConfig.Auth,
+			Instructions:   instructions,
 		})
 	} else {
 		err = alpineContainerTpl.Execute(dockerfile, rebuildContainerArgs{
-			UseTimewarp:        opts.UseTimewarp,
-			UtilPrebuildBucket: opts.UtilPrebuildBucket,
-			UtilPrebuildDir:    opts.UtilPrebuildDir,
-			UtilPrebuildAuth:   opts.UtilPrebuildAuth,
-			Instructions:       instructions,
+			UseTimewarp:    opts.UseTimewarp,
+			PrebuildBucket: opts.PrebuildConfig.Bucket,
+			PrebuildDir:    opts.PrebuildConfig.Dir,
+			PrebuildAuth:   opts.PrebuildConfig.Auth,
+			Instructions:   instructions,
 		})
 	}
 	if err != nil {
@@ -551,9 +564,12 @@ func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 }
 
 // RebuildRemote executes the given target strategy on a remote builder.
-func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptions) error {
+func RebuildRemote(ctx context.Context, input Input, opts RemoteOptions) error {
 	t := input.Target
-	bi := BuildInfo{Target: t, ID: id, Builder: os.Getenv("K_REVISION"), BuildStart: time.Now()}
+	if opts.ObliviousID == "" {
+		return errors.New("ObliviousID must be set")
+	}
+	bi := BuildInfo{Target: t, ObliviousID: opts.ObliviousID, Builder: os.Getenv("K_REVISION"), BuildStart: time.Now()}
 	dockerfile, err := MakeDockerfile(input, opts)
 	if err != nil {
 		return errors.Wrap(err, "creating dockerfile")
@@ -573,7 +589,7 @@ func RebuildRemote(ctx context.Context, input Input, id string, opts RemoteOptio
 			return errors.Wrap(err, "writing Dockerfile")
 		}
 	}
-	build, err := makeBuild(t, dockerfile, opts)
+	build, err := MakeBuild(t, dockerfile, opts)
 	if err != nil {
 		return errors.Wrap(err, "creating build")
 	}

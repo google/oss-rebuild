@@ -64,8 +64,9 @@ func rebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 	}
 }
 func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *RebuildSmoketestDeps) (*schema.SmoketestResponse, error) {
+	started := time.Now().UTC()
 	if sreq.ID == "" {
-		sreq.ID = time.Now().UTC().Format(time.RFC3339)
+		sreq.ID = started.Format(time.RFC3339)
 	}
 	resp, err := rebuildSmoketest(ctx, sreq, deps)
 	for _, v := range resp.Verdicts {
@@ -80,7 +81,8 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 			Timings:         v.Timings,
 			ExecutorVersion: resp.Executor,
 			RunID:           sreq.ID,
-			Created:         time.Now().UnixMilli(),
+			Started:         started,
+			Created:         time.Now().UTC(),
 		})
 		if err != nil {
 			return nil, api.AsStatus(codes.Internal, errors.Wrapf(err, "writing record for %s@%s", sreq.Package, v.Target.Version))

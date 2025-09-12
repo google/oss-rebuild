@@ -33,8 +33,25 @@ func TestPureWheelBuild(t *testing.T) {
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build
-/deps/bin/pip install req_1
-/deps/bin/pip install req_2`,
+/deps/bin/pip install 'req_1'
+/deps/bin/pip install 'req_2'`,
+				Build:      "/deps/bin/python3 -m build --wheel -n the_dir",
+				SystemDeps: []string{"git", "python3"},
+				OutputPath: "dist/the_artifact",
+			},
+		},
+		{
+			"DepsEscaping",
+			&PureWheelBuild{
+				Location:     defaultLocation,
+				Requirements: []string{"req_1<='1.2.3'"},
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/python3 -m venv /deps
+/deps/bin/pip install build
+/deps/bin/pip install 'req_1<='\''1.2.3'\'''`,
 				Build:      "/deps/bin/python3 -m build --wheel -n the_dir",
 				SystemDeps: []string{"git", "python3"},
 				OutputPath: "dist/the_artifact",

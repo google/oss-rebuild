@@ -59,6 +59,9 @@ const (
 	proxyCertJKSPath = "/var/cache/proxy.crt.jks"
 	// Official interface for providing additional args to JVMs.
 	javaTruststoreEnvVar = "JAVA_TOOL_OPTIONS"
+	// Bazel configuration file that is interpreted first.
+	// https://bazel.build/run/bazelrc#bazelrc-file-locations
+	bazelSystemRCPath = "/etc/bazel.bazelrc"
 	// Env var to which docker requests will be sent by the docker CLI.
 	dockerEnvVar = "DOCKER_HOST"
 	// The path to the docker proxy that can be bound within a container to make docker calls.
@@ -410,6 +413,7 @@ type ContainerTruststorePatcher struct {
 	envVars              []string
 	truststoreEnvVars    []string
 	javaTruststoreEnvVar bool
+	bazelTruststore      bool
 	networkOverride      string // TODO: Not a good fit for this abstraction
 	proxySocket          string
 	patchMap             map[string]*patchSet
@@ -422,6 +426,7 @@ type ContainerTruststorePatcherOpts struct {
 	EnvVars              []string
 	TruststoreEnvVars    []string
 	JavaTruststoreEnvVar bool
+	BazelTruststore      bool
 	RecursiveProxy       bool
 	NetworkOverride      string
 }
@@ -445,6 +450,7 @@ func NewContainerTruststorePatcher(cert x509.Certificate, opts ContainerTruststo
 		envVars:              opts.EnvVars,
 		truststoreEnvVars:    opts.TruststoreEnvVars,
 		javaTruststoreEnvVar: opts.JavaTruststoreEnvVar,
+		bazelTruststore:      opts.BazelTruststore,
 		networkOverride:      opts.NetworkOverride,
 		proxySocket:          sockName,
 		patchMap:             make(map[string]*patchSet),
@@ -469,9 +475,18 @@ func (d *ContainerTruststorePatcher) leasePatchSet(container string) *patchSet {
 
 // Proxy serves the Docker API while patching the container truststore.
 func (d *ContainerTruststorePatcher) Proxy(srvAddr, dockerAddr string) {
-	tcpChan := make(chan net.Conn, 1)
+	proxyChan := make(chan net.Conn, 1)
 	udsChan := make(chan net.Conn, 1)
-	tl, err := net.Listen("tcp", srvAddr)
+
+	network := "tcp"
+	address := srvAddr
+	if strings.HasPrefix(address, "unix://") {
+		network = "unix"
+		address = strings.TrimPrefix(address, "unix://")
+	} else if strings.HasPrefix(address, "tcp://") {
+		address = strings.TrimPrefix(address, "tcp://")
+	}
+	tl, err := net.Listen(network, address)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -482,7 +497,7 @@ func (d *ContainerTruststorePatcher) Proxy(srvAddr, dockerAddr string) {
 				log.Printf("Failed to establish connection: %s", err)
 				continue
 			}
-			tcpChan <- c
+			proxyChan <- c
 		}
 	}()
 	if d.proxySocket != "" {
@@ -507,7 +522,7 @@ func (d *ContainerTruststorePatcher) Proxy(srvAddr, dockerAddr string) {
 	for {
 		var c net.Conn
 		select {
-		case c = <-tcpChan:
+		case c = <-proxyChan:
 		case c = <-udsChan:
 		}
 		s, err := net.Dial("unix", dockerAddr)
@@ -623,6 +638,29 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			if err := createFile(dfs, jks, proxyCertJKSPath); err != nil {
 				log.Printf("Creating java proxy cert: %v", err)
 				break
+			}
+		}
+		if d.bazelTruststore {
+			bazelRCContents := fmt.Sprintf("startup --host_jvm_args=-Djavax.net.ssl.trustStore=%s", proxyCertJKSPath)
+			bazelRCBytes := []byte(bazelRCContents)
+			f, err := dfs.OpenAndResolve(bazelSystemRCPath)
+			if err != nil {
+				if err == iofs.ErrNotExist {
+					if err := createFile(dfs, bazelRCBytes, bazelSystemRCPath); err != nil {
+						log.Printf("Creating bazelrc file: %v", err)
+						break
+					}
+				} else {
+					log.Printf("Reading bazelrc file: %v", err)
+					break
+				}
+			} else {
+				f.Contents = append(f.Contents[:], bazelRCBytes...)
+				err = dfs.WriteFile(f)
+				if err != nil {
+					log.Printf("Writing to bazelrc file: %v", err)
+					break
+				}
 			}
 		}
 		patchset := d.leasePatchSet(id)

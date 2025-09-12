@@ -4,6 +4,7 @@
 package npm
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -47,11 +48,13 @@ func (b *NPMPackBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebui
 // NPMCustomBuild implements a user-specified build script.
 type NPMCustomBuild struct {
 	rebuild.Location
-	NPMVersion      string    `json:"npm_version" yaml:"npm_version"`
-	NodeVersion     string    `json:"node_version" yaml:"node_version"`
-	VersionOverride string    `json:"version_override,omitempty" yaml:"version_override,omitempty"`
-	Command         string    `json:"command" yaml:"command"`
-	RegistryTime    time.Time `json:"registry_time" yaml:"registry_time"`
+	NPMVersion        string    `json:"npm_version" yaml:"npm_version"`
+	NodeVersion       string    `json:"node_version" yaml:"node_version"`
+	VersionOverride   string    `json:"version_override,omitempty" yaml:"version_override,omitempty"`
+	Command           string    `json:"command" yaml:"command,omitempty"`
+	RegistryTime      time.Time `json:"registry_time" yaml:"registry_time"`
+	PrepackRemoveDeps bool      `json:"prepack_remove_deps,omitempty" yaml:"prepack_remove_deps,omitempty"`
+	KeepRoot          bool      `json:"keep_root,omitempty" yaml:"keep_root,omitempty"`
 }
 
 var _ rebuild.Strategy = &NPMCustomBuild{}
@@ -79,6 +82,8 @@ func (b *NPMCustomBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 			With: map[string]string{
 				"npmVersion":      b.NPMVersion,
 				"versionOverride": b.VersionOverride,
+				"keepRoot":        fmt.Sprintf("%t", b.KeepRoot),
+				"removeDeps":      fmt.Sprintf("%t", b.PrepackRemoveDeps),
 				"command":         b.Command,
 			},
 		}},
@@ -137,20 +142,24 @@ var toolkit = []*flow.Tool{
 			Needs: []string{},
 		}},
 	},
+	{
+		Name: "npm/install",
+		Steps: []flow.Step{
+			{
+				Uses: "npm/npx",
+				With: map[string]string{
+					"command": `
+						{{- if ne .With.registryTime ""}}npm_config_registry={{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}} {{end -}}
+						npm install --force --no-audit`,
+					"npmVersion": "{{.With.npmVersion}}",
+					"dir":        "{{.Location.Dir}}",
+					"locator":    "{{.With.locator}}",
+				},
+			},
+		},
+	},
 
 	// Composite tools for common dependency setups
-	{
-		Name: "npm/deps/basic",
-		Steps: []flow.Step{{
-			Uses: "npm/npx",
-			With: map[string]string{
-				"command":    "npm install --force",
-				"npmVersion": "{{.With.npmVersion}}",
-				"dir":        "{{.Location.Dir}}",
-				"locator":    "/usr/local/bin/",
-			},
-		}},
-	},
 	{
 		Name: "npm/deps/custom",
 		Steps: []flow.Step{
@@ -161,14 +170,11 @@ var toolkit = []*flow.Tool{
 				},
 			},
 			{
-				Uses: "npm/npx",
+				Uses: "npm/install",
 				With: map[string]string{
-					"command": `
-						{{- if ne .With.registryTime ""}}npm_config_registry={{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}} {{end -}}
-						npm install --force`,
-					"npmVersion": "{{.With.npmVersion}}",
-					"dir":        "{{.Location.Dir}}",
-					"locator":    "/usr/local/bin/",
+					"npmVersion":   "{{.With.npmVersion}}",
+					"registryTime": "{{.With.registryTime}}",
+					"locator":      "/usr/local/bin/",
 				},
 			},
 		},
@@ -209,7 +215,11 @@ var toolkit = []*flow.Tool{
 			{
 				Uses: "npm/npx",
 				With: map[string]string{
-					"command":    "npm run {{.With.command}} && rm -rf node_modules && npm pack",
+					"command": `
+						{{- if eq .With.keepRoot "true"}}npm config set unsafe-perm true && {{end -}}
+						{{- if ne .With.command ""}}npm run {{.With.command}} && {{end -}}
+						{{- if eq .With.removeDeps "true"}}rm -rf node_modules && {{end -}}
+						npm pack`,
 					"npmVersion": "{{.With.npmVersion}}",
 					"dir":        "{{.Location.Dir}}",
 					"locator":    "/usr/local/bin/",

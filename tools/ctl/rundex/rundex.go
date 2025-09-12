@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -21,6 +23,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -29,7 +32,6 @@ import (
 // Rebuild represents the result of a specific rebuild.
 type Rebuild struct {
 	schema.RebuildAttempt
-	Created time.Time
 }
 
 // NewRebuildFromFirestore creates a Rebuild instance from a "attempt" collection document.
@@ -40,8 +42,25 @@ func NewRebuildFromFirestore(doc *firestore.DocumentSnapshot) Rebuild {
 	}
 	var rb Rebuild
 	rb.RebuildAttempt = sa
-	rb.Created = time.UnixMilli(sa.Created)
 	return rb
+}
+
+func NewRebuildFromVerdict(v schema.Verdict, executor string, runID string, created time.Time) Rebuild {
+	return Rebuild{
+		RebuildAttempt: schema.RebuildAttempt{
+			Ecosystem:       string(v.Target.Ecosystem),
+			Package:         v.Target.Package,
+			Version:         v.Target.Version,
+			Artifact:        v.Target.Artifact,
+			Success:         v.Message == "",
+			Message:         v.Message,
+			Strategy:        v.StrategyOneof,
+			Timings:         v.Timings,
+			ExecutorVersion: executor,
+			RunID:           runID,
+			Created:         created,
+		},
+	}
 }
 
 func (r Rebuild) Target() rebuild.Target {
@@ -59,6 +78,7 @@ func (r *Rebuild) ID() string {
 }
 
 // WasSmoketest returns true if this rebuild was part of a smoketest run.
+// NOTE: This will incorrectly appear to be Smoketest if an attestation failed during inference.
 func (r Rebuild) WasSmoketest() bool {
 	// TODO: Should we store the type of execution directly on the Rebuild? A more explicit check would involve looking up the Run object.
 	return r.ObliviousID == ""
@@ -67,15 +87,13 @@ func (r Rebuild) WasSmoketest() bool {
 // Run represents a group of one or more rebuild executions.
 type Run struct {
 	schema.Run
-	Type    schema.ExecutionMode
-	Created time.Time
+	Type schema.ExecutionMode
 }
 
 func FromRun(r schema.Run) Run {
 	var rb Run
 	rb.Run = r
 	rb.Type = schema.ExecutionMode(r.Type)
-	rb.Created = time.UnixMilli(r.Created)
 	return rb
 }
 
@@ -116,8 +134,12 @@ func DoQuery[T any](ctx context.Context, q firestore.Query, fn func(*firestore.D
 }
 
 func cleanVerdict(m string) string {
+	// strip the leading error message of an inference failure to fit the latter, finer-grained error messages, on screen.
+	m = strings.Replace(m, "getting strategy: fetching inference: failed to infer strategy:", "inference failure:", -1)
 	switch {
 	// Generic
+	case strings.Contains(m, "clone failed"):
+		m = "clone failed"
 	case strings.HasPrefix(m, `mismatched version `):
 		m = "wrong package version in manifest"
 	case strings.HasPrefix(m, `mismatched name `):
@@ -132,6 +154,10 @@ func cleanVerdict(m string) string {
 		m = `npm install: unsupported scheme "workspace:"`
 	case strings.Contains(m, `Unsupported URL Type "patch:"`):
 		m = `npm install: unsupported scheme "patch:"`
+	case strings.Contains(m, "no download URL for JDK version"):
+		m = `no download URL for JDK version`
+	case strings.Contains(m, `getting strategy: fetching inference: making http request:`) && strings.Contains(m, `connection reset by peer`):
+		m = `getting strategy: fetching inference: making http request to inference service: connection reset by peer`
 	// NPM
 	case strings.HasPrefix(m, "unknown npm pack failure:"):
 		if strings.Contains(m, ": not found") {
@@ -187,10 +213,12 @@ type FetchRebuildOpts struct {
 
 // FetchRebuildRequest describes which Rebuild results you would like to fetch from firestore.
 type FetchRebuildRequest struct {
-	Bench     *benchmark.PackageSet
-	Executors []string
-	Runs      []string
-	Opts      FetchRebuildOpts
+	Target           *rebuild.Target
+	Bench            *benchmark.PackageSet
+	Executors        []string
+	Runs             []string
+	Opts             FetchRebuildOpts
+	LatestPerPackage bool
 }
 
 // FetchRunsOpts describes which Runs you would like to fetch from firestore.
@@ -201,12 +229,20 @@ type FetchRunsOpts struct {
 
 type Reader interface {
 	FetchRuns(context.Context, FetchRunsOpts) ([]Run, error)
-	FetchRebuilds(context.Context, *FetchRebuildRequest) (map[string]Rebuild, error)
+	FetchRebuilds(context.Context, *FetchRebuildRequest) ([]Rebuild, error)
 }
 
 type Writer interface {
 	WriteRebuild(ctx context.Context, r Rebuild) error
 	WriteRun(ctx context.Context, r Run) error
+}
+
+// Watcher provides channels to notify about rundex object creation.
+// The Watcher is expected to manage the lifecycle of the channels, closing them if necessary.
+type Watcher interface {
+	// TODO: We might want to add filter parameters similar to the Fecth* methods on Reader.
+	WatchRuns() <-chan *Run
+	WatchRebuilds() <-chan *Rebuild
 }
 
 // FirestoreClient is a wrapper around the external firestore client.
@@ -229,7 +265,7 @@ func NewFirestore(ctx context.Context, project string) (*FirestoreClient, error)
 	return &FirestoreClient{Client: client}, nil
 }
 
-func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Rebuild {
+func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 	p := pipe.From(all)
 	if req.Bench != nil {
 		benchMap := make(map[string]benchmark.Package)
@@ -263,26 +299,152 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) map[string]Reb
 			out <- in
 		})
 	}
-	rebuilds := make(map[string]Rebuild)
-	for r := range p.Out() {
-		if existing, seen := rebuilds[r.ID()]; seen && existing.Created.After(r.Created) {
-			continue
+	p = p.Do(func(in Rebuild, out chan<- Rebuild) {
+		in.Message = strings.ReplaceAll(in.Message, "\n", "\\n")
+		out <- in
+	})
+	var res []Rebuild
+	if req.LatestPerPackage {
+		rebuilds := make(map[string]Rebuild)
+		for r := range p.Out() {
+			if existing, seen := rebuilds[r.ID()]; seen && existing.Created.After(r.Created) {
+				continue
+			}
+			rebuilds[r.ID()] = r
 		}
-		r.Message = strings.ReplaceAll(r.Message, "\n", "\\n")
-		rebuilds[r.ID()] = r
+		for _, r := range rebuilds {
+			res = append(res, r)
+		}
+	} else {
+		for r := range p.Out() {
+			res = append(res, r)
+		}
 	}
-	return rebuilds
+	return res
+}
+
+func sanitize(key string) string {
+	return strings.ReplaceAll(key, "/", "!")
+}
+
+func (f *FirestoreClient) findArtifactName(ctx context.Context, t rebuild.Target) (string, error) {
+	iter := f.Client.Collection(path.Join("ecosystem", string(t.Ecosystem), "packages", sanitize(t.Package), "versions", t.Version, "artifacts")).DocumentRefs(ctx)
+	var artifacts []string
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		artifacts = append(artifacts, doc.ID)
+	}
+	if len(artifacts) == 0 {
+		return "", errors.New("no artifact documents found")
+	}
+	if len(artifacts) > 1 {
+		return "", errors.New("multiple artifact documents found")
+	}
+	return artifacts[0], nil
 }
 
 // FetchRebuilds fetches the Rebuild objects out of firestore.
-func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (map[string]Rebuild, error) {
+func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) ([]Rebuild, error) {
 	if len(req.Executors) != 0 && len(req.Runs) != 0 {
 		return nil, errors.New("only provide one of executors and runs")
 	}
 	if req.Bench != nil && req.Bench.Count == 0 {
 		return nil, errors.New("empty bench provided")
 	}
+	// If a benchmark is provided, we can optimize by querying for specific packages.
+	if req.Bench != nil {
+		packagesByEcosystem := make(map[string][]string)
+		for _, p := range req.Bench.Packages {
+			if !slices.Contains(packagesByEcosystem[p.Ecosystem], p.Name) {
+				packagesByEcosystem[p.Ecosystem] = append(packagesByEcosystem[p.Ecosystem], p.Name)
+			}
+		}
+
+		type queryBatch struct {
+			ecosystem string
+			packages  []string
+		}
+		var batches []queryBatch
+		const batchSize = 30 // Firestore 'in' queries are limited to 30 values.
+		for eco, pkgs := range packagesByEcosystem {
+			for i := 0; i < len(pkgs); i += batchSize {
+				end := i + batchSize
+				if end > len(pkgs) {
+					end = len(pkgs)
+				}
+				batches = append(batches, queryBatch{ecosystem: eco, packages: pkgs[i:end]})
+			}
+		}
+
+		p := pipe.FromSlice(batches)
+
+		var queryErr error
+		var once sync.Once
+		pctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		const queryConcurrency = 10
+		rebuildsPipe := pipe.ParInto(queryConcurrency, p, func(batch queryBatch, out chan<- Rebuild) {
+			if pctx.Err() != nil {
+				return
+			}
+			q := f.Client.CollectionGroup("attempts").Query.Where("ecosystem", "==", batch.ecosystem).Where("package", "in", batch.packages)
+			if len(req.Executors) != 0 {
+				q = q.Where("executor_version", "in", req.Executors)
+			}
+			if len(req.Runs) != 0 {
+				q = q.Where("run_id", "in", req.Runs)
+			}
+			iter := q.Documents(pctx)
+			for {
+				doc, err := iter.Next()
+				if err == iterator.Done {
+					break
+				}
+				if err != nil {
+					once.Do(func() {
+						queryErr = errors.Wrap(err, "query error")
+						cancel()
+					})
+					break
+				}
+				out <- NewRebuildFromFirestore(doc)
+			}
+		})
+		var allUnfilteredRebuilds []Rebuild
+		for r := range rebuildsPipe.Out() {
+			allUnfilteredRebuilds = append(allUnfilteredRebuilds, r)
+		}
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		// Now filter all results at once.
+		allChan := make(chan Rebuild, len(allUnfilteredRebuilds))
+		for _, r := range allUnfilteredRebuilds {
+			allChan <- r
+		}
+		close(allChan)
+		return filterRebuilds(allChan, req), nil
+	}
+
 	q := f.Client.CollectionGroup("attempts").Query
+	if req.Target != nil {
+		t := *req.Target
+		if t.Artifact == "" {
+			if a, err := f.findArtifactName(ctx, t); err != nil {
+				return nil, errors.Wrap(err, "inferring missing artifact")
+			} else {
+				t.Artifact = a
+			}
+		}
+		q = f.Client.Collection(path.Join("ecosystem", string(t.Ecosystem), "packages", sanitize(t.Package), "versions", t.Version, "artifacts", t.Artifact, "attempts")).Query
+	}
 	if len(req.Executors) != 0 {
 		q = q.Where("executor_version", "in", req.Executors)
 	}
@@ -321,10 +483,13 @@ func (f *FirestoreClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]
 
 // LocalClient reads rebuilds from the local filesystem.
 type LocalClient struct {
-	fs billy.Filesystem
+	fs                 billy.Filesystem
+	runSubscribers     []chan<- *Run
+	rebuildSubscribers []chan<- *Rebuild
 }
 
 var _ Reader = &LocalClient{}
+var _ Watcher = &LocalClient{}
 var _ Writer = &LocalClient{}
 
 func NewLocalClient(fs billy.Filesystem) *LocalClient {
@@ -334,15 +499,13 @@ func NewLocalClient(fs billy.Filesystem) *LocalClient {
 }
 
 const (
-	rebuildFileName  = "firestore.json"
-	localRunsDir     = "runs"
-	localRunsMetaDir = "runs_metadata"
+	rebuildFileName = "firestore.json"
 )
 
 // FetchRuns fetches Runs out of firestore.
 func (f *LocalClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
 	runs := make([]Run, 0)
-	err := util.Walk(f.fs, localRunsMetaDir, func(path string, info fs.FileInfo, err error) error {
+	err := util.Walk(f.fs, layout.RundexRunsPath, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -376,18 +539,18 @@ func (f *LocalClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run,
 	return runs, nil
 }
 
-// FetchRebuilds fetches the Rebuild objects out of firestore.
-func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) (map[string]Rebuild, error) {
+// FetchRebuilds fetches the Rebuild objects from local paths.
+func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) ([]Rebuild, error) {
 	walkErr := make(chan error, 1)
 	all := make(chan Rebuild, 1)
 	go func() {
 		var toWalk []string
 		if len(req.Runs) != 0 {
 			for _, r := range req.Runs {
-				toWalk = append(toWalk, filepath.Join(localRunsDir, r))
+				toWalk = append(toWalk, filepath.Join(layout.RundexRebuildsPath, r))
 			}
 		} else {
-			toWalk = []string{localRunsDir}
+			toWalk = []string{layout.RundexRebuildsPath}
 		}
 		defer close(all)
 		for _, p := range toWalk {
@@ -427,24 +590,52 @@ func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReques
 	return rebuilds, nil
 }
 
+func (f *LocalClient) WatchRuns() <-chan *Run {
+	n := make(chan *Run, 1)
+	f.runSubscribers = append(f.runSubscribers, n)
+	return n
+}
+
+func (f *LocalClient) WatchRebuilds() <-chan *Rebuild {
+	n := make(chan *Rebuild, 1)
+	f.rebuildSubscribers = append(f.rebuildSubscribers, n)
+	return n
+}
+
 func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
-	path := filepath.Join(localRunsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
+	path := filepath.Join(layout.RundexRebuildsPath, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")
 	}
 	defer file.Close()
-	return json.NewEncoder(file).Encode(r)
+	if err := json.NewEncoder(file).Encode(r); err != nil {
+		return err
+	}
+	for _, sub := range f.rebuildSubscribers {
+		go func() {
+			sub <- &r
+		}()
+	}
+	return nil
 }
 
 func (f *LocalClient) WriteRun(ctx context.Context, r Run) error {
-	path := filepath.Join(localRunsMetaDir, fmt.Sprintf("%s.json", r.ID))
+	path := filepath.Join(layout.RundexRunsPath, fmt.Sprintf("%s.json", r.ID))
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")
 	}
 	defer file.Close()
-	return json.NewEncoder(file).Encode(r)
+	if err := json.NewEncoder(file).Encode(r); err != nil {
+		return err
+	}
+	for _, sub := range f.runSubscribers {
+		go func() {
+			sub <- &r
+		}()
+	}
+	return nil
 }
 
 // VerdictGroup is a collection of Rebuild objects, grouped by the same Message.
@@ -455,7 +646,7 @@ type VerdictGroup struct {
 }
 
 // GroupRebuilds will create VerdictGroup objects, grouping rebuilds by Message.
-func GroupRebuilds(rebuilds map[string]Rebuild) (byCount []*VerdictGroup) {
+func GroupRebuilds(rebuilds []Rebuild) (byCount []*VerdictGroup) {
 	msgs := make(map[string]*VerdictGroup)
 	for _, r := range rebuilds {
 		if _, seen := msgs[r.Message]; !seen {

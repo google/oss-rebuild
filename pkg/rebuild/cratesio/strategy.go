@@ -100,7 +100,9 @@ var toolkit = []*flow.Tool{
 		Name: "cargo/build/package",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				/root/.cargo/bin/cargo package --no-verify{{if or (ne .With.preferPreciseToolchain "true") (gt 0 (cmpSemver "1.56.0" .With.rustVersion))}} --package "path+file://$(readlink -f {{.With.dir}})"{{end}}`)[1:],
+				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
+				/root/.cargo/bin/cargo package --no-verify
+				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`)[1:],
 			Needs: []string{"rustup"},
 		}},
 	},

@@ -91,7 +91,6 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 	case "pypi":
 		r.URL.Host = pypiRegistry.Host
 		r.URL.Scheme = pypiRegistry.Scheme
-		r.URL.Path = path.Join(pypiRegistry.Path, r.URL.Path)
 	default:
 		return herror{errors.New("unsupported platform"), http.StatusBadRequest}
 	}
@@ -105,6 +104,20 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return herror{err, http.StatusBadRequest}
 	}
+	// Determine whether to reroute the request based on the path structure.
+	{
+		parts := strings.Split(strings.Trim(path.Clean(r.URL.Path), "/"), "/")
+		switch {
+		// Reference: https://github.com/npm/registry/blob/master/docs/REGISTRY-API.md
+		case platform == "npm" && len(parts) == 1 && parts[0] != "": // /{pkg}
+		case platform == "npm" && len(parts) == 2 && strings.HasPrefix(parts[0], "@"): // /@{org}/{pkg}
+		// Reference: https://warehouse.pypa.io/api-reference/json.html
+		case platform == "pypi" && len(parts) == 3 && parts[0] == "pypi" && parts[2] == "json": // /pypi/{pkg}/json
+		default:
+			http.Redirect(rw, r, r.URL.String(), http.StatusFound)
+			return nil
+		}
+	}
 	// Create a new request based on the provided method, path, and body but
 	// directed at the upstream registry.
 	nr, _ := http.NewRequest(r.Method, r.URL.String(), r.Body)
@@ -116,9 +129,6 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 		// Let our HTTP client set the encoding to use (by default, gzip) and
 		// transparently decode it in the response.
 		nr.Header.Del("Accept-Encoding")
-		// While we could persist connections with the upstream registries, it's
-		// easier for us to remove that possibility to limit complexity.
-		nr.Header.Set("Connection", "close")
 		// The application/vnd.npm.install-v1 content type indicates that this must
 		// be an NPM install request. However for NPM API requests, this install-v1
 		// data format does not contain the requisite fields to filter by time. For
@@ -154,34 +164,20 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	if resp.Header.Get("Content-Type") != "application/json" {
-		if _, err := io.Copy(rw, resp.Body); err != nil {
-			log.Printf("error: %+v", errors.Wrap(err, "transmitting non-json response"))
-		}
-		return nil
+		return herror{errors.Wrap(err, "unexpected content type"), http.StatusBadGateway}
 	}
 	obj := make(map[string]any)
 	if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
 		return herror{errors.Wrap(err, "parsing response"), http.StatusBadGateway}
 	}
-	if platform == "npm" {
-		// NOTE: This is a rough heuristic for NPM package requests since no other
-		// registry requests will contain this top-level field.
-		// Reference: https://github.com/npm/registry/blob/master/docs/REGISTRY-API.md
-		// TODO: Find a better (path-based?) heuristic for identifying package API.
-		if obj["time"] != nil {
-			if err := timeWarpNPMPackageRequest(obj, *t); err != nil {
-				return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
-			}
+	// NOTE: Only apply warping if the JSON looks like a non-error response.
+	if platform == "npm" && obj["_id"] != nil {
+		if err := timeWarpNPMPackageRequest(obj, *t); err != nil {
+			return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 		}
-	} else if platform == "pypi" {
-		// NOTE: This is a rough heuristic for PyPI project requests since no other
-		// requests will contain this top-level field.
-		// Reference: https://warehouse.pypa.io/api-reference/json.html
-		// TODO: Find a better (path-based?) heuristic for identifying project API.
-		if obj["releases"] != nil {
-			if err := timeWarpPyPIProjectRequest(h.Client, obj, *t); err != nil {
-				return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
-			}
+	} else if platform == "pypi" && obj["releases"] != nil {
+		if err := timeWarpPyPIProjectRequest(h.Client, obj, *t); err != nil {
+			return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 		}
 	}
 	if err := json.NewEncoder(rw).Encode(obj); err != nil {

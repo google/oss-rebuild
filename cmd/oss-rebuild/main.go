@@ -6,20 +6,20 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"os"
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	gcs "cloud.google.com/go/storage"
-	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/fatih/color"
+	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/pkg/errors"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"github.com/spf13/cobra"
@@ -28,96 +28,22 @@ import (
 )
 
 var (
-	output       = flag.String("output", "payload", "Output format [bundle, payload, dockerfile, build, steps]")
+	output       = flag.String("output", "summary", "Output format [summary, bundle, payload, dockerfile, build, steps]")
 	bucket       = flag.String("bucket", "google-rebuild-attestations", "GCS bucket from which to pull rebuild attestations")
 	verify       = flag.Bool("verify", true, "whether to verify rebuild attestation signatures")
 	verifyWith   = flag.String("verify-with", ossRebuildKeyURI, "comma-separated list of key URIs used to verify rebuild attestation signatures")
 	verifyOnline = flag.Bool("verify-online", false, "whether to always fetch --verify-with key contents, ignoring embedded contents")
 )
 
+var (
+	yellow = color.New(color.FgYellow).SprintFunc()
+	green  = color.New(color.FgGreen).SprintFunc()
+	white  = color.New(color.FgWhite).SprintFunc()
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "oss-rebuild [subcommand]",
 	Short: "A CLI tool for OSS Rebuild",
-}
-
-type VerifiedEnvelope struct {
-	Raw     *dsse.Envelope
-	Payload *in_toto.ProvenanceStatementSLSA1
-}
-
-type Bundle struct {
-	envelopes []VerifiedEnvelope
-}
-
-func decodeEnvelopePayload(e *dsse.Envelope) (*in_toto.ProvenanceStatementSLSA1, error) {
-	if e.Payload == "" {
-		return nil, errors.New("empty payload")
-	}
-	b, err := base64.StdEncoding.DecodeString(e.Payload)
-	if err != nil {
-		return nil, errors.Wrap(err, "decoding base64 payload")
-	}
-	var decoded in_toto.ProvenanceStatementSLSA1
-	if err := json.Unmarshal(b, &decoded); err != nil {
-		return nil, errors.Wrap(err, "unmarshaling payload")
-	}
-	return &decoded, nil
-}
-
-func NewBundle(ctx context.Context, data []byte, verifier *dsse.EnvelopeVerifier) (*Bundle, error) {
-	d := json.NewDecoder(bytes.NewBuffer(data))
-	var envelopes []VerifiedEnvelope
-	for {
-		var env dsse.Envelope
-		if err := d.Decode(&env); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, errors.Wrap(err, "decoding envelope")
-		}
-		if _, err := verifier.Verify(ctx, &env); err != nil {
-			return nil, errors.Wrap(err, "verifying envelope")
-		}
-		payload, err := decodeEnvelopePayload(&env)
-		if err != nil {
-			return nil, errors.Wrap(err, "decoding payload")
-		}
-		envelopes = append(envelopes, VerifiedEnvelope{
-			Raw:     &env,
-			Payload: payload,
-		})
-	}
-	return &Bundle{envelopes: envelopes}, nil
-}
-
-func (b *Bundle) Payloads() []*in_toto.ProvenanceStatementSLSA1 {
-	result := make([]*in_toto.ProvenanceStatementSLSA1, len(b.envelopes))
-	for i, env := range b.envelopes {
-		result[i] = env.Payload
-	}
-	return result
-}
-
-func (b *Bundle) RebuildAttestation() (*in_toto.ProvenanceStatementSLSA1, error) {
-	for _, env := range b.envelopes {
-		if env.Payload.Predicate.BuildDefinition.BuildType == verifier.RebuildBuildType {
-			return env.Payload, nil
-		}
-	}
-	return nil, errors.New("no rebuild attestation found")
-}
-
-func (b *Bundle) Byproduct(name string) ([]byte, error) {
-	att, err := b.RebuildAttestation()
-	if err != nil {
-		return nil, errors.Wrap(err, "getting rebuild attestation")
-	}
-	for _, b := range att.Predicate.RunDetails.Byproducts {
-		if b.Name == name {
-			return b.Content, nil
-		}
-	}
-	return nil, errors.Errorf("byproduct %q not found", name)
 }
 
 func writeIndentedJson(out io.Writer, b []byte) error {
@@ -134,14 +60,22 @@ func writeIndentedJson(out io.Writer, b []byte) error {
 }
 
 var getCmd = &cobra.Command{
-	Use:   "get <ecosystem> <package> <version> [<artifact>]",
+	Use:   "get <ecosystem> <package> <version> [<artifact>] [-output=summary|bundle|payload|dockerfile|build|steps]",
 	Short: "Get rebuild attestation for a specific artifact.",
 	Long: `Get rebuild attestation for a specific ecosystem/package/version/artifact.
 The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <package>-<version>.tar.gz file. For pypi the artifact is the wheel file. For cratesio the artifact is the <package>-<version>.crate file.`,
 	Args: cobra.MinimumNArgs(3),
-	Run: func(cmd *cobra.Command, args []string) {
+	// Silence errors because we will print the error ourselves in main.
+	SilenceErrors: true,
+	// Don't show usage for every error.
+	SilenceUsage: true,
+	// RunE because we want errors to affect the return status.
+	RunE: func(cmd *cobra.Command, args []string) error {
+		printlnAll := func(all ...string) {
+			fmt.Fprintln(cmd.OutOrStdout(), strings.Join(all, ""))
+		}
 		if len(args) > 4 {
-			log.Fatal("Too many arguments")
+			return errors.New("Too many arguments")
 		}
 		var t rebuild.Target
 		{
@@ -155,13 +89,12 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 					artifact = fmt.Sprintf("%s-%s.crate", pkg, version)
 				case rebuild.PyPI:
 					artifact = fmt.Sprintf("%s-%s-py3-none-any.whl", strings.ReplaceAll(pkg, "-", "_"), version)
-					l := log.New(cmd.OutOrStderr(), "", 0)
-					l.Printf("pypi artifact is being inferred as %s\n", artifact)
 				case rebuild.NPM:
 					artifact = fmt.Sprintf("%s-%s.tgz", pkg, version)
 				default:
-					log.Fatalf("Unsupported ecosystem: \"%s\"", ecosystem)
+					return errors.Errorf("Unsupported ecosystem: \"%s\"", ecosystem)
 				}
+				fmt.Fprintln(cmd.OutOrStderr(), yellow("NOTE:"), white(fmt.Sprintf(" artifact is being inferred as \"%s\"", artifact)))
 			} else {
 				artifact = args[3]
 			}
@@ -172,15 +105,15 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 				Artifact:  artifact,
 			}
 		}
-		var bundle *Bundle
+		var bundle *attestation.Bundle
 		var bundleBytes []byte
 		{
 			ctx := cmd.Context()
 			ctx = context.WithValue(ctx, rebuild.RunID, "")
 			ctx = context.WithValue(ctx, rebuild.GCSClientOptionsID, []option.ClientOption{option.WithoutAuthentication()})
-			attestation, err := rebuild.NewGCSStore(ctx, "gs://"+*bucket)
+			attestations, err := rebuild.NewGCSStore(ctx, "gs://"+*bucket)
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "initializing GCS store"))
+				return errors.Wrap(err, "initializing GCS store")
 			}
 			var verifiers []dsse.Verifier
 			if !*verify {
@@ -205,72 +138,108 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 					case strings.HasPrefix(uri, kmsV1API):
 						verifier, err := makeKMSVerifier(ctx, ossRebuildKeyResource)
 						if err != nil {
-							log.Fatal(err)
+							return err
 						}
 						verifiers = append(verifiers, verifier)
 					default:
-						log.Fatalf("unsupported key URI: %s", uri)
+						return errors.Errorf("unsupported key URI: %s", uri)
 					}
 					keysAdded = append(keysAdded, uri)
 				}
 			}
 			dsseVerifier, err := dsse.NewEnvelopeVerifier(verifiers...)
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating EnvelopeVerifier"))
+				return errors.Wrap(err, "creating EnvelopeVerifier")
 			}
-			r, err := attestation.Reader(ctx, rebuild.AttestationBundleAsset.For(t))
+			r, err := attestations.Reader(ctx, rebuild.AttestationBundleAsset.For(t))
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating attestation reader"))
+				return errors.Wrap(err, "creating attestation reader")
 			}
 			bundleBytes, err = io.ReadAll(r)
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating attestation reader"))
+				return errors.Wrap(err, "creating attestation reader")
 			}
-			bundle, err = NewBundle(ctx, bundleBytes, dsseVerifier)
+			bundle, err = attestation.NewBundle(ctx, bundleBytes, dsseVerifier)
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "creating bundle"))
+				return errors.Wrap(err, "creating bundle")
 			}
 		}
 		switch *output {
+		case "summary":
+			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
+			if err != nil {
+				return err
+			}
+			ae, err := attestation.FilterForOne[attestation.ArtifactEquivalenceAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeArtifactEquivalenceV01))
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStderr(), green("Rebuild found!"))
+			pp := func(label string, value any) {
+				printlnAll(yellow(label), ": ", white(value))
+			}
+			pp("Rebuilt at", "\""+rb.Predicate.RunDetails.BuildMetadata.FinishedOn.Format(time.RFC3339)+"\"")
+			pp("Upstream target", ae.Predicate.BuildDefinition.ResolvedDependencies.UpstreamArtifact.Name)
+			digest, err := json.Marshal(ae.Predicate.BuildDefinition.ResolvedDependencies.UpstreamArtifact.Digest)
+			if err != nil {
+				return errors.Wrap(err, "marshalling digest")
+			}
+			// TODO: Include the stabilizers that were used to match
+			pp("Upstream target digest", string(digest))
+			dockerfile := string(rb.Predicate.RunDetails.Byproducts.Dockerfile.Content)
+			// Indent the dockerfile in a block string literal.
+			pp("Dockerfile", "|-"+strings.Replace("\n"+dockerfile, "\n", "\n  ", -1))
 		case "bundle":
 			cmd.OutOrStdout().Write(bundleBytes)
-			return
 		case "payload":
-			payloads := bundle.Payloads()
 			encoder := json.NewEncoder(cmd.OutOrStdout())
 			encoder.SetIndent("", "  ")
-			for _, p := range payloads {
-				if err := encoder.Encode(p); err != nil {
-					log.Fatal(errors.Wrap(err, "pprinting payload"))
+			for _, s := range bundle.Statements() {
+				if err := encoder.Encode(s); err != nil {
+					return errors.Wrap(err, "pprinting payload")
 				}
 			}
 		case "dockerfile":
-			dockerfile, err := bundle.Byproduct("Dockerfile")
+			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "getting dockerfile"))
+				return err
 			}
-			if _, err := cmd.OutOrStdout().Write(dockerfile); err != nil {
-				log.Fatal(errors.Wrap(err, "writing dockerfile"))
+			dockerfile := rb.Predicate.RunDetails.Byproducts.Dockerfile
+			if _, err := cmd.OutOrStdout().Write(dockerfile.Content); err != nil {
+				return errors.Wrap(err, "writing dockerfile")
 			}
 		case "build":
-			build, err := bundle.Byproduct("build.json")
+			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "getting build.json"))
+				return err
 			}
-			if err := writeIndentedJson(cmd.OutOrStdout(), build); err != nil {
-				log.Fatal(errors.Wrap(err, "encoding build.json"))
+			strategy := rb.Predicate.RunDetails.Byproducts.BuildStrategy
+			if err := writeIndentedJson(cmd.OutOrStdout(), strategy.Content); err != nil {
+				return errors.Wrap(err, "writing dockerfile")
 			}
 		case "steps":
-			steps, err := bundle.Byproduct("steps.json")
+			rb, err := attestation.FilterForOne[attestation.RebuildAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeRebuildV01))
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "getting steps.json"))
+				return err
 			}
-			if err := writeIndentedJson(cmd.OutOrStdout(), steps); err != nil {
-				log.Fatal(errors.Wrap(err, "encoding steps.json"))
+			steps := rb.Predicate.RunDetails.Byproducts.BuildSteps
+			if err := writeIndentedJson(cmd.OutOrStdout(), steps.Content); err != nil {
+				return errors.Wrap(err, "writing dockerfile")
 			}
 		default:
-			log.Fatal(errors.New("unsupported format: " + *output))
+			return errors.New("unsupported format: " + *output)
 		}
+		return nil
 	},
 }
 
@@ -278,13 +247,18 @@ var listCmd = &cobra.Command{
 	Use:   "list <ecosystem> <package> [<version>]",
 	Short: "List artifacts with rebuild attestations for a given query",
 	Args:  cobra.MaximumNArgs(3),
-	Run: func(cmd *cobra.Command, args []string) {
+	// Silence errors because we will print the error ourselves in main.
+	SilenceErrors: true,
+	// Don't show usage for every error.
+	SilenceUsage: true,
+	// RunE because we want errors to affect the return status.
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) < 2 {
-			log.Fatal("Please include at least an ecosystem and package")
+			return errors.New("Please include at least an ecosystem and package")
 		}
 		gcsClient, err := gcs.NewClient(cmd.Context(), option.WithoutAuthentication())
 		if err != nil {
-			log.Fatal(errors.Wrap(err, "initializing GCS client"))
+			return errors.Wrap(err, "initializing GCS client")
 		}
 		query := &gcs.Query{
 			Prefix: path.Join(args...),
@@ -297,10 +271,11 @@ var listCmd = &cobra.Command{
 				break
 			}
 			if err != nil {
-				log.Fatal(errors.Wrap(err, "listing objects"))
+				return errors.Wrap(err, "listing objects")
 			}
 			io.WriteString(cmd.OutOrStdout(), obj.Name+"\n")
 		}
+		return nil
 	},
 }
 
@@ -320,6 +295,7 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
+		color.New(color.FgRed).Printf("Error: %v\n", err)
+		os.Exit(1)
 	}
 }

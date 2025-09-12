@@ -35,7 +35,8 @@ func NewContentSummaryFromZip(zr *zip.Reader) (*ContentSummary, error) {
 		}
 		cs.Files = append(cs.Files, f.Name)
 		cs.CRLFCount += bytes.Count(buf, []byte{'\r', '\n'})
-		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(sha256.New().Sum(buf)))
+		h := sha256.Sum256(buf)
+		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(h[:]))
 	}
 	return &cs, nil
 }
@@ -118,9 +119,17 @@ type ZipArchiveStabilizer struct {
 	Func func(*MutableZipReader)
 }
 
+func (z ZipArchiveStabilizer) Stabilize(arg any) {
+	z.Func(arg.(*MutableZipReader))
+}
+
 type ZipEntryStabilizer struct {
 	Name string
 	Func func(*MutableZipFile)
+}
+
+func (z ZipEntryStabilizer) Stabilize(arg any) {
+	z.Func(arg.(*MutableZipFile))
 }
 
 var AllZipStabilizers = []Stabilizer{
@@ -209,10 +218,10 @@ func StabilizeZip(zr *zip.Reader, zw *zip.Writer, opts StabilizeOpts) error {
 	for _, s := range opts.Stabilizers {
 		switch s.(type) {
 		case ZipArchiveStabilizer:
-			s.(ZipArchiveStabilizer).Func(&mr)
+			s.(ZipArchiveStabilizer).Stabilize(&mr)
 		case ZipEntryStabilizer:
 			for _, mf := range mr.File {
-				s.(ZipEntryStabilizer).Func(mf)
+				s.(ZipEntryStabilizer).Stabilize(mf)
 			}
 		}
 	}

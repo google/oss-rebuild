@@ -35,9 +35,9 @@ func (signer *InTotoEnvelopeSigner) SignStatement(ctx context.Context, s *in_tot
 	return envelope, nil
 }
 
-// toNISTName converts a crypto.Hash to its corresponding NIST name.
+// ToNISTName converts a crypto.Hash to its corresponding NIST name.
 // See https://github.com/in-toto/attestation/blob/main/spec/v1/digest_set.md#supported-algorithms
-func toNISTName(h crypto.Hash) string {
+func ToNISTName(h crypto.Hash) string {
 	switch h {
 	case crypto.SHA256:
 		return "sha256"
@@ -79,17 +79,17 @@ func toNISTName(h crypto.Hash) string {
 func makeDigestSet(hs ...hashext.TypedHash) common.DigestSet {
 	ret := make(common.DigestSet, len(hs))
 	for _, h := range hs {
-		ret[toNISTName(h.Algorithm)] = hex.EncodeToString(h.Sum(nil))
+		ret[ToNISTName(h.Algorithm)] = hex.EncodeToString(h.Sum(nil))
 	}
 	return ret
 }
 
-// gitDigestSet returns a DigestSet corresponding to the provided Location's git commit hash.
-func gitDigestSet(loc rebuild.Location) common.DigestSet {
+// GitDigestSet returns a DigestSet corresponding to the provided Location's git commit hash.
+func GitDigestSet(loc rebuild.Location) common.DigestSet {
 	for _, h := range []crypto.Hash{crypto.SHA1, crypto.SHA256} {
 		// Compare hex len to bytes len.
 		if len(loc.Ref) == 2*h.Size() {
-			return common.DigestSet{toNISTName(h): loc.Ref}
+			return common.DigestSet{ToNISTName(h): loc.Ref}
 		}
 	}
 	panic("unsupported git ref")

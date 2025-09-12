@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -60,6 +61,8 @@ var (
 	ErrNoUploadPath = errors.New("no artifact upload path provided")
 	// ErrAssetNotFound indicates the asset requested to be read could not be found.
 	ErrAssetNotFound = errors.New("asset not found")
+	// AssetTypeNotSupported indicates that the asset store does not support assets of that type.
+	ErrAssetTypeNotSupported = errors.New("asset type not found")
 )
 
 // Asset represents one of many side effects of rebuilding a single artifact.
@@ -68,6 +71,15 @@ var (
 type Asset struct {
 	Type   AssetType
 	Target Target
+}
+
+// assetPath describes the general layout of assets shared by most hierarchy-based AssetStore types. The runID
+func assetPath(a Asset, runID string) []string {
+	name := string(a.Type)
+	if a.Type == RebuildAsset {
+		name = a.Target.Artifact
+	}
+	return []string{string(a.Target.Ecosystem), a.Target.Package, a.Target.Version, a.Target.Artifact, runID, name}
 }
 
 // ReadOnlyAssetStore is a storage mechanism for debug assets.
@@ -84,6 +96,8 @@ type AssetStore interface {
 // LocatableAssetStore is an asset store whose assets can be identified with a URL.
 type LocatableAssetStore interface {
 	AssetStore
+	// TODO: Should URL() return an error?
+	// Not many places actually check the return value, but they just delay inevitible failure.
 	URL(a Asset) *url.URL
 }
 
@@ -108,22 +122,27 @@ func AssetCopy(ctx context.Context, to AssetStore, from ReadOnlyAssetStore, a As
 // DebugStoreFromContext constructs a DebugStorer using values from the given context.
 func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
 	if uploadpath, ok := ctx.Value(DebugStoreID).(string); ok {
+		if uploadpath == "" {
+			return nil, ErrNoUploadPath
+		}
 		u, err := url.Parse(uploadpath)
 		if err != nil {
-			return nil, errors.Wrap(err, "parsing DesbugStoreID as url")
+			return nil, errors.Wrap(err, "parsing as url")
 		}
-		if u.Scheme == "gs" {
+		switch u.Scheme {
+		case "gs":
 			storer, err := NewGCSStore(ctx, uploadpath)
-			return storer, errors.Wrapf(err, "Failed to create GCS storer")
-		} else if u.Scheme == "file" {
+			return storer, errors.Wrapf(err, "creating GCS storer")
+		case "file":
 			path := u.Path
 			if runID, ok := ctx.Value(RunID).(string); ok {
 				path = filepath.Join(path, runID)
 			}
 			os.MkdirAll(path, 0755)
 			return NewFilesystemAssetStore(osfs.New(path)), nil
+		default:
+			return nil, errors.Errorf("unsupported scheme: '%s'", u.Scheme)
 		}
-		return nil, errors.New("unsupported upload path")
 	}
 	return nil, ErrNoUploadPath
 }
@@ -136,21 +155,9 @@ type GCSStore struct {
 	runID     string
 }
 
-// NewGCSStore creates a new GCSStore.
-func NewGCSStore(ctx context.Context, uploadPrefix string) (*GCSStore, error) {
-	s := &GCSStore{}
-	{
-		var err error
-		var gcsOpts []option.ClientOption
-		if opts, ok := ctx.Value(GCSClientOptionsID).([]option.ClientOption); ok {
-			gcsOpts = append(gcsOpts, opts...)
-		}
-		s.gcsClient, err = gcs.NewClient(ctx, gcsOpts...)
-		if err != nil {
-			return nil, errors.Wrap(err, "Failed to create GCS client")
-		}
-	}
-	s.bucket, s.prefix, _ = strings.Cut(strings.TrimPrefix(uploadPrefix, "gs://"), string(filepath.Separator))
+func NewGCSStoreFromClient(ctx context.Context, client *gcs.Client, uploadPrefix string) (*GCSStore, error) {
+	s := &GCSStore{gcsClient: client}
+	s.bucket, s.prefix, _ = strings.Cut(strings.TrimPrefix(uploadPrefix, "gs://"), "/")
 	{
 		var ok bool
 		s.runID, ok = ctx.Value(RunID).(string)
@@ -161,23 +168,32 @@ func NewGCSStore(ctx context.Context, uploadPrefix string) (*GCSStore, error) {
 	return s, nil
 }
 
+// NewGCSStore creates a new GCSStore.
+func NewGCSStore(ctx context.Context, uploadPrefix string) (*GCSStore, error) {
+	var gcsOpts []option.ClientOption
+	if opts, ok := ctx.Value(GCSClientOptionsID).([]option.ClientOption); ok {
+		gcsOpts = append(gcsOpts, opts...)
+	}
+	client, err := gcs.NewClient(ctx, gcsOpts...)
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to create GCS client")
+	}
+	return NewGCSStoreFromClient(ctx, client, uploadPrefix)
+}
+
 func (s *GCSStore) URL(a Asset) *url.URL {
 	return &url.URL{Scheme: "gs", Path: filepath.Join(s.bucket, s.resourcePath(a))}
 }
 
 func (s *GCSStore) resourcePath(a Asset) string {
-	name := string(a.Type)
-	if a.Type == RebuildAsset {
-		name = a.Target.Artifact
-	}
-	return filepath.Join(s.prefix, string(a.Target.Ecosystem), a.Target.Package, a.Target.Version, a.Target.Artifact, s.runID, name)
+	return path.Join(append([]string{s.prefix}, assetPath(a, s.runID)...)...)
 }
 
 // Reader returns a reader for the given asset.
-func (s *GCSStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, err error) {
+func (s *GCSStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
 	path := s.resourcePath(a)
 	obj := s.gcsClient.Bucket(s.bucket).Object(path)
-	r, err = obj.NewReader(ctx)
+	r, err := obj.NewReader(ctx)
 	if err != nil {
 		if err == gcs.ErrObjectNotExist {
 			err = stderrors.Join(err, ErrAssetNotFound)
@@ -188,7 +204,7 @@ func (s *GCSStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, err er
 }
 
 // Writer returns a writer for the given asset.
-func (s *GCSStore) Writer(ctx context.Context, a Asset) (r io.WriteCloser, err error) {
+func (s *GCSStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
 	objectPath := s.resourcePath(a)
 	obj := s.gcsClient.Bucket(s.bucket).Object(objectPath)
 	w := obj.NewWriter(ctx)
@@ -199,16 +215,12 @@ var _ LocatableAssetStore = &GCSStore{}
 
 // FilesystemAssetStore will store assets in a billy.Filesystem
 type FilesystemAssetStore struct {
-	fs billy.Filesystem
+	fs    billy.Filesystem
+	runID string
 }
 
-// TODO: Maybe this should include a runID?
 func (s *FilesystemAssetStore) resourcePath(a Asset) string {
-	name := string(a.Type)
-	if a.Type == RebuildAsset {
-		name = a.Target.Artifact
-	}
-	return filepath.Join(string(a.Target.Ecosystem), a.Target.Package, a.Target.Version, a.Target.Artifact, name)
+	return filepath.Join(assetPath(a, s.runID)...)
 }
 
 func (s *FilesystemAssetStore) URL(a Asset) *url.URL {
@@ -216,7 +228,7 @@ func (s *FilesystemAssetStore) URL(a Asset) *url.URL {
 }
 
 // Reader returns a reader for the given asset.
-func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (r io.ReadCloser, err error) {
+func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
 	path := s.resourcePath(a)
 	f, err := s.fs.Open(path)
 	if err != nil {
@@ -229,7 +241,7 @@ func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (r io.ReadCl
 }
 
 // Writer returns a writer for the given asset.
-func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (r io.WriteCloser, err error) {
+func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
 	path := s.resourcePath(a)
 	f, err := s.fs.Create(path)
 	if err != nil {
@@ -240,7 +252,142 @@ func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (r io.WriteC
 
 var _ LocatableAssetStore = &FilesystemAssetStore{}
 
+// NewFilesystemAssetStoreWithRunID creates a new FilesystemAssetStore.
+func NewFilesystemAssetStoreWithRunID(fs billy.Filesystem, runID string) *FilesystemAssetStore {
+	return &FilesystemAssetStore{fs: fs, runID: runID}
+}
+
 // NewFilesystemAssetStore creates a new FilesystemAssetStore.
 func NewFilesystemAssetStore(fs billy.Filesystem) *FilesystemAssetStore {
-	return &FilesystemAssetStore{fs: fs}
+	return NewFilesystemAssetStoreWithRunID(fs, "")
+}
+
+// CachedAssetStore implements a pullthrough cache with backline only being read if the asset isn't present in frontline.
+type CachedAssetStore struct {
+	frontline LocatableAssetStore
+	backline  AssetStore
+}
+
+func NewCachedAssetStore(frontline LocatableAssetStore, backline AssetStore) *CachedAssetStore {
+	return &CachedAssetStore{frontline: frontline, backline: backline}
+}
+
+type cachedReader struct {
+	tee        io.Reader
+	writeClose func() error
+	readClose  func() error
+}
+
+func (cr *cachedReader) Read(p []byte) (int, error) {
+	return cr.tee.Read(p)
+}
+
+func (cr *cachedReader) Close() error {
+	// Read the remaining tee, otherwise the frontline might be only partially populated.
+	_, flushErr := io.ReadAll(cr.tee)
+	writeErr := cr.writeClose()
+	readErr := cr.readClose()
+	if flushErr != nil && flushErr != io.EOF {
+		return flushErr
+	}
+	if writeErr != nil {
+		return writeErr
+	}
+	return readErr
+}
+
+// Reader reads from the frontline, unless the frontline returns ErrAssetNotFound
+func (s *CachedAssetStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
+	if r, err := s.frontline.Reader(ctx, a); !errors.Is(err, ErrAssetNotFound) {
+		return r, err
+	}
+	// Cache miss, fetch from the backline
+	br, err := s.backline.Reader(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	fw, err := s.frontline.Writer(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	return &cachedReader{
+		tee:        io.TeeReader(br, fw),
+		writeClose: fw.Close,
+		readClose:  br.Close,
+	}, nil
+}
+
+type multiWriterCloser struct {
+	w        io.Writer
+	closeFns []func() error
+}
+
+func (mwc *multiWriterCloser) Write(p []byte) (int, error) {
+	return mwc.w.Write(p)
+}
+
+func (mwc *multiWriterCloser) Close() error {
+	var errs []error
+	for _, closer := range mwc.closeFns {
+		errs = append(errs, closer())
+	}
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Wrtier writes to both the frontline and the backline of the cache.
+func (s *CachedAssetStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
+	fw, err := s.frontline.Writer(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	bw, err := s.backline.Writer(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	return &multiWriterCloser{io.MultiWriter(fw, bw), []func() error{fw.Close, bw.Close}}, nil
+}
+
+func (s *CachedAssetStore) URL(a Asset) *url.URL {
+	return s.frontline.URL(a)
+}
+
+// MixedAssetStore configures routing on a per-AssetType basis.
+type MixedAssetStore struct {
+	routing map[AssetType]LocatableAssetStore
+}
+
+func NewMixedAssetStore(routing map[AssetType]LocatableAssetStore) *MixedAssetStore {
+	return &MixedAssetStore{routing: routing}
+}
+
+var _ LocatableAssetStore = &MixedAssetStore{}
+var _ AssetStore = &MixedAssetStore{}
+
+func (m *MixedAssetStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
+	s, ok := m.routing[a.Type]
+	if !ok {
+		return nil, errors.Wrapf(ErrAssetTypeNotSupported, "AssetType: %s", a.Type)
+	}
+	return s.Reader(ctx, a)
+}
+
+func (m *MixedAssetStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
+	s, ok := m.routing[a.Type]
+	if !ok {
+		return nil, errors.Wrapf(ErrAssetTypeNotSupported, "AssetType: %s", a.Type)
+	}
+	return s.Writer(ctx, a)
+}
+
+func (m *MixedAssetStore) URL(a Asset) *url.URL {
+	s, ok := m.routing[a.Type]
+	if !ok {
+		return nil
+	}
+	return s.URL(a)
 }
