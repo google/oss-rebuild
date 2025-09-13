@@ -141,6 +141,10 @@ resource "google_service_account" "gateway" {
   account_id  = "gateway"
   description = "Identity serving gateway endpoint."
 }
+resource "google_service_account" "crates-registry" {
+  account_id  = "crates-registry"
+  description = "Identity serving crates registry commit resolution endpoint."
+}
 resource "google_service_account" "agent-job" {
   account_id  = "agent-job"
   description = "Identity for AI agent Cloud Run Jobs."
@@ -420,6 +424,10 @@ locals {
       dockerfile = "build/package/Dockerfile.agent"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
     }
+    crates-registry = {
+      dockerfile = "build/package/Dockerfile.crates-registry"
+      build_args = ["DEBUG=${terraform_data.debug.output}"]
+    }
     }, var.enable_network_analyzer ? {
     network-analyzer = {
       dockerfile = "build/package/Dockerfile.networkanalyzer"
@@ -530,6 +538,13 @@ data "google_artifact_registry_docker_image" "agent-api" {
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "agent-api:${module.service_images["agent-api"].image_version}"
   depends_on    = [module.service_images["agent-api"]]
+}
+
+data "google_artifact_registry_docker_image" "crates-registry" {
+  location      = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name    = "crates-registry:${module.service_images["crates-registry"].image_version}"
+  depends_on    = [module.service_images["crates-registry"]]
 }
 
 data "google_artifact_registry_docker_image" "agent" {
@@ -740,6 +755,7 @@ resource "google_cloud_run_v2_service" "inference" {
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
+        "--crates-registry-service-url=${google_cloud_run_v2_service.crates-registry.uri}",
       ]
       resources {
         limits = {
@@ -749,6 +765,41 @@ resource "google_cloud_run_v2_service" "inference" {
       }
     }
     max_instance_request_concurrency = 1
+  }
+  depends_on = [google_project_service.run]
+}
+resource "google_cloud_run_v2_service" "crates-registry" {
+  name     = "crates-registry"
+  location = "us-central1"
+  template {
+    service_account = google_service_account.crates-registry.email
+    timeout         = "${10 * 60}s" // 10 minutes
+    containers {
+      image = data.google_artifact_registry_docker_image.crates-registry.self_link
+      args = [
+        "--cache-dir=/cache",
+        "--max-snapshots=16",
+        "--current-update-interval-mins=30",
+      ]
+      resources {
+        limits = {
+          cpu    = "4000m"
+          memory = "16G"
+        }
+      }
+      volume_mounts {
+        name       = "cache"
+        mount_path = "/cache"
+      }
+    }
+    volumes {
+      name = "cache"
+      empty_dir {
+        medium     = "MEMORY"
+        size_limit = "12Gi"
+      }
+    }
+    max_instance_request_concurrency = 10
   }
   depends_on = [google_project_service.run]
 }

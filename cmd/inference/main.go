@@ -11,6 +11,7 @@ import (
 	"net/url"
 
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpegress"
@@ -20,7 +21,8 @@ import (
 )
 
 var (
-	gitCacheURL = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
+	gitCacheURL              = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
+	cratesRegistryServiceURL = flag.String("crates-registry-service-url", "", "if provided, the crates registry service to use for Rust crate index resolution")
 )
 
 var httpcfg = httpegress.Config{}
@@ -46,6 +48,14 @@ func InferInit(ctx context.Context) (*inferenceservice.InferDeps, error) {
 			return nil, errors.Wrap(err, "parsing git cache URL")
 		}
 		d.GitCache = &gitx.Cache{IDClient: c, APIClient: sc, URL: u}
+	}
+	if *cratesRegistryServiceURL != "" {
+		u, err := url.Parse(*cratesRegistryServiceURL)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing crates registry service URL")
+		}
+		u = u.JoinPath("resolve")
+		d.CratesRegistryStub = api.Stub[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](d.HTTPClient, u)
 	}
 	return &d, nil
 }

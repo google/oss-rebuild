@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
@@ -53,8 +54,9 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 }
 
 type InferDeps struct {
-	HTTPClient httpx.BasicClient
-	GitCache   *gitx.Cache
+	HTTPClient         httpx.BasicClient
+	GitCache           *gitx.Cache
+	CratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 }
 
 func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*schema.StrategyOneOf, error) {
@@ -65,6 +67,9 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, *deps.GitCache)
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
+	if deps.CratesRegistryStub != nil {
+		ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, deps.CratesRegistryStub)
+	}
 	mux := rebuild.RegistryMux{
 		CratesIO: cratesreg.HTTPRegistry{Client: deps.HTTPClient},
 		NPM:      npmreg.HTTPRegistry{Client: deps.HTTPClient},

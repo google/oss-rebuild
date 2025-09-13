@@ -25,6 +25,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
+	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
@@ -219,9 +222,17 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if ct.Version() != version && ct.Version() != reg.WorkspaceVersion {
 		return nil, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, ct.Version())
 	}
+	rustVersion := vmeta.RustVersion
+	if rustVersion == "" {
+		// NOTE: Give a week's margin to allow for toolchain upgrades. Maybe raise.
+		rustVersion, err = reg.RustVersionAt(vmeta.Updated.Add(-7 * 24 * time.Hour))
+		if err != nil {
+			return nil, errors.New("rust version heuristic failed")
+		}
+	}
+	var lock *ExplicitLockfile
 	topLevel := t.Package + "-" + vmeta.Version.Version
 	lockContent, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.lock")
-	var lock *ExplicitLockfile
 	if errors.Is(err, fs.ErrNotExist) {
 		lock = nil
 	} else if err != nil {
@@ -231,13 +242,27 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
 		}
 	}
-	rustVersion := vmeta.RustVersion
-	if rustVersion == "" {
-		// NOTE: Give a week's margin to allow for toolchain upgrades. Maybe raise.
-		rustVersion, err = reg.RustVersionAt(vmeta.Updated.Add(-7 * 24 * time.Hour))
+	var indexCommit string
+	if lock != nil && semver.Cmp(rustVersion, "1.68.0") >= 0 {
+		// Registry search is only usable in builds that support the sparse registry protocol.
+		// See: http://releases.rs/docs/1.68.0/#cargo
+		stub, err := getRegistryStub(ctx)
 		if err != nil {
-			return nil, errors.New("rust version heuristic failed")
+			return nil, errors.Wrapf(err, "[INTERNAL] Failed to access registry query stub")
 		}
+		req := cratesregistryservice.FindRegistryCommitRequest{
+			LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
+			PublishedTime:  vmeta.Updated.Format(time.RFC3339),
+		}
+		resp, err := stub(ctx, req)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to call registry service")
+		}
+		if resp.CommitHash == "" {
+			return nil, errors.New("no suitable registry commit found")
+		}
+		indexCommit = resp.CommitHash
+		lock = nil
 	}
 	// TODO: This should be moved to build-time since strategies are intended to be, at least notionally, distro-independent.
 	hasMUSLBuild, err := reg.HasMUSLBuild(rustVersion)
@@ -255,6 +280,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		},
 		RustVersion:      rustVersion,
 		ExplicitLockfile: lock,
+		RegistryCommit:   indexCommit,
 	}, nil
 }
 
@@ -427,4 +453,16 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 		}
 	}
 	return tm, err
+}
+
+func getRegistryStub(ctx context.Context) (api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse], error) {
+	stubValue := ctx.Value(rebuild.CratesRegistryStubID)
+	if stubValue == nil {
+		return nil, errors.New("crates registry stub not found in context")
+	}
+	stub, ok := stubValue.(api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse])
+	if !ok {
+		return nil, errors.New("invalid crates registry stub type in context")
+	}
+	return stub, nil
 }
