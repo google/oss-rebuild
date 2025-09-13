@@ -37,7 +37,7 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 	}
 
 	// Infer JDK for Gradle
-	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
+	jdk, err := inferOrFallbackToDefaultJDK(ctx, t, mux)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching JDK")
 	}
