@@ -81,8 +81,11 @@ func (t *Tree) LoadTree(ctx context.Context) error {
 func (t *Tree) LoadRebuilds(rebuilds []rundex.Rebuild) {
 	t.root.ClearChildren()
 	byCount := rundex.GroupRebuilds(rebuilds)
+	var agg float32
 	for i := len(byCount) - 1; i >= 0; i-- {
-		vgnode := t.makeVerdictGroupNode(byCount[i], 100*float32(byCount[i].Count)/float32(len(rebuilds)))
+		pct := 100 * float32(byCount[i].Count) / float32(len(rebuilds))
+		agg += pct
+		vgnode := t.makeVerdictGroupNode(byCount[i], pct, agg)
 		t.root.AddChild(vgnode)
 	}
 }
@@ -124,7 +127,7 @@ func (t *Tree) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
 	return node
 }
 
-func (t *Tree) makeVerdictGroupNode(vg *rundex.VerdictGroup, percent float32) *tview.TreeNode {
+func (t *Tree) makeVerdictGroupNode(vg *rundex.VerdictGroup, percent, cumulative float32) *tview.TreeNode {
 	var msg string
 	if vg.Msg == "" {
 		msg = "Success!"
@@ -137,7 +140,7 @@ func (t *Tree) makeVerdictGroupNode(vg *rundex.VerdictGroup, percent float32) *t
 	} else {
 		pct = fmt.Sprintf("%3.0f%%", percent)
 	}
-	node := tview.NewTreeNode(fmt.Sprintf("%4d %s %s", vg.Count, pct, msg)).SetColor(tcell.ColorGreen).SetSelectable(true).SetReference(vg)
+	node := tview.NewTreeNode(fmt.Sprintf("%4d %s %s %s", vg.Count, pct, fmt.Sprintf("%3.0f%%", cumulative), msg)).SetColor(tcell.ColorGreen).SetSelectable(true).SetReference(vg)
 	data := &NodeData{NodeID: vg.Msg, Rebuilds: nil}
 	for _, r := range vg.Examples {
 		data.Rebuilds = append(data.Rebuilds, &r)
@@ -194,8 +197,11 @@ func (t *Tree) makeRunNode(runid string) *tview.TreeNode {
 				}
 			}
 			byCount := rundex.GroupRebuilds(rebuilds)
+			var agg float32
 			for i := len(byCount) - 1; i >= 0; i-- {
-				vgnode := t.makeVerdictGroupNode(byCount[i], 100*float32(byCount[i].Count)/float32(len(rebuilds)))
+				pct := 100 * float32(byCount[i].Count) / float32(len(rebuilds))
+				agg += pct
+				vgnode := t.makeVerdictGroupNode(byCount[i], pct, agg)
 				node.AddChild(vgnode)
 			}
 		} else {
@@ -300,7 +306,7 @@ func (t *Tree) HandleRebuildUpdate(r *rundex.Rebuild) error {
 	}
 	// TODO: Update the verdict group's stats (percent, count)
 	vg, added := findOrAdd(runNode, r.Message, func() *tview.TreeNode {
-		return t.makeVerdictGroupNode(&rundex.VerdictGroup{Msg: r.Message, Count: 1, Examples: nil}, 100*float32(1)/float32(len(runNodeData.Rebuilds)))
+		return t.makeVerdictGroupNode(&rundex.VerdictGroup{Msg: r.Message, Count: 1, Examples: nil}, 100*float32(1)/float32(len(runNodeData.Rebuilds)), 0.0)
 	})
 	vgData, ok := vg.GetReference().(*NodeData)
 	if !ok {
