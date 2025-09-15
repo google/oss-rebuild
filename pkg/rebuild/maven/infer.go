@@ -26,8 +26,14 @@ import (
 )
 
 const (
-	mavenBuildTool  = "maven"
-	gradleBuildTool = "gradle"
+	mavenBuildTool     = "maven"
+	gradleBuildTool    = "gradle"
+	sbtBuildTool       = "sbt"
+	antBuildTool       = "ant"
+	ivyBuildTool       = "ivy"
+	leiningenBuildTool = "leiningen"
+	npmBuildTool       = "npm"
+	millBuildTool      = "mill"
 )
 
 const fallbackJDK = "11"
@@ -74,8 +80,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		return MavenInfer(ctx, t, mux, repoConfig)
 	case gradleBuildTool:
 		return GradleInfer(ctx, t, mux, repoConfig)
+	case sbtBuildTool, antBuildTool, ivyBuildTool, leiningenBuildTool, npmBuildTool, millBuildTool:
+		return nil, errors.Errorf("build tool %s is recognized but not yet supported", buildTool)
 	default:
-		return nil, errors.Errorf("unsupported build tool: %s", buildTool)
+		return nil, errors.New("no recognized build tool")
 	}
 }
 
@@ -94,18 +102,44 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 			// No need to check deeper files if we already have a shallower candidate
 			return nil
 		}
+		var identifiedTool string
+		fileName := path.Base(f.Name)
+		switch {
 		// Check for Maven's build file
-		// Per Maven conventions, skip non-"pom.xml" files and those inside a `src` directory (unlikely to contain metadata).
-		// Reference: https://maven.apache.org/guides/introduction/introduction-to-the-standard-directory-layout.html
-		if path.Base(f.Name) == "pom.xml" && !strings.HasPrefix(f.Name, "src/") && !strings.Contains(f.Name, "/src/") {
-			bestBuildTool = mavenBuildTool
-			minDepth = currentDepth
-		}
-		// Check if Gradle wrapper is present
+		case fileName == "pom.xml":
+			// Per Maven conventions, skip non-"pom.xml" files and those inside a `src` directory (unlikely to contain metadata).
+			// Reference: https://maven.apache.org/guides/introduction/introduction-to-the-standard-directory-layout.html
+			if !strings.HasPrefix(f.Name, "src/") && !strings.Contains(f.Name, "/src/") {
+				identifiedTool = mavenBuildTool
+			}
+		// Check for Gradle wrapper or compatible build files
 		// It is common practice to include the Gradle wrapper script (`gradlew`) at the root of the project.
-		// Referenence: https://docs.gradle.org/current/userguide/gradle_wrapper_basics.html
-		if path.Base(f.Name) == "gradlew" {
-			bestBuildTool = gradleBuildTool
+		// Reference: https://docs.gradle.org/current/userguide/gradle_wrapper_basics.html
+		// TODO: strategy should install gradle if wrapper is not present
+		case fileName == "gradlew" || strings.HasSuffix(fileName, ".gradle") || strings.HasSuffix(fileName, ".gradle.kts"):
+			identifiedTool = gradleBuildTool
+		// Simple Build Tool (sbt) is to build Scala projects
+		case fileName == "build.sbt":
+			identifiedTool = sbtBuildTool
+		// Apache Ant build file
+		case fileName == "build.xml":
+			identifiedTool = antBuildTool
+		// Apache Ivy file used in conjunction with Ant
+		case fileName == "ivy.xml":
+			identifiedTool = ivyBuildTool
+		// Leiningen build file for Clojure projects
+		case fileName == "project.clj":
+			identifiedTool = leiningenBuildTool
+		// Build file for Node.js projects
+		case fileName == "package.json":
+			identifiedTool = npmBuildTool
+		// Build file compatible with the Mill build tool
+		// Reference: https://mill-build.org/mill/javalib/intro.html
+		case fileName == "build.sc" || fileName == "build.mill":
+			identifiedTool = millBuildTool
+		}
+		if identifiedTool != "" {
+			bestBuildTool = identifiedTool
 			minDepth = currentDepth
 		}
 		return nil
@@ -114,7 +148,7 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 		return bestBuildTool, nil
 	}
 
-	return "", errors.Errorf("neither Maven nor Gradle supported build files were found")
+	return "", errors.Errorf("build tool inference failed")
 }
 
 // inferOrFallbackToDefaultJDK tries to infer the JDK version from the artifact's metadata, falling back to a default if necessary.

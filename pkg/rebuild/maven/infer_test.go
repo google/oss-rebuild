@@ -188,7 +188,6 @@ func TestBuildToolInference(t *testing.T) {
                   pom.xml: |
                       <project></project>`,
 			expectedBuildTool: mavenBuildTool,
-			wantErr:           false,
 		},
 		{
 			name: "pom.xml absent",
@@ -223,7 +222,6 @@ func TestBuildToolInference(t *testing.T) {
                   api/core/pom.xml: |
                     <project></project>`,
 			expectedBuildTool: gradleBuildTool,
-			wantErr:           false,
 		},
 		{
 			name: "maven over gradle",
@@ -236,7 +234,107 @@ func TestBuildToolInference(t *testing.T) {
                   api/core/gradlew: |
                       #!/bin/sh`,
 			expectedBuildTool: mavenBuildTool,
-			wantErr:           false,
+		},
+		{
+			name: "sbt build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  build.sbt: |
+                      name := "example"
+                      version := "0.1.0"
+                      scalaVersion := "2.13.6"`,
+			expectedBuildTool: sbtBuildTool,
+		},
+		{
+			name: "ant build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  build.xml: |
+                      <project name="Example" default="compile">
+                          <target name="compile">
+                              <javac srcdir="src" destdir="build"/>
+                          </target>
+                      </project>`,
+			expectedBuildTool: antBuildTool,
+		},
+		{
+			name: "ivy build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  ivy.xml: |
+                      <ivy-module version="2.0">
+                          <info organisation="org.example" module="example"/>
+                          <dependencies>
+                              <dependency org="org.apache" name="commons-lang3" rev="3.12.0"/>
+                          </dependencies>
+                      </ivy-module>`,
+			expectedBuildTool: ivyBuildTool,
+		},
+		{
+			name: "leiningen build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  project.clj: |
+                      (defproject example "0.1.0"
+                        :description "An example Clojure project"
+                        :dependencies [[org.clojure/clojure "1.10.3"]])`,
+			expectedBuildTool: leiningenBuildTool,
+		},
+		{
+			name: "npm build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  package.json: |
+                      {
+                        "name": "example",
+                        "version": "1.0.0",
+                        "main": "index.js",
+                        "dependencies": {
+                          "express": "^4.17.1"
+                        }
+                      }`,
+			expectedBuildTool: npmBuildTool,
+		},
+		{
+			name: "mill build file for scala",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  build.sc: |
+                      import mill._, mill.scalalib._
+                      object example extends ScalaModule {
+                        def scalaVersion = "2.13.6"
+                      }`,
+			expectedBuildTool: millBuildTool,
+		},
+		{
+			name: "general mill build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  build.mill: |
+                    package build
+                    import mill.*, javalib.*
+
+                    object foo extends JavaModule {
+                        def mvnDeps = Seq(
+                            mvn"net.sourceforge.argparse4j:argparse4j:0.9.0",
+                            mvn"org.thymeleaf:thymeleaf:3.1.1.RELEASE"
+                        )
+                    }`,
+			expectedBuildTool: millBuildTool,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
