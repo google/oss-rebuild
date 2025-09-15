@@ -54,7 +54,7 @@ func RebuildOne(ctx context.Context, r Rebuilder, input Input, mux RegistryMux, 
 			util.RemoveAll(fs, fs.Root())
 		}
 		var newRepo RepoConfig
-		newRepo, err = r.CloneRepo(ctx, t, repoURI, fs, s)
+		newRepo, err = r.CloneRepo(ctx, t, repoURI, &gitx.RepositoryOptions{Worktree: fs, Storer: s})
 		if err != nil {
 			return verdict, nil, err
 		}

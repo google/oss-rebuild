@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/cache"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/build"
@@ -101,8 +102,6 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 }
 
 func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (rebuild.Strategy, error) {
-	mem := memory.NewStorage()
-	fs := memfs.New()
 	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
 	if !ok {
 		return nil, errors.New("unsupported ecosystem")
@@ -111,7 +110,7 @@ func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux
 	if err != nil {
 		return nil, err
 	}
-	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, fs, mem)
+	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, &gitx.RepositoryOptions{Worktree: memfs.New(), Storer: memory.NewStorage()})
 	if err != nil {
 		return nil, err
 	}
