@@ -18,6 +18,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+// We use Gradle 8.14.3 as it supports running JDK versions 8-24.
+// Reference: https://docs.gradle.org/current/userguide/compatibility.html
+const gradleVersion = "8.14.3"
+
 func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig) (rebuild.Strategy, error) {
 	tagGuess, err := rebuild.FindTagMatch(t.Package, t.Version, repoConfig.Repository)
 	if err != nil {
@@ -51,15 +55,37 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching JDK")
 	}
-
+	// Check if gradlew is present in the commit
+	var systemGradle string
+	hasGradleWrapper, err := isGradleWrapperPresent(commitObject)
+	if err != nil {
+		return nil, errors.Wrap(err, "checking for gradle wrapper")
+	}
+	if !hasGradleWrapper {
+		systemGradle = gradleVersion
+		log.Printf("Gradle wrapper (gradlew) not found in the repository. Will use system-installed Gradle.")
+	}
 	return &GradleBuild{
 		Location: rebuild.Location{
 			Repo: repoConfig.URI,
 			Dir:  buildGradleDir,
 			Ref:  ref,
 		},
-		JDKVersion: jdk,
+		JDKVersion:   jdk,
+		SystemGradle: systemGradle,
 	}, nil
+}
+
+func isGradleWrapperPresent(commit *object.Commit) (bool, error) {
+	tree, err := commit.Tree()
+	if err != nil {
+		return false, errors.Wrap(err, "getting tree")
+	}
+	_, err = tree.FindEntry("gradlew")
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
 }
 
 func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
