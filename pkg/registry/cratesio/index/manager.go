@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
@@ -87,6 +88,8 @@ type IndexManager struct {
 	fs                    billy.Filesystem
 	maxSnapshots          int
 	currentUpdateInterval time.Duration
+	currentCloneFunc      gitx.CloneFunc
+	snapshotCloneFunc     gitx.CloneFunc
 	repositories          syncx.Map[RepositoryKey, *managedRepository]
 	acquisitionCh         chan acquisitionRequest
 	shutdownCh            chan struct{}
@@ -98,6 +101,8 @@ type IndexManagerConfig struct {
 	Filesystem            billy.Filesystem
 	MaxSnapshots          int
 	CurrentUpdateInterval time.Duration
+	CurrentCloneFunc      gitx.CloneFunc
+	SnapshotCloneFunc     gitx.CloneFunc
 }
 
 // NewIndexManager creates a new index manager with coordinator model
@@ -106,6 +111,8 @@ func NewIndexManager(cfg IndexManagerConfig) *IndexManager {
 		fs:                    cfg.Filesystem,
 		maxSnapshots:          cfg.MaxSnapshots,
 		currentUpdateInterval: cfg.CurrentUpdateInterval,
+		currentCloneFunc:      cfg.CurrentCloneFunc,
+		snapshotCloneFunc:     cfg.SnapshotCloneFunc,
 		repositories:          syncx.Map[RepositoryKey, *managedRepository]{},
 		acquisitionCh:         make(chan acquisitionRequest),
 		shutdownCh:            make(chan struct{}),
@@ -173,9 +180,9 @@ func (m *IndexManager) loadExistingRepo(key RepositoryKey) error {
 	}
 	switch key.Type {
 	case CurrentIndex:
-		repo.fetcher = &CurrentIndexFetcher{}
+		repo.fetcher = &CurrentIndexFetcher{CloneFunc: m.currentCloneFunc}
 	case SnapshotIndex:
-		repo.fetcher = &SnapshotIndexFetcher{Date: key.Name}
+		repo.fetcher = &SnapshotIndexFetcher{Date: key.Name, CloneFunc: m.snapshotCloneFunc}
 	}
 	f, err := m.fs.Stat(path)
 	if err != nil {
@@ -223,9 +230,9 @@ func (m *IndexManager) handleAcquisitionRequest(req acquisitionRequest) {
 			}
 			switch key.Type {
 			case CurrentIndex:
-				repo.fetcher = &CurrentIndexFetcher{}
+				repo.fetcher = &CurrentIndexFetcher{CloneFunc: m.currentCloneFunc}
 			case SnapshotIndex:
-				repo.fetcher = &SnapshotIndexFetcher{Date: key.Name}
+				repo.fetcher = &SnapshotIndexFetcher{Date: key.Name, CloneFunc: m.snapshotCloneFunc}
 			default:
 				req.response <- acquisitionResponse{err: errors.Errorf("unknown repository type: %v", key.Type)}
 				return
