@@ -63,15 +63,26 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				SystemDeps: []string{"git", "wget"},
+				SystemDeps: []string{"git", "wget", "zip"},
 				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
+					if [ ! -f gradlew ]; then
+						wget -q -O tmp.zip https://services.gradle.org/distributions/gradle-8.14.3-bin.zip
+						unzip -q tmp.zip -d /opt/ && mv /opt/gradle-8.14.3 /opt/gradle
+						rm tmp.zip
+					fi`)[1:],
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
-					./gradlew assemble --no-daemon --console=plain -Pversion=0.8.6`[1:]),
+					export GRADLE_HOME=/opt/gradle
+					export PATH=$GRADLE_HOME/bin:$PATH
+					if [ -f gradlew ]; then
+						./gradlew assemble --no-daemon --console=plain -Pversion=0.8.6
+					else
+						gradle assemble --no-daemon --console=plain -Pversion=0.8.6
+					fi`[1:]),
 				OutputPath: "dir/build/libs/ldapchai-0.8.6.jar",
 			},
 			false,

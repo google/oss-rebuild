@@ -124,7 +124,6 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 		// Check for Gradle wrapper or compatible build files
 		// It is common practice to include the Gradle wrapper script (`gradlew`) at the root of the project.
 		// Reference: https://docs.gradle.org/current/userguide/gradle_wrapper_basics.html
-		// TODO: strategy should install gradle if wrapper is not present
 		case fileName == "gradlew" || strings.HasSuffix(fileName, ".gradle") || strings.HasSuffix(fileName, ".gradle.kts"):
 			identifiedTool = gradleBuildTool
 		// Simple Build Tool (sbt) is to build Scala projects

@@ -61,6 +61,8 @@ func (b *MavenBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild
 	return workflow.GenerateFor(t, be)
 }
 
+const gradleVersion = "8.14.3"
+
 func (b *GradleBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	jdkVersionURL, exists := JDKDownloadURLs[b.JDKVersion]
 	if !exists {
@@ -72,22 +74,39 @@ func (b *GradleBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Source: []flow.Step{{
 			Uses: "git-checkout",
 		}},
-		Deps: []flow.Step{{
-			Uses: "maven/setup-java",
-			With: map[string]string{
-				"versionURL": jdkVersionURL,
+		Deps: []flow.Step{
+			{
+				Uses: "maven/setup-java",
+				With: map[string]string{
+					"versionURL": jdkVersionURL,
+				},
+				Needs: []string{"curl"},
 			},
-			Needs: []string{"curl"},
-		}},
+			{
+				Uses: "maven/setup-gradle",
+				With: map[string]string{
+					"version": gradleVersion,
+				},
+			},
+		},
 		Build: []flow.Step{
 			{
 				Uses: "maven/export-java",
 			},
+			// This export will be a no-op if Gradle wrapper (gradlew) is present in the source tree as that will set the PATH itself.
 			{
-				// We assume the project uses the Gradle Wrapper (gradlew).
+				Uses: "maven/export-gradle",
+			},
+			{
+				// We default to using Gradle's wrapper if it exists, otherwise we use the system-installed Gradle.
 				// We run assemble as it is an atomic lifecycle task that outputs the artifact.
 				// The property `-Pversion` is used to set the project version which ensures that the right version is appended to the artifact name.
-				Runs: "./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
+				Runs: textwrap.Dedent(`
+				if [ -f gradlew ]; then
+					./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}}
+				else
+					gradle assemble --no-daemon --console=plain -Pversion={{.Target.Version}}
+				fi`)[1:],
 			},
 		},
 		OutputDir: path.Join(b.Dir, "build", "libs"),
@@ -136,5 +155,29 @@ var toolkit = []*flow.Tool{
 				export JAVA_HOME=/opt/jdk
 				export PATH=$JAVA_HOME/bin:$PATH`[1:]),
 		}},
+	},
+	{
+		Name: "maven/export-gradle",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				export GRADLE_HOME=/opt/gradle
+				export PATH=$GRADLE_HOME/bin:$PATH`[1:]),
+		}},
+	},
+	// We use Gradle 8.14.3 as it is valid for building with JDK versions 8-24.
+	// Reference: https://docs.gradle.org/current/userguide/compatibility.html
+	{
+		Name: "maven/setup-gradle",
+		Steps: []flow.Step{
+			{
+				Runs: textwrap.Dedent(`
+				if [ ! -f gradlew ]; then
+					wget -q -O tmp.zip https://services.gradle.org/distributions/gradle-{{.With.version}}-bin.zip
+					unzip -q tmp.zip -d /opt/ && mv /opt/gradle-{{.With.version}} /opt/gradle
+					rm tmp.zip
+				fi`[1:]),
+				Needs: []string{"wget", "zip"},
+			},
+		},
 	},
 }
