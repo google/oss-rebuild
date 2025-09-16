@@ -62,25 +62,70 @@ type MavenVersion struct {
 	Files          []string `json:"ec"`
 }
 
-const (
-	// TypePOM is a POM file.
-	TypePOM string = ".pom"
-	// TypeSources is a sources file.
-	TypeSources string = "-sources.jar"
-	// TypeJar is a jar file.
-	TypeJar string = ".jar"
-	// TypeJavadoc is a javadoc file.
-	TypeJavadoc string = "-javadoc.jar"
-	// TypeModule is a module file.
-	TypeModule   string = ".module"
-	TypeMetadata string = "-metadata.xml"
-)
+// TypePOM is a POM file.
+func TypePOM(pkg, version string) (string, error) {
+	_, a, err := getGroupIDArtifactID(pkg)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s-%s.pom", a, version), nil
+}
+
+// TypeSources is a sources file.
+func TypeSources(pkg, version string) (string, error) {
+	_, a, err := getGroupIDArtifactID(pkg)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s-%s-sources.jar", a, version), nil
+}
+
+// TypeJar is a jar file.
+func TypeJar(pkg, version string) (string, error) {
+	_, a, err := getGroupIDArtifactID(pkg)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s-%s.jar", a, version), nil
+}
+
+// TypeJavadoc is a javadoc file.
+func TypeJavadoc(pkg, version string) (string, error) {
+	_, a, err := getGroupIDArtifactID(pkg)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s-%s-javadoc.jar", a, version), nil
+}
+
+// TypeModule is a module file.
+func TypeModule(pkg, version string) (string, error) {
+	_, a, err := getGroupIDArtifactID(pkg)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s-%s.module", a, version), nil
+}
+
+// TypeMetadata is a metadata file used for discovery by Maven Central.
+// https://maven.apache.org/repositories/metadata.html
+func TypeMetadata() string {
+	return "maven-metadata.xml"
+}
+
+// getGroupIDArtifactID extracts the group and artifact IDs from a package string.
+func getGroupIDArtifactID(pkg string) (string, string, error) {
+	g, a, found := strings.Cut(pkg, ":")
+	if !found {
+		return "", "", errors.New("package identifier not of form 'group:artifact'")
+	}
+	return g, a, nil
+}
 
 // Registry is a Maven Central package registry.
 type Registry interface {
 	PackageMetadata(context.Context, string) (*MavenPackage, error)
 	PackageVersion(context.Context, string, string) (*MavenVersion, error)
-	ReleaseFile(context.Context, string, string, string) (io.ReadCloser, error)
 	ReleaseURL(context.Context, string, string, string) (string, error)
 	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
 }
@@ -133,7 +178,7 @@ func (r HTTPRegistry) PackageVersion(ctx context.Context, pkg, version string) (
 
 // PackageMetadata returns the metadata for a Maven package.
 func (r HTTPRegistry) PackageMetadata(ctx context.Context, pkg string) (result *MavenPackage, err error) {
-	content, err := r.ReleaseFile(ctx, pkg, "maven", TypeMetadata)
+	content, err := r.Artifact(ctx, pkg, "maven", TypeMetadata())
 	if err != nil {
 		return nil, err
 	}
@@ -146,44 +191,24 @@ func (r HTTPRegistry) PackageMetadata(ctx context.Context, pkg string) (result *
 	return result, nil
 }
 
-// ReleaseFile returns a release file for a Maven package version.
-func (r HTTPRegistry) ReleaseFile(ctx context.Context, pkg, version string, typ string) (io.ReadCloser, error) {
-	releaseURL, err := r.ReleaseURL(ctx, pkg, version, typ)
-	if err != nil {
-		return nil, err
-	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
-	resp, err := r.Client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != 200 {
-		return nil, errors.Wrap(errors.New(resp.Status), "fetching release artifact")
-	}
-
-	return resp.Body, nil
-}
-
 // ReleaseURL returns the URL for the release file for a Maven package version.
-func (r HTTPRegistry) ReleaseURL(ctx context.Context, pkg, version, typ string) (string, error) {
+func (r HTTPRegistry) ReleaseURL(ctx context.Context, pkg, version, artifact string) (string, error) {
 	g, a, found := strings.Cut(pkg, ":")
 	if !found {
 		return "", errors.New("package identifier not of form 'group:artifact'")
 	}
-	artifactPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, fmt.Sprintf("%s-%s%s", a, version, typ))
+	artifactPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, artifact)
 	artifactURL := releaseURL.JoinPath(artifactPath)
 	return artifactURL.String(), nil
 }
 
 // Artifact returns file that is part of the Maven release.
 func (r HTTPRegistry) Artifact(ctx context.Context, pkg, version, artifact string) (io.ReadCloser, error) {
-	g, a, found := strings.Cut(pkg, ":")
-	if !found {
-		return nil, errors.New("package identifier not of form 'group:artifact'")
+	artifactURL, err := r.ReleaseURL(ctx, pkg, version, artifact)
+	if err != nil {
+		return nil, err
 	}
-	artifactPath := path.Join(strings.ReplaceAll(g, ".", "/"), a, version, artifact)
-	artifactURL := releaseURL.JoinPath(artifactPath)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, artifactURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, artifactURL, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating artifact URL")
 	}

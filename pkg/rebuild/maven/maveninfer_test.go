@@ -113,8 +113,9 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 				},
 			},
 			targetPom: rebuild.Target{
-				Package: "org.example:child",
-				Version: "1.0.0",
+				Package:  "org.example:child",
+				Version:  "1.0.0",
+				Artifact: "child-1.0.0.pom",
 			},
 			expectedURL: "https://github.com/example/child",
 			wantErr:     false,
@@ -130,8 +131,9 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 				},
 			},
 			targetPom: rebuild.Target{
-				Package: "com.example:child",
-				Version: "1.0.0",
+				Package:  "com.example:child",
+				Version:  "1.0.0",
+				Artifact: "child-1.0.0.pom",
 			},
 			expectedURL: "https://example.com/child",
 			wantErr:     false,
@@ -157,8 +159,9 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 				},
 			},
 			targetPom: rebuild.Target{
-				Package: "com.example:child",
-				Version: "1.0.0",
+				Package:  "com.example:child",
+				Version:  "1.0.0",
+				Artifact: "child-1.0.0.pom",
 			},
 			expectedURL: "https://github.com/example/parent",
 			wantErr:     false,
@@ -185,8 +188,9 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 				},
 			},
 			targetPom: rebuild.Target{
-				Package: "com.example:child",
-				Version: "1.0.0",
+				Package:  "com.example:child",
+				Version:  "1.0.0",
+				Artifact: "child-1.0.0.pom",
 			},
 			expectedURL: "https://example.com/parent",
 			wantErr:     false,
@@ -211,8 +215,9 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 				},
 			},
 			targetPom: rebuild.Target{
-				Package: "com.example:child",
-				Version: "1.0.0",
+				Package:  "com.example:child",
+				Version:  "1.0.0",
+				Artifact: "child-1.0.0.pom",
 			},
 			expectedURL: "",
 			wantErr:     true,
@@ -221,7 +226,7 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockRegistry := &mockMavenRegistry{
-				artifactCoordinates: make(map[struct{ PackageName, VersionID, FileType string }][]byte),
+				artifactCoordinates: make(map[struct{ PackageName, VersionID, Artifact string }][]byte),
 			}
 			for _, pom := range tc.pom {
 				addPomArtifact(mockRegistry, &pom)
@@ -248,11 +253,17 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 }
 
 func addPomArtifact(mavenRegistry *mockMavenRegistry, pom *PomXML) {
+	pkgName := fmt.Sprintf("%s:%s", pom.GroupID, pom.ArtifactID)
+	artifact, err := maven.TypePOM(pkgName, pom.VersionID)
+	if err != nil {
+		// This should never happen as we provide correct format of package name.
+		panic(err)
+	}
 	// TODO: make this a type to avoid repeating the struct definition
-	key := struct{ PackageName, VersionID, FileType string }{
-		PackageName: fmt.Sprintf("%s:%s", pom.GroupID, pom.ArtifactID),
+	key := struct{ PackageName, VersionID, Artifact string }{
+		PackageName: pkgName,
 		VersionID:   pom.VersionID,
-		FileType:    maven.TypePOM,
+		Artifact:    artifact,
 	}
 	xmlBytes, _ := xml.MarshalIndent(pom, "", "  ")
 	mavenRegistry.artifactCoordinates[key] = xmlBytes
