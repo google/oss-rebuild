@@ -151,6 +151,9 @@ func HandleGet(rw http.ResponseWriter, req *http.Request) {
 				if errors.Is(err, transport.ErrAuthenticationRequired) {
 					http.Error(rw, err.Error(), 400)
 				} else {
+					if err := o.Delete(ctx); err != nil {
+						log.Printf("Issue cleaning up failed write: %v\n", err)
+					}
 					http.Error(rw, "Internal Error", 500)
 				}
 				return
