@@ -173,12 +173,12 @@ func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.Regist
 
 // RebuildRemote executes the given target strategy on a remote builder.
 func (r Rebuilder) RebuildRemote(ctx context.Context, input rebuild.Input, opts rebuild.RemoteOptions) error {
-	opts.UseTimewarp = false
+	opts.UseTimewarp = r.UsesTimewarp(input)
 	return rebuild.RebuildRemote(ctx, input, opts)
 }
 
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
-	return false
+	return true
 }
 
 func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
