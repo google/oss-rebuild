@@ -114,6 +114,15 @@ func (mr MutableZipReader) WriteTo(zw *zip.Writer) error {
 	return nil
 }
 
+type ZipArchiveStabilizerDebug struct {
+	Name string
+	Func func(*MutableZipReader) bool
+}
+
+func (z ZipArchiveStabilizerDebug) Stabilize(arg any) {
+	z.Func(arg.(*MutableZipReader))
+}
+
 type ZipArchiveStabilizer struct {
 	Name string
 	Func func(*MutableZipReader)

@@ -31,6 +31,9 @@ func StabilizersForTarget(t rebuild.Target) ([]archive.Stabilizer, error) {
 		if format == archive.ZipFormat {
 			stabilizers = append(stabilizers, archive.AllJarStabilizers...)
 		}
+	case rebuild.PyPI:
+		stabilizers = append(stabilizers, archive.AllPypiStabilizers...)
 	}
+
 	return stabilizers, nil
 }
