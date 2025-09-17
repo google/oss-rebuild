@@ -7,13 +7,13 @@ import (
 	"context"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/v5/storage"
+	"github.com/google/oss-rebuild/internal/gitx"
 )
 
 // Rebuilder defines the operations used to rebuild an ecosystem's packages.
 type Rebuilder interface {
 	InferRepo(context.Context, Target, RegistryMux) (string, error)
-	CloneRepo(context.Context, Target, string, billy.Filesystem, storage.Storer) (RepoConfig, error)
+	CloneRepo(context.Context, Target, string, *gitx.RepositoryOptions) (RepoConfig, error)
 	InferStrategy(context.Context, Target, RegistryMux, *RepoConfig, Strategy) (Strategy, error)
 	Rebuild(context.Context, Target, Instructions, billy.Filesystem) error
 	Compare(context.Context, Target, Asset, Asset, AssetStore, Instructions) (error, error)
