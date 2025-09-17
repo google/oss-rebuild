@@ -40,6 +40,11 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		return nil, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
 
+	sourceJarGuess, err := findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
+	if err != nil {
+		return nil, errors.Wrapf(err, "source jar heuristic failed")
+	}
+
 	var ref string
 	var commit *object.Commit
 	switch {
@@ -77,11 +82,20 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			return nil, errors.Wrapf(err, "[INTERNAL] Failed ref resolve from git log [repo=%s,ref=%s]", repoConfig.URI, pomXMLGuess)
 		}
 		fallthrough
-	default:
-		if tagGuess == "" && pomXMLGuess == "" {
-			return nil, errors.Errorf("no git ref")
+	case sourceJarGuess != nil:
+		log.Printf("using source jar heuristic ref: %s", ref[:9])
+		// Only validate name, since version is sometimes not updated in pom.xml.
+		_, newPath, err := findPomXML(commitObject, name)
+		if err != nil {
+			return nil, errors.Wrapf(err, "pom.xml heuristic failed")
 		}
-		return nil, errors.Errorf("no valid git ref")
+		dir = filepath.Dir(newPath)
+		ref = sourceJarGuess.Hash.String()
+	default:
+		if pomXMLGuess == "" && tagGuess == "" {
+			return nil, errors.Errorf("no valid git ref")
+		}
+		return nil, errors.Errorf("no git ref")
 	}
 	jdk, err := inferOrFallbackToDefaultJDK(ctx, name, version, mux)
 	if err != nil {
