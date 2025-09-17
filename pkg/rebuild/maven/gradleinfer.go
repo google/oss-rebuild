@@ -28,14 +28,21 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
+	sourceJarGuess, err := findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
+	if err != nil {
+		return nil, errors.Wrapf(err, "source jar heuristic failed")
+	}
 	var ref string
-	if tagGuess != "" {
+	switch {
+	case tagGuess != "":
 		ref = tagGuess
 		log.Printf("using tag heuristic ref: %s", tagGuess[:9])
-	} else {
+	case sourceJarGuess != nil:
+		ref = sourceJarGuess.Hash.String()
+		log.Printf("using source jar heuristic ref: %s", ref[:9])
+	default:
 		return nil, errors.Errorf("no valid git ref")
 	}
-
 	// Infer JDK for Gradle
 	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
 	if err != nil {

@@ -364,3 +364,142 @@ func must[T any](t T, err error) T {
 	}
 	return t
 }
+
+func TestGitIndexScan(t *testing.T) {
+	testCases := []struct {
+		name             string
+		repoYAML         string
+		zipEntries       []*archive.ZipEntry
+		expectedCommitID string
+		expectedError    bool
+	}{
+		{
+			name: "simple case with direct match",
+			repoYAML: `
+            commits:
+              - id: initial-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    a`,
+			zipEntries: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/App.java"},
+					Body:       []byte("a"),
+				},
+			},
+			expectedCommitID: "initial-commit",
+		},
+		{
+			name: "parent match",
+			repoYAML: `
+            commits:
+              - id: initial-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    a
+              - id: second-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    b`,
+			zipEntries: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/App.java"},
+					Body:       []byte("b"),
+				},
+			},
+			expectedCommitID: "second-commit",
+		},
+		{
+			name: "middle commit match",
+			repoYAML: `
+            commits:
+              - id: initial-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    a
+              - id: second-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    b
+              - id: third-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    c`,
+			zipEntries: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/App.java"},
+					Body:       []byte("b\n"),
+				},
+			},
+			expectedCommitID: "second-commit",
+		},
+		{
+			name: "throw error when no match",
+			repoYAML: `
+            commits:
+              - id: initial-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    a
+              - id: second-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    b`,
+			zipEntries: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/App.java"},
+					Body:       []byte("c"),
+				},
+			},
+			expectedCommitID: "",
+			expectedError:    true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
+
+			var buf bytes.Buffer
+			zw := zip.NewWriter(&buf)
+			for _, entry := range tc.zipEntries {
+				if err := entry.WriteTo(zw); err != nil {
+					t.Fatalf("WriteTo() error: %v", err)
+				}
+			}
+			mockRegistry := &mockMavenRegistry{
+				artifactCoordinates: make(map[struct{ PackageName, VersionID, FileType string }][]byte),
+			}
+			mockMux := rebuild.RegistryMux{
+				Maven: mockRegistry,
+			}
+			addSourceJarArtifact(mockRegistry, "dummy", "dummy", tc.zipEntries)
+			sourceCommit, err := findClosestCommitToSource(context.Background(), rebuild.Target{Package: "dummy", Version: "dummy"}, mockMux, repo.Repository)
+			if tc.expectedError {
+				if err == nil {
+					t.Fatalf("expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if sourceCommit.Hash != repo.Commits[tc.expectedCommitID] {
+					t.Errorf("sourceJarGuess() = %v, want %v", sourceCommit.Hash, repo.Commits[tc.expectedCommitID])
+				}
+			}
+		})
+	}
+}
+
+func addSourceJarArtifact(m *mockMavenRegistry, packageName, version string, entries []*archive.ZipEntry) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, entry := range entries {
+		if err := entry.WriteTo(zw); err != nil {
+			panic(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		panic(err)
+	}
+	m.artifactCoordinates[struct{ PackageName, VersionID, FileType string }{PackageName: packageName, VersionID: version, FileType: maven.TypeSources}] = buf.Bytes()
+}
