@@ -59,7 +59,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 			Where("session_id", "==", req.SessionID).
 			Where("number", "==", req.IterationNumber).
 			Limit(1)
-		if _, err := t.Documents(iterQuery).Next(); err != nil && err != iterator.Done {
+		if _, err := t.Documents(iterQuery).Next(); err != nil && !errors.Is(err, iterator.Done) {
 			return errors.Wrap(err, "checking for existing iteration")
 		} else if err == nil {
 			return errors.Wrap(fs.ErrExist, "checking for existing iteration")
