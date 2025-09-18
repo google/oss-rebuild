@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -237,6 +238,8 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if err != nil {
 			return nil, errors.New("rust version heuristic failed")
 		}
+	} else if strings.Count(rustVersion, ".") == 1 {
+		rustVersion += ".0"
 	}
 	// TODO: This should be moved to build-time since strategies are intended to be, at least notionally, distro-independent.
 	hasMUSLBuild, err := reg.HasMUSLBuild(rustVersion)

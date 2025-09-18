@@ -126,6 +126,37 @@ func TestInferStrategy(t *testing.T) {
 			},
 		},
 		{
+			name: "rust_version adds missing patch version",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: tagged-target
+    parent: initial-commit
+    tag: v1.0.150
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35"}}`,
+			files:    []archive.TarEntry{},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["tagged-target"].String(),
+						Dir:  ".",
+					},
+					RustVersion: "1.35.0",
+				}
+			},
+		},
+		{
 			name: "ref from refmap",
 			repo: `commits:
   - id: initial-commit
