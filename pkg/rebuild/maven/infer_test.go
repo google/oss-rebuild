@@ -16,9 +16,11 @@ import (
 	"github.com/google/oss-rebuild/pkg/registry/maven"
 )
 
+type artifactCoordinates struct{ PackageName, VersionID, FileType string }
+
 type mockMavenRegistry struct {
 	maven.Registry
-	artifactCoordinates map[struct{ PackageName, VersionID, FileType string }][]byte
+	artifactCoordinates map[artifactCoordinates][]byte
 	releaseFileError    error
 }
 
@@ -110,7 +112,7 @@ func TestJDKVersionInference(t *testing.T) {
 
 			mockMux := rebuild.RegistryMux{
 				Maven: &mockMavenRegistry{
-					artifactCoordinates: map[struct{ PackageName, VersionID, FileType string }][]byte{
+					artifactCoordinates: map[artifactCoordinates][]byte{
 						{"dummy", "dummy", maven.TypeJar}: buf.Bytes(),
 					},
 				},
@@ -467,7 +469,7 @@ func TestGitIndexScan(t *testing.T) {
 				}
 			}
 			mockRegistry := &mockMavenRegistry{
-				artifactCoordinates: make(map[struct{ PackageName, VersionID, FileType string }][]byte),
+				artifactCoordinates: make(map[artifactCoordinates][]byte),
 			}
 			mockMux := rebuild.RegistryMux{
 				Maven: mockRegistry,
@@ -501,5 +503,5 @@ func addSourceJarArtifact(m *mockMavenRegistry, packageName, version string, ent
 	if err := zw.Close(); err != nil {
 		panic(err)
 	}
-	m.artifactCoordinates[struct{ PackageName, VersionID, FileType string }{PackageName: packageName, VersionID: version, FileType: maven.TypeSources}] = buf.Bytes()
+	m.artifactCoordinates[artifactCoordinates{PackageName: packageName, VersionID: version, FileType: maven.TypeSources}] = buf.Bytes()
 }

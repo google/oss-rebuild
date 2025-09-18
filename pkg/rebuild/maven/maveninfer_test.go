@@ -227,7 +227,7 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockRegistry := &mockMavenRegistry{
-				artifactCoordinates: make(map[struct{ PackageName, VersionID, FileType string }][]byte),
+				artifactCoordinates: make(map[artifactCoordinates][]byte),
 			}
 			for _, pom := range tc.pom {
 				addPomArtifact(mockRegistry, &pom)
@@ -254,8 +254,7 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 }
 
 func addPomArtifact(mavenRegistry *mockMavenRegistry, pom *PomXML) {
-	// TODO: make this a type to avoid repeating the struct definition
-	key := struct{ PackageName, VersionID, FileType string }{
+	key := artifactCoordinates{
 		PackageName: fmt.Sprintf("%s:%s", pom.GroupID, pom.ArtifactID),
 		VersionID:   pom.VersionID,
 		FileType:    maven.TypePOM,
@@ -397,7 +396,7 @@ func TestMavenInfer(t *testing.T) {
 			}
 			repoConfig.Repository = repo.Repository
 			mockRegistry := &mockMavenRegistry{
-				artifactCoordinates: make(map[struct{ PackageName, VersionID, FileType string }][]byte),
+				artifactCoordinates: make(map[artifactCoordinates][]byte),
 			}
 			addArtifacts(mockRegistry, tc.zipEntries, tc.target)
 			mockMux := rebuild.RegistryMux{
@@ -438,7 +437,7 @@ func addArtifacts(mavenRegistry *mockMavenRegistry, entries map[string][]*archiv
 		if err := zipWriter.Close(); err != nil {
 			panic(err)
 		}
-		key := struct{ PackageName, VersionID, FileType string }{
+		key := artifactCoordinates{
 			PackageName: target.Package,
 			VersionID:   target.Version,
 			FileType:    artifactType,
