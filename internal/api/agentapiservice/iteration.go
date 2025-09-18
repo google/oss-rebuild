@@ -26,7 +26,6 @@ type AgentCreateIterationDeps struct {
 	GCBExecutor         *gcb.Executor
 	BuildProject        string
 	BuildServiceAccount string
-	LogsBucket          string
 	MetadataBucket      string
 	PrebuildConfig      rebuild.PrebuildConfig
 }
