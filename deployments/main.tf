@@ -109,6 +109,14 @@ locals {
   project_num = data.google_project.project.number
 }
 
+terraform {
+  required_providers {
+    google = {
+      source  = "google"
+      version = "~> 6.0"
+    }
+  }
+}
 provider "google" {
   project = var.project
   region  = "us-central1"
