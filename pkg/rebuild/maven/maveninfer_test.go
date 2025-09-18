@@ -221,7 +221,7 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockRegistry := &mockMavenRegistry{
-				artifactCoordinates: make(map[struct{ PackageName, VersionID, FileType string }][]byte),
+				artifactCoordinates: make(map[artifactCoordinates][]byte),
 			}
 			for _, pom := range tc.pom {
 				addPomArtifact(mockRegistry, &pom)
@@ -248,8 +248,7 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 }
 
 func addPomArtifact(mavenRegistry *mockMavenRegistry, pom *PomXML) {
-	// TODO: make this a type to avoid repeating the struct definition
-	key := struct{ PackageName, VersionID, FileType string }{
+	key := artifactCoordinates{
 		PackageName: fmt.Sprintf("%s:%s", pom.GroupID, pom.ArtifactID),
 		VersionID:   pom.VersionID,
 		FileType:    maven.TypePOM,
