@@ -12,25 +12,20 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
 
 func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig) (rebuild.Strategy, error) {
-	head, _ := repoConfig.Repository.Head()
-	commitObject, _ := repoConfig.Repository.CommitObject(head.Hash())
-	buildGradleDir, err := findBuildGradleDir(commitObject, t.Package)
-	if err != nil {
-		return nil, errors.Wrapf(err, "build manifest heuristic failed")
-	}
 	tagGuess, err := rebuild.FindTagMatch(t.Package, t.Version, repoConfig.Repository)
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
 	sourceJarGuess, err := findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
 	if err != nil {
-		return nil, errors.Wrapf(err, "source jar heuristic failed")
+		log.Printf("source jar heuristic failed: %s", err)
 	}
 	var ref string
 	switch {
@@ -42,6 +37,14 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 		log.Printf("using source jar heuristic ref: %s", ref[:9])
 	default:
 		return nil, errors.Errorf("no valid git ref")
+	}
+	commitObject, err := repoConfig.Repository.CommitObject(plumbing.NewHash(ref))
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to resolve commit object [repo=%s,ref=%s]", repoConfig.URI, ref)
+	}
+	buildGradleDir, err := findBuildGradleDir(commitObject, t.Package)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to find build.gradle directory [repo=%s,ref=%s]", repoConfig.URI, ref)
 	}
 	// Infer JDK for Gradle
 	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
