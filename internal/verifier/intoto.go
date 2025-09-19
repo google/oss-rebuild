@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 
 	"github.com/google/oss-rebuild/internal/hashext"
+	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
@@ -28,7 +29,9 @@ func (signer *InTotoEnvelopeSigner) SignStatement(ctx context.Context, s *in_tot
 	if err != nil {
 		return nil, errors.Wrap(err, "marshalling statement")
 	}
-	envelope, err := signer.SignPayload(ctx, s.StatementHeader.Type, b)
+	// Since this is signing only a slsa predicate wrapped in an in-toto statement,
+	// the payload type is fixed to the in-toto media type.
+	envelope, err := signer.SignPayload(ctx, attestation.InTotoPayloadType, b)
 	if err != nil {
 		return nil, errors.Wrap(err, "signing payload")
 	}
