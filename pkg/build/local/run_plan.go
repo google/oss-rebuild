@@ -13,4 +13,6 @@ type DockerRunPlan struct {
 	WorkingDir string
 	// OutputPath specifies where artifacts should be copied from the container
 	OutputPath string
+	// RequiresAuth indicates whether the plan requires authentication
+	RequiresAuth bool
 }
