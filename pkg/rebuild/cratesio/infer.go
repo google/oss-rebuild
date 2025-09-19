@@ -234,7 +234,20 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	} else if strings.Count(rustVersion, ".") == 1 {
 		rustVersion += ".0"
 	}
+	// Apply structural hints to ensure minimum Rust version requirements are met
+	// In the presence of options, (arbitrarily) prefer the latest Rust version in the range
 	topLevel := t.Package + "-" + vmeta.Version.Version
+	cargoTomlText, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.toml")
+	if err != nil {
+		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream Cargo.toml")
+	}
+	minVer, maxVer := detectRustVersionBounds(string(cargoTomlText))
+	if minVer != "" && semver.Cmp(rustVersion, minVer) < 0 {
+		rustVersion = minVer
+	}
+	if maxVer != "" && semver.Cmp(rustVersion, maxVer) > 0 {
+		rustVersion = maxVer
+	}
 	lockContent, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.lock")
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream Cargo.lock")
