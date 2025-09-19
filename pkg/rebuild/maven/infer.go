@@ -15,9 +15,11 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
+	indexsearch "github.com/google/oss-rebuild/internal/indexsearch"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
@@ -253,4 +255,47 @@ func getClassFileMajorVersion(classBytes []byte) (int, error) {
 	bytecodeToVersionOffset := uint16(44)
 	majorVersion := (uint16(classBytes[6]) << 8) | uint16(classBytes[7]) - bytecodeToVersionOffset
 	return int(majorVersion), nil
+}
+
+// findClosestCommitToSource attempts to find the git commit that best matches the contents of a source JAR.
+func findClosestCommitToSource(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repo *git.Repository) (*object.Commit, error) {
+	sourceJar, err := mux.Maven.ReleaseFile(ctx, t.Package, t.Version, maven.TypeSources)
+	if err != nil {
+		return nil, err
+	}
+	defer sourceJar.Close()
+	zipData, err := io.ReadAll(sourceJar)
+	if err != nil {
+		return nil, err
+	}
+	zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	if err != nil {
+		return nil, err
+	}
+	hashes, err := indexsearch.ZipHashes(zipReader)
+	if err != nil {
+		return nil, errors.Wrap(err, "hashing source jar contents")
+	}
+	searchStrategy := &indexsearch.DynamicTreeSearchStrategy{}
+	closest, matched, total, err := searchStrategy.Search(ctx, repo, hashes)
+	if err != nil {
+		return nil, errors.Wrap(err, "searching for matching commit based on source jar")
+	}
+	log.Printf("commits (%d): %v", len(closest), closest)
+	log.Printf("matched %d/%d files using git index scan", matched, total)
+	if len(closest) == 0 {
+		// No matches found so we will not use the source jar heuristic, but this is not an error.
+		// The caller should try other heuristics.
+		log.Printf("no matching commit found using source jar heuristic")
+		return nil, nil
+	}
+	// TODO: further resolve this by overlapping it with time heuristic
+	commitString := closest[0]
+	// Verify if commit exists in the repository
+	commitHash := plumbing.NewHash(commitString)
+	commitObject, err := repo.CommitObject(commitHash)
+	if err != nil {
+		return nil, errors.Wrapf(err, "resolving commit %s", commitString)
+	}
+	return commitObject, nil
 }
