@@ -42,7 +42,7 @@ func TestStrategies(t *testing.T) {
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
-					mvn clean package -DskipTests --batch-mode -f dir`[1:]),
+					mvn clean package -DskipTests --batch-mode -f dir -Dmaven.javadoc.skip=true`[1:]),
 				OutputPath: "dir/target/ldapchai-0.8.6.jar",
 			},
 			false,
