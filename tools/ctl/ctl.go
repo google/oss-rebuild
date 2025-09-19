@@ -30,6 +30,8 @@ import (
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/cheggaaa/pb"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
@@ -1217,6 +1219,9 @@ var localAgent = &cobra.Command{
 		if *metadataBucket == "" {
 			return errors.New("metadata bucket not provided")
 		}
+		if *logsBucket == "" {
+			return errors.New("logs bucket not provided")
+		}
 		fire, err := firestore.NewClient(cmd.Context(), *project)
 		if err != nil {
 			return errors.Wrap(err, "creating firestore client")
@@ -1254,7 +1259,29 @@ var localAgent = &cobra.Command{
 			}
 			return errors.Wrap(err, "creating agent session")
 		}
-		log.Println("Created session object")
+		var retryInitialIter *schema.AgentIteration
+		if *retrySession != "" {
+			sessionDoc := fire.Collection("agent_sessions").Doc(*retrySession)
+			iterQuery := sessionDoc.Collection("agent_iterations").
+				Where("session_id", "==", *retrySession).
+				Where("number", "==", 1).
+				Limit(1)
+			d, err := iterQuery.Documents(ctx).Next()
+			if err != nil {
+				return errors.Wrap(err, "getting iteration to retry")
+			}
+			retryInitialIter = &schema.AgentIteration{}
+			if err := d.DataTo(retryInitialIter); err != nil {
+				return errors.Wrap(err, "deserializing iteration data")
+			}
+			_, err = fire.Collection("agent_sessions").Doc(sessionID).
+				Collection("agent_iterations").
+				Doc(retryInitialIter.ID).
+				Create(ctx, *retryInitialIter)
+			if err != nil {
+				return errors.Wrap(err, "creating initial iteration")
+			}
+		}
 		// Run agent locally
 		client, err := oauth.AuthorizedUserIDClient(ctx)
 		if err != nil {
@@ -1267,17 +1294,20 @@ var localAgent = &cobra.Command{
 		// Create agent API client stubs
 		iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
 		completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
+		g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}), genkit.WithDefaultModel("googleai/gemini-2.5-pro"))
 		deps := agent.RunSessionDeps{
+			Genkit:         g,
 			IterationStub:  iterationStub,
 			CompleteStub:   completeStub,
-			Agent:          agent.NewDefaultAgentLogic(),
 			SessionsBucket: "", // TODO: Add this once it's being used.
 			MetadataBucket: *metadataBucket,
+			LogsBucket:     *logsBucket,
 		}
 		req := agent.RunSessionReq{
-			SessionID:     sessionID,
-			Target:        t,
-			MaxIterations: maxIterations,
+			SessionID:        sessionID,
+			Target:           t,
+			MaxIterations:    3,
+			InitialIteration: retryInitialIter,
 		}
 		// TODO: Should RunSession return an error?
 		agent.RunSession(ctx, req, deps)
@@ -1335,6 +1365,7 @@ var (
 	// Export
 	destination  = flag.String("destination", "", "the destination for the export, e.g. gs://bucket/prefix")
 	exportRundex = flag.Bool("rundex", false, "whether to include the rundex in the export")
+	retrySession = flag.String("retry-session", "", "the session to retry")
 )
 
 func init() {
@@ -1426,10 +1457,12 @@ func init() {
 	localAgent.Flags().AddGoFlag(flag.Lookup("project"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("agent-api"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("ecosystem"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("package"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("version"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("retry-session"))
 
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
