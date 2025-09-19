@@ -117,12 +117,12 @@ func createMockAttestationBundle(t rebuild.Target, strategy rebuild.Strategy) []
 	var bundle bytes.Buffer
 	encoder := json.NewEncoder(&bundle)
 	buildEnvelope := &dsse.Envelope{
-		PayloadType: in_toto.StatementInTotoV1,
+		PayloadType: attestation.InTotoPayloadType,
 		Payload:     base64.StdEncoding.EncodeToString(must(json.Marshal(must(buildAttestation.ToStatement())))),
 		Signatures:  []dsse.Signature{{Sig: base64.StdEncoding.EncodeToString([]byte("mock-sig"))}},
 	}
 	eqEnvelope := &dsse.Envelope{
-		PayloadType: in_toto.StatementInTotoV1,
+		PayloadType: attestation.InTotoPayloadType,
 		Payload:     base64.StdEncoding.EncodeToString(must(json.Marshal(must(eqAttestation.ToStatement())))),
 		Signatures:  []dsse.Signature{{Sig: base64.StdEncoding.EncodeToString([]byte("mock-sig"))}},
 	}

@@ -40,7 +40,7 @@ func createTestEnvelope(t *testing.T, statement *in_toto.Statement) *dsse.Envelo
 	t.Helper()
 	payload := must(json.Marshal(statement))
 	return &dsse.Envelope{
-		PayloadType: in_toto.StatementInTotoV1,
+		PayloadType: InTotoPayloadType,
 		Payload:     base64.StdEncoding.EncodeToString(payload),
 		Signatures:  []dsse.Signature{{Sig: base64.StdEncoding.EncodeToString([]byte("test-signature"))}},
 	}
@@ -94,7 +94,7 @@ func TestVerifiedEnvelope_NewVerifiedEnvelope(t *testing.T) {
 		{
 			name: "empty payload",
 			envelope: &dsse.Envelope{
-				PayloadType: in_toto.StatementInTotoV1,
+				PayloadType: InTotoPayloadType,
 				Payload:     "",
 				Signatures:  validEnvelope.Signatures,
 			},
@@ -104,7 +104,7 @@ func TestVerifiedEnvelope_NewVerifiedEnvelope(t *testing.T) {
 		{
 			name: "invalid base64",
 			envelope: &dsse.Envelope{
-				PayloadType: in_toto.StatementInTotoV1,
+				PayloadType: InTotoPayloadType,
 				Payload:     "invalid-base64-!!!",
 				Signatures:  validEnvelope.Signatures,
 			},
@@ -114,7 +114,7 @@ func TestVerifiedEnvelope_NewVerifiedEnvelope(t *testing.T) {
 		{
 			name: "invalid json",
 			envelope: &dsse.Envelope{
-				PayloadType: in_toto.StatementInTotoV1,
+				PayloadType: InTotoPayloadType,
 				Payload:     base64.StdEncoding.EncodeToString([]byte("invalid json")),
 				Signatures:  validEnvelope.Signatures,
 			},
