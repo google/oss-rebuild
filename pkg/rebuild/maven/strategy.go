@@ -44,7 +44,7 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 			{
 				// TODO: Java 9 needs additional certificate installed in /etc/ssl/certs/java/cacerts
 				// It can be passed to maven command via -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
-				Runs: "mvn clean package -DskipTests --batch-mode -f {{.Location.Dir}}",
+				Runs: "mvn clean package -DskipTests --batch-mode -f {{.Location.Dir}} -Dmaven.javadoc.skip=true",
 				// Note `maven` from apt also pull in jdk-21 and hence we must export JAVA_HOME and PATH in the step before
 				Needs: []string{"maven"},
 			},
