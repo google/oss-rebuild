@@ -84,10 +84,18 @@ func (b *GradleBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				Uses: "maven/export-java",
 			},
 			{
-				// We assume the project uses the Gradle Wrapper (gradlew).
+				Uses: "maven/setup-gradle",
+			},
+			{
+				// We default to using Gradle's wrapper if it exists, otherwise we use the system-installed Gradle.
 				// We run assemble as it is an atomic lifecycle task that outputs the artifact.
 				// The property `-Pversion` is used to set the project version which ensures that the right version is appended to the artifact name.
-				Runs: "./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
+				Runs: textwrap.Dedent(`
+				if [ -f gradlew ]; then
+					./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}};
+				else
+					gradle assemble --no-daemon --console=plain -Pversion={{.Target.Version}};
+				fi`)[1:],
 			},
 		},
 		OutputDir: path.Join(b.Dir, "build", "libs"),
@@ -136,5 +144,21 @@ var toolkit = []*flow.Tool{
 				export JAVA_HOME=/opt/jdk
 				export PATH=$JAVA_HOME/bin:$PATH`[1:]),
 		}},
+	},
+	{
+		Name: "maven/setup-gradle",
+		Steps: []flow.Step{
+			{
+				Runs: textwrap.Dedent(`
+				if [ ! -f gradlew ]; then
+					wget -q -O gradle-8.14.3-bin.zip https://services.gradle.org/distributions/gradle-8.14.3-bin.zip
+					unzip -q gradle-8.14.3-bin.zip -d /opt/
+					rm gradle-8.14.3-bin.zip
+					export GRADLE_HOME=/opt/gradle-8.14.3
+					export PATH=$GRADLE_HOME/bin:$PATH
+				fi`[1:]),
+				Needs: []string{"zip", "wget"},
+			},
+		},
 	},
 }
