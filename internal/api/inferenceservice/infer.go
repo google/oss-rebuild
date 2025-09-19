@@ -49,6 +49,9 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	if req.LocationHint() != nil && req.LocationHint().Ref == "" && req.LocationHint().Dir != "" {
 		return nil, api.AsStatus(codes.Unimplemented, errors.New("location hint dir without ref not implemented"))
 	}
+	if req.LocationHint() != nil && req.LocationHint().Repo != "" {
+		return nil, api.AsStatus(codes.InvalidArgument, errors.New("location hint without repo is not supported"))
+	}
 	repoOpt := deps.RepoOptF()
 	if repoOpt.Worktree == nil {
 		return nil, api.AsStatus(codes.Internal, errors.New("filesystem not provided"))
