@@ -306,8 +306,7 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "using git log heuristic (pkg and version match)",
-			wantErr:           false,
+			expectedHeuristic: "using git log heuristic: with pkg and version match",
 		},
 		{
 			name: "infer using source jar heuristic",
@@ -345,8 +344,7 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "using source jar heuristic with mismatched version",
-			wantErr:           false,
+			expectedHeuristic: "using source jar heuristic: with mismatched version",
 		},
 		{
 			name: "infer using tag heuristic",
@@ -383,8 +381,7 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "using tag heuristic with mismatched version",
-			wantErr:           false,
+			expectedHeuristic: "using tag heuristic: with mismatched version",
 		},
 		{
 			name: "prevent checking for source jar heuristic if it is nil",
