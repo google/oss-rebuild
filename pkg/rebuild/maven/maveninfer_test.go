@@ -386,6 +386,41 @@ func TestMavenInfer(t *testing.T) {
 			expectedHeuristic: "using tag heuristic with mismatched version",
 			wantErr:           false,
 		},
+		{
+			name: "prevent checking for source jar heuristic if it is nil",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: initial-commit
+                tags: ["1.0.0"]
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>blah</groupId>
+                        <artifactId>blah</artifactId>
+                        <version>0.0.0-dev</version>
+                    </project>`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/maven/foo/bar/pom.xml"},
+						Body:       []byte("<project><groupId>foo</groupId><artifactId>bar</artifactId><version>1.0.0</version></project>"),
+					},
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			expectedHeuristic: "",
+			// throw no valid git ref as tag matches but then package does not match
+			wantErr: true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

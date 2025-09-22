@@ -107,18 +107,20 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		fallthrough
 	case sourceJarGuess != nil:
 		commit = sourceJarGuess
-		pomXML, foundPkgPath, err := findPomXML(commit, t.Package)
-		if err != nil {
-			log.Printf("source jar heuristic failed: could not find a pom.xml for the package")
-		} else {
-			ref = sourceJarGuess.Hash.String()
-			dir = filepath.Dir(foundPkgPath)
-			if pomXML.Version() != version {
-				log.Printf("using source jar heuristic with mismatched version [expected=%s,actual=%s,path=%s,ref=%s]", version, pomXML.Version(), path.Join(dir, "pom.xml"), ref[:9])
+		if err == nil {
+			pomXML, foundPkgPath, err := findPomXML(commit, t.Package)
+			if err != nil {
+				log.Printf("source jar heuristic failed: could not find a pom.xml for the package")
 			} else {
-				log.Printf("using source jar heuristic (pkg and version match) ref: %s", ref[:9])
+				ref = sourceJarGuess.Hash.String()
+				dir = filepath.Dir(foundPkgPath)
+				if pomXML.Version() != version {
+					log.Printf("using source jar heuristic with mismatched version [expected=%s,actual=%s,path=%s,ref=%s]", version, pomXML.Version(), path.Join(dir, "pom.xml"), ref[:9])
+				} else {
+					log.Printf("using source jar heuristic (pkg and version match) ref: %s", ref[:9])
+				}
+				break
 			}
-			break
 		}
 		fallthrough
 	default:
