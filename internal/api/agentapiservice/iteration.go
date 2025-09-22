@@ -4,16 +4,27 @@
 package agentapiservice
 
 import (
+	"bytes"
 	"context"
+	"crypto"
 	"io/fs"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/httpegress"
+	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/gcb"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
+	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
+	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -129,20 +140,60 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "updating iteration status"))
 	}
 	// NOTE: For now, we block and wait for the build to complete
-	result, err := h.Wait(ctx)
+	result, buildErr := h.Wait(ctx)
+
+	var exactMatch, stabilizedMatch bool
+	if buildErr == nil && result.Error == nil {
+		hashes := []crypto.Hash{crypto.SHA256}
+		stabilizers, err := stability.StabilizersForTarget(session.Target)
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "getting stabilizers for target"))
+		}
+
+		rebuilder, ok := meta.AllRebuilders[session.Target.Ecosystem]
+		if !ok {
+			return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
+		}
+		regclient, err := httpegress.MakeClient(ctx, httpegress.Config{})
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.New("making gateway client"))
+		}
+		mux := rebuild.RegistryMux{
+			Debian:   debianreg.HTTPRegistry{Client: regclient},
+			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
+			NPM:      npmreg.HTTPRegistry{Client: regclient},
+			PyPI:     pypireg.HTTPRegistry{Client: regclient},
+			Maven:    mavenreg.HTTPRegistry{Client: regclient},
+		}
+		upstreamURI, err := rebuilder.UpstreamURL(ctx, session.Target, mux)
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "getting upstream url"))
+		}
+
+		rb, up, err := verifier.SummarizeArtifacts(ctx, store, session.Target, upstreamURI, hashes, stabilizers)
+		exactMatch = bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
+		stabilizedMatch = bytes.Equal(rb.StabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil))
+	}
+
 	// Update iteration with result
 	iteration.Updated = time.Now().UTC()
-	if err != nil {
+	if buildErr != nil {
 		iteration.Status = schema.AgentIterationStatusError
 		iteration.Result = &schema.AgentBuildResult{
 			BuildSuccess: false,
-			ErrorMessage: err.Error(),
+			ErrorMessage: buildErr.Error(),
 		}
 	} else if result.Error != nil {
 		iteration.Status = schema.AgentIterationStatusFailed
 		iteration.Result = &schema.AgentBuildResult{
 			BuildSuccess: false,
 			ErrorMessage: result.Error.Error(),
+		}
+	} else if !exactMatch && !stabilizedMatch {
+		iteration.Status = schema.AgentIterationStatusFailed
+		iteration.Result = &schema.AgentBuildResult{
+			BuildSuccess: false,
+			ErrorMessage: "rebuild content mismatch",
 		}
 	} else {
 		iteration.Status = schema.AgentIterationStatusSuccess
