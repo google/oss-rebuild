@@ -519,6 +519,7 @@ var runBenchmark = &cobra.Command{
 				log.Println("Note: dropping max concurrency to 1 due to local execution")
 			}
 			concurrency = 1
+
 			store, err := localfiles.AssetStore(runID)
 			if err != nil {
 				log.Fatalf("Failed to create temp directory: %v", err)
@@ -580,7 +581,14 @@ var runBenchmark = &cobra.Command{
 			}
 			return
 		}
-		bar := pb.New(set.Count)
+
+		// Added since the count was always 0
+		currentCount := 0
+		for _, pack := range set.Packages {
+			currentCount += len(pack.Versions)
+		}
+
+		bar := pb.New(currentCount)
 		bar.Output = cmd.OutOrStderr()
 		bar.ShowTimeLeft = true
 		verdictChan, err := run.RunBench(ctx, set, run.RunBenchOpts{
