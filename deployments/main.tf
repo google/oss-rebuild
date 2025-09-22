@@ -133,10 +133,6 @@ resource "google_service_account" "builder-remote" {
   account_id  = "builder-remote"
   description = "Rebuild identity used to run rebuilds executed remotely from the RPC service node."
 }
-resource "google_service_account" "builder-local" {
-  account_id  = "builder-local"
-  description = "Rebuild identity used to run rebuilds executed locally on the RPC service node."
-}
 resource "google_service_account" "inference" {
   account_id  = "inference"
   description = "Identity serving inference-only endpoints."
@@ -404,10 +400,6 @@ locals {
       dockerfile = "build/package/Dockerfile.git_cache"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
     }
-    rebuilder = {
-      dockerfile = "build/package/Dockerfile.rebuilder"
-      build_args = ["DEBUG=${terraform_data.debug.output}"]
-    }
     inference = {
       dockerfile = "build/package/Dockerfile.inference"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
@@ -518,13 +510,6 @@ data "google_artifact_registry_docker_image" "git-cache" {
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "git_cache:${module.service_images["git_cache"].image_version}"
   depends_on    = [module.service_images["git_cache"]]
-}
-
-data "google_artifact_registry_docker_image" "rebuilder" {
-  location      = google_artifact_registry_repository.registry.location
-  repository_id = google_artifact_registry_repository.registry.repository_id
-  image_name    = "rebuilder:${module.service_images["rebuilder"].image_version}"
-  depends_on    = [module.service_images["rebuilder"]]
 }
 
 data "google_artifact_registry_docker_image" "inference" {
@@ -725,32 +710,6 @@ resource "google_cloud_run_v2_service" "git-cache" {
   }
   depends_on = [google_project_service.run]
 }
-resource "google_cloud_run_v2_service" "build-local" {
-  name     = "build-local"
-  location = "us-central1"
-  template {
-    service_account = google_service_account.builder-local.email
-    timeout         = "${59 * 60}s" // 59 minutes
-    containers {
-      image = data.google_artifact_registry_docker_image.rebuilder.self_link
-      args = [
-        "--debug-storage=gs://${google_storage_bucket.debug.name}",
-        "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
-        "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
-        "--user-agent=oss-rebuild+${var.host}/0.0.0",
-      ]
-      resources {
-        limits = {
-          cpu    = "8000m"
-          memory = "24G"
-        }
-      }
-    }
-    scaling { max_instance_count = 100 }
-    max_instance_request_concurrency = 1
-  }
-  depends_on = [google_project_service.run]
-}
 resource "google_cloud_run_v2_service" "inference" {
   name     = "inference"
   location = "us-central1"
@@ -825,7 +784,6 @@ resource "google_cloud_run_v2_service" "orchestrator" {
       args = concat([
         "--project=${var.project}",
         "--location=us-central1",
-        "--build-local-url=${google_cloud_run_v2_service.build-local.uri}",
         "--build-remote-identity=${google_service_account.builder-remote.name}",
         "--inference-url=${google_cloud_run_v2_service.inference.uri}",
         "--prebuild-bucket=${google_storage_bucket.bootstrap-tools.name}",
@@ -998,7 +956,6 @@ resource "google_storage_bucket_iam_binding" "cachers-read-git-cache" {
   bucket  = google_storage_bucket.git-cache.name
   role    = "roles/storage.objectViewer"
   members = [
-    "serviceAccount:${google_service_account.builder-local.email}",
     "serviceAccount:${google_service_account.crates-registry.email}",
   ]
 }
@@ -1016,12 +973,11 @@ resource "google_storage_bucket_iam_binding" "attestors-manage-metadata" {
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
   ] : [])
 }
-resource "google_storage_bucket_iam_binding" "attestors-and-local-build-write-debug" {
+resource "google_storage_bucket_iam_binding" "attestors-write-debug" {
   bucket = google_storage_bucket.debug.name
   role   = "roles/storage.objectCreator"
   members = concat([
     "serviceAccount:${google_service_account.orchestrator.email}",
-    "serviceAccount:${google_service_account.builder-local.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
   ] : [])
@@ -1073,13 +1029,6 @@ resource "google_storage_bucket_iam_binding" "builders-view-bootstrap-bucket" {
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
   ] : [])
-}
-resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-build-local" {
-  location = google_cloud_run_v2_service.build-local.location
-  project  = google_cloud_run_v2_service.build-local.project
-  name     = google_cloud_run_v2_service.build-local.name
-  role     = "roles/run.invoker"
-  members  = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
 resource "google_project_iam_binding" "orchestrators-run-workloads-as-others" {
   project = var.project
@@ -1137,17 +1086,15 @@ resource "google_cloud_run_v2_service_iam_binding" "cachers-call-git-cache" {
   name     = google_cloud_run_v2_service.git-cache.name
   role     = "roles/run.invoker"
   members  = [
-    "serviceAccount:${google_service_account.builder-local.email}",
     "serviceAccount:${google_service_account.crates-registry.email}",
   ]
 }
-resource "google_cloud_run_v2_service_iam_binding" "api-and-local-build-and-inference-call-gateway" {
+resource "google_cloud_run_v2_service_iam_binding" "api-and-inference-call-gateway" {
   location = google_cloud_run_v2_service.gateway.location
   project  = google_cloud_run_v2_service.gateway.project
   name     = google_cloud_run_v2_service.gateway.name
   role     = "roles/run.invoker"
   members = [
-    "serviceAccount:${google_service_account.builder-local.email}",
     "serviceAccount:${google_service_account.inference.email}",
     "serviceAccount:${google_service_account.orchestrator.email}",
   ]
