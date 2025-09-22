@@ -29,9 +29,10 @@ type Agent interface {
 }
 
 type RunSessionReq struct {
-	SessionID     string
-	Target        rebuild.Target
-	MaxIterations int
+	SessionID        string
+	Target           rebuild.Target
+	MaxIterations    int
+	InitialIteration *schema.AgentIteration
 }
 
 type RunSessionDeps struct {
@@ -77,6 +78,16 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		LogsBucket:     deps.LogsBucket,
 		MaxTurns:       10,
 	})
+	if req.InitialIteration != nil {
+		err := a.InitializeFromIteration(ctx, req.InitialIteration)
+		if err != nil {
+			return &schema.AgentCompleteRequest{
+				StopReason: schema.AgentCompleteReasonError,
+				Summary:    fmt.Sprintf("Initializing agent: %v", err),
+			}
+		}
+		iterNum = 1
+	}
 	for {
 		iterNum++
 		if iterNum > req.MaxIterations {
