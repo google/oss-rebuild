@@ -13,11 +13,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 )
@@ -65,13 +60,7 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, *deps.GitCache)
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
-	mux := rebuild.RegistryMux{
-		CratesIO: cratesreg.HTTPRegistry{Client: deps.HTTPClient},
-		NPM:      npmreg.HTTPRegistry{Client: deps.HTTPClient},
-		PyPI:     pypireg.HTTPRegistry{Client: deps.HTTPClient},
-		Maven:    mavenreg.HTTPRegistry{Client: deps.HTTPClient},
-		Debian:   debianreg.HTTPRegistry{Client: deps.HTTPClient},
-	}
+	mux := meta.NewRegistryMux(deps.HTTPClient)
 	var s rebuild.Strategy
 	t := rebuild.Target{
 		Ecosystem: req.Ecosystem,

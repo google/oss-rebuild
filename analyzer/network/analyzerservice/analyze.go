@@ -24,10 +24,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/uuid"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
@@ -97,13 +93,7 @@ func analyzeRebuild(ctx context.Context, t rebuild.Target, deps *AnalyzerDeps) (
 		return nil, errors.Wrap(err, "extracting strategy from attestation")
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
-	regclient := httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
-	mux := rebuild.RegistryMux{
-		Debian:   debianreg.HTTPRegistry{Client: regclient},
-		CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-		NPM:      npmreg.HTTPRegistry{Client: regclient},
-		PyPI:     pypireg.HTTPRegistry{Client: regclient},
-	}
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
 	id, err := executeNetworkRebuild(ctx, deps, t, strategy, rebuildAttestation)
 	if err != nil {
 		return nil, errors.Wrap(err, "network rebuild failed")
