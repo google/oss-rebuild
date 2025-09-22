@@ -77,11 +77,15 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate command")
 	}
+	// Check if any auth is required for this plan
+	requiresAuth := len(opts.Resources.ToolAuthRequired) > 0
+
 	return &DockerRunPlan{
-		Image:      image,
-		Script:     script,
-		WorkingDir: "/workspace",
-		OutputPath: "/out/rebuild",
+		Image:        image,
+		Script:       script,
+		WorkingDir:   "/workspace",
+		OutputPath:   "/out/rebuild",
+		RequiresAuth: requiresAuth,
 	}, nil
 }
 
