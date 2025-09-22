@@ -618,6 +618,110 @@ var runBenchmark = &cobra.Command{
 	},
 }
 
+var runAgentBenchmark = &cobra.Command{
+	Use:   "run-agent-bench --project <project> --api <URI> [--max-concurrency <concurrency>] [--agent-iterations <max iterations>] <benchmark.json>",
+	Short: "Run benchmark on agent",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if *project == "" {
+			return errors.New("project must be provided")
+		}
+		fire, err := firestore.NewClient(cmd.Context(), *project)
+		if err != nil {
+			return errors.Wrap(err, "creating firestore client")
+		}
+		ctx := cmd.Context()
+		var stub api.StubT[schema.AgentCreateRequest, schema.AgentCreateResponse]
+		{
+			apiURL, err := url.Parse(*apiUri)
+			if err != nil {
+				return errors.Wrap(err, "parsing API endpoint")
+			}
+			var client *http.Client
+			if strings.Contains(apiURL.Host, "run.app") {
+				// If the api is on Cloud Run, we need to use an authorized client.
+				apiURL.Scheme = "https"
+				client, err = oauth.AuthorizedUserIDClient(ctx)
+				if err != nil {
+					return errors.Wrap(err, "creating authorized HTTP client")
+				}
+			} else {
+				client = http.DefaultClient
+			}
+			stub = api.Stub[schema.AgentCreateRequest, schema.AgentCreateResponse](client, apiURL.JoinPath("agent"))
+		}
+		path := args[0]
+		log.Printf("Extracting benchmark %s...\n", filepath.Base(path))
+		set, err := benchmark.ReadBenchmark(path)
+		if err != nil {
+			return errors.Wrap(err, "reading benchmark file")
+		}
+		log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
+		p := pipe.Into(pipe.FromSlice(set.Packages), func(in benchmark.Package, out chan<- schema.AgentCreateRequest) {
+			if len(in.Versions) > 0 && len(in.Versions) != len(in.Artifacts) {
+				log.Printf("Package %s has mismatching version and artifacts", in.Name)
+				return
+			}
+			for i, v := range in.Versions {
+				req := schema.AgentCreateRequest{
+					Target: rebuild.Target{
+						Ecosystem: rebuild.Ecosystem(in.Ecosystem),
+						Package:   in.Name,
+						Version:   v,
+					},
+					MaxIterations: *agentIterations,
+				}
+				if len(in.Artifacts) > 0 {
+					req.Target.Artifact = in.Artifacts[i]
+				}
+				out <- req
+			}
+		})
+		bar := pb.New(set.Count)
+		bar.Output = cmd.OutOrStderr()
+		bar.ShowTimeLeft = true
+		bar.Start()
+		p2 := pipe.ParInto(*maxConcurrency, p, func(in schema.AgentCreateRequest, out chan<- string) {
+			defer bar.Increment()
+			resp, err := stub(ctx, in)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			sessionDoc := fire.Collection("agent_sessions").Doc(resp.SessionID)
+			var session schema.AgentSession
+			for { // TODO: Avoid infinite loops with whole-loop timeout
+				time.Sleep(30 * time.Second)
+				sessionSnap, err := sessionDoc.Get(ctx)
+				if err != nil && status.Code(err) == codes.NotFound {
+					continue
+				} else if err != nil {
+					log.Println(errors.Wrap(err, "getting session document"))
+					return
+				}
+				if err := sessionSnap.DataTo(&session); err != nil {
+					log.Fatal("deserializing session data")
+					return
+				}
+				if session.Status == schema.AgentSessionStatusCompleted {
+					break
+				}
+			}
+			out <- session.StopReason
+		})
+		var successes, total int
+		for reason := range p2.Out() {
+			if reason == schema.AgentCompleteReasonSuccess {
+				successes++
+			}
+			total++
+		}
+		bar.Finish()
+		log.Printf("Successes: %d/%d\n", successes, total)
+		return nil
+	},
+}
+
 const analyzeMode = schema.ExecutionMode("analyze")
 
 var runOne = &cobra.Command{
@@ -1325,6 +1429,8 @@ var (
 	taskQueueEmail  = flag.String("task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
 	// run-one
 	strategyPath = flag.String("strategy", "", "the strategy file to use")
+	// agent
+	agentIterations = flag.Int("agent-iterations", 10, "maximum number of agent iterations before giving up")
 	// get-results
 	runFlag = flag.String("run", "", "the run(s) from which to fetch results")
 	format  = flag.String("format", "", "format of the output, options are command specific")
@@ -1436,6 +1542,11 @@ func init() {
 	runAgent.Flags().AddGoFlag(flag.Lookup("version"))
 	runAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
 
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("project"))
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("agent-iterations"))
+
 	localAgent.Flags().AddGoFlag(flag.Lookup("project"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("agent-api"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
@@ -1446,19 +1557,24 @@ func init() {
 	localAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("retry-session"))
 
+	// Execution
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
+	rootCmd.AddCommand(runAgent)
+	rootCmd.AddCommand(localAgent)
+	rootCmd.AddCommand(runAgentBenchmark)
+	// Reading data
+	rootCmd.AddCommand(tui)
 	rootCmd.AddCommand(getResults)
 	rootCmd.AddCommand(export)
-	rootCmd.AddCommand(tui)
 	rootCmd.AddCommand(listRuns)
+	// Rebuild logic
 	rootCmd.AddCommand(infer)
+	rootCmd.AddCommand(getGradleGAV)
+	// Infra tools
 	rootCmd.AddCommand(migrate)
 	rootCmd.AddCommand(setTrackedPackagesCmd)
 	rootCmd.AddCommand(getTrackedPackagesCmd)
-	rootCmd.AddCommand(runAgent)
-	rootCmd.AddCommand(getGradleGAV)
-	rootCmd.AddCommand(localAgent)
 }
 
 func main() {
