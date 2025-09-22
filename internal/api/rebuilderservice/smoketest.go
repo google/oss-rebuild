@@ -14,15 +14,11 @@ import (
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
 	mavenrb "github.com/google/oss-rebuild/pkg/rebuild/maven"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 )
@@ -135,13 +131,7 @@ func RebuildSmoketest(ctx context.Context, sreq schema.SmoketestRequest, deps *R
 		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, *deps.GitCache)
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
-	mux := rebuild.RegistryMux{
-		Debian:   debianreg.HTTPRegistry{Client: deps.HTTPClient},
-		CratesIO: cratesreg.HTTPRegistry{Client: deps.HTTPClient},
-		NPM:      npmreg.HTTPRegistry{Client: deps.HTTPClient},
-		PyPI:     pypireg.HTTPRegistry{Client: deps.HTTPClient},
-		Maven:    mavenreg.HTTPRegistry{Client: deps.HTTPClient},
-	}
+	mux := meta.NewRegistryMux(deps.HTTPClient)
 	if deps.TimewarpURL != nil {
 		ctx = context.WithValue(ctx, rebuild.TimewarpID, *deps.TimewarpURL)
 	}

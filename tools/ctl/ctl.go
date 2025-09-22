@@ -51,11 +51,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/gradle"
@@ -175,14 +170,7 @@ var tui = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "failed to create local build def asset store"))
 			}
 		}
-		regclient := http.DefaultClient
-		mux := rebuild.RegistryMux{
-			Debian:   debianreg.HTTPRegistry{Client: regclient},
-			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-			NPM:      npmreg.HTTPRegistry{Client: regclient},
-			PyPI:     pypireg.HTTPRegistry{Client: regclient},
-			Maven:    mavenreg.HTTPRegistry{Client: regclient},
-		}
+		mux := meta.NewRegistryMux(http.DefaultClient)
 		var assetStoreFn func(runID string) (rebuild.LocatableAssetStore, error)
 		if *sharedAssetStore != "" {
 			u, err := url.Parse(*sharedAssetStore)
@@ -403,13 +391,7 @@ var export = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		regclient := http.DefaultClient
-		mux := rebuild.RegistryMux{
-			Debian:   debianreg.HTTPRegistry{Client: regclient},
-			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-			NPM:      npmreg.HTTPRegistry{Client: regclient},
-			PyPI:     pypireg.HTTPRegistry{Client: regclient},
-		}
+		mux := meta.NewRegistryMux(http.DefaultClient)
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, func(_ string) (rebuild.LocatableAssetStore, error) { return destStore, nil })
 		// Write the metadata about the run.
 		if *exportRundex {

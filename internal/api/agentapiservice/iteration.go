@@ -20,11 +20,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -158,13 +153,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		if err != nil {
 			return nil, api.AsStatus(codes.Internal, errors.New("making gateway client"))
 		}
-		mux := rebuild.RegistryMux{
-			Debian:   debianreg.HTTPRegistry{Client: regclient},
-			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-			NPM:      npmreg.HTTPRegistry{Client: regclient},
-			PyPI:     pypireg.HTTPRegistry{Client: regclient},
-			Maven:    mavenreg.HTTPRegistry{Client: regclient},
-		}
+		mux := meta.NewRegistryMux(regclient)
 		upstreamURI, err := rebuilder.UpstreamURL(ctx, session.Target, mux)
 		if err != nil {
 			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "getting upstream url"))

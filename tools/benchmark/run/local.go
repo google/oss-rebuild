@@ -27,10 +27,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
 )
 
@@ -54,13 +50,7 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 	if req.UseSyscallMonitor {
 		return nil, errors.New("syscall monitor not supported")
 	}
-	regClient := httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{})
-	mux := rebuild.RegistryMux{
-		Debian:   debianreg.HTTPRegistry{Client: regClient},
-		CratesIO: cratesreg.HTTPRegistry{Client: regClient},
-		NPM:      npmreg.HTTPRegistry{Client: regClient},
-		PyPI:     pypireg.HTTPRegistry{Client: regClient},
-	}
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
 	if req.Artifact == "" {
 		switch t.Ecosystem {
