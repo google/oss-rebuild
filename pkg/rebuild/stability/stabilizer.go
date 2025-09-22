@@ -31,6 +31,10 @@ func StabilizersForTarget(t rebuild.Target) ([]archive.Stabilizer, error) {
 		if format == archive.ZipFormat {
 			stabilizers = append(stabilizers, archive.AllJarStabilizers...)
 		}
+	case rebuild.CratesIO:
+		if format == archive.TarGzFormat {
+			stabilizers = append(stabilizers, archive.AllCrateStabilizers...)
+		}
 	}
 	return stabilizers, nil
 }
