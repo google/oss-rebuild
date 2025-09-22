@@ -50,6 +50,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5"
@@ -187,6 +188,12 @@ func (c nilCache) Get(plumbing.Hash) (plumbing.EncodedObject, bool) { return nil
 func (c nilCache) Put(plumbing.EncodedObject)                       {}
 func (c nilCache) Clear()                                           {}
 
+func doClone(ctx context.Context, mfs billy.Filesystem, cloneOpts *git.CloneOptions) error {
+	s := filesystem.NewStorage(mfs, nilCache{})
+	_, err := git.CloneContext(ctx, s, nil, cloneOpts)
+	return err
+}
+
 // populateCache writes an archived bare checkout of the repo to the GCS object.
 func populateCache(ctx context.Context, repo, ref string, o *storage.ObjectHandle) error {
 	m := memfs.New()
@@ -194,23 +201,24 @@ func populateCache(ctx context.Context, repo, ref string, o *storage.ObjectHandl
 	if err != nil {
 		return errors.Wrap(err, "failure allocating .git/")
 	}
-	s := filesystem.NewStorage(dotGit, nilCache{})
 	cloneOpts := &git.CloneOptions{URL: "https://" + repo, NoCheckout: true}
 	if ref != "" {
 		// Clone specific ref/branch
 		cloneOpts.ReferenceName = plumbing.ReferenceName(ref)
 		cloneOpts.SingleBranch = true
 	}
-	_, err = git.CloneContext(ctx, s, nil, cloneOpts)
-	if err != nil {
+	log.Printf("Cloning with opts: %v", cloneOpts)
+	if err := doClone(ctx, dotGit, cloneOpts); err != nil {
 		if ref != "" {
 			return errors.Wrapf(err, "failure cloning %s at ref %s", repo, ref)
 		}
 		return errors.Wrapf(err, "failure cloning %s", repo)
 	}
+	log.Println("Clone successful")
 	w := o.NewWriter(ctx)
 	gw := gzip.NewWriter(w)
 	tw := tar.NewWriter(gw)
+	var bytesWritten int64
 	err = util.Walk(m, m.Root(), func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			// Fail on any path handling issue (see filepath.WalkFunc docs).
@@ -242,7 +250,20 @@ func populateCache(ctx context.Context, repo, ref string, o *storage.ObjectHandl
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(tw, f); err != nil {
+			if written, err := io.Copy(tw, f); err != nil {
+				return err
+			} else {
+				bytesWritten += written
+			}
+			// Periodically flush to GCS.
+			if bytesWritten > 1_000_000 {
+				bytesWritten = 0
+				if err := gw.Flush(); err != nil {
+					return err
+				}
+			}
+			// Remove completed file from filesystem.
+			if err := m.Remove(path); err != nil {
 				return err
 			}
 		}
