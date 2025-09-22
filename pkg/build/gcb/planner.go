@@ -537,8 +537,12 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 		assetTypes := []rebuild.AssetType{
 			rebuild.ContainerImageAsset,
 			rebuild.RebuildAsset,
-			rebuild.TetragonLogAsset,
-			rebuild.ProxyNetlogAsset,
+		}
+		if opts.UseSyscallMonitor {
+			assetTypes = append(assetTypes, rebuild.TetragonLogAsset)
+		}
+		if opts.UseNetworkProxy {
+			assetTypes = append(assetTypes, rebuild.ProxyNetlogAsset)
 		}
 		for _, assetType := range assetTypes {
 			url := opts.Resources.AssetStore.URL(assetType.For(target))
@@ -557,19 +561,15 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 					To:   url.String(),
 				})
 			case rebuild.TetragonLogAsset:
-				if opts.UseSyscallMonitor {
-					uploads = append(uploads, upload{
-						From: "/workspace/tetragon.jsonl",
-						To:   url.String(),
-					})
-				}
+				uploads = append(uploads, upload{
+					From: "/workspace/tetragon.jsonl",
+					To:   url.String(),
+				})
 			case rebuild.ProxyNetlogAsset:
-				if opts.UseNetworkProxy {
-					uploads = append(uploads, upload{
-						From: "/workspace/netlog.json",
-						To:   url.String(),
-					})
-				}
+				uploads = append(uploads, upload{
+					From: "/workspace/netlog.json",
+					To:   url.String(),
+				})
 			}
 		}
 	}
