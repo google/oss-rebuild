@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
+	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -92,15 +93,25 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "creating Cloud Build service")
 	}
-	var gcbClient gcb.Client
+	executorConfig := buildgcb.ExecutorConfig{
+		Project:        *project,
+		ServiceAccount: *buildServiceAccount,
+		LogsBucket:     *logsBucket,
+		Client:         nil, // Defined depending on gcbPrivatePoolName
+	}
 	if *gcbPrivatePoolName != "" {
-		privatePoolConfig := &gcb.PrivatePoolConfig{
+		pool := &gcb.PrivatePoolConfig{
 			Name:   *gcbPrivatePoolName,
 			Region: *gcbPrivatePoolRegion,
 		}
-		gcbClient = gcb.NewClientWithPrivatePool(cloudbuildService, privatePoolConfig)
+		executorConfig.PrivatePool = pool
+		executorConfig.Client = gcb.NewClientWithPrivatePool(cloudbuildService, pool)
 	} else {
-		gcbClient = gcb.NewClient(cloudbuildService)
+		executorConfig.Client = gcb.NewClient(cloudbuildService)
+	}
+	gcbExecutor, err := buildgcb.NewExecutor(executorConfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating GCB executor")
 	}
 	// Storage setup
 	inputAttestationStore, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, ""), "gs://"+*attestationBucket)
@@ -113,7 +124,7 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 	}
 	localMetadataStore := rebuild.NewFilesystemAssetStore(memfs.New())
 	// Debug store builder
-	debugStoreBuilder := func(ctx context.Context) (rebuild.AssetStore, error) {
+	debugStoreBuilder := func(ctx context.Context) (rebuild.LocatableAssetStore, error) {
 		if ctx.Value(rebuild.RunID) == nil {
 			return nil, errors.New("RunID must be set in the context")
 		}
@@ -130,10 +141,7 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 		HTTPClient:                 httpClient,
 		Signer:                     signer,
 		Verifier:                   verifier,
-		GCBClient:                  gcbClient,
-		BuildProject:               *project,
-		BuildServiceAccount:        *buildServiceAccount,
-		BuildLogsBucket:            *logsBucket,
+		GCBExecutor:                gcbExecutor,
 		ServiceRepo:                serviceLoc,
 		InputAttestationStore:      inputAttestationStore,
 		OutputAnalysisStore:        outputAnalysisStore,
