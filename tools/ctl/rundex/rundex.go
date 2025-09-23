@@ -135,11 +135,20 @@ func DoQuery[T any](ctx context.Context, q firestore.Query, fn func(*firestore.D
 
 func cleanVerdict(m string) string {
 	// strip the leading error message of an inference failure to fit the latter, finer-grained error messages, on screen.
-	m = strings.Replace(m, "getting strategy: fetching inference: failed to infer strategy:", "inference failure:", -1)
+	m = strings.ReplaceAll(m, "getting strategy: fetching inference: failed to infer strategy:", "inference:")
+	m = strings.ReplaceAll(m, "\n: 500 Internal Server Error: non-OK response", "")
 	switch {
 	// Generic
+	case strings.Contains(m, "code = AlreadyExists desc = conflict with existing attestati"):
+		m = "Success! (cached)"
+	case strings.Contains(m, "executing rebuild: GCB build failed:"):
+		m = "build: failed"
+	case strings.Contains(m, "executing rebuild: GCB build internal error:"):
+		m = "build: internal error"
+	case strings.Contains(m, "code = FailedPrecondition desc = rebuild content mismatch"):
+		m = "compare: content mismatch"
 	case strings.Contains(m, "clone failed"):
-		m = "clone failed"
+		m = "repo: clone failed"
 	case strings.HasPrefix(m, `mismatched version `):
 		m = "wrong package version in manifest"
 	case strings.HasPrefix(m, `mismatched name `):
@@ -147,18 +156,18 @@ func cleanVerdict(m string) string {
 	case strings.Contains(m, `using existing: Failed to checkout: reference not found`):
 		m = "unable to checkout main branch on reused repo"
 	case strings.Contains(m, `unsupported repo type`):
-		m = "bad repo URL"
-	case strings.Contains(m, `npm is known not to run on Node.js`):
-		m = "npm install: incompatible Node version"
+		m = "repo: bad repo URL"
+	case strings.HasPrefix(m, `Checkout failed`):
+		m = "repo: git checkout failed"
 	case strings.Contains(m, `Unsupported URL Type "workspace:"`):
 		m = `npm install: unsupported scheme "workspace:"`
 	case strings.Contains(m, `Unsupported URL Type "patch:"`):
 		m = `npm install: unsupported scheme "patch:"`
-	case strings.Contains(m, "no download URL for JDK version"):
-		m = `no download URL for JDK version`
 	case strings.Contains(m, `getting strategy: fetching inference: making http request:`) && strings.Contains(m, `connection reset by peer`):
 		m = `getting strategy: fetching inference: making http request to inference service: connection reset by peer`
 	// NPM
+	case strings.Contains(m, `npm is known not to run on Node.js`):
+		m = "npm install: incompatible Node version"
 	case strings.HasPrefix(m, "unknown npm pack failure:"):
 		if strings.Contains(m, ": not found") {
 			i := strings.Index(m, ": not found")
@@ -199,8 +208,13 @@ func cleanVerdict(m string) string {
 		m = "connection to crates.io failed"
 	case strings.Contains(m, `believes it's in a workspace when it's not`):
 		m = "cargo workspace error"
-	case strings.HasPrefix(m, `Checkout failed`):
-		m = "git checkout failed"
+		// Maven
+	case strings.HasPrefix(m, "inference: failed to resolve parent POM"):
+		m = "inference: failed to resolve parent POM"
+	case strings.HasPrefix(m, "inference: failed to find build.gradle directory"):
+		m = "inference: failed to find build.gradle directory"
+	case strings.Contains(m, "no download URL for JDK version"):
+		m = `no download URL for JDK version`
 	}
 	return m
 }
