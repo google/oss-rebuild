@@ -941,16 +941,27 @@ var migrate = &cobra.Command{
 }
 
 var infer = &cobra.Command{
-	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
+	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--repo-hint <repo>] [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
 	Short: "Run inference",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		var strategyHint *schema.StrategyOneOf
+		if *repoHint != "" {
+			strategyHint = &schema.StrategyOneOf{
+				LocationHint: &rebuild.LocationHint{
+					Location: rebuild.Location{
+						Repo: *repoHint,
+					},
+				},
+			}
+		}
 		req := schema.InferenceRequest{
-			Ecosystem: rebuild.Ecosystem(*ecosystem),
-			Package:   *pkg,
-			Version:   *version,
-			Artifact:  *artifact,
-			// TODO: Add support for strategy hint.
+			Ecosystem:    rebuild.Ecosystem(*ecosystem),
+			Package:      *pkg,
+			Version:      *version,
+			Artifact:     *artifact,
+			StrategyHint: strategyHint,
+			// TODO: Add support providing dir and ref hints.
 		}
 		var resp *schema.StrategyOneOf
 		if *apiUri != "" {
@@ -1432,6 +1443,8 @@ var (
 	strategyPath = flag.String("strategy", "", "the strategy file to use")
 	// agent
 	agentIterations = flag.Int("agent-iterations", 10, "maximum number of agent iterations before giving up")
+	// infer
+	repoHint = flag.String("repo-hint", "", "a hint of the repository URL where the package is hosted")
 	// get-results
 	runFlag = flag.String("run", "", "the run(s) from which to fetch results")
 	format  = flag.String("format", "", "format of the output, options are command specific")
@@ -1526,6 +1539,7 @@ func init() {
 	infer.Flags().AddGoFlag(flag.Lookup("artifact"))
 	infer.Flags().AddGoFlag(flag.Lookup("bootstrap-bucket"))
 	infer.Flags().AddGoFlag(flag.Lookup("bootstrap-version"))
+	infer.Flags().AddGoFlag(flag.Lookup("repo-hint"))
 
 	getGradleGAV.Flags().AddGoFlag(flag.Lookup("repository"))
 	getGradleGAV.Flags().AddGoFlag(flag.Lookup("ref"))
