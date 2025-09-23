@@ -16,11 +16,6 @@ type Rebuilder struct{}
 
 var _ rebuild.Rebuilder = Rebuilder{}
 
-func (r Rebuilder) RebuildRemote(ctx context.Context, input rebuild.Input, opts rebuild.RemoteOptions) error {
-	opts.UseTimewarp = r.UsesTimewarp(input)
-	return rebuild.RebuildRemote(ctx, input, opts)
-}
-
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return false
 }
