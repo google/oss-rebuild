@@ -11,13 +11,13 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
 	"github.com/google/oss-rebuild/tools/ctl/ide/commands"
 	"github.com/google/oss-rebuild/tools/ctl/ide/explorer"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
-	"github.com/google/oss-rebuild/tools/ctl/ide/rebuilder"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/rivo/tview"
@@ -32,11 +32,11 @@ type TuiApp struct {
 	statusBox *tview.TextView
 	logs      *tview.TextView
 	benches   benchmark.Repository
-	rb        *rebuilder.Rebuilder
+	executor  *local.DockerRunExecutor
 }
 
 // NewTuiApp creates a new tuiApp object.
-func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, aiClient *genai.Client) *TuiApp {
+func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.FetchRebuildOpts, benches benchmark.Repository, buildDefs rebuild.LocatableAssetStore, butler localfiles.Butler, aiClient *genai.Client, prebuildConfig rebuild.PrebuildConfig) *TuiApp {
 	var t *TuiApp
 	{
 		app := tview.NewApplication()
@@ -48,14 +48,24 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 		log.Default().SetFlags(0)
 		logs.SetBorder(true).SetTitle("Logs")
 		logs.ScrollToEnd()
-		rb := &rebuilder.Rebuilder{}
+		executor, err := local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
+			// We will manage container cleanup outside the executor.
+			// Specifically, we will always re-use the same name for the
+			// container, removing any existing containers with that name before
+			// starting the next run. This effectively keeps the "most recent"
+			// container available for interactive exploration
+			RetainContainer: true,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
 		t = &TuiApp{
 			app: app,
 			// When the widgets are updated, we should refresh the application.
 			statusBox: tview.NewTextView().SetChangedFunc(func() { app.Draw() }),
 			logs:      logs,
 			benches:   benches,
-			rb:        rb,
+			executor:  executor,
 			root:      tview.NewPages(),
 		}
 	}
@@ -63,16 +73,16 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 		return modal.Show(t.app, t.root, input, opts)
 	}
 	cmdReg := &commandreg.Registry{}
-	if err := cmdReg.AddGlobals(commands.NewGlobalCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
+	if err := cmdReg.AddGlobals(commands.NewGlobalCmds(t.app, t.executor, prebuildConfig, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
 		log.Fatal(err)
 	}
-	if err := cmdReg.AddBenchmarks(commands.NewBenchmarkCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
+	if err := cmdReg.AddBenchmarks(commands.NewBenchmarkCmds(t.app, t.executor, prebuildConfig, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
 		log.Fatal(err)
 	}
-	if err := cmdReg.AddRebuildGroups(commands.NewRebuildGroupCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
+	if err := cmdReg.AddRebuildGroups(commands.NewRebuildGroupCmds(t.app, t.executor, prebuildConfig, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
 		log.Fatal(err)
 	}
-	if err := cmdReg.AddRebuilds(commands.NewRebuildCmds(t.app, t.rb, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
+	if err := cmdReg.AddRebuilds(commands.NewRebuildCmds(t.app, t.executor, prebuildConfig, modalFn, butler, aiClient, buildDefs, dex, benches, cmdReg)...); err != nil {
 		log.Fatal(err)
 	}
 	err := cmdReg.AddGlobals([]commandreg.GlobalCmd{
@@ -153,14 +163,6 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 					go cmd.Func(context.Background())
 					return nil
 				}
-			}
-			return event
-		})
-		t.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-			if event.Key() == tcell.KeyCtrlC {
-				// Clean up the rebuilder docker container.
-				t.rb.Kill()
-				return event
 			}
 			return event
 		})
