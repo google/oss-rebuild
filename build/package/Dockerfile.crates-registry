@@ -1,0 +1,12 @@
+FROM golang:1.24-alpine as binary
+ARG DEBUG=false
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build \
+    -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w')" \
+    -gcflags="-l=4" \
+    ./cmd/registry
+FROM alpine
+RUN apk add --no-cache ca-certificates git
+COPY --from=binary /src/registry /
+ENTRYPOINT ["/registry"]
