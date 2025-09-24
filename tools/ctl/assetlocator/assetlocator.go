@@ -106,8 +106,7 @@ func (m *assetStore) Reader(ctx context.Context, a rebuild.Asset) (io.ReadCloser
 			if err != nil {
 				return nil, errors.Wrap(err, "creating gcs client")
 			}
-			obj := client.Bucket(m.metaAssetStore.LogsBucket).Object(gcb.MergedLogFile(bi.BuildID))
-			return obj.NewReader(ctx)
+			return gcb.NewGCSLogsClient(client, m.metaAssetStore.LogsBucket).ReadBuildLogs(ctx, bi.BuildID)
 		default:
 			return nil, errors.Errorf("Unsupported asset type: %s", a.Type)
 		}
