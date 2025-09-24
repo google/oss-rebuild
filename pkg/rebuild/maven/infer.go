@@ -78,9 +78,17 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 	switch buildTool {
 	case mavenBuildTool:
-		return MavenInfer(ctx, t, mux, repoConfig)
+		mavenStrategy, err := MavenInfer(ctx, t, mux, repoConfig)
+		if err != nil {
+			return nil, errors.Wrapf(err, "inferring Maven strategy")
+		}
+		return mavenStrategy, nil
 	case gradleBuildTool:
-		return GradleInfer(ctx, t, mux, repoConfig)
+		gradleStrategy, err := GradleInfer(ctx, t, mux, repoConfig)
+		if err != nil {
+			return nil, errors.Wrapf(err, "inferring Gradle strategy")
+		}
+		return gradleStrategy, nil
 	case sbtBuildTool, antBuildTool, ivyBuildTool, leiningenBuildTool, npmBuildTool, millBuildTool:
 		return nil, errors.Errorf("build tool %s is recognized but not yet supported", buildTool)
 	default:
