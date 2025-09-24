@@ -36,7 +36,7 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 		ref = sourceJarGuess.Hash.String()
 		log.Printf("using source jar heuristic ref: %s", ref[:9])
 	default:
-		return nil, errors.Errorf("no valid git ref")
+		return nil, errors.Errorf("no git ref")
 	}
 	commitObject, err := repoConfig.Repository.CommitObject(plumbing.NewHash(ref))
 	if err != nil {
