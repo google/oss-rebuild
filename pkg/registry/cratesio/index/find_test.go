@@ -32,7 +32,7 @@ func TestGetPackageFilePath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getPackageFilePath(tt.pkg)
+			got := EntryPath(tt.pkg)
 			if got != tt.want {
 				t.Errorf("getPackageFilePath(%q) = %q, want %q", tt.pkg, got, tt.want)
 			}
