@@ -10,6 +10,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -20,7 +21,11 @@ import (
 func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy, ropt *gitx.RepositoryOptions) (rebuild.Strategy, error) {
 	var repo string
 	if lh, ok := hint.(*rebuild.LocationHint); ok && lh != nil {
-		repo = lh.Location.Repo
+		var err error
+		repo, err = uri.CanonicalizeRepoURI(lh.Location.Repo)
+		if err != nil {
+			return nil, errors.Wrap(err, "canonicalizing repo hint")
+		}
 	} else {
 		var err error
 		repo, err = rebuilder.InferRepo(ctx, t, mux)
