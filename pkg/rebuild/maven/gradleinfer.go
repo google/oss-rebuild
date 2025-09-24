@@ -27,20 +27,20 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
-	sourceJarGuess, err := findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
-	if err != nil {
-		log.Printf("source jar heuristic failed: %s", err)
-	}
 	var ref string
-	switch {
-	case tagGuess != "":
+	if tagGuess != "" {
 		ref = tagGuess
 		log.Printf("using tag heuristic ref: %s", tagGuess[:9])
-	case sourceJarGuess != nil:
-		ref = sourceJarGuess.Hash.String()
-		log.Printf("using source jar heuristic ref: %s", ref[:9])
-	default:
-		return nil, errors.Errorf("no git ref")
+	} else {
+		sourceJarGuess, err := findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
+		if err != nil {
+			log.Printf("source jar heuristic failed: %s", err)
+		} else if sourceJarGuess != nil {
+			ref = sourceJarGuess.Hash.String()
+			log.Printf("using source jar heuristic ref: %s", ref[:9])
+		} else {
+			return nil, errors.Errorf("no git ref")
+		}
 	}
 	commitObject, err := repoConfig.Repository.CommitObject(plumbing.NewHash(ref))
 	if err != nil {
