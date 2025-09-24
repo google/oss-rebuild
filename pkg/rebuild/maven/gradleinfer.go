@@ -23,23 +23,27 @@ import (
 const gradleVersion = "8.14.3"
 
 func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig) (rebuild.Strategy, error) {
+	var ref string
+	// 1. Tag Heuristic
 	tagGuess, err := rebuild.FindTagMatch(t.Package, t.Version, repoConfig.Repository)
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
-	sourceJarGuess, err := findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
-	if err != nil {
-		log.Printf("source jar heuristic failed: %s", err)
-	}
-	var ref string
-	switch {
-	case tagGuess != "":
+	if tagGuess != "" {
 		ref = tagGuess
 		log.Printf("using tag heuristic ref: %s", tagGuess[:9])
-	case sourceJarGuess != nil:
-		ref = sourceJarGuess.Hash.String()
-		log.Printf("using source jar heuristic ref: %s", ref[:9])
-	default:
+	}
+	// 2. Source Jar Heuristic
+	if ref == "" {
+		sourceJarGuess, err := findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
+		if err != nil {
+			log.Printf("source jar heuristic failed: %s", err)
+		} else if sourceJarGuess != nil {
+			ref = sourceJarGuess.Hash.String()
+			log.Printf("using source jar heuristic ref: %s", ref[:9])
+		}
+	}
+	if ref == "" {
 		return nil, errors.Errorf("no git ref")
 	}
 	commitObject, err := repoConfig.Repository.CommitObject(plumbing.NewHash(ref))
