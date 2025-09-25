@@ -20,6 +20,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 		name      string
 		url       string
 		basicAuth string
+		headers   map[string]string
 		client    *httpxtest.MockClient
 		want      *http.Response
 	}{
@@ -392,6 +393,145 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				Body:       io.NopCloser(bytes.NewBufferString("time set too far in the past\n")),
 			},
 		},
+		{
+			name:      "cargosparse config.json request",
+			url:       "http://localhost:8081/config.json",
+			basicAuth: "cargosparse:abc1234",
+			client: &httpxtest.MockClient{
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(`{"dl": "https://static.crates.io/crates","api": "/"}`)),
+			},
+		},
+		{
+			name:      "cargosparse index file request",
+			url:       "http://localhost:8081/so/me/some-crate",
+			basicAuth: "cargosparse:abc1234",
+			client: &httpxtest.MockClient{
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusFound,
+				Header: http.Header{
+					"Content-Type": []string{"text/html; charset=utf-8"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`<a href="https://raw.githubusercontent.com/rust-lang/crates.io-index/abc1234/so/me/some-crate">Found</a>.
+
+`)),
+			},
+		},
+		{
+			name:      "cargosparse missing commit hash",
+			url:       "http://localhost:8081/some-crate",
+			basicAuth: "cargosparse:",
+			client:    &httpxtest.MockClient{},
+			want: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(bytes.NewBufferString("no commit hash set\n")),
+			},
+		},
+		{
+			name:      "cargosparse invalid commit hash",
+			url:       "http://localhost:8081/some-crate",
+			basicAuth: "cargosparse:invalid-hash!",
+			client:    &httpxtest.MockClient{},
+			want: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(bytes.NewBufferString("invalid commit hash format\n")),
+			},
+		},
+		{
+			name:      "cargogitarchive successful request",
+			url:       "http://localhost:8081/index.git.tar",
+			basicAuth: "cargogitarchive:abc1234",
+			headers: map[string]string{
+				"X-Package-Names": "serde,tokio,clap",
+			},
+			client: &httpxtest.MockClient{
+				URLValidator: httpxtest.NewURLValidator(t),
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://raw.githubusercontent.com/rust-lang/crates.io-index/abc1234/se/rd/serde",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Body:       io.NopCloser(bytes.NewBufferString(`{"name":"serde","vers":"1.0.0"}`)),
+						},
+					},
+					{
+						Method: "GET",
+						URL:    "https://raw.githubusercontent.com/rust-lang/crates.io-index/abc1234/to/ki/tokio",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Body:       io.NopCloser(bytes.NewBufferString(`{"name":"tokio","vers":"1.0.0"}`)),
+						},
+					},
+					{
+						Method: "GET",
+						URL:    "https://raw.githubusercontent.com/rust-lang/crates.io-index/abc1234/cl/ap/clap",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Body:       io.NopCloser(bytes.NewBufferString(`{"name":"clap","vers":"4.0.0"}`)),
+						},
+					},
+				},
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/x-tar"},
+				},
+				// Body content will be a tar archive - we'll validate it's not empty
+			},
+		},
+		{
+			name:      "cargogitarchive invalid path",
+			url:       "http://localhost:8081/wrong-path",
+			basicAuth: "cargogitarchive:abc1234",
+			client:    &httpxtest.MockClient{},
+			want: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(bytes.NewBufferString("invalid path for cargogitarchive\n")),
+			},
+		},
+		{
+			name:      "cargogitarchive missing package names header",
+			url:       "http://localhost:8081/index.git.tar",
+			basicAuth: "cargogitarchive:abc1234",
+			client:    &httpxtest.MockClient{},
+			want: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(bytes.NewBufferString("missing X-Package-Names header\n")),
+			},
+		},
+		{
+			name:      "cargogitarchive missing commit hash",
+			url:       "http://localhost:8081/index.git.tar",
+			basicAuth: "cargogitarchive:",
+			headers: map[string]string{
+				"X-Package-Names": "serde",
+			},
+			client: &httpxtest.MockClient{},
+			want: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(bytes.NewBufferString("no commit hash set\n")),
+			},
+		},
+		{
+			name:      "cargogitarchive invalid commit hash",
+			url:       "http://localhost:8081/index.git.tar",
+			basicAuth: "cargogitarchive:invalid-hash!",
+			headers: map[string]string{
+				"X-Package-Names": "serde",
+			},
+			client: &httpxtest.MockClient{},
+			want: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(bytes.NewBufferString("invalid commit hash format\n")),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -401,6 +541,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			if tt.basicAuth != "" {
 				parts := bytes.SplitN([]byte(tt.basicAuth), []byte(":"), 2)
 				req.SetBasicAuth(string(parts[0]), string(parts[1]))
+			}
+			for key, value := range tt.headers {
+				req.Header.Set(key, value)
 			}
 
 			// Execute
@@ -425,9 +568,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to read response body: %v", err)
 			}
-			wantBody, err := io.ReadAll(tt.want.Body)
-			if err != nil {
-				t.Fatalf("Failed to read expected body: %v", err)
+			var wantBody []byte
+			if tt.want.Body != nil {
+				wantBody, err = io.ReadAll(tt.want.Body)
+				if err != nil {
+					t.Fatalf("Failed to read expected body: %v", err)
+				}
 			}
 			// Compare responses
 			if got.Header.Get("Content-Type") == "application/json" {
@@ -441,7 +587,16 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				if diff := cmp.Diff(wantJSON, gotJSON); diff != "" {
 					t.Errorf("handler returned unexpected body (-want +got):\n%s", diff)
 				}
-			} else {
+			} else if got.Header.Get("Content-Type") == "application/x-tar" {
+				// For tar archives, just verify that we got some content and it has tar header
+				if len(gotBody) == 0 {
+					t.Error("expected tar archive but got empty body")
+				}
+				// Simple validation: tar files should start with a filename and end with null padding
+				if len(gotBody) < 512 {
+					t.Errorf("tar archive too small: got %d bytes, expected at least 512", len(gotBody))
+				}
+			} else if tt.want.Body != nil {
 				if diff := cmp.Diff(string(wantBody), string(gotBody)); diff != "" {
 					t.Errorf("handler returned wrong body (-want +got):\n%s", diff)
 				}

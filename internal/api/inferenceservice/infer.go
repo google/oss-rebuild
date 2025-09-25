@@ -7,33 +7,25 @@ import (
 	"context"
 	"log"
 
-	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
-	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
-	"github.com/google/oss-rebuild/pkg/rebuild/debian"
-	"github.com/google/oss-rebuild/pkg/rebuild/maven"
-	"github.com/google/oss-rebuild/pkg/rebuild/npm"
-	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
+	"github.com/google/oss-rebuild/internal/uri"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 )
 
-func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy) (rebuild.Strategy, error) {
-	s := memory.NewStorage()
-	mfs := memfs.New()
+func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy, ropt *gitx.RepositoryOptions) (rebuild.Strategy, error) {
 	var repo string
 	if lh, ok := hint.(*rebuild.LocationHint); ok && lh != nil {
-		repo = lh.Location.Repo
+		var err error
+		repo, err = uri.CanonicalizeRepoURI(lh.Location.Repo)
+		if err != nil {
+			return nil, errors.Wrap(err, "canonicalizing repo hint")
+		}
 	} else {
 		var err error
 		repo, err = rebuilder.InferRepo(ctx, t, mux)
@@ -41,7 +33,7 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 			return nil, err
 		}
 	}
-	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, mfs, s)
+	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, ropt)
 	if err != nil {
 		return nil, err
 	}
@@ -55,23 +47,28 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 type InferDeps struct {
 	HTTPClient httpx.BasicClient
 	GitCache   *gitx.Cache
+	RepoOptF   func() *gitx.RepositoryOptions
 }
 
 func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*schema.StrategyOneOf, error) {
 	if req.LocationHint() != nil && req.LocationHint().Ref == "" && req.LocationHint().Dir != "" {
 		return nil, api.AsStatus(codes.Unimplemented, errors.New("location hint dir without ref not implemented"))
 	}
+	if req.LocationHint() != nil && req.LocationHint().Repo == "" {
+		return nil, api.AsStatus(codes.InvalidArgument, errors.New("location hint without repo is not supported"))
+	}
+	repoOpt := deps.RepoOptF()
+	if repoOpt.Worktree == nil {
+		return nil, api.AsStatus(codes.Internal, errors.New("filesystem not provided"))
+	}
+	if repoOpt.Storer == nil {
+		return nil, api.AsStatus(codes.Internal, errors.New("git storage not provided"))
+	}
 	if deps.GitCache != nil {
 		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, *deps.GitCache)
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
-	mux := rebuild.RegistryMux{
-		CratesIO: cratesreg.HTTPRegistry{Client: deps.HTTPClient},
-		NPM:      npmreg.HTTPRegistry{Client: deps.HTTPClient},
-		PyPI:     pypireg.HTTPRegistry{Client: deps.HTTPClient},
-		Maven:    mavenreg.HTTPRegistry{Client: deps.HTTPClient},
-		Debian:   debianreg.HTTPRegistry{Client: deps.HTTPClient},
-	}
+	mux := meta.NewRegistryMux(deps.HTTPClient)
 	var s rebuild.Strategy
 	t := rebuild.Target{
 		Ecosystem: req.Ecosystem,
@@ -79,22 +76,11 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		Version:   req.Version,
 		Artifact:  req.Artifact,
 	}
-	// TODO: Use req.LocationHint in these individual infer calls.
-	var err error
-	switch req.Ecosystem {
-	case rebuild.NPM:
-		s, err = doInfer(ctx, npm.Rebuilder{}, t, mux, req.LocationHint())
-	case rebuild.PyPI:
-		s, err = doInfer(ctx, pypi.Rebuilder{}, t, mux, req.LocationHint())
-	case rebuild.CratesIO:
-		s, err = doInfer(ctx, cratesio.Rebuilder{}, t, mux, req.LocationHint())
-	case rebuild.Debian:
-		s, err = doInfer(ctx, debian.Rebuilder{}, t, mux, req.LocationHint())
-	case rebuild.Maven:
-		s, err = doInfer(ctx, maven.Rebuilder{}, t, mux, req.LocationHint())
-	default:
+	rebuilder, ok := meta.AllRebuilders[req.Ecosystem]
+	if !ok {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
+	s, err := doInfer(ctx, rebuilder, t, mux, req.LocationHint(), repoOpt)
 	if err != nil {
 		log.Printf("No inference for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, err)
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to infer strategy"))

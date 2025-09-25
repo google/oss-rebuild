@@ -109,6 +109,14 @@ locals {
   project_num = data.google_project.project.number
 }
 
+terraform {
+  required_providers {
+    google = {
+      source  = "google"
+      version = "~> 6.0"
+    }
+  }
+}
 provider "google" {
   project = var.project
   region  = "us-central1"
@@ -1157,6 +1165,11 @@ resource "google_storage_bucket_iam_binding" "agent-manages-sessions" {
 resource "google_storage_bucket_iam_binding" "agent-reads-metadata" {
   bucket  = google_storage_bucket.agent-metadata.name
   role    = "roles/storage.objectViewer"
+  members = ["serviceAccount:${google_service_account.agent-job.email}"]
+}
+resource "google_storage_bucket_iam_binding" "agent-reads-logs" {
+  bucket  = google_storage_bucket.agent-logs.name
+  role   = google_project_iam_custom_role.bucket-viewer-role.name
   members = ["serviceAccount:${google_service_account.agent-job.email}"]
 }
 resource "google_project_iam_binding" "orchestrator-creates-run-jobs" {

@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/firestore"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/apiservice"
@@ -38,12 +39,15 @@ import (
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
-	apiURI       = flag.String("api", "", "OSS Rebuild API endpoint URI")
+	apiURI       = flag.String("api", "", "OSS Rebuild agent API endpoint URI")
 	project      = flag.String("project", "", "the project from which to fetch the Firestore data")
 	runFlag      = flag.String("run", "", "the run from which to originate failures")
 	debugStorage = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
@@ -247,6 +251,10 @@ func main() {
 	dex := must(rundex.NewFirestore(ctx, *project))
 	debug := must(rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, *runFlag), *debugStorage))
 	cache := rebuild.NewFilesystemAssetStore(osfs.New("/tmp/eval-cache"))
+	fire, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		log.Fatalf("firestore error: %v\n", err)
+	}
 
 	// Validate run
 	runs := must(dex.FetchRuns(ctx, rundex.FetchRunsOpts{IDs: []string{*runFlag}}))
@@ -431,26 +439,80 @@ func main() {
 	}
 
 	// Evaluate recoveries
-	rebuildSmoketest := api.StubFromHandler(idclient, apiURL.JoinPath("smoketest"), apiservice.RebuildSmoketest)
+	iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](idclient, apiURL.JoinPath("agent/session/iteration"))
+	completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](idclient, apiURL.JoinPath("agent/session/complete"))
 	sp = sp.ParDo(50, func(rec Recovery, _ chan<- Recovery) {
 		if *dryRun {
 			log.Printf("Dry run would execute build for %s: %s", rec.Rebuild.ID(), strings.Join(rec.NewScript.Commands, "; "))
 			return
 		}
 		log.Printf("Running rebuild for %s: %s", rec.Rebuild.ID(), strings.Join(rec.NewScript.Commands, "; "))
-		t := rec.Rebuild.Target()
-		oneof := schema.NewStrategyOneOf(rec.NewStrategy)
-		resp, err := rebuildSmoketest(ctx, schema.SmoketestRequest{
-			Ecosystem: t.Ecosystem,
-			Package:   t.Package,
-			Versions:  []string{t.Version},
-			Strategy:  &oneof,
-			ID:        runID,
+		// We need to setup a session doc to make sure our iteration is valid.
+		// This is very similar to the setup AgentCreate does.
+		sessionUUID, err := uuid.NewV7()
+		if err != nil {
+			log.Println(errors.Wrap(err, "making sessionID"))
+			return
+		}
+		sessionID := sessionUUID.String()
+		sessionTime := time.Unix(sessionUUID.Time().UnixTime())
+		session := schema.AgentSession{
+			ID:             sessionID,
+			Target:         rec.Target(),
+			MaxIterations:  1,       // We're only going to execute a single iteration for this session
+			TimeoutSeconds: 60 * 60, // 1 hr timeout
+			Context:        nil,
+			Status:         schema.AgentSessionStatusRunning, // We don't have any initializing to do, we're going to immediately start running iterations.
+			JobName:        "local-medic",                    // Doesn't really matter, there's no cloud run job to map this to.
+			Created:        sessionTime,
+			Updated:        sessionTime,
+		}
+		// Create session in Firestore
+		err = fire.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
+			// NOTE: This would fail if the session already exists.
+			return t.Create(fire.Collection("agent_sessions").Doc(sessionID), session)
 		})
 		if err != nil {
-			log.Printf("Failed to rebuild %s: %v", rec.Rebuild.ID(), err)
+			if status.Code(err) == codes.AlreadyExists {
+				log.Println(api.AsStatus(codes.AlreadyExists, errors.Errorf("agent session %s already exists", sessionID)))
+				return
+			}
+			log.Println(api.AsStatus(codes.Internal, errors.Wrap(err, "creating agent session")))
+			return
+		}
+		resp, err := iterationStub(ctx, schema.AgentCreateIterationRequest{
+			SessionID:       sessionID,
+			IterationNumber: 0,
+			Strategy:        &rec.Strategy,
+		})
+		// Convert empty response into an error
+		if err != nil && (resp == nil || resp.Iteration == nil || resp.Iteration.Result == nil) {
+			err = fmt.Errorf("iteration response is empty for %s", rec.Rebuild.ID())
+		}
+		var completeReq schema.AgentCompleteRequest
+		if err != nil {
+			log.Println(errors.Wrapf(err, "executing build for %s", rec.Rebuild.ID()))
+			completeReq = schema.AgentCompleteRequest{
+				SessionID:  sessionID,
+				StopReason: schema.AgentCompleteReasonError,
+				Summary:    err.Error(),
+			}
+		} else if resp.Iteration.Result.ErrorMessage != "" {
+			log.Printf("failed to rebuild %s: %v", rec.Rebuild.ID(), resp.Iteration.Result.ErrorMessage)
+			completeReq = schema.AgentCompleteRequest{
+				SessionID:  sessionID,
+				StopReason: schema.AgentCompleteReasonFailed,
+				Summary:    resp.Iteration.Result.ErrorMessage,
+			}
 		} else {
-			log.Printf("Rebuilt %s: %v", rec.Rebuild.ID(), resp.Verdicts[0].Message)
+			completeReq = schema.AgentCompleteRequest{
+				SessionID:          sessionID,
+				StopReason:         schema.AgentCompleteReasonSuccess,
+				SuccessIterationID: resp.IterationID,
+			}
+		}
+		if _, err = completeStub(ctx, completeReq); err != nil {
+			log.Println(err)
 		}
 	})
 

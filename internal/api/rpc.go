@@ -31,7 +31,11 @@ func NoDepsInit(context.Context) (*NoDeps, error) { return &NoDeps{}, nil }
 
 type NoReturn struct{}
 
-var ErrNotOK = errors.New("non-OK response")
+var (
+	ErrNotOK       = errors.New("non-OK response")
+	ErrExhausted   = status.New(codes.ResourceExhausted, "resource exhausted").Err()
+	ErrUnavailable = status.New(codes.Unavailable, "service unavailable").Err()
+)
 
 func Stub[I Message, O any](client httpx.BasicClient, u *url.URL) StubT[I, O] {
 	return func(ctx context.Context, i I) (*O, error) {
@@ -52,7 +56,11 @@ func Stub[I Message, O any](client httpx.BasicClient, u *url.URL) StubT[I, O] {
 			return nil, errors.Wrap(err, "making http request")
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return nil, ErrExhausted
+		} else if resp.StatusCode == http.StatusServiceUnavailable {
+			return nil, ErrUnavailable
+		} else if resp.StatusCode != http.StatusOK {
 			b, _ := io.ReadAll(resp.Body)
 			return nil, errors.Wrap(errors.Wrap(ErrNotOK, resp.Status), string(b))
 		}

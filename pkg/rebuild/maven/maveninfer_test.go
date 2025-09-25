@@ -4,10 +4,14 @@
 package maven
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/xml"
 	"fmt"
+	"log"
 	"path"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +19,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
 )
@@ -221,7 +227,7 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mockRegistry := &mockMavenRegistry{
-				artifactCoordinates: make(map[struct{ PackageName, VersionID, FileType string }][]byte),
+				artifactCoordinates: make(map[artifactCoordinates][]byte),
 			}
 			for _, pom := range tc.pom {
 				addPomArtifact(mockRegistry, &pom)
@@ -248,12 +254,230 @@ func TestSourceRepositoryURLInference(t *testing.T) {
 }
 
 func addPomArtifact(mavenRegistry *mockMavenRegistry, pom *PomXML) {
-	// TODO: make this a type to avoid repeating the struct definition
-	key := struct{ PackageName, VersionID, FileType string }{
+	key := artifactCoordinates{
 		PackageName: fmt.Sprintf("%s:%s", pom.GroupID, pom.ArtifactID),
 		VersionID:   pom.VersionID,
 		FileType:    maven.TypePOM,
 	}
 	xmlBytes, _ := xml.MarshalIndent(pom, "", "  ")
 	mavenRegistry.artifactCoordinates[key] = xmlBytes
+}
+
+func TestMavenInfer(t *testing.T) {
+	testCases := []struct {
+		name              string
+		target            rebuild.Target
+		repo              string
+		zipEntries        map[string][]*archive.ZipEntry
+		expectedHeuristic string
+		wantErr           bool
+	}{
+		{
+			name: "infer using git log heuristic",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>bar</artifactId>
+                        <version>1.0.0</version>
+                    </project>`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeSources: {{
+					FileHeader: &zip.FileHeader{Name: "Foo.java"},
+					Body:       []byte("class Foo {}"),
+				}},
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/maven/foo/bar/pom.xml"},
+						Body:       []byte(`<project><groupId>foo</groupId><artifactId>bar</artifactId><version>1.0.0</version></project>`),
+					},
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			expectedHeuristic: "using git log heuristic (pkg and version match)",
+			wantErr:           false,
+		},
+		{
+			name: "infer using source jar heuristic",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>bar</artifactId>
+                        <version>0.0.0-dev</version>
+                    </project>
+                  src/main/java/Foo.java: |
+                    a`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeSources: {{
+					FileHeader: &zip.FileHeader{Name: "src/main/java/Foo.java"},
+					Body:       []byte("a"),
+				}},
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/maven/foo/bar/pom.xml"},
+						Body:       []byte("<project><groupId>foo</groupId><artifactId>bar</artifactId><version>1.0.0</version></project>"),
+					},
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			expectedHeuristic: "using source jar heuristic with mismatched version",
+			wantErr:           false,
+		},
+		{
+			name: "infer using tag heuristic",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: initial-commit
+                tags: ["v1.0.0"]
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>bar</artifactId>
+                        <version>0.0.0-dev</version>
+                    </project>`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeSources: {{
+					FileHeader: &zip.FileHeader{Name: "src/main/java/Foo.java"},
+					Body:       []byte("a"),
+				}},
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/maven/foo/bar/pom.xml"},
+						Body:       []byte("<project><groupId>foo</groupId><artifactId>bar</artifactId><version>1.0.0</version></project>"),
+					},
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			expectedHeuristic: "using tag heuristic with mismatched version",
+			wantErr:           false,
+		},
+		{
+			name: "prevent checking for source jar heuristic if it is nil",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: initial-commit
+                tags: ["1.0.0"]
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>blah</groupId>
+                        <artifactId>blah</artifactId>
+                        <version>0.0.0-dev</version>
+                    </project>`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/maven/foo/bar/pom.xml"},
+						Body:       []byte("<project><groupId>foo</groupId><artifactId>bar</artifactId><version>1.0.0</version></project>"),
+					},
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			expectedHeuristic: "",
+			// throw no valid git ref as tag matches but then package does not match
+			wantErr: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoConfig := &rebuild.RepoConfig{}
+			repo, err := gitxtest.CreateRepoFromYAML(tc.repo, nil)
+			if err != nil {
+				t.Fatalf("CreateRepoFromYAML() error = %v", err)
+			}
+			repoConfig.Repository = repo.Repository
+			mockRegistry := &mockMavenRegistry{
+				artifactCoordinates: make(map[artifactCoordinates][]byte),
+			}
+			addArtifacts(mockRegistry, tc.zipEntries, tc.target)
+			mockMux := rebuild.RegistryMux{
+				Maven: mockRegistry,
+			}
+			capturedStderr := &bytes.Buffer{}
+			log.SetOutput(capturedStderr)
+			defer func() {
+				log.SetOutput(nil)
+			}()
+			got, err := MavenInfer(context.Background(), tc.target, mockMux, repoConfig)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("MavenInfer() = %v, want error", got)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("MavenInfer() error = %v", err)
+				}
+				if !strings.Contains(capturedStderr.String(), tc.expectedHeuristic) {
+					t.Errorf("MavenInfer() did not use expected heuristic, got logs: %s", capturedStderr.String())
+				}
+			}
+
+		})
+	}
+}
+
+func addArtifacts(mavenRegistry *mockMavenRegistry, entries map[string][]*archive.ZipEntry, target rebuild.Target) error {
+	for artifactType, files := range entries {
+		buf := bytes.Buffer{}
+		zipWriter := zip.NewWriter(&buf)
+		for _, entry := range files {
+			if err := entry.WriteTo(zipWriter); err != nil {
+				panic(err)
+			}
+		}
+		if err := zipWriter.Close(); err != nil {
+			panic(err)
+		}
+		key := artifactCoordinates{
+			PackageName: target.Package,
+			VersionID:   target.Version,
+			FileType:    artifactType,
+		}
+		mavenRegistry.artifactCoordinates[key] = buf.Bytes()
+	}
+	return nil
 }

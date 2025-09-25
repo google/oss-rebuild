@@ -49,6 +49,7 @@ var all = []RebuildBenchmark{
 	npmTop2500,
 	mavenTop500,
 	mavenRecentTop500,
+	mavenRecentAll,
 }
 
 const (
@@ -481,7 +482,7 @@ var npmTop500 = RebuildBenchmark{
 		}
 		query := client.Query(`
 SELECT
-  COUNT(*) AS Downloads,
+  COUNT(*) AS DirectRdeps,
   Name AS Package,
   Version
 FROM (
@@ -514,13 +515,13 @@ GROUP BY
   Name,
   Version
 ORDER BY
-  Downloads DESC
+  DirectRdeps DESC
 LIMIT 2500
 `)
 		pkgs := make(chan struct {
-			Downloads int64
-			Package   string
-			Version   string
+			DirectRdeps int64
+			Package     string
+			Version     string
 		}, 100)
 		// Get download-ordered package versions from deps.dev's dependency table.
 		go func() {
@@ -540,9 +541,9 @@ LIMIT 2500
 				log.Fatal(err.Error())
 			}
 			var entry struct {
-				Downloads int64
-				Package   string
-				Version   string
+				DirectRdeps int64
+				Package     string
+				Version     string
 			}
 			for {
 				err := it.Next(&entry)
@@ -601,7 +602,7 @@ var npmTop2500 = RebuildBenchmark{
 		}
 		query := client.Query(`
 SELECT
-  COUNT(*) AS Downloads,
+  COUNT(*) AS DirectRdeps,
   Name AS Package,
   Version
 FROM (
@@ -634,13 +635,13 @@ GROUP BY
   Name,
   Version
 ORDER BY
-  Downloads DESC
+  DirectRdeps DESC
 LIMIT 10000
 `)
 		pkgs := make(chan struct {
-			Downloads int64
-			Package   string
-			Version   string
+			DirectRdeps int64
+			Package     string
+			Version     string
 		}, 100)
 		// Get download-ordered package versions from deps.dev's dependency table.
 		go func() {
@@ -660,9 +661,9 @@ LIMIT 10000
 				log.Fatal(err.Error())
 			}
 			var entry struct {
-				Downloads int64
-				Package   string
-				Version   string
+				DirectRdeps int64
+				Package     string
+				Version     string
 			}
 			for {
 				err := it.Next(&entry)
@@ -721,7 +722,7 @@ var mavenTop500 = RebuildBenchmark{
 		}
 		query := client.Query(`
 SELECT
-  COUNT(*) AS Downloads,
+  COUNT(*) AS DirectRdeps,
   Name AS Package,
   Version
 FROM (
@@ -754,13 +755,13 @@ GROUP BY
   Name,
   Version
 ORDER BY
-  Downloads DESC
+  DirectRdeps DESC
 LIMIT 2500
 `)
 		pkgs := make(chan struct {
-			Downloads int64
-			Package   string
-			Version   string
+			DirectRdeps int64
+			Package     string
+			Version     string
 		}, 100)
 		// Get download-ordered package versions from deps.dev's dependency table.
 		go func() {
@@ -780,9 +781,9 @@ LIMIT 2500
 				log.Fatal(err.Error())
 			}
 			var entry struct {
-				Downloads int64
-				Package   string
-				Version   string
+				DirectRdeps int64
+				Package     string
+				Version     string
 			}
 			for {
 				err := it.Next(&entry)
@@ -848,7 +849,7 @@ var mavenRecentTop500 = RebuildBenchmark{
 		}
 		query := client.Query(`
 WITH
-	LatestSnapshot AS (
+  LatestSnapshot AS (
     SELECT
       Time
     FROM
@@ -857,52 +858,58 @@ WITH
       Time DESC
     LIMIT
       1
-  )
+  ),
+  PackageVersionDownloads AS (
+    SELECT
+      COUNT(*) AS DirectRdeps,
+      Name AS Package,
+      Version
+    FROM (
+      SELECT
+        T.` + "`" + `From` + "`" + `.Name AS FName,
+        T.` + "`" + `From` + "`" + `.Version AS FVersion,
+        T.` + "`" + `To` + "`" + `.Name AS Name,
+        T.` + "`" + `To` + "`" + `.Version AS Version
+      FROM
+        ` + "`" + `bigquery-public-data.deps_dev_v1.DependencyGraphEdges` + "`" + ` T
+      INNER JOIN LatestSnapshot
+      ON
+        LatestSnapshot.Time = T.SnapshotAt
+      INNER JOIN (
+        SELECT 
+          Name,
+          Version
+        FROM
+          ` + "`" + `bigquery-public-data.deps_dev_v1.PackageVersions` + "`" + ` as T
+        INNER JOIN LatestSnapshot
+        ON LatestSnapshot.Time = T.SnapshotAt
+        WHERE T.UpstreamPublishedAt > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2*365 DAY)
+      ) AS Recent
+      ON
+        Recent.Name = T.` + "`" + `To` + "`" + `.Name AND Recent.Version = T.` + "`" + `To` + "`" + `.Version
+      WHERE
+        T.System = "MAVEN"
+      GROUP BY
+        T.` + "`" + `From` + "`" + `.Name,
+        T.` + "`" + `From` + "`" + `.Version,
+        T.` + "`" + `To` + "`" + `.Name,
+        T.` + "`" + `To` + "`" + `.Version)
+    GROUP BY
+      Name,
+      Version
+    )
 SELECT
-  COUNT(*) AS Downloads,
-  Name AS Package,
-  Version
-FROM (
-  SELECT
-    T.` + "`" + `From` + "`" + `.Name AS FName,
-    T.` + "`" + `From` + "`" + `.Version AS FVersion,
-    T.` + "`" + `To` + "`" + `.Name AS Name,
-    T.` + "`" + `To` + "`" + `.Version AS Version
-  FROM
-    ` + "`" + `bigquery-public-data.deps_dev_v1.DependencyGraphEdges` + "`" + ` T
-  INNER JOIN LatestSnapshot
-  ON
-    LatestSnapshot.Time = T.SnapshotAt
-  INNER JOIN (
-    SELECT 
-		  Name,
-		  Version
-    FROM
-      ` + "`" + `bigquery-public-data.deps_dev_v1.PackageVersions` + "`" + ` as T
-		INNER JOIN LatestSnapshot
-		ON LatestSnapshot.Time = T.SnapshotAt
-    WHERE T.UpstreamPublishedAt > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2*365 DAY)
-	) AS Recent
-	ON
-	  Recent.Name = T.` + "`" + `From` + "`" + `.Name AND Recent.Version = T.` + "`" + `From` + "`" + `.Version
-  WHERE
-    T.System = "MAVEN"
-  GROUP BY
-    T.` + "`" + `From` + "`" + `.Name,
-    T.` + "`" + `From` + "`" + `.Version,
-    T.` + "`" + `To` + "`" + `.Name,
-    T.` + "`" + `To` + "`" + `.Version)
-GROUP BY
-  Name,
-  Version
+  *
+FROM PackageVersionDownloads
+QUALIFY ROW_NUMBER() OVER(PARTITION BY SPLIT(Package, ':')[OFFSET(0)] ORDER BY DirectRdeps DESC) = 1
 ORDER BY
-  Downloads DESC
+  DirectRdeps DESC
 LIMIT 2500
 `)
 		pkgs := make(chan struct {
-			Downloads int64
-			Package   string
-			Version   string
+			DirectRdeps int64
+			Package     string
+			Version     string
 		}, 100)
 		// Get download-ordered package versions from deps.dev's dependency table.
 		go func() {
@@ -922,9 +929,9 @@ LIMIT 2500
 				log.Fatal(err.Error())
 			}
 			var entry struct {
-				Downloads int64
-				Package   string
-				Version   string
+				DirectRdeps int64
+				Package     string
+				Version     string
 			}
 			for {
 				err := it.Next(&entry)
@@ -939,6 +946,7 @@ LIMIT 2500
 			close(pkgs)
 		}()
 		// Select packages with versions that satisfy our criteria.
+		groups := make(map[string]bool)
 		for p := range pkgs {
 			if strings.ContainsRune(p.Version, '-') {
 				// Non-release version.
@@ -960,7 +968,104 @@ LIMIT 2500
 				idx = len(ps.Packages) - 1
 			}
 			psp := &ps.Packages[idx]
-			if len(psp.Versions) >= 5 {
+			if len(psp.Versions) >= 1 {
+				continue
+			}
+			nameParts := strings.SplitN(p.Package, ":", 2)
+			if len(nameParts) != 2 {
+				fmt.Println("Agh unexpected: ", p.Package)
+				return
+			}
+			if groups[nameParts[0]] {
+				continue
+			}
+			groups[nameParts[0]] = true
+			// TODO: Find the artifact name from a real source, don't just guess.
+			psp.Artifacts = append(psp.Artifacts, fmt.Sprintf("%s-%s.jar", nameParts[1], p.Version))
+			psp.Versions = append(psp.Versions, p.Version)
+		}
+		for _, psp := range ps.Packages {
+			ps.Count += len(psp.Versions)
+		}
+		ps.Updated = now
+		return
+	},
+}
+
+var mavenRecentAll = RebuildBenchmark{
+	Filename: "maven_recent_all.json",
+	Generator: func(ctx context.Context) (ps benchmark.PackageSet) {
+		now := time.Now()
+		client, err := bigquery.NewClient(ctx, *project, option.WithQuotaProject(*project))
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		query := client.Query(`
+WITH
+	LatestSnapshot AS (
+    SELECT
+      Time
+    FROM
+      ` + "`" + `bigquery-public-data.deps_dev_v1.Snapshots` + "`" + `
+    ORDER BY
+      Time DESC
+    LIMIT
+      1
+  )
+SELECT
+  T.Name as Package,
+  T.Version as Version
+FROM
+	` + "`" + `bigquery-public-data.deps_dev_v1.PackageVersions` + "`" + ` T
+INNER JOIN
+  LatestSnapshot
+  ON LatestSnapshot.Time = T.SnapshotAt
+WHERE
+  T.System = "MAVEN" AND T.UpstreamPublishedAt IS NOT NULL AND EXTRACT(YEAR FROM UpstreamPublishedAt) >= 2020
+QUALIFY
+  ROW_NUMBER() OVER (PARTITION BY SPLIT(Package, ':')[OFFSET(0)] ORDER BY T.UpstreamPublishedAt DESC) = 1
+`)
+		pkgs := make(chan struct {
+			Package string
+			Version string
+		}, 100)
+		// Get package versions from deps.dev's dependency table.
+		go func() {
+			j, err := query.Run(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			s, err := j.Wait(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			if s.Err() != nil {
+				log.Fatal(s.Err().Error())
+			}
+			it, err := j.Read(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			var entry struct {
+				Package string
+				Version string
+			}
+			for {
+				err := it.Next(&entry)
+				if err == iterator.Done {
+					break
+				}
+				if err != nil {
+					log.Fatal(err.Error())
+				}
+				pkgs <- entry
+			}
+			close(pkgs)
+		}()
+		// Select packages with versions that satisfy our criteria.
+		for p := range pkgs {
+			if strings.ContainsRune(p.Version, '-') {
+				// Non-release version.
 				continue
 			}
 			nameParts := strings.SplitN(p.Package, ":", 2)
@@ -969,8 +1074,13 @@ LIMIT 2500
 				return
 			}
 			// TODO: Find the artifact name from a real source, don't just guess.
-			psp.Artifacts = append(psp.Artifacts, fmt.Sprintf("%s-%s.jar", nameParts[1], p.Version))
-			psp.Versions = append(psp.Versions, p.Version)
+			pkg := benchmark.Package{
+				Name:      p.Package,
+				Ecosystem: "maven",
+				Versions:  []string{p.Version},
+				Artifacts: []string{fmt.Sprintf("%s-%s.jar", nameParts[1], p.Version)},
+			}
+			ps.Packages = append(ps.Packages, pkg)
 		}
 		for _, psp := range ps.Packages {
 			ps.Count += len(psp.Versions)

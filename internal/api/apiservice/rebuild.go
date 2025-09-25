@@ -33,11 +33,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
@@ -281,14 +276,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("debian requires artifact"))
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
-	regclient := httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
-	mux := rebuild.RegistryMux{
-		Debian:   debianreg.HTTPRegistry{Client: regclient},
-		CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-		NPM:      npmreg.HTTPRegistry{Client: regclient},
-		PyPI:     pypireg.HTTPRegistry{Client: regclient},
-		Maven:    mavenreg.HTTPRegistry{Client: regclient},
-	}
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
 	if err := populateArtifact(ctx, &t, mux); err != nil {
 		// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
 		// For this reason, we don't return a nil error and expect no verdict to be written.

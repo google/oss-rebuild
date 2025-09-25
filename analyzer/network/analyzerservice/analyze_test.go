@@ -22,6 +22,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	"github.com/google/oss-rebuild/pkg/attestation"
+	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -117,12 +118,12 @@ func createMockAttestationBundle(t rebuild.Target, strategy rebuild.Strategy) []
 	var bundle bytes.Buffer
 	encoder := json.NewEncoder(&bundle)
 	buildEnvelope := &dsse.Envelope{
-		PayloadType: in_toto.StatementInTotoV1,
+		PayloadType: attestation.InTotoPayloadType,
 		Payload:     base64.StdEncoding.EncodeToString(must(json.Marshal(must(buildAttestation.ToStatement())))),
 		Signatures:  []dsse.Signature{{Sig: base64.StdEncoding.EncodeToString([]byte("mock-sig"))}},
 	}
 	eqEnvelope := &dsse.Envelope{
-		PayloadType: in_toto.StatementInTotoV1,
+		PayloadType: attestation.InTotoPayloadType,
 		Payload:     base64.StdEncoding.EncodeToString(must(json.Marshal(must(eqAttestation.ToStatement())))),
 		Signatures:  []dsse.Signature{{Sig: base64.StdEncoding.EncodeToString([]byte("mock-sig"))}},
 	}
@@ -206,7 +207,7 @@ func TestAnalyze(t *testing.T) {
 			outputAnalysisFS := must(mfs.Chroot("output-analysis"))
 			d.OutputAnalysisStore = rebuild.NewFilesystemAssetStore(outputAnalysisFS)
 			d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(must(mfs.Chroot("local-metadata")))
-			d.DebugStoreBuilder = func(ctx context.Context) (rebuild.AssetStore, error) {
+			d.DebugStoreBuilder = func(ctx context.Context) (rebuild.LocatableAssetStore, error) {
 				return rebuild.NewFilesystemAssetStore(must(mfs.Chroot("debug-metadata"))), nil
 			}
 			remoteMetadata := rebuild.NewFilesystemAssetStore(must(mfs.Chroot("remote-metadata")))
@@ -217,7 +218,7 @@ func TestAnalyze(t *testing.T) {
 			buildSteps := []*cloudbuild.BuildStep{
 				{Name: "gcr.io/foo/bar", Script: "./bar"},
 			}
-			d.GCBClient = &gcbtest.MockClient{
+			gcbclient := &gcbtest.MockClient{
 				CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
 					// Write rebuilt artifact
 					if tc.file != nil {
@@ -260,10 +261,12 @@ func TestAnalyze(t *testing.T) {
 					}, nil
 				},
 			}
-			// Set other required fields
-			d.BuildProject = "test-project"
-			d.BuildServiceAccount = "test-service-account"
-			d.BuildLogsBucket = "test-logs-bucket"
+			d.GCBExecutor = must(buildgcb.NewExecutor(buildgcb.ExecutorConfig{
+				Project:        "test-project",
+				ServiceAccount: "test-service-account",
+				LogsBucket:     "test-logs-bucket",
+				Client:         gcbclient,
+			}))
 			d.ServiceRepo = rebuild.Location{Repo: "https://github.com/test/service", Ref: "main", Dir: "."}
 			d.OverwriteAttestations = false
 			// Setup input attestations

@@ -120,7 +120,7 @@ func AssetCopy(ctx context.Context, to AssetStore, from ReadOnlyAssetStore, a As
 }
 
 // DebugStoreFromContext constructs a DebugStorer using values from the given context.
-func DebugStoreFromContext(ctx context.Context) (AssetStore, error) {
+func DebugStoreFromContext(ctx context.Context) (LocatableAssetStore, error) {
 	if uploadpath, ok := ctx.Value(DebugStoreID).(string); ok {
 		if uploadpath == "" {
 			return nil, ErrNoUploadPath

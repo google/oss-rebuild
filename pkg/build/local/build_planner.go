@@ -67,6 +67,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			RUN cat <<'EOF' >/build
 			 set -eux
 			 {{.Instructions.Build | indent}}
+			 chmod +444 /src/{{.Instructions.OutputPath}}
 			 mkdir -p /out && cp /src/{{.Instructions.OutputPath}} /out/
 			EOF
 			WORKDIR "/src"

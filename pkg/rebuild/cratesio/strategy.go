@@ -19,6 +19,7 @@ type CratesIOCargoPackage struct {
 	rebuild.Location
 	RustVersion      string            `json:"rust_version" yaml:"rust_version,omitempty"`
 	ExplicitLockfile *ExplicitLockfile `json:"explicit_lockfile" yaml:"explicit_lockfile,omitempty"`
+	RegistryCommit   string            `json:"registry_commit,omitempty" yaml:"registry_commit,omitempty"`
 }
 
 var _ rebuild.Strategy = &CratesIOCargoPackage{}
@@ -53,6 +54,7 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 			With: map[string]string{
 				"dir":                    b.Location.Dir,
 				"rustVersion":            b.RustVersion,
+				"registryCommit":         b.RegistryCommit,
 				"preferPreciseToolchain": "{{.BuildEnv.PreferPreciseToolchain}}",
 			},
 		}},
@@ -101,7 +103,7 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
-				/root/.cargo/bin/cargo package --no-verify
+				/root/.cargo/bin/cargo package {{if and (ne .TimewarpHost "") (ne .With.registryCommit "") -}}--config 'source.crates-io.replace-with="timewarp"' --config 'source.timewarp.registry="{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"' {{end -}} --no-verify
 				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`)[1:],
 			Needs: []string{"rustup"},
 		}},

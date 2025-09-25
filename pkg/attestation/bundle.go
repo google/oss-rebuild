@@ -16,6 +16,10 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 )
 
+// The envelope must have the in-toto media type
+// See https://github.com/in-toto/ITE/blob/a6bf0abbc99608ff5920446bf1141417b49a6d30/ITE/5/README.adoc#specification
+const InTotoPayloadType = "application/vnd.in-toto+json"
+
 type VerifiedEnvelope[T any] struct {
 	envelope *dsse.Envelope
 	payload  *T
@@ -29,7 +33,8 @@ func NewVerifiedEnvelope[T any](ctx context.Context, e *dsse.Envelope, verifier 
 	if _, err := verifier.Verify(ctx, e); err != nil {
 		return nil, errors.Wrap(err, "verifying envelope")
 	}
-	if e.PayloadType != in_toto.StatementInTotoV1 {
+	// Here in_toto.StatementInTotoV1 is kept for compatibility
+	if e.PayloadType != in_toto.StatementInTotoV1 && e.PayloadType != InTotoPayloadType {
 		return nil, errors.New("unexpected payload type")
 	}
 	if e.Payload == "" {

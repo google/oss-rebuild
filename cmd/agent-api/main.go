@@ -82,7 +82,6 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 	d.GCBExecutor = executor
 	d.BuildProject = *project
 	d.BuildServiceAccount = *buildRemoteIdentity
-	d.LogsBucket = *logsBucket
 	d.MetadataBucket = *metadataBucket
 	if *prebuildVersion != "" {
 		prebuildRepo, err := serviceid.ParseLocation(BuildRepo, *prebuildVersion)
