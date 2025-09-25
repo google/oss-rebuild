@@ -267,21 +267,6 @@ func inferRequirements(name, version string, zr interface{}) ([]string, error) {
 	return reqs, nil
 }
 
-func inferPythonVersion(artifact pypireg.Artifact) string {
-	upload := artifact.UploadTime
-	var bestVersion string
-	for _, rel := range pypireg.PythonReleases {
-		if !rel.Date.After(upload) {
-			bestVersion = rel.Version.String()
-		}
-	}
-	if bestVersion == "" {
-		// Fallback to latest known version if none matched
-		bestVersion = pypireg.PythonReleases[len(pypireg.PythonReleases)-1].Version.String()
-	}
-	return bestVersion
-}
-
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
 	name, version := t.Package, t.Version
 	release, err := mux.PyPI.Release(ctx, name, version)
