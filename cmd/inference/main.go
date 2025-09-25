@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpegress"
@@ -22,7 +23,8 @@ import (
 )
 
 var (
-	gitCacheURL = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
+	gitCacheURL       = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
+	cratesRegistryURL = flag.String("crates-registry-service-url", "", "if provided, the crates registry service to use for Rust crate index resolution")
 )
 
 var httpcfg = httpegress.Config{}
@@ -54,6 +56,17 @@ func InferInit(ctx context.Context) (*inferenceservice.InferDeps, error) {
 			Worktree: memfs.New(),
 			Storer:   memory.NewStorage(),
 		}
+	}
+	if *cratesRegistryURL != "" {
+		u, err := url.Parse(*cratesRegistryURL)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing crates registry service URL")
+		}
+		c, err := idtoken.NewClient(ctx, *cratesRegistryURL)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating crates registry id client")
+		}
+		d.CratesRegistryStub = api.Stub[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](c, u.JoinPath("resolve"))
 	}
 	return &d, nil
 }

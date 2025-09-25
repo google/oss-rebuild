@@ -39,6 +39,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/oauth"
@@ -51,6 +52,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/gradle"
@@ -986,6 +988,27 @@ var infer = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "executing inference"))
 			}
 		} else {
+			var regstub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+			if req.Ecosystem == rebuild.CratesIO {
+				err := os.MkdirAll("/tmp/crates-registry-cache", 0o755)
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "initializing registry cache"))
+				}
+				mgr, err := index.NewIndexManagerFromFS(index.IndexManagerConfig{
+					Filesystem:            osfs.New("/tmp/crates-registry-cache"),
+					CurrentUpdateInterval: 6 * time.Hour,
+					MaxSnapshots:          3,
+				})
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating index manager"))
+				}
+				deps := &cratesregistryservice.FindRegistryCommitDeps{
+					IndexManager: mgr,
+				}
+				regstub = func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
+					return cratesregistryservice.FindRegistryCommit(ctx, req, deps)
+				}
+			}
 			deps := &inferenceservice.InferDeps{
 				HTTPClient: http.DefaultClient,
 				GitCache:   nil,
@@ -995,6 +1018,7 @@ var infer = &cobra.Command{
 						Storer:   memory.NewStorage(),
 					}
 				},
+				CratesRegistryStub: regstub,
 			}
 			var err error
 			resp, err = inferenceservice.Infer(cmd.Context(), req, deps)
