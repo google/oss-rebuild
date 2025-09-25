@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"log"
 	"slices"
 	"strings"
 	"time"
@@ -210,19 +211,39 @@ var StableZipMisc = ZipEntryStabilizer{
 // StabilizeZip strips volatile metadata and rewrites the provided archive in a standard form.
 func StabilizeZip(zr *zip.Reader, zw *zip.Writer, opts StabilizeOpts) error {
 	defer zw.Close()
-	var headers []zip.FileHeader
-	for _, zf := range zr.File {
-		headers = append(headers, zf.FileHeader)
-	}
 	mr := NewMutableReader(zr)
 	for _, s := range opts.Stabilizers {
-		switch s.(type) {
+		var currentStabName string
+
+		// Compute original archive hash
+		h1 := sha256.New()
+		err := mr.WriteTo(zip.NewWriter(h1))
+		if err != nil {
+			return errors.Wrap(err, "computing original archive hash")
+		}
+		originalArchiveHash := h1.Sum(nil)
+
+		switch s := s.(type) {
 		case ZipArchiveStabilizer:
-			s.(ZipArchiveStabilizer).Stabilize(&mr)
+			currentStabName = s.Name
+			s.Stabilize(&mr)
 		case ZipEntryStabilizer:
+			currentStabName = s.Name
 			for _, mf := range mr.File {
-				s.(ZipEntryStabilizer).Stabilize(mf)
+				s.Stabilize(mf)
 			}
+		}
+
+		// Compute new archive hash
+		h2 := sha256.New()
+		err = mr.WriteTo(zip.NewWriter(h2))
+		if err != nil {
+			return errors.Wrap(err, "computing new archive hash")
+		}
+		newArchiveHash := h2.Sum(nil)
+
+		if !bytes.Equal(originalArchiveHash, newArchiveHash) {
+			log.Printf("Stabilizer taking effect: %s\n", currentStabName)
 		}
 	}
 	return mr.WriteTo(zw)
