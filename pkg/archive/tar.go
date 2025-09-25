@@ -6,8 +6,10 @@ package archive
 import (
 	"archive/tar"
 	"bytes"
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"os"
@@ -167,6 +169,31 @@ func StabilizeTar(tr *tar.Reader, tw *tar.Writer, opts StabilizeOpts) error {
 		}
 	}
 	return nil
+}
+
+var AllCrateStabilizers = []Stabilizer{
+	StabilizeCargoVCSHash,
+}
+
+var StabilizeCargoVCSHash = TarEntryStabilizer{
+	Name: "cargo-vcs-hash",
+	Func: func(e *TarEntry) {
+		if strings.HasSuffix(e.Name, ".cargo_vcs_info.json") {
+			var vcsInfo map[string]any
+			if err := json.Unmarshal(e.Body, &vcsInfo); err != nil {
+				return // Skip if invalid JSON
+			}
+			if git, ok := vcsInfo["git"].(map[string]any); ok {
+				if _, hasSha1 := git["sha1"]; hasSha1 {
+					git["sha1"] = strings.Repeat("x", 2*sha1.Size)
+					if newBody, err := json.Marshal(vcsInfo); err == nil {
+						e.Body = newBody
+						e.Size = int64(len(newBody))
+					}
+				}
+			}
+		}
+	},
 }
 
 // ExtractOptions provides options modifying ExtractTar behavior.

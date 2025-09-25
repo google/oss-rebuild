@@ -8,6 +8,7 @@
 //	/get: Redirect to the GCS repo metadata cache object, populating the cache if necessary.
 //	  - uri: Git repo URI e.g. github.com/org/repo
 //	  - contains: The RFC3339-formatted time after which a cache entry must have been created.
+//	  - ref: Git reference (branch/tag) to cache. If provided, creates a separate cache entry per ref.
 //
 // # Object Format
 //
@@ -49,6 +50,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5"
@@ -68,6 +70,7 @@ var thresholdFudgeFactor = 24 * time.Hour
 type getRequest struct {
 	URI       string
 	Threshold time.Time
+	Ref       string
 }
 
 func parseGetRequest(v url.Values) (r getRequest, err error) {
@@ -82,6 +85,7 @@ func parseGetRequest(v url.Values) (r getRequest, err error) {
 			return r, errors.Wrap(err, "Failed to parse RFC 3339 time")
 		}
 	}
+	r.Ref = v.Get("ref")
 	return r, nil
 }
 
@@ -119,8 +123,16 @@ func HandleGet(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// Normalize repo URI to provide the following interface:
-	// gs://<bucket>/<host>/<org>/<repo>/repo.tgz
-	p := filepath.Join(strings.ToLower(u), "repo.tgz")
+	// gs://<bucket>/<host>/<org>/<repo>/repo.tgz (default branch)
+	// gs://<bucket>/<host>/<org>/<repo>/<ref>/repo.tgz (specific ref)
+	var p string
+	if r.Ref != "" {
+		// Include ref in path to create separate cache entries per ref
+		refPath := strings.ReplaceAll(r.Ref, "/", "_") // Replace slashes to avoid path issues
+		p = filepath.Join(strings.ToLower(u), refPath, "repo.tgz")
+	} else {
+		p = filepath.Join(strings.ToLower(u), "repo.tgz")
+	}
 	o := c.Bucket(*bucket).Object(p)
 	a, err := o.Attrs(ctx)
 	if err == nil && a.Updated.Before(r.Threshold) {
@@ -135,11 +147,14 @@ func HandleGet(rw http.ResponseWriter, req *http.Request) {
 			http.Error(rw, "Internal Error", 500)
 			return
 		case storage.ErrObjectNotExist:
-			if err := populateCache(ctx, u, o); err != nil {
+			if err := populateCache(ctx, u, r.Ref, o); err != nil {
 				log.Printf("Failed to populate cache: %v\n", err)
 				if errors.Is(err, transport.ErrAuthenticationRequired) {
 					http.Error(rw, err.Error(), 400)
 				} else {
+					if err := o.Delete(ctx); err != nil {
+						log.Printf("Issue cleaning up failed write: %v\n", err)
+					}
 					http.Error(rw, "Internal Error", 500)
 				}
 				return
@@ -173,21 +188,37 @@ func (c nilCache) Get(plumbing.Hash) (plumbing.EncodedObject, bool) { return nil
 func (c nilCache) Put(plumbing.EncodedObject)                       {}
 func (c nilCache) Clear()                                           {}
 
+func doClone(ctx context.Context, mfs billy.Filesystem, cloneOpts *git.CloneOptions) error {
+	s := filesystem.NewStorage(mfs, nilCache{})
+	_, err := git.CloneContext(ctx, s, nil, cloneOpts)
+	return err
+}
+
 // populateCache writes an archived bare checkout of the repo to the GCS object.
-func populateCache(ctx context.Context, repo string, o *storage.ObjectHandle) error {
+func populateCache(ctx context.Context, repo, ref string, o *storage.ObjectHandle) error {
 	m := memfs.New()
 	dotGit, err := m.Chroot(git.GitDirName)
 	if err != nil {
 		return errors.Wrap(err, "failure allocating .git/")
 	}
-	s := filesystem.NewStorage(dotGit, nilCache{})
-	_, err = git.CloneContext(ctx, s, nil, &git.CloneOptions{URL: "https://" + repo, NoCheckout: true})
-	if err != nil {
+	cloneOpts := &git.CloneOptions{URL: "https://" + repo, NoCheckout: true}
+	if ref != "" {
+		// Clone specific ref/branch
+		cloneOpts.ReferenceName = plumbing.ReferenceName(ref)
+		cloneOpts.SingleBranch = true
+	}
+	log.Printf("Cloning with opts: %v", cloneOpts)
+	if err := doClone(ctx, dotGit, cloneOpts); err != nil {
+		if ref != "" {
+			return errors.Wrapf(err, "failure cloning %s at ref %s", repo, ref)
+		}
 		return errors.Wrapf(err, "failure cloning %s", repo)
 	}
+	log.Println("Clone successful")
 	w := o.NewWriter(ctx)
 	gw := gzip.NewWriter(w)
 	tw := tar.NewWriter(gw)
+	var bytesWritten int64
 	err = util.Walk(m, m.Root(), func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			// Fail on any path handling issue (see filepath.WalkFunc docs).
@@ -219,7 +250,20 @@ func populateCache(ctx context.Context, repo string, o *storage.ObjectHandle) er
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(tw, f); err != nil {
+			if written, err := io.Copy(tw, f); err != nil {
+				return err
+			} else {
+				bytesWritten += written
+			}
+			// Periodically flush to GCS.
+			if bytesWritten > 1_000_000 {
+				bytesWritten = 0
+				if err := gw.Flush(); err != nil {
+					return err
+				}
+			}
+			// Remove completed file from filesystem.
+			if err := m.Remove(path); err != nil {
 				return err
 			}
 		}

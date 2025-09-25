@@ -98,7 +98,8 @@ type DockerBuildExecutorConfig struct {
 
 // Start implements build.Executor.
 func (e *DockerBuildExecutor) Start(ctx context.Context, input rebuild.Input, opts build.Options) (build.Handle, error) {
-	buildID := opts.BuildID
+	// buildID is used as image name and must be lowercase
+	buildID := strings.ToLower(opts.BuildID)
 	if buildID == "" {
 		buildID = fmt.Sprintf("docker-build-%d", time.Now().UnixNano())
 	}

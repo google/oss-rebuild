@@ -62,6 +62,29 @@ func TestCratesIOCargoPackage(t *testing.T) {
 			},
 		},
 		{
+			"NoDirTimewarp",
+			&CratesIOCargoPackage{
+				Location: rebuild.Location{
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				RustVersion:    "1.77.0",
+				RegistryCommit: "abc1234",
+			},
+			rebuild.BuildEnv{HasRepo: true, TimewarpHost: "localhost:8081"},
+			rebuild.Instructions{
+				Location: rebuild.Location{
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				Source:     "git checkout --force 'the_ref'",
+				Deps:       "",
+				Build:      `/root/.cargo/bin/cargo package --config 'source.crates-io.replace-with="timewarp"' --config 'source.timewarp.registry="sparse+http://cargosparse:abc1234@localhost:8081/"' --no-verify`,
+				SystemDeps: []string{"git", "rustup"},
+				OutputPath: "target/package/the_artifact",
+			},
+		},
+		{
 			"ExplicitLockfile",
 			&CratesIOCargoPackage{
 				Location:    defaultLocation,

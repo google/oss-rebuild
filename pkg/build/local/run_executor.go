@@ -34,6 +34,7 @@ type DockerRunExecutor struct {
 	outputBufferSize int
 	retainContainer  bool
 	tempDirBase      string
+	authCallback     AuthCallback
 }
 
 // NewDockerRunExecutor creates a new Docker run executor with configuration
@@ -74,17 +75,22 @@ func NewDockerRunExecutor(config DockerRunExecutorConfig) (*DockerRunExecutor, e
 		outputBufferSize: outputBufferSize,
 		retainContainer:  config.RetainContainer,
 		tempDirBase:      tempBase,
+		authCallback:     config.AuthCallback,
 	}, nil
 }
+
+// AuthCallback is a function that returns an authorization header value
+type AuthCallback func() (string, error)
 
 // DockerRunExecutorConfig contains configuration for creating a Docker run executor
 type DockerRunExecutorConfig struct {
 	Planner          build.Planner[*DockerRunPlan]
 	CommandExecutor  CommandExecutor
-	MaxParallel      int    // Max number of simultaneous builds
-	OutputBufferSize int    // Buffer size for output pipe, defaults to 512KB
-	RetainContainer  bool   // If true, don't use --rm flag to retain containers
-	TempDirBase      string // Base directory for temp files, if empty uses os.TempDir()
+	MaxParallel      int          // Max number of simultaneous builds
+	OutputBufferSize int          // Buffer size for output pipe, defaults to 512KB
+	RetainContainer  bool         // If true, don't use --rm flag to retain containers
+	TempDirBase      string       // Base directory for temp files, if empty uses os.TempDir()
+	AuthCallback     AuthCallback // Optional callback to generate auth headers when needed
 }
 
 // Start implements build.Executor
@@ -194,6 +200,20 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	if plan.WorkingDir != "" {
 		runArgs = append(runArgs, "-w", plan.WorkingDir)
 	}
+
+	// Add AUTH_HEADER environment variable if auth is required and callback is available
+	if plan.RequiresAuth && e.authCallback != nil {
+		authHeader, err := e.authCallback()
+		if err != nil {
+			handle.updateStatus(build.BuildStateCancelled)
+			handle.setResult(build.Result{
+				Error: errors.Wrap(err, "failed to generate auth header"),
+			})
+			return
+		}
+		runArgs = append(runArgs, "-e", fmt.Sprintf("AUTH_HEADER=%s", authHeader))
+	}
+
 	runArgs = append(runArgs, plan.Image)
 	runArgs = append(runArgs, "/bin/sh", "-c", plan.Script)
 	// Execute the Docker run command with streaming output

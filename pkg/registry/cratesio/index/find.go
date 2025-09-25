@@ -34,7 +34,7 @@ func FindRegistryResolution(index *git.Repository, lockfileCrates []cargolock.Pa
 	for i, pkg := range lockfileCrates {
 		internalPackages[i] = internalPackage{
 			Package: pkg,
-			Path:    getPackageFilePath(pkg.Name),
+			Path:    EntryPath(pkg.Name),
 		}
 	}
 	// Use the existing implementation
@@ -57,7 +57,7 @@ func FindRegistryResolutionMultiRepo(indices []*git.Repository, lockfileCrates [
 	for i, pkg := range lockfileCrates {
 		internalPackages[i] = internalPackage{
 			Package: pkg,
-			Path:    getPackageFilePath(pkg.Name),
+			Path:    EntryPath(pkg.Name),
 		}
 	}
 	var lastResult *searchResult
@@ -108,18 +108,18 @@ type searchResult struct {
 	PriorCommit      *object.Commit
 }
 
-// getPackageFilePath computes the crates registry path for a crate
-func getPackageFilePath(packageName string) string {
-	packageName = strings.ToLower(packageName)
-	switch len(packageName) {
+// EntryPath computes the crates registry path for a crate
+func EntryPath(name string) string {
+	name = strings.ToLower(name)
+	switch len(name) {
 	case 1:
-		return filepath.Join("1", packageName)
+		return filepath.Join("1", name)
 	case 2:
-		return filepath.Join("2", packageName)
+		return filepath.Join("2", name)
 	case 3:
-		return filepath.Join("3", string(packageName[0]), packageName)
+		return filepath.Join("3", string(name[0]), name)
 	default:
-		return filepath.Join(packageName[:2], packageName[2:4], packageName)
+		return filepath.Join(name[:2], name[2:4], name)
 	}
 }
 

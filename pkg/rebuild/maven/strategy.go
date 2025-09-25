@@ -7,7 +7,6 @@ import (
 	"path"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
-
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -45,7 +44,7 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 			{
 				// TODO: Java 9 needs additional certificate installed in /etc/ssl/certs/java/cacerts
 				// It can be passed to maven command via -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
-				Runs: "mvn clean package -DskipTests",
+				Runs: "mvn clean package -DskipTests --batch-mode -f {{.Location.Dir}} -Dmaven.javadoc.skip=true",
 				// Note `maven` from apt also pull in jdk-21 and hence we must export JAVA_HOME and PATH in the step before
 				Needs: []string{"maven"},
 			},
@@ -55,6 +54,56 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 }
 
 func (b *MavenBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	workflow, err := b.ToWorkflow()
+	if err != nil {
+		return rebuild.Instructions{}, err
+	}
+	return workflow.GenerateFor(t, be)
+}
+
+func (b *GradleBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
+	jdkVersionURL, exists := JDKDownloadURLs[b.JDKVersion]
+	if !exists {
+		return nil, errors.Errorf("no download URL for JDK version %s", b.JDKVersion)
+	}
+
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Source: []flow.Step{{
+			Uses: "git-checkout",
+		}},
+		Deps: []flow.Step{{
+			Uses: "maven/setup-java",
+			With: map[string]string{
+				"versionURL": jdkVersionURL,
+			},
+			Needs: []string{"curl"},
+		}},
+		Build: []flow.Step{
+			{
+				Uses: "maven/export-java",
+			},
+			{
+				// We assume the project uses the Gradle Wrapper (gradlew).
+				// We run assemble as it is an atomic lifecycle task that outputs the artifact.
+				// The property `-Pversion` is used to set the project version which ensures that the right version is appended to the artifact name.
+				Runs: "./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
+			},
+		},
+		OutputDir: path.Join(b.Dir, "build", "libs"),
+	}, nil
+}
+
+type GradleBuild struct {
+	rebuild.Location
+
+	// JDKVersion is the version of the JDK to use for the build.
+	JDKVersion string `json:"jdk_version" yaml:"jdk_version"`
+}
+
+var _ rebuild.Strategy = &GradleBuild{}
+
+func (b *GradleBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
 	workflow, err := b.ToWorkflow()
 	if err != nil {
 		return rebuild.Instructions{}, err

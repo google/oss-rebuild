@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitx"
@@ -46,6 +48,12 @@ func InferInit(ctx context.Context) (*inferenceservice.InferDeps, error) {
 			return nil, errors.Wrap(err, "parsing git cache URL")
 		}
 		d.GitCache = &gitx.Cache{IDClient: c, APIClient: sc, URL: u}
+	}
+	d.RepoOptF = func() *gitx.RepositoryOptions {
+		return &gitx.RepositoryOptions{
+			Worktree: memfs.New(),
+			Storer:   memory.NewStorage(),
+		}
 	}
 	return &d, nil
 }

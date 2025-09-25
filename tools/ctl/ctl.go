@@ -30,12 +30,17 @@ import (
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/cheggaaa/pb"
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -46,11 +51,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/gradle"
@@ -111,7 +111,7 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestP
 }
 
 var tui = &cobra.Command{
-	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>] [--merged-asset-store <path>]",
+	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>] [--merged-asset-store <path>] [-prebuild-bucket <BUCKET> -prebuild-version <VERSION>]",
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -170,14 +170,7 @@ var tui = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "failed to create local build def asset store"))
 			}
 		}
-		regclient := http.DefaultClient
-		mux := rebuild.RegistryMux{
-			Debian:   debianreg.HTTPRegistry{Client: regclient},
-			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-			NPM:      npmreg.HTTPRegistry{Client: regclient},
-			PyPI:     pypireg.HTTPRegistry{Client: regclient},
-			Maven:    mavenreg.HTTPRegistry{Client: regclient},
-		}
+		mux := meta.NewRegistryMux(http.DefaultClient)
 		var assetStoreFn func(runID string) (rebuild.LocatableAssetStore, error)
 		if *sharedAssetStore != "" {
 			u, err := url.Parse(*sharedAssetStore)
@@ -231,7 +224,8 @@ var tui = &cobra.Command{
 			}
 		}
 		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
-		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, aiClient)
+		prebuildConfig := rebuild.PrebuildConfig{Bucket: *prebuildBucket, Dir: *prebuildVersion}
+		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, aiClient, prebuildConfig)
 		if err := tapp.Run(cmd.Context()); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -398,13 +392,7 @@ var export = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		regclient := http.DefaultClient
-		mux := rebuild.RegistryMux{
-			Debian:   debianreg.HTTPRegistry{Client: regclient},
-			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-			NPM:      npmreg.HTTPRegistry{Client: regclient},
-			PyPI:     pypireg.HTTPRegistry{Client: regclient},
-		}
+		mux := meta.NewRegistryMux(http.DefaultClient)
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, func(_ string) (rebuild.LocatableAssetStore, error) { return destStore, nil })
 		// Write the metadata about the run.
 		if *exportRundex {
@@ -631,6 +619,110 @@ var runBenchmark = &cobra.Command{
 	},
 }
 
+var runAgentBenchmark = &cobra.Command{
+	Use:   "run-agent-bench --project <project> --api <URI> [--max-concurrency <concurrency>] [--agent-iterations <max iterations>] <benchmark.json>",
+	Short: "Run benchmark on agent",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if *project == "" {
+			return errors.New("project must be provided")
+		}
+		fire, err := firestore.NewClient(cmd.Context(), *project)
+		if err != nil {
+			return errors.Wrap(err, "creating firestore client")
+		}
+		ctx := cmd.Context()
+		var stub api.StubT[schema.AgentCreateRequest, schema.AgentCreateResponse]
+		{
+			apiURL, err := url.Parse(*apiUri)
+			if err != nil {
+				return errors.Wrap(err, "parsing API endpoint")
+			}
+			var client *http.Client
+			if strings.Contains(apiURL.Host, "run.app") {
+				// If the api is on Cloud Run, we need to use an authorized client.
+				apiURL.Scheme = "https"
+				client, err = oauth.AuthorizedUserIDClient(ctx)
+				if err != nil {
+					return errors.Wrap(err, "creating authorized HTTP client")
+				}
+			} else {
+				client = http.DefaultClient
+			}
+			stub = api.Stub[schema.AgentCreateRequest, schema.AgentCreateResponse](client, apiURL.JoinPath("agent"))
+		}
+		path := args[0]
+		log.Printf("Extracting benchmark %s...\n", filepath.Base(path))
+		set, err := benchmark.ReadBenchmark(path)
+		if err != nil {
+			return errors.Wrap(err, "reading benchmark file")
+		}
+		log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
+		p := pipe.Into(pipe.FromSlice(set.Packages), func(in benchmark.Package, out chan<- schema.AgentCreateRequest) {
+			if len(in.Versions) > 0 && len(in.Versions) != len(in.Artifacts) {
+				log.Printf("Package %s has mismatching version and artifacts", in.Name)
+				return
+			}
+			for i, v := range in.Versions {
+				req := schema.AgentCreateRequest{
+					Target: rebuild.Target{
+						Ecosystem: rebuild.Ecosystem(in.Ecosystem),
+						Package:   in.Name,
+						Version:   v,
+					},
+					MaxIterations: *agentIterations,
+				}
+				if len(in.Artifacts) > 0 {
+					req.Target.Artifact = in.Artifacts[i]
+				}
+				out <- req
+			}
+		})
+		bar := pb.New(set.Count)
+		bar.Output = cmd.OutOrStderr()
+		bar.ShowTimeLeft = true
+		bar.Start()
+		p2 := pipe.ParInto(*maxConcurrency, p, func(in schema.AgentCreateRequest, out chan<- string) {
+			defer bar.Increment()
+			resp, err := stub(ctx, in)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			sessionDoc := fire.Collection("agent_sessions").Doc(resp.SessionID)
+			var session schema.AgentSession
+			for { // TODO: Avoid infinite loops with whole-loop timeout
+				time.Sleep(30 * time.Second)
+				sessionSnap, err := sessionDoc.Get(ctx)
+				if err != nil && status.Code(err) == codes.NotFound {
+					continue
+				} else if err != nil {
+					log.Println(errors.Wrap(err, "getting session document"))
+					return
+				}
+				if err := sessionSnap.DataTo(&session); err != nil {
+					log.Fatal("deserializing session data")
+					return
+				}
+				if session.Status == schema.AgentSessionStatusCompleted {
+					break
+				}
+			}
+			out <- session.StopReason
+		})
+		var successes, total int
+		for reason := range p2.Out() {
+			if reason == schema.AgentCompleteReasonSuccess {
+				successes++
+			}
+			total++
+		}
+		bar.Finish()
+		log.Printf("Successes: %d/%d\n", successes, total)
+		return nil
+	},
+}
+
 const analyzeMode = schema.ExecutionMode("analyze")
 
 var runOne = &cobra.Command{
@@ -849,16 +941,27 @@ var migrate = &cobra.Command{
 }
 
 var infer = &cobra.Command{
-	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
+	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--repo-hint <repo>] [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
 	Short: "Run inference",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		var strategyHint *schema.StrategyOneOf
+		if *repoHint != "" {
+			strategyHint = &schema.StrategyOneOf{
+				LocationHint: &rebuild.LocationHint{
+					Location: rebuild.Location{
+						Repo: *repoHint,
+					},
+				},
+			}
+		}
 		req := schema.InferenceRequest{
-			Ecosystem: rebuild.Ecosystem(*ecosystem),
-			Package:   *pkg,
-			Version:   *version,
-			Artifact:  *artifact,
-			// TODO: Add support for strategy hint.
+			Ecosystem:    rebuild.Ecosystem(*ecosystem),
+			Package:      *pkg,
+			Version:      *version,
+			Artifact:     *artifact,
+			StrategyHint: strategyHint,
+			// TODO: Add support providing dir and ref hints.
 		}
 		var resp *schema.StrategyOneOf
 		if *apiUri != "" {
@@ -886,6 +989,12 @@ var infer = &cobra.Command{
 			deps := &inferenceservice.InferDeps{
 				HTTPClient: http.DefaultClient,
 				GitCache:   nil,
+				RepoOptF: func() *gitx.RepositoryOptions {
+					return &gitx.RepositoryOptions{
+						Worktree: memfs.New(),
+						Storer:   memory.NewStorage(),
+					}
+				},
 			}
 			var err error
 			resp, err = inferenceservice.Infer(cmd.Context(), req, deps)
@@ -1208,6 +1317,9 @@ var localAgent = &cobra.Command{
 		if *metadataBucket == "" {
 			return errors.New("metadata bucket not provided")
 		}
+		if *logsBucket == "" {
+			return errors.New("logs bucket not provided")
+		}
 		fire, err := firestore.NewClient(cmd.Context(), *project)
 		if err != nil {
 			return errors.Wrap(err, "creating firestore client")
@@ -1219,7 +1331,7 @@ var localAgent = &cobra.Command{
 		sessionID := sessionUUID.String()
 		sessionTime := time.Unix(sessionUUID.Time().UnixTime())
 		// Set defaults for configuration
-		maxIterations := 10
+		maxIterations := 3
 		session := schema.AgentSession{
 			ID:             sessionID,
 			Target:         t,
@@ -1245,7 +1357,29 @@ var localAgent = &cobra.Command{
 			}
 			return errors.Wrap(err, "creating agent session")
 		}
-		log.Println("Created session object")
+		var retryInitialIter *schema.AgentIteration
+		if *retrySession != "" {
+			sessionDoc := fire.Collection("agent_sessions").Doc(*retrySession)
+			iterQuery := sessionDoc.Collection("agent_iterations").
+				Where("session_id", "==", *retrySession).
+				Where("number", "==", 1).
+				Limit(1)
+			d, err := iterQuery.Documents(ctx).Next()
+			if err != nil {
+				return errors.Wrap(err, "getting iteration to retry")
+			}
+			retryInitialIter = &schema.AgentIteration{}
+			if err := d.DataTo(retryInitialIter); err != nil {
+				return errors.Wrap(err, "deserializing iteration data")
+			}
+			_, err = fire.Collection("agent_sessions").Doc(sessionID).
+				Collection("agent_iterations").
+				Doc(retryInitialIter.ID).
+				Create(ctx, *retryInitialIter)
+			if err != nil {
+				return errors.Wrap(err, "creating initial iteration")
+			}
+		}
 		// Run agent locally
 		client, err := oauth.AuthorizedUserIDClient(ctx)
 		if err != nil {
@@ -1258,17 +1392,20 @@ var localAgent = &cobra.Command{
 		// Create agent API client stubs
 		iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
 		completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
+		g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}), genkit.WithDefaultModel("googleai/gemini-2.5-pro"))
 		deps := agent.RunSessionDeps{
+			Genkit:         g,
 			IterationStub:  iterationStub,
 			CompleteStub:   completeStub,
-			Agent:          agent.NewDefaultAgentLogic(),
 			SessionsBucket: "", // TODO: Add this once it's being used.
 			MetadataBucket: *metadataBucket,
+			LogsBucket:     *logsBucket,
 		}
 		req := agent.RunSessionReq{
-			SessionID:     sessionID,
-			Target:        t,
-			MaxIterations: maxIterations,
+			SessionID:        sessionID,
+			Target:           t,
+			MaxIterations:    maxIterations,
+			InitialIteration: retryInitialIter,
 		}
 		// TODO: Should RunSession return an error?
 		agent.RunSession(ctx, req, deps)
@@ -1304,6 +1441,10 @@ var (
 	taskQueueEmail  = flag.String("task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
 	// run-one
 	strategyPath = flag.String("strategy", "", "the strategy file to use")
+	// agent
+	agentIterations = flag.Int("agent-iterations", 10, "maximum number of agent iterations before giving up")
+	// infer
+	repoHint = flag.String("repo-hint", "", "a hint of the repository URL where the package is hosted")
 	// get-results
 	runFlag = flag.String("run", "", "the run(s) from which to fetch results")
 	format  = flag.String("format", "", "format of the output, options are command specific")
@@ -1326,6 +1467,7 @@ var (
 	// Export
 	destination  = flag.String("destination", "", "the destination for the export, e.g. gs://bucket/prefix")
 	exportRundex = flag.Bool("rundex", false, "whether to include the rundex in the export")
+	retrySession = flag.String("retry-session", "", "the session to retry")
 )
 
 func init() {
@@ -1383,6 +1525,8 @@ func init() {
 	tui.Flags().AddGoFlag(flag.Lookup("def-dir"))
 	tui.Flags().AddGoFlag(flag.Lookup("rundex-gcs-path"))
 	tui.Flags().AddGoFlag(flag.Lookup("merged-asset-store"))
+	tui.Flags().AddGoFlag(flag.Lookup("prebuild-bucket"))
+	tui.Flags().AddGoFlag(flag.Lookup("prebuild-version"))
 
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
@@ -1395,6 +1539,7 @@ func init() {
 	infer.Flags().AddGoFlag(flag.Lookup("artifact"))
 	infer.Flags().AddGoFlag(flag.Lookup("bootstrap-bucket"))
 	infer.Flags().AddGoFlag(flag.Lookup("bootstrap-version"))
+	infer.Flags().AddGoFlag(flag.Lookup("repo-hint"))
 
 	getGradleGAV.Flags().AddGoFlag(flag.Lookup("repository"))
 	getGradleGAV.Flags().AddGoFlag(flag.Lookup("ref"))
@@ -1414,27 +1559,39 @@ func init() {
 	runAgent.Flags().AddGoFlag(flag.Lookup("version"))
 	runAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
 
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("project"))
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("agent-iterations"))
+
 	localAgent.Flags().AddGoFlag(flag.Lookup("project"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("agent-api"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("ecosystem"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("package"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("version"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("retry-session"))
 
+	// Execution
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
+	rootCmd.AddCommand(runAgent)
+	rootCmd.AddCommand(localAgent)
+	rootCmd.AddCommand(runAgentBenchmark)
+	// Reading data
+	rootCmd.AddCommand(tui)
 	rootCmd.AddCommand(getResults)
 	rootCmd.AddCommand(export)
-	rootCmd.AddCommand(tui)
 	rootCmd.AddCommand(listRuns)
+	// Rebuild logic
 	rootCmd.AddCommand(infer)
+	rootCmd.AddCommand(getGradleGAV)
+	// Infra tools
 	rootCmd.AddCommand(migrate)
 	rootCmd.AddCommand(setTrackedPackagesCmd)
 	rootCmd.AddCommand(getTrackedPackagesCmd)
-	rootCmd.AddCommand(runAgent)
-	rootCmd.AddCommand(getGradleGAV)
-	rootCmd.AddCommand(localAgent)
 }
 
 func main() {

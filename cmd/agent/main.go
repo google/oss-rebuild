@@ -9,6 +9,8 @@ import (
 	"log"
 	"net/url"
 
+	"github.com/firebase/genkit/go/genkit"
+	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -70,11 +72,11 @@ func main() {
 	// Create agent API client stubs
 	iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
 	completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
+	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.VertexAI{}), genkit.WithDefaultModel("vertexai/gemini-2.5-pro"))
 	deps := agent.RunSessionDeps{
-		IterationStub: iterationStub,
-		CompleteStub:  completeStub,
-		// TODO: Should the agent logic be configurable?
-		Agent:          agent.NewDefaultAgentLogic(),
+		Genkit:         g,
+		IterationStub:  iterationStub,
+		CompleteStub:   completeStub,
 		SessionsBucket: *sessionsBucket,
 		MetadataBucket: *metadataBucket,
 	}

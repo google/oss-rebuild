@@ -16,9 +16,11 @@ import (
 	"github.com/google/oss-rebuild/pkg/registry/maven"
 )
 
+type artifactCoordinates struct{ PackageName, VersionID, FileType string }
+
 type mockMavenRegistry struct {
 	maven.Registry
-	artifactCoordinates map[struct{ PackageName, VersionID, FileType string }][]byte
+	artifactCoordinates map[artifactCoordinates][]byte
 	releaseFileError    error
 }
 
@@ -110,7 +112,7 @@ func TestJDKVersionInference(t *testing.T) {
 
 			mockMux := rebuild.RegistryMux{
 				Maven: &mockMavenRegistry{
-					artifactCoordinates: map[struct{ PackageName, VersionID, FileType string }][]byte{
+					artifactCoordinates: map[artifactCoordinates][]byte{
 						{"dummy", "dummy", maven.TypeJar}: buf.Bytes(),
 					},
 				},
@@ -188,7 +190,6 @@ func TestBuildToolInference(t *testing.T) {
                   pom.xml: |
                       <project></project>`,
 			expectedBuildTool: mavenBuildTool,
-			wantErr:           false,
 		},
 		{
 			name: "pom.xml absent",
@@ -211,6 +212,131 @@ func TestBuildToolInference(t *testing.T) {
                       <project></project>`,
 			expectedBuildTool: mavenBuildTool,
 			wantErr:           true,
+		},
+		{
+			name: "gradle over maven",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  gradlew: |
+                    #!/bin/sh
+                  api/core/pom.xml: |
+                    <project></project>`,
+			expectedBuildTool: gradleBuildTool,
+		},
+		{
+			name: "maven over gradle",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  pom.xml: |
+                      <project></project>
+                  api/core/gradlew: |
+                      #!/bin/sh`,
+			expectedBuildTool: mavenBuildTool,
+		},
+		{
+			name: "sbt build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  build.sbt: |
+                      name := "example"
+                      version := "0.1.0"
+                      scalaVersion := "2.13.6"`,
+			expectedBuildTool: sbtBuildTool,
+		},
+		{
+			name: "ant build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  build.xml: |
+                      <project name="Example" default="compile">
+                          <target name="compile">
+                              <javac srcdir="src" destdir="build"/>
+                          </target>
+                      </project>`,
+			expectedBuildTool: antBuildTool,
+		},
+		{
+			name: "ivy build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  ivy.xml: |
+                      <ivy-module version="2.0">
+                          <info organisation="org.example" module="example"/>
+                          <dependencies>
+                              <dependency org="org.apache" name="commons-lang3" rev="3.12.0"/>
+                          </dependencies>
+                      </ivy-module>`,
+			expectedBuildTool: ivyBuildTool,
+		},
+		{
+			name: "leiningen build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  project.clj: |
+                      (defproject example "0.1.0"
+                        :description "An example Clojure project"
+                        :dependencies [[org.clojure/clojure "1.10.3"]])`,
+			expectedBuildTool: leiningenBuildTool,
+		},
+		{
+			name: "npm build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  package.json: |
+                      {
+                        "name": "example",
+                        "version": "1.0.0",
+                        "main": "index.js",
+                        "dependencies": {
+                          "express": "^4.17.1"
+                        }
+                      }`,
+			expectedBuildTool: npmBuildTool,
+		},
+		{
+			name: "mill build file for scala",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  build.sc: |
+                      import mill._, mill.scalalib._
+                      object example extends ScalaModule {
+                        def scalaVersion = "2.13.6"
+                      }`,
+			expectedBuildTool: millBuildTool,
+		},
+		{
+			name: "general mill build file",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  build.mill: |
+                    package build
+                    import mill.*, javalib.*
+
+                    object foo extends JavaModule {
+                        def mvnDeps = Seq(
+                            mvn"net.sourceforge.argparse4j:argparse4j:0.9.0",
+                            mvn"org.thymeleaf:thymeleaf:3.1.1.RELEASE"
+                        )
+                    }`,
+			expectedBuildTool: millBuildTool,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -239,4 +365,143 @@ func must[T any](t T, err error) T {
 		panic(err)
 	}
 	return t
+}
+
+func TestGitIndexScan(t *testing.T) {
+	testCases := []struct {
+		name             string
+		repoYAML         string
+		zipEntries       []*archive.ZipEntry
+		expectedCommitID string
+		expectedError    bool
+	}{
+		{
+			name: "simple case with direct match",
+			repoYAML: `
+            commits:
+              - id: initial-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    a`,
+			zipEntries: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/App.java"},
+					Body:       []byte("a"),
+				},
+			},
+			expectedCommitID: "initial-commit",
+		},
+		{
+			name: "parent match",
+			repoYAML: `
+            commits:
+              - id: initial-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    a
+              - id: second-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    b`,
+			zipEntries: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/App.java"},
+					Body:       []byte("b"),
+				},
+			},
+			expectedCommitID: "second-commit",
+		},
+		{
+			name: "middle commit match",
+			repoYAML: `
+            commits:
+              - id: initial-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    a
+              - id: second-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    b
+              - id: third-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    c`,
+			zipEntries: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/App.java"},
+					Body:       []byte("b\n"),
+				},
+			},
+			expectedCommitID: "second-commit",
+		},
+		{
+			name: "throw error when no match",
+			repoYAML: `
+            commits:
+              - id: initial-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    a
+              - id: second-commit
+                files:
+                  src/main/java/com/example/App.java: |
+                    b`,
+			zipEntries: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/App.java"},
+					Body:       []byte("c"),
+				},
+			},
+			expectedCommitID: "",
+			expectedError:    true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
+
+			var buf bytes.Buffer
+			zw := zip.NewWriter(&buf)
+			for _, entry := range tc.zipEntries {
+				if err := entry.WriteTo(zw); err != nil {
+					t.Fatalf("WriteTo() error: %v", err)
+				}
+			}
+			mockRegistry := &mockMavenRegistry{
+				artifactCoordinates: make(map[artifactCoordinates][]byte),
+			}
+			mockMux := rebuild.RegistryMux{
+				Maven: mockRegistry,
+			}
+			addSourceJarArtifact(mockRegistry, "dummy", "dummy", tc.zipEntries)
+			sourceCommit, err := findClosestCommitToSource(context.Background(), rebuild.Target{Package: "dummy", Version: "dummy"}, mockMux, repo.Repository)
+			if tc.expectedError {
+				if err == nil {
+					t.Fatalf("expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if sourceCommit.Hash != repo.Commits[tc.expectedCommitID] {
+					t.Errorf("sourceJarGuess() = %v, want %v", sourceCommit.Hash, repo.Commits[tc.expectedCommitID])
+				}
+			}
+		})
+	}
+}
+
+func addSourceJarArtifact(m *mockMavenRegistry, packageName, version string, entries []*archive.ZipEntry) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, entry := range entries {
+		if err := entry.WriteTo(zw); err != nil {
+			panic(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		panic(err)
+	}
+	m.artifactCoordinates[artifactCoordinates{PackageName: packageName, VersionID: version, FileType: maven.TypeSources}] = buf.Bytes()
 }
