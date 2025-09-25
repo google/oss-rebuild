@@ -98,6 +98,20 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 	opts := &index.RepoOpt{Contains: &publishedTime}
 	handles, err := deps.IndexManager.GetRepositories(ctx, keys, opts)
 	if err != nil {
+		if outOfDateErr, ok := err.(*index.RegistryOutOfDateError); ok {
+			// Calculate retry-after based on repository update timing
+			retryAfter := time.Until(outOfDateErr.NextUpdateTime)
+			if retryAfter <= 0 {
+				// If next update is overdue, use an additional update interval as fallback
+				retryAfter = outOfDateErr.UpdateInterval
+			}
+			// Cap the retry after to a reasonable maximum (1 hour)
+			maxRetry := time.Hour
+			if retryAfter > maxRetry {
+				retryAfter = maxRetry
+			}
+			return nil, api.AsStatus(codes.Unavailable, errors.New("current index registry requires update"), api.RetryAfter(retryAfter))
+		}
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to get repositories"))
 	}
 	defer func() {
