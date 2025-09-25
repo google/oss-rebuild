@@ -622,7 +622,7 @@ var runBenchmark = &cobra.Command{
 var runAgentBenchmark = &cobra.Command{
 	Use:   "run-agent-bench --project <project> --api <URI> [--max-concurrency <concurrency>] [--agent-iterations <max iterations>] <benchmark.json>",
 	Short: "Run benchmark on agent",
-	Args:  cobra.NoArgs,
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if *project == "" {
 			return errors.New("project must be provided")
