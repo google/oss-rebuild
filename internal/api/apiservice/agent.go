@@ -27,6 +27,7 @@ type AgentCreateDeps struct {
 	FirestoreClient     *firestore.Client
 	RunService          *run.Service
 	Project             string
+	Location            string
 	AgentJobName        string
 	AgentAPIURL         string
 	AgentTimeoutSeconds int
@@ -78,6 +79,8 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 				{
 					Name: jobName,
 					Args: []string{
+						"--project=" + deps.Project,
+						"--location=" + deps.Location,
 						"--session-id=" + sessionID,
 						"--agent-api-url=" + deps.AgentAPIURL,
 						"--sessions-bucket=" + deps.SessionsBucket,

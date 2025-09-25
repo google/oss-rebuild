@@ -15,8 +15,6 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/fatih/color"
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -26,12 +24,14 @@ import (
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 )
 
 const uploadBytesLimit = 100_000
@@ -124,13 +124,11 @@ type defaultAgent struct {
 	loc         rebuild.Location
 	iterHistory []*schema.AgentIteration
 	thoughts    []thoughtData
-	tools       []ai.ToolRef
 	assets      rebuild.AssetStore
 }
 
 func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
 	a := &defaultAgent{t: t, deps: deps, assets: rebuild.NewFilesystemAssetStore(memfs.New())}
-	a.registerTools()
 	return a
 }
 
@@ -187,52 +185,158 @@ func (a *defaultAgent) logs(ctx context.Context, obliviousID string) (io.ReadClo
 	return obj.NewReader(ctx)
 }
 
-func (a *defaultAgent) registerTools() {
-	a.tools = []ai.ToolRef{
-		genkit.DefineTool(a.deps.Genkit, "read_repo_file", "Fetch the content of the file from the source repository",
-			func(ctx *ai.ToolContext, path struct {
-				Path string `jsonschema_description:"Path of the file to be read, relative to the repository root"`
-			}) (string, error) {
-				log.Printf("calling read_repo_file(%s)", path.Path)
+func (a *defaultAgent) getTools() []*llm.FunctionDefinition {
+	return []*llm.FunctionDefinition{
+		{
+			FunctionDeclaration: genai.FunctionDeclaration{
+				Name:        "read_repo_file",
+				Description: "Fetch the content of the file from the source repository",
+				Parameters: &genai.Schema{
+					Type: genai.TypeObject,
+					Properties: map[string]*genai.Schema{
+						"path": {Type: genai.TypeString, Description: "Path of the file to be read, relative to the repository root"},
+					},
+					Required: []string{"path"},
+				},
+				Response: &genai.Schema{
+					Type: genai.TypeObject,
+					Properties: map[string]*genai.Schema{
+						"content": {Type: genai.TypeString, Description: "The file content, if read was successful"},
+						"error":   {Type: genai.TypeString, Description: "The error reading the requested file, if unsuccessful"},
+					},
+				},
+			},
+			Function: func(args map[string]any) genai.FunctionResponse {
+				path := args["path"].(string)
+				var content, errStr string
 				if tr, err := getRepoTree(a.repo, a.loc.Ref); err != nil {
-					return "", err
+					errStr = err.Error()
 				} else {
-					return getRepoFile(tr, path.Path)
+					content, err = getRepoFile(tr, path)
+					if err != nil {
+						errStr = err.Error()
+					}
+				}
+				return genai.FunctionResponse{
+					Name: "read_repo_file", // Name must match the FunctionDeclaration
+					Response: map[string]any{
+						"content": content,
+						"error":   errStr,
+					},
 				}
 			},
-		),
-		genkit.DefineTool(a.deps.Genkit, "list_repo_files", "Fetch the list of file from the repository",
-			func(ctx *ai.ToolContext, path struct {
-				Path string `jsonschema_description:"Path of the directory to be read, relative to the repository root. Use . to represent the root."`
-			}) ([]string, error) {
-				log.Printf("calling list_repo_files(%s)", path.Path)
-				tr, err := getRepoTree(a.repo, a.loc.Ref)
-				if err != nil {
-					return nil, err
-				}
-				return listRepoFiles(tr, path.Path)
+		},
+		{
+			FunctionDeclaration: genai.FunctionDeclaration{
+				Name:        "list_repo_files",
+				Description: "Fetch the list of the file from the source repository",
+				Parameters: &genai.Schema{
+					Type: genai.TypeObject,
+					Properties: map[string]*genai.Schema{
+						"path": {Type: genai.TypeString, Description: "Path of the directory to be read, relative to the repository root. Omit or use empty string for root."}, // Clarified description
+					},
+					Required: []string{},
+				},
+				Response: &genai.Schema{
+					Type: genai.TypeObject,
+					Properties: map[string]*genai.Schema{
+						"entries": {Type: genai.TypeArray, Description: "The list of files and directories at the requested path, if read was successful", Items: &genai.Schema{Type: genai.TypeString, Description: "A file path, ending with a slash if a directory"}},
+						"error":   {Type: genai.TypeString, Description: "The error listing the requested path, if unsuccessful"},
+					},
+				},
 			},
-		),
-		genkit.DefineTool(a.deps.Genkit, "read_logs_end", "Read tail of the logs from the previous build. If the logs are large, they may be truncated providing only the tail.",
-			func(ctx *ai.ToolContext, _ struct{}) (string, error) {
-				log.Printf("calling read_logs_end()")
+			Function: func(args map[string]any) genai.FunctionResponse {
+				var path string
+				if patharg, ok := args["path"]; ok {
+					if p, ok := patharg.(string); ok {
+						path = p
+					}
+					// TODO: Handle case where path exists but is not a string?
+				}
+				var errStr string
+				var content []string
+				if tr, err := getRepoTree(a.repo, a.loc.Ref); err != nil {
+					errStr = err.Error()
+				} else {
+					if content, err = listRepoFiles(tr, path); err != nil {
+						errStr = err.Error()
+					}
+				}
+				entries := make([]any, 0, len(content))
+				for _, entry := range content {
+					entries = append(entries, entry)
+				}
+				return genai.FunctionResponse{
+					Name: "list_repo_files", // Name must match the FunctionDeclaration
+					Response: map[string]any{
+						"entries": entries,
+						"error":   errStr,
+					},
+				}
+			},
+		},
+		{
+			FunctionDeclaration: genai.FunctionDeclaration{
+				Name:        "read_logs_end",
+				Description: "Read tail of the logs from the previous build. If the logs are large, they may be truncated providing only the tail.",
+				Parameters: &genai.Schema{
+					Type:       genai.TypeObject,
+					Properties: map[string]*genai.Schema{},
+					Required:   []string{},
+				},
+				Response: &genai.Schema{
+					Type: genai.TypeObject,
+					Properties: map[string]*genai.Schema{
+						"logs":  {Type: genai.TypeString, Description: "The tail end of the build logs"},
+						"error": {Type: genai.TypeString, Description: "The error listing the requested path, if unsuccessful"},
+					},
+				},
+			},
+			Function: func(args map[string]any) genai.FunctionResponse {
 				if len(a.iterHistory) == 0 {
-					return "Can't read logs because there was no previous build execution.", nil
+					return genai.FunctionResponse{
+						Name: "read_logs_end", // Name must match the FunctionDeclaration
+						Response: map[string]any{
+							"logs":  "",
+							"error": "Can't read logs because there was no previous build execution.",
+						},
+					}
 				}
 				prev := a.iterHistory[len(a.iterHistory)-1]
-				r, err := a.logs(ctx, prev.ObliviousID)
+				r, err := a.logs(context.Background(), prev.ObliviousID)
 				if err != nil {
-					return "", errors.Wrap(err, "reading logs")
+					return genai.FunctionResponse{
+						Name: "read_logs_end", // Name must match the FunctionDeclaration
+						Response: map[string]any{
+							"logs":  "",
+							"error": fmt.Sprintf("Reading logs: %v", err),
+						},
+					}
 				}
 				defer r.Close()
 				b, err := io.ReadAll(r)
+				if err != nil {
+					return genai.FunctionResponse{
+						Name: "read_logs_end", // Name must match the FunctionDeclaration
+						Response: map[string]any{
+							"logs":  "",
+							"error": err.Error(),
+						},
+					}
+				}
 				logs := string(b)
 				if len(logs) > uploadBytesLimit {
 					logs = "...(truncated)..." + logs[len(logs)-uploadBytesLimit:]
 				}
-				return logs, err
+				return genai.FunctionResponse{
+					Name: "read_logs_end", // Name must match the FunctionDeclaration
+					Response: map[string]any{
+						"logs":  logs,
+						"error": "",
+					},
+				}
 			},
-		),
+		},
 	}
 }
 
@@ -428,23 +532,17 @@ func (a *defaultAgent) makePrompt(ctx context.Context) []string {
 	return prompt
 }
 
-func (a *defaultAgent) generate(ctx context.Context, prompt []string, opts ...ai.GenerateOption) (*ai.ModelResponse, error) {
-	var err error
-	var modelResp *ai.ModelResponse
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("panic: %v", r)
-			}
-		}()
-		opts = append([]ai.GenerateOption{ai.WithPrompt(strings.Join(prompt, "\n"))}, opts...)
-		modelResp, err = genkit.Generate(
-			ctx,
-			a.deps.Genkit,
-			opts...,
-		)
-	}()
-	return modelResp, err
+func (a *defaultAgent) generate(ctx context.Context, prompt []string) (string, error) {
+	var response genai.Content
+	contentParts := []*genai.Part{genai.NewPartFromText(strings.Join(prompt, "\n"))}
+	for content, err := range a.deps.Chat.SendMessageStream(ctx, contentParts...) {
+		if err != nil {
+			return "", errors.Wrap(err, "chat error")
+		}
+		log.Printf("%s\n\n", llm.FormatContent(*content))
+		response = *content
+	}
+	return response.Parts[0].Text, nil
 }
 
 func (a *defaultAgent) makeDiagnosticPrompt() []string {
@@ -465,16 +563,16 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.Strat
 	thought := thoughtData{
 		BasedOnIteration: len(a.iterHistory) - 1,
 	}
+	var err error
 	// We have a dedicated diagnostic step to make sure we keep a history of what the AI thinks the problems are.
 	{ // Diagnose
 		log.Println("Asking the LLM to diagnose the failure and describe a fix...")
 		p := a.makeDiagnosticPrompt()
 		log.Println("Prompt:\n", color.YellowString(strings.Join(p, "\n")))
-		modelResp, err := a.generate(ctx, p, ai.WithMaxTurns(a.deps.MaxTurns), ai.WithTools(a.tools...))
+		thought.Diagnostic, err = a.generate(ctx, p)
 		if err != nil {
 			return nil, errors.Wrap(err, "diagnose")
 		}
-		thought.Diagnostic = modelResp.Text()
 		log.Printf("Gemini says:\n%s", color.CyanString(thought.Diagnostic))
 	}
 	var rawScript string
@@ -484,19 +582,15 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.Strat
 		p = append(p, "An expert reviewed this failure and gave these instructions for fixing it:", thought.Diagnostic)
 		log.Println("Prompt:\n", color.YellowString(strings.Join(p, "\n")))
 		// TODO: Switch the prompt to outputReasoningAndScript for structured reasoning.
-		modelResp, err := a.generate(
-			ctx,
-			p,
-			ai.WithMaxTurns(a.deps.MaxTurns),
-		)
+		rawScript, err = a.generate(ctx, p)
 		if err != nil {
 			return nil, errors.Wrap(err, "hypothesize")
 		}
-		rawScript = modelResp.Text()
 		log.Printf("Gemini says:\n%s", color.CyanString(rawScript))
 	}
 	{
-		modelResp, err := a.generate(
+		// TODO: Change this to use gemini flash instead
+		script, err := a.generate(
 			ctx,
 			[]string{
 				"You are now a single-purpose, pure Bash script generator.",
@@ -506,13 +600,11 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.Strat
 				"From the following llm response, extract only the shell commands to be run and exclude any commands used to clone, checkout, and navigate to the git repo:",
 				rawScript,
 			},
-			ai.WithModelName("vertexai/gemini-2.5-flash"),
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "ai formatting")
 		}
 		// TODO: Check the script for invalid sequences, like EOS or EOF.
-		script := modelResp.Text()
 		if strings.HasPrefix(script, "```") {
 			lines := strings.Split(script, "\n")
 			lines = lines[1:]
