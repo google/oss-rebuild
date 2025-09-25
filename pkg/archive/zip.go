@@ -7,9 +7,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"io"
+	"log"
 	"slices"
 	"strings"
 	"time"
@@ -211,27 +211,39 @@ var StableZipMisc = ZipEntryStabilizer{
 // StabilizeZip strips volatile metadata and rewrites the provided archive in a standard form.
 func StabilizeZip(zr *zip.Reader, zw *zip.Writer, opts StabilizeOpts) error {
 	defer zw.Close()
-	var headers []zip.FileHeader
-	for _, zf := range zr.File {
-		headers = append(headers, zf.FileHeader)
-	}
 	mr := NewMutableReader(zr)
 	for _, s := range opts.Stabilizers {
 		var currentStabName string
-		originalArchiveHash := getArchiveHash(&mr)
-		switch s.(type) {
+
+		// Compute original archive hash
+		h1 := sha256.New()
+		err := mr.WriteTo(zip.NewWriter(h1))
+		if err != nil {
+			return errors.Wrap(err, "computing original archive hash")
+		}
+		originalArchiveHash := h1.Sum(nil)
+
+		switch s := s.(type) {
 		case ZipArchiveStabilizer:
-			currentStabName = s.(ZipArchiveStabilizer).Name
-			s.(ZipArchiveStabilizer).Stabilize(&mr)
+			currentStabName = s.Name
+			s.Stabilize(&mr)
 		case ZipEntryStabilizer:
-			currentStabName = s.(ZipEntryStabilizer).Name
+			currentStabName = s.Name
 			for _, mf := range mr.File {
-				s.(ZipEntryStabilizer).Stabilize(mf)
+				s.Stabilize(mf)
 			}
 		}
-		newArchiveHash := getArchiveHash(&mr)
-		if originalArchiveHash != newArchiveHash {
-			println("Stabilizer taking effect:", currentStabName)
+
+		// Compute new archive hash
+		h2 := sha256.New()
+		err = mr.WriteTo(zip.NewWriter(h2))
+		if err != nil {
+			return errors.Wrap(err, "computing new archive hash")
+		}
+		newArchiveHash := h2.Sum(nil)
+
+		if !bytes.Equal(originalArchiveHash, newArchiveHash) {
+			log.Printf("Stabilizer taking effect: %s\n", currentStabName)
 		}
 	}
 	return mr.WriteTo(zw)
@@ -260,28 +272,4 @@ func toZipCompatibleReader(r io.Reader) (io.ReaderAt, int64, error) {
 		return nil, 0, errors.New("unsupported reader")
 	}
 	return bytes.NewReader(b), int64(len(b)), nil
-}
-
-// Helper to compute SHA256 and encode as base64 (url encoding, no padding)
-func computeSHA256Base64(data []byte) string {
-	h := sha256.New()
-	h.Write(data)
-	sum := h.Sum(nil)
-	return base64.RawURLEncoding.EncodeToString(sum)
-}
-
-func getArchiveHash(zr *MutableZipReader) string {
-	var buf bytes.Buffer
-	for _, zf := range zr.File {
-		content, err := zf.Open()
-		if err != nil {
-			continue
-		}
-		data, err := io.ReadAll(content)
-		if err != nil {
-			continue
-		}
-		buf.Write(data)
-	}
-	return computeSHA256Base64(buf.Bytes())
 }
