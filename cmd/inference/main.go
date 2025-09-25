@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpegress"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 	"google.golang.org/api/idtoken"
 	gapihttp "google.golang.org/api/transport/http"
@@ -23,6 +24,7 @@ import (
 
 var (
 	gitCacheURL = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
+	logsBucket  = flag.String("logs-bucket", "", "if provided, the GCS bucket to use for inference logs")
 )
 
 var httpcfg = httpegress.Config{}
@@ -54,6 +56,10 @@ func InferInit(ctx context.Context) (*inferenceservice.InferDeps, error) {
 			Worktree: memfs.New(),
 			Storer:   memory.NewStorage(),
 		}
+	}
+	d.LogStore, err = rebuild.NewGCSStore(ctx, "gs://"+*logsBucket)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating log asset store")
 	}
 	return &d, nil
 }
