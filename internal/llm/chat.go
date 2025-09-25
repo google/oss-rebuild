@@ -82,12 +82,17 @@ func NewChat(ctx context.Context, client *genai.Client, model string, config *ge
 // by the model using the configured tools, and sends results back to the model
 // until a final content response is received or an error occurs.
 func (cm *Chat) SendMessage(ctx context.Context, parts ...*genai.Part) (*genai.GenerateContentResponse, error) {
-	// Convert []*Part to []Part
-	partsValues := make([]genai.Part, len(parts))
-	for i, part := range parts {
-		partsValues[i] = *part
+	var last *genai.Content
+	for content, err := range cm.SendMessageStream(ctx, parts...) {
+		if err != nil {
+			return nil, err
+		}
+		last = content
 	}
-	return cm.session.SendMessage(ctx, partsValues...)
+	if last != nil {
+		return &genai.GenerateContentResponse{Candidates: []*genai.Candidate{{Content: last}}}, nil
+	}
+	return nil, errors.New("no message response")
 }
 
 // SendMessageStream sends a message to the model as part of the ongoing conversation.
@@ -102,7 +107,7 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 		}
 		currentParts := slices.Clone(parts)
 		for range cm.maxIter {
-			if !yield(&genai.Content{Parts: currentParts}, nil) {
+			if !yield(&genai.Content{Parts: currentParts, Role: UserRole}, nil) {
 				return
 			}
 			// Convert []*Part to []Part
@@ -127,8 +132,26 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 			if !yield(candidate.Content, nil) {
 				return
 			}
-			// For simplicity, assume no function calls for now - this can be extended later
-			if candidate.FinishReason == genai.FinishReasonStop {
+			var calls []*genai.FunctionCall
+			for _, part := range candidate.Content.Parts {
+				if call := part.FunctionCall; call != nil {
+					calls = append(calls, call)
+				}
+			}
+			if len(calls) > 0 {
+				currentParts = currentParts[:0]
+				for _, call := range calls {
+					implFunc, found := cm.toolImpls[call.Name]
+					if !found {
+						yield(nil, errors.Errorf("tool implementation not found for function call '%s'", call.Name))
+						return
+					}
+					funcResponse := implFunc(call.Args)
+					responsePart := genai.Part{FunctionResponse: &funcResponse}
+					currentParts = append(currentParts, &responsePart)
+				}
+				continue
+			} else if candidate.FinishReason == genai.FinishReasonStop {
 				return
 			} else {
 				yield(nil, errors.Errorf("chat stopped unexpectedly: [%s] %s", candidate.FinishReason, candidate.FinishMessage))
