@@ -59,6 +59,9 @@ func NewChat(ctx context.Context, client *genai.Client, model string, config *ge
 				if def.Function == nil {
 					return nil, errors.Errorf("tool '%s' provided without an implementation Function", def.Name)
 				}
+				if _, ok := toolImpls[def.Name]; ok {
+					return nil, errors.Errorf("duplicate tool definition for '%s'", def.Name)
+				}
 				toolImpls[def.Name] = def.Function
 			}
 		}
