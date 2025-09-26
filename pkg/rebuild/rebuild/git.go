@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -59,6 +60,7 @@ func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err
 		log.Printf("Rejected potential matches [pkg=%s,ver=%s,matches=%v]\n", pkg, version, nearMatches)
 	}
 	if len(matches) > 0 {
+		sort.Strings(matches)
 		if len(matches) > 1 {
 			log.Printf("Multiple tag matches [pkg=%s,ver=%s,matches=%v]\n", pkg, version, matches)
 		}
