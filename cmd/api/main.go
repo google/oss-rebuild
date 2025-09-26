@@ -56,6 +56,7 @@ var (
 	agentAPIURL           = flag.String("agent-api-url", "", "URL of the agent API service")
 	agentSessionsBucket   = flag.String("agent-sessions-bucket", "", "GCS bucket for agent session data")
 	agentMetadataBucket   = flag.String("agent-metadata-bucket", "", "GCS bucket for agent build metadata")
+	agentLogsBucket       = flag.String("agent-logs-bucket", "", "GCS bucket for agent build logs")
 	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
 )
 
@@ -258,6 +259,7 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 	d.AgentTimeoutSeconds = *agentTimeoutSeconds
 	d.SessionsBucket = *agentSessionsBucket
 	d.MetadataBucket = *agentMetadataBucket
+	d.LogsBucket = *agentLogsBucket
 	return &d, nil
 }
 

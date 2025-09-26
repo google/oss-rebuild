@@ -23,6 +23,7 @@ var (
 	agentAPIURL     = flag.String("agent-api-url", "", "URL of the agent API service")
 	sessionsBucket  = flag.String("sessions-bucket", "", "GCS bucket for session data")
 	metadataBucket  = flag.String("metadata-bucket", "", "GCS bucket for build metadata")
+	logsBucket      = flag.String("logs-bucket", "", "GCS bucket for build logs")
 	maxIterations   = flag.Int("max-iterations", 20, "Maximum number of iterations")
 	targetEcosystem = flag.String("target-ecosystem", "", "Target package ecosystem")
 	targetPackage   = flag.String("target-package", "", "Target package name")
@@ -43,6 +44,9 @@ func main() {
 	}
 	if *metadataBucket == "" {
 		log.Fatal("metadata-bucket flag is required")
+	}
+	if *logsBucket == "" {
+		log.Fatal("logs-bucket flag is required")
 	}
 	if *targetEcosystem == "" {
 		log.Fatal("target-ecosystem flag is required")
@@ -79,6 +83,7 @@ func main() {
 		CompleteStub:   completeStub,
 		SessionsBucket: *sessionsBucket,
 		MetadataBucket: *metadataBucket,
+		LogsBucket:     *logsBucket,
 	}
 	req := agent.RunSessionReq{
 		SessionID:     *sessionID,
