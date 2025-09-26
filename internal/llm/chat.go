@@ -81,7 +81,7 @@ func NewChat(ctx context.Context, client *genai.Client, model string, config *ge
 // It handles the full turn logic, including executing any function calls requested
 // by the model using the configured tools, and sends results back to the model
 // until a final content response is received or an error occurs.
-func (cm *Chat) SendMessage(ctx context.Context, parts ...*genai.Part) (*genai.GenerateContentResponse, error) {
+func (cm *Chat) SendMessage(ctx context.Context, parts ...*genai.Part) (*genai.Content, error) {
 	var last *genai.Content
 	for content, err := range cm.SendMessageStream(ctx, parts...) {
 		if err != nil {
@@ -90,7 +90,7 @@ func (cm *Chat) SendMessage(ctx context.Context, parts ...*genai.Part) (*genai.G
 		last = content
 	}
 	if last != nil {
-		return &genai.GenerateContentResponse{Candidates: []*genai.Candidate{{Content: last}}}, nil
+		return last, nil
 	}
 	return nil, errors.New("no message response")
 }
