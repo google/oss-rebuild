@@ -4,7 +4,10 @@
 package inferenceservice
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"log"
 
 	"github.com/google/oss-rebuild/internal/api"
@@ -48,6 +51,7 @@ type InferDeps struct {
 	HTTPClient httpx.BasicClient
 	GitCache   *gitx.Cache
 	RepoOptF   func() *gitx.RepositoryOptions
+	LogStore   rebuild.AssetStore
 }
 
 func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*schema.StrategyOneOf, error) {
@@ -80,11 +84,56 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	if !ok {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
+	// Capture logs to both the standard logger and a buffer for upload
+	oldLoggerOutput := log.Writer()
+	var inferenceLogs bytes.Buffer
+	multiWriter := io.MultiWriter(oldLoggerOutput, &inferenceLogs)
+	log.SetOutput(multiWriter)
+	defer log.SetOutput(oldLoggerOutput)
+	// Perform the inference
 	s, err := doInfer(ctx, rebuilder, t, mux, req.LocationHint(), repoOpt)
+	// Upload logs and strategy if possible
+	if deps.LogStore != nil {
+		if uploadErr := uploadLogs(ctx, deps.LogStore, rebuild.InferenceLogAsset.For(t), inferenceLogs.Bytes()); uploadErr != nil {
+			log.Printf("Failed to upload inference logs for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, uploadErr)
+		}
+		if err == nil {
+			if uploadErr := uploadStrategy(ctx, deps.LogStore, rebuild.InferredStrategyInputs.For(t), s); uploadErr != nil {
+				log.Printf("Failed to upload inference definition for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, uploadErr)
+			}
+		}
+
+	}
 	if err != nil {
 		log.Printf("No inference for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, err)
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to infer strategy"))
 	}
 	oneof := schema.NewStrategyOneOf(s)
 	return &oneof, nil
+}
+
+func uploadLogs(ctx context.Context, store rebuild.AssetStore, asset rebuild.Asset, content []byte) error {
+	writer, err := store.Writer(ctx, asset)
+	if err != nil {
+		return errors.Wrap(err, "failed to get asset store writer")
+	}
+	defer writer.Close()
+	if _, err := writer.Write(content); err != nil {
+		return errors.Wrap(err, "failed to write content to asset store")
+	}
+	return nil
+}
+
+func uploadStrategy(ctx context.Context, store rebuild.AssetStore, asset rebuild.Asset, strategy rebuild.Strategy) error {
+	writer, err := store.Writer(ctx, asset)
+	if err != nil {
+		return errors.Wrap(err, "failed to get asset store writer")
+	}
+	defer writer.Close()
+	enc := json.NewEncoder(writer)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(strategy); err != nil {
+		log.Fatal(errors.Wrap(err, "encoding result"))
+	}
+	return nil
 }

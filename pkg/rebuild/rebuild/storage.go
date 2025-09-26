@@ -49,6 +49,11 @@ const (
 	// TetragonLogAsset is the log of all tetragon events.
 	TetragonLogAsset AssetType = "tetragon.jsonl"
 
+	// InferenceLogAsset is the log of the inference process.
+	InferenceLogAsset AssetType = "inference.log"
+	// InferredStrategyInputs is the inferred build strategy.
+	InferredStrategyInputs AssetType = "strategy_inputs.json"
+
 	// AttestationBundleAsset is the signed attestation bundle generated for a rebuild.
 	AttestationBundleAsset AssetType = "rebuild.intoto.jsonl"
 
