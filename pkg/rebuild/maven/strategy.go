@@ -67,38 +67,52 @@ func (b *GradleBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		return nil, errors.Errorf("no download URL for JDK version %s", b.JDKVersion)
 	}
 
+	deps := []flow.Step{{
+		Uses: "maven/setup-java",
+		With: map[string]string{
+			"versionURL": jdkVersionURL,
+		},
+	}}
+	if b.SystemGradle != "" {
+		deps = append(deps, flow.Step{
+			Uses: "maven/setup-gradle",
+			With: map[string]string{
+				"version": gradleVersion,
+			},
+		})
+	}
+	build := []flow.Step{{
+		Uses: "maven/export-java",
+	}}
+	if b.SystemGradle != "" {
+		build = append(build, flow.Step{
+			Uses: "maven/export-gradle",
+		})
+		build = append(build, flow.Step{
+			Uses: "maven/gradle-build",
+		})
+	} else {
+		build = append(build, flow.Step{
+			Uses: "maven/gradlew-build",
+		})
+	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Source: []flow.Step{{
 			Uses: "git-checkout",
 		}},
-		Deps: []flow.Step{{
-			Uses: "maven/setup-java",
-			With: map[string]string{
-				"versionURL": jdkVersionURL,
-			},
-			Needs: []string{"curl"},
-		}},
-		Build: []flow.Step{
-			{
-				Uses: "maven/export-java",
-			},
-			{
-				// We assume the project uses the Gradle Wrapper (gradlew).
-				// We run assemble as it is an atomic lifecycle task that outputs the artifact.
-				// The property `-Pversion` is used to set the project version which ensures that the right version is appended to the artifact name.
-				Runs: "./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
-			},
-		},
+		Deps:      deps,
+		Build:     build,
 		OutputDir: path.Join(b.Dir, "build", "libs"),
 	}, nil
 }
 
 type GradleBuild struct {
 	rebuild.Location
-
 	// JDKVersion is the version of the JDK to use for the build.
 	JDKVersion string `json:"jdk_version" yaml:"jdk_version"`
+	// SystemGradle indicates the version of Gradle to install instead of using the Gradle wrapper (gradlew).
+	SystemGradle string `json:"system_gradle" yaml:"system_gradle"`
 }
 
 var _ rebuild.Strategy = &GradleBuild{}
@@ -136,5 +150,41 @@ var toolkit = []*flow.Tool{
 				export JAVA_HOME=/opt/jdk
 				export PATH=$JAVA_HOME/bin:$PATH`[1:]),
 		}},
+	},
+	{
+		Name: "maven/export-gradle",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				export GRADLE_HOME=/opt/gradle
+				export PATH=$GRADLE_HOME/bin:$PATH`[1:]),
+		}},
+	},
+	{
+		Name: "maven/setup-gradle",
+		Steps: []flow.Step{
+			{
+				Runs: textwrap.Dedent(`
+					wget -q -O tmp.zip https://services.gradle.org/distributions/gradle-{{.With.version}}-bin.zip
+					unzip -q tmp.zip -d /opt/ && mv /opt/gradle-{{.With.version}} /opt/gradle
+					rm tmp.zip`[1:]),
+				Needs: []string{"wget", "zip"},
+			},
+		},
+	},
+	{
+		Name: "maven/gradlew-build",
+		Steps: []flow.Step{
+			{
+				Runs: "./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
+			},
+		},
+	},
+	{
+		Name: "maven/gradle-build",
+		Steps: []flow.Step{
+			{
+				Runs: "gradle assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
+			},
+		},
 	},
 }
