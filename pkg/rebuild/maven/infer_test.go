@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"testing"
 
@@ -31,6 +32,141 @@ func (m *mockMavenRegistry) ReleaseFile(ctx context.Context, name string, versio
 	return io.NopCloser(bytes.NewReader(m.artifactCoordinates[struct{ PackageName, VersionID, FileType string }{PackageName: name, VersionID: version, FileType: fileType}])), nil
 }
 
+// TestBuildAndTargetJDKCompatibility tests that build and target JDK should always be buildJDK >= targetJDK
+func TestBuildAndTargetJDKCompatibility(t *testing.T) {
+	testCases := []struct {
+		name            string
+		manifestJDKSpec string
+		bytecodeVersion int
+		wantBuildJDK    string
+		wantTargetJDK   string
+	}{
+		{
+			name:            "build JDK (in manifest) (URL present), target JDK (lower than fallback:11) (URL present)",
+			manifestJDKSpec: "17",
+			bytecodeVersion: 9,
+			wantBuildJDK:    "17",
+			wantTargetJDK:   "9",
+		},
+		{
+			name:            "build JDK (in manifest) (URL present), target JDK (lower than fallback:11) (URL absent)",
+			manifestJDKSpec: "17",
+			bytecodeVersion: 8,
+			wantBuildJDK:    "17",
+			wantTargetJDK:   "8",
+		},
+		{
+			name:            "build JDK (in manifest) (URL present), target JDK (higher than fallback:11) (URL present)",
+			manifestJDKSpec: "17",
+			bytecodeVersion: 12,
+			wantBuildJDK:    "17",
+			wantTargetJDK:   "12",
+		},
+		{
+			name:            "build JDK (in manifest) (URL absent), target JDK (lower than fallback:11) (URL present)",
+			manifestJDKSpec: "17.0.6",
+			bytecodeVersion: 9,
+			wantBuildJDK:    "9",
+			wantTargetJDK:   "9",
+		},
+		{
+			name:            "build JDK (in manifest) (URL absent), target JDK (lower than fallback:11) (URL absent)",
+			manifestJDKSpec: "17.0.6",
+			bytecodeVersion: 8,
+			wantBuildJDK:    "11",
+			wantTargetJDK:   "8",
+		},
+		{
+			name:            "build JDK (in manifest) (URL absent), target JDK (higher than fallback:11) (URL present)",
+			manifestJDKSpec: "17.0.6",
+			bytecodeVersion: 12,
+			wantBuildJDK:    "12",
+			wantTargetJDK:   "12",
+		},
+		{
+			name:            "build JDK (not in manifest), target JDK (lower than fallback:11) (URL present)",
+			bytecodeVersion: 9,
+			wantBuildJDK:    "9",
+			wantTargetJDK:   "9",
+		},
+		{
+			name:            "build JDK (not in manifest), target JDK (lower than fallback:11) (URL absent)",
+			bytecodeVersion: 8,
+			wantBuildJDK:    "11",
+			wantTargetJDK:   "8",
+		},
+		{
+			name:            "build JDK (not in manifest), target JDK (higher than fallback:11) (URL present)",
+			bytecodeVersion: 12,
+			wantBuildJDK:    "12",
+			wantTargetJDK:   "12",
+		},
+		// 1) build JDK (in manifest) (URL present), target JDK (higher than fallback:11) (URL absent) --- IGNORE ---
+		// 2) build JDK (in manifest) (URL absent), target JDK (higher than fallback:11) (URL absent) --- IGNORE ---
+		// 3) build JDK (not in manifest), target JDK (higher than fallback:11) (URL absent) --- IGNORE ---
+		// These cases are not possible as we have URLs for all JDK versions >= 9 unless there is a new JDK release and we don't record it yet.
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Dynamically construct manifest content.
+			var manifestBody string
+			if tc.manifestJDKSpec != "" {
+				manifestBody = fmt.Sprintf("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: %s\r\n\r\n", tc.manifestJDKSpec)
+			} else {
+				manifestBody = "Manifest-Version: 1.0\r\n\r\n"
+			}
+			// Dynamically construct class file content from the Java version.
+			// The major version for Java V is 44 + V.
+			majorVersion := uint16(44 + tc.bytecodeVersion)
+			classBody := []byte{
+				0xCA, 0xFE, 0xBA, 0xBE, // Magic number
+				0x00, 0x00, // Minor version
+				byte(majorVersion >> 8), byte(majorVersion), // Major version
+			}
+			// Create an in-memory zip buffer with the generated files.
+			var buf bytes.Buffer
+			zw := zip.NewWriter(&buf)
+			filesToZip := []struct {
+				Name string
+				Body []byte
+			}{
+				{"META-INF/MANIFEST.MF", []byte(manifestBody)},
+				{"com/example/Main.class", classBody},
+			}
+			for _, file := range filesToZip {
+				f, err := zw.Create(file.Name)
+				if err != nil {
+					t.Fatalf("Failed to create zip entry %s: %v", file.Name, err)
+				}
+				_, err = f.Write(file.Body)
+				if err != nil {
+					t.Fatalf("Failed to write to zip entry %s: %v", file.Name, err)
+				}
+			}
+			if err := zw.Close(); err != nil {
+				t.Fatalf("zip.Close() error: %v", err)
+			}
+			mockMux := rebuild.RegistryMux{
+				Maven: &mockMavenRegistry{
+					artifactCoordinates: map[artifactCoordinates][]byte{
+						{"dummy", "dummy", maven.TypeJar}: buf.Bytes(),
+					},
+				},
+			}
+			gotBuildJDK, gotTargetJDK, err := inferJDKAndTargetVersion(context.Background(), "dummy", "dummy", mockMux)
+			if err != nil {
+				t.Fatalf("getJarJDK() error = %v", err)
+			}
+			if gotBuildJDK != tc.wantBuildJDK {
+				t.Errorf("Build JDK = %v, want %v", gotBuildJDK, tc.wantBuildJDK)
+			}
+			if gotTargetJDK != tc.wantTargetJDK {
+				t.Errorf("Target JDK = %v, want %v", gotTargetJDK, tc.wantTargetJDK)
+			}
+		})
+	}
+}
+
 func TestJDKVersionInference(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -44,6 +180,10 @@ func TestJDKVersionInference(t *testing.T) {
 					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 17.0.1\r\n\r\n"),
 				},
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/Main.class"},
+					Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34},
+				},
 			},
 			wantVersion: "17.0.1",
 		},
@@ -53,6 +193,10 @@ func TestJDKVersionInference(t *testing.T) {
 				{
 					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk: 21.0.1\r\n\r\n"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/Main.class"},
+					Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34},
 				},
 			},
 			wantVersion: "21.0.1",
@@ -92,6 +236,10 @@ func TestJDKVersionInference(t *testing.T) {
 					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 1.8.0_121\r\n\r\n"),
 				},
+				{
+					FileHeader: &zip.FileHeader{Name: "com/example/Main.class"},
+					Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x32, 0x01, 0x02}, // Java 6 class file
+				},
 			},
 			wantVersion: "11",
 		},
@@ -109,7 +257,6 @@ func TestJDKVersionInference(t *testing.T) {
 			if err := zw.Close(); err != nil {
 				t.Fatalf("zip.Close() error: %v", err)
 			}
-
 			mockMux := rebuild.RegistryMux{
 				Maven: &mockMavenRegistry{
 					artifactCoordinates: map[artifactCoordinates][]byte{
@@ -117,7 +264,7 @@ func TestJDKVersionInference(t *testing.T) {
 					},
 				},
 			}
-			got, err := inferOrFallbackToDefaultJDK(context.Background(), "dummy", "dummy", mockMux)
+			got, _, err := inferJDKAndTargetVersion(context.Background(), "dummy", "dummy", mockMux)
 			if err != nil {
 				t.Fatalf("getJarJDK() error = %v", err)
 			}

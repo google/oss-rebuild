@@ -26,7 +26,8 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				JDKVersion: "11.0.1",
+				JDKVersion:    "11.0.1",
+				TargetVersion: "11",
 			},
 			rebuild.Instructions{
 				Location: rebuild.Location{
@@ -42,7 +43,7 @@ func TestStrategies(t *testing.T) {
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
-					mvn clean package -DskipTests --batch-mode -f dir -Dmaven.javadoc.skip=true`[1:]),
+					mvn clean package -DskipTests --batch-mode -f dir -Dmaven.javadoc.skip=true -Dmaven.compiler.release=11`[1:]),
 				OutputPath: "dir/target/ldapchai-0.8.6.jar",
 			},
 			false,

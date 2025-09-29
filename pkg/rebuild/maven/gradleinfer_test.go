@@ -156,6 +156,10 @@ func TestGradleInfer(t *testing.T) {
 						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
 					},
+					{
+						FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"},
+						Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x41},
+					},
 				},
 			},
 			// select second-commit because it has the tag matching version 1.0.0
@@ -193,6 +197,10 @@ func TestGradleInfer(t *testing.T) {
 						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
 					},
+					{
+						FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"},
+						Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x41},
+					},
 				},
 				maven.TypeSources: {
 					{
@@ -229,6 +237,10 @@ func TestGradleInfer(t *testing.T) {
 					{
 						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+					{
+						FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"},
+						Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x41},
 					},
 				},
 			},

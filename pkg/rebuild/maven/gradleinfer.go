@@ -51,7 +51,9 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 		return nil, errors.Wrapf(err, "failed to find build.gradle directory [repo=%s,ref=%s]", repoConfig.URI, ref)
 	}
 	// Infer JDK for Gradle
-	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
+	// Note: There does not appear to be a way to set target JDK version via command line args so we just infer the build JDK.
+	// Reference: https://docs.gradle.org/current/userguide/building_java_projects.html#sec:java_cross_compilation
+	buildJdk, _, err := inferJDKAndTargetVersion(ctx, t.Package, t.Version, mux)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching JDK")
 	}
@@ -71,7 +73,7 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 			Dir:  buildGradleDir,
 			Ref:  ref,
 		},
-		JDKVersion:   jdk,
+		JDKVersion:   buildJdk,
 		SystemGradle: systemGradle,
 	}, nil
 }

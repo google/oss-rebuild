@@ -159,48 +159,45 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 	return "", errors.Errorf("build tool inference failed")
 }
 
-// inferOrFallbackToDefaultJDK tries to infer the JDK version from the artifact's metadata, falling back to a default if necessary.
-func inferOrFallbackToDefaultJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
-	jdk, err := inferJDKVersion(ctx, name, version, mux)
-	if err != nil {
-		return "", errors.Wrap(err, "fetching JDK")
-	}
-	if jdk == "" {
-		log.Printf("no JDK version inferred, falling back to JDK %s", fallbackJDK)
-		jdk = fallbackJDK
-	} else if JDKDownloadURLs[jdk] == "" {
-		log.Printf("%s has no associated JDK URL, falling back to JDK %s", jdk, fallbackJDK)
-		jdk = fallbackJDK
-	}
-	return jdk, nil
-}
-
-// inferJDKVersion gets the JDK version from the MANIFEST or Java bytecode.
-func inferJDKVersion(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
+// inferJDKAndTargetVersion gets the build and target JDK versions from the artifact.
+// The target version is always inferred from the Java bytecode.
+// The build version is inferred from the MANIFEST.MF file, falling back to the target version,
+// and finally to a default JDK if no version can be determined.
+func inferJDKAndTargetVersion(ctx context.Context, name, version string, mux rebuild.RegistryMux) (buildJDK string, targetJDK string, err error) {
 	releaseFile, err := mux.Maven.ReleaseFile(ctx, name, version, maven.TypeJar)
 	if err != nil {
-		return "", errors.Wrap(err, "fetching jar file")
+		return "", "", errors.Wrap(err, "fetching jar file")
 	}
+	defer releaseFile.Close()
 	jarBytes, err := io.ReadAll(releaseFile)
 	if err != nil {
-		return "", errors.Wrap(err, "reading jar file")
+		return "", "", errors.Wrap(err, "reading jar file")
 	}
 	zipReader, err := zip.NewReader(bytes.NewReader(jarBytes), int64(len(jarBytes)))
 	if err != nil {
-		return "", errors.Wrap(err, "unzipping jar file")
+		return "", "", errors.Wrap(err, "unzipping jar file")
 	}
-	jdk, err := inferJDKFromManifest(zipReader)
+	targetJDK, err = inferJDKFromBytecode(zipReader)
 	if err != nil {
-		return "", errors.Wrap(err, "inferring JDK from manifest")
+		// We fail if we get corrupt or no bytecode as we won't be able to build them anyway so it is better to fail early.
+		// Ideally, we should preempt these cases during inference of build tool.
+		return "", "", errors.Wrap(err, "inferring target JDK from bytecode")
 	}
-	if jdk != "" {
-		return jdk, nil
-	}
-	jdk, err = inferJDKFromBytecode(zipReader)
+	buildJDK, err = inferJDKFromManifest(zipReader)
 	if err != nil {
-		return "", errors.Wrap(err, "inferring JDK from bytecode")
+		return "", "", errors.Wrap(err, "inferring JDK from manifest")
 	}
-	return jdk, nil
+	// If we could not determine the build JDK from the manifest, use target JDK if its JDK URL is known.
+	// Else, fall back to a default JDK version.
+	if JDKDownloadURLs[buildJDK] == "" {
+		if JDKDownloadURLs[targetJDK] != "" {
+			// buildJDK >= targetJDK so we can use targetJDK as buildJDK
+			buildJDK = targetJDK
+		} else {
+			buildJDK = fallbackJDK
+		}
+	}
+	return buildJDK, targetJDK, nil
 }
 
 // inferJDKFromManifest extracts the JDK version from the MANIFEST.MF file in the JAR.

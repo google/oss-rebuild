@@ -129,7 +129,7 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}
 		return nil, errors.Errorf("no git ref")
 	}
-	jdk, err := inferOrFallbackToDefaultJDK(ctx, name, version, mux)
+	buildJDK, targetJDK, err := inferJDKAndTargetVersion(ctx, name, version, mux)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching JDK")
 	}
@@ -139,7 +139,9 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			Dir:  dir,
 			Ref:  ref,
 		},
-		JDKVersion: jdk,
+		JDKVersion: buildJDK,
+		// TODO: add support for multi-release jars.
+		TargetVersion: targetJDK,
 	}, nil
 }
 

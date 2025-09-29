@@ -304,6 +304,10 @@ func TestMavenInfer(t *testing.T) {
 						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
 					},
+					{
+						FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"},
+						Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34},
+					},
 				},
 			},
 			expectedHeuristic: "using git log heuristic (pkg and version match)",
@@ -343,6 +347,10 @@ func TestMavenInfer(t *testing.T) {
 						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
 					},
+					{
+						FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"},
+						Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x41},
+					},
 				},
 			},
 			expectedHeuristic: "using source jar heuristic with mismatched version",
@@ -381,6 +389,10 @@ func TestMavenInfer(t *testing.T) {
 						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
 					},
+					{
+						FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"},
+						Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x41},
+					},
 				},
 			},
 			expectedHeuristic: "using tag heuristic with mismatched version",
@@ -414,6 +426,10 @@ func TestMavenInfer(t *testing.T) {
 					{
 						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+					{
+						FileHeader: &zip.FileHeader{Name: "com/example/Foo.class"},
+						Body:       []byte{0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x42},
 					},
 				},
 			},

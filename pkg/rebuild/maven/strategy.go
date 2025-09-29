@@ -4,6 +4,7 @@
 package maven
 
 import (
+	"fmt"
 	"path"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -17,6 +18,11 @@ type MavenBuild struct {
 
 	// JDKVersion is the version of the JDK to use for the build.
 	JDKVersion string `json:"jdk_version" yaml:"jdk_version"`
+	// TargetVersion is the version of JVM that the built artifact is targeting.
+	// This is passed to maven via -Dmaven.compiler.release (>=JDK 9).
+	// The CLI option overrides the release version set as property in the pom.xml, but it would not override the version set in the maven-compiler-plugin configuration.
+	// Reference: https://maven.apache.org/plugins/maven-compiler-plugin/examples/set-compiler-release.html
+	TargetVersion string `json:"target_version" yaml:"target_version"`
 }
 
 var _ rebuild.Strategy = &MavenBuild{}
@@ -44,7 +50,7 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 			{
 				// TODO: Java 9 needs additional certificate installed in /etc/ssl/certs/java/cacerts
 				// It can be passed to maven command via -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
-				Runs: "mvn clean package -DskipTests --batch-mode -f {{.Location.Dir}} -Dmaven.javadoc.skip=true",
+				Runs: fmt.Sprintf("mvn clean package -DskipTests --batch-mode -f {{.Location.Dir}} -Dmaven.javadoc.skip=true -Dmaven.compiler.release=%s", b.TargetVersion),
 				// Note `maven` from apt also pull in jdk-21 and hence we must export JAVA_HOME and PATH in the step before
 				Needs: []string{"maven"},
 			},
