@@ -6,6 +6,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"log"
 
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
@@ -61,6 +62,7 @@ type ScriptResponse struct {
 
 func GenerateTextContent(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, prompt ...*genai.Part) (string, error) {
 	contents := []*genai.Content{{Parts: prompt, Role: "user"}}
+	log.Printf("%s\n\n", FormatContent(*contents[0]))
 	resp, err := client.Models.GenerateContent(ctx, model, contents, config)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to generate content")
@@ -77,6 +79,7 @@ func GenerateTextContent(ctx context.Context, client *genai.Client, model string
 		return "", errors.New("empty response content")
 	case 1:
 		if candidate.Content.Parts[0].Text != "" {
+			log.Printf("%s\n\n", FormatContent(*candidate.Content))
 			return candidate.Content.Parts[0].Text, nil
 		}
 		return "", errors.New("part is not text")
