@@ -10,12 +10,17 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/google/oss-rebuild/internal/api"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 )
+
+// TODO: Request and Response types should be defined elsewhere to separate Stub users from the implementaiton.
+// This is currently not possible without introducing a cyclic dependency since
+// they are intended to be used from pkg/rebuild/cratesio which is itself a
+// dependency of pkg/rebuild/ Breaking that dependency requires
+// separating StrategyOneOf and the dependent types into their own package.
 
 // FindRegistryCommitRequest represents a request to find a registry commit
 type FindRegistryCommitRequest struct {
@@ -39,8 +44,18 @@ func (r FindRegistryCommitRequest) Validate() error {
 	return nil
 }
 
+// FindRegistryCommitResponse represents the response from registry commit resolution
+type FindRegistryCommitResponse struct {
+	CommitHash string `json:"commit_hash"`
+}
+
+// FindRegistryCommitDeps holds dependencies for the registry commit resolution service
+type FindRegistryCommitDeps struct {
+	IndexManager *index.IndexManager
+}
+
 // FindRegistryCommit finds a registry commit hash based on a Cargo.lock file and publish time
-func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps *schema.FindRegistryCommitDeps) (*schema.FindRegistryCommitResponse, error) {
+func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps *FindRegistryCommitDeps) (*FindRegistryCommitResponse, error) {
 	// Validate request
 	publishedTime, err := time.Parse(time.RFC3339, req.PublishedTime)
 	if err != nil {
@@ -77,7 +92,7 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 		keys = append(keys, index.RepositoryKey{Type: index.SnapshotIndex, Name: snapshotDate})
 	}
 	if len(keys) == 0 {
-		return &schema.FindRegistryCommitResponse{}, nil
+		return &FindRegistryCommitResponse{}, nil
 	}
 	// Fetch index repositories
 	handles, err := deps.IndexManager.GetRepositories(ctx, keys)
@@ -99,9 +114,9 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to find registry resolution"))
 	}
 	if resolution == nil {
-		return &schema.FindRegistryCommitResponse{}, nil
+		return &FindRegistryCommitResponse{}, nil
 	}
-	return &schema.FindRegistryCommitResponse{
+	return &FindRegistryCommitResponse{
 		CommitHash: resolution.CommitHash.String(),
 	}, nil
 }
