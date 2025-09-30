@@ -966,8 +966,8 @@ resource "google_cloud_run_v2_job" "agent" {
         image = data.google_artifact_registry_docker_image.agent.self_link
         resources {
           limits = {
-            cpu    = "1000m"
-            memory = "4G"
+            cpu    = "2000m"
+            memory = "8G"
           }
         }
       }
