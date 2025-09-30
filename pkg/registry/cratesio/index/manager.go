@@ -418,10 +418,12 @@ func (m *IndexManager) doUpdate(ctx context.Context, repo *managedRepository) er
 	if err != nil {
 		return errors.Wrap(err, "failed to access repo directory")
 	}
+	startedUpdate := time.Now()
 	if err := repo.fetcher.Update(ctx, repoFs); err != nil {
 		return err
 	}
-	repo.lastUpdate.Store(time.Now().UnixMilli())
+	// Set the update point to the starting time to ensure we're not setting an optimistic bound.
+	repo.lastUpdate.Store(startedUpdate.UnixMilli())
 	return nil
 }
 
