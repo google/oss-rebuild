@@ -118,14 +118,14 @@ func TestGCBExecutorStart(t *testing.T) {
 		t.Fatal("Handle should not be nil")
 	}
 	if handle.BuildID() != "test-build-123" {
-		t.Errorf("Expected BuildID 'test-build-123', got '%s'", handle.BuildID())
+		t.Errorf("BuildID = '%s', want 'test-build-123'", handle.BuildID())
 	}
 	outputStream := handle.OutputStream()
 	if outputStream == nil {
 		t.Error("OutputStream should not be nil")
 	}
 	if handle.Status() != build.BuildStateStarting {
-		t.Errorf("Expected initial status %v, got %v", build.BuildStateStarting, handle.Status())
+		t.Errorf("initial status = %v, want %v", handle.Status(), build.BuildStateStarting)
 	}
 	createChan <- struct{}{} // let create complete
 	result, err := handle.Wait(ctx)
@@ -160,11 +160,11 @@ func TestGCBExecutorStatus(t *testing.T) {
 	status := executor.Status()
 
 	if status.InProgress != 0 {
-		t.Errorf("Expected 0 builds in progress, got %d", status.InProgress)
+		t.Errorf("builds in progress = %d, want 0", status.InProgress)
 	}
 
 	if status.Capacity != -1 {
-		t.Errorf("Expected unlimited capacity (-1), got %d", status.Capacity)
+		t.Errorf("capacity = %d, want -1 (unlimited)", status.Capacity)
 	}
 
 	if !status.Healthy {
@@ -270,7 +270,7 @@ func TestGCBExecutorWithSyscallMonitor(t *testing.T) {
 	// but we can verify that the handle was created successfully and that
 	// the syscall monitor option was properly processed.
 	if handle.BuildID() != "test-build-123" {
-		t.Errorf("Expected BuildID 'test-build-123', got '%s'", handle.BuildID())
+		t.Errorf("BuildID = '%s', want 'test-build-123'", handle.BuildID())
 	}
 	// Wait for build to finish
 	if _, err := handle.Wait(ctx); err != nil {

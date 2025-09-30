@@ -50,10 +50,10 @@ func TestStub(t *testing.T) {
 			t.Errorf("ParseForm(): %v", err)
 		}
 		if r.Method != "POST" {
-			t.Errorf("Expected POST request, got %s", r.Method)
+			t.Errorf("request method = %s, want POST", r.Method)
 		}
 		if form := r.Form.Encode(); form != "foo=foo" {
-			t.Errorf("Expected form 'foo=foo', got '%s'", form)
+			t.Errorf("form = %q, want %q", form, "foo=foo")
 		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"Bar":"Bar"}`))
@@ -71,14 +71,14 @@ func TestStub(t *testing.T) {
 	}
 	expected := &FooResponse{Bar: "Bar"}
 	if !reflect.DeepEqual(result, expected) {
-		t.Errorf("Expected %v, got %v", expected, result)
+		t.Errorf("result = %v, want %v", result, expected)
 	}
 }
 
 func TestStubFromHandler(t *testing.T) {
 	h := func(ctx context.Context, req FooRequest, _ *NoDeps) (*FooResponse, error) {
 		if req.Foo != "foo" {
-			t.Errorf("request.Foo: want='foo' got='%s'", req.Foo)
+			t.Errorf("request.Foo = %q, want %q", req.Foo, "foo")
 		}
 		return &FooResponse{Bar: "Bar"}, nil
 	}
@@ -96,14 +96,14 @@ func TestStubFromHandler(t *testing.T) {
 	}
 	expected := FooResponse{Bar: "Bar"}
 	if !reflect.DeepEqual(*result, expected) {
-		t.Errorf("Expected %v, got %v", expected, *result)
+		t.Errorf("result = %v, want %v", *result, expected)
 	}
 }
 
 func TestHandler(t *testing.T) {
 	handler := func(ctx context.Context, req FooRequest, _ *NoDeps) (*FooResponse, error) {
 		if req.Foo != "foo" {
-			t.Errorf("request.Foo: want='foo' got='%s'", req.Foo)
+			t.Errorf("request.Foo = %q, want %q", req.Foo, "foo")
 		}
 		return &FooResponse{Bar: "Bar"}, nil
 	}
@@ -117,7 +117,7 @@ func TestHandler(t *testing.T) {
 		t.Fatalf("Request returned an error: %v", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status code %d, got %d", http.StatusOK, resp.StatusCode)
+		t.Errorf("status code = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
 	var result map[string]string
@@ -127,7 +127,7 @@ func TestHandler(t *testing.T) {
 
 	expected := map[string]string{"Bar": "Bar"}
 	if !reflect.DeepEqual(result, expected) {
-		t.Errorf("Expected %v, got %v", expected, result)
+		t.Errorf("result = %v, want %v", result, expected)
 	}
 }
 
@@ -203,14 +203,14 @@ func TestAsStatus(t *testing.T) {
 				t.Fatal("AsStatus did not return a status error")
 			}
 			if st.Code() != tc.expectCode {
-				t.Errorf("Expected code %v, got %v", tc.expectCode, st.Code())
+				t.Errorf("code = %v, want %v", st.Code(), tc.expectCode)
 			}
 			if st.Message() != tc.expectMessage {
-				t.Errorf("Expected message '%s', got '%s'", tc.expectMessage, st.Message())
+				t.Errorf("message = %q, want %q", st.Message(), tc.expectMessage)
 			}
 			details := st.Details()
 			if len(details) != tc.expectDetails {
-				t.Errorf("Expected %d details, got %d", tc.expectDetails, len(details))
+				t.Errorf("details length = %d, want %d", len(details), tc.expectDetails)
 			}
 			// Check retry info if expected
 			if tc.expectRetryInfo != nil {
@@ -228,7 +228,7 @@ func TestAsStatus(t *testing.T) {
 				} else {
 					actualDuration := foundRetryInfo.RetryDelay.AsDuration()
 					if actualDuration != *tc.expectRetryInfo {
-						t.Errorf("Expected retry duration %v, got %v", *tc.expectRetryInfo, actualDuration)
+						t.Errorf("retry duration = %v, want %v", actualDuration, *tc.expectRetryInfo)
 					}
 				}
 			}
@@ -302,10 +302,10 @@ func TestTranslate(t *testing.T) {
 	handler := Translate(ft.translate, h.handle)
 	handler(nil, &http.Request{URL: must(url.Parse("http://example.com")), Body: io.NopCloser(strings.NewReader("foo"))})
 	if ft.got != "foo" {
-		t.Errorf("Expected ft.got 'foo', got '%s'", ft.got)
+		t.Errorf("ft.got = %q, want %q", ft.got, "foo")
 	}
 	if h.got.URL.RawQuery != "foo=foo" {
-		t.Errorf("Expected h.got.URL.RawQuery 'foo=foo', got '%s'", h.got.URL.RawQuery)
+		t.Errorf("h.got.URL.RawQuery = %q, want %q", h.got.URL.RawQuery, "foo=foo")
 	}
 }
 
@@ -349,7 +349,7 @@ func TestRetryAfter(t *testing.T) {
 			// Check that the duration is correct
 			actualDuration := ri.RetryDelay.AsDuration()
 			if actualDuration != tc.duration {
-				t.Errorf("Expected duration %v, got %v", tc.duration, actualDuration)
+				t.Errorf("duration = %v, want %v", actualDuration, tc.duration)
 			}
 		})
 	}
@@ -427,7 +427,7 @@ func TestStub_RetryAfter(t *testing.T) {
 				t.Fatalf("Expected gRPC status error, got %T: %v", err, err)
 			}
 			if st.Code() != tc.expectedGRPCCode {
-				t.Errorf("Expected gRPC code %v, got %v", tc.expectedGRPCCode, st.Code())
+				t.Errorf("gRPC code = %v, want %v", st.Code(), tc.expectedGRPCCode)
 			}
 			// Check retry info if expected
 			if tc.expectedRetryInfo != nil {
@@ -446,7 +446,7 @@ func TestStub_RetryAfter(t *testing.T) {
 				} else {
 					actualDuration := foundRetryInfo.RetryDelay.AsDuration()
 					if actualDuration != *tc.expectedRetryInfo {
-						t.Errorf("Expected retry duration %v, got %v", *tc.expectedRetryInfo, actualDuration)
+						t.Errorf("retry duration = %v, want %v", actualDuration, *tc.expectedRetryInfo)
 					}
 				}
 			} else {
@@ -535,15 +535,15 @@ func TestHandler_Errors(t *testing.T) {
 			defer resp.Body.Close()
 			// Check HTTP status
 			if resp.StatusCode != tc.expectedHTTPStatus {
-				t.Errorf("Expected status code %d (%s), got %d (%s)",
-					tc.expectedHTTPStatus, http.StatusText(tc.expectedHTTPStatus),
-					resp.StatusCode, http.StatusText(resp.StatusCode))
+				t.Errorf("status code = %d (%s), want %d (%s)",
+					resp.StatusCode, http.StatusText(resp.StatusCode),
+					tc.expectedHTTPStatus, http.StatusText(tc.expectedHTTPStatus))
 			}
 			// Check Retry-After header
 			retryAfterHeader := resp.Header.Get("Retry-After")
 			if retryAfterHeader != tc.expectedRetryAfterHeader {
-				t.Errorf("Expected Retry-After header '%s', got '%s'",
-					tc.expectedRetryAfterHeader, retryAfterHeader)
+				t.Errorf("Retry-After header = %q, want %q",
+					retryAfterHeader, tc.expectedRetryAfterHeader)
 			}
 			// Check response body
 			body, err := io.ReadAll(resp.Body)
@@ -551,8 +551,8 @@ func TestHandler_Errors(t *testing.T) {
 				t.Fatalf("Error reading response body: %v", err)
 			}
 			if string(body) != tc.expectedResponseBody {
-				t.Errorf("Expected response body '%s', got '%s'",
-					tc.expectedResponseBody, string(body))
+				t.Errorf("response body = %q, want %q",
+					string(body), tc.expectedResponseBody)
 			}
 		})
 	}
@@ -625,7 +625,7 @@ func TestStubHandlerRoundTrip_RetryAfter(t *testing.T) {
 				t.Fatalf("Expected gRPC status error, got %T: %v", err, err)
 			}
 			if st.Code() != tc.expectedGRPCCode {
-				t.Errorf("Expected gRPC code %v, got %v", tc.expectedGRPCCode, st.Code())
+				t.Errorf("gRPC code = %v, want %v", st.Code(), tc.expectedGRPCCode)
 			}
 			// Check retry info preservation through round-trip
 			details := st.Details()
@@ -644,8 +644,8 @@ func TestStubHandlerRoundTrip_RetryAfter(t *testing.T) {
 				} else {
 					actualDuration := foundRetryInfo.RetryDelay.AsDuration()
 					if actualDuration != *tc.expectedRetryDuration {
-						t.Errorf("Expected retry duration %v after round-trip, got %v",
-							*tc.expectedRetryDuration, actualDuration)
+						t.Errorf("retry duration after round-trip = %v, want %v",
+							actualDuration, *tc.expectedRetryDuration)
 					}
 				}
 			} else {

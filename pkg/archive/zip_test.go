@@ -156,7 +156,7 @@ func TestToZipCompatibleReader(t *testing.T) {
 				t.Errorf("Unexpected nil reader")
 			}
 			if size != tc.size {
-				t.Errorf("Expected size %d but got %d", tc.size, size)
+				t.Errorf("size = %d, want %d", size, tc.size)
 			}
 			if tc.expectRead && !tc.input.(readSpy).ReadCalled() {
 				t.Error("Expected reader to have been read")

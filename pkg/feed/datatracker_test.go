@@ -141,7 +141,7 @@ func TestNewTracker(t *testing.T) {
 		<-sharedIndexes["test-bucket/test-object"].(*VersionedIndex[int64]).Ready // Wait for fetch
 
 		if got := atomic.LoadInt32(&callCount); got != 1 {
-			t.Errorf("Expected 1 call to NewReader, but got %d", got)
+			t.Errorf("NewReader calls = %d, want 1", got)
 		}
 
 		// Second call with same generation - should use cache
@@ -151,7 +151,7 @@ func TestNewTracker(t *testing.T) {
 		<-sharedIndexes["test-bucket/test-object"].(*VersionedIndex[int64]).Ready // Wait for fetch
 
 		if got := atomic.LoadInt32(&callCount); got != 1 {
-			t.Errorf("Expected call count to remain 1 on cached call, but got %d", got)
+			t.Errorf("cached call count = %d, want 1", got)
 		}
 
 		// Third call with new generation - should fetch again
@@ -162,7 +162,7 @@ func TestNewTracker(t *testing.T) {
 		<-sharedIndexes["test-bucket/test-object"].(*VersionedIndex[int64]).Ready // Wait for fetch
 
 		if got := atomic.LoadInt32(&callCount); got != 2 {
-			t.Errorf("Expected call count to be 2 after generation change, but got %d", got)
+			t.Errorf("call count after generation change = %d, want 2", got)
 		}
 	})
 
@@ -261,7 +261,7 @@ func TestNewTracker(t *testing.T) {
 		<-sharedIndexes["test-bucket/test-object"].(*VersionedIndex[int64]).Ready // Wait for the single fetch to complete
 
 		if got := atomic.LoadInt32(&callCount); got != 1 {
-			t.Errorf("Expected 1 call to NewReader for concurrent calls, but got %d", got)
+			t.Errorf("concurrent NewReader calls = %d, want 1", got)
 		}
 	})
 
