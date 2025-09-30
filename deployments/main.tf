@@ -708,7 +708,7 @@ resource "google_cloud_run_v2_service" "git-cache" {
   location = "us-central1"
   template {
     service_account = google_service_account.git-cache.email
-    timeout         = "${2 * 60}s" // 2 minutes
+    timeout         = "${60 * 60}s" // 60 minutes
     containers {
       image = data.google_artifact_registry_docker_image.git-cache.self_link
       args = [
@@ -716,8 +716,8 @@ resource "google_cloud_run_v2_service" "git-cache" {
       ]
       resources {
         limits = {
-          cpu    = "1000m"
-          memory = "2G"
+          cpu    = "4000m"
+          memory = "8G"
         }
       }
     }
@@ -788,6 +788,7 @@ resource "google_cloud_run_v2_service" "crates-registry" {
         "--cache-dir=/cache",
         "--max-snapshots=16",
         "--current-update-interval-mins=30",
+        "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
       ]
       resources {
         limits = {
@@ -991,10 +992,13 @@ resource "google_storage_bucket_iam_binding" "git-cache-manages-git-cache" {
   role    = "roles/storage.objectAdmin"
   members = ["serviceAccount:${google_service_account.git-cache.email}"]
 }
-resource "google_storage_bucket_iam_binding" "local-build-reads-git-cache" {
+resource "google_storage_bucket_iam_binding" "cachers-read-git-cache" {
   bucket  = google_storage_bucket.git-cache.name
   role    = "roles/storage.objectViewer"
-  members = ["serviceAccount:${google_service_account.builder-local.email}"]
+  members = [
+    "serviceAccount:${google_service_account.builder-local.email}",
+    "serviceAccount:${google_service_account.crates-registry.email}",
+  ]
 }
 resource "google_storage_bucket_iam_binding" "orchestrator-writes-attestations" {
   bucket  = google_storage_bucket.attestations.name
@@ -1125,12 +1129,15 @@ resource "google_kms_crypto_key_iam_binding" "attestors-uses-signing-key" {
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
   ] : [])
 }
-resource "google_cloud_run_v2_service_iam_binding" "local-build-calls-git-cache" {
+resource "google_cloud_run_v2_service_iam_binding" "cachers-call-git-cache" {
   location = google_cloud_run_v2_service.git-cache.location
   project  = google_cloud_run_v2_service.git-cache.project
   name     = google_cloud_run_v2_service.git-cache.name
   role     = "roles/run.invoker"
-  members  = ["serviceAccount:${google_service_account.builder-local.email}"]
+  members  = [
+    "serviceAccount:${google_service_account.builder-local.email}",
+    "serviceAccount:${google_service_account.crates-registry.email}",
+  ]
 }
 resource "google_cloud_run_v2_service_iam_binding" "api-and-local-build-and-inference-call-gateway" {
   location = google_cloud_run_v2_service.gateway.location

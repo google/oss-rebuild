@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/pkg/errors"
 )
 
@@ -53,11 +54,17 @@ type Fetcher interface {
 }
 
 // CurrentIndexFetcher fetches the current crates.io index
-type CurrentIndexFetcher struct{}
+type CurrentIndexFetcher struct {
+	CloneFunc gitx.CloneFunc
+}
 
 func (f *CurrentIndexFetcher) Fetch(ctx context.Context, fs billy.Filesystem) error {
 	storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	_, err := git.CloneContext(ctx, storer, nil, &git.CloneOptions{
+	cloneFunc := f.CloneFunc
+	if cloneFunc == nil {
+		cloneFunc = gitx.Clone
+	}
+	_, err := cloneFunc(ctx, storer, nil, &git.CloneOptions{
 		URL:           currentIndexURL,
 		ReferenceName: plumbing.Master,
 		SingleBranch:  true,
@@ -92,12 +99,17 @@ func (f *CurrentIndexFetcher) Update(ctx context.Context, fs billy.Filesystem) e
 
 // SnapshotIndexFetcher fetches a specific snapshot branch
 type SnapshotIndexFetcher struct {
-	Date string
+	Date      string
+	CloneFunc gitx.CloneFunc
 }
 
 func (f *SnapshotIndexFetcher) Fetch(ctx context.Context, fs billy.Filesystem) error {
 	storer := filesystem.NewStorage(fs, cache.NewObjectLRUDefault())
-	_, err := git.CloneContext(ctx, storer, nil, &git.CloneOptions{
+	cloneFunc := f.CloneFunc
+	if cloneFunc == nil {
+		cloneFunc = gitx.Clone
+	}
+	_, err := cloneFunc(ctx, storer, nil, &git.CloneOptions{
 		URL:           archiveIndexURL,
 		ReferenceName: plumbing.NewBranchReferenceName("snapshot-" + f.Date),
 		SingleBranch:  true,
