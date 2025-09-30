@@ -507,6 +507,9 @@ func makeGitRepo(wfs billy.Filesystem, dotGit billy.Filesystem) error {
 // TODO: Could replace with TarWriter.AddFS once billy is compatible with io.FS
 func addFSToTar(tarWriter *tar.Writer, f billy.Filesystem) error {
 	return util.Walk(f, ".", func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 		if info.IsDir() {
 			return tarWriter.WriteHeader(&tar.Header{
 				Name:     path,
