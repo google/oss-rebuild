@@ -102,6 +102,10 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 			log.Printf("Doing iteration: %v", err)
 			continue
 		}
+		log.Printf("%#v", iteration)
+		if iteration != nil && iteration.Result != nil && !iteration.Result.BuildSuccess {
+			log.Printf("Build failed: %s", iteration.Result.ErrorMessage)
+		}
 		switch iteration.Status {
 		case schema.AgentIterationStatusSuccess:
 			return &schema.AgentCompleteRequest{

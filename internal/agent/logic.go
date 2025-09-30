@@ -118,13 +118,14 @@ func locationFromStrategyOneOf(oneof *schema.StrategyOneOf) (*rebuild.Location, 
 }
 
 type defaultAgent struct {
-	t       rebuild.Target
-	deps    *AgentDeps
-	repo    *git.Repository
-	loc     rebuild.Location
-	history []*schema.AgentIteration
-	tools   []ai.ToolRef
-	assets  rebuild.AssetStore
+	t           rebuild.Target
+	deps        *AgentDeps
+	repo        *git.Repository
+	loc         rebuild.Location
+	iterHistory []*schema.AgentIteration
+	thoughts    []thoughtData
+	tools       []ai.ToolRef
+	assets      rebuild.AssetStore
 }
 
 func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
@@ -215,10 +216,10 @@ func (a *defaultAgent) registerTools() {
 		genkit.DefineTool(a.deps.Genkit, "read_logs_end", "Read tail of the logs from the previous build. If the logs are large, they may be truncated providing only the tail.",
 			func(ctx *ai.ToolContext, _ struct{}) (string, error) {
 				log.Printf("calling read_logs_end()")
-				if len(a.history) == 0 {
+				if len(a.iterHistory) == 0 {
 					return "Can't read logs because there was no previous build execution.", nil
 				}
-				prev := a.history[len(a.history)-1]
+				prev := a.iterHistory[len(a.iterHistory)-1]
 				r, err := a.logs(ctx, prev.ObliviousID)
 				if err != nil {
 					return "", errors.Wrap(err, "reading logs")
@@ -278,9 +279,16 @@ func (a *defaultAgent) genericPrompt() []string {
 		fmt.Sprintf("You are attempting to rebuild %#v", a.t),
 		"You SHOULD NOT change the repo in the location. Even if you do, that will be overwritten when we attempt to execute the build again.",
 		"You SHOULD NOT change the ref in the location.",
-		"You might need to update the `dir` in the location to match the root of the source repo",
 		"To debug the build, you might want to use the read_build_logs tool to view the build errors to understand what's going wrong.",
 		"You might also want to inspect the contents of the source repo using the read_repo_file or list_repo_files tools.",
+	}
+}
+
+func (a *defaultAgent) diagnoseOnly() []string {
+	return []string{
+		"Please explain what went wrong with the rebuild, and what might need to be changed to resolve the build.",
+		"You can include in-line code snippets, but the overall description should only be two or three sentences.",
+		"Another LLM will use your diagnosis to propose a fix.",
 	}
 }
 
@@ -319,62 +327,94 @@ func (a *defaultAgent) ecosystemExpertise() []string {
 }
 
 func (a *defaultAgent) historyContext(ctx context.Context) []string {
-	prompt := make([]string, 0, len(a.history))
-	if len(a.history) > 0 {
-		prompt = append(prompt, "Here is a history of the strategies that have been tried, and their results, in the order they were executed")
-		for i, iteration := range a.history {
-			if iteration.Strategy == nil {
-				continue
-			}
-			prompt = append(prompt, fmt.Sprintf("\nIteration %d", i))
-			s, err := iteration.Strategy.Strategy()
+	prompt := []string{
+		"# History",
+		"Here are the details of the previous attempt.",
+		"You can only control the build script, but other details are included to help you diagnose the failure.",
+	}
+	if len(a.iterHistory) > 0 {
+		iteration := a.iterHistory[len(a.iterHistory)-1]
+		if iteration.Strategy == nil {
+			return nil
+		}
+		s, err := iteration.Strategy.Strategy()
+		if err != nil {
+			log.Printf("Previous iteration had no strategy: %v", err)
+			return nil
+		}
+		var script string
+		{
+			inst, err := s.GenerateFor(a.t, rebuild.BuildEnv{
+				TimewarpHost:           "localhost:8081",
+				HasRepo:                false,
+				PreferPreciseToolchain: false,
+			})
 			if err != nil {
-				log.Printf("Previous iteration had no strategy: %v", err)
+				log.Printf(": %v", err)
+				return nil
 			}
-			var script string
-			{
-				inst, err := s.GenerateFor(a.t, rebuild.BuildEnv{
-					TimewarpHost:           "localhost:8081",
-					HasRepo:                false,
-					PreferPreciseToolchain: false,
-				})
-				if err != nil {
-					log.Printf(": %v", err)
-					continue
-				}
-				script = inst.Deps + "\n" + inst.Build
+			script = inst.Deps + "\n" + inst.Build
+		}
+		prompt = append(prompt,
+			"## Build script:",
+			"",
+			"This is the content you can control, need to focus, on and need to update",
+			"```bash",
+			script,
+			"```",
+			"",
+			"## Error message:",
+			"```",
+			iteration.Result.ErrorMessage,
+			"```",
+		)
+		var dockerfile string
+		{
+			inp := rebuild.Input{Target: a.t, Strategy: s}
+			resources := build.Resources{
+				ToolURLs: map[build.ToolType]string{
+					// TODO: Make a dummy URL for this, it won't actually be executed.
+					build.TimewarpTool: "https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20250428204534-b35098b3c7b7/timewarp",
+				},
+				BaseImageConfig: build.DefaultBaseImageConfig(),
 			}
+			plan, err := local.NewDockerRunPlanner().GeneratePlan(ctx, inp, build.PlanOptions{
+				UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
+				Resources:   resources,
+			})
+			if err == nil {
+				dockerfile = plan.Script
+			}
+			if dockerfile != "" {
+				prompt = append(
+					prompt,
+					"",
+					"## Dockerfile",
+					"This is for debugging purposes only. Do not include this file's contents in your response):",
+					"",
+					"```dockerfile",
+					dockerfile,
+					"```",
+					"",
+				)
+			}
+		}
+	}
+	if len(a.thoughts) > 0 {
+		prompt = append(prompt,
+			"",
+			"## Thoughts so far",
+			"Here are the thoughts you've had so far",
+		)
+		for i, t := range a.thoughts {
 			prompt = append(prompt,
-				"Build script (this is the content you need to focus on and update):\n",
-				script,
-				"\nError message:",
-				iteration.Result.ErrorMessage,
+				"",
+				fmt.Sprintf("### Thought %d", i+1),
+				t.Diagnostic,
+				"```bash",
+				t.UpdatedScript,
+				"```",
 			)
-			var dockerfile string
-			{
-				inp := rebuild.Input{Target: a.t, Strategy: s}
-				resources := build.Resources{
-					ToolURLs: map[build.ToolType]string{
-						// TODO: Make a dummy URL for this, it won't actually be executed.
-						build.TimewarpTool: "https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20250428204534-b35098b3c7b7/timewarp",
-					},
-					BaseImageConfig: build.DefaultBaseImageConfig(),
-				}
-				plan, err := local.NewDockerRunPlanner().GeneratePlan(ctx, inp, build.PlanOptions{
-					UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
-					Resources:   resources,
-				})
-				if err == nil {
-					dockerfile = plan.Script
-				}
-				if dockerfile != "" {
-					prompt = append(
-						prompt,
-						"\nDockerfile (this is for debugging purposes only, do not include this file's contents in your response):\n",
-						dockerfile,
-					)
-				}
-			}
 		}
 	}
 	return prompt
@@ -407,54 +447,87 @@ func (a *defaultAgent) generate(ctx context.Context, prompt []string, opts ...ai
 	return modelResp, err
 }
 
+func (a *defaultAgent) makeDiagnosticPrompt() []string {
+	return append(a.genericPrompt(), a.diagnoseOnly()...)
+}
+
+// One "cycle" of the LLM produces a thoughtData
+type thoughtData struct {
+	BasedOnIteration int    // The index in iterationHistory on which this thought is based.
+	Diagnostic       string // The reasoning of why things were broken, and what might need to be fixed.
+	UpdatedScript    string // The updated script.
+}
+
 func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.StrategyOneOf, error) {
-	if len(a.history) == 0 {
+	if len(a.iterHistory) == 0 {
 		return nil, errors.New("proposeAgentInferece needs an previous iteration to work off of")
 	}
-	log.Println("Gemini is on the case...")
-	p := a.makePrompt(ctx)
-	log.Println("Prompt:\n", color.YellowString(strings.Join(p, "\n")))
-	// TODO: Switch the prompt to outputReasoningAndScript for structured reasoning.
-	modelResp, err := a.generate(
-		ctx,
-		p,
-		ai.WithTools(a.tools...),
-		ai.WithMaxTurns(a.deps.MaxTurns),
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "inference")
+	thought := thoughtData{
+		BasedOnIteration: len(a.iterHistory) - 1,
 	}
+	// We have a dedicated diagnostic step to make sure we keep a history of what the AI thinks the problems are.
+	{ // Diagnose
+		log.Println("Asking the LLM to diagnose the failure and describe a fix...")
+		p := a.makeDiagnosticPrompt()
+		log.Println("Prompt:\n", color.YellowString(strings.Join(p, "\n")))
+		modelResp, err := a.generate(ctx, p, ai.WithMaxTurns(a.deps.MaxTurns), ai.WithTools(a.tools...))
+		if err != nil {
+			return nil, errors.Wrap(err, "diagnose")
+		}
+		thought.Diagnostic = modelResp.Text()
+		log.Printf("Gemini says:\n%s", color.CyanString(thought.Diagnostic))
+	}
+	var rawScript string
+	{ // Implement
+		log.Println("Asking the LLM to hypothesize a fix")
+		p := a.makePrompt(ctx)
+		p = append(p, "An expert reviewed this failure and gave these instructions for fixing it:", thought.Diagnostic)
+		log.Println("Prompt:\n", color.YellowString(strings.Join(p, "\n")))
+		// TODO: Switch the prompt to outputReasoningAndScript for structured reasoning.
+		modelResp, err := a.generate(
+			ctx,
+			p,
+			ai.WithMaxTurns(a.deps.MaxTurns),
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "hypothesize")
+		}
+		rawScript = modelResp.Text()
+		log.Printf("Gemini says:\n%s", color.CyanString(rawScript))
+	}
+	{
+		modelResp, err := a.generate(
+			ctx,
+			[]string{
+				"You are now a single-purpose, pure Bash script generator.",
+				"Your entire output must be a single, raw, ready-to-execute Bash script.",
+				"You must not include any surrounding text, explanations, markdown formatting (like ```bash or ```), titles, or conversational filler.",
+				"Start your response immediately with the first line of the Bash script.",
+				"From the following llm response, extract only the shell commands to be run and exclude any commands used to clone, checkout, and navigate to the git repo:",
+				rawScript,
+			},
+			ai.WithModelName("vertexai/gemini-2.5-flash"),
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "ai formatting")
+		}
+		// TODO: Check the script for invalid sequences, like EOS or EOF.
+		script := modelResp.Text()
+		if strings.HasPrefix(script, "```") {
+			lines := strings.Split(script, "\n")
+			lines = lines[1:]
+			script = strings.Join(lines, "\n")
+		}
+		script = strings.Replace(script, "```", "", -1)
+		thought.UpdatedScript = script
+		log.Printf("After formatting: %s", color.WhiteString(thought.UpdatedScript))
+	}
+	a.thoughts = append(a.thoughts, thought)
 	// TODO: Try to format the bash script into a structured strategy?
-	resp := modelResp.Text()
-	log.Printf("Gemini says:\n%s", color.CyanString(resp))
-	modelResp, err = a.generate(
-		ctx,
-		[]string{
-			"You are now a single-purpose, pure Bash script generator.",
-			"Your entire output must be a single, raw, ready-to-execute Bash script.",
-			"You must not include any surrounding text, explanations, markdown formatting (like ```bash or ```), titles, or conversational filler.",
-			"Start your response immediately with the first line of the Bash script.",
-			"From the following llm response, extract only the shell commands to be run and exclude any commands used to clone, checkout, and navigate to the git repo:",
-			resp,
-		},
-		ai.WithModelName("googleai/gemini-2.5-flash"),
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "ai formatting")
-	}
-	// TODO: Check the script for invalid sequences, like EOS or EOF.
-	script := modelResp.Text()
-	if strings.HasPrefix(script, "```") {
-		lines := strings.Split(script, "\n")
-		lines = lines[1:]
-		script = strings.Join(lines, "\n")
-	}
-	script = strings.Replace(script, "```", "", -1)
-	log.Printf("After formatting: %s", color.WhiteString(script))
 	strat := rebuild.ManualStrategy{
 		Location: a.loc,
 		Deps:     "echo 'running deps'",
-		Build:    script,
+		Build:    thought.UpdatedScript,
 	}
 	stratOneOf := schema.NewStrategyOneOf(&strat)
 	return &stratOneOf, nil
@@ -463,7 +536,7 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.Strat
 func (a *defaultAgent) Propose(ctx context.Context) (*schema.StrategyOneOf, error) {
 	// For the first iteration, use our regular inference logic.
 	// This allows the agent to benefit from the rest of our infrence improvements.
-	if len(a.history) == 0 {
+	if len(a.iterHistory) == 0 {
 		return a.proposeNormalInference(ctx)
 	} else {
 		return a.proposeAgentInference(ctx)
@@ -471,5 +544,5 @@ func (a *defaultAgent) Propose(ctx context.Context) (*schema.StrategyOneOf, erro
 }
 
 func (a *defaultAgent) RecordIteration(i *schema.AgentIteration) {
-	a.history = append(a.history, i)
+	a.iterHistory = append(a.iterHistory, i)
 }
