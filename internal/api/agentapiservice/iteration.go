@@ -160,6 +160,9 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		}
 
 		rb, up, err := verifier.SummarizeArtifacts(ctx, store, session.Target, upstreamURI, hashes, stabilizers)
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "summarizing artifacts"))
+		}
 		exactMatch = bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
 		stabilizedMatch = bytes.Equal(rb.StabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil))
 	}
