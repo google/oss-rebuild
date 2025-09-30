@@ -29,6 +29,9 @@ type RegistryResolution struct {
 // FindRegistryResolution searches across multiple sequential registry indices for the earliest possible state a registry resolution could have taken place.
 // Indices should be ordered from newest to oldest (e.g., current index first, then previous snapshot(s)).
 func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargolock.Package, cratePublished time.Time) (*RegistryResolution, error) {
+	if len(lockfileCrates) == 0 {
+		return nil, errors.New("no crates to resolve")
+	}
 	// Convert to internal format
 	internalPackages := make([]internalPackage, len(lockfileCrates))
 	for i, pkg := range lockfileCrates {
