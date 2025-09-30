@@ -14,7 +14,6 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/pkg/errors"
 )
@@ -46,8 +45,8 @@ func init() {
 	}
 }
 
-func FindRegistryCommitInit(ctx context.Context) (*schema.FindRegistryCommitDeps, error) {
-	return &schema.FindRegistryCommitDeps{IndexManager: indexManager}, nil
+func FindRegistryCommitInit(ctx context.Context) (*cratesregistryservice.FindRegistryCommitDeps, error) {
+	return &cratesregistryservice.FindRegistryCommitDeps{IndexManager: indexManager}, nil
 }
 
 func main() {

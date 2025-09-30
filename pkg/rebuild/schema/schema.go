@@ -17,7 +17,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/pkg/errors"
 )
 
@@ -443,14 +442,4 @@ type AgentIteration struct {
 	Result      *AgentBuildResult `firestore:"result,omitempty"`
 	Created     time.Time         `firestore:"created,omitempty"`
 	Updated     time.Time         `firestore:"updated,omitempty"`
-}
-
-// FindRegistryCommitResponse represents the response from registry commit resolution
-type FindRegistryCommitResponse struct {
-	CommitHash string `json:"commit_hash"`
-}
-
-// FindRegistryCommitDeps holds dependencies for the registry commit resolution service
-type FindRegistryCommitDeps struct {
-	IndexManager *index.IndexManager
 }
