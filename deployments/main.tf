@@ -824,6 +824,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
       image = data.google_artifact_registry_docker_image.api.self_link
       args = concat([
         "--project=${var.project}",
+        "--location=us-central1",
         "--build-local-url=${google_cloud_run_v2_service.build-local.uri}",
         "--build-remote-identity=${google_service_account.builder-remote.name}",
         "--inference-url=${google_cloud_run_v2_service.inference.uri}",
