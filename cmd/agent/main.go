@@ -9,16 +9,17 @@ import (
 	"log"
 	"net/url"
 
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/api/idtoken"
+	"google.golang.org/genai"
 )
 
 var (
+	project         = flag.String("project", "", "GCP Project ID for resource usage")
+	location        = flag.String("location", "", "GCP location for resource usage")
 	sessionID       = flag.String("session-id", "", "Session ID for this agent run")
 	agentAPIURL     = flag.String("agent-api-url", "", "URL of the agent API service")
 	sessionsBucket  = flag.String("sessions-bucket", "", "GCS bucket for session data")
@@ -33,6 +34,9 @@ var (
 
 func main() {
 	flag.Parse()
+	if *project == "" {
+		log.Fatal("project flag is required")
+	}
 	if *sessionID == "" {
 		log.Fatal("session-id flag is required")
 	}
@@ -76,9 +80,13 @@ func main() {
 	// Create agent API client stubs
 	iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
 	completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
-	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.VertexAI{}), genkit.WithDefaultModel("vertexai/gemini-2.5-pro"))
+	aiClient, err := genai.NewClient(ctx, &genai.ClientConfig{
+		Backend:  genai.BackendVertexAI,
+		Project:  *project,
+		Location: *location,
+	})
 	deps := agent.RunSessionDeps{
-		Genkit:         g,
+		Client:         aiClient,
 		IterationStub:  iterationStub,
 		CompleteStub:   completeStub,
 		SessionsBucket: *sessionsBucket,

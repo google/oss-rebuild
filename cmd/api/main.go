@@ -35,6 +35,7 @@ import (
 
 var (
 	project               = flag.String("project", "", "GCP Project ID for storage and build resources")
+	location              = flag.String("location", "", "GCP location for resources")
 	buildRemoteIdentity   = flag.String("build-remote-identity", "", "Identity from which to run remote rebuilds")
 	buildLocalURL         = flag.String("build-local-url", "", "URL of the rebuild service")
 	inferenceURL          = flag.String("inference-url", "", "URL of the inference service")
@@ -254,6 +255,7 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 		return nil, errors.Wrap(err, "creating Cloud Run service")
 	}
 	d.Project = *project
+	d.Location = *location
 	d.AgentJobName = *agentJobName
 	d.AgentAPIURL = *agentAPIURL
 	d.AgentTimeoutSeconds = *agentTimeoutSeconds

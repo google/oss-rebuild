@@ -30,8 +30,6 @@ import (
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/cheggaaa/pb"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
@@ -1348,6 +1346,14 @@ var localAgent = &cobra.Command{
 		if err != nil {
 			return errors.Wrap(err, "creating firestore client")
 		}
+		aiClient, err := genai.NewClient(ctx, &genai.ClientConfig{
+			Backend:  genai.BackendVertexAI,
+			Project:  *project,
+			Location: "us-central1",
+		})
+		if err != nil {
+			return errors.Wrap(err, "making aiClient")
+		}
 		sessionUUID, err := uuid.NewV7()
 		if err != nil {
 			return errors.Wrap(err, "making sessionID")
@@ -1416,9 +1422,8 @@ var localAgent = &cobra.Command{
 		// Create agent API client stubs
 		iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
 		completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
-		g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.GoogleAI{}), genkit.WithDefaultModel("googleai/gemini-2.5-pro"))
 		deps := agent.RunSessionDeps{
-			Genkit:         g,
+			Client:         aiClient,
 			IterationStub:  iterationStub,
 			CompleteStub:   completeStub,
 			SessionsBucket: "", // TODO: Add this once it's being used.
