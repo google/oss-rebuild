@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	gcs "cloud.google.com/go/storage"
-	"github.com/fatih/color"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -557,25 +556,21 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.Strat
 	{ // Diagnose
 		log.Println("Asking the LLM to diagnose the failure and describe a fix...")
 		p := a.makeDiagnosticPrompt()
-		log.Println("Prompt:\n", color.YellowString(strings.Join(p, "\n")))
 		thought.Diagnostic, err = a.generate(ctx, p)
 		if err != nil {
 			return nil, errors.Wrap(err, "diagnose")
 		}
-		log.Printf("Gemini says:\n%s", color.CyanString(thought.Diagnostic))
 	}
 	var rawScript string
 	{ // Implement
 		log.Println("Asking the LLM to hypothesize a fix")
 		p := a.makePrompt(ctx)
 		p = append(p, "An expert reviewed this failure and gave these instructions for fixing it:", thought.Diagnostic)
-		log.Println("Prompt:\n", color.YellowString(strings.Join(p, "\n")))
 		// TODO: Switch the prompt to outputReasoningAndScript for structured reasoning.
 		rawScript, err = a.generate(ctx, p)
 		if err != nil {
 			return nil, errors.Wrap(err, "hypothesize")
 		}
-		log.Printf("Gemini says:\n%s", color.CyanString(rawScript))
 	}
 	{
 		// TODO: Change this to use gemini flash instead
@@ -601,7 +596,6 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.Strat
 		}
 		script = strings.Replace(script, "```", "", -1)
 		thought.UpdatedScript = script
-		log.Printf("After formatting: %s", color.WhiteString(thought.UpdatedScript))
 	}
 	a.thoughts = append(a.thoughts, thought)
 	// TODO: Try to format the bash script into a structured strategy?

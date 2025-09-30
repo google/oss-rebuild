@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fatih/color"
 	"google.golang.org/genai"
 )
 
@@ -31,5 +32,14 @@ func FormatContent(content genai.Content) string {
 			}
 		}
 	}
-	return msg
+	var c func(s string, a ...interface{}) string
+	switch content.Role {
+	case ModelRole:
+		c = color.BlueString
+	case UserRole:
+		c = color.YellowString
+	default:
+		c = color.WhiteString
+	}
+	return c(msg)
 }
