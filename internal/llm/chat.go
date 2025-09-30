@@ -113,12 +113,7 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 			if !yield(&genai.Content{Parts: currentParts, Role: UserRole}, nil) {
 				return
 			}
-			// Convert []*Part to []Part
-			partsValues := make([]genai.Part, len(currentParts))
-			for i, part := range currentParts {
-				partsValues[i] = *part
-			}
-			resp, err := cm.session.SendMessage(ctx, partsValues...)
+			resp, err := cm.session.Send(ctx, currentParts...)
 			if err != nil {
 				yield(nil, errors.Wrap(err, "sending message"))
 				return
