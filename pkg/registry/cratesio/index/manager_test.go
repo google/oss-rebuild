@@ -319,7 +319,7 @@ commits:
 		{Type: CurrentIndex},
 	}
 
-	handles, err := mgr.GetRepositories(ctx, keys)
+	handles, err := mgr.GetRepositories(ctx, keys, nil)
 	if err != nil {
 		t.Fatalf("Failed to acquire multiple repositories: %v", err)
 	}

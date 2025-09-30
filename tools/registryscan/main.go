@@ -174,7 +174,7 @@ func findRegistryResolution(ctx context.Context, manager *index.IndexManager, pa
 		fmt.Printf("Including snapshot repository %s in search...\n", snapshotDate)
 		keys = append(keys, index.RepositoryKey{Type: index.SnapshotIndex, Name: snapshotDate})
 	}
-	handles, err := manager.GetRepositories(ctx, keys)
+	handles, err := manager.GetRepositories(ctx, keys, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching repositories")
 	}

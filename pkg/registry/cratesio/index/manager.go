@@ -45,6 +45,13 @@ func (t IndexType) String() string {
 	}
 }
 
+// RepoOpt contains options for repository operations
+type RepoOpt struct {
+	// Contains specifies a time that must be contained within the repository's valid time range
+	// For current repositories, this validates that the time is not after the HEAD commit time
+	Contains *time.Time
+}
+
 // RepositoryKey uniquely identifies a repository
 type RepositoryKey struct {
 	Type IndexType
@@ -72,6 +79,7 @@ type managedRepository struct {
 // acquisitionRequest represents a request to acquire one or more repositories
 type acquisitionRequest struct {
 	keys     []RepositoryKey
+	opts     *RepoOpt
 	response chan acquisitionResponse
 	ctx      context.Context
 }
@@ -267,6 +275,51 @@ func (m *IndexManager) handleAcquisitionRequest(req acquisitionRequest) {
 		repo.rwMutex.RLock()
 		locked.Store(repo.key, repo)
 	}
+	// Using the lock for the current repo (if present), we can check the opts.Contains constraint
+	if req.opts != nil && req.opts.Contains != nil {
+		if currentRepo, exists := locked.Load(RepositoryKey{Type: CurrentIndex}); exists {
+			// Get HEAD commit to check its commit time
+			// NOTE: We do not rely on currentRepo.lastUpdate as registry commits are
+			// observed to have ~minutes of latency between commit and fetch. This is
+			// especially sensitive as it is common for multi-crate releases to have
+			// interrelated crates published in quick succession.
+			repoFs, err := m.fs.Chroot(currentRepo.path)
+			if err != nil {
+				unlock()
+				req.response <- acquisitionResponse{err: errors.Wrap(err, "accessing current repository directory for constraint check")}
+				return
+			}
+			repo, err := git.PlainOpen(repoFs.Root())
+			if err != nil {
+				unlock()
+				req.response <- acquisitionResponse{err: errors.Wrap(err, "opening current repository for constraint check")}
+				return
+			}
+			head, err := repo.Head()
+			if err != nil {
+				unlock()
+				req.response <- acquisitionResponse{err: errors.Wrap(err, "getting HEAD reference for constraint check")}
+				return
+			}
+			headCommit, err := repo.CommitObject(head.Hash())
+			if err != nil {
+				unlock()
+				req.response <- acquisitionResponse{err: errors.Wrap(err, "getting head commit object for constraint check")}
+				return
+			}
+			// Check if current repo contains requested time
+			if req.opts.Contains.After(headCommit.Committer.When) {
+				unlock()
+				req.response <- acquisitionResponse{err: &RegistryOutOfDateError{
+					ConstraintTime: *req.opts.Contains,
+					HeadCommitTime: headCommit.Committer.When,
+					NextUpdateTime: time.UnixMilli(currentRepo.lastUpdate.Load()).Add(m.currentUpdateInterval),
+					UpdateInterval: m.currentUpdateInterval,
+				}}
+				return
+			}
+		}
+	}
 	// Fetch the new repositories and get read locks
 	var causeErr error
 	for err := range pipe.ParInto(len(missing), pipe.FromSlice(missing), func(in *managedRepository, out chan<- error) {
@@ -429,7 +482,7 @@ func (m *IndexManager) doUpdate(ctx context.Context, repo *managedRepository) er
 
 // GetRepository requests a single repository (convenience method)
 func (m *IndexManager) GetRepository(ctx context.Context, key RepositoryKey) (*RepositoryHandle, error) {
-	handles, err := m.GetRepositories(ctx, []RepositoryKey{key})
+	handles, err := m.GetRepositories(ctx, []RepositoryKey{key}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -437,11 +490,12 @@ func (m *IndexManager) GetRepository(ctx context.Context, key RepositoryKey) (*R
 }
 
 // GetRepositories atomically acquires multiple repositories
-func (m *IndexManager) GetRepositories(ctx context.Context, keys []RepositoryKey) ([]*RepositoryHandle, error) {
+// If opts.Contains is provided, constraints will be validated during acquisition.
+func (m *IndexManager) GetRepositories(ctx context.Context, keys []RepositoryKey, opts *RepoOpt) ([]*RepositoryHandle, error) {
 	response := make(chan acquisitionResponse, 1)
 
 	select {
-	case m.acquisitionCh <- acquisitionRequest{keys: keys, response: response, ctx: ctx}:
+	case m.acquisitionCh <- acquisitionRequest{keys: keys, opts: opts, response: response, ctx: ctx}:
 		select {
 		case resp := <-response:
 			return resp.handles, resp.err

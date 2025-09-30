@@ -94,8 +94,9 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 	if len(keys) == 0 {
 		return &FindRegistryCommitResponse{}, nil
 	}
-	// Fetch index repositories
-	handles, err := deps.IndexManager.GetRepositories(ctx, keys)
+	// Fetch index repositories, ensuring publishedTime is contained in the current registry
+	opts := &index.RepoOpt{Contains: &publishedTime}
+	handles, err := deps.IndexManager.GetRepositories(ctx, keys, opts)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to get repositories"))
 	}
