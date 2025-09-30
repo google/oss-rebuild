@@ -32,6 +32,7 @@ type AgentCreateDeps struct {
 	AgentTimeoutSeconds int
 	SessionsBucket      string
 	MetadataBucket      string
+	LogsBucket          string
 }
 
 func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *AgentCreateDeps) (*schema.AgentCreateResponse, error) {
@@ -81,6 +82,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 						"--agent-api-url=" + deps.AgentAPIURL,
 						"--sessions-bucket=" + deps.SessionsBucket,
 						"--metadata-bucket=" + deps.MetadataBucket,
+						"--logs-bucket=" + deps.LogsBucket,
 						"--max-iterations=" + fmt.Sprintf("%d", maxIterations),
 						"--target-ecosystem=" + string(req.Target.Ecosystem),
 						"--target-package=" + req.Target.Package,

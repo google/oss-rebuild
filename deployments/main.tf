@@ -845,6 +845,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--agent-timeout-seconds=3600", // 1 hour
         "--agent-sessions-bucket=${google_storage_bucket.agent-sessions.name}",
         "--agent-metadata-bucket=${google_storage_bucket.agent-metadata.name}",
+        "--agent-logs-bucket=${google_storage_bucket.agent-logs.name}",
         ], var.enable_private_build_pool ? [
         "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
         "--gcb-private-pool-region=us-central1",
@@ -1233,13 +1234,20 @@ resource "google_storage_bucket_iam_binding" "agent-reads-metadata" {
   role    = "roles/storage.objectViewer"
   members = ["serviceAccount:${google_service_account.agent-job.email}"]
 }
-resource "google_storage_bucket_iam_binding" "builder-and-agent-read-logs" {
+resource "google_storage_bucket_iam_binding" "builder-agent-views-buckets" {
   bucket  = google_storage_bucket.agent-logs.name
   role   = google_project_iam_custom_role.bucket-viewer-role.name
-  members = [
-    "serviceAccount:${google_service_account.agent-job.email}",
-    "serviceAccount:${google_service_account.builder-agent.email}"
-  ]
+  members = ["serviceAccount:${google_service_account.builder-agent.email}"]
+}
+resource "google_storage_bucket_iam_binding" "builder-agent-uses-logs" {
+  bucket  = google_storage_bucket.agent-logs.name
+  role   = "roles/storage.objectUser"
+  members = ["serviceAccount:${google_service_account.builder-agent.email}"]
+}
+resource "google_storage_bucket_iam_binding" "agent-job-views-logs" {
+  bucket  = google_storage_bucket.agent-logs.name
+  role    = "roles/storage.objectViewer"
+  members = ["serviceAccount:${google_service_account.agent-job.email}"]
 }
 resource "google_project_iam_binding" "orchestrator-creates-run-jobs" {
   project = var.project
@@ -1252,11 +1260,6 @@ resource "google_cloud_run_v2_service_iam_binding" "agent-calls-agent-api" {
   name     = google_cloud_run_v2_service.agent-api.name
   role     = "roles/run.invoker"
   members  = ["serviceAccount:${google_service_account.agent-job.email}"]
-}
-resource "google_storage_bucket_iam_binding" "builder-agent-uses-logs" {
-  bucket  = google_storage_bucket.agent-logs.name
-  role   = "roles/storage.objectUser"
-  members = ["serviceAccount:${google_service_account.builder-agent.email}"]
 }
 resource "google_storage_bucket_iam_binding" "builder-agent-writes-metadata" {
   bucket  = google_storage_bucket.agent-metadata.name
