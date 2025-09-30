@@ -379,12 +379,8 @@ func (a *defaultAgent) proposeNormalInference(ctx context.Context) (*schema.Stra
 
 func (a *defaultAgent) genericPrompt() []string {
 	return []string{
-		"Please diagnose this rebuild failure and propose an updated build description.",
+		"You are an open source build expert. You will work towards getting the target package to build successfully and match the upstream.",
 		fmt.Sprintf("You are attempting to rebuild %#v", a.t),
-		"You SHOULD NOT change the repo in the location. Even if you do, that will be overwritten when we attempt to execute the build again.",
-		"You SHOULD NOT change the ref in the location.",
-		"To debug the build, you might want to use the read_build_logs tool to view the build errors to understand what's going wrong.",
-		"You might also want to inspect the contents of the source repo using the read_repo_file or list_repo_files tools.",
 	}
 }
 
@@ -392,6 +388,8 @@ func (a *defaultAgent) diagnoseOnly() []string {
 	return []string{
 		"Please explain what went wrong with the rebuild, and what might need to be changed to resolve the build.",
 		"You can include in-line code snippets, but the overall description should only be two or three sentences.",
+		"To debug the build, you might want to use the read_build_logs tool to view the build errors to understand what's going wrong.",
+		"You might also want to inspect the contents of the source repo using the read_repo_file or list_repo_files tools.",
 		"Another LLM will use your diagnosis to propose a fix.",
 	}
 }
@@ -402,19 +400,10 @@ func (a *defaultAgent) outputOnlyScript() []string {
 		"You should include your reasoning as comments inside the bash script.",
 		"These comments should sufficiently explain to a future reader how you got to this bash script compared to the original script.",
 		"DO NOT include markdown backtics, or ANY formatting besides the raw content of the bash script.",
-	}
-}
-
-func (a *defaultAgent) outputReasoningAndScript() []string {
-	return []string{
-		"When responding, please include both your reasoning and the updated buildscript.",
-		"The reasoning should sufficiently explain to a future reader how you got to this bash script compared to the original script.",
-		"Both the reasoning and script should be prefixed with a label. DO NOT include any other text besides these. For example:",
-		"REASONING: The baz version has to be updated to version 1.2.3 to support foobar",
-		"SCRIPT:",
-		"#/bin/bash",
-		"baz update --version=1.2.3",
-		"baz build /src/...",
+		"You SHOULD NOT change the repo in the location. Even if you do, that will be overwritten when we attempt to execute the build again.",
+		"You SHOULD NOT change the ref in the location.",
+		"To debug the build, you might want to use the read_build_logs tool to view the build errors to understand what's going wrong.",
+		"You might also want to inspect the contents of the source repo using the read_repo_file or list_repo_files tools.",
 	}
 }
 
@@ -462,7 +451,7 @@ func (a *defaultAgent) historyContext(ctx context.Context) []string {
 		prompt = append(prompt,
 			"## Build script:",
 			"",
-			"This is the content you can control, need to focus, on and need to update",
+			"This is the content you can control, focus on and update",
 			"```bash",
 			script,
 			"```",
