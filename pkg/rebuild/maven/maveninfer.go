@@ -19,117 +19,83 @@ import (
 	"github.com/pkg/errors"
 )
 
+// MavenInfer attempts to find the correct git ref and build directory for a given Maven target.
 func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig) (rebuild.Strategy, error) {
-	name, version := t.Package, t.Version
-	var pomXMLGuess string
-	head, _ := repoConfig.Repository.Head()
-	commitObject, _ := repoConfig.Repository.CommitObject(head.Hash())
-	_, pkgPath, err := findPomXML(commitObject, t.Package)
-	if err != nil {
-		log.Printf("cannot build ref map manifest heuristic: %s", err)
-	} else {
-		refMap, err := pomXMLSearch(t.Package, pkgPath, repoConfig.Repository)
-		if err != nil {
-			log.Printf("git log heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, repoConfig.URI, err.Error())
-		}
-		pomXMLGuess = refMap[version]
-		if pomXMLGuess == "" {
-			log.Printf("git log heuristic found no matches [pkg=%s,ver=%s]\n", name, version)
-		}
-	}
-	tagGuess, err := rebuild.FindTagMatch(name, version, repoConfig.Repository)
-	if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
-	}
-	sourceJarGuess, err := findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
-	if err != nil {
-		log.Printf("source jar heuristic failed: %s", err)
-	}
-	var dir string
-	var ref string
-	var commit *object.Commit
 	// Try heuristics in order - tag, git log, source jar.
 	// Commit is selected by first successful heuristic.
 	// If a heuristic finds a commit but cannot find a matching POM, it falls through to the next heuristic.
 	// If a heuristic finds a commit and a matching POM, it is selected as the commit.
 	// If a heuristic does not find a commit, it falls through to the next heuristic.
 	// If no heuristics find a commit, or none of the found commits have a matching POM, return an error.
-	switch {
-	case tagGuess != "":
+	name, version := t.Package, t.Version
+	// 1. Tag Heuristic
+	// Generate guess using git tag heuristic.
+	tagGuess, err := rebuild.FindTagMatch(name, version, repoConfig.Repository)
+	if err != nil {
+		return nil, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
+	}
+	var dir, ref string
+	var found bool
+	var commit *object.Commit
+	if tagGuess != "" {
 		commit, err = repoConfig.Repository.CommitObject(plumbing.NewHash(tagGuess))
-		if err == nil {
-			// First, find the POM file by package name.
-			pomXML, foundPkgPath, err := findPomXML(commit, t.Package)
-			if err != nil {
-				// No POM with package name, continue to next heuristic.
-				log.Printf("tag heuristic failed: could not find a pom.xml for the package")
-			} else {
-				// A package match was found, so set it as our best guess.
-				ref = tagGuess
-				dir = filepath.Dir(foundPkgPath)
-				log.Printf("using tag heuristic (pkg match) ref: %s", tagGuess[:9])
-				// Now, try to validate with the version for a more precise match.
-				if pomXML.Version() != version {
-					log.Printf("using tag heuristic with mismatched version [expected=%s,actual=%s,path=%s,ref=%s]", version, pomXML.Version(), path.Join(dir, "pom.xml"), tagGuess[:9])
-				} else {
-					log.Printf("using tag heuristic (pkg and version match) ref: %s", tagGuess[:9])
-				}
-				break // Match found, exit switch.
-			}
-		} else if err == plumbing.ErrObjectNotFound {
-			log.Printf("tag heuristic ref not found in repo")
-		} else {
-			return nil, errors.Wrapf(err, "[INTERNAL] Failed ref resolve from tag [repo=%s,ref=%s]", repoConfig.URI, tagGuess)
+		if err != nil {
+			return nil, errors.Wrapf(err, "[INTERNAL] Failed to get commit from tag [repo=%s,ref=%s]", repoConfig.URI, tagGuess)
 		}
-		fallthrough
-	case pomXMLGuess != "":
+		if dir, found = validateCommit(commit, t, "tag"); found {
+			ref = tagGuess
+		} else {
+			log.Printf("tag heuristic found no valid pom.xml [pkg=%s,ver=%s,ref=%s]\n", name, version, tagGuess)
+		}
+	}
+	// 2. Git Log Heuristic
+	// Generate guess by computing a map of version->commit for all commits that modified the pom.xml (inferred using HEAD) file.
+	var pomXMLGuess string
+	if !found {
+		head, _ := repoConfig.Repository.Head()
+		commitObject, _ := repoConfig.Repository.CommitObject(head.Hash())
+		_, pkgPath, err := findPomXML(commitObject, t.Package)
+		if err != nil {
+			log.Printf("cannot build ref map manifest heuristic: %s", err)
+		} else {
+			refMap, err := pomXMLSearch(t.Package, pkgPath, repoConfig.Repository)
+			if err != nil {
+				log.Printf("git log heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, repoConfig.URI, err.Error())
+			}
+			pomXMLGuess = refMap[version]
+			if pomXMLGuess == "" {
+				log.Printf("git log heuristic found no matches [pkg=%s,ver=%s]\n", name, version)
+			}
+		}
 		commit, err = repoConfig.Repository.CommitObject(plumbing.NewHash(pomXMLGuess))
 		if err == nil {
-			pomXML, foundPkgPath, err := findPomXML(commit, t.Package)
-			if err != nil {
-				log.Printf("git log heuristic failed: could not find a pom.xml for the package")
-			} else {
+			if dir, found = validateCommit(commit, t, "git log"); found {
 				ref = pomXMLGuess
-				dir = filepath.Dir(foundPkgPath)
-				if pomXML.Version() != version {
-					log.Printf("using git log heuristic with mismatched version [expected=%s,actual=%s,path=%s,ref=%s]", version, pomXML.Version(), path.Join(dir, "pom.xml"), pomXMLGuess[:9])
-				} else {
-					log.Printf("using git log heuristic (pkg and version match) ref: %s", pomXMLGuess[:9])
-				}
-				break
 			}
-
-		} else if err == plumbing.ErrObjectNotFound {
-			log.Printf("git log heuristic ref not found in repo")
-		} else {
+		} else if !errors.Is(err, plumbing.ErrObjectNotFound) {
 			return nil, errors.Wrapf(err, "[INTERNAL] Failed ref resolve from git log [repo=%s,ref=%s]", repoConfig.URI, pomXMLGuess)
 		}
-		fallthrough
-	case sourceJarGuess != nil:
-		commit = sourceJarGuess
-		if err == nil {
-			pomXML, foundPkgPath, err := findPomXML(commit, t.Package)
-			if err != nil {
-				log.Printf("source jar heuristic failed: could not find a pom.xml for the package")
-			} else {
-				ref = sourceJarGuess.Hash.String()
-				dir = filepath.Dir(foundPkgPath)
-				if pomXML.Version() != version {
-					log.Printf("using source jar heuristic with mismatched version [expected=%s,actual=%s,path=%s,ref=%s]", version, pomXML.Version(), path.Join(dir, "pom.xml"), ref[:9])
-				} else {
-					log.Printf("using source jar heuristic (pkg and version match) ref: %s", ref[:9])
-				}
-				break
-			}
+	}
+	// 3. Source Jar Heuristic
+	// Generate guess by comparing source JAR contents to repo contents.
+	var sourceJarGuess *object.Commit
+	if !found {
+		sourceJarGuess, err = findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
+		if err != nil {
+			log.Printf("source jar heuristic failed: %s", err)
 		}
-		fallthrough
-	default:
+		if sourceJarGuess != nil {
+			dir, found = validateCommit(sourceJarGuess, t, "source jar")
+			ref = sourceJarGuess.Hash.String()
+		}
+	}
+	if !found {
 		if pomXMLGuess != "" || tagGuess != "" || sourceJarGuess != nil {
 			return nil, errors.Errorf("no valid git ref")
 		}
 		return nil, errors.Errorf("no git ref")
 	}
-	jdk, err := inferOrFallbackToDefaultJDK(ctx, name, version, mux)
+	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching JDK")
 	}
@@ -141,6 +107,27 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		},
 		JDKVersion: jdk,
 	}, nil
+}
+
+// validateCommit is a helper that checks if a given commit contains a valid pom.xml for the package.
+// It logs the outcome and returns the pom's directory path and a boolean indicating success.
+func validateCommit(commit *object.Commit, t rebuild.Target, heuristicName string) (dir string, found bool) {
+	pomXML, foundPkgPath, err := findPomXML(commit, t.Package)
+	if err != nil {
+		log.Printf("%s heuristic failed: could not find a pom.xml for the package in ref %s", heuristicName, commit.Hash.String()[:9])
+		return "", false
+	}
+
+	dir = filepath.Dir(foundPkgPath)
+	ref := commit.Hash.String()
+
+	if pomXML.Version() != t.Version {
+		log.Printf("using %s heuristic with mismatched version [expected=%s,actual=%s,path=%s,ref=%s]", heuristicName, t.Version, pomXML.Version(), path.Join(dir, "pom.xml"), ref[:9])
+	} else {
+		log.Printf("using %s heuristic (pkg and version match) ref: %s", heuristicName, ref[:9])
+	}
+
+	return dir, true
 }
 
 func findPomXML(commit *object.Commit, pkg string) (*PomXML, string, error) {
