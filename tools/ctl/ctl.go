@@ -66,6 +66,7 @@ import (
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
+	runv2 "google.golang.org/api/run/v2"
 	"google.golang.org/api/serviceusage/v1"
 	"google.golang.org/genai"
 	"google.golang.org/grpc/codes"
@@ -631,6 +632,11 @@ var runAgentBenchmark = &cobra.Command{
 		if err != nil {
 			return errors.Wrap(err, "creating firestore client")
 		}
+		runService, err := runv2.NewService(cmd.Context())
+		if err != nil {
+			return errors.Wrap(err, "creating Cloud Run service")
+		}
+
 		ctx := cmd.Context()
 		var stub api.StubT[schema.AgentCreateRequest, schema.AgentCreateResponse]
 		{
@@ -705,6 +711,15 @@ var runAgentBenchmark = &cobra.Command{
 					return
 				}
 				if session.Status == schema.AgentSessionStatusCompleted {
+					break
+				}
+				e, err := runService.Projects.Locations.Jobs.Executions.Get(resp.ExeuctionName).Do()
+				if err != nil {
+					log.Printf("Failed to get execution %s: %v", resp.ExeuctionName, err)
+				} else if e.CompletionTime != "" {
+					// Execution has terminated, but session not marked as complete.
+					// TODO: Clean up the session in this case.
+					log.Printf("Job execution %s terminated but session %s not complete. Breaking.", resp.ExeuctionName, resp.SessionID)
 					break
 				}
 			}
