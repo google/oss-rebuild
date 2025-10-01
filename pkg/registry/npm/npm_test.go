@@ -113,7 +113,7 @@ func TestHTTPRegistry_Package(t *testing.T) {
 				}
 			}
 			if mockClient.CallCount() != 1 {
-				t.Errorf("Expected 1 call, got %d", mockClient.CallCount())
+				t.Errorf("calls = %d, want 1", mockClient.CallCount())
 			}
 		})
 	}
@@ -216,7 +216,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 				}
 			}
 			if mockClient.CallCount() != 1 {
-				t.Errorf("Expected 1 call, got %d", mockClient.CallCount())
+				t.Errorf("calls = %d, want 1", mockClient.CallCount())
 			}
 		})
 	}
@@ -314,7 +314,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 				}
 			}
 			if mockClient.CallCount() != len(tc.calls) {
-				t.Errorf("Expected %d calls, got %d", len(tc.calls), mockClient.CallCount())
+				t.Errorf("calls = %d, want %d", mockClient.CallCount(), len(tc.calls))
 			}
 		})
 	}
