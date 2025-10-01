@@ -30,6 +30,7 @@ import (
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/cheggaaa/pb"
+	"github.com/gdamore/tcell/v2"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
@@ -55,6 +56,7 @@ import (
 	"github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/gradle"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
+	agentide "github.com/google/oss-rebuild/tools/ctl/ide/agent"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/migrations"
@@ -62,6 +64,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/rivo/tview"
 	"github.com/spf13/cobra"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/iterator"
@@ -1504,6 +1507,69 @@ var getSessions = &cobra.Command{
 	},
 }
 
+var viewSession = &cobra.Command{
+	Use:   "view-session <session-id>",
+	Short: "View details of an agent session",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		sessionID := args[0]
+		ctx := cmd.Context()
+		if *project == "" {
+			return errors.New("project must be provided")
+		}
+		fire, err := firestore.NewClient(ctx, *project)
+		if err != nil {
+			return errors.Wrap(err, "creating firestore client")
+		}
+		// Fetch session
+		sessionDoc := fire.Collection("agent_sessions").Doc(sessionID)
+		sessionSnap, err := sessionDoc.Get(ctx)
+		if err != nil {
+			return errors.Wrap(err, "getting session document")
+		}
+		session := &schema.AgentSession{}
+		if err := sessionSnap.DataTo(session); err != nil {
+			return errors.Wrap(err, "deserializing session data")
+		}
+		// Fetch iterations
+		var iters []*schema.AgentIteration
+		iter := sessionDoc.Collection("agent_iterations").Documents(ctx)
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				return errors.Wrap(err, "iterating over iterations")
+			}
+			iteration := &schema.AgentIteration{}
+			if err := doc.DataTo(iteration); err != nil {
+				return errors.Wrap(err, "deserializing iteration data")
+			}
+			iters = append(iters, iteration)
+		}
+		gcsClient, err := gcs.NewClient(ctx)
+		if err != nil {
+			return errors.Wrap(err, "creating gcs client")
+		}
+		app := tview.NewApplication()
+		app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+			if event.Rune() == 'q' || event.Key() == tcell.KeyCtrlC {
+				app.Stop()
+				return nil
+			}
+			return event // Undandled
+		})
+		v := agentide.NewSessionView(session, iters, agentide.SessionViewDeps{
+			GCS:            gcsClient,
+			App:            app,
+			MetadataBucket: *metadataBucket,
+			LogsBucket:     *logsBucket,
+		})
+		return v.Run()
+	},
+}
+
 var (
 	// Shared
 	apiUri            = flag.String("api", "", "OSS Rebuild API endpoint URI")
@@ -1658,6 +1724,10 @@ func init() {
 
 	getSessions.Flags().AddGoFlag(flag.Lookup("project"))
 
+	viewSession.Flags().AddGoFlag(flag.Lookup("project"))
+	viewSession.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
+	viewSession.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
+
 	localAgent.Flags().AddGoFlag(flag.Lookup("project"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("agent-api"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
@@ -1681,6 +1751,7 @@ func init() {
 	rootCmd.AddCommand(export)
 	rootCmd.AddCommand(listRuns)
 	rootCmd.AddCommand(getSessions)
+	rootCmd.AddCommand(viewSession)
 	// Rebuild logic
 	rootCmd.AddCommand(infer)
 	rootCmd.AddCommand(getGradleGAV)
