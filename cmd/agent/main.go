@@ -85,6 +85,9 @@ func main() {
 		Project:  *project,
 		Location: *location,
 	})
+	if err != nil {
+		log.Fatal("Failed to create genai client: ", err)
+	}
 	deps := agent.RunSessionDeps{
 		Client:         aiClient,
 		IterationStub:  iterationStub,
