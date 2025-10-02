@@ -6,7 +6,6 @@ package archive
 import (
 	"archive/tar"
 	"bytes"
-	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/pkg/errors"
 )
 
@@ -185,7 +185,7 @@ var StabilizeCargoVCSHash = TarEntryStabilizer{
 			}
 			if git, ok := vcsInfo["git"].(map[string]any); ok {
 				if _, hasSha1 := git["sha1"]; hasSha1 {
-					git["sha1"] = strings.Repeat("x", 2*sha1.Size)
+					git["sha1"] = strings.Repeat("x", hash.HexSize)
 					if newBody, err := json.Marshal(vcsInfo); err == nil {
 						e.Body = newBody
 						e.Size = int64(len(newBody))
