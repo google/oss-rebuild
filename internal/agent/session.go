@@ -22,6 +22,7 @@ type AgentDeps struct {
 	MetadataBucket string
 	LogsBucket     string
 	MaxTurns       int
+	Client         *genai.Client
 }
 
 type Agent interface {
@@ -86,6 +87,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		MetadataBucket: deps.MetadataBucket,
 		LogsBucket:     deps.LogsBucket,
 		MaxTurns:       10,
+		Client:         deps.Client,
 	})
 	var err error
 	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, llm.GeminiPro, config, &llm.ChatOpts{Tools: a.getTools()})
