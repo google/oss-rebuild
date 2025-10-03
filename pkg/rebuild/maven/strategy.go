@@ -175,7 +175,7 @@ var toolkit = []*flow.Tool{
 		Name: "maven/gradlew-build",
 		Steps: []flow.Step{
 			{
-				Runs: "./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
+				Runs: "./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}} -x javadoc",
 			},
 		},
 	},
@@ -183,7 +183,7 @@ var toolkit = []*flow.Tool{
 		Name: "maven/gradle-build",
 		Steps: []flow.Step{
 			{
-				Runs: "gradle assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
+				Runs: "gradle assemble --no-daemon --console=plain -Pversion={{.Target.Version}} -x javadoc",
 			},
 		},
 	},
