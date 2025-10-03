@@ -5,6 +5,7 @@ package maven
 
 import (
 	"path"
+	"strings"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
@@ -42,8 +43,6 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				Uses: "maven/export-java",
 			},
 			{
-				// TODO: Java 9 needs additional certificate installed in /etc/ssl/certs/java/cacerts
-				// It can be passed to maven command via -Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
 				Runs: "mvn clean package -DskipTests --batch-mode -f {{.Location.Dir}} -Dmaven.javadoc.skip=true",
 				// Note `maven` from apt also pull in jdk-21 and hence we must export JAVA_HOME and PATH in the step before
 				Needs: []string{"maven"},
@@ -79,6 +78,17 @@ func (b *GradleBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 			With: map[string]string{
 				"version": gradleVersion,
 			},
+		})
+	}
+	// Java 9 does not ship certificates under /lib/security/cacerts so we need to manually add them.
+	// Reference: https://www.oracle.com/java/technologies/javase/9-all-relnotes.html#JDK-8189131
+	// Java 10 onwards the certificates are shipped but they don't complete the chain.
+	if strings.HasPrefix(b.JDKVersion, "9") || strings.HasPrefix(b.JDKVersion, "10") {
+		deps = append(deps, flow.Step{
+			Uses: "maven/export-java",
+		})
+		deps = append(deps, flow.Step{
+			Uses: "maven/fix-certificates",
 		})
 	}
 	build := []flow.Step{{
@@ -184,6 +194,30 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{
 			{
 				Runs: "gradle assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
+			},
+		},
+	},
+	{
+		Name: "maven/fix-certificates",
+		Steps: []flow.Step{
+			{
+				// We set the locale to UTF-8 to properly handle non-ASCII characters in certificate filenames.
+				// One example is /etc/ssl/certs/NetLock_Arany_=Class_Gold=_Főtanúsítvány.pem
+				// We limit the extensions to .pem and .crt to avoid processing non-certificate files.
+				// /etc/ssl/certs may contain other files but they are not valid X.509 certificates.
+				Runs: textwrap.Dedent(`
+                    export LANG=C.UTF-8
+                    KEYSTORE_FILE="$JAVA_HOME/lib/security/cacerts"
+                    rm -f $KEYSTORE_FILE
+                    find /etc/ssl/certs -name '*.pem' -o -name "*.crt" ! -type d | while read cert_path; do
+                      keytool -importcert -noprompt \
+                        -keystore "$KEYSTORE_FILE" \
+                        -alias "$(basename "$cert_path")" \
+                        -file "$cert_path" \
+                        -storepass password \
+                        -storetype JKS
+                    done`[1:]),
+				Needs: []string{"ca-certificates"},
 			},
 		},
 	},
