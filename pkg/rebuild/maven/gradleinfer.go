@@ -4,17 +4,22 @@
 package maven
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/pkg/errors"
 )
 
@@ -46,14 +51,53 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to resolve commit object [repo=%s,ref=%s]", repoConfig.URI, ref)
 	}
-	buildGradleDir, err := findBuildGradleDir(commitObject, t.Package)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to find build.gradle directory [repo=%s,ref=%s]", repoConfig.URI, ref)
-	}
 	// Infer JDK for Gradle
-	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
+	var jdk string
+	var jdkFound bool
+	releaseFile, err := mux.Maven.ReleaseFile(ctx, t.Package, t.Version, maven.TypeJar)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching JDK")
+		return nil, errors.Wrap(err, "fetching jar file")
+	}
+	jarBytes, err := io.ReadAll(releaseFile)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading jar file")
+	}
+	zipReader, err := zip.NewReader(bytes.NewReader(jarBytes), int64(len(jarBytes)))
+	if err != nil {
+		return nil, errors.Wrap(err, "unzipping jar file")
+	}
+	jdk, err = inferJDKFromManifest(zipReader)
+	if err != nil {
+		return nil, errors.Wrap(err, "inferring JDK from manifest")
+	}
+	if JDKDownloadURLs[jdk] != "" {
+		jdkFound = true
+		log.Printf("Inferred JDK version %s from JAR manifest", jdk)
+	}
+	var buildGradleDir string
+	if !jdkFound {
+		buildGradleDir, jdk, err = findBuildGradleDir(commitObject, t.Package)
+		if JDKDownloadURLs[jdk] != "" {
+			jdkFound = true
+			log.Printf("Inferred JDK version %s from Gradle files", jdk)
+		}
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to find build.gradle directory [repo=%s,ref=%s]", repoConfig.URI, ref)
+		}
+	}
+	if !jdkFound {
+		jdk, err = inferJDKFromBytecode(zipReader)
+		if err != nil {
+			return nil, errors.Wrap(err, "inferring JDK from bytecode")
+		}
+		if JDKDownloadURLs[jdk] != "" {
+			jdkFound = true
+			log.Printf("Inferred JDK version %s from class bytecode", jdk)
+		}
+	}
+	if !jdkFound {
+		log.Printf("Could not infer JDK version from JAR manifest, Gradle files, or bytecode. Falling back to default JDK.")
+		jdk = fallbackJDK
 	}
 	// Check if gradlew is present in the commit
 	var systemGradle string
@@ -88,15 +132,16 @@ func isGradleWrapperPresent(commit *object.Commit) (bool, error) {
 	return true, nil
 }
 
-func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
+func findBuildGradleDir(commit *object.Commit, pkg string) (buildDir string, jdkVersion string, err error) {
 	commitTree, _ := commit.Tree()
 	var candidateDirs []string
 	var topLevelGroupID string
+	maxJDKVersion := 0
 	// In a typical multi-module project, the root project's build.gradle defines groupId for the entire project.
 	// This parent groupId is then inherited by all sub-modules.
 	// This structure ensures that all related modules are grouped under a common namespace, simplifying dependency management and versioning across the project.
 	minDepth := math.MaxInt
-	err := commitTree.Files().ForEach(func(f *object.File) error {
+	err = commitTree.Files().ForEach(func(f *object.File) error {
 		// Skip files in gradle/, src/, or any subdirectory containing src/.
 		// gradle directory often contains wrapper scripts and other configuration files.
 		// https://docs.gradle.org/current/userguide/gradle_directories.html
@@ -117,6 +162,19 @@ func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
 			if err != nil {
 				return err
 			}
+			content, err := f.Contents()
+			if err != nil {
+				log.Printf("Warning: could not read file %s to parse JDK: %v", f.Name, err)
+			} else {
+				parsedJDKStr, err := parseJavaVersion(content)
+				if err == nil {
+					jdkNum, convErr := strconv.Atoi(parsedJDKStr)
+					if convErr == nil && jdkNum > maxJDKVersion {
+						log.Printf("Found higher Java version %d in file %s", jdkNum, f.Name)
+						maxJDKVersion = jdkNum
+					}
+				}
+			}
 		}
 		if f.Name == "gradle.properties" {
 			topLevelGroupID, err = getGroupIDFromFile(f)
@@ -127,12 +185,12 @@ func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
 		return nil
 	})
 	if err != nil {
-		return "", errors.Wrap(err, "traversing through files in commit")
+		return "", "", errors.Wrap(err, "traversing through files in commit")
 	} else if topLevelGroupID == "" {
 		log.Printf("No top-level group ID found in Gradle files")
 	}
 	if len(candidateDirs) == 0 {
-		return "", errors.New("no valid build.gradle found")
+		return "", "", errors.New("no valid build.gradle found")
 	}
 	// Find the candidate with the minimum edit distance to the artifact name
 	minDist := math.MaxInt
@@ -143,7 +201,10 @@ func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
 		dist := minEditDistance(combinedName, pkg)
 		if dist == 0 {
 			log.Printf("Found exact match for Gradle project: %s", combinedName)
-			return candidate, nil
+			if maxJDKVersion > 0 {
+				jdkVersion = strconv.Itoa(maxJDKVersion)
+			}
+			return candidate, jdkVersion, nil
 		}
 		_, a, _ := strings.Cut(pkg, ":")
 		if dist <= minDist && strings.Contains(a, path.Base(candidate)) {
@@ -152,7 +213,10 @@ func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
 		}
 	}
 	log.Printf("Found best match with minimum edit distance: %s (distance %d)", bestMatch, minDist)
-	return bestMatch, nil
+	if maxJDKVersion > 0 {
+		jdkVersion = strconv.Itoa(maxJDKVersion)
+	}
+	return bestMatch, jdkVersion, nil
 }
 
 func getGroupIDFromFile(f *object.File) (string, error) {
@@ -195,4 +259,42 @@ func minEditDistance(s1, s2 string) int {
 	}
 
 	return dp[len1][len2]
+}
+
+// parseJavaVersion extracts the highest Java version from a Gradle build file's content.
+// It handles formats like JavaVersion.VERSION_1_8, JavaVersion.VERSION_17, and JavaLanguageVersion.of(21).
+func parseJavaVersion(content string) (string, error) {
+	// Regex to find JavaVersion or JavaLanguageVersion declarations.
+	// It has two capture groups, one for each format.
+	re := regexp.MustCompile(`JavaVersion\.VERSION_(?:1_)?(\d+)|JavaLanguageVersion\.of\((\d+)\)`)
+	allMatches := re.FindAllStringSubmatch(content, -1)
+	if len(allMatches) == 0 {
+		return "", errors.New("no Java version specification found in file content")
+	}
+	maxVersion := 0
+	found := false
+	for _, match := range allMatches {
+		// match[0] is the full string, e.g., "JavaVersion.VERSION_1_8" or "JavaLanguageVersion.of(11)"
+		// match[1] is the number from the JavaVersion pattern, e.g., "8"
+		// match[2] is the number from the JavaLanguageVersion pattern, e.g., "11"
+		var versionStr string
+		if match[1] != "" {
+			versionStr = match[1]
+		} else if match[2] != "" {
+			versionStr = match[2]
+		}
+		if versionStr != "" {
+			version, err := strconv.Atoi(versionStr)
+			if err == nil {
+				found = true
+				if version > maxVersion {
+					maxVersion = version
+				}
+			}
+		}
+	}
+	if !found {
+		return "", errors.New("could not parse version number from Java version specification")
+	}
+	return strconv.Itoa(maxVersion), nil
 }

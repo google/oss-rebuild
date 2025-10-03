@@ -97,7 +97,7 @@ func TestFindBuildGradleDir(t *testing.T) {
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repo, nil))
 			head, _ := repo.Head()
 			headCommit, _ := repo.CommitObject(head.Hash())
-			actualDir, err := findBuildGradleDir(headCommit, tc.pkg)
+			actualDir, _, err := findBuildGradleDir(headCommit, tc.pkg)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("findBuildGradleDir() should fail but did not")
