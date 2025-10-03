@@ -196,11 +196,11 @@ func inferJDKVersion(ctx context.Context, name, version string, mux rebuild.Regi
 	if jdk != "" {
 		return jdk, nil
 	}
-	jdkInt, err := inferJDKFromBytecode(zipReader)
+	jdk, err = inferJDKFromBytecode(zipReader)
 	if err != nil {
 		return "", errors.Wrap(err, "inferring JDK from bytecode")
 	}
-	return fmt.Sprintf("%d", jdkInt), nil
+	return jdk, nil
 }
 
 // inferJDKFromManifest extracts the JDK version from the MANIFEST.MF file in the JAR.
@@ -225,7 +225,7 @@ func inferJDKFromManifest(zipReader *zip.Reader) (string, error) {
 }
 
 // inferJDKFromBytecode identifies the lowest JDK version that can run the provided JAR's bytecode.
-func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
+func inferJDKFromBytecode(jarZip *zip.Reader) (string, error) {
 	for _, file := range jarZip.File {
 		if strings.HasSuffix(file.Name, ".class") {
 			classFile, err := file.Open()
@@ -239,12 +239,12 @@ func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
 			}
 			majorVersion, err := getClassFileMajorVersion(classBytes)
 			if err != nil {
-				return 0, errors.Wrap(err, "parsing class file for major version")
+				return "", errors.Wrap(err, "parsing class file for major version")
 			}
-			return majorVersion, nil
+			return fmt.Sprintf("%d", majorVersion), nil
 		}
 	}
-	return 0, errors.New("no .class files found in jar")
+	return "", errors.New("no .class files found in jar")
 }
 
 // getClassFileMajorVersion extracts the major version from Java class file bytes
