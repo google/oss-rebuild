@@ -71,7 +71,7 @@ func TestStrategies(t *testing.T) {
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
-					./gradlew assemble --no-daemon --console=plain -Pversion=0.8.6`[1:]),
+					./gradlew assemble --no-daemon --console=plain -Pversion=0.8.6 -x javadoc`[1:]),
 				OutputPath: "dir/build/libs/ldapchai-0.8.6.jar",
 			},
 			false,
@@ -106,7 +106,7 @@ func TestStrategies(t *testing.T) {
 					export PATH=$JAVA_HOME/bin:$PATH
 					export GRADLE_HOME=/opt/gradle
 					export PATH=$GRADLE_HOME/bin:$PATH
-					gradle assemble --no-daemon --console=plain -Pversion=0.8.6`[1:]),
+					gradle assemble --no-daemon --console=plain -Pversion=0.8.6 -x javadoc`[1:]),
 				OutputPath: "dir/build/libs/ldapchai-0.8.6.jar",
 			},
 		},
