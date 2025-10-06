@@ -30,6 +30,7 @@ type StrategyOneOf struct {
 	NPMCustomBuild       *npm.NPMCustomBuild            `json:"npm_custom_build,omitempty" yaml:"npm_custom_build,omitempty"`
 	CratesIOCargoPackage *cratesio.CratesIOCargoPackage `json:"cratesio_cargo_package,omitempty" yaml:"cratesio_cargo_package,omitempty"`
 	MavenBuild           *maven.MavenBuild              `json:"maven_build,omitempty" yaml:"maven_build,omitempty"`
+	GradleBuild          *maven.GradleBuild             `json:"gradle_build,omitempty" yaml:"gradle_build,omitempty"`
 	DebianPackage        *debian.DebianPackage          `json:"debian_package,omitempty" yaml:"debian_package,omitempty"`
 	Debrebuild           *debian.Debrebuild             `json:"debrebuild,omitempty" yaml:"debrebuild,omitempty"`
 	ManualStrategy       *rebuild.ManualStrategy        `json:"manual,omitempty" yaml:"manual,omitempty"`
@@ -46,6 +47,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.PureWheelBuild = t
 	case *maven.MavenBuild:
 		oneof.MavenBuild = t
+	case *maven.GradleBuild:
+		oneof.GradleBuild = t
 	case *npm.NPMPackBuild:
 		oneof.NPMPackBuild = t
 	case *npm.NPMCustomBuild:
@@ -108,6 +111,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.MavenBuild != nil {
 			num++
 			s = oneof.MavenBuild
+		}
+		if oneof.GradleBuild != nil {
+			num++
+			s = oneof.GradleBuild
 		}
 	}
 	if num != 1 {
@@ -356,8 +363,8 @@ type AgentContext struct {
 
 // AgentCreateResponse returns the session ID and job name
 type AgentCreateResponse struct {
-	SessionID string `json:"session_id"`
-	JobName   string `json:"job_name"`
+	SessionID     string `json:"session_id"`
+	ExeuctionName string `json:"execution_name"`
 }
 
 // AgentCreateIterationRequest records iteration and triggers build
@@ -373,8 +380,9 @@ func (AgentCreateIterationRequest) Validate() error { return nil }
 
 // AgentCreateIterationResponse returns iteration and build IDs
 type AgentCreateIterationResponse struct {
-	IterationID string `json:"iteration_id"`
-	ObliviousID string `json:"oblivious_id"`
+	IterationID string          `json:"iteration_id"`
+	ObliviousID string          `json:"oblivious_id"`
+	Iteration   *AgentIteration `json:"iteration"`
 }
 
 // AgentBuildResult contains build result with success status and optional error
@@ -382,6 +390,13 @@ type AgentBuildResult struct {
 	BuildSuccess bool   `json:"build_success"`
 	ErrorMessage string `json:"error_message,omitempty"`
 }
+
+// Agent session complete reasons
+const (
+	AgentCompleteReasonSuccess = "SUCCESS"
+	AgentCompleteReasonFailed  = "FAILED"
+	AgentCompleteReasonError   = "ERROR"
+)
 
 // AgentCompleteRequest finalizes session with results
 type AgentCompleteRequest struct {
@@ -408,7 +423,7 @@ type AgentSession struct {
 	TimeoutSeconds   int            `firestore:"timeout_seconds,omitempty"`
 	Context          *AgentContext  `firestore:"context,omitempty"`
 	Status           string         `firestore:"status,omitempty"`
-	JobName          string         `firestore:"job_name,omitempty"`
+	ExecutionName    string         `firestore:"execution_name,omitempty"`
 	Created          time.Time      `firestore:"created,omitempty"`
 	Updated          time.Time      `firestore:"updated,omitempty"`
 	StopReason       string         `firestore:"stop_reason,omitempty"`

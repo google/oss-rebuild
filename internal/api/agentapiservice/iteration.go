@@ -4,18 +4,25 @@
 package agentapiservice
 
 import (
+	"bytes"
 	"context"
+	"crypto"
 	"io/fs"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/httpegress"
+	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/gcb"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -25,7 +32,6 @@ type AgentCreateIterationDeps struct {
 	GCBExecutor         *gcb.Executor
 	BuildProject        string
 	BuildServiceAccount string
-	LogsBucket          string
 	MetadataBucket      string
 	PrebuildConfig      rebuild.PrebuildConfig
 }
@@ -36,7 +42,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	}
 	obliviousID := uuid.New().String()
 	iterTime := time.Now().UTC()
-	iterationID := iterTime.Format(time.RFC3339)
+	iterationID := iterTime.Format(time.RFC3339Nano)
 	var iteration schema.AgentIteration
 	var session schema.AgentSession
 	// Create iteration record and fetch session in a transaction
@@ -44,16 +50,22 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	iterDoc := sessionDoc.Collection("agent_iterations").Doc(iterationID)
 	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
 		// Fetch session to get Target and validate it exists
-		_, err := t.Get(sessionDoc)
+		sessionSnap, err := t.Get(sessionDoc)
 		if err != nil {
 			return errors.Wrap(err, "fetching session")
+		}
+		if err := sessionSnap.DataTo(&session); err != nil {
+			return errors.Wrap(err, "decoding session")
+		}
+		if session.Status != schema.AgentSessionStatusRunning {
+			return errors.Errorf("session %s is not running", req.SessionID)
 		}
 		// Get the highest iteration number for this session to increment it
 		iterQuery := sessionDoc.Collection("agent_iterations").
 			Where("session_id", "==", req.SessionID).
 			Where("number", "==", req.IterationNumber).
 			Limit(1)
-		if _, err := t.Documents(iterQuery).Next(); err != nil && status.Code(err) != codes.NotFound {
+		if _, err := t.Documents(iterQuery).Next(); err != nil && !errors.Is(err, iterator.Done) {
 			return errors.Wrap(err, "checking for existing iteration")
 		} else if err == nil {
 			return errors.Wrap(fs.ErrExist, "checking for existing iteration")
@@ -93,18 +105,19 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	// Build tool URLs using prebuild bucket configuration
 	toolURLs := map[build.ToolType]string{
 		build.TimewarpTool: "gs://" + deps.PrebuildConfig.Bucket + "/" + deps.PrebuildConfig.Dir + "/timewarp",
-		build.GSUtilTool:   "gs://" + deps.PrebuildConfig.Bucket + "/" + deps.PrebuildConfig.Dir + "/gsutil-writeonly",
+		build.GSUtilTool:   "gs://" + deps.PrebuildConfig.Bucket + "/" + deps.PrebuildConfig.Dir + "/gsutil_writeonly",
 	}
 	var authRequired []string
 	if deps.PrebuildConfig.Auth {
 		authRequired = append(authRequired, "gs://"+deps.PrebuildConfig.Bucket)
 	}
-	h, err := deps.GCBExecutor.Start(ctx, rebuild.Input{
+	input := rebuild.Input{
 		Target:   session.Target,
 		Strategy: strategy,
-	}, build.Options{
+	}
+	h, err := deps.GCBExecutor.Start(ctx, input, build.Options{
 		BuildID:     obliviousID,
-		UseTimewarp: true,
+		UseTimewarp: meta.AllRebuilders[input.Target.Ecosystem].UsesTimewarp(input),
 		Resources: build.Resources{
 			AssetStore:       store,
 			ToolURLs:         toolURLs,
@@ -123,20 +136,57 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "updating iteration status"))
 	}
 	// NOTE: For now, we block and wait for the build to complete
-	result, err := h.Wait(ctx)
+	result, buildErr := h.Wait(ctx)
+
+	var exactMatch, stabilizedMatch bool
+	if buildErr == nil && result.Error == nil {
+		hashes := []crypto.Hash{crypto.SHA256}
+		stabilizers, err := stability.StabilizersForTarget(session.Target)
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "getting stabilizers for target"))
+		}
+
+		rebuilder, ok := meta.AllRebuilders[session.Target.Ecosystem]
+		if !ok {
+			return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
+		}
+		regclient, err := httpegress.MakeClient(ctx, httpegress.Config{})
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.New("making gateway client"))
+		}
+		mux := meta.NewRegistryMux(regclient)
+		upstreamURI, err := rebuilder.UpstreamURL(ctx, session.Target, mux)
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "getting upstream url"))
+		}
+
+		rb, up, err := verifier.SummarizeArtifacts(ctx, store, session.Target, upstreamURI, hashes, stabilizers)
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "summarizing artifacts"))
+		}
+		exactMatch = bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
+		stabilizedMatch = bytes.Equal(rb.StabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil))
+	}
+
 	// Update iteration with result
 	iteration.Updated = time.Now().UTC()
-	if err != nil {
+	if buildErr != nil {
 		iteration.Status = schema.AgentIterationStatusError
 		iteration.Result = &schema.AgentBuildResult{
 			BuildSuccess: false,
-			ErrorMessage: err.Error(),
+			ErrorMessage: buildErr.Error(),
 		}
 	} else if result.Error != nil {
 		iteration.Status = schema.AgentIterationStatusFailed
 		iteration.Result = &schema.AgentBuildResult{
 			BuildSuccess: false,
 			ErrorMessage: result.Error.Error(),
+		}
+	} else if !exactMatch && !stabilizedMatch {
+		iteration.Status = schema.AgentIterationStatusFailed
+		iteration.Result = &schema.AgentBuildResult{
+			BuildSuccess: false,
+			ErrorMessage: "rebuild content mismatch",
 		}
 	} else {
 		iteration.Status = schema.AgentIterationStatusSuccess
@@ -152,5 +202,6 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	return &schema.AgentCreateIterationResponse{
 		IterationID: iterationID,
 		ObliviousID: obliviousID,
+		Iteration:   &iteration,
 	}, nil
 }

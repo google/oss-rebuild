@@ -6,7 +6,9 @@ package gcb
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
+	"regexp"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/bufiox"
@@ -19,6 +21,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+var buildTagDisallowedChar = regexp.MustCompile(`[^\w.-]`)
 
 // Executor implements build.Executor for Google Cloud Build execution using a planner
 type Executor struct {
@@ -100,14 +104,13 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 		return nil, errors.Wrap(err, "failed to generate execution plan")
 	}
 	// Make the Cloud Build "Build" request
-	gcbBuild := e.makeBuild(plan)
+	gcbBuild := e.makeBuild(input.Target, plan)
 	// Create a buffered pipe for streaming output
 	pipe := bufiox.NewBufferedPipe(bufiox.NewLineBuffer(e.outputBufferSize))
 	handle := &gcbHandle{
 		id:           buildID,
 		executor:     e,
 		output:       pipe,
-		outputChan:   make(chan string, 100),
 		resultChan:   make(chan build.Result, 1),
 		cancelPolicy: opts.CancelPolicy,
 		status:       build.BuildStateStarting,
@@ -166,11 +169,6 @@ func (e *Executor) Close(ctx context.Context) error {
 
 // executeBuild runs the actual build process using Cloud Build
 func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBuild *cloudbuild.Build, input rebuild.Input, opts build.Options, plan *Plan) {
-	defer func() {
-		e.activeBuilds.Delete(handle.id)
-		handle.output.Close()
-		close(handle.outputChan)
-	}()
 	// Construct BuildInfo to be incrementally set.
 	buildInfo := rebuild.BuildInfo{
 		Target:      input.Target,
@@ -180,17 +178,21 @@ func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBui
 	}
 	// Submit and wait for the build
 	buildResult, buildErr := e.doBuild(ctx, handle, cloudBuild)
+	// If the build itself failed, that will be stored in buildResult.Status
+	if buildErr == nil {
+		buildErr = gcb.ToError(buildResult)
+	}
 	// Extract additional build information from GCB results if available
 	if buildResult != nil {
 		buildInfo.BuildID = buildResult.Id
 		buildInfo.Steps = buildResult.Steps
 		var err error
 		buildInfo.BuildStart, err = time.Parse(time.RFC3339, buildResult.StartTime)
-		if err != nil {
+		if buildErr == nil && err != nil {
 			buildErr = errors.Wrap(err, "parsing build start time")
 		}
 		buildInfo.BuildEnd, err = time.Parse(time.RFC3339, buildResult.FinishTime)
-		if err != nil {
+		if buildErr == nil && err != nil {
 			buildErr = errors.Wrap(err, "parsing build end time")
 		}
 		if buildResult.Results != nil {
@@ -212,6 +214,8 @@ func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBui
 		}
 	}
 	handle.updateStatus(build.BuildStateCompleted)
+	// NOTE: Delete before setResult so handle.Wait returns *after* executor considers it retired.
+	e.activeBuilds.Delete(handle.id)
 	handle.setResult(build.Result{
 		Error: buildErr,
 	})
@@ -263,8 +267,13 @@ func (e *Executor) doBuild(ctx context.Context, handle *gcbHandle, cloudBuild *c
 	return waitMetadata.Build, nil
 }
 
+func buildTag(desc, val string) string {
+	tag := buildTagDisallowedChar.ReplaceAllString(fmt.Sprintf("%s-%s", desc, val), "")
+	return tag[:min(len(tag), 127)]
+}
+
 // makeBuild constructs a cloudbuild.Build from plan and executor config
-func (e *Executor) makeBuild(plan *Plan) *cloudbuild.Build {
+func (e *Executor) makeBuild(t rebuild.Target, plan *Plan) *cloudbuild.Build {
 	buildOptions := &cloudbuild.BuildOptions{
 		Logging: "GCS_ONLY",
 	}
@@ -278,6 +287,11 @@ func (e *Executor) makeBuild(plan *Plan) *cloudbuild.Build {
 		Options:        buildOptions,
 		LogsBucket:     e.logsBucket,
 		ServiceAccount: e.serviceAccount,
+		Tags: []string{
+			buildTag("ecosystem", string(t.Ecosystem)),
+			buildTag("package", t.Package),
+			buildTag("version", t.Version),
+		},
 	}
 }
 

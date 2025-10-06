@@ -23,6 +23,7 @@ import (
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	"github.com/google/oss-rebuild/internal/uri"
+	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -34,6 +35,7 @@ import (
 
 var (
 	project               = flag.String("project", "", "GCP Project ID for storage and build resources")
+	location              = flag.String("location", "", "GCP location for resources")
 	buildRemoteIdentity   = flag.String("build-remote-identity", "", "Identity from which to run remote rebuilds")
 	buildLocalURL         = flag.String("build-local-url", "", "URL of the rebuild service")
 	inferenceURL          = flag.String("inference-url", "", "URL of the inference service")
@@ -55,6 +57,7 @@ var (
 	agentAPIURL           = flag.String("agent-api-url", "", "URL of the agent API service")
 	agentSessionsBucket   = flag.String("agent-sessions-bucket", "", "GCS bucket for agent session data")
 	agentMetadataBucket   = flag.String("agent-metadata-bucket", "", "GCS bucket for agent build metadata")
+	agentLogsBucket       = flag.String("agent-logs-bucket", "", "GCS bucket for agent build logs")
 	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
 )
 
@@ -123,19 +126,26 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "creating CloudBuild service")
 	}
-	var privatePoolConfig *gcb.PrivatePoolConfig
+	executorConfig := buildgcb.ExecutorConfig{
+		Project:        *project,
+		ServiceAccount: *buildRemoteIdentity,
+		LogsBucket:     *logsBucket,
+		Client:         nil, // Defined depending on gcbPrivatePoolName
+	}
 	if *gcbPrivatePoolName != "" {
-		privatePoolConfig = &gcb.PrivatePoolConfig{
+		pool := &gcb.PrivatePoolConfig{
 			Name:   *gcbPrivatePoolName,
 			Region: *gcbPrivatePoolRegion,
 		}
-		d.GCBClient = gcb.NewClientWithPrivatePool(svc, privatePoolConfig)
+		executorConfig.PrivatePool = pool
+		executorConfig.Client = gcb.NewClientWithPrivatePool(svc, pool)
 	} else {
-		d.GCBClient = gcb.NewClient(svc)
+		executorConfig.Client = gcb.NewClient(svc)
 	}
-	d.BuildProject = *project
-	d.BuildServiceAccount = *buildRemoteIdentity
-	d.BuildLogsBucket = *logsBucket
+	d.GCBExecutor, err = buildgcb.NewExecutor(executorConfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating GCB executor")
+	}
 	d.ServiceRepo, err = serviceid.ParseLocation(BuildRepo, BuildVersion)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing service location")
@@ -245,11 +255,13 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 		return nil, errors.Wrap(err, "creating Cloud Run service")
 	}
 	d.Project = *project
+	d.Location = *location
 	d.AgentJobName = *agentJobName
 	d.AgentAPIURL = *agentAPIURL
 	d.AgentTimeoutSeconds = *agentTimeoutSeconds
 	d.SessionsBucket = *agentSessionsBucket
 	d.MetadataBucket = *agentMetadataBucket
+	d.LogsBucket = *agentLogsBucket
 	return &d, nil
 }
 

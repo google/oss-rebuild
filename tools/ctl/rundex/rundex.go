@@ -23,6 +23,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -77,6 +78,7 @@ func (r *Rebuild) ID() string {
 }
 
 // WasSmoketest returns true if this rebuild was part of a smoketest run.
+// NOTE: This will incorrectly appear to be Smoketest if an attestation failed during inference.
 func (r Rebuild) WasSmoketest() bool {
 	// TODO: Should we store the type of execution directly on the Rebuild? A more explicit check would involve looking up the Run object.
 	return r.ObliviousID == ""
@@ -132,18 +134,31 @@ func DoQuery[T any](ctx context.Context, q firestore.Query, fn func(*firestore.D
 }
 
 func cleanVerdict(m string) string {
+	// strip the leading error message of an inference failure to fit the latter, finer-grained error messages, on screen.
+	m = strings.ReplaceAll(m, "getting strategy: fetching inference: failed to infer strategy:", "inference:")
+	m = strings.ReplaceAll(m, "\n: 500 Internal Server Error: non-OK response", "")
 	switch {
 	// Generic
+	case strings.Contains(m, "code = AlreadyExists desc = conflict with existing attestati"):
+		m = "Success! (cached)"
+	case strings.Contains(m, "executing rebuild: GCB build failed:"):
+		m = "build: failed"
+	case strings.Contains(m, "executing rebuild: GCB build internal error:"):
+		m = "build: internal error"
+	case strings.Contains(m, "code = FailedPrecondition desc = rebuild content mismatch"):
+		m = "compare: content mismatch"
+	case strings.Contains(m, "clone failed"):
+		m = "repo: clone failed"
 	case strings.HasPrefix(m, `mismatched version `):
 		m = "wrong package version in manifest"
 	case strings.HasPrefix(m, `mismatched name `):
 		m = "wrong package name in manifest"
 	case strings.Contains(m, `using existing: Failed to checkout: reference not found`):
 		m = "unable to checkout main branch on reused repo"
-	case strings.HasPrefix(m, `Unknown repo URL type:`):
-		m = "bad repo URL"
-	case strings.Contains(m, `npm is known not to run on Node.js`):
-		m = "npm install: incompatible Node version"
+	case strings.Contains(m, `unsupported repo type`):
+		m = "repo: bad repo URL"
+	case strings.HasPrefix(m, `Checkout failed`):
+		m = "repo: git checkout failed"
 	case strings.Contains(m, `Unsupported URL Type "workspace:"`):
 		m = `npm install: unsupported scheme "workspace:"`
 	case strings.Contains(m, `Unsupported URL Type "patch:"`):
@@ -151,6 +166,8 @@ func cleanVerdict(m string) string {
 	case strings.Contains(m, `getting strategy: fetching inference: making http request:`) && strings.Contains(m, `connection reset by peer`):
 		m = `getting strategy: fetching inference: making http request to inference service: connection reset by peer`
 	// NPM
+	case strings.Contains(m, `npm is known not to run on Node.js`):
+		m = "npm install: incompatible Node version"
 	case strings.HasPrefix(m, "unknown npm pack failure:"):
 		if strings.Contains(m, ": not found") {
 			i := strings.Index(m, ": not found")
@@ -191,8 +208,13 @@ func cleanVerdict(m string) string {
 		m = "connection to crates.io failed"
 	case strings.Contains(m, `believes it's in a workspace when it's not`):
 		m = "cargo workspace error"
-	case strings.HasPrefix(m, `Checkout failed`):
-		m = "git checkout failed"
+		// Maven
+	case strings.HasPrefix(m, "inference: failed to resolve parent POM"):
+		m = "inference: failed to resolve parent POM"
+	case strings.HasPrefix(m, "inference: failed to find build.gradle directory"):
+		m = "inference: failed to find build.gradle directory"
+	case strings.Contains(m, "no download URL for JDK version"):
+		m = `no download URL for JDK version`
 	}
 	return m
 }
@@ -491,15 +513,13 @@ func NewLocalClient(fs billy.Filesystem) *LocalClient {
 }
 
 const (
-	rebuildFileName  = "firestore.json"
-	runsDir          = "runs"
-	localRunsMetaDir = "runs_metadata"
+	rebuildFileName = "firestore.json"
 )
 
 // FetchRuns fetches Runs out of firestore.
 func (f *LocalClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
 	runs := make([]Run, 0)
-	err := util.Walk(f.fs, localRunsMetaDir, func(path string, info fs.FileInfo, err error) error {
+	err := util.Walk(f.fs, layout.RundexRunsPath, func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -541,10 +561,10 @@ func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildReques
 		var toWalk []string
 		if len(req.Runs) != 0 {
 			for _, r := range req.Runs {
-				toWalk = append(toWalk, filepath.Join(runsDir, r))
+				toWalk = append(toWalk, filepath.Join(layout.RundexRebuildsPath, r))
 			}
 		} else {
-			toWalk = []string{runsDir}
+			toWalk = []string{layout.RundexRebuildsPath}
 		}
 		defer close(all)
 		for _, p := range toWalk {
@@ -597,7 +617,7 @@ func (f *LocalClient) WatchRebuilds() <-chan *Rebuild {
 }
 
 func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
-	path := filepath.Join(runsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
+	path := filepath.Join(layout.RundexRebuildsPath, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")
@@ -615,7 +635,7 @@ func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
 }
 
 func (f *LocalClient) WriteRun(ctx context.Context, r Run) error {
-	path := filepath.Join(localRunsMetaDir, fmt.Sprintf("%s.json", r.ID))
+	path := filepath.Join(layout.RundexRunsPath, fmt.Sprintf("%s.json", r.ID))
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")

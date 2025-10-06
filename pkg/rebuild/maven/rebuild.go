@@ -4,6 +4,7 @@
 package maven
 
 import (
+	"bytes"
 	"context"
 
 	"github.com/go-git/go-billy/v5"
@@ -15,9 +16,8 @@ type Rebuilder struct{}
 
 var _ rebuild.Rebuilder = Rebuilder{}
 
-func (r Rebuilder) RebuildRemote(ctx context.Context, input rebuild.Input, opts rebuild.RemoteOptions) error {
-	opts.UseTimewarp = false
-	return rebuild.RebuildRemote(ctx, input, opts)
+func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
+	return false
 }
 
 func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Instructions, fs billy.Filesystem) error {
@@ -34,6 +34,38 @@ func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Ins
 }
 
 func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb rebuild.Asset, up rebuild.Asset, assets rebuild.AssetStore, inst rebuild.Instructions) (msg error, err error) {
+	rbb := new(bytes.Buffer)
+	upb := new(bytes.Buffer)
+
+	{
+		rbr, err := assets.Reader(ctx, rb)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to find rebuilt artifact")
+		}
+		defer rbr.Close()
+		if _, err = rbb.ReadFrom(rbr); err != nil {
+			return nil, errors.Wrapf(err, "failed to read rebuilt artifact")
+		}
+	}
+	{
+		upr, err := assets.Reader(ctx, up)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to find upstream artifact")
+		}
+		defer upr.Close()
+		if _, err = upb.ReadFrom(upr); err != nil {
+			return nil, errors.Wrapf(err, "failed to read upstream artifact")
+		}
+	}
+
+	if rbb.Len() > upb.Len() {
+		return errors.New("rebuild is larger than upstream"), nil
+	} else if rbb.Len() < upb.Len() {
+		return errors.New("upstream is larger than rebuild"), nil
+	}
+	if !bytes.Equal(upb.Bytes(), rbb.Bytes()) {
+		return errors.New("content differences found"), nil
+	}
 	return nil, nil
 }
 

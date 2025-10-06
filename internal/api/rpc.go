@@ -10,13 +10,19 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/api/form"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/pkg/errors"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 type Dependencies any
@@ -31,7 +37,11 @@ func NoDepsInit(context.Context) (*NoDeps, error) { return &NoDeps{}, nil }
 
 type NoReturn struct{}
 
-var ErrNotOK = errors.New("non-OK response")
+var (
+	ErrNotOK       = errors.New("non-OK response")
+	ErrExhausted   = status.New(codes.ResourceExhausted, "resource exhausted").Err()
+	ErrUnavailable = status.New(codes.Unavailable, "service unavailable").Err()
+)
 
 func Stub[I Message, O any](client httpx.BasicClient, u *url.URL) StubT[I, O] {
 	return func(ctx context.Context, i I) (*O, error) {
@@ -52,8 +62,21 @@ func Stub[I Message, O any](client httpx.BasicClient, u *url.URL) StubT[I, O] {
 			return nil, errors.Wrap(err, "making http request")
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return nil, errors.Wrap(ErrNotOK, resp.Status)
+		switch resp.StatusCode {
+		case http.StatusOK: // Success: Skip error generation
+		case http.StatusServiceUnavailable:
+			if retryAfterStr := resp.Header.Get("Retry-After"); retryAfterStr != "" {
+				if seconds, err := strconv.Atoi(retryAfterStr); err == nil && seconds > 0 {
+					d := time.Duration(seconds) * time.Second
+					return nil, AsStatus(codes.Unavailable, ErrUnavailable, RetryAfter(d))
+				}
+			}
+			return nil, ErrUnavailable
+		case http.StatusTooManyRequests:
+			return nil, ErrExhausted
+		default:
+			b, _ := io.ReadAll(resp.Body)
+			return nil, errors.Wrap(errors.Wrap(ErrNotOK, resp.Status), string(b))
 		}
 		var o O
 		if err := json.NewDecoder(resp.Body).Decode(&o); err != nil {
@@ -67,8 +90,31 @@ func StubFromHandler[I Message, O any, D Dependencies](client httpx.BasicClient,
 	return Stub[I, O](client, u)
 }
 
-func AsStatus(code codes.Code, err error) error {
-	return status.New(code, err.Error()).Err()
+// AsStatus creates a gRPC status with the given code and error message.
+// Optionally accepts status details to attach to the error.
+func AsStatus(code codes.Code, err error, details ...proto.Message) error {
+	s := status.New(code, err.Error())
+	if len(details) == 0 {
+		return s.Err()
+	}
+	p := s.Proto()
+	for _, detail := range details {
+		m, err := anypb.New(detail)
+		if err != nil {
+			log.Printf("Skipping detail which failed to convert: detail=%v,err=%v", detail, err)
+			continue
+		}
+		p.Details = append(p.Details, m)
+	}
+	return status.FromProto(p).Err()
+}
+
+// RetryAfter is a convenience function for creating a detail proto for retry information.
+// NOTE: For HTTP, should be limited to use with Unavailable and ResourceExhausted codes.
+func RetryAfter(after time.Duration) proto.Message {
+	return &errdetails.RetryInfo{
+		RetryDelay: durationpb.New(after),
+	}
 }
 
 var grpcToHTTP = map[codes.Code]int{
@@ -115,14 +161,30 @@ func Handler[I Message, O any, D Dependencies](initDeps InitT[D], handler Handle
 		}
 		o, err := handler(ctx, req, deps)
 		s := status.Convert(err)
-		status, ok := grpcToHTTP[s.Code()]
+		for _, detail := range s.Details() {
+			switch d := detail.(type) {
+			case *errdetails.RetryInfo:
+				if d.RetryDelay != nil {
+					if seconds := int(d.RetryDelay.Seconds); seconds > 0 {
+						rw.Header().Set("Retry-After", strconv.Itoa(seconds))
+					}
+				}
+			}
+		}
+		httpStatus, ok := grpcToHTTP[s.Code()]
 		if !ok {
 			log.Printf("unknown error code: %s\n", s.Code())
-			status = http.StatusInternalServerError
+			httpStatus = http.StatusInternalServerError
 		}
-		if status != http.StatusOK {
+		if httpStatus != http.StatusOK {
 			log.Println(s.Err())
-			http.Error(rw, http.StatusText(status), status)
+			// NOTE: Use s.Message() as the body, instead of err.Error() This is
+			// in case err was already a grpc status, then calling err.Error()
+			// would be a verbose grpc error message.
+			// TODO: Use a structured error type to avoid including unwanted
+			// data. grpc status objects is one option. Another might be using
+			// constant error messages with no dynamic information
+			http.Error(rw, s.Message(), httpStatus)
 			return
 		}
 		if o != nil {

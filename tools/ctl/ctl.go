@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -19,45 +18,59 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	gcs "cloud.google.com/go/storage"
 	"github.com/cheggaaa/pb"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/google/oss-rebuild/internal/urlx"
+	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/feed"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/benchmark/run"
+	"github.com/google/oss-rebuild/tools/ctl/gradle"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
+	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/google/oss-rebuild/tools/ctl/migrations"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
+	runv2 "google.golang.org/api/run/v2"
 	"google.golang.org/api/serviceusage/v1"
 	"google.golang.org/genai"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
 )
 
@@ -67,28 +80,6 @@ var rootCmd = &cobra.Command{
 	Use:   "ctl",
 	Short: "A debugging tool for OSS-Rebuild",
 }
-
-var debuildShellScript = template.Must(
-	template.New(
-		"rebuild shell script",
-	).Funcs(template.FuncMap{
-		"join": func(sep string, s []string) string { return strings.Join(s, sep) },
-	}).Parse(
-		textwrap.Dedent(`
-# Install dependencies.
-set -eux
-apt update
-apt install -y {{join " " .SystemDeps}}
-
-mkdir /src && cd /src
-{{.Source}}
-{{.Deps}}
-
-# Run the build.
-{{.Build}}
-mkdir /out && cp /src/{{.OutputPath}} /out/
-`)[1:], // remove leading newline
-	))
 
 func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestPerPackage bool) (*rundex.FetchRebuildRequest, error) {
 	var runs []string
@@ -120,26 +111,8 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestP
 	return &req, nil
 }
 
-func makeShellScript(input rebuild.Input) (string, error) {
-	env := rebuild.BuildEnv{HasRepo: false, PreferPreciseToolchain: true}
-	instructions, err := input.Strategy.GenerateFor(input.Target, env)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to generate strategy")
-	}
-	shellScript := new(bytes.Buffer)
-	if input.Target.Ecosystem == rebuild.Debian {
-		err = debuildShellScript.Execute(shellScript, instructions)
-	} else {
-		err = errors.Errorf("unimplemented ecosystem %v", input.Target.Ecosystem)
-	}
-	if err != nil {
-		return "", errors.Wrap(err, "populating template")
-	}
-	return shellScript.String(), nil
-}
-
 var tui = &cobra.Command{
-	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>] [--merged-asset-store <path>]",
+	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>] [--merged-asset-store <path>] [-prebuild-bucket <BUCKET> -prebuild-version <VERSION>]",
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -171,10 +144,7 @@ var tui = &cobra.Command{
 				if err != nil {
 					log.Fatal(errors.Wrap(err, "creating GCS client"))
 				}
-				dex, err = rundex.NewGCSClient(ctx, gcsClient, u.Host, strings.TrimPrefix(u.Path, "/"))
-				if err != nil {
-					log.Fatal(errors.Wrap(err, "creating GCS rundex client"))
-				}
+				dex = rundex.NewGCSClient(ctx, gcsClient, u.Host, strings.TrimPrefix(u.Path, "/"))
 				// GCS watcher is not implemented.
 			} else if *project != "" {
 				var err error
@@ -201,13 +171,7 @@ var tui = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "failed to create local build def asset store"))
 			}
 		}
-		regclient := http.DefaultClient
-		mux := rebuild.RegistryMux{
-			Debian:   debianreg.HTTPRegistry{Client: regclient},
-			CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-			NPM:      npmreg.HTTPRegistry{Client: regclient},
-			PyPI:     pypireg.HTTPRegistry{Client: regclient},
-		}
+		mux := meta.NewRegistryMux(http.DefaultClient)
 		var assetStoreFn func(runID string) (rebuild.LocatableAssetStore, error)
 		if *sharedAssetStore != "" {
 			u, err := url.Parse(*sharedAssetStore)
@@ -261,7 +225,8 @@ var tui = &cobra.Command{
 			}
 		}
 		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
-		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, aiClient)
+		prebuildConfig := rebuild.PrebuildConfig{Bucket: *prebuildBucket, Dir: *prebuildVersion}
+		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, aiClient, prebuildConfig)
 		if err := tapp.Run(cmd.Context()); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 			log.Default().SetOutput(os.Stdout)
@@ -271,16 +236,13 @@ var tui = &cobra.Command{
 }
 
 var getResults = &cobra.Command{
-	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-prefix <prefix>] [-pattern <regex>] [-sample N] [-format=summary|bench|assets|csv|rundex] [-asset=<assetType>]",
+	Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-prefix <prefix>] [-pattern <regex>] [-sample N] [-format=summary|bench|csv]",
 	Short: "Analyze rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		req, err := buildFetchRebuildRequest(*bench, *runFlag, *prefix, *pattern, *clean, true)
 		if err != nil {
 			log.Fatal(err)
-		}
-		if (*format == "" || *format == "summary") && *sample > 0 {
-			log.Fatal("--sample option incompatible with --format=summary")
 		}
 		fireClient, err := rundex.NewFirestore(cmd.Context(), *project)
 		if err != nil {
@@ -357,52 +319,150 @@ var getResults = &cobra.Command{
 					log.Fatal(errors.Wrap(err, "writing CSV"))
 				}
 			}
-		case "assets":
-			regclient := http.DefaultClient
-			mux := rebuild.RegistryMux{
-				Debian:   debianreg.HTTPRegistry{Client: regclient},
-				CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-				NPM:      npmreg.HTTPRegistry{Client: regclient},
-				PyPI:     pypireg.HTTPRegistry{Client: regclient},
-			}
-			butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, localfiles.AssetStore)
-			atype := rebuild.AssetType(*assetType)
-			ctx := cmd.Context()
-			p := pipe.FromSlice(rebuilds)
-			assetPipe := pipe.ParInto(50, p, func(r rundex.Rebuild, out chan<- string) {
-				path, err := butler.Fetch(ctx, *runFlag, r.WasSmoketest(), atype.For(r.Target()))
-				if err != nil {
-					out <- err.Error()
-					return
-				}
-				out <- path
-			})
-			for path := range assetPipe.Out() {
-				cmd.OutOrStdout().Write([]byte(path + "\n"))
-			}
-		case "rundex":
-			dex := rundex.NewLocalClient(localfiles.Rundex())
-			ctx := cmd.Context()
-			runs, err := fireClient.FetchRuns(ctx, rundex.FetchRunsOpts{IDs: req.Runs})
-			if err != nil {
-				log.Printf("fetching runs failed: %v", err)
-			} else {
-				for _, run := range runs {
-					if err := dex.WriteRun(ctx, run); err != nil {
-						log.Printf("writing run %s failed: %v", run.ID, err)
-					}
-				}
-			}
-			for _, r := range rebuilds {
-				if err := dex.WriteRebuild(ctx, r); err != nil {
-					cmd.OutOrStderr().Write([]byte(err.Error() + "\n"))
-					continue
-				}
-				cmd.OutOrStdout().Write([]byte(r.ID() + "\n"))
-			}
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
 		}
+	},
+}
+
+var export = &cobra.Command{
+	Use:   "export -project <ID> -run <ID> -destination <url> [-pattern <regex>] [-rundex] [-asset-types <type1>,<type2>] -",
+	Short: "Export rebuild results",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if *runFlag == "" {
+			log.Fatal("--run must be provided")
+		}
+		runID := *runFlag
+		ctx := cmd.Context()
+		var destDex rundex.Writer
+		var destStore rebuild.LocatableAssetStore
+		{
+			destURL, err := url.Parse(*destination)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "parsing destination"))
+			}
+			switch destURL.Scheme {
+			case "gs":
+				client, err := gcs.NewClient(ctx)
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating gcs client"))
+				}
+				// Add the layout.AssetsDir to the path
+				destStoreURL := urlx.MustParse(destURL.String())
+				destStoreURL.Path = path.Join(destStoreURL.Path, layout.AssetsDir)
+				destStore, err = rebuild.NewGCSStoreFromClient(context.WithValue(ctx, rebuild.RunID, runID), client, destStoreURL.String())
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating gcs asset store"))
+				}
+				// rundex.NewGCSClient already adds layout.RundexDir to the path
+				destDex = rundex.NewGCSClient(ctx, client, destURL.Host, destURL.Path)
+			case "file":
+				dir := filepath.Join(destURL.Path, layout.AssetsDir)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					log.Fatal(errors.Wrapf(err, "failed to create directory %s", dir))
+				}
+				assetsFS, err := osfs.New("/").Chroot(dir)
+				if err != nil {
+					log.Fatal(errors.Wrapf(err, "failed to chroot into directory %s", dir))
+				}
+				destStore = rebuild.NewFilesystemAssetStoreWithRunID(assetsFS, runID)
+				// TODO: Find a helper to re-use for these two dirs
+				dir = filepath.Join(destURL.Path, layout.RundexDir)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					log.Fatal(errors.Wrapf(err, "failed to create directory %s", dir))
+				}
+				rundexFS, err := osfs.New("/").Chroot(dir)
+				if err != nil {
+					log.Fatal(errors.Wrapf(err, "failed to chroot into directory %s", dir))
+				}
+				destDex = rundex.NewLocalClient(rundexFS)
+			default:
+				log.Fatal("destination must be a gs:// or file:// URL")
+			}
+		}
+		var assetTypes []rebuild.AssetType
+		if *assetTypesFlag != "" {
+			for _, at := range strings.Split(*assetTypesFlag, ",") {
+				assetTypes = append(assetTypes, rebuild.AssetType(at))
+			}
+		}
+		var fireDex rundex.Reader
+		var err error
+		fireDex, err = rundex.NewFirestore(ctx, *project)
+		if err != nil {
+			log.Fatal(err)
+		}
+		mux := meta.NewRegistryMux(http.DefaultClient)
+		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, func(_ string) (rebuild.LocatableAssetStore, error) { return destStore, nil })
+		// Write the metadata about the run.
+		if *exportRundex {
+			log.Println("Exporting run_metadata")
+			runs, err := fireDex.FetchRuns(ctx, rundex.FetchRunsOpts{IDs: []string{runID}})
+			if err != nil {
+				log.Printf("fetching runs failed: %v", err)
+			} else {
+				if len(runs) != 1 {
+					log.Fatalf("expected exactly one run, got %d", len(runs))
+				}
+				for _, run := range runs {
+					if err := destDex.WriteRun(ctx, run); err != nil {
+						log.Fatalf("writing run %s failed: %v", run.ID, err)
+					}
+				}
+			}
+			log.Printf("Exported run_metadata for run: %s", runID)
+		}
+		// Read all the rebuild objects.
+		var rebuilds []rundex.Rebuild
+		{
+			req, err := buildFetchRebuildRequest("", runID, "", *pattern, false, false)
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("Querying results for [run=%v,pattern=%s]", req.Runs, req.Opts.Pattern)
+			rebuilds, err = fireDex.FetchRebuilds(ctx, req)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		log.Printf("Fetched %d rebuilds", len(rebuilds))
+		// Export all the run objects.
+		rundexReadParallelism := 50
+		type rebuildExport struct {
+			rebuild rundex.Rebuild
+			errs    []error
+		}
+		p := pipe.ParInto(rundexReadParallelism, pipe.FromSlice(rebuilds), func(in rundex.Rebuild, out chan<- rebuildExport) {
+			res := rebuildExport{rebuild: in}
+			defer func() { out <- res }()
+			if *exportRundex {
+				if err := destDex.WriteRebuild(ctx, in); err != nil {
+					res.errs = append(res.errs, errors.Wrap(err, "writing rebuild to rundex"))
+				}
+			}
+			for _, at := range assetTypes {
+				// NOTE: We hardcode wasSmoketest=false, because in.WasSmoketest() incorrectly returns true if the attempt failed during rebuild, resulting in an empty ObliviousID
+				if _, err := butler.Fetch(ctx, runID, false, at.For(in.Target())); err != nil {
+					res.errs = append(res.errs, errors.Wrapf(err, "fetching %s", at))
+				}
+			}
+		})
+		log.Println("Beginning export of rebuilds...")
+		errOut := cmd.OutOrStdout()
+		bar := pb.New(len(rebuilds))
+		bar.Output = cmd.OutOrStderr()
+		bar.ShowTimeLeft = true
+		bar.Start()
+		for re := range p.Out() {
+			if len(re.errs) > 0 {
+				for _, err := range re.errs {
+					fmt.Fprintf(errOut, "%s: %v\n", re.rebuild.ID(), err)
+				}
+			}
+			bar.Increment()
+		}
+		bar.Finish()
 	},
 }
 
@@ -557,6 +617,124 @@ var runBenchmark = &cobra.Command{
 		default:
 			log.Fatalf("Unsupported format: %s", *format)
 		}
+	},
+}
+
+var runAgentBenchmark = &cobra.Command{
+	Use:   "run-agent-bench --project <project> --api <URI> [--max-concurrency <concurrency>] [--agent-iterations <max iterations>] <benchmark.json>",
+	Short: "Run benchmark on agent",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if *project == "" {
+			return errors.New("project must be provided")
+		}
+		fire, err := firestore.NewClient(cmd.Context(), *project)
+		if err != nil {
+			return errors.Wrap(err, "creating firestore client")
+		}
+		runService, err := runv2.NewService(cmd.Context())
+		if err != nil {
+			return errors.Wrap(err, "creating Cloud Run service")
+		}
+
+		ctx := cmd.Context()
+		var stub api.StubT[schema.AgentCreateRequest, schema.AgentCreateResponse]
+		{
+			apiURL, err := url.Parse(*apiUri)
+			if err != nil {
+				return errors.Wrap(err, "parsing API endpoint")
+			}
+			var client *http.Client
+			if strings.Contains(apiURL.Host, "run.app") {
+				// If the api is on Cloud Run, we need to use an authorized client.
+				apiURL.Scheme = "https"
+				client, err = oauth.AuthorizedUserIDClient(ctx)
+				if err != nil {
+					return errors.Wrap(err, "creating authorized HTTP client")
+				}
+			} else {
+				client = http.DefaultClient
+			}
+			stub = api.Stub[schema.AgentCreateRequest, schema.AgentCreateResponse](client, apiURL.JoinPath("agent"))
+		}
+		path := args[0]
+		log.Printf("Extracting benchmark %s...\n", filepath.Base(path))
+		set, err := benchmark.ReadBenchmark(path)
+		if err != nil {
+			return errors.Wrap(err, "reading benchmark file")
+		}
+		log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
+		p := pipe.Into(pipe.FromSlice(set.Packages), func(in benchmark.Package, out chan<- schema.AgentCreateRequest) {
+			if len(in.Versions) > 0 && len(in.Versions) != len(in.Artifacts) {
+				log.Printf("Package %s has mismatching version and artifacts", in.Name)
+				return
+			}
+			for i, v := range in.Versions {
+				req := schema.AgentCreateRequest{
+					Target: rebuild.Target{
+						Ecosystem: rebuild.Ecosystem(in.Ecosystem),
+						Package:   in.Name,
+						Version:   v,
+					},
+					MaxIterations: *agentIterations,
+				}
+				if len(in.Artifacts) > 0 {
+					req.Target.Artifact = in.Artifacts[i]
+				}
+				out <- req
+			}
+		})
+		bar := pb.New(set.Count)
+		bar.Output = cmd.OutOrStderr()
+		bar.ShowTimeLeft = true
+		bar.Start()
+		p2 := pipe.ParInto(*maxConcurrency, p, func(in schema.AgentCreateRequest, out chan<- string) {
+			defer bar.Increment()
+			resp, err := stub(ctx, in)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			sessionDoc := fire.Collection("agent_sessions").Doc(resp.SessionID)
+			var session schema.AgentSession
+			for { // TODO: Avoid infinite loops with whole-loop timeout
+				time.Sleep(30 * time.Second)
+				sessionSnap, err := sessionDoc.Get(ctx)
+				if err != nil && status.Code(err) == codes.NotFound {
+					continue
+				} else if err != nil {
+					log.Println(errors.Wrap(err, "getting session document"))
+					return
+				}
+				if err := sessionSnap.DataTo(&session); err != nil {
+					log.Fatal("deserializing session data")
+					return
+				}
+				if session.Status == schema.AgentSessionStatusCompleted {
+					break
+				}
+				e, err := runService.Projects.Locations.Jobs.Executions.Get(resp.ExeuctionName).Do()
+				if err != nil {
+					log.Printf("Failed to get execution %s: %v", resp.ExeuctionName, err)
+				} else if e.CompletionTime != "" {
+					// Execution has terminated, but session not marked as complete.
+					// TODO: Clean up the session in this case.
+					log.Printf("Job execution %s terminated but session %s not complete. Breaking.", resp.ExeuctionName, resp.SessionID)
+					break
+				}
+			}
+			out <- session.StopReason
+		})
+		var successes, total int
+		for reason := range p2.Out() {
+			if reason == schema.AgentCompleteReasonSuccess {
+				successes++
+			}
+			total++
+		}
+		bar.Finish()
+		log.Printf("Successes: %d/%d\n", successes, total)
+		return nil
 	},
 }
 
@@ -778,16 +956,27 @@ var migrate = &cobra.Command{
 }
 
 var infer = &cobra.Command{
-	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
+	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--repo-hint <repo>] [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
 	Short: "Run inference",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		var strategyHint *schema.StrategyOneOf
+		if *repoHint != "" {
+			strategyHint = &schema.StrategyOneOf{
+				LocationHint: &rebuild.LocationHint{
+					Location: rebuild.Location{
+						Repo: *repoHint,
+					},
+				},
+			}
+		}
 		req := schema.InferenceRequest{
-			Ecosystem: rebuild.Ecosystem(*ecosystem),
-			Package:   *pkg,
-			Version:   *version,
-			Artifact:  *artifact,
-			// TODO: Add support for strategy hint.
+			Ecosystem:    rebuild.Ecosystem(*ecosystem),
+			Package:      *pkg,
+			Version:      *version,
+			Artifact:     *artifact,
+			StrategyHint: strategyHint,
+			// TODO: Add support providing dir and ref hints.
 		}
 		var resp *schema.StrategyOneOf
 		if *apiUri != "" {
@@ -812,15 +1001,85 @@ var infer = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "executing inference"))
 			}
 		} else {
+			var regstub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+			if req.Ecosystem == rebuild.CratesIO {
+				err := os.MkdirAll("/tmp/crates-registry-cache", 0o755)
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "initializing registry cache"))
+				}
+				mgr, err := index.NewIndexManagerFromFS(index.IndexManagerConfig{
+					Filesystem:            osfs.New("/tmp/crates-registry-cache"),
+					CurrentUpdateInterval: 6 * time.Hour,
+					MaxSnapshots:          3,
+				})
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "creating index manager"))
+				}
+				deps := &cratesregistryservice.FindRegistryCommitDeps{
+					IndexManager: mgr,
+				}
+				regstub = func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
+					return cratesregistryservice.FindRegistryCommit(ctx, req, deps)
+				}
+			}
 			deps := &inferenceservice.InferDeps{
 				HTTPClient: http.DefaultClient,
 				GitCache:   nil,
+				RepoOptF: func() *gitx.RepositoryOptions {
+					return &gitx.RepositoryOptions{
+						Worktree: memfs.New(),
+						Storer:   memory.NewStorage(),
+					}
+				},
+				CratesRegistryStub: regstub,
 			}
 			var err error
 			resp, err = inferenceservice.Infer(cmd.Context(), req, deps)
 			if err != nil {
 				log.Fatal(err)
 			}
+		}
+		s, err := resp.Strategy()
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "parsing strategy"))
+		}
+		if s == nil {
+			log.Fatal("no strategy")
+		}
+		inp := rebuild.Input{Target: rebuild.Target{
+			Ecosystem: rebuild.Ecosystem(*ecosystem),
+			Package:   *pkg,
+			Version:   *version,
+			Artifact:  *artifact,
+		}, Strategy: s}
+		resources := build.Resources{
+			ToolURLs: map[build.ToolType]string{
+				// Ex: https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20250428204534-b35098b3c7b7/timewarp
+				build.TimewarpTool: fmt.Sprintf("https://storage.googleapis.com/%s/%s/timewarp", *bootstrapBucket, *bootstrapVersion),
+			},
+			BaseImageConfig: build.DefaultBaseImageConfig(),
+		}
+		var dockerfile string
+		{
+			plan, err := local.NewDockerBuildPlanner().GeneratePlan(cmd.Context(), inp, build.PlanOptions{
+				UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
+				Resources:   resources,
+			})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "generating plan"))
+			}
+			dockerfile = plan.Dockerfile
+		}
+		var buildScript string
+		{
+			plan, err := local.NewDockerRunPlanner().GeneratePlan(cmd.Context(), inp, build.PlanOptions{
+				UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
+				Resources:   resources,
+			})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "generating plan"))
+			}
+			buildScript = plan.Script
 		}
 		switch *format {
 		case "", "strategy":
@@ -830,44 +1089,8 @@ var infer = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "encoding result"))
 			}
 		case "dockerfile":
-			t := rebuild.Target{
-				Ecosystem: rebuild.Ecosystem(*ecosystem),
-				Package:   *pkg,
-				Version:   *version,
-				Artifact:  *artifact,
-			}
-			s, err := resp.Strategy()
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "parsing strategy"))
-			}
-			if s == nil {
-				log.Fatal("no strategy")
-			}
-			in := rebuild.Input{Target: t, Strategy: s}
-			dockerfile, err := rebuild.MakeDockerfile(in, rebuild.RemoteOptions{})
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "generating dockerfile"))
-			}
 			cmd.OutOrStdout().Write([]byte(dockerfile))
 		case "debug-steps":
-			t := rebuild.Target{
-				Ecosystem: rebuild.Ecosystem(*ecosystem),
-				Package:   *pkg,
-				Version:   *version,
-				Artifact:  *artifact,
-			}
-			s, err := resp.Strategy()
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "parsing strategy"))
-			}
-			if s == nil {
-				log.Fatal("no strategy")
-			}
-			in := rebuild.Input{Target: t, Strategy: s}
-			dockerfile, err := rebuild.MakeDockerfile(in, rebuild.RemoteOptions{})
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "generating dockerfile"))
-			}
 			buildScript := fmt.Sprintf(textwrap.Dedent(`
 				#!/usr/bin/env bash
 				set -eux
@@ -890,29 +1113,47 @@ var infer = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "encoding build steps"))
 			}
 		case "shell-script":
-			t := rebuild.Target{
-				Ecosystem: rebuild.Ecosystem(*ecosystem),
-				Package:   *pkg,
-				Version:   *version,
-				Artifact:  *artifact,
-			}
-			s, err := resp.Strategy()
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "parsing strategy"))
-			}
-			if s == nil {
-				log.Fatal("no strategy")
-			}
-			in := rebuild.Input{Target: t, Strategy: s}
-			script, err := makeShellScript(in)
-			if err != nil {
-				log.Fatal(errors.Wrap(err, "generating shell script"))
-			}
-			cmd.OutOrStdout().Write([]byte(script))
-
+			cmd.OutOrStdout().Write([]byte(buildScript))
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
 		}
+	},
+}
+
+var getGradleGAV = &cobra.Command{
+	Use:   "get-gradle-gav --repository <URI> --ref <ref>",
+	Short: "Extracts GAV coordinates from a Gradle project at a given commit",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repoURL := *repository
+		sha := *ref
+
+		tempDir, err := os.MkdirTemp("", "gradle-gav-")
+		if err != nil {
+			return errors.Wrap(err, "failed to create temp directory")
+		}
+		defer os.RemoveAll(tempDir)
+
+		repo, err := git.PlainClone(tempDir, false, &git.CloneOptions{URL: repoURL})
+		if err != nil {
+			return errors.Wrap(err, "failed to clone repository")
+		}
+		wt, err := repo.Worktree()
+		if err != nil {
+			return errors.Wrap(err, "failed to get worktree")
+		}
+		if err := wt.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(sha)}); err != nil {
+			return errors.Wrap(err, "failed to checkout commit")
+		}
+
+		gradleProject, err := gradle.RunPrintCoordinates(cmd.Context(), *repo, local.NewRealCommandExecutor())
+		if err != nil {
+			return errors.Wrap(err, "running printCoordinates")
+		}
+
+		encoder := json.NewEncoder(cmd.OutOrStdout())
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(gradleProject)
 	},
 }
 
@@ -1018,19 +1259,221 @@ var getTrackedPackagesCmd = &cobra.Command{
 	},
 }
 
+var runAgent = &cobra.Command{
+	Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>]",
+	Short: "Run benchmark",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if *project == "" {
+			return errors.New("project must be provided")
+		}
+		fire, err := firestore.NewClient(cmd.Context(), *project)
+		if err != nil {
+			return errors.Wrap(err, "creating firestore client")
+		}
+		if *apiUri == "" {
+			log.Fatal("API endpoint not provided")
+		}
+		apiURL, err := url.Parse(*apiUri)
+		if err != nil {
+			return errors.Wrap(err, "parsing API endpoint")
+		}
+		if *ecosystem == "" || *pkg == "" || *version == "" || *artifact == "" {
+			log.Fatal("ecosystem, package, version, and artifact must be provided")
+		}
+		t := rebuild.Target{Ecosystem: rebuild.Ecosystem(*ecosystem), Package: *pkg, Version: *version, Artifact: *artifact}
+		ctx := cmd.Context()
+		var client *http.Client
+		{
+			if strings.Contains(apiURL.Host, "run.app") {
+				// If the api is on Cloud Run, we need to use an authorized client.
+				apiURL.Scheme = "https"
+				client, err = oauth.AuthorizedUserIDClient(ctx)
+				if err != nil {
+					return errors.Wrap(err, "creating authorized HTTP client")
+				}
+			} else {
+				client = http.DefaultClient
+			}
+		}
+		stub := api.Stub[schema.AgentCreateRequest, schema.AgentCreateResponse](client, apiURL.JoinPath("agent"))
+		resp, err := stub(ctx, schema.AgentCreateRequest{
+			Target:        t,
+			MaxIterations: *agentIterations,
+		})
+		if err != nil {
+			return errors.Wrap(err, "running attest")
+		}
+		log.Printf("Successfully started session %s", resp.SessionID)
+		sessionDoc := fire.Collection("agent_sessions").Doc(resp.SessionID)
+		var session schema.AgentSession
+		for {
+			time.Sleep(5 * time.Second)
+			if session.Status != schema.AgentSessionStatusCompleted {
+				sessionSnap, err := sessionDoc.Get(ctx)
+				if err != nil && status.Code(err) == codes.NotFound {
+					continue
+				} else if err != nil {
+					log.Fatal(errors.Wrap(err, "getting session document"))
+				}
+				var newSession schema.AgentSession
+				if err := sessionSnap.DataTo(&newSession); err != nil {
+					log.Fatal("deserializing session data")
+				}
+				// As a proxy for iterations running, log any updates on the session.
+				// TODO: Fetch iteration records as the come in and log those either instead of or in addition to this.
+				if newSession.Updated != session.Updated {
+					log.Printf("Session updated: %+v", newSession)
+					session = newSession
+				}
+			}
+			if session.Status == schema.AgentSessionStatusCompleted {
+				log.Printf("Session %s completed", session.ID)
+				break
+			}
+		}
+		return nil
+	},
+}
+
+var localAgent = &cobra.Command{
+	Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>] [--agent-iterations <max iterations>]",
+	Short: "Run agent code locally",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		t := rebuild.Target{Ecosystem: rebuild.Ecosystem(*ecosystem), Package: *pkg, Version: *version, Artifact: *artifact}
+		if t.Ecosystem == "" || t.Package == "" || t.Version == "" || t.Artifact == "" {
+			log.Fatal("ecosystem, package, version, and artifact must be provided")
+		}
+		if *project == "" {
+			return errors.New("project must be provided")
+		}
+		if *agentApiUri == "" {
+			return errors.New("agent API endpoint not provided")
+		}
+		if *metadataBucket == "" {
+			return errors.New("metadata bucket not provided")
+		}
+		if *logsBucket == "" {
+			return errors.New("logs bucket not provided")
+		}
+		fire, err := firestore.NewClient(cmd.Context(), *project)
+		if err != nil {
+			return errors.Wrap(err, "creating firestore client")
+		}
+		aiClient, err := genai.NewClient(ctx, &genai.ClientConfig{
+			Backend:  genai.BackendVertexAI,
+			Project:  *project,
+			Location: "us-central1",
+		})
+		if err != nil {
+			return errors.Wrap(err, "making aiClient")
+		}
+		sessionUUID, err := uuid.NewV7()
+		if err != nil {
+			return errors.Wrap(err, "making sessionID")
+		}
+		sessionID := sessionUUID.String()
+		sessionTime := time.Unix(sessionUUID.Time().UnixTime())
+		session := schema.AgentSession{
+			ID:             sessionID,
+			Target:         t,
+			MaxIterations:  *agentIterations,
+			TimeoutSeconds: 60 * 60, // 1 hr
+			Context:        &schema.AgentContext{},
+			// Because we're going to start running the session locally immediately, we can mark it as Running from the start.
+			// This avoids needing to update the session record immediately after creation.
+			Status: schema.AgentSessionStatusRunning,
+			// There is no execution name, because we're going to run the agent in-process.
+			ExecutionName: "",
+			Created:       sessionTime,
+			Updated:       sessionTime,
+		}
+		// Create session in Firestore
+		err = fire.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
+			// NOTE: This would fail if the session record already exists.
+			return t.Create(fire.Collection("agent_sessions").Doc(sessionID), session)
+		})
+		if err != nil {
+			if status.Code(err) == codes.AlreadyExists {
+				return errors.Errorf("agent session %s already exists", sessionID)
+			}
+			return errors.Wrap(err, "creating agent session")
+		}
+		var retryInitialIter *schema.AgentIteration
+		if *retrySession != "" {
+			sessionDoc := fire.Collection("agent_sessions").Doc(*retrySession)
+			iterQuery := sessionDoc.Collection("agent_iterations").
+				Where("session_id", "==", *retrySession).
+				Where("number", "==", 1).
+				Limit(1)
+			d, err := iterQuery.Documents(ctx).Next()
+			if err != nil {
+				return errors.Wrap(err, "getting iteration to retry")
+			}
+			retryInitialIter = &schema.AgentIteration{}
+			if err := d.DataTo(retryInitialIter); err != nil {
+				return errors.Wrap(err, "deserializing iteration data")
+			}
+			_, err = fire.Collection("agent_sessions").Doc(sessionID).
+				Collection("agent_iterations").
+				Doc(retryInitialIter.ID).
+				Create(ctx, *retryInitialIter)
+			if err != nil {
+				return errors.Wrap(err, "creating initial iteration")
+			}
+		}
+		// Run agent locally
+		client, err := oauth.AuthorizedUserIDClient(ctx)
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "creating authorized HTTP client"))
+		}
+		baseURL, err := url.Parse(*agentApiUri)
+		if err != nil {
+			log.Fatalf("Failed to parse agent API URL: %v", err)
+		}
+		// Create agent API client stubs
+		iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
+		completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
+		deps := agent.RunSessionDeps{
+			Client:         aiClient,
+			IterationStub:  iterationStub,
+			CompleteStub:   completeStub,
+			SessionsBucket: "", // TODO: Add this once it's being used.
+			MetadataBucket: *metadataBucket,
+			LogsBucket:     *logsBucket,
+		}
+		req := agent.RunSessionReq{
+			SessionID:        sessionID,
+			Target:           t,
+			MaxIterations:    *agentIterations,
+			InitialIteration: retryInitialIter,
+		}
+		// TODO: Should RunSession return an error?
+		agent.RunSession(ctx, req, deps)
+		return nil
+	},
+}
+
 var (
 	// Shared
 	apiUri            = flag.String("api", "", "OSS Rebuild API endpoint URI")
+	agentApiUri       = flag.String("agent-api", "", "Agent API endpoint URI")
 	ecosystem         = flag.String("ecosystem", "", "the ecosystem")
 	pkg               = flag.String("package", "", "the package name")
 	version           = flag.String("version", "", "the version of the package")
 	artifact          = flag.String("artifact", "", "the artifact name")
 	verbose           = flag.Bool("v", false, "verbose output")
 	bench             = flag.String("bench", "", "a path to a benchmark file for filtering or execution")
+	debugStorage      = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
 	logsBucket        = flag.String("logs-bucket", "", "the gcs bucket where gcb logs are stored")
 	metadataBucket    = flag.String("metadata-bucket", "", "the gcs bucket where rebuild output is stored")
+	bootstrapBucket   = flag.String("bootstrap-bucket", "", "the gcs bucket where bootstrap tools are stored")
+	bootstrapVersion  = flag.String("bootstrap-version", "", "the version of bootstrap tools to use")
 	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
 	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request syscall monitoring")
+	assetTypesFlag    = flag.String("asset-types", "", "a comma-separated list of asset types to export")
 	// run-bench
 	maxConcurrency  = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
 	buildLocal      = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
@@ -1041,16 +1484,21 @@ var (
 	taskQueueEmail  = flag.String("task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
 	// run-one
 	strategyPath = flag.String("strategy", "", "the strategy file to use")
+	// agent
+	agentIterations = flag.Int("agent-iterations", 3, "maximum number of agent iterations before giving up")
+	// infer
+	repoHint = flag.String("repo-hint", "", "a hint of the repository URL where the package is hosted")
 	// get-results
-	runFlag      = flag.String("run", "", "the run(s) from which to fetch results")
-	format       = flag.String("format", "", "format of the output, options are command specific")
-	assetType    = flag.String("asset-type", "", "the type of asset that should be fetched")
-	prefix       = flag.String("prefix", "", "filter results to those matching this prefix ")
-	pattern      = flag.String("pattern", "", "filter results to those matching this regex pattern")
-	sample       = flag.Int("sample", -1, "if provided, only N results will be displayed")
-	project      = flag.String("project", "", "the project from which to fetch the Firestore data")
-	clean        = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
-	debugStorage = flag.String("debug-storage", "", "the gcs bucket to find debug logs and artifacts")
+	runFlag = flag.String("run", "", "the run(s) from which to fetch results")
+	format  = flag.String("format", "", "format of the output, options are command specific")
+	prefix  = flag.String("prefix", "", "filter results to those matching this prefix ")
+	pattern = flag.String("pattern", "", "filter results to those matching this regex pattern")
+	sample  = flag.Int("sample", -1, "if provided, only N results will be displayed")
+	project = flag.String("project", "", "the project from which to fetch the Firestore data")
+	clean   = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
+	// get-gradle-gav
+	repository = flag.String("repository", "", "the repository URI")
+	ref        = flag.String("ref", "", "the git reference (branch, tag, commit)")
 	// TUI
 	benchmarkDir     = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 	defDir           = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
@@ -1059,6 +1507,10 @@ var (
 	sharedAssetStore = flag.String("merged-asset-store", "", "if provided, use a GCS path as a shared asset store")
 	// Migrate
 	dryrun = flag.Bool("dryrun", false, "true if this migration is a dryrun")
+	// Export
+	destination  = flag.String("destination", "", "the destination for the export, e.g. gs://bucket/prefix")
+	exportRundex = flag.Bool("rundex", false, "whether to include the rundex in the export")
+	retrySession = flag.String("retry-session", "", "the session to retry")
 )
 
 func init() {
@@ -1092,10 +1544,19 @@ func init() {
 	getResults.Flags().AddGoFlag(flag.Lookup("project"))
 	getResults.Flags().AddGoFlag(flag.Lookup("clean"))
 	getResults.Flags().AddGoFlag(flag.Lookup("format"))
-	getResults.Flags().AddGoFlag(flag.Lookup("asset-type"))
 	getResults.Flags().AddGoFlag(flag.Lookup("debug-storage"))
 	getResults.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
 	getResults.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
+
+	export.Flags().AddGoFlag(flag.Lookup("run"))
+	export.Flags().AddGoFlag(flag.Lookup("pattern"))
+	export.Flags().AddGoFlag(flag.Lookup("project"))
+	export.Flags().AddGoFlag(flag.Lookup("debug-storage"))
+	export.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
+	export.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
+	export.Flags().AddGoFlag(flag.Lookup("asset-types"))
+	export.Flags().AddGoFlag(flag.Lookup("destination"))
+	export.Flags().AddGoFlag(flag.Lookup("rundex"))
 
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
 	tui.Flags().AddGoFlag(flag.Lookup("llm-project"))
@@ -1107,6 +1568,8 @@ func init() {
 	tui.Flags().AddGoFlag(flag.Lookup("def-dir"))
 	tui.Flags().AddGoFlag(flag.Lookup("rundex-gcs-path"))
 	tui.Flags().AddGoFlag(flag.Lookup("merged-asset-store"))
+	tui.Flags().AddGoFlag(flag.Lookup("prebuild-bucket"))
+	tui.Flags().AddGoFlag(flag.Lookup("prebuild-version"))
 
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
@@ -1117,19 +1580,60 @@ func init() {
 	infer.Flags().AddGoFlag(flag.Lookup("package"))
 	infer.Flags().AddGoFlag(flag.Lookup("version"))
 	infer.Flags().AddGoFlag(flag.Lookup("artifact"))
+	infer.Flags().AddGoFlag(flag.Lookup("bootstrap-bucket"))
+	infer.Flags().AddGoFlag(flag.Lookup("bootstrap-version"))
+	infer.Flags().AddGoFlag(flag.Lookup("repo-hint"))
+
+	getGradleGAV.Flags().AddGoFlag(flag.Lookup("repository"))
+	getGradleGAV.Flags().AddGoFlag(flag.Lookup("ref"))
 
 	migrate.Flags().AddGoFlag(flag.Lookup("project"))
 	migrate.Flags().AddGoFlag(flag.Lookup("dryrun"))
 
+	getTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("format"))
+
 	setTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("bench"))
 	setTrackedPackagesCmd.Flags().AddGoFlag(flag.Lookup("format"))
 
+	runAgent.Flags().AddGoFlag(flag.Lookup("api"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("project"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("ecosystem"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("package"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("version"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("agent-iterations"))
+
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("project"))
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
+	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("agent-iterations"))
+
+	localAgent.Flags().AddGoFlag(flag.Lookup("project"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("agent-api"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("ecosystem"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("package"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("version"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("retry-session"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("agent-iterations"))
+
+	// Execution
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
-	rootCmd.AddCommand(getResults)
+	rootCmd.AddCommand(runAgent)
+	rootCmd.AddCommand(localAgent)
+	rootCmd.AddCommand(runAgentBenchmark)
+	// Reading data
 	rootCmd.AddCommand(tui)
+	rootCmd.AddCommand(getResults)
+	rootCmd.AddCommand(export)
 	rootCmd.AddCommand(listRuns)
+	// Rebuild logic
 	rootCmd.AddCommand(infer)
+	rootCmd.AddCommand(getGradleGAV)
+	// Infra tools
 	rootCmd.AddCommand(migrate)
 	rootCmd.AddCommand(setTrackedPackagesCmd)
 	rootCmd.AddCommand(getTrackedPackagesCmd)

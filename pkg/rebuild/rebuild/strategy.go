@@ -10,7 +10,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Location is where a set of rebuild instruction should be executed.
+// Location defines the source code to be used for a rebuild, specifying the Git
+// repository, a reference (like a commit hash or tag), and an optional
+// subdirectory for executing the build and/or for expected output.
 type Location struct {
 	Repo string `json:"repo" yaml:"repo"`
 	Ref  string `json:"ref" yaml:"ref"`
@@ -44,9 +46,22 @@ func (b *BuildEnv) TimewarpURL(ecosystem string, registryTime time.Time) (string
 	return fmt.Sprintf("http://%s:%s@%s", ecosystem, registryTime.Format(time.RFC3339), b.TimewarpHost), nil
 }
 
-// TimewarpURLFromString constructs the correct URL for an ecosystem and RFC 3339-formatted time.
-func (b *BuildEnv) TimewarpURLFromString(ecosystem string, rfc3339Time string) (string, error) {
-	registryTime, err := time.Parse(time.RFC3339, rfc3339Time)
+// TimewarpURLFromString constructs the correct URL for an ecosystem and a point in time.
+// For most ecosystems, this moment is defined as an RFC 3339-formatted timestamp.
+// For cargo, this is defined as a git commit hash representing a historical registry state.
+func (b *BuildEnv) TimewarpURLFromString(ecosystem string, registryMoment string) (string, error) {
+	if ecosystem == "cargosparse" {
+		if _, err := b.TimewarpURL(ecosystem, time.Now()); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("sparse+http://%s:%s@%s/", ecosystem, registryMoment, b.TimewarpHost), nil
+	} else if ecosystem == "cargogitarchive" {
+		if _, err := b.TimewarpURL(ecosystem, time.Now()); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("http://%s:%s@%s/", ecosystem, registryMoment, b.TimewarpHost), nil
+	}
+	registryTime, err := time.Parse(time.RFC3339, registryMoment)
 	if err != nil {
 		return "", errors.Wrap(err, "parsing time")
 	}

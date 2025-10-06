@@ -41,11 +41,11 @@ func TestMakeDockerfile(t *testing.T) {
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.10
-# OSS-Rebuild Dockerfile
-# Package: example-pkg (npm)
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: npm
 # Version: 1.0.0
 # Artifact: example-pkg-1.0.0.tgz
-# This Dockerfile rebuilds the above package from source for supply chain verification
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -84,11 +84,11 @@ ENTRYPOINT ["/bin/sh","/build"]
 				PrebuildConfig: PrebuildConfig{Bucket: "my-bucket"},
 			},
 			expected: `#syntax=docker/dockerfile:1.10
-# OSS-Rebuild Dockerfile
-# Package: example-pkg (npm)
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: npm
 # Version: 1.0.0
 # Artifact: example-pkg-1.0.0.tgz
-# This Dockerfile rebuilds the above package from source for supply chain verification
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -132,11 +132,11 @@ ENTRYPOINT ["/bin/sh","/build"]
 				Project:        "my-project",
 			},
 			expected: `#syntax=docker/dockerfile:1.10
-# OSS-Rebuild Dockerfile
-# Package: example-pkg (npm)
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: npm
 # Version: 1.0.0
 # Artifact: example-pkg-1.0.0.tgz
-# This Dockerfile rebuilds the above package from source for supply chain verification
 FROM docker.io/library/alpine:3.19
 RUN --mount=type=secret,id=auth_header <<'EOF'
  set -eux
@@ -179,11 +179,11 @@ ENTRYPOINT ["/bin/sh","/build"]
 				PrebuildConfig: PrebuildConfig{Bucket: "my-bucket", Dir: "v0.0.0-202501010000-feeddeadbeef00"},
 			},
 			expected: `#syntax=docker/dockerfile:1.10
-# OSS-Rebuild Dockerfile
-# Package: example-pkg (npm)
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: npm
 # Version: 1.0.0
 # Artifact: example-pkg-1.0.0.tgz
-# This Dockerfile rebuilds the above package from source for supply chain verification
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -229,11 +229,11 @@ python3 setup.py sdist`,
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.10
-# OSS-Rebuild Dockerfile
-# Package: example-pkg (pypi)
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: pypi
 # Version: 1.0.0
 # Artifact: example-pkg-1.0.0.whl
-# This Dockerfile rebuilds the above package from source for supply chain verification
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -280,11 +280,11 @@ ENTRYPOINT ["/bin/sh","/build"]
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.10
-# OSS-Rebuild Dockerfile
-# Package: example-pkg (debian)
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: debian
 # Version: 1.0.0
 # Artifact: example-pkg_1.0.0_amd64.deb
-# This Dockerfile rebuilds the above package from source for supply chain verification
 FROM docker.io/library/debian:trixie-20250203-slim
 RUN <<'EOF'
  set -eux

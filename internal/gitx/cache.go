@@ -37,6 +37,11 @@ type Cache struct {
 
 // GetLink returns a GCS link to the cached repo resource.
 func (c Cache) GetLink(repo string, contains time.Time) (uri string, err error) {
+	return c.GetLinkWithRef(repo, contains, "")
+}
+
+// GetLinkWithRef returns a GCS link to the cached repo resource for a specific ref.
+func (c Cache) GetLinkWithRef(repo string, contains time.Time, ref string) (uri string, err error) {
 	u, err := c.URL.Parse("/get")
 	if err != nil {
 		return "", err
@@ -47,6 +52,9 @@ func (c Cache) GetLink(repo string, contains time.Time) (uri string, err error) 
 		q.Add("contains", contains.Format(time.RFC3339))
 	} else if !c.DefaultFreshness.IsZero() {
 		q.Add("contains", c.DefaultFreshness.Format(time.RFC3339))
+	}
+	if ref != "" {
+		q.Add("ref", ref)
 	}
 	u.RawQuery = q.Encode()
 	c.IDClient.CheckRedirect = func(*http.Request, []*http.Request) error {
@@ -79,8 +87,8 @@ func (c Cache) GetLink(repo string, contains time.Time) (uri string, err error) 
 
 // Clone provides an interface to clone a git repo using the GitCache.
 func (c Cache) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
-	if opt.Auth != nil || opt.RemoteName != "" || opt.ReferenceName != "" || opt.SingleBranch || opt.Depth != 0 || opt.RecurseSubmodules != 0 || opt.Tags != git.InvalidTagMode || opt.InsecureSkipTLS || len(opt.CABundle) > 0 {
-		// No support for non-trivial opts aside from NoCheckout.
+	if opt.Auth != nil || opt.RemoteName != "" || opt.Depth != 0 || opt.RecurseSubmodules != 0 || opt.Tags != git.InvalidTagMode || opt.InsecureSkipTLS || len(opt.CABundle) > 0 {
+		// No support for non-trivial opts aside from NoCheckout, ReferenceName, and SingleBranch.
 		return nil, errors.New("Unsupported opt")
 	}
 	sf, ok := s.(*filesystem.Storage)
@@ -89,7 +97,12 @@ func (c Cache) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem,
 		return nil, errors.New("Unsupported Storer")
 	}
 	sfs := sf.Filesystem()
-	uri, err := c.GetLink(opt.URL, c.DefaultFreshness)
+	// Use ref if specified in CloneOptions
+	var ref string
+	if opt.ReferenceName != "" {
+		ref = string(opt.ReferenceName)
+	}
+	uri, err := c.GetLinkWithRef(opt.URL, c.DefaultFreshness, ref)
 	if err != nil {
 		return nil, errors.Wrap(err, "cache error")
 	}

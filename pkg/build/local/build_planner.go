@@ -41,7 +41,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			 set -eux
 			{{- if .UseTimewarp}}
 			 {{- $hasCurl := or (eq .OS "debian") (eq .OS "ubuntu")}}
-       {{- $hasWget := eq .OS "alpine"}}
+			 {{- $hasWget := eq .OS "alpine"}}
 			 {{- if .TimewarpAuth}}
 			 {{if not $hasCurl}}{{.PackageManager.InstallCommand (list "curl")}} && {{end}}curl -H @/run/secrets/auth_header
 			 {{- else if $hasWget}}
@@ -67,6 +67,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			RUN cat <<'EOF' >/build
 			 set -eux
 			 {{.Instructions.Build | indent}}
+			 chmod +444 /src/{{.Instructions.OutputPath}}
 			 mkdir -p /out && cp /src/{{.Instructions.OutputPath}} /out/
 			EOF
 			WORKDIR "/src"
@@ -121,7 +122,7 @@ func (p *DockerBuildPlanner) generateDockerfile(input rebuild.Input, instruction
 		BaseImage:      baseImage,
 		OS:             os,
 		PackageManager: pkgMgr,
-		UseTimewarp:    timewarpURL != "",
+		UseTimewarp:    opts.UseTimewarp,
 		TimewarpURL:    timewarpURL,
 		TimewarpAuth:   timewarpAuth,
 	}

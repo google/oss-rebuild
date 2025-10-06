@@ -15,6 +15,8 @@ type CommandOptions struct {
 	Input io.Reader
 	// Output streams stdout/stderr to the writer (if nil, output is discarded)
 	Output io.Writer
+	// Dir is the directory in which the command is run
+	Dir string
 }
 
 // CommandExecutor abstracts command execution for better testability
@@ -45,6 +47,7 @@ func (r *realCommandExecutor) Execute(ctx context.Context, opts CommandOptions, 
 		cmd.Stdout = opts.Output
 		cmd.Stderr = opts.Output
 	}
+	cmd.Dir = opts.Dir
 	// Block and wait for completion.
 	return cmd.Run()
 }

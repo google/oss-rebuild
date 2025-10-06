@@ -6,7 +6,7 @@ package maven
 import (
 	"context"
 	"encoding/xml"
-	"io"
+	"fmt"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/maven"
@@ -60,12 +60,38 @@ func (p *PomXML) Version() string {
 }
 
 // NewPomXML returns the POM file for a Maven package version.
-func NewPomXML(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (p PomXML, err error) {
-	var r io.ReadCloser
-	r, err = mux.Maven.ReleaseFile(ctx, t.Package, t.Version, maven.TypePOM)
+// TODO: NewPomXML should be added to the maven.Registry interface.
+// TODO: This will ensure that we can simply resolve parent POM by only changing the target, thus eliminating the need for `ResolveParentPom`.
+func NewPomXML(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (PomXML, error) {
+	var p PomXML
+	r, err := mux.Maven.ReleaseFile(ctx, t.Package, t.Version, maven.TypePOM)
 	if err != nil {
 		return p, err
 	}
 	defer r.Close()
 	return p, xml.NewDecoder(r).Decode(&p)
+}
+
+func ResolveParentPom(ctx context.Context, pom PomXML, mux rebuild.RegistryMux) (PomXML, error) {
+	if pom.Parent.ArtifactID == "" {
+		return pom, nil
+	}
+	var ver, group string
+	if pom.Parent.VersionID != "" {
+		ver = pom.Parent.VersionID
+	} else {
+		ver = pom.VersionID
+	}
+	if pom.Parent.GroupID != "" {
+		group = pom.Parent.GroupID
+	} else {
+		group = pom.GroupID
+	}
+	var parent PomXML
+	r, err := mux.Maven.ReleaseFile(ctx, fmt.Sprintf("%s:%s", group, pom.Parent.ArtifactID), ver, maven.TypePOM)
+	if err != nil {
+		return parent, err
+	}
+	defer r.Close()
+	return parent, xml.NewDecoder(r).Decode(&parent)
 }

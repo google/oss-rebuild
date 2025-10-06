@@ -555,7 +555,7 @@ func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 		return "", errors.Wrap(err, "failed to generate strategy")
 	}
 	dockerfile := new(bytes.Buffer)
-	if input.Target.Ecosystem == Debian {
+	if input.Target.Ecosystem == Debian || input.Target.Ecosystem == Maven {
 		err = debuildContainerTpl.Execute(dockerfile, rebuildContainerArgs{
 			UseTimewarp:    opts.UseTimewarp,
 			PrebuildBucket: opts.PrebuildConfig.Bucket,

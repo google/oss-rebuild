@@ -8,8 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/v5/storage"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/pkg/errors"
@@ -21,7 +20,7 @@ func (Rebuilder) InferRepo(_ context.Context, _ rebuild.Target, _ rebuild.Regist
 }
 
 // CloneRepo is not needed because debian uses source packages.
-func (Rebuilder) CloneRepo(_ context.Context, _ rebuild.Target, _ string, _ billy.Filesystem, _ storage.Storer) (rebuild.RepoConfig, error) {
+func (Rebuilder) CloneRepo(_ context.Context, _ rebuild.Target, _ string, _ *gitx.RepositoryOptions) (rebuild.RepoConfig, error) {
 	return rebuild.RepoConfig{}, nil
 }
 

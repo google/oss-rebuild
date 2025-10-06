@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/pkg/errors"
 )
 
@@ -169,6 +171,31 @@ func StabilizeTar(tr *tar.Reader, tw *tar.Writer, opts StabilizeOpts) error {
 	return nil
 }
 
+var AllCrateStabilizers = []Stabilizer{
+	StabilizeCargoVCSHash,
+}
+
+var StabilizeCargoVCSHash = TarEntryStabilizer{
+	Name: "cargo-vcs-hash",
+	Func: func(e *TarEntry) {
+		if strings.HasSuffix(e.Name, ".cargo_vcs_info.json") {
+			var vcsInfo map[string]any
+			if err := json.Unmarshal(e.Body, &vcsInfo); err != nil {
+				return // Skip if invalid JSON
+			}
+			if git, ok := vcsInfo["git"].(map[string]any); ok {
+				if _, hasSha1 := git["sha1"]; hasSha1 {
+					git["sha1"] = strings.Repeat("x", hash.HexSize)
+					if newBody, err := json.Marshal(vcsInfo); err == nil {
+						e.Body = newBody
+						e.Size = int64(len(newBody))
+					}
+				}
+			}
+		}
+	},
+}
+
 // ExtractOptions provides options modifying ExtractTar behavior.
 type ExtractOptions struct {
 	// SubDir is a directory within the TAR to extract relative to the provided filesystem.
@@ -254,7 +281,8 @@ func NewContentSummaryFromTar(tr *tar.Reader) (*ContentSummary, error) {
 		}
 		cs.Files = append(cs.Files, header.Name)
 		cs.CRLFCount += bytes.Count(buf, []byte{'\r', '\n'})
-		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(sha256.New().Sum(buf)))
+		h := sha256.Sum256(buf)
+		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(h[:]))
 	}
 	return &cs, nil
 }

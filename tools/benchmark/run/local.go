@@ -14,21 +14,19 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/cache"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
 )
 
@@ -52,13 +50,7 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 	if req.UseSyscallMonitor {
 		return nil, errors.New("syscall monitor not supported")
 	}
-	regClient := httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{})
-	mux := rebuild.RegistryMux{
-		Debian:   debianreg.HTTPRegistry{Client: regClient},
-		CratesIO: cratesreg.HTTPRegistry{Client: regClient},
-		NPM:      npmreg.HTTPRegistry{Client: regClient},
-		PyPI:     pypireg.HTTPRegistry{Client: regClient},
-	}
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
 	if req.Artifact == "" {
 		switch t.Ecosystem {
@@ -100,28 +92,15 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 }
 
 func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (rebuild.Strategy, error) {
-	mem := memory.NewStorage()
-	fs := memfs.New()
-	var rebuilder rebuild.Rebuilder
-	switch t.Ecosystem {
-	case rebuild.NPM:
-		rebuilder = npm.Rebuilder{}
-	case rebuild.PyPI:
-		rebuilder = pypi.Rebuilder{}
-	case rebuild.CratesIO:
-		rebuilder = cratesio.Rebuilder{}
-	case rebuild.Debian:
-		rebuilder = debian.Rebuilder{}
-	case rebuild.Maven:
-		return nil, errors.New("maven not implemented")
-	default:
+	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
+	if !ok {
 		return nil, errors.New("unsupported ecosystem")
 	}
 	repo, err := rebuilder.InferRepo(ctx, t, mux)
 	if err != nil {
 		return nil, err
 	}
-	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, fs, mem)
+	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, &gitx.RepositoryOptions{Worktree: memfs.New(), Storer: memory.NewStorage()})
 	if err != nil {
 		return nil, err
 	}

@@ -14,23 +14,17 @@ import (
 
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
-	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/hashext"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/attestation"
-	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
-	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
-	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
-	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
+	"github.com/google/oss-rebuild/pkg/build"
+	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
-	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
-	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
-	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
-	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/uuid"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
@@ -44,15 +38,12 @@ type AnalyzerDeps struct {
 	HTTPClient                 httpx.BasicClient
 	Signer                     *dsse.EnvelopeSigner
 	Verifier                   *dsse.EnvelopeVerifier
-	GCBClient                  gcb.Client
-	BuildProject               string
-	BuildServiceAccount        string
-	BuildLogsBucket            string
+	GCBExecutor                *buildgcb.Executor
 	ServiceRepo                rebuild.Location
 	InputAttestationStore      rebuild.AssetStore
 	OutputAnalysisStore        rebuild.LocatableAssetStore
-	LocalMetadataStore         rebuild.AssetStore
-	DebugStoreBuilder          func(ctx context.Context) (rebuild.AssetStore, error)
+	LocalMetadataStore         rebuild.LocatableAssetStore
+	DebugStoreBuilder          func(ctx context.Context) (rebuild.LocatableAssetStore, error)
 	RemoteMetadataStoreBuilder func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error)
 	OverwriteAttestations      bool
 }
@@ -100,13 +91,7 @@ func analyzeRebuild(ctx context.Context, t rebuild.Target, deps *AnalyzerDeps) (
 		return nil, errors.Wrap(err, "extracting strategy from attestation")
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
-	regclient := httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{})
-	mux := rebuild.RegistryMux{
-		Debian:   debianreg.HTTPRegistry{Client: regclient},
-		CratesIO: cratesreg.HTTPRegistry{Client: regclient},
-		NPM:      npmreg.HTTPRegistry{Client: regclient},
-		PyPI:     pypireg.HTTPRegistry{Client: regclient},
-	}
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
 	id, err := executeNetworkRebuild(ctx, deps, t, strategy, rebuildAttestation)
 	if err != nil {
 		return nil, errors.Wrap(err, "network rebuild failed")
@@ -165,7 +150,7 @@ func getBuildDefinition(rebuildAttestation *attestation.RebuildAttestation) (*sc
 }
 
 func compareArtifacts(ctx context.Context, mux rebuild.RegistryMux, t rebuild.Target, remoteStore rebuild.LocatableAssetStore, rebuildAttestation *attestation.RebuildAttestation) (*verifier.ArtifactSummary, *verifier.ArtifactSummary, error) {
-	rebuilder, ok := rebuilders[t.Ecosystem]
+	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
 	if !ok {
 		return nil, nil, errors.New("unsupported ecosystem")
 	}
@@ -203,18 +188,7 @@ func compareArtifacts(ctx context.Context, mux rebuild.RegistryMux, t rebuild.Ta
 	return &rb, &up, nil
 }
 
-var rebuilders = map[rebuild.Ecosystem]rebuild.Rebuilder{
-	rebuild.NPM:      &npmrb.Rebuilder{},
-	rebuild.PyPI:     &pypirb.Rebuilder{},
-	rebuild.CratesIO: &cratesrb.Rebuilder{},
-	rebuild.Debian:   &debianrb.Rebuilder{},
-}
-
 func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Target, strategy rebuild.Strategy, rebuildAttestation *attestation.RebuildAttestation) (string, error) {
-	rebuilder, ok := rebuilders[t.Ecosystem]
-	if !ok {
-		return "", errors.New("unsupported ecosystem")
-	}
 	obID := uuid.New().String()
 	debugStore, err := deps.DebugStoreBuilder(context.WithValue(ctx, rebuild.RunID, obID))
 	if err != nil {
@@ -224,23 +198,49 @@ func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Ta
 	if err != nil {
 		return "", errors.Wrap(err, "creating rebuild store")
 	}
-	opts := rebuild.RemoteOptions{
-		ObliviousID:         obID,
-		GCBClient:           deps.GCBClient,
-		Project:             deps.BuildProject,
-		BuildServiceAccount: deps.BuildServiceAccount,
-		PrebuildConfig:      rebuildAttestation.Predicate.BuildDefinition.InternalParameters.PrebuildConfig,
-		LogsBucket:          deps.BuildLogsBucket,
-		LocalMetadataStore:  deps.LocalMetadataStore,
-		DebugStore:          debugStore,
-		RemoteMetadataStore: remoteMetadata,
-		UseNetworkProxy:     true, // Key difference for network analysis
-		UseSyscallMonitor:   false,
+	buildStore := rebuild.NewMixedAssetStore(map[rebuild.AssetType]rebuild.LocatableAssetStore{
+		rebuild.ContainerImageAsset: remoteMetadata,
+		rebuild.RebuildAsset:        remoteMetadata,
+		rebuild.ProxyNetlogAsset:    remoteMetadata,
+		rebuild.DockerfileAsset:     deps.LocalMetadataStore,
+		rebuild.BuildInfoAsset:      deps.LocalMetadataStore,
+	})
+	prebuildConfig := rebuildAttestation.Predicate.BuildDefinition.InternalParameters.PrebuildConfig
+	toolURLs := map[build.ToolType]string{
+		build.TimewarpTool: "gs://" + path.Join(prebuildConfig.Bucket, prebuildConfig.Dir, "timewarp"),
+		build.GSUtilTool:   "gs://" + path.Join(prebuildConfig.Bucket, prebuildConfig.Dir, "gsutil_writeonly"),
 	}
-	err = rebuilder.RebuildRemote(ctx, rebuild.Input{Target: t, Strategy: strategy}, opts)
+	var authRequired []string
+	if prebuildConfig.Auth {
+		authRequired = append(authRequired, "gs://"+prebuildConfig.Bucket)
+	}
+	in := rebuild.Input{
+		Target:   t,
+		Strategy: strategy,
+	}
+	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
+		BuildID:         obID,
+		UseTimewarp:     meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
+		UseNetworkProxy: true, // The whole point of the analyzer
+		Resources: build.Resources{
+			AssetStore:       buildStore,
+			ToolURLs:         toolURLs,
+			ToolAuthRequired: authRequired,
+			BaseImageConfig:  build.DefaultBaseImageConfig(),
+		},
+	})
+	if err != nil {
+		return "", errors.Wrap(err, "starting build")
+	}
+	_, err = h.Wait(ctx)
 	if err != nil {
 		return "", errors.Wrap(err, "rebuild failed")
 	}
+	defer func() {
+		for _, a := range []rebuild.AssetType{rebuild.DockerfileAsset, rebuild.BuildInfoAsset} {
+			rebuild.AssetCopy(ctx, debugStore, deps.LocalMetadataStore, a.For(t))
+		}
+	}()
 	return obID, nil
 }
 

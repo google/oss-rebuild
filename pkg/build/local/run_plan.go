@@ -7,10 +7,12 @@ package local
 type DockerRunPlan struct {
 	// Image is the Docker image to run
 	Image string
-	// Command is the command to execute in the container
-	Command []string
+	// Script is the bash script to execute inside the container
+	Script string
 	// WorkingDir sets the working directory in the container
 	WorkingDir string
 	// OutputPath specifies where artifacts should be copied from the container
 	OutputPath string
+	// RequiresAuth indicates whether the plan requires authentication
+	RequiresAuth bool
 }

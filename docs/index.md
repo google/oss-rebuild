@@ -1,11 +1,11 @@
-# OSS Rebuild
+# [OSS Rebuild](https://oss-rebuild.dev/)
 
 Secure open-source package ecosystems by originating, validating, and augmenting
 build attestations.
 
 ## Overview
 
-OSS Rebuild aims to apply [reproducible build](https://reproducible-builds.org/)
+[OSS Rebuild](https://oss-rebuild.dev/) aims to apply [reproducible build](https://reproducible-builds.org/)
 concepts at low-cost and high-scale for open-source package ecosystems.
 
 Rebuilds are derived by analyzing the published metadata and artifacts and are

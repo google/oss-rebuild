@@ -17,17 +17,22 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strings"
 	"time"
 
-	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/storage"
+	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
 )
@@ -52,9 +57,9 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 	return uri.CanonicalizeRepoURI(pmeta.Repository)
 }
 
-func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, fs billy.Filesystem, s storage.Storer) (r rebuild.RepoConfig, err error) {
+func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, ropt *gitx.RepositoryOptions) (r rebuild.RepoConfig, err error) {
 	r.URI = repoURI
-	r.Repository, err = rebuild.LoadRepo(ctx, t.Package, s, fs, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
+	r.Repository, err = rebuild.LoadRepo(ctx, t.Package, ropt.Storer, ropt.Worktree, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
 	switch err {
 	case nil:
 	case transport.ErrAuthenticationRequired:
@@ -219,18 +224,6 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if ct.Version() != version && ct.Version() != reg.WorkspaceVersion {
 		return nil, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, ct.Version())
 	}
-	topLevel := t.Package + "-" + vmeta.Version.Version
-	lockContent, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.lock")
-	var lock *ExplicitLockfile
-	if errors.Is(err, fs.ErrNotExist) {
-		lock = nil
-	} else if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream Cargo.lock")
-	} else {
-		lock = &ExplicitLockfile{
-			LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
-		}
-	}
 	rustVersion := vmeta.RustVersion
 	if rustVersion == "" {
 		// NOTE: Give a week's margin to allow for toolchain upgrades. Maybe raise.
@@ -238,6 +231,50 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if err != nil {
 			return nil, errors.New("rust version heuristic failed")
 		}
+	} else if strings.Count(rustVersion, ".") == 1 {
+		rustVersion += ".0"
+	}
+	topLevel := t.Package + "-" + vmeta.Version.Version
+	lockContent, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.lock")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream Cargo.lock")
+	}
+	// Extract package names from Cargo.lock for git-based index support
+	var indexCommit string
+	var packageNames []string
+	if lockContent != nil && semver.Cmp(rustVersion, "1.34.0") >= 0 {
+		// Registry search is only usable in builds that support the local or sparse registry protocols.
+		// Sparse support: http://releases.rs/docs/1.68.0/#cargo
+		// Local support: http://releases.rs/docs/1.34.0/#cargo
+		stub, err := getRegistryStub(ctx)
+		if err != nil {
+			return nil, errors.Wrapf(err, "[INTERNAL] Failed to access registry query stub")
+		}
+		resp, err := stub(ctx, cratesregistryservice.FindRegistryCommitRequest{
+			LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
+			PublishedTime:  vmeta.Updated.Format(time.RFC3339),
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to call registry service")
+		}
+		if resp.CommitHash == "" {
+			return nil, errors.New("no suitable registry commit found")
+		}
+		indexCommit = resp.CommitHash
+		// TODO: If we want to default to sparse registry, we can predicate this on `if semver.Cmp(rustVersion, "1.68.0") < 0`
+		// If only local registry supported, parse package names from Cargo.lock.
+		packages, err := cargolock.Parse(string(lockContent))
+		if err != nil {
+			return nil, errors.Wrap(err, "[INTERNAL] failed to parse Cargo.lock")
+		}
+		packageSet := make(map[string]bool)
+		for _, pkg := range packages {
+			packageSet[pkg.Name] = true
+		}
+		for pkgName := range packageSet {
+			packageNames = append(packageNames, pkgName)
+		}
+		slices.Sort(packageNames)
 	}
 	// TODO: This should be moved to build-time since strategies are intended to be, at least notionally, distro-independent.
 	hasMUSLBuild, err := reg.HasMUSLBuild(rustVersion)
@@ -247,14 +284,16 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if !hasMUSLBuild {
 		return nil, errors.New("rust version unsupported in MUSL builds")
 	}
+
 	return &CratesIOCargoPackage{
 		Location: rebuild.Location{
 			Repo: rcfg.URI,
 			Ref:  ref,
 			Dir:  dir,
 		},
-		RustVersion:      rustVersion,
-		ExplicitLockfile: lock,
+		RustVersion:    rustVersion,
+		RegistryCommit: indexCommit,
+		PackageNames:   packageNames,
 	}, nil
 }
 
@@ -427,4 +466,16 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 		}
 	}
 	return tm, err
+}
+
+func getRegistryStub(ctx context.Context) (api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse], error) {
+	stubValue := ctx.Value(rebuild.CratesRegistryStubID)
+	if stubValue == nil {
+		return nil, errors.New("crates registry stub not found in context")
+	}
+	stub, ok := stubValue.(api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse])
+	if !ok {
+		return nil, errors.New("invalid crates registry stub type in context")
+	}
+	return stub, nil
 }
