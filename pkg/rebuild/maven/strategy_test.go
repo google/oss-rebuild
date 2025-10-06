@@ -111,6 +111,90 @@ func TestStrategies(t *testing.T) {
 			},
 		},
 		{
+			name: "maven build instructions for JDK 10",
+			strategy: &MavenBuild{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
+				},
+				JDKVersion: "10",
+			},
+			want: rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
+				},
+				SystemDeps: []string{"git", "wget", "ca-certificates", "maven"},
+				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Deps: textwrap.Dedent(`
+                    mkdir -p /opt/jdk
+                    wget -q -O - "https://download.java.net/java/GA/jdk10/10/binaries/openjdk-10_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
+                    export JAVA_HOME=/opt/jdk
+                    export PATH=$JAVA_HOME/bin:$PATH
+                    KEYSTORE_FILE="$JAVA_HOME/lib/security/cacerts"
+                    rm -f $KEYSTORE_FILE
+                    find /etc/ssl/certs -name '*.pem' | while read cert_path; do
+                      export LANG=C.UTF-8
+                      keytool -importcert -noprompt \
+                        -keystore "$KEYSTORE_FILE" \
+                        -alias "$(basename "$cert_path")" \
+                        -file "$cert_path" \
+                        -storepass password \
+                        -storetype JKS
+                    done`)[1:],
+				Build: textwrap.Dedent(`
+                    export JAVA_HOME=/opt/jdk
+                    export PATH=$JAVA_HOME/bin:$PATH
+                    mvn clean package -DskipTests --batch-mode -f dir -Dmaven.javadoc.skip=true`[1:]),
+				OutputPath: "dir/target/ldapchai-0.8.6.jar",
+			},
+			wantErr: false,
+		},
+		{
+			name: "gradle build instructions for JDK 9",
+			strategy: &GradleBuild{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
+				},
+				JDKVersion: "9",
+			},
+			want: rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
+				},
+				SystemDeps: []string{"git", "wget", "ca-certificates"},
+				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Deps: textwrap.Dedent(`
+                    mkdir -p /opt/jdk
+                    wget -q -O - "https://download.java.net/java/GA/jdk9/9/binaries/openjdk-9_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
+                    export JAVA_HOME=/opt/jdk
+                    export PATH=$JAVA_HOME/bin:$PATH
+                    KEYSTORE_FILE="$JAVA_HOME/lib/security/cacerts"
+                    rm -f $KEYSTORE_FILE
+                    find /etc/ssl/certs -name '*.pem' | while read cert_path; do
+                      export LANG=C.UTF-8
+                      keytool -importcert -noprompt \
+                        -keystore "$KEYSTORE_FILE" \
+                        -alias "$(basename "$cert_path")" \
+                        -file "$cert_path" \
+                        -storepass password \
+                        -storetype JKS
+                    done`)[1:],
+				Build: textwrap.Dedent(`
+                    export JAVA_HOME=/opt/jdk
+                    export PATH=$JAVA_HOME/bin:$PATH
+                    ./gradlew assemble --no-daemon --console=plain -Pversion=0.8.6`[1:]),
+				OutputPath: "dir/build/libs/ldapchai-0.8.6.jar",
+			},
+			wantErr: false,
+		},
+		{
 			"throw an error if JDK installation candidate is not found",
 			&MavenBuild{
 				Location: rebuild.Location{
