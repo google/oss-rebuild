@@ -7,7 +7,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
+	"path"
 
+	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -21,11 +24,16 @@ type AgentDeps struct {
 	// Bucket for logs and rebuild artifact
 	MetadataBucket string
 	LogsBucket     string
+	GCSClient      *gcs.Client
 	MaxTurns       int
 }
 
+type ProposeOpts struct {
+	ChatUploadURL *url.URL // The path to which llm.Chat messages should be stored.
+}
+
 type Agent interface {
-	Propose(context.Context) (*schema.StrategyOneOf, error)
+	Propose(context.Context, *ProposeOpts) (*schema.StrategyOneOf, error)
 	RecordIteration(*schema.AgentIteration)
 }
 
@@ -38,6 +46,7 @@ type RunSessionReq struct {
 
 type RunSessionDeps struct {
 	Client        *genai.Client
+	GCSClient     *gcs.Client
 	IterationStub api.StubT[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse]
 	CompleteStub  api.StubT[schema.AgentCompleteRequest, schema.AgentCompleteResponse]
 	// TODO: Should these be asset stores?
@@ -47,7 +56,15 @@ type RunSessionDeps struct {
 }
 
 func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
-	s, err := agent.Propose(ctx)
+	opts := &ProposeOpts{}
+	if deps.SessionsBucket != "" {
+		opts.ChatUploadURL = &url.URL{
+			Scheme: "gs",
+			Host:   deps.SessionsBucket,
+			Path:   path.Join(sessionID, "messages", fmt.Sprintf("%d", iterNum)),
+		}
+	}
+	s, err := agent.Propose(ctx, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "generating strategy")
 	}
@@ -85,6 +102,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		Chat:           nil,
 		MetadataBucket: deps.MetadataBucket,
 		LogsBucket:     deps.LogsBucket,
+		GCSClient:      deps.GCSClient,
 		MaxTurns:       10,
 	})
 	var err error
