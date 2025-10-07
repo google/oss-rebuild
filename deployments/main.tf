@@ -1233,7 +1233,10 @@ resource "google_storage_bucket_iam_binding" "agent-manages-sessions" {
 resource "google_storage_bucket_iam_binding" "agent-reads-metadata" {
   bucket  = google_storage_bucket.agent-metadata.name
   role    = "roles/storage.objectViewer"
-  members = ["serviceAccount:${google_service_account.agent-job.email}"]
+  members = [
+    "serviceAccount:${google_service_account.agent-job.email}",
+    "serviceAccount:${google_service_account.orchestrator.email}", # Orchestrator runs agent-api, needs to do comparison
+  ]
 }
 resource "google_storage_bucket_iam_binding" "builder-agent-views-buckets" {
   bucket  = google_storage_bucket.agent-logs.name
