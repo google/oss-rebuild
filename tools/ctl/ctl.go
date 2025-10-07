@@ -1370,10 +1370,10 @@ var localAgent = &cobra.Command{
 			// Because we're going to start running the session locally immediately, we can mark it as Running from the start.
 			// This avoids needing to update the session record immediately after creation.
 			Status: schema.AgentSessionStatusRunning,
-			// There is no job name, because we're going to run the agent in-process.
-			JobName: "",
-			Created: sessionTime,
-			Updated: sessionTime,
+			// There is no execution name, because we're going to run the agent in-process.
+			ExecutionName: "",
+			Created:       sessionTime,
+			Updated:       sessionTime,
 		}
 		// Create session in Firestore
 		err = fire.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
