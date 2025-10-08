@@ -20,7 +20,7 @@ import (
 
 const (
 	// DefaultMaxIterations is the default maximum number of iterations for an agent session
-	DefaultMaxIterations = 20
+	DefaultMaxIterations = 5
 )
 
 type AgentCreateDeps struct {

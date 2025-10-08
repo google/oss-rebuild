@@ -1245,7 +1245,7 @@ var getTrackedPackagesCmd = &cobra.Command{
 }
 
 var runAgent = &cobra.Command{
-	Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name>",
+	Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>]",
 	Short: "Run benchmark",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -1283,7 +1283,8 @@ var runAgent = &cobra.Command{
 		}
 		stub := api.Stub[schema.AgentCreateRequest, schema.AgentCreateResponse](client, apiURL.JoinPath("agent"))
 		resp, err := stub(ctx, schema.AgentCreateRequest{
-			Target: t,
+			Target:        t,
+			MaxIterations: *agentIterations,
 		})
 		if err != nil {
 			return errors.Wrap(err, "running attest")
@@ -1321,7 +1322,7 @@ var runAgent = &cobra.Command{
 }
 
 var localAgent = &cobra.Command{
-	Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>]",
+	Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>] [--agent-iterations <max iterations>]",
 	Short: "Run agent code locally",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -1360,12 +1361,10 @@ var localAgent = &cobra.Command{
 		}
 		sessionID := sessionUUID.String()
 		sessionTime := time.Unix(sessionUUID.Time().UnixTime())
-		// Set defaults for configuration
-		maxIterations := 3
 		session := schema.AgentSession{
 			ID:             sessionID,
 			Target:         t,
-			MaxIterations:  maxIterations,
+			MaxIterations:  *agentIterations,
 			TimeoutSeconds: 60 * 60, // 1 hr
 			Context:        &schema.AgentContext{},
 			// Because we're going to start running the session locally immediately, we can mark it as Running from the start.
@@ -1433,7 +1432,7 @@ var localAgent = &cobra.Command{
 		req := agent.RunSessionReq{
 			SessionID:        sessionID,
 			Target:           t,
-			MaxIterations:    maxIterations,
+			MaxIterations:    *agentIterations,
 			InitialIteration: retryInitialIter,
 		}
 		// TODO: Should RunSession return an error?
@@ -1471,7 +1470,7 @@ var (
 	// run-one
 	strategyPath = flag.String("strategy", "", "the strategy file to use")
 	// agent
-	agentIterations = flag.Int("agent-iterations", 10, "maximum number of agent iterations before giving up")
+	agentIterations = flag.Int("agent-iterations", 3, "maximum number of agent iterations before giving up")
 	// infer
 	repoHint = flag.String("repo-hint", "", "a hint of the repository URL where the package is hosted")
 	// get-results
@@ -1587,6 +1586,7 @@ func init() {
 	runAgent.Flags().AddGoFlag(flag.Lookup("package"))
 	runAgent.Flags().AddGoFlag(flag.Lookup("version"))
 	runAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
+	runAgent.Flags().AddGoFlag(flag.Lookup("agent-iterations"))
 
 	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
 	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("project"))
@@ -1602,6 +1602,7 @@ func init() {
 	localAgent.Flags().AddGoFlag(flag.Lookup("version"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("artifact"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("retry-session"))
+	localAgent.Flags().AddGoFlag(flag.Lookup("agent-iterations"))
 
 	// Execution
 	rootCmd.AddCommand(runBenchmark)
