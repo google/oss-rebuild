@@ -1461,6 +1461,49 @@ var localAgent = &cobra.Command{
 	},
 }
 
+var getSessions = &cobra.Command{
+	Use:   "get-sessions --project <project>",
+	Short: "Get a history of sessions",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if *project == "" {
+			return errors.New("project must be provided")
+		}
+		fire, err := firestore.NewClient(ctx, *project)
+		if err != nil {
+			return errors.Wrap(err, "creating firestore client")
+		}
+		sessionQuery := fire.Collection("agent_sessions").Documents(ctx)
+		sessions := make([]*schema.AgentSession, 0)
+		for {
+			doc, err := sessionQuery.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				return errors.Wrap(err, "iterating over sessions")
+			}
+			session := &schema.AgentSession{}
+			if err := doc.DataTo(session); err != nil {
+				return errors.Wrap(err, "deserializing session data")
+			}
+			sessions = append(sessions, session)
+		}
+		slices.SortFunc(sessions, func(a, b *schema.AgentSession) int {
+			return a.Created.Compare(b.Created)
+		})
+		w := csv.NewWriter(cmd.OutOrStdout())
+		defer w.Flush()
+		for _, s := range sessions {
+			if err := w.Write([]string{s.ID, string(s.Target.Ecosystem), s.Target.Package, s.Target.Version, s.Target.Artifact, s.Status, s.StopReason, s.Summary}); err != nil {
+				log.Fatal(errors.Wrap(err, "writing CSV"))
+			}
+		}
+		return nil
+	},
+}
+
 var (
 	// Shared
 	apiUri            = flag.String("api", "", "OSS Rebuild API endpoint URI")
@@ -1613,6 +1656,8 @@ func init() {
 	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
 	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("agent-iterations"))
 
+	getSessions.Flags().AddGoFlag(flag.Lookup("project"))
+
 	localAgent.Flags().AddGoFlag(flag.Lookup("project"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("agent-api"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("metadata-bucket"))
@@ -1635,6 +1680,7 @@ func init() {
 	rootCmd.AddCommand(getResults)
 	rootCmd.AddCommand(export)
 	rootCmd.AddCommand(listRuns)
+	rootCmd.AddCommand(getSessions)
 	// Rebuild logic
 	rootCmd.AddCommand(infer)
 	rootCmd.AddCommand(getGradleGAV)
