@@ -1,0 +1,6 @@
+maven_build:
+  location:
+    repo: https://github.com/apache/pdfbox
+    ref: 39888640082f44929825fc828cfacb18edb2badb
+    dir: pdfbox
+    jdk_version: "11"
