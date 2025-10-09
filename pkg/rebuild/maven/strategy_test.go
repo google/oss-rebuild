@@ -26,7 +26,7 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				JDKVersion: "11.0.1",
+				JDKVersion: "12",
 			},
 			rebuild.Instructions{
 				Location: rebuild.Location{
@@ -38,7 +38,7 @@ func TestStrategies(t *testing.T) {
 				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+					wget -q -O - "https://download.java.net/java/GA/jdk12/33/GPL/openjdk-12_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
@@ -55,7 +55,7 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				JDKVersion: "11.0.1",
+				JDKVersion: "13",
 			},
 			rebuild.Instructions{
 				Location: rebuild.Location{
@@ -67,7 +67,7 @@ func TestStrategies(t *testing.T) {
 				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+					wget -q -O - "https://download.java.net/java/GA/jdk13/5b8a42f3905b406298b72d750b6919f6/33/GPL/openjdk-13_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
@@ -84,7 +84,7 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				JDKVersion:   "11.0.1",
+				JDKVersion:   "13",
 				SystemGradle: gradleVersion,
 			},
 			want: rebuild.Instructions{
@@ -97,7 +97,7 @@ func TestStrategies(t *testing.T) {
 				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
+					wget -q -O - "https://download.java.net/java/GA/jdk13/5b8a42f3905b406298b72d750b6919f6/33/GPL/openjdk-13_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
 					wget -q -O tmp.zip https://services.gradle.org/distributions/gradle-8.14.3-bin.zip
 					unzip -q tmp.zip -d /opt/ && mv /opt/gradle-8.14.3 /opt/gradle
 					rm tmp.zip`)[1:],
@@ -193,6 +193,62 @@ func TestStrategies(t *testing.T) {
 				OutputPath: "dir/build/libs/ldapchai-0.8.6.jar",
 			},
 			wantErr: false,
+		},
+		{
+			name: "enforce TLS 1.2 for JDK 11.0.1 in maven build",
+			strategy: &MavenBuild{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
+				},
+				JDKVersion: "11.0.1",
+			},
+			want: rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
+				},
+				SystemDeps: []string{"git", "wget", "maven"},
+				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Deps: textwrap.Dedent(`
+					mkdir -p /opt/jdk
+					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+				Build: textwrap.Dedent(`
+					export JAVA_HOME=/opt/jdk
+					export PATH=$JAVA_HOME/bin:$PATH
+					mvn clean package -DskipTests --batch-mode -f dir -Dmaven.javadoc.skip=true -Djdk.tls.client.protocols="TLSv1.2"`[1:]),
+				OutputPath: "dir/target/ldapchai-0.8.6.jar",
+			},
+		},
+		{
+			name: "enforce TLS 1.2 for JDK 11 in gradle build",
+			strategy: &GradleBuild{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
+				},
+				JDKVersion: "11",
+			},
+			want: rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "dir",
+				},
+				SystemDeps: []string{"git", "wget"},
+				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Deps: textwrap.Dedent(`
+					mkdir -p /opt/jdk
+					wget -q -O - "https://download.java.net/java/ga/jdk11/openjdk-11_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+				Build: textwrap.Dedent(`
+					export JAVA_HOME=/opt/jdk
+					export PATH=$JAVA_HOME/bin:$PATH
+					./gradlew assemble --no-daemon --console=plain -Pversion=0.8.6 -Djdk.tls.client.protocols="TLSv1.2"`[1:]),
+				OutputPath: "dir/build/libs/ldapchai-0.8.6.jar",
+			},
 		},
 		{
 			"throw an error if JDK installation candidate is not found",
