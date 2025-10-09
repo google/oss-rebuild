@@ -77,7 +77,6 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 			Timeout: fmt.Sprintf("%ds", deps.AgentTimeoutSeconds),
 			ContainerOverrides: []*run.GoogleCloudRunV2ContainerOverride{
 				{
-					Name: jobName,
 					Args: []string{
 						"--project=" + deps.Project,
 						"--location=" + deps.Location,
