@@ -5,6 +5,7 @@ package apiservice
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -36,6 +37,30 @@ type AgentCreateDeps struct {
 	LogsBucket          string
 }
 
+// executionFromOp extracts the execution name from the metadata of a
+// long-running operation returned by the google.golang.org/api/run/v2 client
+// library.
+// TODO: Switch to the cloud.google.com/go/run/apiv2 library, which would not
+// require us to to do marshalling of operation types to get this data.
+// This function returns the full execution resource ID: projects/<project>/locations/<location>/jobs/<job>/executions/<execution>
+func executionFromOp(op *run.GoogleLongrunningOperation) (string, error) {
+	if op == nil || op.Metadata == nil {
+		return "", fmt.Errorf("operation or its metadata is nil")
+	}
+	metadataBytes, err := op.Metadata.MarshalJSON()
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal operation metadata: %w", err)
+	}
+	var e run.GoogleCloudRunV2Execution
+	if err := json.Unmarshal(metadataBytes, &e); err != nil {
+		return "", fmt.Errorf("unmarshalling metadata into GoogleCloudRunV2Execution: %w", err)
+	}
+	if e.Name == "" {
+		return "", fmt.Errorf("execution name is empty")
+	}
+	return e.Name, nil
+}
+
 func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *AgentCreateDeps) (*schema.AgentCreateResponse, error) {
 	sessionUUID, err := uuid.NewV7()
 	if err != nil {
@@ -43,7 +68,6 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 	}
 	sessionID := sessionUUID.String()
 	sessionTime := time.Unix(sessionUUID.Time().UnixTime())
-	jobName := fmt.Sprintf("agent-%s", sessionID)
 	// Set defaults for configuration
 	maxIterations := req.MaxIterations
 	if maxIterations == 0 {
@@ -56,7 +80,6 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		TimeoutSeconds: deps.AgentTimeoutSeconds,
 		Context:        req.Context,
 		Status:         schema.AgentSessionStatusInitializing,
-		JobName:        jobName,
 		Created:        sessionTime,
 		Updated:        sessionTime,
 	}
@@ -72,7 +95,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating agent session"))
 	}
 	// Create Cloud Run Job
-	_, err = deps.RunService.Projects.Locations.Jobs.Run(deps.AgentJobName, &run.GoogleCloudRunV2RunJobRequest{
+	op, err := deps.RunService.Projects.Locations.Jobs.Run(deps.AgentJobName, &run.GoogleCloudRunV2RunJobRequest{
 		Overrides: &run.GoogleCloudRunV2Overrides{
 			Timeout: fmt.Sprintf("%ds", deps.AgentTimeoutSeconds),
 			ContainerOverrides: []*run.GoogleCloudRunV2ContainerOverride{
@@ -98,6 +121,10 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating cloud run job"))
 	}
 	// Update session status
+	session.ExecutionName, err = executionFromOp(op)
+	if err != nil {
+		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "getting execution name from operation"))
+	}
 	session.Status = schema.AgentSessionStatusRunning
 	session.Updated = time.Now().UTC()
 	_, err = deps.FirestoreClient.Collection("agent_sessions").Doc(sessionID).Set(ctx, session)
@@ -105,7 +132,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "updating session status"))
 	}
 	return &schema.AgentCreateResponse{
-		SessionID: sessionID,
-		JobName:   jobName,
+		SessionID:     sessionID,
+		ExeuctionName: session.ExecutionName,
 	}, nil
 }

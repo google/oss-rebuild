@@ -363,8 +363,8 @@ type AgentContext struct {
 
 // AgentCreateResponse returns the session ID and job name
 type AgentCreateResponse struct {
-	SessionID string `json:"session_id"`
-	JobName   string `json:"job_name"`
+	SessionID     string `json:"session_id"`
+	ExeuctionName string `json:"execution_name"`
 }
 
 // AgentCreateIterationRequest records iteration and triggers build
@@ -423,7 +423,7 @@ type AgentSession struct {
 	TimeoutSeconds   int            `firestore:"timeout_seconds,omitempty"`
 	Context          *AgentContext  `firestore:"context,omitempty"`
 	Status           string         `firestore:"status,omitempty"`
-	JobName          string         `firestore:"job_name,omitempty"`
+	ExecutionName    string         `firestore:"execution_name,omitempty"`
 	Created          time.Time      `firestore:"created,omitempty"`
 	Updated          time.Time      `firestore:"updated,omitempty"`
 	StopReason       string         `firestore:"stop_reason,omitempty"`
