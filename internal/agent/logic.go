@@ -10,10 +10,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path"
 	"reflect"
 	"strings"
+	"time"
 
-	gcs "cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -176,11 +177,7 @@ func (a *defaultAgent) logs(ctx context.Context, obliviousID string) (io.ReadClo
 	if bi.BuildID == "" {
 		return nil, errors.New("BuildID is empty, cannot read gcb logs")
 	}
-	client, err := gcs.NewClient(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating gcs client")
-	}
-	obj := client.Bucket(a.deps.LogsBucket).Object(gcb.MergedLogFile(bi.BuildID))
+	obj := a.deps.GCSClient.Bucket(a.deps.LogsBucket).Object(gcb.MergedLogFile(bi.BuildID))
 	return obj.NewReader(ctx)
 }
 
@@ -520,15 +517,36 @@ func (a *defaultAgent) makePrompt(ctx context.Context) []string {
 	return prompt
 }
 
-func (a *defaultAgent) generate(ctx context.Context, prompt []string) (string, error) {
+func (a *defaultAgent) generate(ctx context.Context, prompt []string, opts *ProposeOpts) (string, error) {
 	var response genai.Content
 	contentParts := []*genai.Part{genai.NewPartFromText(strings.Join(prompt, "\n"))}
+	var partNum int
+	// Use timestamp for each call to generate to avoid collisions
+	invokeTime := time.Now().UTC().Format(time.RFC3339Nano)
 	for content, err := range a.deps.Chat.SendMessageStream(ctx, contentParts...) {
 		if err != nil {
 			return "", errors.Wrap(err, "chat error")
 		}
 		log.Printf("%s\n\n", llm.FormatContent(*content))
+		if opts.ChatUploadURL != nil {
+			contentPath := path.Join(opts.ChatUploadURL.Path, fmt.Sprintf("%s-%d-%s.json", invokeTime, partNum, content.Role))
+			var writer io.WriteCloser
+			switch opts.ChatUploadURL.Scheme {
+			case "gs":
+				writer = a.deps.GCSClient.Bucket(opts.ChatUploadURL.Host).Object(contentPath).NewWriter(ctx)
+			// TODO: implement local fs storage
+			default:
+				return "", fmt.Errorf("unsupported chat upload scheme: \"%s\"", opts.ChatUploadURL.Scheme)
+			}
+			defer writer.Close()
+			enc := json.NewEncoder(writer)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(content); err != nil {
+				return "", errors.Wrap(err, "writing to bucket")
+			}
+		}
 		response = *content
+		partNum++
 	}
 	return response.Parts[0].Text, nil
 }
@@ -544,7 +562,7 @@ type thoughtData struct {
 	UpdatedScript    string // The updated script.
 }
 
-func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.StrategyOneOf, error) {
+func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {
 	if len(a.iterHistory) == 0 {
 		return nil, errors.New("proposeAgentInferece needs an previous iteration to work off of")
 	}
@@ -556,7 +574,7 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.Strat
 	{ // Diagnose
 		log.Println("Asking the LLM to diagnose the failure and describe a fix...")
 		p := a.makeDiagnosticPrompt()
-		thought.Diagnostic, err = a.generate(ctx, p)
+		thought.Diagnostic, err = a.generate(ctx, p, opts)
 		if err != nil {
 			return nil, errors.Wrap(err, "diagnose")
 		}
@@ -567,7 +585,7 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.Strat
 		p := a.makePrompt(ctx)
 		p = append(p, "An expert reviewed this failure and gave these instructions for fixing it:", thought.Diagnostic)
 		// TODO: Switch the prompt to outputReasoningAndScript for structured reasoning.
-		rawScript, err = a.generate(ctx, p)
+		rawScript, err = a.generate(ctx, p, opts)
 		if err != nil {
 			return nil, errors.Wrap(err, "hypothesize")
 		}
@@ -584,6 +602,7 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.Strat
 				"From the following llm response, extract only the shell commands to be run and exclude any commands used to clone, checkout, and navigate to the git repo:",
 				rawScript,
 			},
+			opts,
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "ai formatting")
@@ -608,13 +627,13 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context) (*schema.Strat
 	return &stratOneOf, nil
 }
 
-func (a *defaultAgent) Propose(ctx context.Context) (*schema.StrategyOneOf, error) {
+func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {
 	// For the first iteration, use our regular inference logic.
 	// This allows the agent to benefit from the rest of our infrence improvements.
 	if len(a.iterHistory) == 0 {
 		return a.proposeNormalInference(ctx)
 	} else {
-		return a.proposeAgentInference(ctx)
+		return a.proposeAgentInference(ctx, opts)
 	}
 }
 

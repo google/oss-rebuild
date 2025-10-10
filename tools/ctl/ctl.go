@@ -1433,6 +1433,10 @@ var localAgent = &cobra.Command{
 		if err != nil {
 			log.Fatalf("Failed to parse agent API URL: %v", err)
 		}
+		gcsClient, err := gcs.NewClient(ctx)
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "creating GCS client"))
+		}
 		// Create agent API client stubs
 		iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
 		completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
@@ -1440,6 +1444,7 @@ var localAgent = &cobra.Command{
 			Client:         aiClient,
 			IterationStub:  iterationStub,
 			CompleteStub:   completeStub,
+			GCSClient:      gcsClient,
 			SessionsBucket: "", // TODO: Add this once it's being used.
 			MetadataBucket: *metadataBucket,
 			LogsBucket:     *logsBucket,

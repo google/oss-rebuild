@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/url"
 
+	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -88,10 +89,15 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to create genai client: ", err)
 	}
+	gcsClient, err := gcs.NewClient(ctx)
+	if err != nil {
+		log.Fatal("Failed to create GCS client: ", err)
+	}
 	deps := agent.RunSessionDeps{
 		Client:         aiClient,
 		IterationStub:  iterationStub,
 		CompleteStub:   completeStub,
+		GCSClient:      gcsClient,
 		SessionsBucket: *sessionsBucket,
 		MetadataBucket: *metadataBucket,
 		LogsBucket:     *logsBucket,
