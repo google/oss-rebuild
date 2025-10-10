@@ -247,12 +247,17 @@ var getResults = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		fireClient, err := rundex.NewFirestore(cmd.Context(), *project)
-		if err != nil {
-			log.Fatal(err)
+		var dex rundex.Reader
+		if *project == "" {
+			dex = rundex.NewLocalClient(localfiles.Rundex())
+		} else {
+			dex, err = rundex.NewFirestore(cmd.Context(), *project)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 		log.Printf("Querying results for [executors=%v,runs=%v,bench=%s,prefix=%s,pattern=%s]", req.Executors, req.Runs, *bench, req.Opts.Prefix, req.Opts.Pattern)
-		rebuilds, err := fireClient.FetchRebuilds(cmd.Context(), req)
+		rebuilds, err := dex.FetchRebuilds(cmd.Context(), req)
 		if err != nil {
 			log.Fatal(err)
 		}
