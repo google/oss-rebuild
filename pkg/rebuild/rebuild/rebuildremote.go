@@ -50,6 +50,7 @@ type rebuildContainerArgs struct {
 	PrebuildBucket  string
 	PrebuildDir     string
 	PrebuildAuth    bool
+	Target          Target
 }
 
 var tetragonPoliciesYaml = []string{`apiVersion: cilium.io/v1alpha1
@@ -144,6 +145,13 @@ var debuildContainerTpl = template.Must(
 		// TODO: Find a base image that has build-essentials installed, that would improve startup time significantly, and it would pin the build tools we're using.
 		textwrap.Dedent(`
 				#syntax=docker/dockerfile:1.10
+				# OSS-Rebuild generated build instructions
+				# Package: {{.Target.Package}}
+				# Ecosystem: {{.Target.Ecosystem}}
+				# Version: {{.Target.Version}}
+				{{- if .Target.Artifact}}
+				# Artifact: {{.Target.Artifact}}
+				{{- end}}
 				FROM docker.io/library/debian:trixie-20250203-slim
 				RUN {{if .PrebuildAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
 				 set -eux
@@ -185,6 +193,13 @@ var alpineContainerTpl = template.Must(
 		// NOTE: For syntax docs, see https://docs.docker.com/build/dockerfile/release-notes/
 		textwrap.Dedent(`
 				#syntax=docker/dockerfile:1.10
+				# OSS-Rebuild generated build instructions
+				# Package: {{.Target.Package}}
+				# Ecosystem: {{.Target.Ecosystem}}
+				# Version: {{.Target.Version}}
+				{{- if .Target.Artifact}}
+				# Artifact: {{.Target.Artifact}}
+				{{- end}}
 				FROM docker.io/library/alpine:3.19
 				RUN {{if .PrebuildAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
 				 set -eux
@@ -547,6 +562,7 @@ func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 			PrebuildDir:    opts.PrebuildConfig.Dir,
 			PrebuildAuth:   opts.PrebuildConfig.Auth,
 			Instructions:   instructions,
+			Target:         input.Target,
 		})
 	} else {
 		err = alpineContainerTpl.Execute(dockerfile, rebuildContainerArgs{
@@ -555,6 +571,7 @@ func MakeDockerfile(input Input, opts RemoteOptions) (string, error) {
 			PrebuildDir:    opts.PrebuildConfig.Dir,
 			PrebuildAuth:   opts.PrebuildConfig.Auth,
 			Instructions:   instructions,
+			Target:         input.Target,
 		})
 	}
 	if err != nil {

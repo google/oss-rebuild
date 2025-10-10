@@ -28,7 +28,7 @@ func TestMakeDockerfile(t *testing.T) {
 		{
 			name: "Basic Usage",
 			input: Input{
-				Target: Target{},
+				Target: Target{Ecosystem: NPM, Package: "example-pkg", Version: "1.0.0", Artifact: "example-pkg-1.0.0.tgz"},
 				Strategy: &ManualStrategy{
 					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
 					SystemDeps: []string{"git", "make"},
@@ -41,6 +41,11 @@ func TestMakeDockerfile(t *testing.T) {
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.10
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: npm
+# Version: 1.0.0
+# Artifact: example-pkg-1.0.0.tgz
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -65,7 +70,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 		{
 			name: "With Timewarp",
 			input: Input{
-				Target: Target{},
+				Target: Target{Ecosystem: NPM, Package: "example-pkg", Version: "1.0.0", Artifact: "example-pkg-1.0.0.tgz"},
 				Strategy: &ManualStrategy{
 					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
 					SystemDeps: []string{"git", "make"},
@@ -79,6 +84,11 @@ ENTRYPOINT ["/bin/sh","/build"]
 				PrebuildConfig: PrebuildConfig{Bucket: "my-bucket"},
 			},
 			expected: `#syntax=docker/dockerfile:1.10
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: npm
+# Version: 1.0.0
+# Artifact: example-pkg-1.0.0.tgz
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -107,7 +117,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 		{
 			name: "With Timewarp and auth",
 			input: Input{
-				Target: Target{},
+				Target: Target{Ecosystem: NPM, Package: "example-pkg", Version: "1.0.0", Artifact: "example-pkg-1.0.0.tgz"},
 				Strategy: &ManualStrategy{
 					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
 					SystemDeps: []string{"git", "make"},
@@ -122,6 +132,11 @@ ENTRYPOINT ["/bin/sh","/build"]
 				Project:        "my-project",
 			},
 			expected: `#syntax=docker/dockerfile:1.10
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: npm
+# Version: 1.0.0
+# Artifact: example-pkg-1.0.0.tgz
 FROM docker.io/library/alpine:3.19
 RUN --mount=type=secret,id=auth_header <<'EOF'
  set -eux
@@ -150,7 +165,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 		{
 			name: "With Timewarp at a Subdir",
 			input: Input{
-				Target: Target{},
+				Target: Target{Ecosystem: NPM, Package: "example-pkg", Version: "1.0.0", Artifact: "example-pkg-1.0.0.tgz"},
 				Strategy: &ManualStrategy{
 					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
 					SystemDeps: []string{"git", "make"},
@@ -164,6 +179,11 @@ ENTRYPOINT ["/bin/sh","/build"]
 				PrebuildConfig: PrebuildConfig{Bucket: "my-bucket", Dir: "v0.0.0-202501010000-feeddeadbeef00"},
 			},
 			expected: `#syntax=docker/dockerfile:1.10
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: npm
+# Version: 1.0.0
+# Artifact: example-pkg-1.0.0.tgz
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -192,7 +212,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 		{
 			name: "Multi-Line Scripts",
 			input: Input{
-				Target: Target{},
+				Target: Target{Ecosystem: PyPI, Package: "example-pkg", Version: "1.0.0", Artifact: "example-pkg-1.0.0.whl"},
 				Strategy: &ManualStrategy{
 					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
 					SystemDeps: []string{"curl", "jq"},
@@ -209,6 +229,11 @@ python3 setup.py sdist`,
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.10
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: pypi
+# Version: 1.0.0
+# Artifact: example-pkg-1.0.0.whl
 FROM docker.io/library/alpine:3.19
 RUN <<'EOF'
  set -eux
@@ -239,6 +264,9 @@ ENTRYPOINT ["/bin/sh","/build"]
 			input: Input{
 				Target: Target{
 					Ecosystem: Debian,
+					Package:   "example-pkg",
+					Version:   "1.0.0",
+					Artifact:  "example-pkg_1.0.0_amd64.deb",
 				},
 				Strategy: &ManualStrategy{
 					Location:   Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
@@ -252,6 +280,11 @@ ENTRYPOINT ["/bin/sh","/build"]
 				UseTimewarp: false,
 			},
 			expected: `#syntax=docker/dockerfile:1.10
+# OSS-Rebuild generated build instructions
+# Package: example-pkg
+# Ecosystem: debian
+# Version: 1.0.0
+# Artifact: example-pkg_1.0.0_amd64.deb
 FROM docker.io/library/debian:trixie-20250203-slim
 RUN <<'EOF'
  set -eux
