@@ -132,7 +132,9 @@ func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strate
 			ToolURLs: map[build.ToolType]string{
 				build.TimewarpTool: opts.PrebuildURL + "/timewarp",
 			},
+			BaseImageConfig: build.DefaultBaseImageConfig(),
 		},
+		UseTimewarp: meta.AllRebuilders[t.Ecosystem].UsesTimewarp(input),
 	}
 	handle, err := executor.Start(ctx, input, buildOpts)
 	if err != nil {
