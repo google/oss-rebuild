@@ -78,7 +78,11 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		}
 	}
 	verdict := &schema.Verdict{Target: t}
+	outBuf := &bytes.Buffer{}
+	log.SetOutput(io.MultiWriter(outBuf, s.logsink))
 	strategy, err := s.infer(ctx, t, mux)
+	uploadInferenceLogs(ctx, s.store, t, outBuf.Bytes())
+	log.SetOutput(s.logsink)
 	if err != nil {
 		verdict.Message = err.Error()
 		return verdict, nil
@@ -90,6 +94,17 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		verdict.Message = err.Error()
 	}
 	return verdict, nil
+}
+
+func uploadInferenceLogs(ctx context.Context, store rebuild.LocatableAssetStore, t rebuild.Target, logs []byte) {
+	if writeCloser, err := store.Writer(ctx, rebuild.InferenceLogsAsset.For(t)); err != nil {
+		log.Printf("Failed to create writer for inference logs: %v", err)
+	} else {
+		defer writeCloser.Close()
+		if _, err := writeCloser.Write(logs); err != nil {
+			log.Printf("Failed to write inference logs: %v", err)
+		}
+	}
 }
 
 func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (rebuild.Strategy, error) {

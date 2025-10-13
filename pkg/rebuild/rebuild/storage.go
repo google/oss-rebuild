@@ -29,6 +29,8 @@ func (a AssetType) For(t Target) Asset {
 }
 
 const (
+	// InferenceLogsAsset is the logs produced during inference.
+	InferenceLogsAsset AssetType = "inference-logs"
 	// DebugRebuildAsset is the artifact that we rebuilt.
 	DebugRebuildAsset AssetType = "rebuild"
 	// DebugUpstreamAsset is the upstream artifact we compared against.
