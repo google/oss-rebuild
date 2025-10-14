@@ -244,12 +244,17 @@ var getResults = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-		fireClient, err := rundex.NewFirestore(cmd.Context(), *project)
-		if err != nil {
-			log.Fatal(err)
+		var client rundex.Reader
+		if *project == "" {
+			client = rundex.NewLocalClient(localfiles.Rundex())
+		} else {
+			client, err = rundex.NewFirestore(cmd.Context(), *project)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 		log.Printf("Querying results for [executors=%v,runs=%v,bench=%s,prefix=%s,pattern=%s]", req.Executors, req.Runs, *bench, req.Opts.Prefix, req.Opts.Pattern)
-		rebuilds, err := fireClient.FetchRebuilds(cmd.Context(), req)
+		rebuilds, err := client.FetchRebuilds(cmd.Context(), req)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -515,7 +520,7 @@ var runBenchmark = &cobra.Command{
 				ID:            runID,
 				BenchmarkName: filepath.Base(args[1]),
 				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-				Type:          string(schema.SmoketestMode),
+				Type:          string(mode),
 				Created:       now,
 			})); err != nil {
 				log.Println(errors.Wrap(err, "writing run to rundex"))
