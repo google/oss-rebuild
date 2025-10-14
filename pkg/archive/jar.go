@@ -59,6 +59,7 @@ var StableJARBuildMetadata = ZipEntryStabilizer{
 			"Created-By",
 			"DSTAMP",
 			"Eclipse-SourceReferences",
+			"Git-Branch",
 			"Git-Commit-Id-Describe",
 			"Git-Remote-Origin-Url",
 			"Git-SHA",
