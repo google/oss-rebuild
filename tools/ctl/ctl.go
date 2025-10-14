@@ -326,7 +326,7 @@ var getResults = &cobra.Command{
 }
 
 var export = &cobra.Command{
-	Use:   "export -project <ID> -run <ID> -destination <url> [-pattern <regex>] [-rundex] [-asset-types <type1>,<type2>] -",
+	Use:   "export -project <ID> -run <ID> -destination <url> [-pattern <regex>] [-rundex] [-asset-types <type1>,<type2>] [--max-concurrency N]",
 	Short: "Export rebuild results",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -428,7 +428,7 @@ var export = &cobra.Command{
 		}
 		log.Printf("Fetched %d rebuilds", len(rebuilds))
 		// Export all the run objects.
-		rundexReadParallelism := 50
+		rundexReadParallelism := *maxConcurrency
 		type rebuildExport struct {
 			rebuild rundex.Rebuild
 			errs    []error
@@ -1605,6 +1605,7 @@ func init() {
 	export.Flags().AddGoFlag(flag.Lookup("asset-types"))
 	export.Flags().AddGoFlag(flag.Lookup("destination"))
 	export.Flags().AddGoFlag(flag.Lookup("rundex"))
+	export.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
 
 	tui.Flags().AddGoFlag(flag.Lookup("project"))
 	tui.Flags().AddGoFlag(flag.Lookup("llm-project"))
