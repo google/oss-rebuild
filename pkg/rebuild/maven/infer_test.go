@@ -72,6 +72,16 @@ func TestJDKVersionInference(t *testing.T) {
 			wantVersion: "17.0.2",
 		},
 		{
+			name: "strip patch version",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 17.0.6\r\n\r\n"),
+				},
+			},
+			wantVersion: "17",
+		},
+		{
 			name: "fallback to classfile",
 			input: []*archive.ZipEntry{
 				{
