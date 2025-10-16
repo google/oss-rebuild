@@ -1,0 +1,196 @@
+{
+  "Count": 19,
+  "Updated": "2025-10-16T16:05:00.533913",
+  "Packages": [
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.tika:tika-core",
+      "Versions": [
+        "2.9.2"
+      ],
+      "Artifacts": [
+        "tika-core-2.9.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.fasterxml.jackson.core:jackson-databind",
+      "Versions": [
+        "2.18.3"
+      ],
+      "Artifacts": [
+        "jackson-databind-2.18.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.r2dbc:r2dbc-pool",
+      "Versions": [
+        "1.0.2.RELEASE"
+      ],
+      "Artifacts": [
+        "r2dbc-pool-1.0.2.RELEASE.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.projectreactor:reactor-core",
+      "Versions": [
+        "3.5.11"
+      ],
+      "Artifacts": [
+        "reactor-core-3.5.11.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.fluxtion:runtime",
+      "Versions": [
+        "9.7.14"
+      ],
+      "Artifacts": [
+        "runtime-9.7.14.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.httpcomponents.core5:httpcore5",
+      "Versions": [
+        "5.2.4"
+      ],
+      "Artifacts": [
+        "httpcore5-5.2.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "fun.fengwk.auto-mapper:auto-mapper-processor",
+      "Versions": [
+        "0.0.48"
+      ],
+      "Artifacts": [
+        "auto-mapper-processor-0.0.48.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.projectreactor.kafka:reactor-kafka",
+      "Versions": [
+        "1.3.23"
+      ],
+      "Artifacts": [
+        "reactor-kafka-1.3.23.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.avro:avro",
+      "Versions": [
+        "1.11.3"
+      ],
+      "Artifacts": [
+        "avro-1.11.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.jersey.core:jersey-client",
+      "Versions": [
+        "2.41"
+      ],
+      "Artifacts": [
+        "jersey-client-2.41.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.flink:flink-streaming-java",
+      "Versions": [
+        "1.18.1"
+      ],
+      "Artifacts": [
+        "flink-streaming-java-1.18.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.zafarkhaja:java-semver",
+      "Versions": [
+        "0.10.2"
+      ],
+      "Artifacts": [
+        "java-semver-0.10.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.helger.commons:ph-commons",
+      "Versions": [
+        "11.1.6"
+      ],
+      "Artifacts": [
+        "ph-commons-11.1.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.lettuce:lettuce-core",
+      "Versions": [
+        "6.3.2.RELEASE"
+      ],
+      "Artifacts": [
+        "lettuce-core-6.3.2.RELEASE.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.javaparser:javaparser-symbol-solver-core",
+      "Versions": [
+        "3.26.2"
+      ],
+      "Artifacts": [
+        "javaparser-symbol-solver-core-3.26.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.h2database:h2",
+      "Versions": [
+        "2.3.232"
+      ],
+      "Artifacts": [
+        "h2-2.3.232.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.noear:solon",
+      "Versions": [
+        "3.2.0"
+      ],
+      "Artifacts": [
+        "solon-3.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.httpcomponents.client5:httpclient5",
+      "Versions": [
+        "5.3.1"
+      ],
+      "Artifacts": [
+        "httpclient5-5.3.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.vesoft:client",
+      "Versions": [
+        "3.8.0"
+      ],
+      "Artifacts": [
+        "client-3.8.0.jar"
+      ]
+    }
+  ]
+}
