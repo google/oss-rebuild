@@ -467,12 +467,12 @@ func (a *defaultAgent) historyContext(ctx context.Context) []string {
 				},
 				BaseImageConfig: build.DefaultBaseImageConfig(),
 			}
-			plan, err := local.NewDockerRunPlanner().GeneratePlan(ctx, inp, build.PlanOptions{
+			plan, err := local.NewDockerBuildPlanner().GeneratePlan(ctx, inp, build.PlanOptions{
 				UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
 				Resources:   resources,
 			})
 			if err == nil {
-				dockerfile = plan.Script
+				dockerfile = plan.Dockerfile
 			}
 			if dockerfile != "" {
 				prompt = append(
