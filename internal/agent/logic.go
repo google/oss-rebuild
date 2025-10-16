@@ -25,9 +25,6 @@ import (
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/llm"
-	"github.com/google/oss-rebuild/pkg/build"
-	"github.com/google/oss-rebuild/pkg/build/local"
-	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
@@ -390,7 +387,7 @@ func (a *defaultAgent) diagnoseOnly() []string {
 	}
 }
 
-func (a *defaultAgent) outputOnlyScript() []string {
+func (a *defaultAgent) outputOnlyScript(outputPath string) []string {
 	return []string{
 		"When responding, please only respond with the bash script. Do not include any english text before or after the bash script, and do not include any formatting.",
 		"You should include your reasoning as comments inside the bash script.",
@@ -400,6 +397,8 @@ func (a *defaultAgent) outputOnlyScript() []string {
 		"You SHOULD NOT change the ref in the location.",
 		"To debug the build, you might want to use the read_build_logs tool to view the build errors to understand what's going wrong.",
 		"You might also want to inspect the contents of the source repo using the read_repo_file or list_repo_files tools.",
+		fmt.Sprintf("Make sure artifact eventually ends up in %s, which is the path from which it will be exported.", outputPath),
+		"DO NOT create or modify the /out directory. That will be done for you after the build script finishes.",
 	}
 }
 
@@ -415,78 +414,97 @@ func (a *defaultAgent) ecosystemExpertise() []string {
 	}
 }
 
-func (a *defaultAgent) historyContext(ctx context.Context) []string {
+// executionDetails about the previous execution
+type executionDetails struct {
+	Iteration    schema.AgentIteration
+	Instructions rebuild.Instructions
+	Dockerfile   string
+}
+
+func (a *defaultAgent) dockerfile(ctx context.Context, obliviousID string) (string, error) {
+	if obliviousID == "" {
+		return "", errors.New("no oblivious ID provided")
+	}
+	meta, err := rebuild.NewGCSStoreFromClient(context.WithValue(ctx, rebuild.RunID, obliviousID), a.deps.GCSClient, fmt.Sprintf("gs://%s", a.deps.MetadataBucket))
+	if err != nil {
+		return "", err
+	}
+	r, err := meta.Reader(ctx, rebuild.DockerfileAsset.For(a.t))
+	if err != nil {
+		return "", errors.Wrap(err, "opening dockerfile")
+	}
+	defer r.Close()
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return "", errors.Wrap(err, "reading dockerfile")
+	}
+	return string(data), nil
+}
+
+func (a *defaultAgent) execDetails(ctx context.Context, iteration *schema.AgentIteration) *executionDetails {
+	d := &executionDetails{Iteration: *iteration}
+	if iteration.Strategy == nil {
+		return d
+	}
+	s, err := iteration.Strategy.Strategy()
+	if err != nil {
+		return d
+	}
+	{ // Instructions - generated from strategy
+		// NOTE: These instructions might differ slightly from the ones in the dockerfile that was used for the build.
+		// We do this because GenerateFor is the most straightforward way of separating the source, deps, and build steps.
+		inst, err := s.GenerateFor(a.t, rebuild.BuildEnv{
+			TimewarpHost:           "localhost:8080",
+			HasRepo:                false,
+			PreferPreciseToolchain: false,
+		})
+		if err != nil {
+			log.Println(errors.Wrap(err, "generating instructions"))
+		} else {
+			d.Instructions = inst
+		}
+	}
+	{ // Dockerfile - fetched from infrastructure
+		d.Dockerfile, err = a.dockerfile(ctx, iteration.ObliviousID)
+		if err != nil {
+			log.Println(errors.Wrap(err, "getting dockerfile"))
+		}
+	}
+	return d
+}
+
+func (a *defaultAgent) historyContext(prev *executionDetails) []string {
 	prompt := []string{
 		"# History",
 		"Here are the details of the previous attempt.",
 		"You can only control the build script, but other details are included to help you diagnose the failure.",
 	}
-	if len(a.iterHistory) > 0 {
-		iteration := a.iterHistory[len(a.iterHistory)-1]
-		if iteration.Strategy == nil {
-			return nil
-		}
-		s, err := iteration.Strategy.Strategy()
-		if err != nil {
-			log.Printf("Previous iteration had no strategy: %v", err)
-			return nil
-		}
-		var script string
-		{
-			inst, err := s.GenerateFor(a.t, rebuild.BuildEnv{
-				TimewarpHost:           "localhost:8081",
-				HasRepo:                false,
-				PreferPreciseToolchain: false,
-			})
-			if err != nil {
-				log.Printf(": %v", err)
-				return nil
-			}
-			script = inst.Deps + "\n" + inst.Build
-		}
+	if prev != nil {
 		prompt = append(prompt,
 			"## Build script:",
 			"",
 			"This is the content you can control, focus on and update",
 			"```bash",
-			script,
+			prev.Instructions.Build,
 			"```",
 			"",
 			"## Error message:",
 			"```",
-			iteration.Result.ErrorMessage,
+			prev.Iteration.Result.ErrorMessage,
 			"```",
 		)
-		var dockerfile string
-		{
-			inp := rebuild.Input{Target: a.t, Strategy: s}
-			resources := build.Resources{
-				ToolURLs: map[build.ToolType]string{
-					// TODO: Make a dummy URL for this, it won't actually be executed.
-					build.TimewarpTool: "https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20250428204534-b35098b3c7b7/timewarp",
-				},
-				BaseImageConfig: build.DefaultBaseImageConfig(),
-			}
-			plan, err := local.NewDockerRunPlanner().GeneratePlan(ctx, inp, build.PlanOptions{
-				UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
-				Resources:   resources,
-			})
-			if err == nil {
-				dockerfile = plan.Script
-			}
-			if dockerfile != "" {
-				prompt = append(
-					prompt,
-					"",
-					"## Dockerfile",
-					"This is for debugging purposes only. Do not include this file's contents in your response):",
-					"",
-					"```dockerfile",
-					dockerfile,
-					"```",
-					"",
-				)
-			}
+		if prev.Dockerfile != "" {
+			prompt = append(
+				prompt,
+				"",
+				"## Dockerfile",
+				"This is for debugging purposes only. Do not include this file's contents in your response):",
+				"",
+				"```dockerfile",
+				prev.Dockerfile,
+				"```",
+				"",
+			)
 		}
 	}
 	if len(a.thoughts) > 0 {
@@ -554,17 +572,18 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 	if len(a.iterHistory) == 0 {
 		return nil, errors.New("proposeAgentInferece needs an previous iteration to work off of")
 	}
+	prev := a.execDetails(ctx, a.iterHistory[len(a.iterHistory)-1])
 	thought := thoughtData{
 		BasedOnIteration: len(a.iterHistory) - 1,
 	}
-	var err error
 	// We have a dedicated diagnostic step to make sure we keep a history of what the AI thinks the problems are.
 	{ // Diagnose
 		log.Println("Asking the LLM to diagnose the failure and describe a fix...")
 		prompt := a.genericPrompt()
 		prompt = append(prompt, a.ecosystemExpertise()...)
-		prompt = append(prompt, a.historyContext(ctx)...)
+		prompt = append(prompt, a.historyContext(prev)...)
 		prompt = append(prompt, a.diagnoseOnly()...)
+		var err error
 		thought.Diagnostic, err = a.generate(ctx, prompt, opts)
 		if err != nil {
 			return nil, errors.Wrap(err, "diagnose")
@@ -574,15 +593,17 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 	{ // Implement
 		log.Println("Asking the LLM to hypothesize a fix")
 		prompt := a.genericPrompt()
-		prompt = append(prompt, a.outputOnlyScript()...)
+		prompt = append(prompt, a.ecosystemExpertise()...)
+		prompt = append(prompt, a.outputOnlyScript(prev.Instructions.OutputPath)...)
 		prompt = append(prompt, "An expert reviewed this failure and gave these instructions for fixing it:", thought.Diagnostic)
 		// TODO: Switch the prompt to outputReasoningAndScript for structured reasoning.
+		var err error
 		rawScript, err = a.generate(ctx, prompt, opts)
 		if err != nil {
 			return nil, errors.Wrap(err, "hypothesize")
 		}
 	}
-	{
+	{ // Clean the script
 		// TODO: Change this to use gemini flash instead
 		script, err := a.generate(
 			ctx,
@@ -611,9 +632,11 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 	a.thoughts = append(a.thoughts, thought)
 	// TODO: Try to format the bash script into a structured strategy?
 	strat := rebuild.ManualStrategy{
-		Location: a.loc,
-		Deps:     "echo 'running deps'",
-		Build:    thought.UpdatedScript,
+		Location:   a.loc,
+		SystemDeps: prev.Instructions.SystemDeps,
+		Deps:       prev.Instructions.Deps,
+		Build:      thought.UpdatedScript,
+		OutputPath: prev.Instructions.OutputPath,
 	}
 	stratOneOf := schema.NewStrategyOneOf(&strat)
 	return &stratOneOf, nil
