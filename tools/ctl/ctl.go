@@ -641,7 +641,8 @@ var runAgentBenchmark = &cobra.Command{
 		}
 
 		ctx := cmd.Context()
-		var stub api.StubT[schema.AgentCreateRequest, schema.AgentCreateResponse]
+		var agentStub api.StubT[schema.AgentCreateRequest, schema.AgentCreateResponse]
+		var runStub api.StubT[schema.CreateRunRequest, schema.Run]
 		{
 			apiURL, err := url.Parse(*apiUri)
 			if err != nil {
@@ -658,7 +659,8 @@ var runAgentBenchmark = &cobra.Command{
 			} else {
 				client = http.DefaultClient
 			}
-			stub = api.Stub[schema.AgentCreateRequest, schema.AgentCreateResponse](client, apiURL.JoinPath("agent"))
+			agentStub = api.Stub[schema.AgentCreateRequest, schema.AgentCreateResponse](client, apiURL.JoinPath("agent"))
+			runStub = api.Stub[schema.CreateRunRequest, schema.Run](client, apiURL.JoinPath("runs"))
 		}
 		path := args[0]
 		log.Printf("Extracting benchmark %s...\n", filepath.Base(path))
@@ -667,6 +669,19 @@ var runAgentBenchmark = &cobra.Command{
 			return errors.Wrap(err, "reading benchmark file")
 		}
 		log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
+		// Create the Run object
+		var runID string
+		{
+			resp, err := runStub(ctx, schema.CreateRunRequest{
+				BenchmarkName: filepath.Base(path),
+				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
+				Type:          string(schema.AgentMode),
+			})
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "creating run"))
+			}
+			runID = resp.ID
+		}
 		p := pipe.Into(pipe.FromSlice(set.Packages), func(in benchmark.Package, out chan<- schema.AgentCreateRequest) {
 			if len(in.Versions) > 0 && len(in.Versions) != len(in.Artifacts) {
 				log.Printf("Package %s has mismatching version and artifacts", in.Name)
@@ -674,6 +689,7 @@ var runAgentBenchmark = &cobra.Command{
 			}
 			for i, v := range in.Versions {
 				req := schema.AgentCreateRequest{
+					RunID: runID,
 					Target: rebuild.Target{
 						Ecosystem: rebuild.Ecosystem(in.Ecosystem),
 						Package:   in.Name,
@@ -693,7 +709,7 @@ var runAgentBenchmark = &cobra.Command{
 		bar.Start()
 		p2 := pipe.ParInto(*maxConcurrency, p, func(in schema.AgentCreateRequest, out chan<- string) {
 			defer bar.Increment()
-			resp, err := stub(ctx, in)
+			resp, err := agentStub(ctx, in)
 			if err != nil {
 				log.Println(err)
 				return
@@ -1465,7 +1481,7 @@ var localAgent = &cobra.Command{
 }
 
 var getSessions = &cobra.Command{
-	Use:   "get-sessions --project <project>",
+	Use:   "get-sessions --project <project> [--run <RunID>]",
 	Short: "Get a history of sessions",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -1477,10 +1493,14 @@ var getSessions = &cobra.Command{
 		if err != nil {
 			return errors.Wrap(err, "creating firestore client")
 		}
-		sessionQuery := fire.Collection("agent_sessions").Documents(ctx)
+		sessionQuery := fire.Collection("agent_sessions").Query
+		if *runFlag != "" {
+			sessionQuery = sessionQuery.Where("run_id", "==", *runFlag)
+		}
 		sessions := make([]*schema.AgentSession, 0)
+		docIter := sessionQuery.Documents(ctx)
 		for {
-			doc, err := sessionQuery.Next()
+			doc, err := docIter.Next()
 			if err == iterator.Done {
 				break
 			}

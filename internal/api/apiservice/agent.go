@@ -75,6 +75,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 	}
 	session := schema.AgentSession{
 		ID:             sessionID,
+		RunID:          req.RunID,
 		Target:         req.Target,
 		MaxIterations:  maxIterations,
 		TimeoutSeconds: deps.AgentTimeoutSeconds,
