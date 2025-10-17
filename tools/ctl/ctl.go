@@ -682,6 +682,7 @@ var runAgentBenchmark = &cobra.Command{
 			}
 			runID = resp.ID
 		}
+		log.Printf("Beginning run %s", runID)
 		p := pipe.Into(pipe.FromSlice(set.Packages), func(in benchmark.Package, out chan<- schema.AgentCreateRequest) {
 			if len(in.Versions) > 0 && len(in.Versions) != len(in.Artifacts) {
 				log.Printf("Package %s has mismatching version and artifacts", in.Name)
