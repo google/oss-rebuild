@@ -1744,6 +1744,7 @@ func init() {
 	runAgentBenchmark.Flags().AddGoFlag(flag.Lookup("agent-iterations"))
 
 	getSessions.Flags().AddGoFlag(flag.Lookup("project"))
+	getSessions.Flags().AddGoFlag(flag.Lookup("run"))
 
 	viewSession.Flags().AddGoFlag(flag.Lookup("project"))
 	viewSession.Flags().AddGoFlag(flag.Lookup("logs-bucket"))
