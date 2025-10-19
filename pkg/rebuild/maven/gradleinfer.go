@@ -5,11 +5,9 @@ package maven
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"math"
 	"path"
-	"regexp"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -95,10 +93,6 @@ func isGradleWrapperPresent(commit *object.Commit) (bool, error) {
 func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
 	commitTree, _ := commit.Tree()
 	var candidateDirs []string
-	var topLevelGroupID string
-	// In a typical multi-module project, the root project's build.gradle defines groupId for the entire project.
-	// This parent groupId is then inherited by all sub-modules.
-	// This structure ensures that all related modules are grouped under a common namespace, simplifying dependency management and versioning across the project.
 	minDepth := math.MaxInt
 	err := commitTree.Files().ForEach(func(f *object.File) error {
 		// Skip files in gradle/, src/, or any subdirectory containing src/.
@@ -112,28 +106,14 @@ func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
 		if depth >= minDepth {
 			return nil
 		}
-		var err error
 		// Look for build.gradle or build.gradle.kts files to identify potential project directories.
-		// Also check gradle.properties for group ID.
 		if strings.HasSuffix(f.Name, ".gradle") || strings.HasSuffix(f.Name, ".gradle.kts") {
 			candidateDirs = append(candidateDirs, path.Dir(f.Name))
-			topLevelGroupID, err = getGroupIDFromFile(f)
-			if err != nil {
-				return err
-			}
-		}
-		if f.Name == "gradle.properties" {
-			topLevelGroupID, err = getGroupIDFromFile(f)
-			if err != nil {
-				return err
-			}
 		}
 		return nil
 	})
 	if err != nil {
 		return "", errors.Wrap(err, "traversing through files in commit")
-	} else if topLevelGroupID == "" {
-		log.Printf("No top-level group ID found in Gradle files")
 	}
 	if len(candidateDirs) == 0 {
 		return "", errors.New("no valid build.gradle found")
@@ -143,10 +123,9 @@ func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
 	// Default to the root directory if no better match is found
 	bestMatch := "."
 	for _, candidate := range candidateDirs {
-		combinedName := fmt.Sprintf("%s:%s", topLevelGroupID, path.Base(candidate))
-		dist := minEditDistance(combinedName, pkg)
+		dist := minEditDistance(path.Base(candidate), pkg)
 		if dist == 0 {
-			log.Printf("Found exact match for Gradle project: %s", combinedName)
+			log.Printf("Found exact match for Gradle project: %s", path.Base(candidate))
 			return candidate, nil
 		}
 		_, a, _ := strings.Cut(pkg, ":")
@@ -157,19 +136,6 @@ func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
 	}
 	log.Printf("Found best match with minimum edit distance: %s (distance %d)", bestMatch, minDist)
 	return bestMatch, nil
-}
-
-func getGroupIDFromFile(f *object.File) (string, error) {
-	content, err := f.Contents()
-	if err != nil {
-		return "", errors.Wrapf(err, "reading file %s", f.Name)
-	}
-	var groupIDRegex = regexp.MustCompile(`(?m)^\s*<groupId>([^<]+?)</groupId>`)
-	matcher := groupIDRegex.FindStringSubmatch(content)
-	if len(matcher) > 1 {
-		return matcher[1], nil
-	}
-	return "", nil
 }
 
 // minEditDistance computes the Levenshtein distance between two strings.
