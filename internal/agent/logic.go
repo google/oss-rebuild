@@ -509,14 +509,6 @@ func (a *defaultAgent) historyContext(ctx context.Context) []string {
 	return prompt
 }
 
-func (a *defaultAgent) makePrompt(ctx context.Context) []string {
-	prompt := a.genericPrompt()
-	prompt = append(prompt, a.outputOnlyScript()...)
-	prompt = append(prompt, a.ecosystemExpertise()...)
-	prompt = append(prompt, a.historyContext(ctx)...)
-	return prompt
-}
-
 func (a *defaultAgent) generate(ctx context.Context, prompt []string, opts *ProposeOpts) (string, error) {
 	var response genai.Content
 	contentParts := []*genai.Part{genai.NewPartFromText(strings.Join(prompt, "\n"))}
@@ -551,10 +543,6 @@ func (a *defaultAgent) generate(ctx context.Context, prompt []string, opts *Prop
 	return response.Parts[0].Text, nil
 }
 
-func (a *defaultAgent) makeDiagnosticPrompt() []string {
-	return append(a.genericPrompt(), a.diagnoseOnly()...)
-}
-
 // One "cycle" of the LLM produces a thoughtData
 type thoughtData struct {
 	BasedOnIteration int    // The index in iterationHistory on which this thought is based.
@@ -573,8 +561,11 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 	// We have a dedicated diagnostic step to make sure we keep a history of what the AI thinks the problems are.
 	{ // Diagnose
 		log.Println("Asking the LLM to diagnose the failure and describe a fix...")
-		p := a.makeDiagnosticPrompt()
-		thought.Diagnostic, err = a.generate(ctx, p, opts)
+		prompt := a.genericPrompt()
+		prompt = append(prompt, a.ecosystemExpertise()...)
+		prompt = append(prompt, a.historyContext(ctx)...)
+		prompt = append(prompt, a.diagnoseOnly()...)
+		thought.Diagnostic, err = a.generate(ctx, prompt, opts)
 		if err != nil {
 			return nil, errors.Wrap(err, "diagnose")
 		}
@@ -582,10 +573,11 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 	var rawScript string
 	{ // Implement
 		log.Println("Asking the LLM to hypothesize a fix")
-		p := a.makePrompt(ctx)
-		p = append(p, "An expert reviewed this failure and gave these instructions for fixing it:", thought.Diagnostic)
+		prompt := a.genericPrompt()
+		prompt = append(prompt, a.outputOnlyScript()...)
+		prompt = append(prompt, "An expert reviewed this failure and gave these instructions for fixing it:", thought.Diagnostic)
 		// TODO: Switch the prompt to outputReasoningAndScript for structured reasoning.
-		rawScript, err = a.generate(ctx, p, opts)
+		rawScript, err = a.generate(ctx, prompt, opts)
 		if err != nil {
 			return nil, errors.Wrap(err, "hypothesize")
 		}
