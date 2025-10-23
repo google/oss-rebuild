@@ -9,9 +9,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"log"
 	"path"
-	"strings"
 	"testing"
 	"time"
 
@@ -265,12 +263,12 @@ func addPomArtifact(mavenRegistry *mockMavenRegistry, pom *PomXML) {
 
 func TestMavenInfer(t *testing.T) {
 	testCases := []struct {
-		name              string
-		target            rebuild.Target
-		repo              string
-		zipEntries        map[string][]*archive.ZipEntry
-		expectedHeuristic string
-		wantErr           bool
+		name           string
+		target         rebuild.Target
+		repo           string
+		zipEntries     map[string][]*archive.ZipEntry
+		expectedCommit string
+		wantErr        bool
 	}{
 		{
 			name: "git log heuristic (with pkg and version match)",
@@ -302,7 +300,7 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "using git log heuristic: with pkg and version match",
+			expectedCommit: "initial-commit",
 		},
 		{
 			name: "source jar heuristic (with pkg match only)",
@@ -336,7 +334,7 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "using source jar heuristic: with mismatched version",
+			expectedCommit: "initial-commit",
 		},
 		{
 			name: "source jar heuristic (with pkg and version match)",
@@ -381,7 +379,7 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "using source jar heuristic: with pkg and version match",
+			expectedCommit: "orphan-commit",
 		},
 		{
 			name: "infer using tag heuristic (with pkg match only)",
@@ -410,7 +408,7 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "using tag heuristic: with mismatched version",
+			expectedCommit: "initial-commit",
 		},
 		{
 			name: "infer using tag heuristic (with pkg match and version match)",
@@ -439,7 +437,7 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "using tag heuristic: with pkg and version match",
+			expectedCommit: "initial-commit",
 		},
 		{
 			name: "no valid git ref",
@@ -468,7 +466,6 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "",
 			// tag is matched but then package does not match so no valid git ref
 			wantErr: true,
 		},
@@ -498,7 +495,6 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "",
 			// none of the heuristics can find a git ref
 			wantErr: true,
 		},
@@ -533,7 +529,6 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "",
 			// throw no valid git ref as tag matches but then package does not match
 			wantErr: true,
 		},
@@ -553,11 +548,6 @@ func TestMavenInfer(t *testing.T) {
 			mockMux := rebuild.RegistryMux{
 				Maven: mockRegistry,
 			}
-			capturedStderr := &bytes.Buffer{}
-			log.SetOutput(capturedStderr)
-			defer func() {
-				log.SetOutput(nil)
-			}()
 			got, err := MavenInfer(context.Background(), tc.target, mockMux, repoConfig)
 			if tc.wantErr {
 				if err == nil {
@@ -567,8 +557,10 @@ func TestMavenInfer(t *testing.T) {
 				if err != nil {
 					t.Fatalf("MavenInfer() error = %v", err)
 				}
-				if !strings.Contains(capturedStderr.String(), tc.expectedHeuristic) {
-					t.Errorf("MavenInfer() did not use expected heuristic, got logs: %s", capturedStderr.String())
+				actualCommit := got.(*MavenBuild).Location.Ref
+				expectedCommit := repo.Commits[tc.expectedCommit].String()
+				if actualCommit != expectedCommit {
+					t.Errorf("MavenInfer() commit = %q, want %q", actualCommit, tc.expectedCommit)
 				}
 			}
 
