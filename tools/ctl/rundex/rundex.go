@@ -617,7 +617,7 @@ func (f *LocalClient) WatchRebuilds() <-chan *Rebuild {
 }
 
 func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
-	path := filepath.Join(layout.RundexRebuildsDir, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
+	path := filepath.Join(layout.RundexRebuildsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")
