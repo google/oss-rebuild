@@ -27,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/pkg/errors"
 )
 
@@ -77,7 +78,11 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		}
 	}
 	verdict := &schema.Verdict{Target: t}
+	outBuf := &bytes.Buffer{}
+	log.SetOutput(io.MultiWriter(outBuf, s.logsink))
 	strategy, err := s.infer(ctx, t, mux)
+	uploadInferenceLogs(ctx, s.store, t, outBuf.Bytes())
+	log.SetOutput(s.logsink)
 	if err != nil {
 		verdict.Message = err.Error()
 		return verdict, nil
@@ -89,6 +94,17 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		verdict.Message = err.Error()
 	}
 	return verdict, nil
+}
+
+func uploadInferenceLogs(ctx context.Context, store rebuild.LocatableAssetStore, t rebuild.Target, logs []byte) {
+	if writeCloser, err := store.Writer(ctx, rebuild.InferenceLogsAsset.For(t)); err != nil {
+		log.Printf("Failed to create writer for inference logs: %v", err)
+	} else {
+		defer writeCloser.Close()
+		if _, err := writeCloser.Write(logs); err != nil {
+			log.Printf("Failed to write inference logs: %v", err)
+		}
+	}
 }
 
 func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (rebuild.Strategy, error) {
@@ -131,7 +147,9 @@ func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strate
 			ToolURLs: map[build.ToolType]string{
 				build.TimewarpTool: opts.PrebuildURL + "/timewarp",
 			},
+			BaseImageConfig: build.DefaultBaseImageConfig(),
 		},
+		UseTimewarp: meta.AllRebuilders[t.Ecosystem].UsesTimewarp(input),
 	}
 	handle, err := executor.Start(ctx, input, buildOpts)
 	if err != nil {
@@ -196,7 +214,10 @@ func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAsset
 			return errors.Wrap(err, "getting debian artifact URL")
 		}
 	case rebuild.Maven:
-		return errors.New("maven comparison not implemented")
+		upstreamURL, err = mux.Maven.ReleaseURL(ctx, t.Package, t.Version, maven.TypeJar)
+		if err != nil {
+			return errors.Wrap(err, "getting maven artifact URL")
+		}
 	default:
 		return errors.Errorf("unsupported ecosystem: %s", t.Ecosystem)
 	}

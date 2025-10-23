@@ -104,7 +104,7 @@ func (p *DockerRunPlanner) generateScript(instructions rebuild.Instructions, inp
 	if err := dockerRunScriptTpl.Execute(&buf, dockerRunScriptArgs{
 		Inst:           instructions,
 		PackageManager: pkgMgr,
-		UseTimewarp:    timewarpURL != "",
+		UseTimewarp:    opts.UseTimewarp,
 		TimewarpURL:    timewarpURL,
 		TimewarpAuth:   timewarpAuth,
 	}); err != nil {
