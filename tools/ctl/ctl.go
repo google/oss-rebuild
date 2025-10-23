@@ -115,7 +115,7 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestP
 }
 
 var tui = &cobra.Command{
-	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>] [--merged-asset-store <path>] [-prebuild-bucket <BUCKET> -prebuild-version <VERSION>]",
+	Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>] [--merged-asset-store <path>] [-bootstrap-bucket <BUCKET> -bootstrap-version <VERSION>]",
 	Short: "A terminal UI for the OSS-Rebuild debugging tools",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -228,7 +228,7 @@ var tui = &cobra.Command{
 			}
 		}
 		benches := benchmark.NewFSRepository(osfs.New(*benchmarkDir))
-		prebuildConfig := rebuild.PrebuildConfig{Bucket: *prebuildBucket, Dir: *prebuildVersion}
+		prebuildConfig := rebuild.PrebuildConfig{Bucket: *bootstrapBucket, Dir: *bootstrapVersion}
 		tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: *clean}, benches, buildDefs, butler, aiClient, prebuildConfig)
 		if err := tapp.Run(cmd.Context()); err != nil {
 			// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
@@ -474,7 +474,7 @@ func isCloudRun(u *url.URL) bool {
 }
 
 var runBenchmark = &cobra.Command{
-	Use:   "run-bench smoketest|attest -api <URI>  [-local -prebuild-bucket <BUCKET> -prebuild-version <VERSION>] [-format=summary|csv] <benchmark.json>",
+	Use:   "run-bench smoketest|attest -api <URI>  [-local -bootstrap-bucket <BUCKET> -bootstrap-version <VERSION>] [-format=summary|csv] <benchmark.json>",
 	Short: "Run benchmark",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -511,7 +511,7 @@ var runBenchmark = &cobra.Command{
 				log.Fatalf("Failed to create temp directory: %v", err)
 			}
 			// TODO: Validate this.
-			prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", *prebuildBucket, *prebuildVersion)
+			prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", *bootstrapBucket, *bootstrapVersion)
 			executor = run.NewLocalExecutionService(prebuildURL, store, cmd.OutOrStdout())
 			dex = rundex.NewLocalClient(localfiles.Rundex())
 			if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
@@ -1610,13 +1610,11 @@ var (
 	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request syscall monitoring")
 	assetTypesFlag    = flag.String("asset-types", "", "a comma-separated list of asset types to export")
 	// run-bench
-	maxConcurrency  = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
-	buildLocal      = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
-	prebuildBucket  = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
-	prebuildVersion = flag.String("prebuild-version", "", "golang version identifier of the prebuild binary builds")
-	async           = flag.Bool("async", false, "true if this benchmark should run asynchronously")
-	taskQueuePath   = flag.String("task-queue", "", "the path identifier of the task queue to use")
-	taskQueueEmail  = flag.String("task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
+	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
+	buildLocal     = flag.Bool("local", false, "true if this request is going direct to build-local (not through API first)")
+	async          = flag.Bool("async", false, "true if this benchmark should run asynchronously")
+	taskQueuePath  = flag.String("task-queue", "", "the path identifier of the task queue to use")
+	taskQueueEmail = flag.String("task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
 	// run-one
 	strategyPath = flag.String("strategy", "", "the strategy file to use")
 	// agent
@@ -1652,8 +1650,8 @@ func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("api"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("max-concurrency"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("local"))
-	runBenchmark.Flags().AddGoFlag(flag.Lookup("prebuild-bucket"))
-	runBenchmark.Flags().AddGoFlag(flag.Lookup("prebuild-version"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("bootstrap-bucket"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("bootstrap-version"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("format"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("v"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("async"))
@@ -1704,8 +1702,8 @@ func init() {
 	tui.Flags().AddGoFlag(flag.Lookup("def-dir"))
 	tui.Flags().AddGoFlag(flag.Lookup("rundex-gcs-path"))
 	tui.Flags().AddGoFlag(flag.Lookup("merged-asset-store"))
-	tui.Flags().AddGoFlag(flag.Lookup("prebuild-bucket"))
-	tui.Flags().AddGoFlag(flag.Lookup("prebuild-version"))
+	tui.Flags().AddGoFlag(flag.Lookup("bootstrap-bucket"))
+	tui.Flags().AddGoFlag(flag.Lookup("bootstrap-version"))
 
 	listRuns.Flags().AddGoFlag(flag.Lookup("project"))
 	listRuns.Flags().AddGoFlag(flag.Lookup("bench"))
