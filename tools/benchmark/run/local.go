@@ -145,7 +145,7 @@ func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strate
 		return err
 	}
 	if result.Error != nil {
-		return errors.Wrap(err, "build failed")
+		return errors.Wrap(result.Error, "build failed")
 	}
 	return nil
 }
