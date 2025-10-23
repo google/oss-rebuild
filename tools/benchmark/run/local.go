@@ -27,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/pkg/errors"
 )
 
@@ -196,7 +197,10 @@ func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAsset
 			return errors.Wrap(err, "getting debian artifact URL")
 		}
 	case rebuild.Maven:
-		return errors.New("maven comparison not implemented")
+		upstreamURL, err = mux.Maven.ReleaseURL(ctx, t.Package, t.Version, maven.TypeJar)
+		if err != nil {
+			return errors.Wrap(err, "getting maven artifact URL")
+		}
 	default:
 		return errors.Errorf("unsupported ecosystem: %s", t.Ecosystem)
 	}
