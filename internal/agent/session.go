@@ -26,6 +26,7 @@ type AgentDeps struct {
 	LogsBucket     string
 	GCSClient      *gcs.Client
 	MaxTurns       int
+	GenaiClient    *genai.Client
 }
 
 type ProposeOpts struct {
@@ -104,6 +105,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		LogsBucket:     deps.LogsBucket,
 		GCSClient:      deps.GCSClient,
 		MaxTurns:       10,
+		GenaiClient:    deps.Client,
 	})
 	var err error
 	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, llm.GeminiPro, config, &llm.ChatOpts{Tools: a.getTools()})

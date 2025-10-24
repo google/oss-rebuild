@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -333,6 +334,57 @@ func (a *defaultAgent) getTools() []*llm.FunctionDefinition {
 	}
 }
 
+func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initialErr error, wt billy.Filesystem, str *memory.Storage) (*schema.StrategyOneOf, error) {
+	prompt := []string{
+		fmt.Sprintf("Based on the following inference failure error \"%v\" for package '%s', find the correct source code repository URL.", initialErr, a.t.Package),
+		"Just return the URL WITHOUT any additional text or formatting.",
+		"For example, for the package 'org.apache.camel:camel-support', return 'https://github.com/apache/camel' not 'https://github.com/apache/camel/tree/main/core/camel-support'.",
+		"Use the tools you have at your disposal to find the URL.",
+		"Finally, if you don't find the URL, just return an empty string.",
+	}
+	repoURL, err := llm.GenerateTextContent(ctx, a.deps.GenaiClient, llm.GeminiPro, &genai.GenerateContentConfig{
+		Temperature: genai.Ptr(float32(0.0)),
+		Tools: []*genai.Tool{
+			{GoogleSearch: &genai.GoogleSearch{}},
+		},
+	}, genai.NewPartFromText(strings.Join(prompt, "\n")))
+	if err != nil {
+		return nil, errors.Wrap(err, "getting AI repo hint")
+	}
+	if repoURL == "" {
+		return nil, errors.Wrap(initialErr, "AI could not find a repository hint")
+	}
+	log.Printf("AI suggested repo hint: %s", repoURL)
+	req := schema.InferenceRequest{
+		Ecosystem: a.t.Ecosystem,
+		Package:   a.t.Package,
+		Version:   a.t.Version,
+		Artifact:  a.t.Artifact,
+		StrategyHint: &schema.StrategyOneOf{
+			LocationHint: &rebuild.LocationHint{
+				Location: rebuild.Location{
+					Repo: repoURL,
+				},
+			},
+		},
+	}
+	s, err := inferenceservice.Infer(
+		ctx,
+		req,
+		&inferenceservice.InferDeps{
+			HTTPClient: http.DefaultClient,
+			GitCache:   nil,
+			RepoOptF: func() *gitx.RepositoryOptions {
+				return &gitx.RepositoryOptions{
+					Worktree: wt,
+					Storer:   str,
+				}
+			},
+		},
+	)
+	return s, errors.Wrap(err, "AI-assisted inference failed")
+}
+
 func (a *defaultAgent) proposeNormalInference(ctx context.Context) (*schema.StrategyOneOf, error) {
 	wt := memfs.New()
 	str := memory.NewStorage()
@@ -356,7 +408,13 @@ func (a *defaultAgent) proposeNormalInference(ctx context.Context) (*schema.Stra
 		},
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "inferring initial strategy")
+		wt = memfs.New()
+		str = memory.NewStorage()
+		s, err = a.proposeInferenceWithAIAssist(ctx, err, wt, str)
+		if err != nil {
+			return nil, errors.Wrap(err, "AI-assisted inference failed")
+		}
+		log.Println("AI-assisted inference succeeded.")
 	}
 	a.repo, err = git.Open(str, wt)
 	if err != nil {
