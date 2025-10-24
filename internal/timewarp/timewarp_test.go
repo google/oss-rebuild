@@ -364,6 +364,139 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			},
 		},
 		{
+			name:      "pypi simple project request - successful time warp",
+			url:       "http://localhost:8081/simple/some-package/",
+			basicAuth: "pypi:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://pypi.org/simple/some-package/",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header: http.Header{
+								"Content-Type": []string{"application/json"},
+							},
+							Body: io.NopCloser(bytes.NewBufferString(`{
+								"name": "some-package",
+								"files": [
+									{
+										"filename": "some-package-0.9.0.tar.gz",
+										"upload-time": "2021-01-01T00:00:00.123456Z",
+										"yanked": true
+									},
+									{
+										"filename": "some-package-1.0.0.tar.gz",
+										"upload-time": "2021-06-01T00:00:00.123456Z",
+										"yanked": false
+									},
+									{
+										"filename": "some-package-1.0.0-py3-none-any.whl",
+										"upload-time": "2021-06-02T00:00:00.123456Z",
+										"yanked": false
+									},
+									{
+										"filename": "some-package-2.0.0.tar.gz",
+										"upload-time": "2022-06-01T00:00:00.123456Z",
+										"yanked": false
+									}
+								],
+								"versions": ["0.9.0", "1.0.0", "2.0.0"]
+							}`)),
+						},
+					},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`{
+					"name": "some-package",
+					"files": [
+						{
+							"filename": "some-package-0.9.0.tar.gz",
+							"upload-time": "2021-01-01T00:00:00.123456Z",
+							"yanked": true
+						},
+						{
+							"filename": "some-package-1.0.0.tar.gz",
+							"upload-time": "2021-06-01T00:00:00.123456Z",
+							"yanked": false
+						},
+						{
+							"filename": "some-package-1.0.0-py3-none-any.whl",
+							"upload-time": "2021-06-02T00:00:00.123456Z",
+							"yanked": false
+						}
+					],
+					"versions": ["0.9.0", "1.0.0"]
+				}`)),
+			},
+		},
+		{
+			name:      "pypi simple project request - timewarp but no available files",
+			url:       "http://localhost:8081/simple/some-other-package/",
+			basicAuth: "pypi:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://pypi.org/simple/some-other-package/",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header: http.Header{
+								"Content-Type": []string{"application/json"},
+							},
+							Body: io.NopCloser(bytes.NewBufferString(`{
+								"name": "some-other-package",
+								"files": [
+									{
+										"filename": "some-other-package-1.0.0.tar.gz",
+										"upload-time": "2023-01-01T00:00:00.000000Z",
+										"yanked": false
+									}
+								],
+								"versions": ["1.0.0"]
+							}`)),
+						},
+					},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`{
+					"name": "some-other-package",
+					"files": null,
+					"versions": null
+				}`)),
+			},
+		},
+		{
+			name:      "pypi simple file request - skipped time warp",
+			url:       "http://localhost:8081/simple/some-package/some-package-1.0.0.tar.gz",
+			basicAuth: "pypi:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls:        []httpxtest.Call{},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusFound,
+				Header: http.Header{
+					"Content-Type": []string{"text/html; charset=utf-8"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`<a href="https://pypi.org/simple/some-package/some-package-1.0.0.tar.gz">Found</a>.
+
+`)),
+			},
+		},
+		{
 			name:      "invalid platform",
 			url:       "http://localhost:8081/some-package",
 			basicAuth: "invalid:2022-01-01T00:00:00Z",
