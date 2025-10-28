@@ -85,13 +85,7 @@ func (b *Debrebuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		}},
 		Deps: []flow.Step{
 			{
-				Uses: "debian/deps/add-snapshot",
-			},
-			{
 				Uses: "debian/deps/install-debrebuild",
-			},
-			{
-				Uses: "debian/deps/patch-debrebuild",
 			},
 		},
 		Build: []flow.Step{{
@@ -172,7 +166,7 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`))),
 			// TODO: pin these versions
 			Runs: textwrap.Dedent(`
 				apt -o Acquire::Check-Valid-Until=false update
-				apt install -y devscripts mmdebstrap apt-utils`)[1:],
+				apt install -y devscripts mmdebstrap sbuild`[1:]),
 		}},
 	},
 	{
@@ -214,7 +208,10 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`))),
 		Name: "debian/build/debrebuild",
 		Steps: []flow.Step{
 			{
-				Runs: "debrebuild --buildresult=./out --builder=mmdebstrap {{ .With.buildinfo }}",
+				Runs: textwrap.Dedent(`
+				echo "root:100000:65536" | tee /etc/subuid
+				echo "root:100000:65536" | tee /etc/subgid
+				debrebuild --buildresult=./out --builder=sbuild+unshare {{ .With.buildinfo }}`[1:]),
 			},
 		},
 	},
