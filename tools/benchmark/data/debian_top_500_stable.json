@@ -1,0 +1,5006 @@
+{
+  "Count": 500,
+  "Updated": "2025-10-28T21:43:47.260934884Z",
+  "Packages": [
+    {
+      "Ecosystem": "debian",
+      "Name": "main/apt",
+      "Versions": [
+        "3.1.9"
+      ],
+      "Artifacts": [
+        "apt_3.1.9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/base-passwd",
+      "Versions": [
+        "3.6.7"
+      ],
+      "Artifacts": [
+        "base-passwd_3.6.7_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/debconf",
+      "Versions": [
+        "1.5.91"
+      ],
+      "Artifacts": [
+        "debconf_1.5.91_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/acl",
+      "Versions": [
+        "2.3.2-2+b1"
+      ],
+      "Artifacts": [
+        "libacl1_2.3.2-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/attr",
+      "Versions": [
+        "2.5.2-3"
+      ],
+      "Artifacts": [
+        "libattr1_2.5.2-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "libblkid1_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cdebconf",
+      "Versions": [
+        "0.280"
+      ],
+      "Artifacts": [
+        "libdebconfclient0_0.280_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "libmount1_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pam",
+      "Versions": [
+        "1.7.0-5"
+      ],
+      "Artifacts": [
+        "libpam-modules_1.7.0-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pam",
+      "Versions": [
+        "1.7.0-5"
+      ],
+      "Artifacts": [
+        "libpam-modules-bin_1.7.0-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pam",
+      "Versions": [
+        "1.7.0-5"
+      ],
+      "Artifacts": [
+        "libpam-runtime_1.7.0-5_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "bsdutils_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/coreutils",
+      "Versions": [
+        "9.7-3"
+      ],
+      "Artifacts": [
+        "coreutils_9.7-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dash",
+      "Versions": [
+        "0.5.12-2"
+      ],
+      "Artifacts": [
+        "dash_0.5.12-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/diffutils",
+      "Versions": [
+        "3.8-4"
+      ],
+      "Artifacts": [
+        "diffutils_3.8-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dpkg",
+      "Versions": [
+        "1.22.21"
+      ],
+      "Artifacts": [
+        "dpkg_1.22.21_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/findutils",
+      "Versions": [
+        "4.9.0-4"
+      ],
+      "Artifacts": [
+        "findutils_4.9.0-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/grep",
+      "Versions": [
+        "3.8-5"
+      ],
+      "Artifacts": [
+        "grep_3.8-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gzip",
+      "Versions": [
+        "1.14-1~exp2"
+      ],
+      "Artifacts": [
+        "gzip_1.14-1~exp2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/hostname",
+      "Versions": [
+        "3.25"
+      ],
+      "Artifacts": [
+        "hostname_3.25_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/init-system-helpers",
+      "Versions": [
+        "1.69~deb13u1"
+      ],
+      "Artifacts": [
+        "init-system-helpers_1.69~deb13u1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/bzip2",
+      "Versions": [
+        "1.0.8-6"
+      ],
+      "Artifacts": [
+        "libbz2-1.0_1.0.8-6_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcrypt",
+      "Versions": [
+        "4.4.38-1"
+      ],
+      "Artifacts": [
+        "libcrypt1_4.4.38-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "libsmartcols1_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "libuuid1_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/shadow",
+      "Versions": [
+        "4.8.1-1"
+      ],
+      "Artifacts": [
+        "passwd_4.8.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/perl",
+      "Versions": [
+        "5.42.0-2"
+      ],
+      "Artifacts": [
+        "perl-base_5.42.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/sysvinit",
+      "Versions": [
+        "3.15-5"
+      ],
+      "Artifacts": [
+        "sysvinit-utils_3.15-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/tar",
+      "Versions": [
+        "1.35+dfsg-3.1"
+      ],
+      "Artifacts": [
+        "tar_1.35+dfsg-3.1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/zlib",
+      "Versions": [
+        "1.3.dfsg+really1.3.1-1+b1"
+      ],
+      "Artifacts": [
+        "zlib1g_1.3.dfsg+really1.3.1-1+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/bash",
+      "Versions": [
+        "5.3-1"
+      ],
+      "Artifacts": [
+        "bash_5.3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libbsd",
+      "Versions": [
+        "0.12.2-2"
+      ],
+      "Artifacts": [
+        "libbsd0_0.12.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pcre2",
+      "Versions": [
+        "10.47-2"
+      ],
+      "Artifacts": [
+        "libpcre2-8-0_10.47-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ncurses",
+      "Versions": [
+        "6.5+20250216-2"
+      ],
+      "Artifacts": [
+        "libtinfo6_6.5+20250216-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ncurses",
+      "Versions": [
+        "6.5+20250216-2"
+      ],
+      "Artifacts": [
+        "ncurses-base_6.5+20250216-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ncurses",
+      "Versions": [
+        "6.5+20250216-2"
+      ],
+      "Artifacts": [
+        "ncurses-bin_6.5+20250216-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/sed",
+      "Versions": [
+        "4.9-2"
+      ],
+      "Artifacts": [
+        "sed_4.9-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "util-linux_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/audit",
+      "Versions": [
+        "4.1.2-1"
+      ],
+      "Artifacts": [
+        "libaudit-common_4.1.2-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/audit",
+      "Versions": [
+        "4.1.2-1"
+      ],
+      "Artifacts": [
+        "libaudit1_4.1.2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libcap-ng",
+      "Versions": [
+        "0.8.5-4+b1"
+      ],
+      "Artifacts": [
+        "libcap-ng0_0.8.5-4+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gmp",
+      "Versions": [
+        "6.3.0+dfsg-5"
+      ],
+      "Artifacts": [
+        "libgmp10_6.3.0+dfsg-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lz4",
+      "Versions": [
+        "1.9.4-1"
+      ],
+      "Artifacts": [
+        "liblz4-1_1.9.4-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libzstd",
+      "Versions": [
+        "1.5.7+dfsg-2"
+      ],
+      "Artifacts": [
+        "libzstd1_1.5.7+dfsg-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libcap2",
+      "Versions": [
+        "2.75-10+b1"
+      ],
+      "Artifacts": [
+        "libcap2_2.75-10+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/xz-utils",
+      "Versions": [
+        "5.8.1-2"
+      ],
+      "Artifacts": [
+        "liblzma5_5.8.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libselinux",
+      "Versions": [
+        "3.9-2"
+      ],
+      "Artifacts": [
+        "libselinux1_3.9-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libsemanage",
+      "Versions": [
+        "3.9-1"
+      ],
+      "Artifacts": [
+        "libsemanage-common_3.9-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/xxhash",
+      "Versions": [
+        "0.8.3-2"
+      ],
+      "Artifacts": [
+        "libxxhash0_0.8.3-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/adduser",
+      "Versions": [
+        "3.153"
+      ],
+      "Artifacts": [
+        "adduser_3.153_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libmd",
+      "Versions": [
+        "1.1.0-2+b1"
+      ],
+      "Artifacts": [
+        "libmd0_1.1.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/sqlite3",
+      "Versions": [
+        "3.46.1-8"
+      ],
+      "Artifacts": [
+        "libsqlite3-0_3.46.1-8_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/systemd",
+      "Versions": [
+        "258.1-2"
+      ],
+      "Artifacts": [
+        "libsystemd0_258.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/glibc",
+      "Versions": [
+        "2.42-2"
+      ],
+      "Artifacts": [
+        "libc6_2.42-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/krb5",
+      "Versions": [
+        "1.22.1-1"
+      ],
+      "Artifacts": [
+        "libk5crypto3_1.22.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/krb5",
+      "Versions": [
+        "1.22.1-1"
+      ],
+      "Artifacts": [
+        "libkrb5-3_1.22.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/krb5",
+      "Versions": [
+        "1.22.1-1"
+      ],
+      "Artifacts": [
+        "libkrb5support0_1.22.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pam",
+      "Versions": [
+        "1.7.0-5"
+      ],
+      "Artifacts": [
+        "libpam0g_1.7.0-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/krb5",
+      "Versions": [
+        "1.22.1-1"
+      ],
+      "Artifacts": [
+        "libgssapi-krb5-2_1.22.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libseccomp",
+      "Versions": [
+        "2.6.0-2"
+      ],
+      "Artifacts": [
+        "libseccomp2_2.6.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libtext-wrapi18n-perl",
+      "Versions": [
+        "0.06-9"
+      ],
+      "Artifacts": [
+        "libtext-wrapi18n-perl_0.06-9_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/base-files",
+      "Versions": [
+        "14"
+      ],
+      "Artifacts": [
+        "base-files_14_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libidn2",
+      "Versions": [
+        "2.3.8-4"
+      ],
+      "Artifacts": [
+        "libidn2-0_2.3.8-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/debian-archive-keyring",
+      "Versions": [
+        "2025.1"
+      ],
+      "Artifacts": [
+        "debian-archive-keyring_2025.1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libtext-charwidth-perl",
+      "Versions": [
+        "0.04-11"
+      ],
+      "Artifacts": [
+        "libtext-charwidth-perl_0.04-11_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ncurses",
+      "Versions": [
+        "6.5+20250216-2"
+      ],
+      "Artifacts": [
+        "libncursesw6_6.5+20250216-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/keyutils",
+      "Versions": [
+        "1.6.3-6"
+      ],
+      "Artifacts": [
+        "libkeyutils1_1.6.3-6_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/popularity-contest",
+      "Versions": [
+        "1.79"
+      ],
+      "Artifacts": [
+        "popularity-contest_1.79_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/systemd",
+      "Versions": [
+        "258.1-2"
+      ],
+      "Artifacts": [
+        "libudev1_258.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/netbase",
+      "Versions": [
+        "6.5"
+      ],
+      "Artifacts": [
+        "netbase_6.5_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/sensible-utils",
+      "Versions": [
+        "0.0.26"
+      ],
+      "Artifacts": [
+        "sensible-utils_0.0.26_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libtirpc",
+      "Versions": [
+        "1.3.6+ds-1"
+      ],
+      "Artifacts": [
+        "libtirpc-common_1.3.6+ds-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libedit",
+      "Versions": [
+        "3.1-20250104-1"
+      ],
+      "Artifacts": [
+        "libedit2_3.1-20250104-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libffi",
+      "Versions": [
+        "3.5.2-2"
+      ],
+      "Artifacts": [
+        "libffi8_3.5.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/systemd",
+      "Versions": [
+        "258.1-2"
+      ],
+      "Artifacts": [
+        "libsystemd-shared_258.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/popt",
+      "Versions": [
+        "1.19+dfsg-2"
+      ],
+      "Artifacts": [
+        "libpopt0_1.19+dfsg-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "mount_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/readline",
+      "Versions": [
+        "8.3-3"
+      ],
+      "Artifacts": [
+        "readline-common_8.3-3_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/expat",
+      "Versions": [
+        "2.7.3-1"
+      ],
+      "Artifacts": [
+        "libexpat1_2.7.3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/brotli",
+      "Versions": [
+        "1.1.0-2+b7"
+      ],
+      "Artifacts": [
+        "libbrotli1_1.1.0-2+b7_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ucf",
+      "Versions": [
+        "3.0052"
+      ],
+      "Artifacts": [
+        "ucf_3.0052_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/apparmor",
+      "Versions": [
+        "4.1.0-1"
+      ],
+      "Artifacts": [
+        "libapparmor1_4.1.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/iptables",
+      "Versions": [
+        "1.8.9-2"
+      ],
+      "Artifacts": [
+        "libxtables12_1.8.9-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libmnl",
+      "Versions": [
+        "1.0.5-3"
+      ],
+      "Artifacts": [
+        "libmnl0_1.0.5-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libsepol",
+      "Versions": [
+        "3.9-2"
+      ],
+      "Artifacts": [
+        "libsepol2_3.9-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dbus",
+      "Versions": [
+        "1.16.2-2"
+      ],
+      "Artifacts": [
+        "libdbus-1-3_1.16.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/kmod",
+      "Versions": [
+        "34.2-2"
+      ],
+      "Artifacts": [
+        "libkmod2_34.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libsemanage",
+      "Versions": [
+        "3.9-1"
+      ],
+      "Artifacts": [
+        "libsemanage2_3.9-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libunistring",
+      "Versions": [
+        "1.3-2"
+      ],
+      "Artifacts": [
+        "libunistring5_1.3-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/procps",
+      "Versions": [
+        "4.0.4-9"
+      ],
+      "Artifacts": [
+        "libproc2-0_4.0.4-9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gcc-14",
+      "Versions": [
+        "14.3.0-10"
+      ],
+      "Artifacts": [
+        "gcc-14-base_14.3.0-10_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/iproute2",
+      "Versions": [
+        "6.17.0-1"
+      ],
+      "Artifacts": [
+        "iproute2_6.17.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libcap2",
+      "Versions": [
+        "2.75-10+b1"
+      ],
+      "Artifacts": [
+        "libcap2-bin_2.75-10+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/e2fsprogs",
+      "Versions": [
+        "1.47.3~rc3-1"
+      ],
+      "Artifacts": [
+        "libcom-err2_1.47.3~rc3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libbpf",
+      "Versions": [
+        "1.6.2-1"
+      ],
+      "Artifacts": [
+        "libbpf1_1.6.2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cron",
+      "Versions": [
+        "3.0pl1-200"
+      ],
+      "Artifacts": [
+        "cron-daemon-common_3.0pl1-200_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/less",
+      "Versions": [
+        "668-1"
+      ],
+      "Artifacts": [
+        "less_668-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/e2fsprogs",
+      "Versions": [
+        "1.47.3~rc3-1"
+      ],
+      "Artifacts": [
+        "e2fsprogs_1.47.3~rc3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/tzdata",
+      "Versions": [
+        "2025b-5"
+      ],
+      "Artifacts": [
+        "tzdata_2025b-5_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/debianutils",
+      "Versions": [
+        "5.7-0.5~deb12u1"
+      ],
+      "Artifacts": [
+        "debianutils_5.7-0.5~deb12u1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/mawk",
+      "Versions": [
+        "1.3.4.20250131-1"
+      ],
+      "Artifacts": [
+        "mawk_1.3.4.20250131-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/glibc",
+      "Versions": [
+        "2.42-2"
+      ],
+      "Artifacts": [
+        "libc-l10n_2.42-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/shadow",
+      "Versions": [
+        "4.18.0-2"
+      ],
+      "Artifacts": [
+        "login.defs_4.18.0-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/e2fsprogs",
+      "Versions": [
+        "1.47.3~rc3-1"
+      ],
+      "Artifacts": [
+        "logsave_1.47.3~rc3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cpio",
+      "Versions": [
+        "2.15+dfsg-2"
+      ],
+      "Artifacts": [
+        "cpio_2.15+dfsg-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gettext",
+      "Versions": [
+        "0.23.1-2"
+      ],
+      "Artifacts": [
+        "gettext-base_0.23.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/kmod",
+      "Versions": [
+        "34.2-2"
+      ],
+      "Artifacts": [
+        "kmod_34.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/logrotate",
+      "Versions": [
+        "3.22.0-1"
+      ],
+      "Artifacts": [
+        "logrotate_3.22.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/slang2",
+      "Versions": [
+        "2.3.3-5+b2"
+      ],
+      "Artifacts": [
+        "libslang2_2.3.3-5+b2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/liblocale-gettext-perl",
+      "Versions": [
+        "1.07-7+b1"
+      ],
+      "Artifacts": [
+        "liblocale-gettext-perl_1.07-7+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/openssl",
+      "Versions": [
+        "3.6.0-1"
+      ],
+      "Artifacts": [
+        "openssl_3.6.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/e2fsprogs",
+      "Versions": [
+        "1.47.3~rc3-1"
+      ],
+      "Artifacts": [
+        "libss2_1.47.3~rc3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libnftnl",
+      "Versions": [
+        "1.3.0-1"
+      ],
+      "Artifacts": [
+        "libnftnl11_1.3.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lvm2",
+      "Versions": [
+        "1.02.205-2"
+      ],
+      "Artifacts": [
+        "dmsetup_1.02.205-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lvm2",
+      "Versions": [
+        "1.02.205-2"
+      ],
+      "Artifacts": [
+        "libdevmapper1.02.1_1.02.205-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/freetype",
+      "Versions": [
+        "2.13.3+dfsg-1"
+      ],
+      "Artifacts": [
+        "libfreetype6_2.13.3+dfsg-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/linux-base",
+      "Versions": [
+        "4.9"
+      ],
+      "Artifacts": [
+        "linux-base_4.9_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/iputils",
+      "Versions": [
+        "20250605-1"
+      ],
+      "Artifacts": [
+        "iputils-ping_20250605-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/glibc",
+      "Versions": [
+        "2.42-2"
+      ],
+      "Artifacts": [
+        "locales_2.42-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/apt",
+      "Versions": [
+        "3.1.9"
+      ],
+      "Artifacts": [
+        "apt-utils_3.1.9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dbus",
+      "Versions": [
+        "1.16.2-2"
+      ],
+      "Artifacts": [
+        "dbus-session-bus-common_1.16.2-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dbus",
+      "Versions": [
+        "1.16.2-2"
+      ],
+      "Artifacts": [
+        "dbus-system-bus-common_1.16.2-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/p11-kit",
+      "Versions": [
+        "0.25.9-2"
+      ],
+      "Artifacts": [
+        "libp11-kit0_0.25.9-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dbus",
+      "Versions": [
+        "1.16.2-2"
+      ],
+      "Artifacts": [
+        "dbus-bin_1.16.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libtasn1-6",
+      "Versions": [
+        "4.20.0-2"
+      ],
+      "Artifacts": [
+        "libtasn1-6_4.20.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ca-certificates",
+      "Versions": [
+        "20250419"
+      ],
+      "Artifacts": [
+        "ca-certificates_20250419_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/jansson",
+      "Versions": [
+        "2.14-2"
+      ],
+      "Artifacts": [
+        "libjansson4_2.14-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dbus",
+      "Versions": [
+        "1.16.2-2"
+      ],
+      "Artifacts": [
+        "dbus-daemon_1.16.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/newt",
+      "Versions": [
+        "0.52.25-1"
+      ],
+      "Artifacts": [
+        "libnewt0.52_0.52.25-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libfido2",
+      "Versions": [
+        "1.6.0-2"
+      ],
+      "Artifacts": [
+        "libfido2-1_1.6.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libtext-iconv-perl",
+      "Versions": [
+        "1.7-8"
+      ],
+      "Artifacts": [
+        "libtext-iconv-perl_1.7-8_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/openssh",
+      "Versions": [
+        "9.2p1-2+deb12u7"
+      ],
+      "Artifacts": [
+        "openssh-client_9.2p1-2+deb12u7_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/openssl",
+      "Versions": [
+        "3.6.0-1"
+      ],
+      "Artifacts": [
+        "openssl-provider-legacy_3.6.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/procps",
+      "Versions": [
+        "4.0.4-9"
+      ],
+      "Artifacts": [
+        "procps_4.0.4-9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/newt",
+      "Versions": [
+        "0.52.25-1"
+      ],
+      "Artifacts": [
+        "whiptail_0.52.25-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/openssl",
+      "Versions": [
+        "3.6.0-1"
+      ],
+      "Artifacts": [
+        "libssl3t64_3.6.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/init-system-helpers",
+      "Versions": [
+        "1.69~deb13u1"
+      ],
+      "Artifacts": [
+        "init_1.69~deb13u1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/db5.3",
+      "Versions": [
+        "5.3.28+dfsg2-9"
+      ],
+      "Artifacts": [
+        "libdb5.3t64_5.3.28+dfsg2-9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "liblastlog2-2_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/perl",
+      "Versions": [
+        "5.42.0-2"
+      ],
+      "Artifacts": [
+        "perl_5.42.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/nettle",
+      "Versions": [
+        "3.10.2-1"
+      ],
+      "Artifacts": [
+        "libnettle8t64_3.10.2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/nettle",
+      "Versions": [
+        "3.10.2-1"
+      ],
+      "Artifacts": [
+        "libhogweed6t64_3.10.2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/systemd",
+      "Versions": [
+        "258.1-2"
+      ],
+      "Artifacts": [
+        "udev_258.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dmidecode",
+      "Versions": [
+        "3.6-2"
+      ],
+      "Artifacts": [
+        "dmidecode_3.6-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/readline",
+      "Versions": [
+        "8.3-3"
+      ],
+      "Artifacts": [
+        "libreadline8t64_8.3-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cron",
+      "Versions": [
+        "3.0pl1-200"
+      ],
+      "Artifacts": [
+        "cron_3.0pl1-200_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/systemd",
+      "Versions": [
+        "258.1-2"
+      ],
+      "Artifacts": [
+        "systemd-sysv_258.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pci.ids",
+      "Versions": [
+        "0.0~2025.07.11-1"
+      ],
+      "Artifacts": [
+        "pci.ids_0.0~2025.07.11-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pciutils",
+      "Versions": [
+        "3.9.0-4"
+      ],
+      "Artifacts": [
+        "libpci3_3.9.0-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/media-types",
+      "Versions": [
+        "4.0.0"
+      ],
+      "Artifacts": [
+        "media-types_4.0.0_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/klibc",
+      "Versions": [
+        "2.0.8-6.1"
+      ],
+      "Artifacts": [
+        "libklibc_2.0.8-6.1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/klibc",
+      "Versions": [
+        "2.0.8-6.1"
+      ],
+      "Artifacts": [
+        "klibc-utils_2.0.8-6.1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/nghttp2",
+      "Versions": [
+        "1.64.0-1.1"
+      ],
+      "Artifacts": [
+        "libnghttp2-14_1.64.0-1.1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/initramfs-tools",
+      "Versions": [
+        "0.150"
+      ],
+      "Artifacts": [
+        "initramfs-tools-core_0.150_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/apt",
+      "Versions": [
+        "3.1.9"
+      ],
+      "Artifacts": [
+        "libapt-pkg7.0_3.1.9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/rust-sequoia-sqv",
+      "Versions": [
+        "1.3.0-3"
+      ],
+      "Artifacts": [
+        "sqv_1.3.0-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python3-defaults",
+      "Versions": [
+        "3.9.2-3"
+      ],
+      "Artifacts": [
+        "python3-minimal_3.9.2-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxau",
+      "Versions": [
+        "1.0.9-1"
+      ],
+      "Artifacts": [
+        "libxau6_1.0.9-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxdmcp",
+      "Versions": [
+        "1.1.5-1"
+      ],
+      "Artifacts": [
+        "libxdmcp6_1.1.5-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/debconf",
+      "Versions": [
+        "1.5.91"
+      ],
+      "Artifacts": [
+        "debconf-i18n_1.5.91_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcb",
+      "Versions": [
+        "1.17.0-2+b1"
+      ],
+      "Artifacts": [
+        "libxcb1_1.17.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python3-defaults",
+      "Versions": [
+        "3.9.2-3"
+      ],
+      "Artifacts": [
+        "libpython3-stdlib_3.9.2-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/systemd",
+      "Versions": [
+        "258.1-2"
+      ],
+      "Artifacts": [
+        "systemd_258.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python3-defaults",
+      "Versions": [
+        "3.9.2-3"
+      ],
+      "Artifacts": [
+        "python3_3.9.2-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libx11",
+      "Versions": [
+        "1.8.4-2+deb12u2"
+      ],
+      "Artifacts": [
+        "libx11-data_1.8.4-2+deb12u2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libx11",
+      "Versions": [
+        "1.8.4-2+deb12u2"
+      ],
+      "Artifacts": [
+        "libx11-6_1.8.4-2+deb12u2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libtirpc",
+      "Versions": [
+        "1.3.6+ds-1"
+      ],
+      "Artifacts": [
+        "libtirpc3t64_1.3.6+ds-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pciutils",
+      "Versions": [
+        "3.9.0-4"
+      ],
+      "Artifacts": [
+        "pciutils_3.9.0-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libzstd",
+      "Versions": [
+        "1.5.7+dfsg-2"
+      ],
+      "Artifacts": [
+        "zstd_1.5.7+dfsg-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/elfutils",
+      "Versions": [
+        "0.193-3~bpo13+1"
+      ],
+      "Artifacts": [
+        "libelf1t64_0.193-3~bpo13+1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/e2fsprogs",
+      "Versions": [
+        "1.47.3~rc3-1"
+      ],
+      "Artifacts": [
+        "libext2fs2t64_1.47.3~rc3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxext",
+      "Versions": [
+        "1.3.4-1+b3"
+      ],
+      "Artifacts": [
+        "libxext6_1.3.4-1+b3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnutls28",
+      "Versions": [
+        "3.8.9-3"
+      ],
+      "Artifacts": [
+        "libgnutls30t64_3.8.9-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "libfdisk1_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dbus",
+      "Versions": [
+        "1.16.2-2"
+      ],
+      "Artifacts": [
+        "dbus_1.16.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/vim",
+      "Versions": [
+        "9.1.1882-1"
+      ],
+      "Artifacts": [
+        "vim-common_9.1.1882-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/systemd",
+      "Versions": [
+        "258.1-2"
+      ],
+      "Artifacts": [
+        "libpam-systemd_258.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libpsl",
+      "Versions": [
+        "0.21.2-1.1+b1"
+      ],
+      "Artifacts": [
+        "libpsl5t64_0.21.2-1.1+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libcbor",
+      "Versions": [
+        "0.10.2-2"
+      ],
+      "Artifacts": [
+        "libcbor0.10_0.10.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libpng1.6",
+      "Versions": [
+        "1.6.50-1"
+      ],
+      "Artifacts": [
+        "libpng16-16t64_1.6.50-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dracut",
+      "Versions": [
+        "108-8"
+      ],
+      "Artifacts": [
+        "dracut-install_108-8_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/xkeyboard-config",
+      "Versions": [
+        "2.44-1"
+      ],
+      "Artifacts": [
+        "xkb-data_2.44-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/apparmor",
+      "Versions": [
+        "4.1.0-1"
+      ],
+      "Artifacts": [
+        "apparmor_4.1.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/fuse3",
+      "Versions": [
+        "3.17.4-1"
+      ],
+      "Artifacts": [
+        "libfuse3-4_3.17.4-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gdbm",
+      "Versions": [
+        "1.26-1"
+      ],
+      "Artifacts": [
+        "libgdbm6t64_1.26-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gdbm",
+      "Versions": [
+        "1.26-1"
+      ],
+      "Artifacts": [
+        "libgdbm-compat4t64_1.26-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/xz-utils",
+      "Versions": [
+        "5.8.1-2"
+      ],
+      "Artifacts": [
+        "xz-utils_5.8.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/glibc",
+      "Versions": [
+        "2.42-2"
+      ],
+      "Artifacts": [
+        "libc-bin_2.42-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/perl",
+      "Versions": [
+        "5.40.1-6"
+      ],
+      "Artifacts": [
+        "perl-modules-5.40_5.40.1-6_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dbus",
+      "Versions": [
+        "1.16.2-2"
+      ],
+      "Artifacts": [
+        "dbus-user-session_1.16.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/perl",
+      "Versions": [
+        "5.40.1-6"
+      ],
+      "Artifacts": [
+        "libperl5.40_5.40.1-6_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/tcp-wrappers",
+      "Versions": [
+        "7.6.q-36"
+      ],
+      "Artifacts": [
+        "libwrap0_7.6.q-36_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python3.13",
+      "Versions": [
+        "3.13.9-1"
+      ],
+      "Artifacts": [
+        "libpython3.13-minimal_3.13.9-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python3.13",
+      "Versions": [
+        "3.13.9-1"
+      ],
+      "Artifacts": [
+        "libpython3.13-stdlib_3.13.9-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python3.13",
+      "Versions": [
+        "3.13.9-1"
+      ],
+      "Artifacts": [
+        "python3.13-minimal_3.13.9-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/grub2",
+      "Versions": [
+        "2.12-9"
+      ],
+      "Artifacts": [
+        "grub-common_2.12-9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python3.13",
+      "Versions": [
+        "3.13.9-1"
+      ],
+      "Artifacts": [
+        "python3.13_3.13.9-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/initramfs-tools",
+      "Versions": [
+        "0.150"
+      ],
+      "Artifacts": [
+        "initramfs-tools_0.150_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/tasksel",
+      "Versions": [
+        "3.83"
+      ],
+      "Artifacts": [
+        "tasksel_3.83_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/tasksel",
+      "Versions": [
+        "3.83"
+      ],
+      "Artifacts": [
+        "tasksel-data_3.83_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/grub2",
+      "Versions": [
+        "2.14~git20250718.0e36779-1"
+      ],
+      "Artifacts": [
+        "grub2-common_2.14~git20250718.0e36779-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxmu",
+      "Versions": [
+        "1.1.3-3"
+      ],
+      "Artifacts": [
+        "libxmuu1_1.1.3-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/console-setup",
+      "Versions": [
+        "1.244"
+      ],
+      "Artifacts": [
+        "keyboard-configuration_1.244_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/json-c",
+      "Versions": [
+        "0.18+ds-1"
+      ],
+      "Artifacts": [
+        "libjson-c5_0.18+ds-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/publicsuffix",
+      "Versions": [
+        "20251016.1743-0.1"
+      ],
+      "Artifacts": [
+        "publicsuffix_20251016.1743-0.1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/bzip2",
+      "Versions": [
+        "1.0.8-6"
+      ],
+      "Artifacts": [
+        "bzip2_1.0.8-6_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/xauth",
+      "Versions": [
+        "1.1.2-1"
+      ],
+      "Artifacts": [
+        "xauth_1.1.2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/linux-base",
+      "Versions": [
+        "4.14"
+      ],
+      "Artifacts": [
+        "linux-sysctl-defaults_4.14_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/file",
+      "Versions": [
+        "5.46-5"
+      ],
+      "Artifacts": [
+        "libmagic-mgc_5.46-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "fdisk_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/file",
+      "Versions": [
+        "5.46-5"
+      ],
+      "Artifacts": [
+        "file_5.46-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/kbd",
+      "Versions": [
+        "2.7.1-2"
+      ],
+      "Artifacts": [
+        "kbd_2.7.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/nftables",
+      "Versions": [
+        "1.1.5-2"
+      ],
+      "Artifacts": [
+        "libnftables1_1.1.5-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/bash-completion",
+      "Versions": [
+        "2.16.0-7"
+      ],
+      "Artifacts": [
+        "bash-completion_2.16.0-7_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/wget",
+      "Versions": [
+        "1.25.0-2"
+      ],
+      "Artifacts": [
+        "wget_1.25.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/efivar",
+      "Versions": [
+        "39-2"
+      ],
+      "Artifacts": [
+        "libefivar1t64_39-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ncurses",
+      "Versions": [
+        "6.5+20250216-2"
+      ],
+      "Artifacts": [
+        "ncurses-term_6.5+20250216-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/efivar",
+      "Versions": [
+        "39-2"
+      ],
+      "Artifacts": [
+        "libefiboot1t64_39-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/nano",
+      "Versions": [
+        "8.6-1"
+      ],
+      "Artifacts": [
+        "nano_8.6-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/console-setup",
+      "Versions": [
+        "1.244"
+      ],
+      "Artifacts": [
+        "console-setup-linux_1.244_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libusb-1.0",
+      "Versions": [
+        "1.0.29-2"
+      ],
+      "Artifacts": [
+        "libusb-1.0-0_1.0.29-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/console-setup",
+      "Versions": [
+        "1.244"
+      ],
+      "Artifacts": [
+        "console-setup_1.244_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/initramfs-tools",
+      "Versions": [
+        "0.150"
+      ],
+      "Artifacts": [
+        "initramfs-tools-bin_0.150_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/vim",
+      "Versions": [
+        "9.1.1882-1"
+      ],
+      "Artifacts": [
+        "vim-tiny_9.1.1882-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lmdb",
+      "Versions": [
+        "0.9.31-1+b2"
+      ],
+      "Artifacts": [
+        "liblmdb0_0.9.31-1+b2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/busybox",
+      "Versions": [
+        "1.37.0-6+b3"
+      ],
+      "Artifacts": [
+        "busybox_1.37.0-6+b3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/uchardet",
+      "Versions": [
+        "0.0.8-2"
+      ],
+      "Artifacts": [
+        "libuchardet0_0.0.8-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/groff",
+      "Versions": [
+        "1.23.0-9"
+      ],
+      "Artifacts": [
+        "groff-base_1.23.0-9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/iso-codes",
+      "Versions": [
+        "4.6.0-1"
+      ],
+      "Artifacts": [
+        "iso-codes_4.6.0-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/file",
+      "Versions": [
+        "5.46-5"
+      ],
+      "Artifacts": [
+        "libmagic1t64_5.46-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "bsdextrautils_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python-certifi",
+      "Versions": [
+        "2025.1.31+ds-1"
+      ],
+      "Artifacts": [
+        "python3-certifi_2025.1.31+ds-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/manpages",
+      "Versions": [
+        "6.9.1-1"
+      ],
+      "Artifacts": [
+        "manpages_6.9.1-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python-urllib3",
+      "Versions": [
+        "2.5.0-1"
+      ],
+      "Artifacts": [
+        "python3-urllib3_2.5.0-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/laptop-detect",
+      "Versions": [
+        "0.16"
+      ],
+      "Artifacts": [
+        "laptop-detect_0.16_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libpipeline",
+      "Versions": [
+        "1.5.8-1"
+      ],
+      "Artifacts": [
+        "libpipeline1_1.5.8-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python-idna",
+      "Versions": [
+        "3.3-1+deb12u1"
+      ],
+      "Artifacts": [
+        "python3-idna_3.3-1+deb12u1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ifupdown",
+      "Versions": [
+        "0.8.44"
+      ],
+      "Artifacts": [
+        "ifupdown_0.8.44_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/protobuf-c",
+      "Versions": [
+        "1.5.1-1"
+      ],
+      "Artifacts": [
+        "libprotobuf-c1_1.5.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/installation-report",
+      "Versions": [
+        "2.97"
+      ],
+      "Artifacts": [
+        "installation-report_2.97_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python-charset-normalizer",
+      "Versions": [
+        "3.4.3-1"
+      ],
+      "Artifacts": [
+        "python3-charset-normalizer_3.4.3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/chardet",
+      "Versions": [
+        "5.2.0+dfsg-2"
+      ],
+      "Artifacts": [
+        "python3-chardet_5.2.0+dfsg-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/glib2.0",
+      "Versions": [
+        "2.86.1-1"
+      ],
+      "Artifacts": [
+        "libglib2.0-0t64_2.86.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/distro-info-data",
+      "Versions": [
+        "0.68"
+      ],
+      "Artifacts": [
+        "distro-info-data_0.68_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/requests",
+      "Versions": [
+        "2.32.5+dfsg-1"
+      ],
+      "Artifacts": [
+        "python3-requests_2.32.5+dfsg-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/emacsen-common",
+      "Versions": [
+        "3.0.8"
+      ],
+      "Artifacts": [
+        "emacsen-common_3.0.8_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/scowl",
+      "Versions": [
+        "2020.12.07-4"
+      ],
+      "Artifacts": [
+        "wamerican_2020.12.07-4_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libuv1",
+      "Versions": [
+        "1.51.0-2"
+      ],
+      "Artifacts": [
+        "libuv1t64_1.51.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cyrus-sasl2",
+      "Versions": [
+        "2.1.28+dfsg1-9"
+      ],
+      "Artifacts": [
+        "libsasl2-2_2.1.28+dfsg1-9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cyrus-sasl2",
+      "Versions": [
+        "2.1.28+dfsg1-9"
+      ],
+      "Artifacts": [
+        "libsasl2-modules-db_2.1.28+dfsg1-9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lsof",
+      "Versions": [
+        "4.99.4+dfsg-2"
+      ],
+      "Artifacts": [
+        "lsof_4.99.4+dfsg-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python-apt",
+      "Versions": [
+        "3.0.0"
+      ],
+      "Artifacts": [
+        "python-apt-common_3.0.0_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python-apt",
+      "Versions": [
+        "3.0.0"
+      ],
+      "Artifacts": [
+        "python3-apt_3.0.0_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/os-prober",
+      "Versions": [
+        "1.83"
+      ],
+      "Artifacts": [
+        "os-prober_1.83_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/shared-mime-info",
+      "Versions": [
+        "2.4-5+b3"
+      ],
+      "Artifacts": [
+        "shared-mime-info_2.4-5+b3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/glib2.0",
+      "Versions": [
+        "2.86.1-1"
+      ],
+      "Artifacts": [
+        "libglib2.0-data_2.86.1-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/jemalloc",
+      "Versions": [
+        "5.3.0-3"
+      ],
+      "Artifacts": [
+        "libjemalloc2_5.3.0-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dictionaries-common",
+      "Versions": [
+        "1.30.11"
+      ],
+      "Artifacts": [
+        "dictionaries-common_1.30.11_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/man-db",
+      "Versions": [
+        "2.9.4-2"
+      ],
+      "Artifacts": [
+        "man-db_2.9.4-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/openldap",
+      "Versions": [
+        "2.6.10+dfsg-1"
+      ],
+      "Artifacts": [
+        "libldap2_2.6.10+dfsg-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/liblockfile",
+      "Versions": [
+        "1.17-2"
+      ],
+      "Artifacts": [
+        "liblockfile-bin_1.17-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libmaxminddb",
+      "Versions": [
+        "1.7.1-1"
+      ],
+      "Artifacts": [
+        "libmaxminddb0_1.7.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lsof",
+      "Versions": [
+        "4.99.4+dfsg-2"
+      ],
+      "Artifacts": [
+        "liblsof0_4.99.4+dfsg-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/nftables",
+      "Versions": [
+        "1.1.5-2"
+      ],
+      "Artifacts": [
+        "nftables_1.1.5-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/xdg-user-dirs",
+      "Versions": [
+        "0.19-1"
+      ],
+      "Artifacts": [
+        "xdg-user-dirs_0.19-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/fstrm",
+      "Versions": [
+        "0.6.1-1"
+      ],
+      "Artifacts": [
+        "libfstrm0_0.6.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "util-linux-extra_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/bind9",
+      "Versions": [
+        "9.21.14-1"
+      ],
+      "Artifacts": [
+        "bind9-libs_9.21.14-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/openldap",
+      "Versions": [
+        "2.6.10+dfsg-1"
+      ],
+      "Artifacts": [
+        "libldap-common_2.6.10+dfsg-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/bind9",
+      "Versions": [
+        "9.21.14-1"
+      ],
+      "Artifacts": [
+        "bind9-host_9.21.14-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/rtmpdump",
+      "Versions": [
+        "2.4+20151223.gitfa8646d.1-3"
+      ],
+      "Artifacts": [
+        "librtmp1_2.4+20151223.gitfa8646d.1-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libssh2",
+      "Versions": [
+        "1.11.1-1"
+      ],
+      "Artifacts": [
+        "libssh2-1t64_1.11.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/usbutils",
+      "Versions": [
+        "018-2"
+      ],
+      "Artifacts": [
+        "usbutils_018-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/liburcu",
+      "Versions": [
+        "0.15.3-1"
+      ],
+      "Artifacts": [
+        "liburcu8t64_0.15.3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/nghttp3",
+      "Versions": [
+        "1.8.0-1~bpo12+1"
+      ],
+      "Artifacts": [
+        "libnghttp3-9_1.8.0-1~bpo12+1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cyrus-sasl2",
+      "Versions": [
+        "2.1.28+dfsg1-9"
+      ],
+      "Artifacts": [
+        "libsasl2-modules_2.1.28+dfsg1-9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/krb5",
+      "Versions": [
+        "1.22.1-1"
+      ],
+      "Artifacts": [
+        "krb5-locales_1.22.1-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python-debian",
+      "Versions": [
+        "1.0.1"
+      ],
+      "Artifacts": [
+        "python3-debian_1.0.1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/linux-signed-amd64",
+      "Versions": [
+        "6.17.2-1~exp1"
+      ],
+      "Artifacts": [
+        "linux-image-amd64_6.17.2-1~exp1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/traceroute",
+      "Versions": [
+        "2.1.6-1"
+      ],
+      "Artifacts": [
+        "traceroute_2.1.6-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/systemd",
+      "Versions": [
+        "258.1-2"
+      ],
+      "Artifacts": [
+        "libnss-systemd_258.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python-debianbts",
+      "Versions": [
+        "4.1.1"
+      ],
+      "Artifacts": [
+        "python3-debianbts_4.1.1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/reportbug",
+      "Versions": [
+        "7.10.3+deb11u2"
+      ],
+      "Artifacts": [
+        "python3-reportbug_7.10.3+deb11u2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/bind9",
+      "Versions": [
+        "9.21.14-1"
+      ],
+      "Artifacts": [
+        "bind9-dnsutils_9.21.14-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/reportbug",
+      "Versions": [
+        "7.10.3+deb11u2"
+      ],
+      "Artifacts": [
+        "reportbug_7.10.3+deb11u2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/curl",
+      "Versions": [
+        "8.17.0~rc2-1"
+      ],
+      "Artifacts": [
+        "libcurl4t64_8.17.0~rc2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/netcat",
+      "Versions": [
+        "1.10-50"
+      ],
+      "Artifacts": [
+        "netcat-traditional_1.10-50_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/inetutils",
+      "Versions": [
+        "2.6-4"
+      ],
+      "Artifacts": [
+        "inetutils-telnet_2.6-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libgpg-error",
+      "Versions": [
+        "1.56-2"
+      ],
+      "Artifacts": [
+        "libgpg-error0_1.56-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libgcrypt20",
+      "Versions": [
+        "1.8.7-6"
+      ],
+      "Artifacts": [
+        "libgcrypt20_1.8.7-6_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/debconf",
+      "Versions": [
+        "1.5.91"
+      ],
+      "Artifacts": [
+        "python3-debconf_1.5.91_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/apt-listchanges",
+      "Versions": [
+        "4.8"
+      ],
+      "Artifacts": [
+        "apt-listchanges_4.8_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/sudo",
+      "Versions": [
+        "1.9.5p2-3+deb11u1"
+      ],
+      "Artifacts": [
+        "sudo_1.9.5p2-3+deb11u1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/doc-debian",
+      "Versions": [
+        "6.5"
+      ],
+      "Artifacts": [
+        "doc-debian_6.5_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/debian-faq",
+      "Versions": [
+        "12.2"
+      ],
+      "Artifacts": [
+        "debian-faq_12.2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/wtmpdb",
+      "Versions": [
+        "0.75.0-4"
+      ],
+      "Artifacts": [
+        "libwtmpdb0_0.75.0-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/numactl",
+      "Versions": [
+        "2.0.19-1"
+      ],
+      "Artifacts": [
+        "libnuma1_2.0.19-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ngtcp2",
+      "Versions": [
+        "1.16.0-1~bpo13+2"
+      ],
+      "Artifacts": [
+        "libngtcp2-16_1.16.0-1~bpo13+2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ngtcp2",
+      "Versions": [
+        "1.16.0-1~bpo13+2"
+      ],
+      "Artifacts": [
+        "libngtcp2-crypto-gnutls8_1.16.0-1~bpo13+2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/curl",
+      "Versions": [
+        "8.17.0~rc2-1"
+      ],
+      "Artifacts": [
+        "libcurl3t64-gnutls_8.17.0~rc2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gpm",
+      "Versions": [
+        "1.20.7-8"
+      ],
+      "Artifacts": [
+        "libgpm2_1.20.7-8_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ispell",
+      "Versions": [
+        "3.4.06-1"
+      ],
+      "Artifacts": [
+        "ispell_3.4.06-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnupg2",
+      "Versions": [
+        "2.4.8-4"
+      ],
+      "Artifacts": [
+        "gpgv_2.4.8-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/util-linux",
+      "Versions": [
+        "2.41.2-4"
+      ],
+      "Artifacts": [
+        "eject_2.41.2-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnupg2",
+      "Versions": [
+        "2.4.8-4"
+      ],
+      "Artifacts": [
+        "gpgconf_2.4.8-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libksba",
+      "Versions": [
+        "1.6.7-2+b1"
+      ],
+      "Artifacts": [
+        "libksba8_1.6.7-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnupg2",
+      "Versions": [
+        "2.4.8-4"
+      ],
+      "Artifacts": [
+        "gpg_2.4.8-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnupg2",
+      "Versions": [
+        "2.4.8-4"
+      ],
+      "Artifacts": [
+        "gpg-agent_2.4.8-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/systemd",
+      "Versions": [
+        "258.1-2"
+      ],
+      "Artifacts": [
+        "systemd-timesyncd_258.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libassuan",
+      "Versions": [
+        "3.0.2-2"
+      ],
+      "Artifacts": [
+        "libassuan9_3.0.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnupg2",
+      "Versions": [
+        "2.4.8-4"
+      ],
+      "Artifacts": [
+        "dirmngr_2.4.8-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnupg2",
+      "Versions": [
+        "2.4.8-4"
+      ],
+      "Artifacts": [
+        "gpgsm_2.4.8-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnupg2",
+      "Versions": [
+        "2.4.8-4"
+      ],
+      "Artifacts": [
+        "gnupg-l10n_2.4.8-4_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnupg2",
+      "Versions": [
+        "2.4.8-4"
+      ],
+      "Artifacts": [
+        "gnupg_2.4.8-4_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libnfnetlink",
+      "Versions": [
+        "1.0.2-3"
+      ],
+      "Artifacts": [
+        "libnfnetlink0_1.0.2-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libnetfilter-conntrack",
+      "Versions": [
+        "1.1.0-1"
+      ],
+      "Artifacts": [
+        "libnetfilter-conntrack3_1.1.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/npth",
+      "Versions": [
+        "1.8-3"
+      ],
+      "Artifacts": [
+        "libnpth0t64_1.8-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnupg2",
+      "Versions": [
+        "2.4.8-4"
+      ],
+      "Artifacts": [
+        "gpg-wks-client_2.4.8-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gnupg2",
+      "Versions": [
+        "2.4.8-4"
+      ],
+      "Artifacts": [
+        "gnupg-utils_2.4.8-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/fontconfig",
+      "Versions": [
+        "2.15.0-2.4"
+      ],
+      "Artifacts": [
+        "fontconfig-config_2.15.0-2.4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/fontconfig",
+      "Versions": [
+        "2.15.0-2.4"
+      ],
+      "Artifacts": [
+        "libfontconfig1_2.15.0-2.4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/mpfr4",
+      "Versions": [
+        "4.2.2-2"
+      ],
+      "Artifacts": [
+        "libmpfr6_4.2.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/fonts-dejavu",
+      "Versions": [
+        "2.37-8"
+      ],
+      "Artifacts": [
+        "fonts-dejavu-core_2.37-8_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libsodium",
+      "Versions": [
+        "1.0.18-1"
+      ],
+      "Artifacts": [
+        "libsodium23_1.0.18-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/fonts-dejavu",
+      "Versions": [
+        "2.37-8"
+      ],
+      "Artifacts": [
+        "fonts-dejavu-mono_2.37-8_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libjpeg-turbo",
+      "Versions": [
+        "2.1.5-4"
+      ],
+      "Artifacts": [
+        "libjpeg62-turbo_2.1.5-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ncurses",
+      "Versions": [
+        "6.5+20250216-2"
+      ],
+      "Artifacts": [
+        "libncurses6_6.5+20250216-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cryptsetup",
+      "Versions": [
+        "2.8.1-1"
+      ],
+      "Artifacts": [
+        "libcryptsetup12_2.8.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libwebp",
+      "Versions": [
+        "1.5.0-0.1~bpo12+1"
+      ],
+      "Artifacts": [
+        "libwebp7_1.5.0-0.1~bpo12+1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libdeflate",
+      "Versions": [
+        "1.7-1"
+      ],
+      "Artifacts": [
+        "libdeflate0_1.7-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libwebp",
+      "Versions": [
+        "1.5.0-0.1~bpo12+1"
+      ],
+      "Artifacts": [
+        "libsharpyuv0_1.5.0-0.1~bpo12+1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/jbigkit",
+      "Versions": [
+        "2.1-6.1"
+      ],
+      "Artifacts": [
+        "libjbig0_2.1-6.1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lerc",
+      "Versions": [
+        "4.0.0+ds-5"
+      ],
+      "Artifacts": [
+        "liblerc4_4.0.0+ds-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/tiff",
+      "Versions": [
+        "4.7.1-1"
+      ],
+      "Artifacts": [
+        "libtiff6_4.7.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/icu",
+      "Versions": [
+        "76.1-4"
+      ],
+      "Artifacts": [
+        "libicu76_76.1-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dav1d",
+      "Versions": [
+        "1.5.1-1"
+      ],
+      "Artifacts": [
+        "libdav1d7_1.5.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libnl3",
+      "Versions": [
+        "3.7.0-2"
+      ],
+      "Artifacts": [
+        "libnl-3-200_3.7.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/avahi",
+      "Versions": [
+        "0.8-5+deb11u2"
+      ],
+      "Artifacts": [
+        "libavahi-common-data_0.8-5+deb11u2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/avahi",
+      "Versions": [
+        "0.8-5+deb11u2"
+      ],
+      "Artifacts": [
+        "libavahi-common3_0.8-5+deb11u2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lm-sensors",
+      "Versions": [
+        "3.6.2-2"
+      ],
+      "Artifacts": [
+        "libsensors-config_3.6.2-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lm-sensors",
+      "Versions": [
+        "3.6.2-2"
+      ],
+      "Artifacts": [
+        "libsensors5_3.6.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/avahi",
+      "Versions": [
+        "0.8-5+deb11u2"
+      ],
+      "Artifacts": [
+        "libavahi-client3_0.8-5+deb11u2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/fribidi",
+      "Versions": [
+        "1.0.8-2.1"
+      ],
+      "Artifacts": [
+        "libfribidi0_1.0.8-2.1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libidn",
+      "Versions": [
+        "1.43-2"
+      ],
+      "Artifacts": [
+        "libidn12_1.43-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/mpclib3",
+      "Versions": [
+        "1.3.1-2"
+      ],
+      "Artifacts": [
+        "libmpc3_1.3.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/isl",
+      "Versions": [
+        "0.27-1"
+      ],
+      "Artifacts": [
+        "libisl23_0.27-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/aom",
+      "Versions": [
+        "3.6.0-1+deb12u2"
+      ],
+      "Artifacts": [
+        "libaom3_3.6.0-1+deb12u2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/unzip",
+      "Versions": [
+        "6.0-29"
+      ],
+      "Artifacts": [
+        "unzip_6.0-29_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxrender",
+      "Versions": [
+        "0.9.12-1"
+      ],
+      "Artifacts": [
+        "libxrender1_0.9.12-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gcc-defaults",
+      "Versions": [
+        "15.2.0-4"
+      ],
+      "Artifacts": [
+        "cpp_15.2.0-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/xorg",
+      "Versions": [
+        "7.7+26"
+      ],
+      "Artifacts": [
+        "x11-common_7.7+26_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gcc-14",
+      "Versions": [
+        "14.3.0-10"
+      ],
+      "Artifacts": [
+        "cpp-14_14.3.0-10_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cups",
+      "Versions": [
+        "2.4.14-1"
+      ],
+      "Artifacts": [
+        "libcups2t64_2.4.14-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/x265",
+      "Versions": [
+        "4.1-3"
+      ],
+      "Artifacts": [
+        "libx265-215_4.1-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcb",
+      "Versions": [
+        "1.17.0-2+b1"
+      ],
+      "Artifacts": [
+        "libxcb-shm0_1.17.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lcms2",
+      "Versions": [
+        "2.16-2"
+      ],
+      "Artifacts": [
+        "liblcms2-2_2.16-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxpm",
+      "Versions": [
+        "3.5.17-1+b3"
+      ],
+      "Artifacts": [
+        "libxpm4_3.5.17-1+b3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/harfbuzz",
+      "Versions": [
+        "6.0.0+dfsg-3"
+      ],
+      "Artifacts": [
+        "libharfbuzz0b_6.0.0+dfsg-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/graphite2",
+      "Versions": [
+        "1.3.14-2+b1"
+      ],
+      "Artifacts": [
+        "libgraphite2-3_1.3.14-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/svt-av1",
+      "Versions": [
+        "2.3.0+dfsg-1"
+      ],
+      "Artifacts": [
+        "libsvtav1enc2_2.3.0+dfsg-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/rust-rav1e",
+      "Versions": [
+        "0.7.1-9+b2"
+      ],
+      "Artifacts": [
+        "librav1e0.7_0.7.1-9+b2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/mailcap",
+      "Versions": [
+        "3.75"
+      ],
+      "Artifacts": [
+        "mailcap_3.75_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pixman",
+      "Versions": [
+        "0.46.4-1"
+      ],
+      "Artifacts": [
+        "libpixman-1-0_0.46.4-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcb",
+      "Versions": [
+        "1.17.0-2+b1"
+      ],
+      "Artifacts": [
+        "libxcb-render0_1.17.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/abseil",
+      "Versions": [
+        "20240722.0-4"
+      ],
+      "Artifacts": [
+        "libabsl20240722_20240722.0-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cairo",
+      "Versions": [
+        "1.18.4-1+b1"
+      ],
+      "Artifacts": [
+        "libcairo2_1.18.4-1+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/python3.13",
+      "Versions": [
+        "3.13.9-1"
+      ],
+      "Artifacts": [
+        "libpython3.13_3.13.9-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libyaml",
+      "Versions": [
+        "0.2.5-2"
+      ],
+      "Artifacts": [
+        "libyaml-0-2_0.2.5-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libdrm",
+      "Versions": [
+        "2.4.127-1"
+      ],
+      "Artifacts": [
+        "libdrm-common_2.4.127-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libdrm",
+      "Versions": [
+        "2.4.127-1"
+      ],
+      "Artifacts": [
+        "libdrm2_2.4.127-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/alsa-lib",
+      "Versions": [
+        "1.2.8-1"
+      ],
+      "Artifacts": [
+        "libasound2-data_1.2.8-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gcc-14",
+      "Versions": [
+        "14.3.0-10"
+      ],
+      "Artifacts": [
+        "cpp-14-x86-64-linux-gnu_14.3.0-10_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libde265",
+      "Versions": [
+        "1.0.16-1"
+      ],
+      "Artifacts": [
+        "libde265-0_1.0.16-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gcc-defaults",
+      "Versions": [
+        "15.2.0-4"
+      ],
+      "Artifacts": [
+        "cpp-x86-64-linux-gnu_15.2.0-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/argon2",
+      "Versions": [
+        "0~20190702+dfsg-5"
+      ],
+      "Artifacts": [
+        "libargon2-1_0~20190702+dfsg-5_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libdatrie",
+      "Versions": [
+        "0.2.13-4"
+      ],
+      "Artifacts": [
+        "libdatrie1_0.2.13-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libthai",
+      "Versions": [
+        "0.1.29-2"
+      ],
+      "Artifacts": [
+        "libthai-data_0.1.29-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libthai",
+      "Versions": [
+        "0.1.29-2+b1"
+      ],
+      "Artifacts": [
+        "libthai0_0.1.29-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libheif",
+      "Versions": [
+        "1.20.2-2+b1"
+      ],
+      "Artifacts": [
+        "libheif1_1.20.2-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/alsa-lib",
+      "Versions": [
+        "1.2.14-2"
+      ],
+      "Artifacts": [
+        "libasound2t64_1.2.14-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/psmisc",
+      "Versions": [
+        "23.7-2"
+      ],
+      "Artifacts": [
+        "psmisc_23.7-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pango1.0",
+      "Versions": [
+        "1.56.3-2"
+      ],
+      "Artifacts": [
+        "libpango-1.0-0_1.56.3-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pango1.0",
+      "Versions": [
+        "1.56.3-2"
+      ],
+      "Artifacts": [
+        "libpangoft2-1.0-0_1.56.3-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pinentry",
+      "Versions": [
+        "1.3.2-3"
+      ],
+      "Artifacts": [
+        "pinentry-curses_1.3.2-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pango1.0",
+      "Versions": [
+        "1.56.3-2"
+      ],
+      "Artifacts": [
+        "libpangocairo-1.0-0_1.56.3-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libheif",
+      "Versions": [
+        "1.20.2-2+b1"
+      ],
+      "Artifacts": [
+        "libheif-plugin-libde265_1.20.2-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libheif",
+      "Versions": [
+        "1.20.2-2+b1"
+      ],
+      "Artifacts": [
+        "libheif-plugin-dav1d_1.20.2-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/fontconfig",
+      "Versions": [
+        "2.15.0-2.4"
+      ],
+      "Artifacts": [
+        "fontconfig_2.15.0-2.4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libevent",
+      "Versions": [
+        "2.1.12-stable-10+b1"
+      ],
+      "Artifacts": [
+        "libevent-2.1-7t64_2.1.12-stable-10+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/z3",
+      "Versions": [
+        "4.8.12-3.1"
+      ],
+      "Artifacts": [
+        "libz3-4_4.8.12-3.1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libimagequant",
+      "Versions": [
+        "4.4.0-3"
+      ],
+      "Artifacts": [
+        "libimagequant0_4.4.0-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libyuv",
+      "Versions": [
+        "0.0~git20230123.b2528b0-1"
+      ],
+      "Artifacts": [
+        "libyuv0_0.0~git20230123.b2528b0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libgav1",
+      "Versions": [
+        "0.19.0-3+b1"
+      ],
+      "Artifacts": [
+        "libgav1-1_0.19.0-3+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/fuse3",
+      "Versions": [
+        "3.17.4-1"
+      ],
+      "Artifacts": [
+        "fuse3_3.17.4-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gdk-pixbuf",
+      "Versions": [
+        "2.44.4+dfsg-1"
+      ],
+      "Artifacts": [
+        "libgdk-pixbuf2.0-common_2.44.4+dfsg-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gdk-pixbuf",
+      "Versions": [
+        "2.44.4+dfsg-1"
+      ],
+      "Artifacts": [
+        "libgdk-pixbuf-2.0-0_2.44.4+dfsg-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxfixes",
+      "Versions": [
+        "6.0.0-2"
+      ],
+      "Artifacts": [
+        "libxfixes3_6.0.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libx11",
+      "Versions": [
+        "1.8.4-2+deb12u2"
+      ],
+      "Artifacts": [
+        "libx11-xcb1_1.8.4-2+deb12u2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libnl3",
+      "Versions": [
+        "3.7.0-2"
+      ],
+      "Artifacts": [
+        "libnl-genl-3-200_3.7.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxslt",
+      "Versions": [
+        "1.1.43-0.3"
+      ],
+      "Artifacts": [
+        "libxslt1.1_1.1.43-0.3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/llvm-toolchain-19",
+      "Versions": [
+        "19.1.7-9"
+      ],
+      "Artifacts": [
+        "libllvm19_19.1.7-9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gobject-introspection",
+      "Versions": [
+        "1.86.0-6"
+      ],
+      "Artifacts": [
+        "libgirepository-1.0-1_1.86.0-6_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libpcap",
+      "Versions": [
+        "1.10.5-2"
+      ],
+      "Artifacts": [
+        "libpcap0.8t64_1.10.5-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/wayland",
+      "Versions": [
+        "1.24.0-2+b1"
+      ],
+      "Artifacts": [
+        "libwayland-client0_1.24.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/cairo",
+      "Versions": [
+        "1.18.4-1+b1"
+      ],
+      "Artifacts": [
+        "libcairo-gobject2_1.18.4-1+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libavif",
+      "Versions": [
+        "1.3.0-1+b1"
+      ],
+      "Artifacts": [
+        "libavif16_1.3.0-1+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/duktape",
+      "Versions": [
+        "2.7.0-2"
+      ],
+      "Artifacts": [
+        "libduktape207_2.7.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pygobject",
+      "Versions": [
+        "3.54.5-4"
+      ],
+      "Artifacts": [
+        "python3-gi_3.54.5-4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxi",
+      "Versions": [
+        "1.8.2-1"
+      ],
+      "Artifacts": [
+        "libxi6_1.8.2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libgd2",
+      "Versions": [
+        "2.3.3-9"
+      ],
+      "Artifacts": [
+        "libgd3_2.3.3-9_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/librsvg",
+      "Versions": [
+        "2.60.0+dfsg-1"
+      ],
+      "Artifacts": [
+        "librsvg2-2_2.60.0+dfsg-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libtool",
+      "Versions": [
+        "2.5.4-7"
+      ],
+      "Artifacts": [
+        "libltdl7_2.5.4-7_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libtimedate-perl",
+      "Versions": [
+        "2.3300-2"
+      ],
+      "Artifacts": [
+        "libtimedate-perl_2.3300-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libice",
+      "Versions": [
+        "1.1.1-1"
+      ],
+      "Artifacts": [
+        "libice6_1.1.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libsm",
+      "Versions": [
+        "1.2.6-1"
+      ],
+      "Artifacts": [
+        "libsm6_1.2.6-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libpciaccess",
+      "Versions": [
+        "0.18.1-2"
+      ],
+      "Artifacts": [
+        "libpciaccess0_0.18.1-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gobject-introspection",
+      "Versions": [
+        "1.86.0-6"
+      ],
+      "Artifacts": [
+        "gir1.2-girepository-2.0_1.86.0-6_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libnl3",
+      "Versions": [
+        "3.7.0-2"
+      ],
+      "Artifacts": [
+        "libnl-route-3-200_3.7.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/sgml-base",
+      "Versions": [
+        "1.31"
+      ],
+      "Artifacts": [
+        "sgml-base_1.31_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gdk-pixbuf",
+      "Versions": [
+        "2.44.4+dfsg-1"
+      ],
+      "Artifacts": [
+        "libgdk-pixbuf2.0-bin_2.44.4+dfsg-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libdrm",
+      "Versions": [
+        "2.4.127-1"
+      ],
+      "Artifacts": [
+        "libdrm-amdgpu1_2.4.127-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/librsvg",
+      "Versions": [
+        "2.60.0+dfsg-1"
+      ],
+      "Artifacts": [
+        "librsvg2-common_2.60.0+dfsg-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcb",
+      "Versions": [
+        "1.17.0-2+b1"
+      ],
+      "Artifacts": [
+        "libxcb-dri3-0_1.17.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/openjpeg2",
+      "Versions": [
+        "2.5.3-2.1~deb13u1"
+      ],
+      "Artifacts": [
+        "libopenjp2-7_2.5.3-2.1~deb13u1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lzo2",
+      "Versions": [
+        "2.10-3+b1"
+      ],
+      "Artifacts": [
+        "liblzo2-2_2.10-3+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcb",
+      "Versions": [
+        "1.17.0-2+b1"
+      ],
+      "Artifacts": [
+        "libxcb-xfixes0_1.17.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcb",
+      "Versions": [
+        "1.17.0-2+b1"
+      ],
+      "Artifacts": [
+        "libxcb-present0_1.17.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcb",
+      "Versions": [
+        "1.17.0-2+b1"
+      ],
+      "Artifacts": [
+        "libxcb-randr0_1.17.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcb",
+      "Versions": [
+        "1.17.0-2+b1"
+      ],
+      "Artifacts": [
+        "libxcb-sync1_1.17.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxshmfence",
+      "Versions": [
+        "1.3.3-1"
+      ],
+      "Artifacts": [
+        "libxshmfence1_1.3.3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/alsa-topology-conf",
+      "Versions": [
+        "1.2.5.1-3"
+      ],
+      "Artifacts": [
+        "alsa-topology-conf_1.2.5.1-3_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/xml-core",
+      "Versions": [
+        "0.19"
+      ],
+      "Artifacts": [
+        "xml-core_0.19_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/alsa-ucm-conf",
+      "Versions": [
+        "1.2.8-1"
+      ],
+      "Artifacts": [
+        "alsa-ucm-conf_1.2.8-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libclone-perl",
+      "Versions": [
+        "0.47-1+b1"
+      ],
+      "Artifacts": [
+        "libclone-perl_0.47-1+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libheif",
+      "Versions": [
+        "1.20.2-2+b1"
+      ],
+      "Artifacts": [
+        "libheif-plugin-x265_1.20.2-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxrandr",
+      "Versions": [
+        "1.5.4-1+b3"
+      ],
+      "Artifacts": [
+        "libxrandr2_1.5.4-1+b3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/liburi-perl",
+      "Versions": [
+        "5.34-2"
+      ],
+      "Artifacts": [
+        "liburi-perl_5.34-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/nspr",
+      "Versions": [
+        "4.37-1"
+      ],
+      "Artifacts": [
+        "libnspr4_4.37-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcursor",
+      "Versions": [
+        "1.2.3-1"
+      ],
+      "Artifacts": [
+        "libxcursor1_1.2.3-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dbus-python",
+      "Versions": [
+        "1.4.0-1"
+      ],
+      "Artifacts": [
+        "python3-dbus_1.4.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/nss",
+      "Versions": [
+        "3.87.1-1+deb12u1"
+      ],
+      "Artifacts": [
+        "libnss3_3.87.1-1+deb12u1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libwebp",
+      "Versions": [
+        "1.5.0-0.1~bpo12+1"
+      ],
+      "Artifacts": [
+        "libwebpmux3_1.5.0-0.1~bpo12+1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dconf",
+      "Versions": [
+        "0.49.0-2"
+      ],
+      "Artifacts": [
+        "libdconf1_0.49.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/wayland",
+      "Versions": [
+        "1.24.0-2+b1"
+      ],
+      "Artifacts": [
+        "libwayland-server0_1.24.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/mesa",
+      "Versions": [
+        "25.3.0~rc2-1"
+      ],
+      "Artifacts": [
+        "libgbm1_25.3.0~rc2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gpgme1.0",
+      "Versions": [
+        "1.24.2-3"
+      ],
+      "Artifacts": [
+        "libgpgme11t64_1.24.2-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libencode-locale-perl",
+      "Versions": [
+        "1.05-3"
+      ],
+      "Artifacts": [
+        "libencode-locale-perl_1.05-3_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dconf",
+      "Versions": [
+        "0.49.0-2"
+      ],
+      "Artifacts": [
+        "dconf-service_0.49.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dconf",
+      "Versions": [
+        "0.49.0-2"
+      ],
+      "Artifacts": [
+        "dconf-gsettings-backend_0.49.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/pcsc-lite",
+      "Versions": [
+        "2.4.0-1"
+      ],
+      "Artifacts": [
+        "libpcsclite1_2.4.0-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libhtml-parser-perl",
+      "Versions": [
+        "3.83-1+b2"
+      ],
+      "Artifacts": [
+        "libhtml-parser-perl_3.83-1+b2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libhtml-tagset-perl",
+      "Versions": [
+        "3.24-1"
+      ],
+      "Artifacts": [
+        "libhtml-tagset-perl_3.24-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libio-html-perl",
+      "Versions": [
+        "1.004-3"
+      ],
+      "Artifacts": [
+        "libio-html-perl_1.004-3_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/liblwp-mediatypes-perl",
+      "Versions": [
+        "6.04-2"
+      ],
+      "Artifacts": [
+        "liblwp-mediatypes-perl_6.04-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxtst",
+      "Versions": [
+        "1.2.5-1"
+      ],
+      "Artifacts": [
+        "libxtst6_1.2.5-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libhttp-date-perl",
+      "Versions": [
+        "6.06-1"
+      ],
+      "Artifacts": [
+        "libhttp-date-perl_6.06-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libhttp-message-perl",
+      "Versions": [
+        "7.01-1"
+      ],
+      "Artifacts": [
+        "libhttp-message-perl_7.01-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxt",
+      "Versions": [
+        "1.2.1-1.3"
+      ],
+      "Artifacts": [
+        "libxt6t64_1.2.1-1.3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/vulkan-loader",
+      "Versions": [
+        "1.4.328.1-1"
+      ],
+      "Artifacts": [
+        "libvulkan1_1.4.328.1-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxinerama",
+      "Versions": [
+        "1.1.4-3"
+      ],
+      "Artifacts": [
+        "libxinerama1_1.1.4-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libglvnd",
+      "Versions": [
+        "1.7.0-1+b2"
+      ],
+      "Artifacts": [
+        "libglvnd0_1.7.0-1+b2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxxf86vm",
+      "Versions": [
+        "1.1.4-1+b4"
+      ],
+      "Artifacts": [
+        "libxxf86vm1_1.1.4-1+b4_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/policykit-1",
+      "Versions": [
+        "126-2"
+      ],
+      "Artifacts": [
+        "libpolkit-gobject-1-0_126-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcb",
+      "Versions": [
+        "1.17.0-2+b1"
+      ],
+      "Artifacts": [
+        "libxcb-glx0_1.17.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/snappy",
+      "Versions": [
+        "1.2.2-2"
+      ],
+      "Artifacts": [
+        "libsnappy1v5_1.2.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/mesa",
+      "Versions": [
+        "25.3.0~rc2-1"
+      ],
+      "Artifacts": [
+        "libgl1-mesa-dri_25.3.0~rc2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libheif",
+      "Versions": [
+        "1.20.2-2+b1"
+      ],
+      "Artifacts": [
+        "libheif-plugin-aomenc_1.20.2-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/mesa",
+      "Versions": [
+        "25.3.0~rc2-1"
+      ],
+      "Artifacts": [
+        "mesa-libgallium_25.3.0~rc2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libglvnd",
+      "Versions": [
+        "1.7.0-1+b2"
+      ],
+      "Artifacts": [
+        "libglx0_1.7.0-1+b2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/policykit-1",
+      "Versions": [
+        "126-2"
+      ],
+      "Artifacts": [
+        "libpolkit-agent-1-0_126-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libglvnd",
+      "Versions": [
+        "1.7.0-1+b2"
+      ],
+      "Artifacts": [
+        "libgl1_1.7.0-1+b2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/mesa",
+      "Versions": [
+        "25.3.0~rc2-1"
+      ],
+      "Artifacts": [
+        "libglx-mesa0_25.3.0~rc2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxcomposite",
+      "Versions": [
+        "0.4.6-1"
+      ],
+      "Artifacts": [
+        "libxcomposite1_0.4.6-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxkbcommon",
+      "Versions": [
+        "1.7.0-2"
+      ],
+      "Artifacts": [
+        "libxkbcommon0_1.7.0-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/policykit-1",
+      "Versions": [
+        "126-2"
+      ],
+      "Artifacts": [
+        "polkitd_126-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/dosfstools",
+      "Versions": [
+        "4.2-1"
+      ],
+      "Artifacts": [
+        "dosfstools_4.2-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/gsettings-desktop-schemas",
+      "Versions": [
+        "49.1-1"
+      ],
+      "Artifacts": [
+        "gsettings-desktop-schemas_49.1-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/aspell",
+      "Versions": [
+        "0.60.8.1-6"
+      ],
+      "Artifacts": [
+        "libaspell15_0.60.8.1-6_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxdamage",
+      "Versions": [
+        "1.1.6-1"
+      ],
+      "Artifacts": [
+        "libxdamage1_1.1.6-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/hicolor-icon-theme",
+      "Versions": [
+        "0.18-2"
+      ],
+      "Artifacts": [
+        "hicolor-icon-theme_0.18-2_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libepoxy",
+      "Versions": [
+        "1.5.5-1"
+      ],
+      "Artifacts": [
+        "libepoxy0_1.5.5-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/lapack",
+      "Versions": [
+        "3.9.0-3+deb11u1"
+      ],
+      "Artifacts": [
+        "libblas3_3.9.0-3+deb11u1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libdrm",
+      "Versions": [
+        "2.4.127-1"
+      ],
+      "Artifacts": [
+        "libdrm-intel1_2.4.127-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/aspell",
+      "Versions": [
+        "0.60.8.1-6"
+      ],
+      "Artifacts": [
+        "aspell_0.60.8.1-6_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/ssl-cert",
+      "Versions": [
+        "1.1.3"
+      ],
+      "Artifacts": [
+        "ssl-cert_1.1.3_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/wayland",
+      "Versions": [
+        "1.24.0-2+b1"
+      ],
+      "Artifacts": [
+        "libwayland-egl1_1.24.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/wayland",
+      "Versions": [
+        "1.24.0-2+b1"
+      ],
+      "Artifacts": [
+        "libwayland-cursor0_1.24.0-2+b1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libxv",
+      "Versions": [
+        "1.0.11-1"
+      ],
+      "Artifacts": [
+        "libxv1_1.0.11-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/perl-openssl-defaults",
+      "Versions": [
+        "7+b2"
+      ],
+      "Artifacts": [
+        "perl-openssl-defaults_7+b2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libnet-ssleay-perl",
+      "Versions": [
+        "1.94-3"
+      ],
+      "Artifacts": [
+        "libnet-ssleay-perl_1.94-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/at-spi2-core",
+      "Versions": [
+        "2.58.1-1~bpo13+1"
+      ],
+      "Artifacts": [
+        "at-spi2-common_2.58.1-1~bpo13+1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/adwaita-icon-theme",
+      "Versions": [
+        "49.0-1"
+      ],
+      "Artifacts": [
+        "adwaita-icon-theme_49.0-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/opus",
+      "Versions": [
+        "1.5.2-2"
+      ],
+      "Artifacts": [
+        "libopus0_1.5.2-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/samba",
+      "Versions": [
+        "4.23.2+dfsg-1"
+      ],
+      "Artifacts": [
+        "libwbclient0_4.23.2+dfsg-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libogg",
+      "Versions": [
+        "1.3.6-1"
+      ],
+      "Artifacts": [
+        "libogg0_1.3.6-1_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libio-compress-brotli-perl",
+      "Versions": [
+        "0.004001-2+b3"
+      ],
+      "Artifacts": [
+        "libio-compress-brotli-perl_0.004001-2+b3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libtry-tiny-perl",
+      "Versions": [
+        "0.32-1"
+      ],
+      "Artifacts": [
+        "libtry-tiny-perl_0.32-1_all.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/libvorbis",
+      "Versions": [
+        "1.3.7-3"
+      ],
+      "Artifacts": [
+        "libvorbis0a_1.3.7-3_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/colord",
+      "Versions": [
+        "1.4.8-2"
+      ],
+      "Artifacts": [
+        "libcolord2_1.4.8-2_amd64.deb"
+      ]
+    },
+    {
+      "Ecosystem": "debian",
+      "Name": "main/at-spi2-core",
+      "Versions": [
+        "2.58.1-1~bpo13+1"
+      ],
+      "Artifacts": [
+        "libatk1.0-0t64_2.58.1-1~bpo13+1_amd64.deb"
+      ]
+    }
+  ]
+}
