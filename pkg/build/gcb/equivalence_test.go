@@ -30,6 +30,7 @@ package gcb
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -233,6 +234,7 @@ func TestImplementationComparison(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Legacy MakeDockerfile failed: %v", err)
 			}
+			legacyDockerfile = regexp.MustCompile(`#\s[^\n]*\n`).ReplaceAllString(legacyDockerfile, "")
 			legacyBuild, err := rebuild.MakeBuild(tc.target, legacyDockerfile, tc.opts)
 			if err != nil {
 				t.Fatalf("Legacy MakeBuild failed: %v", err)
@@ -279,6 +281,7 @@ func checkEquivalence(target rebuild.Target, strategy rebuild.ManualStrategy, op
 		}
 		return false, fmt.Sprintf("legacy failed (%v) but new succeeded", err1)
 	}
+	legacyDockerfile = regexp.MustCompile(`#\s[^\n]*\n`).ReplaceAllString(legacyDockerfile, "")
 	legacyBuild, err1 := rebuild.MakeBuild(target, legacyDockerfile, opts)
 	if err1 != nil {
 		return true, "skipped: legacy MakeBuild failed"

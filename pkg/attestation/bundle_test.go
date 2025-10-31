@@ -281,12 +281,12 @@ func TestBundle_NewBundle(t *testing.T) {
 				t.Fatal("Bundle should not be nil")
 			}
 			if len(bundle.envelopes) != tt.expectedCount {
-				t.Errorf("Expected %d envelopes, got %d", tt.expectedCount, len(bundle.envelopes))
+				t.Errorf("envelopes = %d, want %d", len(bundle.envelopes), tt.expectedCount)
 			}
 			// Verify statements can be retrieved
 			statements := bundle.Statements()
 			if len(statements) != tt.expectedCount {
-				t.Errorf("Expected %d statements, got %d", tt.expectedCount, len(statements))
+				t.Errorf("statements = %d, want %d", len(statements), tt.expectedCount)
 			}
 		})
 	}

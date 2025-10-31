@@ -111,12 +111,13 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	if deps.PrebuildConfig.Auth {
 		authRequired = append(authRequired, "gs://"+deps.PrebuildConfig.Bucket)
 	}
-	h, err := deps.GCBExecutor.Start(ctx, rebuild.Input{
+	input := rebuild.Input{
 		Target:   session.Target,
 		Strategy: strategy,
-	}, build.Options{
+	}
+	h, err := deps.GCBExecutor.Start(ctx, input, build.Options{
 		BuildID:     obliviousID,
-		UseTimewarp: true,
+		UseTimewarp: meta.AllRebuilders[input.Target.Ecosystem].UsesTimewarp(input),
 		Resources: build.Resources{
 			AssetStore:       store,
 			ToolURLs:         toolURLs,
@@ -160,6 +161,9 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		}
 
 		rb, up, err := verifier.SummarizeArtifacts(ctx, store, session.Target, upstreamURI, hashes, stabilizers)
+		if err != nil {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "summarizing artifacts"))
+		}
 		exactMatch = bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
 		stabilizedMatch = bytes.Equal(rb.StabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil))
 	}

@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"context"
 	"io"
+	"sort"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -87,6 +88,7 @@ func (c LazyTreeCount) Search(ctx context.Context, r *git.Repository, hashes []p
 		}
 		return nil
 	})
+	sort.Strings(closest)
 	return
 }
 
@@ -178,6 +180,7 @@ func (s CommitsNearPublish) Search(ctx context.Context, r *git.Repository, hashe
 		}
 		return nil
 	})
+	sort.Strings(closest)
 	return
 }
 
@@ -249,6 +252,7 @@ func (s ExactTreeCount) Search(ctx context.Context, r *git.Repository, hashes []
 		}
 		return nil
 	})
+	sort.Strings(closest)
 	return
 }
 

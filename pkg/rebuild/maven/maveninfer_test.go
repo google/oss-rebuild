@@ -9,9 +9,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"log"
 	"path"
-	"strings"
 	"testing"
 	"time"
 
@@ -265,15 +263,15 @@ func addPomArtifact(mavenRegistry *mockMavenRegistry, pom *PomXML) {
 
 func TestMavenInfer(t *testing.T) {
 	testCases := []struct {
-		name              string
-		target            rebuild.Target
-		repo              string
-		zipEntries        map[string][]*archive.ZipEntry
-		expectedHeuristic string
-		wantErr           bool
+		name           string
+		target         rebuild.Target
+		repo           string
+		zipEntries     map[string][]*archive.ZipEntry
+		expectedCommit string
+		wantErr        bool
 	}{
 		{
-			name: "infer using git log heuristic",
+			name: "git log heuristic (with pkg and version match)",
 			target: rebuild.Target{
 				Ecosystem: "Maven",
 				Package:   "foo:bar",
@@ -297,20 +295,15 @@ func TestMavenInfer(t *testing.T) {
 				}},
 				maven.TypeJar: {
 					{
-						FileHeader: &zip.FileHeader{Name: "META-INF/maven/foo/bar/pom.xml"},
-						Body:       []byte(`<project><groupId>foo</groupId><artifactId>bar</artifactId><version>1.0.0</version></project>`),
-					},
-					{
 						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
 					},
 				},
 			},
-			expectedHeuristic: "using git log heuristic (pkg and version match)",
-			wantErr:           false,
+			expectedCommit: "initial-commit",
 		},
 		{
-			name: "infer using source jar heuristic",
+			name: "source jar heuristic (with pkg match only)",
 			target: rebuild.Target{
 				Ecosystem: "Maven",
 				Package:   "foo:bar",
@@ -336,20 +329,60 @@ func TestMavenInfer(t *testing.T) {
 				}},
 				maven.TypeJar: {
 					{
-						FileHeader: &zip.FileHeader{Name: "META-INF/maven/foo/bar/pom.xml"},
-						Body:       []byte("<project><groupId>foo</groupId><artifactId>bar</artifactId><version>1.0.0</version></project>"),
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
 					},
+				},
+			},
+			expectedCommit: "initial-commit",
+		},
+		{
+			name: "source jar heuristic (with pkg and version match)",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: initial-commit
+              - id: orphan-commit
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>bar</artifactId>
+                        <version>1.0.0</version>
+                    </project>
+                  src/main/java/Foo.java: a
+              - id: parent-2
+                parent: initial-commit
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>bar</artifactId>
+                        <version>1.0.0-SNAPSHOT</version>
+                    </project>
+                  src/main/java/Foo.java: not-a`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeSources: {{
+					FileHeader: &zip.FileHeader{Name: "src/main/java/Foo.java"},
+					Body:       []byte("a"),
+				}},
+				maven.TypeJar: {
 					{
 						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
 					},
 				},
 			},
-			expectedHeuristic: "using source jar heuristic with mismatched version",
-			wantErr:           false,
+			expectedCommit: "orphan-commit",
 		},
 		{
-			name: "infer using tag heuristic",
+			name: "infer using tag heuristic (with pkg match only)",
 			target: rebuild.Target{
 				Ecosystem: "Maven",
 				Package:   "foo:bar",
@@ -368,23 +401,102 @@ func TestMavenInfer(t *testing.T) {
                         <version>0.0.0-dev</version>
                     </project>`,
 			zipEntries: map[string][]*archive.ZipEntry{
-				maven.TypeSources: {{
-					FileHeader: &zip.FileHeader{Name: "src/main/java/Foo.java"},
-					Body:       []byte("a"),
-				}},
 				maven.TypeJar: {
-					{
-						FileHeader: &zip.FileHeader{Name: "META-INF/maven/foo/bar/pom.xml"},
-						Body:       []byte("<project><groupId>foo</groupId><artifactId>bar</artifactId><version>1.0.0</version></project>"),
-					},
 					{
 						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
 					},
 				},
 			},
-			expectedHeuristic: "using tag heuristic with mismatched version",
-			wantErr:           false,
+			expectedCommit: "initial-commit",
+		},
+		{
+			name: "infer using tag heuristic (with pkg match and version match)",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: initial-commit
+                tags: ["v1.0.0"]
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>bar</artifactId>
+                        <version>1.0.0</version>
+                    </project>`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			expectedCommit: "initial-commit",
+		},
+		{
+			name: "no valid git ref",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: initial-commit
+                tags: ["v1.0.0"]
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>${project.artifactId}</artifactId>
+                        <version>${project.version}</version>
+                    </project>`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			// tag is matched but then package does not match so no valid git ref
+			wantErr: true,
+		},
+		{
+			name: "no git ref",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>${project.artifactId}</artifactId>
+                        <version>${project.version}</version>
+                    </project>`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			// none of the heuristics can find a git ref
+			wantErr: true,
 		},
 		{
 			name: "prevent checking for source jar heuristic if it is nil",
@@ -417,7 +529,6 @@ func TestMavenInfer(t *testing.T) {
 					},
 				},
 			},
-			expectedHeuristic: "",
 			// throw no valid git ref as tag matches but then package does not match
 			wantErr: true,
 		},
@@ -437,11 +548,6 @@ func TestMavenInfer(t *testing.T) {
 			mockMux := rebuild.RegistryMux{
 				Maven: mockRegistry,
 			}
-			capturedStderr := &bytes.Buffer{}
-			log.SetOutput(capturedStderr)
-			defer func() {
-				log.SetOutput(nil)
-			}()
 			got, err := MavenInfer(context.Background(), tc.target, mockMux, repoConfig)
 			if tc.wantErr {
 				if err == nil {
@@ -451,8 +557,10 @@ func TestMavenInfer(t *testing.T) {
 				if err != nil {
 					t.Fatalf("MavenInfer() error = %v", err)
 				}
-				if !strings.Contains(capturedStderr.String(), tc.expectedHeuristic) {
-					t.Errorf("MavenInfer() did not use expected heuristic, got logs: %s", capturedStderr.String())
+				actualCommit := got.(*MavenBuild).Location.Ref
+				expectedCommit := repo.Commits[tc.expectedCommit].String()
+				if actualCommit != expectedCommit {
+					t.Errorf("MavenInfer() commit = %q, want %q", actualCommit, tc.expectedCommit)
 				}
 			}
 

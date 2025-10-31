@@ -27,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/pkg/errors"
 )
 
@@ -131,7 +132,9 @@ func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strate
 			ToolURLs: map[build.ToolType]string{
 				build.TimewarpTool: opts.PrebuildURL + "/timewarp",
 			},
+			BaseImageConfig: build.DefaultBaseImageConfig(),
 		},
+		UseTimewarp: meta.AllRebuilders[t.Ecosystem].UsesTimewarp(input),
 	}
 	handle, err := executor.Start(ctx, input, buildOpts)
 	if err != nil {
@@ -145,7 +148,7 @@ func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strate
 		return err
 	}
 	if result.Error != nil {
-		return errors.Wrap(err, "build failed")
+		return errors.Wrap(result.Error, "build failed")
 	}
 	return nil
 }
@@ -196,7 +199,10 @@ func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAsset
 			return errors.Wrap(err, "getting debian artifact URL")
 		}
 	case rebuild.Maven:
-		return errors.New("maven comparison not implemented")
+		upstreamURL, err = mux.Maven.ReleaseURL(ctx, t.Package, t.Version, maven.TypeJar)
+		if err != nil {
+			return errors.Wrap(err, "getting maven artifact URL")
+		}
 	default:
 		return errors.Errorf("unsupported ecosystem: %s", t.Ecosystem)
 	}

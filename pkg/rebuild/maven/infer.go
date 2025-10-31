@@ -124,7 +124,6 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 		// Check for Gradle wrapper or compatible build files
 		// It is common practice to include the Gradle wrapper script (`gradlew`) at the root of the project.
 		// Reference: https://docs.gradle.org/current/userguide/gradle_wrapper_basics.html
-		// TODO: strategy should install gradle if wrapper is not present
 		case fileName == "gradlew" || strings.HasSuffix(fileName, ".gradle") || strings.HasSuffix(fileName, ".gradle.kts"):
 			identifiedTool = gradleBuildTool
 		// Simple Build Tool (sbt) is to build Scala projects
@@ -162,18 +161,45 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 
 // inferOrFallbackToDefaultJDK tries to infer the JDK version from the artifact's metadata, falling back to a default if necessary.
 func inferOrFallbackToDefaultJDK(ctx context.Context, name, version string, mux rebuild.RegistryMux) (string, error) {
-	jdk, err := inferJDKVersion(ctx, name, version, mux)
+	rawJDK, err := inferJDKVersion(ctx, name, version, mux)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching JDK")
 	}
-	if jdk == "" {
+	if rawJDK == "" {
 		log.Printf("no JDK version inferred, falling back to JDK %s", fallbackJDK)
-		jdk = fallbackJDK
-	} else if JDKDownloadURLs[jdk] == "" {
-		log.Printf("%s has no associated JDK URL, falling back to JDK %s", jdk, fallbackJDK)
-		jdk = fallbackJDK
+		return fallbackJDK, nil
 	}
-	return jdk, nil
+	// First, check if the inferred version is directly available for download.
+	if _, ok := JDKDownloadURLs[rawJDK]; ok {
+		log.Printf("Using directly inferred JDK version: %s", rawJDK)
+		return rawJDK, nil
+	}
+	// If not directly available, try parsing its major version.
+	log.Printf("Inferred JDK \"%s\" is not directly available, attempting to parse major version.", rawJDK)
+	var majorJDK string
+	if strings.HasPrefix(rawJDK, "1.") {
+		// For Java versions < 9 (e.g., "1.8.0_301")
+		parts := strings.Split(rawJDK, ".")
+		if len(parts) > 1 {
+			majorJDK = parts[1] // "1.8.0_301" becomes "8"
+		}
+	} else {
+		// For Java versions >= 9 (e.g., "17.0.1")
+		parts := strings.Split(rawJDK, ".")
+		if len(parts) > 0 {
+			majorJDK = parts[0] // "17.0.1" becomes "17"
+		}
+	}
+	// Check if the major version is valid and available.
+	if majorJDK != "" {
+		if _, ok := JDKDownloadURLs[majorJDK]; ok {
+			log.Printf("Successfully used major JDK version %s (from \"%s\")", majorJDK, rawJDK)
+			return majorJDK, nil
+		}
+	}
+	// If all attempts failed, fall back to the default.
+	log.Printf("Could not find a downloadable JDK for \"%s\" or its major version \"%s\", falling back to JDK %s", rawJDK, majorJDK, fallbackJDK)
+	return fallbackJDK, nil
 }
 
 // inferJDKVersion gets the JDK version from the MANIFEST or Java bytecode.
@@ -197,11 +223,11 @@ func inferJDKVersion(ctx context.Context, name, version string, mux rebuild.Regi
 	if jdk != "" {
 		return jdk, nil
 	}
-	jdkInt, err := inferJDKFromBytecode(zipReader)
+	jdk, err = inferJDKFromBytecode(zipReader)
 	if err != nil {
 		return "", errors.Wrap(err, "inferring JDK from bytecode")
 	}
-	return fmt.Sprintf("%d", jdkInt), nil
+	return jdk, nil
 }
 
 // inferJDKFromManifest extracts the JDK version from the MANIFEST.MF file in the JAR.
@@ -226,7 +252,7 @@ func inferJDKFromManifest(zipReader *zip.Reader) (string, error) {
 }
 
 // inferJDKFromBytecode identifies the lowest JDK version that can run the provided JAR's bytecode.
-func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
+func inferJDKFromBytecode(jarZip *zip.Reader) (string, error) {
 	for _, file := range jarZip.File {
 		if strings.HasSuffix(file.Name, ".class") {
 			classFile, err := file.Open()
@@ -240,12 +266,12 @@ func inferJDKFromBytecode(jarZip *zip.Reader) (int, error) {
 			}
 			majorVersion, err := getClassFileMajorVersion(classBytes)
 			if err != nil {
-				return 0, errors.Wrap(err, "parsing class file for major version")
+				return "", errors.Wrap(err, "parsing class file for major version")
 			}
-			return majorVersion, nil
+			return fmt.Sprintf("%d", majorVersion), nil
 		}
 	}
-	return 0, errors.New("no .class files found in jar")
+	return "", errors.New("no .class files found in jar")
 }
 
 // getClassFileMajorVersion extracts the major version from Java class file bytes

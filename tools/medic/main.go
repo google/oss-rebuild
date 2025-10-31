@@ -463,7 +463,7 @@ func main() {
 			TimeoutSeconds: 60 * 60, // 1 hr timeout
 			Context:        nil,
 			Status:         schema.AgentSessionStatusRunning, // We don't have any initializing to do, we're going to immediately start running iterations.
-			JobName:        "local-medic",                    // Doesn't really matter, there's no cloud run job to map this to.
+			ExecutionName:  "local-medic",                    // Doesn't really matter, there's no cloud run job to map this to.
 			Created:        sessionTime,
 			Updated:        sessionTime,
 		}

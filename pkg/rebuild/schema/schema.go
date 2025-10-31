@@ -327,6 +327,7 @@ type ExecutionMode string
 const (
 	SmoketestMode ExecutionMode = "smoketest" // No attestations, faster.
 	AttestMode    ExecutionMode = "attest"    // Creates attestations, slower.
+	AgentMode     ExecutionMode = "agent"     // Agent service for debugging.
 )
 
 // Agent-related constants and types for AI agent feature
@@ -350,6 +351,7 @@ const (
 // AgentCreateRequest creates a new agent session
 type AgentCreateRequest struct {
 	Target        rebuild.Target `form:",required"`
+	RunID         string         `form:""`
 	MaxIterations int            `form:""`
 	Context       *AgentContext  `form:""`
 }
@@ -370,8 +372,8 @@ type AgentContext struct {
 
 // AgentCreateResponse returns the session ID and job name
 type AgentCreateResponse struct {
-	SessionID string `json:"session_id"`
-	JobName   string `json:"job_name"`
+	SessionID     string `json:"session_id"`
+	ExeuctionName string `json:"execution_name"`
 }
 
 // AgentCreateIterationRequest records iteration and triggers build
@@ -425,12 +427,13 @@ type AgentCompleteResponse struct {
 // AgentSession stores agent session metadata in Firestore
 type AgentSession struct {
 	ID               string         `firestore:"id,omitempty"`
+	RunID            string         `firestore:"run_id,omitempty"`
 	Target           rebuild.Target `firestore:"target,omitempty"`
 	MaxIterations    int            `firestore:"max_iterations,omitempty"`
 	TimeoutSeconds   int            `firestore:"timeout_seconds,omitempty"`
 	Context          *AgentContext  `firestore:"context,omitempty"`
 	Status           string         `firestore:"status,omitempty"`
-	JobName          string         `firestore:"job_name,omitempty"`
+	ExecutionName    string         `firestore:"execution_name,omitempty"`
 	Created          time.Time      `firestore:"created,omitempty"`
 	Updated          time.Time      `firestore:"updated,omitempty"`
 	StopReason       string         `firestore:"stop_reason,omitempty"`

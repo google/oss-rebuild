@@ -7,24 +7,34 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
+	"path"
 
-	"github.com/firebase/genkit/go/genkit"
+	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 )
 
 type AgentDeps struct {
-	Genkit *genkit.Genkit
+	Chat *llm.Chat
 	// Bucket for logs and rebuild artifact
 	MetadataBucket string
 	LogsBucket     string
+	GCSClient      *gcs.Client
 	MaxTurns       int
+	GenaiClient    *genai.Client
+}
+
+type ProposeOpts struct {
+	ChatUploadURL *url.URL // The path to which llm.Chat messages should be stored.
 }
 
 type Agent interface {
-	Propose(context.Context) (*schema.StrategyOneOf, error)
+	Propose(context.Context, *ProposeOpts) (*schema.StrategyOneOf, error)
 	RecordIteration(*schema.AgentIteration)
 }
 
@@ -36,7 +46,8 @@ type RunSessionReq struct {
 }
 
 type RunSessionDeps struct {
-	Genkit        *genkit.Genkit
+	Client        *genai.Client
+	GCSClient     *gcs.Client
 	IterationStub api.StubT[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse]
 	CompleteStub  api.StubT[schema.AgentCompleteRequest, schema.AgentCompleteResponse]
 	// TODO: Should these be asset stores?
@@ -46,7 +57,15 @@ type RunSessionDeps struct {
 }
 
 func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
-	s, err := agent.Propose(ctx)
+	opts := &ProposeOpts{}
+	if deps.SessionsBucket != "" {
+		opts.ChatUploadURL = &url.URL{
+			Scheme: "gs",
+			Host:   deps.SessionsBucket,
+			Path:   path.Join(sessionID, "messages", fmt.Sprintf("%d", iterNum)),
+		}
+	}
+	s, err := agent.Propose(ctx, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "generating strategy")
 	}
@@ -72,12 +91,30 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		}
 	}
 	var iterNum int
+	config := &genai.GenerateContentConfig{
+		Temperature:     genai.Ptr[float32](.1),
+		MaxOutputTokens: 16000,
+		ToolConfig: &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: "AUTO"},
+		},
+	}
+	config = llm.WithSystemPrompt(config, genai.NewPartFromText("You are an expert at debugging rebuild failures"))
 	a := NewDefaultAgent(req.Target, &AgentDeps{
-		Genkit:         deps.Genkit,
+		Chat:           nil,
 		MetadataBucket: deps.MetadataBucket,
 		LogsBucket:     deps.LogsBucket,
+		GCSClient:      deps.GCSClient,
 		MaxTurns:       10,
+		GenaiClient:    deps.Client,
 	})
+	var err error
+	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, llm.GeminiPro, config, &llm.ChatOpts{Tools: a.getTools()})
+	if err != nil {
+		return &schema.AgentCompleteRequest{
+			StopReason: schema.AgentCompleteReasonError,
+			Summary:    fmt.Sprintf("Initializing agent: %v", err),
+		}
+	}
 	if req.InitialIteration != nil {
 		err := a.InitializeFromIteration(ctx, req.InitialIteration)
 		if err != nil {
@@ -101,6 +138,10 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		if err != nil {
 			log.Printf("Doing iteration: %v", err)
 			continue
+		}
+		log.Printf("%#v", iteration)
+		if iteration != nil && iteration.Result != nil && !iteration.Result.BuildSuccess {
+			log.Printf("Build failed: %s", iteration.Result.ErrorMessage)
 		}
 		switch iteration.Status {
 		case schema.AgentIterationStatusSuccess:

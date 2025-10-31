@@ -9,20 +9,23 @@ import (
 	"log"
 	"net/url"
 
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
+	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/api/idtoken"
+	"google.golang.org/genai"
 )
 
 var (
+	project         = flag.String("project", "", "GCP Project ID for resource usage")
+	location        = flag.String("location", "", "GCP location for resource usage")
 	sessionID       = flag.String("session-id", "", "Session ID for this agent run")
 	agentAPIURL     = flag.String("agent-api-url", "", "URL of the agent API service")
 	sessionsBucket  = flag.String("sessions-bucket", "", "GCS bucket for session data")
 	metadataBucket  = flag.String("metadata-bucket", "", "GCS bucket for build metadata")
+	logsBucket      = flag.String("logs-bucket", "", "GCS bucket for build logs")
 	maxIterations   = flag.Int("max-iterations", 20, "Maximum number of iterations")
 	targetEcosystem = flag.String("target-ecosystem", "", "Target package ecosystem")
 	targetPackage   = flag.String("target-package", "", "Target package name")
@@ -32,6 +35,9 @@ var (
 
 func main() {
 	flag.Parse()
+	if *project == "" {
+		log.Fatal("project flag is required")
+	}
 	if *sessionID == "" {
 		log.Fatal("session-id flag is required")
 	}
@@ -43,6 +49,9 @@ func main() {
 	}
 	if *metadataBucket == "" {
 		log.Fatal("metadata-bucket flag is required")
+	}
+	if *logsBucket == "" {
+		log.Fatal("logs-bucket flag is required")
 	}
 	if *targetEcosystem == "" {
 		log.Fatal("target-ecosystem flag is required")
@@ -72,13 +81,26 @@ func main() {
 	// Create agent API client stubs
 	iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
 	completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
-	g := genkit.Init(ctx, genkit.WithPlugins(&googlegenai.VertexAI{}), genkit.WithDefaultModel("vertexai/gemini-2.5-pro"))
+	aiClient, err := genai.NewClient(ctx, &genai.ClientConfig{
+		Backend:  genai.BackendVertexAI,
+		Project:  *project,
+		Location: *location,
+	})
+	if err != nil {
+		log.Fatal("Failed to create genai client: ", err)
+	}
+	gcsClient, err := gcs.NewClient(ctx)
+	if err != nil {
+		log.Fatal("Failed to create GCS client: ", err)
+	}
 	deps := agent.RunSessionDeps{
-		Genkit:         g,
+		Client:         aiClient,
 		IterationStub:  iterationStub,
 		CompleteStub:   completeStub,
+		GCSClient:      gcsClient,
 		SessionsBucket: *sessionsBucket,
 		MetadataBucket: *metadataBucket,
+		LogsBucket:     *logsBucket,
 	}
 	req := agent.RunSessionReq{
 		SessionID:     *sessionID,
