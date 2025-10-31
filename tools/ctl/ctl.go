@@ -26,6 +26,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
+	"github.com/google/oss-rebuild/pkg/rebuild/maven"
+
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	gcs "cloud.google.com/go/storage"
@@ -981,7 +984,7 @@ var migrate = &cobra.Command{
 }
 
 var infer = &cobra.Command{
-	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--repo-hint <repo>] [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
+	Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--repo-hint <repo>] [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps|buildspec]",
 	Short: "Run inference",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -1139,6 +1142,68 @@ var infer = &cobra.Command{
 			}
 		case "shell-script":
 			cmd.OutOrStdout().Write([]byte(buildScript))
+		case "buildspec":
+			if rebuild.Ecosystem(*ecosystem) != rebuild.Maven {
+				log.Fatal("buildspec format only supported for Maven ecosystem")
+			}
+			var tool string
+			var jdk string
+			var workflowStrategy *rebuild.WorkflowStrategy
+			if resp.MavenBuild != nil {
+				tool = "mvn"
+				jdk = s.(*maven.MavenBuild).JDKVersion
+				workflowStrategy, err = s.(*maven.MavenBuild).ToWorkflow()
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "getting workflow strategy"))
+				}
+			}
+			if resp.GradleBuild != nil {
+				tool = "gradle"
+				jdk = s.(*maven.GradleBuild).JDKVersion
+				workflowStrategy, err = s.(*maven.GradleBuild).ToWorkflow()
+				if err != nil {
+					log.Fatal(errors.Wrap(err, "getting workflow strategy"))
+				}
+			}
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "generating build instructions"))
+			}
+			data := map[string]any{
+				"Location": &workflowStrategy.Location,
+				"BuildEnv": &rebuild.BuildEnv{},
+				"Target": &rebuild.Target{
+					Ecosystem: rebuild.Ecosystem(*ecosystem),
+					Package:   *pkg,
+					Version:   *version,
+					Artifact:  *artifact,
+				},
+			}
+			g, a, _ := strings.Cut(*pkg, ":")
+			// The first step is always the maven/export-java step and it is not needed for buildspec format.
+			buildCommand, err := flow.ResolveSteps(workflowStrategy.Build[1:], nil, data)
+			if err != nil {
+				log.Fatal(errors.Wrap(err, "resolving build command"))
+			}
+			// Use a slice instead of a map to maintain order
+			bs := []struct{ key, value string }{
+				{"groupId", g},
+				{"artifactId", a},
+				{"display", *pkg},
+				{"version", *version},
+				{"gitRepo", workflowStrategy.Location.Repo},
+				{"gitTag", workflowStrategy.Location.Ref},
+				{"tool", tool},
+				// TODO: we do not detect line endings yet
+				{"newline", "lf"},
+				// This has been hardcoded to UTC for now.
+				{"timezone", "Etc/UTC"},
+				{"jdk", jdk},
+				{"command", fmt.Sprintf("\"%s\"", buildCommand.Script)},
+				{"buildinfo", path.Join(workflowStrategy.OutputDir, fmt.Sprintf("%s-%s.buildinfo", a, *version))},
+			}
+			for _, kv := range bs {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s=%s\n", kv.key, kv.value)
+			}
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
 		}
