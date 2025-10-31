@@ -4,8 +4,10 @@
 package pypi
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -148,6 +150,8 @@ func extractPyProjectRequirements(ctx context.Context, tree *object.Tree) ([]str
 		// TODO: Some of these requirements are probably already in rbcfg.Requirements, should we skip
 		// them? To even know which package we're looking at would require parsing the dependency spec.
 		// https://packaging.python.org/en/latest/specifications/dependency-specifiers/#dependency-specifiers
+		// Always split on ';' and take the first part (requirement specifier)
+		r = strings.Split(r, ";")[0]
 		reqs = append(reqs, strings.ReplaceAll(r, " ", ""))
 	}
 	log.Println("Added these reqs from pyproject.toml: " + strings.Join(reqs, ", "))
@@ -186,29 +190,64 @@ func FindPureWheel(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
 	return nil, fs.ErrNotExist
 }
 
-func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
+func FindSourceDistribution(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
+	for _, r := range artifacts {
+		if strings.HasSuffix(r.Filename, ".tar.gz") {
+			return &r, nil
+		}
+	}
+	return nil, fs.ErrNotExist
+}
+
+func inferRequirements(name, version string, zr interface{}) ([]string, error) {
 	// Name and version have "-" replaced with "_". See https://packaging.python.org/en/latest/specifications/recording-installed-packages/#the-dist-info-directory
-	// TODO: Search for dist-info in the gzip using a regex. It sounds like many tools do varying amounts of normalization on the path name.
+	// TODO: Search for dist-info in the archive using a regex. It sounds like many tools do varying amounts of normalization on the path name.
 	wheelPath := fmt.Sprintf("%s-%s.dist-info/WHEEL", strings.ReplaceAll(name, "-", "_"), strings.ReplaceAll(version, "-", "_"))
-	wheel, err := getFile(wheelPath, zr)
+
+	var wheel []byte
+	var err error
+	var reqs []string
+
+	switch reader := zr.(type) {
+	case *zip.Reader:
+		wheel, err = getFile(wheelPath, reader)
+	case *tar.Reader:
+		return reqs, nil
+	default:
+		return nil, errors.New("[INTERNAL] Unsupported archive reader type")
+	}
+
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", wheelPath)
 	}
-	reqs, err := getGenerator(wheel)
+
+	reqs, err = getGenerator(wheel)
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to get upstream generator")
 	}
+
 	// Determine setuptools version.
 	if slices.ContainsFunc(reqs, func(s string) bool { return strings.HasPrefix(s, "setuptools==") }) {
 		// setuptools already set.
 		return reqs, nil
 	}
+
 	// TODO: Also find this with a regex.
 	metadataPath := fmt.Sprintf("%s-%s.dist-info/METADATA", strings.ReplaceAll(name, "-", "_"), strings.ReplaceAll(version, "-", "_"))
-	metadata, err := getFile(metadataPath, zr)
+
+	var metadata []byte
+
+	switch reader := zr.(type) {
+	case *zip.Reader:
+		metadata, err = getFile(metadataPath, reader)
+	default:
+		return nil, errors.New("[INTERNAL] Unsupported archive reader type")
+	}
+
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream dist-info/METADATA")
 	}
+
 	switch {
 	case !bytes.Contains(metadata, []byte("License-File")):
 		// The License-File value was introduced in later versions so this is the
@@ -223,6 +262,7 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 	default:
 		reqs = append(reqs, "setuptools==67.7.2")
 	}
+
 	return reqs, nil
 }
 
@@ -234,6 +274,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 	// TODO: support different build types.
 	cfg := &PureWheelBuild{}
+	scfg := &SourceDistributionBuild{}
 	var ref, dir string
 	lh, ok := hint.(*rebuild.LocationHint)
 	if hint != nil && !ok {
@@ -253,10 +294,16 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		}
 		dir = rcfg.Dir
 	}
+	zipFile := true
 	a, err := FindPureWheel(release.Artifacts)
 	if err != nil {
-		return cfg, errors.Wrap(err, "finding pure wheel")
+		zipFile = false
+		a, err = FindSourceDistribution(release.Artifacts)
+		if err != nil {
+			return scfg, errors.Wrap(err, "Failed to find pure wheel and source distribution")
+		}
 	}
+
 	log.Printf("Downloading artifact: %s", a.URL)
 	r, err := mux.PyPI.Artifact(ctx, name, version, a.Filename)
 	if err != nil {
@@ -266,7 +313,19 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to read upstream artifact")
 	}
-	zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
+	var zr interface{}
+	if zipFile {
+		zr, err = zip.NewReader(bytes.NewReader(body), a.Size)
+		if err != nil {
+			return nil, errors.Wrapf(err, "[INTERNAL] Failed to initialize upstream zip reader")
+		}
+	} else {
+		gzf, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return nil, errors.Wrapf(err, "[INTERNAL] Failed to initialize gzip reader")
+		}
+		zr = tar.NewReader(gzf)
+	}
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to initialize upstream zip reader")
 	}
@@ -301,7 +360,18 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			}
 		}
 	}
-	return &PureWheelBuild{
+
+	if zipFile {
+		return &PureWheelBuild{
+			Location: rebuild.Location{
+				Repo: rcfg.URI,
+				Dir:  dir,
+				Ref:  ref,
+			},
+			Requirements: reqs,
+		}, nil
+	}
+	return &SourceDistributionBuild{
 		Location: rebuild.Location{
 			Repo: rcfg.URI,
 			Dir:  dir,
@@ -362,5 +432,31 @@ func getFile(fname string, zr *zip.Reader) ([]byte, error) {
 			return io.ReadAll(fi)
 		}
 	}
+	return nil, fs.ErrNotExist
+}
+
+// getFileFromTarGz extracts a file with the given name from a tar.Reader.
+func getFileFromTarGz(fname string, tr *tar.Reader) ([]byte, error) {
+	for {
+		header, err := tr.Next()
+		if err != nil {
+			if err == io.EOF {
+				break // End of archive
+			}
+			return nil, err
+		}
+
+		// Check if the current file matches the requested file name
+		if header.Name == fname {
+			// Read the file contents
+			data, err := io.ReadAll(tr)
+			if err != nil {
+				return nil, err
+			}
+			return data, nil
+		}
+	}
+
+	// File not found in the archive
 	return nil, fs.ErrNotExist
 }
