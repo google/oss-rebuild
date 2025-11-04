@@ -49,7 +49,7 @@ var dockerRunScriptTpl = template.Must(
 			{{.Inst.Source}}
 			{{.Inst.Deps}}
 			{{.Inst.Build}}
-			cp /src/{{.Inst.OutputPath}} /out/rebuild`)[1:],
+			cp /src/{{.Inst.OutputPath}} /out/rebuild`[1:]),
 	),
 )
 

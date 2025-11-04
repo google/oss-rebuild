@@ -111,7 +111,7 @@ var toolkit = []*flow.Tool{
 				{{if ne .With.version "" -}}
 				{{- /* NOTE: Prefer builtin npm for 'npm version' as it wasn't introduced until NPM v6. */ -}}
 				PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix {{.With.dir}} --no-git-tag-version {{.With.version}}
-				{{- end -}}`)[1:],
+				{{- end -}}`[1:]),
 			Needs: []string{"npm"},
 		}},
 	},
@@ -121,7 +121,7 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				{{.With.locator}}npx --package=npm@{{.With.npmVersion}} -c '
 						{{- if and (ne .With.dir ".") (ne .With.dir "")}}cd {{.With.dir}} && {{end -}}
-						{{.With.command}}'`)[1:],
+						{{.With.command}}'`[1:]),
 			Needs: []string{"npm"},
 		}},
 	},
@@ -130,7 +130,7 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				/usr/bin/npm config --location-global set registry {{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}}
-				trap '/usr/bin/npm config --location-global delete registry' EXIT`)[1:],
+				trap '/usr/bin/npm config --location-global delete registry' EXIT`[1:]),
 			Needs: []string{"npm"},
 		}},
 	},
@@ -138,7 +138,7 @@ var toolkit = []*flow.Tool{
 		Name: "npm/install-node",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				wget -O - https://unofficial-builds.nodejs.org/download/release/v{{.With.nodeVersion}}/node-v{{.With.nodeVersion}}-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/`)[1:],
+				wget -O - https://unofficial-builds.nodejs.org/download/release/v{{.With.nodeVersion}}/node-v{{.With.nodeVersion}}-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/`[1:]),
 			Needs: []string{},
 		}},
 	},

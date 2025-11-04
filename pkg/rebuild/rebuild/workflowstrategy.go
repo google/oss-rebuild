@@ -88,7 +88,7 @@ func init() {
 				{{ if not .BuildEnv.HasRepo -}}
 				git clone {{.Location.Repo}} .
 				{{ end -}}
-				git checkout --force '{{.Location.Ref}}'`)[1:],
+				git checkout --force '{{.Location.Ref}}'`[1:]),
 			Needs: []string{"git"},
 		}},
 	})

@@ -72,7 +72,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			EOF
 			WORKDIR "/src"
 			ENTRYPOINT ["/bin/sh","/build"]
-			`)[1:], // remove leading newline
+			`[1:]), // remove leading newline
 	))
 
 // DockerBuildPlanner generates Docker build execution plans

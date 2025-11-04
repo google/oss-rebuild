@@ -66,7 +66,7 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/setup-venv",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				{{.With.locator}}python3 -m venv {{.With.path}}`)[1:],
+				{{.With.locator}}python3 -m venv {{.With.path}}`[1:]),
 			Needs: []string{"python3"},
 		}},
 	},
@@ -76,7 +76,7 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				{{if ne .With.registryTime "" -}}
 				export PIP_INDEX_URL={{.BuildEnv.TimewarpURLFromString "pypi" .With.registryTime}}
-				{{- end -}}`)[1:],
+				{{- end -}}`[1:]),
 			Needs: []string{},
 		}},
 	},
@@ -86,7 +86,7 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				{{.With.locator}}pip install build
 				{{- range $req := .With.requirements | fromJSON}}
-				{{$.With.locator}}pip install '{{regexReplace $req "'" "'\\''"}}'{{end}}`)[1:],
+				{{$.With.locator}}pip install '{{regexReplace $req "'" "'\\''"}}'{{end}}`[1:]),
 			Needs: []string{"python3"},
 		}},
 	},
@@ -121,7 +121,7 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
+				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`[1:]),
 			Needs: []string{"python3"},
 		}},
 	},

@@ -170,7 +170,7 @@ var gcbDockerfileTpl = template.Must(
 			EOF
 			WORKDIR "/src"
 			ENTRYPOINT ["/bin/sh","/build"]
-			`)[1:], // remove leading newline
+			`[1:]), // remove leading newline
 	))
 
 // gcbStandardBuildTpl generates standard build scripts for Cloud Build steps
@@ -200,7 +200,7 @@ var gcbStandardBuildTpl = template.Must(
 			{{- if .UseSyscallMonitor}}
 			docker kill tetragon
 			{{- end}}
-			`)[1:], // remove leading newline
+			`[1:]), // remove leading newline
 	))
 
 // gcbProxyBuildTpl generates proxy-enabled build scripts for Cloud Build steps
@@ -313,7 +313,7 @@ var gcbProxyBuildTpl = template.Must(
 			docker kill tetragon
 			{{- end}}
 			curl http://proxy:{{.CtrlPort}}/summary > /workspace/netlog.json
-			`)[1:], // remove leading newline
+			`[1:]), // remove leading newline
 	))
 
 // Planner generates Google Cloud Build execution plans
@@ -606,5 +606,5 @@ var gcbAssetUploadTpl = template.Must(
 			{{- range .Uploads}}
 			./gsutil_writeonly cp {{.From}} {{.To}}
 			{{- end}}
-			`)[1:], // remove leading newline
+			`[1:]), // remove leading newline
 	))

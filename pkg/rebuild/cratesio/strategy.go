@@ -94,7 +94,7 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				{{if ne .With.lockfile "" -}}
 				echo '{{.With.lockfile}}' | base64 -d > Cargo.lock
-				{{- end -}}`)[1:],
+				{{- end -}}`[1:]),
 		}},
 	},
 	{
@@ -107,7 +107,7 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				{{if eq .With.preferPreciseToolchain "true" -}}
 				/usr/bin/rustup-init -y --profile minimal --default-toolchain {{.With.rustVersion}}
-				{{- end -}}`)[1:],
+				{{- end -}}`[1:]),
 			Needs: []string{"rustup"},
 		}},
 	},
@@ -125,7 +125,7 @@ var toolkit = []*flow.Tool{
 				printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"\n' > /.cargo/config.toml
 				{{- else -}}
 				# NOTE: Using current crates.io registry
-				{{- end -}}`)[1:],
+				{{- end -}}`[1:]),
 		}},
 	},
 	{
@@ -134,7 +134,7 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
 				/root/.cargo/bin/cargo package --no-verify
-				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`)[1:],
+				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`[1:]),
 			Needs: []string{"rustup"},
 		}},
 	},

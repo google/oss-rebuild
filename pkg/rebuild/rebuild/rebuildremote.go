@@ -180,7 +180,7 @@ var debuildContainerTpl = template.Must(
 				EOF
 				WORKDIR "/src"
 				ENTRYPOINT ["/bin/sh","/build"]
-				`)[1:], // remove leading newline
+				`[1:]), // remove leading newline
 	))
 
 var alpineContainerTpl = template.Must(
@@ -227,7 +227,7 @@ var alpineContainerTpl = template.Must(
 				EOF
 				WORKDIR "/src"
 				ENTRYPOINT ["/bin/sh","/build"]
-				`)[1:], // remove leading newline
+				`[1:]), // remove leading newline
 	))
 
 var standardBuildTpl = template.Must(
@@ -258,7 +258,7 @@ var standardBuildTpl = template.Must(
 				{{- if .UseSyscallMonitor}}
 				docker kill tetragon
 				{{- end}}
-				`)[1:], // remove leading newline
+				`[1:]), // remove leading newline
 	))
 
 // NOTE(impl): There are a number of factors complicating this harness that warrant some explanation.
@@ -373,7 +373,7 @@ var proxyBuildTpl = template.Must(
 				docker kill tetragon
 				{{- end}}
 				curl http://proxy:{{.CtrlPort}}/summary > /workspace/netlog.json
-				`)[1:], // remove leading newline
+				`[1:]), // remove leading newline
 	))
 
 type upload struct {
@@ -397,7 +397,7 @@ var assetUploadTpl = template.Must(
 				{{- range .Uploads}}
 				./gsutil_writeonly cp {{.From}} {{.To}}
 				{{- end}}
-				`)[1:], // remove leading newline
+				`[1:]), // remove leading newline
 	))
 
 func MakeBuild(t Target, dockerfile string, opts RemoteOptions) (*cloudbuild.Build, error) {

@@ -38,7 +38,7 @@ func TestStrategies(t *testing.T) {
 				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`[1:]),
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
@@ -67,7 +67,7 @@ func TestStrategies(t *testing.T) {
 				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`[1:]),
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
@@ -100,7 +100,7 @@ func TestStrategies(t *testing.T) {
 					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
 					wget -q -O tmp.zip https://services.gradle.org/distributions/gradle-8.14.3-bin.zip
 					unzip -q tmp.zip -d /opt/ && mv /opt/gradle-8.14.3 /opt/gradle
-					rm tmp.zip`)[1:],
+					rm tmp.zip`[1:]),
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
@@ -143,7 +143,7 @@ func TestStrategies(t *testing.T) {
                         -file "$cert_path" \
                         -storepass password \
                         -storetype JKS
-                    done`)[1:],
+                    done`[1:]),
 				Build: textwrap.Dedent(`
                     export JAVA_HOME=/opt/jdk
                     export PATH=$JAVA_HOME/bin:$PATH
@@ -185,7 +185,7 @@ func TestStrategies(t *testing.T) {
                         -file "$cert_path" \
                         -storepass password \
                         -storetype JKS
-                    done`)[1:],
+                    done`[1:]),
 				Build: textwrap.Dedent(`
                     export JAVA_HOME=/opt/jdk
                     export PATH=$JAVA_HOME/bin:$PATH

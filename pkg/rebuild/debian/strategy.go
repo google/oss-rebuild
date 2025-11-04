@@ -129,7 +129,7 @@ var toolkit = []*flow.Tool{
 				wget {{.With.origUrl}}
 				wget {{.With.debianUrl}}
 				{{ end }}
-				dpkg-source -x --no-check $(basename "{{.With.dscUrl}}")`)[1:],
+				dpkg-source -x --no-check $(basename "{{.With.dscUrl}}")`[1:]),
 			Needs: []string{"wget", "git"},
 		}},
 	},
@@ -138,7 +138,7 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			// TODO: use the FileWithChecksum.MD5 values to verify the downloaded archives.
 			Runs: textwrap.Dedent(`
-				wget {{.With.buildinfoUrl}}`)[1:],
+				wget {{.With.buildinfoUrl}}`[1:]),
 			Needs: []string{"wget"},
 		}},
 	},
@@ -163,7 +163,7 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`))),
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				apt update
-				apt install -y{{range $req := .With.requirements | fromJSON}} {{$req}}{{end}}`)[1:],
+				apt install -y{{range $req := .With.requirements | fromJSON}} {{$req}}{{end}}`[1:]),
 		}},
 	},
 	{
@@ -172,7 +172,7 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`))),
 			// TODO: pin these versions
 			Runs: textwrap.Dedent(`
 				apt -o Acquire::Check-Valid-Until=false update
-				apt install -y devscripts mmdebstrap apt-utils`)[1:],
+				apt install -y devscripts mmdebstrap apt-utils`[1:]),
 		}},
 	},
 	{
@@ -190,7 +190,7 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`))),
 			Runs: textwrap.Dedent(`
 				{{- $expected := regexReplace .With.targetPath "\\+b[0-9]+(_[^_]+\\.deb)$" "$1"}}
 				{{- if ne $expected .With.targetPath }}mv /src/{{$expected}} /src/{{.With.targetPath}}
-				{{- end}}`)[1:],
+				{{- end}}`[1:]),
 		}},
 	},
 	{
@@ -199,7 +199,7 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`))),
 			{
 				Runs: textwrap.Dedent(`
 					cd */
-					debuild -b -uc -us`)[1:],
+					debuild -b -uc -us`[1:]),
 				Needs: []string{"build-essential", "fakeroot", "devscripts"},
 			},
 			{

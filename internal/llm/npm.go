@@ -33,7 +33,7 @@ var originalPromptTpl = template.Must(
 				{{.PackageJSON}}
 				` + "```" + `
 				{{- end}}
-				`)[1:],
+				`[1:]),
 	))
 
 func executeTemplate(tpl *template.Template, data any) (string, error) {
@@ -76,7 +76,7 @@ var inferPromptTpl = template.Must(
 				{{.PackageJSON}}
 				` + "```" + `
 				{{- end}}
-				`)[1:],
+				`[1:]),
 	))
 
 // InferNPMBuild attempts to generate an NPM package build script.
@@ -140,7 +140,7 @@ var recoverPromptTpl = template.Must(
 				{{.BuildLog}}
 				` + "```" + `
 				{{- end}}
-				`)[1:],
+				`[1:]),
 	))
 
 // FixNPMBreakage attempts to repair an observed build failure by suggesting another script.
