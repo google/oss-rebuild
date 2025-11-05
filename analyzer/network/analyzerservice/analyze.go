@@ -220,6 +220,7 @@ func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Ta
 	}
 	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
 		BuildID:         obID,
+		Privileged:      meta.AllRebuilders[t.Ecosystem].NeedsPrivilege(in),
 		UseTimewarp:     meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
 		UseNetworkProxy: true, // The whole point of the analyzer
 		Resources: build.Resources{

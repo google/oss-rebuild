@@ -134,6 +134,7 @@ func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strate
 			},
 			BaseImageConfig: build.DefaultBaseImageConfig(),
 		},
+		Privileged:  meta.AllRebuilders[t.Ecosystem].NeedsPrivilege(input),
 		UseTimewarp: meta.AllRebuilders[t.Ecosystem].UsesTimewarp(input),
 	}
 	handle, err := executor.Start(ctx, input, buildOpts)

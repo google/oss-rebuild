@@ -176,6 +176,10 @@ func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.Regist
 	return rebuild.RebuildMany(ctx, Rebuilder{}, inputs, mux)
 }
 
+func (r Rebuilder) NeedsPrivilege(input rebuild.Input) bool {
+	return false
+}
+
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return true
 }

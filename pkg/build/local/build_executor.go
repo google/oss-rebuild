@@ -104,6 +104,7 @@ func (e *DockerBuildExecutor) Start(ctx context.Context, input rebuild.Input, op
 		buildID = fmt.Sprintf("docker-build-%d", time.Now().UnixNano())
 	}
 	planOpts := build.PlanOptions{
+		Privileged:             opts.Privileged, // Unused by this plan type
 		UseTimewarp:            opts.UseTimewarp,
 		UseNetworkProxy:        opts.UseNetworkProxy,
 		UseSyscallMonitor:      opts.UseSyscallMonitor,
@@ -212,6 +213,9 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	}
 	// Run Docker container with streaming and captured output.
 	runArgs := []string{"run"}
+	if opts.Privileged {
+		runArgs = append(runArgs, "--privileged")
+	}
 	if !e.retainContainer {
 		runArgs = append(runArgs, "--rm")
 	}

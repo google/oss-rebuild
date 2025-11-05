@@ -30,6 +30,8 @@ type Options struct {
 	Timeout time.Duration
 	// BuildID allows specifying a custom build identifier
 	BuildID string
+	// Privileged allows the build to run with more privileges
+	Privileged bool
 	// UseTimewarp enables timewarp functionality for builds
 	UseTimewarp bool
 	// UseNetworkProxy enables network proxy functionality
@@ -42,6 +44,8 @@ type Options struct {
 
 // PlanOptions configures plan generation behavior and resources
 type PlanOptions struct {
+	// Privileged allows the build to run with more privileges
+	Privileged bool
 	// UseTimewarp enables timewarp functionality for builds
 	UseTimewarp bool
 	// UseNetworkProxy enables network proxy functionality

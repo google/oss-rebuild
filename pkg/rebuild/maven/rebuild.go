@@ -16,6 +16,10 @@ type Rebuilder struct{}
 
 var _ rebuild.Rebuilder = Rebuilder{}
 
+func (r Rebuilder) NeedsPrivilege(input rebuild.Input) bool {
+	return false
+}
+
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return false
 }

@@ -216,6 +216,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	}
 	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
 		BuildID:           obID,
+		Privileged:        meta.AllRebuilders[t.Ecosystem].NeedsPrivilege(in),
 		UseTimewarp:       meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
 		UseNetworkProxy:   useProxy,
 		UseSyscallMonitor: useSyscallMonitor,

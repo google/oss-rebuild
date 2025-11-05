@@ -93,6 +93,7 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 	}
 	// Generate the execution plan
 	planOpts := build.PlanOptions{
+		Privileged:             opts.Privileged,
 		UseTimewarp:            opts.UseTimewarp,
 		UseNetworkProxy:        opts.UseNetworkProxy,
 		UseSyscallMonitor:      opts.UseSyscallMonitor,

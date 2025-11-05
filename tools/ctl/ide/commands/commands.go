@@ -66,6 +66,7 @@ func runLocal(ctx context.Context, executor build.Executor, prebuildConfig rebui
 	h, err := executor.Start(ctx, inp, build.Options{
 		// Use a constant BuildID to make sure we overwrite the container each run
 		BuildID:     containerName,
+		Privileged:  meta.AllRebuilders[inp.Target.Ecosystem].NeedsPrivilege(inp),
 		UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
 		Resources: build.Resources{
 			AssetStore: assets,

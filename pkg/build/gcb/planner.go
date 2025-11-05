@@ -196,7 +196,7 @@ var gcbStandardBuildTpl = template.Must(
 			cat <<'EOS' | docker buildx build {{if .TimewarpAuth}}--secret id=auth_header,src=/tmp/auth_header {{end}}--tag=img -
 			{{.Dockerfile}}
 			EOS
-			docker run --privileged --name=container img
+			docker run {{if .Privileged}}--privileged {{end}}--name=container img
 			{{- if .UseSyscallMonitor}}
 			docker kill tetragon
 			{{- end}}
@@ -307,7 +307,7 @@ var gcbProxyBuildTpl = template.Must(
 				export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt{{if .TimewarpAuth}} HEADER{{end}}
 				docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
 				cat /Dockerfile | docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT {{if .TimewarpAuth}}--secret id=auth_header,env=HEADER {{end}}--load --tag=img -
-				docker run --privileged --name=container img
+				docker run {{if .Privileged}}--privileged {{end}}--name=container img
 			'
 			{{- if .UseSyscallMonitor}}
 			docker kill tetragon
@@ -490,6 +490,7 @@ func (p *Planner) generateStandardBuildScript(target rebuild.Target, dockerfile 
 		"SyscallPolicies":     tetragonPoliciesJSON,
 		"TimewarpAuth":        timewarpAuth,
 		"ServiceAccountEmail": serviceAccountEmail,
+		"Privileged":          opts.Privileged,
 	}); err != nil {
 		return "", errors.Wrap(err, "failed to execute standard build template")
 	}
@@ -517,6 +518,7 @@ func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile str
 		"ProxyURL":            proxyURL,
 		"ProxyAuth":           proxyAuth,
 		"ServiceAccountEmail": serviceAccountEmail,
+		"Privileged":          opts.Privileged,
 		"User":                "proxyu",
 		"HTTPPort":            "3128",
 		"TLSPort":             "3129",
