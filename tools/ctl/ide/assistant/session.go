@@ -10,6 +10,9 @@ import (
 	"strings"
 
 	"github.com/google/oss-rebuild/internal/llm"
+	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/local"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
 	"github.com/google/oss-rebuild/tools/ctl/ide/chatbox"
@@ -123,9 +126,21 @@ func (a *session) evidence(ctx context.Context, attempt rundex.Rebuild) *attempt
 		if err != nil {
 			builddef = errors.Wrap(err, "unpacking StrategyOneOf").Error()
 		} else {
-			builddef, err = rebuild.MakeDockerfile(rebuild.Input{Strategy: s, Target: attempt.Target()}, rebuild.RemoteOptions{})
+			inp := rebuild.Input{Strategy: s, Target: attempt.Target()}
+			resources := build.Resources{
+				ToolURLs: map[build.ToolType]string{
+					build.TimewarpTool: "https://url/for/timewarp",
+				},
+				BaseImageConfig: build.DefaultBaseImageConfig(),
+			}
+			plan, err := local.NewDockerBuildPlanner().GeneratePlan(ctx, inp, build.PlanOptions{
+				UseTimewarp: meta.AllRebuilders[attempt.Target().Ecosystem].UsesTimewarp(inp),
+				Resources:   resources,
+			})
 			if err != nil {
-				builddef = errors.Wrap(err, "making dockerfile").Error()
+				builddef = errors.Wrap(err, "generating plan").Error()
+			} else {
+				builddef = plan.Dockerfile
 			}
 		}
 	}
