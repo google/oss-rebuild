@@ -64,9 +64,8 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 		return nil, errors.New("syscall monitor support not implemented")
 	}
 	buildEnv := rebuild.BuildEnv{
-		TimewarpHost:           "localhost:8081",
-		HasRepo:                false,
-		PreferPreciseToolchain: opts.PreferPreciseToolchain,
+		TimewarpHost: "localhost:8081",
+		HasRepo:      false,
 	}
 	instructions, err := input.Strategy.GenerateFor(input.Target, buildEnv)
 	if err != nil {

@@ -48,8 +48,6 @@ type PlanOptions struct {
 	UseNetworkProxy bool
 	// UseSyscallMonitor enables syscall monitoring
 	UseSyscallMonitor bool
-	// PreferPreciseToolchain indicates whether to use precise toolchain versions
-	PreferPreciseToolchain bool
 	// Resources configures URLs and authentication for build resources
 	Resources Resources
 }

@@ -512,9 +512,8 @@ func (a *defaultAgent) execDetails(ctx context.Context, iteration *schema.AgentI
 		// NOTE: These instructions might differ slightly from the ones in the dockerfile that was used for the build.
 		// We do this because GenerateFor is the most straightforward way of separating the source, deps, and build steps.
 		inst, err := s.GenerateFor(a.t, rebuild.BuildEnv{
-			TimewarpHost:           "localhost:8080",
-			HasRepo:                false,
-			PreferPreciseToolchain: false,
+			TimewarpHost: "localhost:8080",
+			HasRepo:      false,
 		})
 		if err != nil {
 			log.Println(errors.Wrap(err, "generating instructions"))

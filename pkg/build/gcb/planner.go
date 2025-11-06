@@ -325,23 +325,21 @@ type Planner struct {
 	privatePool    *gcb.PrivatePoolConfig
 
 	// Internal configuration - not exposed to users
-	timewarpHost           string
-	hasRepo                bool
-	preferPreciseToolchain bool
-	allowPrivileged        bool
+	timewarpHost    string
+	hasRepo         bool
+	allowPrivileged bool
 }
 
 // NewPlanner creates a new GCB planner with the given configuration
 func NewPlanner(config PlannerConfig) *Planner {
 	return &Planner{
-		project:                config.Project,
-		serviceAccount:         config.ServiceAccount,
-		logsBucket:             config.LogsBucket,
-		privatePool:            config.PrivatePool,
-		timewarpHost:           "localhost:8080", // Internal default
-		hasRepo:                false,            // Repository needs to be cloned in container
-		preferPreciseToolchain: true,             // Internal default
-		allowPrivileged:        config.AllowPrivileged,
+		project:         config.Project,
+		serviceAccount:  config.ServiceAccount,
+		logsBucket:      config.LogsBucket,
+		privatePool:     config.PrivatePool,
+		timewarpHost:    "localhost:8080", // Internal default
+		hasRepo:         false,            // Repository needs to be cloned in container
+		allowPrivileged: config.AllowPrivileged,
 	}
 }
 
@@ -358,9 +356,8 @@ type PlannerConfig struct {
 func (p *Planner) GeneratePlan(ctx context.Context, input rebuild.Input, opts build.PlanOptions) (*Plan, error) {
 	// Generate rebuild instructions from the strategy
 	buildEnv := rebuild.BuildEnv{
-		TimewarpHost:           p.timewarpHost,
-		HasRepo:                p.hasRepo,
-		PreferPreciseToolchain: opts.PreferPreciseToolchain,
+		TimewarpHost: p.timewarpHost,
+		HasRepo:      p.hasRepo,
 	}
 	instructions, err := input.Strategy.GenerateFor(input.Target, buildEnv)
 	if err != nil {

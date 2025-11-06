@@ -103,11 +103,10 @@ func (e *DockerRunExecutor) Start(ctx context.Context, input rebuild.Input, opts
 		buildID = fmt.Sprintf("docker-run-%d", time.Now().UnixNano())
 	}
 	planOpts := build.PlanOptions{
-		UseTimewarp:            opts.UseTimewarp,
-		UseNetworkProxy:        opts.UseNetworkProxy,
-		UseSyscallMonitor:      opts.UseSyscallMonitor,
-		PreferPreciseToolchain: true, // NOTE: Only false in smoketest
-		Resources:              opts.Resources,
+		UseTimewarp:       opts.UseTimewarp,
+		UseNetworkProxy:   opts.UseNetworkProxy,
+		UseSyscallMonitor: opts.UseSyscallMonitor,
+		Resources:         opts.Resources,
 	}
 	plan, err := e.planner.GeneratePlan(ctx, input, planOpts)
 	if err != nil {

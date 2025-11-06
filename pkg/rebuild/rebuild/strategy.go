@@ -40,9 +40,8 @@ type Instructions struct {
 
 // BuildEnv contains resources provided by the build environment that a strategy may use.
 type BuildEnv struct {
-	TimewarpHost           string
-	HasRepo                bool
-	PreferPreciseToolchain bool
+	TimewarpHost string
+	HasRepo      bool
 }
 
 // TimewarpURL constructs the correct URL for this ecosystem and registryTime.
