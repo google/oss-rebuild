@@ -18,7 +18,6 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/apiservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
-	"github.com/google/oss-rebuild/internal/api/rebuilderservice"
 	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
@@ -37,7 +36,6 @@ var (
 	project               = flag.String("project", "", "GCP Project ID for storage and build resources")
 	location              = flag.String("location", "", "GCP location for resources")
 	buildRemoteIdentity   = flag.String("build-remote-identity", "", "Identity from which to run remote rebuilds")
-	buildLocalURL         = flag.String("build-local-url", "", "URL of the rebuild service")
 	inferenceURL          = flag.String("inference-url", "", "URL of the inference service")
 	signingKeyVersion     = flag.String("signing-key-version", "", "Resource name of the signing CryptoKeyVersion")
 	metadataBucket        = flag.String("metadata-bucket", "", "GCS bucket for rebuild artifacts")
@@ -70,26 +68,6 @@ var (
 )
 
 var httpcfg = httpegress.Config{}
-
-func RebuildSmoketestInit(ctx context.Context) (*apiservice.RebuildSmoketestDeps, error) {
-	var d apiservice.RebuildSmoketestDeps
-	var err error
-	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating firestore client")
-	}
-	u, err := url.Parse(*buildLocalURL)
-	if err != nil {
-		return nil, errors.Wrap(err, "parsing build local URL")
-	}
-	runclient, err := idtoken.NewClient(ctx, *buildLocalURL)
-	if err != nil {
-		return nil, errors.Wrap(err, "initializing build local client")
-	}
-	d.SmoketestStub = api.StubFromHandler(runclient, u.JoinPath("smoketest"), rebuilderservice.RebuildSmoketest)
-	d.VersionStub = api.StubFromHandler(runclient, u.JoinPath("version"), rebuilderservice.Version)
-	return &d, nil
-}
 
 func makeKMSSigner(ctx context.Context, cryptoKeyVersion string) (*dsse.EnvelopeSigner, error) {
 	kc, err := kms.NewKeyManagementClient(ctx)
@@ -209,17 +187,6 @@ func VersionInit(ctx context.Context) (*apiservice.VersionDeps, error) {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
 	{
-		u, err := url.Parse(*buildLocalURL)
-		if err != nil {
-			return nil, errors.Wrap(err, "parsing build local URL")
-		}
-		runclient, err := idtoken.NewClient(ctx, *buildLocalURL)
-		if err != nil {
-			return nil, errors.Wrap(err, "initializing build local client")
-		}
-		d.BuildLocalVersionStub = api.StubFromHandler(runclient, u.JoinPath("version"), rebuilderservice.Version)
-	}
-	{
 		u, err := url.Parse(*inferenceURL)
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing inference URL")
@@ -268,7 +235,6 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 func main() {
 	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
-	http.HandleFunc("/smoketest", api.Handler(RebuildSmoketestInit, apiservice.RebuildSmoketest))
 	http.HandleFunc("/rebuild", api.Handler(RebuildPackageInit, apiservice.RebuildPackage))
 	http.HandleFunc("/version", api.Handler(VersionInit, apiservice.Version))
 	http.HandleFunc("/runs", api.Handler(CreateRunInit, apiservice.CreateRun))
