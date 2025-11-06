@@ -7,8 +7,6 @@ import (
 	"bytes"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
@@ -21,27 +19,14 @@ const (
 )
 
 func Format(example rundex.Rebuild) (string, error) {
-	type deets struct {
-		Success         bool
-		Message         string
-		ExecutorVersion string
-		Timings         rebuild.Timings
-		Strategy        schema.StrategyOneOf
-	}
-	detailsYaml := new(bytes.Buffer)
-	enc := yaml.NewEncoder(detailsYaml)
+	buf := new(bytes.Buffer)
+	enc := yaml.NewEncoder(buf)
 	enc.SetIndent(2)
-	err := enc.Encode(deets{
-		Success:         example.Success,
-		Message:         example.Message,
-		ExecutorVersion: example.ExecutorVersion,
-		Timings:         example.Timings,
-		Strategy:        example.Strategy,
-	})
+	err := enc.Encode(example)
 	if err != nil {
 		return "", errors.Wrap(err, "marshalling details")
 	}
-	return detailsYaml.String(), nil
+	return buf.String(), nil
 }
 
 func View(example rundex.Rebuild) (modal.InputCaptureable, error) {
