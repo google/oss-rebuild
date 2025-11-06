@@ -130,3 +130,10 @@ func createAnnotatedTag(repo *git.Repository, tag, targetCommit string) {
 		Tagger:  &object.Signature{Name: "Test Author", Email: "test@example.com"},
 	}))
 }
+
+func must[T any](t T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
