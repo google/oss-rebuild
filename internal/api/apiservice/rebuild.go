@@ -39,10 +39,6 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-func sanitize(key string) string {
-	return strings.ReplaceAll(key, "/", "!")
-}
-
 func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.RegistryMux) error {
 	if t.Artifact != "" {
 		return nil
@@ -340,7 +336,9 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 			log.Println("Failed to load build info:", err)
 		}
 	}
-	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(v.Target.Ecosystem)).Collection("packages").Doc(sanitize(v.Target.Package)).Collection("versions").Doc(v.Target.Version).Collection("artifacts").Doc(v.Target.Artifact).Collection("attempts").Doc(req.ID).Set(ctx, schema.RebuildAttempt{
+	// Encode target for Firestore document IDs (handles NPM slashes, etc.)
+	et := rebuild.FirestoreTargetEncoding.Encode(v.Target)
+	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(et.Ecosystem)).Collection("packages").Doc(et.Package).Collection("versions").Doc(et.Version).Collection("artifacts").Doc(et.Artifact).Collection("attempts").Doc(req.ID).Set(ctx, schema.RebuildAttempt{
 		Ecosystem:       string(v.Target.Ecosystem),
 		Package:         v.Target.Package,
 		Version:         v.Target.Version,
