@@ -73,13 +73,17 @@ type Asset struct {
 	Target Target
 }
 
-// assetPath describes the general layout of assets shared by most hierarchy-based AssetStore types. The runID
+// assetPath describes the general layout of assets shared by most hierarchy-based AssetStore types.
+// Package identifiers are encoded for filesystem safety using ecosystem-specific transforms.
+// See pkg/rebuild/rebuild/sanitize.go for encoding details.
 func assetPath(a Asset, runID string) []string {
 	name := string(a.Type)
 	if a.Type == RebuildAsset {
 		name = a.Target.Artifact
 	}
-	return []string{string(a.Target.Ecosystem), a.Target.Package, a.Target.Version, a.Target.Artifact, runID, name}
+	// Encode target for filesystem storage (handles Maven colons, NPM slashes, etc.)
+	et := FilesystemTargetEncoding.Encode(a.Target)
+	return []string{string(et.Ecosystem), et.Package, et.Version, et.Artifact, runID, name}
 }
 
 // ReadOnlyAssetStore is a storage mechanism for debug assets.
