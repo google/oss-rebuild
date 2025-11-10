@@ -141,7 +141,9 @@ func TestWorkflowStrategy_GenerateFor(t *testing.T) {
 					Repo: "https://github.com/test/repo",
 					Ref:  "abc123",
 				},
-				SystemDeps: []string{"git", "npm", "git"},
+				Requires: RequiredEnv{
+					SystemDeps: []string{"git", "npm", "git"},
+				},
 				Source: []flow.Step{{
 					Uses: "git-checkout",
 				}},
@@ -155,9 +157,11 @@ func TestWorkflowStrategy_GenerateFor(t *testing.T) {
 					Repo: "https://github.com/test/repo",
 					Ref:  "abc123",
 				},
-				SystemDeps: []string{"git", "npm"},
-				Source:     "git clone https://github.com/test/repo .\ngit checkout --force 'abc123'",
-				Build:      "npm pack",
+				Requires: RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
+				Source: "git clone https://github.com/test/repo .\ngit checkout --force 'abc123'",
+				Build:  "npm pack",
 			},
 		},
 	}
@@ -213,7 +217,9 @@ func TestWorkflowStrategyYAML(t *testing.T) {
 				Build: []flow.Step{
 					{Runs: "make build"},
 				},
-				SystemDeps: []string{"git", "npm"},
+				Requires: RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
 				OutputPath: "dist/output",
 			},
 			wantYAML: `
@@ -230,9 +236,10 @@ deps:
         foo: bar
 build:
     - runs: make build
-system_deps:
-    - git
-    - npm
+requires:
+    system_deps:
+        - git
+        - npm
 output_path: dist/output
 `,
 		},

@@ -32,10 +32,12 @@ func TestNPMStrategies(t *testing.T) {
 				VersionOverride: "green",
 			},
 			rebuild.Instructions{
-				Location:   defaultLocation,
-				SystemDeps: []string{"git", "npm"},
-				Source:     "git checkout --force 'the_ref'",
-				Deps:       "",
+				Location: defaultLocation,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
+				Source: "git checkout --force 'the_ref'",
+				Deps:   "",
 				Build: `PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix the_dir --no-git-tag-version green
 /usr/bin/npx --package=npm@red -c 'cd the_dir && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
@@ -49,8 +51,10 @@ func TestNPMStrategies(t *testing.T) {
 				VersionOverride: "",
 			},
 			rebuild.Instructions{
-				Location:   defaultLocation,
-				SystemDeps: []string{"git", "npm"},
+				Location: defaultLocation,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
 				Source:     "git checkout --force 'the_ref'",
 				Deps:       "",
 				Build:      `/usr/bin/npx --package=npm@red -c 'cd the_dir && npm pack'`,
@@ -74,7 +78,9 @@ func TestNPMStrategies(t *testing.T) {
 					Ref:  "the_ref",
 					Repo: "the_repo",
 				},
-				SystemDeps: []string{"git", "npm"},
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
 				Source:     "git checkout --force 'the_ref'",
 				Deps:       "",
 				Build:      `/usr/bin/npx --package=npm@red -c 'npm pack'`,
@@ -93,9 +99,11 @@ func TestNPMStrategies(t *testing.T) {
 				PrepackRemoveDeps: true,
 			},
 			rebuild.Instructions{
-				Location:   defaultLocation,
-				SystemDeps: []string{"git", "npm"},
-				Source:     "git checkout --force 'the_ref'",
+				Location: defaultLocation,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
+				Source: "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build: `PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix the_dir --no-git-tag-version green
@@ -115,9 +123,11 @@ func TestNPMStrategies(t *testing.T) {
 				PrepackRemoveDeps: true,
 			},
 			rebuild.Instructions{
-				Location:   defaultLocation,
-				SystemDeps: []string{"git", "npm"},
-				Source:     "git checkout --force 'the_ref'",
+				Location: defaultLocation,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
+				Source: "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
@@ -135,9 +145,11 @@ func TestNPMStrategies(t *testing.T) {
 				PrepackRemoveDeps: true,
 			},
 			rebuild.Instructions{
-				Location:   defaultLocation,
-				SystemDeps: []string{"git", "npm"},
-				Source:     "git checkout --force 'the_ref'",
+				Location: defaultLocation,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
+				Source: "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
@@ -165,8 +177,10 @@ func TestNPMStrategies(t *testing.T) {
 					Ref:  "the_ref",
 					Repo: "the_repo",
 				},
-				SystemDeps: []string{"git", "npm"},
-				Source:     "git checkout --force 'the_ref'",
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
+				Source: "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm run yellow && rm -rf node_modules && npm pack'`,
@@ -183,9 +197,11 @@ func TestNPMStrategies(t *testing.T) {
 				RegistryTime: time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
 			},
 			rebuild.Instructions{
-				Location:   defaultLocation,
-				SystemDeps: []string{"git", "npm"},
-				Source:     "git checkout --force 'the_ref'",
+				Location: defaultLocation,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
+				Source: "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm pack'`,
@@ -212,8 +228,10 @@ func TestNPMStrategies(t *testing.T) {
 					Ref:  "the_ref",
 					Repo: "the_repo",
 				},
-				SystemDeps: []string{"git", "npm"},
-				Source:     "git checkout --force 'the_ref'",
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
+				Source: "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
 				Build:      `/usr/local/bin/npx --package=npm@red -c 'npm config set unsafe-perm true && npm run yellow && npm pack'`,

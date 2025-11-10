@@ -52,7 +52,9 @@ dpkg-source -x --no-check $(basename "https://example.com/pkg_1.0-1.dsc")`,
 apt install -y build-dep1 build-dep2`,
 				Build: `cd */
 debuild -b -uc -us`,
-				SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
+				},
 				OutputPath: "pkg_1.0-1_amd64.deb",
 			},
 		},
@@ -85,7 +87,9 @@ dpkg-source -x --no-check $(basename "https://example.com/pkg_1.0.dsc")`,
 apt install -y build-dep1`,
 				Build: `cd */
 debuild -b -uc -us`,
-				SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
+				},
 				OutputPath: "pkg_1.0_amd64.deb",
 			},
 		},
@@ -123,7 +127,9 @@ apt install -y`,
 				Build: `cd */
 debuild -b -uc -us
 mv /src/pkg_1.0-1_amd64.deb /src/pkg_1.0-1+b1_amd64.deb`,
-				SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"wget", "git", "build-essential", "fakeroot", "devscripts"},
+				},
 				OutputPath: "pkg_1.0-1+b1_amd64.deb",
 			},
 		},
@@ -172,7 +178,9 @@ apt install -y devscripts mmdebstrap apt-utils
 echo QEAgLTcyNSwyICs3MjUsMyBAQAogICAgICAgICApLAorICAgICAgICAnLS1jdXN0b21pemUtaG9vaz1zbGVlcCAxMCcsCiAgICAgICAgICctLWN1c3RvbWl6ZS1ob29rPWNocm9vdCAiJDEiIHNoIC1jICIn | base64 -d | patch /usr/bin/debrebuild`,
 				Build:      `debrebuild --buildresult=./out --builder=mmdebstrap acl_2.3.2-2_amd64.buildinfo`,
 				OutputPath: "out/acl_2.3.1-3_amd64.deb",
-				SystemDeps: []string{"wget"},
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"wget"},
+				},
 			},
 		},
 	}

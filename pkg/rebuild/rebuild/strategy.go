@@ -19,16 +19,21 @@ type Location struct {
 	Dir  string `json:"dir" yaml:"dir,omitempty"`
 }
 
+// RequiredEnv describes any required properties about the build environment
+type RequiredEnv struct {
+	SystemDeps []string `json:"system_deps" yaml:"system_deps,omitempty"`
+}
+
 // Instructions represents the source, dependencies, and build steps to execute a rebuild.
 type Instructions struct {
 	// The location these instructions should be executed from.
-	Location   Location
-	SystemDeps []string
-	Source     string
-	Deps       string
-	Build      string
+	Location Location
+	Source   string
+	Deps     string
+	Build    string
 	// Where the generated artifact can be found.
 	OutputPath string
+	Requires   RequiredEnv
 }
 
 // BuildEnv contains resources provided by the build environment that a strategy may use.

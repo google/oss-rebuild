@@ -88,8 +88,10 @@ func TestGCBExecutorStart(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
-			SystemDeps: []string{"git", "node", "npm"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
 			Deps:       "npm install",
 			Build:      "npm run build",
 			OutputPath: "dist/test-package-1.0.0.tgz",
@@ -234,8 +236,10 @@ func TestGCBExecutorWithSyscallMonitor(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
-			SystemDeps: []string{"git", "node", "npm"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
 			Deps:       "npm install",
 			Build:      "npm run build",
 			OutputPath: "dist/test-package-1.0.0.tgz",
@@ -345,8 +349,10 @@ func TestGCBExecutorAssetUpload(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
-			SystemDeps: []string{"git", "node", "npm"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
 			Deps:       "npm install",
 			Build:      "npm run build",
 			OutputPath: "dist/test-package-1.0.0.tgz",
@@ -480,8 +486,10 @@ func TestGCBExecutorFailedBuild(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
-			SystemDeps: []string{"git", "node", "npm"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
 			Deps:       "npm install",
 			Build:      "npm run build",
 			OutputPath: "dist/test-package-1.0.0.tgz",
