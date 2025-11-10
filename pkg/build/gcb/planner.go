@@ -196,7 +196,7 @@ var gcbStandardBuildTpl = template.Must(
 			cat <<'EOS' | docker buildx build {{if .TimewarpAuth}}--secret id=auth_header,src=/tmp/auth_header {{end}}--tag=img -
 			{{.Dockerfile}}
 			EOS
-			docker run --name=container img
+			docker run {{if .Privileged}}--privileged {{end}}--name=container img
 			{{- if .UseSyscallMonitor}}
 			docker kill tetragon
 			{{- end}}
@@ -307,7 +307,7 @@ var gcbProxyBuildTpl = template.Must(
 				export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt{{if .TimewarpAuth}} HEADER{{end}}
 				docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
 				cat /Dockerfile | docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT {{if .TimewarpAuth}}--secret id=auth_header,env=HEADER {{end}}--load --tag=img -
-				docker run --name=container img
+				docker run {{if .Privileged}}--privileged {{end}}--name=container img
 			'
 			{{- if .UseSyscallMonitor}}
 			docker kill tetragon
@@ -328,6 +328,7 @@ type Planner struct {
 	timewarpHost           string
 	hasRepo                bool
 	preferPreciseToolchain bool
+	allowPrivileged        bool
 }
 
 // NewPlanner creates a new GCB planner with the given configuration
@@ -340,15 +341,17 @@ func NewPlanner(config PlannerConfig) *Planner {
 		timewarpHost:           "localhost:8080", // Internal default
 		hasRepo:                false,            // Repository needs to be cloned in container
 		preferPreciseToolchain: true,             // Internal default
+		allowPrivileged:        config.AllowPrivileged,
 	}
 }
 
 // PlannerConfig contains configuration for the GCB planner
 type PlannerConfig struct {
-	Project        string
-	ServiceAccount string
-	LogsBucket     string
-	PrivatePool    *gcb.PrivatePoolConfig
+	Project         string
+	ServiceAccount  string
+	LogsBucket      string
+	PrivatePool     *gcb.PrivatePoolConfig
+	AllowPrivileged bool
 }
 
 // GeneratePlan implements Planner[*Plan]
@@ -369,7 +372,7 @@ func (p *Planner) GeneratePlan(ctx context.Context, input rebuild.Input, opts bu
 		return nil, errors.Wrap(err, "failed to generate Dockerfile")
 	}
 	// Generate Cloud Build steps
-	steps, err := p.generateSteps(input.Target, dockerfile, opts)
+	steps, err := p.generateSteps(input.Target, dockerfile, instructions.Requires, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate Cloud Build steps")
 	}
@@ -430,10 +433,10 @@ func (p *Planner) getToolURL(toolType build.ToolType, opts build.PlanOptions) (t
 }
 
 // generateSteps creates the Cloud Build steps using remote rebuild patterns
-func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, opts build.PlanOptions) ([]*cloudbuild.BuildStep, error) {
+func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, reqs rebuild.RequiredEnv, opts build.PlanOptions) ([]*cloudbuild.BuildStep, error) {
 	var steps []*cloudbuild.BuildStep
 	// Main build step - either standard or proxy-enabled
-	buildScript, err := p.generateRemoteBuildScript(target, dockerfile, opts)
+	buildScript, err := p.generateRemoteBuildScript(target, dockerfile, reqs, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate remote build script")
 	}
@@ -468,24 +471,33 @@ func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, opts b
 }
 
 // generateRemoteBuildScript creates the build script for remote rebuild mode
-func (p *Planner) generateRemoteBuildScript(target rebuild.Target, dockerfile string, opts build.PlanOptions) (string, error) {
+func (p *Planner) generateRemoteBuildScript(target rebuild.Target, dockerfile string, reqs rebuild.RequiredEnv, opts build.PlanOptions) (string, error) {
 	if opts.UseNetworkProxy {
-		return p.generateProxyBuildScript(target, dockerfile, opts)
+		return p.generateProxyBuildScript(target, dockerfile, reqs, opts)
 	}
-	return p.generateStandardBuildScript(target, dockerfile, opts)
+	return p.generateStandardBuildScript(target, dockerfile, reqs, opts)
 }
 
 // generateStandardBuildScript creates a standard build script without proxy
-func (p *Planner) generateStandardBuildScript(target rebuild.Target, dockerfile string, opts build.PlanOptions) (string, error) {
+func (p *Planner) generateStandardBuildScript(target rebuild.Target, dockerfile string, reqs rebuild.RequiredEnv, opts build.PlanOptions) (string, error) {
 	_, serviceAccountEmail := path.Split(p.serviceAccount)
 	_, timewarpAuth, err := p.getToolURL(build.TimewarpTool, opts)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to process timewarp URL")
 	}
+	var privileged bool
+	if reqs.Privileged {
+		if p.allowPrivileged {
+			privileged = true
+		} else {
+			log.Println("Warning: instructions requested privileged execution but this planner does not allow privileged builds.")
+		}
+	}
 	var buf bytes.Buffer
 	if err := gcbStandardBuildTpl.Execute(&buf, map[string]any{
 		"TargetStr":           fmt.Sprintf("%+v", target),
 		"Dockerfile":          dockerfile,
+		"Privileged":          privileged,
 		"UseSyscallMonitor":   opts.UseSyscallMonitor,
 		"SyscallPolicies":     tetragonPoliciesJSON,
 		"TimewarpAuth":        timewarpAuth,
@@ -497,7 +509,7 @@ func (p *Planner) generateStandardBuildScript(target rebuild.Target, dockerfile 
 }
 
 // generateProxyBuildScript creates a proxy-enabled build script
-func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile string, opts build.PlanOptions) (string, error) {
+func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile string, reqs rebuild.RequiredEnv, opts build.PlanOptions) (string, error) {
 	_, serviceAccountEmail := path.Split(p.serviceAccount)
 	proxyURL, proxyAuth, err := p.getToolURL(build.ProxyTool, opts)
 	if err != nil {
@@ -507,10 +519,19 @@ func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile str
 	if err != nil {
 		return "", errors.Wrap(err, "failed to process timewarp URL")
 	}
+	var privileged bool
+	if reqs.Privileged {
+		if p.allowPrivileged {
+			privileged = true
+		} else {
+			log.Println("Warning: instructions requested privileged execution but this planner does not allow privileged builds.")
+		}
+	}
 	var buf bytes.Buffer
 	if err := gcbProxyBuildTpl.Execute(&buf, map[string]any{
 		"TargetStr":           fmt.Sprintf("%+v", target),
 		"Dockerfile":          dockerfile,
+		"Privileged":          privileged,
 		"UseSyscallMonitor":   opts.UseSyscallMonitor,
 		"SyscallPolicies":     tetragonPoliciesJSON,
 		"TimewarpAuth":        timewarpAuth,

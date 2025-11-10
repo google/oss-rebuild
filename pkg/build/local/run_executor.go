@@ -35,6 +35,7 @@ type DockerRunExecutor struct {
 	retainContainer  bool
 	tempDirBase      string
 	authCallback     AuthCallback
+	allowPrivileged  bool
 }
 
 // NewDockerRunExecutor creates a new Docker run executor with configuration
@@ -76,6 +77,7 @@ func NewDockerRunExecutor(config DockerRunExecutorConfig) (*DockerRunExecutor, e
 		retainContainer:  config.RetainContainer,
 		tempDirBase:      tempBase,
 		authCallback:     config.AuthCallback,
+		allowPrivileged:  config.AllowPrivileged,
 	}, nil
 }
 
@@ -91,6 +93,7 @@ type DockerRunExecutorConfig struct {
 	RetainContainer  bool         // If true, don't use --rm flag to retain containers
 	TempDirBase      string       // Base directory for temp files, if empty uses os.TempDir()
 	AuthCallback     AuthCallback // Optional callback to generate auth headers when needed
+	AllowPrivileged  bool         // If true, allow privileged builds
 }
 
 // Start implements build.Executor
@@ -199,6 +202,13 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	runArgs = append(runArgs, "-v", fmt.Sprintf("%s:%s", hostOutputPath, path.Dir(plan.OutputPath)))
 	if plan.WorkingDir != "" {
 		runArgs = append(runArgs, "-w", plan.WorkingDir)
+	}
+	if plan.Privileged {
+		if e.allowPrivileged {
+			runArgs = append(runArgs, "--privileged")
+		} else {
+			log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
+		}
 	}
 
 	// Add AUTH_HEADER environment variable if auth is required and callback is available

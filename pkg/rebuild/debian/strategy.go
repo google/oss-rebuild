@@ -101,6 +101,9 @@ func (b *Debrebuild) ToWorkflow() *rebuild.WorkflowStrategy {
 				"buildinfo":  path.Base(b.BuildInfo.URL),
 			},
 		}},
+		Requires: rebuild.RequiredEnv{
+			Privileged: true,
+		},
 		OutputDir: "out",
 	}
 }

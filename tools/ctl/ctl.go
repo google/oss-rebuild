@@ -1084,16 +1084,15 @@ var infer = &cobra.Command{
 			},
 			BaseImageConfig: build.DefaultBaseImageConfig(),
 		}
-		var dockerfile string
+		var plan *local.DockerBuildPlan
 		{
-			plan, err := local.NewDockerBuildPlanner().GeneratePlan(cmd.Context(), inp, build.PlanOptions{
+			plan, err = local.NewDockerBuildPlanner().GeneratePlan(cmd.Context(), inp, build.PlanOptions{
 				UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
 				Resources:   resources,
 			})
 			if err != nil {
 				log.Fatal(errors.Wrap(err, "generating plan"))
 			}
-			dockerfile = plan.Dockerfile
 		}
 		var buildScript string
 		{
@@ -1114,16 +1113,23 @@ var infer = &cobra.Command{
 				log.Fatal(errors.Wrap(err, "encoding result"))
 			}
 		case "dockerfile":
-			cmd.OutOrStdout().Write([]byte(dockerfile))
+			cmd.OutOrStdout().Write([]byte(plan.Dockerfile))
 		case "debug-steps":
+			args := []string{
+				"--name=container",
+				"img",
+			}
+			if plan.Privileged {
+				args = append([]string{"--privileged"}, args...)
+			}
 			buildScript := fmt.Sprintf(textwrap.Dedent(`
 				#!/usr/bin/env bash
 				set -eux
 				cat <<'EOS' | docker buildx build --tag=img -
 				%s
 				EOS
-				docker run --name=container img
-				`[1:]), dockerfile)
+				docker run %s
+				`[1:]), plan.Dockerfile, strings.Join(args, " "))
 			b := cloudbuild.Build{
 				Steps: []*cloudbuild.BuildStep{
 					{

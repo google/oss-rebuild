@@ -35,6 +35,7 @@ type DockerBuildExecutor struct {
 	retainContainer  bool
 	retainImage      bool
 	tempDirBase      string
+	allowPrivileged  bool
 }
 
 // NewDockerBuildExecutor creates a new Docker build executor with configuration
@@ -81,6 +82,7 @@ func NewDockerBuildExecutor(config DockerBuildExecutorConfig) (*DockerBuildExecu
 		retainContainer:  config.RetainContainer,
 		retainImage:      config.RetainImage,
 		tempDirBase:      tempBase,
+		allowPrivileged:  config.AllowPrivileged,
 	}, nil
 }
 
@@ -94,6 +96,7 @@ type DockerBuildExecutorConfig struct {
 	RetainContainer  bool   // If true, don't use --rm flag to retain containers
 	RetainImage      bool   // If true, don't remove built image after build completes
 	TempDirBase      string // Base directory for temp files, if empty uses os.TempDir()
+	AllowPrivileged  bool   // If true, allow privileged builds
 }
 
 // Start implements build.Executor.
@@ -216,6 +219,13 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 		runArgs = append(runArgs, "--rm")
 	}
 	runArgs = append(runArgs, "-v", fmt.Sprintf("%s:%s", hostOutputPath, path.Dir(plan.OutputPath)), imageTag)
+	if plan.Privileged {
+		if e.allowPrivileged {
+			runArgs = append(runArgs, "--privileged")
+		} else {
+			log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
+		}
+	}
 	err = e.cmdExecutor.Execute(ctx, CommandOptions{
 		Output: multiWriter,
 	}, e.dockerCmd, runArgs...)
