@@ -232,7 +232,7 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		} else if err := e.uploadFile(ctx, opts.Resources.AssetStore, rebuild.RebuildAsset.For(input.Target), rebuildArtifactPath); err != nil {
 			log.Printf("Failed to upload rebuild artifact: %v", err)
 		}
-		if err := e.uploadContent(ctx, opts.Resources.AssetStore, rebuild.DebugLogsAsset.For(input.Target), []byte(outbuf.String())); err != nil {
+		if err := e.uploadContent(ctx, opts.Resources.AssetStore, rebuild.DebugLogsAsset.For(input.Target), outbuf.Bytes()); err != nil {
 			log.Printf("Failed to upload debug logs: %v", err)
 		}
 	}
