@@ -117,7 +117,7 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 	}
 	e.activeBuilds.Store(buildID, handle)
 	// Start the build execution
-	go e.executeBuild(ctx, handle, gcbBuild, input, opts, plan)
+	go e.executeBuild(ctx, handle, gcbBuild, input.Target, opts, plan)
 	return handle, nil
 }
 
@@ -168,10 +168,10 @@ func (e *Executor) Close(ctx context.Context) error {
 }
 
 // executeBuild runs the actual build process using Cloud Build
-func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBuild *cloudbuild.Build, input rebuild.Input, opts build.Options, plan *Plan) {
+func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBuild *cloudbuild.Build, t rebuild.Target, opts build.Options, plan *Plan) {
 	// Construct BuildInfo to be incrementally set.
 	buildInfo := rebuild.BuildInfo{
-		Target:      input.Target,
+		Target:      t,
 		ObliviousID: opts.BuildID,
 		Builder:     e.builderName,
 		Steps:       plan.Steps,
@@ -206,10 +206,10 @@ func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBui
 	}
 	// Upload assets to asset store if configured
 	if opts.Resources.AssetStore != nil {
-		if err := e.uploadContent(ctx, opts.Resources.AssetStore, rebuild.DockerfileAsset.For(input.Target), []byte(plan.Dockerfile)); err != nil {
+		if err := e.uploadContent(ctx, opts.Resources.AssetStore, rebuild.DockerfileAsset.For(t), []byte(plan.Dockerfile)); err != nil {
 			buildErr = errors.Wrap(err, "uploading Dockerfile")
 		}
-		if err := e.uploadBuildInfo(ctx, opts.Resources.AssetStore, rebuild.BuildInfoAsset.For(input.Target), buildInfo); err != nil {
+		if err := e.uploadBuildInfo(ctx, opts.Resources.AssetStore, rebuild.BuildInfoAsset.For(t), buildInfo); err != nil {
 			buildErr = errors.Wrap(err, "uploading build info")
 		}
 	}

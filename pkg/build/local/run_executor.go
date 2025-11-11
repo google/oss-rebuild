@@ -124,7 +124,7 @@ func (e *DockerRunExecutor) Start(ctx context.Context, input rebuild.Input, opts
 	}
 	e.activeBuilds.Store(buildID, handle)
 	// Start the build in a goroutine
-	go e.executeBuild(buildCtx, handle, plan, input, opts)
+	go e.executeBuild(buildCtx, handle, plan, input.Target, opts)
 	return handle, nil
 }
 
@@ -161,7 +161,7 @@ func (e *DockerRunExecutor) Close(ctx context.Context) error {
 }
 
 // executeBuild runs the actual Docker run process
-func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandle, plan *DockerRunPlan, input rebuild.Input, opts build.Options) {
+func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandle, plan *DockerRunPlan, t rebuild.Target, opts build.Options) {
 	defer e.activeBuilds.Delete(handle.id)
 	defer handle.output.Close()
 	// Acquire semaphore slot
@@ -229,10 +229,10 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		rebuildArtifactPath := filepath.Join(hostOutputPath, path.Base(plan.OutputPath))
 		if _, err := os.Stat(rebuildArtifactPath); err != nil {
 			log.Printf("Failed to stat rebuild artifact: %v", err)
-		} else if err := e.uploadFile(ctx, opts.Resources.AssetStore, rebuild.RebuildAsset.For(input.Target), rebuildArtifactPath); err != nil {
+		} else if err := e.uploadFile(ctx, opts.Resources.AssetStore, rebuild.RebuildAsset.For(t), rebuildArtifactPath); err != nil {
 			log.Printf("Failed to upload rebuild artifact: %v", err)
 		}
-		if err := e.uploadContent(ctx, opts.Resources.AssetStore, rebuild.DebugLogsAsset.For(input.Target), outbuf.Bytes()); err != nil {
+		if err := e.uploadContent(ctx, opts.Resources.AssetStore, rebuild.DebugLogsAsset.For(t), outbuf.Bytes()); err != nil {
 			log.Printf("Failed to upload debug logs: %v", err)
 		}
 	}

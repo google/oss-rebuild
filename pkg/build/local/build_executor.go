@@ -130,7 +130,7 @@ func (e *DockerBuildExecutor) Start(ctx context.Context, input rebuild.Input, op
 	}
 	e.activeBuilds.Store(buildID, handle)
 	// Start the build in a goroutine.
-	go e.executeBuild(buildCtx, handle, plan, input, opts)
+	go e.executeBuild(buildCtx, handle, plan, input.Target, opts)
 	return handle, nil
 }
 
@@ -167,7 +167,7 @@ func (e *DockerBuildExecutor) Close(ctx context.Context) error {
 }
 
 // executeBuild runs the actual Docker build process.
-func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHandle, plan *DockerBuildPlan, input rebuild.Input, opts build.Options) {
+func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHandle, plan *DockerBuildPlan, t rebuild.Target, opts build.Options) {
 	// Ensure resources are cleaned up on exit.
 	defer e.activeBuilds.Delete(handle.id)
 	defer handle.output.Close()
@@ -221,7 +221,7 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	}, e.dockerCmd, runArgs...)
 	// Upload assets to asset store
 	if opts.Resources.AssetStore != nil {
-		e.uploadAssets(ctx, plan, hostOutputPath, input, opts, handle.id, outbuf.Bytes())
+		e.uploadAssets(ctx, plan, hostOutputPath, t, opts, handle.id, outbuf.Bytes())
 	}
 	// Clean up the built image if RetainImage is false
 	if !e.retainImage {
@@ -244,7 +244,7 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 }
 
 // uploadAssets uploads build artifacts to the asset store.
-func (e *DockerBuildExecutor) uploadAssets(ctx context.Context, plan *DockerBuildPlan, hostOutputPath string, input rebuild.Input, opts build.Options, imageTag string, logs []byte) {
+func (e *DockerBuildExecutor) uploadAssets(ctx context.Context, plan *DockerBuildPlan, hostOutputPath string, t rebuild.Target, opts build.Options, imageTag string, logs []byte) {
 	store := opts.Resources.AssetStore
 	if store == nil {
 		log.Println("No asset store configured. Skipping asset upload.")
@@ -254,22 +254,22 @@ func (e *DockerBuildExecutor) uploadAssets(ctx context.Context, plan *DockerBuil
 	rebuildArtifactPath := filepath.Join(hostOutputPath, filepath.Base(plan.OutputPath))
 	if _, err := os.Stat(rebuildArtifactPath); err != nil {
 		log.Printf("Failed to stat rebuild artifact: %v", err)
-	} else if err := e.uploadFile(ctx, store, rebuild.RebuildAsset.For(input.Target), rebuildArtifactPath); err != nil {
+	} else if err := e.uploadFile(ctx, store, rebuild.RebuildAsset.For(t), rebuildArtifactPath); err != nil {
 		log.Printf("Failed to upload rebuild artifact: %v", err)
 	}
 	// Upload Dockerfile.
-	if err := e.uploadContent(ctx, store, rebuild.DockerfileAsset.For(input.Target), []byte(plan.Dockerfile)); err != nil {
+	if err := e.uploadContent(ctx, store, rebuild.DockerfileAsset.For(t), []byte(plan.Dockerfile)); err != nil {
 		log.Printf("Failed to upload Dockerfile: %v", err)
 	}
 	// Upload combined build and run logs.
-	if err := e.uploadContent(ctx, store, rebuild.DebugLogsAsset.For(input.Target), logs); err != nil {
+	if err := e.uploadContent(ctx, store, rebuild.DebugLogsAsset.For(t), logs); err != nil {
 		log.Printf("Failed to upload build logs: %v", err)
 	}
 	// Save and upload container image.
 	imagePath := filepath.Join(hostOutputPath, string(rebuild.ContainerImageAsset))
 	if err := e.saveContainerImage(ctx, imageTag, imagePath); err != nil {
 		log.Printf("Failed to save container image: %v", err)
-	} else if err := e.uploadFile(ctx, store, rebuild.ContainerImageAsset.For(input.Target), imagePath); err != nil {
+	} else if err := e.uploadFile(ctx, store, rebuild.ContainerImageAsset.For(t), imagePath); err != nil {
 		log.Printf("Failed to upload container image: %v", err)
 	}
 }
