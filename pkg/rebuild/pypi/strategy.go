@@ -45,7 +45,12 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 				"locator": "/deps/bin/",
 			},
 		}},
-		OutputDir: "dist",
+		OutputDir: func() string {
+			if b.Location.Dir != "" {
+				return b.Location.Dir + "/dist"
+			}
+			return "dist"
+		}(),
 	}
 }
 

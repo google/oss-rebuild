@@ -1,0 +1,64 @@
+[project]
+name = "jurigged"
+version = "0.6.1"
+description = "Live update of Python functions"
+authors = [
+    { name = "Olivier Breuleux", email = "breuleux@gmail.com" }
+]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = [
+    "blessed>=1.20.0",
+    "codefind~=0.1.7",
+    "ovld>=0.4.0",
+    "watchdog>=4.0.2",
+]
+
+[project.scripts]
+jurigged = "jurigged.live:cli"
+
+[project.urls]
+Homepage = "https://github.com/breuleux/jurigged"
+Repository = "https://github.com/breuleux/jurigged"
+
+[project.optional-dependencies]
+develoop = [
+    "giving~=0.4.3",
+    "rich>=10.13.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.3",
+    "pytest-cov>=5.0.0",
+]
+
+[tool.ruff]
+line-length = 80
+exclude = ["tests/snippets"]
+
+[tool.ruff.lint]
+extend-select = ["I"]
+ignore = ["E241", "F722", "E501", "E203", "F811", "F821"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "@abstractmethod",
+    "# pragma: no cover"
+]
+
+[tool.coverage.run]
+omit = [
+    "src/jurigged/__main__.py",
+    "src/jurigged/runpy.py",
+    "src/jurigged/loop/*",
+    "tests/*",
+]
