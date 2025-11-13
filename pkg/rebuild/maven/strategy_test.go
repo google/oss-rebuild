@@ -34,8 +34,10 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				SystemDeps: []string{"git", "wget", "maven"},
-				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "wget", "maven"},
+				},
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
 					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
@@ -63,8 +65,10 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				SystemDeps: []string{"git", "wget"},
-				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "wget"},
+				},
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
 					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
@@ -93,8 +97,10 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				SystemDeps: []string{"git", "wget", "zip"},
-				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "wget", "zip"},
+				},
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
 					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
@@ -126,8 +132,10 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				SystemDeps: []string{"git", "wget", "ca-certificates", "maven"},
-				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "wget", "ca-certificates", "maven"},
+				},
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
                     mkdir -p /opt/jdk
                     wget -q -O - "https://download.java.net/java/GA/jdk10/10/binaries/openjdk-10_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
@@ -168,8 +176,10 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				SystemDeps: []string{"git", "wget", "ca-certificates"},
-				Source:     "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "wget", "ca-certificates"},
+				},
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
                     mkdir -p /opt/jdk
                     wget -q -O - "https://download.java.net/java/GA/jdk9/9/binaries/openjdk-9_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk

@@ -64,7 +64,7 @@ func TestCreateAttestations(t *testing.T) {
 			orDie(w.Close())
 		}
 		inputStrategy := &rebuild.LocationHint{Location: rebuild.Location{Repo: "http://github.com/foo/bar", Ref: "0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33"}}
-		strategy := &rebuild.ManualStrategy{Location: inputStrategy.Location, Deps: "echo deps", Build: "echo build", SystemDeps: []string{"git"}, OutputPath: "foo/bar"}
+		strategy := &rebuild.ManualStrategy{Location: inputStrategy.Location, Deps: "echo deps", Build: "echo build", Requires: rebuild.RequiredEnv{SystemDeps: []string{"git"}}, OutputPath: "foo/bar"}
 		oneof := schema.NewStrategyOneOf(inputStrategy)
 		defn := schema.BuildDefinition{StrategyOneOf: &oneof}
 		serviceLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202501010000-feeddeadbeef00"}
@@ -218,7 +218,7 @@ func TestCreateAttestations(t *testing.T) {
       "byproducts": [
         {
           "name": "build.json",
-          "content": "eyJtYW51YWwiOnsicmVwbyI6Imh0dHA6Ly9naXRodWIuY29tL2Zvby9iYXIiLCJyZWYiOiIwYmVlYzdiNWVhM2YwZmRiYzk1ZDBkZDQ3ZjNjNWJjMjc1ZGE4YTMzIiwiZGlyIjoiIiwiZGVwcyI6ImVjaG8gZGVwcyIsImJ1aWxkIjoiZWNobyBidWlsZCIsInN5c3RlbV9kZXBzIjpbImdpdCJdLCJvdXRwdXRfcGF0aCI6ImZvby9iYXIifX0="
+          "content": "eyJtYW51YWwiOnsicmVwbyI6Imh0dHA6Ly9naXRodWIuY29tL2Zvby9iYXIiLCJyZWYiOiIwYmVlYzdiNWVhM2YwZmRiYzk1ZDBkZDQ3ZjNjNWJjMjc1ZGE4YTMzIiwiZGlyIjoiIiwiZGVwcyI6ImVjaG8gZGVwcyIsImJ1aWxkIjoiZWNobyBidWlsZCIsInJlcXVpcmVzIjp7InN5c3RlbV9kZXBzIjpbImdpdCJdfSwib3V0cHV0X3BhdGgiOiJmb28vYmFyIn19"
         },
         {
           "name": "Dockerfile",

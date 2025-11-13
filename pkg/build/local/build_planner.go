@@ -52,7 +52,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			 chmod +x timewarp
 			{{- end}}
 			 {{.PackageManager.UpdateCmd}}
-			 {{.PackageManager.InstallCommand .Instructions.SystemDeps}}
+			 {{.PackageManager.InstallCommand .Instructions.Requires.SystemDeps}}
 			EOF
 			RUN <<'EOF'
 			 set -eux

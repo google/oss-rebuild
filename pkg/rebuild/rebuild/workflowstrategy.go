@@ -25,7 +25,7 @@ type WorkflowStrategy struct {
 	Source     []flow.Step `json:"src" yaml:"src,omitempty"`
 	Deps       []flow.Step `json:"deps" yaml:"deps,omitempty"`
 	Build      []flow.Step `json:"build" yaml:"build,omitempty"`
-	SystemDeps []string    `json:"system_deps" yaml:"system_deps,omitempty"`
+	Requires   RequiredEnv `json:"requires" yaml:"requires,omitempty"`
 	OutputPath string      `json:"output_path" yaml:"output_path,omitempty"`
 	OutputDir  string      `json:"output_dir" yaml:"output_dir,omitempty"`
 }
@@ -64,18 +64,20 @@ func (s *WorkflowStrategy) GenerateFor(t Target, be BuildEnv) (Instructions, err
 	}
 	uniqueDeps := make(map[string]bool)
 	var finalDeps []string
-	for _, dep := range chain(s.SystemDeps, source.Needs, deps.Needs, build.Needs) {
+	for _, dep := range chain(s.Requires.SystemDeps, source.Needs, deps.Needs, build.Needs) {
 		if _, ok := uniqueDeps[dep]; !ok {
 			finalDeps = append(finalDeps, dep)
 			uniqueDeps[dep] = true
 		}
 	}
 	return Instructions{
-		Location:   s.Location,
-		Source:     source.Script,
-		Deps:       deps.Script,
-		Build:      build.Script,
-		SystemDeps: finalDeps,
+		Location: s.Location,
+		Source:   source.Script,
+		Deps:     deps.Script,
+		Build:    build.Script,
+		Requires: RequiredEnv{
+			SystemDeps: finalDeps,
+		},
 		OutputPath: outputPath,
 	}, nil
 }

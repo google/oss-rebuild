@@ -45,7 +45,7 @@ var dockerRunScriptTpl = template.Must(
 			while ! nc -z localhost 8081;do sleep 1;done
 			{{- end}}
 			mkdir /src && cd /src
-			{{.PackageManager.InstallCommand .Inst.SystemDeps}}
+			{{.PackageManager.InstallCommand .Inst.Requires.SystemDeps}}
 			{{.Inst.Source}}
 			{{.Inst.Deps}}
 			{{.Inst.Build}}

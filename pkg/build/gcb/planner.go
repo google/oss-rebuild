@@ -151,7 +151,7 @@ var gcbDockerfileTpl = template.Must(
 			 {{- if eq .OS "debian"}}
 			 {{.PackageManager.UpdateCmd}}
 			 {{- end}}
-			 {{.PackageManager.InstallCommand .Instructions.SystemDeps}}
+			 {{.PackageManager.InstallCommand .Instructions.Requires.SystemDeps}}
 			EOF
 			RUN <<'EOF'
 			 set -eux

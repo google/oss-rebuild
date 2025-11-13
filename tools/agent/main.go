@@ -497,7 +497,7 @@ apk add {{.SystemDeps}}
 {{.Inst.Source}}
 {{.Inst.Deps}}
 {{.Inst.Build}}
-cp /src/{{.Inst.OutputPath}} /out/rebuild`)).Execute(buf, map[string]any{"Inst": inst, "SystemDeps": strings.Join(inst.SystemDeps, " ")})
+cp /src/{{.Inst.OutputPath}} /out/rebuild`)).Execute(buf, map[string]any{"Inst": inst, "SystemDeps": strings.Join(inst.Requires.SystemDeps, " ")})
 	if err != nil {
 		return err
 	}

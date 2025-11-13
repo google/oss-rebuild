@@ -691,7 +691,7 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 	// TODO: Try to format the bash script into a structured strategy?
 	strat := rebuild.ManualStrategy{
 		Location:   a.loc,
-		SystemDeps: prev.Instructions.SystemDeps,
+		Requires:   prev.Instructions.Requires,
 		Deps:       prev.Instructions.Deps,
 		Build:      thought.UpdatedScript,
 		OutputPath: prev.Instructions.OutputPath,

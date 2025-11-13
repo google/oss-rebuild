@@ -36,7 +36,9 @@ func TestDockerRunPlanner(t *testing.T) {
 						Repo: "https://github.com/example/test-package",
 						Ref:  "v1.0.0",
 					},
-					SystemDeps: []string{"npm", "git"},
+					Requires: rebuild.RequiredEnv{
+						SystemDeps: []string{"npm", "git"},
+					},
 					Deps:       "npm install",
 					Build:      "npm pack",
 					OutputPath: "test-package-1.0.0.tgz",

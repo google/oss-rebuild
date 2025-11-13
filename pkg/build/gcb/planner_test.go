@@ -33,8 +33,10 @@ func TestMakeDockerfile(t *testing.T) {
 			input: rebuild.Input{
 				Target: rebuild.Target{},
 				Strategy: &rebuild.ManualStrategy{
-					Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
-					SystemDeps: []string{"git", "make"},
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Requires: rebuild.RequiredEnv{
+						SystemDeps: []string{"git", "make"},
+					},
 					Deps:       "make deps ...",
 					Build:      "make build ...",
 					OutputPath: "output/foo.tgz",
@@ -74,8 +76,10 @@ ENTRYPOINT ["/bin/sh","/build"]
 			input: rebuild.Input{
 				Target: rebuild.Target{},
 				Strategy: &rebuild.ManualStrategy{
-					Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
-					SystemDeps: []string{"git", "make"},
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Requires: rebuild.RequiredEnv{
+						SystemDeps: []string{"git", "make"},
+					},
 					Deps:       "make deps ...",
 					Build:      "make build ...",
 					OutputPath: "output/foo.tgz",
@@ -122,8 +126,10 @@ ENTRYPOINT ["/bin/sh","/build"]
 			input: rebuild.Input{
 				Target: rebuild.Target{},
 				Strategy: &rebuild.ManualStrategy{
-					Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
-					SystemDeps: []string{"git", "make"},
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Requires: rebuild.RequiredEnv{
+						SystemDeps: []string{"git", "make"},
+					},
 					Deps:       "make deps ...",
 					Build:      "make build ...",
 					OutputPath: "output/foo.tgz",
@@ -217,8 +223,10 @@ func TestGCBPlannerGeneratePlan(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
-			SystemDeps: []string{"git", "node", "npm"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
 			Deps:       "npm install",
 			Build:      "npm run build",
 			OutputPath: "dist/test-package-1.0.0.tgz",
