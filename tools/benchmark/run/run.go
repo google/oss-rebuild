@@ -54,7 +54,7 @@ func (s *remoteExecutionService) SmoketestPackage(ctx context.Context, req schem
 
 func (s *remoteExecutionService) Warmup(ctx context.Context) {
 	log.Println("Warming up remote service...")
-	req := schema.VersionRequest{Service: "build-local"}
+	req := schema.VersionRequest{Service: ""}
 	for i := 0; i < 5; {
 		if _, err := s.versionStub(ctx, req); err != nil {
 			log.Printf("Warmup attempt failed: %v. Retrying...\n", err)
