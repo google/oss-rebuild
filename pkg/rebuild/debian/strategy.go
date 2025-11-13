@@ -69,18 +69,21 @@ func (b *DebianPackage) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebu
 
 // Debrebuild uses the upstream's generated buildinfo to perform a rebuild.
 type Debrebuild struct {
-	BuildInfo FileWithChecksum `json:"buildinfo" yaml:"buildinfo,omitempty"`
+	BuildInfo  FileWithChecksum `json:"buildinfo" yaml:"buildinfo,omitempty"`
+	UseNoCheck bool
 }
 
 func (b *Debrebuild) ToWorkflow() *rebuild.WorkflowStrategy {
-	return &rebuild.WorkflowStrategy{
-		Source: []flow.Step{{
-			Uses: "debian/fetch/buildinfo",
-			With: map[string]string{
-				"buildinfoUrl": b.BuildInfo.URL,
-				"buildinfoMd5": b.BuildInfo.MD5,
+	s := &rebuild.WorkflowStrategy{
+		Source: []flow.Step{
+			{
+				Uses: "debian/fetch/buildinfo",
+				With: map[string]string{
+					"buildinfoUrl": b.BuildInfo.URL,
+					"buildinfoMd5": b.BuildInfo.MD5,
+				},
 			},
-		}},
+		},
 		Deps: []flow.Step{
 			{
 				Uses: "debian/deps/install-debrebuild",
@@ -98,6 +101,16 @@ func (b *Debrebuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		},
 		OutputDir: "out",
 	}
+	// TODO: Maybe there should be a debrebuild minimal that aggressively narrows the TCB of a rebuild
+	if b.UseNoCheck {
+		s.Source = append(s.Source, flow.Step{
+			Uses: "debian/source/set-nocheck",
+			With: map[string]string{
+				"buildinfo": path.Base(b.BuildInfo.URL),
+			},
+		})
+	}
+	return s
 }
 
 // Generate generates the instructions for a Debrebuild
@@ -135,6 +148,20 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				wget {{.With.buildinfoUrl}}`)[1:],
 			Needs: []string{"wget"},
+		}},
+	},
+	{
+		Name: "debian/source/set-nocheck",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				BUILDINFO_FILE='{{ .With.buildinfo }}'
+				NEW_PROFILE_ENTRY='DEB_BUILD_PROFILES="nocheck"'
+				if grep -q "DEB_BUILD_PROFILES=" "$BUILDINFO_FILE"; then
+					sed -i '/^\(Environment:\|\s\+\)DEB_BUILD_PROFILES=/s/DEB_BUILD_PROFILES=.*$/'"$NEW_PROFILE_ENTRY"'/' "$BUILDINFO_FILE"
+				else
+					sed -i '/^Environment:/a \ '"$NEW_PROFILE_ENTRY"'' "$BUILDINFO_FILE"
+				fi
+				`)[1:],
 		}},
 	},
 	{
