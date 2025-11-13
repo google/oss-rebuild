@@ -184,6 +184,43 @@ debrebuild --buildresult=./out --builder=sbuild+unshare acl_2.3.2-2_amd64.buildi
 				},
 			},
 		},
+		{
+			name: "NoCheck",
+			strategy: Debrebuild{
+				BuildInfo: FileWithChecksum{
+					URL: "https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo",
+					MD5: "deadbeef",
+				},
+				UseNoCheck: true,
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.Debian,
+				Package:   "main/acl",
+				Version:   "2.3.1-3",
+				Artifact:  "acl_2.3.1-3_amd64.deb",
+			},
+			env: rebuild.BuildEnv{},
+			want: rebuild.Instructions{
+				Source: `wget https://buildinfos.debian.net/buildinfo-pool/a/acl/acl_2.3.2-2_amd64.buildinfo
+BUILDINFO_FILE='acl_2.3.2-2_amd64.buildinfo'
+NEW_PROFILE_ENTRY='DEB_BUILD_PROFILES="nocheck"'
+if grep -q "DEB_BUILD_PROFILES=" "$BUILDINFO_FILE"; then
+    sed -i '/^\(Environment:\|\s\+\)DEB_BUILD_PROFILES=/s/DEB_BUILD_PROFILES=.*$/'"$NEW_PROFILE_ENTRY"'/' "$BUILDINFO_FILE"
+else
+    sed -i '/^Environment:/a \ '"$NEW_PROFILE_ENTRY"'' "$BUILDINFO_FILE"
+fi`,
+				Deps: `apt -o Acquire::Check-Valid-Until=false update
+apt install -y devscripts mmdebstrap sbuild`,
+				Build: `echo "root:100000:65536" > /etc/subuid
+echo "root:100000:65536" > /etc/subgid
+debrebuild --buildresult=./out --builder=sbuild+unshare acl_2.3.2-2_amd64.buildinfo`,
+				OutputPath: "out/acl_2.3.1-3_amd64.deb",
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"wget"},
+					Privileged: true,
+				},
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
