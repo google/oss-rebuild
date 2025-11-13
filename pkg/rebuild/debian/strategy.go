@@ -4,8 +4,6 @@
 package debian
 
 import (
-	"encoding/base64"
-	"fmt"
 	"path"
 	"regexp"
 
@@ -85,13 +83,7 @@ func (b *Debrebuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		}},
 		Deps: []flow.Step{
 			{
-				Uses: "debian/deps/add-snapshot",
-			},
-			{
 				Uses: "debian/deps/install-debrebuild",
-			},
-			{
-				Uses: "debian/deps/patch-debrebuild",
 			},
 		},
 		Build: []flow.Step{{
@@ -146,22 +138,6 @@ var toolkit = []*flow.Tool{
 		}},
 	},
 	{
-		Name: "debian/deps/add-snapshot",
-		Steps: []flow.Step{{
-			Runs: fmt.Sprintf("echo %s | base64 -d > /etc/apt/sources.list.d/debian.sources", base64.StdEncoding.EncodeToString([]byte(`Types: deb
-URIs: http://snapshot.debian.org/archive/debian/20250305T000000Z
-Suites: testing testing-updates
-Components: main
-Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
-
-Types: deb
-URIs: http://snapshot.debian.org/archive/debian-security/20250305T000000Z
-Suites: testing-security
-Components: main
-Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`))),
-		}},
-	},
-	{
 		Name: "debian/deps/install",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
@@ -175,16 +151,7 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`))),
 			// TODO: pin these versions
 			Runs: textwrap.Dedent(`
 				apt -o Acquire::Check-Valid-Until=false update
-				apt install -y devscripts mmdebstrap apt-utils`)[1:],
-		}},
-	},
-	{
-		Name: "debian/deps/patch-debrebuild",
-		Steps: []flow.Step{{
-			Runs: fmt.Sprintf(`echo %s | base64 -d | patch /usr/bin/debrebuild`, base64.StdEncoding.EncodeToString([]byte(`@@ -725,2 +725,3 @@
-         ),
-+        '--customize-hook=sleep 10',
-         '--customize-hook=chroot "$1" sh -c "'`))),
+				apt install -y devscripts mmdebstrap sbuild`[1:]),
 		}},
 	},
 	{
@@ -217,7 +184,15 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg`))),
 		Name: "debian/build/debrebuild",
 		Steps: []flow.Step{
 			{
-				Runs: "debrebuild --buildresult=./out --builder=mmdebstrap {{ .With.buildinfo }}",
+				// The subuid and subgid mappings are needed for unshare to create a new namespace for the build.
+				// This setup assumes:
+				//	1. You're running the build as root
+				//  2. This mapping doesn't yet exist
+				// Both those things are true when executing in a standard debian container, but might not be true in other environments.
+				Runs: textwrap.Dedent(`
+				echo "root:100000:65536" > /etc/subuid
+				echo "root:100000:65536" > /etc/subgid
+				debrebuild --buildresult=./out --builder=sbuild+unshare {{ .With.buildinfo }}`[1:]),
 			},
 		},
 	},
