@@ -180,6 +180,7 @@ echo QEAgLTcyNSwyICs3MjUsMyBAQAogICAgICAgICApLAorICAgICAgICAnLS1jdXN0b21pemUtaG9
 				OutputPath: "out/acl_2.3.1-3_amd64.deb",
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"wget"},
+					Privileged: true,
 				},
 			},
 		},

@@ -9,4 +9,6 @@ type DockerBuildPlan struct {
 	Dockerfile string
 	// OutputPath specifies where artifacts should be copied from the container
 	OutputPath string
+	// Indicates whether to run the container in privileged mode
+	Privileged bool
 }

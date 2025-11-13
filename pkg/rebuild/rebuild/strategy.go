@@ -22,6 +22,8 @@ type Location struct {
 // RequiredEnv describes any required properties about the build environment
 type RequiredEnv struct {
 	SystemDeps []string `json:"system_deps" yaml:"system_deps,omitempty"`
+	// Privileged is true if this build definition requires elevated privileges
+	Privileged bool `json:"privileged,omitempty" yaml:"privileged,omitempty"`
 }
 
 // Instructions represents the source, dependencies, and build steps to execute a rebuild.

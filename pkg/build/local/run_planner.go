@@ -86,6 +86,7 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 		WorkingDir:   "/workspace",
 		OutputPath:   "/out/rebuild",
 		RequiresAuth: requiresAuth,
+		Privileged:   instructions.Requires.Privileged,
 	}, nil
 }
 

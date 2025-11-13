@@ -15,4 +15,6 @@ type DockerRunPlan struct {
 	OutputPath string
 	// RequiresAuth indicates whether the plan requires authentication
 	RequiresAuth bool
+	// Indicates whether to run the container in privileged mode
+	Privileged bool
 }

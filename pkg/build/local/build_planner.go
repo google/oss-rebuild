@@ -101,6 +101,7 @@ func (p *DockerBuildPlanner) GeneratePlan(ctx context.Context, input rebuild.Inp
 	return &DockerBuildPlan{
 		Dockerfile: dockerfile,
 		OutputPath: path.Join("/out", path.Base(instructions.OutputPath)),
+		Privileged: instructions.Requires.Privileged,
 	}, nil
 }
 

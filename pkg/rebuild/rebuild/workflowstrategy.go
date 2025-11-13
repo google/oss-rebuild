@@ -77,6 +77,7 @@ func (s *WorkflowStrategy) GenerateFor(t Target, be BuildEnv) (Instructions, err
 		Build:    build.Script,
 		Requires: RequiredEnv{
 			SystemDeps: finalDeps,
+			Privileged: s.Requires.Privileged,
 		},
 		OutputPath: outputPath,
 	}, nil
