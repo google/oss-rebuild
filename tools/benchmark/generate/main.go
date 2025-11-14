@@ -150,7 +150,7 @@ var debianTop500 = RebuildBenchmark{
 		var (
 			// The "all" arch is included in other arch indices.
 			archs         = []string{"amd64"}
-			popularityURL = "https://popcon.debian.org/by_inst"
+			popularityURL = "https://popcon.debian.org/stable/by_inst"
 			repositoryURL = "https://deb.debian.org/debian"
 		)
 		resp, err := get(ctx, popularityURL)
