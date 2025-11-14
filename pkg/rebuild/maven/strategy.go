@@ -4,6 +4,7 @@
 package maven
 
 import (
+	"fmt"
 	"path"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
+	"golang.org/x/mod/semver"
 )
 
 type MavenBuild struct {
@@ -44,22 +46,32 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 			Uses: "maven/regen-cacerts",
 		})
 	}
+	build := []flow.Step{{
+		// Note `maven` from apt also pull in jdk-21 and hence we must export JAVA_HOME and PATH in the step before
+		Uses: "maven/export-java",
+	}}
+	extraArgs := []string{"-Dmaven.javadoc.skip=true"}
+	// Semver package needs a prefix `v` to parse correctly.
+	// Reference: https://pkg.go.dev/golang.org/x/mod/semver
+	if semver.Compare(fmt.Sprintf("v%s", b.JDKVersion), "v11") >= 0 && semver.Compare(fmt.Sprintf("v%s", b.JDKVersion), "v11.0.2") <= 0 {
+		// For these JDK versions, the implementation of TLS 1.3 is broken as JDK does not send server name indication (SNI) when resuming TLS session.
+		// Enforcing TLS 1.2 works around the issue.
+		// Reference: https://bugs.openjdk.org/browse/JDK-8211806
+		extraArgs = append(extraArgs, "-Djdk.tls.client.protocols=\"TLSv1.2\"")
+	}
+	build = append(build, flow.Step{
+		Uses: "maven/mvn-build",
+		With: map[string]string{
+			"extraArgs": strings.Join(extraArgs, " "),
+		},
+	})
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Source: []flow.Step{{
 			Uses: "git-checkout",
 		}},
-		Deps: deps,
-		Build: []flow.Step{
-			{
-				Uses: "maven/export-java",
-			},
-			{
-				Runs: "mvn clean package -DskipTests --batch-mode -f {{.Location.Dir}} -Dmaven.javadoc.skip=true",
-				// Note `maven` from apt also pull in jdk-21 and hence we must export JAVA_HOME and PATH in the step before
-				Needs: []string{"maven"},
-			},
-		},
+		Deps:      deps,
+		Build:     build,
 		OutputDir: path.Join(b.Dir, "target"),
 	}, nil
 }
@@ -106,16 +118,31 @@ func (b *GradleBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	build := []flow.Step{{
 		Uses: "maven/export-java",
 	}}
+	extraArgs := []string{}
+	// Semver package needs a prefix `v` to parse correctly.
+	// Reference: https://pkg.go.dev/golang.org/x/mod/semver
+	if semver.Compare(fmt.Sprintf("v%s", b.JDKVersion), "v11") >= 0 && semver.Compare(fmt.Sprintf("v%s", b.JDKVersion), "v11.0.2") <= 0 {
+		// For these JDK versions, the implementation of TLS 1.3 is broken as JDK does not send server name indication (SNI) when resuming TLS session.
+		// Enforcing TLS 1.2 works around the issue.
+		// Reference: https://bugs.openjdk.org/browse/JDK-8211806
+		extraArgs = append(extraArgs, "-Djdk.tls.client.protocols=\"TLSv1.2\"")
+	}
 	if b.SystemGradle != "" {
 		build = append(build, flow.Step{
 			Uses: "maven/export-gradle",
 		})
 		build = append(build, flow.Step{
 			Uses: "maven/gradle-build",
+			With: map[string]string{
+				"extraArgs": strings.Join(extraArgs, " "),
+			},
 		})
 	} else {
 		build = append(build, flow.Step{
 			Uses: "maven/gradlew-build",
+			With: map[string]string{
+				"extraArgs": strings.Join(extraArgs, " "),
+			},
 		})
 	}
 	return &rebuild.WorkflowStrategy{
@@ -194,10 +221,19 @@ var toolkit = []*flow.Tool{
 		},
 	},
 	{
+		Name: "maven/mvn-build",
+		Steps: []flow.Step{
+			{
+				Runs:  "mvn clean package -DskipTests --batch-mode -f {{.Location.Dir}}{{if .With.extraArgs}} {{.With.extraArgs}}{{end}}",
+				Needs: []string{"maven"},
+			},
+		},
+	},
+	{
 		Name: "maven/gradlew-build",
 		Steps: []flow.Step{
 			{
-				Runs: "./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
+				Runs: "./gradlew assemble --no-daemon --console=plain -Pversion={{.Target.Version}}{{if .With.extraArgs}} {{.With.extraArgs}}{{end}}",
 			},
 		},
 	},
@@ -205,7 +241,7 @@ var toolkit = []*flow.Tool{
 		Name: "maven/gradle-build",
 		Steps: []flow.Step{
 			{
-				Runs: "gradle assemble --no-daemon --console=plain -Pversion={{.Target.Version}}",
+				Runs: "gradle assemble --no-daemon --console=plain -Pversion={{.Target.Version}}{{if .With.extraArgs}} {{.With.extraArgs}}{{end}}",
 			},
 		},
 	},
