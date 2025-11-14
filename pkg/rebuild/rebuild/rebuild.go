@@ -23,7 +23,6 @@ type Rebuilder interface {
 	InferRepo(context.Context, Target, RegistryMux) (string, error)
 	CloneRepo(context.Context, Target, string, *gitx.RepositoryOptions) (RepoConfig, error)
 	InferStrategy(context.Context, Target, RegistryMux, *RepoConfig, Strategy) (Strategy, error)
-	Compare(context.Context, Target, Asset, Asset, AssetStore, Instructions) (error, error)
 	UsesTimewarp(Input) bool
 	UpstreamURL(context.Context, Target, RegistryMux) (string, error)
 }
