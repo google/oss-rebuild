@@ -9,7 +9,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/pkg/errors"
 )
@@ -34,43 +33,6 @@ func UpstreamArtifactReader(ctx context.Context, t Target, mux RegistryMux) (io.
 	default:
 		return nil, errors.New("unsupported ecosystem")
 	}
-}
-
-// Stabilize the upstream and rebuilt artifacts.
-func Stabilize(ctx context.Context, t Target, mux RegistryMux, rbPath string, fs billy.Filesystem, assets AssetStore) (rb, up Asset, err error) {
-	{ // Stabilize rebuild
-		rb = DebugRebuildAsset.For(t)
-		w, err := assets.Writer(ctx, rb)
-		if err != nil {
-			return rb, up, errors.Errorf("[INTERNAL] failed to store asset %v", rb)
-		}
-		defer w.Close()
-		f, err := fs.Open(rbPath)
-		if err != nil {
-			return rb, up, errors.Wrapf(err, "[INTERNAL] Failed to find rebuilt artifact")
-		}
-		defer f.Close()
-		if err := archive.Stabilize(w, f, t.ArchiveType()); err != nil {
-			return rb, up, errors.Wrapf(err, "[INTERNAL] Stabilize rebuild failed")
-		}
-	}
-	{ // Stabilize upstream
-		up = DebugUpstreamAsset.For(t)
-		w, err := assets.Writer(ctx, up)
-		if err != nil {
-			return rb, up, errors.Errorf("[INTERNAL] failed to store asset %v", up)
-		}
-		defer w.Close()
-		r, err := UpstreamArtifactReader(ctx, t, mux)
-		if err != nil {
-			return rb, up, errors.Wrapf(err, "[INTERNAL] Failed to fetch upstream artifact")
-		}
-		defer r.Close()
-		if err := archive.Stabilize(w, r, t.ArchiveType()); err != nil {
-			return rb, up, errors.Wrapf(err, "[INTERNAL] Stabilize upstream failed")
-		}
-	}
-	return rb, up, nil
 }
 
 // Summarize constructs ContentSummary objects for the upstream and rebuilt artifacts.

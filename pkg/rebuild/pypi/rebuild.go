@@ -87,27 +87,6 @@ func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.A
 	return verdict, nil
 }
 
-// RebuildMany executes rebuilds for each provided rebuild.Input returning their rebuild.Verdicts.
-func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {
-	if len(inputs) == 0 {
-		return nil, errors.New("no inputs provided")
-	}
-	project, err := mux.PyPI.Project(ctx, inputs[0].Target.Package)
-	if err != nil {
-		return nil, err
-	}
-	// We currently only support none-any wheels. In the future we can add support for different types
-	// of artifacts.
-	for i := range inputs {
-		a, err := FindPureWheel(project.Releases[inputs[i].Target.Version])
-		if err != nil {
-			return nil, errors.Errorf("%s does not have a none-any wheel", inputs[i].Target.Version)
-		}
-		inputs[i].Target.Artifact = a.Filename
-	}
-	return rebuild.RebuildMany(ctx, Rebuilder{}, inputs, mux)
-}
-
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return true
 }

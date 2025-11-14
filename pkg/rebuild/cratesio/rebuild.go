@@ -163,14 +163,6 @@ func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.A
 	}
 }
 
-// RebuildMany executes rebuilds for each provided rebuild.Input returning their rebuild.Verdicts.
-func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {
-	for i := range inputs {
-		inputs[i].Target.Artifact = ArtifactName(inputs[i].Target)
-	}
-	return rebuild.RebuildMany(ctx, Rebuilder{}, inputs, mux)
-}
-
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return true
 }
