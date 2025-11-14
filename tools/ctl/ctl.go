@@ -450,8 +450,7 @@ var export = &cobra.Command{
 				}
 			}
 			for _, at := range assetTypes {
-				// NOTE: We hardcode wasSmoketest=false, because in.WasSmoketest() incorrectly returns true if the attempt failed during rebuild, resulting in an empty ObliviousID
-				if _, err := butler.Fetch(ctx, runID, false, at.For(in.Target())); err != nil {
+				if _, err := butler.Fetch(ctx, runID, at.For(in.Target())); err != nil {
 					res.errs = append(res.errs, errors.Wrapf(err, "fetching %s", at))
 				}
 			}

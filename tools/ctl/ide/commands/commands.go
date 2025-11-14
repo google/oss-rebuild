@@ -218,7 +218,7 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 					log.Println("Rundex does not have the artifact, cannot find GCS path.")
 					return
 				}
-				logs, err := butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugLogsAsset.For(example.Target()))
+				logs, err := butler.Fetch(ctx, example.RunID, rebuild.DebugLogsAsset.For(example.Target()))
 				if err != nil {
 					log.Println(errors.Wrap(err, "downloading logs"))
 					return
@@ -232,7 +232,7 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 			Hotkey: 'd',
 			Short:  "diff",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
-				path, err := butler.Fetch(ctx, example.RunID, example.WasSmoketest(), diffoscope.DiffAsset.For(example.Target()))
+				path, err := butler.Fetch(ctx, example.RunID, diffoscope.DiffAsset.For(example.Target()))
 				if err != nil {
 					log.Println(errors.Wrap(err, "fetching diff"))
 					return
@@ -249,11 +249,11 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 				// Generate the path exclusion stabilizers.
 				var customStabs []archive.CustomStabilizerEntry
 				{
-					if _, err := butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.DebugUpstreamAsset.For(example.Target())); err != nil {
+					if _, err := butler.Fetch(ctx, example.RunID, rebuild.DebugUpstreamAsset.For(example.Target())); err != nil {
 						log.Println(errors.Wrap(err, "downloading upstream"))
 						return
 					}
-					if _, err := butler.Fetch(ctx, example.RunID, example.WasSmoketest(), rebuild.RebuildAsset.For(example.Target())); err != nil {
+					if _, err := butler.Fetch(ctx, example.RunID, rebuild.RebuildAsset.For(example.Target())); err != nil {
 						log.Println(errors.Wrap(err, "downloading rebuild"))
 						return
 					}
@@ -469,7 +469,7 @@ func NewRebuildGroupCmds(app *tview.Application, executor build.Executor, prebui
 				}
 				p := pipe.FromSlice(rebuilds)
 				p = p.ParDo(RundexReadParallelism, func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
-					_, err := butler.Fetch(context.Background(), in.RunID, in.WasSmoketest(), rebuild.DebugLogsAsset.For(in.Target()))
+					_, err := butler.Fetch(context.Background(), in.RunID, rebuild.DebugLogsAsset.For(in.Target()))
 					if err != nil {
 						log.Println(errors.Wrap(err, "downloading logs"))
 						return
@@ -530,7 +530,7 @@ func NewRebuildGroupCmds(app *tview.Application, executor build.Executor, prebui
 					config = llm.WithSystemPrompt(config, systemPrompt...)
 				}
 				p1 := pipe.FromSlice(rebuilds).ParDo(RundexReadParallelism, func(in rundex.Rebuild, out chan<- rundex.Rebuild) {
-					_, err := butler.Fetch(context.Background(), in.RunID, in.WasSmoketest(), rebuild.DebugLogsAsset.For(in.Target()))
+					_, err := butler.Fetch(context.Background(), in.RunID, rebuild.DebugLogsAsset.For(in.Target()))
 					if err != nil {
 						log.Println(errors.Wrap(err, "downloading logs"))
 						return
@@ -570,7 +570,7 @@ func NewRebuildGroupCmds(app *tview.Application, executor build.Executor, prebui
 						{Text: logs},
 					}
 					if strings.Contains(in.Message, "content mismatch") {
-						diffPath, err := butler.Fetch(ctx, in.RunID, in.WasSmoketest(), diffoscope.DiffAsset.For(in.Target()))
+						diffPath, err := butler.Fetch(ctx, in.RunID, diffoscope.DiffAsset.For(in.Target()))
 						if err != nil {
 							log.Println(errors.Wrap(err, "fetching diff"))
 						} else {
