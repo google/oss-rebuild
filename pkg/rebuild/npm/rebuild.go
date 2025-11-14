@@ -10,11 +10,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
-	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -72,41 +70,6 @@ func makeUsrLocalCleanup() func() {
 type Rebuilder struct{}
 
 var _ rebuild.Rebuilder = Rebuilder{}
-
-var nodeFetchPat = regexp.MustCompile(`Connecting to unofficial-builds.nodejs.org [^\n]*?\nwget: server returned error: HTTP/1.1 404 Not Found`)
-
-func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Instructions, fs billy.Filesystem) error {
-	defer makeUsrLocalCleanup()()
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Source); err != nil {
-		return errors.Wrap(err, "failed to execute strategy.Source")
-	}
-	if output, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Deps); err != nil {
-		switch {
-		case nodeFetchPat.FindString(output) != "":
-			return errors.Errorf("node version not found")
-		default:
-			return errors.Wrap(err, "failed to execute strategy.Deps")
-		}
-	}
-	if output, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Build); err != nil {
-		// Build failed. Let's try to figure out why.
-		switch {
-		case strings.Contains(output, "primordials is not defined"):
-			// TODO: Recovery is to use Node <11.15
-			return errors.Errorf("primordials error")
-		case strings.Contains(output, "cb.apply is not a function"):
-			return errors.Errorf("cb.apply error")
-		case strings.Contains(output, ": command not found"):
-			endIdx := strings.Index(output, ": command not found")
-			startIdx := strings.LastIndex(output[:endIdx], ": ")
-			return errors.Errorf("pack command not found: %s", output[startIdx+2:endIdx])
-		// TODO: Classify with newly-observed cases.
-		default:
-			return errors.Wrapf(err, "unknown npm pack failure:\n%s", output)
-		}
-	}
-	return nil
-}
 
 var (
 	verdictMissingDist        = errors.New("dist/ file(s) found in upstream but not rebuild")

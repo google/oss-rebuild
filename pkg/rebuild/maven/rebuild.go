@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 
-	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -18,19 +17,6 @@ var _ rebuild.Rebuilder = Rebuilder{}
 
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return false
-}
-
-func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Instructions, fs billy.Filesystem) error {
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Source); err != nil {
-		return errors.Wrap(err, "fetching source")
-	}
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Deps); err != nil {
-		return errors.Wrap(err, "configuring build deps")
-	}
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Build); err != nil {
-		return errors.Wrap(err, "executing build")
-	}
-	return nil
 }
 
 func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb rebuild.Asset, up rebuild.Asset, assets rebuild.AssetStore, inst rebuild.Instructions) (msg error, err error) {
