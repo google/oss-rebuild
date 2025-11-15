@@ -180,7 +180,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 				Project:        "test-project",
 				ServiceAccount: "test@test.iam.gserviceaccount.com",
 			}
-			instructions, _ := tc.input.Strategy.GenerateFor(tc.input.Target, rebuild.BuildEnv{PreferPreciseToolchain: true, TimewarpHost: "localhost:8080"})
+			instructions, _ := tc.input.Strategy.GenerateFor(tc.input.Target, rebuild.BuildEnv{TimewarpHost: "localhost:8080"})
 			planner := NewPlanner(config)
 			result, err := planner.generateDockerfile(instructions, tc.input, tc.opts)
 

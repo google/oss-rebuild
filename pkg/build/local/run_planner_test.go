@@ -45,7 +45,6 @@ func TestDockerRunPlanner(t *testing.T) {
 				},
 			},
 			opts: build.PlanOptions{
-				PreferPreciseToolchain: true,
 				Resources: build.Resources{
 					BaseImageConfig: build.BaseImageConfig{
 						Default: "alpine:3.19",
@@ -88,8 +87,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				},
 			},
 			opts: build.PlanOptions{
-				UseTimewarp:            true,
-				PreferPreciseToolchain: true,
+				UseTimewarp: true,
 				Resources: build.Resources{
 					BaseImageConfig: build.BaseImageConfig{
 						Default: "alpine:3.19",

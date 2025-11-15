@@ -185,7 +185,6 @@ func parseFlags() (*config, error) {
 
 	// Build environment flags
 	flag.StringVar(&cfg.buildEnv.TimewarpHost, "timewarp-host", "", "Timewarp host address")
-	flag.BoolVar(&cfg.buildEnv.PreferPreciseToolchain, "precise-toolchain", false, "Prefer precise toolchain")
 	flag.BoolVar(&cfg.buildEnv.HasRepo, "has-repo", false, "Whether the build environment has repository access")
 
 	// Tool paths

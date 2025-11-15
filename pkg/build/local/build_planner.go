@@ -86,9 +86,8 @@ func NewDockerBuildPlanner() *DockerBuildPlanner {
 // GeneratePlan implements Planner[*DockerBuildPlan]
 func (p *DockerBuildPlanner) GeneratePlan(ctx context.Context, input rebuild.Input, opts build.PlanOptions) (*DockerBuildPlan, error) {
 	buildEnv := rebuild.BuildEnv{
-		TimewarpHost:           "localhost:8080",
-		HasRepo:                false,
-		PreferPreciseToolchain: opts.PreferPreciseToolchain,
+		TimewarpHost: "localhost:8080",
+		HasRepo:      false,
 	}
 	instructions, err := input.Strategy.GenerateFor(input.Target, buildEnv)
 	if err != nil {

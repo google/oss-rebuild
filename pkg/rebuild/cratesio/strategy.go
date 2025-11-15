@@ -48,8 +48,7 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 			{
 				Uses: "cargo/deps/toolchain",
 				With: map[string]string{
-					"rustVersion":            b.RustVersion,
-					"preferPreciseToolchain": "{{.BuildEnv.PreferPreciseToolchain}}",
+					"rustVersion": b.RustVersion,
 				},
 			},
 			{
@@ -64,11 +63,10 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "cargo/build/package",
 			With: map[string]string{
-				"dir":                    b.Location.Dir,
-				"rustVersion":            b.RustVersion,
-				"registryCommit":         b.RegistryCommit,
-				"preferPreciseToolchain": "{{.BuildEnv.PreferPreciseToolchain}}",
-				"useGitIndex":            fmt.Sprintf("%t", len(b.PackageNames) > 0),
+				"dir":            b.Location.Dir,
+				"rustVersion":    b.RustVersion,
+				"registryCommit": b.RegistryCommit,
+				"useGitIndex":    fmt.Sprintf("%t", len(b.PackageNames) > 0),
 			},
 		}},
 		OutputDir: "target/package",
@@ -100,14 +98,8 @@ var toolkit = []*flow.Tool{
 	{
 		Name: "cargo/deps/toolchain",
 		Steps: []flow.Step{{
-			// Unless PreferPreciseToolchain is specified, we ignore the exact
-			// toolchain version and rely on one that's ambiently installed. This is
-			// to avoid using a version that predates sparse index support (>=1.68.0)
-			// which requires a full index fetch (~700MB, many minutes of latency).
 			Runs: textwrap.Dedent(`
-				{{if eq .With.preferPreciseToolchain "true" -}}
-				/usr/bin/rustup-init -y --profile minimal --default-toolchain {{.With.rustVersion}}
-				{{- end -}}`)[1:],
+				/usr/bin/rustup-init -y --profile minimal --default-toolchain {{.With.rustVersion}}`)[1:],
 			Needs: []string{"rustup"},
 		}},
 	},

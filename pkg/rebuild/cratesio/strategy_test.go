@@ -33,8 +33,9 @@ func TestCratesIOCargoPackage(t *testing.T) {
 			rebuild.Instructions{
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
-				Deps:     "# NOTE: Using current crates.io registry",
-				Build:    `(cd the_dir && /root/.cargo/bin/cargo package --no-verify)`,
+				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
+# NOTE: Using current crates.io registry`,
+				Build: `(cd the_dir && /root/.cargo/bin/cargo package --no-verify)`,
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "rustup"},
 				},
@@ -57,8 +58,9 @@ func TestCratesIOCargoPackage(t *testing.T) {
 					Repo: "the_repo",
 				},
 				Source: "git checkout --force 'the_ref'",
-				Deps:   "# NOTE: Using current crates.io registry",
-				Build:  `/root/.cargo/bin/cargo package --no-verify`,
+				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
+# NOTE: Using current crates.io registry`,
+				Build: `/root/.cargo/bin/cargo package --no-verify`,
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "rustup"},
 				},
@@ -82,7 +84,8 @@ func TestCratesIOCargoPackage(t *testing.T) {
 					Repo: "the_repo",
 				},
 				Source: "git checkout --force 'the_ref'",
-				Deps: `mkdir -p /.cargo
+				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
+mkdir -p /.cargo
 printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "sparse+http://cargosparse:abc1234@localhost:8081/"\n' > /.cargo/config.toml`,
 				Build: `/root/.cargo/bin/cargo package --no-verify`,
 				Requires: rebuild.RequiredEnv{
@@ -105,6 +108,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `echo 'lock_base64' | base64 -d > Cargo.lock
+/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
 # NOTE: Using current crates.io registry`,
 				Build: `(cd the_dir && /root/.cargo/bin/cargo package --no-verify)`,
 				Requires: rebuild.RequiredEnv{
@@ -123,7 +127,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 				},
 				RustVersion: "1.77.0",
 			},
-			rebuild.BuildEnv{HasRepo: true, PreferPreciseToolchain: true},
+			rebuild.BuildEnv{HasRepo: true},
 			rebuild.Instructions{
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
@@ -145,7 +149,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 					LockfileBase64: "lock_base64",
 				},
 			},
-			rebuild.BuildEnv{HasRepo: true, PreferPreciseToolchain: true},
+			rebuild.BuildEnv{HasRepo: true},
 			rebuild.Instructions{
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
@@ -165,7 +169,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 				Location:    defaultLocation,
 				RustVersion: "1.55.0",
 			},
-			rebuild.BuildEnv{HasRepo: true, PreferPreciseToolchain: true},
+			rebuild.BuildEnv{HasRepo: true},
 			rebuild.Instructions{
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
@@ -190,7 +194,8 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 			rebuild.Instructions{
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
-				Deps: `mkdir -p /cargo-index
+				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.55.0
+mkdir -p /cargo-index
 wget -O - --header "X-Package-Names: serde,tokio" "http://cargogitarchive:abc1234@localhost:8081/index.git.tar" | tar -xf - -C /cargo-index
 mkdir -p /.cargo
 printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/config.toml`,
@@ -212,7 +217,8 @@ printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-lo
 			rebuild.Instructions{
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
-				Deps: `mkdir -p /.cargo
+				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
+mkdir -p /.cargo
 printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "sparse+http://cargosparse:abc1234@localhost:8081/"\n' > /.cargo/config.toml`,
 				Build: `(cd the_dir && /root/.cargo/bin/cargo package --no-verify)`,
 				Requires: rebuild.RequiredEnv{
