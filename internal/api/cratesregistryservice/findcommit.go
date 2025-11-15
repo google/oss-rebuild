@@ -124,7 +124,7 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 		repos = append(repos, handle.Repository)
 	}
 	// Find the registry resolution
-	resolution, err := index.FindRegistryResolution(repos, packages, publishedTime)
+	resolution, err := index.FindRegistryResolution(repos, packages, publishedTime, nil)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to find registry resolution"))
 	}

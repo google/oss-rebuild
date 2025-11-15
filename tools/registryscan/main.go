@@ -185,7 +185,9 @@ func findRegistryResolution(ctx context.Context, manager *index.IndexManager, pa
 	if len(repos) == 0 {
 		return nil, fmt.Errorf("no repositories available for search")
 	}
-	return index.FindRegistryResolution(repos, packages, published)
+	return index.FindRegistryResolution(repos, packages, published, &index.FindConfig{
+		VerboseLogging: true,
+	})
 }
 
 func downloadCargoLockWithDate(ctx context.Context, packageSpec string) (string, time.Time, error) {

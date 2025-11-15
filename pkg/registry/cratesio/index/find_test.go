@@ -211,7 +211,7 @@ func TestFindRegistryResolution(t *testing.T) {
 				repos = append(repos, repo)
 				indices = append(indices, repo.Repository)
 			}
-			got, err := FindRegistryResolution(indices, tt.packages, tt.cratePublished)
+			got, err := FindRegistryResolution(indices, tt.packages, tt.cratePublished, nil)
 			if err != nil || tt.wantErr {
 				if err != nil != tt.wantErr {
 					t.Errorf("FindRegistryResolution() want error = %t, error = %v", tt.wantErr, err)
