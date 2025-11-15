@@ -90,6 +90,11 @@ variable "enable_network_analyzer" {
   description = "Whether to deploy the network analyzer service"
   default     = false
 }
+variable "enable_system_analyzer" {
+  type        = bool
+  description = "Whether to deploy the system analyzer service"
+  default     = false
+}
 variable "enable_private_build_pool" {
   type        = bool
   description = "Whether to create and use a private Cloud Build worker pool for rebuilds"
@@ -171,6 +176,16 @@ resource "google_service_account" "network-analyzer-build" {
   count       = var.enable_network_analyzer ? 1 : 0
   account_id  = "network-analyzer-build"
   description = "Build identity for the network analyzer"
+}
+resource "google_service_account" "system-analyzer" {
+  count       = var.enable_system_analyzer ? 1 : 0
+  account_id  = "system-analyzer"
+  description = "Primary API identity for the system analyzer"
+}
+resource "google_service_account" "system-analyzer-build" {
+  count       = var.enable_system_analyzer ? 1 : 0
+  account_id  = "system-analyzer-build"
+  description = "Build identity for the system analyzer"
 }
 data "google_storage_project_service_account" "attestation-pubsub-publisher" {
 }
@@ -255,6 +270,14 @@ resource "google_storage_bucket" "bootstrap-tools" {
 resource "google_storage_bucket" "network-analyzer-attestations" {
   count                       = var.enable_network_analyzer ? 1 : 0
   name                        = "${var.host}-network-analyzer-attestations"
+  location                    = "us-central1"
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  depends_on                  = [google_project_service.storage]
+}
+resource "google_storage_bucket" "system-analyzer-attestations" {
+  count                       = var.enable_system_analyzer ? 1 : 0
+  name                        = "${var.host}-system-analyzer-attestations"
   location                    = "us-central1"
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
@@ -349,6 +372,23 @@ resource "google_cloud_tasks_queue" "network-analyzer-queue" {
   depends_on = [google_project_service.cloudtasks]
 }
 
+resource "google_cloud_tasks_queue" "system-analyzer-queue" {
+  count    = var.enable_system_analyzer ? 1 : 0
+  name     = "system-analyzer-queue"
+  location = "us-central1"
+  rate_limits {
+    max_concurrent_dispatches = 50
+    max_dispatches_per_second = 5
+  }
+  retry_config {
+    max_attempts       = 1
+    min_backoff        = "10s"
+    max_backoff        = "300s"
+    max_retry_duration = "600s"
+  }
+  depends_on = [google_project_service.cloudtasks]
+}
+
 resource "google_pubsub_subscription" "network-analyzer-feed" {
   count = var.enable_network_analyzer ? 1 : 0
   name  = "network-analyzer-feed"
@@ -360,6 +400,23 @@ resource "google_pubsub_subscription" "network-analyzer-feed" {
     }
     oidc_token {
       service_account_email = google_service_account.network-analyzer[0].email
+    }
+  }
+  message_retention_duration = "${7 * 24 * 60 * 60}s" # 7 days
+  ack_deadline_seconds       = 600
+}
+
+resource "google_pubsub_subscription" "system-analyzer-feed" {
+  count = var.enable_system_analyzer ? 1 : 0
+  name  = "system-analyzer-feed"
+  topic = google_pubsub_topic.attestation-topic.id
+  push_config {
+    push_endpoint = "${google_cloud_run_v2_service.system-subscriber[0].uri}/enqueue"
+    no_wrapper {
+      write_metadata = false
+    }
+    oidc_token {
+      service_account_email = google_service_account.system-analyzer[0].email
     }
   }
   message_retention_duration = "${7 * 24 * 60 * 60}s" # 7 days
@@ -439,6 +496,19 @@ locals {
     }
     network-subscriber = {
       dockerfile = "build/package/Dockerfile.networksubscriber"
+      build_args = ["DEBUG=${terraform_data.debug.output}"]
+    }
+  } : {}, var.enable_system_analyzer ? {
+    system-analyzer = {
+      dockerfile = "build/package/Dockerfile.systemanalyzer"
+      build_args = [
+        "DEBUG=${terraform_data.debug.output}",
+        "BUILD_REPO=${var.repo}",
+        "BUILD_VERSION=${terraform_data.service_version.output}"
+      ]
+    }
+    system-subscriber = {
+      dockerfile = "build/package/Dockerfile.systemsubscriber"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
     }
   } : {})
@@ -561,6 +631,22 @@ data "google_artifact_registry_docker_image" "network-subscriber" {
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "network-subscriber:${module.service_images["network-subscriber"].image_version}"
   depends_on    = [module.service_images["network-subscriber"]]
+}
+
+data "google_artifact_registry_docker_image" "system-analyzer" {
+  count         = var.enable_system_analyzer ? 1 : 0
+  location      = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name    = "system-analyzer:${module.service_images["system-analyzer"].image_version}"
+  depends_on    = [module.service_images["system-analyzer"]]
+}
+
+data "google_artifact_registry_docker_image" "system-subscriber" {
+  count         = var.enable_system_analyzer ? 1 : 0
+  location      = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name    = "system-subscriber:${module.service_images["system-subscriber"].image_version}"
+  depends_on    = [module.service_images["system-subscriber"]]
 }
 
 ## Network resources
@@ -880,6 +966,66 @@ resource "google_cloud_run_v2_service" "network-subscriber" {
   }
   depends_on = [google_project_service.run]
 }
+resource "google_cloud_run_v2_service" "system-analyzer" {
+  count    = var.enable_system_analyzer ? 1 : 0
+  name     = "system-analyzer"
+  location = "us-central1"
+  template {
+    service_account = google_service_account.system-analyzer[0].email
+    timeout         = "${59 * 60}s" // 59 minutes
+    containers {
+      image = data.google_artifact_registry_docker_image.system-analyzer[0].self_link
+      args = concat([
+        "--project=${var.project}",
+        "--analysis-bucket=${google_storage_bucket.system-analyzer-attestations[0].name}",
+        "--build-remote-identity=${google_service_account.system-analyzer-build[0].name}",
+        "--logs-bucket=${google_storage_bucket.logs.name}",
+        "--metadata-bucket=${google_storage_bucket.metadata.name}",
+        "--attestation-bucket=${google_storage_bucket.attestations.name}",
+        "--debug-storage=gs://${google_storage_bucket.debug.name}",
+        "--signing-key-version=${data.google_kms_crypto_key_version.signing-key-version.name}",
+        "--verifying-key-version=${data.google_kms_crypto_key_version.signing-key-version.name}",
+        "--overwrite-attestations=false",
+        ], var.enable_private_build_pool ? [
+        "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
+        "--gcb-private-pool-region=us-central1",
+      ] : [])
+      resources {
+        limits = {
+          cpu    = "1000m"
+          memory = "2G"
+        }
+      }
+    }
+    scaling { max_instance_count = 10 }
+  }
+  depends_on = [google_project_service.run]
+}
+resource "google_cloud_run_v2_service" "system-subscriber" {
+  count    = var.enable_system_analyzer ? 1 : 0
+  name     = "system-subscriber"
+  location = "us-central1"
+  template {
+    service_account = google_service_account.system-analyzer[0].email
+    timeout         = "${2 * 60}s" // 2 minutes
+    containers {
+      image = data.google_artifact_registry_docker_image.system-subscriber[0].self_link
+      args = [
+        "--analyzer-url=${google_cloud_run_v2_service.system-analyzer[0].uri}",
+        "--task-queue=${google_cloud_tasks_queue.system-analyzer-queue[0].id}",
+        "--task-queue-email=${google_service_account.system-analyzer[0].email}",
+      ]
+      resources {
+        limits = {
+          cpu    = "1000m"
+          memory = "512Mi"
+        }
+      }
+    }
+    scaling { max_instance_count = 1 }
+  }
+  depends_on = [google_project_service.run]
+}
 resource "google_cloud_run_v2_service" "agent-api" {
   name     = "agent-api"
   location = "us-central1"
@@ -971,6 +1117,8 @@ resource "google_storage_bucket_iam_binding" "attestors-manage-metadata" {
     "serviceAccount:${google_service_account.orchestrator.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer[0].email}",
   ] : [])
 }
 resource "google_storage_bucket_iam_binding" "attestors-write-debug" {
@@ -980,6 +1128,8 @@ resource "google_storage_bucket_iam_binding" "attestors-write-debug" {
     "serviceAccount:${google_service_account.orchestrator.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer[0].email}",
   ] : [])
 }
 resource "google_storage_bucket_iam_binding" "builders-write-metadata" {
@@ -989,6 +1139,8 @@ resource "google_storage_bucket_iam_binding" "builders-write-metadata" {
     "serviceAccount:${google_service_account.builder-remote.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer-build[0].email}",
   ] : [])
 }
 resource "google_storage_bucket_iam_binding" "builders-use-logs" {
@@ -998,6 +1150,8 @@ resource "google_storage_bucket_iam_binding" "builders-use-logs" {
     "serviceAccount:${google_service_account.builder-remote.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer-build[0].email}",
   ] : [])
 }
 resource "google_storage_bucket_iam_binding" "builders-view-logs" {
@@ -1007,6 +1161,8 @@ resource "google_storage_bucket_iam_binding" "builders-view-logs" {
     "serviceAccount:${google_service_account.builder-remote.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer-build[0].email}",
   ] : [])
 }
 resource "google_storage_bucket_iam_binding" "orchestrator-manages-attestations" {
@@ -1028,6 +1184,8 @@ resource "google_storage_bucket_iam_binding" "builders-view-bootstrap-bucket" {
     "serviceAccount:${google_service_account.builder-agent.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer-build[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer-build[0].email}",
   ] : [])
 }
 resource "google_project_iam_binding" "orchestrators-run-workloads-as-others" {
@@ -1037,6 +1195,8 @@ resource "google_project_iam_binding" "orchestrators-run-workloads-as-others" {
     "serviceAccount:${google_service_account.orchestrator.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer[0].email}",
   ] : [])
 }
 resource "google_project_iam_binding" "orchestrators-run-gcb-builds" {
@@ -1046,6 +1206,8 @@ resource "google_project_iam_binding" "orchestrators-run-gcb-builds" {
     "serviceAccount:${google_service_account.orchestrator.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer[0].email}",
   ] : [])
 }
 resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-inference" {
@@ -1069,6 +1231,8 @@ resource "google_kms_crypto_key_iam_binding" "attestors-read-signing-key" {
     "serviceAccount:${google_service_account.orchestrator.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer[0].email}",
   ] : [])
 }
 resource "google_kms_crypto_key_iam_binding" "attestors-uses-signing-key" {
@@ -1078,6 +1242,8 @@ resource "google_kms_crypto_key_iam_binding" "attestors-uses-signing-key" {
     "serviceAccount:${google_service_account.orchestrator.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer[0].email}",
   ] : [])
 }
 resource "google_cloud_run_v2_service_iam_binding" "cachers-call-git-cache" {
@@ -1156,6 +1322,53 @@ resource "google_service_account_iam_binding" "network-analyzer-acts-as-itself" 
   role               = "roles/iam.serviceAccountUser"
   members            = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
 }
+# System analyzer-specific IAM bindings
+resource "google_storage_bucket_iam_binding" "system-analyzer-writes-analysis" {
+  count   = var.enable_system_analyzer ? 1 : 0
+  bucket  = google_storage_bucket.system-analyzer-attestations[0].name
+  role    = "roles/storage.objectCreator"
+  members = ["serviceAccount:${google_service_account.system-analyzer[0].email}"]
+}
+resource "google_storage_bucket_iam_binding" "system-analyzer-reads-attestations" {
+  count   = !var.public && var.enable_system_analyzer ? 1 : 0
+  bucket  = google_storage_bucket.attestations.name
+  role    = "roles/storage.objectViewer"
+  members = ["serviceAccount:${google_service_account.system-analyzer[0].email}"]
+}
+resource "google_storage_bucket_iam_binding" "system-analyzer-reads-system-analyzer-attestations" {
+  count   = !var.public && var.enable_system_analyzer ? 1 : 0
+  bucket  = google_storage_bucket.system-analyzer-attestations[0].name
+  role    = "roles/storage.objectViewer"
+  members = ["serviceAccount:${google_service_account.system-analyzer[0].email}"]
+}
+resource "google_cloud_tasks_queue_iam_binding" "system-analyzer-enqueues-tasks" {
+  count   = var.enable_system_analyzer ? 1 : 0
+  name    = google_cloud_tasks_queue.system-analyzer-queue[0].name
+  role    = "roles/cloudtasks.enqueuer"
+  members = ["serviceAccount:${google_service_account.system-analyzer[0].email}"]
+}
+resource "google_cloud_run_v2_service_iam_binding" "system-analyzer-calls-analyzer" {
+  count    = var.enable_system_analyzer ? 1 : 0
+  location = google_cloud_run_v2_service.system-analyzer[0].location
+  project  = google_cloud_run_v2_service.system-analyzer[0].project
+  name     = google_cloud_run_v2_service.system-analyzer[0].name
+  role     = "roles/run.invoker"
+  members  = ["serviceAccount:${google_service_account.system-analyzer[0].email}"]
+}
+resource "google_cloud_run_v2_service_iam_binding" "system-analyzer-calls-subscriber" {
+  count    = var.enable_system_analyzer ? 1 : 0
+  location = google_cloud_run_v2_service.system-subscriber[0].location
+  project  = google_cloud_run_v2_service.system-subscriber[0].project
+  name     = google_cloud_run_v2_service.system-subscriber[0].name
+  role     = "roles/run.invoker"
+  members  = ["serviceAccount:${google_service_account.system-analyzer[0].email}"]
+}
+resource "google_service_account_iam_binding" "system-analyzer-acts-as-itself" {
+  count              = var.enable_system_analyzer ? 1 : 0
+  service_account_id = google_service_account.system-analyzer[0].name
+  role               = "roles/iam.serviceAccountUser"
+  members            = ["serviceAccount:${google_service_account.system-analyzer[0].email}"]
+}
 resource "google_project_iam_binding" "orchestrators-use-worker-pool" {
   count   = var.enable_private_build_pool ? 1 : 0
   project = var.project
@@ -1164,6 +1377,8 @@ resource "google_project_iam_binding" "orchestrators-use-worker-pool" {
     "serviceAccount:${google_service_account.orchestrator.email}",
     ], var.enable_network_analyzer ? [
     "serviceAccount:${google_service_account.network-analyzer[0].email}",
+  ] : [], var.enable_system_analyzer ? [
+    "serviceAccount:${google_service_account.system-analyzer[0].email}",
   ] : [])
 }
 # Agent-specific IAM bindings
@@ -1247,6 +1462,12 @@ resource "google_pubsub_topic_iam_binding" "attestation-bucket-topic-is-public" 
 resource "google_storage_bucket_iam_binding" "network-analyzer-attestations-bucket-is-public" {
   count   = var.enable_network_analyzer && var.public ? 1 : 0
   bucket  = google_storage_bucket.network-analyzer-attestations[0].name
+  role    = "roles/storage.objectViewer"
+  members = ["allUsers"]
+}
+resource "google_storage_bucket_iam_binding" "system-analyzer-attestations-bucket-is-public" {
+  count   = var.enable_system_analyzer && var.public ? 1 : 0
+  bucket  = google_storage_bucket.system-analyzer-attestations[0].name
   role    = "roles/storage.objectViewer"
   members = ["allUsers"]
 }
