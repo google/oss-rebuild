@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"net/http"
 	"net/url"
@@ -29,8 +28,8 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/helper/iofs"
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -440,7 +439,7 @@ func (h Handler) createCargoIndexArchive(indexCommit string, packageNames []stri
 	var buf bytes.Buffer
 	tarWriter := tar.NewWriter(&buf)
 	defer tarWriter.Close()
-	if err := addFSToTar(tarWriter, wfs); err != nil {
+	if err := tarWriter.AddFS(iofs.New(wfs)); err != nil {
 		return nil, errors.Wrap(err, "adding git repo to tar")
 	}
 	if err := tarWriter.Close(); err != nil {
@@ -501,35 +500,4 @@ func makeGitRepo(wfs billy.Filesystem, dotGit billy.Filesystem) error {
 		return errors.Wrap(err, "creating commit")
 	}
 	return nil
-}
-
-// addFSToTar write the fs to the tar archive.
-// TODO: Could replace with TarWriter.AddFS once billy is compatible with io.FS
-func addFSToTar(tarWriter *tar.Writer, f billy.Filesystem) error {
-	return util.Walk(f, ".", func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return tarWriter.WriteHeader(&tar.Header{
-				Name:     path,
-				Mode:     0755,
-				Typeflag: tar.TypeDir,
-			})
-		}
-		file, err := f.Open(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		if err := tarWriter.WriteHeader(&tar.Header{
-			Name: path,
-			Mode: 0644,
-			Size: info.Size(),
-		}); err != nil {
-			return err
-		}
-		_, err = io.Copy(tarWriter, file)
-		return err
-	})
 }
