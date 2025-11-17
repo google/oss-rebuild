@@ -633,7 +633,7 @@ var runBenchmark = &cobra.Command{
 
 var runAgentBenchmark = &cobra.Command{
 	Use:   "run-agent-bench --project <project> --api <URI> [--max-concurrency <concurrency>] [--agent-iterations <max iterations>] <benchmark.json>",
-	Short: "Run benchmark on agent",
+	Short: "Run benchmark on the agent",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if *project == "" {
@@ -770,7 +770,7 @@ const analyzeMode = schema.ExecutionMode("analyze")
 
 var runOne = &cobra.Command{
 	Use:   "run-one smoketest|attest|analyze --api <URI> --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--strategy <strategy.yaml>] [--strategy-from-repo]",
-	Short: "Run benchmark",
+	Short: "Run a single target",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		if *ecosystem == "" || *pkg == "" || *version == "" {
@@ -1295,7 +1295,7 @@ var getTrackedPackagesCmd = &cobra.Command{
 
 var runAgent = &cobra.Command{
 	Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>]",
-	Short: "Run benchmark",
+	Short: "Run the agent on a single target",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if *project == "" {
