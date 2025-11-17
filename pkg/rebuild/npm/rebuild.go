@@ -83,54 +83,6 @@ var (
 	verdictContentDiff        = errors.New("content differences found")
 )
 
-func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.Asset, assets rebuild.AssetStore, _ rebuild.Instructions) (msg error, err error) {
-	csRB, csUP, err := rebuild.Summarize(ctx, t, rb, up, assets)
-	if err != nil {
-		return nil, errors.Wrapf(err, "summarizing assets")
-	}
-	upOnly, diffs, rbOnly := csUP.Diff(csRB)
-	var foundDist, foundDSStore bool
-	allHidden := true
-	for _, f := range upOnly {
-		if strings.HasPrefix(f, "package/dist/") {
-			foundDist = true
-		}
-		if strings.HasSuffix(f, "/.DS_STORE") {
-			foundDSStore = true
-		}
-		allHidden = allHidden && strings.HasPrefix(f, "package/.")
-	}
-	var pkgJSONDiff bool
-	for _, f := range diffs {
-		if f == "package/package.json" {
-			pkgJSONDiff = true
-		}
-	}
-	switch {
-	case foundDist:
-		return verdictMissingDist, nil
-	case foundDSStore:
-		return verdictDSStore, nil
-	case csUP.CRLFCount > csRB.CRLFCount:
-		return verdictLineEndings, nil
-	case len(upOnly) > 0 && len(rbOnly) > 0:
-		return verdictMismatchedFiles, nil
-	case len(upOnly) > 0:
-		if allHidden {
-			return verdictHiddenUpstreamOnly, nil
-		}
-		return verdictUpstreamOnly, nil
-	case len(rbOnly) > 0:
-		return verdictRebuildOnly, nil
-	case pkgJSONDiff:
-		return verdictPackageJSONDiff, nil
-	case len(diffs) > 0:
-		return verdictContentDiff, nil
-	default:
-		return nil, nil
-	}
-}
-
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return true
 }

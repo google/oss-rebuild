@@ -60,19 +60,6 @@ func compareTwoFiles(csRB, csUP *archive.ContentSummary) (verdict error, err err
 	}
 }
 
-func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.Asset, assets rebuild.AssetStore, _ rebuild.Instructions) (verdict error, err error) {
-	csRB, csUP, err := rebuild.Summarize(ctx, t, rb, up, assets)
-	if err != nil {
-		return nil, errors.Wrapf(err, "summarizing assets")
-	}
-	verdict, err = compareTwoFiles(csRB, csUP)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to compare %v to %v", rb, up)
-	}
-	log.Printf("Verdict for %s: %v", rb.Target.Artifact, verdict)
-	return verdict, nil
-}
-
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return true
 }

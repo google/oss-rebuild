@@ -5,11 +5,7 @@ package cratesio
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"log"
-	"path"
-	"slices"
 	"sort"
 	"strings"
 
@@ -66,88 +62,6 @@ var (
 	verdictRebuildOnly     = errors.New("file(s) found in rebuild but not upstream")
 	verdictContentDiff     = errors.New("content differences found")
 )
-
-func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.Asset, assets rebuild.AssetStore, inst rebuild.Instructions) (msg error, err error) {
-	csRB, csUP, err := rebuild.Summarize(ctx, t, rb, up, assets)
-	if err != nil {
-		return nil, errors.Wrapf(err, "summarizing assets")
-	}
-	upOnly, diffs, rbOnly := csUP.Diff(csRB)
-	var foundDSStore bool
-	for _, f := range upOnly {
-		if strings.HasSuffix(f, "/.DS_STORE") {
-			foundDSStore = true
-		}
-	}
-	prefix := strings.TrimSuffix(t.Artifact, ".crate")
-	var cargoVersionDiff bool
-	{
-		metadataFiles := []string{path.Join(prefix, cargoToml), path.Join(prefix, cargoVCSInfo)}
-		if orig := slices.Index(csUP.Files, path.Join(prefix, cargoTomlOrig)); orig == -1 {
-			// If upstream has no orig file (i.e. from an older version of cargo),
-			// check the Cargo.toml file against the rebuilt orig since this compares
-			// the user-defined content.
-			tomlHash := csUP.FileHashes[slices.Index(csUP.Files, path.Join(prefix, cargoToml))]
-			origHash := csRB.FileHashes[slices.Index(csRB.Files, path.Join(prefix, cargoTomlOrig))]
-			if tomlHash == origHash {
-				metadataFiles = append(metadataFiles, path.Join(prefix, cargoTomlOrig))
-			}
-		}
-		allDiffs := slices.Clone(rbOnly)
-		allDiffs = append(allDiffs, upOnly...)
-		allDiffs = append(allDiffs, diffs...)
-		cargoVersionDiff = len(allDiffs) > 0
-		for _, f := range allDiffs {
-			if !slices.Contains(metadataFiles, f) {
-				cargoVersionDiff = false
-				break
-			}
-		}
-	}
-	var gitRefDiff bool
-	{
-		var upRef string
-		{
-			r, err := assets.Reader(ctx, up)
-			if err != nil {
-				return nil, errors.Wrapf(err, "reading upstream")
-			}
-			defer r.Close()
-			f, err := getFileFromCrate(r, path.Join(prefix, cargoVCSInfo))
-			if err != nil {
-				log.Printf("failed to read VCS info from crate: %v", err)
-			} else {
-				var info reg.CargoVCSInfo
-				if err := json.Unmarshal(f, &info); err != nil {
-					log.Printf("failed to unmarshal VCS info from crate: %v", err)
-				} else {
-					upRef = info.GitInfo.SHA1
-				}
-			}
-		}
-		gitRefDiff = upRef != inst.Location.Ref
-	}
-	switch {
-	case foundDSStore:
-		return verdictDSStore, nil
-	case csUP.CRLFCount > csRB.CRLFCount:
-		return verdictLineEndings, nil
-	case cargoVersionDiff && gitRefDiff:
-		return verdictCargoVersionGit, nil
-	case cargoVersionDiff:
-		return verdictCargoVersion, nil
-	case len(upOnly) > 0 && len(rbOnly) > 0:
-		return verdictMismatchedFiles, nil
-	case len(upOnly) > 0:
-		return verdictUpstreamOnly, nil
-	case len(rbOnly) > 0:
-		return verdictRebuildOnly, nil
-	case len(diffs) > 0:
-		return verdictContentDiff, nil
-	default:
-		return nil, nil
-	}
-}
 
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return true
