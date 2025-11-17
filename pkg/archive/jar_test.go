@@ -6,11 +6,13 @@ package archive
 import (
 	"archive/zip"
 	"bytes"
+	"github.com/google/oss-rebuild/internal/textwrap"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/oss-rebuild/internal/textwrap"
 )
 
 func TestStableJARBuildMetadata(t *testing.T) {
@@ -373,7 +375,7 @@ func TestStableGitProperties(t *testing.T) {
 		expected []*ZipEntry
 	}{
 		{
-			test: "delete_git_properties",
+			test: "empty_git_properties",
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
@@ -396,7 +398,7 @@ func TestStableGitProperties(t *testing.T) {
 			},
 		},
 		{
-			test: "delete_git_json",
+			test: "empty_git_json",
 			input: []*ZipEntry{
 				{
 					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
@@ -425,15 +427,11 @@ func TestStableGitProperties(t *testing.T) {
 			},
 		},
 		{
-			test: "delete_git_json_from_custom_location",
+			test: "delete_git_filename_from_custom_location",
 			input: []*ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: root\r\n\r\n"),
-				},
-				{
-					&zip.FileHeader{Name: "classes/foo"},
-					[]byte("bar"),
+					&zip.FileHeader{Name: "META-INF/maven/org.example/foo/pom.xml"},
+					readFileAndHandleException(filepath.Join("testdata", "custom_build_path_pom.xml")),
 				},
 				{
 					&zip.FileHeader{Name: "classes/git.json"},
@@ -465,19 +463,60 @@ func TestStableGitProperties(t *testing.T) {
 							"git.total.commit.count": "8"
 						}`)),
 				},
+				{
+					&zip.FileHeader{Name: "classes/donotremove.git.json"},
+					[]byte(textwrap.Dedent(`
+						{
+							"git.branch": "main",
+						}`)),
+				},
 			},
 			expected: []*ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: root\r\n\r\n"),
-				},
-				{
-					&zip.FileHeader{Name: "classes/foo"},
-					[]byte("bar"),
+					&zip.FileHeader{Name: "META-INF/maven/org.example/foo/pom.xml"},
+					readFileAndHandleException(filepath.Join("testdata", "custom_build_path_pom.xml")),
 				},
 				{
 					&zip.FileHeader{Name: "classes/git.json"},
-					[]byte("{}"),
+					[]byte(textwrap.Dedent(`{}`)),
+				},
+				{
+					&zip.FileHeader{Name: "classes/donotremove.git.json"},
+					[]byte(textwrap.Dedent(`
+						{
+							"git.branch": "main",
+						}`)),
+				},
+			},
+		},
+		{
+			test: "delete_git_filename_if_mentioned_under_profile",
+			input: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/maven/org.example/foo/pom.xml"},
+					readFileAndHandleException(filepath.Join("testdata", "custom_profile_path_pom.xml")),
+				},
+				{
+					&zip.FileHeader{Name: "foobar/custom-git.properties"},
+					[]byte("git.build.user.email=foo@bar.baz\r\ngit.build.user.name=foo bar\r\n\r\n"),
+				},
+				{
+					&zip.FileHeader{Name: "classes/donotremove.git.properties"},
+					[]byte("git.branch=main\r\n"),
+				},
+			},
+			expected: []*ZipEntry{
+				{
+					&zip.FileHeader{Name: "META-INF/maven/org.example/foo/pom.xml"},
+					readFileAndHandleException(filepath.Join("testdata", "custom_profile_path_pom.xml")),
+				},
+				{
+					&zip.FileHeader{Name: "foobar/custom-git.properties"},
+					[]byte(""),
+				},
+				{
+					&zip.FileHeader{Name: "classes/donotremove.git.properties"},
+					[]byte("git.branch=main\r\n"),
 				},
 			},
 		},
@@ -527,4 +566,9 @@ func TestStableGitProperties(t *testing.T) {
 			}
 		})
 	}
+}
+
+func readFileAndHandleException(path string) []byte {
+	data := must(os.ReadFile(path))
+	return data
 }
