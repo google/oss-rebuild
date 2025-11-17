@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/pkg/errors"
@@ -50,19 +49,6 @@ func ArtifactName(t rebuild.Target) string {
 type Rebuilder struct{}
 
 var _ rebuild.Rebuilder = Rebuilder{}
-
-func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Instructions, fs billy.Filesystem) error {
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Source); err != nil {
-		return errors.Wrap(err, "failed to execute strategy.Source")
-	}
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Deps); err != nil {
-		return errors.Wrap(err, "failed to execute strategy.Deps")
-	}
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Build); err != nil {
-		return errors.Wrap(err, "failed to execute strategy.Build")
-	}
-	return nil
-}
 
 const (
 	cargoToml     = "Cargo.toml"

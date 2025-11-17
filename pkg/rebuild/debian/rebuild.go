@@ -8,7 +8,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -24,19 +23,6 @@ func ParseComponent(pkg string) (component, name string, err error) {
 		return "", "", errors.Errorf("failed to parse debian component: %s", pkg)
 	}
 	return component, name, nil
-}
-
-func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Instructions, fs billy.Filesystem) error {
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Source); err != nil {
-		return errors.Wrap(err, "failed to execute strategy.Source")
-	}
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Deps); err != nil {
-		return errors.Wrap(err, "failed to execute strategy.Deps")
-	}
-	if _, err := rebuild.ExecuteScript(ctx, fs.Root(), inst.Build); err != nil {
-		return errors.Wrap(err, "failed to execute strategy.Build")
-	}
-	return nil
 }
 
 func (Rebuilder) Compare(ctx context.Context, t rebuild.Target, rb, up rebuild.Asset, assets rebuild.AssetStore, inst rebuild.Instructions) (msg error, err error) {

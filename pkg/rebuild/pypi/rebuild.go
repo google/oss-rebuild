@@ -8,7 +8,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -17,19 +16,6 @@ import (
 type Rebuilder struct{}
 
 var _ rebuild.Rebuilder = Rebuilder{}
-
-func (Rebuilder) Rebuild(ctx context.Context, t rebuild.Target, inst rebuild.Instructions, projectfs billy.Filesystem) error {
-	if _, err := rebuild.ExecuteScript(ctx, projectfs.Root(), inst.Source); err != nil {
-		return errors.Wrap(err, "fetching source")
-	}
-	if _, err := rebuild.ExecuteScript(ctx, projectfs.Root(), inst.Deps); err != nil {
-		return errors.Wrap(err, "configuring build deps")
-	}
-	if _, err := rebuild.ExecuteScript(ctx, projectfs.Root(), inst.Build); err != nil {
-		return errors.Wrap(err, "executing build")
-	}
-	return nil
-}
 
 var (
 	verdictDSStore         = errors.New(".DS_STORE file(s) found in upstream but not rebuild")
