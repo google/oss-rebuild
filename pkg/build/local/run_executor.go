@@ -178,7 +178,7 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		return
 	}
 	// Create temporary directory for build output
-	hostOutputPath := filepath.Join(e.tempDirBase, fmt.Sprintf("oss-rebuild-%s", handle.id))
+	hostOutputPath := filepath.Join(e.tempDirBase, "tmp", fmt.Sprintf("oss-rebuild-%s", handle.id))
 	err := os.MkdirAll(hostOutputPath, 0755)
 	if err != nil {
 		handle.updateStatus(build.BuildStateCancelled)
