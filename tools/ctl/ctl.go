@@ -54,6 +54,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/benchmark/run"
+	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
 	"github.com/google/oss-rebuild/tools/ctl/gradle"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
 	agentide "github.com/google/oss-rebuild/tools/ctl/ide/agent"
@@ -407,6 +408,12 @@ var export = &cobra.Command{
 		}
 		mux := meta.NewRegistryMux(http.DefaultClient)
 		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, func(_ string) (rebuild.LocatableAssetStore, error) { return destStore, nil })
+		// Butler doesn't handle non-local asset stores well, so we need a local-based butler to implement diffoscope.
+		localAssets, err := localfiles.AssetStore(runID)
+		if err != nil {
+			log.Fatal(errors.Wrap(err, "making local asset store"))
+		}
+		localButler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, func(_ string) (rebuild.LocatableAssetStore, error) { return localAssets, nil })
 		// Write the metadata about the run.
 		if *exportRundex {
 			log.Println("Exporting run_metadata")
@@ -454,6 +461,17 @@ var export = &cobra.Command{
 				}
 			}
 			for _, at := range assetTypes {
+				if at == diffoscope.DiffAsset {
+					a := at.For(in.Target())
+					if _, err := localButler.Fetch(ctx, runID, a); err != nil {
+						res.errs = append(res.errs, errors.Wrapf(err, "fetching diff for %s", at))
+						continue
+					}
+					if err := rebuild.AssetCopy(ctx, destStore, localAssets, a); err != nil {
+						res.errs = append(res.errs, errors.Wrapf(err, "copying diff for %s", at))
+					}
+					continue
+				}
 				if _, err := butler.Fetch(ctx, runID, at.For(in.Target())); err != nil {
 					res.errs = append(res.errs, errors.Wrapf(err, "fetching %s", at))
 				}
