@@ -201,7 +201,11 @@ var tui = &cobra.Command{
 		} else {
 			assetStoreFn = localfiles.AssetStore
 		}
-		butler := localfiles.NewButler(*metadataBucket, *logsBucket, *debugStorage, mux, assetStoreFn)
+		debug := *debugStorage
+		if debug == "" {
+			debug = "file://" + localfiles.AssetsPath()
+		}
+		butler := localfiles.NewButler(*metadataBucket, *logsBucket, debug, mux, assetStoreFn)
 		var aiClient *genai.Client
 		{
 			aiProject := *project
