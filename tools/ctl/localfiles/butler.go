@@ -14,7 +14,7 @@ import (
 
 // Butler delivers you any assets you desire from the remote assets stores.
 type Butler interface {
-	Fetch(ctx context.Context, runID string, wasSmoketest bool, want rebuild.Asset) (path string, err error)
+	Fetch(ctx context.Context, runID string, want rebuild.Asset) (path string, err error)
 }
 
 type butler struct {
@@ -34,7 +34,7 @@ func NewButler(metadataBucket, logsBucket, debugBucket string, mux rebuild.Regis
 	}
 }
 
-func (b *butler) Fetch(ctx context.Context, runID string, wasSmoketest bool, want rebuild.Asset) (path string, err error) {
+func (b *butler) Fetch(ctx context.Context, runID string, want rebuild.Asset) (path string, err error) {
 	dest, err := b.assetStoreFn(runID)
 	if err != nil {
 		return "", err
@@ -49,11 +49,11 @@ func (b *butler) Fetch(ctx context.Context, runID string, wasSmoketest bool, wan
 	case diffoscope.DiffAsset:
 		var rba, usa string
 		{
-			rba, err = b.Fetch(ctx, runID, wasSmoketest, rebuild.RebuildAsset.For(want.Target))
+			rba, err = b.Fetch(ctx, runID, rebuild.RebuildAsset.For(want.Target))
 			if err != nil {
 				return "", errors.Wrap(err, "fetching rebuild asset")
 			}
-			usa, err = b.Fetch(ctx, runID, wasSmoketest, rebuild.DebugUpstreamAsset.For(want.Target))
+			usa, err = b.Fetch(ctx, runID, rebuild.DebugUpstreamAsset.For(want.Target))
 			if err != nil {
 				return "", errors.Wrap(err, "fetching upstream asset")
 			}
@@ -72,7 +72,7 @@ func (b *butler) Fetch(ctx context.Context, runID string, wasSmoketest bool, wan
 			return "", err
 		}
 	default:
-		forRun, err := b.metaAssetstore.For(ctx, runID, wasSmoketest)
+		forRun, err := b.metaAssetstore.For(ctx, runID)
 		if err != nil {
 			return "", errors.Wrap(err, "creating asset store")
 		}
