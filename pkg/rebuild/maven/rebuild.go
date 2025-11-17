@@ -73,17 +73,3 @@ func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuil
 	// Assuming the primary artifact is a .jar file.
 	return mux.Maven.ReleaseURL(ctx, t.Package, t.Version, ".jar")
 }
-
-func RebuildMany(ctx context.Context, inputs []rebuild.Input, mux rebuild.RegistryMux) ([]rebuild.Verdict, error) {
-	if len(inputs) == 0 {
-		return nil, errors.New("no inputs provided")
-	}
-	for i := range inputs {
-		packageVersion, err := mux.Maven.PackageVersion(ctx, inputs[i].Target.Package, inputs[i].Target.Version)
-		if err != nil {
-			return nil, err
-		}
-		inputs[i].Target.Artifact = packageVersion.Files[0]
-	}
-	return rebuild.RebuildMany(ctx, Rebuilder{}, inputs, mux)
-}
