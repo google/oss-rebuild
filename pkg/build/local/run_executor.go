@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/bufiox"
@@ -33,6 +34,7 @@ type DockerRunExecutor struct {
 	activeBuilds     syncx.Map[string, *localHandle]
 	outputBufferSize int
 	retainContainer  bool
+	keepalive        bool
 	tempDirBase      string
 	authCallback     AuthCallback
 	allowPrivileged  bool
@@ -75,6 +77,7 @@ func NewDockerRunExecutor(config DockerRunExecutorConfig) (*DockerRunExecutor, e
 		activeBuilds:     syncx.Map[string, *localHandle]{},
 		outputBufferSize: outputBufferSize,
 		retainContainer:  config.RetainContainer,
+		keepalive:        config.KeepAlive,
 		tempDirBase:      tempBase,
 		authCallback:     config.AuthCallback,
 		allowPrivileged:  config.AllowPrivileged,
@@ -91,6 +94,7 @@ type DockerRunExecutorConfig struct {
 	MaxParallel      int          // Max number of simultaneous builds
 	OutputBufferSize int          // Buffer size for output pipe, defaults to 512KB
 	RetainContainer  bool         // If true, don't use --rm flag to retain containers
+	KeepAlive        bool         // Keep containers running. Caller is responsible for cleanup
 	TempDirBase      string       // Base directory for temp files, if empty uses os.TempDir()
 	AuthCallback     AuthCallback // Optional callback to generate auth headers when needed
 	AllowPrivileged  bool         // If true, allow privileged builds
@@ -224,7 +228,20 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	}
 
 	runArgs = append(runArgs, plan.Image)
-	runArgs = append(runArgs, "/bin/sh", "-c", plan.Script)
+	if e.keepalive {
+		// To keep the container alive, we need to execute the build script in the background and keep an infinte process in the forground.
+		// Write the script to a file then execute it in the background
+		if strings.Contains(plan.Script, "EOF") {
+			handle.updateStatus(build.BuildStateCompleted)
+			handle.setResult(build.Result{
+				Error: errors.New("build script contains unexpected 'EOF' literal"),
+			})
+		}
+		wrappedScript := fmt.Sprintf("cat << 'EOF' > /build.sh\n%s\nEOF\n/bin/sh /build.sh &\ntail -f /dev/null\n", plan.Script)
+		runArgs = append(runArgs, "/bin/sh", "-c", wrappedScript)
+	} else {
+		runArgs = append(runArgs, "/bin/sh", "-c", plan.Script)
+	}
 	// Execute the Docker run command with streaming output
 	handle.updateStatus(build.BuildStateRunning)
 	outbuf := &bytes.Buffer{}
