@@ -56,7 +56,7 @@ const (
 )
 
 func removeContainer(ctx context.Context, name string) error {
-	return exec.CommandContext(ctx, "docker", "container", "rm", name).Run()
+	return exec.CommandContext(ctx, "docker", "container", "rm", "-f", name).Run()
 }
 
 func runLocal(ctx context.Context, executor build.Executor, prebuildConfig rebuild.PrebuildConfig, dex rundex.Reader, inp rebuild.Input) error {
