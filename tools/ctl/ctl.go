@@ -1618,6 +1618,262 @@ var viewSession = &cobra.Command{
 	},
 }
 
+// importAgentSessionFilters holds the filter criteria for querying agent sessions
+type importAgentSessionFilters struct {
+	since     time.Time
+	until     time.Time
+	ecosystem string
+	pkg       string
+}
+
+// importAgentResult holds information about an import operation
+type importAgentResult struct {
+	sessionID string
+	target    rebuild.Target
+	imported  bool
+	skipped   bool
+	existed   bool
+	err       error
+}
+
+var importAgentDefinitions = &cobra.Command{
+	Use:   "import-agent-definitions --project <project> --def-dir <path> [--since <time>] [--until <time>] [--ecosystem <eco>] [--package <pkg>] [--force] [--dryrun] [--exclude-existing] [--yes]",
+	Short: "Import agent-generated build definitions into the definitions repo",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if *project == "" {
+			return errors.New("project must be provided")
+		}
+		if *defDir == "" {
+			return errors.New("def-dir must be provided")
+		}
+		// Parse time filters
+		var filters importAgentSessionFilters
+		if *importSince != "" {
+			// Try parsing as duration first
+			if dur, err := time.ParseDuration(*importSince); err == nil {
+				filters.since = time.Now().Add(-dur)
+			} else if t, err := time.Parse(time.RFC3339, *importSince); err == nil {
+				filters.since = t
+			} else {
+				return errors.Errorf("invalid --since value: %s (expected duration like '24h' or RFC3339 timestamp)", *importSince)
+			}
+		}
+		if *importUntil != "" {
+			if t, err := time.Parse(time.RFC3339, *importUntil); err == nil {
+				filters.until = t
+			} else {
+				return errors.Errorf("invalid --until value: %s (expected RFC3339 timestamp)", *importUntil)
+			}
+		}
+		filters.ecosystem = *ecosystem
+		filters.pkg = *pkg
+		// Create Firestore client
+		fire, err := firestore.NewClient(ctx, *project)
+		if err != nil {
+			return errors.Wrap(err, "creating firestore client")
+		}
+		// Create asset store for definitions
+		buildDefs := rebuild.NewFilesystemAssetStore(osfs.New(*defDir))
+		// Query successful agent sessions
+		sessions, err := querySuccessfulAgentSessions(ctx, fire, filters)
+		if err != nil {
+			return errors.Wrap(err, "querying agent sessions")
+		}
+		if len(sessions) == 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "No successful agent sessions found matching the filters.")
+			return nil
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Found %d successful agent session(s)\n\n", len(sessions))
+		// Process each session
+		var results []importAgentResult
+		for _, session := range sessions {
+			result := importAgentResult{
+				sessionID: session.ID,
+				target:    session.Target,
+			}
+			// Fetch the successful iteration's strategy
+			strategy, err := fetchSuccessfulIterationStrategy(ctx, fire, session)
+			if err != nil {
+				result.err = err
+				results = append(results, result)
+				continue
+			}
+			// Check if definition already exists
+			buildDefAsset := rebuild.BuildDef.For(session.Target)
+			var existingDef *schema.BuildDefinition
+			if r, err := buildDefs.Reader(ctx, buildDefAsset); err == nil {
+				var def schema.BuildDefinition
+				if yaml.NewDecoder(r).Decode(&def) == nil {
+					existingDef = &def
+				}
+				r.Close()
+			}
+			// Skip if --exclude-existing and definition exists
+			if *importExcludeExisting && existingDef != nil {
+				result.skipped = true
+				result.existed = true
+				results = append(results, result)
+				continue
+			}
+			// Check if we need --force for existing definitions
+			if existingDef != nil && !*importForce {
+				result.err = errors.New("definition already exists (use --force to overwrite)")
+				result.existed = true
+				results = append(results, result)
+				continue
+			}
+			// Display strategy for review
+			fmt.Fprintf(cmd.OutOrStdout(), "--- Session: %s ---\n", session.ID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Target: %s %s@%s (%s)\n", session.Target.Ecosystem, session.Target.Package, session.Target.Version, session.Target.Artifact)
+			fmt.Fprintf(cmd.OutOrStdout(), "Created: %s\n\n", session.Created.Format(time.RFC3339))
+			// Show the strategy YAML
+			strategyYAML, err := yaml.Marshal(strategy)
+			if err != nil {
+				result.err = errors.Wrap(err, "marshalling strategy")
+				results = append(results, result)
+				continue
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Strategy:\n%s\n", string(strategyYAML))
+			// Show diff if existing definition
+			if existingDef != nil {
+				existingYAML, _ := yaml.Marshal(existingDef)
+				fmt.Fprintf(cmd.OutOrStdout(), "Existing definition:\n%s\n", string(existingYAML))
+			}
+			// Prompt for import (unless --yes or --dryrun)
+			if *dryrun {
+				fmt.Fprintln(cmd.OutOrStdout(), "[dry-run] Skipping import")
+				result.imported = true
+				results = append(results, result)
+				continue
+			}
+			shouldImport := *importYes
+			if !shouldImport {
+				fmt.Fprint(cmd.OutOrStdout(), "Import this definition? [y]es / [n]o / [q]uit: ")
+				var response string
+				fmt.Scanln(&response)
+				response = strings.ToLower(strings.TrimSpace(response))
+				switch response {
+				case "y", "yes":
+					shouldImport = true
+				case "q", "quit":
+					fmt.Fprintln(cmd.OutOrStdout(), "Quitting...")
+					goto printSummary
+				default:
+					result.skipped = true
+					results = append(results, result)
+					fmt.Fprintln(cmd.OutOrStdout(), "")
+					continue
+				}
+			}
+			if shouldImport {
+				// Write the definition
+				def := schema.BuildDefinition{StrategyOneOf: strategy}
+				if err := writeAgentDefinition(ctx, buildDefs, session.Target, def); err != nil {
+					result.err = errors.Wrap(err, "writing definition")
+					results = append(results, result)
+					continue
+				}
+				result.imported = true
+				fmt.Fprintln(cmd.OutOrStdout(), "Imported successfully")
+			}
+			results = append(results, result)
+		}
+	printSummary:
+		// Print summary
+		var imported, skipped, errored int
+		for _, r := range results {
+			if r.imported {
+				imported++
+			} else if r.skipped {
+				skipped++
+			} else if r.err != nil {
+				errored++
+				fmt.Fprintf(cmd.OutOrStderr(), "Error for %s/%s@%s: %v\n", r.target.Ecosystem, r.target.Package, r.target.Version, r.err)
+			}
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "\nSummary: %d imported, %d skipped, %d errors\n", imported, skipped, errored)
+		return nil
+	},
+}
+
+// querySuccessfulAgentSessions queries Firestore for successful agent sessions matching the filters
+func querySuccessfulAgentSessions(ctx context.Context, fire *firestore.Client, filters importAgentSessionFilters) ([]*schema.AgentSession, error) {
+	query := fire.Collection("agent_sessions").
+		Where("stop_reason", "==", schema.AgentCompleteReasonSuccess)
+	if !filters.since.IsZero() {
+		query = query.Where("created", ">=", filters.since)
+	}
+	if !filters.until.IsZero() {
+		query = query.Where("created", "<=", filters.until)
+	}
+	var sessions []*schema.AgentSession
+	iter := query.Documents(ctx)
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, errors.Wrap(err, "iterating over sessions")
+		}
+		session := &schema.AgentSession{}
+		if err := doc.DataTo(session); err != nil {
+			return nil, errors.Wrap(err, "deserializing session data")
+		}
+		// Client-side filtering for ecosystem and package (Firestore doesn't support nested field queries well)
+		if filters.ecosystem != "" && string(session.Target.Ecosystem) != filters.ecosystem {
+			continue
+		}
+		if filters.pkg != "" && session.Target.Package != filters.pkg {
+			continue
+		}
+		sessions = append(sessions, session)
+	}
+	// Sort by creation time
+	slices.SortFunc(sessions, func(a, b *schema.AgentSession) int {
+		return a.Created.Compare(b.Created)
+	})
+	return sessions, nil
+}
+
+// fetchSuccessfulIterationStrategy fetches the strategy from the successful iteration
+func fetchSuccessfulIterationStrategy(ctx context.Context, fire *firestore.Client, session *schema.AgentSession) (*schema.StrategyOneOf, error) {
+	if session.SuccessIteration == "" {
+		return nil, errors.New("session has no success iteration")
+	}
+	iterDoc := fire.Collection("agent_sessions").Doc(session.ID).
+		Collection("agent_iterations").Doc(session.SuccessIteration)
+	iterSnap, err := iterDoc.Get(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting iteration document")
+	}
+	var iteration schema.AgentIteration
+	if err := iterSnap.DataTo(&iteration); err != nil {
+		return nil, errors.Wrap(err, "deserializing iteration data")
+	}
+	if iteration.Strategy == nil {
+		return nil, errors.New("iteration has no strategy")
+	}
+	return iteration.Strategy, nil
+}
+
+// writeAgentDefinition writes a build definition to the asset store
+func writeAgentDefinition(ctx context.Context, buildDefs *rebuild.FilesystemAssetStore, target rebuild.Target, def schema.BuildDefinition) error {
+	buildDefAsset := rebuild.BuildDef.For(target)
+	w, err := buildDefs.Writer(ctx, buildDefAsset)
+	if err != nil {
+		return errors.Wrap(err, "opening build definition for writing")
+	}
+	defer w.Close()
+	enc := yaml.NewEncoder(w)
+	if err := enc.Encode(&def); err != nil {
+		return errors.Wrap(err, "encoding build definition")
+	}
+	return nil
+}
+
 var (
 	// Shared
 	apiUri            = flag.String("api", "", "OSS Rebuild API endpoint URI")
@@ -1671,6 +1927,12 @@ var (
 	destination  = flag.String("destination", "", "the destination for the export, e.g. gs://bucket/prefix")
 	exportRundex = flag.Bool("rundex", false, "whether to include the rundex in the export")
 	retrySession = flag.String("retry-session", "", "the session to retry")
+	// import-agent-definitions
+	importSince           = flag.String("since", "", "filter sessions created after this time (duration like '24h' or RFC3339)")
+	importUntil           = flag.String("until", "", "filter sessions created before this time (RFC3339)")
+	importForce           = flag.Bool("force", false, "overwrite existing definitions")
+	importExcludeExisting = flag.Bool("exclude-existing", false, "skip targets that already have definitions")
+	importYes             = flag.Bool("yes", false, "non-interactive mode, import all matches")
 )
 
 func init() {
@@ -1787,6 +2049,17 @@ func init() {
 	localAgent.Flags().AddGoFlag(flag.Lookup("retry-session"))
 	localAgent.Flags().AddGoFlag(flag.Lookup("agent-iterations"))
 
+	importAgentDefinitions.Flags().AddGoFlag(flag.Lookup("project"))
+	importAgentDefinitions.Flags().AddGoFlag(flag.Lookup("def-dir"))
+	importAgentDefinitions.Flags().AddGoFlag(flag.Lookup("since"))
+	importAgentDefinitions.Flags().AddGoFlag(flag.Lookup("until"))
+	importAgentDefinitions.Flags().AddGoFlag(flag.Lookup("ecosystem"))
+	importAgentDefinitions.Flags().AddGoFlag(flag.Lookup("package"))
+	importAgentDefinitions.Flags().AddGoFlag(flag.Lookup("force"))
+	importAgentDefinitions.Flags().AddGoFlag(flag.Lookup("dryrun"))
+	importAgentDefinitions.Flags().AddGoFlag(flag.Lookup("exclude-existing"))
+	importAgentDefinitions.Flags().AddGoFlag(flag.Lookup("yes"))
+
 	// Execution
 	rootCmd.AddCommand(runBenchmark)
 	rootCmd.AddCommand(runOne)
@@ -1800,6 +2073,7 @@ func init() {
 	rootCmd.AddCommand(listRuns)
 	rootCmd.AddCommand(getSessions)
 	rootCmd.AddCommand(viewSession)
+	rootCmd.AddCommand(importAgentDefinitions)
 	// Rebuild logic
 	rootCmd.AddCommand(infer)
 	rootCmd.AddCommand(getGradleGAV)
