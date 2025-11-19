@@ -188,6 +188,7 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 		case platform == "npm" && len(parts) == 2 && strings.HasPrefix(parts[0], "@"): // /@{org}/{pkg}
 		// Reference: https://warehouse.pypa.io/api-reference/json.html
 		case platform == "pypi" && len(parts) == 3 && parts[0] == "pypi" && parts[2] == "json": // /pypi/{pkg}/json
+		case platform == "pypi" && len(parts) == 2 && parts[0] == "simple": // /simple/{pkg}/ (path.Clean removes trailing slash)
 		default:
 			http.Redirect(rw, r, r.URL.String(), http.StatusFound)
 			return nil
@@ -218,6 +219,12 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 			}
 			nr.Header.Set("Accept", "application/json")
 		}
+		if a := nr.Header.Get("Accept"); strings.Contains(a, "application/vnd.pypi.simple.v1+html") {
+			if !strings.Contains(a, "application/vnd.pypi.simple.v1+json") {
+				return herror{errors.Errorf("unsupported Accept header: %s", a), http.StatusBadGateway}
+			}
+			nr.Header.Set("Accept", "application/vnd.pypi.simple.v1+json")
+		}
 	}
 	resp, err := h.Client.Do(nr)
 	if err != nil {
@@ -238,8 +245,12 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 		}
 		return nil
 	}
-	if resp.Header.Get("Content-Type") != "application/json" {
-		return herror{errors.Wrap(err, "unexpected content type"), http.StatusBadGateway}
+	contentType := resp.Header.Get("Content-Type")
+	if platform == "npm" && contentType != "application/json" {
+		return herror{errors.New("unexpected content type"), http.StatusBadGateway}
+	}
+	if platform == "pypi" && contentType != "application/json" && contentType != "application/vnd.pypi.simple.v1+json" {
+		return herror{errors.New("unexpected content type"), http.StatusBadGateway}
 	}
 	obj := make(map[string]any)
 	if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
@@ -252,6 +263,10 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 		}
 	} else if platform == "pypi" && obj["releases"] != nil {
 		if err := timeWarpPyPIProjectRequest(h.Client, obj, *t); err != nil {
+			return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
+		}
+	} else if platform == "pypi" && obj["files"] != nil {
+		if err := timeWarpPyPISimpleRequest(obj, *t); err != nil {
 			return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 		}
 	}
@@ -404,11 +419,94 @@ func timeWarpPyPIProjectRequest(client httpx.BasicClient, obj map[string]any, at
 		if err != nil {
 			return errors.Wrap(err, "fetching version")
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&obj); err != nil {
+		versionObj := make(map[string]any)
+		if err := json.NewDecoder(resp.Body).Decode(&versionObj); err != nil {
 			return errors.Wrap(err, "decoding version")
 		}
+		// Only update the "info" field, preserving the already-processed "releases"
+		obj["info"] = versionObj["info"]
 	}
 	return nil
+}
+
+// timeWarpPyPISimpleRequest modifies a PyPI Simple API JSON map to exclude all content after "at".
+// It filters the "files" list and then filters the "versions" list to only
+// include versions that still have at least one valid file.
+func timeWarpPyPISimpleRequest(obj map[string]any, at time.Time) error {
+	files, ok := obj["files"].([]any)
+	if !ok {
+		return errors.New("unexpected response: 'files' key not found or not an array")
+	}
+	var pastFiles []any
+	var pastVersions = make(map[string]struct{})
+	for _, fileAny := range files {
+		file, ok := fileAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		uploadTimeStr, ok := file["upload-time"].(string)
+		if !ok {
+			continue
+		}
+		uploadTime, err := time.Parse(time.RFC3339Nano, uploadTimeStr)
+		if err != nil {
+			return errors.Wrapf(err, "parsing upload-time: %s", uploadTimeStr)
+		}
+		if uploadTime.After(at) {
+			continue // File was uploaded in the future
+		}
+		// This file is valid for the timewarp so track its version.
+		pastFiles = append(pastFiles, file)
+		filename, ok := file["filename"].(string)
+		if !ok {
+			continue
+		}
+		version := extractVersionFromPyFilename(filename)
+		if version != "" {
+			pastVersions[version] = struct{}{}
+		}
+	}
+	obj["files"] = pastFiles
+	// Filter the versions list based on those found in the past.
+	originalVersions, ok := obj["versions"].([]any)
+	if !ok {
+		return errors.New("unexpected response: 'versions' key not found or not an array")
+	}
+	var fixedVersions []string
+	for _, vAny := range originalVersions {
+		vStr, ok := vAny.(string)
+		if !ok {
+			continue
+		}
+		if _, exists := pastVersions[vStr]; exists {
+			fixedVersions = append(fixedVersions, vStr)
+		}
+	}
+	obj["versions"] = fixedVersions
+	return nil
+}
+
+// extractVersionFromPyFilename parses a wheel or sdist filename to find its version.
+// This is a simplified parser inspired by Python's packaging.utils.
+func extractVersionFromPyFilename(filename string) string {
+	if strings.HasSuffix(filename, ".whl") {
+		// For wheels (e.g., requests-2.31.0-py3-none-any.whl)
+		parts := strings.Split(filename, "-")
+		if len(parts) >= 5 {
+			return parts[1]
+		}
+	}
+	// For sdists (e.g., requests-0.2.0.tar.gz)
+	exts := []string{".tar.gz", ".tar.bz2", ".tar.xz", ".zip", ".tar"}
+	for _, ext := range exts {
+		if strings.HasSuffix(filename, ext) {
+			base := strings.TrimSuffix(filename, ext)
+			if idx := strings.LastIndex(base, "-"); idx != -1 {
+				return base[idx+1:]
+			}
+		}
+	}
+	return "" // Unknown format
 }
 
 // createCargoIndexArchive creates a tar archive containing a git repository with index files for the specified packages.
