@@ -88,7 +88,7 @@ func TestPureWheelBuild(t *testing.T) {
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
-export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange
+export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --wheel -n the_dir",
 				Requires: rebuild.RequiredEnv{

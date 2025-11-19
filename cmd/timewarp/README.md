@@ -62,13 +62,13 @@ npm install express
 Set the PyPI index URL to point to Timewarp, including the desired timestamp in RFC3339 format:
 
 ```bash
-pip install --index-url "http://pypi:2013-12-23T07:45:10.417Z@localhost:8081/" requests
+pip install --index-url "http://pypi:2013-12-23T07:45:10.417Z@localhost:8081/simple" requests
 ```
 
 Or set it as an environment variable:
 
 ```bash
-export PIP_INDEX_URL="http://pypi:2013-12-23T07:45:10.417Z@localhost:8081/"
+export PIP_INDEX_URL="http://pypi:2013-12-23T07:45:10.417Z@localhost:8081/simple"
 pip install requests
 ```
 
