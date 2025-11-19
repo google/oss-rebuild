@@ -1,0 +1,174 @@
+// Copyright 2025 Google LLC
+// SPDX-License-Identifier: Apache-2.0
+
+package diffr
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+
+	"github.com/google/oss-rebuild/internal/gitdiff"
+	"github.com/pkg/errors"
+)
+
+// Options for the Diff function
+type Options struct {
+	Output     io.Writer
+	OutputJSON bool // If true, output JSON format; otherwise formatted text diff
+}
+
+// File represents an input file with its name and content reader
+type File struct {
+	Name   string
+	Reader io.ReadSeeker
+}
+
+var ErrNoDiff = errors.New("no diff found")
+
+// Diff compares two files recursively through archives
+// If no diff is found, ErrNoDiff is returned
+func Diff(file1, file2 File, opts Options) error {
+	// Create root diff node
+	rootNode := DiffNode{
+		Source1: file1.Name,
+		Source2: file2.Name,
+	}
+	// Compare the files
+	match, err := compareFiles(&rootNode, file1, file2)
+	if err != nil {
+		return errors.Wrap(err, "comparing files")
+	}
+	if match {
+		return ErrNoDiff
+	}
+	// Generate output only if configured
+	if opts.Output != nil {
+		if opts.OutputJSON {
+			enc := json.NewEncoder(opts.Output)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(rootNode); err != nil {
+				return errors.Wrap(err, "marshaling JSON")
+			}
+		} else {
+			_, err := io.WriteString(opts.Output, rootNode.String())
+			if err != nil {
+				return errors.Wrap(err, "writing diff")
+			}
+		}
+	}
+	return nil
+}
+
+// compareFiles compares two files and populates the DiffNode
+func compareFiles(node *DiffNode, file1, file2 File) (bool, error) {
+	// First, use compareBinary to perform byte-level comparison.
+	// This catches any differences that type-aware differs might miss due to
+	// parser canonicalization or lacking semantic reporting.
+	match, err := compareBinary(node, file1, file2)
+	if err != nil {
+		return false, err
+	}
+	if match {
+		return true, nil // Files are byte-identical
+	}
+	// Files differ. Try to improve reporting with type-aware diff
+	type1, err := DetectFileType(file1.Reader)
+	if err != nil {
+		return false, errors.Wrap(err, "detecting type of file1")
+	}
+	type2, err := DetectFileType(file2.Reader)
+	if err != nil {
+		return false, errors.Wrap(err, "detecting type of file2")
+	}
+	// If types don't match, just note that difference
+	if type1 != type2 {
+		node.Comments = []string{fmt.Sprintf("File types differ: %s vs %s", type1, type2)}
+		return false, nil
+	}
+	// Create a temporary node to collect type-aware differ output
+	typedNode := DiffNode{
+		Source1: node.Source1,
+		Source2: node.Source2,
+	}
+	switch type1 {
+	case TypeGzip:
+		match, err = compareGzip(&typedNode, file1, file2)
+	case TypeZip:
+		match, err = compareZip(&typedNode, file1, file2)
+	case TypeTar:
+		match, err = compareTar(&typedNode, file1, file2)
+	case TypeText:
+		match, err = compareText(&typedNode, file1, file2)
+	case TypeBinary:
+		return false, nil // compareBinary already called
+	default:
+		return false, fmt.Errorf("unknown file type: %v", type1)
+	}
+	if err != nil {
+		return false, err
+	}
+	// If the typed differ generated output, use it instead of the binary comparison
+	if typedNode.UnifiedDiff != nil || len(typedNode.Comments) > 0 || len(typedNode.Details) > 0 {
+		node.UnifiedDiff = typedNode.UnifiedDiff
+		node.Comments = typedNode.Comments
+		node.Details = typedNode.Details
+	} else {
+		// Typed differ generated no diffs but bytes don't match
+		node.Comments = []string{"Bytes differ but no semantic diff generated"}
+	}
+	return false, nil
+}
+
+// compareText compares two text files and generates unified diff
+func compareText(node *DiffNode, file1, file2 File) (bool, error) {
+	// Read both files
+	content1, err := readAll(file1.Reader)
+	if err != nil {
+		return false, errors.Wrap(err, "reading file1")
+	}
+	content2, err := readAll(file2.Reader)
+	if err != nil {
+		return false, errors.Wrap(err, "reading file2")
+	}
+	// Check if identical
+	if bytes.Equal(content1, content2) {
+		return true, nil
+	}
+	// Generate unified diff using the gitdiff package
+	diff, err := gitdiff.Strings(string(content1), string(content2))
+	if err != nil {
+		return false, errors.Wrap(err, "generating diff")
+	}
+	if diff != "" {
+		node.UnifiedDiff = &diff
+	}
+	return false, nil
+}
+
+// compareBinary compares two binary files
+func compareBinary(node *DiffNode, file1, file2 File) (bool, error) {
+	// Read both files
+	content1, err := readAll(file1.Reader)
+	if err != nil {
+		return false, errors.Wrap(err, "reading file1")
+	}
+	content2, err := readAll(file2.Reader)
+	if err != nil {
+		return false, errors.Wrap(err, "reading file2")
+	}
+	// Check if identical
+	if bytes.Equal(content1, content2) {
+		return true, nil
+	}
+	// TODO: Produce an actual diff for binary files.
+	node.Comments = append(node.Comments, "Binary files differ")
+	return false, nil
+}
+
+// readAll reads all content from a ReadSeeker, resetting position first
+func readAll(r io.ReadSeeker) ([]byte, error) {
+	r.Seek(0, io.SeekStart)
+	return io.ReadAll(r)
+}
