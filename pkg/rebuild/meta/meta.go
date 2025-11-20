@@ -7,12 +7,14 @@ import (
 	"github.com/google/oss-rebuild/internal/httpx"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
+	golangrb "github.com/google/oss-rebuild/pkg/rebuild/go"
 	mavenrb "github.com/google/oss-rebuild/pkg/rebuild/maven"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
+	golangreg "github.com/google/oss-rebuild/pkg/registry/golang"
 	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
@@ -25,6 +27,7 @@ func NewRegistryMux(c httpx.BasicClient) rebuild.RegistryMux {
 		NPM:      npmreg.HTTPRegistry{Client: c},
 		PyPI:     pypireg.HTTPRegistry{Client: c},
 		Maven:    mavenreg.HTTPRegistry{Client: c},
+		Go:       golangreg.HTTPRegistry{Client: c},
 	}
 }
 
@@ -34,4 +37,5 @@ var AllRebuilders = map[rebuild.Ecosystem]rebuild.Rebuilder{
 	rebuild.CratesIO: &cratesrb.Rebuilder{},
 	rebuild.Debian:   &debianrb.Rebuilder{},
 	rebuild.Maven:    &mavenrb.Rebuilder{},
+	rebuild.Go:       &golangrb.Rebuilder{},
 }

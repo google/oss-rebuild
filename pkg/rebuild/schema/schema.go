@@ -13,6 +13,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
+	golang "github.com/google/oss-rebuild/pkg/rebuild/go"
 	"github.com/google/oss-rebuild/pkg/rebuild/maven"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
@@ -29,6 +30,7 @@ type StrategyOneOf struct {
 	NPMPackBuild         *npm.NPMPackBuild              `json:"npm_pack_build,omitempty" yaml:"npm_pack_build,omitempty"`
 	NPMCustomBuild       *npm.NPMCustomBuild            `json:"npm_custom_build,omitempty" yaml:"npm_custom_build,omitempty"`
 	CratesIOCargoPackage *cratesio.CratesIOCargoPackage `json:"cratesio_cargo_package,omitempty" yaml:"cratesio_cargo_package,omitempty"`
+	GoBuild              *golang.GoBuild                `json:"go_build,omitempty" yaml:"go_build,omitempty"`
 	MavenBuild           *maven.MavenBuild              `json:"maven_build,omitempty" yaml:"maven_build,omitempty"`
 	GradleBuild          *maven.GradleBuild             `json:"gradle_build,omitempty" yaml:"gradle_build,omitempty"`
 	DebianPackage        *debian.DebianPackage          `json:"debian_package,omitempty" yaml:"debian_package,omitempty"`
@@ -55,6 +57,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.NPMCustomBuild = t
 	case *cratesio.CratesIOCargoPackage:
 		oneof.CratesIOCargoPackage = t
+	case *golang.GoBuild:
+		oneof.GoBuild = t
 	case *debian.DebianPackage:
 		oneof.DebianPackage = t
 	case *debian.Debrebuild:
@@ -91,6 +95,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.CratesIOCargoPackage != nil {
 			num++
 			s = oneof.CratesIOCargoPackage
+		}
+		if oneof.GoBuild != nil {
+			num++
+			s = oneof.GoBuild
 		}
 		if oneof.DebianPackage != nil {
 			num++
