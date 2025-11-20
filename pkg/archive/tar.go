@@ -8,17 +8,13 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/v5/plumbing/hash"
 	"github.com/pkg/errors"
 )
 
@@ -39,161 +35,9 @@ func (e TarEntry) WriteTo(tw *tar.Writer) error {
 	return nil
 }
 
+// TarArchive represents a collection of tar entries.
 type TarArchive struct {
 	Files []*TarEntry
-}
-
-type TarArchiveStabilizer struct {
-	Name string
-	Func func(*TarArchive)
-}
-
-func (t TarArchiveStabilizer) Stabilize(arg any) {
-	t.Func(arg.(*TarArchive))
-}
-
-type TarEntryStabilizer struct {
-	Name string
-	Func func(*TarEntry)
-}
-
-func (t TarEntryStabilizer) Stabilize(arg any) {
-	t.Func(arg.(*TarEntry))
-}
-
-var AllTarStabilizers = []Stabilizer{
-	StableTarFileOrder,
-	StableTarTime,
-	StableTarFileMode,
-	StableTarOwners,
-	StableTarXattrs,
-	StableTarDeviceNumber,
-}
-
-var StableTarFileOrder = TarArchiveStabilizer{
-	Name: "tar-file-order",
-	Func: func(f *TarArchive) {
-		slices.SortFunc(f.Files, func(a, b *TarEntry) int {
-			return strings.Compare(a.Name, b.Name)
-		})
-	},
-}
-
-var StableTarTime = TarEntryStabilizer{
-	Name: "tar-time",
-	Func: func(e *TarEntry) {
-		e.ModTime = time.UnixMilli(0)
-		e.AccessTime = time.UnixMilli(0)
-		e.ChangeTime = time.Time{}
-		// NOTE: Without a PAX record, the tar library will disregard this value
-		// and write the format as USTAR. Setting 'atime' ensures at least one
-		// PAX record exists which will cause tar to be always be considered a PAX.
-		e.Format = tar.FormatPAX
-	},
-}
-
-var StableTarFileMode = TarEntryStabilizer{
-	Name: "tar-file-mode",
-	Func: func(e *TarEntry) {
-		e.Mode = int64(fs.ModePerm)
-	},
-}
-
-var StableTarOwners = TarEntryStabilizer{
-	Name: "tar-owners",
-	Func: func(e *TarEntry) {
-		e.Uid = 0
-		e.Gid = 0
-		e.Uname = ""
-		e.Gname = ""
-	},
-}
-
-var StableTarXattrs = TarEntryStabilizer{
-	Name: "tar-xattrs",
-	Func: func(e *TarEntry) {
-		clear(e.Xattrs)
-		clear(e.PAXRecords)
-	},
-}
-
-var StableTarDeviceNumber = TarEntryStabilizer{
-	Name: "tar-device-number",
-	Func: func(e *TarEntry) {
-		// NOTE: 0 is currently reserved on Linux and will dynamically allocate a
-		// device number when passed to the kernel.
-		e.Devmajor = 0
-		e.Devminor = 0
-	},
-}
-
-// StabilizeTar strips volatile metadata and re-writes the provided archive in a standard form.
-func StabilizeTar(tr *tar.Reader, tw *tar.Writer, opts StabilizeOpts) error {
-	defer tw.Close()
-	var ents []*TarEntry
-	for {
-		header, err := tr.Next()
-		if err != nil {
-			if err == io.EOF {
-				break // End of archive
-			}
-			return err
-		}
-		// NOTE: Non-PAX header type support can be added, if necessary.
-		switch header.Typeflag {
-		case tar.TypeGNUSparse, tar.TypeGNULongName, tar.TypeGNULongLink:
-			return errors.New("Unsupported file type")
-		}
-		buf, err := io.ReadAll(tr)
-		if err != nil {
-			return err
-		}
-		// NOTE: Memory-intensive. We're buffering the full file in memory as
-		// tar.Reader is single-pass and we need to support sorting entries.
-		ents = append(ents, &TarEntry{header, buf[:]})
-	}
-	f := TarArchive{Files: ents}
-	for _, s := range opts.Stabilizers {
-		switch s.(type) {
-		case TarArchiveStabilizer:
-			s.(TarArchiveStabilizer).Stabilize(&f)
-		case TarEntryStabilizer:
-			for _, ent := range f.Files {
-				s.(TarEntryStabilizer).Stabilize(ent)
-			}
-		}
-	}
-	for _, ent := range f.Files {
-		if err := ent.WriteTo(tw); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-var AllCrateStabilizers = []Stabilizer{
-	StabilizeCargoVCSHash,
-}
-
-var StabilizeCargoVCSHash = TarEntryStabilizer{
-	Name: "cargo-vcs-hash",
-	Func: func(e *TarEntry) {
-		if strings.HasSuffix(e.Name, ".cargo_vcs_info.json") {
-			var vcsInfo map[string]any
-			if err := json.Unmarshal(e.Body, &vcsInfo); err != nil {
-				return // Skip if invalid JSON
-			}
-			if git, ok := vcsInfo["git"].(map[string]any); ok {
-				if _, hasSha1 := git["sha1"]; hasSha1 {
-					git["sha1"] = strings.Repeat("x", hash.HexSize)
-					if newBody, err := json.Marshal(vcsInfo); err == nil {
-						e.Body = newBody
-						e.Size = int64(len(newBody))
-					}
-				}
-			}
-		}
-	},
 }
 
 // ExtractOptions provides options modifying ExtractTar behavior.

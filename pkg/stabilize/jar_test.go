@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package archive
+package stabilize
 
 import (
 	"archive/zip"
@@ -11,87 +11,88 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/google/oss-rebuild/pkg/archive"
 )
 
 func TestStableJARBuildMetadata(t *testing.T) {
 	testCases := []struct {
 		test     string
-		input    []*ZipEntry
-		expected []*ZipEntry
+		input    []*archive.ZipEntry
+		expected []*archive.ZipEntry
 	}{
 		{
 			test: "non_manifest_file",
-			input: []*ZipEntry{
-				{&zip.FileHeader{Name: "src/main/java/App.class"}, []byte("class content")},
+			input: []*archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "src/main/java/App.class"}, Body: []byte("class content")},
 			},
-			expected: []*ZipEntry{
-				{&zip.FileHeader{Name: "src/main/java/App.class"}, []byte("class content")},
+			expected: []*archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "src/main/java/App.class"}, Body: []byte("class content")},
 			},
 		},
 		{
 			test: "simple_manifest",
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Manifest-Version: 1.0\r\nCreated-By: Maven\r\nBuild-Jdk: 11.0.12\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\nCreated-By: Maven\r\nBuild-Jdk: 11.0.12\r\n\r\n"),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Manifest-Version: 1.0\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\n"),
 				},
 			},
 		},
 		{
 			test: "complex_manifest_with_sections",
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Manifest-Version: 1.0\r\nCreated-By: Maven\r\nBuild-Jdk: 11.0.12\r\n\r\nName: org/example/\r\nImplementation-Title: Example\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\nCreated-By: Maven\r\nBuild-Jdk: 11.0.12\r\n\r\nName: org/example/\r\nImplementation-Title: Example\r\n\r\n"),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Manifest-Version: 1.0\r\n\r\nName: org/example/\r\nImplementation-Title: Example\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\nName: org/example/\r\nImplementation-Title: Example\r\n\r\n"),
 				},
 			},
 		},
 		{
 			test: "keep_metadata_in_entries",
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Manifest-Version: 1.0\r\n\r\nName: org/example/\r\nCreated-By: Maven\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\nName: org/example/\r\nCreated-By: Maven\r\n\r\n"),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Manifest-Version: 1.0\r\n\r\nName: org/example/\r\nCreated-By: Maven\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\nName: org/example/\r\nCreated-By: Maven\r\n\r\n"),
 				},
 			},
 		},
 		{
 			test: "multiple_files_with_manifest",
-			input: []*ZipEntry{
-				{&zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, []byte("Manifest-Version: 1.0\r\nBuild-Jdk: 11.0.12\r\nBuild-Time: 2024-01-22\r\n\r\n")},
-				{&zip.FileHeader{Name: "com/example/Main.class"}, []byte("class data")},
-				{&zip.FileHeader{Name: "META-INF/maven/project.properties"}, []byte("version=1.0.0")},
+			input: []*archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\r\nBuild-Jdk: 11.0.12\r\nBuild-Time: 2024-01-22\r\n\r\n")},
+				{FileHeader: &zip.FileHeader{Name: "com/example/Main.class"}, Body: []byte("class data")},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/maven/project.properties"}, Body: []byte("version=1.0.0")},
 			},
-			expected: []*ZipEntry{
-				{&zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, []byte("Manifest-Version: 1.0\r\n\r\n")},
-				{&zip.FileHeader{Name: "com/example/Main.class"}, []byte("class data")},
-				{&zip.FileHeader{Name: "META-INF/maven/project.properties"}, []byte("version=1.0.0")},
+			expected: []*archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\r\n\r\n")},
+				{FileHeader: &zip.FileHeader{Name: "com/example/Main.class"}, Body: []byte("class data")},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/maven/project.properties"}, Body: []byte("version=1.0.0")},
 			},
 		},
 		{
 			test: "all_build_metadata_attributes",
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte(
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte(
 						"Manifest-Version: 1.0\r\n" +
 							"Archiver-Version: 1.0\r\n" +
 							"Bnd-LastModified: 1671890378000\r\n" +
@@ -124,10 +125,10 @@ func TestStableJARBuildMetadata(t *testing.T) {
 							"Implementation-Version: 1.0.0\r\n\r\n"),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Manifest-Version: 1.0\r\nImplementation-Title: Test Project\r\nImplementation-Version: 1.0.0\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\nImplementation-Title: Test Project\r\nImplementation-Version: 1.0.0\r\n\r\n"),
 				},
 			},
 		},
@@ -156,11 +157,11 @@ func TestStableJARBuildMetadata(t *testing.T) {
 			}
 
 			// Check output
-			var got []ZipEntry
+			var got []archive.ZipEntry
 			{
 				zr := must(zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len())))
 				for _, ent := range zr.File {
-					got = append(got, ZipEntry{&ent.FileHeader, must(io.ReadAll(must(ent.Open())))})
+					got = append(got, archive.ZipEntry{FileHeader: &ent.FileHeader, Body: must(io.ReadAll(must(ent.Open())))})
 				}
 			}
 
@@ -184,32 +185,32 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 	testCases := []struct {
 		test          string
 		attributeName []string
-		input         []*ZipEntry
-		expected      []*ZipEntry
+		input         []*archive.ZipEntry
+		expected      []*archive.ZipEntry
 	}{
 		{
 			test:          "synthetic_example",
 			attributeName: []string{"Export-Package"},
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Export-Package: c,\n a,b,d,\n e\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Export-Package: c,\n a,b,d,\n e\n"),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Export-Package: a,b,c,d,e\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Export-Package: a,b,c,d,e\r\n\r\n"),
 				},
 			},
 		},
 		{
 			test:          "single_attribute",
 			attributeName: []string{"Provide-Capability"},
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Provide-Capability: " +
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte("Provide-Capability: " +
 						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExtension=ecma;sling.servlet.selectors:List<String>=script," +
 						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=rhino;scriptExtension=js;sling.servlet.selectors:List<String>=script," +
 						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled\";scriptEngine=htl;scriptExtension=html," +
@@ -217,10 +218,10 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 						"sling.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/testing/precompiled/templates-access-control\";scriptEngine=htl;scriptExtension=html;sling.servlet.selectors:List<String>=\"partials,include\"\n"),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Provide-Capability: " +
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte("Provide-Capability: " +
 						"scriptEngine=htl;scriptExtension=html;sling.servlet;\r\n sling.servlet.resourceTypes:List<String>=\"org/apache/sling/scripting/si\r\n ghtly/testing/precompiled\"," +
 						"scriptEngine=rhino;scriptExtension=ecma;slin\r\n g.servlet;sling.servlet.resourceTypes:List<String>=\"org/apache/sling/sc\r\n ripting/sightly/testing/precompiled\";sling.servlet.selectors:List<Strin\r\n g>=script," +
 						"scriptEngine=rhino;scriptExtension=js;sling.servlet;sling.ser\r\n vlet.resourceTypes:List<String>=\"org/apache/sling/scripting/sightly/tes\r\n ting/precompiled\";sling.servlet.selectors:List<String>=script," +
@@ -232,10 +233,10 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 		{
 			test:          "multiple_attributes",
 			attributeName: []string{"Export-Package", "Include-Resource"},
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte(
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte(
 						"Export-Package: org.slf4j.ext;version=\"2.0.6\";uses:=\"org.slf4j\",\n" +
 							" org.slf4j.agent;version=\"2.0.6\",\n" +
 							" org.slf4j.instrumentation;uses:=javassist;version=\"2.0.6\",\n" +
@@ -272,10 +273,10 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 							" org.apache.shiro.session.mgt.eis\n"),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte(
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte(
 						"Export-Package: " +
 							"org.slf4j.agent;version=\"2.0.6\"," +
 							"org.slf4j.cal10n;uses:=\"\r\n ch.qos.cal10n,org.slf4j," +
@@ -319,16 +320,16 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 		{
 			test:          "synthetic_ordering_within_values",
 			attributeName: []string{"Export-Package"},
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Export-Package: c2=\"a,b\";a2;b2,a1=\"1234\";c1;b1\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Export-Package: c2=\"a,b\";a2;b2,a1=\"1234\";c1;b1\n"),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Export-Package: a1=\"1234\";b1;c1,a2;b2;c2=\"a,b\"\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Export-Package: a1=\"1234\";b1;c1,a2;b2;c2=\"a,b\"\r\n\r\n"),
 				},
 			},
 		},
@@ -369,42 +370,42 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 func TestStableGitProperties(t *testing.T) {
 	testCases := []struct {
 		test     string
-		input    []*ZipEntry
-		expected []*ZipEntry
+		input    []*archive.ZipEntry
+		expected []*archive.ZipEntry
 	}{
 		{
 			test: "delete_git_properties",
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: root\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Built-By: root\r\n\r\n"),
 				},
 				{
-					&zip.FileHeader{Name: "git.properties"},
-					[]byte("git.build.user.email=foo@bar.baz\r\ngit.build.user.name=foo bar\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "git.properties"},
+					Body:       []byte("git.build.user.email=foo@bar.baz\r\ngit.build.user.name=foo bar\r\n\r\n"),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: root\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Built-By: root\r\n\r\n"),
 				},
 				{
-					&zip.FileHeader{Name: "git.properties"},
-					[]byte{},
+					FileHeader: &zip.FileHeader{Name: "git.properties"},
+					Body:       []byte{},
 				},
 			},
 		},
 		{
 			test: "delete_git_json",
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: root\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Built-By: root\r\n\r\n"),
 				},
 				{
-					&zip.FileHeader{Name: "git.json"},
-					[]byte(textwrap.Dedent(`
+					FileHeader: &zip.FileHeader{Name: "git.json"},
+					Body: []byte(textwrap.Dedent(`
 						{
 							"git.branch": "master",
 							"git.commit.id.abbrev": "e646d22",
@@ -413,31 +414,31 @@ func TestStableGitProperties(t *testing.T) {
 						}`)),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: root\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Built-By: root\r\n\r\n"),
 				},
 				{
-					&zip.FileHeader{Name: "git.json"},
-					[]byte("{}"),
+					FileHeader: &zip.FileHeader{Name: "git.json"},
+					Body:       []byte("{}"),
 				},
 			},
 		},
 		{
 			test: "delete_git_json_from_custom_location",
-			input: []*ZipEntry{
+			input: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: root\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Built-By: root\r\n\r\n"),
 				},
 				{
-					&zip.FileHeader{Name: "classes/foo"},
-					[]byte("bar"),
+					FileHeader: &zip.FileHeader{Name: "classes/foo"},
+					Body:       []byte("bar"),
 				},
 				{
-					&zip.FileHeader{Name: "classes/git.json"},
-					[]byte(textwrap.Dedent(`
+					FileHeader: &zip.FileHeader{Name: "classes/git.json"},
+					Body: []byte(textwrap.Dedent(`
 						{
 							"git.branch": "main",
 							"git.build.host": "ort",
@@ -466,18 +467,18 @@ func TestStableGitProperties(t *testing.T) {
 						}`)),
 				},
 			},
-			expected: []*ZipEntry{
+			expected: []*archive.ZipEntry{
 				{
-					&zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
-					[]byte("Built-By: root\r\n\r\n"),
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Built-By: root\r\n\r\n"),
 				},
 				{
-					&zip.FileHeader{Name: "classes/foo"},
-					[]byte("bar"),
+					FileHeader: &zip.FileHeader{Name: "classes/foo"},
+					Body:       []byte("bar"),
 				},
 				{
-					&zip.FileHeader{Name: "classes/git.json"},
-					[]byte("{}"),
+					FileHeader: &zip.FileHeader{Name: "classes/git.json"},
+					Body:       []byte("{}"),
 				},
 			},
 		},
@@ -505,11 +506,11 @@ func TestStableGitProperties(t *testing.T) {
 			}
 
 			// Check output
-			var got []ZipEntry
+			var got []archive.ZipEntry
 			{
 				zr := must(zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len())))
 				for _, ent := range zr.File {
-					got = append(got, ZipEntry{&ent.FileHeader, must(io.ReadAll(must(ent.Open())))})
+					got = append(got, archive.ZipEntry{FileHeader: &ent.FileHeader, Body: must(io.ReadAll(must(ent.Open())))})
 				}
 			}
 

@@ -16,15 +16,6 @@ const (
 	RawFormat
 )
 
-type Stabilizer interface {
-	Stabilize(any)
-}
-
-// StabilizeOpts aggregates stabilizers to be used in stabilization.
-type StabilizeOpts struct {
-	Stabilizers []Stabilizer
-}
-
 // ContentSummary is a summary of rebuild-relevant features of an archive.
 type ContentSummary struct {
 	Files      []string

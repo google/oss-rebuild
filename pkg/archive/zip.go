@@ -9,9 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
-	"slices"
-	"strings"
-	"time"
 
 	"github.com/pkg/errors"
 )
@@ -67,6 +64,7 @@ type MutableZipFile struct {
 	mutContent []byte
 }
 
+// Open returns a reader for the file content.
 func (mf *MutableZipFile) Open() (io.Reader, error) {
 	if mf.mutContent != nil {
 		return bytes.NewReader(mf.mutContent), nil
@@ -74,6 +72,7 @@ func (mf *MutableZipFile) Open() (io.Reader, error) {
 	return mf.File.Open()
 }
 
+// SetContent sets the modified content for this file.
 func (mf *MutableZipFile) SetContent(content []byte) {
 	mf.mutContent = content
 }
@@ -85,6 +84,7 @@ type MutableZipReader struct {
 	Comment string
 }
 
+// NewMutableReader creates a MutableZipReader from a zip.Reader.
 func NewMutableReader(zr *zip.Reader) MutableZipReader {
 	mr := MutableZipReader{Reader: zr}
 	mr.Comment = mr.Reader.Comment
@@ -94,6 +94,7 @@ func NewMutableReader(zr *zip.Reader) MutableZipReader {
 	return mr
 }
 
+// WriteTo writes the modified archive to a zip writer.
 func (mr MutableZipReader) WriteTo(zw *zip.Writer) error {
 	if err := zw.SetComment(mr.Comment); err != nil {
 		return err
@@ -114,122 +115,8 @@ func (mr MutableZipReader) WriteTo(zw *zip.Writer) error {
 	return nil
 }
 
-type ZipArchiveStabilizer struct {
-	Name string
-	Func func(*MutableZipReader)
-}
-
-func (z ZipArchiveStabilizer) Stabilize(arg any) {
-	z.Func(arg.(*MutableZipReader))
-}
-
-type ZipEntryStabilizer struct {
-	Name string
-	Func func(*MutableZipFile)
-}
-
-func (z ZipEntryStabilizer) Stabilize(arg any) {
-	z.Func(arg.(*MutableZipFile))
-}
-
-var AllZipStabilizers = []Stabilizer{
-	StableZipFileOrder,
-	StableZipModifiedTime,
-	StableZipCompression,
-	StableZipDataDescriptor,
-	StableZipFileEncoding,
-	StableZipFileMode,
-	StableZipMisc,
-}
-
-var StableZipFileOrder = ZipArchiveStabilizer{
-	Name: "zip-file-order",
-	Func: func(zr *MutableZipReader) {
-		slices.SortFunc(zr.File, func(i, j *MutableZipFile) int {
-			return strings.Compare(i.Name, j.Name)
-		})
-	},
-}
-
-var StableZipModifiedTime = ZipEntryStabilizer{
-	Name: "zip-modified-time",
-	Func: func(zf *MutableZipFile) {
-		zf.Modified = time.UnixMilli(0)
-		zf.ModifiedDate = 0
-		zf.ModifiedTime = 0
-	},
-}
-
-var StableZipCompression = ZipEntryStabilizer{
-	Name: "zip-compression",
-	Func: func(zf *MutableZipFile) {
-		zf.Method = zip.Store
-	},
-}
-
-var dataDescriptorFlag = uint16(0x8)
-
-var StableZipDataDescriptor = ZipEntryStabilizer{
-	Name: "zip-data-descriptor",
-	Func: func(zf *MutableZipFile) {
-		zf.Flags = zf.Flags & ^dataDescriptorFlag
-		zf.CRC32 = 0
-		zf.CompressedSize = 0
-		zf.CompressedSize64 = 0
-		zf.UncompressedSize = 0
-		zf.UncompressedSize64 = 0
-	},
-}
-
-var StableZipFileEncoding = ZipEntryStabilizer{
-	Name: "zip-file-encoding",
-	Func: func(zf *MutableZipFile) {
-		zf.NonUTF8 = false
-	},
-}
-
-var StableZipFileMode = ZipEntryStabilizer{
-	Name: "zip-file-mode",
-	Func: func(zf *MutableZipFile) {
-		zf.CreatorVersion = 0
-		zf.ExternalAttrs = 0
-	},
-}
-
-var StableZipMisc = ZipEntryStabilizer{
-	Name: "zip-misc",
-	Func: func(zf *MutableZipFile) {
-		zf.Comment = ""
-		zf.ReaderVersion = 0
-		zf.Extra = []byte{}
-		// NOTE: Zero all flags except the data descriptor one handled above.
-		zf.Flags = zf.Flags & dataDescriptorFlag
-	},
-}
-
-// StabilizeZip strips volatile metadata and rewrites the provided archive in a standard form.
-func StabilizeZip(zr *zip.Reader, zw *zip.Writer, opts StabilizeOpts) error {
-	defer zw.Close()
-	var headers []zip.FileHeader
-	for _, zf := range zr.File {
-		headers = append(headers, zf.FileHeader)
-	}
-	mr := NewMutableReader(zr)
-	for _, s := range opts.Stabilizers {
-		switch s.(type) {
-		case ZipArchiveStabilizer:
-			s.(ZipArchiveStabilizer).Stabilize(&mr)
-		case ZipEntryStabilizer:
-			for _, mf := range mr.File {
-				s.(ZipEntryStabilizer).Stabilize(mf)
-			}
-		}
-	}
-	return mr.WriteTo(zw)
-}
-
-// toZipCompatibleReader coerces an io.Reader into an io.ReaderAt required to construct a zip.Reader.
-func toZipCompatibleReader(r io.Reader) (io.ReaderAt, int64, error) {
+// ToZipCompatibleReader coerces an io.Reader into an io.ReaderAt required to construct a zip.Reader.
+func ToZipCompatibleReader(r io.Reader) (io.ReaderAt, int64, error) {
 	seeker, seekerOK := r.(io.Seeker)
 	readerAt, readerOK := r.(io.ReaderAt)
 	if seekerOK && readerOK {

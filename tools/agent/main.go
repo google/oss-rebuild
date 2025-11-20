@@ -27,12 +27,12 @@ import (
 	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/internal/uri"
-	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
 	"gopkg.in/yaml.v3"
@@ -426,7 +426,7 @@ func stabilizeInPlace(pth string, tfs billy.Filesystem, t rebuild.Target) error 
 		return errors.Wrap(err, "opening file")
 	}
 	defer orig.Close()
-	if err := archive.Stabilize(buf, orig, t.ArchiveType()); err != nil {
+	if err := stabilize.Stabilize(buf, orig, t.ArchiveType()); err != nil {
 		return errors.Wrap(err, "stabilizing")
 	}
 	if _, err := orig.Seek(0, io.SeekStart); err != nil {
