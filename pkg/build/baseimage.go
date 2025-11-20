@@ -23,6 +23,7 @@ func DefaultBaseImageConfig() BaseImageConfig {
 		Ecosystems: map[rebuild.Ecosystem]string{
 			rebuild.Debian: "docker.io/library/debian:stable-20251103-slim",
 			rebuild.Maven:  "docker.io/library/debian:trixie-20250203-slim",
+			rebuild.Go:     "docker.io/library/golang:1.25.4-alpine3.22",
 		},
 	}
 }
