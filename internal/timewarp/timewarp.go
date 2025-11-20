@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
@@ -78,11 +79,22 @@ type herror struct {
 	status int
 }
 
+// isClientDisconnect checks if the error is due to client disconnecting (broken pipe or connection reset)
+func isClientDisconnect(err error) bool {
+	return errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET)
+}
+
 func (h Handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if err := h.handleRequest(rw, r); err != nil {
+		if isClientDisconnect(err) {
+			return // don't try to write an error response
+		}
 		status := http.StatusInternalServerError
 		if he, ok := err.(herror); ok {
 			status = he.status
+			if isClientDisconnect(he.error) {
+				return
+			}
 		}
 		if status/100 == 3 {
 			http.Redirect(rw, r, err.Error(), status)
