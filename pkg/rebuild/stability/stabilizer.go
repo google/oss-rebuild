@@ -8,32 +8,33 @@ import (
 
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
 )
 
 // StabilizersForTarget returns the appropriate stabilizers for a given target.
-func StabilizersForTarget(t rebuild.Target) ([]archive.Stabilizer, error) {
+func StabilizersForTarget(t rebuild.Target) ([]stabilize.Stabilizer, error) {
 	format := t.ArchiveType()
 	if format == archive.UnknownFormat {
 		return nil, errors.Errorf("unknown archive format for %s %s", t.Ecosystem, t.Artifact)
 	}
-	var stabilizers []archive.Stabilizer
+	var stabilizers []stabilize.Stabilizer
 	switch format {
 	case archive.ZipFormat:
-		stabilizers = slices.Clone(archive.AllZipStabilizers)
+		stabilizers = slices.Clone(stabilize.AllZipStabilizers)
 	case archive.TarFormat:
-		stabilizers = slices.Clone(archive.AllTarStabilizers)
+		stabilizers = slices.Clone(stabilize.AllTarStabilizers)
 	case archive.TarGzFormat:
-		stabilizers = slices.Concat(archive.AllTarStabilizers, archive.AllGzipStabilizers)
+		stabilizers = slices.Concat(stabilize.AllTarStabilizers, stabilize.AllGzipStabilizers)
 	}
 	switch t.Ecosystem {
 	case rebuild.Maven:
 		if format == archive.ZipFormat {
-			stabilizers = append(stabilizers, archive.AllJarStabilizers...)
+			stabilizers = append(stabilizers, stabilize.AllJarStabilizers...)
 		}
 	case rebuild.CratesIO:
 		if format == archive.TarGzFormat {
-			stabilizers = append(stabilizers, archive.AllCrateStabilizers...)
+			stabilizers = append(stabilizers, stabilize.AllCrateStabilizers...)
 		}
 	}
 	return stabilizers, nil
