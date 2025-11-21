@@ -5,6 +5,7 @@ package diffr
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,14 +30,14 @@ var ErrNoDiff = errors.New("no diff found")
 
 // Diff compares two files recursively through archives
 // If no diff is found, ErrNoDiff is returned
-func Diff(file1, file2 File, opts Options) error {
+func Diff(ctx context.Context, file1, file2 File, opts Options) error {
 	// Create root diff node
 	rootNode := DiffNode{
 		Source1: file1.Name,
 		Source2: file2.Name,
 	}
 	// Compare the files
-	match, err := compareFiles(&rootNode, file1, file2)
+	match, err := compareFiles(ctx, &rootNode, file1, file2)
 	if err != nil {
 		return errors.Wrap(err, "comparing files")
 	}
@@ -62,7 +63,7 @@ func Diff(file1, file2 File, opts Options) error {
 }
 
 // compareFiles compares two files and populates the DiffNode
-func compareFiles(node *DiffNode, file1, file2 File) (bool, error) {
+func compareFiles(ctx context.Context, node *DiffNode, file1, file2 File) (bool, error) {
 	// First, use compareBinary to perform byte-level comparison.
 	// This catches any differences that type-aware differs might miss due to
 	// parser canonicalization or lacking semantic reporting.
@@ -94,11 +95,11 @@ func compareFiles(node *DiffNode, file1, file2 File) (bool, error) {
 	}
 	switch type1 {
 	case TypeGzip:
-		match, err = compareGzip(&typedNode, file1, file2)
+		match, err = compareGzip(ctx, &typedNode, file1, file2)
 	case TypeZip:
-		match, err = compareZip(&typedNode, file1, file2)
+		match, err = compareZip(ctx, &typedNode, file1, file2)
 	case TypeTar:
-		match, err = compareTar(&typedNode, file1, file2)
+		match, err = compareTar(ctx, &typedNode, file1, file2)
 	case TypeText:
 		match, err = compareText(&typedNode, file1, file2)
 	case TypeBinary:
