@@ -22,8 +22,8 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/glob"
 	"github.com/google/oss-rebuild/internal/llm"
-	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/diffr"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -264,33 +264,42 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 						log.Println(errors.Wrap(err, "creating asset store"))
 						return
 					}
-					var upCS *archive.ContentSummary
-					{
-						usr, err := assets.Reader(ctx, rebuild.DebugUpstreamAsset.For(example.Target()))
-						if err != nil {
-							log.Println(errors.Wrap(err, "opening upstream"))
-							return
-						}
-						defer usr.Close()
-						upCS, err = archive.NewContentSummary(usr, example.Target().ArchiveType())
-						if err != nil {
-							log.Println(errors.Wrap(err, "summarizing upstream"))
-							return
-						}
+					// Use diffr to compare the archives
+					upstreamPath := assets.URL(rebuild.DebugUpstreamAsset.For(example.Target())).Path
+					rebuildPath := assets.URL(rebuild.RebuildAsset.For(example.Target())).Path
+					upFile, err := os.Open(upstreamPath)
+					if err != nil {
+						log.Println(errors.Wrap(err, "opening upstream file"))
+						return
 					}
-					var rbCS *archive.ContentSummary
-					{
-						rbr, err := assets.Reader(ctx, rebuild.RebuildAsset.For(example.Target()))
-						if err != nil {
-							log.Println(errors.Wrap(err, "opening rebuild"))
+					defer upFile.Close()
+					rbFile, err := os.Open(rebuildPath)
+					if err != nil {
+						log.Println(errors.Wrap(err, "opening rebuild file"))
+						return
+					}
+					defer rbFile.Close()
+					// Use MaxDepth based on archive format layers
+					maxDepth := example.Target().ArchiveType().Layers()
+					var left, diff, right []string
+					var buf bytes.Buffer
+					err = diffr.Diff(
+						ctx,
+						diffr.File{Name: rebuildPath, Reader: rbFile},
+						diffr.File{Name: upstreamPath, Reader: upFile},
+						diffr.Options{MaxDepth: maxDepth, Output: &buf, OutputJSON: true},
+					)
+					if err != nil && !errors.Is(err, diffr.ErrNoDiff) {
+						log.Println(errors.Wrap(err, "running diffr"))
+						return
+					}
+					if buf.Len() > 0 {
+						var root diffr.DiffNode
+						if err := json.Unmarshal(buf.Bytes(), &root); err != nil {
+							log.Println(errors.Wrap(err, "parsing diffr output"))
 							return
 						}
-						defer rbr.Close()
-						rbCS, err = archive.NewContentSummary(rbr, example.Target().ArchiveType())
-						if err != nil {
-							log.Println(errors.Wrap(err, "summarizing rebuild"))
-							return
-						}
+						left, diff, right = collectDiffPaths(&root)
 					}
 					exclusionStab := func(path, reason string) stabilize.CustomStabilizerEntry {
 						return stabilize.CustomStabilizerEntry{
@@ -302,7 +311,6 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 							Reason: reason,
 						}
 					}
-					left, diff, right := rbCS.Diff(upCS)
 					for _, p := range left {
 						customStabs = append(customStabs, exclusionStab(p, "Found in rebuild.\nFIXME: Explain why it's safe to ignore."))
 					}
@@ -755,4 +763,42 @@ func NewBenchmarkCmds(app *tview.Application, executor build.Executor, prebuildC
 			},
 		},
 	}
+}
+
+// collectDiffPaths walks the diff tree and collects file paths by status.
+// It returns files only in first archive, files in both, and files only in second.
+func collectDiffPaths(n *diffr.DiffNode) (onlyFirst, both, onlySecond []string) {
+	// Skip non-file nodes
+	if n.Source1 == "file list" {
+		for _, detail := range n.Details {
+			f, b, s := collectDiffPaths(&detail)
+			onlyFirst = append(onlyFirst, f...)
+			both = append(both, b...)
+			onlySecond = append(onlySecond, s...)
+		}
+		return
+	}
+	// Classify the current node
+	status := n.Status()
+	name := n.Source1 // Use Source1 as the canonical name
+	switch status {
+	case diffr.StatusOnlyFirst:
+		onlyFirst = append(onlyFirst, name)
+	case diffr.StatusOnlySecond:
+		onlySecond = append(onlySecond, name)
+	case diffr.StatusBoth:
+		// If this node has details, it's a container - recurse
+		if len(n.Details) > 0 {
+			for _, detail := range n.Details {
+				f, b, s := collectDiffPaths(&detail)
+				onlyFirst = append(onlyFirst, f...)
+				both = append(both, b...)
+				onlySecond = append(onlySecond, s...)
+			}
+		} else {
+			// This is a leaf node that differs
+			both = append(both, name)
+		}
+	}
+	return
 }
