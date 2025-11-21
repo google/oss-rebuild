@@ -642,3 +642,84 @@ func createZip(entries []archive.ZipEntry) ([]byte, error) {
 	}
 	return buf.Bytes(), nil
 }
+
+func TestMaxDepth(t *testing.T) {
+	// Create a tar.gz with different content for testing
+	leftData, err := createTgz([]archive.TarEntry{
+		{Header: &tar.Header{Name: "file.txt", Size: 7, Mode: 0644}, Body: []byte("hello 1")},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create left tgz: %v", err)
+	}
+	rightData, err := createTgz([]archive.TarEntry{
+		{Header: &tar.Header{Name: "file.txt", Size: 7, Mode: 0644}, Body: []byte("hello 2")},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create right tgz: %v", err)
+	}
+	testCases := []struct {
+		name     string
+		maxDepth int
+		expect   string
+	}{
+		{
+			name:     "unlimited depth",
+			maxDepth: 0,
+			expect: `--- archive.tar.gz
++++ archive.tar.gz
+│   --- archive.tar
+├─┐ +++ archive.tar
+│ ├── file.txt
+│ │ @@ -1 +1 @@
+│ │ -hello 1
+│ │ +hello 2
+`,
+		},
+		{
+			name:     "depth 1 stops at gzip",
+			maxDepth: 1,
+			// Should stop at gzip level, showing the tar as not expanded
+			expect: `--- archive.tar.gz
++++ archive.tar.gz
+├── archive.tar
+│┄ Binary files differ
+│┄ Archive not expanded (depth limit 1 reached)
+`,
+		},
+		{
+			name:     "depth 2 shows tar contents",
+			maxDepth: 2,
+			expect: `--- archive.tar.gz
++++ archive.tar.gz
+│   --- archive.tar
+├─┐ +++ archive.tar
+│ ├── file.txt
+│ │ @@ -1 +1 @@
+│ │ -hello 1
+│ │ +hello 2
+`,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			leftFile := File{
+				Name:   "archive.tar.gz",
+				Reader: bytes.NewReader(leftData),
+			}
+			rightFile := File{
+				Name:   "archive.tar.gz",
+				Reader: bytes.NewReader(rightData),
+			}
+			var buf bytes.Buffer
+			opts := Options{Output: &buf, MaxDepth: tc.maxDepth}
+			err := Diff(t.Context(), leftFile, rightFile, opts)
+			if err != nil {
+				t.Fatalf("Diff failed: %v", err)
+			}
+			output := buf.String()
+			if output != tc.expect {
+				t.Errorf("Text output mismatch\nExpected:\n%q\nGot:\n%q", tc.expect, output)
+			}
+		})
+	}
+}

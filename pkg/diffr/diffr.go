@@ -18,6 +18,19 @@ import (
 type Options struct {
 	Output     io.Writer
 	OutputJSON bool // If true, output JSON format; otherwise formatted text diff
+	MaxDepth   int  // Maximum archive nesting depth to recurse into (0 = unlimited)
+}
+
+// compareContext holds options and state for the comparison
+type compareContext struct {
+	context.Context
+	maxDepth int
+	depth    int
+}
+
+func (c compareContext) Child() compareContext {
+	c.depth++
+	return c
 }
 
 // File represents an input file with its name and content reader
@@ -36,8 +49,10 @@ func Diff(ctx context.Context, file1, file2 File, opts Options) error {
 		Source1: file1.Name,
 		Source2: file2.Name,
 	}
+	// Create context for comparison
+	cmpCtx := compareContext{Context: ctx, maxDepth: opts.MaxDepth}
 	// Compare the files
-	match, err := compareFiles(ctx, &rootNode, file1, file2)
+	match, err := compareFiles(cmpCtx, &rootNode, file1, file2)
 	if err != nil {
 		return errors.Wrap(err, "comparing files")
 	}
@@ -63,7 +78,7 @@ func Diff(ctx context.Context, file1, file2 File, opts Options) error {
 }
 
 // compareFiles compares two files and populates the DiffNode
-func compareFiles(ctx context.Context, node *DiffNode, file1, file2 File) (bool, error) {
+func compareFiles(ctx compareContext, node *DiffNode, file1, file2 File) (bool, error) {
 	// First, use compareBinary to perform byte-level comparison.
 	// This catches any differences that type-aware differs might miss due to
 	// parser canonicalization or lacking semantic reporting.
@@ -87,6 +102,16 @@ func compareFiles(ctx context.Context, node *DiffNode, file1, file2 File) (bool,
 	if type1 != type2 {
 		node.Comments = []string{fmt.Sprintf("File types differ: %s vs %s", type1, type2)}
 		return false, nil
+	}
+	// Check if we've reached max depth for archive types
+	// MaxDepth of 0 means unlimited
+	if ctx.maxDepth > 0 && ctx.depth >= ctx.maxDepth {
+		switch type1 {
+		case TypeGzip, TypeZip, TypeTar:
+			// Don't recurse into archives at max depth, add comment and report binary diff
+			node.Comments = append(node.Comments, fmt.Sprintf("Archive not expanded (depth limit %d reached)", ctx.maxDepth))
+			return false, nil
+		}
 	}
 	// Create a temporary node to collect type-aware differ output
 	typedNode := DiffNode{
