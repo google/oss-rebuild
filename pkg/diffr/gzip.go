@@ -6,7 +6,6 @@ package diffr
 import (
 	"bytes"
 	"compress/gzip"
-	"context"
 	"io"
 	"strings"
 
@@ -14,7 +13,7 @@ import (
 )
 
 // compareGzip compares two gzip files
-func compareGzip(ctx context.Context, node *DiffNode, file1, file2 File) (bool, error) {
+func compareGzip(ctx compareContext, node *DiffNode, file1, file2 File) (bool, error) {
 	// Decompress both files
 	gz1, err := gzip.NewReader(file1.Reader)
 	if err != nil {
@@ -62,7 +61,7 @@ func compareGzip(ctx context.Context, node *DiffNode, file1, file2 File) (bool, 
 		Name:   childNode.Source2,
 		Reader: bytes.NewReader(buf2.Bytes()),
 	}
-	match, err := compareFiles(ctx, &childNode, childFile1, childFile2)
+	match, err := compareFiles(ctx.Child(), &childNode, childFile1, childFile2)
 	if err != nil {
 		return false, errors.Wrap(err, "comparing decompressed content")
 	}
