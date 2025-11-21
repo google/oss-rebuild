@@ -24,6 +24,7 @@ type FirestoreClient struct {
 
 // FirestoreClient is only a Reader for now.
 var _ Reader = &FirestoreClient{}
+var _ SessionReader = &FirestoreClient{}
 
 // NewFirestore creates a new FirestoreClient.
 func NewFirestore(ctx context.Context, project string) (*FirestoreClient, error) {
@@ -170,6 +171,76 @@ func (f *FirestoreClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]
 	return runSlice, nil
 }
 
+func (f *FirestoreClient) FetchSessions(ctx context.Context, req *FetchSessionsReq) ([]schema.AgentSession, error) {
+	query := f.client.Collection("agent_sessions").Query
+	if len(req.IDs) != 0 {
+		query = query.Where("id", "in", req.IDs)
+	}
+	if req.StopReason != "" {
+		query = query.Where("stop_reason", "==", req.StopReason)
+	}
+	if !req.Since.IsZero() {
+		query = query.Where("created", ">=", req.Since)
+	}
+	if !req.Until.IsZero() {
+		query = query.Where("created", "<=", req.Until)
+	}
+	sessions := make(chan schema.AgentSession)
+	cerr := doQuery(ctx, query, newSessionFromFirestore, sessions)
+	var sessionSlice []schema.AgentSession
+	for s := range sessions {
+		// Client-side filtering for target (Firestore doesn't support nested field queries well)
+		if req.PartialTarget.Ecosystem != "" && s.Target.Ecosystem != req.PartialTarget.Ecosystem {
+			continue
+		}
+		if req.PartialTarget.Package != "" && s.Target.Package != req.PartialTarget.Package {
+			continue
+		}
+		if req.PartialTarget.Version != "" && s.Target.Version != req.PartialTarget.Version {
+			continue
+		}
+		if req.PartialTarget.Artifact != "" && s.Target.Artifact != req.PartialTarget.Artifact {
+			continue
+		}
+		sessionSlice = append(sessionSlice, s)
+	}
+	if err := <-cerr; err != nil {
+		return nil, errors.Wrap(err, "query error")
+	}
+	// Sort by creation time
+	slices.SortFunc(sessionSlice, func(a, b schema.AgentSession) int {
+		return a.Created.Compare(b.Created)
+	})
+	return sessionSlice, nil
+}
+
+func (f *FirestoreClient) FetchIterations(ctx context.Context, req *FetchIterationsReq) ([]schema.AgentIteration, error) {
+	if req.SessionID == "" {
+		return nil, errors.New("empty session ID provided")
+	}
+	query := f.client.Collection("agent_sessions").Doc(req.SessionID).Collection("agent_iterations").Query
+	iterations := make(chan schema.AgentIteration)
+	cerr := doQuery(ctx, query, newIterationFromFirestore, iterations)
+	var iterationSlice []schema.AgentIteration
+	iterIDs := make(map[string]bool)
+	for _, id := range req.IterationIDs {
+		iterIDs[id] = true
+	}
+	for it := range iterations {
+		if len(iterIDs) != 0 && !iterIDs[it.ID] {
+			continue
+		}
+		iterationSlice = append(iterationSlice, it)
+	}
+	if err := <-cerr; err != nil {
+		return nil, errors.Wrap(err, "query error")
+	}
+	slices.SortFunc(iterationSlice, func(a, b schema.AgentIteration) int {
+		return a.Created.Compare(b.Created)
+	})
+	return iterationSlice, nil
+}
+
 // newRebuildFromFirestore creates a Rebuild instance from a "attempt" collection document.
 func newRebuildFromFirestore(doc *firestore.DocumentSnapshot) Rebuild {
 	var sa schema.RebuildAttempt
@@ -192,6 +263,22 @@ func newRunFromFirestore(doc *firestore.DocumentSnapshot) Run {
 		r.ID = doc.Ref.ID
 	}
 	return FromRun(r)
+}
+
+func newSessionFromFirestore(doc *firestore.DocumentSnapshot) schema.AgentSession {
+	var s schema.AgentSession
+	if err := doc.DataTo(&s); err != nil {
+		panic(err)
+	}
+	return s
+}
+
+func newIterationFromFirestore(doc *firestore.DocumentSnapshot) schema.AgentIteration {
+	var i schema.AgentIteration
+	if err := doc.DataTo(&i); err != nil {
+		panic(err)
+	}
+	return i
 }
 
 // doQuery executes a query, transforming and sending each document to the output channel.
