@@ -5,6 +5,7 @@ package pypi
 
 import (
 	"context"
+	"io"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -26,6 +27,10 @@ var (
 
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return true
+}
+
+func (r Rebuilder) Upstream(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (io.ReadCloser, error) {
+	return mux.PyPI.Artifact(ctx, t.Package, t.Version, t.Artifact)
 }
 
 func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
