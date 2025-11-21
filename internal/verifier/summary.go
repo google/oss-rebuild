@@ -11,8 +11,8 @@ import (
 	"net/http"
 
 	"github.com/google/oss-rebuild/internal/hashext"
-	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
 )
 
@@ -24,7 +24,7 @@ type ArtifactSummary struct {
 }
 
 // SummarizeArtifacts fetches and summarizes the rebuild and upstream artifacts.
-func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStore, t rebuild.Target, upstreamURI string, hashes []crypto.Hash, stabilizers []archive.Stabilizer) (rb, up ArtifactSummary, err error) {
+func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStore, t rebuild.Target, upstreamURI string, hashes []crypto.Hash, stabilizers []stabilize.Stabilizer) (rb, up ArtifactSummary, err error) {
 	rb = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), StabilizedHash: hashext.NewMultiHash(hashes...)}
 	up = ArtifactSummary{Hash: hashext.NewMultiHash(hashes...), StabilizedHash: hashext.NewMultiHash(hashes...), URI: upstreamURI}
 	// Fetch and process rebuild.
@@ -36,7 +36,7 @@ func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStor
 		return rb, up, errors.Wrap(err, "reading artifact")
 	}
 	defer checkClose(r)
-	err = archive.StabilizeWithOpts(rb.StabilizedHash, io.TeeReader(r, rb.Hash), t.ArchiveType(), archive.StabilizeOpts{Stabilizers: stabilizers})
+	err = stabilize.StabilizeWithOpts(rb.StabilizedHash, io.TeeReader(r, rb.Hash), t.ArchiveType(), stabilize.StabilizeOpts{Stabilizers: stabilizers})
 	if err != nil {
 		return rb, up, errors.Wrap(err, "fingerprinting rebuild")
 	}
@@ -49,7 +49,7 @@ func SummarizeArtifacts(ctx context.Context, metadata rebuild.LocatableAssetStor
 	if resp.StatusCode != 200 {
 		return rb, up, errors.Wrap(errors.New(resp.Status), "fetching upstream artifact")
 	}
-	err = archive.StabilizeWithOpts(up.StabilizedHash, io.TeeReader(resp.Body, up.Hash), t.ArchiveType(), archive.StabilizeOpts{Stabilizers: stabilizers})
+	err = stabilize.StabilizeWithOpts(up.StabilizedHash, io.TeeReader(resp.Body, up.Hash), t.ArchiveType(), stabilize.StabilizeOpts{Stabilizers: stabilizers})
 	checkClose(resp.Body)
 	if err != nil {
 		return rb, up, errors.Wrap(err, "fingerprinting upstream")
