@@ -16,13 +16,18 @@ const (
 	RawFormat
 )
 
-type Stabilizer interface {
-	Stabilize(any)
-}
-
-// StabilizeOpts aggregates stabilizers to be used in stabilization.
-type StabilizeOpts struct {
-	Stabilizers []Stabilizer
+// Layers returns the number of nested archive layers for a format.
+func (f Format) Layers() int {
+	switch f {
+	case TarGzFormat:
+		return 2 // gzip -> tar
+	case TarFormat:
+		return 1
+	case ZipFormat:
+		return 1
+	default:
+		return 0
+	}
 }
 
 // ContentSummary is a summary of rebuild-relevant features of an archive.
