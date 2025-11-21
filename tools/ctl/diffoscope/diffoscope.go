@@ -11,8 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
 )
 
@@ -32,7 +32,7 @@ func stabilizeArtifact(in, out string, t rebuild.Target) error {
 		return errors.Wrap(err, "opening output")
 	}
 	defer stabilized.Close()
-	if err := archive.Stabilize(stabilized, orig, t.ArchiveType()); err != nil {
+	if err := stabilize.Stabilize(stabilized, orig, t.ArchiveType()); err != nil {
 		return errors.Wrap(err, "running stabilize")
 	}
 	return nil
