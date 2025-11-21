@@ -5,10 +5,7 @@ package pypi
 
 import (
 	"context"
-	"log"
-	"strings"
 
-	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -26,39 +23,6 @@ var (
 	verdictWheelDiff       = errors.New("wheel metadata mismatch")
 	verdictContentDiff     = errors.New("content differences found")
 )
-
-func compareTwoFiles(csRB, csUP *archive.ContentSummary) (verdict error, err error) {
-	upOnly, diffs, rbOnly := csUP.Diff(csRB)
-	log.Println(upOnly, diffs, rbOnly)
-	var foundDSStore bool
-	for _, f := range upOnly {
-		if strings.HasSuffix(f, "/.DS_STORE") {
-			foundDSStore = true
-		}
-	}
-	onlyMetadataDiffs := len(upOnly) == 0 && len(rbOnly) == 0 && len(diffs) > 0
-	for _, f := range diffs {
-		onlyMetadataDiffs = onlyMetadataDiffs && strings.Contains(f, ".dist-info/")
-	}
-	switch {
-	case foundDSStore:
-		return verdictDSStore, nil
-	case csUP.CRLFCount > csRB.CRLFCount:
-		return verdictLineEndings, nil
-	case len(upOnly) > 0 && len(rbOnly) > 0:
-		return verdictMismatchedFiles, nil
-	case len(upOnly) > 0:
-		return verdictUpstreamOnly, nil
-	case len(rbOnly) > 0:
-		return verdictRebuildOnly, nil
-	case onlyMetadataDiffs:
-		return verdictWheelDiff, nil
-	case len(diffs) > 0:
-		return verdictContentDiff, nil
-	default:
-		return nil, nil
-	}
-}
 
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return true

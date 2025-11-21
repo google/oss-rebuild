@@ -6,37 +6,10 @@ package archive
 import (
 	"archive/zip"
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 
 	"github.com/pkg/errors"
 )
-
-// NewContentSummaryFromZip returns a ContentSummary for a zip archive.
-func NewContentSummaryFromZip(zr *zip.Reader) (*ContentSummary, error) {
-	cs := ContentSummary{
-		Files:      make([]string, 0),
-		FileHashes: make([]string, 0),
-		CRLFCount:  0,
-	}
-	for _, f := range zr.File {
-		rc, err := f.Open()
-		if err != nil {
-			return nil, err
-		}
-		defer rc.Close()
-		buf, err := io.ReadAll(rc)
-		if err != nil {
-			return nil, err
-		}
-		cs.Files = append(cs.Files, f.Name)
-		cs.CRLFCount += bytes.Count(buf, []byte{'\r', '\n'})
-		h := sha256.Sum256(buf)
-		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(h[:]))
-	}
-	return &cs, nil
-}
 
 // ZipEntry represents an entry in a zip archive.
 // TODO: Move to archivetest.
