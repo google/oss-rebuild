@@ -22,7 +22,6 @@ import (
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
-	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/build"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
@@ -33,6 +32,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
@@ -174,7 +174,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		return errors.Wrap(err, "getting stabilizers for target")
 	}
 	if entry != nil && len(entry.BuildDefinition.CustomStabilizers) > 0 {
-		customStabilizers, err := archive.CreateCustomStabilizers(entry.BuildDefinition.CustomStabilizers, t.ArchiveType())
+		customStabilizers, err := stabilize.CreateCustomStabilizers(entry.BuildDefinition.CustomStabilizers, t.ArchiveType())
 		if err != nil {
 			return errors.Wrap(err, "creating stabilizers")
 		}
