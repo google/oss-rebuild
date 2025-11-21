@@ -114,7 +114,7 @@ func compareZip(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 			node.Details = append(node.Details, DiffNode{
 				Source1:  name,
 				Source2:  name,
-				Comments: []string{"Entry only in second archive"},
+				Comments: []string{commentOnlyInSecond},
 			})
 		} else if has1 && !has2 {
 			// Entry only in file1
@@ -122,7 +122,7 @@ func compareZip(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 			node.Details = append(node.Details, DiffNode{
 				Source1:  name,
 				Source2:  name,
-				Comments: []string{"Entry only in first archive"},
+				Comments: []string{commentOnlyInFirst},
 			})
 		} else if has1 && has2 {
 			// Entry in both - compare contents
