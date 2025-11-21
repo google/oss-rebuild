@@ -5,9 +5,6 @@ package archive
 
 import (
 	"archive/tar"
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/pkg/errors"
 )
 
 // TarEntry represents an entry in a tar archive.
@@ -96,37 +92,4 @@ func ExtractTar(tr *tar.Reader, fs billy.Filesystem, opt ExtractOptions) error {
 			}
 		}
 	}
-}
-
-// NewContentSummaryFromTar returns a ContentSummary for a tar archive.
-func NewContentSummaryFromTar(tr *tar.Reader) (*ContentSummary, error) {
-	cs := ContentSummary{
-		Files:      make([]string, 0),
-		FileHashes: make([]string, 0),
-		CRLFCount:  0,
-	}
-	for {
-		header, err := tr.Next()
-		if err != nil {
-			if err == io.EOF {
-				break // End of archive
-			}
-			return nil, errors.Wrap(err, "failed to read tar header")
-		}
-		switch header.Typeflag {
-		case tar.TypeGNUSparse, tar.TypeGNULongName, tar.TypeGNULongLink:
-			// NOTE: Non-PAX header type support can be added, if necessary.
-			return nil, errors.Errorf("Unsupported header type: %v", header.Typeflag)
-		default:
-		}
-		buf, err := io.ReadAll(tr)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to read tar entry %s", header.Name)
-		}
-		cs.Files = append(cs.Files, header.Name)
-		cs.CRLFCount += bytes.Count(buf, []byte{'\r', '\n'})
-		h := sha256.Sum256(buf)
-		cs.FileHashes = append(cs.FileHashes, hex.EncodeToString(h[:]))
-	}
-	return &cs, nil
 }
