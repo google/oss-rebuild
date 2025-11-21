@@ -723,3 +723,70 @@ func TestMaxDepth(t *testing.T) {
 		})
 	}
 }
+
+func TestNodeStatus(t *testing.T) {
+	testCases := []struct {
+		name     string
+		node     DiffNode
+		expected NodeStatus
+	}{
+		{
+			name:     "no comments returns StatusBoth",
+			node:     DiffNode{Source1: "file.txt", Source2: "file.txt"},
+			expected: StatusBoth,
+		},
+		{
+			name: "unrelated comment returns StatusBoth",
+			node: DiffNode{
+				Source1:  "file.txt",
+				Source2:  "file.txt",
+				Comments: []string{"Binary files differ"},
+			},
+			expected: StatusBoth,
+		},
+		{
+			name: "commentOnlyInFirst returns StatusOnlyFirst",
+			node: DiffNode{
+				Source1:  "file.txt",
+				Source2:  "file.txt",
+				Comments: []string{commentOnlyInFirst},
+			},
+			expected: StatusOnlyFirst,
+		},
+		{
+			name: "commentOnlyInSecond returns StatusOnlySecond",
+			node: DiffNode{
+				Source1:  "file.txt",
+				Source2:  "file.txt",
+				Comments: []string{commentOnlyInSecond},
+			},
+			expected: StatusOnlySecond,
+		},
+		{
+			name: "multiple comments with commentOnlyInFirst",
+			node: DiffNode{
+				Source1:  "file.txt",
+				Source2:  "file.txt",
+				Comments: []string{"Some other comment", commentOnlyInFirst},
+			},
+			expected: StatusOnlyFirst,
+		},
+		{
+			name: "multiple comments with commentOnlyInSecond",
+			node: DiffNode{
+				Source1:  "file.txt",
+				Source2:  "file.txt",
+				Comments: []string{"Binary files differ", commentOnlyInSecond},
+			},
+			expected: StatusOnlySecond,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.node.Status()
+			if got != tc.expected {
+				t.Errorf("Expected Status() = %v, got %v", tc.expected, got)
+			}
+		})
+	}
+}
