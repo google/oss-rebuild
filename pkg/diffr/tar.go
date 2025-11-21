@@ -30,7 +30,7 @@ func formatTarListing(h *tar.Header) string {
 }
 
 // compareTar compares two tar archives
-func compareTar(node *DiffNode, file1, file2 File) (bool, error) {
+func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, error) {
 	// Reset readers
 	file1.Reader.Seek(0, io.SeekStart)
 	file2.Reader.Seek(0, io.SeekStart)
@@ -119,7 +119,7 @@ func compareTar(node *DiffNode, file1, file2 File) (bool, error) {
 			node.Details = append(node.Details, DiffNode{
 				Source1:  name,
 				Source2:  name,
-				Comments: []string{"Entry only in second archive"},
+				Comments: []string{commentOnlyInSecond},
 			})
 		} else if has1 && !has2 {
 			// Entry only in file1
@@ -127,7 +127,7 @@ func compareTar(node *DiffNode, file1, file2 File) (bool, error) {
 			node.Details = append(node.Details, DiffNode{
 				Source1:  name,
 				Source2:  name,
-				Comments: []string{"Entry only in first archive"},
+				Comments: []string{commentOnlyInFirst},
 			})
 		} else if has1 && has2 {
 			// Entry in both - compare based on type
@@ -164,7 +164,7 @@ func compareTar(node *DiffNode, file1, file2 File) (bool, error) {
 					Name:   name,
 					Reader: bytes.NewReader(content2.Bytes()),
 				}
-				entryMatch, err := compareFiles(&entryNode, entryFile1, entryFile2)
+				entryMatch, err := compareFiles(ctx.Child(), &entryNode, entryFile1, entryFile2)
 				if err != nil {
 					return false, errors.Wrapf(err, "comparing %s", name)
 				}

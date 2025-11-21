@@ -16,48 +16,16 @@ const (
 	RawFormat
 )
 
-type Stabilizer interface {
-	Stabilize(any)
-}
-
-// StabilizeOpts aggregates stabilizers to be used in stabilization.
-type StabilizeOpts struct {
-	Stabilizers []Stabilizer
-}
-
-// ContentSummary is a summary of rebuild-relevant features of an archive.
-type ContentSummary struct {
-	Files      []string
-	FileHashes []string
-	CRLFCount  int
-}
-
-// Diff returns the files that are only in this summary, the files that are in both summaries but have different hashes, and the files that are only in the other summary.
-func (cs *ContentSummary) Diff(other *ContentSummary) (leftOnly, diffs, rightOnly []string) {
-	left := cs
-	right := other
-	var i, j int
-	for i < len(left.Files) || j < len(right.Files) {
-		switch {
-		case i >= len(left.Files):
-			rightOnly = append(rightOnly, right.Files[j])
-			j++
-		case j >= len(right.Files):
-			leftOnly = append(leftOnly, left.Files[i])
-			i++
-		case left.Files[i] == right.Files[j]:
-			if left.FileHashes[i] != right.FileHashes[j] {
-				diffs = append(diffs, right.Files[j])
-			}
-			i++
-			j++
-		case left.Files[i] < right.Files[j]:
-			leftOnly = append(leftOnly, left.Files[i])
-			i++
-		case left.Files[i] > right.Files[j]:
-			rightOnly = append(rightOnly, right.Files[j])
-			j++
-		}
+// Layers returns the number of nested archive layers for a format.
+func (f Format) Layers() int {
+	switch f {
+	case TarGzFormat:
+		return 2 // gzip -> tar
+	case TarFormat:
+		return 1
+	case ZipFormat:
+		return 1
+	default:
+		return 0
 	}
-	return
 }
