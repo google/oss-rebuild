@@ -17,7 +17,6 @@ import (
 	"github.com/google/oss-rebuild/internal/hashext"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
-	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/build"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
@@ -25,6 +24,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/google/uuid"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
@@ -165,7 +165,7 @@ func compareArtifacts(ctx context.Context, mux rebuild.RegistryMux, t rebuild.Ta
 	if buildDef, err := getBuildDefinition(rebuildAttestation); err != nil {
 		return nil, nil, errors.Wrap(err, "getting build definition from attestation")
 	} else if buildDef != nil && len(buildDef.CustomStabilizers) > 0 {
-		customStabilizers, err := archive.CreateCustomStabilizers(buildDef.CustomStabilizers, t.ArchiveType())
+		customStabilizers, err := stabilize.CreateCustomStabilizers(buildDef.CustomStabilizers, t.ArchiveType())
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "creating custom stabilizers")
 		}
