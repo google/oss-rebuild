@@ -1,4 +1,4 @@
-package pyprojecttoml
+package parsing
 
 import (
 	"context"
@@ -6,8 +6,6 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/google/oss-rebuild/pkg/parsing/pypi/utils"
-	fuzzy "github.com/paul-mannino/go-fuzzywuzzy"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
 )
@@ -26,9 +24,10 @@ type PyProjectProject struct {
 	Tool     ToolMetadata    `toml:"tool"`
 }
 
-func VerifyPyProjectFile(ctx context.Context, foundFile utils.FoundFile, name, version string) (utils.FileVerification, error) {
-	var verificationResult utils.FileVerification
+func VerifyPyProjectFile(ctx context.Context, foundFile FoundFile, name, version string) (FileVerification, error) {
+	var verificationResult FileVerification
 	verificationResult.FoundF = foundFile
+	verificationResult.Name = name
 	verificationResult.Type = foundFile.Filetype
 	verificationResult.Path = foundFile.Path
 	f := foundFile.FileObject
@@ -51,18 +50,25 @@ func VerifyPyProjectFile(ctx context.Context, foundFile utils.FoundFile, name, v
 		foundVersion = pyProject.Tool.Poetry.Version
 	}
 
-	if foundFile.Path == "" {
+	if foundFile.Path == "." {
 		verificationResult.Main = true
 	}
 
 	if foundName != "" {
-		fuzzyMatch := fuzzy.Ratio(utils.NormalizeName(name), utils.NormalizeName(foundName))
+		editDist := MinEditDistance(NormalizeName(name), NormalizeName(foundName))
+		verificationResult.LevDistance = editDist
 
-		if fuzzyMatch >= utils.FuzzyThreshold {
+		if editDist == 0 {
 			verificationResult.NameMatch = true
 
 			if foundVersion != "" && version == foundVersion {
 				verificationResult.VersionMatch = true
+			}
+		} else {
+			verificationResult.PartialNameMatch = true
+
+			if foundVersion != "" && version == foundVersion {
+				verificationResult.PartialVersionMatch = true
 			}
 		}
 	}
