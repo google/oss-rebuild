@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/api"
-	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/maven"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
 )
 
@@ -125,7 +125,7 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 
 type BuildDefinition struct {
 	*StrategyOneOf    `json:",inline,omitempty" yaml:",inline,omitempty"`
-	CustomStabilizers []archive.CustomStabilizerEntry `json:"custom_stabilizers,omitempty" yaml:"custom_stabilizers,omitempty"`
+	CustomStabilizers []stabilize.CustomStabilizerEntry `json:"custom_stabilizers,omitempty" yaml:"custom_stabilizers,omitempty"`
 }
 
 type VersionRequest struct {
