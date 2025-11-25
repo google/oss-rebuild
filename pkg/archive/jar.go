@@ -5,6 +5,7 @@ package archive
 
 import (
 	"bytes"
+	"io"
 	"path"
 	"sort"
 	"strings"
@@ -203,4 +204,68 @@ var StableGitProperties = ZipEntryStabilizer{
 			zf.SetContent([]byte{})
 		}
 	},
+}
+
+var StableProperties = ZipEntryStabilizer{
+	Name: "jar-properties",
+	Func: func(zf *MutableZipFile) {
+		// *.properties files are used as configuration files in Java application
+		// See: https://en.wikipedia.org/wiki/.properties
+		if strings.HasSuffix(zf.Name, ".properties") {
+			r, err := zf.Open()
+			if err != nil {
+				return
+			}
+			content, err := io.ReadAll(r)
+			if err != nil {
+				return
+			}
+			ordered := orderPropertiesFile(content)
+			zf.SetContent(ordered)
+		}
+	},
+}
+
+func orderPropertiesFile(content []byte) []byte {
+	lines := strings.Split(string(content), "\n")
+	var comments []string
+	var keys []string
+	props := make(map[string]string)
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			comments = append(comments, line)
+			continue
+		}
+		if idx := strings.Index(line, "="); idx != -1 {
+			key := line[:idx]
+			val := line[idx+1:]
+			keys = append(keys, key)
+			props[key] = val
+		} else {
+			keys = append(keys, line)
+			props[line] = ""
+		}
+	}
+	// Check if keys are already sorted
+	alreadySorted := sort.SliceIsSorted(keys, func(i, j int) bool {
+		return keys[i] < keys[j]
+	})
+	if alreadySorted {
+		return content
+	}
+	sort.Strings(keys)
+	var buf bytes.Buffer
+	for _, k := range keys {
+		if v := props[k]; v != "" {
+			buf.WriteString(k + "=" + v + "\r\n")
+		} else {
+			buf.WriteString(k + "\r\n")
+		}
+	}
+	buf.WriteString("\r\n")
+	return buf.Bytes()
 }
