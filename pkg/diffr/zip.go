@@ -41,7 +41,7 @@ func formatZipListing(f *zip.FileHeader) string {
 }
 
 // compareZip compares two zip archives
-func compareZip(node *DiffNode, file1, file2 File) (bool, error) {
+func compareZip(ctx compareContext, node *DiffNode, file1, file2 File) (bool, error) {
 	// Get file sizes
 	size1, err := getSize(file1.Reader)
 	if err != nil {
@@ -154,7 +154,7 @@ func compareZip(node *DiffNode, file1, file2 File) (bool, error) {
 				Name:   name,
 				Reader: bytes.NewReader(buf2.Bytes()),
 			}
-			entryMatch, err := compareFiles(&entryNode, entryFile1, entryFile2)
+			entryMatch, err := compareFiles(ctx.Child(), &entryNode, entryFile1, entryFile2)
 			if err != nil {
 				return false, errors.Wrapf(err, "comparing %s", name)
 			}
