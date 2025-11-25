@@ -13,7 +13,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 	var reqs []string
 	var foundFiles []FoundFile
 
-	foundPyprojFiles, err := GoDeep("pyproject.toml", tree, "", "")
+	foundPyprojFiles, err := findRecursively("pyproject.toml", tree, "", "")
 	if err != nil {
 		log.Printf("Failed to find pyproject.toml files: %v", err)
 	} else {
@@ -33,7 +33,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 	for _, foundFile := range foundFiles {
 		switch foundFile.Filetype {
 		case "pyproject.toml":
-			verification, err := VerifyPyProjectFile(ctx, foundFile, name, version)
+			verification, err := verifyPyProjectFile(ctx, foundFile, name, version)
 			if err != nil {
 				log.Printf("Failed to verify pyproject.toml file: %v", err)
 				continue
@@ -50,7 +50,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 		return nil, errors.New("no verified build files found for requirement extraction")
 	}
 
-	sortedVerification := SortVerifications(verifiedFiles)
+	sortedVerification := sortVerifications(verifiedFiles)
 
 	bestFile := sortedVerification[0]
 	dir := bestFile.Path
@@ -65,7 +65,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 	for _, f := range posFiles {
 		switch f.Filetype {
 		case "pyproject.toml":
-			pyprojReqs, err := ExtractPyProjectRequirements(ctx, f.FileObject)
+			pyprojReqs, err := extractPyProjectRequirements(ctx, f.FileObject)
 			if err != nil {
 				return nil, errors.Wrap(err, "Failed to extract pyproject.toml requirements")
 			}

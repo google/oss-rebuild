@@ -36,7 +36,7 @@ type FileVerification struct {
 
 // minEditDistance computes the Levenshtein distance between two strings.
 // Originally found in the maven gradle infer, used to replace fuzzywuzzy
-func MinEditDistance(s1, s2 string) int {
+func minEditDistance(s1, s2 string) int {
 	len1 := len(s1)
 	len2 := len(s2)
 	dp := make([][]int, len1+1)
@@ -80,7 +80,7 @@ func verificationScore(v FileVerification) int {
 }
 
 // SortVerifications sorts based on score, and uses Name as a tie-breaker.
-func SortVerifications(verifications []FileVerification) []FileVerification {
+func sortVerifications(verifications []FileVerification) []FileVerification {
 	sort.Slice(verifications, func(i, j int) bool {
 		a := verifications[i]
 		b := verifications[j]
@@ -112,14 +112,14 @@ func SortVerifications(verifications []FileVerification) []FileVerification {
 	return verifications
 }
 
-func NormalizeName(name string) string {
+func normalizeName(name string) string {
 	// Normalizes a package name according to PEP 503.
 	normalized := re.MustCompile(`[-_.]+`).ReplaceAllString(name, "-")
 	return strings.ToLower(normalized)
 }
 
 // Recursively check for build files
-func GoDeep(fileType string, tree *object.Tree, name, version string) ([]FoundFile, error) {
+func findRecursively(fileType string, tree *object.Tree, name, version string) ([]FoundFile, error) {
 
 	if !SupportedFileTypes[fileType] {
 		return nil, errors.New("unsupported file type")
@@ -127,8 +127,7 @@ func GoDeep(fileType string, tree *object.Tree, name, version string) ([]FoundFi
 
 	var foundFiles []FoundFile
 
-	result := tree.Files()
-	result.ForEach(func(f *object.File) error {
+	tree.Files().ForEach(func(f *object.File) error {
 		if filepath.Base(f.Name) == fileType {
 			foundFiles = append(foundFiles, FoundFile{
 				Filename:   f.Name,

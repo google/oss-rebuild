@@ -24,7 +24,7 @@ type PyProjectProject struct {
 	Tool     ToolMetadata    `toml:"tool"`
 }
 
-func VerifyPyProjectFile(ctx context.Context, foundFile FoundFile, name, version string) (FileVerification, error) {
+func verifyPyProjectFile(ctx context.Context, foundFile FoundFile, name, version string) (FileVerification, error) {
 	var verificationResult FileVerification
 	verificationResult.FoundF = foundFile
 	verificationResult.Name = name
@@ -55,7 +55,7 @@ func VerifyPyProjectFile(ctx context.Context, foundFile FoundFile, name, version
 	}
 
 	if foundName != "" {
-		editDist := MinEditDistance(NormalizeName(name), NormalizeName(foundName))
+		editDist := minEditDistance(normalizeName(name), normalizeName(foundName))
 		verificationResult.LevDistance = editDist
 
 		if editDist == 0 {
@@ -76,7 +76,7 @@ func VerifyPyProjectFile(ctx context.Context, foundFile FoundFile, name, version
 	return verificationResult, nil
 }
 
-func ExtractPyProjectRequirements(ctx context.Context, f *object.File) ([]string, error) {
+func extractPyProjectRequirements(ctx context.Context, f *object.File) ([]string, error) {
 	var reqs []string
 	log.Println("Looking for additional reqs in pyproject.toml")
 	pyprojContents, err := f.Contents()
