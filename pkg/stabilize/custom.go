@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package archive
+package stabilize
 
 import (
 	"fmt"
@@ -11,12 +11,13 @@ import (
 	"slices"
 
 	"github.com/google/oss-rebuild/internal/glob"
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/pkg/errors"
 )
 
 // CustomStabilizerConfig defines a custom stabilizer that can be materialized for many formats
 type CustomStabilizerConfig interface {
-	Stabilizer(name string, format Format) (Stabilizer, error)
+	Stabilizer(name string, format archive.Format) (Stabilizer, error)
 	Validate() error
 }
 
@@ -36,6 +37,7 @@ func count(bools ...bool) int {
 	return c
 }
 
+// Validate ensures exactly one config is set.
 func (cfg *CustomStabilizerConfigOneOf) Validate() error {
 	if count(
 		cfg.ReplacePattern != nil,
@@ -46,6 +48,7 @@ func (cfg *CustomStabilizerConfigOneOf) Validate() error {
 	return nil
 }
 
+// CustomStabilizerConfig returns the configured custom stabilizer.
 func (cfg *CustomStabilizerConfigOneOf) CustomStabilizerConfig() CustomStabilizerConfig {
 	switch {
 	case cfg.ReplacePattern != nil:
@@ -63,6 +66,7 @@ type CustomStabilizerEntry struct {
 	Reason string                      `yaml:"reason"`
 }
 
+// Validate ensures the entry is valid.
 func (ent CustomStabilizerEntry) Validate() error {
 	if ent.Reason == "" {
 		return errors.New("no reason provided")
@@ -73,7 +77,7 @@ func (ent CustomStabilizerEntry) Validate() error {
 // CreateCustomStabilizers converts a set of CustomStabilizerEntry specs to Stabilizers.
 // NOTE: This should only be called once. It generates stabilizer names using a
 // 0-based integer counter so subsequent calls will generate identical names.
-func CreateCustomStabilizers(entries []CustomStabilizerEntry, format Format) ([]Stabilizer, error) {
+func CreateCustomStabilizers(entries []CustomStabilizerEntry, format archive.Format) ([]Stabilizer, error) {
 	var stabilizers []Stabilizer
 	for i, ent := range entries {
 		if err := ent.Validate(); err != nil {
@@ -102,6 +106,7 @@ type ReplacePattern struct {
 	Replace string   `yaml:"replace"`
 }
 
+// Validate ensures the replace pattern is valid.
 func (rp *ReplacePattern) Validate() error {
 	if len(rp.Paths) == 0 {
 		return errors.New("no path provided")
@@ -116,13 +121,13 @@ func (rp *ReplacePattern) Validate() error {
 }
 
 // Stabilizer materializes a Stabilizer for the given config, name, and format.
-func (rp *ReplacePattern) Stabilizer(name string, format Format) (Stabilizer, error) {
+func (rp *ReplacePattern) Stabilizer(name string, format archive.Format) (Stabilizer, error) {
 	re := regexp.MustCompile(rp.Pattern)
 	switch format {
-	case TarGzFormat, TarFormat:
+	case archive.TarGzFormat, archive.TarFormat:
 		return TarEntryStabilizer{
 			Name: "replace-pattern-" + name,
-			Func: func(te *TarEntry) {
+			Func: func(te *archive.TarEntry) {
 				if match, err := multiMatch(rp.Paths, te.Name); err != nil || !match {
 					return
 				}
@@ -130,10 +135,10 @@ func (rp *ReplacePattern) Stabilizer(name string, format Format) (Stabilizer, er
 				te.Size = int64(len(te.Body))
 			},
 		}, nil
-	case ZipFormat:
+	case archive.ZipFormat:
 		return ZipEntryStabilizer{
 			Name: "replace-pattern-" + name,
-			Func: func(zf *MutableZipFile) {
+			Func: func(zf *archive.MutableZipFile) {
 				if match, err := multiMatch(rp.Paths, zf.Name); err != nil || !match {
 					return
 				}
@@ -160,6 +165,7 @@ type ExcludePath struct {
 	Paths []string `yaml:"paths"`
 }
 
+// Validate ensures the exclude path is valid.
 func (ep *ExcludePath) Validate() error {
 	if len(ep.Paths) == 0 {
 		return errors.New("no path provided")
@@ -170,13 +176,14 @@ func (ep *ExcludePath) Validate() error {
 	return nil
 }
 
-func (ep *ExcludePath) Stabilizer(name string, format Format) (Stabilizer, error) {
+// Stabilizer materializes a Stabilizer for the given config, name, and format.
+func (ep *ExcludePath) Stabilizer(name string, format archive.Format) (Stabilizer, error) {
 	switch format {
-	case TarGzFormat, TarFormat:
+	case archive.TarGzFormat, archive.TarFormat:
 		return TarArchiveStabilizer{
 			Name: "exclude-path-" + name,
-			Func: func(ta *TarArchive) {
-				var files []*TarEntry
+			Func: func(ta *archive.TarArchive) {
+				var files []*archive.TarEntry
 				for _, f := range ta.Files {
 					if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
 						continue
@@ -186,11 +193,11 @@ func (ep *ExcludePath) Stabilizer(name string, format Format) (Stabilizer, error
 				ta.Files = files
 			},
 		}, nil
-	case ZipFormat:
+	case archive.ZipFormat:
 		return ZipArchiveStabilizer{
 			Name: "exclude-path-" + name,
-			Func: func(mzr *MutableZipReader) {
-				var files []*MutableZipFile
+			Func: func(mzr *archive.MutableZipReader) {
+				var files []*archive.MutableZipFile
 				for _, f := range mzr.File {
 					if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
 						continue

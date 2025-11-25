@@ -1,30 +1,38 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package archive
+// Package stabilize provides stabilizers for normalizing archive contents.
+package stabilize
 
 import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
 	"io"
-	"slices"
 
+	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/pkg/errors"
 )
 
-var AllStabilizers = slices.Concat(AllZipStabilizers, AllTarStabilizers, AllGzipStabilizers, AllJarStabilizers, AllCrateStabilizers)
+// Stabilizer is an interface for archive stabilization operations.
+type Stabilizer interface {
+	Stabilize(any)
+}
 
-// Stabilize selects and applies the default stabilization routine for the given archive format.
-func Stabilize(dst io.Writer, src io.Reader, f Format) error {
+// StabilizeOpts aggregates stabilizers to be used in stabilization.
+type StabilizeOpts struct {
+	Stabilizers []Stabilizer
+}
+
+func Stabilize(dst io.Writer, src io.Reader, f archive.Format) error {
 	return StabilizeWithOpts(dst, src, f, StabilizeOpts{Stabilizers: AllStabilizers})
 }
 
 // StabilizeWithOpts selects and applies the provided stabilization routine for the given archive format.
-func StabilizeWithOpts(dst io.Writer, src io.Reader, f Format, opts StabilizeOpts) error {
+func StabilizeWithOpts(dst io.Writer, src io.Reader, f archive.Format, opts StabilizeOpts) error {
 	switch f {
-	case ZipFormat:
-		srcReader, size, err := toZipCompatibleReader(src)
+	case archive.ZipFormat:
+		srcReader, size, err := archive.ToZipCompatibleReader(src)
 		if err != nil {
 			return errors.Wrap(err, "converting reader")
 		}
@@ -38,7 +46,7 @@ func StabilizeWithOpts(dst io.Writer, src io.Reader, f Format, opts StabilizeOpt
 		if err != nil {
 			return errors.Wrap(err, "stabilizing zip")
 		}
-	case TarGzFormat:
+	case archive.TarGzFormat:
 		gzr, err := gzip.NewReader(src)
 		if err != nil {
 			return errors.Wrap(err, "initializing gzip reader")
@@ -53,12 +61,12 @@ func StabilizeWithOpts(dst io.Writer, src io.Reader, f Format, opts StabilizeOpt
 		if err != nil {
 			return errors.Wrap(err, "stabilizing tar.gz")
 		}
-	case TarFormat:
+	case archive.TarFormat:
 		err := StabilizeTar(tar.NewReader(src), tar.NewWriter(dst), opts)
 		if err != nil {
 			return errors.Wrap(err, "stabilizing tar")
 		}
-	case RawFormat:
+	case archive.RawFormat:
 		if _, err := io.Copy(dst, src); err != nil {
 			return errors.Wrap(err, "copying raw")
 		}
@@ -66,29 +74,4 @@ func StabilizeWithOpts(dst io.Writer, src io.Reader, f Format, opts StabilizeOpt
 		return errors.New("unsupported archive type")
 	}
 	return nil
-}
-
-// NewContentSummary constructs a ContentSummary for the given archive format.
-func NewContentSummary(src io.Reader, f Format) (*ContentSummary, error) {
-	switch f {
-	case ZipFormat:
-		srcReader, size, err := toZipCompatibleReader(src)
-		if err != nil {
-			return nil, errors.Wrap(err, "converting reader")
-		}
-		zr, err := zip.NewReader(srcReader, size)
-		if err != nil {
-			return nil, errors.Wrap(err, "initializing zip reader")
-		}
-		return NewContentSummaryFromZip(zr)
-	case TarGzFormat:
-		gzr, err := gzip.NewReader(src)
-		if err != nil {
-			return nil, errors.Wrap(err, "initializing gzip reader")
-		}
-		defer gzr.Close()
-		return NewContentSummaryFromTar(tar.NewReader(gzr))
-	default:
-		return nil, errors.New("unsupported archive type")
-	}
 }

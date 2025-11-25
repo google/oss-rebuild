@@ -6,6 +6,7 @@ package cratesio
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -65,6 +66,10 @@ var (
 
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return true
+}
+
+func (r Rebuilder) Upstream(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (io.ReadCloser, error) {
+	return mux.CratesIO.Artifact(ctx, t.Package, t.Version)
 }
 
 func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {

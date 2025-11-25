@@ -5,6 +5,7 @@ package rebuild
 
 import (
 	"context"
+	"io"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/google/oss-rebuild/internal/gitx"
@@ -24,5 +25,6 @@ type Rebuilder interface {
 	CloneRepo(context.Context, Target, string, *gitx.RepositoryOptions) (RepoConfig, error)
 	InferStrategy(context.Context, Target, RegistryMux, *RepoConfig, Strategy) (Strategy, error)
 	UsesTimewarp(Input) bool
+	Upstream(context.Context, Target, RegistryMux) (io.ReadCloser, error)
 	UpstreamURL(context.Context, Target, RegistryMux) (string, error)
 }
