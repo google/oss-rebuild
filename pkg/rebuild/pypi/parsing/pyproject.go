@@ -10,65 +10,62 @@ import (
 	"github.com/pkg/errors"
 )
 
-type ProjectMetadata struct {
-	Name    string `toml:"name"`
-	Version string `toml:"version"`
+type projectMetadata struct {
+	name    string `toml:"name"`
+	version string `toml:"version"`
 }
 
-type ToolMetadata struct {
-	Poetry ProjectMetadata `toml:"poetry"`
+type toolMetadata struct {
+	poetry projectMetadata `toml:"poetry"`
 }
 
-type PyProjectProject struct {
-	Metadata ProjectMetadata `toml:"project"`
-	Tool     ToolMetadata    `toml:"tool"`
+type pyProjectProject struct {
+	metadata projectMetadata `toml:"project"`
+	tool     toolMetadata    `toml:"tool"`
 }
 
-func verifyPyProjectFile(ctx context.Context, foundFile FoundFile, name, version string) (FileVerification, error) {
-	var verificationResult FileVerification
-	verificationResult.FoundF = foundFile
-	verificationResult.Name = name
-	verificationResult.Type = foundFile.Filetype
-	verificationResult.Path = foundFile.Path
-	f := foundFile.FileObject
+func verifyPyProjectFile(ctx context.Context, foundFile foundFile, name, version string) (fileVerification, error) {
+	var verificationResult fileVerification
+	verificationResult.foundF = foundFile
+	f := foundFile.object
 
 	pyprojContents, err := f.Contents()
 	if err != nil {
 		return verificationResult, errors.Wrap(err, "Failed to read pyproject.toml")
 	}
-	var pyProject PyProjectProject
+	var pyProject pyProjectProject
 	if err := toml.Unmarshal([]byte(pyprojContents), &pyProject); err != nil {
 		return verificationResult, errors.Wrap(err, "Failed to decode pyproject.toml")
 	}
 	foundName := ""
 	foundVersion := ""
-	if pyProject.Metadata.Name != "" {
-		foundName = pyProject.Metadata.Name
-		foundVersion = pyProject.Metadata.Version
-	} else if pyProject.Tool.Poetry.Name != "" {
-		foundName = pyProject.Tool.Poetry.Name
-		foundVersion = pyProject.Tool.Poetry.Version
+	if pyProject.metadata.name != "" {
+		foundName = pyProject.metadata.name
+		foundVersion = pyProject.metadata.version
+	} else if pyProject.tool.poetry.name != "" {
+		foundName = pyProject.tool.poetry.name
+		foundVersion = pyProject.tool.poetry.version
 	}
 
-	if foundFile.Path == "." {
-		verificationResult.Main = true
+	if foundFile.path == "." {
+		verificationResult.main = true
 	}
 
 	if foundName != "" {
 		editDist := minEditDistance(normalizeName(name), normalizeName(foundName))
-		verificationResult.LevDistance = editDist
+		verificationResult.levDistance = editDist
 
 		if editDist == 0 {
-			verificationResult.NameMatch = true
+			verificationResult.nameMatch = true
 
 			if foundVersion != "" && version == foundVersion {
-				verificationResult.VersionMatch = true
+				verificationResult.versionMatch = true
 			}
 		} else {
-			verificationResult.PartialNameMatch = true
+			verificationResult.partialNameMatch = true
 
 			if foundVersion != "" && version == foundVersion {
-				verificationResult.PartialVersionMatch = true
+				verificationResult.partialVersionMatch = true
 			}
 		}
 	}

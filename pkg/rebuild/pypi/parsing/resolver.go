@@ -11,7 +11,7 @@ import (
 func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, version string) ([]string, error) {
 	log.Println("Extracting any extra requirements from found build file types (pyproject.toml)")
 	var reqs []string
-	var foundFiles []FoundFile
+	var foundFiles []foundFile
 
 	foundPyprojFiles, err := findRecursively("pyproject.toml", tree, "", "")
 	if err != nil {
@@ -28,10 +28,10 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 		return nil, errors.New("no supported build files found for requirement extraction")
 	}
 
-	var verifiedFiles []FileVerification
+	var verifiedFiles []fileVerification
 
 	for _, foundFile := range foundFiles {
-		switch foundFile.Filetype {
+		switch foundFile.filetype {
 		case "pyproject.toml":
 			verification, err := verifyPyProjectFile(ctx, foundFile, name, version)
 			if err != nil {
@@ -42,7 +42,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 		// TODO case setup.py
 		// TODO case setup.cfg
 		default:
-			log.Printf("Unsupported file type for verification: %s", foundFile.Filetype)
+			log.Printf("Unsupported file type for verification: %s", foundFile.filetype)
 		}
 	}
 
@@ -53,19 +53,19 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 	sortedVerification := sortVerifications(verifiedFiles)
 
 	bestFile := sortedVerification[0]
-	dir := bestFile.Path
+	dir := bestFile.foundF.path
 
-	posFiles := []FoundFile{bestFile.FoundF}
+	posFiles := []foundFile{bestFile.foundF}
 	for _, f := range foundFiles {
-		if f.Path == dir && f.Filename != bestFile.FoundF.Filename {
+		if f.path == dir && f.name != bestFile.foundF.name {
 			posFiles = append(posFiles, f)
 		}
 	}
 
 	for _, f := range posFiles {
-		switch f.Filetype {
+		switch f.filetype {
 		case "pyproject.toml":
-			pyprojReqs, err := extractPyProjectRequirements(ctx, f.FileObject)
+			pyprojReqs, err := extractPyProjectRequirements(ctx, f.object)
 			if err != nil {
 				return nil, errors.Wrap(err, "Failed to extract pyproject.toml requirements")
 			}
@@ -74,7 +74,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 		// TODO case setup.py
 		// TODO case setup.cfg
 		default:
-			log.Printf("Unsupported file type for requirement extraction: %s", f.Filetype)
+			log.Printf("Unsupported file type for requirement extraction: %s", f.filetype)
 		}
 	}
 

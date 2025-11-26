@@ -10,28 +10,25 @@ import (
 	"github.com/pkg/errors"
 )
 
-var SupportedFileTypes = map[string]bool{
+var supportedFileTypes = map[string]bool{
 	"pyproject.toml": true,
 }
 
-type FoundFile struct {
-	Filename   string
-	Filetype   string
-	Path       string
-	FileObject *object.File
+type foundFile struct {
+	name     string
+	filetype string
+	path     string
+	object   *object.File
 }
 
-type FileVerification struct {
-	FoundF              FoundFile
-	Type                string
-	Name                string
-	Path                string
-	Main                bool
-	NameMatch           bool
-	VersionMatch        bool
-	PartialNameMatch    bool
-	PartialVersionMatch bool
-	LevDistance         int
+type fileVerification struct {
+	foundF              foundFile
+	main                bool
+	nameMatch           bool
+	versionMatch        bool
+	partialNameMatch    bool
+	partialVersionMatch bool
+	levDistance         int
 }
 
 // minEditDistance computes the Levenshtein distance between two strings.
@@ -66,21 +63,21 @@ func minEditDistance(s1, s2 string) int {
 
 // verificationScore assigns a numeric priority to the verification object.
 // Higher score means higher priority (comes first).
-func verificationScore(v FileVerification) int {
-	if v.VersionMatch {
+func verificationScore(v fileVerification) int {
+	if v.versionMatch {
 		return 3
 	}
-	if v.NameMatch {
+	if v.nameMatch {
 		return 2
 	}
-	if v.Main {
+	if v.main {
 		return 1
 	}
 	return 0
 }
 
 // SortVerifications sorts based on score, and uses Name as a tie-breaker.
-func sortVerifications(verifications []FileVerification) []FileVerification {
+func sortVerifications(verifications []fileVerification) []fileVerification {
 	sort.Slice(verifications, func(i, j int) bool {
 		a := verifications[i]
 		b := verifications[j]
@@ -93,20 +90,20 @@ func sortVerifications(verifications []FileVerification) []FileVerification {
 			return scoreA > scoreB
 		} else if scoreA == 0 {
 			// Try and compare the Levenshtein distances
-			if a.PartialNameMatch && b.PartialNameMatch {
+			if a.partialNameMatch && b.partialNameMatch {
 				// Lower is better
-				return a.LevDistance < b.LevDistance
-			} else if a.PartialNameMatch {
+				return a.levDistance < b.levDistance
+			} else if a.partialNameMatch {
 				// If only a, then good
 				return true
-			} else if b.PartialNameMatch {
+			} else if b.partialNameMatch {
 				// If only b, then move it up
 				return false
 			}
 		}
 
 		// If scores are equal, we sort by Name lexicographically
-		return a.Name < b.Name
+		return a.foundF.name < b.foundF.name
 	})
 
 	return verifications
@@ -119,21 +116,21 @@ func normalizeName(name string) string {
 }
 
 // Recursively check for build files
-func findRecursively(fileType string, tree *object.Tree, name, version string) ([]FoundFile, error) {
+func findRecursively(fileType string, tree *object.Tree, name, version string) ([]foundFile, error) {
 
-	if !SupportedFileTypes[fileType] {
+	if !supportedFileTypes[fileType] {
 		return nil, errors.New("unsupported file type")
 	}
 
-	var foundFiles []FoundFile
+	var foundFiles []foundFile
 
 	tree.Files().ForEach(func(f *object.File) error {
 		if filepath.Base(f.Name) == fileType {
-			foundFiles = append(foundFiles, FoundFile{
-				Filename:   f.Name,
-				Filetype:   fileType,
-				Path:       filepath.Dir(f.Name),
-				FileObject: f,
+			foundFiles = append(foundFiles, foundFile{
+				name:     f.Name,
+				filetype: fileType,
+				path:     filepath.Dir(f.Name),
+				object:   f,
 			})
 		}
 		return nil
