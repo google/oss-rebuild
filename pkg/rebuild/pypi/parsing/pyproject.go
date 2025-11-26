@@ -1,7 +1,6 @@
 package parsing
 
 import (
-	"context"
 	"log"
 	"strings"
 
@@ -24,7 +23,7 @@ type PyProjectProject struct {
 	Tool     ToolMetadata    `toml:"tool"`
 }
 
-func verifyPyProjectFile(ctx context.Context, foundFile FoundFile, name, version string) (FileVerification, error) {
+func verifyPyProjectFile(foundFile FoundFile, name, version string) (FileVerification, error) {
 	var verificationResult FileVerification
 	verificationResult.FoundF = foundFile
 	verificationResult.Name = name
@@ -76,7 +75,7 @@ func verifyPyProjectFile(ctx context.Context, foundFile FoundFile, name, version
 	return verificationResult, nil
 }
 
-func extractPyProjectRequirements(ctx context.Context, f *object.File) ([]string, error) {
+func extractPyProjectRequirements(f *object.File) ([]string, error) {
 	var reqs []string
 	log.Println("Looking for additional reqs in pyproject.toml")
 	pyprojContents, err := f.Contents()

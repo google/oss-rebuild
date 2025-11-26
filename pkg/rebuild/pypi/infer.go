@@ -251,7 +251,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if err != nil {
 			return cfg, errors.Wrapf(err, "Failed to get tree")
 		}
-		if buildReqs, err := pypiresolver.ExtractAllRequirements(ctx, tree, name, version); err != nil {
+		if buildReqs, err := pypiresolver.ExtractAllRequirements(tree, name, version); err != nil {
 			log.Println(errors.Wrap(err, "Failed to extract reqs from pyproject.toml."))
 		} else {
 			existing := make(map[string]bool)

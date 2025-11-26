@@ -12,6 +12,7 @@ import (
 
 var SupportedFileTypes = map[string]bool{
 	"pyproject.toml": true,
+	"setup.cfg":      true,
 }
 
 type FoundFile struct {
