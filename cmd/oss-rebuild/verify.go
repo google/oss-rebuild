@@ -40,7 +40,13 @@ nQSECAK6r262hPwIzjd6LpE7IPlUbwgheE87vU8EUE9tsS02MShFZGo1gg==
 	Algorithm: kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256,
 }
 
-var embeddedKeys []key = []key{ossRebuildKey}
+var ossRebuildLegacyKey = key{
+	PublicKey: ossRebuildKey.PublicKey,
+	ID:        kmsV1API + ossRebuildKeyResource,
+	Algorithm: ossRebuildKey.Algorithm,
+}
+
+var embeddedKeys []key = []key{ossRebuildKey, ossRebuildLegacyKey}
 
 func mustParsePKIX(pubkey string) crypto.PublicKey {
 	key, err := parsePKIX(pubkey)
