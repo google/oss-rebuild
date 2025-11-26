@@ -19,7 +19,7 @@ func (c BaseImageConfig) SelectFor(input rebuild.Input) string {
 
 func DefaultBaseImageConfig() BaseImageConfig {
 	return BaseImageConfig{
-		Default: "docker.io/library/alpine:3.19",
+		Default: "docker.io/library/alpine:3.21",
 		Ecosystems: map[rebuild.Ecosystem]string{
 			rebuild.Debian: "docker.io/library/debian:stable-20251103-slim",
 			rebuild.Maven:  "docker.io/library/debian:trixie-20250203-slim",
