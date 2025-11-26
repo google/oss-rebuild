@@ -460,7 +460,7 @@ func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, reqs r
 		return nil, errors.Wrap(err, "failed to generate asset upload script")
 	}
 	uploadStep := &cloudbuild.BuildStep{
-		Name:   "docker.io/library/alpine:3.19",
+		Name:   opts.Resources.BaseImageConfig.Default,
 		Script: uploadScript,
 	}
 	steps = append(steps, uploadStep)

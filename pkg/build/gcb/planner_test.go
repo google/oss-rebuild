@@ -273,7 +273,7 @@ func TestGCBPlannerGeneratePlan(t *testing.T) {
 			} else if step.Script != "" && strings.Contains(step.Script, "docker save") {
 				foundSaveStep = true
 			}
-		} else if step.Name == "docker.io/library/alpine:3.19" {
+		} else if step.Name == baseImageConfig.Default {
 			foundUploadStep = true
 		}
 	}
