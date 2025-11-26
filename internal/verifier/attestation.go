@@ -20,7 +20,7 @@ import (
 )
 
 // CreateAttestations creates the SLSA attestations associated with a rebuild.
-func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.BuildDefinition, strategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, prebuildLoc, buildDefLoc rebuild.Location, prebuildConfig rebuild.PrebuildConfig) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
+func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.BuildDefinition, strategy rebuild.Strategy, id string, rb, up ArtifactSummary, metadata rebuild.AssetStore, serviceLoc, prebuildLoc, buildDefLoc rebuild.Location, prebuildConfig rebuild.PrebuildConfig, mode schema.OverwriteMode) (equivalence, build *in_toto.ProvenanceStatementSLSA1, err error) {
 	var dockerfile []byte
 	{
 		r, err := metadata.Reader(ctx, rebuild.DockerfileAsset.For(t))
@@ -122,10 +122,11 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 		return nil, nil, errors.Wrap(err, "marshalling Strategy")
 	}
 	externalParams := attestation.RebuildParams{
-		Ecosystem: string(t.Ecosystem),
-		Package:   t.Package,
-		Version:   t.Version,
-		Artifact:  t.Artifact,
+		Ecosystem:     string(t.Ecosystem),
+		Package:       t.Package,
+		Version:       t.Version,
+		Artifact:      t.Artifact,
+		OverwriteMode: mode,
 	}
 	// Only add manual strategy field if it was used.
 	if defn != nil {
