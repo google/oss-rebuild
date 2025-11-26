@@ -20,8 +20,9 @@ import (
 )
 
 const kmsV1API = "https://cloudkms.googleapis.com/v1/"
+const gcpKMSScheme = "gcpkms://"
 const ossRebuildKeyResource = "projects/oss-rebuild/locations/global/keyRings/ring/cryptoKeys/signing-key/cryptoKeyVersions/1"
-const ossRebuildKeyURI = "https://cloudkms.googleapis.com/v1/" + ossRebuildKeyResource
+const ossRebuildKeyURI = gcpKMSScheme + ossRebuildKeyResource
 
 type key struct {
 	crypto.PublicKey
@@ -62,8 +63,11 @@ func parsePKIX(pubkey string) (crypto.PublicKey, error) {
 }
 
 func makeKMSVerifier(ctx context.Context, cryptoKeyVersion string) (dsse.Verifier, error) {
+	// Handle both old HTTPS format and new gcpkms:// format
 	if strings.HasPrefix(cryptoKeyVersion, kmsV1API) {
 		cryptoKeyVersion = strings.TrimPrefix(cryptoKeyVersion, kmsV1API)
+	} else if strings.HasPrefix(cryptoKeyVersion, gcpKMSScheme) {
+		cryptoKeyVersion = strings.TrimPrefix(cryptoKeyVersion, gcpKMSScheme)
 	}
 	kc, err := kms.NewKeyManagementClient(ctx)
 	if err != nil {
