@@ -1,0 +1,13 @@
+# Copyright 2025 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+- version: "v0.0.0-20250205222847-abb51bc97097"
+  reason: "Record service version in provenance (#306) - Added serviceSource to internal parameters"
+- version: "v0.0.0-20250612124827-f51ca15d7b4f"
+  reason: "Add new PrebuildConfig field to attestation (#551) - Added prebuildConfig to internal parameters"
+- version: "v0.0.0-20250919194454-0452e2656e86"
+  reason: "Correct media type in DSSE payload when signing (#807) - Changed payload media type from application/json to application/vnd.in-toto+json"
+- version: "v0.0.0-20251126223253-f0ce92a1d91d"
+  reason: "Change sig keyID to gcpkms:// scheme (#978) - Changed signature KeyID prefix from https://cloudkms.googleapis.com/v1/ to gcpkms://"
+- version: "v0.0.0-20251126223818-cb1d6e0911a5"
+  reason: "Bump base image version to alpine:3.21 (#980) - Updated default base image from alpine:3.19 to alpine:3.21"
