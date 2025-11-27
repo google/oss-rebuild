@@ -8,6 +8,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -531,7 +532,7 @@ func TestDiff(t *testing.T) {
 			t.Run("text_output", func(t *testing.T) {
 				var buf bytes.Buffer
 				opts := Options{Output: &buf, OutputJSON: false}
-				err := Diff(leftFile, rightFile, opts)
+				err := Diff(context.Background(), leftFile, rightFile, opts)
 				if err != nil && err != ErrNoDiff {
 					t.Fatalf("Diff failed: %v", err)
 				}
@@ -562,7 +563,7 @@ func TestDiff(t *testing.T) {
 			t.Run("json_output", func(t *testing.T) {
 				var buf bytes.Buffer
 				opts := Options{Output: &buf, OutputJSON: true}
-				err := Diff(leftFile, rightFile, opts)
+				err := Diff(context.Background(), leftFile, rightFile, opts)
 				if err != nil && err != ErrNoDiff {
 					t.Fatalf("Diff failed: %v", err)
 				}
