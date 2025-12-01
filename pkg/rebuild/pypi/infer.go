@@ -251,9 +251,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if err != nil {
 			return cfg, errors.Wrapf(err, "Failed to get tree")
 		}
-		if buildReqs, err := pypiresolver.ExtractAllRequirements(ctx, tree, name, version); err != nil {
+		if buildReqs, newFoundDir, err := pypiresolver.ExtractAllRequirements(ctx, tree, name, version, dir); err != nil {
 			log.Println(errors.Wrap(err, "Failed to extract reqs from pyproject.toml."))
 		} else {
+			dir = newFoundDir
 			existing := make(map[string]bool)
 			pkgname := func(req string) string {
 				return strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~! \t", r) })[0]

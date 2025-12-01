@@ -11,12 +11,12 @@ import (
 	"github.com/pkg/errors"
 )
 
-func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, version string) ([]string, error) {
+func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, version, hintDir string) ([]string, string, error) {
 	log.Println("Extracting any extra requirements from found build file types (pyproject.toml)")
 	var reqs []string
 	var foundFiles []foundFile
 
-	foundPyprojFiles, err := findRecursively("pyproject.toml", tree, "", "")
+	foundPyprojFiles, err := findRecursively("pyproject.toml", tree, hintDir)
 	if err != nil {
 		log.Printf("Failed to find pyproject.toml files: %v", err)
 	} else {
@@ -28,7 +28,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 	// TODO setup.cfg
 
 	if len(foundFiles) == 0 {
-		return nil, errors.New("no supported build files found for requirement extraction")
+		return nil, "", errors.New("no supported build files found for requirement extraction")
 	}
 
 	var verifiedFiles []fileVerification
@@ -50,7 +50,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 	}
 
 	if len(verifiedFiles) == 0 {
-		return nil, errors.New("no verified build files found for requirement extraction")
+		return nil, "", errors.New("no verified build files found for requirement extraction")
 	}
 
 	sortedVerification := sortVerifications(verifiedFiles)
@@ -70,7 +70,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 		case "pyproject.toml":
 			pyprojReqs, err := extractPyProjectRequirements(ctx, f.object)
 			if err != nil {
-				return nil, errors.Wrap(err, "Failed to extract pyproject.toml requirements")
+				return nil, "", errors.Wrap(err, "Failed to extract pyproject.toml requirements")
 			}
 
 			reqs = append(reqs, pyprojReqs...)
@@ -81,5 +81,10 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 		}
 	}
 
-	return reqs, nil
+	// Account for "." as base dir
+	if dir == "." {
+		dir = ""
+	}
+
+	return reqs, dir, nil
 }

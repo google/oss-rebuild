@@ -14,17 +14,17 @@ import (
 )
 
 type projectMetadata struct {
-	name    string `toml:"name"`
-	version string `toml:"version"`
+	Name    string `toml:"name"`
+	Version string `toml:"version"`
 }
 
 type toolMetadata struct {
-	poetry projectMetadata `toml:"poetry"`
+	Poetry projectMetadata `toml:"poetry"`
 }
 
 type pyProjectProject struct {
-	metadata projectMetadata `toml:"project"`
-	tool     toolMetadata    `toml:"tool"`
+	Metadata projectMetadata `toml:"project"`
+	Tool     toolMetadata    `toml:"tool"`
 }
 
 func verifyPyProjectFile(ctx context.Context, foundFile foundFile, name, version string) (fileVerification, error) {
@@ -42,12 +42,12 @@ func verifyPyProjectFile(ctx context.Context, foundFile foundFile, name, version
 	}
 	foundName := ""
 	foundVersion := ""
-	if pyProject.metadata.name != "" {
-		foundName = pyProject.metadata.name
-		foundVersion = pyProject.metadata.version
-	} else if pyProject.tool.poetry.name != "" {
-		foundName = pyProject.tool.poetry.name
-		foundVersion = pyProject.tool.poetry.version
+	if pyProject.Metadata.Name != "" {
+		foundName = pyProject.Metadata.Name
+		foundVersion = pyProject.Metadata.Version
+	} else if pyProject.Tool.Poetry.Name != "" {
+		foundName = pyProject.Tool.Poetry.Name
+		foundVersion = pyProject.Tool.Poetry.Version
 	}
 
 	if foundFile.path == "." {
