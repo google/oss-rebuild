@@ -37,6 +37,7 @@ type Config struct {
 	Strategy          string
 	UseNetworkProxy   bool
 	UseSyscallMonitor bool
+	OverwriteMode     string
 	Mode              string
 }
 
@@ -60,6 +61,9 @@ func (c Config) Validate() error {
 	mode := schema.ExecutionMode(c.Mode)
 	if mode != schema.SmoketestMode && mode != schema.AttestMode && mode != analyzeMode {
 		return errors.Errorf("unknown mode: %s. Expected one of 'smoketest', 'attest', or 'analyze'", c.Mode)
+	}
+	if c.OverwriteMode != "" && c.OverwriteMode != string(schema.OverwriteServiceUpdate) && c.OverwriteMode != string(schema.OverwriteForce) {
+		return errors.Errorf("invalid overwrite-mode: %s. Expected one of 'SERVICE_UPDATE' or 'FORCE'", c.OverwriteMode)
 	}
 	return nil
 }
@@ -165,6 +169,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			Artifact:          cfg.Artifact,
 			UseNetworkProxy:   cfg.UseNetworkProxy,
 			UseSyscallMonitor: cfg.UseSyscallMonitor,
+			OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
 			ID:                time.Now().UTC().Format(time.RFC3339),
 		})
 		if err != nil {
@@ -206,5 +211,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Strategy, "strategy", "", "the strategy file to use")
 	set.BoolVar(&cfg.UseNetworkProxy, "use-network-proxy", false, "request the newtwork proxy")
 	set.BoolVar(&cfg.UseSyscallMonitor, "use-syscall-monitor", false, "request syscall monitoring")
+	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
 	return set
 }
