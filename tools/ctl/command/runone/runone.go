@@ -27,6 +27,8 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
 )
 
@@ -53,6 +55,7 @@ type Config struct {
 	Mode              string
 	SizeHint          string
 	ExecutionHint     string
+	RunID             string
 }
 
 // Validate ensures the configuration is valid.
@@ -162,7 +165,10 @@ func isCloudRun(u *url.URL) bool {
 }
 
 func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder, strategyOneOf *schema.StrategyOneOf) (*act.NoOutput, error) {
-	runID := time.Now().UTC().Format(time.RFC3339)
+	runID := cfg.RunID
+	if runID == "" {
+		runID = time.Now().UTC().Format(time.RFC3339)
+	}
 	store, err := localfiles.AssetStore(runID)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create temp directory")
@@ -262,6 +268,28 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 		}
 		fmt.Fprintln(deps.IO.Out, "Analysis completed successfully")
 	case schema.AttestMode:
+		runID := cfg.RunID
+		if runID == "" {
+			runID = time.Now().UTC().Format(time.RFC3339)
+		} else {
+			// When a custom run ID is provided, ensure the run exists
+			// Use BenchmarkName to pass the desired run ID
+			createRunStub := api.Stub[schema.CreateRunRequest, schema.Run](client, apiURL.JoinPath("runs"))
+			run, err := createRunStub(ctx, schema.CreateRunRequest{
+				BenchmarkName: runID,
+				BenchmarkHash: "",
+				Type:          string(schema.AttestMode),
+			})
+			if err != nil {
+				if status.Code(err) == codes.AlreadyExists {
+					fmt.Fprintf(deps.IO.Err, "Note: Run already exists: %s\n", runID)
+				} else {
+					return nil, errors.Wrap(err, "creating run")
+				}
+			} else {
+				fmt.Fprintf(deps.IO.Err, "Created run with ID: %s (benchmark name: %s)\n", run.ID, runID)
+			}
+		}
 		createStub := api.Stub[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]](client, apiURL.JoinPath("rebuild", "op", "create"))
 		getStub := api.Stub[schema.GetOperationRequest, longrunning.Operation[schema.Verdict]](client, apiURL.JoinPath("rebuild", "op", "get"))
 		op, err := createStub(ctx, schema.RebuildPackageRequest{
@@ -274,7 +302,7 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 			UseRepoDefinition: cfg.UseRepoDefinition,
 			BuildTimeout:      cfg.BuildTimeout,
 			OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
-			ID:                time.Now().UTC().Format(time.RFC3339),
+			ID:                runID,
 			SizeHint:          schema.SizeHint(cfg.SizeHint),
 			ExecutionHint:     schema.ExecutionHint(cfg.ExecutionHint),
 		})
@@ -339,5 +367,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
 	set.StringVar(&cfg.SizeHint, "size-hint", "", "build size hint (SHRIMP or JUMBO), defaults to SHRIMP")
 	set.StringVar(&cfg.ExecutionHint, "execution-hint", "", "execution hint (FAST or EXTENDED)")
+	set.StringVar(&cfg.RunID, "run-id", "", "explicit run ID to use")
 	return set
 }

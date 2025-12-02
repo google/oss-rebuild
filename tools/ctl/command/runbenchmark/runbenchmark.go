@@ -39,6 +39,8 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Config holds all configuration for the run-bench command.
@@ -61,6 +63,7 @@ type Config struct {
 	UseRepoDefinition bool
 	OverwriteMode     string
 	MaxConcurrency    int
+	RunID             string
 }
 
 // Validate ensures the configuration is valid.
@@ -137,7 +140,10 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	var executor benchrun.ExecutionService
 	if cfg.Local {
 		now := time.Now().UTC()
-		runID = now.Format(time.RFC3339)
+		runID = cfg.RunID
+		if runID == "" {
+			runID = now.Format(time.RFC3339)
+		}
 		store, err := localfiles.AssetStore(runID)
 		if err != nil {
 			return nil, errors.Wrap(err, "Failed to create temp directory")
@@ -219,16 +225,37 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			client = http.DefaultClient
 		}
 		executor = benchrun.NewRemoteExecutionService(client, apiURL)
-		stub := api.Stub[schema.CreateRunRequest, schema.Run](client, apiURL.JoinPath("runs"))
-		resp, err := stub(ctx, schema.CreateRunRequest{
-			BenchmarkName: filepath.Base(cfg.BenchmarkPath),
-			BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-			Type:          string(cfg.ExecutionMode),
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "creating run")
+		runID = cfg.RunID
+		if runID == "" {
+			stub := api.Stub[schema.CreateRunRequest, schema.Run](client, apiURL.JoinPath("runs"))
+			resp, err := stub(ctx, schema.CreateRunRequest{
+				BenchmarkName: filepath.Base(cfg.BenchmarkPath),
+				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
+				Type:          string(cfg.ExecutionMode),
+			})
+			if err != nil {
+				return nil, errors.Wrap(err, "creating run")
+			}
+			runID = resp.ID
+		} else {
+			// When a custom run ID is provided, ensure the run exists
+			// Use BenchmarkName to pass the desired run ID
+			stub := api.Stub[schema.CreateRunRequest, schema.Run](client, apiURL.JoinPath("runs"))
+			run, err := stub(ctx, schema.CreateRunRequest{
+				BenchmarkName: runID,
+				BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
+				Type:          string(cfg.ExecutionMode),
+			})
+			if err != nil {
+				if status.Code(err) == codes.AlreadyExists {
+					log.Printf("Note: Run already exists: %s", runID)
+				} else {
+					return nil, errors.Wrap(err, "creating run")
+				}
+			} else {
+				log.Printf("Created run with ID: %s (benchmark name: %s)", run.ID, runID)
+			}
 		}
-		runID = resp.ID
 	}
 	if cfg.Async {
 		if cfg.Local {
@@ -342,5 +369,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.BoolVar(&cfg.UseRepoDefinition, "use-repo-definition", false, "use build definitions from the build definition repository")
 	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
 	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos (local mode only)")
+	set.StringVar(&cfg.RunID, "run-id", "", "explicit run ID to use")
 	return set
 }
