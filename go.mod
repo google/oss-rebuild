@@ -23,6 +23,8 @@ require (
 	github.com/rivo/tview v0.0.0-20240519200218-0ac5f73025a8
 	github.com/secure-systems-lab/go-securesystemslib v0.9.1
 	github.com/spf13/cobra v1.8.0
+	github.com/tree-sitter/go-tree-sitter v0.25.0
+	github.com/tree-sitter/tree-sitter-python v0.25.0
 	golang.org/x/crypto v0.45.0
 	golang.org/x/oauth2 v0.30.0
 	google.golang.org/api v0.242.0
@@ -78,6 +80,7 @@ require (
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect

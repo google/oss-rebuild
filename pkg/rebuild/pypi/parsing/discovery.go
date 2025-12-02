@@ -15,6 +15,7 @@ import (
 
 var supportedFileTypes = map[string]bool{
 	"pyproject.toml": true,
+	"setup.py":       true,
 	"setup.cfg":      true,
 }
 
