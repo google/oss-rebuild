@@ -33,8 +33,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api"
@@ -54,8 +52,8 @@ import (
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/benchmark/run"
+	"github.com/google/oss-rebuild/tools/ctl/command/getgradlegav"
 	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
-	"github.com/google/oss-rebuild/tools/ctl/gradle"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
 	agentide "github.com/google/oss-rebuild/tools/ctl/ide/agent"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
@@ -598,6 +596,7 @@ var runBenchmark = &cobra.Command{
 			MaxConcurrency:    *maxConcurrency,
 			UseSyscallMonitor: *useSyscallMonitor,
 			UseNetworkProxy:   *useNetworkProxy,
+			OverwriteMode:     schema.OverwriteMode(*overwriteMode),
 		})
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "running benchmark"))
@@ -875,6 +874,7 @@ var runOne = &cobra.Command{
 				Artifact:          *artifact,
 				UseNetworkProxy:   *useNetworkProxy,
 				UseSyscallMonitor: *useSyscallMonitor,
+				OverwriteMode:     schema.OverwriteMode(*overwriteMode),
 				ID:                time.Now().UTC().Format(time.RFC3339),
 			})
 			if err != nil {
@@ -1164,43 +1164,6 @@ var infer = &cobra.Command{
 		default:
 			log.Fatalf("Unknown --format type: %s", *format)
 		}
-	},
-}
-
-var getGradleGAV = &cobra.Command{
-	Use:   "get-gradle-gav --repository <URI> --ref <ref>",
-	Short: "Extracts GAV coordinates from a Gradle project at a given commit",
-	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		repoURL := *repository
-		sha := *ref
-
-		tempDir, err := os.MkdirTemp("", "gradle-gav-")
-		if err != nil {
-			return errors.Wrap(err, "failed to create temp directory")
-		}
-		defer os.RemoveAll(tempDir)
-
-		repo, err := git.PlainClone(tempDir, false, &git.CloneOptions{URL: repoURL})
-		if err != nil {
-			return errors.Wrap(err, "failed to clone repository")
-		}
-		wt, err := repo.Worktree()
-		if err != nil {
-			return errors.Wrap(err, "failed to get worktree")
-		}
-		if err := wt.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(sha)}); err != nil {
-			return errors.Wrap(err, "failed to checkout commit")
-		}
-
-		gradleProject, err := gradle.RunPrintCoordinates(cmd.Context(), *repo, local.NewRealCommandExecutor())
-		if err != nil {
-			return errors.Wrap(err, "running printCoordinates")
-		}
-
-		encoder := json.NewEncoder(cmd.OutOrStdout())
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(gradleProject)
 	},
 }
 
@@ -1635,6 +1598,7 @@ var (
 	bootstrapVersion  = flag.String("bootstrap-version", "", "the version of bootstrap tools to use")
 	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
 	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request syscall monitoring")
+	overwriteMode     = flag.String("overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
 	assetTypesFlag    = flag.String("asset-types", "", "a comma-separated list of asset types to export")
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
@@ -1656,9 +1620,6 @@ var (
 	sample  = flag.Int("sample", -1, "if provided, only N results will be displayed")
 	project = flag.String("project", "", "the project from which to fetch the Firestore data")
 	clean   = flag.Bool("clean", false, "whether to apply normalization heuristics to group similar verdicts")
-	// get-gradle-gav
-	repository = flag.String("repository", "", "the repository URI")
-	ref        = flag.String("ref", "", "the git reference (branch, tag, commit)")
 	// TUI
 	benchmarkDir     = flag.String("benchmark-dir", "", "a directory with benchmarks to work with")
 	defDir           = flag.String("def-dir", "", "tui will make edits to strategies in this manual build definition repo")
@@ -1686,11 +1647,13 @@ func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("task-queue-email"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("use-network-proxy"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("use-syscall-monitor"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("overwrite-mode"))
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
 	runOne.Flags().AddGoFlag(flag.Lookup("use-network-proxy"))
 	runOne.Flags().AddGoFlag(flag.Lookup("use-syscall-monitor"))
+	runOne.Flags().AddGoFlag(flag.Lookup("overwrite-mode"))
 	runOne.Flags().AddGoFlag(flag.Lookup("ecosystem"))
 	runOne.Flags().AddGoFlag(flag.Lookup("package"))
 	runOne.Flags().AddGoFlag(flag.Lookup("version"))
@@ -1744,9 +1707,6 @@ func init() {
 	infer.Flags().AddGoFlag(flag.Lookup("bootstrap-bucket"))
 	infer.Flags().AddGoFlag(flag.Lookup("bootstrap-version"))
 	infer.Flags().AddGoFlag(flag.Lookup("repo-hint"))
-
-	getGradleGAV.Flags().AddGoFlag(flag.Lookup("repository"))
-	getGradleGAV.Flags().AddGoFlag(flag.Lookup("ref"))
 
 	migrate.Flags().AddGoFlag(flag.Lookup("project"))
 	migrate.Flags().AddGoFlag(flag.Lookup("dryrun"))
@@ -1802,7 +1762,7 @@ func init() {
 	rootCmd.AddCommand(viewSession)
 	// Rebuild logic
 	rootCmd.AddCommand(infer)
-	rootCmd.AddCommand(getGradleGAV)
+	rootCmd.AddCommand(getgradlegav.Command())
 	// Infra tools
 	rootCmd.AddCommand(migrate)
 	rootCmd.AddCommand(setTrackedPackagesCmd)

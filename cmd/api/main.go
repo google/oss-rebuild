@@ -69,20 +69,27 @@ var (
 
 var httpcfg = httpegress.Config{}
 
-func makeKMSSigner(ctx context.Context, cryptoKeyVersion string) (*dsse.EnvelopeSigner, error) {
+func makeKMSSignerVerifier(ctx context.Context, cryptoKeyVersion string) (*dsse.EnvelopeSigner, *dsse.EnvelopeVerifier, error) {
 	kc, err := kms.NewKeyManagementClient(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating KMS client")
+		return nil, nil, errors.Wrap(err, "creating KMS client")
 	}
-	kmsSigner, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, cryptoKeyVersion)
+	kmsSignerVerifier, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, cryptoKeyVersion)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating Cloud KMS signer")
+		return nil, nil, errors.Wrap(err, "creating Cloud KMS signer/verifier")
 	}
-	dsseSigner, err := dsse.NewEnvelopeSigner(kmsSigner)
+	dsseSigner, err := dsse.NewEnvelopeSigner(kmsSignerVerifier)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating envelope signer")
+		return nil, nil, errors.Wrap(err, "creating envelope signer")
 	}
-	return dsseSigner, nil
+	// Create verifiers for both new (gcpkms://) and legacy (https://) keyid formats
+	// to support verification of existing attestations with legacy keyids
+	legacyVerifier := kmsdsse.NewLegacyKeyIDVerifier(kmsSignerVerifier)
+	dsseVerifier, err := dsse.NewEnvelopeVerifier(kmsSignerVerifier, legacyVerifier)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "creating envelope verifier")
+	}
+	return dsseSigner, dsseVerifier, nil
 }
 
 func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, error) {
@@ -96,9 +103,9 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
-	d.Signer, err = makeKMSSigner(ctx, *signingKeyVersion)
+	d.Signer, d.Verifier, err = makeKMSSignerVerifier(ctx, *signingKeyVersion)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating signer")
+		return nil, errors.Wrap(err, "creating signer/verifier")
 	}
 	svc, err := cloudbuild.NewService(ctx)
 	if err != nil {

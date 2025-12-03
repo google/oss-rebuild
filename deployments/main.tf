@@ -229,6 +229,9 @@ resource "google_storage_bucket" "attestations" {
   storage_class               = "STANDARD"
   uniform_bucket_level_access = true
   depends_on                  = [google_project_service.storage]
+  versioning {
+    enabled = true
+  }
 }
 resource "google_storage_bucket" "metadata" {
   name                        = "${var.host}-rebuild-metadata"
