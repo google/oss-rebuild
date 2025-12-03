@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	slsa1 "github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/v1"
 )
@@ -71,6 +72,8 @@ type RebuildParams struct {
 	Package string `json:"package"`
 	// Version is the specific version of the package to rebuild
 	Version string `json:"version"`
+	// OverwriteMode specifies the justification for overwriting an existing attestation
+	OverwriteMode schema.OverwriteMode `json:"overwrite_mode,omitempty"`
 }
 
 // RebuildDeps represents the resolved dependencies for a rebuild operation.
