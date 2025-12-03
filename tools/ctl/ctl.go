@@ -598,6 +598,7 @@ var runBenchmark = &cobra.Command{
 			MaxConcurrency:    *maxConcurrency,
 			UseSyscallMonitor: *useSyscallMonitor,
 			UseNetworkProxy:   *useNetworkProxy,
+			OverwriteMode:     schema.OverwriteMode(*overwriteMode),
 		})
 		if err != nil {
 			log.Fatal(errors.Wrap(err, "running benchmark"))
@@ -875,6 +876,7 @@ var runOne = &cobra.Command{
 				Artifact:          *artifact,
 				UseNetworkProxy:   *useNetworkProxy,
 				UseSyscallMonitor: *useSyscallMonitor,
+				OverwriteMode:     schema.OverwriteMode(*overwriteMode),
 				ID:                time.Now().UTC().Format(time.RFC3339),
 			})
 			if err != nil {
@@ -1635,6 +1637,7 @@ var (
 	bootstrapVersion  = flag.String("bootstrap-version", "", "the version of bootstrap tools to use")
 	useNetworkProxy   = flag.Bool("use-network-proxy", false, "request the newtwork proxy")
 	useSyscallMonitor = flag.Bool("use-syscall-monitor", false, "request syscall monitoring")
+	overwriteMode     = flag.String("overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
 	assetTypesFlag    = flag.String("asset-types", "", "a comma-separated list of asset types to export")
 	// run-bench
 	maxConcurrency = flag.Int("max-concurrency", 90, "maximum number of inflight requests")
@@ -1686,11 +1689,13 @@ func init() {
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("task-queue-email"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("use-network-proxy"))
 	runBenchmark.Flags().AddGoFlag(flag.Lookup("use-syscall-monitor"))
+	runBenchmark.Flags().AddGoFlag(flag.Lookup("overwrite-mode"))
 
 	runOne.Flags().AddGoFlag(flag.Lookup("api"))
 	runOne.Flags().AddGoFlag(flag.Lookup("strategy"))
 	runOne.Flags().AddGoFlag(flag.Lookup("use-network-proxy"))
 	runOne.Flags().AddGoFlag(flag.Lookup("use-syscall-monitor"))
+	runOne.Flags().AddGoFlag(flag.Lookup("overwrite-mode"))
 	runOne.Flags().AddGoFlag(flag.Lookup("ecosystem"))
 	runOne.Flags().AddGoFlag(flag.Lookup("package"))
 	runOne.Flags().AddGoFlag(flag.Lookup("version"))
