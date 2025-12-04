@@ -5,6 +5,7 @@ package debian
 
 import (
 	"context"
+	"io"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -26,6 +27,14 @@ func ParseComponent(pkg string) (component, name string, err error) {
 
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
 	return false
+}
+
+func (r Rebuilder) Upstream(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (io.ReadCloser, error) {
+	component, name, err := ParseComponent(t.Package)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing package name")
+	}
+	return mux.Debian.Artifact(ctx, component, name, t.Artifact)
 }
 
 func (r Rebuilder) UpstreamURL(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {

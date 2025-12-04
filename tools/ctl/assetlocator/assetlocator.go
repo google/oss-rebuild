@@ -11,6 +11,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/gcb"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -60,7 +61,7 @@ func (m *assetStore) Reader(ctx context.Context, a rebuild.Asset) (io.ReadCloser
 	case rebuild.DebugUpstreamAsset:
 		// NOTE: RebuildRemote doesn't store the upstream, so we have to re-download it.
 		// If RebuildRemote stored the upstream in the debug bucket, this wouldn't be necessary.
-		return rebuild.UpstreamArtifactReader(ctx, a.Target, m.metaAssetStore.Mux)
+		return meta.AllRebuilders[a.Target.Ecosystem].Upstream(ctx, a.Target, m.metaAssetStore.Mux)
 	case rebuild.RebuildAsset, rebuild.TetragonLogAsset:
 		// NOTE: RebuildRemote stores the RebuildAsset and TetragonLogAsset in the metadata bucket.
 		// If rebuild remote copied the rebuild artifact into debug, this wouldn't be necessary.
