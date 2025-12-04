@@ -6,7 +6,6 @@ package diffr
 import (
 	"archive/tar"
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -31,7 +30,7 @@ func formatTarListing(h *tar.Header) string {
 }
 
 // compareTar compares two tar archives
-func compareTar(ctx context.Context, node *DiffNode, file1, file2 File) (bool, error) {
+func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, error) {
 	// Reset readers
 	file1.Reader.Seek(0, io.SeekStart)
 	file2.Reader.Seek(0, io.SeekStart)
@@ -165,7 +164,7 @@ func compareTar(ctx context.Context, node *DiffNode, file1, file2 File) (bool, e
 					Name:   name,
 					Reader: bytes.NewReader(content2.Bytes()),
 				}
-				entryMatch, err := compareFiles(ctx, &entryNode, entryFile1, entryFile2)
+				entryMatch, err := compareFiles(ctx.Child(), &entryNode, entryFile1, entryFile2)
 				if err != nil {
 					return false, errors.Wrapf(err, "comparing %s", name)
 				}
