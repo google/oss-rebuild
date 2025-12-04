@@ -136,7 +136,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 					}
 					switch {
 					case strings.HasPrefix(uri, kmsV1API):
-						verifier, err := makeKMSVerifier(ctx, ossRebuildKeyResource)
+						verifier, err := makeKMSVerifier(ctx, uri)
 						if err != nil {
 							return err
 						}
