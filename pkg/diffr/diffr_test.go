@@ -86,6 +86,78 @@ func TestDiff(t *testing.T) {
   "comments": ["File types differ: text vs binary"]
 }`,
 		},
+		// Line ending tests
+		{
+			name:        "text_diff_crlf_vs_lf",
+			description: "Files with different line endings but same content should show comment",
+			left: func() ([]byte, error) {
+				return []byte("hello world\nthis is a test\n"), nil
+			},
+			right: func() ([]byte, error) {
+				return []byte("hello world\r\nthis is a test\r\n"), nil
+			},
+			leftName:  "file.txt",
+			rightName: "file.txt",
+			expectTextDiff: `--- file.txt
++++ file.txt
+│┄ Line endings differ (-LF,+CRLF)
+`,
+			expectJSONDiff: `{
+  "source1": "file.txt",
+  "source2": "file.txt",
+  "comments": ["Line endings differ (-LF,+CRLF)"]
+}`,
+		},
+		{
+			name:        "text_diff_different_line_endings_and_content",
+			description: "Files with different line endings and content should show both",
+			left: func() ([]byte, error) {
+				return []byte("hello world\nthis is a test\n"), nil
+			},
+			right: func() ([]byte, error) {
+				return []byte("hello there\r\nthis is different\r\n"), nil
+			},
+			leftName:  "file.txt",
+			rightName: "file.txt",
+			expectTextDiff: `--- file.txt
++++ file.txt
+│┄ Line endings differ (-LF,+CRLF)
+│┄ Diff shown with normalized line endings
+@@ -1,2 +1,2 @@
+-hello world
+-this is a test
++hello there
++this is different
+
+`,
+			expectJSONDiff: `{
+  "source1": "file.txt",
+  "source2": "file.txt",
+  "comments": ["Line endings differ (-LF,+CRLF)","Diff shown with normalized line endings"],
+  "unified_diff": "@@ -1,2 +1,2 @@\n-hello world\n-this is a test\n+hello there\n+this is different\n"
+}`,
+		},
+		{
+			name:        "text_diff_with_cr_line_endings",
+			description: "Files with CR (classic Mac) line endings should be detected",
+			left: func() ([]byte, error) {
+				return []byte("hello world\ntest\n"), nil
+			},
+			right: func() ([]byte, error) {
+				return []byte("hello world\rtest\r"), nil
+			},
+			leftName:  "file.txt",
+			rightName: "file.txt",
+			expectTextDiff: `--- file.txt
++++ file.txt
+│┄ Line endings differ (-LF,+CR)
+`,
+			expectJSONDiff: `{
+  "source1": "file.txt",
+  "source2": "file.txt",
+  "comments": ["Line endings differ (-LF,+CR)"]
+}`,
+		},
 		// Binary file comparisons
 		{
 			name:        "identical_binary_files",

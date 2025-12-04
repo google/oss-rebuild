@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/google/oss-rebuild/internal/gitdiff"
 	"github.com/pkg/errors"
 )
 
@@ -148,32 +147,6 @@ func compareFiles(ctx compareContext, node *DiffNode, file1, file2 File) (bool, 
 	} else {
 		// Typed differ generated no diffs but bytes don't match
 		node.Comments = []string{"Bytes differ but no semantic diff generated"}
-	}
-	return false, nil
-}
-
-// compareText compares two text files and generates unified diff
-func compareText(node *DiffNode, file1, file2 File) (bool, error) {
-	// Read both files
-	content1, err := readAll(file1.Reader)
-	if err != nil {
-		return false, errors.Wrap(err, "reading file1")
-	}
-	content2, err := readAll(file2.Reader)
-	if err != nil {
-		return false, errors.Wrap(err, "reading file2")
-	}
-	// Check if identical
-	if bytes.Equal(content1, content2) {
-		return true, nil
-	}
-	// Generate unified diff using the gitdiff package
-	diff, err := gitdiff.Strings(string(content1), string(content2))
-	if err != nil {
-		return false, errors.Wrap(err, "generating diff")
-	}
-	if diff != "" {
-		node.UnifiedDiff = &diff
 	}
 	return false, nil
 }
