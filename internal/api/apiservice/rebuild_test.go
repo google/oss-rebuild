@@ -39,6 +39,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/api/cloudbuild/v1"
 	"gopkg.in/yaml.v3"
@@ -488,10 +489,10 @@ RLpmHHG1JOVdOA==
 						RustVersion: "1.65.0",
 					},
 				},
-				CustomStabilizers: []archive.CustomStabilizerEntry{
+				CustomStabilizers: []stabilize.CustomStabilizerEntry{
 					{
-						Config: archive.CustomStabilizerConfigOneOf{
-							ExcludePath: &archive.ExcludePath{Paths: []string{"foo"}},
+						Config: stabilize.CustomStabilizerConfigOneOf{
+							ExcludePath: &stabilize.ExcludePath{Paths: []string{"foo"}},
 						},
 						Reason: "too much foo",
 					},

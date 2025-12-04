@@ -27,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
 	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
@@ -247,7 +248,7 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 			Short: "generate stabilizers from diff",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
 				// Generate the path exclusion stabilizers.
-				var customStabs []archive.CustomStabilizerEntry
+				var customStabs []stabilize.CustomStabilizerEntry
 				{
 					if _, err := butler.Fetch(ctx, example.RunID, rebuild.DebugUpstreamAsset.For(example.Target())); err != nil {
 						log.Println(errors.Wrap(err, "downloading upstream"))
@@ -291,10 +292,10 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 							return
 						}
 					}
-					exclusionStab := func(path, reason string) archive.CustomStabilizerEntry {
-						return archive.CustomStabilizerEntry{
-							Config: archive.CustomStabilizerConfigOneOf{
-								ExcludePath: &archive.ExcludePath{
+					exclusionStab := func(path, reason string) stabilize.CustomStabilizerEntry {
+						return stabilize.CustomStabilizerEntry{
+							Config: stabilize.CustomStabilizerConfigOneOf{
+								ExcludePath: &stabilize.ExcludePath{
 									Paths: []string{path},
 								},
 							},
