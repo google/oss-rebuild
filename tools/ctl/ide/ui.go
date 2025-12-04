@@ -110,7 +110,7 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 		},
 		{
 			Short:  "refresh",
-			Hotkey: 'f',
+			Hotkey: 'r',
 			Func: func(ctx context.Context) {
 				if err := t.explorer.LoadTree(ctx); err != nil {
 					log.Println(err)
