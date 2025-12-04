@@ -531,7 +531,7 @@ func TestDiff(t *testing.T) {
 			}
 			t.Run("text_output", func(t *testing.T) {
 				var buf bytes.Buffer
-				opts := Options{Output: &buf, OutputJSON: false}
+				opts := Options{Output: &buf}
 				err := Diff(t.Context(), leftFile, rightFile, opts)
 				if err != nil && err != ErrNoDiff {
 					t.Fatalf("Diff failed: %v", err)
@@ -562,7 +562,7 @@ func TestDiff(t *testing.T) {
 			})
 			t.Run("json_output", func(t *testing.T) {
 				var buf bytes.Buffer
-				opts := Options{Output: &buf, OutputJSON: true}
+				opts := Options{OutputJSON: &buf}
 				err := Diff(t.Context(), leftFile, rightFile, opts)
 				if err != nil && err != ErrNoDiff {
 					t.Fatalf("Diff failed: %v", err)
