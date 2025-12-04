@@ -245,6 +245,72 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 			},
 		},
 		{
+			Hotkey: 'f',
+			Short:  "fast diff",
+			Func: func(ctx context.Context, example rundex.Rebuild) {
+				// Fetch both artifacts
+				if _, err := butler.Fetch(ctx, example.RunID, rebuild.DebugUpstreamAsset.For(example.Target())); err != nil {
+					log.Println(errors.Wrap(err, "downloading upstream"))
+					return
+				}
+				if _, err := butler.Fetch(ctx, example.RunID, rebuild.RebuildAsset.For(example.Target())); err != nil {
+					log.Println(errors.Wrap(err, "downloading rebuild"))
+					return
+				}
+				// Get paths to the local artifacts
+				assets, err := localfiles.AssetStore(example.RunID)
+				if err != nil {
+					log.Println(errors.Wrap(err, "creating asset store"))
+					return
+				}
+				upstreamPath := assets.URL(rebuild.DebugUpstreamAsset.For(example.Target())).Path
+				rebuildPath := assets.URL(rebuild.RebuildAsset.For(example.Target())).Path
+				// Open both files
+				upFile, err := os.Open(upstreamPath)
+				if err != nil {
+					log.Println(errors.Wrap(err, "opening upstream file"))
+					return
+				}
+				defer upFile.Close()
+				rbFile, err := os.Open(rebuildPath)
+				if err != nil {
+					log.Println(errors.Wrap(err, "opening rebuild file"))
+					return
+				}
+				defer rbFile.Close()
+				// Create a temporary file for the diff output
+				tempFile, err := os.CreateTemp("", "fast-diff-*.txt")
+				if err != nil {
+					log.Println(errors.Wrap(err, "creating temp file"))
+					return
+				}
+				tempPath := tempFile.Name()
+				defer tempFile.Close()
+				// Use MaxDepth based on archive format layers
+				maxDepth := example.Target().ArchiveType().Layers()
+				// Run diffr to generate the diff
+				err = diffr.Diff(
+					ctx,
+					diffr.File{Name: rebuildPath, Reader: rbFile},
+					diffr.File{Name: upstreamPath, Reader: upFile},
+					diffr.Options{MaxDepth: maxDepth, Output: tempFile, OutputJSON: false},
+				)
+				if err != nil && !errors.Is(err, diffr.ErrNoDiff) {
+					log.Println(errors.Wrap(err, "running diffr"))
+					return
+				}
+				if errors.Is(err, diffr.ErrNoDiff) {
+					log.Println("No differences found")
+					return
+				}
+				// Display the diff using less
+				if err := tmux.Wait(fmt.Sprintf("less -R %s", tempPath)); err != nil {
+					log.Println(errors.Wrap(err, "displaying diff"))
+					return
+				}
+			},
+		},
+		{
 			Short: "generate stabilizers from diff",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
 				// Generate the path exclusion stabilizers.
