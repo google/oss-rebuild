@@ -85,6 +85,78 @@ func TestDiff(t *testing.T) {
   "comments": ["File types differ: text vs binary"]
 }`,
 		},
+		// Line ending tests
+		{
+			name:        "text_diff_crlf_vs_lf",
+			description: "Files with different line endings but same content should show comment",
+			left: func() ([]byte, error) {
+				return []byte("hello world\nthis is a test\n"), nil
+			},
+			right: func() ([]byte, error) {
+				return []byte("hello world\r\nthis is a test\r\n"), nil
+			},
+			leftName:  "file.txt",
+			rightName: "file.txt",
+			expectTextDiff: `--- file.txt
++++ file.txt
+│┄ Line endings differ (-LF,+CRLF)
+`,
+			expectJSONDiff: `{
+  "source1": "file.txt",
+  "source2": "file.txt",
+  "comments": ["Line endings differ (-LF,+CRLF)"]
+}`,
+		},
+		{
+			name:        "text_diff_different_line_endings_and_content",
+			description: "Files with different line endings and content should show both",
+			left: func() ([]byte, error) {
+				return []byte("hello world\nthis is a test\n"), nil
+			},
+			right: func() ([]byte, error) {
+				return []byte("hello there\r\nthis is different\r\n"), nil
+			},
+			leftName:  "file.txt",
+			rightName: "file.txt",
+			expectTextDiff: `--- file.txt
++++ file.txt
+│┄ Line endings differ (-LF,+CRLF)
+│┄ Diff shown with normalized line endings
+@@ -1,2 +1,2 @@
+-hello world
+-this is a test
++hello there
++this is different
+
+`,
+			expectJSONDiff: `{
+  "source1": "file.txt",
+  "source2": "file.txt",
+  "comments": ["Line endings differ (-LF,+CRLF)","Diff shown with normalized line endings"],
+  "unified_diff": "@@ -1,2 +1,2 @@\n-hello world\n-this is a test\n+hello there\n+this is different\n"
+}`,
+		},
+		{
+			name:        "text_diff_with_cr_line_endings",
+			description: "Files with CR (classic Mac) line endings should be detected",
+			left: func() ([]byte, error) {
+				return []byte("hello world\ntest\n"), nil
+			},
+			right: func() ([]byte, error) {
+				return []byte("hello world\rtest\r"), nil
+			},
+			leftName:  "file.txt",
+			rightName: "file.txt",
+			expectTextDiff: `--- file.txt
++++ file.txt
+│┄ Line endings differ (-LF,+CR)
+`,
+			expectJSONDiff: `{
+  "source1": "file.txt",
+  "source2": "file.txt",
+  "comments": ["Line endings differ (-LF,+CR)"]
+}`,
+		},
 		// Binary file comparisons
 		{
 			name:        "identical_binary_files",
@@ -214,6 +286,80 @@ func TestDiff(t *testing.T) {
       "unified_diff": "@@ -1 +1 @@\n-hello world\n+hello there\n"
     }
   ]
+}`,
+		},
+		{
+			name:        "tar_with_file_added_in_middle",
+			description: "TAR with file added in middle should preserve original order",
+			left: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "a_file.txt", Size: 5, Mode: 0644}, Body: []byte("aaaaa")},
+					{Header: &tar.Header{Name: "c_file.txt", Size: 5, Mode: 0644}, Body: []byte("ccccc")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "a_file.txt", Size: 5, Mode: 0644}, Body: []byte("aaaaa")},
+					{Header: &tar.Header{Name: "b_file.txt", Size: 5, Mode: 0644}, Body: []byte("bbbbb")},
+					{Header: &tar.Header{Name: "c_file.txt", Size: 5, Mode: 0644}, Body: []byte("ccccc")},
+				})
+			},
+			leftName:  "archive.tar",
+			rightName: "archive.tar",
+			expectTextDiff: `--- archive.tar
++++ archive.tar
+├── file list
+│ @@ -1,2 +1,3 @@
+│  -rw-r--r-- 0 0            5 1970-01-01 00:00:00.000000 a_file.txt
+│ +-rw-r--r-- 0 0            5 1970-01-01 00:00:00.000000 b_file.txt
+│  -rw-r--r-- 0 0            5 1970-01-01 00:00:00.000000 c_file.txt
+├── b_file.txt
+│┄ Entry only in second archive
+`,
+			expectJSONDiff: `{
+  "source1": "archive.tar",
+  "source2": "archive.tar",
+  "details": [
+    {
+      "source1": "file list",
+      "source2": "file list",
+      "unified_diff": "@@ -1,2 +1,3 @@\n -rw-r--r-- 0 0            5 1970-01-01 00:00:00.000000 a_file.txt\n+-rw-r--r-- 0 0            5 1970-01-01 00:00:00.000000 b_file.txt\n -rw-r--r-- 0 0            5 1970-01-01 00:00:00.000000 c_file.txt\n"
+    },
+    {
+      "source1": "b_file.txt",
+      "source2": "b_file.txt",
+      "comments": ["Entry only in second archive"]
+    }
+  ]
+}`,
+		},
+		{
+			name:        "tar_with_files_reordered",
+			description: "TAR with same files in different order should show reordering comment",
+			left: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "z_last.txt", Size: 5, Mode: 0644}, Body: []byte("zzzzz")},
+					{Header: &tar.Header{Name: "a_first.txt", Size: 5, Mode: 0644}, Body: []byte("aaaaa")},
+					{Header: &tar.Header{Name: "m_middle.txt", Size: 5, Mode: 0644}, Body: []byte("mmmmm")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "a_first.txt", Size: 5, Mode: 0644}, Body: []byte("aaaaa")},
+					{Header: &tar.Header{Name: "m_middle.txt", Size: 5, Mode: 0644}, Body: []byte("mmmmm")},
+					{Header: &tar.Header{Name: "z_last.txt", Size: 5, Mode: 0644}, Body: []byte("zzzzz")},
+				})
+			},
+			leftName:  "archive.tar",
+			rightName: "archive.tar",
+			expectTextDiff: `--- archive.tar
++++ archive.tar
+│┄ Entry order differs (listings shown in sorted order)
+`,
+			expectJSONDiff: `{
+  "source1": "archive.tar",
+  "source2": "archive.tar",
+  "comments": ["Entry order differs (listings shown in sorted order)"]
 }`,
 		},
 		// GZIP comparisons
@@ -459,6 +605,80 @@ func TestDiff(t *testing.T) {
       "unified_diff": "@@ -1 +1 @@\n-version 1.0\n+version 2.0\n"
     }
   ]
+}`,
+		},
+		{
+			name:        "zip_with_file_added_in_middle",
+			description: "ZIP with file added in middle should preserve original order",
+			left: func() ([]byte, error) {
+				return createZip([]archive.ZipEntry{
+					{FileHeader: &zip.FileHeader{Name: "a_file.txt"}, Body: []byte("aaaaa")},
+					{FileHeader: &zip.FileHeader{Name: "c_file.txt"}, Body: []byte("ccccc")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createZip([]archive.ZipEntry{
+					{FileHeader: &zip.FileHeader{Name: "a_file.txt"}, Body: []byte("aaaaa")},
+					{FileHeader: &zip.FileHeader{Name: "b_file.txt"}, Body: []byte("bbbbb")},
+					{FileHeader: &zip.FileHeader{Name: "c_file.txt"}, Body: []byte("ccccc")},
+				})
+			},
+			leftName:  "archive.zip",
+			rightName: "archive.zip",
+			expectTextDiff: `--- archive.zip
++++ archive.zip
+├── file list
+│ @@ -1,2 +1,3 @@
+│  -rw-rw-rw- Store    5            1979-11-30 00:00:00.000000 a_file.txt
+│ +-rw-rw-rw- Store    5            1979-11-30 00:00:00.000000 b_file.txt
+│  -rw-rw-rw- Store    5            1979-11-30 00:00:00.000000 c_file.txt
+├── b_file.txt
+│┄ Entry only in second archive
+`,
+			expectJSONDiff: `{
+  "source1": "archive.zip",
+  "source2": "archive.zip",
+  "details": [
+    {
+      "source1": "file list",
+      "source2": "file list",
+      "unified_diff": "@@ -1,2 +1,3 @@\n -rw-rw-rw- Store    5            1979-11-30 00:00:00.000000 a_file.txt\n+-rw-rw-rw- Store    5            1979-11-30 00:00:00.000000 b_file.txt\n -rw-rw-rw- Store    5            1979-11-30 00:00:00.000000 c_file.txt\n"
+    },
+    {
+      "source1": "b_file.txt",
+      "source2": "b_file.txt",
+      "comments": ["Entry only in second archive"]
+    }
+  ]
+}`,
+		},
+		{
+			name:        "zip_with_files_reordered",
+			description: "ZIP with same files in different order should show reordering comment",
+			left: func() ([]byte, error) {
+				return createZip([]archive.ZipEntry{
+					{FileHeader: &zip.FileHeader{Name: "z_last.txt"}, Body: []byte("zzzzz")},
+					{FileHeader: &zip.FileHeader{Name: "a_first.txt"}, Body: []byte("aaaaa")},
+					{FileHeader: &zip.FileHeader{Name: "m_middle.txt"}, Body: []byte("mmmmm")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createZip([]archive.ZipEntry{
+					{FileHeader: &zip.FileHeader{Name: "a_first.txt"}, Body: []byte("aaaaa")},
+					{FileHeader: &zip.FileHeader{Name: "m_middle.txt"}, Body: []byte("mmmmm")},
+					{FileHeader: &zip.FileHeader{Name: "z_last.txt"}, Body: []byte("zzzzz")},
+				})
+			},
+			leftName:  "archive.zip",
+			rightName: "archive.zip",
+			expectTextDiff: `--- archive.zip
++++ archive.zip
+│┄ Entry order differs (listings shown in sorted order)
+`,
+			expectJSONDiff: `{
+  "source1": "archive.zip",
+  "source2": "archive.zip",
+  "comments": ["Entry order differs (listings shown in sorted order)"]
 }`,
 		},
 		{

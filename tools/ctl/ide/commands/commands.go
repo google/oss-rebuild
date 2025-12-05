@@ -29,7 +29,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
+	"github.com/google/oss-rebuild/tools/ctl/difftool"
 	"github.com/google/oss-rebuild/tools/ctl/ide/assistant"
 	"github.com/google/oss-rebuild/tools/ctl/ide/chatbox"
 	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
@@ -233,13 +233,29 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 			Hotkey: 'd',
 			Short:  "diff",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
-				path, err := butler.Fetch(ctx, example.RunID, diffoscope.DiffAsset.For(example.Target()))
+				path, err := butler.Fetch(ctx, example.RunID, difftool.DiffoscopeAsset.For(example.Target()))
 				if err != nil {
 					log.Println(errors.Wrap(err, "fetching diff"))
 					return
 				}
 				if err := tmux.Wait(fmt.Sprintf("less -R %s", path)); err != nil {
 					log.Println(errors.Wrap(err, "running diffoscope"))
+					return
+				}
+			},
+		},
+		{
+			Hotkey: 'f',
+			Short:  "fast diff",
+			Func: func(ctx context.Context, example rundex.Rebuild) {
+				// Fetch the diffr asset (butler will generate it if needed)
+				path, err := butler.Fetch(ctx, example.RunID, difftool.DiffrAsset.For(example.Target()))
+				if err != nil {
+					log.Println(errors.Wrap(err, "fetching diffr"))
+					return
+				}
+				if err := tmux.Wait(fmt.Sprintf("less -R %s", path)); err != nil {
+					log.Println(errors.Wrap(err, "displaying diff"))
 					return
 				}
 			},
@@ -579,7 +595,7 @@ func NewRebuildGroupCmds(app *tview.Application, executor build.Executor, prebui
 						{Text: logs},
 					}
 					if strings.Contains(in.Message, "content mismatch") {
-						diffPath, err := butler.Fetch(ctx, in.RunID, diffoscope.DiffAsset.For(in.Target()))
+						diffPath, err := butler.Fetch(ctx, in.RunID, difftool.DiffoscopeAsset.For(in.Target()))
 						if err != nil {
 							log.Println(errors.Wrap(err, "fetching diff"))
 						} else {
