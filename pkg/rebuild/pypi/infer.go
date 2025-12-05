@@ -257,6 +257,8 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if buildReqs, newFoundDir, err := pypiresolver.ExtractAllRequirements(ctx, tree, name, version, dir); err != nil {
 			log.Println(errors.Wrap(err, "Failed to extract reqs from pyproject.toml."))
 		} else {
+			// NOTE - This should NOT overwrite the hint dir if one exists, but utilize it and return it again
+			//   Test "pyproject.toml - Detect package with dir hint" showcases this
 			dir = newFoundDir
 			existing := make(map[string]bool)
 			pkgname := func(req string) string {
