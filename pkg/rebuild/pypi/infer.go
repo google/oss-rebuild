@@ -17,13 +17,12 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
+	pypiresolver "github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
-	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
 )
 
@@ -120,38 +119,6 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	default:
 		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
 	}
-}
-
-func extractPyProjectRequirements(ctx context.Context, tree *object.Tree) ([]string, error) {
-	var reqs []string
-	log.Println("Looking for additional reqs in pyproject.toml")
-	// TODO: Maybe look for pyproject.toml in subdir?
-	f, err := tree.File("pyproject.toml")
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed to find pyproject.toml")
-	}
-	pyprojContents, err := f.Contents()
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed to read pyproject.toml")
-	}
-	type BuildSystem struct {
-		Requirements []string `toml:"requires"`
-	}
-	type PyProject struct {
-		Build BuildSystem `toml:"build-system"`
-	}
-	var pyProject PyProject
-	if err := toml.Unmarshal([]byte(pyprojContents), &pyProject); err != nil {
-		return nil, errors.Wrap(err, "Failed to decode pyproject.toml")
-	}
-	for _, r := range pyProject.Build.Requirements {
-		// TODO: Some of these requirements are probably already in rbcfg.Requirements, should we skip
-		// them? To even know which package we're looking at would require parsing the dependency spec.
-		// https://packaging.python.org/en/latest/specifications/dependency-specifiers/#dependency-specifiers
-		reqs = append(reqs, strings.ReplaceAll(r, " ", ""))
-	}
-	log.Println("Added these reqs from pyproject.toml: " + strings.Join(reqs, ", "))
-	return reqs, nil
 }
 
 func findGitRef(pkg string, version string, rcfg *rebuild.RepoConfig) (string, error) {
@@ -284,9 +251,15 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if err != nil {
 			return cfg, errors.Wrapf(err, "Failed to get tree")
 		}
-		if pyprojReqs, err := extractPyProjectRequirements(ctx, tree); err != nil {
+
+		// TODO: Split ExtractAllRequirements into 1) file discovery and 2) requirement extraction
+		// This allows infer.go to own the logic deciding on dir
+		if buildReqs, newFoundDir, err := pypiresolver.ExtractAllRequirements(ctx, tree, name, version, dir); err != nil {
 			log.Println(errors.Wrap(err, "Failed to extract reqs from pyproject.toml."))
 		} else {
+			// NOTE - This should NOT overwrite the hint dir if one exists, but utilize it and return it again
+			//   Test "pyproject.toml - Detect package with dir hint" showcases this
+			dir = newFoundDir
 			existing := make(map[string]bool)
 			pkgname := func(req string) string {
 				return strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~! \t", r) })[0]
@@ -294,7 +267,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			for _, req := range reqs {
 				existing[pkgname(req)] = true
 			}
-			for _, newReq := range pyprojReqs {
+			for _, newReq := range buildReqs {
 				if pkg := pkgname(newReq); !existing[pkg] {
 					reqs = append(reqs, newReq)
 				}
