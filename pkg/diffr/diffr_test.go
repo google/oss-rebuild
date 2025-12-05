@@ -729,6 +729,274 @@ func TestDiff(t *testing.T) {
   "comments": ["Bytes differ but no semantic diff generated"]
 }`,
 		},
+		// Duplicate entry tests for TAR archives
+		{
+			name:        "tar_identical_duplicates",
+			description: "TAR with identical duplicate entries should match",
+			left: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "file.txt", Size: 5, Mode: 0644}, Body: []byte("first")},
+					{Header: &tar.Header{Name: "other.txt", Size: 5, Mode: 0644}, Body: []byte("other")},
+					{Header: &tar.Header{Name: "file.txt", Size: 6, Mode: 0644}, Body: []byte("second")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "file.txt", Size: 5, Mode: 0644}, Body: []byte("first")},
+					{Header: &tar.Header{Name: "other.txt", Size: 5, Mode: 0644}, Body: []byte("other")},
+					{Header: &tar.Header{Name: "file.txt", Size: 6, Mode: 0644}, Body: []byte("second")},
+				})
+			},
+			leftName:    "archive.tar",
+			rightName:   "archive.tar",
+			expectMatch: true,
+		},
+		{
+			name:        "tar_duplicate_content_diff",
+			description: "TAR with different content in duplicate occurrence should show [occurrence N]",
+			left: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "data.txt", Size: 7, Mode: 0644}, Body: []byte("first-1")},
+					{Header: &tar.Header{Name: "data.txt", Size: 7, Mode: 0644}, Body: []byte("second-")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "data.txt", Size: 7, Mode: 0644}, Body: []byte("first-1")},
+					{Header: &tar.Header{Name: "data.txt", Size: 7, Mode: 0644}, Body: []byte("second2")},
+				})
+			},
+			leftName:  "archive.tar",
+			rightName: "archive.tar",
+			expectTextDiff: `--- archive.tar
++++ archive.tar
+├── data.txt [occurrence 2]
+│ @@ -1 +1 @@
+│ -second-
+│ +second2
+`,
+			expectJSONDiff: `{
+  "source1": "archive.tar",
+  "source2": "archive.tar",
+  "details": [
+    {
+      "source1": "data.txt [occurrence 2]",
+      "source2": "data.txt [occurrence 2]",
+      "unified_diff": "@@ -1 +1 @@\n-second-\n+second2\n"
+    }
+  ]
+}`,
+		},
+		{
+			name:        "tar_jagged_duplicates",
+			description: "TAR with different duplicate counts should show 'Unmatched duplicate entry'",
+			left: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "file.txt", Size: 5, Mode: 0644}, Body: []byte("hello")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "file.txt", Size: 5, Mode: 0644}, Body: []byte("hello")},
+					{Header: &tar.Header{Name: "file.txt", Size: 5, Mode: 0644}, Body: []byte("world")},
+				})
+			},
+			leftName:  "archive.tar",
+			rightName: "archive.tar",
+			expectTextDiff: `--- archive.tar
++++ archive.tar
+│┄ Entry order differs (listings shown in sorted order)
+├── file list
+│ @@ -1 +1,2 @@
+│  -rw-r--r-- 0 0            5 1970-01-01 00:00:00.000000 file.txt
+│ +-rw-r--r-- 0 0            5 1970-01-01 00:00:00.000000 file.txt
+├── file.txt [occurrence 2]
+│┄ Entry only in second archive
+│┄ Unmatched duplicate entry
+`,
+			expectJSONDiff: `{
+  "source1": "archive.tar",
+  "source2": "archive.tar",
+  "comments": [
+    "Entry order differs (listings shown in sorted order)"
+  ],
+  "details": [
+    {
+      "source1": "file list",
+      "source2": "file list",
+      "unified_diff": "@@ -1 +1,2 @@\n -rw-r--r-- 0 0            5 1970-01-01 00:00:00.000000 file.txt\n+-rw-r--r-- 0 0            5 1970-01-01 00:00:00.000000 file.txt\n"
+    },
+    {
+      "source1": "file.txt [occurrence 2]",
+      "source2": "file.txt [occurrence 2]",
+      "comments": [
+        "Entry only in second archive",
+        "Unmatched duplicate entry"
+      ]
+    }
+  ]
+}`,
+		},
+		{
+			name:        "tar_multiple_duplicates",
+			description: "TAR with multiple files having duplicates",
+			left: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "a.txt", Size: 2, Mode: 0644}, Body: []byte("a1")},
+					{Header: &tar.Header{Name: "b.txt", Size: 2, Mode: 0644}, Body: []byte("b1")},
+					{Header: &tar.Header{Name: "a.txt", Size: 2, Mode: 0644}, Body: []byte("a2")},
+					{Header: &tar.Header{Name: "b.txt", Size: 2, Mode: 0644}, Body: []byte("b2")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createTar([]archive.TarEntry{
+					{Header: &tar.Header{Name: "a.txt", Size: 2, Mode: 0644}, Body: []byte("a1")},
+					{Header: &tar.Header{Name: "b.txt", Size: 2, Mode: 0644}, Body: []byte("b1")},
+					{Header: &tar.Header{Name: "a.txt", Size: 3, Mode: 0644}, Body: []byte("a2x")},
+					{Header: &tar.Header{Name: "b.txt", Size: 2, Mode: 0644}, Body: []byte("b2")},
+				})
+			},
+			leftName:  "archive.tar",
+			rightName: "archive.tar",
+			expectTextDiff: `--- archive.tar
++++ archive.tar
+├── file list
+│ @@ -1,4 +1,4 @@
+│  -rw-r--r-- 0 0            2 1970-01-01 00:00:00.000000 a.txt
+│  -rw-r--r-- 0 0            2 1970-01-01 00:00:00.000000 b.txt
+│ --rw-r--r-- 0 0            2 1970-01-01 00:00:00.000000 a.txt
+│ +-rw-r--r-- 0 0            3 1970-01-01 00:00:00.000000 a.txt
+│  -rw-r--r-- 0 0            2 1970-01-01 00:00:00.000000 b.txt
+├── a.txt [occurrence 2]
+│ @@ -1 +1 @@
+│ -a2
+│ +a2x
+`,
+			expectJSONDiff: `{
+  "source1": "archive.tar",
+  "source2": "archive.tar",
+  "details": [
+    {
+      "source1": "file list",
+      "source2": "file list",
+      "unified_diff": "@@ -1,4 +1,4 @@\n -rw-r--r-- 0 0            2 1970-01-01 00:00:00.000000 a.txt\n -rw-r--r-- 0 0            2 1970-01-01 00:00:00.000000 b.txt\n--rw-r--r-- 0 0            2 1970-01-01 00:00:00.000000 a.txt\n+-rw-r--r-- 0 0            3 1970-01-01 00:00:00.000000 a.txt\n -rw-r--r-- 0 0            2 1970-01-01 00:00:00.000000 b.txt\n"
+    },
+    {
+      "source1": "a.txt [occurrence 2]",
+      "source2": "a.txt [occurrence 2]",
+      "unified_diff": "@@ -1 +1 @@\n-a2\n+a2x\n"
+    }
+  ]
+}`,
+		},
+		// Duplicate entry tests for ZIP archives
+		{
+			name:        "zip_identical_duplicates",
+			description: "ZIP with identical duplicate entries should match",
+			left: func() ([]byte, error) {
+				return createZip([]archive.ZipEntry{
+					{FileHeader: &zip.FileHeader{Name: "file.txt"}, Body: []byte("first")},
+					{FileHeader: &zip.FileHeader{Name: "other.txt"}, Body: []byte("other")},
+					{FileHeader: &zip.FileHeader{Name: "file.txt"}, Body: []byte("second")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createZip([]archive.ZipEntry{
+					{FileHeader: &zip.FileHeader{Name: "file.txt"}, Body: []byte("first")},
+					{FileHeader: &zip.FileHeader{Name: "other.txt"}, Body: []byte("other")},
+					{FileHeader: &zip.FileHeader{Name: "file.txt"}, Body: []byte("second")},
+				})
+			},
+			leftName:    "archive.zip",
+			rightName:   "archive.zip",
+			expectMatch: true,
+		},
+		{
+			name:        "zip_duplicate_content_diff",
+			description: "ZIP with different content in duplicate occurrence should show [occurrence N]",
+			left: func() ([]byte, error) {
+				return createZip([]archive.ZipEntry{
+					{FileHeader: &zip.FileHeader{Name: "data.txt"}, Body: []byte("first-1")},
+					{FileHeader: &zip.FileHeader{Name: "data.txt"}, Body: []byte("second-")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createZip([]archive.ZipEntry{
+					{FileHeader: &zip.FileHeader{Name: "data.txt"}, Body: []byte("first-1")},
+					{FileHeader: &zip.FileHeader{Name: "data.txt"}, Body: []byte("second2")},
+				})
+			},
+			leftName:  "archive.zip",
+			rightName: "archive.zip",
+			expectTextDiff: `--- archive.zip
++++ archive.zip
+├── data.txt [occurrence 2]
+│ @@ -1 +1 @@
+│ -second-
+│ +second2
+`,
+			expectJSONDiff: `{
+  "source1": "archive.zip",
+  "source2": "archive.zip",
+  "details": [
+    {
+      "source1": "data.txt [occurrence 2]",
+      "source2": "data.txt [occurrence 2]",
+      "unified_diff": "@@ -1 +1 @@\n-second-\n+second2\n"
+    }
+  ]
+}`,
+		},
+		{
+			name:        "zip_jagged_duplicates",
+			description: "ZIP with different duplicate counts should show 'Unmatched duplicate entry'",
+			left: func() ([]byte, error) {
+				return createZip([]archive.ZipEntry{
+					{FileHeader: &zip.FileHeader{Name: "file.txt"}, Body: []byte("hello")},
+					{FileHeader: &zip.FileHeader{Name: "file.txt"}, Body: []byte("world")},
+				})
+			},
+			right: func() ([]byte, error) {
+				return createZip([]archive.ZipEntry{
+					{FileHeader: &zip.FileHeader{Name: "file.txt"}, Body: []byte("hello")},
+				})
+			},
+			leftName:  "archive.zip",
+			rightName: "archive.zip",
+			expectTextDiff: `--- archive.zip
++++ archive.zip
+│┄ Entry order differs (listings shown in sorted order)
+├── file list
+│ @@ -1,2 +1 @@
+│  -rw-rw-rw- Store    5            1979-11-30 00:00:00.000000 file.txt
+│ --rw-rw-rw- Store    5            1979-11-30 00:00:00.000000 file.txt
+├── file.txt [occurrence 2]
+│┄ Entry only in first archive
+│┄ Unmatched duplicate entry
+`,
+			expectJSONDiff: `{
+  "source1": "archive.zip",
+  "source2": "archive.zip",
+  "comments": [
+    "Entry order differs (listings shown in sorted order)"
+  ],
+  "details": [
+    {
+      "source1": "file list",
+      "source2": "file list",
+      "unified_diff": "@@ -1,2 +1 @@\n -rw-rw-rw- Store    5            1979-11-30 00:00:00.000000 file.txt\n--rw-rw-rw- Store    5            1979-11-30 00:00:00.000000 file.txt\n"
+    },
+    {
+      "source1": "file.txt [occurrence 2]",
+      "source2": "file.txt [occurrence 2]",
+      "comments": [
+        "Entry only in first archive",
+        "Unmatched duplicate entry"
+      ]
+    }
+  ]
+}`,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
