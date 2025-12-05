@@ -18,6 +18,12 @@ type PureWheelBuild struct {
 	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
 }
 
+type SourceDistributionBuild struct {
+	rebuild.Location
+	Requirements []string  `json:"requirements"`
+	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+}
+
 var _ rebuild.Strategy = &PureWheelBuild{}
 
 func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
@@ -51,6 +57,39 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 
 // GenerateFor generates the instructions for a PureWheelBuild.
 func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	return b.ToWorkflow().GenerateFor(t, be)
+}
+
+func (b *SourceDistributionBuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	var registryTime string
+	if !b.RegistryTime.IsZero() {
+		registryTime = b.RegistryTime.Format(time.RFC3339)
+	}
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Source: []flow.Step{{
+			Uses: "git-checkout",
+		}},
+		Deps: []flow.Step{{
+			Uses: "pypi/deps/basic",
+			With: map[string]string{
+				"registryTime": registryTime,
+				"requirements": flow.MustToJSON(b.Requirements),
+				"venv":         "/deps",
+			},
+		}},
+		Build: []flow.Step{{
+			Uses: "pypi/build/sdist",
+			With: map[string]string{
+				"dir":     b.Location.Dir,
+				"locator": "/deps/bin/",
+			},
+		}},
+		OutputDir: "dist",
+	}
+}
+
+func (b *SourceDistributionBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
 	return b.ToWorkflow().GenerateFor(t, be)
 }
 
@@ -122,6 +161,14 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
+			Needs: []string{"python3"},
+		}},
+	},
+	{
+		Name: "pypi/build/sdist",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				{{.With.locator}}python3 -m build --sdist -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
 			Needs: []string{"python3"},
 		}},
 	},

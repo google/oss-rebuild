@@ -26,6 +26,7 @@ import (
 type StrategyOneOf struct {
 	LocationHint         *rebuild.LocationHint          `json:"rebuild_location_hint,omitempty" yaml:"rebuild_location_hint,omitempty"`
 	PureWheelBuild       *pypi.PureWheelBuild           `json:"pypi_pure_wheel_build,omitempty" yaml:"pypi_pure_wheel_build,omitempty"`
+  SourceDistributionBuild *pypi.SourceDistributionBuild  `json:"pypi_source_distribution_build,omitempty" yaml:"pypi_source_distribution_build,omitempty"`
 	NPMPackBuild         *npm.NPMPackBuild              `json:"npm_pack_build,omitempty" yaml:"npm_pack_build,omitempty"`
 	NPMCustomBuild       *npm.NPMCustomBuild            `json:"npm_custom_build,omitempty" yaml:"npm_custom_build,omitempty"`
 	CratesIOCargoPackage *cratesio.CratesIOCargoPackage `json:"cratesio_cargo_package,omitempty" yaml:"cratesio_cargo_package,omitempty"`
@@ -45,6 +46,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.LocationHint = t
 	case *pypi.PureWheelBuild:
 		oneof.PureWheelBuild = t
+	case *pypi.SourceDistributionBuild:
+		oneof.SourceDistributionBuild = t
 	case *maven.MavenBuild:
 		oneof.MavenBuild = t
 	case *maven.GradleBuild:
@@ -79,6 +82,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.PureWheelBuild != nil {
 			num++
 			s = oneof.PureWheelBuild
+		}
+		if oneof.SourceDistributionBuild != nil {
+			num++
+			s = oneof.SourceDistributionBuild
 		}
 		if oneof.NPMPackBuild != nil {
 			num++
