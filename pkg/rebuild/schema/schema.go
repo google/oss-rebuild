@@ -202,6 +202,7 @@ type RebuildPackageRequest struct {
 	UseSyscallMonitor bool              `form:""`
 	UseNetworkProxy   bool              `form:""`
 	BuildTimeout      time.Duration     `form:""` // Cancel the build after this amount of time.
+	OverwriteMode     OverwriteMode     `form:""`
 }
 
 var _ api.Message = RebuildPackageRequest{}
@@ -321,6 +322,16 @@ const (
 	SmoketestMode ExecutionMode = "smoketest" // No attestations, faster.
 	AttestMode    ExecutionMode = "attest"    // Creates attestations, slower.
 	AgentMode     ExecutionMode = "agent"     // Agent service for debugging.
+)
+
+// OverwriteMode defines the justification for overwriting an existing attestation.
+type OverwriteMode string
+
+const (
+	// OverwriteServiceUpdate indicates a rebuild is justified by a change in the service environment/dependencies.
+	OverwriteServiceUpdate OverwriteMode = "SERVICE_UPDATE"
+	// OverwriteForce indicates a manual, forced rebuild (e.g. for key rotation or other administrative actions).
+	OverwriteForce OverwriteMode = "FORCE"
 )
 
 // Agent-related constants and types for AI agent feature

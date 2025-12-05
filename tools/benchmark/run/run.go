@@ -110,6 +110,7 @@ type attestWorker struct {
 	workerConfig
 	useSyscallMonitor bool
 	useNetworkProxy   bool
+	overwriteMode     schema.OverwriteMode
 }
 
 var _ packageWorker = &attestWorker{}
@@ -136,6 +137,7 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 			ID:                w.runID,
 			UseSyscallMonitor: w.useSyscallMonitor,
 			UseNetworkProxy:   w.useNetworkProxy,
+			OverwriteMode:     w.overwriteMode,
 		}
 		verdict, err := w.execService.RebuildPackage(ctx, req)
 		if err != nil {
@@ -210,6 +212,7 @@ type RunBenchOpts struct {
 	MaxConcurrency    int
 	UseSyscallMonitor bool
 	UseNetworkProxy   bool
+	OverwriteMode     schema.OverwriteMode
 	ExecService       ExecutionService
 }
 
@@ -239,6 +242,7 @@ func RunBench(ctx context.Context, set benchmark.PackageSet, opts RunBenchOpts) 
 			workerConfig:      conf,
 			useSyscallMonitor: opts.UseSyscallMonitor,
 			useNetworkProxy:   opts.UseNetworkProxy,
+			overwriteMode:     opts.OverwriteMode,
 		}
 	default:
 		return nil, fmt.Errorf("invalid mode: %s", string(opts.Mode))
