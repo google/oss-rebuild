@@ -14,7 +14,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
+	"github.com/google/oss-rebuild/tools/ctl/difftool"
 	"github.com/google/oss-rebuild/tools/ctl/ide/chatbox"
 	"github.com/google/oss-rebuild/tools/ctl/ide/tmux"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
@@ -58,7 +58,7 @@ func newSession(butler localfiles.Butler, chat *llm.Chat, attempt rundex.Rebuild
 			return nil
 		},
 		"diff": func(ctx context.Context, out chan<- *chatbox.Message) error {
-			diff, err := a.butler.Fetch(ctx, attempt.RunID, diffoscope.DiffAsset.For(attempt.Target()))
+			diff, err := a.butler.Fetch(ctx, attempt.RunID, difftool.DiffoscopeAsset.For(attempt.Target()))
 			if err != nil {
 				return errors.Wrap(err, "generating diff")
 			}
@@ -163,7 +163,7 @@ func (a *session) evidence(ctx context.Context, attempt rundex.Rebuild) *attempt
 	}
 	var diff string
 	{
-		path, err := a.butler.Fetch(ctx, attempt.RunID, diffoscope.DiffAsset.For(attempt.Target()))
+		path, err := a.butler.Fetch(ctx, attempt.RunID, difftool.DiffoscopeAsset.For(attempt.Target()))
 		if err != nil {
 			diff = errors.Wrap(err, "generating diff").Error()
 		} else {
