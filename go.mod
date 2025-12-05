@@ -21,7 +21,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.2
 	github.com/pkg/errors v0.9.1
 	github.com/rivo/tview v0.0.0-20240519200218-0ac5f73025a8
-	github.com/secure-systems-lab/go-securesystemslib v0.8.0
+	github.com/secure-systems-lab/go-securesystemslib v0.9.1
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/crypto v0.45.0
 	golang.org/x/oauth2 v0.30.0

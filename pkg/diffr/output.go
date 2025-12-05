@@ -17,6 +17,35 @@ type DiffNode struct {
 	Details     []DiffNode `json:"details,omitempty"` // Recursive nodes
 }
 
+// NodeStatus indicates whether a node represents a file only in first archive,
+// only in second archive, or in both.
+type NodeStatus int
+
+const (
+	StatusBoth NodeStatus = iota
+	StatusOnlyFirst
+	StatusOnlySecond
+)
+
+// Comment constants for archive entry status (unexported - use Status() for programmatic access)
+const (
+	commentOnlyInFirst  = "Entry only in first archive"
+	commentOnlyInSecond = "Entry only in second archive"
+)
+
+// Status determines the status of a node from its comments.
+func (n *DiffNode) Status() NodeStatus {
+	for _, c := range n.Comments {
+		if c == commentOnlyInFirst {
+			return StatusOnlyFirst
+		}
+		if c == commentOnlyInSecond {
+			return StatusOnlySecond
+		}
+	}
+	return StatusBoth
+}
+
 const (
 	detailGlyph       = "│ "
 	branchGlyph       = "├── "

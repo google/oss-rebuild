@@ -20,6 +20,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 )
 
 func TestSummarizeArtifacts(t *testing.T) {
@@ -66,11 +67,11 @@ func TestSummarizeArtifacts(t *testing.T) {
 			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Modified: time.UnixMilli(0)}, Body: []byte("data")},
 		}))
 		must(stabilizedHash.Write(stabilizedZip.Bytes()))
-		customStabilizers := must(archive.CreateCustomStabilizers([]archive.CustomStabilizerEntry{
-			{Config: archive.CustomStabilizerConfigOneOf{ExcludePath: &archive.ExcludePath{Paths: []string{"**/REBUILD"}}}, Reason: "not supposed to be there"},
-			{Config: archive.CustomStabilizerConfigOneOf{ExcludePath: &archive.ExcludePath{Paths: []string{"**/UPSTREAM"}}}, Reason: "not supposed to be there"},
+		customStabilizers := must(stabilize.CreateCustomStabilizers([]stabilize.CustomStabilizerEntry{
+			{Config: stabilize.CustomStabilizerConfigOneOf{ExcludePath: &stabilize.ExcludePath{Paths: []string{"**/REBUILD"}}}, Reason: "not supposed to be there"},
+			{Config: stabilize.CustomStabilizerConfigOneOf{ExcludePath: &stabilize.ExcludePath{Paths: []string{"**/UPSTREAM"}}}, Reason: "not supposed to be there"},
 		}, archive.ZipFormat))
-		rb, up, err := SummarizeArtifacts(ctx, metadata, target, upstreamURI, []crypto.Hash{crypto.SHA256}, slices.Concat(archive.AllStabilizers, customStabilizers))
+		rb, up, err := SummarizeArtifacts(ctx, metadata, target, upstreamURI, []crypto.Hash{crypto.SHA256}, slices.Concat(stabilize.AllStabilizers, customStabilizers))
 		if err != nil {
 			t.Fatalf("SummarizeArtifacts() returned error: %v", err)
 		}

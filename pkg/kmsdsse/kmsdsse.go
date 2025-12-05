@@ -100,7 +100,7 @@ func (s *CloudKMSSignerVerifier) Verify(ctx context.Context, data, sig []byte) e
 }
 
 func (s CloudKMSSignerVerifier) KeyID() (string, error) {
-	return "https://cloudkms.googleapis.com/v1/" + s.keyName, nil
+	return "gcpkms://" + s.keyName, nil
 }
 
 var _ dsse.SignerVerifier = (*CloudKMSSignerVerifier)(nil)
