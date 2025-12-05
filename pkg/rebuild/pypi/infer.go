@@ -251,6 +251,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if err != nil {
 			return cfg, errors.Wrapf(err, "Failed to get tree")
 		}
+
+		// TODO: Split ExtractAllRequirements into 1) file discovery and 2) requirement extraction
+		// This allows infer.go to own the logic deciding on dir
 		if buildReqs, newFoundDir, err := pypiresolver.ExtractAllRequirements(ctx, tree, name, version, dir); err != nil {
 			log.Println(errors.Wrap(err, "Failed to extract reqs from pyproject.toml."))
 		} else {
