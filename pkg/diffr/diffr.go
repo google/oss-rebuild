@@ -16,9 +16,10 @@ import (
 
 // Options for the Diff function
 type Options struct {
-	Output     io.Writer
-	OutputJSON bool // If true, output JSON format; otherwise formatted text diff
-	MaxDepth   int  // Maximum archive nesting depth to recurse into (0 = unlimited)
+	Output     io.Writer // If non-nil, write formatted text diff here
+	OutputJSON io.Writer // If non-nil, write JSON diff here
+	OutputNode *DiffNode // If non-nil, populated with the diff tree structure
+	MaxDepth   int       // Maximum archive nesting depth to recurse into (0 = unlimited)
 }
 
 // compareContext holds options and state for the comparison
@@ -59,19 +60,23 @@ func Diff(ctx context.Context, file1, file2 File, opts Options) error {
 	if match {
 		return ErrNoDiff
 	}
-	// Generate output only if configured
+	// Populate OutputNode if requested
+	if opts.OutputNode != nil {
+		*opts.OutputNode = rootNode
+	}
+	// Generate JSON output if requested
+	if opts.OutputJSON != nil {
+		enc := json.NewEncoder(opts.OutputJSON)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(rootNode); err != nil {
+			return errors.Wrap(err, "marshaling JSON")
+		}
+	}
+	// Generate text output if requested
 	if opts.Output != nil {
-		if opts.OutputJSON {
-			enc := json.NewEncoder(opts.Output)
-			enc.SetIndent("", "  ")
-			if err := enc.Encode(rootNode); err != nil {
-				return errors.Wrap(err, "marshaling JSON")
-			}
-		} else {
-			_, err := io.WriteString(opts.Output, rootNode.String())
-			if err != nil {
-				return errors.Wrap(err, "writing diff")
-			}
+		_, err := io.WriteString(opts.Output, rootNode.String())
+		if err != nil {
+			return errors.Wrap(err, "writing diff")
 		}
 	}
 	return nil
