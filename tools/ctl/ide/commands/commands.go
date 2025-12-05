@@ -282,23 +282,18 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 					// Use MaxDepth based on archive format layers
 					maxDepth := example.Target().ArchiveType().Layers()
 					var left, diff, right []string
-					var buf bytes.Buffer
+					var root diffr.DiffNode
 					err = diffr.Diff(
 						ctx,
 						diffr.File{Name: rebuildPath, Reader: rbFile},
 						diffr.File{Name: upstreamPath, Reader: upFile},
-						diffr.Options{MaxDepth: maxDepth, Output: &buf, OutputJSON: true},
+						diffr.Options{MaxDepth: maxDepth, OutputNode: &root},
 					)
 					if err != nil && !errors.Is(err, diffr.ErrNoDiff) {
 						log.Println(errors.Wrap(err, "running diffr"))
 						return
 					}
-					if buf.Len() > 0 {
-						var root diffr.DiffNode
-						if err := json.Unmarshal(buf.Bytes(), &root); err != nil {
-							log.Println(errors.Wrap(err, "parsing diffr output"))
-							return
-						}
+					if err == nil {
 						left, diff, right = collectDiffPaths(&root)
 					}
 					exclusionStab := func(path, reason string) stabilize.CustomStabilizerEntry {
