@@ -144,6 +144,43 @@ func TestCheckOrderConsistency(t *testing.T) {
 			order2:   []string{"c", "b", "d", "a"},
 			expected: false, // b comes before a in order2, after in order1
 		},
+		// Duplicate detection tests
+		{
+			name:     "identical orders with duplicates",
+			order1:   []string{"a", "b", "a"},
+			order2:   []string{"a", "b", "a"},
+			expected: true, // Identical orders are consistent even with duplicates
+		},
+		{
+			name:     "duplicate in order1",
+			order1:   []string{"a", "b", "a"},
+			order2:   []string{"a", "b"},
+			expected: false, // Duplicates cause order inconsistency
+		},
+		{
+			name:     "duplicate in order2",
+			order1:   []string{"a", "b"},
+			order2:   []string{"a", "b", "a"},
+			expected: false, // Duplicates cause order inconsistency
+		},
+		{
+			name:     "duplicates in both orders",
+			order1:   []string{"a", "b", "a"},
+			order2:   []string{"b", "a", "b"},
+			expected: false, // Duplicates cause order inconsistency
+		},
+		{
+			name:     "duplicate at beginning",
+			order1:   []string{"x", "x", "a", "b"},
+			order2:   []string{"a", "b"},
+			expected: false, // Duplicate detected immediately
+		},
+		{
+			name:     "multiple different duplicates",
+			order1:   []string{"a", "b", "c", "a", "b"},
+			order2:   []string{"a", "b", "c"},
+			expected: false, // Multiple duplicates still inconsistent
+		},
 	}
 
 	for _, tt := range tests {
