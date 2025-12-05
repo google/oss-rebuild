@@ -1,24 +1,28 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package archive
+package stabilize
 
 import (
 	"bytes"
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/google/oss-rebuild/pkg/archive"
 )
 
+// AllJarStabilizers is the list of all available JAR stabilizers.
 var AllJarStabilizers = []Stabilizer{
 	StableJARBuildMetadata,
 	StableJAROrderOfAttributeValues,
 	StableGitProperties,
 }
 
+// StableJARBuildMetadata removes build-related metadata from MANIFEST.MF files.
 var StableJARBuildMetadata = ZipEntryStabilizer{
 	Name: "jar-build-metadata",
-	Func: func(zf *MutableZipFile) {
+	Func: func(zf *archive.MutableZipFile) {
 		// Only process MANIFEST.MF files
 		if !strings.HasSuffix(zf.Name, "META-INF/MANIFEST.MF") {
 			return
@@ -108,9 +112,10 @@ var StableJARBuildMetadata = ZipEntryStabilizer{
 	},
 }
 
+// StableJAROrderOfAttributeValues sorts attribute values in MANIFEST.MF files.
 var StableJAROrderOfAttributeValues = ZipEntryStabilizer{
 	Name: "jar-attribute-value-order",
-	Func: func(zf *MutableZipFile) {
+	Func: func(zf *archive.MutableZipFile) {
 		if !strings.HasSuffix(zf.Name, "META-INF/MANIFEST.MF") {
 			return
 		}
@@ -184,9 +189,10 @@ func splitPreservingQuotes(s string, sep rune) []string {
 	return result
 }
 
+// StableGitProperties clears git.json and git.properties files.
 var StableGitProperties = ZipEntryStabilizer{
 	Name: "jar-git-properties",
-	Func: func(zf *MutableZipFile) {
+	Func: func(zf *archive.MutableZipFile) {
 		// These files contain git properties set by git-commit-id-maven-plugin.
 		// They contain many unreproducible attributes as documented
 		// [here](https://github.com/git-commit-id/git-commit-id-maven-plugin/issues/825).

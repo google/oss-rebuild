@@ -251,9 +251,15 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if err != nil {
 			return cfg, errors.Wrapf(err, "Failed to get tree")
 		}
-		if buildReqs, err := pypiresolver.ExtractAllRequirements(tree, name, version); err != nil {
+
+		// TODO: Split ExtractAllRequirements into 1) file discovery and 2) requirement extraction
+		// This allows infer.go to own the logic deciding on dir
+		if buildReqs, newFoundDir, err := pypiresolver.ExtractAllRequirements(ctx, tree, name, version, dir); err != nil {
 			log.Println(errors.Wrap(err, "Failed to extract reqs from pyproject.toml."))
 		} else {
+			// NOTE - This should NOT overwrite the hint dir if one exists, but utilize it and return it again
+			//   Test "pyproject.toml - Detect package with dir hint" showcases this
+			dir = newFoundDir
 			existing := make(map[string]bool)
 			pkgname := func(req string) string {
 				return strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~! \t", r) })[0]

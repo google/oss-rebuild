@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package archive
+package stabilize
 
 import (
 	"archive/tar"
@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/pkg/archive"
 )
 
 func TestCustomStabilizerEntry_Validate(t *testing.T) {
@@ -215,32 +216,32 @@ func TestReplacePattern_Stabilizer(t *testing.T) {
 	}
 	tests := []struct {
 		name     string
-		format   Format
+		format   archive.Format
 		wantType reflect.Type
 		wantName string
 		wantErr  bool
 	}{
 		{
 			name:     "tar format",
-			format:   TarFormat,
+			format:   archive.TarFormat,
 			wantType: reflect.TypeOf(TarEntryStabilizer{}),
 			wantName: "replace-pattern-test",
 		},
 		{
 			name:     "tgz format",
-			format:   TarGzFormat,
+			format:   archive.TarGzFormat,
 			wantType: reflect.TypeOf(TarEntryStabilizer{}),
 			wantName: "replace-pattern-test",
 		},
 		{
 			name:     "zip format",
-			format:   ZipFormat,
+			format:   archive.ZipFormat,
 			wantType: reflect.TypeOf(ZipEntryStabilizer{}),
 			wantName: "replace-pattern-test",
 		},
 		{
 			name:    "unsupported format",
-			format:  UnknownFormat,
+			format:  archive.UnknownFormat,
 			wantErr: true,
 		},
 	}
@@ -267,7 +268,7 @@ func TestReplacePattern_Stabilizer(t *testing.T) {
 				t.Errorf("Stabilizer() type = %v, want %v", gotType, tt.wantType)
 			}
 			switch format := tt.format; format {
-			case TarFormat, TarGzFormat:
+			case archive.TarFormat, archive.TarGzFormat:
 				s := stabilizer.(TarEntryStabilizer)
 				if s.Name != tt.wantName {
 					t.Errorf("Stabilizer() name = %v, want %v", s.Name, tt.wantName)
@@ -275,7 +276,7 @@ func TestReplacePattern_Stabilizer(t *testing.T) {
 				if s.Func == nil {
 					t.Errorf("Stabilizer() Func is nil")
 				}
-			case ZipFormat:
+			case archive.ZipFormat:
 				s := stabilizer.(ZipEntryStabilizer)
 				if s.Name != tt.wantName {
 					t.Errorf("Stabilizer() name = %v, want %v", s.Name, tt.wantName)
@@ -295,32 +296,32 @@ func TestExcludePath_Stabilizer(t *testing.T) {
 	}
 	tests := []struct {
 		name     string
-		format   Format
+		format   archive.Format
 		wantType reflect.Type
 		wantName string
 		wantErr  bool
 	}{
 		{
 			name:     "tar format",
-			format:   TarFormat,
+			format:   archive.TarFormat,
 			wantType: reflect.TypeOf(TarArchiveStabilizer{}),
 			wantName: "exclude-path-test",
 		},
 		{
 			name:     "tgz format",
-			format:   TarGzFormat,
+			format:   archive.TarGzFormat,
 			wantType: reflect.TypeOf(TarArchiveStabilizer{}),
 			wantName: "exclude-path-test",
 		},
 		{
 			name:     "zip format",
-			format:   ZipFormat,
+			format:   archive.ZipFormat,
 			wantType: reflect.TypeOf(ZipArchiveStabilizer{}),
 			wantName: "exclude-path-test",
 		},
 		{
 			name:    "unsupported format",
-			format:  UnknownFormat,
+			format:  archive.UnknownFormat,
 			wantErr: true,
 		},
 	}
@@ -347,7 +348,7 @@ func TestExcludePath_Stabilizer(t *testing.T) {
 				t.Errorf("Stabilizer() type = %v, want %v", gotType, tt.wantType)
 			}
 			switch format := tt.format; format {
-			case TarFormat, TarGzFormat:
+			case archive.TarFormat, archive.TarGzFormat:
 				s := stabilizer.(TarArchiveStabilizer)
 				if s.Name != tt.wantName {
 					t.Errorf("Stabilizer() name = %v, want %v", s.Name, tt.wantName)
@@ -355,7 +356,7 @@ func TestExcludePath_Stabilizer(t *testing.T) {
 				if s.Func == nil {
 					t.Errorf("Stabilizer() Func is nil")
 				}
-			case ZipFormat:
+			case archive.ZipFormat:
 				s := stabilizer.(ZipArchiveStabilizer)
 				if s.Name != tt.wantName {
 					t.Errorf("Stabilizer() name = %v, want %v", s.Name, tt.wantName)
@@ -372,7 +373,7 @@ func TestCreateCustomStabilizers(t *testing.T) {
 	tests := []struct {
 		name        string
 		entries     []CustomStabilizerEntry
-		format      Format
+		format      archive.Format
 		wantLen     int
 		wantErr     bool
 		errContains string
@@ -399,7 +400,7 @@ func TestCreateCustomStabilizers(t *testing.T) {
 					Reason: "test reason 2",
 				},
 			},
-			format:  TarFormat,
+			format:  archive.TarFormat,
 			wantLen: 2,
 		},
 		{
@@ -416,7 +417,7 @@ func TestCreateCustomStabilizers(t *testing.T) {
 					},
 				},
 			},
-			format:      TarFormat,
+			format:      archive.TarFormat,
 			wantErr:     true,
 			errContains: "no reason provided",
 		},
@@ -435,7 +436,7 @@ func TestCreateCustomStabilizers(t *testing.T) {
 					Reason: "test reason",
 				},
 			},
-			format:      TarFormat,
+			format:      archive.TarFormat,
 			wantErr:     true,
 			errContains: "invalid path",
 		},
@@ -453,14 +454,14 @@ func TestCreateCustomStabilizers(t *testing.T) {
 					Reason: "", // This will cause an error in Stabilizer()
 				},
 			},
-			format:      TarFormat,
+			format:      archive.TarFormat,
 			wantErr:     true,
 			errContains: "no reason provided",
 		},
 		{
 			name:    "empty configs",
 			entries: []CustomStabilizerEntry{},
-			format:  TarFormat,
+			format:  archive.TarFormat,
 			wantLen: 0,
 		},
 	}
@@ -491,12 +492,12 @@ func TestCreateCustomStabilizers(t *testing.T) {
 				switch {
 				case ent.Config.ReplacePattern != nil:
 					switch tt.format {
-					case TarFormat, TarGzFormat:
+					case archive.TarFormat, archive.TarGzFormat:
 						_, ok := stabilizers[i].(TarEntryStabilizer)
 						if !ok {
 							t.Errorf("Stabilizer at index %d is not a TarEntryStabilizer", i)
 						}
-					case ZipFormat:
+					case archive.ZipFormat:
 						_, ok := stabilizers[i].(ZipEntryStabilizer)
 						if !ok {
 							t.Errorf("Stabilizer at index %d is not a ZipEntryStabilizer", i)
@@ -504,12 +505,12 @@ func TestCreateCustomStabilizers(t *testing.T) {
 					}
 				case ent.Config.ExcludePath != nil:
 					switch tt.format {
-					case TarFormat, TarGzFormat:
+					case archive.TarFormat, archive.TarGzFormat:
 						_, ok := stabilizers[i].(TarArchiveStabilizer)
 						if !ok {
 							t.Errorf("Stabilizer at index %d is not a TarArchiveStabilizer", i)
 						}
-					case ZipFormat:
+					case archive.ZipFormat:
 						_, ok := stabilizers[i].(ZipArchiveStabilizer)
 						if !ok {
 							t.Errorf("Stabilizer at index %d is not a ZipArchiveStabilizer", i)
@@ -580,16 +581,16 @@ func TestCustomStabilizerConfigOneOf_CustomStabilizerConfig(t *testing.T) {
 func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 	testCases := []struct {
 		name     string
-		input    []*TarEntry
+		input    []*archive.TarEntry
 		entries  []CustomStabilizerEntry
-		expected []*TarEntry
+		expected []*archive.TarEntry
 		wantErr  bool
 	}{
 		{
 			name: "replace_pattern",
-			input: []*TarEntry{
-				{&tar.Header{Name: "test/file.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
-				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+			input: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "test/file.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -603,17 +604,17 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 					Reason: "test replacement",
 				},
 			},
-			expected: []*TarEntry{
-				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Hello World")},
-				{&tar.Header{Name: "test/file.txt", Typeflag: tar.TypeReg, Size: 13, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Changed World")},
+			expected: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "test/file.txt", Typeflag: tar.TypeReg, Size: 13, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("Changed World")},
 			},
 		},
 		{
 			name: "exclude_path",
-			input: []*TarEntry{
-				{&tar.Header{Name: "test/file1.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
-				{&tar.Header{Name: "test/file2.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
-				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+			input: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "test/file1.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "test/file2.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -625,17 +626,17 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 					Reason: "exclude specific file",
 				},
 			},
-			expected: []*TarEntry{
-				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Hello World")},
-				{&tar.Header{Name: "test/file2.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Hello World")},
+			expected: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "test/file2.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("Hello World")},
 			},
 		},
 		{
 			name: "exclude_path_glob",
-			input: []*TarEntry{
-				{&tar.Header{Name: "test/foo/file1.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
-				{&tar.Header{Name: "test/bar/file2.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
-				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+			input: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "test/foo/file1.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "test/bar/file2.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -647,16 +648,16 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 					Reason: "exclude all test files",
 				},
 			},
-			expected: []*TarEntry{
-				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Hello World")},
+			expected: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("Hello World")},
 			},
 		},
 		{
 			name: "exclude_path_multiglob",
-			input: []*TarEntry{
-				{&tar.Header{Name: "test/foo/file1.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
-				{&tar.Header{Name: "test/bar/file2.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
-				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+			input: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "test/foo/file1.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "test/bar/file2.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -668,16 +669,16 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 					Reason: "exclude all test files",
 				},
 			},
-			expected: []*TarEntry{
-				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Hello World")},
+			expected: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("Hello World")},
 			},
 		},
 		{
 			name: "multiple_custom_stabilizers",
-			input: []*TarEntry{
-				{&tar.Header{Name: "test/file1.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
-				{&tar.Header{Name: "test/file2.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
-				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+			input: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "test/file1.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "test/file2.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -699,16 +700,16 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 					Reason: "test replacement",
 				},
 			},
-			expected: []*TarEntry{
-				{&tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Hello World")},
-				{&tar.Header{Name: "test/file2.txt", Typeflag: tar.TypeReg, Size: 13, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Changed World")},
+			expected: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "other/file.txt", Typeflag: tar.TypeReg, Size: 11, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("Hello World")},
+				{Header: &tar.Header{Name: "test/file2.txt", Typeflag: tar.TypeReg, Size: 13, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("Changed World")},
 			},
 		},
 		{
 			name: "replace_pattern_dir",
-			input: []*TarEntry{
-				{&tar.Header{Name: "test/", Typeflag: tar.TypeDir}, []byte{}},
-				{&tar.Header{Name: "test/file.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+			input: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "test/", Typeflag: tar.TypeDir}, Body: []byte{}},
+				{Header: &tar.Header{Name: "test/file.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -722,15 +723,15 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 					Reason: "test replacement",
 				},
 			},
-			expected: []*TarEntry{
-				{&tar.Header{Name: "test/", Typeflag: tar.TypeDir, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte{}},
-				{&tar.Header{Name: "test/file.txt", Typeflag: tar.TypeReg, Size: 13, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, []byte("Changed World")},
+			expected: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "test/", Typeflag: tar.TypeDir, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte{}},
+				{Header: &tar.Header{Name: "test/file.txt", Typeflag: tar.TypeReg, Size: 13, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("Changed World")},
 			},
 		},
 		{
 			name: "invalid_custom_stabilizer",
-			input: []*TarEntry{
-				{&tar.Header{Name: "test/file.txt", Typeflag: tar.TypeReg, Size: 11}, []byte("Hello World")},
+			input: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "test/file.txt", Typeflag: tar.TypeReg, Size: 11}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -760,7 +761,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 				}
 				tw.Close()
 			}
-			customStabilizers, err := CreateCustomStabilizers(tc.entries, TarFormat)
+			customStabilizers, err := CreateCustomStabilizers(tc.entries, archive.TarFormat)
 			if err != nil {
 				if tc.wantErr {
 					return
@@ -777,7 +778,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 				}
 				t.Fatalf("StabilizeTar() error: %v", err)
 			}
-			var gotEntries []*TarEntry
+			var gotEntries []*archive.TarEntry
 			{
 				tr := tar.NewReader(bytes.NewReader(output.Bytes()))
 				for {
@@ -787,7 +788,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 					}
 					orDie(err)
 					body := must(io.ReadAll(tr))
-					gotEntries = append(gotEntries, &TarEntry{
+					gotEntries = append(gotEntries, &archive.TarEntry{
 						Header: header,
 						Body:   body,
 					})
@@ -806,16 +807,16 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 	testCases := []struct {
 		name     string
-		input    []ZipEntry
+		input    []archive.ZipEntry
 		entries  []CustomStabilizerEntry
-		expected []ZipEntry
+		expected []archive.ZipEntry
 		wantErr  bool
 	}{
 		{
 			name: "replace_pattern",
-			input: []ZipEntry{
-				{&zip.FileHeader{Name: "test/file.txt"}, []byte("Hello World")},
-				{&zip.FileHeader{Name: "other/file.txt"}, []byte("Hello World")},
+			input: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "test/file.txt"}, Body: []byte("Hello World")},
+				{FileHeader: &zip.FileHeader{Name: "other/file.txt"}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -829,17 +830,17 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 					Reason: "test replacement",
 				},
 			},
-			expected: []ZipEntry{
-				{&zip.FileHeader{Name: "other/file.txt", Modified: epoch}, []byte("Hello World")},
-				{&zip.FileHeader{Name: "test/file.txt", Modified: epoch}, []byte("Changed World")},
+			expected: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "other/file.txt", Modified: epoch}, Body: []byte("Hello World")},
+				{FileHeader: &zip.FileHeader{Name: "test/file.txt", Modified: epoch}, Body: []byte("Changed World")},
 			},
 		},
 		{
 			name: "exclude_path",
-			input: []ZipEntry{
-				{&zip.FileHeader{Name: "test/file1.txt"}, []byte("Hello World")},
-				{&zip.FileHeader{Name: "test/file2.txt"}, []byte("Hello World")},
-				{&zip.FileHeader{Name: "other/file.txt"}, []byte("Hello World")},
+			input: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "test/file1.txt"}, Body: []byte("Hello World")},
+				{FileHeader: &zip.FileHeader{Name: "test/file2.txt"}, Body: []byte("Hello World")},
+				{FileHeader: &zip.FileHeader{Name: "other/file.txt"}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -851,17 +852,17 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 					Reason: "exclude specific file",
 				},
 			},
-			expected: []ZipEntry{
-				{&zip.FileHeader{Name: "other/file.txt", Modified: epoch}, []byte("Hello World")},
-				{&zip.FileHeader{Name: "test/file2.txt", Modified: epoch}, []byte("Hello World")},
+			expected: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "other/file.txt", Modified: epoch}, Body: []byte("Hello World")},
+				{FileHeader: &zip.FileHeader{Name: "test/file2.txt", Modified: epoch}, Body: []byte("Hello World")},
 			},
 		},
 		{
 			name: "exclude_path_glob",
-			input: []ZipEntry{
-				{&zip.FileHeader{Name: "test/foo/file1.txt"}, []byte("Hello World")},
-				{&zip.FileHeader{Name: "test/bar/file2.txt"}, []byte("Hello World")},
-				{&zip.FileHeader{Name: "other/file.txt"}, []byte("Hello World")},
+			input: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "test/foo/file1.txt"}, Body: []byte("Hello World")},
+				{FileHeader: &zip.FileHeader{Name: "test/bar/file2.txt"}, Body: []byte("Hello World")},
+				{FileHeader: &zip.FileHeader{Name: "other/file.txt"}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -873,16 +874,16 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 					Reason: "exclude all test files",
 				},
 			},
-			expected: []ZipEntry{
-				{&zip.FileHeader{Name: "other/file.txt", Modified: epoch}, []byte("Hello World")},
+			expected: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "other/file.txt", Modified: epoch}, Body: []byte("Hello World")},
 			},
 		},
 		{
 			name: "multiple_custom_stabilizers",
-			input: []ZipEntry{
-				{&zip.FileHeader{Name: "test/file1.txt"}, []byte("Hello World")},
-				{&zip.FileHeader{Name: "test/file2.txt"}, []byte("Hello World")},
-				{&zip.FileHeader{Name: "other/file.txt"}, []byte("Hello World")},
+			input: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "test/file1.txt"}, Body: []byte("Hello World")},
+				{FileHeader: &zip.FileHeader{Name: "test/file2.txt"}, Body: []byte("Hello World")},
+				{FileHeader: &zip.FileHeader{Name: "other/file.txt"}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -904,16 +905,16 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 					Reason: "test replacement",
 				},
 			},
-			expected: []ZipEntry{
-				{&zip.FileHeader{Name: "other/file.txt", Modified: epoch}, []byte("Hello World")},
-				{&zip.FileHeader{Name: "test/file2.txt", Modified: epoch}, []byte("Changed World")},
+			expected: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "other/file.txt", Modified: epoch}, Body: []byte("Hello World")},
+				{FileHeader: &zip.FileHeader{Name: "test/file2.txt", Modified: epoch}, Body: []byte("Changed World")},
 			},
 		},
 		{
 			name: "replace_pattern_dir",
-			input: []ZipEntry{
-				{&zip.FileHeader{Name: "test/"}, []byte{}},
-				{&zip.FileHeader{Name: "test/file.txt"}, []byte("Hello World")},
+			input: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "test/"}, Body: []byte{}},
+				{FileHeader: &zip.FileHeader{Name: "test/file.txt"}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -927,15 +928,15 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 					Reason: "test replacement",
 				},
 			},
-			expected: []ZipEntry{
-				{&zip.FileHeader{Name: "test/", Modified: epoch}, []byte{}},
-				{&zip.FileHeader{Name: "test/file.txt", Modified: epoch}, []byte("Changed World")},
+			expected: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "test/", Modified: epoch}, Body: []byte{}},
+				{FileHeader: &zip.FileHeader{Name: "test/file.txt", Modified: epoch}, Body: []byte("Changed World")},
 			},
 		},
 		{
 			name: "invalid_custom_stabilizer",
-			input: []ZipEntry{
-				{&zip.FileHeader{Name: "test/file.txt"}, []byte("Hello World")},
+			input: []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "test/file.txt"}, Body: []byte("Hello World")},
 			},
 			entries: []CustomStabilizerEntry{
 				{
@@ -964,7 +965,7 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 				}
 				orDie(zw.Close())
 			}
-			customStabilizers, err := CreateCustomStabilizers(tc.entries, ZipFormat)
+			customStabilizers, err := CreateCustomStabilizers(tc.entries, archive.ZipFormat)
 			if err != nil {
 				if tc.wantErr {
 					return
@@ -989,12 +990,12 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 			zipWriter.Close()
 			reader, size = bytes.NewReader(output.Bytes()), int64(output.Len())
 			stabilizedZip := must(zip.NewReader(reader, size))
-			var gotEntries []ZipEntry
+			var gotEntries []archive.ZipEntry
 			for _, f := range stabilizedZip.File {
 				r := must(f.Open())
 				body := must(io.ReadAll(r))
 				r.Close()
-				gotEntries = append(gotEntries, ZipEntry{
+				gotEntries = append(gotEntries, archive.ZipEntry{
 					FileHeader: &f.FileHeader,
 					Body:       body,
 				})

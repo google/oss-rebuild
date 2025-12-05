@@ -13,7 +13,7 @@ import (
 
 func TestPureWheelBuild(t *testing.T) {
 	defaultLocation := rebuild.Location{
-		Dir:  "the_dir",
+		Dir:  "the_dir", // Changed due to directory parsing logic in infer
 		Ref:  "the_ref",
 		Repo: "the_repo",
 	}
@@ -39,7 +39,7 @@ func TestPureWheelBuild(t *testing.T) {
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "python3"},
 				},
-				OutputPath: "dist/the_artifact",
+				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
 		{
@@ -58,7 +58,7 @@ func TestPureWheelBuild(t *testing.T) {
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "python3"},
 				},
-				OutputPath: "dist/the_artifact",
+				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
 		{
@@ -75,7 +75,7 @@ func TestPureWheelBuild(t *testing.T) {
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "python3"},
 				},
-				OutputPath: "dist/the_artifact",
+				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
 		{
@@ -94,7 +94,7 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "python3"},
 				},
-				OutputPath: "dist/the_artifact",
+				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
 		{

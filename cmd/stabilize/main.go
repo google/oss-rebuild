@@ -15,6 +15,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
 )
 
@@ -26,18 +27,18 @@ var (
 	ecosystem     = flag.String("ecosystem", "", "The package ecosystem of the artifact. Required when ambiguous from the file extension.")
 )
 
-func getName(san archive.Stabilizer) string {
+func getName(san stabilize.Stabilizer) string {
 	switch san.(type) {
-	case archive.TarArchiveStabilizer:
-		return san.(archive.TarArchiveStabilizer).Name
-	case archive.TarEntryStabilizer:
-		return san.(archive.TarEntryStabilizer).Name
-	case archive.ZipArchiveStabilizer:
-		return san.(archive.ZipArchiveStabilizer).Name
-	case archive.ZipEntryStabilizer:
-		return san.(archive.ZipEntryStabilizer).Name
-	case archive.GzipStabilizer:
-		return san.(archive.GzipStabilizer).Name
+	case stabilize.TarArchiveStabilizer:
+		return san.(stabilize.TarArchiveStabilizer).Name
+	case stabilize.TarEntryStabilizer:
+		return san.(stabilize.TarEntryStabilizer).Name
+	case stabilize.ZipArchiveStabilizer:
+		return san.(stabilize.ZipArchiveStabilizer).Name
+	case stabilize.ZipEntryStabilizer:
+		return san.(stabilize.ZipEntryStabilizer).Name
+	case stabilize.GzipStabilizer:
+		return san.(stabilize.GzipStabilizer).Name
 	default:
 		log.Fatalf("unknown stabilizer type: %T", san)
 		return "" // unreachable
@@ -64,25 +65,25 @@ func filetype(path string) archive.Format {
 }
 
 type StabilizerRegistry struct {
-	stabilizers []archive.Stabilizer
-	byName      map[string]archive.Stabilizer
+	stabilizers []stabilize.Stabilizer
+	byName      map[string]stabilize.Stabilizer
 }
 
-func NewStabilizerRegistry(stabs ...archive.Stabilizer) StabilizerRegistry {
+func NewStabilizerRegistry(stabs ...stabilize.Stabilizer) StabilizerRegistry {
 	reg := StabilizerRegistry{stabilizers: stabs}
-	reg.byName = make(map[string]archive.Stabilizer)
+	reg.byName = make(map[string]stabilize.Stabilizer)
 	for _, san := range reg.stabilizers {
 		reg.byName[getName(san)] = san
 	}
 	return reg
 }
 
-func (reg StabilizerRegistry) Get(name string) (archive.Stabilizer, bool) {
+func (reg StabilizerRegistry) Get(name string) (stabilize.Stabilizer, bool) {
 	val, ok := reg.byName[name]
 	return val, ok
 }
 
-func (reg StabilizerRegistry) GetAll() []archive.Stabilizer {
+func (reg StabilizerRegistry) GetAll() []stabilize.Stabilizer {
 	return reg.stabilizers[:]
 }
 
@@ -91,8 +92,8 @@ func (reg StabilizerRegistry) GetAll() []archive.Stabilizer {
 // - Preserves the order specified in enableSpec. Order of "all" is impl-defined.
 // - Disable has precedence over enable.
 // - Duplicates are retained and respected.
-func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string, eligible []archive.Stabilizer) ([]archive.Stabilizer, error) {
-	var toRun []archive.Stabilizer
+func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string, eligible []stabilize.Stabilizer) ([]stabilize.Stabilizer, error) {
+	var toRun []stabilize.Stabilizer
 	enabled := make(map[string]bool)
 	switch enableSpec {
 	case "all":
@@ -132,7 +133,7 @@ func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string, eli
 		}
 	}
 	// Apply deletions from "enabled" map.
-	toRun = slices.DeleteFunc(toRun, func(san archive.Stabilizer) bool {
+	toRun = slices.DeleteFunc(toRun, func(san stabilize.Stabilizer) bool {
 		_, ok := enabled[getName(san)]
 		return !ok
 	})
@@ -169,12 +170,12 @@ func candidateEcosystems(filename string) []rebuild.Ecosystem {
 
 var ErrAmbiguousEcosystem = errors.New("ambiguous ecosystem detection for file")
 
-func eligiblePasses(filename string) ([]archive.Stabilizer, error) {
+func eligiblePasses(filename string) ([]stabilize.Stabilizer, error) {
 	candidates := candidateEcosystems(filename)
 	if len(candidates) == 0 {
 		return nil, errors.New("no eligible ecosystems for file")
 	}
-	var result []archive.Stabilizer
+	var result []stabilize.Stabilizer
 	for i, e := range candidates {
 		stabs, err := stability.StabilizersForTarget(rebuild.Target{Ecosystem: e, Artifact: filename})
 		if err != nil {
@@ -182,7 +183,7 @@ func eligiblePasses(filename string) ([]archive.Stabilizer, error) {
 		}
 		if i == 0 {
 			result = stabs
-		} else if !slices.EqualFunc(result, stabs, func(s1, s2 archive.Stabilizer) bool {
+		} else if !slices.EqualFunc(result, stabs, func(s1, s2 stabilize.Stabilizer) bool {
 			return getName(s1) == getName(s2)
 		}) {
 			return nil, errors.Wrapf(ErrAmbiguousEcosystem, "ecosystem %s suggests different stabilizers than %s", candidates[0], e)
@@ -192,14 +193,14 @@ func eligiblePasses(filename string) ([]archive.Stabilizer, error) {
 }
 
 func run() error {
-	stabilizers := NewStabilizerRegistry(archive.AllStabilizers...)
+	stabilizers := NewStabilizerRegistry(stabilize.AllStabilizers...)
 
 	// Update usage to include available passes.
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nAvailable stabilizers (in default order of application):\n")
-		for _, san := range archive.AllStabilizers {
+		for _, san := range stabilize.AllStabilizers {
 			fmt.Fprintf(os.Stderr, "  - %s\n", getName(san))
 		}
 	}
@@ -240,7 +241,7 @@ func run() error {
 		names = append(names, getName(stab))
 	}
 	log.Printf("Applying stablizers: {%s}", strings.Join(names, ", "))
-	err = archive.StabilizeWithOpts(out, in, filetype(*infile), archive.StabilizeOpts{Stabilizers: toRun})
+	err = stabilize.StabilizeWithOpts(out, in, filetype(*infile), stabilize.StabilizeOpts{Stabilizers: toRun})
 	return errors.Wrap(err, "stabilizing file")
 }
 
