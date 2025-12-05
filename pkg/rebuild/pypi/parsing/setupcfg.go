@@ -1,6 +1,7 @@
 package parsing
 
 import (
+	"context"
 	"log"
 	"strings"
 
@@ -28,13 +29,10 @@ func parseMultiLineValue(value string) []string {
 	return result
 }
 
-func verifySetupCfgFile(foundFile FoundFile, name, version string) (FileVerification, error) {
-	var verificationResult FileVerification
-	verificationResult.FoundF = foundFile
-	verificationResult.Name = name
-	verificationResult.Type = foundFile.Filetype
-	verificationResult.Path = foundFile.Path
-	f := foundFile.FileObject
+func verifySetupCfgFile(ctx context.Context, foundFile foundFile, name, version string) (fileVerification, error) {
+	var verificationResult fileVerification
+	verificationResult.foundF = foundFile
+	f := foundFile.object
 
 	cfgContents, err := f.Contents()
 	if err != nil {
@@ -51,25 +49,25 @@ func verifySetupCfgFile(foundFile FoundFile, name, version string) (FileVerifica
 	foundName, fn := cfg.GetValue("metadata", "name")
 	foundVersion, fv := cfg.GetValue("metadata", "version")
 
-	if foundFile.Path == "." {
-		verificationResult.Main = true
+	if foundFile.path == "." {
+		verificationResult.main = true
 	}
 
 	if fn {
 		editDist := minEditDistance(normalizeName(name), normalizeName(foundName))
-		verificationResult.LevDistance = editDist
+		verificationResult.levDistance = editDist
 
 		if editDist == 0 {
-			verificationResult.NameMatch = true
+			verificationResult.nameMatch = true
 
 			if fv && version == foundVersion {
-				verificationResult.VersionMatch = true
+				verificationResult.versionMatch = true
 			}
 		} else {
-			verificationResult.PartialNameMatch = true
+			verificationResult.partialNameMatch = true
 
 			if fv && version == foundVersion {
-				verificationResult.PartialVersionMatch = true
+				verificationResult.partialVersionMatch = true
 			}
 		}
 	}
@@ -77,7 +75,7 @@ func verifySetupCfgFile(foundFile FoundFile, name, version string) (FileVerifica
 	return verificationResult, nil
 }
 
-func extractSetupCfgRequirements(f *object.File) ([]string, error) {
+func extractSetupCfgRequirements(ctx context.Context, f *object.File) ([]string, error) {
 	var reqs []string
 	log.Println("Looking for additional reqs in setup.cfg")
 	cfgContents, err := f.Contents()

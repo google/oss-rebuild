@@ -25,7 +25,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 
 	// TODO setup.py
 
-	foundSetupCfgFiles, err := findRecursively("setup.cfg", tree, "", "")
+	foundSetupCfgFiles, err := findRecursively("setup.cfg", tree, hintDir)
 	if err != nil {
 		log.Printf("Failed to find setup.cfg files: %v", err)
 	} else {
@@ -41,7 +41,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 	for _, foundFile := range foundFiles {
 		switch foundFile.filetype {
 		case "pyproject.toml":
-			verification, err := verifyPyProjectFile(foundFile, name, version)
+			verification, err := verifyPyProjectFile(ctx, foundFile, name, version)
 			if err != nil {
 				log.Printf("Failed to verify pyproject.toml file: %v", err)
 				continue
@@ -49,7 +49,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 			verifiedFiles = append(verifiedFiles, verification)
 		// TODO case setup.py
 		case "setup.cfg":
-			verification, err := verifySetupCfgFile(foundFile, name, version)
+			verification, err := verifySetupCfgFile(ctx, foundFile, name, version)
 			if err != nil {
 				log.Printf("Failed to verify setup.cfg file: %v", err)
 				continue
@@ -87,9 +87,9 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 			reqs = append(reqs, pyprojReqs...)
 		// TODO case setup.py
 		case "setup.cfg":
-			setupCfgReqs, err := extractSetupCfgRequirements(f.object)
+			setupCfgReqs, err := extractSetupCfgRequirements(ctx, f.object)
 			if err != nil {
-				return nil, errors.Wrap(err, "Failed to extract pyproject.toml requirements")
+				return nil, "", errors.Wrap(err, "Failed to extract pyproject.toml requirements")
 			}
 
 			reqs = append(reqs, setupCfgReqs...)

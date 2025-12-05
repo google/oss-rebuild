@@ -4,6 +4,7 @@
 package parsing
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
@@ -160,6 +161,7 @@ commits:
         setup_requires = setuptools_scm
 `,
 			expectedReqs: []string{"setuptools_scm"},
+			expectedDir:  "",
 		},
 		{
 			name:    "setup.cfg - Parse a cfg with a semi-colon seperated setup_requires",
@@ -178,6 +180,7 @@ commits:
         setup_requires = setuptools; setuptools_scm[toml]
 `,
 			expectedReqs: []string{"setuptools", "setuptools_scm[toml]"},
+			expectedDir:  "",
 		},
 		{
 			name:    "setup.cfg - Parse a cfg with a dangling list",
@@ -199,6 +202,7 @@ commits:
             pytest-runner
 `,
 			expectedReqs: []string{"setuptools", "wheel", "pytest-runner"},
+			expectedDir:  "",
 		},
 		{
 			name:    "setup.cfg with pyproject- Parse the correct cfg with a dangling list using the pyproject file",
@@ -231,6 +235,7 @@ commits:
         version = "5.7.3"
 `,
 			expectedReqs: []string{"setuptools_scm"},
+			expectedDir:  "sub1",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -238,6 +243,7 @@ commits:
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
 			commit := must(repo.CommitObject(repo.Commits["initial-commit"]))
 			tree := must(commit.Tree())
+			ctx := context.Background()
 
 			reqs, dir, err := ExtractAllRequirements(ctx, tree, tc.pkg, tc.version, tc.dirHint)
 			if err != nil {

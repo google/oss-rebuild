@@ -76,7 +76,7 @@ func verifyPyProjectFile(ctx context.Context, foundFile foundFile, name, version
 	return verificationResult, nil
 }
 
-func extractPyProjectRequirements(f *object.File) ([]string, error) {
+func extractPyProjectRequirements(ctx context.Context, f *object.File) ([]string, error) {
 	var reqs []string
 	log.Println("Looking for additional reqs in pyproject.toml")
 	pyprojContents, err := f.Contents()
