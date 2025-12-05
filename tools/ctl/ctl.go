@@ -54,7 +54,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/benchmark/run"
-	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
+	"github.com/google/oss-rebuild/tools/ctl/difftool"
 	"github.com/google/oss-rebuild/tools/ctl/gradle"
 	"github.com/google/oss-rebuild/tools/ctl/ide"
 	agentide "github.com/google/oss-rebuild/tools/ctl/ide/agent"
@@ -461,7 +461,7 @@ var export = &cobra.Command{
 				}
 			}
 			for _, at := range assetTypes {
-				if at == diffoscope.DiffAsset {
+				if at == difftool.DiffoscopeAsset {
 					a := at.For(in.Target())
 					if _, err := localButler.Fetch(ctx, runID, a); err != nil {
 						res.errs = append(res.errs, errors.Wrapf(err, "fetching diff for %s", at))
