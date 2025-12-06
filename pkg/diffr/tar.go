@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -37,10 +38,12 @@ func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 	tr1 := tar.NewReader(file1.Reader)
 	tr2 := tar.NewReader(file2.Reader)
 	// First pass: collect entries and record offsets
-	entries1 := make(map[string]*tarEntry)
-	entries2 := make(map[string]*tarEntry)
+	// Use slices to support duplicate entries with the same name
+	entries1 := make(map[string][]*tarEntry)
+	entries2 := make(map[string][]*tarEntry)
 	var listing1, listing2 strings.Builder
-	// Read all entries from tar1, recording offsets
+	// Read all entries from tar1, recording offsets and original order
+	var names1 []string
 	for {
 		hdr, err := tr1.Next()
 		if err == io.EOF {
@@ -53,13 +56,14 @@ func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 		if err != nil {
 			return false, errors.Wrap(err, "getting offset in tar1")
 		}
-		entries1[hdr.Name] = &tarEntry{
+		entries1[hdr.Name] = append(entries1[hdr.Name], &tarEntry{
 			header:        hdr,
 			contentOffset: offset,
-		}
-		listing1.WriteString(formatTarListing(hdr))
+		})
+		names1 = append(names1, hdr.Name)
 	}
-	// Read all entries from tar2, recording offsets
+	// Read all entries from tar2, recording offsets and original order
+	var names2 []string
 	for {
 		hdr, err := tr2.Next()
 		if err == io.EOF {
@@ -72,11 +76,32 @@ func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 		if err != nil {
 			return false, errors.Wrap(err, "getting offset in tar2")
 		}
-		entries2[hdr.Name] = &tarEntry{
+		entries2[hdr.Name] = append(entries2[hdr.Name], &tarEntry{
 			header:        hdr,
 			contentOffset: offset,
-		}
-		listing2.WriteString(formatTarListing(hdr))
+		})
+		names2 = append(names2, hdr.Name)
+	}
+	// Pick listing based on whether order is consistent (same relative order for common entries)
+	ordersConsistent := checkOrderConsistency(names1, names2)
+	if !ordersConsistent {
+		sort.Strings(names1)
+		sort.Strings(names2)
+		node.Comments = append(node.Comments, "Entry order differs (listings shown in sorted order)")
+	}
+	// Build listings using chosen order
+	// Track occurrence index for each name to handle duplicates
+	nameIndex1 := make(map[string]int)
+	for _, name := range names1 {
+		idx := nameIndex1[name]
+		listing1.WriteString(formatTarListing(entries1[name][idx].header))
+		nameIndex1[name]++
+	}
+	nameIndex2 := make(map[string]int)
+	for _, name := range names2 {
+		idx := nameIndex2[name]
+		listing2.WriteString(formatTarListing(entries2[name][idx].header))
+		nameIndex2[name]++
 	}
 	// Compare listings
 	match := true
@@ -95,78 +120,81 @@ func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 			node.Details = append(node.Details, listingNode)
 		}
 	}
-	// Get all unique entry names
-	allNames := make(map[string]bool)
-	for name := range entries1 {
-		allNames[name] = true
+	// Second pass: compare entries, handling duplicates by position
+	var iterationOrder []string
+	seen := make(map[string]bool)
+	for _, name := range slices.Concat(names1, names2) {
+		if !seen[name] {
+			iterationOrder = append(iterationOrder, name)
+			seen[name] = true
+		}
 	}
-	for name := range entries2 {
-		allNames[name] = true
-	}
-	// Sort names for consistent ordering
-	var sortedNames []string
-	for name := range allNames {
-		sortedNames = append(sortedNames, name)
-	}
-	sort.Strings(sortedNames)
-	// Second pass: compare entries
-	for _, name := range sortedNames {
-		e1, has1 := entries1[name]
-		e2, has2 := entries2[name]
-		if !has1 && has2 {
-			// Entry only in file2
-			match = false
-			node.Details = append(node.Details, DiffNode{
-				Source1:  name,
-				Source2:  name,
-				Comments: []string{commentOnlyInSecond},
-			})
-		} else if has1 && !has2 {
-			// Entry only in file1
-			match = false
-			node.Details = append(node.Details, DiffNode{
-				Source1:  name,
-				Source2:  name,
-				Comments: []string{commentOnlyInFirst},
-			})
-		} else if has1 && has2 {
-			// Entry in both - compare based on type
-			if e1.header.Typeflag != e2.header.Typeflag {
-				match = false
-				node.Details = append(node.Details, DiffNode{
-					Source1:  name,
-					Source2:  name,
-					Comments: []string{fmt.Sprintf("Entry types differ: %c vs %c", e1.header.Typeflag, e2.header.Typeflag)},
-				})
-				continue
+	for _, name := range iterationOrder {
+		list1, list2 := entries1[name], entries2[name]
+		count1, count2 := len(list1), len(list2)
+		maxCount := max(count2, count1)
+		// Iterate through all occurrences (positional matching)
+		for i := range maxCount {
+			// Generate source names with occurrence numbers if there are duplicates
+			sourceName := name
+			if maxCount > 1 {
+				sourceName = fmt.Sprintf("%s [occurrence %d]", name, i+1)
 			}
-			// For regular files, compare contents
-			if e1.header.Typeflag == tar.TypeReg || e1.header.Typeflag == tar.TypeRegA {
+			has1, has2 := i < count1, i < count2
+			if has1 != has2 {
+				// Extra occurrence
+				match = false
+				comments := []string{map[bool]string{true: commentOnlyInFirst, false: commentOnlyInSecond}[has1]}
+				// Only add duplicate comment if this is actually a duplicate scenario
+				if (has1 && count1 > 1) || (has2 && count2 > 1) {
+					comments = append(comments, "Unmatched duplicate entry")
+				}
+				node.Details = append(node.Details, DiffNode{
+					Source1:  sourceName,
+					Source2:  sourceName,
+					Comments: comments,
+				})
+			} else if has1 && has2 {
+				// Both have this occurrence - compare based on type
+				e1, e2 := list1[i], list2[i]
+				if e1.header.Typeflag != e2.header.Typeflag {
+					match = false
+					node.Details = append(node.Details, DiffNode{
+						Source1:  sourceName,
+						Source2:  sourceName,
+						Comments: []string{fmt.Sprintf("Entry types differ: %c vs %c", e1.header.Typeflag, e2.header.Typeflag)},
+					})
+					continue
+				}
+				if !slices.Contains([]byte{tar.TypeReg, tar.TypeRegA}, e1.header.Typeflag) {
+					// Skip entries except regular files
+					continue
+				}
 				entryNode := DiffNode{
-					Source1: name,
-					Source2: name,
+					Source1: sourceName,
+					Source2: sourceName,
 				}
 				file1.Reader.Seek(e1.contentOffset, io.SeekStart)
 				content1 := new(bytes.Buffer)
 				if _, err := io.CopyN(content1, file1.Reader, e1.header.Size); err != nil {
-					return false, errors.Wrapf(err, "reading content of %s from tar1", name)
+					return false, errors.Wrapf(err, "reading content of %s from tar1", sourceName)
 				}
 				file2.Reader.Seek(e2.contentOffset, io.SeekStart)
 				content2 := new(bytes.Buffer)
 				if _, err := io.CopyN(content2, file2.Reader, e2.header.Size); err != nil {
-					return false, errors.Wrapf(err, "reading content of %s from tar2", name)
+					return false, errors.Wrapf(err, "reading content of %s from tar2", sourceName)
 				}
 				entryFile1 := File{
-					Name:   name,
+					Name:   sourceName,
 					Reader: bytes.NewReader(content1.Bytes()),
 				}
 				entryFile2 := File{
-					Name:   name,
+					Name:   sourceName,
 					Reader: bytes.NewReader(content2.Bytes()),
 				}
 				entryMatch, err := compareFiles(ctx.Child(), &entryNode, entryFile1, entryFile2)
 				if err != nil {
-					return false, errors.Wrapf(err, "comparing %s", name)
+					return false, errors.Wrapf(err, "comparing %s", sourceName)
 				}
 				if !entryMatch {
 					match = false
