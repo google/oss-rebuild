@@ -1,0 +1,13 @@
+baseURL = '/'
+languageCode = 'en-us'
+title = 'OSS Rebuild'
+disableAliases = false
+disablePathToLower = true
+
+[params]
+  description = "Securing open-source package ecosystems by originating, validating, and augmenting build attestations."
+  logo = "https://raw.githubusercontent.com/google/oss-rebuild/main/site/logo-dark.svg"
+  github_project_url = "https://github.com/google/oss-rebuild"
+  github_repo = "google/oss-rebuild"
+  github_owner_url = "https://github.com/google"
+  github_owner_name = "Google"

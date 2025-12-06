@@ -1,0 +1,13 @@
+/**
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Main stylesheet for OSS Rebuild documentation site.
+ *
+ * This file imports:
+ * 1. _minimal-theme.scss - Base theme from jekyll-theme-minimal (CC0-1.0)
+ * 2. _custom.scss - Custom modifications and additions (Apache-2.0)
+ */
+
+@import 'minimal-theme';
+@import 'custom';

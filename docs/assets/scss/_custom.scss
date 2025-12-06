@@ -1,0 +1,65 @@
+/**
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* ============================================================================
+   Code block styling fixes for Hugo syntax highlighting
+   ============================================================================ */
+
+code {
+  background: #f8f8f8;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color:#333;
+}
+
+pre {
+  background: #f8f8f8 !important;
+  color:#333 !important;
+}
+
+pre code {
+  background: none !important;
+  padding: 0;
+  border-radius: 0;
+}
+
+pre code span {
+  color: #333 !important;
+}
+
+/* ============================================================================
+   Custom additions for OSS Rebuild
+   ============================================================================ */
+
+/* Limit the size of the logo to not exceed the title width */
+header img {
+  max-width: 175px;
+}
+
+/* Fluid expansion using clamp() for smooth scaling on large screens */
+@media screen and (min-width: 1200px) {
+  .wrapper {
+    /* Smoothly scales from 1100px at 1200px screen to 1500px at 1600px screen */
+    width: clamp(1100px, calc(60vw + 380px), 1500px);
+    margin: 0 auto;
+  }
+  section {
+    /* Smoothly scales from 740px at 1200px screen to 1140px at 1600px screen */
+    width: clamp(740px, calc(45vw + 200px), 1140px);
+  }
+}
+
+/* Text content width remains compact while tables can scale */
+section p {
+  max-width: 85ch;
+}
+section ul,
+section ol {
+  max-width: 78ch;
+}
+section pre,
+section table {
+  max-width: none;
+}

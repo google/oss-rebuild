@@ -1,3 +1,11 @@
+---
+title: "Google Hosted Rebuilds"
+aliases:
+  - /hosts/Google.md
+  - /hosts/google
+  - /hosts/google/
+---
+
 # Google Hosted Rebuilds
 
 Google runs a public good instance of OSS Rebuild and publishes rebuild

@@ -1,3 +1,4 @@
 #!/bin/sh
 # NOTE: Keep in sync with .github/workflow/license.yml
-go run github.com/google/addlicense@v1.1.1 -s=only -ignore='bin/**' -ignore='**/.terraform.lock.hcl' -ignore='definitions/**' **
+# NOTE: docs/layouts are Hugo Go templates which do not carry the correct file extension.
+go run github.com/google/addlicense@v1.1.1 -s=only -ignore='bin/**' -ignore='**/.terraform.lock.hcl' -ignore='definitions/**' -ignore='docs/layouts/**' **

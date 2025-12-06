@@ -1,10 +1,19 @@
+---
+title: "NetworkRebuild Build Type"
+aliases:
+  - /builds/NetworkRebuild@v0.1.md
+  - /builds/NetworkRebuild@v0.1
+  - /builds/networkrebuild@v0.1
+  - /builds/networkrebuild@v0.1/
+---
+
 # `NetworkRebuild` Build Type
 
 The NetworkRebuild build type attests to a rebuild of an upstream that performed
 network analysis on the build process itself. It captures network activity and
 traffic patterns during the rebuild execution, providing insights into external
 dependencies and potential security concerns. This attestation largely mirrors
-the [Rebuild Attestation](./Rebuild@v0.1.md) but is oriented solely towards
+the [Rebuild Attestation](Rebuild@v0.1.md) but is oriented solely towards
 providing deeper detail on the build's network behavior.
 
 ## Attestation Format

@@ -1,0 +1,61 @@
+{{/*
+ Copyright 2025 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+*/}}
+
+<!DOCTYPE html>
+<html lang="{{ .Site.LanguageCode | default "en-US" }}">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} | {{ .Site.Title }}{{ end }}</title>
+    {{ $style := resources.Get "scss/style.scss" | css.Sass }}
+    {{ if eq hugo.Environment "development" }}
+    <style>
+      {{ $style.Content | safeCSS }}
+    </style>
+    {{ else }}
+    {{ $style = $style | minify | fingerprint }}
+    <link rel="stylesheet" href="{{ $style.RelPermalink }}">
+    {{ end }}
+    <!--[if lt IE 9]>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1><a href="{{ "/" | relURL }}">{{ .Site.Title }}</a></h1>
+
+        {{ if .Site.Params.logo }}
+          <img src="{{ .Site.Params.logo }}" alt="Logo" />
+        {{ end }}
+
+        <p>{{ .Site.Params.description }}</p>
+
+        {{ if .Site.Params.github_project_url }}
+        <p class="view"><a href="{{ .Site.Params.github_project_url }}">View the Project on GitHub <small>{{ .Site.Params.github_repo }}</small></a></p>
+        {{ end }}
+
+      </header>
+      <section>
+
+      {{ block "main" . }}{{ end }}
+
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="{{ .Site.Params.github_owner_url }}">{{ .Site.Params.github_owner_name }}</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    {{ $script := resources.Get "js/scale.fix.js" }}
+    {{ if eq hugo.Environment "development" }}
+    <script>
+      {{ $script.Content | safeJS }}
+    </script>
+    {{ else }}
+    <script src="{{ $script.RelPermalink }}"></script>
+    {{ end }}
+  </body>
+</html>
