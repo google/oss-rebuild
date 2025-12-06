@@ -34,6 +34,16 @@
 
         <p>{{ .Site.Params.description }}</p>
 
+        {{ if .Site.Menus.main }}
+        <nav>
+          <ul>
+            {{ range .Site.Menus.main }}
+            <li><a href="{{ .URL }}">{{ .Name }}</a></li>
+            {{ end }}
+          </ul>
+        </nav>
+        {{ end }}
+
         {{ if .Site.Params.github_project_url }}
         <p class="view"><a href="{{ .Site.Params.github_project_url }}">View the Project on GitHub <small>{{ .Site.Params.github_repo }}</small></a></p>
         {{ end }}
