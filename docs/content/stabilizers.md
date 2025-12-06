@@ -1,3 +1,7 @@
+---
+title: "Stabilization"
+---
+
 # Stabilization
 
 Stabilization transforms software packages to remove observable changes due to
