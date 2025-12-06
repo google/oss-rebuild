@@ -3,10 +3,10 @@ name: GitHub Pages
 on:
   push:
     branches: ["main"]
-    paths: ["docs/**", ".github/workflows/jekyll-gh-pages.yml"]
+    paths: ["docs/**", ".github/workflows/gh-pages.yml"]
   pull_request:
     branches: ["main"]
-    paths: ["docs/**", ".github/workflows/jekyll-gh-pages.yml"]
+    paths: ["docs/**", ".github/workflows/gh-pages.yml"]
 
 permissions:
   contents: read
@@ -43,7 +43,7 @@ jobs:
     # Only run on push, and in the upstream repo
     if: >
       github.event_name == 'push'
-      && github.repository == 'google/oss-rebuild' 
+      && github.repository == 'google/oss-rebuild'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
