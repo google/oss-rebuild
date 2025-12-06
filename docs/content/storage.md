@@ -1,3 +1,9 @@
+---
+title: "Attestation Storage"
+aliases:
+  - /storage.md
+---
+
 # Attestation Storage
 
 OSS Rebuild stores attestations in a simple, standards-based format designed for reliability and ease-of-use.
@@ -17,8 +23,8 @@ Some examples of bucket-relative paths:
 
 Each `.jsonl` file contains multiple attestations including:
 
-1. A [rebuild attestation](./builds/Rebuild@v0.1.md) describing the build process
-2. An [artifact equivalence attestation](./builds/ArtifactEquivalence@v0.1.md) verifying the rebuilt content matches upstream
+1. A [rebuild attestation](builds/Rebuild@v0.1.md) describing the build process
+2. An [artifact equivalence attestation](builds/ArtifactEquivalence@v0.1.md) verifying the rebuilt content matches upstream
 
 ## Access Methods
 

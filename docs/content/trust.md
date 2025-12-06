@@ -1,3 +1,7 @@
+---
+title: "Trust and Rebuilds"
+---
+
 # Trust and Rebuilds
 
 Rebuilding is the semantic reproduction of a previously-built artifact through a

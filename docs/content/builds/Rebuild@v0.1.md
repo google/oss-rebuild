@@ -1,3 +1,12 @@
+---
+title: "Rebuild Build Type"
+aliases:
+  - /builds/Rebuild@v0.1.md
+  - /builds/Rebuild@v0.1
+  - /builds/rebuild@v0.1
+  - /builds/rebuild@v0.1/
+---
+
 # `Rebuild` Build Type
 
 The Rebuild build type attests to the build process that reproduced the upstream
