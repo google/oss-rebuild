@@ -10,6 +10,18 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} | {{ .Site.Title }}{{ end }}</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&family=Public+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
     {{ $style := resources.Get "scss/style.scss" | css.Sass }}
     {{ if eq hugo.Environment "development" }}
     <style>
@@ -19,53 +31,45 @@
     {{ $style = $style | minify | fingerprint }}
     <link rel="stylesheet" href="{{ $style.RelPermalink }}">
     {{ end }}
-    <!--[if lt IE 9]>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
-    <![endif]-->
   </head>
-  <body>
-    <div class="wrapper">
-      <header>
-        <h1><a href="{{ "/" | relURL }}">{{ .Site.Title }}</a></h1>
+  <body class="min-h-screen flex flex-col">
 
-        {{ if .Site.Params.logo }}
-          <img src="{{ .Site.Params.logo }}" alt="Logo" />
-        {{ end }}
+    <!-- HEADER: Clean, Minimal, "Institutional" -->
+    <header class="bg-white border-b border-soft sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <!-- Logo -->
+                {{ if .Site.Params.logo }}
+                <a href="{{ "/" | relURL }}" class="flex items-center gap-3">
+                    <img src="{{ .Site.Params.logo }}" alt="{{ .Site.Title }} Logo" class="h-8" />
+                    <span class="font-bold text-xl tracking-tight text-stone-900">{{ .Site.Title }}</span>
+                </a>
+                {{ else }}
+                <a href="{{ "/" | relURL }}" class="font-bold text-xl tracking-tight text-stone-900">{{ .Site.Title }}</a>
+                {{ end }}
+            </div>
 
-        <p>{{ .Site.Params.description }}</p>
+            <!-- Nav: Simple text links, underlined on hover -->
+            <nav class="hidden md:flex lg:gap-8 gap-4 text-sm font-medium text-stone-600">
+                {{ range .Site.Menus.main }}
+                <a href="{{ .URL }}" class="{{ if $.IsMenuCurrent "main" . }}text-stone-900 underline decoration-2 decoration-teal-600 underline-offset-4{{ else }}hover:text-stone-900 hover:underline decoration-2 decoration-teal-600 underline-offset-4 transition-all{{ end }}{{ if eq .Name "Run Locally" }} hidden min-[900px]:inline{{ end }}">{{ .Name }}</a>
+                {{ end }}
+            </nav>
 
-        {{ if .Site.Menus.main }}
-        <nav>
-          <ul>
-            {{ range .Site.Menus.main }}
-            <li><a href="{{ .URL }}">{{ .Name }}</a></li>
-            {{ end }}
-          </ul>
-        </nav>
-        {{ end }}
+            <div class="flex items-center gap-4">
+                {{ if .Site.Params.github_project_url }}
+                <a href="{{ .Site.Params.github_project_url }}" class="text-stone-500 hover:text-stone-900">
+                    <i data-lucide="github" class="w-5 h-5"></i>
+                </a>
+                {{ end }}
+            </div>
+        </div>
+    </header>
 
-        {{ if .Site.Params.github_project_url }}
-        <p class="view"><a href="{{ .Site.Params.github_project_url }}">View the Project on GitHub <small>{{ .Site.Params.github_repo }}</small></a></p>
-        {{ end }}
+    {{ block "main" . }}{{ end }}
 
-      </header>
-      <section>
-
-      {{ block "main" . }}{{ end }}
-
-      </section>
-      <footer>
-        <p>This project is maintained by <a href="{{ .Site.Params.github_owner_url }}">{{ .Site.Params.github_owner_name }}</a></p>
-        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
-      </footer>
-    </div>
-    {{ $script := resources.Get "js/scale.fix.js" }}
-    {{ if eq hugo.Environment "development" }}
     <script>
-      {{ $script.Content | safeJS }}
+        lucide.createIcons();
     </script>
-    {{ else }}
-    <script src="{{ $script.RelPermalink }}"></script>
-    {{ end }}
   </body>
 </html>

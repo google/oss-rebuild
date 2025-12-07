@@ -1,7 +1,9 @@
-# [OSS Rebuild](https://oss-rebuild.dev/)
+# OSS Rebuild
 
-Secure open-source package ecosystems by originating, validating, and augmenting
-build attestations.
+_Secure open-source package ecosystems by originating, validating, and augmenting
+build attestations._
+
+---
 
 ## Overview
 
