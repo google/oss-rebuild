@@ -5,6 +5,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 
 	"github.com/google/oss-rebuild/tools/ctl/command/agentexport"
@@ -31,6 +32,10 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "ctl",
 	Short: "A debugging tool for OSS-Rebuild",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(logo)
+		cmd.Help()
+	},
 }
 
 func init() {
