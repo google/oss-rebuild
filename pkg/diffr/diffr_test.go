@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/archive"
 )
 
@@ -585,6 +586,28 @@ func TestDiff(t *testing.T) {
 					if string(expectedBytes) != string(actualBytes) {
 						t.Errorf("JSON output mismatch\nExpected:\n%s\nGot:\n%s",
 							string(expectedBytes), string(actualBytes))
+					}
+				}
+			})
+			t.Run("output_node", func(t *testing.T) {
+				var node DiffNode
+				err := Diff(t.Context(), leftFile, rightFile, Options{OutputNode: &node})
+				if err != nil && err != ErrNoDiff {
+					t.Fatalf("Diff failed: %v", err)
+				}
+				match := err == ErrNoDiff
+				// Check match result
+				if match != tc.expectMatch {
+					t.Errorf("Expected match=%v, got %v", tc.expectMatch, match)
+				}
+				// If we expect a diff, verify the node matches the JSON output
+				if !tc.expectMatch && tc.expectJSONDiff != "" {
+					var expectedNode DiffNode
+					if err := json.Unmarshal([]byte(tc.expectJSONDiff), &expectedNode); err != nil {
+						t.Fatalf("Failed to parse expected JSON: %v", err)
+					}
+					if diff := cmp.Diff(expectedNode, node); diff != "" {
+						t.Errorf("OutputNode mismatch (-want +got):\n%s", diff)
 					}
 				}
 			})

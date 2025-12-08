@@ -17,8 +17,9 @@ import (
 // Options for the Diff function
 type Options struct {
 	Output     io.Writer
-	OutputJSON bool // If true, output JSON format; otherwise formatted text diff
-	MaxDepth   int  // Maximum archive nesting depth to recurse into (0 = unlimited)
+	OutputJSON bool      // If true, output JSON format; otherwise formatted text diff
+	OutputNode *DiffNode // If non-nil, populated with the diff tree structure
+	MaxDepth   int       // Maximum archive nesting depth to recurse into (0 = unlimited)
 }
 
 // compareContext holds options and state for the comparison
@@ -58,6 +59,10 @@ func Diff(ctx context.Context, file1, file2 File, opts Options) error {
 	}
 	if match {
 		return ErrNoDiff
+	}
+	// Populate OutputNode if requested
+	if opts.OutputNode != nil {
+		*opts.OutputNode = rootNode
 	}
 	// Generate output only if configured
 	if opts.Output != nil {
