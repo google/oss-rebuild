@@ -1,0 +1,21 @@
+{{/*
+ Copyright 2025 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+*/}}
+
+{{- $destination := .Destination -}}
+{{- $title := .Title -}}
+{{- $text := .Text -}}
+
+{{- if strings.HasSuffix $destination ".md" -}}
+  {{- $destination = strings.TrimSuffix ".md" $destination -}}
+  {{- with .Page.GetPage $destination -}}
+    <a href="{{ .RelPermalink }}"{{- with $title }} title="{{ . }}"{{- end }}>{{ $text | safeHTML }}</a>
+  {{- else -}}
+    {{- /* Fallback if page not found - use destination as-is */ -}}
+    <a href="{{ $destination | relURL }}"{{- with $title }} title="{{ . }}"{{- end }}>{{ $text | safeHTML }}</a>
+  {{- end -}}
+{{- else -}}
+  {{- /* Not a .md link, pass through normally */ -}}
+  <a href="{{ $destination | relURL }}"{{- with $title }} title="{{ . }}"{{- end }}>{{ $text | safeHTML }}</a>
+{{- end -}}

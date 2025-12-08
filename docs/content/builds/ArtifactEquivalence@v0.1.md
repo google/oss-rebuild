@@ -1,3 +1,11 @@
+---
+title: "`ArtifactEquivalence` Build Type"
+aliases:
+  - /builds/ArtifactEquivalence@v0.1.md
+  - /builds/artifactequivalence@v0.1
+  - /builds/artifactequivalence@v0.1/
+---
+
 # `ArtifactEquivalence` Build Type
 
 The artifact equivalence attestation is a claim that two artifacts are equal

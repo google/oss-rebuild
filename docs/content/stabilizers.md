@@ -1,3 +1,7 @@
+---
+title: "Stabilization"
+---
+
 # Stabilization
 
 Stabilization transforms software packages to remove observable changes due to
@@ -188,7 +192,7 @@ stabilize -infile lib.jar -outfile out.jar \
   -disable-passes="jar-git-properties"
 ```
 
-See the [stabilize command documentation](../cmd/stabilize/README.md) for full usage details.
+See the [stabilize command documentation](https://github.com/google/oss-rebuild/blob/main/cmd/stabilize/README.md) for full usage details.
 
 ## Takeaway
 

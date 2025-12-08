@@ -36,18 +36,18 @@ ecosystem are currently rebuilt.
 ## Public Data
 
 Published attestations can be accessed through our CLI tool or directly from cloud storage.
-For detailed information on accessing and verifying rebuild attestations, see our [Storage and Access guide](./storage.md).
+For detailed information on accessing and verifying rebuild attestations, see our [Storage and Access guide](storage.md).
 
 For developers and integrators interested in OSS Rebuild attestation formats:
 
-- **[Rebuild Attestations](./builds/Rebuild@v0.1.md)** specify the procedure
+- **[Rebuild Attestations](builds/Rebuild@v0.1.md)** specify the procedure
   used to perform the rebuild.
-- **[Artifact Equivalence Attestations](./builds/ArtifactEquivalence@v0.1.md)** specify the details of the comparison between the rebuilt artifact and the upstream.
+- **[Artifact Equivalence Attestations](builds/ArtifactEquivalence@v0.1.md)** specify the details of the comparison between the rebuilt artifact and the upstream.
 
 ## Security
 
 To better understand the security properties of rebuilds, see
-[Trust and Rebuilds](./trust.md).
+[Trust and Rebuilds](trust.md).
 
 ## Related Projects
 

@@ -1,3 +1,9 @@
+---
+title: "Local Development Workflow"
+aliases:
+  - /development.md
+---
+
 # Local Development Workflow
 
 This guide provides a comprehensive overview of how to run and develop OSS Rebuild locally using the `ctl` command-line tool. It covers benchmark files, local rebuild execution, and results analysis through the `ctl` CLI and the Terminal User Interface (`tui`).
