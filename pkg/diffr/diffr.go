@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -126,7 +127,11 @@ func compareFiles(ctx compareContext, node *DiffNode, file1, file2 File) (bool, 
 	case TypeGzip:
 		match, err = compareGzip(ctx, &typedNode, file1, file2)
 	case TypeZip:
-		match, err = compareZip(ctx, &typedNode, file1, file2)
+		if ctx.depth == 0 && strings.HasSuffix(file1.Name, ".jar") && strings.HasSuffix(file2.Name, ".jar") {
+			match, err = compareJar(ctx, &typedNode, file1, file2)
+		} else {
+			match, err = compareZip(ctx, &typedNode, file1, file2)
+		}
 	case TypeTar:
 		match, err = compareTar(ctx, &typedNode, file1, file2)
 	case TypeText:
