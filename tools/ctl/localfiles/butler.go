@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/ctl/assetlocator"
-	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
+	"github.com/google/oss-rebuild/tools/ctl/difftool"
 	"github.com/pkg/errors"
 )
 
@@ -46,7 +46,7 @@ func (b *butler) Fetch(ctx context.Context, runID string, want rebuild.Asset) (p
 		return dest.URL(want).Path, nil
 	}
 	switch want.Type {
-	case diffoscope.DiffAsset:
+	case difftool.DiffoscopeAsset:
 		var rba, usa string
 		{
 			rba, err = b.Fetch(ctx, runID, rebuild.RebuildAsset.For(want.Target))
@@ -58,7 +58,7 @@ func (b *butler) Fetch(ctx context.Context, runID string, want rebuild.Asset) (p
 				return "", errors.Wrap(err, "fetching upstream asset")
 			}
 		}
-		contents, err := diffoscope.DiffArtifacts(ctx, rba, usa, want.Target)
+		contents, err := difftool.Diffoscope{}.Diff(ctx, rba, usa, want.Target)
 		if err != nil {
 			return "", errors.Wrap(err, "executing diff")
 		}
@@ -68,6 +68,31 @@ func (b *butler) Fetch(ctx context.Context, runID string, want rebuild.Asset) (p
 		}
 		defer w.Close()
 		_, err = w.Write([]byte(contents))
+		if err != nil {
+			return "", err
+		}
+	case difftool.DiffrAsset:
+		var rba, usa string
+		{
+			rba, err = b.Fetch(ctx, runID, rebuild.RebuildAsset.For(want.Target))
+			if err != nil {
+				return "", errors.Wrap(err, "fetching rebuild asset")
+			}
+			usa, err = b.Fetch(ctx, runID, rebuild.DebugUpstreamAsset.For(want.Target))
+			if err != nil {
+				return "", errors.Wrap(err, "fetching upstream asset")
+			}
+		}
+		contents, err := difftool.Diffr{}.Diff(ctx, rba, usa, want.Target)
+		if err != nil {
+			return "", errors.Wrap(err, "executing diffr")
+		}
+		w, err := dest.Writer(ctx, want)
+		if err != nil {
+			return "", err
+		}
+		defer w.Close()
+		_, err = w.Write(contents)
 		if err != nil {
 			return "", err
 		}
