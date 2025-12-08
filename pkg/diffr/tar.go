@@ -40,7 +40,8 @@ func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 	entries1 := make(map[string]*tarEntry)
 	entries2 := make(map[string]*tarEntry)
 	var listing1, listing2 strings.Builder
-	// Read all entries from tar1, recording offsets
+	// Read all entries from tar1, recording offsets and original order
+	var names1 []string
 	for {
 		hdr, err := tr1.Next()
 		if err == io.EOF {
@@ -57,9 +58,10 @@ func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 			header:        hdr,
 			contentOffset: offset,
 		}
-		listing1.WriteString(formatTarListing(hdr))
+		names1 = append(names1, hdr.Name)
 	}
-	// Read all entries from tar2, recording offsets
+	// Read all entries from tar2, recording offsets and original order
+	var names2 []string
 	for {
 		hdr, err := tr2.Next()
 		if err == io.EOF {
@@ -76,7 +78,21 @@ func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 			header:        hdr,
 			contentOffset: offset,
 		}
-		listing2.WriteString(formatTarListing(hdr))
+		names2 = append(names2, hdr.Name)
+	}
+	// Pick listing based on whether order is consistent (same relative order for common entries)
+	ordersConsistent := checkOrderConsistency(names1, names2)
+	if !ordersConsistent {
+		sort.Strings(names1)
+		sort.Strings(names2)
+		node.Comments = append(node.Comments, "Entry order differs (listings shown in sorted order)")
+	}
+	// Build listings using chosen order
+	for _, name := range names1 {
+		listing1.WriteString(formatTarListing(entries1[name].header))
+	}
+	for _, name := range names2 {
+		listing2.WriteString(formatTarListing(entries2[name].header))
 	}
 	// Compare listings
 	match := true

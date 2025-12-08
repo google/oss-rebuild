@@ -60,18 +60,32 @@ func compareZip(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 	if err != nil {
 		return false, errors.Wrap(err, "opening zip file2")
 	}
-	// Create maps for entries
+	// Create maps for entries and track original order
 	entries1 := make(map[string]*zip.File)
 	entries2 := make(map[string]*zip.File)
-	// Generate file listings
-	var listing1, listing2 strings.Builder
+	var order1, order2 []string
 	for _, f := range zr1.File {
 		entries1[f.Name] = f
-		listing1.WriteString(formatZipListing(&f.FileHeader))
+		order1 = append(order1, f.Name)
 	}
 	for _, f := range zr2.File {
 		entries2[f.Name] = f
-		listing2.WriteString(formatZipListing(&f.FileHeader))
+		order2 = append(order2, f.Name)
+	}
+	// Pick listing based on whether order is consistent (same relative order for common entries)
+	ordersConsistent := checkOrderConsistency(order1, order2)
+	if !ordersConsistent {
+		sort.Strings(order1)
+		sort.Strings(order2)
+		node.Comments = append(node.Comments, "Entry order differs (listings shown in sorted order)")
+	}
+	// Generate file listings using chosen order
+	var listing1, listing2 strings.Builder
+	for _, name := range order1 {
+		listing1.WriteString(formatZipListing(&entries1[name].FileHeader))
+	}
+	for _, name := range order2 {
+		listing2.WriteString(formatZipListing(&entries2[name].FileHeader))
 	}
 	// Compare listings
 	match := true
