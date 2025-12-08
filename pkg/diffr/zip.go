@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 
@@ -61,31 +62,39 @@ func compareZip(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 		return false, errors.Wrap(err, "opening zip file2")
 	}
 	// Create maps for entries and track original order
-	entries1 := make(map[string]*zip.File)
-	entries2 := make(map[string]*zip.File)
-	var order1, order2 []string
+	// Use slices to support duplicate entries with the same name
+	entries1 := make(map[string][]*zip.File)
+	entries2 := make(map[string][]*zip.File)
+	var names1, names2 []string
 	for _, f := range zr1.File {
-		entries1[f.Name] = f
-		order1 = append(order1, f.Name)
+		entries1[f.Name] = append(entries1[f.Name], f)
+		names1 = append(names1, f.Name)
 	}
 	for _, f := range zr2.File {
-		entries2[f.Name] = f
-		order2 = append(order2, f.Name)
+		entries2[f.Name] = append(entries2[f.Name], f)
+		names2 = append(names2, f.Name)
 	}
 	// Pick listing based on whether order is consistent (same relative order for common entries)
-	ordersConsistent := checkOrderConsistency(order1, order2)
+	ordersConsistent := checkOrderConsistency(names1, names2)
 	if !ordersConsistent {
-		sort.Strings(order1)
-		sort.Strings(order2)
+		sort.Strings(names1)
+		sort.Strings(names2)
 		node.Comments = append(node.Comments, "Entry order differs (listings shown in sorted order)")
 	}
 	// Generate file listings using chosen order
+	// Track occurrence index for each name to handle duplicates
 	var listing1, listing2 strings.Builder
-	for _, name := range order1 {
-		listing1.WriteString(formatZipListing(&entries1[name].FileHeader))
+	nameIndex1 := make(map[string]int)
+	for _, name := range names1 {
+		idx := nameIndex1[name]
+		listing1.WriteString(formatZipListing(&entries1[name][idx].FileHeader))
+		nameIndex1[name]++
 	}
-	for _, name := range order2 {
-		listing2.WriteString(formatZipListing(&entries2[name].FileHeader))
+	nameIndex2 := make(map[string]int)
+	for _, name := range names2 {
+		idx := nameIndex2[name]
+		listing2.WriteString(formatZipListing(&entries2[name][idx].FileHeader))
+		nameIndex2[name]++
 	}
 	// Compare listings
 	match := true
@@ -104,77 +113,79 @@ func compareZip(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 			node.Details = append(node.Details, listingNode)
 		}
 	}
-	// Get all unique entry names
-	allNames := make(map[string]bool)
-	for name := range entries1 {
-		allNames[name] = true
+	// Second pass: compare entries, handling duplicates by position
+	var iterationOrder []string
+	seen := make(map[string]bool)
+	for _, name := range slices.Concat(names1, names2) {
+		if !seen[name] {
+			iterationOrder = append(iterationOrder, name)
+			seen[name] = true
+		}
 	}
-	for name := range entries2 {
-		allNames[name] = true
-	}
-	// Sort names for consistent ordering
-	var sortedNames []string
-	for name := range allNames {
-		sortedNames = append(sortedNames, name)
-	}
-	sort.Strings(sortedNames)
-	// Compare individual entries
-	for _, name := range sortedNames {
-		e1, has1 := entries1[name]
-		e2, has2 := entries2[name]
-		if !has1 && has2 {
-			// Entry only in file2
-			match = false
-			node.Details = append(node.Details, DiffNode{
-				Source1:  name,
-				Source2:  name,
-				Comments: []string{commentOnlyInSecond},
-			})
-		} else if has1 && !has2 {
-			// Entry only in file1
-			match = false
-			node.Details = append(node.Details, DiffNode{
-				Source1:  name,
-				Source2:  name,
-				Comments: []string{commentOnlyInFirst},
-			})
-		} else if has1 && has2 {
-			// Entry in both - compare contents
-			entryNode := DiffNode{
-				Source1: name,
-				Source2: name,
+	for _, name := range iterationOrder {
+		list1, list2 := entries1[name], entries2[name]
+		count1, count2 := len(list1), len(list2)
+		maxCount := max(count2, count1)
+		// Iterate through all occurrences (positional matching)
+		for i := range maxCount {
+			// Generate source names with occurrence numbers if there are duplicates
+			sourceName := name
+			if maxCount > 1 {
+				sourceName = fmt.Sprintf("%s [occurrence %d]", name, i+1)
 			}
-			// Open and compare entry contents
-			r1, err := e1.Open()
-			if err != nil {
-				return false, errors.Wrapf(err, "opening %s in file1", name)
-			}
-			defer r1.Close()
-			r2, err := e2.Open()
-			if err != nil {
-				return false, errors.Wrapf(err, "opening %s in file2", name)
-			}
-			defer r2.Close()
-			// Buffer for comparison
-			buf1 := new(bytes.Buffer)
-			buf2 := new(bytes.Buffer)
-			io.Copy(buf1, r1)
-			io.Copy(buf2, r2)
-			entryFile1 := File{
-				Name:   name,
-				Reader: bytes.NewReader(buf1.Bytes()),
-			}
-			entryFile2 := File{
-				Name:   name,
-				Reader: bytes.NewReader(buf2.Bytes()),
-			}
-			entryMatch, err := compareFiles(ctx.Child(), &entryNode, entryFile1, entryFile2)
-			if err != nil {
-				return false, errors.Wrapf(err, "comparing %s", name)
-			}
-			if !entryMatch {
+			has1, has2 := i < count1, i < count2
+			if has1 != has2 {
+				// Extra occurrence
 				match = false
-				node.Details = append(node.Details, entryNode)
+				comments := []string{map[bool]string{true: commentOnlyInFirst, false: commentOnlyInSecond}[has1]}
+				// Only add duplicate comment if this is actually a duplicate scenario
+				if (has1 && count1 > 1) || (has2 && count2 > 1) {
+					comments = append(comments, "Unmatched duplicate entry")
+				}
+				node.Details = append(node.Details, DiffNode{
+					Source1:  sourceName,
+					Source2:  sourceName,
+					Comments: comments,
+				})
+			} else if has1 && has2 {
+				// Both have this occurrence - compare contents
+				e1, e2 := list1[i], list2[i]
+				entryNode := DiffNode{
+					Source1: sourceName,
+					Source2: sourceName,
+				}
+				// Open and compare entry contents
+				r1, err := e1.Open()
+				if err != nil {
+					return false, errors.Wrapf(err, "opening %s in file1", sourceName)
+				}
+				defer r1.Close()
+				r2, err := e2.Open()
+				if err != nil {
+					return false, errors.Wrapf(err, "opening %s in file2", sourceName)
+				}
+				defer r2.Close()
+				// Buffer for comparison
+				buf1 := new(bytes.Buffer)
+				buf2 := new(bytes.Buffer)
+				io.Copy(buf1, r1)
+				io.Copy(buf2, r2)
+				entryFile1 := File{
+					Name:   sourceName,
+					Reader: bytes.NewReader(buf1.Bytes()),
+				}
+				entryFile2 := File{
+					Name:   sourceName,
+					Reader: bytes.NewReader(buf2.Bytes()),
+				}
+				entryMatch, err := compareFiles(ctx.Child(), &entryNode, entryFile1, entryFile2)
+				if err != nil {
+					return false, errors.Wrapf(err, "comparing %s", sourceName)
+				}
+				if !entryMatch {
+					match = false
+					node.Details = append(node.Details, entryNode)
+				}
 			}
 		}
 	}
