@@ -4,5 +4,37 @@
 */}}
 
 {{ define "main" }}
-  {{ .Content }}
+<div class="flex-grow max-w-6xl mx-auto w-full py-10 px-6">
+    <div class="flex flex-row gap-12 xl:justify-end justify-center">
+        <!-- MAIN CONTENT -->
+        <main class="w-full max-w-2xl">
+            {{ if not .IsHome }}
+            {{ with .Parent }}
+            {{ if ne .RelPermalink "/" }}
+            <span class="text-teal-700 font-bold text-sm tracking-wide uppercase">{{ .Title }}</span>
+            {{ end }}
+            {{ end }}
+            {{ end }}
+
+            <div class="prose-content text-stone-700 mb-10">
+                {{ .Content }}
+            </div>
+        </main>
+
+        <!-- RIGHT MARGIN: For "On this page" -->
+        <div class="hidden xl:block w-56 flex-shrink-0">
+            <div class="sticky top-28">
+                {{ if .TableOfContents }}
+                {{ $toc := .TableOfContents }}
+                {{ if gt (len $toc) 50 }}
+                <h5 class="font-sans font-bold text-xs text-stone-400 uppercase mb-4 tracking-wider">On this page</h5>
+                <div class="toc-sidebar text-xs">
+                    {{ .TableOfContents }}
+                </div>
+                {{ end }}
+                {{ end }}
+            </div>
+        </div>
+    </div>
+</div>
 {{ end }}
