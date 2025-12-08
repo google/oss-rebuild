@@ -27,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/diffoscope"
@@ -58,6 +59,39 @@ const (
 
 func removeContainer(ctx context.Context, name string) error {
 	return exec.CommandContext(ctx, "docker", "container", "rm", "-f", name).Run()
+}
+
+// fetchAndStabilizeArtifact downloads an artifact, applies stabilizers, and returns a temp file with the stabilized content.
+// The caller is responsible for closing and removing the returned file.
+func fetchAndStabilizeArtifact(ctx context.Context, butler localfiles.Butler, runID string, asset rebuild.Asset, target rebuild.Target, stabilizers []stabilize.Stabilizer) (*os.File, error) {
+	// Fetch the artifact and get its path
+	artifactPath, err := butler.Fetch(ctx, runID, asset)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching artifact")
+	}
+	// Open the artifact
+	artifactFile, err := os.Open(artifactPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "opening artifact file")
+	}
+	defer artifactFile.Close()
+	// Create temp file for stabilized artifact
+	stabilizedFile, err := os.CreateTemp("", "stabilized-artifact-*.tmp")
+	if err != nil {
+		return nil, errors.Wrap(err, "creating temp file for stabilized artifact")
+	}
+	// Stabilize the artifact
+	err = stabilize.StabilizeWithOpts(stabilizedFile, artifactFile,
+		target.ArchiveType(),
+		stabilize.StabilizeOpts{Stabilizers: stabilizers})
+	if err != nil {
+		stabilizedFile.Close()
+		os.Remove(stabilizedFile.Name())
+		return nil, errors.Wrap(err, "stabilizing artifact")
+	}
+	// Reset to beginning for reading
+	stabilizedFile.Seek(0, 0)
+	return stabilizedFile, nil
 }
 
 func runLocal(ctx context.Context, executor build.Executor, prebuildConfig rebuild.PrebuildConfig, dex rundex.Reader, inp rebuild.Input) error {
@@ -240,6 +274,70 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 				}
 				if err := tmux.Wait(fmt.Sprintf("less -R %s", path)); err != nil {
 					log.Println(errors.Wrap(err, "running diffoscope"))
+					return
+				}
+			},
+		},
+		{
+			Hotkey: 'f',
+			Short:  "fast diff",
+			Func: func(ctx context.Context, example rundex.Rebuild) {
+				// Get stabilizers for this target
+				stabilizers, err := stability.StabilizersForTarget(example.Target())
+				if err != nil {
+					log.Println(errors.Wrap(err, "getting stabilizers"))
+					return
+				}
+				// Fetch and stabilize rebuild artifacts
+				var stabilizedRebuild, stabilizedUpstream *os.File
+				{
+					stabilizedRebuild, err = fetchAndStabilizeArtifact(ctx, butler, example.RunID,
+						rebuild.RebuildAsset.For(example.Target()), example.Target(), stabilizers)
+					if err != nil {
+						log.Println(errors.Wrap(err, "fetching and stabilizing rebuild artifact"))
+						return
+					}
+					defer os.Remove(stabilizedRebuild.Name())
+					defer stabilizedRebuild.Close()
+					stabilizedUpstream, err := fetchAndStabilizeArtifact(ctx, butler, example.RunID,
+						rebuild.DebugUpstreamAsset.For(example.Target()), example.Target(), stabilizers)
+					if err != nil {
+						log.Println(errors.Wrap(err, "fetching and stabilizing upstream artifact"))
+						return
+					}
+					defer os.Remove(stabilizedUpstream.Name())
+					defer stabilizedUpstream.Close()
+				}
+				// Get original paths for display names
+				assets, err := localfiles.AssetStore(example.RunID)
+				if err != nil {
+					log.Println(errors.Wrap(err, "creating asset store"))
+					return
+				}
+				upstreamPath := assets.URL(rebuild.DebugUpstreamAsset.For(example.Target())).Path
+				rebuildPath := assets.URL(rebuild.RebuildAsset.For(example.Target())).Path
+				// Create a temporary file for the diff output
+				tempFile, err := os.CreateTemp("", "fast-diff-*.txt")
+				if err != nil {
+					log.Println(errors.Wrap(err, "creating temp file"))
+					return
+				}
+				defer tempFile.Close()
+				// Use MaxDepth based on archive format layers
+				maxDepth := example.Target().ArchiveType().Layers()
+				// Run diffr to generate the diff on stabilized artifacts
+				err = diffr.Diff(
+					ctx,
+					diffr.File{Name: rebuildPath, Reader: stabilizedRebuild},
+					diffr.File{Name: upstreamPath, Reader: stabilizedUpstream},
+					diffr.Options{MaxDepth: maxDepth, Output: tempFile},
+				)
+				if err != nil && !errors.Is(err, diffr.ErrNoDiff) {
+					log.Println(errors.Wrap(err, "running diffr"))
+				} else if errors.Is(err, diffr.ErrNoDiff) {
+					log.Println("No differences found")
+				} else if err := tmux.Wait(fmt.Sprintf("less -R %s", tempFile.Name())); err != nil {
+					log.Println(errors.Wrap(err, "displaying diff"))
 					return
 				}
 			},
