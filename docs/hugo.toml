@@ -11,3 +11,38 @@ disablePathToLower = true
   github_repo = "google/oss-rebuild"
   github_owner_url = "https://github.com/google"
   github_owner_name = "Google"
+
+[[menus.main]]
+  name = "Home"
+  url = "/"
+  weight = 1
+
+[[menus.main]]
+  name = "Trust"
+  url = "/trust/"
+  weight = 2
+
+[[menus.main]]
+  name = "Storage"
+  url = "/storage/"
+  weight = 3
+
+[[menus.main]]
+  name = "Attestations"
+  url = "/builds/"
+  weight = 4
+
+[[menus.main]]
+  name = "Hosts"
+  url = "/hosts/"
+  weight = 5
+
+[[menus.main]]
+  name = "Stabilizers"
+  url = "/stabilizers/"
+  weight = 6
+
+[[menus.main]]
+  name = "Run Locally"
+  url = "/development/"
+  weight = 7

@@ -30,6 +30,23 @@ pre code span {
 }
 
 /* ============================================================================
+   Mobile navigation improvements
+   ============================================================================ */
+
+@media print, screen and (max-width: 720px) {
+  /* Make nav horizontal on small screens */
+  nav ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  nav li {
+    margin-bottom: 0;
+  }
+}
+
+/* ============================================================================
    Custom additions for OSS Rebuild
    ============================================================================ */
 
@@ -62,4 +79,19 @@ section ol {
 section pre,
 section table {
   max-width: none;
+}
+
+/* Navbar styling */
+nav ul {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+}
+
+nav li {
+  margin-bottom: 10px;
+}
+
+nav a {
+  font-weight: bold;
 }
