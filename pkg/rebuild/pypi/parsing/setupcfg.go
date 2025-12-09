@@ -62,16 +62,10 @@ func verifySetupCfgFile(ctx context.Context, found foundFile, name, version stri
 
 		if editDist == 0 {
 			verificationResult.nameMatch = true
+		}
 
-			if fv && version == foundVersion {
-				verificationResult.versionMatch = true
-			}
-		} else {
-			verificationResult.partialNameMatch = true
-
-			if fv && version == foundVersion {
-				verificationResult.partialVersionMatch = true
-			}
+		if fv && version == foundVersion {
+			verificationResult.versionMatch = true
 		}
 	}
 
