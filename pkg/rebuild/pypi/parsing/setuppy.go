@@ -1,6 +1,7 @@
 package parsing
 
 import (
+	"context"
 	"log"
 	"strings"
 
@@ -8,13 +9,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-func verifySetupPyFile(foundFile FoundFile, name, version string) (FileVerification, error) {
-	var verificationResult FileVerification
-	verificationResult.FoundF = foundFile
-	verificationResult.Name = name
-	verificationResult.Type = foundFile.Filetype
-	verificationResult.Path = foundFile.Path
-	f := foundFile.FileObject
+func verifySetupPyFile(ctx context.Context, found foundFile, name, version string) (fileVerification, error) {
+	var verificationResult fileVerification
+	verificationResult.foundF = found
+	f := found.object
 
 	setupPyContents, err := f.Contents()
 	if err != nil {
@@ -26,22 +24,22 @@ func verifySetupPyFile(foundFile FoundFile, name, version string) (FileVerificat
 		if nameVal, ok := call.arguments.keywordArgs["name"]; ok {
 			if nameVal.typ == "string" {
 				editDist := minEditDistance(normalizeName(name), normalizeName(nameVal.value.(string)))
-				verificationResult.LevDistance = editDist
+				verificationResult.levDistance = editDist
 
 				if editDist == 0 {
-					verificationResult.NameMatch = true
+					verificationResult.nameMatch = true
 
 					if versionVal, vok := call.arguments.keywordArgs["version"]; vok {
 						if versionVal.typ == "string" && versionVal.value.(string) == version {
-							verificationResult.VersionMatch = true
+							verificationResult.versionMatch = true
 						}
 					}
 				} else {
-					verificationResult.PartialNameMatch = true
+					verificationResult.partialNameMatch = true
 
 					if versionVal, vok := call.arguments.keywordArgs["version"]; vok {
 						if versionVal.typ == "string" && versionVal.value.(string) == version {
-							verificationResult.PartialVersionMatch = true
+							verificationResult.partialVersionMatch = true
 						}
 					}
 				}
@@ -52,7 +50,7 @@ func verifySetupPyFile(foundFile FoundFile, name, version string) (FileVerificat
 	return verificationResult, nil
 }
 
-func extractSetupPyRequirements(f *object.File) ([]string, error) {
+func extractSetupPyRequirements(ctx context.Context, f *object.File) ([]string, error) {
 	var reqs []string
 	log.Println("Looking for additional reqs in setup.py")
 	setupPyContents, err := f.Contents()

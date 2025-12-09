@@ -23,7 +23,7 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 		foundFiles = append(foundFiles, foundPyprojFiles...)
 	}
 
-	foundSetupPyFiles, err := findRecursively("setup.py", tree, "", "")
+	foundSetupPyFiles, err := findRecursively("setup.py", tree, hintDir)
 	if err != nil {
 		log.Printf("Failed to find setup.py files: %v", err)
 	} else {
@@ -43,31 +43,31 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 
 	var verifiedFiles []fileVerification
 
-	for _, foundFile := range foundFiles {
-		switch foundFile.filetype {
+	for _, found := range foundFiles {
+		switch found.filetype {
 		case "pyproject.toml":
-			verification, err := verifyPyProjectFile(ctx, foundFile, name, version)
+			verification, err := verifyPyProjectFile(ctx, found, name, version)
 			if err != nil {
 				log.Printf("Failed to verify pyproject.toml file: %v", err)
 				continue
 			}
 			verifiedFiles = append(verifiedFiles, verification)
 		case "setup.py":
-			verification, err := verifySetupPyFile(foundFile, name, version)
+			verification, err := verifySetupPyFile(ctx, found, name, version)
 			if err != nil {
 				log.Printf("Failed to verify setup.py file: %v", err)
 				continue
 			}
 			verifiedFiles = append(verifiedFiles, verification)
 		case "setup.cfg":
-			verification, err := verifySetupCfgFile(ctx, foundFile, name, version)
+			verification, err := verifySetupCfgFile(ctx, found, name, version)
 			if err != nil {
 				log.Printf("Failed to verify setup.cfg file: %v", err)
 				continue
 			}
 			verifiedFiles = append(verifiedFiles, verification)
 		default:
-			log.Printf("Unsupported file type for verification: %s", foundFile.filetype)
+			log.Printf("Unsupported file type for verification: %s", found.filetype)
 		}
 	}
 
@@ -97,9 +97,9 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 
 			reqs = append(reqs, pyprojReqs...)
 		case "setup.py":
-			setupPyReqs, err := extractSetupPyRequirements(f.FileObject)
+			setupPyReqs, err := extractSetupPyRequirements(ctx, f.object)
 			if err != nil {
-				return nil, errors.Wrap(err, "Failed to extract setup.py requirements")
+				return nil, "", errors.Wrap(err, "Failed to extract setup.py requirements")
 			}
 			reqs = append(reqs, setupPyReqs...)
 		case "setup.cfg":

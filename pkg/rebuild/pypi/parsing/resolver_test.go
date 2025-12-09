@@ -10,8 +10,6 @@ import (
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 )
 
-// TODO - Once the pyproject PR gets accepted, need to pull in the functionality to have directory capture tests for everything that needs it as well
-
 func must[T any](t T, err error) T {
 	if err != nil {
 		panic(err)
@@ -299,6 +297,7 @@ commits:
         )
 `,
 			expectedReqs: []string{"wheel"},
+			expectedDir:  "sub1",
 		},
 		{
 			name:    "setup.py - Fail to extract the correct requirements from the setup.py with dynamic data",
@@ -338,6 +337,7 @@ commits:
         )
 `,
 			expectedReqs: []string{"wheel"}, // I expect it to fail to parse the dynamic one and fall back to the other setup.py
+			expectedDir:  "",
 		},
 		{
 			name:    "Everything in a sub directory",
@@ -375,6 +375,7 @@ commits:
         build-backend = "setuptools.build_meta"
 `,
 			expectedReqs: []string{"setuptools>=59.0.0", "setuptools", "wheel", "pytest-runner"},
+			expectedDir:  "sub1",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
