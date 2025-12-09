@@ -70,7 +70,7 @@ func TestCreateAttestations(t *testing.T) {
 		serviceLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202501010000-feeddeadbeef00"}
 		prebuildLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202401010000-feeddeadbeef99"}
 		buildDefLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "b33eec7134eff8a16cb902b80e434de58bf37e2c", Dir: "definitions/cratesio/bytes/1.0.0/bytes-1.0.0.crate/build.yaml"}
-		eqStmt, buildStmt, err := CreateAttestations(ctx, target, &defn, strategy, "test-id", rbSummary, upSummary, metadata, serviceLoc, prebuildLoc, buildDefLoc, rebuild.PrebuildConfig{Bucket: "test-bucket", Dir: "test-dir", Auth: true})
+		eqStmt, buildStmt, err := CreateAttestations(ctx, target, &defn, strategy, "test-id", rbSummary, upSummary, metadata, serviceLoc, prebuildLoc, buildDefLoc, rebuild.PrebuildConfig{Bucket: "test-bucket", Dir: "test-dir", Auth: true}, schema.OverwriteMode(""))
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
