@@ -19,6 +19,7 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"github.com/fatih/color"
 	"github.com/google/oss-rebuild/pkg/attestation"
+	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
@@ -31,7 +32,7 @@ var (
 	output       = flag.String("output", "summary", "Output format [summary, bundle, payload, dockerfile, build, steps]")
 	bucket       = flag.String("bucket", "google-rebuild-attestations", "GCS bucket from which to pull rebuild attestations")
 	verify       = flag.Bool("verify", true, "whether to verify rebuild attestation signatures")
-	verifyWith   = flag.String("verify-with", ossRebuildKeyURI, "comma-separated list of key URIs used to verify rebuild attestation signatures")
+	verifyWith   = flag.String("verify-with", strings.Join([]string{ossRebuildKey.ID, ossRebuildLegacyKey.ID}, ","), "comma-separated list of key URIs used to verify rebuild attestation signatures")
 	verifyOnline = flag.Bool("verify-online", false, "whether to always fetch --verify-with key contents, ignoring embedded contents")
 )
 
@@ -135,12 +136,15 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 						continue
 					}
 					switch {
-					case strings.HasPrefix(uri, kmsV1API):
+					case strings.HasPrefix(uri, kmsV1API), strings.HasPrefix(uri, gcpKMSScheme):
 						verifier, err := makeKMSVerifier(ctx, uri)
 						if err != nil {
 							return err
 						}
+						// Add verifiers for both new (gcpkms://) and legacy (https://) keyid formats
 						verifiers = append(verifiers, verifier)
+						legacyVerifier := kmsdsse.NewLegacyKeyIDVerifier(verifier.(*kmsdsse.CloudKMSSignerVerifier))
+						verifiers = append(verifiers, legacyVerifier)
 					default:
 						return errors.Errorf("unsupported key URI: %s", uri)
 					}
