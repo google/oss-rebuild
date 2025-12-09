@@ -10,7 +10,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func parseMultiLineValue(value string) []string {
+func splitRequiresList(value string) []string {
 	// cfg specification in this doc: https://setuptools.pypa.io/en/latest/userguide/declarative_config.html
 	// setup_requires may be list-semi (list separated by a semi-colon) or dangling list (newline seperated)
 	lines := strings.Split(value, "\n")
@@ -29,10 +29,10 @@ func parseMultiLineValue(value string) []string {
 	return result
 }
 
-func verifySetupCfgFile(ctx context.Context, foundFile foundFile, name, version string) (fileVerification, error) {
+func verifySetupCfgFile(ctx context.Context, found foundFile, name, version string) (fileVerification, error) {
 	var verificationResult fileVerification
-	verificationResult.foundF = foundFile
-	f := foundFile.object
+	verificationResult.foundF = found
+	f := found.object
 
 	cfgContents, err := f.Contents()
 	if err != nil {
@@ -49,7 +49,7 @@ func verifySetupCfgFile(ctx context.Context, foundFile foundFile, name, version 
 	foundName, fn := cfg.GetValue("metadata", "name")
 	foundVersion, fv := cfg.GetValue("metadata", "version")
 
-	if foundFile.path == "." {
+	if found.path == "." {
 		verificationResult.main = true
 	}
 
@@ -76,7 +76,6 @@ func verifySetupCfgFile(ctx context.Context, foundFile foundFile, name, version 
 }
 
 func extractSetupCfgRequirements(ctx context.Context, f *object.File) ([]string, error) {
-	var reqs []string
 	log.Println("Looking for additional reqs in setup.cfg")
 	cfgContents, err := f.Contents()
 	if err != nil {
@@ -90,12 +89,9 @@ func extractSetupCfgRequirements(ctx context.Context, f *object.File) ([]string,
 		return nil, errors.Wrap(err, "Failed to parse setup.cfg")
 	}
 
-	setupRequires, found := cfg.GetValue("options", "setup_requires")
-	if found {
-		setupRequiresList := parseMultiLineValue(setupRequires)
-		reqs = append(reqs, setupRequiresList...)
-	}
+	setupRequires, _ := cfg.GetValue("options", "setup_requires")
+	setupRequiresList := splitRequiresList(setupRequires)
 
-	log.Println("Added these reqs from setup.cfg: " + strings.Join(reqs, ", "))
-	return reqs, nil
+	log.Println("Added these reqs from setup.cfg: " + strings.Join(setupRequiresList, ", "))
+	return setupRequiresList, nil
 }
