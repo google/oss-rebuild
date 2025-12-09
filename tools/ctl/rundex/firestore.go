@@ -7,7 +7,6 @@ import (
 	"context"
 	"path"
 	"slices"
-	"strings"
 	"sync"
 
 	"cloud.google.com/go/firestore"
@@ -132,7 +131,8 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 				t.Artifact = a
 			}
 		}
-		q = f.client.Collection(path.Join("ecosystem", string(t.Ecosystem), "packages", sanitize(t.Package), "versions", t.Version, "artifacts", t.Artifact, "attempts")).Query
+		et := rebuild.FirestoreTargetEncoding.Encode(t)
+		q = f.client.Collection(path.Join("ecosystem", string(et.Ecosystem), "packages", et.Package, "versions", et.Version, "artifacts", et.Artifact, "attempts")).Query
 	}
 	if len(req.Executors) != 0 {
 		q = q.Where("executor_version", "in", req.Executors)
@@ -218,7 +218,8 @@ func doQuery[T any](ctx context.Context, q firestore.Query, fn func(*firestore.D
 }
 
 func (f *FirestoreClient) findArtifactName(ctx context.Context, t rebuild.Target) (string, error) {
-	iter := f.client.Collection(path.Join("ecosystem", string(t.Ecosystem), "packages", sanitize(t.Package), "versions", t.Version, "artifacts")).DocumentRefs(ctx)
+	et := rebuild.FirestoreTargetEncoding.Encode(t)
+	iter := f.client.Collection(path.Join("ecosystem", string(et.Ecosystem), "packages", et.Package, "versions", et.Version, "artifacts")).DocumentRefs(ctx)
 	var artifacts []string
 	for {
 		doc, err := iter.Next()
@@ -236,9 +237,6 @@ func (f *FirestoreClient) findArtifactName(ctx context.Context, t rebuild.Target
 	if len(artifacts) > 1 {
 		return "", errors.New("multiple artifact documents found")
 	}
-	return artifacts[0], nil
-}
-
-func sanitize(key string) string {
-	return strings.ReplaceAll(key, "/", "!")
+	et.Artifact = artifacts[0]
+	return et.Decode().Artifact, nil
 }
