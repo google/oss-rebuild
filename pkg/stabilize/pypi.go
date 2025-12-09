@@ -10,15 +10,15 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/mail"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/archive"
 )
 
 var AllPypiStabilizers = []Stabilizer{
-	StablePypiMetadata,
+	RemoveMetadataJSON,
 	StableWheelBuildMetadata,
 	StablePypiDescription,
 	StableCommentsCollapse,
@@ -193,35 +193,6 @@ func RemovePythonComments(pythonCode []byte) ([]byte, error) {
 	return outputBuffer.Bytes(), nil
 }
 
-// __field_list = [
-//     _make_field("Metadata-Version", required=True),
-//     _make_field("Name", required=True),
-//     _make_field("Version", required=True),
-//     _make_field("Dynamic", multiple=True),
-//     _make_field("Platform", multiple=True),
-//     _make_field("Supported-Platform", multiple=True),
-//     _make_field("Summary"),
-//     _make_field("Summary"),
-//     _make_field("Description"),
-//     _make_field("Description-Content-Type"),
-//     _make_field("Keywords"),
-//     _make_field("Home-page"),
-//     _make_field("Download-URL"),
-//     _make_field("Author"),
-//     _make_field("Author-email"),
-//     _make_field("Maintainer"),
-//     _make_field("Maintainer-email"),
-//     _make_field("License"),
-//     _make_field("Classifier", multiple=True),
-//     _make_field("Requires-Dist", multiple=True),
-//     _make_field("Requires-Python"),
-//     _make_field("Requires-External", multiple=True),
-//     _make_field("Project-URL", multiple=True),
-//     _make_field("Provides-Extra", multiple=True),
-//     # rarely used fields
-//     _make_field("Provides-Dist", multiple=True),
-//     _make_field("Obsoletes-Dist", multiple=True),
-
 type MetadataDistInfo struct {
 	// Name of the package
 	MetadataVersion        string
@@ -263,105 +234,114 @@ type RecordDistInfo struct {
 	entries []RecordDistEntry
 }
 
-func ParseMetadataDistInfo(r io.Reader) (*MetadataDistInfo, error) {
-	content, err := io.ReadAll(r)
+// TODO - This is all sorts of messed up. Needs more investigation
+func ParseMetadataDistInfo(r io.Reader) (*mail.Message, error) {
+	content, err := mail.ReadMessage(r)
 	if err != nil {
 		return nil, err
 	}
-	lines := bytes.Split(content, []byte("\n"))
-	info := &MetadataDistInfo{
-		OtherFields: make(map[string][]string),
+	for k, v := range content.Header {
+		fmt.Printf("%s: %s\n", k, v)
 	}
-	var lastKey string
-	for _, line := range lines {
-		if len(line) == 0 {
-			info.GeneralText = append(info.GeneralText, "")
-			continue
-		}
-		// Handle continuation lines (PEP 566: lines starting with space are continuation)
-		if line[0] == ' ' && lastKey != "" {
-			// Append to previous field value
-			switch lastKey {
-			case "Description":
-				info.Description += "\n" + string(bytes.TrimLeft(line, " "))
-			default:
-				if len(info.OtherFields[lastKey]) > 0 {
-					info.OtherFields[lastKey][len(info.OtherFields[lastKey])-1] += "\n" + string(bytes.TrimLeft(line, " "))
-				}
-			}
-			continue
-		}
-		parts := bytes.SplitN(line, []byte(": "), 2)
-		if len(parts) != 2 {
-			// Check for structured information (e.g., links, images, etc.)
-			if isStructuredInfo(line) {
-				info.OtherFields["StructuredInfo"] = append(info.OtherFields["StructuredInfo"], string(line))
-			} else {
-				// Treat as general text
-				info.GeneralText = append(info.GeneralText, string(line))
-			}
-			lastKey = ""
-			continue
-		}
-		key := string(parts[0])
-		value := string(parts[1])
-		lastKey = key
-		switch key {
-		case "Metadata-Version":
-			info.MetadataVersion = value
-		case "Name":
-			info.Name = value
-		case "Version":
-			info.Version = value
-		case "Dynamic":
-			info.Dynamic = append(info.Dynamic, value)
-		case "Platform":
-			info.Platform = append(info.Platform, value)
-		case "Supported-Platform":
-			info.SupportedPlatform = append(info.SupportedPlatform, value)
-		case "Summary":
-			info.Summary = value
-		case "Description":
-			info.Description = value
-		case "Description-Content-Type":
-			info.DescriptionContentType = value
-		case "Keywords":
-			info.Keywords = value
-		case "Home-page":
-			info.HomePage = value
-		case "Download-URL":
-			info.DownloadURL = value
-		case "Author":
-			info.Author = value
-		case "Author-email":
-			info.AuthorEmail = value
-		case "Maintainer":
-			info.Maintainer = value
-		case "Maintainer-email":
-			info.MaintainerEmail = value
-		case "License":
-			info.License = value
-		case "Classifier":
-			info.Classifiers = append(info.Classifiers, value)
-		case "Requires-Dist":
-			info.RequiresDist = append(info.RequiresDist, value)
-		case "Requires-Python":
-			info.RequiresPython = value
-		case "Requires-External":
-			info.RequiresExternal = append(info.RequiresExternal, value)
-		case "Project-URL":
-			info.ProjectURL = append(info.ProjectURL, value)
-		case "Provides-Extra":
-			info.ProvidesExtra = append(info.ProvidesExtra, value)
-		case "Provides-Dist":
-			info.ProvidesDist = append(info.ProvidesDist, value)
-		case "Obsoletes-Dist":
-			info.ObsoletesDist = append(info.ObsoletesDist, value)
-		default:
-			info.OtherFields[key] = append(info.OtherFields[key], value)
-		}
-	}
-	return info, nil
+
+	// content, err := io.ReadAll(r)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// lines := bytes.Split(content, []byte("\n"))
+	// info := &MetadataDistInfo{
+	// 	OtherFields: make(map[string][]string),
+	// }
+	// var lastKey string
+	// for _, line := range lines {
+	// 	if len(line) == 0 {
+	// 		info.GeneralText = append(info.GeneralText, "")
+	// 		continue
+	// 	}
+	// 	// Handle continuation lines (PEP 566: lines starting with space are continuation)
+	// 	if line[0] == ' ' && lastKey != "" {
+	// 		// Append to previous field value
+	// 		switch lastKey {
+	// 		case "Description":
+	// 			info.Description += "\n" + string(bytes.TrimLeft(line, " "))
+	// 		default:
+	// 			if len(info.OtherFields[lastKey]) > 0 {
+	// 				info.OtherFields[lastKey][len(info.OtherFields[lastKey])-1] += "\n" + string(bytes.TrimLeft(line, " "))
+	// 			}
+	// 		}
+	// 		continue
+	// 	}
+	// 	parts := bytes.SplitN(line, []byte(": "), 2)
+	// 	if len(parts) != 2 {
+	// 		// Check for structured information (e.g., links, images, etc.)
+	// 		if isStructuredInfo(line) {
+	// 			info.OtherFields["StructuredInfo"] = append(info.OtherFields["StructuredInfo"], string(line))
+	// 		} else {
+	// 			// Treat as general text
+	// 			info.GeneralText = append(info.GeneralText, string(line))
+	// 		}
+	// 		lastKey = ""
+	// 		continue
+	// 	}
+	// 	key := string(parts[0])
+	// 	value := string(parts[1])
+	// 	lastKey = key
+	// 	switch key {
+	// 	case "Metadata-Version":
+	// 		info.MetadataVersion = value
+	// 	case "Name":
+	// 		info.Name = value
+	// 	case "Version":
+	// 		info.Version = value
+	// 	case "Dynamic":
+	// 		info.Dynamic = append(info.Dynamic, value)
+	// 	case "Platform":
+	// 		info.Platform = append(info.Platform, value)
+	// 	case "Supported-Platform":
+	// 		info.SupportedPlatform = append(info.SupportedPlatform, value)
+	// 	case "Summary":
+	// 		info.Summary = value
+	// 	case "Description":
+	// 		info.Description = value
+	// 	case "Description-Content-Type":
+	// 		info.DescriptionContentType = value
+	// 	case "Keywords":
+	// 		info.Keywords = value
+	// 	case "Home-page":
+	// 		info.HomePage = value
+	// 	case "Download-URL":
+	// 		info.DownloadURL = value
+	// 	case "Author":
+	// 		info.Author = value
+	// 	case "Author-email":
+	// 		info.AuthorEmail = value
+	// 	case "Maintainer":
+	// 		info.Maintainer = value
+	// 	case "Maintainer-email":
+	// 		info.MaintainerEmail = value
+	// 	case "License":
+	// 		info.License = value
+	// 	case "Classifier":
+	// 		info.Classifiers = append(info.Classifiers, value)
+	// 	case "Requires-Dist":
+	// 		info.RequiresDist = append(info.RequiresDist, value)
+	// 	case "Requires-Python":
+	// 		info.RequiresPython = value
+	// 	case "Requires-External":
+	// 		info.RequiresExternal = append(info.RequiresExternal, value)
+	// 	case "Project-URL":
+	// 		info.ProjectURL = append(info.ProjectURL, value)
+	// 	case "Provides-Extra":
+	// 		info.ProvidesExtra = append(info.ProvidesExtra, value)
+	// 	case "Provides-Dist":
+	// 		info.ProvidesDist = append(info.ProvidesDist, value)
+	// 	case "Obsoletes-Dist":
+	// 		info.ObsoletesDist = append(info.ObsoletesDist, value)
+	// 	default:
+	// 		info.OtherFields[key] = append(info.OtherFields[key], value)
+	// 	}
+	// }
+	return content, nil
 }
 
 // Helper function to detect structured information
@@ -376,44 +356,8 @@ func isStructuredInfo(line []byte) bool {
 	return false
 }
 
-// func ParseRecordDistInfo(r io.Reader) (*RecordDistInfo, error) {
-// 	content, err := io.ReadAll(r)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	lines := bytes.Split(content, []byte("\n"))
-// 	record := &RecordDistInfo{
-// 		entries: make([]RecordDistEntry, 0),
-// 	}
-// 	for _, line := range lines {
-// 		if len(line) == 0 {
-// 			continue
-// 		}
-// 		// Parse the line into RecordDistEntry fields
-// 		parts := bytes.SplitN(line, []byte{','}, 3)
-// 		if len(parts) < 3 {
-// 			continue
-// 		}
-// 		size := int64(0)
-// 		if len(parts[1]) > 0 {
-// 			// Try to parse size
-// 			var err error
-// 			size, err = parseInt64(string(parts[1]))
-// 			if err != nil {
-// 				size = 0
-// 			}
-// 		}
-// 		entry := RecordDistEntry{
-// 			Path:   string(parts[0]),
-// 			Size:   size,
-// 			SHA256: string(parts[2]),
-// 		}
-// 		record.entries = append(record.entries, entry)
-// 	}
-// 	return record, nil
-// }
-
-var StablePypiMetadata = ZipArchiveStabilizer{
+// TODO - Stabilizer more than remove
+var RemoveMetadataJSON = ZipArchiveStabilizer{
 	Name: "pypi-metadata",
 	Func: func(zr *archive.MutableZipReader) {
 		for _, zf := range zr.File {
@@ -423,7 +367,7 @@ var StablePypiMetadata = ZipArchiveStabilizer{
 			}
 			println("Processing file:", zf.Name)
 
-			zf.SetContent([]byte("Removed content for (metadata)"))
+			zf.SetContent([]byte("This needed to change (metadata)"))
 
 		}
 	},
@@ -441,7 +385,7 @@ var StablePypiDescription = ZipArchiveStabilizer{
 			// rebuild the zip without the Description.rst file
 			// as it is not needed for stabilization.
 
-			zf.SetContent([]byte("Removed content for (description)"))
+			zf.SetContent([]byte("This needed to change (description)"))
 
 		}
 	},
@@ -471,47 +415,44 @@ var StableWheelBuildMetadata = ZipEntryStabilizer{
 		}
 
 		// Modify the parsed metadata
-		println("Original AuthorEmail:", manifest.AuthorEmail)
-		if manifest.AuthorEmail == "UNKNOWN" {
-			manifest.AuthorEmail = ""
+		println("Original AuthorEmail:", manifest.Header.Get("Author-Email"))
+		if manifest.Header.Get("Author-Email") == "UNKNOWN" {
+			manifest.Header["Author-Email"][0] = ""
 		}
-		println("Updated AuthorEmail:", manifest.AuthorEmail)
+		println("Updated AuthorEmail:", manifest.Header.Get("Author-Email"))
 
 		// Serialize the updated metadata back to a string
 		var updatedMetadata strings.Builder
-
-		// Adding this to account for \r already being in the name
-		if strings.HasSuffix(manifest.MetadataVersion, "\r") {
-			updatedMetadata.WriteString("Metadata-Version: " + manifest.MetadataVersion + "\n")
-		} else {
-			updatedMetadata.WriteString("Metadata-Version: " + manifest.MetadataVersion + "\r\n")
-		}
-
-		if strings.HasSuffix(manifest.Name, "\r") {
-			updatedMetadata.WriteString("Name: " + manifest.Name + "\n")
-		} else {
-			updatedMetadata.WriteString("Name: " + manifest.Name + "\r\n")
-		}
-
-		if strings.HasSuffix(manifest.Version, "\r") {
-			updatedMetadata.WriteString("Version: " + manifest.Version + "\n")
-		} else {
-			updatedMetadata.WriteString("Version: " + manifest.Version + "\r\n")
-		}
-
-		// Add structured information (sorted)
-		if structuredInfo, ok := manifest.OtherFields["StructuredInfo"]; ok {
-			sort.Strings(structuredInfo)
-			for _, entry := range structuredInfo {
-				updatedMetadata.WriteString(entry + "\n")
+		for key, values := range manifest.Header {
+			for _, value := range values {
+				updatedMetadata.WriteString(fmt.Sprintf("%s: %s\n", key, value))
 			}
 		}
+		updatedMetadata.WriteString("\n") // End of headers
+
+		// // Append the body (if any)
+		// body, err := io.ReadAll(manifest.Body)
+		// if err != nil {
+		// 	println("Error reading METADATA body:", err)
+		// 	return
+		// }
+		// updatedMetadata.Write(body)
+
+		// For debugging, print the updated metadata
+		println("Updated METADATA content:\n", updatedMetadata.String())
 
 		// Write the updated metadata back into the Zip archive
 		zf.SetContent([]byte(updatedMetadata.String()))
 
 		println("Updated METADATA file written successfully.")
 	},
+}
+
+func computeSHA256Base64(data []byte) string {
+	h := sha256.New()
+	h.Write(data)
+	sum := h.Sum(nil)
+	return base64.RawURLEncoding.EncodeToString(sum)
 }
 
 var StablePypiRecord = ZipArchiveStabilizer{
@@ -624,6 +565,7 @@ func mayContainGeneratedDocstring(content string) bool {
 	return false
 }
 
+// TODO - Try this by having git config --global core.autocrlf true in the build instead of here
 var StableCrcf = ZipEntryStabilizer{
 	Name: "crcf",
 	Func: func(zf *archive.MutableZipFile) {
@@ -643,13 +585,10 @@ var StableCrcf = ZipEntryStabilizer{
 	},
 }
 
+// TODO - Investigate where this is specifically used for
 var StableVersionFile = ZipArchiveStabilizer{
 	Name: "version-file",
 	Func: func(zr *archive.MutableZipReader) {
-
-		// Compute a hash of the entire archive content for debugging
-		// originalArchiveHash := getArchiveHash(zr)
-		// println("Archive SHA256 (base64):", originalArchiveHash)
 
 		// Define the pattern to find
 		patternToFind := regexp.MustCompile(`(?m)^TYPE_CHECKING = False\nif TYPE_CHECKING:\n(\s*)from typing import Tuple, Union\n(\s*)VERSION_TUPLE = Tuple\[Union\[int, str\], \.\.\.\]$`)
@@ -693,14 +632,11 @@ if TYPE_CHECKING:
 			}
 		}
 
-		// newArchiveHash := getArchiveHash(zr)
-
-		// if originalArchiveHash != newArchiveHash {
-		// 	println("Stabilizer taking effect:", "version-file")
-		// }
 	},
 }
 
+// NOTE - This may be an unsafe change.
+// TODO - Investiage need
 var StableVersionFile2 = ZipArchiveStabilizer{
 	Name: "version-file-2",
 	Func: func(zr *archive.MutableZipReader) {
@@ -715,37 +651,8 @@ var StableVersionFile2 = ZipArchiveStabilizer{
 			// rebuild the zip without the Description.rst file
 			// as it is not needed for stabilization.
 
-			zf.SetContent([]byte("Removed content for (version file)"))
+			zf.SetContent([]byte("This needed to change (version file)"))
 
 		}
-
-		// newArchiveHash := getArchiveHash(zr)
-		// if originalArchiveHash != newArchiveHash {
-		// 	println("Stabilizer taking effect:", "version-file-2")
-		// }
 	},
-}
-
-// Helper to compute SHA256 and encode as base64 (url encoding, no padding)
-func computeSHA256Base64(data []byte) string {
-	h := sha256.New()
-	h.Write(data)
-	sum := h.Sum(nil)
-	return base64.RawURLEncoding.EncodeToString(sum)
-}
-
-func getArchiveHash(zr *archive.MutableZipReader) string {
-	var buf bytes.Buffer
-	for _, zf := range zr.File {
-		content, err := zf.Open()
-		if err != nil {
-			continue
-		}
-		data, err := io.ReadAll(content)
-		if err != nil {
-			continue
-		}
-		buf.Write(data)
-	}
-	return computeSHA256Base64(buf.Bytes())
 }
