@@ -98,7 +98,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	}
 	var dex rundex.Reader
 	if cfg.Project == "" {
-		dex = rundex.NewLocalClient(localfiles.Rundex())
+		dex = rundex.NewFilesystemClient(localfiles.Rundex())
 	} else {
 		dex, err = rundex.NewFirestore(ctx, cfg.Project)
 		if err != nil {
