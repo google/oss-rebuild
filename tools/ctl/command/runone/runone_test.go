@@ -75,6 +75,18 @@ func TestValidation(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "invalid overwrite mode",
+			cfg: Config{
+				API:           "http://test",
+				Ecosystem:     "npm",
+				Package:       "test",
+				Version:       "1.0.0",
+				Mode:          "attest",
+				OverwriteMode: "INVALID",
+			},
+			wantErr: true,
+		},
+		{
 			name: "valid config smoketest",
 			cfg: Config{
 				API:       "http://test",

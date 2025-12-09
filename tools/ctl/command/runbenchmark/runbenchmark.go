@@ -64,6 +64,9 @@ func (c Config) Validate() error {
 	if c.Format != "" && c.Format != "summary" && c.Format != "csv" {
 		return errors.Errorf("invalid format: %s. Expected one of 'summary' or 'csv'", c.Format)
 	}
+	if c.OverwriteMode != "" && c.OverwriteMode != string(schema.OverwriteServiceUpdate) && c.OverwriteMode != string(schema.OverwriteForce) {
+		return errors.Errorf("invalid overwrite-mode: %s. Expected one of 'SERVICE_UPDATE' or 'FORCE'", c.OverwriteMode)
+	}
 	return nil
 }
 
@@ -190,6 +193,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		MaxConcurrency:    cfg.MaxConcurrency,
 		UseSyscallMonitor: cfg.UseSyscallMonitor,
 		UseNetworkProxy:   cfg.UseNetworkProxy,
+		OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "running benchmark")
