@@ -27,10 +27,10 @@ type pyProjectProject struct {
 	Tool     toolMetadata    `toml:"tool"`
 }
 
-func verifyPyProjectFile(ctx context.Context, foundFile foundFile, name, version string) (fileVerification, error) {
+func verifyPyProjectFile(ctx context.Context, found foundFile, name, version string) (fileVerification, error) {
 	var verificationResult fileVerification
-	verificationResult.foundF = foundFile
-	f := foundFile.object
+	verificationResult.foundF = found
+	f := found.object
 
 	pyprojContents, err := f.Contents()
 	if err != nil {
@@ -50,7 +50,7 @@ func verifyPyProjectFile(ctx context.Context, foundFile foundFile, name, version
 		foundVersion = pyProject.Tool.Poetry.Version
 	}
 
-	if foundFile.path == "." {
+	if found.path == "." {
 		verificationResult.main = true
 	}
 

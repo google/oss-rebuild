@@ -144,6 +144,239 @@ commits:
 			expectedReqs: []string{"setuptools>=61.0.0"},
 			expectedDir:  "sub4",
 		},
+		{
+			name:    "setup.cfg - Parse a cfg with a single entry setup_requires",
+			pkg:     "single-cfg-package",
+			version: "1.7.2",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.cfg: |
+        [metadata]
+        name = single-cfg-package
+        version = 1.7.2
+        
+        [options]
+        setup_requires = setuptools_scm
+`,
+			expectedReqs: []string{"setuptools_scm"},
+			expectedDir:  "",
+		},
+		{
+			name:    "setup.cfg - Parse a cfg with a semi-colon seperated setup_requires",
+			pkg:     "semi-cfg-package",
+			version: "1.4.5",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.cfg: |
+        [metadata]
+        name = semi-cfg-package
+        version = 1.4.5
+        
+        [options]
+        setup_requires = setuptools; setuptools_scm[toml]
+`,
+			expectedReqs: []string{"setuptools", "setuptools_scm[toml]"},
+			expectedDir:  "",
+		},
+		{
+			name:    "setup.cfg - Parse a cfg with a dangling list",
+			pkg:     "hard-cfg-package",
+			version: "1.2",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.cfg: |
+        [metadata]
+        name = hard-cfg-package
+        version = 1.2
+        
+        [options]
+        setup_requires =
+            setuptools
+            wheel
+            pytest-runner
+`,
+			expectedReqs: []string{"setuptools", "wheel", "pytest-runner"},
+			expectedDir:  "",
+		},
+		{
+			name:    "setup.cfg with pyproject- Parse the correct cfg with a dangling list using the pyproject file",
+			pkg:     "hard-cfg-pyproject-package",
+			version: "5.7.3",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.cfg: |
+        [metadata]
+        name = hard-cfg-package
+        version = 1.2
+        
+        [options]
+        setup_requires =
+            setuptools
+            wheel
+            pytest-runner
+      pyproject.toml: |
+        [build-system]
+        requires = ["setuptools>=61.0.0"]
+        build-backend = "setuptools.build_meta"
+      sub1/setup.cfg: |
+        [options]
+        setup_requires = setuptools_scm
+      sub1/pyproject.toml: |
+        [project]
+        name = "hard-cfg-pyproject-package"
+        version = "5.7.3"
+`,
+			expectedReqs: []string{"setuptools_scm"},
+			expectedDir:  "sub1",
+		},
+		{
+			name:    "setup.py - Parse a general setup.py",
+			pkg:     "setup-test",
+			version: "1.2",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test',
+            version='1.2',
+            setup_requires=['pytest-runner'],
+        )
+`,
+			expectedReqs: []string{"pytest-runner"},
+		},
+		{
+			name:    "setup.py - Parse a general setup.py with a string setup_requires",
+			pkg:     "setup-test-string",
+			version: "1.2.3",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test-string',
+            version='1.2.3',
+            setup_requires="wheel",
+        )
+`,
+			expectedReqs: []string{"wheel"},
+		},
+		{
+			name:    "setup.py - Parse a general setup.py using name data",
+			pkg:     "setup-test-name",
+			version: "1.4.5",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test',
+            version='1.2',
+            setup_requires=['pytest-runner'],
+        )
+      sub1/setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test-name',
+            version='1.4.5',
+            setup_requires=['wheel'],
+        )
+`,
+			expectedReqs: []string{"wheel"},
+			expectedDir:  "sub1",
+		},
+		{
+			name:    "setup.py - Fail to extract the correct requirements from the setup.py with dynamic data",
+			pkg:     "setup-test-dynamic",
+			version: "7.2.8",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      sub1/setup.py: |
+        from setuptools import setup, find_packages
+        from os import path
+        
+        here = path.abspath(path.dirname(__file__))
+        
+        with open(path.join(here, 'VERSION')) as f:
+            dyn_version = f.read()
+        
+        with open(path.join(here, 'PACKAGE')) as f:
+            dyn_name = f.read()
+        
+        setup(
+            name=dyn_name,
+            version=dyn_version,
+            setup_requires="pytest-runner",
+        )
+      sub1/VERSION: |
+        7.2.8
+      sub1/PACKAGE: |
+        setup-test-dynamic
+      setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test-name',
+            version='1.4.5',
+            setup_requires=['wheel'],
+        )
+`,
+			expectedReqs: []string{"wheel"}, // I expect it to fail to parse the dynamic one and fall back to the other setup.py
+			expectedDir:  "",
+		},
+		{
+			name:    "Everything in a sub directory",
+			pkg:     "everything-test",
+			version: "4.5.6",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["setuptools>=61.0.0"]
+        build-backend = "setuptools.build_meta"
+
+        [project]
+        name = "my-project"
+        version = "1.2.3"
+      sub1/setup.cfg: |
+        [metadata]
+        version = 4.5.6
+        
+        [options]
+        setup_requires =
+            setuptools
+            wheel
+            pytest-runner
+      sub1/setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='everything-test',
+        )
+      sub1/pyproject.toml: |
+        [build-system]
+        requires = ["setuptools>=59.0.0"]
+        build-backend = "setuptools.build_meta"
+`,
+			expectedReqs: []string{"setuptools>=59.0.0", "setuptools", "wheel", "pytest-runner"},
+			expectedDir:  "sub1",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup the commit tree using repo yaml
