@@ -94,6 +94,27 @@ func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux
 	return rebuilder.InferStrategy(ctx, t, mux, &rcfg, nil)
 }
 
+func (s *localExecutionService) Infer(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+	if req.StrategyHint != nil {
+		return nil, errors.New("strategy hint not supported")
+	}
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
+	if req.Artifact == "" {
+		a, err := meta.GuessArtifact(ctx, t, mux)
+		if err != nil {
+			return nil, errors.Wrap(err, "selecting artifact")
+		}
+		t.Artifact = a
+	}
+	strategy, err := s.infer(ctx, t, mux)
+	if err != nil {
+		return nil, err
+	}
+	strat := schema.NewStrategyOneOf(strategy)
+	return &strat, nil
+}
+
 type buildOpts struct {
 	PrebuildURL string
 	LogSink     io.Writer
