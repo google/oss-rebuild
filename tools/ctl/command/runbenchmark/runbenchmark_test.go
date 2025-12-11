@@ -37,9 +37,10 @@ func TestConfigValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "missing bootstrap when local",
+			name: "bootstrap bucket no version",
 			cfg: Config{
-				Local: true,
+				Local:           true,
+				BootstrapBucket: "bucket",
 			},
 			wantErr: true,
 		},
