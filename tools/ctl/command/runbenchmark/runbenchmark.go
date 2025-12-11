@@ -97,8 +97,8 @@ func parseArgs(cfg *Config, args []string) error {
 		return errors.New("expected exactly 2 arguments")
 	}
 	mode := schema.ExecutionMode(args[0])
-	if mode != schema.AttestMode {
-		return errors.Errorf("Unknown mode: %s. Expected 'attest'", string(mode))
+	if mode != schema.AttestMode && mode != benchrun.InferMode {
+		return errors.Errorf("Unknown mode: %s. Expected one of 'attest' or 'infer'", string(mode))
 	}
 	cfg.ExecutionMode = mode
 	cfg.BenchmarkPath = args[1]
@@ -198,23 +198,26 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		}
 		var prebuildURL string
 		var needHostGate bool
-		if cfg.BootstrapBucket != "" && cfg.BootstrapVersion != "" {
-			prebuildURL = fmt.Sprintf("http://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
-		} else {
-			fs := memfs.New()
-			// TODO: Add new bootstrap tools as necessary here.
-			for _, tool := range []string{"./cmd/timewarp"} {
-				if err := compileToFS(ctx, fs, tool); err != nil {
-					return nil, errors.Wrap(err, "compiling bootstrap tools")
+		// Skip bootstrap setup for inference runs
+		if cfg.ExecutionMode != benchrun.InferMode {
+			if cfg.BootstrapBucket != "" && cfg.BootstrapVersion != "" {
+				prebuildURL = fmt.Sprintf("http://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
+			} else {
+				fs := memfs.New()
+				// TODO: Add new bootstrap tools as necessary here.
+				for _, tool := range []string{"./cmd/timewarp"} {
+					if err := compileToFS(ctx, fs, tool); err != nil {
+						return nil, errors.Wrap(err, "compiling bootstrap tools")
+					}
 				}
+				port, err := serveFS(fs)
+				if err != nil {
+					return nil, errors.Wrap(err, "serving binaries")
+				}
+				log.Printf("Serving binaries on: %d", port)
+				prebuildURL = fmt.Sprintf("http://host.docker.internal:%d", port)
+				needHostGate = true
 			}
-			port, err := serveFS(fs)
-			if err != nil {
-				return nil, errors.Wrap(err, "serving binaries")
-			}
-			log.Printf("Serving binaries on: %d", port)
-			prebuildURL = fmt.Sprintf("http://host.docker.internal:%d", port)
-			needHostGate = true
 		}
 		executor = benchrun.NewLocalExecutionService(benchrun.LocalExecutionServiceConfig{
 			PrebuildURL: prebuildURL,
