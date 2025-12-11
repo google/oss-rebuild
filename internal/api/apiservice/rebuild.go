@@ -27,10 +27,7 @@ import (
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	"github.com/google/oss-rebuild/pkg/changelog"
-	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
-	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
-	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
@@ -40,33 +37,6 @@ import (
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/grpc/codes"
 )
-
-func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.RegistryMux) error {
-	if t.Artifact != "" {
-		return nil
-	}
-	switch t.Ecosystem {
-	case rebuild.NPM:
-		t.Artifact = npmrb.ArtifactName(*t)
-	case rebuild.CratesIO:
-		t.Artifact = cratesrb.ArtifactName(*t)
-	case rebuild.PyPI:
-		release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
-		if err != nil {
-			return errors.Wrap(err, "fetching metadata failed")
-		}
-		a, err := pypirb.FindPureWheel(release.Artifacts)
-		if err != nil {
-			return errors.Wrap(err, "locating pure wheel failed")
-		}
-		t.Artifact = a.Filename
-	case rebuild.Debian:
-		return errors.New("debian requires explicit artifact")
-	default:
-		return errors.New("unknown ecosystem")
-	}
-	return nil
-}
 
 // TODO: LocalMetadataStore and DebugStoreBuilder can be combined into a layered AssetStore.
 type RebuildPackageDeps struct {
@@ -276,10 +246,14 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
-	if err := populateArtifact(ctx, &t, mux); err != nil {
-		// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
-		// For this reason, we don't return a nil error and expect no verdict to be written.
-		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "selecting artifact"))
+	if t.Artifact == "" {
+		a, err := meta.GuessArtifact(ctx, t, mux)
+		if err != nil {
+			// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
+			// For this reason, we don't return a nil error and expect no verdict to be written.
+			return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "selecting artifact"))
+		}
+		t.Artifact = a
 	}
 	v := schema.Verdict{
 		Target: t,
