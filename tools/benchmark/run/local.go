@@ -230,8 +230,4 @@ func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAsset
 	return errors.New("rebuild does not match upstream artifact")
 }
 
-func (s *localExecutionService) SmoketestPackage(ctx context.Context, req schema.SmoketestRequest) (*schema.SmoketestResponse, error) {
-	return nil, errors.New("Not implemented")
-}
-
 func (s *localExecutionService) Warmup(ctx context.Context) { /* no-op */ }

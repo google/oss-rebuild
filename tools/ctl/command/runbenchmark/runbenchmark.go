@@ -91,8 +91,8 @@ func parseArgs(cfg *Config, args []string) error {
 		return errors.New("expected exactly 2 arguments")
 	}
 	mode := schema.ExecutionMode(args[0])
-	if mode != schema.SmoketestMode && mode != schema.AttestMode {
-		return errors.Errorf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
+	if mode != schema.AttestMode {
+		return errors.Errorf("Unknown mode: %s. Expected 'attest'", string(mode))
 	}
 	cfg.ExecutionMode = mode
 	cfg.BenchmarkPath = args[1]
@@ -134,7 +134,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			ID:            runID,
 			BenchmarkName: filepath.Base(cfg.BenchmarkPath),
 			BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-			Type:          string(schema.SmoketestMode),
+			Type:          string(schema.SmoketestMode), // TODO: Remove this. Needed for now to help TUI find the output assets.
 			Created:       now,
 		})); err != nil {
 			log.Println(errors.Wrap(err, "writing run to rundex"))
@@ -244,7 +244,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-bench smoketest|attest -api <URI>  [-local -bootstrap-bucket <BUCKET> -bootstrap-version <VERSION>] [-format=summary|csv] <benchmark.json>",
+		Use:   "run-bench attest -api <URI>  [-local -bootstrap-bucket <BUCKET> -bootstrap-version <VERSION>] [-format=summary|csv] <benchmark.json>",
 		Short: "Run benchmark",
 		Args:  cobra.ExactArgs(2),
 		RunE: cli.RunE(
