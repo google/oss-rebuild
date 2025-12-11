@@ -37,6 +37,7 @@ type DockerRunExecutor struct {
 	keepalive        bool
 	tempDirBase      string
 	authCallback     AuthCallback
+	hostGateway      bool
 	allowPrivileged  bool
 }
 
@@ -80,6 +81,7 @@ func NewDockerRunExecutor(config DockerRunExecutorConfig) (*DockerRunExecutor, e
 		keepalive:        config.KeepAlive,
 		tempDirBase:      tempBase,
 		authCallback:     config.AuthCallback,
+		hostGateway:      config.HostGateway,
 		allowPrivileged:  config.AllowPrivileged,
 	}, nil
 }
@@ -97,6 +99,7 @@ type DockerRunExecutorConfig struct {
 	KeepAlive        bool         // Keep containers running. Caller is responsible for cleanup
 	TempDirBase      string       // Base directory for temp files, if empty uses os.TempDir()
 	AuthCallback     AuthCallback // Optional callback to generate auth headers when needed
+	HostGateway      bool         // If true, allow access to the host network via host.docker.internal
 	AllowPrivileged  bool         // If true, allow privileged builds
 }
 
@@ -212,6 +215,13 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		} else {
 			log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
 		}
+	}
+	if e.hostGateway {
+		// Allow access to host services via the host.docker.internal name.
+		// The benefit over --network host is portability on macOS and Windows,
+		// and also this this maintains a private ip address for each container,
+		// preventing port conflict and other unnecessary access.
+		runArgs = append(runArgs, "--add-host", "host.docker.internal:host-gateway")
 	}
 
 	// Add AUTH_HEADER environment variable if auth is required and callback is available
