@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"cloud.google.com/go/firestore"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
@@ -91,11 +92,7 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 				q = q.Where("run_id", "in", req.Runs)
 			}
 			iter := q.Documents(pctx)
-			for {
-				doc, err := iter.Next()
-				if err == iterator.Done {
-					break
-				}
+			for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
 				if err != nil {
 					once.Do(func() {
 						queryErr = errors.Wrap(err, "query error")
@@ -288,18 +285,14 @@ func doQuery[T any](ctx context.Context, q firestore.Query, fn func(*firestore.D
 	go func() {
 		defer close(ret)
 		defer close(out)
-		for {
-			doc, err := iter.Next()
-			if err == iterator.Done {
-				ret <- nil
-				break
-			}
+		for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
 			if err != nil {
 				ret <- err
-				break
+				return
 			}
 			out <- fn(doc)
 		}
+		ret <- nil
 	}()
 	return ret
 }
@@ -308,11 +301,7 @@ func (f *FirestoreClient) findArtifactName(ctx context.Context, t rebuild.Target
 	et := rebuild.FirestoreTargetEncoding.Encode(t)
 	iter := f.client.Collection(path.Join("ecosystem", string(et.Ecosystem), "packages", et.Package, "versions", et.Version, "artifacts")).DocumentRefs(ctx)
 	var artifacts []string
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
+	for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
 		if err != nil {
 			return "", err
 		}
