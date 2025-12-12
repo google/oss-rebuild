@@ -37,8 +37,14 @@ type localExecutionService struct {
 	logsink     io.Writer
 }
 
-func NewLocalExecutionService(prebuildURL string, store rebuild.LocatableAssetStore, logsink io.Writer) ExecutionService {
-	return &localExecutionService{prebuildURL: prebuildURL, store: store, logsink: logsink}
+type LocalExecutionServiceConfig struct {
+	PrebuildURL string
+	Store       rebuild.LocatableAssetStore
+	LogSink     io.Writer
+}
+
+func NewLocalExecutionService(config LocalExecutionServiceConfig) ExecutionService {
+	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink}
 }
 
 func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
