@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/pkg/errors"
 )
@@ -139,7 +140,8 @@ func (f *FilesystemClient) WatchRebuilds() <-chan *Rebuild {
 }
 
 func (f *FilesystemClient) WriteRebuild(ctx context.Context, r Rebuild) error {
-	path := filepath.Join(layout.RundexRebuildsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
+	et := rebuild.FilesystemTargetEncoding.Encode(r.Target())
+	path := filepath.Join(layout.RundexRebuildsDir, r.RunID, string(et.Ecosystem), et.Package, et.Artifact, rebuildFileName)
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")
