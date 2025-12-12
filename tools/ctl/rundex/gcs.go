@@ -137,7 +137,7 @@ func (g *GCSClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest)
 
 func (g *GCSClient) WriteRebuild(ctx context.Context, r Rebuild) error {
 	et := rebuild.FilesystemTargetEncoding.Encode(r.Target())
-	path := path.Join(g.prefix, layout.RundexRebuildsPath, r.RunID, string(et.Ecosystem), et.Package, et.Artifact, rebuildFileName)
+	path := path.Join(g.prefix, layout.RundexRebuildsPath, r.RunID, string(et.Ecosystem), et.Package, et.Version, et.Artifact, rebuildFileName)
 	obj := g.client.Bucket(g.bucket).Object(path)
 	w := obj.NewWriter(ctx)
 	if err := json.NewEncoder(w).Encode(r); err != nil {
