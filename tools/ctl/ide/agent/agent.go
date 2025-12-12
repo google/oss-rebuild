@@ -50,14 +50,14 @@ type sessionViewModel struct {
 
 type sessionView struct {
 	session         *schema.AgentSession
-	iters           []*schema.AgentIteration
+	iters           []schema.AgentIteration
 	deps            SessionViewDeps
 	model           *sessionViewModel
 	dockerfileCache map[string]string
 	logsCache       map[string]string
 }
 
-func NewSessionView(session *schema.AgentSession, iters []*schema.AgentIteration, deps SessionViewDeps) *sessionView {
+func NewSessionView(session *schema.AgentSession, iters []schema.AgentIteration, deps SessionViewDeps) *sessionView {
 	sort.Slice(iters, func(i, j int) bool {
 		return iters[i].Number < iters[j].Number
 	})

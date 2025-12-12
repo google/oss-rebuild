@@ -96,9 +96,28 @@ type FetchRunsOpts struct {
 	BenchmarkHash string
 }
 
+type FetchSessionsReq struct {
+	IDs           []string
+	PartialTarget *rebuild.Target
+	Since         time.Time
+	Until         time.Time
+	StopReason    string
+}
+
+type FetchIterationsReq struct {
+	SessionID    string
+	IterationIDs []string
+}
+
 type Reader interface {
 	FetchRuns(context.Context, FetchRunsOpts) ([]Run, error)
 	FetchRebuilds(context.Context, *FetchRebuildRequest) ([]Rebuild, error)
+}
+
+// TOOD: Move SessionReader into Reader when more impls exist.
+type SessionReader interface {
+	FetchSessions(context.Context, *FetchSessionsReq) ([]schema.AgentSession, error)
+	FetchIterations(context.Context, *FetchIterationsReq) ([]schema.AgentIteration, error)
 }
 
 type Writer interface {
