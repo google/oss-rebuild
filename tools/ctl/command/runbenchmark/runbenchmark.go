@@ -129,7 +129,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		// TODO: Validate this.
 		prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
 		executor = benchrun.NewLocalExecutionService(prebuildURL, store, deps.IO.Out)
-		dex = rundex.NewLocalClient(localfiles.Rundex())
+		dex = rundex.NewFilesystemClient(localfiles.Rundex())
 		if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
 			ID:            runID,
 			BenchmarkName: filepath.Base(cfg.BenchmarkPath),

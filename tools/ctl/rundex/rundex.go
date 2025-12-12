@@ -6,43 +6,20 @@ package rundex
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io/fs"
-	"path"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
-	"cloud.google.com/go/firestore"
-	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/util"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
-	"github.com/pkg/errors"
-	"google.golang.org/api/iterator"
 )
 
 // Rebuild represents the result of a specific rebuild.
 type Rebuild struct {
 	schema.RebuildAttempt
-}
-
-// NewRebuildFromFirestore creates a Rebuild instance from a "attempt" collection document.
-func NewRebuildFromFirestore(doc *firestore.DocumentSnapshot) Rebuild {
-	var sa schema.RebuildAttempt
-	if err := doc.DataTo(&sa); err != nil {
-		panic(err)
-	}
-	var rb Rebuild
-	rb.RebuildAttempt = sa
-	return rb
 }
 
 func NewRebuildFromVerdict(v schema.Verdict, executor string, runID string, created time.Time) Rebuild {
@@ -97,40 +74,44 @@ func FromRun(r schema.Run) Run {
 	return rb
 }
 
-// NewRunFromFirestore creates a Run instance from a "runs" collection document.
-func NewRunFromFirestore(doc *firestore.DocumentSnapshot) Run {
-	var r schema.Run
-	if err := doc.DataTo(&r); err != nil {
-		panic(err)
-	}
-	// Historical, past entries only contain runid in the doc.Ref.ID, not inside the document.
-	if r.ID == "" {
-		r.ID = doc.Ref.ID
-	}
-	return FromRun(r)
+type FetchRebuildOpts struct {
+	Clean   bool
+	Prefix  string
+	Pattern string
 }
 
-// DoQuery executes a query, transforming and sending each document to the output channel.
-func DoQuery[T any](ctx context.Context, q firestore.Query, fn func(*firestore.DocumentSnapshot) T, out chan<- T) <-chan error {
-	ret := make(chan error, 1)
-	iter := q.Documents(ctx)
-	go func() {
-		defer close(ret)
-		defer close(out)
-		for {
-			doc, err := iter.Next()
-			if err == iterator.Done {
-				ret <- nil
-				break
-			}
-			if err != nil {
-				ret <- err
-				break
-			}
-			out <- fn(doc)
-		}
-	}()
-	return ret
+// FetchRebuildRequest describes which Rebuild results you would like to fetch from firestore.
+type FetchRebuildRequest struct {
+	Target           *rebuild.Target
+	Bench            *benchmark.PackageSet
+	Executors        []string
+	Runs             []string
+	Opts             FetchRebuildOpts
+	LatestPerPackage bool
+}
+
+// FetchRunsOpts describes which Runs you would like to fetch from firestore.
+type FetchRunsOpts struct {
+	IDs           []string
+	BenchmarkHash string
+}
+
+type Reader interface {
+	FetchRuns(context.Context, FetchRunsOpts) ([]Run, error)
+	FetchRebuilds(context.Context, *FetchRebuildRequest) ([]Rebuild, error)
+}
+
+type Writer interface {
+	WriteRebuild(ctx context.Context, r Rebuild) error
+	WriteRun(ctx context.Context, r Run) error
+}
+
+// Watcher provides channels to notify about rundex object creation.
+// The Watcher is expected to manage the lifecycle of the channels, closing them if necessary.
+type Watcher interface {
+	// TODO: We might want to add filter parameters similar to the Fecth* methods on Reader.
+	WatchRuns() <-chan *Run
+	WatchRebuilds() <-chan *Rebuild
 }
 
 func cleanVerdict(m string) string {
@@ -219,66 +200,6 @@ func cleanVerdict(m string) string {
 	return m
 }
 
-type FetchRebuildOpts struct {
-	Clean   bool
-	Prefix  string
-	Pattern string
-}
-
-// FetchRebuildRequest describes which Rebuild results you would like to fetch from firestore.
-type FetchRebuildRequest struct {
-	Target           *rebuild.Target
-	Bench            *benchmark.PackageSet
-	Executors        []string
-	Runs             []string
-	Opts             FetchRebuildOpts
-	LatestPerPackage bool
-}
-
-// FetchRunsOpts describes which Runs you would like to fetch from firestore.
-type FetchRunsOpts struct {
-	IDs           []string
-	BenchmarkHash string
-}
-
-type Reader interface {
-	FetchRuns(context.Context, FetchRunsOpts) ([]Run, error)
-	FetchRebuilds(context.Context, *FetchRebuildRequest) ([]Rebuild, error)
-}
-
-type Writer interface {
-	WriteRebuild(ctx context.Context, r Rebuild) error
-	WriteRun(ctx context.Context, r Run) error
-}
-
-// Watcher provides channels to notify about rundex object creation.
-// The Watcher is expected to manage the lifecycle of the channels, closing them if necessary.
-type Watcher interface {
-	// TODO: We might want to add filter parameters similar to the Fecth* methods on Reader.
-	WatchRuns() <-chan *Run
-	WatchRebuilds() <-chan *Rebuild
-}
-
-// FirestoreClient is a wrapper around the external firestore client.
-type FirestoreClient struct {
-	Client *firestore.Client
-}
-
-// FirestoreClient is only a Reader for now.
-var _ Reader = &FirestoreClient{}
-
-// NewFirestore creates a new FirestoreClient.
-func NewFirestore(ctx context.Context, project string) (*FirestoreClient, error) {
-	if project == "" {
-		return nil, errors.New("empty project provided")
-	}
-	client, err := firestore.NewClient(ctx, project)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating firestore client")
-	}
-	return &FirestoreClient{Client: client}, nil
-}
-
 func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 	p := pipe.From(all)
 	if req.Bench != nil {
@@ -335,321 +256,6 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 		}
 	}
 	return res
-}
-
-func sanitize(key string) string {
-	return strings.ReplaceAll(key, "/", "!")
-}
-
-func (f *FirestoreClient) findArtifactName(ctx context.Context, t rebuild.Target) (string, error) {
-	iter := f.Client.Collection(path.Join("ecosystem", string(t.Ecosystem), "packages", sanitize(t.Package), "versions", t.Version, "artifacts")).DocumentRefs(ctx)
-	var artifacts []string
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return "", err
-		}
-		artifacts = append(artifacts, doc.ID)
-	}
-	if len(artifacts) == 0 {
-		return "", errors.New("no artifact documents found")
-	}
-	if len(artifacts) > 1 {
-		return "", errors.New("multiple artifact documents found")
-	}
-	return artifacts[0], nil
-}
-
-// FetchRebuilds fetches the Rebuild objects out of firestore.
-func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) ([]Rebuild, error) {
-	if len(req.Executors) != 0 && len(req.Runs) != 0 {
-		return nil, errors.New("only provide one of executors and runs")
-	}
-	if req.Bench != nil && req.Bench.Count == 0 {
-		return nil, errors.New("empty bench provided")
-	}
-	// If a benchmark is provided, we can optimize by querying for specific packages.
-	if req.Bench != nil {
-		packagesByEcosystem := make(map[string][]string)
-		for _, p := range req.Bench.Packages {
-			if !slices.Contains(packagesByEcosystem[p.Ecosystem], p.Name) {
-				packagesByEcosystem[p.Ecosystem] = append(packagesByEcosystem[p.Ecosystem], p.Name)
-			}
-		}
-
-		type queryBatch struct {
-			ecosystem string
-			packages  []string
-		}
-		var batches []queryBatch
-		const batchSize = 30 // Firestore 'in' queries are limited to 30 values.
-		for eco, pkgs := range packagesByEcosystem {
-			for i := 0; i < len(pkgs); i += batchSize {
-				end := i + batchSize
-				if end > len(pkgs) {
-					end = len(pkgs)
-				}
-				batches = append(batches, queryBatch{ecosystem: eco, packages: pkgs[i:end]})
-			}
-		}
-
-		p := pipe.FromSlice(batches)
-
-		var queryErr error
-		var once sync.Once
-		pctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-
-		const queryConcurrency = 10
-		rebuildsPipe := pipe.ParInto(queryConcurrency, p, func(batch queryBatch, out chan<- Rebuild) {
-			if pctx.Err() != nil {
-				return
-			}
-			q := f.Client.CollectionGroup("attempts").Query.Where("ecosystem", "==", batch.ecosystem).Where("package", "in", batch.packages)
-			if len(req.Executors) != 0 {
-				q = q.Where("executor_version", "in", req.Executors)
-			}
-			if len(req.Runs) != 0 {
-				q = q.Where("run_id", "in", req.Runs)
-			}
-			iter := q.Documents(pctx)
-			for {
-				doc, err := iter.Next()
-				if err == iterator.Done {
-					break
-				}
-				if err != nil {
-					once.Do(func() {
-						queryErr = errors.Wrap(err, "query error")
-						cancel()
-					})
-					break
-				}
-				out <- NewRebuildFromFirestore(doc)
-			}
-		})
-		var allUnfilteredRebuilds []Rebuild
-		for r := range rebuildsPipe.Out() {
-			allUnfilteredRebuilds = append(allUnfilteredRebuilds, r)
-		}
-		if queryErr != nil {
-			return nil, queryErr
-		}
-		// Now filter all results at once.
-		allChan := make(chan Rebuild, len(allUnfilteredRebuilds))
-		for _, r := range allUnfilteredRebuilds {
-			allChan <- r
-		}
-		close(allChan)
-		return filterRebuilds(allChan, req), nil
-	}
-
-	q := f.Client.CollectionGroup("attempts").Query
-	if req.Target != nil {
-		t := *req.Target
-		if t.Artifact == "" {
-			if a, err := f.findArtifactName(ctx, t); err != nil {
-				return nil, errors.Wrap(err, "inferring missing artifact")
-			} else {
-				t.Artifact = a
-			}
-		}
-		q = f.Client.Collection(path.Join("ecosystem", string(t.Ecosystem), "packages", sanitize(t.Package), "versions", t.Version, "artifacts", t.Artifact, "attempts")).Query
-	}
-	if len(req.Executors) != 0 {
-		q = q.Where("executor_version", "in", req.Executors)
-	}
-	if len(req.Runs) != 0 {
-		q = q.Where("run_id", "in", req.Runs)
-	}
-	all := make(chan Rebuild)
-	cerr := DoQuery(ctx, q, NewRebuildFromFirestore, all)
-	rebuilds := filterRebuilds(all, req)
-	if err := <-cerr; err != nil {
-		return nil, errors.Wrap(err, "query error")
-	}
-	return rebuilds, nil
-}
-
-// FetchRuns fetches Runs out of firestore.
-func (f *FirestoreClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
-	q := f.Client.CollectionGroup("runs").Query
-	if opts.BenchmarkHash != "" {
-		q = q.Where("benchmark_hash", "==", opts.BenchmarkHash)
-	}
-	runs := make(chan Run)
-	cerr := DoQuery(ctx, q, NewRunFromFirestore, runs)
-	var runSlice []Run
-	for r := range runs {
-		if len(opts.IDs) != 0 && !slices.Contains(opts.IDs, r.ID) {
-			continue
-		}
-		runSlice = append(runSlice, r)
-	}
-	if err := <-cerr; err != nil {
-		return nil, errors.New("query error")
-	}
-	return runSlice, nil
-}
-
-// LocalClient reads rebuilds from the local filesystem.
-type LocalClient struct {
-	fs                 billy.Filesystem
-	runSubscribers     []chan<- *Run
-	rebuildSubscribers []chan<- *Rebuild
-}
-
-var _ Reader = &LocalClient{}
-var _ Watcher = &LocalClient{}
-var _ Writer = &LocalClient{}
-
-func NewLocalClient(fs billy.Filesystem) *LocalClient {
-	return &LocalClient{
-		fs: fs,
-	}
-}
-
-const (
-	rebuildFileName = "firestore.json"
-)
-
-// FetchRuns fetches Runs out of firestore.
-func (f *LocalClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
-	runs := make([]Run, 0)
-	err := util.Walk(f.fs, layout.RundexRunsDir, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		if filepath.Ext(path) != ".json" {
-			return nil
-		}
-		file, err := f.fs.Open(path)
-		if err != nil {
-			return errors.Wrap(err, "opening run file")
-		}
-		defer file.Close()
-		var r Run
-		if err := json.NewDecoder(file).Decode(&r); err != nil {
-			return errors.Wrap(err, "decoding run file")
-		}
-		if len(opts.IDs) != 0 && !slices.Contains(opts.IDs, r.ID) {
-			return nil
-		}
-		if opts.BenchmarkHash != "" && r.BenchmarkHash != opts.BenchmarkHash {
-			return nil
-		}
-		runs = append(runs, r)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return runs, nil
-}
-
-// FetchRebuilds fetches the Rebuild objects from local paths.
-func (f *LocalClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) ([]Rebuild, error) {
-	walkErr := make(chan error, 1)
-	all := make(chan Rebuild, 1)
-	go func() {
-		var toWalk []string
-		if len(req.Runs) != 0 {
-			for _, r := range req.Runs {
-				toWalk = append(toWalk, filepath.Join(layout.RundexRebuildsDir, r))
-			}
-		} else {
-			toWalk = []string{layout.RundexRebuildsDir}
-		}
-		defer close(all)
-		for _, p := range toWalk {
-			err := util.Walk(f.fs, p, func(path string, info fs.FileInfo, err error) error {
-				if err != nil {
-					return err
-				}
-				if info.IsDir() {
-					return nil
-				}
-				if filepath.Base(path) != rebuildFileName {
-					return nil
-				}
-				file, err := f.fs.Open(path)
-				if err != nil {
-					return errors.Wrap(err, "opening firestore file")
-				}
-				defer file.Close()
-				var r Rebuild
-				if err := json.NewDecoder(file).Decode(&r); err != nil {
-					return errors.Wrap(err, "decoding firestore file")
-				}
-				all <- r
-				return nil
-			})
-			if err != nil {
-				walkErr <- err
-				return
-			}
-		}
-		walkErr <- nil
-	}()
-	rebuilds := filterRebuilds(all, req)
-	if err := <-walkErr; err != nil {
-		return nil, errors.Wrap(err, "exploring rebuilds dir")
-	}
-	return rebuilds, nil
-}
-
-func (f *LocalClient) WatchRuns() <-chan *Run {
-	n := make(chan *Run, 1)
-	f.runSubscribers = append(f.runSubscribers, n)
-	return n
-}
-
-func (f *LocalClient) WatchRebuilds() <-chan *Rebuild {
-	n := make(chan *Rebuild, 1)
-	f.rebuildSubscribers = append(f.rebuildSubscribers, n)
-	return n
-}
-
-func (f *LocalClient) WriteRebuild(ctx context.Context, r Rebuild) error {
-	path := filepath.Join(layout.RundexRebuildsDir, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
-	file, err := f.fs.Create(path)
-	if err != nil {
-		return errors.Wrap(err, "creating file")
-	}
-	defer file.Close()
-	if err := json.NewEncoder(file).Encode(r); err != nil {
-		return err
-	}
-	for _, sub := range f.rebuildSubscribers {
-		go func() {
-			sub <- &r
-		}()
-	}
-	return nil
-}
-
-func (f *LocalClient) WriteRun(ctx context.Context, r Run) error {
-	path := filepath.Join(layout.RundexRunsDir, fmt.Sprintf("%s.json", r.ID))
-	file, err := f.fs.Create(path)
-	if err != nil {
-		return errors.Wrap(err, "creating file")
-	}
-	defer file.Close()
-	if err := json.NewEncoder(file).Encode(r); err != nil {
-		return err
-	}
-	for _, sub := range f.runSubscribers {
-		go func() {
-			sub <- &r
-		}()
-	}
-	return nil
 }
 
 // VerdictGroup is a collection of Rebuild objects, grouped by the same Message.
