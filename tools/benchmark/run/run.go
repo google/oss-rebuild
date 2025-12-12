@@ -21,7 +21,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// ExecutionService defines the contract for services that can execute rebuilds or smoketests.
+// ExecutionService defines the contract for services that can execute rebuilds.
 type ExecutionService interface {
 	RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error)
 	// Warmup can be called to prepare the service, e.g., for remote Cloud Run instances.

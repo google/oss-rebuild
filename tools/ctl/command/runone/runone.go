@@ -59,8 +59,8 @@ func (c Config) Validate() error {
 		return errors.New("mode is required")
 	}
 	mode := schema.ExecutionMode(c.Mode)
-	if mode != schema.SmoketestMode && mode != schema.AttestMode && mode != analyzeMode {
-		return errors.Errorf("unknown mode: %s. Expected one of 'smoketest', 'attest', or 'analyze'", c.Mode)
+	if mode != schema.AttestMode && mode != analyzeMode {
+		return errors.Errorf("unknown mode: %s. Expected one of 'attest', or 'analyze'", c.Mode)
 	}
 	if c.OverwriteMode != "" && c.OverwriteMode != string(schema.OverwriteServiceUpdate) && c.OverwriteMode != string(schema.OverwriteForce) {
 		return errors.Errorf("invalid overwrite-mode: %s. Expected one of 'SERVICE_UPDATE' or 'FORCE'", c.OverwriteMode)
@@ -144,22 +144,6 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			return nil, errors.Wrap(err, "running analyze")
 		}
 		fmt.Fprintln(deps.IO.Out, "Analysis completed successfully")
-	case schema.SmoketestMode:
-		stub := api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, apiURL.JoinPath("smoketest"))
-		resp, err := stub(ctx, schema.SmoketestRequest{
-			Ecosystem: rebuild.Ecosystem(cfg.Ecosystem),
-			Package:   cfg.Package,
-			Versions:  []string{cfg.Version},
-			Strategy:  strategy,
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "running smoketest")
-		}
-		for _, v := range resp.Verdicts {
-			if err := enc.Encode(v); err != nil {
-				return nil, errors.Wrap(err, "encoding results")
-			}
-		}
 	case schema.AttestMode:
 		stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, apiURL.JoinPath("rebuild"))
 		resp, err := stub(ctx, schema.RebuildPackageRequest{
@@ -186,7 +170,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-one smoketest|attest|analyze --api <URI> --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--strategy <strategy.yaml>] [--strategy-from-repo]",
+		Use:   "run-one attest|analyze --api <URI> --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--strategy <strategy.yaml>] [--strategy-from-repo]",
 		Short: "Run a single target",
 		Args:  cobra.ExactArgs(1),
 		RunE: cli.RunE(
