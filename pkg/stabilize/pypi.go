@@ -235,7 +235,6 @@ type RecordDistInfo struct {
 	entries []RecordDistEntry
 }
 
-// TODO - This is all sorts of messed up. Needs more investigation
 func ParseMetadataDistInfo(r io.Reader) (*mail.Message, error) {
 	content, err := mail.ReadMessage(r)
 	if err != nil {
@@ -256,103 +255,6 @@ func ParseMetadataDistInfo(r io.Reader) (*mail.Message, error) {
 		content.Header["MessageBodyDescription"] = lines
 	}
 
-	// content, err := io.ReadAll(r)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// lines := bytes.Split(content, []byte("\n"))
-	// info := &MetadataDistInfo{
-	// 	OtherFields: make(map[string][]string),
-	// }
-	// var lastKey string
-	// for _, line := range lines {
-	// 	if len(line) == 0 {
-	// 		info.GeneralText = append(info.GeneralText, "")
-	// 		continue
-	// 	}
-	// 	// Handle continuation lines (PEP 566: lines starting with space are continuation)
-	// 	if line[0] == ' ' && lastKey != "" {
-	// 		// Append to previous field value
-	// 		switch lastKey {
-	// 		case "Description":
-	// 			info.Description += "\n" + string(bytes.TrimLeft(line, " "))
-	// 		default:
-	// 			if len(info.OtherFields[lastKey]) > 0 {
-	// 				info.OtherFields[lastKey][len(info.OtherFields[lastKey])-1] += "\n" + string(bytes.TrimLeft(line, " "))
-	// 			}
-	// 		}
-	// 		continue
-	// 	}
-	// 	parts := bytes.SplitN(line, []byte(": "), 2)
-	// 	if len(parts) != 2 {
-	// 		// Check for structured information (e.g., links, images, etc.)
-	// 		if isStructuredInfo(line) {
-	// 			info.OtherFields["StructuredInfo"] = append(info.OtherFields["StructuredInfo"], string(line))
-	// 		} else {
-	// 			// Treat as general text
-	// 			info.GeneralText = append(info.GeneralText, string(line))
-	// 		}
-	// 		lastKey = ""
-	// 		continue
-	// 	}
-	// 	key := string(parts[0])
-	// 	value := string(parts[1])
-	// 	lastKey = key
-	// 	switch key {
-	// 	case "Metadata-Version":
-	// 		info.MetadataVersion = value
-	// 	case "Name":
-	// 		info.Name = value
-	// 	case "Version":
-	// 		info.Version = value
-	// 	case "Dynamic":
-	// 		info.Dynamic = append(info.Dynamic, value)
-	// 	case "Platform":
-	// 		info.Platform = append(info.Platform, value)
-	// 	case "Supported-Platform":
-	// 		info.SupportedPlatform = append(info.SupportedPlatform, value)
-	// 	case "Summary":
-	// 		info.Summary = value
-	// 	case "Description":
-	// 		info.Description = value
-	// 	case "Description-Content-Type":
-	// 		info.DescriptionContentType = value
-	// 	case "Keywords":
-	// 		info.Keywords = value
-	// 	case "Home-page":
-	// 		info.HomePage = value
-	// 	case "Download-URL":
-	// 		info.DownloadURL = value
-	// 	case "Author":
-	// 		info.Author = value
-	// 	case "Author-email":
-	// 		info.AuthorEmail = value
-	// 	case "Maintainer":
-	// 		info.Maintainer = value
-	// 	case "Maintainer-email":
-	// 		info.MaintainerEmail = value
-	// 	case "License":
-	// 		info.License = value
-	// 	case "Classifier":
-	// 		info.Classifiers = append(info.Classifiers, value)
-	// 	case "Requires-Dist":
-	// 		info.RequiresDist = append(info.RequiresDist, value)
-	// 	case "Requires-Python":
-	// 		info.RequiresPython = value
-	// 	case "Requires-External":
-	// 		info.RequiresExternal = append(info.RequiresExternal, value)
-	// 	case "Project-URL":
-	// 		info.ProjectURL = append(info.ProjectURL, value)
-	// 	case "Provides-Extra":
-	// 		info.ProvidesExtra = append(info.ProvidesExtra, value)
-	// 	case "Provides-Dist":
-	// 		info.ProvidesDist = append(info.ProvidesDist, value)
-	// 	case "Obsoletes-Dist":
-	// 		info.ObsoletesDist = append(info.ObsoletesDist, value)
-	// 	default:
-	// 		info.OtherFields[key] = append(info.OtherFields[key], value)
-	// 	}
-	// }
 	return content, nil
 }
 
@@ -368,7 +270,7 @@ func isStructuredInfo(line []byte) bool {
 	return false
 }
 
-// TODO - Stabilizer more than remove
+// TODO - Add more stabilization rather than a full remove
 var RemoveMetadataJSON = ZipArchiveStabilizer{
 	Name: "pypi-metadata",
 	Func: func(zr *archive.MutableZipReader) {
@@ -456,14 +358,6 @@ var StableWheelBuildMetadata = ZipEntryStabilizer{
 			}
 		}
 		updatedMetadata.WriteString("\n") // End of headers
-
-		// // Append the body (if any)
-		// body, err := io.ReadAll(manifest.Body)
-		// if err != nil {
-		// 	println("Error reading METADATA body:", err)
-		// 	return
-		// }
-		// updatedMetadata.Write(body)
 
 		// For debugging, print the updated metadata
 		println("Updated METADATA content:\n", updatedMetadata.String())
