@@ -32,16 +32,18 @@ type localExecutionService struct {
 	prebuildURL string
 	store       rebuild.LocatableAssetStore
 	logsink     io.Writer
+	hostGateway bool
 }
 
 type LocalExecutionServiceConfig struct {
 	PrebuildURL string
 	Store       rebuild.LocatableAssetStore
 	LogSink     io.Writer
+	HostGateway bool
 }
 
 func NewLocalExecutionService(config LocalExecutionServiceConfig) ExecutionService {
-	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink}
+	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink, hostGateway: config.HostGateway}
 }
 
 func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
@@ -94,16 +96,48 @@ func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux
 	return rebuilder.InferStrategy(ctx, t, mux, &rcfg, nil)
 }
 
+func (s *localExecutionService) Infer(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+	if req.StrategyHint != nil {
+		return nil, errors.New("strategy hint not supported")
+	}
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
+	if req.Artifact == "" {
+		a, err := meta.GuessArtifact(ctx, t, mux)
+		if err != nil {
+			return nil, errors.Wrap(err, "selecting artifact")
+		}
+		t.Artifact = a
+	}
+	strategy, err := s.infer(ctx, t, mux)
+	if err != nil {
+		return nil, err
+	}
+	strat := schema.NewStrategyOneOf(strategy)
+	return &strat, nil
+}
+
 type buildOpts struct {
 	PrebuildURL string
 	LogSink     io.Writer
+	HostGateway bool
 }
 
 func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts) error {
-	executor, err := local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
-		Planner:     local.NewDockerRunPlanner(),
-		MaxParallel: 1,
-	})
+	var executor build.Executor
+	var err error
+	if opts.HostGateway {
+		executor, err = local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
+			Planner:     local.NewDockerRunPlanner(),
+			MaxParallel: 1,
+			HostGateway: true,
+		})
+	} else {
+		executor, err = local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
+			Planner:     local.NewDockerRunPlanner(),
+			MaxParallel: 1,
+		})
+	}
 	if err != nil {
 		return errors.Wrap(err, "failed to create executor")
 	}
