@@ -4,6 +4,8 @@
 package meta
 
 import (
+	"context"
+
 	"github.com/google/oss-rebuild/internal/httpx"
 	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
@@ -16,6 +18,7 @@ import (
 	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
+	"github.com/pkg/errors"
 )
 
 func NewRegistryMux(c httpx.BasicClient) rebuild.RegistryMux {
@@ -34,4 +37,37 @@ var AllRebuilders = map[rebuild.Ecosystem]rebuild.Rebuilder{
 	rebuild.CratesIO: &cratesrb.Rebuilder{},
 	rebuild.Debian:   &debianrb.Rebuilder{},
 	rebuild.Maven:    &mavenrb.Rebuilder{},
+}
+
+func GuessArtifact(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
+	if t.Artifact != "" {
+		return t.Artifact, nil
+	}
+	var guess string
+	switch t.Ecosystem {
+	case rebuild.NPM:
+		guess = npmrb.ArtifactName(t)
+	case rebuild.CratesIO:
+		guess = cratesrb.ArtifactName(t)
+	case rebuild.PyPI:
+		release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
+		if err != nil {
+			return "", errors.Wrap(err, "fetching metadata failed")
+		}
+		a, err := pypirb.FindPureWheel(release.Artifacts)
+		if err != nil {
+			return "", errors.Wrap(err, "locating pure wheel failed")
+		}
+		guess = a.Filename
+	case rebuild.Debian:
+		return "", errors.New("debian requires explicit artifact")
+	case rebuild.Maven:
+		return "", errors.New("maven not implemented")
+	default:
+		return "", errors.New("unknown ecosystem")
+	}
+	if guess == "" {
+		return "", errors.New("no artifact found")
+	}
+	return guess, nil
 }

@@ -85,6 +85,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			version := args[2]
 			var artifact string
 			if len(args) < 4 {
+				// TODO: Maybe use meta.GuessEcosystem? The downside is that's not hermetic.
 				switch ecosystem {
 				case rebuild.CratesIO:
 					artifact = fmt.Sprintf("%s-%s.crate", pkg, version)

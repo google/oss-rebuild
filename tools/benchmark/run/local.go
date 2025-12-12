@@ -19,11 +19,8 @@ import (
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/local"
-	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
-	"github.com/google/oss-rebuild/pkg/rebuild/npm"
-	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
@@ -60,28 +57,11 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
 	if req.Artifact == "" {
-		switch t.Ecosystem {
-		case rebuild.NPM:
-			t.Artifact = npm.ArtifactName(t)
-		case rebuild.PyPI:
-			release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
-			if err != nil {
-				return nil, errors.Wrap(err, "fetching pypi release")
-			}
-			wheel, err := pypi.FindPureWheel(release.Artifacts)
-			if err != nil {
-				return nil, errors.Wrap(err, "locating wheel")
-			}
-			t.Artifact = wheel.Filename
-		case rebuild.CratesIO:
-			t.Artifact = cratesio.ArtifactName(t)
-		case rebuild.Debian:
-			return nil, errors.New("artifact name required")
-		case rebuild.Maven:
-			return nil, errors.New("maven not implemented")
-		default:
-			return nil, errors.New("unsupported ecosystem")
+		a, err := meta.GuessArtifact(ctx, t, mux)
+		if err != nil {
+			return nil, errors.Wrap(err, "selecting artifact")
 		}
+		t.Artifact = a
 	}
 	verdict := &schema.Verdict{Target: t}
 	strategy, err := s.infer(ctx, t, mux)
