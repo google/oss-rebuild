@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/google/oss-rebuild/internal/gitdiff"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/pkg/errors"
 )
 
@@ -44,11 +45,7 @@ func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 	var listing1, listing2 strings.Builder
 	// Read all entries from tar1, recording offsets and original order
 	var names1 []string
-	for {
-		hdr, err := tr1.Next()
-		if err == io.EOF {
-			break
-		}
+	for hdr, err := range iterx.ToSeq2(tr1, io.EOF) {
 		if err != nil {
 			return false, errors.Wrap(err, "reading tar1")
 		}
@@ -64,11 +61,7 @@ func compareTar(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 	}
 	// Read all entries from tar2, recording offsets and original order
 	var names2 []string
-	for {
-		hdr, err := tr2.Next()
-		if err == io.EOF {
-			break
-		}
+	for hdr, err := range iterx.ToSeq2(tr2, io.EOF) {
 		if err != nil {
 			return false, errors.Wrap(err, "reading tar2")
 		}

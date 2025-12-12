@@ -11,6 +11,7 @@ import (
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	"github.com/cheggaaa/pb"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/tools/ctl/migrations"
@@ -89,11 +90,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	bar.ShowTimeLeft = true
 	bar.Start()
 	defer bar.Finish()
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
+	for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
 		bar.Increment()
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over attempts")

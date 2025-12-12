@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"cloud.google.com/go/firestore"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -56,11 +57,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	}
 	sessions := make([]*schema.AgentSession, 0)
 	docIter := sessionQuery.Documents(ctx)
-	for {
-		doc, err := docIter.Next()
-		if err == iterator.Done {
-			break
-		}
+	for doc, err := range iterx.ToSeq2(docIter, iterator.Done) {
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over sessions")
 		}

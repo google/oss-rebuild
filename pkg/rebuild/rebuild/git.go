@@ -15,10 +15,10 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/pkg/errors"
 )
 
@@ -84,12 +84,8 @@ func allTags(repo *git.Repository) (tags []string, err error) {
 	if err != nil {
 		return nil, err
 	}
-	var ref *plumbing.Reference
-	for {
-		ref, err = ri.Next()
-		if err == io.EOF {
-			break
-		} else if err != nil {
+	for ref, err := range iterx.ToSeq2(ri, io.EOF) {
+		if err != nil {
 			return nil, err
 		}
 		tags = append(tags, ref.Name().Short())

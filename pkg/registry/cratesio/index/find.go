@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
 	"github.com/pkg/errors"
 )
@@ -176,25 +177,26 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 	// until we find a drop in the number of matches.
 	day := 24 * time.Hour
 	nextCheckTime := firstCommit.Committer.When.Add(-day)
-	for {
-		c, err := commitIter.Next()
-		if err == io.EOF {
-			return &searchResult{
-				ResolutionCommit: upperBoundCommit,
-				ResolvableCrates: maxFound,
-				PriorCommit:      nil,
-			}, nil
-		}
+	foundDrop := false
+	for c, err := range iterx.ToSeq2(commitIter, io.EOF) {
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over daily commits")
 		}
 		if c.Committer.When.Before(nextCheckTime) {
 			if matchesFor(c) < maxFound {
+				foundDrop = true
 				break
 			}
 			upperBoundCommit = c
 			nextCheckTime = c.Committer.When.Add(-day)
 		}
+	}
+	if !foundDrop {
+		return &searchResult{
+			ResolutionCommit: upperBoundCommit,
+			ResolvableCrates: maxFound,
+			PriorCommit:      nil,
+		}, nil
 	}
 	// Scan backwards through that day's commits again to find the exact drop
 	commitIter, err = repo.Log(&git.LogOptions{From: upperBoundCommit.Hash})
@@ -203,15 +205,7 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 	}
 	defer commitIter.Close()
 	var lastCommit *object.Commit
-	for {
-		commit, err := commitIter.Next()
-		if err == io.EOF {
-			return &searchResult{
-				ResolutionCommit: lastCommit,
-				ResolvableCrates: maxFound,
-				PriorCommit:      nil,
-			}, nil
-		}
+	for commit, err := range iterx.ToSeq2(commitIter, io.EOF) {
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over commits")
 		}
@@ -224,4 +218,9 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 		}
 		lastCommit = commit
 	}
+	return &searchResult{
+		ResolutionCommit: lastCommit,
+		ResolvableCrates: maxFound,
+		PriorCommit:      nil,
+	}, nil
 }
