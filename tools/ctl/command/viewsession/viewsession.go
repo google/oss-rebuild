@@ -10,6 +10,7 @@ import (
 	"cloud.google.com/go/firestore"
 	gcs "cloud.google.com/go/storage"
 	"github.com/gdamore/tcell/v2"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -84,11 +85,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	// Fetch iterations
 	var iters []*schema.AgentIteration
 	iter := sessionDoc.Collection("agent_iterations").Documents(ctx)
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
+	for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over iterations")
 		}

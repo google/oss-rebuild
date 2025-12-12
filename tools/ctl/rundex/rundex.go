@@ -20,6 +20,7 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -117,18 +118,14 @@ func DoQuery[T any](ctx context.Context, q firestore.Query, fn func(*firestore.D
 	go func() {
 		defer close(ret)
 		defer close(out)
-		for {
-			doc, err := iter.Next()
-			if err == iterator.Done {
-				ret <- nil
-				break
-			}
+		for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
 			if err != nil {
 				ret <- err
-				break
+				return
 			}
 			out <- fn(doc)
 		}
+		ret <- nil
 	}()
 	return ret
 }
@@ -344,11 +341,7 @@ func sanitize(key string) string {
 func (f *FirestoreClient) findArtifactName(ctx context.Context, t rebuild.Target) (string, error) {
 	iter := f.Client.Collection(path.Join("ecosystem", string(t.Ecosystem), "packages", sanitize(t.Package), "versions", t.Version, "artifacts")).DocumentRefs(ctx)
 	var artifacts []string
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
+	for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
 		if err != nil {
 			return "", err
 		}
@@ -416,11 +409,7 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 				q = q.Where("run_id", "in", req.Runs)
 			}
 			iter := q.Documents(pctx)
-			for {
-				doc, err := iter.Next()
-				if err == iterator.Done {
-					break
-				}
+			for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
 				if err != nil {
 					once.Do(func() {
 						queryErr = errors.Wrap(err, "query error")

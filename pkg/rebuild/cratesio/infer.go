@@ -28,6 +28,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -317,12 +318,8 @@ func getFileFromCrate(crate io.Reader, path string) ([]byte, error) {
 	}
 	defer gzr.Close()
 	tr := tar.NewReader(gzr)
-	for {
-		header, err := tr.Next()
+	for header, err := range iterx.ToSeq2(tr, io.EOF) {
 		if err != nil {
-			if err == io.EOF {
-				break // End of archive
-			}
 			return nil, err
 		}
 		if header.Name == path {

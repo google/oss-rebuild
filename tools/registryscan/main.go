@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/google/oss-rebuild/internal/iterx"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
@@ -240,11 +241,7 @@ func extractCargoLockFromTarGz(reader io.Reader) (string, error) {
 	}
 	defer gzipReader.Close()
 	tarReader := tar.NewReader(gzipReader)
-	for {
-		header, err := tarReader.Next()
-		if err == io.EOF {
-			break
-		}
+	for header, err := range iterx.ToSeq2(tarReader, io.EOF) {
 		if err != nil {
 			return "", err
 		}
