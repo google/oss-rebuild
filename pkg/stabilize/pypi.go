@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/mail"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/archive"
@@ -24,7 +25,7 @@ var AllPypiStabilizers = []Stabilizer{
 	StableCommentsCollapse,
 	StableVersionFile2,
 	StableVersionFile,
-	StableCrcf,
+	StableCrlf,
 	StablePypiRecord,
 }
 
@@ -243,6 +244,17 @@ func ParseMetadataDistInfo(r io.Reader) (*mail.Message, error) {
 	for k, v := range content.Header {
 		fmt.Printf("%s: %s\n", k, v)
 	}
+	body, err := io.ReadAll(content.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	bodyStr := string(body)
+	lines := strings.Split(strings.ReplaceAll(bodyStr, "\r\n", "\n"), "\n")
+
+	if len(lines) > 0 && bodyStr != "" {
+		content.Header["MessageBodyDescription"] = lines
+	}
 
 	// content, err := io.ReadAll(r)
 	// if err != nil {
@@ -423,7 +435,22 @@ var StableWheelBuildMetadata = ZipEntryStabilizer{
 
 		// Serialize the updated metadata back to a string
 		var updatedMetadata strings.Builder
-		for key, values := range manifest.Header {
+
+		keys := make([]string, 0, len(manifest.Header))
+		for key := range manifest.Header {
+			if key != "MessageBodyDescription" {
+				keys = append(keys, key)
+			}
+		}
+
+		sort.Strings(keys)
+
+		// TODO - Check to see if we want to compare this
+		// keys = append(keys, "MessageBodyDescription")
+
+		for _, key := range keys {
+			values := manifest.Header[key]
+			sort.Strings(values)
 			for _, value := range values {
 				updatedMetadata.WriteString(fmt.Sprintf("%s: %s\n", key, value))
 			}
@@ -566,8 +593,8 @@ func mayContainGeneratedDocstring(content string) bool {
 }
 
 // TODO - Try this by having git config --global core.autocrlf true in the build instead of here
-var StableCrcf = ZipEntryStabilizer{
-	Name: "crcf",
+var StableCrlf = ZipEntryStabilizer{
+	Name: "crlf",
 	Func: func(zf *archive.MutableZipFile) {
 		r, err := zf.Open()
 		if err != nil {
@@ -586,6 +613,7 @@ var StableCrcf = ZipEntryStabilizer{
 }
 
 // TODO - Investigate where this is specifically used for
+// I only found matching hits to the regex for this in pypa/setuptools and pypa/pipenv no where else
 var StableVersionFile = ZipArchiveStabilizer{
 	Name: "version-file",
 	Func: func(zr *archive.MutableZipReader) {
@@ -636,7 +664,7 @@ if TYPE_CHECKING:
 }
 
 // NOTE - This may be an unsafe change.
-// TODO - Investiage need
+// TODO - Investiage need since it could delete important file changes
 var StableVersionFile2 = ZipArchiveStabilizer{
 	Name: "version-file-2",
 	Func: func(zr *archive.MutableZipReader) {
