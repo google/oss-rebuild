@@ -85,7 +85,7 @@ func inferDSC(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (r
 	return &p, nil
 }
 
-func inferBuildInfo(t rebuild.Target) (rebuild.Strategy, error) {
+func inferDebrebuild(t rebuild.Target, hint rebuild.Strategy) (rebuild.Strategy, error) {
 	_, name, err := ParseComponent(t.Package)
 	if err != nil {
 		return nil, err
@@ -99,6 +99,11 @@ func inferBuildInfo(t rebuild.Target) (rebuild.Strategy, error) {
 	infoURL := debian.BuildInfoURL(name, a.Version.String(), a.Arch)
 	// TODO: Populate the checksum
 	strat := Debrebuild{BuildInfo: FileWithChecksum{URL: infoURL, MD5: ""}}
+	if s, ok := hint.(*Debrebuild); ok {
+		if s.UseNoCheck {
+			strat.UseNoCheck = true
+		}
+	}
 	return &strat, nil
 }
 
@@ -106,5 +111,5 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if _, ok := hint.(*DebianPackage); ok {
 		return inferDSC(ctx, t, mux)
 	}
-	return inferBuildInfo(t)
+	return inferDebrebuild(t, hint)
 }
