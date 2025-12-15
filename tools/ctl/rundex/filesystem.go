@@ -141,7 +141,7 @@ func (f *FilesystemClient) WatchRebuilds() <-chan *Rebuild {
 
 func (f *FilesystemClient) WriteRebuild(ctx context.Context, r Rebuild) error {
 	et := rebuild.FilesystemTargetEncoding.Encode(r.Target())
-	path := filepath.Join(layout.RundexRebuildsDir, r.RunID, string(et.Ecosystem), et.Package, et.Artifact, rebuildFileName)
+	path := filepath.Join(layout.RundexRebuildsDir, r.RunID, string(et.Ecosystem), et.Package, et.Version, et.Artifact, rebuildFileName)
 	file, err := f.fs.Create(path)
 	if err != nil {
 		return errors.Wrap(err, "creating file")
