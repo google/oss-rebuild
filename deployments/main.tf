@@ -1113,6 +1113,15 @@ resource "google_storage_bucket_iam_binding" "orchestrator-writes-attestations" 
   role    = "roles/storage.objectCreator"
   members = ["serviceAccount:${google_service_account.orchestrator.email}"]
 }
+resource "google_storage_bucket_iam_binding" "analyzers-read-attestations" {
+  count  = !var.public && (var.enable_network_analyzer || var.enable_system_analyzer) ? 1 : 0
+  bucket = google_storage_bucket.attestations.name
+  role   = "roles/storage.objectViewer"
+  members = concat(
+    var.enable_network_analyzer ? ["serviceAccount:${google_service_account.network-analyzer[0].email}"] : [],
+    var.enable_system_analyzer ? ["serviceAccount:${google_service_account.system-analyzer[0].email}"] : [],
+  )
+}
 resource "google_storage_bucket_iam_binding" "attestors-manage-metadata" {
   bucket = google_storage_bucket.metadata.name
   role   = "roles/storage.objectAdmin"
@@ -1285,12 +1294,6 @@ resource "google_storage_bucket_iam_binding" "network-analyzer-writes-analysis" 
   role    = "roles/storage.objectCreator"
   members = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
 }
-resource "google_storage_bucket_iam_binding" "network-analyzer-reads-attestations" {
-  count   = !var.public && var.enable_network_analyzer ? 1 : 0
-  bucket  = google_storage_bucket.attestations.name
-  role    = "roles/storage.objectViewer"
-  members = ["serviceAccount:${google_service_account.network-analyzer[0].email}"]
-}
 resource "google_storage_bucket_iam_binding" "network-analyzer-reads-network-analyzer-attestations" {
   count   = !var.public && var.enable_network_analyzer ? 1 : 0
   bucket  = google_storage_bucket.network-analyzer-attestations[0].name
@@ -1330,12 +1333,6 @@ resource "google_storage_bucket_iam_binding" "system-analyzer-writes-analysis" {
   count   = var.enable_system_analyzer ? 1 : 0
   bucket  = google_storage_bucket.system-analyzer-attestations[0].name
   role    = "roles/storage.objectCreator"
-  members = ["serviceAccount:${google_service_account.system-analyzer[0].email}"]
-}
-resource "google_storage_bucket_iam_binding" "system-analyzer-reads-attestations" {
-  count   = !var.public && var.enable_system_analyzer ? 1 : 0
-  bucket  = google_storage_bucket.attestations.name
-  role    = "roles/storage.objectViewer"
   members = ["serviceAccount:${google_service_account.system-analyzer[0].email}"]
 }
 resource "google_storage_bucket_iam_binding" "system-analyzer-reads-system-analyzer-attestations" {
