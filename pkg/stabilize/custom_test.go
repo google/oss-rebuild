@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/archive"
 )
 
@@ -781,11 +782,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 			var gotEntries []*archive.TarEntry
 			{
 				tr := tar.NewReader(bytes.NewReader(output.Bytes()))
-				for {
-					header, err := tr.Next()
-					if err == io.EOF {
-						break
-					}
+				for header, err := range iterx.ToSeq2(tr, io.EOF) {
 					orDie(err)
 					body := must(io.ReadAll(tr))
 					gotEntries = append(gotEntries, &archive.TarEntry{
