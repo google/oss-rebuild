@@ -13,6 +13,7 @@ import (
 	"log"
 	re "regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -280,8 +281,38 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			Dir:  dir,
 			Ref:  ref,
 		},
-		Requirements: reqs,
+		PythonVersion: inferPythonVersion(reqs),
+		Requirements:  reqs,
 	}, nil
+}
+
+func inferPythonVersion(reqs []string) string {
+	constraintPat := re.MustCompile(`([<>=!~]+)\s*(\d+)`)
+	for _, req := range reqs {
+		parts := strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~! \t[", r) })
+		if len(parts) == 0 || strings.ToLower(parts[0]) != "setuptools" {
+			continue
+		}
+		allConstraints := constraintPat.FindAllStringSubmatch(req, -1)
+		for _, matches := range allConstraints {
+			op := matches[1]
+			ver, err := strconv.Atoi(matches[2])
+			if err != nil {
+				continue
+			}
+			switch op {
+			case "<":
+				if ver <= 60 {
+					return "3.11"
+				}
+			case "<=", "==":
+				if ver < 60 {
+					return "3.11"
+				}
+			}
+		}
+	}
+	return "" // unconstrained
 }
 
 var bdistWheelPat = re.MustCompile(`^Generator: bdist_wheel \(([\d\.]+)\)`)

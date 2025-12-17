@@ -14,8 +14,9 @@ import (
 // PureWheelBuild aggregates the options controlling a wheel build.
 type PureWheelBuild struct {
 	rebuild.Location
-	Requirements []string  `json:"requirements"`
-	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+	PythonVersion string    `json:"python_version" yaml:"python_version"`
+	Requirements  []string  `json:"requirements" yaml:"requirements"`
+	RegistryTime  time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
 }
 
 var _ rebuild.Strategy = &PureWheelBuild{}
@@ -33,9 +34,10 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Deps: []flow.Step{{
 			Uses: "pypi/deps/basic",
 			With: map[string]string{
-				"registryTime": registryTime,
-				"requirements": flow.MustToJSON(b.Requirements),
-				"venv":         "/deps",
+				"registryTime":  registryTime,
+				"requirements":  flow.MustToJSON(b.Requirements),
+				"pythonVersion": b.PythonVersion,
+				"venv":          "/deps",
 			},
 		}},
 		Build: []flow.Step{{
@@ -71,8 +73,12 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/setup-venv",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				{{.With.locator}}python3 -m venv {{.With.path}}`)[1:],
-			Needs: []string{"python3"},
+				{{if .With.pythonVersion -}}
+				{{.With.locator}}uvx uv venv {{.With.path}} --seed --python {{.With.pythonVersion}}
+				{{- else -}}
+				{{.With.locator}}python3 -m venv {{.With.path}}
+				{{- end -}}`)[1:],
+			Needs: []string{"python3", "uv"},
 		}},
 	},
 	{
@@ -92,7 +98,6 @@ var toolkit = []*flow.Tool{
 				{{.With.locator}}pip install build
 				{{- range $req := .With.requirements | fromJSON}}
 				{{$.With.locator}}pip install '{{regexReplace $req "'" "'\\''"}}'{{end}}`)[1:],
-			Needs: []string{"python3"},
 		}},
 	},
 
@@ -103,8 +108,9 @@ var toolkit = []*flow.Tool{
 			{
 				Uses: "pypi/setup-venv",
 				With: map[string]string{
-					"locator": "/usr/bin/",
-					"path":    "{{.With.venv}}",
+					"locator":       "/usr/bin/",
+					"path":          "{{.With.venv}}",
+					"pythonVersion": "{{.With.pythonVersion}}",
 				},
 			},
 			{
@@ -127,7 +133,6 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
-			Needs: []string{"python3"},
 		}},
 	},
 }
