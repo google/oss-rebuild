@@ -11,6 +11,7 @@ import (
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/debian"
+	"github.com/google/oss-rebuild/pkg/registry/debian/control"
 	"github.com/pkg/errors"
 )
 
@@ -37,7 +38,7 @@ func inferDSC(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (r
 		return nil, err
 	}
 	p := DebianPackage{}
-	var dsc *debian.DSC
+	var dsc *control.ControlFile
 	p.DSC.URL, dsc, err = mux.Debian.DSC(ctx, component, name, t.Version)
 	if err != nil {
 		return nil, err
