@@ -145,10 +145,18 @@ func findGitRef(pkg string, version string, rcfg *rebuild.RepoConfig) (string, e
 
 // FindPureWheel returns the pure wheel artifact from the given version's releases.
 func FindPureWheel(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
+	var sdistFallback *pypireg.Artifact
 	for _, r := range artifacts {
-		if strings.HasSuffix(r.Filename, "none-any.whl") {
+		switch {
+		case strings.HasSuffix(r.Filename, "none-any.whl"):
 			return &r, nil
+
+		case strings.HasSuffix(r.Filename, ".tar.gz"):
+			sdistFallback = &r
 		}
+	}
+	if sdistFallback != nil {
+		return sdistFallback, nil
 	}
 	return nil, fs.ErrNotExist
 }
@@ -233,13 +241,22 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to read upstream artifact")
 	}
-	zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
-	if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to initialize upstream zip reader")
-	}
-	reqs, err := inferRequirements(release.Name, version, zr)
-	if err != nil {
-		return cfg, err
+
+	var reqs []string
+
+	if strings.HasSuffix(a.Filename, ".whl") {
+		zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
+		if err != nil {
+			return nil, errors.Wrapf(err, "[INTERNAL] Failed to initialize upstream zip reader")
+		}
+		reqs, err = inferRequirements(release.Name, version, zr)
+		if err != nil {
+			return cfg, err
+		}
+	} else if strings.HasSuffix(a.Filename, ".tar.gz") {
+		// For .tar.gz files (source distributions), we don't infer requirements from the archive
+		// We'll get them from pyproject.toml below
+		reqs = []string{}
 	}
 	// Extract pyproject.toml requirements.
 	{
@@ -274,14 +291,25 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			}
 		}
 	}
-	return &PureWheelBuild{
-		Location: rebuild.Location{
-			Repo: rcfg.URI,
-			Dir:  dir,
-			Ref:  ref,
-		},
-		Requirements: reqs,
-	}, nil
+	if strings.HasSuffix(a.Filename, ".tar.gz") {
+		return &SourceDistBuild{
+			Location: rebuild.Location{
+				Repo: rcfg.URI,
+				Dir:  dir,
+				Ref:  ref,
+			},
+			Requirements: reqs,
+		}, nil
+	} else {
+		return &PureWheelBuild{
+			Location: rebuild.Location{
+				Repo: rcfg.URI,
+				Dir:  dir,
+				Ref:  ref,
+			},
+			Requirements: reqs,
+		}, nil
+	}
 }
 
 var bdistWheelPat = re.MustCompile(`^Generator: bdist_wheel \(([\d\.]+)\)`)
