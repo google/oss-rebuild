@@ -88,13 +88,14 @@ npm_custom_build:
 			},
 			Requirements: []string{"req_a", "req_b"},
 		},
-		jsonEncoded: `{"pypi_pure_wheel_build":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","requirements":["req_a","req_b"],"registry_time":"0001-01-01T00:00:00Z"}}`,
+		jsonEncoded: `{"pypi_pure_wheel_build":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","python_version":"","requirements":["req_a","req_b"],"registry_time":"0001-01-01T00:00:00Z"}}`,
 		yamlEncoded: `
 pypi_pure_wheel_build:
   location:
     repo: the_repo
     ref: the_ref
     dir: the_dir
+  python_version: ""
   requirements:
     - req_a
     - req_b

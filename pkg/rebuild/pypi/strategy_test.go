@@ -37,7 +37,7 @@ func TestPureWheelBuild(t *testing.T) {
 /deps/bin/pip install 'req_2'`,
 				Build: "/deps/bin/python3 -m build --wheel -n the_dir",
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "python3"},
+					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
 			},
@@ -56,7 +56,7 @@ func TestPureWheelBuild(t *testing.T) {
 /deps/bin/pip install 'req_1<='\''1.2.3'\'''`,
 				Build: "/deps/bin/python3 -m build --wheel -n the_dir",
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "python3"},
+					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
 			},
@@ -73,7 +73,7 @@ func TestPureWheelBuild(t *testing.T) {
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --wheel -n the_dir",
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "python3"},
+					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
 			},
@@ -92,7 +92,7 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --wheel -n the_dir",
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "python3"},
+					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
 			},
@@ -109,9 +109,27 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --wheel -n",
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "python3"},
+					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "dist/the_artifact",
+			},
+		},
+		{
+			"WithPythonVersion",
+			&PureWheelBuild{
+				Location:      defaultLocation,
+				PythonVersion: "3.11",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/uvx uv venv /deps --seed --python 3.11
+/deps/bin/pip install build`,
+				Build: "/deps/bin/python3 -m build --wheel -n the_dir",
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "python3", "uv"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
 	}
