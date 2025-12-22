@@ -33,6 +33,7 @@ type StrategyOneOf struct {
 	GradleBuild          *maven.GradleBuild             `json:"gradle_build,omitempty" yaml:"gradle_build,omitempty"`
 	DebianPackage        *debian.DebianPackage          `json:"debian_package,omitempty" yaml:"debian_package,omitempty"`
 	Debrebuild           *debian.Debrebuild             `json:"debrebuild,omitempty" yaml:"debrebuild,omitempty"`
+	DebootsnapSbuild     *debian.DebootsnapSbuild       `json:"debootsnap_sbuild,omitempty" yaml:"debootsnap_sbuild,omitempty"`
 	ManualStrategy       *rebuild.ManualStrategy        `json:"manual,omitempty" yaml:"manual,omitempty"`
 	WorkflowStrategy     *rebuild.WorkflowStrategy      `json:"flow,omitempty" yaml:"flow,omitempty"`
 }
@@ -59,6 +60,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.DebianPackage = t
 	case *debian.Debrebuild:
 		oneof.Debrebuild = t
+	case *debian.DebootsnapSbuild:
+		oneof.DebootsnapSbuild = t
 	case *rebuild.ManualStrategy:
 		oneof.ManualStrategy = t
 	case *rebuild.WorkflowStrategy:
@@ -99,6 +102,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.Debrebuild != nil {
 			num++
 			s = oneof.Debrebuild
+		}
+		if oneof.DebootsnapSbuild != nil {
+			num++
+			s = oneof.DebootsnapSbuild
 		}
 		if oneof.ManualStrategy != nil {
 			num++
