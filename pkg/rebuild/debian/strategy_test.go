@@ -288,3 +288,101 @@ func TestBinaryVersionRegex(t *testing.T) {
 		})
 	}
 }
+
+func TestDebootsnapSbuild(t *testing.T) {
+	tests := []struct {
+		name     string
+		strategy DebootsnapSbuild
+		target   rebuild.Target
+		env      rebuild.BuildEnv
+		want     rebuild.Instructions
+	}{
+		{
+			name: "FullOptions",
+			strategy: DebootsnapSbuild{
+				BuildInfo: FileWithChecksum{
+					URL: "http://example.com/pkg.buildinfo",
+					MD5: "md5",
+				},
+				BuildArchAll:             true,
+				BuildArchAny:             false,
+				BuildArch:                "amd64",
+				HostArch:                 "amd64",
+				SrcPackage:               "pkg",
+				SrcVersion:               "1.0",
+				SrcVersionNoEpoch:        "1.0",
+				BuildPath:                "/build/path",
+				DscDir:                   "/dsc/dir",
+				ForceRulesRequiresRootNo: true,
+				Env:                      []string{"VAR=val"},
+				BinaryOnlyChanges:        "changes",
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.Debian,
+				Package:   "pkg",
+				Version:   "1.0",
+				Artifact:  "pkg_1.0_amd64.deb",
+			},
+			env: rebuild.BuildEnv{},
+			want: rebuild.Instructions{
+				Source: `apt update
+apt install -y devscripts mmdebstrap sbuild
+wget http://example.com/pkg.buildinfo
+debsnap --force --verbose --destdir ./ pkg 1.0`,
+				Deps: `debootsnap --buildinfo="pkg.buildinfo" "/tmp/chroot.tar"`,
+				Build: `if [ ! -e /dev/console ]; then
+	mknod -m 666 /dev/console c 5 1
+fi
+cat <<"EOFSTEP" > "/tmp/sbuild.config"
+$apt_get = '/bin/true';
+$apt_cache = '/bin/true';
+$build_as_root_when_needed = 1;
+EOFSTEP
+echo "root:100000:65536" > /etc/subuid
+echo "root:100000:65536" > /etc/subgid
+env --chdir=/src VAR=val SBUILD_CONFIG=/tmp/sbuild.config\
+    sbuild \
+    --build=amd64 \
+    --host=amd64 \
+    --no-arch-any \
+    --arch-all \
+    --binNMU-changelog="changes" \
+    --chroot="/tmp/chroot.tar" \
+    --chroot-mode=unshare \
+    --dist=unstable \
+    --no-run-lintian \
+    --no-run-piuparts \
+    --no-run-autopkgtest \
+    --no-apt-update \
+    --no-apt-upgrade \
+    --no-apt-distupgrade \
+    --no-source \
+    --verbose \
+    --nolog \
+    --bd-uninstallable-explainer= \
+    --starting-build-commands='grep -iq "^Rules-Requires-Root:" "%p/debian/control" || sed -i "1iRules-Requires-Root: no" "%p/debian/control"' \
+    --build-path="/build/path" \
+    --dsc-dir="/dsc/dir" \
+    "/src/pkg_1.0.dsc"
+`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"wget"},
+					Privileged: true,
+				},
+				OutputPath: "pkg_1.0_amd64.deb",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.strategy.GenerateFor(tc.target, tc.env)
+			if err != nil {
+				t.Fatalf("DebootsnapSbuild.GenerateFor() failed unexpectedly: %v", err)
+			}
+			if diff := cmp.Diff(got, tc.want); diff != "" {
+				t.Errorf("DebootsnapSbuild.GenerateFor() returned diff (-got +want):\n%s", diff)
+			}
+		})
+	}
+}
