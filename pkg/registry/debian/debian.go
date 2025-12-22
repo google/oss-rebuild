@@ -150,6 +150,7 @@ type Registry interface {
 	ArtifactURL(context.Context, string, string) (string, error)
 	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
 	DSC(context.Context, string, string, string) (string, *control.ControlFile, error)
+	BuildInfo(context.Context, string, string, string, string) (string, *control.BuildInfo, error)
 }
 
 // HTTPRegistry is a Registry implementation that uses the debian HTTP API.
@@ -189,6 +190,21 @@ func BuildInfoURL(name, version, arch string) string {
 	u := urlx.Copy(buildinfoURL)
 	u.Path += path.Join(poolDir(name), name, fmt.Sprintf("%s_%s_%s.buildinfo", name, version, arch))
 	return u.String()
+}
+
+func (r HTTPRegistry) BuildInfo(ctx context.Context, component, name, version, arch string) (string, *control.BuildInfo, error) {
+	v, err := ParseVersion(version)
+	if err != nil {
+		return "", nil, err
+	}
+	buildinfoURL := BuildInfoURL(name, v.String(), arch)
+	log.Printf("Fetching buildinfo from %s", buildinfoURL)
+	re, err := r.get(ctx, buildinfoURL)
+	if err != nil {
+		return "", nil, errors.Wrapf(err, "failed to get .buildinfo file %s", buildinfoURL)
+	}
+	b, err := control.ParseBuildInfo(re)
+	return buildinfoURL, b, err
 }
 
 func guessDSCURL(component, name string, version *Version) string {
