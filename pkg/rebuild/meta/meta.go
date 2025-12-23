@@ -13,11 +13,13 @@ import (
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	rubygemsrb "github.com/google/oss-rebuild/pkg/rebuild/rubygems"
 	cratesreg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	debianreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	mavenreg "github.com/google/oss-rebuild/pkg/registry/maven"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
+	rubygemsreg "github.com/google/oss-rebuild/pkg/registry/rubygems"
 	"github.com/pkg/errors"
 )
 
@@ -28,6 +30,7 @@ func NewRegistryMux(c httpx.BasicClient) rebuild.RegistryMux {
 		NPM:      npmreg.HTTPRegistry{Client: c},
 		PyPI:     pypireg.HTTPRegistry{Client: c},
 		Maven:    mavenreg.HTTPRegistry{Client: c},
+		RubyGems: rubygemsreg.HTTPRegistry{Client: c},
 	}
 }
 
@@ -37,6 +40,7 @@ var AllRebuilders = map[rebuild.Ecosystem]rebuild.Rebuilder{
 	rebuild.CratesIO: &cratesrb.Rebuilder{},
 	rebuild.Debian:   &debianrb.Rebuilder{},
 	rebuild.Maven:    &mavenrb.Rebuilder{},
+	rebuild.RubyGems: &rubygemsrb.Rebuilder{},
 }
 
 func GuessArtifact(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
@@ -63,6 +67,8 @@ func GuessArtifact(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMu
 		return "", errors.New("debian requires explicit artifact")
 	case rebuild.Maven:
 		return "", errors.New("maven not implemented")
+	case rebuild.RubyGems:
+		guess = rubygemsrb.ArtifactName(t)
 	default:
 		return "", errors.New("unknown ecosystem")
 	}
