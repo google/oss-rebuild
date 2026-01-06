@@ -13,8 +13,11 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/cache"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/google/oss-rebuild/internal/taskqueue"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -43,6 +46,15 @@ func NewRemoteExecutionService(client *http.Client, baseURL *url.URL) ExecutionS
 }
 
 func (s *remoteExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
+	if req.Artifact == "" {
+		mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+		t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
+		a, err := meta.GuessArtifact(ctx, t, mux)
+		if err != nil {
+			return nil, errors.Wrap(err, "selecting artifact")
+		}
+		t.Artifact = a
+	}
 	return s.rebuildStub(ctx, req)
 }
 
