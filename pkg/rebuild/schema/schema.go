@@ -213,6 +213,9 @@ func (r RebuildPackageRequest) Validate() error {
 	default:
 		return errors.Errorf("Unknown OverwriteMode: %s", r.OverwriteMode)
 	}
+	if r.Artifact != "" {
+		return errors.New("artifact must not be empty")
+	}
 	return nil
 }
 
@@ -233,6 +236,9 @@ func (req InferenceRequest) Validate() error {
 		return err
 	} else if _, ok := s.(*rebuild.LocationHint); !ok {
 		return errors.Errorf("strategy hint should be a LocationHint, got: %T", s)
+	}
+	if req.Artifact != "" {
+		return errors.New("artifact must not be empty")
 	}
 	return nil
 }
