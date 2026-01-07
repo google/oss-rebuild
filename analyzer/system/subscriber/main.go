@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -23,6 +24,7 @@ var (
 	analyzerURL    = flag.String("analyzer-url", "", "the Cloud Tasks queue resource path to use")
 	taskQueuePath  = flag.String("task-queue", "", "the Cloud Tasks queue resource path to use")
 	taskQueueEmail = flag.String("task-queue-email", "", "the service account email used as the identity for Cloud Tasks-initiated calls")
+	port           = flag.Int("port", 8080, "port on which to serve")
 )
 
 func EnqueueInit(ctx context.Context) (*analyzerservice.EnqueueDeps, error) {
@@ -40,7 +42,7 @@ func EnqueueInit(ctx context.Context) (*analyzerservice.EnqueueDeps, error) {
 func main() {
 	flag.Parse()
 	http.HandleFunc("/enqueue", api.Translate(analyzer.GCSEventBodyToTargetEvent, api.Handler(EnqueueInit, analyzerservice.Enqueue)))
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}
 }
