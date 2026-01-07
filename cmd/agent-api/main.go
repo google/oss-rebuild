@@ -31,6 +31,7 @@ var (
 	prebuildBucket       = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
 	prebuildVersion      = flag.String("prebuild-version", "", "golang version identifier of the prebuild binary builds")
 	prebuildAuth         = flag.Bool("prebuild-auth", false, "whether to authenticate requests to the prebuild tools bucket")
+	port                 = flag.Int("port", 8080, "port on which to serve")
 )
 
 // Link-time configured service identity
@@ -111,7 +112,7 @@ func main() {
 	flag.Parse()
 	http.HandleFunc("/agent/session/iteration", api.Handler(AgentCreateIterationInit, agentapiservice.AgentCreateIteration))
 	http.HandleFunc("/agent/session/complete", api.Handler(AgentCompleteInit, agentapiservice.AgentComplete))
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}
 }

@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -25,6 +26,7 @@ import (
 var (
 	gitCacheURL       = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
 	cratesRegistryURL = flag.String("crates-registry-service-url", "", "if provided, the crates registry service to use for Rust crate index resolution")
+	port              = flag.Int("port", 8080, "port on which to serve")
 )
 
 var httpcfg = httpegress.Config{}
@@ -76,7 +78,7 @@ func main() {
 	flag.Parse()
 	http.HandleFunc("/infer", api.Handler(InferInit, inferenceservice.Infer))
 	http.HandleFunc("/version", api.Handler(api.NoDepsInit, inferenceservice.Version))
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}
 }
