@@ -60,16 +60,10 @@ func verifyPyProjectFile(ctx context.Context, foundFile foundFile, name, version
 
 		if editDist == 0 {
 			verificationResult.nameMatch = true
+		}
 
-			if foundVersion != "" && version == foundVersion {
-				verificationResult.versionMatch = true
-			}
-		} else {
-			verificationResult.partialNameMatch = true
-
-			if foundVersion != "" && version == foundVersion {
-				verificationResult.partialVersionMatch = true
-			}
+		if foundVersion != "" && version == foundVersion {
+			verificationResult.versionMatch = true
 		}
 	}
 

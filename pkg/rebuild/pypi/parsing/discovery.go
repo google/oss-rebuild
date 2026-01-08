@@ -15,6 +15,7 @@ import (
 
 var supportedFileTypes = map[string]bool{
 	"pyproject.toml": true,
+	"setup.cfg":      true,
 }
 
 type foundFile struct {
@@ -25,13 +26,11 @@ type foundFile struct {
 }
 
 type fileVerification struct {
-	foundF              foundFile
-	main                bool
-	nameMatch           bool
-	versionMatch        bool
-	partialNameMatch    bool
-	partialVersionMatch bool
-	levDistance         int
+	foundF       foundFile
+	main         bool
+	nameMatch    bool
+	versionMatch bool
+	levDistance  int
 }
 
 // minEditDistance computes the Levenshtein distance between two strings.
@@ -67,15 +66,16 @@ func minEditDistance(s1, s2 string) int {
 // verificationScore assigns a numeric priority to the verification object.
 // Higher score means higher priority (comes first).
 func verificationScore(v fileVerification) int {
-	if v.versionMatch {
+	if v.nameMatch && v.versionMatch {
+		return 4
+	} else if v.nameMatch {
 		return 3
-	}
-	if v.nameMatch {
+	} else if v.main {
 		return 2
-	}
-	if v.main {
+	} else if v.versionMatch {
 		return 1
 	}
+
 	return 0
 }
 
@@ -91,18 +91,9 @@ func sortVerifications(verifications []fileVerification) []fileVerification {
 		if scoreA != scoreB {
 			// If scores are different, the higher score comes first
 			return scoreA > scoreB
-		} else if scoreA == 0 {
-			// Try and compare the Levenshtein distances
-			if a.partialNameMatch && b.partialNameMatch {
-				// Lower is better
-				return a.levDistance < b.levDistance
-			} else if a.partialNameMatch {
-				// If only a, then good
-				return true
-			} else if b.partialNameMatch {
-				// If only b, then move it up
-				return false
-			}
+		} else if scoreA < 2 { // If they are both partial matches with matching versions or no version match
+			// Compare the levenshtein distance, lower is better
+			return a.levDistance < b.levDistance
 		}
 
 		// If scores are equal, we sort by Name lexicographically

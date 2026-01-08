@@ -144,6 +144,99 @@ commits:
 			expectedReqs: []string{"setuptools>=61.0.0"},
 			expectedDir:  "sub4",
 		},
+		{
+			name:    "setup.cfg - Parse a cfg with a single entry setup_requires",
+			pkg:     "single-cfg-package",
+			version: "1.7.2",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.cfg: |
+        [metadata]
+        name = single-cfg-package
+        version = 1.7.2
+        
+        [options]
+        setup_requires = setuptools_scm
+`,
+			expectedReqs: []string{"setuptools_scm"},
+			expectedDir:  "",
+		},
+		{
+			name:    "setup.cfg - Parse a cfg with a semi-colon seperated setup_requires",
+			pkg:     "semi-cfg-package",
+			version: "1.4.5",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.cfg: |
+        [metadata]
+        name = semi-cfg-package
+        version = 1.4.5
+        
+        [options]
+        setup_requires = setuptools; setuptools_scm[toml]
+`,
+			expectedReqs: []string{"setuptools", "setuptools_scm[toml]"},
+			expectedDir:  "",
+		},
+		{
+			name:    "setup.cfg - Parse a cfg with a dangling list",
+			pkg:     "hard-cfg-package",
+			version: "1.2",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.cfg: |
+        [metadata]
+        name = hard-cfg-package
+        version = 1.2
+        
+        [options]
+        setup_requires =
+            setuptools
+            wheel
+            pytest-runner
+`,
+			expectedReqs: []string{"setuptools", "wheel", "pytest-runner"},
+			expectedDir:  "",
+		},
+		{
+			name:    "setup.cfg with pyproject- Parse the correct cfg with a dangling list using the pyproject file",
+			pkg:     "hard-cfg-pyproject-package",
+			version: "5.7.3",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.cfg: |
+        [metadata]
+        name = hard-cfg-package
+        version = 1.2
+        
+        [options]
+        setup_requires =
+            setuptools
+            wheel
+            pytest-runner
+      pyproject.toml: |
+        [build-system]
+        requires = ["setuptools>=61.0.0"]
+        build-backend = "setuptools.build_meta"
+      sub1/setup.cfg: |
+        [options]
+        setup_requires = setuptools_scm
+      sub1/pyproject.toml: |
+        [project]
+        name = "hard-cfg-pyproject-package"
+        version = "5.7.3"
+`,
+			expectedReqs: []string{"setuptools_scm"},
+			expectedDir:  "sub1",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup the commit tree using repo yaml
