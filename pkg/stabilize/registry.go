@@ -6,4 +6,4 @@ package stabilize
 import "slices"
 
 // AllStabilizers is the complete list of all available stabilizers across all formats.
-var AllStabilizers = slices.Concat(AllZipStabilizers, AllTarStabilizers, AllGzipStabilizers, AllJarStabilizers, AllCrateStabilizers)
+var AllStabilizers = slices.Concat(AllZipStabilizers, AllTarStabilizers, AllGzipStabilizers, AllJarStabilizers, AllCrateStabilizers, AllPypiStabilizers)
