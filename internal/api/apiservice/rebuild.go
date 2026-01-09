@@ -12,7 +12,6 @@ import (
 	"log"
 	"net/url"
 	"path"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -241,20 +240,8 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 
 func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
-	if req.Ecosystem == rebuild.Debian && strings.TrimSpace(req.Artifact) == "" {
-		return nil, api.AsStatus(codes.InvalidArgument, errors.New("debian requires artifact"))
-	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
-	if t.Artifact == "" {
-		a, err := meta.GuessArtifact(ctx, t, mux)
-		if err != nil {
-			// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
-			// For this reason, we don't return a nil error and expect no verdict to be written.
-			return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "selecting artifact"))
-		}
-		t.Artifact = a
-	}
 	v := schema.Verdict{
 		Target: t,
 	}
