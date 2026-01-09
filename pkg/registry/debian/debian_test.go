@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
+	"github.com/google/oss-rebuild/pkg/registry/debian/control"
 )
 
 func TestPoolURL(t *testing.T) {
@@ -183,7 +184,7 @@ func TestHTTPRegistry_DSC(t *testing.T) {
 		version     string
 		expectedURL string
 		contents    string
-		expected    *DSC
+		expected    *control.ControlFile
 		expectedErr error
 	}{
 		{
@@ -204,61 +205,8 @@ Files:
  003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz
  e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc
  5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz`,
-			expected: &DSC{
-				Stanzas: []ControlStanza{
-					{
-						Fields: map[string][]string{
-							"Hash": {"SHA256"},
-						},
-					},
-					{
-						Fields: map[string][]string{
-							"Format": {"3.0 (quilt)"},
-							"Source": {"xz-utils"},
-							"Binary": {"bin-a, bin-b, xz-utils"},
-							"Package-List": {
-								"liblzma-dev deb libdevel optional arch=any",
-								"liblzma-doc deb doc optional arch=all",
-							},
-							"Files": {
-								"003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz",
-								"e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc",
-								"5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz",
-							},
-						},
-					},
-				},
-			},
-			expectedErr: nil,
-		},
-		{
-			name:        "With PGP",
-			component:   "main",
-			pkg:         "xz-utils",
-			version:     "5.2.4-1",
-			expectedURL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
-			contents: `-----BEGIN PGP SIGNED MESSAGE-----
-Hash: SHA256
-
-Format: 3.0 (quilt)
-Source: xz-utils
-Binary: bin-a, bin-b, xz-utils
-Package-List:
- liblzma-dev deb libdevel optional arch=any
- liblzma-doc deb doc optional arch=all
-Files:
- 003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz
- e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc
- 5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz
-
------BEGIN PGP SIGNATURE-----
-
-iQJHBAEBCAAxFiEEUh5Y8X6W1xKqD/EC38Zx7rMz+iUFAlxOW5QTHGpybmllZGVy
-RLpmHHG1JOVdOA==
-=WDR2
------END PGP SIGNATURE-----`,
-			expected: &DSC{
-				Stanzas: []ControlStanza{
+			expected: &control.ControlFile{
+				Stanzas: []control.ControlStanza{
 					{
 						Fields: map[string][]string{
 							"Hash": {"SHA256"},
