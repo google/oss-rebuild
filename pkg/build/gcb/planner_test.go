@@ -51,22 +51,22 @@ func TestMakeDockerfile(t *testing.T) {
 			},
 			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
-RUN <<'EOF'
- set -eux
- apk add git make
-EOF
-RUN <<'EOF'
- set -eux
- mkdir /src && cd /src
- git clone github.com/example .
- git checkout --force 'main'
- make deps ...
-EOF
-RUN cat <<'EOF' >/build
- set -eux
- make build ...
- mkdir /out && cp /src/output/foo.tgz /out/
-EOF
+RUN <<-'EOF'
+	set -eux
+	apk add git make
+	EOF
+RUN <<-'EOF'
+	set -eux
+	mkdir /src && cd /src
+	git clone github.com/example .
+	git checkout --force 'main'
+	make deps ...
+	EOF
+COPY --chmod=755 <<-'EOF' /build
+	set -eux
+	make build ...
+	mkdir /out && cp /src/output/foo.tgz /out/
+	EOF
 WORKDIR "/src"
 ENTRYPOINT ["/bin/sh","/build"]
 `,
@@ -97,26 +97,26 @@ ENTRYPOINT ["/bin/sh","/build"]
 			},
 			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
-RUN <<'EOF'
- set -eux
- wget https://my-bucket.storage.googleapis.com/timewarp
- chmod +x timewarp
- apk add git make
-EOF
-RUN <<'EOF'
- set -eux
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
- mkdir /src && cd /src
- git clone github.com/example .
- git checkout --force 'main'
- make deps ...
-EOF
-RUN cat <<'EOF' >/build
- set -eux
- make build ...
- mkdir /out && cp /src/output/foo.tgz /out/
-EOF
+RUN <<-'EOF'
+	set -eux
+	wget https://my-bucket.storage.googleapis.com/timewarp
+	chmod +x timewarp
+	apk add git make
+	EOF
+RUN <<-'EOF'
+	set -eux
+	./timewarp -port 8080 &
+	while ! nc -z localhost 8080;do sleep 1;done
+	mkdir /src && cd /src
+	git clone github.com/example .
+	git checkout --force 'main'
+	make deps ...
+	EOF
+COPY --chmod=755 <<-'EOF' /build
+	set -eux
+	make build ...
+	mkdir /out && cp /src/output/foo.tgz /out/
+	EOF
 WORKDIR "/src"
 ENTRYPOINT ["/bin/sh","/build"]
 `,
@@ -148,26 +148,26 @@ ENTRYPOINT ["/bin/sh","/build"]
 			},
 			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
-RUN --mount=type=secret,id=auth_header <<'EOF'
- set -eux
- apk add curl && curl -O -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp
- chmod +x timewarp
- apk add git make
-EOF
-RUN <<'EOF'
- set -eux
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
- mkdir /src && cd /src
- git clone github.com/example .
- git checkout --force 'main'
- make deps ...
-EOF
-RUN cat <<'EOF' >/build
- set -eux
- make build ...
- mkdir /out && cp /src/output/foo.tgz /out/
-EOF
+RUN --mount=type=secret,id=auth_header <<-'EOF'
+	set -eux
+	apk add curl && curl -O -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp
+	chmod +x timewarp
+	apk add git make
+	EOF
+RUN <<-'EOF'
+	set -eux
+	./timewarp -port 8080 &
+	while ! nc -z localhost 8080;do sleep 1;done
+	mkdir /src && cd /src
+	git clone github.com/example .
+	git checkout --force 'main'
+	make deps ...
+	EOF
+COPY --chmod=755 <<-'EOF' /build
+	set -eux
+	make build ...
+	mkdir /out && cp /src/output/foo.tgz /out/
+	EOF
 WORKDIR "/src"
 ENTRYPOINT ["/bin/sh","/build"]
 `,

@@ -127,47 +127,47 @@ type gcbContainerArgs struct {
 // gcbDockerfileTpl generates Dockerfiles for use in GCB
 var gcbDockerfileTpl = template.Must(
 	template.New("gcb dockerfile").Funcs(template.FuncMap{
-		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
+		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n\t") },
 		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
 		"list":   func(s string) []string { return []string{s} },
 	}).Parse(
 		textwrap.Dedent(`
 			#syntax=docker/dockerfile:1.10
 			FROM {{.BaseImage}}
-			RUN {{if or .TimewarpAuth .ProxyAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
-			 set -eux
+			RUN {{if or .TimewarpAuth .ProxyAuth}}--mount=type=secret,id=auth_header {{end}}<<-'EOF'
+				set -eux
 			{{- if .UseTimewarp}}
-			 {{- $hasCurl := or (eq .OS "debian") (eq .OS "ubuntu")}}
-			 {{- $hasWget := eq .OS "alpine"}}
-			 {{- if .TimewarpAuth}}
-			 {{if not $hasCurl}}{{.PackageManager.InstallCommand (list "curl")}} && {{end}}curl -O -H @/run/secrets/auth_header {{.TimewarpURL}}
-			 {{- else if $hasWget}}
-			 wget {{.TimewarpURL}}
-			 {{- else if $hasCurl}}
-			 curl -O {{.TimewarpURL}}
-			 {{- end}}
-			 chmod +x timewarp
+				{{- $hasCurl := or (eq .OS "debian") (eq .OS "ubuntu")}}
+				{{- $hasWget := eq .OS "alpine"}}
+				{{- if .TimewarpAuth}}
+				{{if not $hasCurl}}{{.PackageManager.InstallCommand (list "curl")}} && {{end}}curl -O -H @/run/secrets/auth_header {{.TimewarpURL}}
+				{{- else if $hasWget}}
+				wget {{.TimewarpURL}}
+				{{- else if $hasCurl}}
+				curl -O {{.TimewarpURL}}
+				{{- end}}
+				chmod +x timewarp
 			{{- end}}
-			 {{- if eq .OS "debian"}}
-			 {{.PackageManager.UpdateCmd}}
-			 {{- end}}
-			 {{.PackageManager.InstallCommand .Instructions.Requires.SystemDeps}}
-			EOF
-			RUN <<'EOF'
-			 set -eux
+				{{- if eq .OS "debian"}}
+				{{.PackageManager.UpdateCmd}}
+				{{- end}}
+				{{.PackageManager.InstallCommand .Instructions.Requires.SystemDeps}}
+				EOF
+			RUN <<-'EOF'
+				set -eux
 			{{- if .UseTimewarp}}
-			 ./timewarp -port 8080 &
-			 while ! nc -z localhost 8080;do sleep 1;done
+				./timewarp -port 8080 &
+				while ! nc -z localhost 8080;do sleep 1;done
 			{{- end}}
-			 mkdir /src && cd /src
-			 {{.Instructions.Source| indent}}
-			 {{.Instructions.Deps | indent}}
-			EOF
-			RUN cat <<'EOF' >/build
-			 set -eux
-			 {{.Instructions.Build | indent}}
-			 mkdir /out && cp /src/{{.Instructions.OutputPath}} /out/
-			EOF
+				mkdir /src && cd /src
+				{{.Instructions.Source| indent}}
+				{{.Instructions.Deps | indent}}
+				EOF
+			COPY --chmod=755 <<-'EOF' /build
+				set -eux
+				{{.Instructions.Build | indent}}
+				mkdir /out && cp /src/{{.Instructions.OutputPath}} /out/
+				EOF
 			WORKDIR "/src"
 			ENTRYPOINT ["/bin/sh","/build"]
 			`)[1:], // remove leading newline
@@ -246,7 +246,8 @@ var gcbStandardBuildTpl = template.Must(
 // TODO: Support IPv6.
 var gcbProxyBuildTpl = template.Must(
 	template.New("gcb proxy build script").Funcs(template.FuncMap{
-		"join": func(sep string, s []string) string { return strings.Join(s, sep) },
+		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n\t") },
+		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
 	}).Parse(
 		textwrap.Dedent(`
 			set -eux
@@ -298,9 +299,9 @@ var gcbProxyBuildTpl = template.Must(
 			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 			{{- end}}
-			cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" > /Dockerfile
-			{{.Dockerfile}}
-			EOS
+			cat <<-'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" > /Dockerfile
+				{{.Dockerfile | indent}}
+				EOS
 			docker cp /Dockerfile build:/Dockerfile
 			docker exec build /bin/sh -euxc '
 				curl http://proxy:{{.CtrlPort}}/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
