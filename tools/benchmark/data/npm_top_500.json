@@ -1,6 +1,6 @@
 {
   "Count": 1009,
-  "Updated": "2023-11-16T21:41:54.483888449-05:00",
+  "Updated": "2026-01-08T20:18:49Z",
   "Packages": [
     {
       "Ecosystem": "npm",
@@ -11,6 +11,13 @@
         "4.17.20",
         "2.4.2",
         "4.17.15"
+      ],
+      "Artifacts": [
+        "lodash-4.17.21.tgz",
+        "lodash-3.10.1.tgz",
+        "lodash-4.17.20.tgz",
+        "lodash-2.4.2.tgz",
+        "lodash-4.17.15.tgz"
       ]
     },
     {
@@ -22,6 +29,13 @@
         "1.10.0",
         "2.3.1",
         "2.4.1"
+      ],
+      "Artifacts": [
+        "tslib-2.6.2.tgz",
+        "tslib-1.14.1.tgz",
+        "tslib-1.10.0.tgz",
+        "tslib-2.3.1.tgz",
+        "tslib-2.4.1.tgz"
       ]
     },
     {
@@ -32,6 +46,12 @@
         "15.7.2",
         "15.6.2",
         "15.6.0"
+      ],
+      "Artifacts": [
+        "prop-types-15.8.1.tgz",
+        "prop-types-15.7.2.tgz",
+        "prop-types-15.6.2.tgz",
+        "prop-types-15.6.0.tgz"
       ]
     },
     {
@@ -43,6 +63,13 @@
         "2.29.1",
         "2.22.2",
         "2.20.1"
+      ],
+      "Artifacts": [
+        "moment-2.29.4.tgz",
+        "moment-2.24.0.tgz",
+        "moment-2.29.1.tgz",
+        "moment-2.22.2.tgz",
+        "moment-2.20.1.tgz"
       ]
     },
     {
@@ -50,6 +77,9 @@
       "Name": "@babel/runtime",
       "Versions": [
         "7.23.2"
+      ],
+      "Artifacts": [
+        "babel-runtime-7.23.2.tgz"
       ]
     },
     {
@@ -60,6 +90,12 @@
         "2.2.6",
         "2.3.1",
         "2.2.5"
+      ],
+      "Artifacts": [
+        "classnames-2.3.2.tgz",
+        "classnames-2.2.6.tgz",
+        "classnames-2.3.1.tgz",
+        "classnames-2.2.5.tgz"
       ]
     },
     {
@@ -69,6 +105,11 @@
         "4.18.2",
         "4.17.1",
         "4.16.4"
+      ],
+      "Artifacts": [
+        "express-4.18.2.tgz",
+        "express-4.17.1.tgz",
+        "express-4.16.4.tgz"
       ]
     },
     {
@@ -80,6 +121,13 @@
         "18.2.0",
         "15.7.0",
         "0.14.10"
+      ],
+      "Artifacts": [
+        "react-16.14.0.tgz",
+        "react-17.0.2.tgz",
+        "react-18.2.0.tgz",
+        "react-15.7.0.tgz",
+        "react-0.14.10.tgz"
       ]
     },
     {
@@ -91,6 +139,13 @@
         "9.0.1",
         "7.0.3",
         "3.3.2"
+      ],
+      "Artifacts": [
+        "uuid-8.3.2.tgz",
+        "uuid-3.4.0.tgz",
+        "uuid-9.0.1.tgz",
+        "uuid-7.0.3.tgz",
+        "uuid-3.3.2.tgz"
       ]
     },
     {
@@ -102,6 +157,13 @@
         "1.1.3",
         "3.0.0",
         "5.3.0"
+      ],
+      "Artifacts": [
+        "chalk-4.1.2.tgz",
+        "chalk-2.4.2.tgz",
+        "chalk-1.1.3.tgz",
+        "chalk-3.0.0.tgz",
+        "chalk-5.3.0.tgz"
       ]
     },
     {
@@ -113,6 +175,13 @@
         "2.4.1",
         "3.30.2",
         "3.6.5"
+      ],
+      "Artifacts": [
+        "core-js-3.33.2.tgz",
+        "core-js-2.6.12.tgz",
+        "core-js-2.4.1.tgz",
+        "core-js-3.30.2.tgz",
+        "core-js-3.6.5.tgz"
       ]
     },
     {
@@ -123,6 +192,12 @@
         "3.3.7",
         "1.0.28",
         "2.6.10"
+      ],
+      "Artifacts": [
+        "vue-2.7.15.tgz",
+        "vue-3.3.7.tgz",
+        "vue-1.0.28.tgz",
+        "vue-2.6.10.tgz"
       ]
     },
     {
@@ -132,6 +207,11 @@
         "2.88.2",
         "2.88.0",
         "2.81.0"
+      ],
+      "Artifacts": [
+        "request-2.88.2.tgz",
+        "request-2.88.0.tgz",
+        "request-2.81.0.tgz"
       ]
     },
     {
@@ -143,6 +223,13 @@
         "18.2.0",
         "15.7.0",
         "16.13.1"
+      ],
+      "Artifacts": [
+        "react-dom-16.14.0.tgz",
+        "react-dom-17.0.2.tgz",
+        "react-dom-18.2.0.tgz",
+        "react-dom-15.7.0.tgz",
+        "react-dom-16.13.1.tgz"
       ]
     },
     {
@@ -154,6 +241,13 @@
         "3.2.7",
         "4.1.1",
         "2.2.0"
+      ],
+      "Artifacts": [
+        "debug-4.3.4.tgz",
+        "debug-2.6.9.tgz",
+        "debug-3.2.7.tgz",
+        "debug-4.1.1.tgz",
+        "debug-2.2.0.tgz"
       ]
     },
     {
@@ -165,6 +259,13 @@
         "2.6.7",
         "1.7.3",
         "2.6.1"
+      ],
+      "Artifacts": [
+        "node-fetch-2.7.0.tgz",
+        "node-fetch-3.3.2.tgz",
+        "node-fetch-2.6.7.tgz",
+        "node-fetch-1.7.3.tgz",
+        "node-fetch-2.6.1.tgz"
       ]
     },
     {
@@ -172,6 +273,9 @@
       "Name": "@babel/core",
       "Versions": [
         "7.23.2"
+      ],
+      "Artifacts": [
+        "babel-core-7.23.2.tgz"
       ]
     },
     {
@@ -183,6 +287,13 @@
         "1.6.0",
         "0.18.1",
         "0.27.2"
+      ],
+      "Artifacts": [
+        "axios-0.21.4.tgz",
+        "axios-0.19.2.tgz",
+        "axios-1.6.0.tgz",
+        "axios-0.18.1.tgz",
+        "axios-0.27.2.tgz"
       ]
     },
     {
@@ -194,6 +305,13 @@
         "5.0.15",
         "10.3.10",
         "7.1.6"
+      ],
+      "Artifacts": [
+        "glob-7.2.3.tgz",
+        "glob-8.1.0.tgz",
+        "glob-5.0.15.tgz",
+        "glob-10.3.10.tgz",
+        "glob-7.1.6.tgz"
       ]
     },
     {
@@ -202,6 +320,10 @@
       "Versions": [
         "0.1.13",
         "0.1.10"
+      ],
+      "Artifacts": [
+        "reflect-metadata-0.1.13.tgz",
+        "reflect-metadata-0.1.10.tgz"
       ]
     },
     {
@@ -213,6 +335,13 @@
         "8.3.0",
         "6.2.1",
         "5.1.0"
+      ],
+      "Artifacts": [
+        "commander-2.20.3.tgz",
+        "commander-9.5.0.tgz",
+        "commander-8.3.0.tgz",
+        "commander-6.2.1.tgz",
+        "commander-5.1.0.tgz"
       ]
     },
     {
@@ -224,6 +353,13 @@
         "5.2.2",
         "2.9.2",
         "4.7.4"
+      ],
+      "Artifacts": [
+        "typescript-4.9.5.tgz",
+        "typescript-3.9.10.tgz",
+        "typescript-5.2.2.tgz",
+        "typescript-2.9.2.tgz",
+        "typescript-4.7.4.tgz"
       ]
     },
     {
@@ -234,6 +370,12 @@
         "9.0.2",
         "9.0.0",
         "7.4.3"
+      ],
+      "Artifacts": [
+        "jsonwebtoken-8.5.1.tgz",
+        "jsonwebtoken-9.0.2.tgz",
+        "jsonwebtoken-9.0.0.tgz",
+        "jsonwebtoken-7.4.3.tgz"
       ]
     },
     {
@@ -245,6 +387,13 @@
         "6.3.1",
         "6.3.0",
         "7.3.5"
+      ],
+      "Artifacts": [
+        "semver-7.5.4.tgz",
+        "semver-5.7.2.tgz",
+        "semver-6.3.1.tgz",
+        "semver-6.3.0.tgz",
+        "semver-7.3.5.tgz"
       ]
     },
     {
@@ -254,6 +403,11 @@
         "2.30.0",
         "1.30.1",
         "2.29.3"
+      ],
+      "Artifacts": [
+        "date-fns-2.30.0.tgz",
+        "date-fns-1.30.1.tgz",
+        "date-fns-2.29.3.tgz"
       ]
     },
     {
@@ -262,6 +416,10 @@
       "Versions": [
         "3.7.2",
         "2.11.0"
+      ],
+      "Artifacts": [
+        "bluebird-3.7.2.tgz",
+        "bluebird-2.11.0.tgz"
       ]
     },
     {
@@ -270,6 +428,10 @@
       "Versions": [
         "1.20.2",
         "1.19.0"
+      ],
+      "Artifacts": [
+        "body-parser-1.20.2.tgz",
+        "body-parser-1.19.0.tgz"
       ]
     },
     {
@@ -278,6 +440,10 @@
       "Versions": [
         "6.11.2",
         "6.11.0"
+      ],
+      "Artifacts": [
+        "qs-6.11.2.tgz",
+        "qs-6.11.0.tgz"
       ]
     },
     {
@@ -285,6 +451,9 @@
       "Name": "dayjs",
       "Versions": [
         "1.11.10"
+      ],
+      "Artifacts": [
+        "dayjs-1.11.10.tgz"
       ]
     },
     {
@@ -292,6 +461,9 @@
       "Name": "@babel/preset-env",
       "Versions": [
         "7.23.2"
+      ],
+      "Artifacts": [
+        "babel-preset-env-7.23.2.tgz"
       ]
     },
     {
@@ -303,6 +475,13 @@
         "9.1.0",
         "7.0.1",
         "11.1.1"
+      ],
+      "Artifacts": [
+        "fs-extra-10.1.0.tgz",
+        "fs-extra-8.1.0.tgz",
+        "fs-extra-9.1.0.tgz",
+        "fs-extra-7.0.1.tgz",
+        "fs-extra-11.1.1.tgz"
       ]
     },
     {
@@ -311,6 +490,10 @@
       "Versions": [
         "1.2.8",
         "1.2.0"
+      ],
+      "Artifacts": [
+        "minimist-1.2.8.tgz",
+        "minimist-1.2.0.tgz"
       ]
     },
     {
@@ -318,6 +501,9 @@
       "Name": "lodash-es",
       "Versions": [
         "4.17.21"
+      ],
+      "Artifacts": [
+        "lodash-es-4.17.21.tgz"
       ]
     },
     {
@@ -325,6 +511,9 @@
       "Name": "aws-sdk",
       "Versions": [
         "2.1488.0"
+      ],
+      "Artifacts": [
+        "aws-sdk-2.1488.0.tgz"
       ]
     },
     {
@@ -333,6 +522,10 @@
       "Versions": [
         "6.26.0",
         "5.8.38"
+      ],
+      "Artifacts": [
+        "babel-runtime-6.26.0.tgz",
+        "babel-runtime-5.8.38.tgz"
       ]
     },
     {
@@ -344,6 +537,13 @@
         "3.4.10",
         "4.3.2",
         "6.1.0"
+      ],
+      "Artifacts": [
+        "styled-components-5.3.11.tgz",
+        "styled-components-4.4.1.tgz",
+        "styled-components-3.4.10.tgz",
+        "styled-components-4.3.2.tgz",
+        "styled-components-6.1.0.tgz"
       ]
     },
     {
@@ -355,6 +555,13 @@
         "0.5.1",
         "0.3.5",
         "3.0.1"
+      ],
+      "Artifacts": [
+        "mkdirp-0.5.6.tgz",
+        "mkdirp-1.0.4.tgz",
+        "mkdirp-0.5.1.tgz",
+        "mkdirp-0.3.5.tgz",
+        "mkdirp-3.0.1.tgz"
       ]
     },
     {
@@ -362,6 +569,9 @@
       "Name": "@emotion/react",
       "Versions": [
         "11.11.1"
+      ],
+      "Artifacts": [
+        "emotion-react-11.11.1.tgz"
       ]
     },
     {
@@ -371,6 +581,11 @@
         "1.4.0",
         "0.6.2",
         "1.1.2"
+      ],
+      "Artifacts": [
+        "colors-1.4.0.tgz",
+        "colors-0.6.2.tgz",
+        "colors-1.1.2.tgz"
       ]
     },
     {
@@ -379,6 +594,10 @@
       "Versions": [
         "3.7.1",
         "2.2.4"
+      ],
+      "Artifacts": [
+        "jquery-3.7.1.tgz",
+        "jquery-2.2.4.tgz"
       ]
     },
     {
@@ -386,6 +605,9 @@
       "Name": "cors",
       "Versions": [
         "2.8.5"
+      ],
+      "Artifacts": [
+        "cors-2.8.5.tgz"
       ]
     },
     {
@@ -395,6 +617,11 @@
         "3.0.2",
         "2.7.1",
         "5.0.5"
+      ],
+      "Artifacts": [
+        "rimraf-3.0.2.tgz",
+        "rimraf-2.7.1.tgz",
+        "rimraf-5.0.5.tgz"
       ]
     },
     {
@@ -404,6 +631,11 @@
         "11.11.0",
         "10.3.0",
         "10.0.27"
+      ],
+      "Artifacts": [
+        "emotion-styled-11.11.0.tgz",
+        "emotion-styled-10.3.0.tgz",
+        "emotion-styled-10.0.27.tgz"
       ]
     },
     {
@@ -411,6 +643,9 @@
       "Name": "@types/lodash",
       "Versions": [
         "4.14.200"
+      ],
+      "Artifacts": [
+        "types-lodash-4.14.200.tgz"
       ]
     },
     {
@@ -420,6 +655,11 @@
         "3.5.3",
         "1.7.0",
         "2.1.8"
+      ],
+      "Artifacts": [
+        "chokidar-3.5.3.tgz",
+        "chokidar-1.7.0.tgz",
+        "chokidar-2.1.8.tgz"
       ]
     },
     {
@@ -429,6 +669,11 @@
         "3.6.5",
         "4.2.5",
         "2.8.1"
+      ],
+      "Artifacts": [
+        "vue-router-3.6.5.tgz",
+        "vue-router-4.2.5.tgz",
+        "vue-router-2.8.1.tgz"
       ]
     },
     {
@@ -436,6 +681,9 @@
       "Name": "@types/express",
       "Versions": [
         "4.17.20"
+      ],
+      "Artifacts": [
+        "types-express-4.17.20.tgz"
       ]
     },
     {
@@ -445,6 +693,11 @@
         "3.14.1",
         "4.1.0",
         "3.13.1"
+      ],
+      "Artifacts": [
+        "js-yaml-3.14.1.tgz",
+        "js-yaml-4.1.0.tgz",
+        "js-yaml-3.13.1.tgz"
       ]
     },
     {
@@ -456,6 +709,13 @@
         "5.5.12",
         "6.6.3",
         "6.5.3"
+      ],
+      "Artifacts": [
+        "rxjs-6.6.7.tgz",
+        "rxjs-7.8.1.tgz",
+        "rxjs-5.5.12.tgz",
+        "rxjs-6.6.3.tgz",
+        "rxjs-6.5.3.tgz"
       ]
     },
     {
@@ -464,6 +724,10 @@
       "Versions": [
         "4.12.4",
         "3.9.4"
+      ],
+      "Artifacts": [
+        "material-ui-core-4.12.4.tgz",
+        "material-ui-core-3.9.4.tgz"
       ]
     },
     {
@@ -474,6 +738,12 @@
         "2.4.7",
         "3.2.1",
         "3.3.3"
+      ],
+      "Artifacts": [
+        "winston-3.11.0.tgz",
+        "winston-2.4.7.tgz",
+        "winston-3.2.1.tgz",
+        "winston-3.3.3.tgz"
       ]
     },
     {
@@ -483,6 +753,11 @@
         "2.8.8",
         "1.19.1",
         "3.0.3"
+      ],
+      "Artifacts": [
+        "prettier-2.8.8.tgz",
+        "prettier-1.19.1.tgz",
+        "prettier-3.0.3.tgz"
       ]
     },
     {
@@ -490,6 +765,9 @@
       "Name": "eslint-plugin-import",
       "Versions": [
         "2.29.0"
+      ],
+      "Artifacts": [
+        "eslint-plugin-import-2.29.0.tgz"
       ]
     },
     {
@@ -501,6 +779,13 @@
         "6.4.1",
         "9.1.3",
         "8.0.6"
+      ],
+      "Artifacts": [
+        "babel-loader-8.3.0.tgz",
+        "babel-loader-7.1.5.tgz",
+        "babel-loader-6.4.1.tgz",
+        "babel-loader-9.1.3.tgz",
+        "babel-loader-8.0.6.tgz"
       ]
     },
     {
@@ -512,6 +797,13 @@
         "3.12.0",
         "2.7.0",
         "1.15.0"
+      ],
+      "Artifacts": [
+        "webpack-4.47.0.tgz",
+        "webpack-5.89.0.tgz",
+        "webpack-3.12.0.tgz",
+        "webpack-2.7.0.tgz",
+        "webpack-1.15.0.tgz"
       ]
     },
     {
@@ -522,6 +814,12 @@
         "6.18.0",
         "4.3.1",
         "5.2.0"
+      ],
+      "Artifacts": [
+        "react-router-dom-5.3.4.tgz",
+        "react-router-dom-6.18.0.tgz",
+        "react-router-dom-4.3.1.tgz",
+        "react-router-dom-5.2.0.tgz"
       ]
     },
     {
@@ -532,6 +830,12 @@
         "1.8.3",
         "1.5.2",
         "1.4.4"
+      ],
+      "Artifacts": [
+        "underscore-1.13.6.tgz",
+        "underscore-1.8.3.tgz",
+        "underscore-1.5.2.tgz",
+        "underscore-1.4.4.tgz"
       ]
     },
     {
@@ -540,6 +844,10 @@
       "Versions": [
         "4.2.1",
         "3.7.2"
+      ],
+      "Artifacts": [
+        "redux-4.2.1.tgz",
+        "redux-3.7.2.tgz"
       ]
     },
     {
@@ -547,6 +855,9 @@
       "Name": "@babel/preset-react",
       "Versions": [
         "7.22.15"
+      ],
+      "Artifacts": [
+        "babel-preset-react-7.22.15.tgz"
       ]
     },
     {
@@ -556,6 +867,11 @@
         "0.8.5",
         "0.7.8",
         "0.5.3"
+      ],
+      "Artifacts": [
+        "shelljs-0.8.5.tgz",
+        "shelljs-0.7.8.tgz",
+        "shelljs-0.5.3.tgz"
       ]
     },
     {
@@ -563,6 +879,9 @@
       "Name": "handlebars",
       "Versions": [
         "4.7.8"
+      ],
+      "Artifacts": [
+        "handlebars-4.7.8.tgz"
       ]
     },
     {
@@ -572,6 +891,11 @@
         "3.6.2",
         "4.1.0",
         "2.5.0"
+      ],
+      "Artifacts": [
+        "vuex-3.6.2.tgz",
+        "vuex-4.1.0.tgz",
+        "vuex-2.5.0.tgz"
       ]
     },
     {
@@ -579,6 +903,9 @@
       "Name": "eslint-plugin-react",
       "Versions": [
         "7.33.2"
+      ],
+      "Artifacts": [
+        "eslint-plugin-react-7.33.2.tgz"
       ]
     },
     {
@@ -590,6 +917,13 @@
         "16.2.0",
         "12.0.5",
         "13.3.2"
+      ],
+      "Artifacts": [
+        "yargs-17.7.2.tgz",
+        "yargs-15.4.1.tgz",
+        "yargs-16.2.0.tgz",
+        "yargs-12.0.5.tgz",
+        "yargs-13.3.2.tgz"
       ]
     },
     {
@@ -597,6 +931,9 @@
       "Name": "element-ui",
       "Versions": [
         "2.15.14"
+      ],
+      "Artifacts": [
+        "element-ui-2.15.14.tgz"
       ]
     },
     {
@@ -608,6 +945,13 @@
         "6.1.0",
         "13.2.2",
         "8.0.2"
+      ],
+      "Artifacts": [
+        "globby-11.1.0.tgz",
+        "globby-10.0.2.tgz",
+        "globby-6.1.0.tgz",
+        "globby-13.2.2.tgz",
+        "globby-8.0.2.tgz"
       ]
     },
     {
@@ -619,6 +963,13 @@
         "10.0.0",
         "4.0.0",
         "6.2.0"
+      ],
+      "Artifacts": [
+        "dotenv-8.6.0.tgz",
+        "dotenv-16.3.1.tgz",
+        "dotenv-10.0.0.tgz",
+        "dotenv-4.0.0.tgz",
+        "dotenv-6.2.0.tgz"
       ]
     },
     {
@@ -630,6 +981,13 @@
         "4.2.2",
         "2.2.1",
         "3.3.0"
+      ],
+      "Artifacts": [
+        "deepmerge-4.3.1.tgz",
+        "deepmerge-1.5.2.tgz",
+        "deepmerge-4.2.2.tgz",
+        "deepmerge-2.2.1.tgz",
+        "deepmerge-3.3.0.tgz"
       ]
     },
     {
@@ -637,6 +995,9 @@
       "Name": "@babel/plugin-proposal-class-properties",
       "Versions": [
         "7.18.6"
+      ],
+      "Artifacts": [
+        "babel-plugin-proposal-class-properties-7.18.6.tgz"
       ]
     },
     {
@@ -644,6 +1005,9 @@
       "Name": "mime-types",
       "Versions": [
         "2.1.35"
+      ],
+      "Artifacts": [
+        "mime-types-2.1.35.tgz"
       ]
     },
     {
@@ -653,6 +1017,11 @@
         "4.14.1",
         "5.0.0",
         "3.13.1"
+      ],
+      "Artifacts": [
+        "node-sass-4.14.1.tgz",
+        "node-sass-5.0.0.tgz",
+        "node-sass-3.13.1.tgz"
       ]
     },
     {
@@ -660,6 +1029,9 @@
       "Name": "path",
       "Versions": [
         "0.12.7"
+      ],
+      "Artifacts": [
+        "path-0.12.7.tgz"
       ]
     },
     {
@@ -668,6 +1040,10 @@
       "Versions": [
         "4.11.3",
         "3.0.2"
+      ],
+      "Artifacts": [
+        "material-ui-icons-4.11.3.tgz",
+        "material-ui-icons-3.0.2.tgz"
       ]
     },
     {
@@ -675,6 +1051,9 @@
       "Name": "md5",
       "Versions": [
         "2.3.0"
+      ],
+      "Artifacts": [
+        "md5-2.3.0.tgz"
       ]
     },
     {
@@ -682,6 +1061,9 @@
       "Name": "compression",
       "Versions": [
         "1.7.4"
+      ],
+      "Artifacts": [
+        "compression-1.7.4.tgz"
       ]
     },
     {
@@ -693,6 +1075,13 @@
         "6.5.2",
         "9.2.11",
         "3.3.0"
+      ],
+      "Artifacts": [
+        "inquirer-8.2.6.tgz",
+        "inquirer-7.3.3.tgz",
+        "inquirer-6.5.2.tgz",
+        "inquirer-9.2.11.tgz",
+        "inquirer-3.3.0.tgz"
       ]
     },
     {
@@ -700,6 +1089,9 @@
       "Name": "inherits",
       "Versions": [
         "2.0.4"
+      ],
+      "Artifacts": [
+        "inherits-2.0.4.tgz"
       ]
     },
     {
@@ -707,6 +1099,9 @@
       "Name": "sass",
       "Versions": [
         "1.69.5"
+      ],
+      "Artifacts": [
+        "sass-1.69.5.tgz"
       ]
     },
     {
@@ -714,6 +1109,9 @@
       "Name": "@babel/preset-typescript",
       "Versions": [
         "7.23.2"
+      ],
+      "Artifacts": [
+        "babel-preset-typescript-7.23.2.tgz"
       ]
     },
     {
@@ -721,6 +1119,9 @@
       "Name": "clsx",
       "Versions": [
         "1.2.1"
+      ],
+      "Artifacts": [
+        "clsx-1.2.1.tgz"
       ]
     },
     {
@@ -729,6 +1130,10 @@
       "Versions": [
         "3.1.8",
         "3.1.5"
+      ],
+      "Artifacts": [
+        "cross-fetch-3.1.8.tgz",
+        "cross-fetch-3.1.5.tgz"
       ]
     },
     {
@@ -740,6 +1145,13 @@
         "1.0.0",
         "3.4.0",
         "6.1.0"
+      ],
+      "Artifacts": [
+        "execa-5.1.1.tgz",
+        "execa-4.1.0.tgz",
+        "execa-1.0.0.tgz",
+        "execa-3.4.0.tgz",
+        "execa-6.1.0.tgz"
       ]
     },
     {
@@ -749,6 +1161,11 @@
         "6.12.6",
         "8.12.0",
         "5.5.2"
+      ],
+      "Artifacts": [
+        "ajv-6.12.6.tgz",
+        "ajv-8.12.0.tgz",
+        "ajv-5.5.2.tgz"
       ]
     },
     {
@@ -756,6 +1173,9 @@
       "Name": "moment-timezone",
       "Versions": [
         "0.5.43"
+      ],
+      "Artifacts": [
+        "moment-timezone-0.5.43.tgz"
       ]
     },
     {
@@ -765,6 +1185,11 @@
         "7.0.3",
         "6.0.5",
         "5.1.0"
+      ],
+      "Artifacts": [
+        "cross-spawn-7.0.3.tgz",
+        "cross-spawn-6.0.5.tgz",
+        "cross-spawn-5.1.0.tgz"
       ]
     },
     {
@@ -772,6 +1197,9 @@
       "Name": "lodash.get",
       "Versions": [
         "4.4.2"
+      ],
+      "Artifacts": [
+        "lodash.get-4.4.2.tgz"
       ]
     },
     {
@@ -781,6 +1209,11 @@
         "4.2.0",
         "3.3.0",
         "4.1.1"
+      ],
+      "Artifacts": [
+        "crypto-js-4.2.0.tgz",
+        "crypto-js-3.3.0.tgz",
+        "crypto-js-4.1.1.tgz"
       ]
     },
     {
@@ -789,6 +1222,10 @@
       "Versions": [
         "6.26.3",
         "6.26.0"
+      ],
+      "Artifacts": [
+        "babel-core-6.26.3.tgz",
+        "babel-core-6.26.0.tgz"
       ]
     },
     {
@@ -796,6 +1233,9 @@
       "Name": "cookie-parser",
       "Versions": [
         "1.4.6"
+      ],
+      "Artifacts": [
+        "cookie-parser-1.4.6.tgz"
       ]
     },
     {
@@ -804,6 +1244,10 @@
       "Versions": [
         "2.12.6",
         "2.10.1"
+      ],
+      "Artifacts": [
+        "graphql-tag-2.12.6.tgz",
+        "graphql-tag-2.10.1.tgz"
       ]
     },
     {
@@ -811,6 +1255,9 @@
       "Name": "ethers",
       "Versions": [
         "5.7.2"
+      ],
+      "Artifacts": [
+        "ethers-5.7.2.tgz"
       ]
     },
     {
@@ -818,6 +1265,9 @@
       "Name": "babel-polyfill",
       "Versions": [
         "6.26.0"
+      ],
+      "Artifacts": [
+        "babel-polyfill-6.26.0.tgz"
       ]
     },
     {
@@ -825,6 +1275,9 @@
       "Name": "lodash.debounce",
       "Versions": [
         "4.0.8"
+      ],
+      "Artifacts": [
+        "lodash.debounce-4.0.8.tgz"
       ]
     },
     {
@@ -832,6 +1285,9 @@
       "Name": "@babel/plugin-transform-runtime",
       "Versions": [
         "7.23.2"
+      ],
+      "Artifacts": [
+        "babel-plugin-transform-runtime-7.23.2.tgz"
       ]
     },
     {
@@ -843,6 +1299,13 @@
         "6.2.2",
         "5.2.3",
         "1.1.5"
+      ],
+      "Artifacts": [
+        "ws-7.5.9.tgz",
+        "ws-8.14.2.tgz",
+        "ws-6.2.2.tgz",
+        "ws-5.2.3.tgz",
+        "ws-1.1.5.tgz"
       ]
     },
     {
@@ -852,6 +1315,11 @@
         "4.4.5",
         "2.9.0",
         "1.2.1"
+      ],
+      "Artifacts": [
+        "react-transition-group-4.4.5.tgz",
+        "react-transition-group-2.9.0.tgz",
+        "react-transition-group-1.2.1.tgz"
       ]
     },
     {
@@ -860,6 +1328,10 @@
       "Versions": [
         "5.17.0",
         "4.2.4"
+      ],
+      "Artifacts": [
+        "testing-library-jest-dom-5.17.0.tgz",
+        "testing-library-jest-dom-4.2.4.tgz"
       ]
     },
     {
@@ -867,6 +1339,9 @@
       "Name": "prompts",
       "Versions": [
         "2.4.2"
+      ],
+      "Artifacts": [
+        "prompts-2.4.2.tgz"
       ]
     },
     {
@@ -877,6 +1352,12 @@
         "7.0.39",
         "5.2.18",
         "6.0.23"
+      ],
+      "Artifacts": [
+        "postcss-8.4.31.tgz",
+        "postcss-7.0.39.tgz",
+        "postcss-5.2.18.tgz",
+        "postcss-6.0.23.tgz"
       ]
     },
     {
@@ -884,6 +1365,9 @@
       "Name": "@babel/polyfill",
       "Versions": [
         "7.12.1"
+      ],
+      "Artifacts": [
+        "babel-polyfill-7.12.1.tgz"
       ]
     },
     {
@@ -892,6 +1376,10 @@
       "Versions": [
         "7.0.3",
         "5.2.1"
+      ],
+      "Artifacts": [
+        "cross-env-7.0.3.tgz",
+        "cross-env-5.2.1.tgz"
       ]
     },
     {
@@ -899,6 +1387,9 @@
       "Name": "@popperjs/core",
       "Versions": [
         "2.11.8"
+      ],
+      "Artifacts": [
+        "popperjs-core-2.11.8.tgz"
       ]
     },
     {
@@ -910,6 +1401,13 @@
         "16.8.1",
         "16.6.0",
         "0.13.2"
+      ],
+      "Artifacts": [
+        "graphql-15.8.0.tgz",
+        "graphql-14.7.0.tgz",
+        "graphql-16.8.1.tgz",
+        "graphql-16.6.0.tgz",
+        "graphql-0.13.2.tgz"
       ]
     },
     {
@@ -918,6 +1416,10 @@
       "Versions": [
         "2.2.1",
         "3.0.5"
+      ],
+      "Artifacts": [
+        "js-cookie-2.2.1.tgz",
+        "js-cookie-3.0.5.tgz"
       ]
     },
     {
@@ -926,6 +1428,10 @@
       "Versions": [
         "3.1.9",
         "2.7.4"
+      ],
+      "Artifacts": [
+        "ejs-3.1.9.tgz",
+        "ejs-2.7.4.tgz"
       ]
     },
     {
@@ -933,6 +1439,9 @@
       "Name": "lodash.clonedeep",
       "Versions": [
         "4.5.0"
+      ],
+      "Artifacts": [
+        "lodash.clonedeep-4.5.0.tgz"
       ]
     },
     {
@@ -940,6 +1449,9 @@
       "Name": "resize-observer-polyfill",
       "Versions": [
         "1.5.1"
+      ],
+      "Artifacts": [
+        "resize-observer-polyfill-1.5.1.tgz"
       ]
     },
     {
@@ -947,6 +1459,9 @@
       "Name": "invariant",
       "Versions": [
         "2.2.4"
+      ],
+      "Artifacts": [
+        "invariant-2.2.4.tgz"
       ]
     },
     {
@@ -954,6 +1469,9 @@
       "Name": "object-assign",
       "Versions": [
         "4.1.1"
+      ],
+      "Artifacts": [
+        "object-assign-4.1.1.tgz"
       ]
     },
     {
@@ -965,6 +1483,13 @@
         "8.1.3",
         "6.0.1",
         "4.4.10"
+      ],
+      "Artifacts": [
+        "react-redux-7.2.9.tgz",
+        "react-redux-5.1.2.tgz",
+        "react-redux-8.1.3.tgz",
+        "react-redux-6.0.1.tgz",
+        "react-redux-4.4.10.tgz"
       ]
     },
     {
@@ -972,6 +1497,9 @@
       "Name": "@babel/cli",
       "Versions": [
         "7.23.0"
+      ],
+      "Artifacts": [
+        "babel-cli-7.23.0.tgz"
       ]
     },
     {
@@ -981,6 +1509,11 @@
         "3.1.2",
         "3.0.4",
         "5.1.6"
+      ],
+      "Artifacts": [
+        "minimatch-3.1.2.tgz",
+        "minimatch-3.0.4.tgz",
+        "minimatch-5.1.6.tgz"
       ]
     },
     {
@@ -989,6 +1522,10 @@
       "Versions": [
         "17.4.0",
         "15.3.8"
+      ],
+      "Artifacts": [
+        "react-use-17.4.0.tgz",
+        "react-use-15.3.8.tgz"
       ]
     },
     {
@@ -996,6 +1533,9 @@
       "Name": "lodash.throttle",
       "Versions": [
         "4.1.1"
+      ],
+      "Artifacts": [
+        "lodash.throttle-4.1.1.tgz"
       ]
     },
     {
@@ -1004,6 +1544,10 @@
       "Versions": [
         "8.5.9",
         "9.0.4"
+      ],
+      "Artifacts": [
+        "types-jsonwebtoken-8.5.9.tgz",
+        "types-jsonwebtoken-9.0.4.tgz"
       ]
     },
     {
@@ -1011,6 +1555,9 @@
       "Name": "morgan",
       "Versions": [
         "1.10.0"
+      ],
+      "Artifacts": [
+        "morgan-1.10.0.tgz"
       ]
     },
     {
@@ -1018,6 +1565,9 @@
       "Name": "xml2js",
       "Versions": [
         "0.4.23"
+      ],
+      "Artifacts": [
+        "xml2js-0.4.23.tgz"
       ]
     },
     {
@@ -1029,6 +1579,13 @@
         "3.4.0",
         "6.3.1",
         "1.4.0"
+      ],
+      "Artifacts": [
+        "ora-5.4.1.tgz",
+        "ora-4.1.1.tgz",
+        "ora-3.4.0.tgz",
+        "ora-6.3.1.tgz",
+        "ora-1.4.0.tgz"
       ]
     },
     {
@@ -1036,6 +1593,9 @@
       "Name": "lodash.merge",
       "Versions": [
         "4.6.2"
+      ],
+      "Artifacts": [
+        "lodash.merge-4.6.2.tgz"
       ]
     },
     {
@@ -1044,6 +1604,10 @@
       "Versions": [
         "3.3.1",
         "3.2.12"
+      ],
+      "Artifacts": [
+        "fast-glob-3.3.1.tgz",
+        "fast-glob-3.2.12.tgz"
       ]
     },
     {
@@ -1053,6 +1617,11 @@
         "4.0.0",
         "3.0.1",
         "2.5.1"
+      ],
+      "Artifacts": [
+        "form-data-4.0.0.tgz",
+        "form-data-3.0.1.tgz",
+        "form-data-2.5.1.tgz"
       ]
     },
     {
@@ -1061,6 +1630,10 @@
       "Versions": [
         "0.13.11",
         "0.12.1"
+      ],
+      "Artifacts": [
+        "regenerator-runtime-0.13.11.tgz",
+        "regenerator-runtime-0.12.1.tgz"
       ]
     },
     {
@@ -1069,6 +1642,10 @@
       "Versions": [
         "0.5.21",
         "0.4.18"
+      ],
+      "Artifacts": [
+        "source-map-support-0.5.21.tgz",
+        "source-map-support-0.4.18.tgz"
       ]
     },
     {
@@ -1080,6 +1657,13 @@
         "1.5.2",
         "0.9.2",
         "0.2.10"
+      ],
+      "Artifacts": [
+        "async-2.6.4.tgz",
+        "async-3.2.5.tgz",
+        "async-1.5.2.tgz",
+        "async-0.9.2.tgz",
+        "async-0.2.10.tgz"
       ]
     },
     {
@@ -1087,6 +1671,9 @@
       "Name": "zod",
       "Versions": [
         "3.22.4"
+      ],
+      "Artifacts": [
+        "zod-3.22.4.tgz"
       ]
     },
     {
@@ -1095,6 +1682,10 @@
       "Versions": [
         "2.2.1",
         "3.0.0"
+      ],
+      "Artifacts": [
+        "isomorphic-fetch-2.2.1.tgz",
+        "isomorphic-fetch-3.0.0.tgz"
       ]
     },
     {
@@ -1102,6 +1693,9 @@
       "Name": "@mui/material",
       "Versions": [
         "5.14.16"
+      ],
+      "Artifacts": [
+        "mui-material-5.14.16.tgz"
       ]
     },
     {
@@ -1109,6 +1703,9 @@
       "Name": "express-validator",
       "Versions": [
         "6.15.0"
+      ],
+      "Artifacts": [
+        "express-validator-6.15.0.tgz"
       ]
     },
     {
@@ -1117,6 +1714,10 @@
       "Versions": [
         "4.0.722",
         "1.1.10"
+      ],
+      "Artifacts": [
+        "tencentcloud-sdk-nodejs-common-4.0.722.tgz",
+        "tencentcloud-sdk-nodejs-common-1.1.10.tgz"
       ]
     },
     {
@@ -1124,6 +1725,9 @@
       "Name": "bignumber.js",
       "Versions": [
         "9.1.2"
+      ],
+      "Artifacts": [
+        "bignumber.js-9.1.2.tgz"
       ]
     },
     {
@@ -1131,6 +1735,9 @@
       "Name": "resolve",
       "Versions": [
         "1.22.8"
+      ],
+      "Artifacts": [
+        "resolve-1.22.8.tgz"
       ]
     },
     {
@@ -1140,6 +1747,11 @@
         "6.8.0",
         "5.1.1",
         "6.2.3"
+      ],
+      "Artifacts": [
+        "eslint-plugin-jsx-a11y-6.8.0.tgz",
+        "eslint-plugin-jsx-a11y-5.1.1.tgz",
+        "eslint-plugin-jsx-a11y-6.2.3.tgz"
       ]
     },
     {
@@ -1151,6 +1763,13 @@
         "6.2.1",
         "4.3.0",
         "7.3.3"
+      ],
+      "Artifacts": [
+        "postcss-loader-3.0.0.tgz",
+        "postcss-loader-2.1.6.tgz",
+        "postcss-loader-6.2.1.tgz",
+        "postcss-loader-4.3.0.tgz",
+        "postcss-loader-7.3.3.tgz"
       ]
     },
     {
@@ -1161,6 +1780,12 @@
         "7.21.0",
         "7.16.7",
         "7.21.5"
+      ],
+      "Artifacts": [
+        "babel-runtime-corejs3-7.23.2.tgz",
+        "babel-runtime-corejs3-7.21.0.tgz",
+        "babel-runtime-corejs3-7.16.7.tgz",
+        "babel-runtime-corejs3-7.21.5.tgz"
       ]
     },
     {
@@ -1168,6 +1793,9 @@
       "Name": "redux-thunk",
       "Versions": [
         "2.4.2"
+      ],
+      "Artifacts": [
+        "redux-thunk-2.4.2.tgz"
       ]
     },
     {
@@ -1175,6 +1803,9 @@
       "Name": "@types/cookie-session",
       "Versions": [
         "2.0.46"
+      ],
+      "Artifacts": [
+        "types-cookie-session-2.0.46.tgz"
       ]
     },
     {
@@ -1184,6 +1815,11 @@
         "16.14.50",
         "18.2.35",
         "17.0.69"
+      ],
+      "Artifacts": [
+        "types-react-16.14.50.tgz",
+        "types-react-18.2.35.tgz",
+        "types-react-17.0.69.tgz"
       ]
     },
     {
@@ -1192,6 +1828,10 @@
       "Versions": [
         "2.0.5",
         "1.3.8"
+      ],
+      "Artifacts": [
+        "file-saver-2.0.5.tgz",
+        "file-saver-1.3.8.tgz"
       ]
     },
     {
@@ -1200,6 +1840,10 @@
       "Versions": [
         "4.6.0",
         "1.7.0"
+      ],
+      "Artifacts": [
+        "eslint-plugin-react-hooks-4.6.0.tgz",
+        "eslint-plugin-react-hooks-1.7.0.tgz"
       ]
     },
     {
@@ -1207,6 +1851,9 @@
       "Name": "babel-preset-es2015",
       "Versions": [
         "6.24.1"
+      ],
+      "Artifacts": [
+        "babel-preset-es2015-6.24.1.tgz"
       ]
     },
     {
@@ -1217,6 +1864,12 @@
         "4.0.2",
         "2.1.11",
         "3.3.4"
+      ],
+      "Artifacts": [
+        "nanoid-3.3.7.tgz",
+        "nanoid-4.0.2.tgz",
+        "nanoid-2.1.11.tgz",
+        "nanoid-3.3.4.tgz"
       ]
     },
     {
@@ -1225,6 +1878,10 @@
       "Versions": [
         "3.3.0",
         "1.1.1"
+      ],
+      "Artifacts": [
+        "events-3.3.0.tgz",
+        "events-1.1.1.tgz"
       ]
     },
     {
@@ -1233,6 +1890,10 @@
       "Versions": [
         "8.0.0",
         "7.0.0"
+      ],
+      "Artifacts": [
+        "pluralize-8.0.0.tgz",
+        "pluralize-7.0.0.tgz"
       ]
     },
     {
@@ -1242,6 +1903,11 @@
         "4.6.2",
         "5.3.2",
         "3.4.1"
+      ],
+      "Artifacts": [
+        "bootstrap-4.6.2.tgz",
+        "bootstrap-5.3.2.tgz",
+        "bootstrap-3.4.1.tgz"
       ]
     },
     {
@@ -1249,6 +1915,9 @@
       "Name": "koa",
       "Versions": [
         "2.14.2"
+      ],
+      "Artifacts": [
+        "koa-2.14.2.tgz"
       ]
     },
     {
@@ -1256,6 +1925,9 @@
       "Name": "lodash.isequal",
       "Versions": [
         "4.5.0"
+      ],
+      "Artifacts": [
+        "lodash.isequal-4.5.0.tgz"
       ]
     },
     {
@@ -1263,6 +1935,9 @@
       "Name": "graceful-fs",
       "Versions": [
         "4.2.11"
+      ],
+      "Artifacts": [
+        "graceful-fs-4.2.11.tgz"
       ]
     },
     {
@@ -1271,6 +1946,10 @@
       "Versions": [
         "6.0.3",
         "5.7.1"
+      ],
+      "Artifacts": [
+        "buffer-6.0.3.tgz",
+        "buffer-5.7.1.tgz"
       ]
     },
     {
@@ -1279,6 +1958,10 @@
       "Versions": [
         "8.11.3",
         "7.18.2"
+      ],
+      "Artifacts": [
+        "pg-8.11.3.tgz",
+        "pg-7.18.2.tgz"
       ]
     },
     {
@@ -1286,6 +1969,9 @@
       "Name": "mysql",
       "Versions": [
         "2.18.1"
+      ],
+      "Artifacts": [
+        "mysql-2.18.1.tgz"
       ]
     },
     {
@@ -1293,6 +1979,9 @@
       "Name": "slash",
       "Versions": [
         "3.0.0"
+      ],
+      "Artifacts": [
+        "slash-3.0.0.tgz"
       ]
     },
     {
@@ -1301,6 +1990,10 @@
       "Versions": [
         "2.24.3",
         "4.1.0"
+      ],
+      "Artifacts": [
+        "vuedraggable-2.24.3.tgz",
+        "vuedraggable-4.1.0.tgz"
       ]
     },
     {
@@ -1310,6 +2003,11 @@
         "4.24.14",
         "3.26.20",
         "5.11.0"
+      ],
+      "Artifacts": [
+        "antd-4.24.14.tgz",
+        "antd-3.26.20.tgz",
+        "antd-5.11.0.tgz"
       ]
     },
     {
@@ -1318,6 +2016,10 @@
       "Versions": [
         "3.8.2",
         "4.3.4"
+      ],
+      "Artifacts": [
+        "immutable-3.8.2.tgz",
+        "immutable-4.3.4.tgz"
       ]
     },
     {
@@ -1329,6 +2031,13 @@
         "4.3.0",
         "3.0.1",
         "2.0.0"
+      ],
+      "Artifacts": [
+        "file-loader-6.2.0.tgz",
+        "file-loader-1.1.11.tgz",
+        "file-loader-4.3.0.tgz",
+        "file-loader-3.0.1.tgz",
+        "file-loader-2.0.0.tgz"
       ]
     },
     {
@@ -1339,6 +2048,12 @@
         "8.10.2",
         "9.1.1",
         "7.0.1"
+      ],
+      "Artifacts": [
+        "ts-node-10.9.1.tgz",
+        "ts-node-8.10.2.tgz",
+        "ts-node-9.1.1.tgz",
+        "ts-node-7.0.1.tgz"
       ]
     },
     {
@@ -1347,6 +2062,10 @@
       "Versions": [
         "4.3.10",
         "3.5.0"
+      ],
+      "Artifacts": [
+        "chai-4.3.10.tgz",
+        "chai-3.5.0.tgz"
       ]
     },
     {
@@ -1355,6 +2074,10 @@
       "Versions": [
         "5.15.4",
         "6.4.2"
+      ],
+      "Artifacts": [
+        "fortawesome-free-solid-svg-icons-5.15.4.tgz",
+        "fortawesome-free-solid-svg-icons-6.4.2.tgz"
       ]
     },
     {
@@ -1362,6 +2085,9 @@
       "Name": "@babel/types",
       "Versions": [
         "7.23.0"
+      ],
+      "Artifacts": [
+        "babel-types-7.23.0.tgz"
       ]
     },
     {
@@ -1372,6 +2098,12 @@
         "7.1.3",
         "5.1.1",
         "4.3.4"
+      ],
+      "Artifacts": [
+        "query-string-6.14.1.tgz",
+        "query-string-7.1.3.tgz",
+        "query-string-5.1.1.tgz",
+        "query-string-4.3.4.tgz"
       ]
     },
     {
@@ -1380,6 +2112,10 @@
       "Versions": [
         "1.5.1",
         "1.4.1"
+      ],
+      "Artifacts": [
+        "q-1.5.1.tgz",
+        "q-1.4.1.tgz"
       ]
     },
     {
@@ -1387,6 +2123,9 @@
       "Name": "@babel/plugin-syntax-dynamic-import",
       "Versions": [
         "7.8.3"
+      ],
+      "Artifacts": [
+        "babel-plugin-syntax-dynamic-import-7.8.3.tgz"
       ]
     },
     {
@@ -1395,6 +2134,10 @@
       "Versions": [
         "1.2.36",
         "6.4.2"
+      ],
+      "Artifacts": [
+        "fortawesome-fontawesome-svg-core-1.2.36.tgz",
+        "fortawesome-fontawesome-svg-core-6.4.2.tgz"
       ]
     },
     {
@@ -1403,6 +2146,10 @@
       "Versions": [
         "4.10.1",
         "5.3.0"
+      ],
+      "Artifacts": [
+        "history-4.10.1.tgz",
+        "history-5.3.0.tgz"
       ]
     },
     {
@@ -1410,6 +2157,9 @@
       "Name": "request-promise",
       "Versions": [
         "4.2.6"
+      ],
+      "Artifacts": [
+        "request-promise-4.2.6.tgz"
       ]
     },
     {
@@ -1417,6 +2167,9 @@
       "Name": "svelte",
       "Versions": [
         "3.59.2"
+      ],
+      "Artifacts": [
+        "svelte-3.59.2.tgz"
       ]
     },
     {
@@ -1425,6 +2178,10 @@
       "Versions": [
         "8.10.0",
         "6.15.0"
+      ],
+      "Artifacts": [
+        "eslint-config-prettier-8.10.0.tgz",
+        "eslint-config-prettier-6.15.0.tgz"
       ]
     },
     {
@@ -1435,6 +2192,12 @@
         "7.2.3",
         "8.2.6",
         "10.0.1"
+      ],
+      "Artifacts": [
+        "babel-eslint-10.1.0.tgz",
+        "babel-eslint-7.2.3.tgz",
+        "babel-eslint-8.2.6.tgz",
+        "babel-eslint-10.0.1.tgz"
       ]
     },
     {
@@ -1442,6 +2205,9 @@
       "Name": "styled-system",
       "Versions": [
         "5.1.5"
+      ],
+      "Artifacts": [
+        "styled-system-5.1.5.tgz"
       ]
     },
     {
@@ -1449,6 +2215,9 @@
       "Name": "@babel/parser",
       "Versions": [
         "7.23.0"
+      ],
+      "Artifacts": [
+        "babel-parser-7.23.0.tgz"
       ]
     },
     {
@@ -1456,6 +2225,9 @@
       "Name": "figlet",
       "Versions": [
         "1.7.0"
+      ],
+      "Artifacts": [
+        "figlet-1.7.0.tgz"
       ]
     },
     {
@@ -1463,6 +2235,9 @@
       "Name": "prismjs",
       "Versions": [
         "1.29.0"
+      ],
+      "Artifacts": [
+        "prismjs-1.29.0.tgz"
       ]
     },
     {
@@ -1470,6 +2245,9 @@
       "Name": "babel-preset-env",
       "Versions": [
         "1.7.0"
+      ],
+      "Artifacts": [
+        "babel-preset-env-1.7.0.tgz"
       ]
     },
     {
@@ -1477,6 +2255,9 @@
       "Name": "global",
       "Versions": [
         "4.4.0"
+      ],
+      "Artifacts": [
+        "global-4.4.0.tgz"
       ]
     },
     {
@@ -1484,6 +2265,9 @@
       "Name": "react-color",
       "Versions": [
         "2.19.3"
+      ],
+      "Artifacts": [
+        "react-color-2.19.3.tgz"
       ]
     },
     {
@@ -1491,6 +2275,9 @@
       "Name": "esm",
       "Versions": [
         "3.2.25"
+      ],
+      "Artifacts": [
+        "esm-3.2.25.tgz"
       ]
     },
     {
@@ -1499,6 +2286,10 @@
       "Versions": [
         "4.2.8",
         "3.3.1"
+      ],
+      "Artifacts": [
+        "es6-promise-4.2.8.tgz",
+        "es6-promise-3.3.1.tgz"
       ]
     },
     {
@@ -1506,6 +2297,9 @@
       "Name": "url-join",
       "Versions": [
         "4.0.1"
+      ],
+      "Artifacts": [
+        "url-join-4.0.1.tgz"
       ]
     },
     {
@@ -1513,6 +2307,9 @@
       "Name": "lit-element",
       "Versions": [
         "2.5.1"
+      ],
+      "Artifacts": [
+        "lit-element-2.5.1.tgz"
       ]
     },
     {
@@ -1520,6 +2317,9 @@
       "Name": "@babel/register",
       "Versions": [
         "7.22.15"
+      ],
+      "Artifacts": [
+        "babel-register-7.22.15.tgz"
       ]
     },
     {
@@ -1529,6 +2329,11 @@
         "3.13.1",
         "2.7.3",
         "4.2.0"
+      ],
+      "Artifacts": [
+        "less-3.13.1.tgz",
+        "less-2.7.3.tgz",
+        "less-4.2.0.tgz"
       ]
     },
     {
@@ -1539,6 +2344,12 @@
         "14.3.1",
         "13.7.0",
         "10.6.0"
+      ],
+      "Artifacts": [
+        "joi-17.11.0.tgz",
+        "joi-14.3.1.tgz",
+        "joi-13.7.0.tgz",
+        "joi-10.6.0.tgz"
       ]
     },
     {
@@ -1550,6 +2361,13 @@
         "16.18.60",
         "20.8.10",
         "18.18.8"
+      ],
+      "Artifacts": [
+        "types-node-14.18.63.tgz",
+        "types-node-12.20.55.tgz",
+        "types-node-16.18.60.tgz",
+        "types-node-20.8.10.tgz",
+        "types-node-18.18.8.tgz"
       ]
     },
     {
@@ -1557,6 +2375,9 @@
       "Name": "tinycolor2",
       "Versions": [
         "1.6.0"
+      ],
+      "Artifacts": [
+        "tinycolor2-1.6.0.tgz"
       ]
     },
     {
@@ -1564,6 +2385,9 @@
       "Name": "once",
       "Versions": [
         "1.4.0"
+      ],
+      "Artifacts": [
+        "once-1.4.0.tgz"
       ]
     },
     {
@@ -1571,6 +2395,9 @@
       "Name": "shortid",
       "Versions": [
         "2.2.16"
+      ],
+      "Artifacts": [
+        "shortid-2.2.16.tgz"
       ]
     },
     {
@@ -1582,6 +2409,13 @@
         "6.8.0",
         "5.16.0",
         "4.19.1"
+      ],
+      "Artifacts": [
+        "eslint-7.32.0.tgz",
+        "eslint-8.53.0.tgz",
+        "eslint-6.8.0.tgz",
+        "eslint-5.16.0.tgz",
+        "eslint-4.19.1.tgz"
       ]
     },
     {
@@ -1589,6 +2423,9 @@
       "Name": "popper.js",
       "Versions": [
         "1.16.1"
+      ],
+      "Artifacts": [
+        "popper.js-1.16.1.tgz"
       ]
     },
     {
@@ -1597,6 +2434,10 @@
       "Versions": [
         "2.1.4",
         "1.1.2"
+      ],
+      "Artifacts": [
+        "web-vitals-2.1.4.tgz",
+        "web-vitals-1.1.2.tgz"
       ]
     },
     {
@@ -1608,6 +2449,13 @@
         "5.2.0",
         "6.0.0",
         "4.0.0"
+      ],
+      "Artifacts": [
+        "strip-ansi-6.0.1.tgz",
+        "strip-ansi-3.0.1.tgz",
+        "strip-ansi-5.2.0.tgz",
+        "strip-ansi-6.0.0.tgz",
+        "strip-ansi-4.0.0.tgz"
       ]
     },
     {
@@ -1618,6 +2466,12 @@
         "1.8.0",
         "2.4.0",
         "3.2.0"
+      ],
+      "Artifacts": [
+        "path-to-regexp-6.2.1.tgz",
+        "path-to-regexp-1.8.0.tgz",
+        "path-to-regexp-2.4.0.tgz",
+        "path-to-regexp-3.2.0.tgz"
       ]
     },
     {
@@ -1625,6 +2479,9 @@
       "Name": "font-awesome",
       "Versions": [
         "4.7.0"
+      ],
+      "Artifacts": [
+        "font-awesome-4.7.0.tgz"
       ]
     },
     {
@@ -1632,6 +2489,9 @@
       "Name": "google-protobuf",
       "Versions": [
         "3.21.2"
+      ],
+      "Artifacts": [
+        "google-protobuf-3.21.2.tgz"
       ]
     },
     {
@@ -1639,6 +2499,9 @@
       "Name": "copy-to-clipboard",
       "Versions": [
         "3.3.3"
+      ],
+      "Artifacts": [
+        "copy-to-clipboard-3.3.3.tgz"
       ]
     },
     {
@@ -1646,6 +2509,9 @@
       "Name": "@emotion/core",
       "Versions": [
         "10.3.1"
+      ],
+      "Artifacts": [
+        "emotion-core-10.3.1.tgz"
       ]
     },
     {
@@ -1656,6 +2522,12 @@
         "4.33.0",
         "2.34.0",
         "6.9.1"
+      ],
+      "Artifacts": [
+        "typescript-eslint-parser-5.62.0.tgz",
+        "typescript-eslint-parser-4.33.0.tgz",
+        "typescript-eslint-parser-2.34.0.tgz",
+        "typescript-eslint-parser-6.9.1.tgz"
       ]
     },
     {
@@ -1664,6 +2536,10 @@
       "Versions": [
         "3.3.2",
         "2.5.5"
+      ],
+      "Artifacts": [
+        "hoist-non-react-statics-3.3.2.tgz",
+        "hoist-non-react-statics-2.5.5.tgz"
       ]
     },
     {
@@ -1672,6 +2548,10 @@
       "Versions": [
         "3.1.3",
         "2.0.1"
+      ],
+      "Artifacts": [
+        "fast-deep-equal-3.1.3.tgz",
+        "fast-deep-equal-2.0.1.tgz"
       ]
     },
     {
@@ -1679,6 +2559,9 @@
       "Name": "bcryptjs",
       "Versions": [
         "2.4.3"
+      ],
+      "Artifacts": [
+        "bcryptjs-2.4.3.tgz"
       ]
     },
     {
@@ -1688,6 +2571,11 @@
         "3.11.3",
         "4.15.1",
         "2.11.5"
+      ],
+      "Artifacts": [
+        "webpack-dev-server-3.11.3.tgz",
+        "webpack-dev-server-4.15.1.tgz",
+        "webpack-dev-server-2.11.5.tgz"
       ]
     },
     {
@@ -1695,6 +2583,9 @@
       "Name": "babel-preset-react",
       "Versions": [
         "6.24.1"
+      ],
+      "Artifacts": [
+        "babel-preset-react-6.24.1.tgz"
       ]
     },
     {
@@ -1702,6 +2593,9 @@
       "Name": "@babel/traverse",
       "Versions": [
         "7.23.2"
+      ],
+      "Artifacts": [
+        "babel-traverse-7.23.2.tgz"
       ]
     },
     {
@@ -1709,6 +2603,9 @@
       "Name": "react-modal",
       "Versions": [
         "3.16.1"
+      ],
+      "Artifacts": [
+        "react-modal-3.16.1.tgz"
       ]
     },
     {
@@ -1719,6 +2616,12 @@
         "6.12.2",
         "4.13.21",
         "7.6.4"
+      ],
+      "Artifacts": [
+        "mongoose-5.13.21.tgz",
+        "mongoose-6.12.2.tgz",
+        "mongoose-4.13.21.tgz",
+        "mongoose-7.6.4.tgz"
       ]
     },
     {
@@ -1726,6 +2629,9 @@
       "Name": "@babel/plugin-proposal-decorators",
       "Versions": [
         "7.23.2"
+      ],
+      "Artifacts": [
+        "babel-plugin-proposal-decorators-7.23.2.tgz"
       ]
     },
     {
@@ -1734,6 +2640,10 @@
       "Versions": [
         "3.9.1",
         "4.0.2"
+      ],
+      "Artifacts": [
+        "gulp-3.9.1.tgz",
+        "gulp-4.0.2.tgz"
       ]
     },
     {
@@ -1742,6 +2652,10 @@
       "Versions": [
         "0.32.11",
         "0.29.3"
+      ],
+      "Artifacts": [
+        "yup-0.32.11.tgz",
+        "yup-0.29.3.tgz"
       ]
     },
     {
@@ -1752,6 +2666,12 @@
         "4.33.0",
         "2.34.0",
         "6.9.1"
+      ],
+      "Artifacts": [
+        "typescript-eslint-eslint-plugin-5.62.0.tgz",
+        "typescript-eslint-eslint-plugin-4.33.0.tgz",
+        "typescript-eslint-eslint-plugin-2.34.0.tgz",
+        "typescript-eslint-eslint-plugin-6.9.1.tgz"
       ]
     },
     {
@@ -1760,6 +2680,10 @@
       "Versions": [
         "2.3.0",
         "1.3.11"
+      ],
+      "Artifacts": [
+        "react-popper-2.3.0.tgz",
+        "react-popper-1.3.11.tgz"
       ]
     },
     {
@@ -1767,6 +2691,9 @@
       "Name": "lit",
       "Versions": [
         "2.8.0"
+      ],
+      "Artifacts": [
+        "lit-2.8.0.tgz"
       ]
     },
     {
@@ -1774,6 +2701,9 @@
       "Name": "sirv-cli",
       "Versions": [
         "1.0.14"
+      ],
+      "Artifacts": [
+        "sirv-cli-1.0.14.tgz"
       ]
     },
     {
@@ -1783,6 +2713,11 @@
         "4.11.0",
         "3.11.0",
         "2.2.7"
+      ],
+      "Artifacts": [
+        "react-icons-4.11.0.tgz",
+        "react-icons-3.11.0.tgz",
+        "react-icons-2.2.7.tgz"
       ]
     },
     {
@@ -1790,6 +2725,9 @@
       "Name": "numeral",
       "Versions": [
         "2.0.6"
+      ],
+      "Artifacts": [
+        "numeral-2.0.6.tgz"
       ]
     },
     {
@@ -1797,6 +2735,9 @@
       "Name": "jszip",
       "Versions": [
         "3.10.1"
+      ],
+      "Artifacts": [
+        "jszip-3.10.1.tgz"
       ]
     },
     {
@@ -1807,6 +2748,12 @@
         "4.0.3",
         "5.0.0",
         "3.4.4"
+      ],
+      "Artifacts": [
+        "react-scripts-5.0.1.tgz",
+        "react-scripts-4.0.3.tgz",
+        "react-scripts-5.0.0.tgz",
+        "react-scripts-3.4.4.tgz"
       ]
     },
     {
@@ -1818,6 +2765,13 @@
         "6.7.7",
         "7.2.6",
         "8.6.5"
+      ],
+      "Artifacts": [
+        "autoprefixer-9.8.8.tgz",
+        "autoprefixer-10.4.16.tgz",
+        "autoprefixer-6.7.7.tgz",
+        "autoprefixer-7.2.6.tgz",
+        "autoprefixer-8.6.5.tgz"
       ]
     },
     {
@@ -1825,6 +2779,9 @@
       "Name": "express-session",
       "Versions": [
         "1.17.3"
+      ],
+      "Artifacts": [
+        "express-session-1.17.3.tgz"
       ]
     },
     {
@@ -1833,6 +2790,10 @@
       "Versions": [
         "2.2.0",
         "3.1.2"
+      ],
+      "Artifacts": [
+        "jwt-decode-2.2.0.tgz",
+        "jwt-decode-3.1.2.tgz"
       ]
     },
     {
@@ -1840,6 +2801,9 @@
       "Name": "node-nats-streaming",
       "Versions": [
         "0.3.2"
+      ],
+      "Artifacts": [
+        "node-nats-streaming-0.3.2.tgz"
       ]
     },
     {
@@ -1847,6 +2811,9 @@
       "Name": "react-window",
       "Versions": [
         "1.8.9"
+      ],
+      "Artifacts": [
+        "react-window-1.8.9.tgz"
       ]
     },
     {
@@ -1855,6 +2822,10 @@
       "Versions": [
         "0.11.3",
         "0.11.0"
+      ],
+      "Artifacts": [
+        "url-0.11.3.tgz",
+        "url-0.11.0.tgz"
       ]
     },
     {
@@ -1862,6 +2833,9 @@
       "Name": "json5",
       "Versions": [
         "2.2.3"
+      ],
+      "Artifacts": [
+        "json5-2.2.3.tgz"
       ]
     },
     {
@@ -1870,6 +2844,10 @@
       "Versions": [
         "4.1.2",
         "3.1.0"
+      ],
+      "Artifacts": [
+        "change-case-4.1.2.tgz",
+        "change-case-3.1.0.tgz"
       ]
     },
     {
@@ -1881,6 +2859,13 @@
         "0.25.0",
         "0.28.0",
         "0.24.1"
+      ],
+      "Artifacts": [
+        "ramda-0.27.2.tgz",
+        "ramda-0.26.1.tgz",
+        "ramda-0.25.0.tgz",
+        "ramda-0.28.0.tgz",
+        "ramda-0.24.1.tgz"
       ]
     },
     {
@@ -1889,6 +2874,10 @@
       "Versions": [
         "3.2.1",
         "4.2.3"
+      ],
+      "Artifacts": [
+        "color-3.2.1.tgz",
+        "color-4.2.3.tgz"
       ]
     },
     {
@@ -1898,6 +2887,11 @@
         "13.5.0",
         "12.8.3",
         "7.2.1"
+      ],
+      "Artifacts": [
+        "testing-library-user-event-13.5.0.tgz",
+        "testing-library-user-event-12.8.3.tgz",
+        "testing-library-user-event-7.2.1.tgz"
       ]
     },
     {
@@ -1906,6 +2900,10 @@
       "Versions": [
         "6.9.7",
         "4.7.0"
+      ],
+      "Artifacts": [
+        "nodemailer-6.9.7.tgz",
+        "nodemailer-4.7.0.tgz"
       ]
     },
     {
@@ -1917,6 +2915,13 @@
         "0.5.9",
         "0.6.2",
         "2.3.0"
+      ],
+      "Artifacts": [
+        "url-loader-4.1.1.tgz",
+        "url-loader-1.1.2.tgz",
+        "url-loader-0.5.9.tgz",
+        "url-loader-0.6.2.tgz",
+        "url-loader-2.3.0.tgz"
       ]
     },
     {
@@ -1925,6 +2930,10 @@
       "Versions": [
         "0.1.19",
         "0.2.0"
+      ],
+      "Artifacts": [
+        "fortawesome-react-fontawesome-0.1.19.tgz",
+        "fortawesome-react-fontawesome-0.2.0.tgz"
       ]
     },
     {
@@ -1932,6 +2941,9 @@
       "Name": "ncp",
       "Versions": [
         "2.0.0"
+      ],
+      "Artifacts": [
+        "ncp-2.0.0.tgz"
       ]
     },
     {
@@ -1940,6 +2952,10 @@
       "Versions": [
         "1.10.2",
         "2.3.4"
+      ],
+      "Artifacts": [
+        "yaml-1.10.2.tgz",
+        "yaml-2.3.4.tgz"
       ]
     },
     {
@@ -1948,6 +2964,10 @@
       "Versions": [
         "3.4.344",
         "10.3.0"
+      ],
+      "Artifacts": [
+        "constructs-3.4.344.tgz",
+        "constructs-10.3.0.tgz"
       ]
     },
     {
@@ -1956,6 +2976,10 @@
       "Versions": [
         "1.4.0",
         "2.0.0"
+      ],
+      "Artifacts": [
+        "cookie-session-1.4.0.tgz",
+        "cookie-session-2.0.0.tgz"
       ]
     },
     {
@@ -1965,6 +2989,11 @@
         "4.0.7",
         "3.1.2",
         "5.0.1"
+      ],
+      "Artifacts": [
+        "eventemitter3-4.0.7.tgz",
+        "eventemitter3-3.1.2.tgz",
+        "eventemitter3-5.0.1.tgz"
       ]
     },
     {
@@ -1974,6 +3003,11 @@
         "16.9.21",
         "17.0.22",
         "18.2.14"
+      ],
+      "Artifacts": [
+        "types-react-dom-16.9.21.tgz",
+        "types-react-dom-17.0.22.tgz",
+        "types-react-dom-18.2.14.tgz"
       ]
     },
     {
@@ -1981,6 +3015,9 @@
       "Name": "@mui/icons-material",
       "Versions": [
         "5.14.16"
+      ],
+      "Artifacts": [
+        "mui-icons-material-5.14.16.tgz"
       ]
     },
     {
@@ -1991,6 +3028,12 @@
         "4.1.5",
         "5.1.1",
         "7.18.3"
+      ],
+      "Artifacts": [
+        "lru-cache-6.0.0.tgz",
+        "lru-cache-4.1.5.tgz",
+        "lru-cache-5.1.1.tgz",
+        "lru-cache-7.18.3.tgz"
       ]
     },
     {
@@ -1999,6 +3042,10 @@
       "Versions": [
         "2.16.1",
         "2.1.1"
+      ],
+      "Artifacts": [
+        "fp-ts-2.16.1.tgz",
+        "fp-ts-2.1.1.tgz"
       ]
     },
     {
@@ -2006,6 +3053,9 @@
       "Name": "hammerjs",
       "Versions": [
         "2.0.8"
+      ],
+      "Artifacts": [
+        "hammerjs-2.0.8.tgz"
       ]
     },
     {
@@ -2016,6 +3066,12 @@
         "7.4.2",
         "0.0.5",
         "6.4.0"
+      ],
+      "Artifacts": [
+        "open-8.4.2.tgz",
+        "open-7.4.2.tgz",
+        "open-0.0.5.tgz",
+        "open-6.4.0.tgz"
       ]
     },
     {
@@ -2024,6 +3080,10 @@
       "Versions": [
         "2.0.3",
         "1.1.8"
+      ],
+      "Artifacts": [
+        "progress-2.0.3.tgz",
+        "progress-1.1.8.tgz"
       ]
     },
     {
@@ -2032,6 +3092,10 @@
       "Versions": [
         "8.3.4",
         "3.4.12"
+      ],
+      "Artifacts": [
+        "types-uuid-8.3.4.tgz",
+        "types-uuid-3.4.12.tgz"
       ]
     },
     {
@@ -2040,6 +3104,10 @@
       "Versions": [
         "4.8.1",
         "5.2.6"
+      ],
+      "Artifacts": [
+        "ant-design-icons-4.8.1.tgz",
+        "ant-design-icons-5.2.6.tgz"
       ]
     },
     {
@@ -2049,6 +3117,11 @@
         "2.6.0",
         "3.0.0",
         "1.6.0"
+      ],
+      "Artifacts": [
+        "mime-2.6.0.tgz",
+        "mime-3.0.0.tgz",
+        "mime-1.6.0.tgz"
       ]
     },
     {
@@ -2056,6 +3129,9 @@
       "Name": "co",
       "Versions": [
         "4.6.0"
+      ],
+      "Artifacts": [
+        "co-4.6.0.tgz"
       ]
     },
     {
@@ -2063,6 +3139,9 @@
       "Name": "@types/gapi.client",
       "Versions": [
         "1.0.7"
+      ],
+      "Artifacts": [
+        "types-gapi.client-1.0.7.tgz"
       ]
     },
     {
@@ -2071,6 +3150,10 @@
       "Versions": [
         "4.2.2",
         "5.10.0"
+      ],
+      "Artifacts": [
+        "webpack-merge-4.2.2.tgz",
+        "webpack-merge-5.10.0.tgz"
       ]
     },
     {
@@ -2078,6 +3161,9 @@
       "Name": "node-uuid",
       "Versions": [
         "1.4.8"
+      ],
+      "Artifacts": [
+        "node-uuid-1.4.8.tgz"
       ]
     },
     {
@@ -2087,6 +3173,11 @@
         "3.7.4",
         "4.17.1",
         "2.2.36"
+      ],
+      "Artifacts": [
+        "mongodb-3.7.4.tgz",
+        "mongodb-4.17.1.tgz",
+        "mongodb-2.2.36.tgz"
       ]
     },
     {
@@ -2094,6 +3185,9 @@
       "Name": "sortablejs",
       "Versions": [
         "1.15.0"
+      ],
+      "Artifacts": [
+        "sortablejs-1.15.0.tgz"
       ]
     },
     {
@@ -2101,6 +3195,9 @@
       "Name": "@oclif/command",
       "Versions": [
         "1.8.36"
+      ],
+      "Artifacts": [
+        "oclif-command-1.8.36.tgz"
       ]
     },
     {
@@ -2108,6 +3205,9 @@
       "Name": "@babel/plugin-proposal-object-rest-spread",
       "Versions": [
         "7.20.7"
+      ],
+      "Artifacts": [
+        "babel-plugin-proposal-object-rest-spread-7.20.7.tgz"
       ]
     },
     {
@@ -2116,6 +3216,10 @@
       "Versions": [
         "7.48.2",
         "6.15.8"
+      ],
+      "Artifacts": [
+        "react-hook-form-7.48.2.tgz",
+        "react-hook-form-6.15.8.tgz"
       ]
     },
     {
@@ -2123,6 +3227,9 @@
       "Name": "@polymer/polymer",
       "Versions": [
         "3.5.1"
+      ],
+      "Artifacts": [
+        "polymer-polymer-3.5.1.tgz"
       ]
     },
     {
@@ -2130,6 +3237,9 @@
       "Name": "atob",
       "Versions": [
         "2.1.2"
+      ],
+      "Artifacts": [
+        "atob-2.1.2.tgz"
       ]
     },
     {
@@ -2140,6 +3250,12 @@
         "2.9.0",
         "3.12.1",
         "6.5.1"
+      ],
+      "Artifacts": [
+        "react-intl-5.25.1.tgz",
+        "react-intl-2.9.0.tgz",
+        "react-intl-3.12.1.tgz",
+        "react-intl-6.5.1.tgz"
       ]
     },
     {
@@ -2147,6 +3263,9 @@
       "Name": "slugify",
       "Versions": [
         "1.6.6"
+      ],
+      "Artifacts": [
+        "slugify-1.6.6.tgz"
       ]
     },
     {
@@ -2154,6 +3273,9 @@
       "Name": "escape-html",
       "Versions": [
         "1.0.3"
+      ],
+      "Artifacts": [
+        "escape-html-1.0.3.tgz"
       ]
     },
     {
@@ -2161,6 +3283,9 @@
       "Name": "@babel/plugin-proposal-optional-chaining",
       "Versions": [
         "7.21.0"
+      ],
+      "Artifacts": [
+        "babel-plugin-proposal-optional-chaining-7.21.0.tgz"
       ]
     },
     {
@@ -2168,6 +3293,9 @@
       "Name": "auto-bind",
       "Versions": [
         "4.0.0"
+      ],
+      "Artifacts": [
+        "auto-bind-4.0.0.tgz"
       ]
     },
     {
@@ -2179,6 +3307,13 @@
         "2.30.1",
         "4.5.2",
         "2.29.0"
+      ],
+      "Artifacts": [
+        "html-webpack-plugin-3.2.0.tgz",
+        "html-webpack-plugin-5.5.3.tgz",
+        "html-webpack-plugin-2.30.1.tgz",
+        "html-webpack-plugin-4.5.2.tgz",
+        "html-webpack-plugin-2.29.0.tgz"
       ]
     },
     {
@@ -2188,6 +3323,11 @@
         "3.0.0",
         "2.0.0",
         "1.2.2"
+      ],
+      "Artifacts": [
+        "aws-crypto-sha256-js-3.0.0.tgz",
+        "aws-crypto-sha256-js-2.0.0.tgz",
+        "aws-crypto-sha256-js-1.2.2.tgz"
       ]
     },
     {
@@ -2195,6 +3335,9 @@
       "Name": "btoa",
       "Versions": [
         "1.2.1"
+      ],
+      "Artifacts": [
+        "btoa-1.2.1.tgz"
       ]
     },
     {
@@ -2206,6 +3349,13 @@
         "3.3.3",
         "2.0.0",
         "0.13.2"
+      ],
+      "Artifacts": [
+        "style-loader-0.23.1.tgz",
+        "style-loader-1.3.0.tgz",
+        "style-loader-3.3.3.tgz",
+        "style-loader-2.0.0.tgz",
+        "style-loader-0.13.2.tgz"
       ]
     },
     {
@@ -2215,6 +3365,11 @@
         "3.6.19",
         "2.0.4",
         "2.0.3"
+      ],
+      "Artifacts": [
+        "whatwg-fetch-3.6.19.tgz",
+        "whatwg-fetch-2.0.4.tgz",
+        "whatwg-fetch-2.0.3.tgz"
       ]
     },
     {
@@ -2222,6 +3377,9 @@
       "Name": "strip-indent",
       "Versions": [
         "3.0.0"
+      ],
+      "Artifacts": [
+        "strip-indent-3.0.0.tgz"
       ]
     },
     {
@@ -2230,6 +3388,10 @@
       "Versions": [
         "5.2.1",
         "5.1.2"
+      ],
+      "Artifacts": [
+        "safe-buffer-5.2.1.tgz",
+        "safe-buffer-5.1.2.tgz"
       ]
     },
     {
@@ -2237,6 +3399,9 @@
       "Name": "@oclif/config",
       "Versions": [
         "1.18.17"
+      ],
+      "Artifacts": [
+        "oclif-config-1.18.17.tgz"
       ]
     },
     {
@@ -2245,6 +3410,10 @@
       "Versions": [
         "6.1.0",
         "5.2.1"
+      ],
+      "Artifacts": [
+        "react-helmet-6.1.0.tgz",
+        "react-helmet-5.2.1.tgz"
       ]
     },
     {
@@ -2253,6 +3422,10 @@
       "Versions": [
         "2.4.5",
         "1.5.8"
+      ],
+      "Artifacts": [
+        "formik-2.4.5.tgz",
+        "formik-1.5.8.tgz"
       ]
     },
     {
@@ -2262,6 +3435,11 @@
         "3.3.12",
         "4.10.0",
         "5.1.4"
+      ],
+      "Artifacts": [
+        "webpack-cli-3.3.12.tgz",
+        "webpack-cli-4.10.0.tgz",
+        "webpack-cli-5.1.4.tgz"
       ]
     },
     {
@@ -2270,6 +3448,10 @@
       "Versions": [
         "5.2.1",
         "4.12.0"
+      ],
+      "Artifacts": [
+        "bn.js-5.2.1.tgz",
+        "bn.js-4.12.0.tgz"
       ]
     },
     {
@@ -2277,6 +3459,9 @@
       "Name": "terminal-link",
       "Versions": [
         "2.1.1"
+      ],
+      "Artifacts": [
+        "terminal-link-2.1.1.tgz"
       ]
     },
     {
@@ -2287,6 +3472,12 @@
         "11.2.7",
         "12.1.5",
         "9.5.0"
+      ],
+      "Artifacts": [
+        "testing-library-react-13.4.0.tgz",
+        "testing-library-react-11.2.7.tgz",
+        "testing-library-react-12.1.5.tgz",
+        "testing-library-react-9.5.0.tgz"
       ]
     },
     {
@@ -2296,6 +3487,11 @@
         "3.0.0",
         "2.0.0",
         "1.2.2"
+      ],
+      "Artifacts": [
+        "aws-crypto-sha256-browser-3.0.0.tgz",
+        "aws-crypto-sha256-browser-2.0.0.tgz",
+        "aws-crypto-sha256-browser-1.2.2.tgz"
       ]
     },
     {
@@ -2306,6 +3502,12 @@
         "3.0.2",
         "0.6.5",
         "4.0.2"
+      ],
+      "Artifacts": [
+        "through2-2.0.5.tgz",
+        "through2-3.0.2.tgz",
+        "through2-0.6.5.tgz",
+        "through2-4.0.2.tgz"
       ]
     },
     {
@@ -2313,6 +3515,9 @@
       "Name": "nprogress",
       "Versions": [
         "0.2.0"
+      ],
+      "Artifacts": [
+        "nprogress-0.2.0.tgz"
       ]
     },
     {
@@ -2322,6 +3527,11 @@
         "7.26.11",
         "5.2.8",
         "6.18.0"
+      ],
+      "Artifacts": [
+        "ember-cli-babel-7.26.11.tgz",
+        "ember-cli-babel-5.2.8.tgz",
+        "ember-cli-babel-6.18.0.tgz"
       ]
     },
     {
@@ -2329,6 +3539,9 @@
       "Name": "url-parse",
       "Versions": [
         "1.5.10"
+      ],
+      "Artifacts": [
+        "url-parse-1.5.10.tgz"
       ]
     },
     {
@@ -2338,6 +3551,11 @@
         "4.2.2",
         "3.7.2",
         "1.9.3"
+      ],
+      "Artifacts": [
+        "polished-4.2.2.tgz",
+        "polished-3.7.2.tgz",
+        "polished-1.9.3.tgz"
       ]
     },
     {
@@ -2345,6 +3563,9 @@
       "Name": "react-i18next",
       "Versions": [
         "11.18.6"
+      ],
+      "Artifacts": [
+        "react-i18next-11.18.6.tgz"
       ]
     },
     {
@@ -2352,6 +3573,9 @@
       "Name": "debounce",
       "Versions": [
         "1.2.1"
+      ],
+      "Artifacts": [
+        "debounce-1.2.1.tgz"
       ]
     },
     {
@@ -2359,6 +3583,9 @@
       "Name": "vue-template-compiler",
       "Versions": [
         "2.7.15"
+      ],
+      "Artifacts": [
+        "vue-template-compiler-2.7.15.tgz"
       ]
     },
     {
@@ -2367,6 +3594,10 @@
       "Versions": [
         "8.0.1",
         "7.0.0"
+      ],
+      "Artifacts": [
+        "normalize.css-8.0.1.tgz",
+        "normalize.css-7.0.0.tgz"
       ]
     },
     {
@@ -2374,6 +3605,9 @@
       "Name": "json-stable-stringify",
       "Versions": [
         "1.0.2"
+      ],
+      "Artifacts": [
+        "json-stable-stringify-1.0.2.tgz"
       ]
     },
     {
@@ -2383,6 +3617,11 @@
         "2.5.0",
         "4.7.2",
         "1.7.4"
+      ],
+      "Artifacts": [
+        "socket.io-client-2.5.0.tgz",
+        "socket.io-client-4.7.2.tgz",
+        "socket.io-client-1.7.4.tgz"
       ]
     },
     {
@@ -2390,6 +3629,9 @@
       "Name": "tiny-invariant",
       "Versions": [
         "1.3.1"
+      ],
+      "Artifacts": [
+        "tiny-invariant-1.3.1.tgz"
       ]
     },
     {
@@ -2398,6 +3640,10 @@
       "Versions": [
         "4.28.5",
         "5.3.2"
+      ],
+      "Artifacts": [
+        "ioredis-4.28.5.tgz",
+        "ioredis-5.3.2.tgz"
       ]
     },
     {
@@ -2406,6 +3652,10 @@
       "Versions": [
         "6.2.0",
         "4.4.19"
+      ],
+      "Artifacts": [
+        "tar-6.2.0.tgz",
+        "tar-4.4.19.tgz"
       ]
     },
     {
@@ -2415,6 +3665,11 @@
         "2.79.1",
         "3.29.4",
         "1.32.1"
+      ],
+      "Artifacts": [
+        "rollup-2.79.1.tgz",
+        "rollup-3.29.4.tgz",
+        "rollup-1.32.1.tgz"
       ]
     },
     {
@@ -2424,6 +3679,11 @@
         "0.2.1",
         "0.0.33",
         "0.1.0"
+      ],
+      "Artifacts": [
+        "tmp-0.2.1.tgz",
+        "tmp-0.0.33.tgz",
+        "tmp-0.1.0.tgz"
       ]
     },
     {
@@ -2431,6 +3691,9 @@
       "Name": "ms",
       "Versions": [
         "2.1.3"
+      ],
+      "Artifacts": [
+        "ms-2.1.3.tgz"
       ]
     },
     {
@@ -2438,6 +3701,9 @@
       "Name": "webpack-hot-middleware",
       "Versions": [
         "2.25.4"
+      ],
+      "Artifacts": [
+        "webpack-hot-middleware-2.25.4.tgz"
       ]
     },
     {
@@ -2446,6 +3712,10 @@
       "Versions": [
         "3.4.1",
         "4.2.1"
+      ],
+      "Artifacts": [
+        "eslint-plugin-prettier-3.4.1.tgz",
+        "eslint-plugin-prettier-4.2.1.tgz"
       ]
     },
     {
@@ -2453,6 +3723,9 @@
       "Name": "micromatch",
       "Versions": [
         "4.0.5"
+      ],
+      "Artifacts": [
+        "micromatch-4.0.5.tgz"
       ]
     },
     {
@@ -2460,6 +3733,9 @@
       "Name": "babel-cli",
       "Versions": [
         "6.26.0"
+      ],
+      "Artifacts": [
+        "babel-cli-6.26.0.tgz"
       ]
     },
     {
@@ -2467,6 +3743,9 @@
       "Name": "identity-obj-proxy",
       "Versions": [
         "3.0.0"
+      ],
+      "Artifacts": [
+        "identity-obj-proxy-3.0.0.tgz"
       ]
     },
     {
@@ -2478,6 +3757,13 @@
         "6.8.1",
         "5.2.7",
         "2.1.1"
+      ],
+      "Artifacts": [
+        "css-loader-0.28.11.tgz",
+        "css-loader-3.6.0.tgz",
+        "css-loader-6.8.1.tgz",
+        "css-loader-5.2.7.tgz",
+        "css-loader-2.1.1.tgz"
       ]
     },
     {
@@ -2487,6 +3773,11 @@
         "2.5.0",
         "4.7.2",
         "1.7.4"
+      ],
+      "Artifacts": [
+        "socket.io-2.5.0.tgz",
+        "socket.io-4.7.2.tgz",
+        "socket.io-1.7.4.tgz"
       ]
     },
     {
@@ -2494,6 +3785,9 @@
       "Name": "https-proxy-agent",
       "Versions": [
         "5.0.1"
+      ],
+      "Artifacts": [
+        "https-proxy-agent-5.0.1.tgz"
       ]
     },
     {
@@ -2501,6 +3795,9 @@
       "Name": "babel-plugin-transform-runtime",
       "Versions": [
         "6.23.0"
+      ],
+      "Artifacts": [
+        "babel-plugin-transform-runtime-6.23.0.tgz"
       ]
     },
     {
@@ -2508,6 +3805,9 @@
       "Name": "extend",
       "Versions": [
         "3.0.2"
+      ],
+      "Artifacts": [
+        "extend-3.0.2.tgz"
       ]
     },
     {
@@ -2515,6 +3815,9 @@
       "Name": "multer",
       "Versions": [
         "1.4.4"
+      ],
+      "Artifacts": [
+        "multer-1.4.4.tgz"
       ]
     },
     {
@@ -2523,6 +3826,10 @@
       "Versions": [
         "5.2.1",
         "6.0.0"
+      ],
+      "Artifacts": [
+        "memoize-one-5.2.1.tgz",
+        "memoize-one-6.0.0.tgz"
       ]
     },
     {
@@ -2530,6 +3837,9 @@
       "Name": "@types/hyper-function-component",
       "Versions": [
         "2.1.2"
+      ],
+      "Artifacts": [
+        "types-hyper-function-component-2.1.2.tgz"
       ]
     },
     {
@@ -2539,6 +3849,11 @@
         "9.0.21",
         "5.0.0",
         "1.12.1"
+      ],
+      "Artifacts": [
+        "immer-9.0.21.tgz",
+        "immer-5.0.0.tgz",
+        "immer-1.12.1.tgz"
       ]
     },
     {
@@ -2550,6 +3865,13 @@
         "4.3.1",
         "2.4.4",
         "1.3.0"
+      ],
+      "Artifacts": [
+        "react-select-3.2.0.tgz",
+        "react-select-5.7.7.tgz",
+        "react-select-4.3.1.tgz",
+        "react-select-2.4.4.tgz",
+        "react-select-1.3.0.tgz"
       ]
     },
     {
@@ -2557,6 +3879,9 @@
       "Name": "util-deprecate",
       "Versions": [
         "1.0.2"
+      ],
+      "Artifacts": [
+        "util-deprecate-1.0.2.tgz"
       ]
     },
     {
@@ -2565,6 +3890,10 @@
       "Versions": [
         "13.11.0",
         "10.11.0"
+      ],
+      "Artifacts": [
+        "validator-13.11.0.tgz",
+        "validator-10.11.0.tgz"
       ]
     },
     {
@@ -2573,6 +3902,10 @@
       "Versions": [
         "11.8.6",
         "9.6.0"
+      ],
+      "Artifacts": [
+        "got-11.8.6.tgz",
+        "got-9.6.0.tgz"
       ]
     },
     {
@@ -2580,6 +3913,9 @@
       "Name": "envify",
       "Versions": [
         "4.1.0"
+      ],
+      "Artifacts": [
+        "envify-4.1.0.tgz"
       ]
     },
     {
@@ -2587,6 +3923,9 @@
       "Name": "gulp-util",
       "Versions": [
         "3.0.8"
+      ],
+      "Artifacts": [
+        "gulp-util-3.0.8.tgz"
       ]
     },
     {
@@ -2594,6 +3933,9 @@
       "Name": "codemirror",
       "Versions": [
         "5.65.15"
+      ],
+      "Artifacts": [
+        "codemirror-5.65.15.tgz"
       ]
     },
     {
@@ -2603,6 +3945,11 @@
         "1.4.2",
         "2.0.4",
         "0.2.17"
+      ],
+      "Artifacts": [
+        "loader-utils-1.4.2.tgz",
+        "loader-utils-2.0.4.tgz",
+        "loader-utils-0.2.17.tgz"
       ]
     },
     {
@@ -2611,6 +3958,10 @@
       "Versions": [
         "0.5.1",
         "0.5.3"
+      ],
+      "Artifacts": [
+        "swc-helpers-0.5.1.tgz",
+        "swc-helpers-0.5.3.tgz"
       ]
     },
     {
@@ -2620,6 +3971,11 @@
         "0.8.29",
         "0.11.8",
         "0.10.3"
+      ],
+      "Artifacts": [
+        "zone.js-0.8.29.tgz",
+        "zone.js-0.11.8.tgz",
+        "zone.js-0.10.3.tgz"
       ]
     },
     {
@@ -2628,6 +3984,10 @@
       "Versions": [
         "5.0.0",
         "4.1.0"
+      ],
+      "Artifacts": [
+        "find-up-5.0.0.tgz",
+        "find-up-4.1.0.tgz"
       ]
     },
     {
@@ -2635,6 +3995,9 @@
       "Name": "serve-static",
       "Versions": [
         "1.15.0"
+      ],
+      "Artifacts": [
+        "serve-static-1.15.0.tgz"
       ]
     },
     {
@@ -2643,6 +4006,10 @@
       "Versions": [
         "2.4.0",
         "1.2.0"
+      ],
+      "Artifacts": [
+        "smithy-types-2.4.0.tgz",
+        "smithy-types-1.2.0.tgz"
       ]
     },
     {
@@ -2652,6 +4019,11 @@
         "3.4.3",
         "1.28.1",
         "2.5.2"
+      ],
+      "Artifacts": [
+        "luxon-3.4.3.tgz",
+        "luxon-1.28.1.tgz",
+        "luxon-2.5.2.tgz"
       ]
     },
     {
@@ -2659,6 +4031,9 @@
       "Name": "lodash.set",
       "Versions": [
         "4.3.2"
+      ],
+      "Artifacts": [
+        "lodash.set-4.3.2.tgz"
       ]
     },
     {
@@ -2667,6 +4042,10 @@
       "Versions": [
         "0.2.1",
         "0.2.0"
+      ],
+      "Artifacts": [
+        "querystring-0.2.1.tgz",
+        "querystring-0.2.0.tgz"
       ]
     },
     {
@@ -2675,6 +4054,10 @@
       "Versions": [
         "8.28.2",
         "9.6.5"
+      ],
+      "Artifacts": [
+        "vue-i18n-8.28.2.tgz",
+        "vue-i18n-9.6.5.tgz"
       ]
     },
     {
@@ -2682,6 +4065,9 @@
       "Name": "@reduxjs/toolkit",
       "Versions": [
         "1.9.7"
+      ],
+      "Artifacts": [
+        "reduxjs-toolkit-1.9.7.tgz"
       ]
     },
     {
@@ -2689,6 +4075,9 @@
       "Name": "process",
       "Versions": [
         "0.11.10"
+      ],
+      "Artifacts": [
+        "process-0.11.10.tgz"
       ]
     },
     {
@@ -2696,6 +4085,9 @@
       "Name": "@types/styled-components",
       "Versions": [
         "5.1.29"
+      ],
+      "Artifacts": [
+        "types-styled-components-5.1.29.tgz"
       ]
     },
     {
@@ -2703,6 +4095,9 @@
       "Name": "passport-local",
       "Versions": [
         "1.0.0"
+      ],
+      "Artifacts": [
+        "passport-local-1.0.0.tgz"
       ]
     },
     {
@@ -2711,6 +4106,10 @@
       "Versions": [
         "3.4.1",
         "3.4.0"
+      ],
+      "Artifacts": [
+        "raf-3.4.1.tgz",
+        "raf-3.4.0.tgz"
       ]
     },
     {
@@ -2719,6 +4118,10 @@
       "Versions": [
         "4.1.0",
         "5.5.3"
+      ],
+      "Artifacts": [
+        "faker-4.1.0.tgz",
+        "faker-5.5.3.tgz"
       ]
     },
     {
@@ -2727,6 +4130,10 @@
       "Versions": [
         "2.4.1",
         "2.3.6"
+      ],
+      "Artifacts": [
+        "enquirer-2.4.1.tgz",
+        "enquirer-2.3.6.tgz"
       ]
     },
     {
@@ -2736,6 +4143,11 @@
         "9.18.5",
         "10.7.3",
         "11.9.0"
+      ],
+      "Artifacts": [
+        "highlight.js-9.18.5.tgz",
+        "highlight.js-10.7.3.tgz",
+        "highlight.js-11.9.0.tgz"
       ]
     },
     {
@@ -2743,6 +4155,9 @@
       "Name": "readline-sync",
       "Versions": [
         "1.4.10"
+      ],
+      "Artifacts": [
+        "readline-sync-1.4.10.tgz"
       ]
     },
     {
@@ -2752,6 +4167,11 @@
         "1.3.1",
         "2.2.0",
         "3.0.0"
+      ],
+      "Artifacts": [
+        "object-hash-1.3.1.tgz",
+        "object-hash-2.2.0.tgz",
+        "object-hash-3.0.0.tgz"
       ]
     },
     {
@@ -2759,6 +4179,9 @@
       "Name": "ip",
       "Versions": [
         "1.1.8"
+      ],
+      "Artifacts": [
+        "ip-1.1.8.tgz"
       ]
     },
     {
@@ -2767,6 +4190,10 @@
       "Versions": [
         "1.8.2",
         "1.8.0"
+      ],
+      "Artifacts": [
+        "common-tags-1.8.2.tgz",
+        "common-tags-1.8.0.tgz"
       ]
     },
     {
@@ -2776,6 +4203,11 @@
         "5.3.2",
         "3.1.1",
         "2.1.1"
+      ],
+      "Artifacts": [
+        "archiver-5.3.2.tgz",
+        "archiver-3.1.1.tgz",
+        "archiver-2.1.1.tgz"
       ]
     },
     {
@@ -2783,6 +4215,9 @@
       "Name": "http-proxy",
       "Versions": [
         "1.18.1"
+      ],
+      "Artifacts": [
+        "http-proxy-1.18.1.tgz"
       ]
     },
     {
@@ -2790,6 +4225,9 @@
       "Name": "portfinder",
       "Versions": [
         "1.0.32"
+      ],
+      "Artifacts": [
+        "portfinder-1.0.32.tgz"
       ]
     },
     {
@@ -2797,6 +4235,9 @@
       "Name": "nan",
       "Versions": [
         "2.18.0"
+      ],
+      "Artifacts": [
+        "nan-2.18.0.tgz"
       ]
     },
     {
@@ -2804,6 +4245,9 @@
       "Name": "qrcode",
       "Versions": [
         "1.5.3"
+      ],
+      "Artifacts": [
+        "qrcode-1.5.3.tgz"
       ]
     },
     {
@@ -2812,6 +4256,10 @@
       "Versions": [
         "2.1.2",
         "1.0.4"
+      ],
+      "Artifacts": [
+        "clone-2.1.2.tgz",
+        "clone-1.0.4.tgz"
       ]
     },
     {
@@ -2819,6 +4267,9 @@
       "Name": "consola",
       "Versions": [
         "2.15.3"
+      ],
+      "Artifacts": [
+        "consola-2.15.3.tgz"
       ]
     },
     {
@@ -2826,6 +4277,9 @@
       "Name": "content-type",
       "Versions": [
         "1.0.5"
+      ],
+      "Artifacts": [
+        "content-type-1.0.5.tgz"
       ]
     },
     {
@@ -2835,6 +4289,11 @@
         "2.8.0",
         "3.1.2",
         "4.6.10"
+      ],
+      "Artifacts": [
+        "redis-2.8.0.tgz",
+        "redis-3.1.2.tgz",
+        "redis-4.6.10.tgz"
       ]
     },
     {
@@ -2845,6 +4304,12 @@
         "4.3.1",
         "6.18.0",
         "3.2.6"
+      ],
+      "Artifacts": [
+        "react-router-5.3.4.tgz",
+        "react-router-4.3.1.tgz",
+        "react-router-6.18.0.tgz",
+        "react-router-3.2.6.tgz"
       ]
     },
     {
@@ -2852,6 +4317,9 @@
       "Name": "@babel/generator",
       "Versions": [
         "7.23.0"
+      ],
+      "Artifacts": [
+        "babel-generator-7.23.0.tgz"
       ]
     },
     {
@@ -2859,6 +4327,9 @@
       "Name": "clipboard",
       "Versions": [
         "2.0.11"
+      ],
+      "Artifacts": [
+        "clipboard-2.0.11.tgz"
       ]
     },
     {
@@ -2866,6 +4337,9 @@
       "Name": "base64-js",
       "Versions": [
         "1.5.1"
+      ],
+      "Artifacts": [
+        "base64-js-1.5.1.tgz"
       ]
     },
     {
@@ -2875,6 +4349,11 @@
         "5.3.1",
         "3.8.3",
         "6.1.0"
+      ],
+      "Artifacts": [
+        "superagent-5.3.1.tgz",
+        "superagent-3.8.3.tgz",
+        "superagent-6.1.0.tgz"
       ]
     },
     {
@@ -2882,6 +4361,9 @@
       "Name": "keycode",
       "Versions": [
         "2.2.1"
+      ],
+      "Artifacts": [
+        "keycode-2.2.1.tgz"
       ]
     },
     {
@@ -2890,6 +4372,10 @@
       "Versions": [
         "4.1.8",
         "3.0.1"
+      ],
+      "Artifacts": [
+        "reselect-4.1.8.tgz",
+        "reselect-3.0.1.tgz"
       ]
     },
     {
@@ -2898,6 +4384,10 @@
       "Versions": [
         "5.4.3",
         "4.9.0"
+      ],
+      "Artifacts": [
+        "echarts-5.4.3.tgz",
+        "echarts-4.9.0.tgz"
       ]
     },
     {
@@ -2905,6 +4395,9 @@
       "Name": "react-desc",
       "Versions": [
         "4.1.3"
+      ],
+      "Artifacts": [
+        "react-desc-4.1.3.tgz"
       ]
     },
     {
@@ -2912,6 +4405,9 @@
       "Name": "listr",
       "Versions": [
         "0.14.3"
+      ],
+      "Artifacts": [
+        "listr-0.14.3.tgz"
       ]
     },
     {
@@ -2921,6 +4417,11 @@
         "0.4.2",
         "0.5.0",
         "0.3.1"
+      ],
+      "Artifacts": [
+        "cookie-0.4.2.tgz",
+        "cookie-0.5.0.tgz",
+        "cookie-0.3.1.tgz"
       ]
     },
     {
@@ -2928,6 +4429,9 @@
       "Name": "@sprucelabs/error",
       "Versions": [
         "5.1.40"
+      ],
+      "Artifacts": [
+        "sprucelabs-error-5.1.40.tgz"
       ]
     },
     {
@@ -2935,6 +4439,9 @@
       "Name": "inversify",
       "Versions": [
         "5.1.1"
+      ],
+      "Artifacts": [
+        "inversify-5.1.1.tgz"
       ]
     },
     {
@@ -2942,6 +4449,9 @@
       "Name": "html2canvas",
       "Versions": [
         "1.4.1"
+      ],
+      "Artifacts": [
+        "html2canvas-1.4.1.tgz"
       ]
     },
     {
@@ -2949,6 +4459,9 @@
       "Name": "@babel/runtime-corejs2",
       "Versions": [
         "7.23.2"
+      ],
+      "Artifacts": [
+        "babel-runtime-corejs2-7.23.2.tgz"
       ]
     },
     {
@@ -2957,6 +4470,10 @@
       "Versions": [
         "0.12.5",
         "0.10.4"
+      ],
+      "Artifacts": [
+        "util-0.12.5.tgz",
+        "util-0.10.4.tgz"
       ]
     },
     {
@@ -2964,6 +4481,9 @@
       "Name": "localforage",
       "Versions": [
         "1.10.0"
+      ],
+      "Artifacts": [
+        "localforage-1.10.0.tgz"
       ]
     },
     {
@@ -2971,6 +4491,9 @@
       "Name": "babel-plugin-import",
       "Versions": [
         "1.13.8"
+      ],
+      "Artifacts": [
+        "babel-plugin-import-1.13.8.tgz"
       ]
     },
     {
@@ -2978,6 +4501,9 @@
       "Name": "react-table",
       "Versions": [
         "7.8.0"
+      ],
+      "Artifacts": [
+        "react-table-7.8.0.tgz"
       ]
     },
     {
@@ -2985,6 +4511,9 @@
       "Name": "react-beautiful-dnd",
       "Versions": [
         "13.1.1"
+      ],
+      "Artifacts": [
+        "react-beautiful-dnd-13.1.1.tgz"
       ]
     },
     {
@@ -2992,6 +4521,9 @@
       "Name": "babel-preset-stage-0",
       "Versions": [
         "6.24.1"
+      ],
+      "Artifacts": [
+        "babel-preset-stage-0-6.24.1.tgz"
       ]
     },
     {
@@ -3000,6 +4532,10 @@
       "Versions": [
         "3.7.5",
         "2.6.4"
+      ],
+      "Artifacts": [
+        "js-base64-3.7.5.tgz",
+        "js-base64-2.6.4.tgz"
       ]
     },
     {
@@ -3008,6 +4544,10 @@
       "Versions": [
         "2.2.20",
         "2.0.1"
+      ],
+      "Artifacts": [
+        "io-ts-2.2.20.tgz",
+        "io-ts-2.0.1.tgz"
       ]
     },
     {
@@ -3015,6 +4555,9 @@
       "Name": "browserslist",
       "Versions": [
         "4.22.1"
+      ],
+      "Artifacts": [
+        "browserslist-4.22.1.tgz"
       ]
     },
     {
@@ -3022,6 +4565,9 @@
       "Name": "@apollo/client",
       "Versions": [
         "3.8.7"
+      ],
+      "Artifacts": [
+        "apollo-client-3.8.7.tgz"
       ]
     },
     {
@@ -3030,6 +4576,10 @@
       "Versions": [
         "3.3.5",
         "1.9.6"
+      ],
+      "Artifacts": [
+        "tailwindcss-3.3.5.tgz",
+        "tailwindcss-1.9.6.tgz"
       ]
     },
     {
@@ -3037,6 +4587,9 @@
       "Name": "wrappy",
       "Versions": [
         "1.0.2"
+      ],
+      "Artifacts": [
+        "wrappy-1.0.2.tgz"
       ]
     },
     {
@@ -3044,6 +4597,9 @@
       "Name": "validate-npm-package-name",
       "Versions": [
         "3.0.0"
+      ],
+      "Artifacts": [
+        "validate-npm-package-name-3.0.0.tgz"
       ]
     },
     {
@@ -3054,6 +4610,12 @@
         "26.0.24",
         "24.9.1",
         "29.5.7"
+      ],
+      "Artifacts": [
+        "types-jest-27.5.2.tgz",
+        "types-jest-26.0.24.tgz",
+        "types-jest-24.9.1.tgz",
+        "types-jest-29.5.7.tgz"
       ]
     },
     {
@@ -3061,6 +4623,9 @@
       "Name": "request-promise-native",
       "Versions": [
         "1.0.9"
+      ],
+      "Artifacts": [
+        "request-promise-native-1.0.9.tgz"
       ]
     },
     {
@@ -3068,6 +4633,9 @@
       "Name": "json-loader",
       "Versions": [
         "0.5.7"
+      ],
+      "Artifacts": [
+        "json-loader-0.5.7.tgz"
       ]
     },
     {
@@ -3075,6 +4643,9 @@
       "Name": "redux-logger",
       "Versions": [
         "3.0.6"
+      ],
+      "Artifacts": [
+        "redux-logger-3.0.6.tgz"
       ]
     },
     {
@@ -3082,6 +4653,9 @@
       "Name": "@babel/plugin-proposal-nullish-coalescing-operator",
       "Versions": [
         "7.18.6"
+      ],
+      "Artifacts": [
+        "babel-plugin-proposal-nullish-coalescing-operator-7.18.6.tgz"
       ]
     },
     {
@@ -3089,6 +4663,9 @@
       "Name": "apollo-link-http",
       "Versions": [
         "1.5.17"
+      ],
+      "Artifacts": [
+        "apollo-link-http-1.5.17.tgz"
       ]
     },
     {
@@ -3097,6 +4674,10 @@
       "Versions": [
         "5.0.2",
         "4.1.1"
+      ],
+      "Artifacts": [
+        "flat-5.0.2.tgz",
+        "flat-4.1.1.tgz"
       ]
     },
     {
@@ -3104,6 +4685,9 @@
       "Name": "react-loadable",
       "Versions": [
         "5.5.0"
+      ],
+      "Artifacts": [
+        "react-loadable-5.5.0.tgz"
       ]
     },
     {
@@ -3111,6 +4695,9 @@
       "Name": "web3",
       "Versions": [
         "1.10.3"
+      ],
+      "Artifacts": [
+        "web3-1.10.3.tgz"
       ]
     },
     {
@@ -3119,6 +4706,10 @@
       "Versions": [
         "3.1.1",
         "2.9.1"
+      ],
+      "Artifacts": [
+        "immutability-helper-3.1.1.tgz",
+        "immutability-helper-2.9.1.tgz"
       ]
     },
     {
@@ -3130,6 +4721,13 @@
         "6.0.7",
         "10.4.1",
         "12.6.0"
+      ],
+      "Artifacts": [
+        "sass-loader-7.3.1.tgz",
+        "sass-loader-8.0.2.tgz",
+        "sass-loader-6.0.7.tgz",
+        "sass-loader-10.4.1.tgz",
+        "sass-loader-12.6.0.tgz"
       ]
     },
     {
@@ -3137,6 +4735,9 @@
       "Name": "@headlessui/react",
       "Versions": [
         "1.7.17"
+      ],
+      "Artifacts": [
+        "headlessui-react-1.7.17.tgz"
       ]
     },
     {
@@ -3144,6 +4745,9 @@
       "Name": "js-beautify",
       "Versions": [
         "1.14.9"
+      ],
+      "Artifacts": [
+        "js-beautify-1.14.9.tgz"
       ]
     },
     {
@@ -3151,6 +4755,9 @@
       "Name": "json-stringify-safe",
       "Versions": [
         "5.0.1"
+      ],
+      "Artifacts": [
+        "json-stringify-safe-5.0.1.tgz"
       ]
     },
     {
@@ -3158,6 +4765,9 @@
       "Name": "loglevel",
       "Versions": [
         "1.8.1"
+      ],
+      "Artifacts": [
+        "loglevel-1.8.1.tgz"
       ]
     },
     {
@@ -3166,6 +4776,10 @@
       "Versions": [
         "3.17.4",
         "2.8.29"
+      ],
+      "Artifacts": [
+        "uglify-js-3.17.4.tgz",
+        "uglify-js-2.8.29.tgz"
       ]
     },
     {
@@ -3173,6 +4787,9 @@
       "Name": "bunyan",
       "Versions": [
         "1.8.15"
+      ],
+      "Artifacts": [
+        "bunyan-1.8.15.tgz"
       ]
     },
     {
@@ -3183,6 +4800,12 @@
         "2.3.8",
         "1.4.5",
         "4.2.3"
+      ],
+      "Artifacts": [
+        "terser-webpack-plugin-5.3.9.tgz",
+        "terser-webpack-plugin-2.3.8.tgz",
+        "terser-webpack-plugin-1.4.5.tgz",
+        "terser-webpack-plugin-4.2.3.tgz"
       ]
     },
     {
@@ -3190,6 +4813,9 @@
       "Name": "koa-static",
       "Versions": [
         "5.0.0"
+      ],
+      "Artifacts": [
+        "koa-static-5.0.0.tgz"
       ]
     },
     {
@@ -3197,6 +4823,9 @@
       "Name": "@types/node-fetch",
       "Versions": [
         "2.6.8"
+      ],
+      "Artifacts": [
+        "types-node-fetch-2.6.8.tgz"
       ]
     },
     {
@@ -3205,6 +4834,10 @@
       "Versions": [
         "3.0.2",
         "1.0.1"
+      ],
+      "Artifacts": [
+        "extract-text-webpack-plugin-3.0.2.tgz",
+        "extract-text-webpack-plugin-1.0.1.tgz"
       ]
     },
     {
@@ -3213,6 +4846,10 @@
       "Versions": [
         "2.9.4",
         "3.9.1"
+      ],
+      "Artifacts": [
+        "chart.js-2.9.4.tgz",
+        "chart.js-3.9.1.tgz"
       ]
     },
     {
@@ -3220,6 +4857,9 @@
       "Name": "abort-controller",
       "Versions": [
         "3.0.0"
+      ],
+      "Artifacts": [
+        "abort-controller-3.0.0.tgz"
       ]
     },
     {
@@ -3228,6 +4868,10 @@
       "Versions": [
         "1.4.0",
         "2.0.0"
+      ],
+      "Artifacts": [
+        "gulp-rename-1.4.0.tgz",
+        "gulp-rename-2.0.0.tgz"
       ]
     },
     {
@@ -3235,6 +4879,9 @@
       "Name": "lit-html",
       "Versions": [
         "1.4.1"
+      ],
+      "Artifacts": [
+        "lit-html-1.4.1.tgz"
       ]
     },
     {
@@ -3242,6 +4889,9 @@
       "Name": "@backstage/config",
       "Versions": [
         "1.1.1"
+      ],
+      "Artifacts": [
+        "backstage-config-1.1.1.tgz"
       ]
     },
     {
@@ -3251,6 +4901,11 @@
         "0.13.2",
         "0.14.0",
         "0.12.2"
+      ],
+      "Artifacts": [
+        "class-validator-0.13.2.tgz",
+        "class-validator-0.14.0.tgz",
+        "class-validator-0.12.2.tgz"
       ]
     },
     {
@@ -3260,6 +4915,11 @@
         "4.2.0",
         "2.3.2",
         "3.2.1"
+      ],
+      "Artifacts": [
+        "mustache-4.2.0.tgz",
+        "mustache-2.3.2.tgz",
+        "mustache-3.2.1.tgz"
       ]
     },
     {
@@ -3267,6 +4927,9 @@
       "Name": "nullthrows",
       "Versions": [
         "1.1.1"
+      ],
+      "Artifacts": [
+        "nullthrows-1.1.1.tgz"
       ]
     },
     {
@@ -3274,6 +4937,9 @@
       "Name": "crypto",
       "Versions": [
         "1.0.1"
+      ],
+      "Artifacts": [
+        "crypto-1.0.1.tgz"
       ]
     },
     {
@@ -3283,6 +4949,11 @@
         "5.0.8",
         "5.0.3",
         "5.0.1"
+      ],
+      "Artifacts": [
+        "optimize-css-assets-webpack-plugin-5.0.8.tgz",
+        "optimize-css-assets-webpack-plugin-5.0.3.tgz",
+        "optimize-css-assets-webpack-plugin-5.0.1.tgz"
       ]
     },
     {
@@ -3290,6 +4961,9 @@
       "Name": "eslint-plugin-node",
       "Versions": [
         "11.1.0"
+      ],
+      "Artifacts": [
+        "eslint-plugin-node-11.1.0.tgz"
       ]
     },
     {
@@ -3297,6 +4971,9 @@
       "Name": "p-map",
       "Versions": [
         "4.0.0"
+      ],
+      "Artifacts": [
+        "p-map-4.0.0.tgz"
       ]
     },
     {
@@ -3304,6 +4981,9 @@
       "Name": "preact",
       "Versions": [
         "10.18.2"
+      ],
+      "Artifacts": [
+        "preact-10.18.2.tgz"
       ]
     },
     {
@@ -3311,6 +4991,9 @@
       "Name": "@types/styled-system",
       "Versions": [
         "5.1.20"
+      ],
+      "Artifacts": [
+        "types-styled-system-5.1.20.tgz"
       ]
     },
     {
@@ -3318,6 +5001,9 @@
       "Name": "decimal.js",
       "Versions": [
         "10.4.3"
+      ],
+      "Artifacts": [
+        "decimal.js-10.4.3.tgz"
       ]
     },
     {
@@ -3325,6 +5011,9 @@
       "Name": "react-player",
       "Versions": [
         "2.13.0"
+      ],
+      "Artifacts": [
+        "react-player-2.13.0.tgz"
       ]
     },
     {
@@ -3332,6 +5021,9 @@
       "Name": "elliptic",
       "Versions": [
         "6.5.4"
+      ],
+      "Artifacts": [
+        "elliptic-6.5.4.tgz"
       ]
     },
     {
@@ -3339,6 +5031,9 @@
       "Name": "vue-class-component",
       "Versions": [
         "7.2.6"
+      ],
+      "Artifacts": [
+        "vue-class-component-7.2.6.tgz"
       ]
     },
     {
@@ -3346,6 +5041,9 @@
       "Name": "memoizee",
       "Versions": [
         "0.4.15"
+      ],
+      "Artifacts": [
+        "memoizee-0.4.15.tgz"
       ]
     },
     {
@@ -3353,6 +5051,9 @@
       "Name": "lodash.omit",
       "Versions": [
         "4.5.0"
+      ],
+      "Artifacts": [
+        "lodash.omit-4.5.0.tgz"
       ]
     },
     {
@@ -3360,6 +5061,9 @@
       "Name": "focus-visible",
       "Versions": [
         "5.2.0"
+      ],
+      "Artifacts": [
+        "focus-visible-5.2.0.tgz"
       ]
     },
     {
@@ -3367,6 +5071,9 @@
       "Name": "apollo-client",
       "Versions": [
         "2.6.10"
+      ],
+      "Artifacts": [
+        "apollo-client-2.6.10.tgz"
       ]
     },
     {
@@ -3375,6 +5082,10 @@
       "Versions": [
         "6.3.0",
         "5.3.1"
+      ],
+      "Artifacts": [
+        "camelcase-6.3.0.tgz",
+        "camelcase-5.3.1.tgz"
       ]
     },
     {
@@ -3386,6 +5097,13 @@
         "2.2.3",
         "7.3.0",
         "10.2.0"
+      ],
+      "Artifacts": [
+        "less-loader-4.1.0.tgz",
+        "less-loader-5.0.0.tgz",
+        "less-loader-2.2.3.tgz",
+        "less-loader-7.3.0.tgz",
+        "less-loader-10.2.0.tgz"
       ]
     },
     {
@@ -3393,6 +5111,9 @@
       "Name": "@balena/jellyfish-assert",
       "Versions": [
         "1.11.8"
+      ],
+      "Artifacts": [
+        "balena-jellyfish-assert-1.11.8.tgz"
       ]
     },
     {
@@ -3400,6 +5121,9 @@
       "Name": "@grpc/grpc-js",
       "Versions": [
         "1.9.9"
+      ],
+      "Artifacts": [
+        "grpc-grpc-js-1.9.9.tgz"
       ]
     },
     {
@@ -3409,6 +5133,11 @@
         "0.4.1",
         "0.6.0",
         "0.3.2"
+      ],
+      "Artifacts": [
+        "passport-0.4.1.tgz",
+        "passport-0.6.0.tgz",
+        "passport-0.3.2.tgz"
       ]
     },
     {
@@ -3416,6 +5145,9 @@
       "Name": "path-browserify",
       "Versions": [
         "1.0.1"
+      ],
+      "Artifacts": [
+        "path-browserify-1.0.1.tgz"
       ]
     },
     {
@@ -3423,6 +5155,9 @@
       "Name": "@babel/helper-plugin-utils",
       "Versions": [
         "7.22.5"
+      ],
+      "Artifacts": [
+        "babel-helper-plugin-utils-7.22.5.tgz"
       ]
     },
     {
@@ -3430,6 +5165,9 @@
       "Name": "optimist",
       "Versions": [
         "0.6.1"
+      ],
+      "Artifacts": [
+        "optimist-0.6.1.tgz"
       ]
     },
     {
@@ -3437,6 +5175,9 @@
       "Name": "string-width",
       "Versions": [
         "4.2.3"
+      ],
+      "Artifacts": [
+        "string-width-4.2.3.tgz"
       ]
     },
     {
@@ -3444,6 +5185,9 @@
       "Name": "react-virtualized",
       "Versions": [
         "9.22.5"
+      ],
+      "Artifacts": [
+        "react-virtualized-9.22.5.tgz"
       ]
     },
     {
@@ -3452,6 +5196,10 @@
       "Versions": [
         "4.13.1",
         "3.1.3"
+      ],
+      "Artifacts": [
+        "react-hot-loader-4.13.1.tgz",
+        "react-hot-loader-3.1.3.tgz"
       ]
     },
     {
@@ -3460,6 +5208,10 @@
       "Versions": [
         "1.3.0",
         "0.2.14"
+      ],
+      "Artifacts": [
+        "prompt-1.3.0.tgz",
+        "prompt-0.2.14.tgz"
       ]
     },
     {
@@ -3467,6 +5219,9 @@
       "Name": "function-bind",
       "Versions": [
         "1.1.2"
+      ],
+      "Artifacts": [
+        "function-bind-1.1.2.tgz"
       ]
     },
     {
@@ -3474,6 +5229,9 @@
       "Name": "react-copy-to-clipboard",
       "Versions": [
         "5.1.0"
+      ],
+      "Artifacts": [
+        "react-copy-to-clipboard-5.1.0.tgz"
       ]
     },
     {
@@ -3481,6 +5239,9 @@
       "Name": "cli-progress",
       "Versions": [
         "3.12.0"
+      ],
+      "Artifacts": [
+        "cli-progress-3.12.0.tgz"
       ]
     },
     {
@@ -3491,6 +5252,12 @@
         "0.3.1",
         "0.2.3",
         "0.4.0"
+      ],
+      "Artifacts": [
+        "class-transformer-0.5.1.tgz",
+        "class-transformer-0.3.1.tgz",
+        "class-transformer-0.2.3.tgz",
+        "class-transformer-0.4.0.tgz"
       ]
     },
     {
@@ -3498,6 +5265,9 @@
       "Name": "is-url",
       "Versions": [
         "1.2.4"
+      ],
+      "Artifacts": [
+        "is-url-1.2.4.tgz"
       ]
     },
     {
@@ -3505,6 +5275,9 @@
       "Name": "xml-js",
       "Versions": [
         "1.6.11"
+      ],
+      "Artifacts": [
+        "xml-js-1.6.11.tgz"
       ]
     },
     {
@@ -3513,6 +5286,10 @@
       "Versions": [
         "4.0.3",
         "3.0.0"
+      ],
+      "Artifacts": [
+        "warning-4.0.3.tgz",
+        "warning-3.0.0.tgz"
       ]
     },
     {
@@ -3521,6 +5298,10 @@
       "Versions": [
         "8.0.27",
         "9.7.3"
+      ],
+      "Artifacts": [
+        "react-spring-8.0.27.tgz",
+        "react-spring-9.7.3.tgz"
       ]
     },
     {
@@ -3531,6 +5312,12 @@
         "3.347.0",
         "3.433.0",
         "3.310.0"
+      ],
+      "Artifacts": [
+        "aws-sdk-types-3.254.0.tgz",
+        "aws-sdk-types-3.347.0.tgz",
+        "aws-sdk-types-3.433.0.tgz",
+        "aws-sdk-types-3.310.0.tgz"
       ]
     },
     {
@@ -3539,6 +5326,10 @@
       "Versions": [
         "2.0.1",
         "1.7.0"
+      ],
+      "Artifacts": [
+        "extract-zip-2.0.1.tgz",
+        "extract-zip-1.7.0.tgz"
       ]
     },
     {
@@ -3547,6 +5338,10 @@
       "Versions": [
         "1.7.2",
         "3.0.0"
+      ],
+      "Artifacts": [
+        "webpack-node-externals-1.7.2.tgz",
+        "webpack-node-externals-3.0.0.tgz"
       ]
     },
     {
@@ -3554,6 +5349,9 @@
       "Name": "react-custom-scrollbars",
       "Versions": [
         "4.2.1"
+      ],
+      "Artifacts": [
+        "react-custom-scrollbars-4.2.1.tgz"
       ]
     },
     {
@@ -3561,6 +5359,9 @@
       "Name": "babel-plugin-transform-class-properties",
       "Versions": [
         "6.24.1"
+      ],
+      "Artifacts": [
+        "babel-plugin-transform-class-properties-6.24.1.tgz"
       ]
     },
     {
@@ -3569,6 +5370,10 @@
       "Versions": [
         "2.3.3",
         "1.7.0"
+      ],
+      "Artifacts": [
+        "mysql2-2.3.3.tgz",
+        "mysql2-1.7.0.tgz"
       ]
     },
     {
@@ -3578,6 +5383,11 @@
         "0.8.1",
         "2.19.0",
         "3.13.1"
+      ],
+      "Artifacts": [
+        "type-fest-0.8.1.tgz",
+        "type-fest-2.19.0.tgz",
+        "type-fest-3.13.1.tgz"
       ]
     },
     {
@@ -3585,6 +5395,9 @@
       "Name": "cli-table",
       "Versions": [
         "0.3.11"
+      ],
+      "Artifacts": [
+        "cli-table-0.3.11.tgz"
       ]
     },
     {
@@ -3593,6 +5406,10 @@
       "Versions": [
         "6.11.4",
         "7.2.5"
+      ],
+      "Artifacts": [
+        "protobufjs-6.11.4.tgz",
+        "protobufjs-7.2.5.tgz"
       ]
     },
     {
@@ -3600,6 +5417,9 @@
       "Name": "command-exists",
       "Versions": [
         "1.2.9"
+      ],
+      "Artifacts": [
+        "command-exists-1.2.9.tgz"
       ]
     },
     {
@@ -3607,6 +5427,9 @@
       "Name": "dompurify",
       "Versions": [
         "2.4.7"
+      ],
+      "Artifacts": [
+        "dompurify-2.4.7.tgz"
       ]
     },
     {
@@ -3614,6 +5437,9 @@
       "Name": "bip39",
       "Versions": [
         "3.1.0"
+      ],
+      "Artifacts": [
+        "bip39-3.1.0.tgz"
       ]
     },
     {
@@ -3625,6 +5451,13 @@
         "0.7.0",
         "2.1.3",
         "1.2.9"
+      ],
+      "Artifacts": [
+        "marked-4.3.0.tgz",
+        "marked-0.3.19.tgz",
+        "marked-0.7.0.tgz",
+        "marked-2.1.3.tgz",
+        "marked-1.2.9.tgz"
       ]
     },
     {
@@ -3632,6 +5465,9 @@
       "Name": "get-port",
       "Versions": [
         "5.1.1"
+      ],
+      "Artifacts": [
+        "get-port-5.1.1.tgz"
       ]
     },
     {
@@ -3639,6 +5475,9 @@
       "Name": "clear",
       "Versions": [
         "0.1.0"
+      ],
+      "Artifacts": [
+        "clear-0.1.0.tgz"
       ]
     },
     {
@@ -3646,6 +5485,9 @@
       "Name": "koa-router",
       "Versions": [
         "7.4.0"
+      ],
+      "Artifacts": [
+        "koa-router-7.4.0.tgz"
       ]
     },
     {
@@ -3653,6 +5495,9 @@
       "Name": "@ethersproject/providers",
       "Versions": [
         "5.7.2"
+      ],
+      "Artifacts": [
+        "ethersproject-providers-5.7.2.tgz"
       ]
     },
     {
@@ -3660,6 +5505,9 @@
       "Name": "@backstage/theme",
       "Versions": [
         "0.2.19"
+      ],
+      "Artifacts": [
+        "backstage-theme-0.2.19.tgz"
       ]
     },
     {
@@ -3667,6 +5515,9 @@
       "Name": "bcrypt",
       "Versions": [
         "5.1.1"
+      ],
+      "Artifacts": [
+        "bcrypt-5.1.1.tgz"
       ]
     },
     {
@@ -3674,6 +5525,9 @@
       "Name": "ignore",
       "Versions": [
         "5.2.4"
+      ],
+      "Artifacts": [
+        "ignore-5.2.4.tgz"
       ]
     },
     {
@@ -3681,6 +5535,9 @@
       "Name": "@emotion/css",
       "Versions": [
         "11.11.2"
+      ],
+      "Artifacts": [
+        "emotion-css-11.11.2.tgz"
       ]
     },
     {
@@ -3688,6 +5545,9 @@
       "Name": "ini",
       "Versions": [
         "1.3.8"
+      ],
+      "Artifacts": [
+        "ini-1.3.8.tgz"
       ]
     },
     {
@@ -3695,6 +5555,9 @@
       "Name": "tweetnacl",
       "Versions": [
         "1.0.3"
+      ],
+      "Artifacts": [
+        "tweetnacl-1.0.3.tgz"
       ]
     },
     {
@@ -3702,6 +5565,9 @@
       "Name": "@material-ui/pickers",
       "Versions": [
         "3.3.11"
+      ],
+      "Artifacts": [
+        "material-ui-pickers-3.3.11.tgz"
       ]
     },
     {
@@ -3709,6 +5575,9 @@
       "Name": "jsonschema",
       "Versions": [
         "1.4.1"
+      ],
+      "Artifacts": [
+        "jsonschema-1.4.1.tgz"
       ]
     },
     {
@@ -3716,6 +5585,9 @@
       "Name": "read-pkg-up",
       "Versions": [
         "7.0.1"
+      ],
+      "Artifacts": [
+        "read-pkg-up-7.0.1.tgz"
       ]
     },
     {
@@ -3723,6 +5595,9 @@
       "Name": "@aws-cdk/core",
       "Versions": [
         "1.204.0"
+      ],
+      "Artifacts": [
+        "aws-cdk-core-1.204.0.tgz"
       ]
     },
     {
@@ -3730,6 +5605,9 @@
       "Name": "ts-dedent",
       "Versions": [
         "2.2.0"
+      ],
+      "Artifacts": [
+        "ts-dedent-2.2.0.tgz"
       ]
     },
     {
@@ -3737,6 +5615,9 @@
       "Name": "libphonenumber-js",
       "Versions": [
         "1.10.49"
+      ],
+      "Artifacts": [
+        "libphonenumber-js-1.10.49.tgz"
       ]
     },
     {
@@ -3745,6 +5626,10 @@
       "Versions": [
         "2.4.0",
         "2.1.1"
+      ],
+      "Artifacts": [
+        "case-sensitive-paths-webpack-plugin-2.4.0.tgz",
+        "case-sensitive-paths-webpack-plugin-2.1.1.tgz"
       ]
     },
     {
@@ -3752,6 +5637,9 @@
       "Name": "ajv-formats",
       "Versions": [
         "2.1.1"
+      ],
+      "Artifacts": [
+        "ajv-formats-2.1.1.tgz"
       ]
     },
     {
@@ -3760,6 +5648,10 @@
       "Versions": [
         "10.0.27",
         "9.2.12"
+      ],
+      "Artifacts": [
+        "emotion-10.0.27.tgz",
+        "emotion-9.2.12.tgz"
       ]
     },
     {
@@ -3768,6 +5660,10 @@
       "Versions": [
         "3.6.2",
         "2.3.8"
+      ],
+      "Artifacts": [
+        "readable-stream-3.6.2.tgz",
+        "readable-stream-2.3.8.tgz"
       ]
     },
     {
@@ -3777,6 +5673,11 @@
         "4.21.0",
         "3.8.0",
         "2.16.0"
+      ],
+      "Artifacts": [
+        "react-datepicker-4.21.0.tgz",
+        "react-datepicker-3.8.0.tgz",
+        "react-datepicker-2.16.0.tgz"
       ]
     },
     {
@@ -3784,6 +5685,9 @@
       "Name": "wu",
       "Versions": [
         "2.1.0"
+      ],
+      "Artifacts": [
+        "wu-2.1.0.tgz"
       ]
     },
     {
@@ -3791,6 +5695,9 @@
       "Name": "xtend",
       "Versions": [
         "4.0.2"
+      ],
+      "Artifacts": [
+        "xtend-4.0.2.tgz"
       ]
     },
     {
@@ -3799,6 +5706,10 @@
       "Versions": [
         "2.1.0",
         "1.5.1"
+      ],
+      "Artifacts": [
+        "assert-2.1.0.tgz",
+        "assert-1.5.1.tgz"
       ]
     },
     {
@@ -3807,6 +5718,10 @@
       "Versions": [
         "0.30.0",
         "0.26.0"
+      ],
+      "Artifacts": [
+        "recompose-0.30.0.tgz",
+        "recompose-0.26.0.tgz"
       ]
     },
     {
@@ -3814,6 +5729,9 @@
       "Name": "koa-bodyparser",
       "Versions": [
         "4.4.1"
+      ],
+      "Artifacts": [
+        "koa-bodyparser-4.4.1.tgz"
       ]
     },
     {
@@ -3822,6 +5740,10 @@
       "Versions": [
         "2.0.2",
         "1.3.1"
+      ],
+      "Artifacts": [
+        "which-2.0.2.tgz",
+        "which-1.3.1.tgz"
       ]
     },
     {
@@ -3830,6 +5752,10 @@
       "Versions": [
         "1.0.5",
         "4.0.0"
+      ],
+      "Artifacts": [
+        "escape-string-regexp-1.0.5.tgz",
+        "escape-string-regexp-4.0.0.tgz"
       ]
     },
     {
@@ -3837,6 +5763,9 @@
       "Name": "browser-sync",
       "Versions": [
         "2.29.3"
+      ],
+      "Artifacts": [
+        "browser-sync-2.29.3.tgz"
       ]
     },
     {
@@ -3844,6 +5773,9 @@
       "Name": "@ethersproject/bytes",
       "Versions": [
         "5.7.0"
+      ],
+      "Artifacts": [
+        "ethersproject-bytes-5.7.0.tgz"
       ]
     },
     {
@@ -3851,6 +5783,9 @@
       "Name": "connect",
       "Versions": [
         "3.7.0"
+      ],
+      "Artifacts": [
+        "connect-3.7.0.tgz"
       ]
     },
     {
@@ -3858,6 +5793,9 @@
       "Name": "apollo-cache-inmemory",
       "Versions": [
         "1.6.6"
+      ],
+      "Artifacts": [
+        "apollo-cache-inmemory-1.6.6.tgz"
       ]
     },
     {
@@ -3867,6 +5805,11 @@
         "16.13.1",
         "17.0.2",
         "18.2.0"
+      ],
+      "Artifacts": [
+        "react-is-16.13.1.tgz",
+        "react-is-17.0.2.tgz",
+        "react-is-18.2.0.tgz"
       ]
     },
     {
@@ -3874,6 +5817,9 @@
       "Name": "opn",
       "Versions": [
         "5.5.0"
+      ],
+      "Artifacts": [
+        "opn-5.5.0.tgz"
       ]
     },
     {
@@ -3881,6 +5827,9 @@
       "Name": "slick-carousel",
       "Versions": [
         "1.8.1"
+      ],
+      "Artifacts": [
+        "slick-carousel-1.8.1.tgz"
       ]
     },
     {
@@ -3888,6 +5837,9 @@
       "Name": "gulp-concat",
       "Versions": [
         "2.6.1"
+      ],
+      "Artifacts": [
+        "gulp-concat-2.6.1.tgz"
       ]
     },
     {
@@ -3895,6 +5847,9 @@
       "Name": "@rollup/plugin-json",
       "Versions": [
         "4.1.0"
+      ],
+      "Artifacts": [
+        "rollup-plugin-json-4.1.0.tgz"
       ]
     },
     {
@@ -3903,6 +5858,10 @@
       "Versions": [
         "5.20.1",
         "6.1.3"
+      ],
+      "Artifacts": [
+        "tslint-5.20.1.tgz",
+        "tslint-6.1.3.tgz"
       ]
     },
     {
@@ -3911,6 +5870,10 @@
       "Versions": [
         "1.1.1",
         "2.2.2"
+      ],
+      "Artifacts": [
+        "deep-equal-1.1.1.tgz",
+        "deep-equal-2.2.2.tgz"
       ]
     },
     {
@@ -3918,6 +5881,9 @@
       "Name": "enzyme",
       "Versions": [
         "3.11.0"
+      ],
+      "Artifacts": [
+        "enzyme-3.11.0.tgz"
       ]
     },
     {
@@ -3925,6 +5891,9 @@
       "Name": "nunjucks",
       "Versions": [
         "3.2.4"
+      ],
+      "Artifacts": [
+        "nunjucks-3.2.4.tgz"
       ]
     },
     {
@@ -3932,6 +5901,9 @@
       "Name": "@types/classnames",
       "Versions": [
         "2.3.1"
+      ],
+      "Artifacts": [
+        "types-classnames-2.3.1.tgz"
       ]
     },
     {
@@ -3939,6 +5911,9 @@
       "Name": "tiny-warning",
       "Versions": [
         "1.0.3"
+      ],
+      "Artifacts": [
+        "tiny-warning-1.0.3.tgz"
       ]
     },
     {
@@ -3946,6 +5921,9 @@
       "Name": "leaflet",
       "Versions": [
         "1.9.4"
+      ],
+      "Artifacts": [
+        "leaflet-1.9.4.tgz"
       ]
     },
     {
@@ -3954,6 +5932,10 @@
       "Versions": [
         "2.0.22",
         "1.19.4"
+      ],
+      "Artifacts": [
+        "nodemon-2.0.22.tgz",
+        "nodemon-1.19.4.tgz"
       ]
     },
     {
@@ -3961,6 +5943,9 @@
       "Name": "websocket",
       "Versions": [
         "1.0.34"
+      ],
+      "Artifacts": [
+        "websocket-1.0.34.tgz"
       ]
     },
     {
@@ -3968,6 +5953,9 @@
       "Name": "@backstage/errors",
       "Versions": [
         "1.2.3"
+      ],
+      "Artifacts": [
+        "backstage-errors-1.2.3.tgz"
       ]
     },
     {
@@ -3976,6 +5964,10 @@
       "Versions": [
         "6.14.18",
         "8.19.4"
+      ],
+      "Artifacts": [
+        "npm-6.14.18.tgz",
+        "npm-8.19.4.tgz"
       ]
     },
     {
@@ -3984,6 +5976,10 @@
       "Versions": [
         "1.2.3",
         "0.16.2"
+      ],
+      "Artifacts": [
+        "redux-saga-1.2.3.tgz",
+        "redux-saga-0.16.2.tgz"
       ]
     },
     {
@@ -3992,6 +5988,10 @@
       "Versions": [
         "3.0.2",
         "1.1.0"
+      ],
+      "Artifacts": [
+        "download-git-repo-3.0.2.tgz",
+        "download-git-repo-1.1.0.tgz"
       ]
     },
     {
@@ -4002,6 +6002,12 @@
         "14.2.3",
         "10.2.2",
         "4.3.0"
+      ],
+      "Artifacts": [
+        "react-dropzone-11.7.1.tgz",
+        "react-dropzone-14.2.3.tgz",
+        "react-dropzone-10.2.2.tgz",
+        "react-dropzone-4.3.0.tgz"
       ]
     },
     {
@@ -4009,6 +6015,9 @@
       "Name": "normalize-path",
       "Versions": [
         "3.0.0"
+      ],
+      "Artifacts": [
+        "normalize-path-3.0.0.tgz"
       ]
     }
   ]
