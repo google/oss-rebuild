@@ -234,8 +234,12 @@ func (e *Executor) doBuild(ctx context.Context, handle *gcbHandle, cloudBuild *c
 		return nil, errors.Wrap(err, "unmarshalling build metadata")
 	}
 	waitOp, err := e.client.WaitForOperation(ctx, createOp)
-	if errors.Is(err, context.DeadlineExceeded) && e.terminateOnTimeout {
-		log.Printf("GCB deadline exceeded, cancelling build %s", createOp.Name)
+	if errors.Is(err, context.DeadlineExceeded) && e.terminateOnTimeout || errors.Is(err, context.Canceled) {
+		if errors.Is(err, context.Canceled) {
+			log.Printf("Context cancelled, cancelling build %s", createOp.Name)
+		} else {
+			log.Printf("GCB deadline exceeded, cancelling build %s", createOp.Name)
+		}
 		if err := e.client.CancelOperation(createOp); err != nil {
 			log.Printf("Best effort GCB cancellation failed: %v", err)
 			return nil, errors.Wrap(err, "cancelling operation")
