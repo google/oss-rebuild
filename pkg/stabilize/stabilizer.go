@@ -61,6 +61,20 @@ func StabilizeWithOpts(dst io.Writer, src io.Reader, f archive.Format, opts Stab
 		if err != nil {
 			return errors.Wrap(err, "stabilizing tar.gz")
 		}
+	case archive.GzipFormat:
+		gzr, err := gzip.NewReader(src)
+		if err != nil {
+			return errors.Wrap(err, "initializing gzip reader")
+		}
+		defer gzr.Close()
+		gzw, err := NewStabilizedGzipWriter(gzr, dst, opts)
+		if err != nil {
+			return errors.Wrap(err, "stabilizing gzip")
+		}
+		defer gzw.Close()
+		if _, err := io.Copy(gzw, gzr); err != nil {
+			return errors.Wrap(err, "copying gzip content")
+		}
 	case archive.TarFormat:
 		err := StabilizeTar(tar.NewReader(src), tar.NewWriter(dst), opts)
 		if err != nil {

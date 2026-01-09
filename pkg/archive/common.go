@@ -13,6 +13,7 @@ const (
 	TarGzFormat
 	TarFormat
 	ZipFormat
+	GzipFormat
 	RawFormat
 )
 
@@ -24,6 +25,8 @@ func (f Format) Layers() int {
 	case TarFormat:
 		return 1
 	case ZipFormat:
+		return 1
+	case GzipFormat:
 		return 1
 	default:
 		return 0
