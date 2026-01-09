@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
+	"github.com/google/oss-rebuild/pkg/registry/debian/control"
 )
 
 func TestPoolURL(t *testing.T) {
@@ -183,7 +184,7 @@ func TestHTTPRegistry_DSC(t *testing.T) {
 		version     string
 		expectedURL string
 		contents    string
-		expected    *DSC
+		expected    *control.ControlFile
 		expectedErr error
 	}{
 		{
@@ -204,61 +205,8 @@ Files:
  003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz
  e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc
  5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz`,
-			expected: &DSC{
-				Stanzas: []ControlStanza{
-					{
-						Fields: map[string][]string{
-							"Hash": {"SHA256"},
-						},
-					},
-					{
-						Fields: map[string][]string{
-							"Format": {"3.0 (quilt)"},
-							"Source": {"xz-utils"},
-							"Binary": {"bin-a, bin-b, xz-utils"},
-							"Package-List": {
-								"liblzma-dev deb libdevel optional arch=any",
-								"liblzma-doc deb doc optional arch=all",
-							},
-							"Files": {
-								"003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz",
-								"e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc",
-								"5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz",
-							},
-						},
-					},
-				},
-			},
-			expectedErr: nil,
-		},
-		{
-			name:        "With PGP",
-			component:   "main",
-			pkg:         "xz-utils",
-			version:     "5.2.4-1",
-			expectedURL: "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
-			contents: `-----BEGIN PGP SIGNED MESSAGE-----
-Hash: SHA256
-
-Format: 3.0 (quilt)
-Source: xz-utils
-Binary: bin-a, bin-b, xz-utils
-Package-List:
- liblzma-dev deb libdevel optional arch=any
- liblzma-doc deb doc optional arch=all
-Files:
- 003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz
- e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc
- 5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz
-
------BEGIN PGP SIGNATURE-----
-
-iQJHBAEBCAAxFiEEUh5Y8X6W1xKqD/EC38Zx7rMz+iUFAlxOW5QTHGpybmllZGVy
-RLpmHHG1JOVdOA==
-=WDR2
------END PGP SIGNATURE-----`,
-			expected: &DSC{
-				Stanzas: []ControlStanza{
+			expected: &control.ControlFile{
+				Stanzas: []control.ControlStanza{
 					{
 						Fields: map[string][]string{
 							"Hash": {"SHA256"},
@@ -310,6 +258,213 @@ RLpmHHG1JOVdOA==
 			}
 			if diff := cmp.Diff(DSCURI, tc.expectedURL); diff != "" {
 				t.Errorf("Returned DSC url doesn't match fetched url\n%v", diff)
+			}
+		})
+	}
+}
+
+func TestParseVersion(t *testing.T) {
+	tests := []struct {
+		name                 string
+		version              string
+		wantErr              bool
+		expected             Version
+		expectedString       string
+		expectedNative       bool
+		expectedRollbackBase string
+		expectedBinNMU       string
+		expectedBinIndep     string
+		expectedEpochless    string
+	}{
+		{
+			name:    "Standard Native Package",
+			version: "1.0",
+			expected: Version{
+				Upstream: "1.0",
+			},
+			expectedString:       "1.0",
+			expectedNative:       true,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0",
+			expectedEpochless:    "1.0",
+		},
+		{
+			name:    "Standard Non-Native Package",
+			version: "1.0-1",
+			expected: Version{
+				Upstream:       "1.0",
+				DebianRevision: "1",
+			},
+			expectedString:       "1.0-1",
+			expectedNative:       false,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0-1",
+			expectedEpochless:    "1.0-1",
+		},
+		{
+			name:    "Native with Epoch",
+			version: "1:2.0",
+			expected: Version{
+				Epoch:    "1",
+				Upstream: "2.0",
+			},
+			expectedString:       "1:2.0",
+			expectedNative:       true,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1:2.0",
+			expectedEpochless:    "2.0",
+		},
+		{
+			name:    "Non-Native with Epoch",
+			version: "2:3.0-4",
+			expected: Version{
+				Epoch:          "2",
+				Upstream:       "3.0",
+				DebianRevision: "4",
+			},
+			expectedString:       "2:3.0-4",
+			expectedNative:       false,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "2:3.0-4",
+			expectedEpochless:    "3.0-4",
+		},
+		{
+			name:    "Upstream with Hyphens (Non-Native)",
+			version: "1.0-beta-1",
+			expected: Version{
+				Upstream:       "1.0-beta",
+				DebianRevision: "1",
+			},
+			expectedString:       "1.0-beta-1",
+			expectedNative:       false,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0-beta-1",
+			expectedEpochless:    "1.0-beta-1",
+		},
+		{
+			name:    "Complex Revision",
+			version: "1.0-0.1ubuntu1",
+			expected: Version{
+				Upstream:       "1.0",
+				DebianRevision: "0.1ubuntu1",
+			},
+			expectedString:       "1.0-0.1ubuntu1",
+			expectedNative:       false,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0-0.1ubuntu1",
+			expectedEpochless:    "1.0-0.1ubuntu1",
+		},
+		{
+			name:    "Native Binary Non-Maintainer Upload (BinNMU)",
+			version: "1.0+b1",
+			expected: Version{
+				Upstream: "1.0+b1",
+			},
+			expectedString:       "1.0+b1",
+			expectedNative:       true,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "1",
+			expectedBinIndep:     "1.0",
+			expectedEpochless:    "1.0+b1",
+		},
+		{
+			name:    "Non-Native Binary Non-Maintainer Upload (BinNMU)",
+			version: "1.0-1+b1",
+			expected: Version{
+				Upstream:       "1.0",
+				DebianRevision: "1+b1",
+			},
+			expectedString:       "1.0-1+b1",
+			expectedNative:       false,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "1",
+			expectedBinIndep:     "1.0-1",
+			expectedEpochless:    "1.0-1+b1",
+		},
+		{
+			name:    "Rollback Package (+really)",
+			version: "1.0+really0.9",
+			expected: Version{
+				Upstream: "1.0+really0.9",
+			},
+			expectedString:       "1.0+really0.9",
+			expectedNative:       true,
+			expectedRollbackBase: "0.9",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0+really0.9",
+			expectedEpochless:    "1.0+really0.9",
+		},
+		{
+			name:    "Multiple Rollbacks (+really)",
+			version: "1.0+really0.9+really0.8",
+			expected: Version{
+				Upstream: "1.0+really0.9+really0.8",
+			},
+			expectedString:       "1.0+really0.9+really0.8",
+			expectedNative:       true,
+			expectedRollbackBase: "0.8",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0+really0.9+really0.8",
+			expectedEpochless:    "1.0+really0.9+really0.8",
+		},
+		{
+			name:    "Invalid: Empty String",
+			version: "",
+			wantErr: true,
+		},
+		{
+			name:    "Invalid: Starts with non-digit",
+			version: "v1.0",
+			wantErr: true,
+		},
+		{
+			name:    "Invalid: Hyphen but empty revision",
+			version: "1.0-",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			v, err := ParseVersion(tc.version)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("ParseVersion(%q) expected error, got nil", tc.version)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ParseVersion(%q) unexpected error: %v", tc.version, err)
+				return
+			}
+			// Verify Struct Match using DeepEqual
+			if diff := cmp.Diff(*v, tc.expected); diff != "" {
+				t.Errorf("Struct mismatch:\n%+v", diff)
+			}
+			// Verify Methods
+			if got := v.String(); got != tc.expectedString {
+				t.Errorf("String(): got %q, want %q", got, tc.expectedString)
+			}
+			if got := v.Native(); got != tc.expectedNative {
+				t.Errorf("Native(): got %v, want %v", got, tc.expectedNative)
+			}
+			if got := v.RollbackBase(); got != tc.expectedRollbackBase {
+				t.Errorf("RollbackBase(): got %q, want %q", got, tc.expectedRollbackBase)
+			}
+			if got := v.BinaryNonMaintainerUpload(); got != tc.expectedBinNMU {
+				t.Errorf("BinaryNonMaintainerUpload(): got %q, want %q", got, tc.expectedBinNMU)
+			}
+			if got := v.BinaryIndependentString(); got != tc.expectedBinIndep {
+				t.Errorf("BinaryIndependentString(): got %q, want %q", got, tc.expectedBinIndep)
+			}
+			if got := v.Epochless(); got != tc.expectedEpochless {
+				t.Errorf("Epochless(): got %q, want %q", got, tc.expectedEpochless)
 			}
 		})
 	}

@@ -30,46 +30,46 @@ type dockerBuildContainerArgs struct {
 // dockerBuildDockerfileTpl generates Dockerfiles for local Docker builds
 var dockerBuildDockerfileTpl = template.Must(
 	template.New("docker build dockerfile").Funcs(template.FuncMap{
-		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
+		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n\t") },
 		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
 		"list":   func(s string) []string { return []string{s} },
 	}).Parse(
 		textwrap.Dedent(`
 			#syntax=docker/dockerfile:1.10
 			FROM {{.BaseImage}}
-			RUN {{if .TimewarpAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
-			 set -eux
+			RUN {{if .TimewarpAuth}}--mount=type=secret,id=auth_header {{end}}<<-'EOF'
+				set -eux
 			{{- if .UseTimewarp}}
-			 {{- $hasCurl := or (eq .OS "debian") (eq .OS "ubuntu")}}
-			 {{- $hasWget := eq .OS "alpine"}}
-			 {{- if .TimewarpAuth}}
-			 {{if not $hasCurl}}{{.PackageManager.InstallCommand (list "curl")}} && {{end}}curl -H @/run/secrets/auth_header
-			 {{- else if $hasWget}}
-			 wget -O -
-			 {{- else if $hasCurl}}
-			 curl
-			 {{- end}} {{.TimewarpURL}} > timewarp
-			 chmod +x timewarp
+				{{- $hasCurl := or (eq .OS "debian") (eq .OS "ubuntu")}}
+				{{- $hasWget := eq .OS "alpine"}}
+				{{- if .TimewarpAuth}}
+				{{if not $hasCurl}}{{.PackageManager.InstallCommand (list "curl")}} && {{end}}curl -H @/run/secrets/auth_header
+			{{- else if $hasWget}}
+				wget -O -
+			{{- else if $hasCurl}}
+				curl
+				{{- end}} {{.TimewarpURL}} > timewarp
+				chmod +x timewarp
 			{{- end}}
-			 {{.PackageManager.UpdateCmd}}
-			 {{.PackageManager.InstallCommand .Instructions.Requires.SystemDeps}}
-			EOF
-			RUN <<'EOF'
-			 set -eux
+				{{.PackageManager.UpdateCmd}}
+				{{.PackageManager.InstallCommand .Instructions.Requires.SystemDeps}}
+				EOF
+			RUN <<-'EOF'
+				set -eux
 			{{- if .UseTimewarp}}
-			 ./timewarp -port 8080 &
-			 while ! nc -z localhost 8080;do sleep 1;done
+				./timewarp -port 8080 &
+				while ! nc -z localhost 8080;do sleep 1;done
 			{{- end}}
-			 mkdir -p /src && cd /src
-			 {{.Instructions.Source| indent}}
-			 {{.Instructions.Deps | indent}}
-			EOF
-			RUN cat <<'EOF' >/build
-			 set -eux
-			 {{.Instructions.Build | indent}}
-			 chmod 444 /src/{{.Instructions.OutputPath}}
-			 mkdir -p /out && cp /src/{{.Instructions.OutputPath}} /out/
-			EOF
+				mkdir -p /src && cd /src
+				{{.Instructions.Source | indent}}
+				{{.Instructions.Deps | indent}}
+				EOF
+			COPY --chmod=755 <<-'EOF' /build
+				set -eux
+				{{.Instructions.Build | indent}}
+				chmod 444 /src/{{.Instructions.OutputPath}}
+				mkdir -p /out && cp /src/{{.Instructions.OutputPath}} /out/
+				EOF
 			WORKDIR "/src"
 			ENTRYPOINT ["/bin/sh","/build"]
 			`)[1:], // remove leading newline
