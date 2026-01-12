@@ -312,6 +312,7 @@ func TestInferenceRequest_Validate(t *testing.T) {
 				"ecosystem": []string{"npm"},
 				"package":   []string{"lodash"},
 				"version":   []string{"4.17.21"},
+				"artifact":  []string{"lodash-4.17.21.tgz"},
 			},
 			wantErr: false,
 		},
@@ -321,6 +322,7 @@ func TestInferenceRequest_Validate(t *testing.T) {
 				"ecosystem":    []string{"pypi"},
 				"package":      []string{"requests"},
 				"version":      []string{"2.25.1"},
+				"artifact":     []string{"requests-2.25.1.tar.gz"},
 				"strategyhint": []string{`{"rebuild_location_hint":{"repo":"https://github.com/psf/requests"}}`},
 			},
 			wantErr: false,
@@ -331,6 +333,7 @@ func TestInferenceRequest_Validate(t *testing.T) {
 				"ecosystem":    []string{"npm"},
 				"package":      []string{"express"},
 				"version":      []string{"4.17.1"},
+				"artifact":     []string{"express.tgz"},
 				"strategyhint": []string{`{"npm_pack_build": {}}`},
 			},
 			wantErr: true,
@@ -341,18 +344,30 @@ func TestInferenceRequest_Validate(t *testing.T) {
 				"ecosystem":    []string{"pypi"},
 				"package":      []string{"django"},
 				"version":      []string{"3.2.4"},
+				"artifact":     []string{"django.whl"},
 				"strategyhint": []string{`{"rebuild_location_hint":{},"npm_pack_build":{}}`},
 			},
 			wantErr: true,
 		},
 		{
-			name: "missing required field",
+			name: "missing required field (version)",
 			values: url.Values{
 				"ecosystem": []string{"npm"},
 				"package":   []string{"lodash"},
 				// missing "version"
+				"artifact": []string{"lodash.tgz"},
 			},
-			wantParseErr: true,
+			wantParseErr: true, // Version is required in the InferenceRequest struct tag
+		},
+		{
+			name: "missing required field (artifact)",
+			values: url.Values{
+				"ecosystem": []string{"npm"},
+				"package":   []string{"lodash"},
+				"version":   []string{"4.17.21"},
+				// missing "artifact"
+			},
+			wantErr: true, // Artifact is not required by tag, but Validate() checks for it.
 		},
 	}
 
@@ -363,7 +378,9 @@ func TestInferenceRequest_Validate(t *testing.T) {
 			if (err != nil) != tt.wantParseErr {
 				t.Fatalf("Failed to decode form values: %v", err)
 			}
-
+			if tt.wantParseErr {
+				return
+			}
 			err = req.Validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("InferenceRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
@@ -384,6 +401,7 @@ func TestInferenceRequest_LocationHint(t *testing.T) {
 				"ecosystem": []string{"npm"},
 				"package":   []string{"lodash"},
 				"version":   []string{"4.17.21"},
+				"artifact":  []string{"lodash.tgz"},
 			},
 			want: nil,
 		},
@@ -393,6 +411,7 @@ func TestInferenceRequest_LocationHint(t *testing.T) {
 				"ecosystem":    []string{"pypi"},
 				"package":      []string{"requests"},
 				"version":      []string{"2.25.1"},
+				"artifact":     []string{"requests.whl"},
 				"strategyhint": []string{`{"rebuild_location_hint":{"repo":"https://github.com/psf/requests"}}`},
 			},
 			want: &rebuild.LocationHint{

@@ -53,7 +53,7 @@ func (s *remoteExecutionService) RebuildPackage(ctx context.Context, req schema.
 		if err != nil {
 			return nil, errors.Wrap(err, "selecting artifact")
 		}
-		t.Artifact = a
+		req.Artifact = a
 	}
 	return s.rebuildStub(ctx, req)
 }
