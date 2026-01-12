@@ -31,27 +31,27 @@ go build ./cmd/stabilize
 #### Basic Usage (Apply All Stabilizers)
 
 ```bash
-stabilize -infile package-1.0.0.whl -outfile stabilized.whl
+stabilize --infile package-1.0.0.whl --outfile stabilized.whl
 ```
 
 #### Enable Only Specific Stabilizers
 
 ```bash
-stabilize -infile package-1.0.0.tgz -outfile stabilized.tgz -enable-passes="tar-file-order,tar-time,tar-owners"
+stabilize --infile package-1.0.0.tgz --outfile stabilized.tgz --enable-passes="tar-file-order,tar-time,tar-owners"
 ```
 
 #### Disable Specific Stabilizers
 
 ```bash
-stabilize -infile library-1.0.0.jar -outfile stabilized.jar -disable-passes="jar-git-properties"
+stabilize --infile library-1.0.0.jar --outfile stabilized.jar --disable-passes="jar-git-properties"
 ```
 
 #### Specify Ecosystem When Ambiguous
 
 ```bash
-stabilize -infile package-1.0.0.tgz -outfile stabilized.tgz -ecosystem=npm
+stabilize --infile package-1.0.0.tgz --outfile stabilized.tgz --ecosystem=npm
 ```
 
 ## Available Stabilizers
 
-The tool applies different sets of stabilizers based on the file format. Run `stabilize -help` for a list of all supported stabilizers.
+The tool applies different sets of stabilizers based on the file format. Run `stabilize --help` for a list of all supported stabilizers.
