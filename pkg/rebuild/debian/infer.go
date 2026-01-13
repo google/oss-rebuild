@@ -43,14 +43,15 @@ func inferDSC(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (r
 	if err != nil {
 		return nil, err
 	}
+	// TODO: Move this Control parsing into the control package as a specific DSC type (similar to BuildInfo)
 	for stanza := range dsc.Stanzas {
-		for field, values := range dsc.Stanzas[stanza].Fields {
+		for field, val := range dsc.Stanzas[stanza].Fields {
 			switch field {
 			case "Files":
-				for _, value := range values {
-					elems := strings.Split(strings.TrimSpace(value), " ")
+				for _, line := range val.AsLines() {
+					elems := strings.Fields(line)
 					if len(elems) != 3 {
-						return nil, errors.Errorf("unexpected dsc File element: %s", value)
+						return nil, errors.Errorf("unexpected dsc File element: %s", line)
 					}
 					md5 := elems[0]
 					f := elems[2]
@@ -69,9 +70,8 @@ func inferDSC(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (r
 					}
 				}
 			case "Build-Depends", "Build-Depends-Indep":
-				deps := strings.Split(strings.TrimSpace(values[0]), ",")
+				deps := val.AsList()
 				for i, dep := range deps {
-					dep = strings.TrimSpace(dep)
 					if strings.Contains(dep, " ") {
 						deps[i] = strings.TrimSpace(strings.Split(dep, " ")[0])
 					}

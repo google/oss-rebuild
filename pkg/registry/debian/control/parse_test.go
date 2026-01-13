@@ -35,24 +35,26 @@ Files:
 			expected: &ControlFile{
 				Stanzas: []ControlStanza{
 					{
-						Fields: map[string][]string{
-							"Hash": {"SHA256"},
+						Fields: map[string]Value{
+							"Hash": {Lines: []string{"SHA256"}},
 						},
 					},
 					{
-						Fields: map[string][]string{
-							"Format": {"3.0 (quilt)"},
-							"Source": {"xz-utils"},
-							"Binary": {"bin-a, bin-b, xz-utils"},
-							"Package-List": {
+						Fields: map[string]Value{
+							"Format": {Lines: []string{"3.0 (quilt)"}},
+							"Source": {Lines: []string{"xz-utils"}},
+							"Binary": {Lines: []string{"bin-a, bin-b, xz-utils"}},
+							"Package-List": {Lines: []string{
+								"",
 								"liblzma-dev deb libdevel optional arch=any",
 								"liblzma-doc deb doc optional arch=all",
-							},
-							"Files": {
+							}},
+							"Files": {Lines: []string{
+								"",
 								"003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz",
 								"e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc",
 								"5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz",
-							},
+							}},
 						},
 					},
 				},
@@ -84,24 +86,26 @@ RLpmHHG1JOVdOA==
 			expected: &ControlFile{
 				Stanzas: []ControlStanza{
 					{
-						Fields: map[string][]string{
-							"Hash": {"SHA256"},
+						Fields: map[string]Value{
+							"Hash": {Lines: []string{"SHA256"}},
 						},
 					},
 					{
-						Fields: map[string][]string{
-							"Format": {"3.0 (quilt)"},
-							"Source": {"xz-utils"},
-							"Binary": {"bin-a, bin-b, xz-utils"},
-							"Package-List": {
+						Fields: map[string]Value{
+							"Format": {Lines: []string{"3.0 (quilt)"}},
+							"Source": {Lines: []string{"xz-utils"}},
+							"Binary": {Lines: []string{"bin-a, bin-b, xz-utils"}},
+							"Package-List": {Lines: []string{
+								"",
 								"liblzma-dev deb libdevel optional arch=any",
 								"liblzma-doc deb doc optional arch=all",
-							},
-							"Files": {
+							}},
+							"Files": {Lines: []string{
+								"",
 								"003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz",
 								"e475651d39fac8c38ff1460c1d92fc2e 879 xz-utils_5.2.4.orig.tar.xz.asc",
 								"5d018428dac6a83f00c010f49c51836e 135296 xz-utils_5.2.4-1.debian.tar.xz",
-							},
+							}},
 						},
 					},
 				},
