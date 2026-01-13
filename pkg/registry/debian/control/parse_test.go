@@ -129,3 +129,103 @@ RLpmHHG1JOVdOA==
 		})
 	}
 }
+
+func TestParseBuildInfo(t *testing.T) {
+	tests := []struct {
+		name        string
+		contents    string
+		expectedErr bool
+		expected    *BuildInfo
+	}{
+		{
+			name: "BuildInfo",
+			contents: `Format: 1.0
+Source: xz-utils
+Binary: xz-utils
+Architecture: amd64
+Version: 5.2.4-1
+Build-Origin: Debian
+Build-Architecture: amd64
+Build-Date: Sun, 28 Oct 2018 15:53:24 +0000
+Build-Path: /build/xz-utils-5.2.4
+Installed-Build-Depends:
+ autoconf (= 2.69-11),
+ automake (= 1:1.16.1-4)
+Environment:
+ DEB_BUILD_OPTIONS="parallel=4"
+ LANG="C.UTF-8"
+Checksums-Sha256:
+ 003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz`,
+			expectedErr: false,
+			expected: &BuildInfo{
+				Format:            "1.0",
+				Source:            "xz-utils",
+				Binary:            []string{"xz-utils"},
+				Architecture:      "amd64",
+				Version:           "5.2.4-1",
+				BuildOrigin:       "Debian",
+				BuildArchitecture: "amd64",
+				BuildDate:         "Sun, 28 Oct 2018 15:53:24 +0000",
+				BuildPath:         "/build/xz-utils-5.2.4",
+				InstalledBuildDepends: []string{
+					"autoconf (= 2.69-11)",
+					"automake (= 1:1.16.1-4)",
+				},
+				Environment: []string{
+					"DEB_BUILD_OPTIONS=\"parallel=4\"",
+					"LANG=\"C.UTF-8\"",
+				},
+				ChecksumsSha256: []string{
+					"003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz",
+				},
+			},
+		},
+		{
+			name: "BuildInfoWithMultilineAndFolded",
+			contents: `Format: 1.0
+Source: pkg
+Binary:
+ bin1,
+ bin2
+Binary-Only-Changes:
+ changelog entry
+  indented line
+ .
+ last line
+Checksums-Sha256:
+ hash1 size1 file1
+ hash2 size2 file2`,
+			expectedErr: false,
+			expected: &BuildInfo{
+				Format: "1.0",
+				Source: "pkg",
+				Binary: []string{"bin1,", "bin2"},
+				BinaryOnlyChanges: `
+changelog entry
+ indented line
+
+last line`[1:],
+				ChecksumsSha256: []string{
+					"hash1 size1 file1",
+					"hash2 size2 file2",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseBuildInfo(strings.NewReader(tt.contents))
+			if (err != nil) != tt.expectedErr {
+				t.Errorf("ParseBuildInfo() error = %v, expectedErr %v", err, tt.expectedErr)
+				return
+			}
+			if tt.expectedErr {
+				return
+			}
+			if diff := cmp.Diff(got, tt.expected); diff != "" {
+				t.Errorf("BuildInfo mismatch: diff\n%v", diff)
+			}
+		})
+	}
+}
