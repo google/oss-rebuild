@@ -6,6 +6,7 @@ package main
 
 import (
 	"bufio"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,14 +16,16 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
-	"regexp"
-	"slices"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio"
+	"github.com/google/oss-rebuild/pkg/registry/debian"
+	"github.com/google/oss-rebuild/pkg/registry/debian/control"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -145,24 +148,68 @@ func get(ctx context.Context, url string) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
+type debianPackageInfo struct {
+	Version string
+	Path    string
+}
+
+var debianRepositoryURL = urlx.MustParse("https://deb.debian.org/debian")
+
+func fetchDebianPackages(ctx context.Context, dist string) (map[string]debianPackageInfo, error) {
+	repo := make(map[string]debianPackageInfo)
+	components := []string{"main", "contrib", "non-free"}
+	arches := []string{"all", "amd64"}
+	for _, comp := range components {
+		for _, arch := range arches {
+			// Copy the URL
+			u := urlx.MustParse(debianRepositoryURL.String())
+			u.Path = path.Join(u.Path, "dists", dist, comp, fmt.Sprintf("binary-%s", arch), "Packages.gz")
+			rc, err := get(ctx, u.String())
+			if err != nil {
+				log.Printf("Error fetching packages for %s/%s: %v", dist, comp, err)
+				continue
+			}
+			defer rc.Close()
+			gr, err := gzip.NewReader(rc)
+			if err != nil {
+				return nil, err
+			}
+			defer gr.Close()
+			ctrl, err := control.Parse(gr)
+			if err != nil {
+				return nil, err
+			}
+			for _, stanza := range ctrl.Stanzas {
+				// We handle potential errors by ignoring incomplete stanzas
+				pkgName, _ := stanza.Fields["Package"].AsSimple()
+				version, _ := stanza.Fields["Version"].AsSimple()
+				filename, _ := stanza.Fields["Filename"].AsSimple()
+				if pkgName != "" && version != "" && filename != "" {
+					// Normalize epoch
+					if v, err := debian.ParseVersion(version); err == nil {
+						if v.Epoch == "" {
+							v.Epoch = "0"
+							version = v.String()
+						}
+					}
+					repo[pkgName] = debianPackageInfo{Version: version, Path: filename}
+				}
+			}
+		}
+	}
+	return repo, nil
+}
+
 var debianTop500 = RebuildBenchmark{
 	Filename: "debian_top_500.json",
 	Generator: func(ctx context.Context) (ps benchmark.PackageSet) {
-		var (
-			// The "all" arch is included in other arch indices.
-			archs         = []string{"amd64"}
-			popularityURL = "https://popcon.debian.org/by_inst"
-			repositoryURL = "https://deb.debian.org/debian"
-		)
+		popularityURL := "https://popcon.debian.org/by_inst"
 		resp, err := get(ctx, popularityURL)
 		if err != nil {
 			log.Fatalf("error fetching popularity: %v", err)
 		}
 		b := bufio.NewScanner(resp)
 		var popularPackages []string
-		// Lines beginning with '#' are comments. Here are the column names and first row:
-		// #rank name                            inst  vote   old recent no-files (maintainer)
-		// 1     adduser                        248240 227236  4237 16731    36 (Debian Adduser Developers)
 		for b.Scan() {
 			line := strings.TrimSpace(b.Text())
 			if len(line) == 0 || line[0] == '#' {
@@ -172,81 +219,40 @@ var debianTop500 = RebuildBenchmark{
 			if len(f) < 2 {
 				continue
 			}
-			// We only care about the package name.
 			popularPackages = append(popularPackages, f[1])
 		}
-		// Mapping from package name to a set of strings like "component/sourceName/version/artifact" where package name matches the artifact.
-		var elementsRegex = regexp.MustCompile(`^(?P<component>[^/]+)\/(?P<sourceName>[^/]+)\/(?P<version>[^/]+)\/(?P<artifact>[^/]+)$`)
-		repo := map[string]map[string]bool{}
-		for _, arch := range archs {
-			index, err := get(ctx, repositoryURL+fmt.Sprintf("/indices/files/arch-%s.files", arch))
-			if err != nil {
-				log.Fatalf("error fetching arch %s index: %v", arch, err)
-			}
-			b = bufio.NewScanner(index)
-			// Each line in the index is a relative path from the repository root. Files included are *.dsc, *.tar.gz, and *.deb.
-			// And example would be:
-			// ./pool/contrib/a/alex4/alex4_1.1-10+b2_amd64.deb
-			packagePathRegex := regexp.MustCompile(`^\.\/pool\/(?P<component>[^/]+)\/[^/]+\/(?P<sourceName>[^/]+)\/(?P<packageName>[^_]+)_(?P<version>[^_]+)_[^_]+\.deb$`)
-			for b.Scan() {
-				if matches := packagePathRegex.FindStringSubmatch(strings.TrimSpace(b.Text())); matches != nil {
-					component := matches[packagePathRegex.SubexpIndex("component")]
-					sourceName := matches[packagePathRegex.SubexpIndex("sourceName")]
-					packageName := matches[packagePathRegex.SubexpIndex("packageName")]
-					version := matches[packagePathRegex.SubexpIndex("version")]
-					artifact := filepath.Base(b.Text())
-					if _, ok := repo[packageName]; !ok {
-						repo[packageName] = map[string]bool{}
-					}
-					repo[packageName][fmt.Sprintf("%s/%s/%s/%s", component, sourceName, version, artifact)] = true
-				}
-			}
-		}
-		type Artifact struct {
-			Version string
-			Name    string
+		repo, err := fetchDebianPackages(ctx, "testing")
+		if err != nil {
+			log.Fatalf("error fetching debian packages: %v", err)
 		}
 		for _, p := range popularPackages {
 			if ps.Count >= 500 {
 				break
 			}
-			if _, ok := repo[p]; !ok || len(repo[p]) == 0 {
-				log.Printf("Cannot find package %s in the indexes", p)
-			}
-			var packageComponent, packageSourceName string
-			var artifacts []Artifact
-			// TODO: Optionally only include the artifacts provided by a specific release.
-			for a := range repo[p] {
-				if matches := elementsRegex.FindStringSubmatch(a); matches != nil {
-					component := matches[elementsRegex.SubexpIndex("component")]
-					sourceName := matches[elementsRegex.SubexpIndex("sourceName")]
-					version := matches[elementsRegex.SubexpIndex("version")]
-					artifact := matches[elementsRegex.SubexpIndex("artifact")]
-					if packageComponent == "" {
-						packageComponent = component
-					}
-					if packageSourceName == "" {
-						packageSourceName = sourceName
-					}
-					if !strings.HasPrefix(a, packageComponent+"/"+packageSourceName) {
-						log.Printf("Package occurred with different prefixes: %s (%s vs %s)", p, packageComponent+"/"+packageSourceName, a)
-						goto next
-					}
-					artifacts = append(artifacts, Artifact{Version: version, Name: artifact})
-				} else {
-					log.Fatalf("Unexpected artifact format %s", a)
-				}
-			}
-			if packageComponent == "" || packageSourceName == "" {
+			info, ok := repo[p]
+			if !ok {
+				log.Printf("Failed to find debian package: %s", p)
 				continue
 			}
-			slices.SortFunc(artifacts, func(a, b Artifact) int {
-				return strings.Compare(fmt.Sprintf("%s/%s", a.Version, a.Name), fmt.Sprintf("%s/%s", b.Version, b.Name))
+			// Path example: pool/main/a/apt/apt_2.2.4_amd64.deb
+			parts := strings.Split(info.Path, "/")
+			if len(parts) < 4 {
+				log.Printf("Unexpected path format for %s: %s", p, info.Path)
+				continue
+			}
+			component := parts[1]
+			// parts[3] corresponds to the source package name in standard pool layout
+			sourceName := parts[3]
+			pkgName := fmt.Sprintf("%s/%s", component, sourceName)
+			artifact := filepath.Base(info.Path)
+
+			ps.Packages = append(ps.Packages, benchmark.Package{
+				Ecosystem: "debian",
+				Name:      pkgName,
+				Versions:  []string{info.Version},
+				Artifacts: []string{artifact},
 			})
-			// TODO: Support multiple artifacts/versions for each package.
-			ps.Packages = append(ps.Packages, benchmark.Package{Ecosystem: "debian", Name: packageComponent + "/" + packageSourceName, Versions: []string{artifacts[len(artifacts)-1].Version}, Artifacts: []string{artifacts[len(artifacts)-1].Name}})
-			ps.Count += 1
-		next:
+			ps.Count++
 		}
 		ps.Updated = time.Now()
 		return
@@ -256,21 +262,13 @@ var debianTop500 = RebuildBenchmark{
 var debianTop500Stable = RebuildBenchmark{
 	Filename: "debian_top_500_stable.json",
 	Generator: func(ctx context.Context) (ps benchmark.PackageSet) {
-		var (
-			// The "all" arch is included in other arch indices.
-			archs         = []string{"amd64"}
-			popularityURL = "https://popcon.debian.org/stable/by_inst"
-			repositoryURL = "https://deb.debian.org/debian"
-		)
+		popularityURL := "https://popcon.debian.org/stable/by_inst"
 		resp, err := get(ctx, popularityURL)
 		if err != nil {
 			log.Fatalf("error fetching popularity: %v", err)
 		}
 		b := bufio.NewScanner(resp)
 		var popularPackages []string
-		// Lines beginning with '#' are comments. Here are the column names and first row:
-		// #rank name                            inst  vote   old recent no-files (maintainer)
-		// 1     adduser                        248240 227236  4237 16731    36 (Debian Adduser Developers)
 		for b.Scan() {
 			line := strings.TrimSpace(b.Text())
 			if len(line) == 0 || line[0] == '#' {
@@ -280,81 +278,39 @@ var debianTop500Stable = RebuildBenchmark{
 			if len(f) < 2 {
 				continue
 			}
-			// We only care about the package name.
 			popularPackages = append(popularPackages, f[1])
 		}
-		// Mapping from package name to a set of strings like "component/sourceName/version/artifact" where package name matches the artifact.
-		var elementsRegex = regexp.MustCompile(`^(?P<component>[^/]+)\/(?P<sourceName>[^/]+)\/(?P<version>[^/]+)\/(?P<artifact>[^/]+)$`)
-		repo := map[string]map[string]bool{}
-		for _, arch := range archs {
-			index, err := get(ctx, repositoryURL+fmt.Sprintf("/indices/files/arch-%s.files", arch))
-			if err != nil {
-				log.Fatalf("error fetching arch %s index: %v", arch, err)
-			}
-			b = bufio.NewScanner(index)
-			// Each line in the index is a relative path from the repository root. Files included are *.dsc, *.tar.gz, and *.deb.
-			// And example would be:
-			// ./pool/contrib/a/alex4/alex4_1.1-10+b2_amd64.deb
-			packagePathRegex := regexp.MustCompile(`^\.\/pool\/(?P<component>[^/]+)\/[^/]+\/(?P<sourceName>[^/]+)\/(?P<packageName>[^_]+)_(?P<version>[^_]+)_[^_]+\.deb$`)
-			for b.Scan() {
-				if matches := packagePathRegex.FindStringSubmatch(strings.TrimSpace(b.Text())); matches != nil {
-					component := matches[packagePathRegex.SubexpIndex("component")]
-					sourceName := matches[packagePathRegex.SubexpIndex("sourceName")]
-					packageName := matches[packagePathRegex.SubexpIndex("packageName")]
-					version := matches[packagePathRegex.SubexpIndex("version")]
-					artifact := filepath.Base(b.Text())
-					if _, ok := repo[packageName]; !ok {
-						repo[packageName] = map[string]bool{}
-					}
-					repo[packageName][fmt.Sprintf("%s/%s/%s/%s", component, sourceName, version, artifact)] = true
-				}
-			}
-		}
-		type Artifact struct {
-			Version string
-			Name    string
+		repo, err := fetchDebianPackages(ctx, "stable")
+		if err != nil {
+			log.Fatalf("error fetching debian packages: %v", err)
 		}
 		for _, p := range popularPackages {
 			if ps.Count >= 500 {
 				break
 			}
-			if _, ok := repo[p]; !ok || len(repo[p]) == 0 {
-				log.Printf("Cannot find package %s in the indexes", p)
-			}
-			var packageComponent, packageSourceName string
-			var artifacts []Artifact
-			// TODO: Optionally only include the artifacts provided by a specific release.
-			for a := range repo[p] {
-				if matches := elementsRegex.FindStringSubmatch(a); matches != nil {
-					component := matches[elementsRegex.SubexpIndex("component")]
-					sourceName := matches[elementsRegex.SubexpIndex("sourceName")]
-					version := matches[elementsRegex.SubexpIndex("version")]
-					artifact := matches[elementsRegex.SubexpIndex("artifact")]
-					if packageComponent == "" {
-						packageComponent = component
-					}
-					if packageSourceName == "" {
-						packageSourceName = sourceName
-					}
-					if !strings.HasPrefix(a, packageComponent+"/"+packageSourceName) {
-						log.Printf("Package occurred with different prefixes: %s (%s vs %s)", p, packageComponent+"/"+packageSourceName, a)
-						goto next
-					}
-					artifacts = append(artifacts, Artifact{Version: version, Name: artifact})
-				} else {
-					log.Fatalf("Unexpected artifact format %s", a)
-				}
-			}
-			if packageComponent == "" || packageSourceName == "" {
+			info, ok := repo[p]
+			if !ok {
+				log.Printf("Failed to find debian package: %s", p)
 				continue
 			}
-			slices.SortFunc(artifacts, func(a, b Artifact) int {
-				return strings.Compare(fmt.Sprintf("%s/%s", a.Version, a.Name), fmt.Sprintf("%s/%s", b.Version, b.Name))
+			parts := strings.Split(info.Path, "/")
+			if len(parts) < 4 {
+				log.Printf("Unexpected path format for %s: %s", p, info.Path)
+				continue
+			}
+			component := parts[1]
+			sourceName := parts[3]
+
+			pkgName := fmt.Sprintf("%s/%s", component, sourceName)
+			artifact := filepath.Base(info.Path)
+
+			ps.Packages = append(ps.Packages, benchmark.Package{
+				Ecosystem: "debian",
+				Name:      pkgName,
+				Versions:  []string{info.Version},
+				Artifacts: []string{artifact},
 			})
-			// TODO: Support multiple artifacts/versions for each package.
-			ps.Packages = append(ps.Packages, benchmark.Package{Ecosystem: "debian", Name: packageComponent + "/" + packageSourceName, Versions: []string{artifacts[len(artifacts)-1].Version}, Artifacts: []string{artifacts[len(artifacts)-1].Name}})
-			ps.Count += 1
-		next:
+			ps.Count++
 		}
 		ps.Updated = time.Now()
 		return
