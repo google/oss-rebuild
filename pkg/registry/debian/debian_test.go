@@ -115,6 +115,163 @@ func TestGuessDSCURL(t *testing.T) {
 	}
 }
 
+func TestBuildInfoURL(t *testing.T) {
+	testCases := []struct {
+		name     string
+		pkg      string
+		version  *Version
+		arch     string
+		expected string
+	}{
+		{
+			name:     "no epoch",
+			pkg:      "xz-utils",
+			version:  must(ParseVersion("5.2.4-1")),
+			arch:     "amd64",
+			expected: "https://buildinfos.debian.net/buildinfo-pool/x/xz-utils/xz-utils_5.2.4-1_amd64.buildinfo",
+		},
+		{
+			name:     "with epoch",
+			pkg:      "golang-1.15",
+			version:  must(ParseVersion("1:1.15.15-1~deb11u4")),
+			arch:     "amd64",
+			expected: "https://buildinfos.debian.net/buildinfo-pool/g/golang-1.15/golang-1.15_1.15.15-1~deb11u4_amd64.buildinfo",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := BuildInfoURL(tc.pkg, tc.version, tc.arch)
+			if actual != tc.expected {
+				t.Errorf("BuildInfoURL mismatch: got %v, want %v", actual, tc.expected)
+			}
+		})
+	}
+}
+
+func TestHTTPRegistry_BuildInfo(t *testing.T) {
+	testCases := []struct {
+		name        string
+		component   string
+		pkg         string
+		version     *Version
+		arch        string
+		expectedURL string
+		contents    string
+		expected    *control.BuildInfo
+		expectedErr bool
+	}{
+		{
+			name:        "Standard",
+			component:   "main",
+			pkg:         "xz-utils",
+			version:     must(ParseVersion("5.2.4-1")),
+			arch:        "amd64",
+			expectedURL: "https://buildinfos.debian.net/buildinfo-pool/x/xz-utils/xz-utils_5.2.4-1_amd64.buildinfo",
+			contents: `Format: 1.0
+Source: xz-utils
+Binary: xz-utils
+Architecture: amd64
+Version: 5.2.4-1
+Build-Origin: Debian
+Build-Architecture: amd64
+Build-Date: Sun, 28 Oct 2018 15:53:24 +0000
+Build-Path: /build/xz-utils-5.2.4
+Installed-Build-Depends:
+ autoconf (= 2.69-11),
+ automake (= 1:1.16.1-4)
+Environment:
+ DEB_BUILD_OPTIONS="parallel=4"
+ LANG="C.UTF-8"
+Checksums-Sha256:
+ 003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz`,
+			expected: &control.BuildInfo{
+				Format:            "1.0",
+				Source:            "xz-utils",
+				Binary:            []string{"xz-utils"},
+				Architecture:      "amd64",
+				Version:           "5.2.4-1",
+				BuildOrigin:       "Debian",
+				BuildArchitecture: "amd64",
+				BuildDate:         "Sun, 28 Oct 2018 15:53:24 +0000",
+				BuildPath:         "/build/xz-utils-5.2.4",
+				InstalledBuildDepends: []string{
+					"autoconf (= 2.69-11)",
+					"automake (= 1:1.16.1-4)",
+				},
+				Environment: []string{
+					"DEB_BUILD_OPTIONS=\"parallel=4\"",
+					"LANG=\"C.UTF-8\"",
+				},
+				ChecksumsSha256: []string{
+					"003e4d0b1b1899fc6e3000b24feddf7c 1053868 xz-utils_5.2.4.orig.tar.xz",
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name:        "Epoch Mismatch",
+			component:   "main",
+			pkg:         "pkg",
+			version:     must(ParseVersion("1:1.0")),
+			arch:        "amd64",
+			expectedURL: "https://buildinfos.debian.net/buildinfo-pool/p/pkg/pkg_1.0_amd64.buildinfo",
+			contents: `Format: 1.0
+Source: pkg
+Version: 1.0`,
+			expectedErr: true,
+		},
+		{
+			name:        "Epoch Match",
+			component:   "main",
+			pkg:         "pkg",
+			version:     must(ParseVersion("1:1.0")),
+			arch:        "amd64",
+			expectedURL: "https://buildinfos.debian.net/buildinfo-pool/p/pkg/pkg_1.0_amd64.buildinfo",
+			contents: `Format: 1.0
+Source: pkg
+Version: 1:1.0`,
+			expected: &control.BuildInfo{
+				Format:  "1.0",
+				Source:  "pkg",
+				Version: "1:1.0",
+			},
+			expectedErr: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			call := httpxtest.Call{
+				URL: tc.expectedURL,
+				Response: &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(bytes.NewReader([]byte(tc.contents))),
+				},
+			}
+			mockClient := &httpxtest.MockClient{
+				Calls:        []httpxtest.Call{call},
+				URLValidator: httpxtest.NewURLValidator(t),
+			}
+			u, actual, err := HTTPRegistry{Client: mockClient}.BuildInfo(context.Background(), tc.component, tc.pkg, tc.version, tc.arch)
+			if tc.expectedErr {
+				if err == nil {
+					t.Errorf("Expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+			if u != tc.expectedURL {
+				t.Errorf("URL mismatch: got %v, want %v", u, tc.expectedURL)
+			}
+			if diff := cmp.Diff(actual, tc.expected); diff != "" {
+				t.Errorf("BuildInfo mismatch: diff\n%v", diff)
+			}
+		})
+	}
+}
+
 func TestHTTPRegistry_Artifact(t *testing.T) {
 	testCases := []struct {
 		name        string
