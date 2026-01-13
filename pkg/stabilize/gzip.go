@@ -11,12 +11,21 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive"
 )
 
+var gzipFormats = []archive.Format{archive.GzipFormat, archive.TarGzFormat}
+
 // AllGzipStabilizers is the list of all available gzip stabilizers.
 var AllGzipStabilizers = []Stabilizer{
 	StableGzipCompression,
 	StableGzipName,
 	StableGzipTime,
 	StableGzipMisc,
+}
+
+// GzipFn applies stabilization to gzip metadata.
+type GzipFn func(*archive.MutableGzipHeader)
+
+func (GzipFn) Constraints() Constraints {
+	return []Constraint{Formats(gzipFormats)}
 }
 
 // defaultCompression enables us to configure the default compression value
@@ -30,13 +39,12 @@ var defaultCompression = gzip.DefaultCompression
 // compression level used in the gzip.Writer is not configurable after
 // construction. As a result, a raw writer must be provided and a gzip.Writer
 // returned to ensure a configurable compression level.
-func NewStabilizedGzipWriter(gr *gzip.Reader, w io.Writer, opts StabilizeOpts) (*gzip.Writer, error) {
+func NewStabilizedGzipWriter(gr *gzip.Reader, w io.Writer, opts StabilizeOpts, ctx *StabilizationContext) (*gzip.Writer, error) {
 	header := gr.Header
 	mh := archive.MutableGzipHeader{Header: &header, Compression: defaultCompression}
 	for _, s := range opts.Stabilizers {
-		switch s.(type) {
-		case GzipStabilizer:
-			s.(GzipStabilizer).Stabilize(&mh)
+		if fn, ok := s.FnFor(ctx).(GzipFn); ok {
+			fn(&mh)
 		}
 	}
 	gw, err := gzip.NewWriterLevel(w, mh.Compression)
@@ -47,50 +55,35 @@ func NewStabilizedGzipWriter(gr *gzip.Reader, w io.Writer, opts StabilizeOpts) (
 	return gw, nil
 }
 
-// GzipStabilizer applies stabilization to gzip headers.
-type GzipStabilizer struct {
-	Name string
-	Func func(*archive.MutableGzipHeader)
-}
-
-// Stabilize applies the stabilizer function to the given MutableGzipHeader.
-func (g GzipStabilizer) Stabilize(arg any) {
-	g.Func(arg.(*archive.MutableGzipHeader))
-}
-
 // StableGzipCompression sets compression to no compression.
-var StableGzipCompression = GzipStabilizer{
+var StableGzipCompression = Stabilizer{
 	Name: "gzip-compression",
-	Func: func(h *archive.MutableGzipHeader) {
-		h.Compression = gzip.NoCompression
-	},
-}
+}.WithFn(GzipFn(func(h *archive.MutableGzipHeader) {
+	h.Compression = gzip.NoCompression
+}))
 
 // StableGzipName clears the filename.
-var StableGzipName = GzipStabilizer{
+var StableGzipName = Stabilizer{
 	Name: "gzip-name",
-	Func: func(h *archive.MutableGzipHeader) {
-		h.Name = ""
-	},
-}
+}.WithFn(GzipFn(func(h *archive.MutableGzipHeader) {
+	h.Name = ""
+}))
 
 // StableGzipTime zeroes out modification time.
-var StableGzipTime = GzipStabilizer{
+var StableGzipTime = Stabilizer{
 	Name: "gzip-time",
-	Func: func(h *archive.MutableGzipHeader) {
-		// NOTE: time.Time{} can be round-tripped more cleanly than the epoch value
-		// because, per the spec, the field is not serialized when set to the zero
-		// value. As a result, writing the epoch would be read back as time.Time{}.
-		h.ModTime = time.Time{}
-	},
-}
+}.WithFn(GzipFn(func(h *archive.MutableGzipHeader) {
+	// NOTE: time.Time{} can be round-tripped more cleanly than the epoch value
+	// because, per the spec, the field is not serialized when set to the zero
+	// value. As a result, writing the epoch would be read back as time.Time{}.
+	h.ModTime = time.Time{}
+}))
 
 // StableGzipMisc clears miscellaneous metadata fields.
-var StableGzipMisc = GzipStabilizer{
+var StableGzipMisc = Stabilizer{
 	Name: "gzip-misc",
-	Func: func(h *archive.MutableGzipHeader) {
-		h.Comment = ""
-		h.Extra = nil
-		h.OS = 255 // unknown
-	},
-}
+}.WithFn(GzipFn(func(h *archive.MutableGzipHeader) {
+	h.Comment = ""
+	h.Extra = nil
+	h.OS = 255 // unknown
+}))
