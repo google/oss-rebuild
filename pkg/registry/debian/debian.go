@@ -112,6 +112,12 @@ func (v *Version) BinaryIndependentString() string {
 	return strings.TrimSuffix(v.String(), "+b"+v.BinaryNonMaintainerUpload())
 }
 
+// Epochless converts this version into a string, minus any epoch.
+// Helpful when constructing file names, which commonly elide the epoch.
+func (v *Version) Epochless() string {
+	return strings.TrimPrefix(v.String(), v.Epoch+":")
+}
+
 type ArtifactIdentifier struct {
 	// Name is the name of the artifact (different from the source package)
 	Name string

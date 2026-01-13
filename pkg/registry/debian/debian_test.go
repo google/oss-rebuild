@@ -315,6 +315,211 @@ RLpmHHG1JOVdOA==
 	}
 }
 
+func TestParseVersion(t *testing.T) {
+	tests := []struct {
+		name                 string
+		version              string
+		wantErr              bool
+		expected             Version
+		expectedString       string
+		expectedNative       bool
+		expectedRollbackBase string
+		expectedBinNMU       string
+		expectedBinIndep     string
+		expectedEpochless    string
+	}{
+		{
+			name:    "Standard Native Package",
+			version: "1.0",
+			expected: Version{
+				Upstream: "1.0",
+			},
+			expectedString:       "1.0",
+			expectedNative:       true,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0",
+			expectedEpochless:    "1.0",
+		},
+		{
+			name:    "Standard Non-Native Package",
+			version: "1.0-1",
+			expected: Version{
+				Upstream:       "1.0",
+				DebianRevision: "1",
+			},
+			expectedString:       "1.0-1",
+			expectedNative:       false,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0-1",
+			expectedEpochless:    "1.0-1",
+		},
+		{
+			name:    "Native with Epoch",
+			version: "1:2.0",
+			expected: Version{
+				Epoch:    "1",
+				Upstream: "2.0",
+			},
+			expectedString:       "1:2.0",
+			expectedNative:       true,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1:2.0",
+			expectedEpochless:    "2.0",
+		},
+		{
+			name:    "Non-Native with Epoch",
+			version: "2:3.0-4",
+			expected: Version{
+				Epoch:          "2",
+				Upstream:       "3.0",
+				DebianRevision: "4",
+			},
+			expectedString:       "2:3.0-4",
+			expectedNative:       false,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "2:3.0-4",
+			expectedEpochless:    "3.0-4",
+		},
+		{
+			name:    "Upstream with Hyphens (Non-Native)",
+			version: "1.0-beta-1",
+			expected: Version{
+				Upstream:       "1.0-beta",
+				DebianRevision: "1",
+			},
+			expectedString:       "1.0-beta-1",
+			expectedNative:       false,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0-beta-1",
+			expectedEpochless:    "1.0-beta-1",
+		},
+		{
+			name:    "Complex Revision",
+			version: "1.0-0.1ubuntu1",
+			expected: Version{
+				Upstream:       "1.0",
+				DebianRevision: "0.1ubuntu1",
+			},
+			expectedString:       "1.0-0.1ubuntu1",
+			expectedNative:       false,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0-0.1ubuntu1",
+			expectedEpochless:    "1.0-0.1ubuntu1",
+		},
+		{
+			name:    "Native Binary Non-Maintainer Upload (BinNMU)",
+			version: "1.0+b1",
+			expected: Version{
+				Upstream: "1.0+b1",
+			},
+			expectedString:       "1.0+b1",
+			expectedNative:       true,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "1",
+			expectedBinIndep:     "1.0",
+			expectedEpochless:    "1.0+b1",
+		},
+		{
+			name:    "Non-Native Binary Non-Maintainer Upload (BinNMU)",
+			version: "1.0-1+b1",
+			expected: Version{
+				Upstream:       "1.0",
+				DebianRevision: "1+b1",
+			},
+			expectedString:       "1.0-1+b1",
+			expectedNative:       false,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "1",
+			expectedBinIndep:     "1.0-1",
+			expectedEpochless:    "1.0-1+b1",
+		},
+		{
+			name:    "Rollback Package (+really)",
+			version: "1.0+really0.9",
+			expected: Version{
+				Upstream: "1.0+really0.9",
+			},
+			expectedString:       "1.0+really0.9",
+			expectedNative:       true,
+			expectedRollbackBase: "0.9",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0+really0.9",
+			expectedEpochless:    "1.0+really0.9",
+		},
+		{
+			name:    "Multiple Rollbacks (+really)",
+			version: "1.0+really0.9+really0.8",
+			expected: Version{
+				Upstream: "1.0+really0.9+really0.8",
+			},
+			expectedString:       "1.0+really0.9+really0.8",
+			expectedNative:       true,
+			expectedRollbackBase: "0.8",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "1.0+really0.9+really0.8",
+			expectedEpochless:    "1.0+really0.9+really0.8",
+		},
+		{
+			name:    "Invalid: Empty String",
+			version: "",
+			wantErr: true,
+		},
+		{
+			name:    "Invalid: Starts with non-digit",
+			version: "v1.0",
+			wantErr: true,
+		},
+		{
+			name:    "Invalid: Hyphen but empty revision",
+			version: "1.0-",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			v, err := ParseVersion(tc.version)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("ParseVersion(%q) expected error, got nil", tc.version)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ParseVersion(%q) unexpected error: %v", tc.version, err)
+				return
+			}
+			if diff := cmp.Diff(*v, tc.expected); diff != "" {
+				t.Errorf("Struct mismatch:\n%+v", diff)
+			}
+			if got := v.String(); got != tc.expectedString {
+				t.Errorf("String(): got %q, want %q", got, tc.expectedString)
+			}
+			if got := v.Native(); got != tc.expectedNative {
+				t.Errorf("Native(): got %v, want %v", got, tc.expectedNative)
+			}
+			if got := v.RollbackBase(); got != tc.expectedRollbackBase {
+				t.Errorf("RollbackBase(): got %q, want %q", got, tc.expectedRollbackBase)
+			}
+			if got := v.BinaryNonMaintainerUpload(); got != tc.expectedBinNMU {
+				t.Errorf("BinaryNonMaintainerUpload(): got %q, want %q", got, tc.expectedBinNMU)
+			}
+			if got := v.BinaryIndependentString(); got != tc.expectedBinIndep {
+				t.Errorf("BinaryIndependentString(): got %q, want %q", got, tc.expectedBinIndep)
+			}
+			if got := v.Epochless(); got != tc.expectedEpochless {
+				t.Errorf("Epochless(): got %q, want %q", got, tc.expectedEpochless)
+			}
+		})
+	}
+}
+
 func TestParseDebianArtifact(t *testing.T) {
 	testCases := []struct {
 		name                    string
