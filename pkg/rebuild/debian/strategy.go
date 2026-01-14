@@ -4,8 +4,10 @@
 package debian
 
 import (
+	"fmt"
 	"path"
 	"regexp"
+	"strings"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
@@ -115,6 +117,105 @@ func (b *Debrebuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild
 	return b.ToWorkflow().GenerateFor(t, be)
 }
 
+// DebootsnapSbuild uses debootsnap sbuild to perform a rebuild.
+type DebootsnapSbuild struct {
+	BuildInfo                FileWithChecksum `json:"buildinfo" yaml:"buildinfo,omitempty"`
+	BuildArchAll             bool             `json:"buildArchAll" yaml:"buildArchAll,omitempty"`
+	BuildArchAny             bool             `json:"buildArchAny" yaml:"buildArchAny,omitempty"`
+	BuildArch                string           `json:"buildArch" yaml:"buildArch,omitempty"`
+	HostArch                 string           `json:"hostArch" yaml:"hostArch,omitempty"`
+	SrcPackage               string           `json:"srcPackage" yaml:"srcPackage,omitempty"`
+	SrcVersion               string           `json:"srcVersion" yaml:"srcVersion,omitempty"`
+	SrcVersionNoEpoch        string           `json:"srcVersionNoEpoch" yaml:"srcVersionNoEpoch,omitempty"`
+	BuildPath                string           `json:"buildPath" yaml:"buildPath,omitempty"`
+	DscDir                   string           `json:"dscDir" yaml:"dscDir,omitempty"`
+	DpkgVersion              string           `json:"dpkgVersion" yaml:"dpkgVersion,omitempty"`
+	ForceRulesRequiresRootNo bool             `json:"forceRulesRequiresRootNo" yaml:"forceRulesRequiresRootNo,omitempty"`
+	Env                      []string         `json:"env" yaml:"env,omitempty"`
+	BinaryOnlyChanges        string           `json:"binaryOnlyChanges" yaml:"binaryOnlyChanges,omitempty"`
+}
+
+func (b *DebootsnapSbuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	s := &rebuild.WorkflowStrategy{
+		Source: []flow.Step{
+			{
+				Uses: "debian/deps/install",
+				With: map[string]string{
+					"requirements": flow.MustToJSON([]string{"devscripts", "mmdebstrap", "sbuild"}),
+				},
+			},
+			{
+				Uses: "debian/fetch/buildinfo",
+				With: map[string]string{
+					"buildinfoUrl": b.BuildInfo.URL,
+					"buildinfoMd5": b.BuildInfo.MD5,
+				},
+			},
+			{
+				Uses: "debian/fetch/dsc",
+				With: map[string]string{
+					"srcPackage": b.SrcPackage,
+					"srcVersion": b.SrcVersion,
+				},
+			},
+		},
+		Deps: []flow.Step{
+			{
+				Uses: "debian/deps/debootsnap",
+				With: map[string]string{
+					"buildinfo": path.Base(b.BuildInfo.URL),
+				},
+			},
+		},
+		Build: []flow.Step{
+			{
+				// Removes noisy "cannot bind moun /dev/console" errors
+				Uses: "debian/build/make-dev-console",
+			},
+			{
+				Uses: "debian/build/sbuild",
+				With: map[string]string{
+					"env":       strings.Join(b.Env, " "),
+					"buildArch": b.BuildArch,
+					"hostArch":  b.HostArch,
+					"buildArchAll": func() string {
+						if b.BuildArchAll {
+							return "true"
+						}
+						return "" // Empty string will evaluate false in the template
+					}(),
+					"buildArchAny": func() string {
+						if b.BuildArchAny {
+							return "true"
+						}
+						return ""
+					}(),
+					"forceRulesRequiresRootNo": func() string {
+						if b.ForceRulesRequiresRootNo {
+							return "true"
+						}
+						return ""
+					}(),
+					"binNMU":    b.BinaryOnlyChanges,
+					"buildPath": b.BuildPath,
+					"dscDir":    b.DscDir,
+					"dscPath":   path.Join("/", "src", fmt.Sprintf("%s_%s.dsc", b.SrcPackage, b.SrcVersionNoEpoch)),
+				},
+			},
+		},
+		Requires: rebuild.RequiredEnv{
+			Privileged: true,
+		},
+		OutputDir: "./",
+	}
+	return s
+}
+
+// GenerateFor generates the instructions for a DebootsnapSbuild
+func (b *DebootsnapSbuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	return b.ToWorkflow().GenerateFor(t, be)
+}
+
 func init() {
 	for _, t := range toolkit {
 		flow.Tools.MustRegister(t)
@@ -145,6 +246,12 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				wget {{.With.buildinfoUrl}}`)[1:],
 			Needs: []string{"wget"},
+		}},
+	},
+	{
+		Name: "debian/fetch/dsc",
+		Steps: []flow.Step{{
+			Runs: `debsnap --force --verbose --destdir ./ {{.With.srcPackage}} {{.With.srcVersion}}`,
 		}},
 	},
 	{
@@ -204,6 +311,63 @@ var toolkit = []*flow.Tool{
 		},
 	},
 	{
+		Name: "debian/deps/debootsnap",
+		Steps: []flow.Step{{
+			Runs: `debootsnap --buildinfo="{{ .With.buildinfo }}" "/tmp/chroot.tar"`,
+		}},
+	},
+	{
+		Name: "debian/build/make-dev-console",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+			if [ ! -e /dev/console ]; then
+				mknod -m 666 /dev/console c 5 1
+			fi`)[1:],
+		}},
+	},
+	{
+		Name: "debian/build/sbuild",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+cat <<"EOFSTEP" > "/tmp/sbuild.config"
+$apt_get = '/bin/true';
+$apt_cache = '/bin/true';
+$build_as_root_when_needed = 1;
+EOFSTEP
+echo "root:100000:65536" > /etc/subuid
+echo "root:100000:65536" > /etc/subgid
+env --chdir=/src {{.With.env}} SBUILD_CONFIG=/tmp/sbuild.config\
+    sbuild \
+    --build={{ .With.buildArch }} \
+    --host={{ .With.hostArch }} \
+    {{ if .With.buildArchAny }}--arch-any{{ else }}--no-arch-any{{ end }} \
+    {{ if .With.buildArchAll }}--arch-all{{ else }}--no-arch-all{{ end }} \
+    {{ if .With.binNMU -}}
+    --binNMU-changelog="{{ .With.binNMU }}" \
+    {{ end -}}
+    --chroot="/tmp/chroot.tar" \
+    --chroot-mode=unshare \
+    --dist=unstable \
+    --no-run-lintian \
+    --no-run-piuparts \
+    --no-run-autopkgtest \
+    --no-apt-update \
+    --no-apt-upgrade \
+    --no-apt-distupgrade \
+    --no-source \
+    --verbose \
+    --nolog \
+    --bd-uninstallable-explainer= \
+    {{ if .With.forceRulesRequiresRootNo -}}
+    --starting-build-commands='grep -iq "^Rules-Requires-Root:" "%p/debian/control" || sed -i "1iRules-Requires-Root: no" "%p/debian/control"' \
+    {{ end -}}
+    {{ if .With.buildPath }}--build-path="{{ .With.buildPath }}"{{ end }} \
+    {{ if .With.dscDir }}--dsc-dir="{{ .With.dscDir }}"{{ end }} \
+    "{{ .With.dscPath }}"
+`)[1:],
+		}},
+	},
+	{
 		Name: "debian/build/debrebuild",
 		Steps: []flow.Step{
 			{
@@ -218,5 +382,4 @@ var toolkit = []*flow.Tool{
 				debrebuild --buildresult=./out --builder=sbuild+unshare {{ .With.buildinfo }}`[1:]),
 			},
 		},
-	},
-}
+	}}
