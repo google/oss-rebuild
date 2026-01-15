@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/pkg/archive"
 )
 
 // xflMap associates gzip compression constants with XFL compression level flag.
@@ -102,7 +103,7 @@ func TestNewStabilizedGzipWriter(t *testing.T) {
 			// Apply stabilization to gzip data
 			outBuf := &bytes.Buffer{}
 			gr := must(gzip.NewReader(bytes.NewReader(inBuf.Bytes())))
-			gw = must(NewStabilizedGzipWriter(gr, outBuf, StabilizeOpts{Stabilizers: tt.stabilizers}))
+			gw = must(NewStabilizedGzipWriter(gr, outBuf, StabilizeOpts{Stabilizers: tt.stabilizers}, NewContext(archive.GzipFormat)))
 			must(io.Copy(gw, gr))
 			orDie(gw.Close())
 

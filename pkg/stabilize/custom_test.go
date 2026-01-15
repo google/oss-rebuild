@@ -218,73 +218,47 @@ func TestReplacePattern_Stabilizer(t *testing.T) {
 	tests := []struct {
 		name     string
 		format   archive.Format
-		wantType reflect.Type
+		wantFunc any
 		wantName string
-		wantErr  bool
 	}{
 		{
 			name:     "tar format",
 			format:   archive.TarFormat,
-			wantType: reflect.TypeOf(TarEntryStabilizer{}),
+			wantFunc: TarEntryFn(nil),
 			wantName: "replace-pattern-test",
 		},
 		{
 			name:     "tgz format",
 			format:   archive.TarGzFormat,
-			wantType: reflect.TypeOf(TarEntryStabilizer{}),
+			wantFunc: TarEntryFn(nil),
 			wantName: "replace-pattern-test",
 		},
 		{
 			name:     "zip format",
 			format:   archive.ZipFormat,
-			wantType: reflect.TypeOf(ZipEntryStabilizer{}),
+			wantFunc: ZipEntryFn(nil),
 			wantName: "replace-pattern-test",
 		},
 		{
-			name:    "unsupported format",
-			format:  archive.UnknownFormat,
-			wantErr: true,
+			name:     "unsupported format",
+			format:   archive.UnknownFormat,
+			wantFunc: nil,
+			wantName: "replace-pattern-test",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stabilizer, err := rp.Stabilizer("test", tt.format)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("Stabilizer() expected error, got nil")
-				}
-				if stabilizer != nil {
-					t.Errorf("Stabilizer() expected nil stabilizer, got %v", stabilizer)
-				}
-				return
+			stabilizer := rp.Stabilizer("test")
+			if stabilizer.Name != tt.wantName {
+				t.Errorf("Stabilizer() name = %v, want %v", stabilizer.Name, tt.wantName)
 			}
-			if err != nil {
-				t.Fatalf("Stabilizer() unexpected error: %v", err)
-			}
-			if stabilizer == nil {
-				t.Fatalf("Stabilizer() unexpectedly returned nil")
-			}
-			gotType := reflect.TypeOf(stabilizer)
-			if gotType != tt.wantType {
-				t.Errorf("Stabilizer() type = %v, want %v", gotType, tt.wantType)
-			}
-			switch format := tt.format; format {
-			case archive.TarFormat, archive.TarGzFormat:
-				s := stabilizer.(TarEntryStabilizer)
-				if s.Name != tt.wantName {
-					t.Errorf("Stabilizer() name = %v, want %v", s.Name, tt.wantName)
+			fn := stabilizer.FnFor(NewContext(tt.format))
+			if tt.wantFunc == nil {
+				if fn != nil {
+					t.Errorf("Stabilizer() impl = %T, want nil", fn)
 				}
-				if s.Func == nil {
-					t.Errorf("Stabilizer() Func is nil")
-				}
-			case archive.ZipFormat:
-				s := stabilizer.(ZipEntryStabilizer)
-				if s.Name != tt.wantName {
-					t.Errorf("Stabilizer() name = %v, want %v", s.Name, tt.wantName)
-				}
-				if s.Func == nil {
-					t.Errorf("Stabilizer() Func is nil")
-				}
+			} else if reflect.TypeOf(fn) != reflect.TypeOf(tt.wantFunc) {
+				t.Errorf("Stabilizer() impl type = %T, want %T", fn, tt.wantFunc)
 			}
 		})
 	}
@@ -298,73 +272,48 @@ func TestExcludePath_Stabilizer(t *testing.T) {
 	tests := []struct {
 		name     string
 		format   archive.Format
-		wantType reflect.Type
+		wantFunc any
 		wantName string
 		wantErr  bool
 	}{
 		{
 			name:     "tar format",
 			format:   archive.TarFormat,
-			wantType: reflect.TypeOf(TarArchiveStabilizer{}),
+			wantFunc: TarArchiveFn(nil),
 			wantName: "exclude-path-test",
 		},
 		{
 			name:     "tgz format",
 			format:   archive.TarGzFormat,
-			wantType: reflect.TypeOf(TarArchiveStabilizer{}),
+			wantFunc: TarArchiveFn(nil),
 			wantName: "exclude-path-test",
 		},
 		{
 			name:     "zip format",
 			format:   archive.ZipFormat,
-			wantType: reflect.TypeOf(ZipArchiveStabilizer{}),
+			wantFunc: ZipArchiveFn(nil),
 			wantName: "exclude-path-test",
 		},
 		{
-			name:    "unsupported format",
-			format:  archive.UnknownFormat,
-			wantErr: true,
+			name:     "unsupported format",
+			format:   archive.UnknownFormat,
+			wantFunc: nil,
+			wantName: "exclude-path-test",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stabilizer, err := ep.Stabilizer("test", tt.format)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("Stabilizer() expected error, got nil")
-				}
-				if stabilizer != nil {
-					t.Errorf("Stabilizer() expected nil stabilizer, got %v", stabilizer)
-				}
-				return
+			stabilizer := ep.Stabilizer("test")
+			if stabilizer.Name != tt.wantName {
+				t.Errorf("Stabilizer() name = %v, want %v", stabilizer.Name, tt.wantName)
 			}
-			if err != nil {
-				t.Fatalf("Stabilizer() unexpected error: %v", err)
-			}
-			if stabilizer == nil {
-				t.Fatalf("Stabilizer() unexpectedly returned nil")
-			}
-			gotType := reflect.TypeOf(stabilizer)
-			if gotType != tt.wantType {
-				t.Errorf("Stabilizer() type = %v, want %v", gotType, tt.wantType)
-			}
-			switch format := tt.format; format {
-			case archive.TarFormat, archive.TarGzFormat:
-				s := stabilizer.(TarArchiveStabilizer)
-				if s.Name != tt.wantName {
-					t.Errorf("Stabilizer() name = %v, want %v", s.Name, tt.wantName)
+			fn := stabilizer.FnFor(NewContext(tt.format))
+			if tt.wantFunc == nil {
+				if fn != nil {
+					t.Errorf("Stabilizer() impl = %T, want nil", fn)
 				}
-				if s.Func == nil {
-					t.Errorf("Stabilizer() Func is nil")
-				}
-			case archive.ZipFormat:
-				s := stabilizer.(ZipArchiveStabilizer)
-				if s.Name != tt.wantName {
-					t.Errorf("Stabilizer() name = %v, want %v", s.Name, tt.wantName)
-				}
-				if s.Func == nil {
-					t.Errorf("Stabilizer() Func is nil")
-				}
+			} else if reflect.TypeOf(fn) != reflect.TypeOf(tt.wantFunc) {
+				t.Errorf("Stabilizer() impl type = %T, want %T", fn, tt.wantFunc)
 			}
 		})
 	}
@@ -490,31 +439,28 @@ func TestCreateCustomStabilizers(t *testing.T) {
 				if i >= len(stabilizers) {
 					break
 				}
+				fn := stabilizers[i].FnFor(NewContext(tt.format))
 				switch {
 				case ent.Config.ReplacePattern != nil:
 					switch tt.format {
 					case archive.TarFormat, archive.TarGzFormat:
-						_, ok := stabilizers[i].(TarEntryStabilizer)
-						if !ok {
-							t.Errorf("Stabilizer at index %d is not a TarEntryStabilizer", i)
+						if _, ok := fn.(TarEntryFn); !ok {
+							t.Errorf("Stabilizer at index %d is not a TarEntryFn", i)
 						}
 					case archive.ZipFormat:
-						_, ok := stabilizers[i].(ZipEntryStabilizer)
-						if !ok {
-							t.Errorf("Stabilizer at index %d is not a ZipEntryStabilizer", i)
+						if _, ok := fn.(ZipEntryFn); !ok {
+							t.Errorf("Stabilizer at index %d is not a ZipEntryFn", i)
 						}
 					}
 				case ent.Config.ExcludePath != nil:
 					switch tt.format {
 					case archive.TarFormat, archive.TarGzFormat:
-						_, ok := stabilizers[i].(TarArchiveStabilizer)
-						if !ok {
-							t.Errorf("Stabilizer at index %d is not a TarArchiveStabilizer", i)
+						if _, ok := fn.(TarArchiveFn); !ok {
+							t.Errorf("Stabilizer at index %d is not a TarArchiveFn", i)
 						}
 					case archive.ZipFormat:
-						_, ok := stabilizers[i].(ZipArchiveStabilizer)
-						if !ok {
-							t.Errorf("Stabilizer at index %d is not a ZipArchiveStabilizer", i)
+						if _, ok := fn.(ZipArchiveFn); !ok {
+							t.Errorf("Stabilizer at index %d is not a ZipArchiveFn", i)
 						}
 					}
 				}
@@ -772,7 +718,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 			allStabilizers := append(AllTarStabilizers, customStabilizers...)
 			var output bytes.Buffer
 			tr := tar.NewReader(bytes.NewReader(input.Bytes()))
-			err = StabilizeTar(tr, tar.NewWriter(&output), StabilizeOpts{Stabilizers: allStabilizers})
+			err = StabilizeTar(tr, tar.NewWriter(&output), StabilizeOpts{Stabilizers: allStabilizers}, NewContext(archive.TarFormat))
 			if err != nil {
 				if tc.wantErr {
 					return
@@ -977,7 +923,7 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 			}
 			var output bytes.Buffer
 			zipWriter := zip.NewWriter(&output)
-			err = StabilizeZip(zipReader, zipWriter, StabilizeOpts{Stabilizers: allStabilizers})
+			err = StabilizeZip(zipReader, zipWriter, StabilizeOpts{Stabilizers: allStabilizers}, NewContext(archive.ZipFormat))
 			if err != nil {
 				if tc.wantErr {
 					return
