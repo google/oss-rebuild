@@ -24,9 +24,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	InferMode = schema.ExecutionMode("infer")
+)
+
 // ExecutionService defines the contract for services that can execute rebuilds.
 type ExecutionService interface {
 	RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error)
+	Infer(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error)
 	// Warmup can be called to prepare the service, e.g., for remote Cloud Run instances.
 	Warmup(ctx context.Context)
 }
@@ -56,6 +61,10 @@ func (s *remoteExecutionService) RebuildPackage(ctx context.Context, req schema.
 		req.Artifact = a
 	}
 	return s.rebuildStub(ctx, req)
+}
+
+func (s *remoteExecutionService) Infer(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (s *remoteExecutionService) Warmup(ctx context.Context) {
@@ -180,6 +189,76 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 	}
 }
 
+type inferenceWorker struct {
+	workerConfig
+}
+
+var _ packageWorker = &inferenceWorker{}
+
+func (w *inferenceWorker) Setup(ctx context.Context) {
+	w.execService.Warmup(ctx)
+}
+
+func (w *inferenceWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
+	if len(p.Artifacts) > 0 && len(p.Artifacts) != len(p.Versions) {
+		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
+	}
+	for i, v := range p.Versions {
+		var artifact string
+		if len(p.Artifacts) > 0 {
+			artifact = p.Artifacts[i]
+		}
+		req := schema.InferenceRequest{
+			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+			Package:   p.Name,
+			Version:   v,
+			Artifact:  artifact,
+		}
+		var strat *schema.StrategyOneOf
+		var err error
+		// TODO: Maybe implement this rate-limiting using the internal task queue interface?
+		// Then some of these parameters can be configured there.
+		for range 3 {
+			if err := w.limiters[p.Ecosystem].Wait(ctx); err != nil {
+				log.Printf("limiter wait error: %v", err)
+				break
+			}
+			strat, err = w.execService.Infer(ctx, req)
+			if err != nil && errors.Is(err, api.ErrExhausted) {
+				w.limiters[p.Ecosystem].Backoff()
+				log.Printf("rate limited, backing off to %s", w.limiters[p.Ecosystem].CurrentPeriod())
+				continue
+			}
+			break
+		}
+		if err == nil {
+			w.limiters[p.Ecosystem].Success()
+		}
+		if err != nil {
+			out <- schema.Verdict{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+					Package:   p.Name,
+					Version:   v,
+					Artifact:  artifact,
+				},
+				Message: err.Error(),
+			}
+		} else {
+			out <- schema.Verdict{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+					Package:   p.Name,
+					Version:   v,
+					Artifact:  artifact,
+				},
+				StrategyOneof: *strat,
+				Message:       "inference success",
+			}
+		}
+	}
+}
+
 func defaultLimiters() map[string]*ratex.BackoffLimiter {
 	return map[string]*ratex.BackoffLimiter{
 		"debian": ratex.NewBackoffLimiter(time.Second),
@@ -225,6 +304,10 @@ func RunBench(ctx context.Context, set benchmark.PackageSet, opts RunBenchOpts) 
 			useSyscallMonitor: opts.UseSyscallMonitor,
 			useNetworkProxy:   opts.UseNetworkProxy,
 			overwriteMode:     opts.OverwriteMode,
+		}
+	case InferMode:
+		ex.Worker = &inferenceWorker{
+			workerConfig: conf,
 		}
 	default:
 		return nil, fmt.Errorf("invalid mode: %s", string(opts.Mode))

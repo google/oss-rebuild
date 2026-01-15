@@ -91,8 +91,8 @@ func parseArgs(cfg *Config, args []string) error {
 		return errors.New("expected exactly 2 arguments")
 	}
 	mode := schema.ExecutionMode(args[0])
-	if mode != schema.AttestMode {
-		return errors.Errorf("Unknown mode: %s. Expected 'attest'", string(mode))
+	if mode != schema.AttestMode && mode != benchrun.InferMode {
+		return errors.Errorf("Unknown mode: %s. Expected one of 'attest' or 'infer'", string(mode))
 	}
 	cfg.ExecutionMode = mode
 	cfg.BenchmarkPath = args[1]
