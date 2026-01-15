@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/google/oss-rebuild/pkg/registry/npm"
 	"github.com/google/oss-rebuild/pkg/registry/pypi"
+	"github.com/google/oss-rebuild/pkg/registry/rubygems"
 )
 
 // RegistryMux offers a unified accessor for package registries.
@@ -25,6 +26,7 @@ type RegistryMux struct {
 	CratesIO cratesio.Registry
 	Maven    maven.Registry
 	Debian   debian.Registry
+	RubyGems rubygems.Registry
 }
 
 // RegistryMuxWithCache returns a new RegistryMux with the provided cache wrapping each registry.
@@ -55,6 +57,11 @@ func RegistryMuxWithCache(registry RegistryMux, c cacheinternal.Cache) (Registry
 	} else {
 		return newmux, errors.New("unknown debian registry type")
 	}
+	if httpreg, ok := registry.RubyGems.(rubygems.HTTPRegistry); ok {
+		newmux.RubyGems = rubygems.HTTPRegistry{Client: httpx.NewCachedClient(httpreg.Client, c)}
+	} else {
+		return newmux, errors.New("unknown rubygems registry type")
+	}
 	return newmux, nil
 }
 
@@ -83,6 +90,10 @@ func warmCacheforArtifact(ctx context.Context, registry RegistryMux, t Target) {
 		}
 		registry.Debian.DSC(ctx, component, name, t.Version)
 		registry.Debian.Artifact(ctx, component, name, t.Artifact)
+	case RubyGems:
+		registry.RubyGems.Gem(ctx, t.Package)
+		registry.RubyGems.Versions(ctx, t.Package)
+		registry.RubyGems.Artifact(ctx, t.Package, t.Version)
 	}
 }
 
@@ -98,5 +109,7 @@ func warmCacheForPackage(ctx context.Context, registry RegistryMux, t Target) {
 		registry.Maven.PackageMetadata(ctx, t.Package)
 	case Debian:
 		// There is no Debian resource shared across versions.
+	case RubyGems:
+		registry.RubyGems.Gem(ctx, t.Package)
 	}
 }
