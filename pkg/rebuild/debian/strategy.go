@@ -115,6 +115,48 @@ func (b *Debrebuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild
 	return b.ToWorkflow().GenerateFor(t, be)
 }
 
+// UpstreamSourceArchive builds an orig tarball from an upstream git repository.
+// This enables attestable provenance from upstream git through to the source package.
+type UpstreamSourceArchive struct {
+	// Source git repository and ref
+	Location rebuild.Location `json:"location" yaml:"location"`
+
+	// Compression format: "xz", "gz", "bz2"
+	Compression string `json:"compression" yaml:"compression"`
+
+	// Directory prefix in tarball (e.g., "xz-5.2.4/")
+	// If empty, inferred as "<package>-<version>/"
+	Prefix string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+
+	// Output filename (e.g., "xz-utils_5.2.4.orig.tar.xz")
+	OutputFilename string `json:"output_filename" yaml:"output_filename"`
+}
+
+var _ rebuild.Strategy = &UpstreamSourceArchive{}
+
+func (b *UpstreamSourceArchive) ToWorkflow() *rebuild.WorkflowStrategy {
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Source: []flow.Step{{
+			Uses: "git-checkout",
+		}},
+		Build: []flow.Step{{
+			Uses: "debian/build/orig-from-git",
+			With: map[string]string{
+				"prefix":         b.Prefix,
+				"compression":    b.Compression,
+				"outputFilename": b.OutputFilename,
+			},
+		}},
+		OutputPath: b.OutputFilename,
+	}
+}
+
+// GenerateFor generates the instructions for an UpstreamOrig
+func (b *UpstreamSourceArchive) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	return b.ToWorkflow().GenerateFor(t, be)
+}
+
 func init() {
 	for _, t := range toolkit {
 		flow.Tools.MustRegister(t)
@@ -122,6 +164,26 @@ func init() {
 }
 
 var toolkit = []*flow.Tool{
+	{
+		Name: "debian/build/orig-from-git",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+        {{- /* Determine compression command at template resolution time */ -}}
+        {{- $compressCmd := "" -}}
+        {{- if eq .With.compression "xz" }}{{ $compressCmd = "xz -c" -}}
+        {{- else if eq .With.compression "gz" }}{{ $compressCmd = "gzip -c" -}}
+        {{- else if eq .With.compression "bz2" }}{{ $compressCmd = "bzip2 -c" -}}
+        {{- end -}}
+
+        {{- $opts := "--format=tar" -}}
+        {{- if ne .With.prefix "" }}{{ $opts = printf "%s --prefix=%s" $opts .With.prefix }}{{ end -}}
+
+        {{- /* Generate the final shell command */ -}}
+        git archive {{ $opts }} '{{.Location.Ref}}'
+        {{- if ne .Location.Dir "" }} -- '{{.Location.Dir}}'{{- end }} | {{ $compressCmd }} > "{{.With.outputFilename}}"`)[1:],
+			Needs: []string{"git", "xz-utils", "gzip", "bzip2"},
+		}},
+	},
 	{
 		Name: "debian/fetch/sources",
 		Steps: []flow.Step{{
