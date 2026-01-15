@@ -150,7 +150,7 @@ type Registry interface {
 	ArtifactURL(context.Context, string, string) (string, error)
 	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
 	DSC(context.Context, string, string, string) (string, *control.ControlFile, error)
-	BuildInfo(context.Context, string, string, string, string) (string, *control.BuildInfo, error)
+	BuildInfo(context.Context, string, string, *Version, string) (string, *control.BuildInfo, error)
 }
 
 // HTTPRegistry is a Registry implementation that uses the debian HTTP API.
@@ -186,29 +186,35 @@ func PoolURL(component, name, artifact string) string {
 	return u.String()
 }
 
-func BuildInfoURL(name, version, arch string) string {
+func BuildInfoURL(name string, version *Version, arch string) string {
 	u := urlx.Copy(buildinfoURL)
-	u.Path += path.Join(poolDir(name), name, fmt.Sprintf("%s_%s_%s.buildinfo", name, version, arch))
+	// The buildinfo file name does not contain the epoch.
+	u.Path += path.Join(poolDir(name), name, fmt.Sprintf("%s_%s_%s.buildinfo", name, version.Epochless(), arch))
 	return u.String()
 }
 
-func (r HTTPRegistry) BuildInfo(ctx context.Context, component, name, version, arch string) (string, *control.BuildInfo, error) {
-	v, err := ParseVersion(version)
-	if err != nil {
-		return "", nil, err
-	}
-	buildinfoURL := BuildInfoURL(name, v.String(), arch)
+func (r HTTPRegistry) BuildInfo(ctx context.Context, component, name string, version *Version, arch string) (string, *control.BuildInfo, error) {
+	// We pass the full version string to BuildInfoURL, which will handle stripping the epoch for the URL.
+	buildinfoURL := BuildInfoURL(name, version, arch)
 	log.Printf("Fetching buildinfo from %s", buildinfoURL)
 	re, err := r.get(ctx, buildinfoURL)
 	if err != nil {
 		return "", nil, errors.Wrapf(err, "failed to get .buildinfo file %s", buildinfoURL)
 	}
 	b, err := control.ParseBuildInfo(re)
-	return buildinfoURL, b, err
+	if err != nil {
+		return "", nil, err
+	}
+	// Validate that the fetched buildinfo matches the requested version (including epoch).
+	// The file name excludes the epoch, so we must rely on the file content.
+	if b.Version != version.String() {
+		return "", nil, errors.Errorf("buildinfo version mismatch: requested %s, got %s", version, b.Version)
+	}
+	return buildinfoURL, b, nil
 }
 
 func guessDSCURL(component, name string, version *Version) string {
-	return PoolURL(component, name, fmt.Sprintf("%s_%s.dsc", name, version.String()))
+	return PoolURL(component, name, fmt.Sprintf("%s_%s.dsc", name, version.Epochless()))
 }
 
 func (r HTTPRegistry) DSC(ctx context.Context, component, name, version string) (string, *control.ControlFile, error) {

@@ -91,13 +91,18 @@ func inferDebrebuild(t rebuild.Target, hint rebuild.Strategy) (rebuild.Strategy,
 	if err != nil {
 		return nil, err
 	}
+	v, err := debian.ParseVersion(t.Version)
+	if err != nil {
+		return nil, err
+	}
 	a, err := debian.ParseDebianArtifact(t.Artifact)
 	if err != nil {
 		return nil, err
 	}
 	// The buildinfo uses the *source* package name, and the entire version string (including binary-only upload components).
 	// This is because the buildinfo is versioned per build, not per source package release.
-	infoURL := debian.BuildInfoURL(name, a.Version.String(), a.Arch)
+	// We use the target version rather than a.Version to ensure epoch is present.
+	infoURL := debian.BuildInfoURL(name, v, a.Arch)
 	// TODO: Populate the checksum
 	strat := Debrebuild{BuildInfo: FileWithChecksum{URL: infoURL, MD5: ""}}
 	if s, ok := hint.(*Debrebuild); ok {
