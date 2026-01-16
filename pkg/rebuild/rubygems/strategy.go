@@ -24,6 +24,7 @@ func (b *GemBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Source: []flow.Step{{
 			Uses: "git-checkout",
 		}},
+		// TODO: Install toolchain based on RubyVersion
 		Deps: []flow.Step{},
 		Build: []flow.Step{{
 			Uses: "rubygems/build/gem",
