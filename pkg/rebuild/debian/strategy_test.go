@@ -288,3 +288,156 @@ func TestBinaryVersionRegex(t *testing.T) {
 		})
 	}
 }
+
+func TestUpstreamSourceArchive(t *testing.T) {
+	tests := []struct {
+		name     string
+		strategy *UpstreamSourceArchive
+		target   rebuild.Target
+		env      rebuild.BuildEnv
+		want     rebuild.Instructions
+	}{
+		{
+			name: "XZCompression",
+			strategy: &UpstreamSourceArchive{
+				Location: rebuild.Location{
+					Repo: "https://github.com/example/repo.git",
+					Ref:  "v1.2.3",
+				},
+				Compression:    "xz",
+				Prefix:         "example-1.2.3/",
+				OutputFilename: "example_1.2.3.orig.tar.xz",
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.Debian,
+				Package:   "main/example",
+				Version:   "1.2.3-1",
+				Artifact:  "example_1.2.3.orig.tar.xz",
+			},
+			env: rebuild.BuildEnv{},
+			want: rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://github.com/example/repo.git",
+					Ref:  "v1.2.3",
+				},
+				Source: `git clone https://github.com/example/repo.git .
+git checkout --force 'v1.2.3'`,
+				Build: `git archive --format=tar --prefix=example-1.2.3/ 'v1.2.3' | xz -c > "example_1.2.3.orig.tar.xz"`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "xz-utils", "gzip", "bzip2"},
+				},
+				OutputPath: "example_1.2.3.orig.tar.xz",
+			},
+		},
+		{
+			name: "GzipCompression",
+			strategy: &UpstreamSourceArchive{
+				Location: rebuild.Location{
+					Repo: "https://gitlab.com/example/repo.git",
+					Ref:  "1.0.0",
+				},
+				Compression:    "gz",
+				Prefix:         "example-1.0.0/",
+				OutputFilename: "example_1.0.0.orig.tar.gz",
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.Debian,
+				Package:   "main/example",
+				Version:   "1.0.0-1",
+				Artifact:  "example_1.0.0.orig.tar.gz",
+			},
+			env: rebuild.BuildEnv{},
+			want: rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://gitlab.com/example/repo.git",
+					Ref:  "1.0.0",
+				},
+				Source: `git clone https://gitlab.com/example/repo.git .
+git checkout --force '1.0.0'`,
+				Build: `git archive --format=tar --prefix=example-1.0.0/ '1.0.0' | gzip -c > "example_1.0.0.orig.tar.gz"`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "xz-utils", "gzip", "bzip2"},
+				},
+				OutputPath: "example_1.0.0.orig.tar.gz",
+			},
+		},
+		{
+			name: "WithSubdirectory",
+			strategy: &UpstreamSourceArchive{
+				Location: rebuild.Location{
+					Repo: "https://github.com/monorepo/project.git",
+					Ref:  "v2.0.0",
+					Dir:  "packages/subproject",
+				},
+				Compression:    "xz",
+				Prefix:         "subproject-2.0.0/",
+				OutputFilename: "subproject_2.0.0.orig.tar.xz",
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.Debian,
+				Package:   "main/subproject",
+				Version:   "2.0.0-1",
+				Artifact:  "subproject_2.0.0.orig.tar.xz",
+			},
+			env: rebuild.BuildEnv{},
+			want: rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://github.com/monorepo/project.git",
+					Ref:  "v2.0.0",
+					Dir:  "packages/subproject",
+				},
+				Source: `git clone https://github.com/monorepo/project.git .
+git checkout --force 'v2.0.0'`,
+				Build: `git archive --format=tar --prefix=subproject-2.0.0/ 'v2.0.0' -- 'packages/subproject' | xz -c > "subproject_2.0.0.orig.tar.xz"`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "xz-utils", "gzip", "bzip2"},
+				},
+				OutputPath: "subproject_2.0.0.orig.tar.xz",
+			},
+		},
+		{
+			name: "Bzip2Compression",
+			strategy: &UpstreamSourceArchive{
+				Location: rebuild.Location{
+					Repo: "https://github.com/example/app.git",
+					Ref:  "release-3.1.4",
+				},
+				Compression:    "bz2",
+				Prefix:         "app-3.1.4/",
+				OutputFilename: "app_3.1.4.orig.tar.bz2",
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.Debian,
+				Package:   "main/app",
+				Version:   "3.1.4-1",
+				Artifact:  "app_3.1.4.orig.tar.bz2",
+			},
+			env: rebuild.BuildEnv{},
+			want: rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://github.com/example/app.git",
+					Ref:  "release-3.1.4",
+				},
+				Source: `git clone https://github.com/example/app.git .
+git checkout --force 'release-3.1.4'`,
+				Build: `git archive --format=tar --prefix=app-3.1.4/ 'release-3.1.4' | bzip2 -c > "app_3.1.4.orig.tar.bz2"`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "xz-utils", "gzip", "bzip2"},
+				},
+				OutputPath: "app_3.1.4.orig.tar.bz2",
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.strategy.GenerateFor(tc.target, tc.env)
+			if err != nil {
+				t.Fatalf("UpstreamOrig.GenerateFor() failed unexpectedly: %v", err)
+			}
+
+			if diff := cmp.Diff(got, tc.want); diff != "" {
+				t.Errorf("UpstreamOrig.GenerateFor() returned diff (-got +want):\n%s", diff)
+			}
+		})
+	}
+}

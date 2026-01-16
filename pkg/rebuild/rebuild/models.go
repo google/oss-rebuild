@@ -34,7 +34,16 @@ type Target struct {
 func (t Target) ArchiveType() archive.Format {
 	switch t.Ecosystem {
 	case Debian:
-		return archive.RawFormat
+		switch {
+		case strings.HasSuffix(t.Artifact, ".tar.gz"):
+			return archive.TarGzFormat
+		case strings.HasSuffix(t.Artifact, ".tar.bz2"):
+			return archive.UnknownFormat // bzip2
+		case strings.HasSuffix(t.Artifact, ".tar.xz"):
+			return archive.UnknownFormat // xz
+		default:
+			return archive.RawFormat
+		}
 	case CratesIO, NPM:
 		return archive.TarGzFormat
 	case PyPI:
