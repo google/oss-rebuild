@@ -18,7 +18,7 @@ var _ rebuild.Rebuilder = Rebuilder{}
 
 // UsesTimewarp returns whether this ecosystem uses time-based registry lookups.
 func (r Rebuilder) UsesTimewarp(input rebuild.Input) bool {
-	return true
+	return false
 }
 
 // Upstream returns a reader for the upstream artifact.
