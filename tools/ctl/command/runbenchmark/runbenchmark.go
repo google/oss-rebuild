@@ -12,14 +12,20 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/cheggaaa/pb"
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
@@ -58,8 +64,8 @@ func (c Config) Validate() error {
 	if !c.Local && c.API == "" {
 		return errors.New("API is required when not running locally")
 	}
-	if c.Local && (c.BootstrapBucket == "" || c.BootstrapVersion == "") {
-		return errors.New("bootstrap-bucket and bootstrap-version are required when running locally")
+	if (c.BootstrapBucket == "") != (c.BootstrapVersion == "") {
+		return errors.New("bootstrap-bucket and bootstrap-version must be set together")
 	}
 	if c.Format != "" && c.Format != "summary" && c.Format != "csv" {
 		return errors.Errorf("invalid format: %s. Expected one of 'summary' or 'csv'", c.Format)
@@ -102,6 +108,70 @@ func parseArgs(cfg *Config, args []string) error {
 	return nil
 }
 
+// compileToFS builds a Go program and loads the binary directly into the provided memfs.
+func compileToFS(ctx context.Context, fs billy.Filesystem, srcPath string) error {
+	if filepath.Base(srcPath) == "main.go" {
+		return errors.New("unexpected main.go, did you mean to provide the dir?")
+	}
+	dir, err := os.MkdirTemp("", "*")
+	if err != nil {
+		return errors.Wrap(err, "creating tempdir")
+	}
+	defer os.RemoveAll(dir)
+	log.Printf("Compiling  %s...", srcPath)
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", dir, "-gcflags", "-l=4", srcPath)
+	cmd.Env = append(os.Environ(), "GOOS=linux", fmt.Sprintf("GOARCH=%s", runtime.GOARCH), "CGO_ENABLED=0")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("compilation failed:\n%s", string(output))
+	}
+	// Assume the srcPath is either the parent dir, or source file matching the binary name.
+	binName := strings.TrimSuffix(filepath.Base(srcPath), ".go")
+	tmpName := filepath.Join(dir, binName)
+	diskBin, err := os.Open(tmpName)
+	if err != nil {
+		return err
+	}
+	defer diskBin.Close()
+	memBin, err := fs.Create(binName)
+	if err != nil {
+		return err
+	}
+	defer memBin.Close()
+	if _, err := io.Copy(memBin, diskBin); err != nil {
+		return fmt.Errorf("failed to copy binary to memfs: %w", err)
+	}
+	return nil
+}
+
+// serveFS serves the Filesystem, choosing and returning an available port
+func serveFS(fs billy.Filesystem) (int, error) {
+	// Bind to 0.0.0.0 to make sure the docker bridge can connect
+	listener, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		return 0, err
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := filepath.Clean(r.URL.Path)
+		s, err := fs.Stat(path)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		file, err := fs.Open(path)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer file.Close()
+		http.ServeContent(w, r, path, s.ModTime(), file)
+	})
+	go func() {
+		http.Serve(listener, handler)
+	}()
+	port := listener.Addr().(*net.TCPAddr).Port
+	return port, nil
+}
+
 // Handler contains the business logic for the run-bench command.
 // This function does not depend on Cobra and can be tested independently.
 func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error) {
@@ -126,12 +196,34 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "Failed to create temp directory")
 		}
-		// TODO: Validate this.
-		prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
+		var prebuildURL string
+		var needHostGate bool
+		// Skip bootstrap setup for inference runs
+		if cfg.ExecutionMode != benchrun.InferMode {
+			if cfg.BootstrapBucket != "" && cfg.BootstrapVersion != "" {
+				prebuildURL = fmt.Sprintf("http://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
+			} else {
+				fs := memfs.New()
+				// TODO: Add new bootstrap tools as necessary here.
+				for _, tool := range []string{"./cmd/timewarp"} {
+					if err := compileToFS(ctx, fs, tool); err != nil {
+						return nil, errors.Wrap(err, "compiling bootstrap tools")
+					}
+				}
+				port, err := serveFS(fs)
+				if err != nil {
+					return nil, errors.Wrap(err, "serving binaries")
+				}
+				log.Printf("Serving binaries on: %d", port)
+				prebuildURL = fmt.Sprintf("http://host.docker.internal:%d", port)
+				needHostGate = true
+			}
+		}
 		executor = benchrun.NewLocalExecutionService(benchrun.LocalExecutionServiceConfig{
 			PrebuildURL: prebuildURL,
 			Store:       store,
 			LogSink:     deps.IO.Out,
+			HostGateway: needHostGate,
 		})
 		dex = rundex.NewFilesystemClient(localfiles.Rundex())
 		if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{

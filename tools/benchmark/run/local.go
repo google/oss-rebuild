@@ -32,16 +32,18 @@ type localExecutionService struct {
 	prebuildURL string
 	store       rebuild.LocatableAssetStore
 	logsink     io.Writer
+	hostGateway bool
 }
 
 type LocalExecutionServiceConfig struct {
 	PrebuildURL string
 	Store       rebuild.LocatableAssetStore
 	LogSink     io.Writer
+	HostGateway bool
 }
 
 func NewLocalExecutionService(config LocalExecutionServiceConfig) ExecutionService {
-	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink}
+	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink, hostGateway: config.HostGateway}
 }
 
 func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
@@ -118,13 +120,24 @@ func (s *localExecutionService) Infer(ctx context.Context, req schema.InferenceR
 type buildOpts struct {
 	PrebuildURL string
 	LogSink     io.Writer
+	HostGateway bool
 }
 
 func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts) error {
-	executor, err := local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
-		Planner:     local.NewDockerRunPlanner(),
-		MaxParallel: 1,
-	})
+	var executor build.Executor
+	var err error
+	if opts.HostGateway {
+		executor, err = local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
+			Planner:     local.NewDockerRunPlanner(),
+			MaxParallel: 1,
+			HostGateway: true,
+		})
+	} else {
+		executor, err = local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
+			Planner:     local.NewDockerRunPlanner(),
+			MaxParallel: 1,
+		})
+	}
 	if err != nil {
 		return errors.Wrap(err, "failed to create executor")
 	}
