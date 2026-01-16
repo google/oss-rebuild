@@ -19,7 +19,16 @@ type PureWheelBuild struct {
 	RegistryTime  time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
 }
 
+// PyPISdistBuild includes elements for building an sdist.
+type PyPISdistBuild struct {
+	rebuild.Location
+	PythonVersion string    `json:"python_version" yaml:"python_version"`
+	Requirements  []string  `json:"requirements"`
+	RegistryTime  time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+}
+
 var _ rebuild.Strategy = &PureWheelBuild{}
+var _ rebuild.Strategy = &PyPISdistBuild{}
 
 func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 	var registryTime string
@@ -56,8 +65,48 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 	}
 }
 
+func (b *PyPISdistBuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	var registryTime string
+	if !b.RegistryTime.IsZero() {
+		registryTime = b.RegistryTime.Format(time.RFC3339)
+	}
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Source: []flow.Step{{
+			Uses: "git-checkout",
+		}},
+		Deps: []flow.Step{{
+			Uses: "pypi/deps/basic",
+			With: map[string]string{
+				"registryTime":  registryTime,
+				"requirements":  flow.MustToJSON(b.Requirements),
+				"pythonVersion": b.PythonVersion,
+				"venv":          "/deps",
+			},
+		}},
+		Build: []flow.Step{{
+			Uses: "pypi/build/sdist",
+			With: map[string]string{
+				"dir":     b.Location.Dir,
+				"locator": "/deps/bin/",
+			},
+		}},
+		OutputDir: func() string {
+			if b.Location.Dir != "" {
+				return b.Location.Dir + "/dist"
+			}
+			return "dist"
+		}(),
+	}
+}
+
 // GenerateFor generates the instructions for a PureWheelBuild.
 func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	return b.ToWorkflow().GenerateFor(t, be)
+}
+
+// GenerateFor generates the instructions for a SourceDistBuild.
+func (b *PyPISdistBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
 	return b.ToWorkflow().GenerateFor(t, be)
 }
 
@@ -98,6 +147,7 @@ var toolkit = []*flow.Tool{
 				{{.With.locator}}pip install build
 				{{- range $req := .With.requirements | fromJSON}}
 				{{$.With.locator}}pip install '{{regexReplace $req "'" "'\\''"}}'{{end}}`)[1:],
+			Needs: []string{"python3", "gcc"},
 		}},
 	},
 
@@ -133,6 +183,16 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
+			Needs: []string{"python3"},
 		}},
+	},
+	{
+		Name: "pypi/build/sdist",
+		Steps: []flow.Step{
+			{
+				Runs: textwrap.Dedent(`
+				{{.With.locator}}python3 -m build --sdist -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
+				Needs: []string{"python3"},
+			}},
 	},
 }
