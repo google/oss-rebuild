@@ -72,14 +72,14 @@ func TestJDKVersionInference(t *testing.T) {
 			wantVersion: "17.0.2",
 		},
 		{
-			name: "strip patch version",
+			name: "use exact patch version when available",
 			input: []*archive.ZipEntry{
 				{
 					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 17.0.6\r\n\r\n"),
 				},
 			},
-			wantVersion: "17",
+			wantVersion: "17.0.6",
 		},
 		{
 			name: "fallback to classfile",
@@ -96,14 +96,14 @@ func TestJDKVersionInference(t *testing.T) {
 			wantVersion: "11",
 		},
 		{
-			name: "fallback to default JDK version",
+			name: "parse JDK 8 version format",
 			input: []*archive.ZipEntry{
 				{
 					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
 					Body:       []byte("Manifest-Version: 1.0\r\nBuild-Jdk-Spec: 1.8.0_121\r\n\r\n"),
 				},
 			},
-			wantVersion: "11",
+			wantVersion: "8",
 		},
 	}
 
