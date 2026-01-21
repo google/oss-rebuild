@@ -24,7 +24,7 @@ func (b *GemBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Source: []flow.Step{{
 			Uses: "git-checkout",
 		}},
-		Deps:  []flow.Step{},
+		Deps: []flow.Step{},
 		Build: []flow.Step{{
 			Uses: "rubygems/build/gem",
 			With: map[string]string{

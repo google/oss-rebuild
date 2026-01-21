@@ -23,31 +23,31 @@ var registryURL = urlx.MustParse("https://rubygems.org")
 
 // Gem describes a single RubyGem's metadata.
 type Gem struct {
-	Name              string `json:"name"`
-	Version           string `json:"version"`
-	Authors           string `json:"authors"`
-	Description       string `json:"description"`
-	Homepage          string `json:"homepage_uri"`
-	SourceCode        string `json:"source_code_uri"`
-	BugTracker        string `json:"bug_tracker_uri"`
-	Changelog         string `json:"changelog_uri"`
-	Documentation     string `json:"documentation_uri"`
-	GemURI            string `json:"gem_uri"`
-	ProjectURI        string `json:"project_uri"`
-	SHA               string `json:"sha"`
-	Platform          string `json:"platform"`
-	Licenses          []string `json:"licenses"`
+	Name          string   `json:"name"`
+	Version       string   `json:"version"`
+	Authors       string   `json:"authors"`
+	Description   string   `json:"description"`
+	Homepage      string   `json:"homepage_uri"`
+	SourceCode    string   `json:"source_code_uri"`
+	BugTracker    string   `json:"bug_tracker_uri"`
+	Changelog     string   `json:"changelog_uri"`
+	Documentation string   `json:"documentation_uri"`
+	GemURI        string   `json:"gem_uri"`
+	ProjectURI    string   `json:"project_uri"`
+	SHA           string   `json:"sha"`
+	Platform      string   `json:"platform"`
+	Licenses      []string `json:"licenses"`
 }
 
 // VersionInfo describes a single version of a gem.
 type VersionInfo struct {
-	Number      string    `json:"number"`
-	Platform    string    `json:"platform"`
-	Prerelease  bool      `json:"prerelease"`
-	CreatedAt   time.Time `json:"created_at"`
-	SHA         string    `json:"sha"`
-	Licenses    []string  `json:"licenses"`
-	Metadata    VersionMetadata `json:"metadata"`
+	Number     string          `json:"number"`
+	Platform   string          `json:"platform"`
+	Prerelease bool            `json:"prerelease"`
+	CreatedAt  time.Time       `json:"created_at"`
+	SHA        string          `json:"sha"`
+	Licenses   []string        `json:"licenses"`
+	Metadata   VersionMetadata `json:"metadata"`
 }
 
 // VersionMetadata contains additional metadata for a version.
