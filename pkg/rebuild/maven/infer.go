@@ -318,10 +318,7 @@ func findClosestCommitToSource(ctx context.Context, t rebuild.Target, mux rebuil
 	log.Printf("commits (%d): %v", len(closest), closest)
 	log.Printf("matched %d/%d files using git index scan", matched, total)
 	if len(closest) == 0 {
-		// No matches found so we will not use the source jar heuristic, but this is not an error.
-		// The caller should try other heuristics.
-		log.Printf("no matching commit found using source jar heuristic")
-		return nil, nil
+		return nil, errors.New("no matching commit found using source jar heuristic")
 	}
 	// TODO: use a better heuristic here like using commit time
 	commitString := closest[0]
