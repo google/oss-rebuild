@@ -117,7 +117,11 @@ func resolveContainerID(c *UDSHTTPClient, id string) (string, error) {
 }
 
 func truststoreCertPatch(fs dockerfs.Filesystem, cert []byte) (*patch, error) {
-	truststore, err := locateTruststore(&fs)
+	truststorePath, err := TruststorePath(&fs)
+	if err != nil {
+		return nil, errors.Wrap(err, "locating truststore")
+	}
+	truststore, err := fs.OpenAndResolve(truststorePath)
 	if err != nil {
 		return nil, errors.Wrap(err, "locating truststore")
 	}
@@ -380,12 +384,12 @@ func (p patch) Apply(fs *dockerfs.Filesystem) error {
 
 // Revert writes the Before file to the target container, validating After is the current state.
 func (p patch) Revert(fs *dockerfs.Filesystem) error {
-	f, err := fs.Open(*p.Path())
+	contents, err := fs.ReadFile(*p.Path())
 	if err != nil {
 		return err
 	}
 	// TODO: Either remove and support smart rollback or make check more robust.
-	if !bytes.Equal(f.Contents, p.After.Contents) {
+	if !bytes.Equal(contents, p.After.Contents) {
 		return errors.New("out of band change to patched file: " + *p.Path())
 	}
 	if err := fs.WriteFile(p.Before); err != nil {
