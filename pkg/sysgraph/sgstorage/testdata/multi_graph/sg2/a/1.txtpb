@@ -1,0 +1,41 @@
+# proto-file: github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph/sysgraph.proto
+# proto-message: Action
+
+id: 1
+sys_graph_id: "abcdefg"
+start_time: {
+  seconds: 1
+  nanos: 1
+}
+end_time: {
+  seconds: 10
+  nanos: 10
+}
+inputs: {
+  key: "49ef35511c267514f67ebbb6eac0d2c006cc92677817cc747b67218224395f64/89"  # path/to/file
+  value: {
+    interactions: {
+      io_info: {
+        bytes_used: 100
+      }
+    }
+  }
+}
+children: {
+  key: 2
+  value: {
+    timestamp: {
+      seconds: 1
+      nanos: 1
+    }
+  }
+}
+children: {
+  key: 3
+  value: {
+    timestamp: {
+      seconds: 2
+      nanos: 2
+    }
+  }
+}

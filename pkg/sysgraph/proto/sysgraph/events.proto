@@ -1,0 +1,94 @@
+// Copyright 2026 Google LLC
+// SPDX-License-Identifier: Apache-2.0
+
+edition = "2024";
+
+package sysgraph;
+
+option go_package = "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph";
+
+import "google/protobuf/timestamp.proto";
+
+import "sysgraph.proto";
+
+message SysGraphEvent {
+  // The action id of the action that this event is associated with.
+  // This action id should be unique within a set of events.
+  string action_id = 1;
+  // The time that this event occurred.
+  google.protobuf.Timestamp timestamp = 2;
+  // The event that occurred.
+  oneof event {
+    // An resource event.
+    ResourceEvent resource_event = 3;
+    // A child event.
+    ChildEvent child_event = 4;
+    // An exec event.
+    ExecEvent exec_event = 5;
+    // A metadata event.
+    MetadataEvent metadata_event = 6;
+    // An action end event.
+    EndEvent end_event = 7;
+    // An action end event.
+    StartEvent start_event = 8;
+    PipeEvent pipe_event = 9;
+    DupEvent dup_event = 10;
+  }
+}
+
+message PipeEvent {}
+
+message DupEvent {
+  int32 old_fd = 1;
+  int32 new_fd = 2;
+  // We need this field so that we can check if this dup's parent is a pipe or
+  // not. The map we can refer to is a map of
+  // parent_exec_id (IR action id) -> parent_aid;
+  string parent_exec_id = 3;
+  // The time that the dup action started.
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+message ResourceEvent {
+  // The digest of the resource in canonical format <hash>/<size>.
+  Resource resource = 1;
+  enum EventType {
+    EVENT_TYPE_UNSPECIFIED = 0;
+    // An input event.
+    EVENT_TYPE_INPUT = 1;
+    // An output event.
+    EVENT_TYPE_OUTPUT = 2;
+  }
+  // The type of the event.
+  EventType event_type = 2;
+  IOInfo io_info = 3;
+}
+
+message ChildEvent {
+  // The action id of the child action.
+  string child_action_id = 1;
+}
+
+message ExecEvent {
+  Resource executable = 1;
+  ExecInfo exec_info = 2;
+}
+
+message MetadataEvent {
+  string key = 1;
+  string value = 2;
+}
+
+message EndEvent {
+  // The time that the action ended.
+  google.protobuf.Timestamp timestamp = 1;
+  // The signal that the process received when it exited.
+  string signal = 2;
+  // The exit status code on process exit.
+  uint32 status = 3;
+}
+
+message StartEvent {
+  // The time that the action started.
+  google.protobuf.Timestamp timestamp = 1;
+}
