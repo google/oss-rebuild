@@ -270,7 +270,7 @@ var RemoveMetadataJSON = ZipArchiveStabilizer{
 	Func: func(zr *archive.MutableZipReader) {
 		for _, zf := range zr.File {
 			// Only process metadata.json files
-			if !strings.HasSuffix(zf.Name, "metadata.json") {
+			if !strings.HasSuffix(strings.ToLower(zf.Name), "/metadata.json") {
 				continue
 			}
 			println("Processing file:", zf.Name)
@@ -285,8 +285,8 @@ var StablePypiDescription = ZipArchiveStabilizer{
 	Name: "pypi-description",
 	Func: func(zr *archive.MutableZipReader) {
 		for _, zf := range zr.File {
-			// Only process METADATA files
-			if !strings.HasSuffix(zf.Name, "DESCRIPTION.rst") {
+			// Only process DESCRIPTION files
+			if !strings.HasSuffix(strings.ToLower(zf.Name), "/description.rst") {
 				continue
 			}
 			println("Processing file:", zf.Name)
