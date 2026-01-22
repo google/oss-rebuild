@@ -299,18 +299,13 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		}
 	}
 	if strings.HasSuffix(a.Filename, ".tar.gz") {
-		pythonVer := inferPythonVersion(reqs)
-		// Default sdist construction to python 3.11
-		if pythonVer == "" {
-			pythonVer = "3.11"
-		}
-		return &PyPISdistBuild{
+		return &SdistBuild{
 			Location: rebuild.Location{
 				Repo: rcfg.URI,
 				Dir:  dir,
 				Ref:  ref,
 			},
-			PythonVersion: pythonVer,
+			PythonVersion: inferPythonVersion(reqs),
 			Requirements:  reqs,
 		}, nil
 	} else {

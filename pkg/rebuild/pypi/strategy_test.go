@@ -159,7 +159,7 @@ func TestSourceDistBuild(t *testing.T) {
 	}{
 		{
 			"WithDeps",
-			&PyPISdistBuild{
+			&SdistBuild{
 				Location: defaultLocation,
 				Requirements: []string{
 					"req_1",
@@ -182,7 +182,7 @@ func TestSourceDistBuild(t *testing.T) {
 		},
 		{
 			"DepsEscaping",
-			&PyPISdistBuild{
+			&SdistBuild{
 				Location: defaultLocation,
 				Requirements: []string{
 					"req_1<='1.2.3'",
@@ -203,7 +203,7 @@ func TestSourceDistBuild(t *testing.T) {
 		},
 		{
 			"NoDeps",
-			&PyPISdistBuild{
+			&SdistBuild{
 				Location: defaultLocation,
 			},
 			rebuild.Instructions{
@@ -220,7 +220,7 @@ func TestSourceDistBuild(t *testing.T) {
 		},
 		{
 			"WithTimewarp",
-			&PyPISdistBuild{
+			&SdistBuild{
 				Location:     defaultLocation,
 				RegistryTime: time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
 			},
@@ -239,7 +239,7 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple
 		},
 		{
 			"WithoutDir",
-			&PyPISdistBuild{
+			&SdistBuild{
 				Location: rebuild.Location{Ref: "the_ref", Repo: "the_repo"},
 			},
 			rebuild.Instructions{
