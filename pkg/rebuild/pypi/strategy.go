@@ -19,16 +19,7 @@ type PureWheelBuild struct {
 	RegistryTime  time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
 }
 
-// PyPISdistBuild includes elements for building an sdist.
-type PyPISdistBuild struct {
-	rebuild.Location
-	PythonVersion string    `json:"python_version" yaml:"python_version"`
-	Requirements  []string  `json:"requirements"`
-	RegistryTime  time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
-}
-
 var _ rebuild.Strategy = &PureWheelBuild{}
-var _ rebuild.Strategy = &PyPISdistBuild{}
 
 func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 	var registryTime string
@@ -65,6 +56,21 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 	}
 }
 
+// GenerateFor generates the instructions for a PureWheelBuild.
+func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	return b.ToWorkflow().GenerateFor(t, be)
+}
+
+// PyPISdistBuild includes elements for building an sdist.
+type PyPISdistBuild struct {
+	rebuild.Location
+	PythonVersion string    `json:"python_version" yaml:"python_version"`
+	Requirements  []string  `json:"requirements" yaml:"requirements"`
+	RegistryTime  time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+}
+
+var _ rebuild.Strategy = &PyPISdistBuild{}
+
 func (b *PyPISdistBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
@@ -98,11 +104,6 @@ func (b *PyPISdistBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 			return "dist"
 		}(),
 	}
-}
-
-// GenerateFor generates the instructions for a PureWheelBuild.
-func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
-	return b.ToWorkflow().GenerateFor(t, be)
 }
 
 // GenerateFor generates the instructions for a SourceDistBuild.
@@ -147,7 +148,6 @@ var toolkit = []*flow.Tool{
 				{{.With.locator}}pip install build
 				{{- range $req := .With.requirements | fromJSON}}
 				{{$.With.locator}}pip install '{{regexReplace $req "'" "'\\''"}}'{{end}}`)[1:],
-			Needs: []string{"python3", "gcc"},
 		}},
 	},
 

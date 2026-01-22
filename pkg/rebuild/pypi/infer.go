@@ -250,9 +250,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to read upstream artifact")
 	}
-
 	var reqs []string
-
 	if strings.HasSuffix(a.Filename, ".whl") {
 		zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
 		if err != nil {
@@ -284,7 +282,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			log.Println(errors.Wrap(err, "Failed to extract reqs from pyproject.toml."))
 		} else {
 			// NOTE - This should NOT overwrite the hint dir if one exists, but utilize it and return it again
-			//   Test reqs"pyproject.toml - Detect package with dir hint" showcases this
+			//   Test "pyproject.toml - Detect package with dir hint" showcases this
 			dir = newFoundDir
 			existing := make(map[string]bool)
 			pkgname := func(req string) string {
@@ -302,6 +300,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 	if strings.HasSuffix(a.Filename, ".tar.gz") {
 		pythonVer := inferPythonVersion(reqs)
+		// Default sdist construction to python 3.11
 		if pythonVer == "" {
 			pythonVer = "3.11"
 		}

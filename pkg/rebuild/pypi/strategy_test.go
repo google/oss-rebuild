@@ -161,6 +161,10 @@ func TestSourceDistBuild(t *testing.T) {
 			"WithDeps",
 			&PyPISdistBuild{
 				Location: defaultLocation,
+				Requirements: []string{
+					"req_1",
+					"req_2",
+				},
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
@@ -171,7 +175,7 @@ func TestSourceDistBuild(t *testing.T) {
 /deps/bin/pip install 'req_2'`,
 				Build: "/deps/bin/python3 -m build --sdist -n the_dir",
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "python3", "uv", "gcc"},
+					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
 			},
@@ -180,6 +184,9 @@ func TestSourceDistBuild(t *testing.T) {
 			"DepsEscaping",
 			&PyPISdistBuild{
 				Location: defaultLocation,
+				Requirements: []string{
+					"req_1<='1.2.3'",
+				},
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
@@ -189,7 +196,7 @@ func TestSourceDistBuild(t *testing.T) {
 /deps/bin/pip install 'req_1<='\''1.2.3'\'''`,
 				Build: "/deps/bin/python3 -m build --sdist -n the_dir",
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "python3", "uv", "gcc"},
+					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
 			},
@@ -206,7 +213,7 @@ func TestSourceDistBuild(t *testing.T) {
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --sdist -n the_dir",
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "python3", "uv", "gcc"},
+					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
 			},
@@ -225,7 +232,7 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --sdist -n the_dir",
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "python3", "uv", "gcc"},
+					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
 			},
@@ -242,7 +249,7 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --sdist -n",
 				Requires: rebuild.RequiredEnv{
-					SystemDeps: []string{"git", "python3", "uv", "gcc"},
+					SystemDeps: []string{"git", "python3", "uv"},
 				},
 				OutputPath: "dist/the_artifact",
 			},
