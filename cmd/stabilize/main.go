@@ -27,24 +27,6 @@ var (
 	ecosystem     = flag.String("ecosystem", "", "The package ecosystem of the artifact. Required when ambiguous from the file extension.")
 )
 
-func getName(san stabilize.Stabilizer) string {
-	switch san.(type) {
-	case stabilize.TarArchiveStabilizer:
-		return san.(stabilize.TarArchiveStabilizer).Name
-	case stabilize.TarEntryStabilizer:
-		return san.(stabilize.TarEntryStabilizer).Name
-	case stabilize.ZipArchiveStabilizer:
-		return san.(stabilize.ZipArchiveStabilizer).Name
-	case stabilize.ZipEntryStabilizer:
-		return san.(stabilize.ZipEntryStabilizer).Name
-	case stabilize.GzipStabilizer:
-		return san.(stabilize.GzipStabilizer).Name
-	default:
-		log.Fatalf("unknown stabilizer type: %T", san)
-		return "" // unreachable
-	}
-}
-
 func filetype(path string) archive.Format {
 	ext := filepath.Ext(path)
 	switch ext {
@@ -73,7 +55,7 @@ func NewStabilizerRegistry(stabs ...stabilize.Stabilizer) StabilizerRegistry {
 	reg := StabilizerRegistry{stabilizers: stabs}
 	reg.byName = make(map[string]stabilize.Stabilizer)
 	for _, san := range reg.stabilizers {
-		reg.byName[getName(san)] = san
+		reg.byName[san.Name] = san
 	}
 	return reg
 }
@@ -99,16 +81,16 @@ func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string, eli
 	case "all":
 		for _, pass := range eligible {
 			toRun = append(toRun, pass)
-			enabled[getName(pass)] = true
+			enabled[pass.Name] = true
 		}
 	case "", "none":
 		// No passes enabled.
 	default:
-		for _, name := range strings.Split(enableSpec, ",") {
+		for name := range strings.SplitSeq(enableSpec, ",") {
 			cleanName := strings.TrimSpace(name)
 			if san, ok := reg.Get(cleanName); !ok {
 				return nil, errors.Errorf("unknown pass name: %s", cleanName)
-			} else if !slices.Contains(eligible, san) {
+			} else if !slices.ContainsFunc(eligible, func(e stabilize.Stabilizer) bool { return e.Name == san.Name }) {
 				return nil, errors.Errorf("ineligible pass for artifact: %s", cleanName)
 			} else {
 				toRun = append(toRun, san)
@@ -122,7 +104,7 @@ func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string, eli
 	case "", "none":
 		// No passes disabled.
 	default:
-		for _, name := range strings.Split(disableSpec, ",") {
+		for name := range strings.SplitSeq(disableSpec, ",") {
 			cleanName := strings.TrimSpace(name)
 			if _, ok := reg.Get(cleanName); !ok {
 				return nil, fmt.Errorf("unknown pass name: %s", cleanName)
@@ -134,7 +116,7 @@ func determinePasses(reg StabilizerRegistry, enableSpec, disableSpec string, eli
 	}
 	// Apply deletions from "enabled" map.
 	toRun = slices.DeleteFunc(toRun, func(san stabilize.Stabilizer) bool {
-		_, ok := enabled[getName(san)]
+		_, ok := enabled[san.Name]
 		return !ok
 	})
 	return toRun, nil
@@ -184,7 +166,7 @@ func eligiblePasses(filename string) ([]stabilize.Stabilizer, error) {
 		if i == 0 {
 			result = stabs
 		} else if !slices.EqualFunc(result, stabs, func(s1, s2 stabilize.Stabilizer) bool {
-			return getName(s1) == getName(s2)
+			return s1.Name == s2.Name
 		}) {
 			return nil, errors.Wrapf(ErrAmbiguousEcosystem, "ecosystem %s suggests different stabilizers than %s", candidates[0], e)
 		}
@@ -201,7 +183,7 @@ func run() error {
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nAvailable stabilizers (in default order of application):\n")
 		for _, san := range stabilize.AllStabilizers {
-			fmt.Fprintf(os.Stderr, "  - %s\n", getName(san))
+			fmt.Fprintf(os.Stderr, "  - %s\n", san.Name)
 		}
 	}
 
@@ -238,7 +220,7 @@ func run() error {
 
 	var names []string
 	for _, stab := range toRun {
-		names = append(names, getName(stab))
+		names = append(names, stab.Name)
 	}
 	log.Printf("Applying stablizers: {%s}", strings.Join(names, ", "))
 	err = stabilize.StabilizeWithOpts(out, in, filetype(*infile), stabilize.StabilizeOpts{Stabilizers: toRun})
