@@ -47,8 +47,8 @@ var (
 	importsFixTask   = run("go", "tool", "goimports", "-w", ".")
 
 	// NOTE: docs/layouts are Hugo Go templates which do not carry the correct file extension.
-	licenseCheckTask = run("go", "tool", "addlicense", "-check", "-s=only", "-ignore=.*/**", "-ignore=bin/**", "-ignore=**/.terraform.lock.hcl", "-ignore=definitions/**", "-ignore=docs/layouts/**", ".")
-	licenseFixTask   = run("go", "tool", "addlicense" /*     */, "-s=only", "-ignore=.*/**", "-ignore=bin/**", "-ignore=**/.terraform.lock.hcl", "-ignore=definitions/**", "-ignore=docs/layouts/**", ".")
+	licenseCheckTask = run("go", "tool", "addlicense", "-check", "-s=only", "-ignore=.*/**", "-ignore=bin/**", "-ignore=**/.terraform.lock.hcl", "-ignore=definitions/**", "-ignore=docs/layouts/**", "-ignore=**/*.pb.go", ".")
+	licenseFixTask   = run("go", "tool", "addlicense" /*     */, "-s=only", "-ignore=.*/**", "-ignore=bin/**", "-ignore=**/.terraform.lock.hcl", "-ignore=definitions/**", "-ignore=docs/layouts/**", "-ignore=**/*.pb.go", ".")
 )
 
 // --- Single commands ---
