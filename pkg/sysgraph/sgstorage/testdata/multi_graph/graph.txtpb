@@ -1,0 +1,8 @@
+# proto-file: github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph/sysgraph.proto
+# proto-message: SysGraph
+
+id: "multi_graph"
+subgraphs: [
+  "sg1",
+  "sg2"
+]
