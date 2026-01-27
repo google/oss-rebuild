@@ -54,6 +54,7 @@ var all = []RebuildBenchmark{
 	mavenTop500,
 	mavenRecentTop500,
 	mavenRecentAll,
+	rubygemsTop500,
 }
 
 const (
@@ -1146,6 +1147,126 @@ QUALIFY
 				Artifacts: []string{fmt.Sprintf("%s-%s.jar", nameParts[1], p.Version)},
 			}
 			ps.Packages = append(ps.Packages, pkg)
+		}
+		for _, psp := range ps.Packages {
+			ps.Count += len(psp.Versions)
+		}
+		ps.Updated = now
+		return
+	},
+}
+
+var rubygemsTop500 = RebuildBenchmark{
+	Filename: "rubygems_top_500.json",
+	Generator: func(ctx context.Context) (ps benchmark.PackageSet) {
+		now := time.Now()
+		client, err := bigquery.NewClient(ctx, *project, option.WithQuotaProject(*project))
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		query := client.Query(`
+SELECT
+  COUNT(*) AS DirectRdeps,
+  Name AS Package,
+  Version
+FROM (
+  SELECT
+    T.` + "`" + `From` + "`" + `.Name AS FName,
+    T.` + "`" + `From` + "`" + `.Version AS FVersion,
+    T.` + "`" + `To` + "`" + `.Name AS Name,
+    T.` + "`" + `To` + "`" + `.Version AS Version
+  FROM
+    ` + "`" + `bigquery-public-data.deps_dev_v1.DependencyGraphEdges` + "`" + ` T
+  INNER JOIN (
+    SELECT
+      Time
+    FROM
+      ` + "`" + `bigquery-public-data.deps_dev_v1.Snapshots` + "`" + `
+    ORDER BY
+      Time DESC
+    LIMIT
+      1) S
+  ON
+    S.Time = T.SnapshotAt
+  WHERE
+    T.System = "RUBYGEMS"
+  GROUP BY
+    T.` + "`" + `From` + "`" + `.Name,
+    T.` + "`" + `From` + "`" + `.Version,
+    T.` + "`" + `To` + "`" + `.Name,
+    T.` + "`" + `To` + "`" + `.Version)
+GROUP BY
+  Name,
+  Version
+ORDER BY
+  DirectRdeps DESC
+LIMIT 2500
+`)
+		pkgs := make(chan struct {
+			DirectRdeps int64
+			Package     string
+			Version     string
+		}, 100)
+		// Get dependency-ordered package versions from deps.dev's dependency table.
+		go func() {
+			j, err := query.Run(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			s, err := j.Wait(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			if s.Err() != nil {
+				log.Fatal(s.Err().Error())
+			}
+			it, err := j.Read(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			var entry struct {
+				DirectRdeps int64
+				Package     string
+				Version     string
+			}
+			for {
+				err := it.Next(&entry)
+				if err == iterator.Done {
+					break
+				}
+				if err != nil {
+					log.Fatal(err.Error())
+				}
+				pkgs <- entry
+			}
+			close(pkgs)
+		}()
+		// Select packages with versions that satisfy our criteria.
+		for p := range pkgs {
+			if strings.ContainsRune(p.Version, '-') {
+				// Non-release version (prerelease).
+				continue
+			}
+			idx := -1
+			for i, psp := range ps.Packages {
+				if psp.Name == p.Package {
+					idx = i
+					break
+				}
+			}
+			if idx == -1 {
+				if len(ps.Packages) >= 500 {
+					// If we're already at the max project count, skip.
+					continue
+				}
+				ps.Packages = append(ps.Packages, benchmark.Package{Name: p.Package, Ecosystem: "rubygems"})
+				idx = len(ps.Packages) - 1
+			}
+			psp := &ps.Packages[idx]
+			if len(psp.Versions) >= 5 {
+				continue
+			}
+			psp.Versions = append(psp.Versions, p.Version)
 		}
 		for _, psp := range ps.Packages {
 			ps.Count += len(psp.Versions)
