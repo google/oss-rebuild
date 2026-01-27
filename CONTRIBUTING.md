@@ -25,6 +25,28 @@ This project follows
 
 ## Contribution process
 
+### Development Workflow
+
+After making code changes, ensure your environment is clean and all tests pass. We provide a pre-commit script to automate these checks.
+
+1. Install the pre-commit hook (one-time setup):
+   ```bash
+   ./scripts/install_precommit.sh
+   ```
+
+2. The script will run automatically on `git commit`. You can also run it manually at any time:
+   ```bash
+   ./scripts/precommit.sh
+   ```
+
+The script performs the following:
+- Updates dependencies (`go mod tidy`)
+- Adds license headers (`./.hooks/addlicense`)
+- Builds the project (`go build ./...`)
+- Runs tests (`go test ./...`)
+- Runs vet (`go vet ./...`)
+- Formats code (`gofmt -s -w .` and `go run golang.org/x/tools/cmd/goimports -w .`)
+
 ### Code Reviews
 
 All submissions, including submissions by project members, require review. We
