@@ -37,9 +37,26 @@ func TestConfigValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "missing bootstrap when local",
+			name: "valid config with local and bootstrap repo",
 			cfg: Config{
-				Local: true,
+				Local:              true,
+				BootstrapToolsRepo: "github.com/google/oss-rebuild",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with local and empty bootstrap repo (defaulting to local)",
+			cfg: Config{
+				Local:              true,
+				BootstrapToolsRepo: "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "bootstrap bucket no version",
+			cfg: Config{
+				Local:           true,
+				BootstrapBucket: "bucket",
 			},
 			wantErr: true,
 		},

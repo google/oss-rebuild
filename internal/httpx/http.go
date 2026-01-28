@@ -8,8 +8,11 @@ import (
 	"bufio"
 	"bytes"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/internal/cache"
 )
 
@@ -84,3 +87,25 @@ func (c *RateLimitedClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 var _ BasicClient = &RateLimitedClient{}
+
+func FSHandler(fs billy.Filesystem) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := filepath.Clean(r.URL.Path)
+		s, err := fs.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.NotFound(w, r)
+			} else {
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+			return
+		}
+		file, err := fs.Open(path)
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+		defer file.Close()
+		http.ServeContent(w, r, path, s.ModTime(), file)
+	})
+}
