@@ -17,6 +17,7 @@ import (
 
 var interactive = isTerminal()
 var verbose bool
+var continueOnFailure bool
 
 // ANSI escape codes for terminal formatting
 const (
@@ -87,7 +88,9 @@ func runParallelSimple(tasks []task) error {
 			} else {
 				fmt.Printf("✗ %s\n", r.name)
 				failed = append(failed, r)
-				cancel() // Cancel remaining tasks on first failure
+				if !continueOnFailure {
+					cancel() // Cancel remaining tasks on first failure
+				}
 			}
 		} else {
 			fmt.Printf("✓ %s\n", r.name)
@@ -141,7 +144,9 @@ func runParallelInteractive(tasks []task) error {
 						status[r.name] = "cancelled"
 					} else {
 						status[r.name] = "fail"
-						cancel() // Cancel remaining tasks on first failure
+						if !continueOnFailure {
+							cancel() // Cancel remaining tasks on first failure
+						}
 					}
 				} else {
 					status[r.name] = "done"
@@ -192,9 +197,12 @@ func runSequentialSimple(tasks []task) error {
 		if err != nil {
 			fmt.Printf("✗ %s\n", t.name)
 			printFailure(taskResult{name: t.name, stdout: stdout, stderr: stderr, err: err}, "")
-			return err
+			if !continueOnFailure {
+				return err
+			}
+		} else {
+			fmt.Printf("✓ %s\n", t.name)
 		}
-		fmt.Printf("✓ %s\n", t.name)
 	}
 	return nil
 }
@@ -241,9 +249,12 @@ func runSequentialInteractive(tasks []task) error {
 			render(tasks, status, &mu)
 			fmt.Printf("\n"+ansiRed+"✗ %s failed:"+ansiReset+"\n", t.name)
 			printFailure(taskResult{name: t.name, stdout: stdout, stderr: stderr, err: err}, "  ")
-			return err
+			if !continueOnFailure {
+				return err
+			}
+		} else {
+			status[t.name] = "done"
 		}
-		status[t.name] = "done"
 	}
 
 	render(tasks, status, &mu)
