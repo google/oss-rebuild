@@ -16,6 +16,10 @@ func main() {
 		interactive = false
 		args = slices.DeleteFunc(args, func(s string) bool { return s == "-v" })
 	}
+	if slices.Contains(args, "-keep-going") {
+		continueOnFailure = true
+		args = slices.DeleteFunc(args, func(s string) bool { return s == "-keep-going" })
+	}
 
 	if len(args) < 1 {
 		usage()
@@ -48,10 +52,11 @@ func main() {
 }
 
 func usage() {
-	fmt.Print(`Usage: go run ./ci [-v] <command>
+	fmt.Print(`Usage: go run ./ci [-v] [-keep-going] <command>
 
 Options:
   -v             Verbose output (stream command output to terminal)
+  -keep-going    Run all tasks to completion, don't stop on first failure
 
 Commands:
   build          Build all packages
