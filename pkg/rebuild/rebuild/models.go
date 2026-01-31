@@ -20,6 +20,7 @@ const (
 	CratesIO Ecosystem = "cratesio"
 	Maven    Ecosystem = "maven"
 	Debian   Ecosystem = "debian"
+	RubyGems Ecosystem = "rubygems"
 )
 
 // Target is a single target we might attempt to rebuild.
@@ -65,6 +66,9 @@ func (t Target) ArchiveType() archive.Format {
 			return archive.RawFormat
 		}
 		return archive.UnknownFormat
+	case RubyGems:
+		// Gem files are tar archives containing data.tar.gz, metadata.gz, and checksums.yaml.gz
+		return archive.TarFormat
 	default:
 		return archive.UnknownFormat
 	}
