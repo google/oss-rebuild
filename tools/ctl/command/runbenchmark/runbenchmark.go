@@ -12,15 +12,22 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/cheggaaa/pb"
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/act"
@@ -36,21 +43,22 @@ import (
 
 // Config holds all configuration for the run-bench command.
 type Config struct {
-	API               string
-	Local             bool
-	BenchmarkPath     string
-	BootstrapBucket   string
-	BootstrapVersion  string
-	ExecutionMode     schema.ExecutionMode
-	Format            string
-	Verbose           bool
-	Async             bool
-	TaskQueue         string
-	TaskQueueEmail    string
-	UseNetworkProxy   bool
-	UseSyscallMonitor bool
-	OverwriteMode     string
-	MaxConcurrency    int
+	API                string
+	Local              bool
+	BenchmarkPath      string
+	BootstrapBucket    string
+	BootstrapVersion   string
+	BootstrapToolsRepo string
+	ExecutionMode      schema.ExecutionMode
+	Format             string
+	Verbose            bool
+	Async              bool
+	TaskQueue          string
+	TaskQueueEmail     string
+	UseNetworkProxy    bool
+	UseSyscallMonitor  bool
+	OverwriteMode      string
+	MaxConcurrency     int
 }
 
 // Validate ensures the configuration is valid.
@@ -58,8 +66,8 @@ func (c Config) Validate() error {
 	if !c.Local && c.API == "" {
 		return errors.New("API is required when not running locally")
 	}
-	if c.Local && (c.BootstrapBucket == "" || c.BootstrapVersion == "") {
-		return errors.New("bootstrap-bucket and bootstrap-version are required when running locally")
+	if (c.BootstrapBucket == "") != (c.BootstrapVersion == "") {
+		return errors.New("bootstrap-bucket and bootstrap-version must be set together")
 	}
 	if c.Format != "" && c.Format != "summary" && c.Format != "csv" {
 		return errors.Errorf("invalid format: %s. Expected one of 'summary' or 'csv'", c.Format)
@@ -102,6 +110,47 @@ func parseArgs(cfg *Config, args []string) error {
 	return nil
 }
 
+// compileToFS builds a Go program and loads the binary directly into the provided fs at location outPath.
+func compileToFS(ctx context.Context, fs billy.Filesystem, srcPath, outPath string) error {
+	f, err := os.CreateTemp("", "go-bin-*")
+	if err != nil {
+		return errors.Wrap(err, "creating tempdir")
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+	log.Printf("Compiling  %s...", srcPath)
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", f.Name(), "-gcflags", "-l=4", srcPath)
+	// Make a copy of the environment
+	cmd.Env = append([]string{}, os.Environ()...)
+	cmd.Env = append(cmd.Env, "GOOS=linux", fmt.Sprintf("GOARCH=%s", runtime.GOARCH), "CGO_ENABLED=0")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("compilation failed:\n%s", string(output))
+	}
+	w, err := fs.Create(outPath)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+	if _, err := io.Copy(w, f); err != nil {
+		return fmt.Errorf("failed to copy binary to fs: %w", err)
+	}
+	return nil
+}
+
+// serveFS serves the Filesystem, choosing and returning an available port
+func serveFS(fs billy.Filesystem) (int, error) {
+	// Bind to 0.0.0.0 to make sure the docker bridge can connect
+	listener, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		return 0, err
+	}
+	go func() {
+		http.Serve(listener, httpx.FSHandler(fs))
+	}()
+	port := listener.Addr().(*net.TCPAddr).Port
+	return port, nil
+}
+
 // Handler contains the business logic for the run-bench command.
 // This function does not depend on Cobra and can be tested independently.
 func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error) {
@@ -126,12 +175,51 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "Failed to create temp directory")
 		}
-		// TODO: Validate this.
-		prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
+		var prebuildURL string
+		var needHostGate bool
+		// Skip bootstrap setup for inference runs
+		if cfg.ExecutionMode != benchrun.InferMode {
+			if cfg.BootstrapBucket != "" && cfg.BootstrapVersion != "" {
+				prebuildURL = fmt.Sprintf("http://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
+			} else {
+				fs := memfs.New()
+				repo := cfg.BootstrapToolsRepo
+				if repo == "" {
+					repo = "."
+				}
+				// TODO: Add new bootstrap tools as necessary here.
+				for _, tool := range []struct {
+					src string
+					dst string
+				}{
+					{
+						src: "cmd/timewarp",
+						dst: "timewarp",
+					},
+				} {
+					// NOTE: We don't use path.Join() here because this is a go module path
+					toolPath := repo + "/" + tool.src
+					if repo == "." {
+						toolPath = "./" + tool.src
+					}
+					if err := compileToFS(ctx, fs, toolPath, tool.dst); err != nil {
+						return nil, errors.Wrap(err, "compiling bootstrap tools")
+					}
+				}
+				port, err := serveFS(fs)
+				if err != nil {
+					return nil, errors.Wrap(err, "serving binaries")
+				}
+				log.Printf("Serving binaries on: %d", port)
+				prebuildURL = fmt.Sprintf("http://host.docker.internal:%d", port)
+				needHostGate = true
+			}
+		}
 		executor = benchrun.NewLocalExecutionService(benchrun.LocalExecutionServiceConfig{
-			PrebuildURL: prebuildURL,
-			Store:       store,
-			LogSink:     deps.IO.Out,
+			PrebuildURL:       prebuildURL,
+			Store:             store,
+			LogSink:           deps.IO.Out,
+			EnableHostGateway: needHostGate,
 		})
 		dex = rundex.NewFilesystemClient(localfiles.Rundex())
 		if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
@@ -248,7 +336,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-bench attest -api <URI>  [-local -bootstrap-bucket <BUCKET> -bootstrap-version <VERSION>] [-format=summary|csv] <benchmark.json>",
+		Use:   "run-bench attest -api <URI>  [-local -bootstrap-bucket <BUCKET> -bootstrap-version <VERSION> -bootstrap-tools-repo <REPO>] [-format=summary|csv] <benchmark.json>",
 		Short: "Run benchmark",
 		Args:  cobra.ExactArgs(2),
 		RunE: cli.RunE(
@@ -270,6 +358,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.BoolVar(&cfg.Local, "local", false, "true if this request is going direct to build-local (not through API first)")
 	set.StringVar(&cfg.BootstrapBucket, "bootstrap-bucket", "", "the gcs bucket where bootstrap tools are stored")
 	set.StringVar(&cfg.BootstrapVersion, "bootstrap-version", "", "the version of bootstrap tools to use")
+	set.StringVar(&cfg.BootstrapToolsRepo, "bootstrap-tools-repo", "github.com/google/oss-rebuild", "the repository or local directory to build bootstrap tools from")
 	set.StringVar(&cfg.Format, "format", "", "format of the output (summary|csv)")
 	set.BoolVar(&cfg.Verbose, "v", false, "verbose output")
 	set.BoolVar(&cfg.Async, "async", false, "true if this benchmark should run asynchronously")
