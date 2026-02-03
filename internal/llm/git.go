@@ -4,6 +4,8 @@
 package llm
 
 import (
+	"strings"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -144,6 +146,7 @@ func getRepoFile(tree *object.Tree, path string) (string, error) {
 }
 
 func listRepoFiles(tree *object.Tree, path string) ([]string, error) {
+	path = strings.TrimSuffix(path, "/") // go-git doesn't like trailing slashes
 	if path == "" {
 		path = "."
 	}
