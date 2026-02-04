@@ -32,16 +32,18 @@ type localExecutionService struct {
 	prebuildURL string
 	store       rebuild.LocatableAssetStore
 	logsink     io.Writer
+	gitCache    *gitx.Cache
 }
 
 type LocalExecutionServiceConfig struct {
 	PrebuildURL string
 	Store       rebuild.LocatableAssetStore
 	LogSink     io.Writer
+	GitCache    *gitx.Cache
 }
 
 func NewLocalExecutionService(config LocalExecutionServiceConfig) ExecutionService {
-	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink}
+	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink, gitCache: config.GitCache}
 }
 
 func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
@@ -107,6 +109,9 @@ func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux
 	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
 	if !ok {
 		return nil, errors.New("unsupported ecosystem")
+	}
+	if s.gitCache != nil {
+		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, s.gitCache)
 	}
 	repo, err := rebuilder.InferRepo(ctx, t, mux)
 	if err != nil {
