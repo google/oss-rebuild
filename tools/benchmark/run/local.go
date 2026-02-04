@@ -78,6 +78,31 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 	return verdict, nil
 }
 
+// RebuildWithStrategy rebuilds a package using a provided strategy instead of inferring one.
+// This is only supported for local execution services.
+func RebuildWithStrategy(ctx context.Context, executor ExecutionService, t rebuild.Target, strategy rebuild.Strategy) (*schema.Verdict, error) {
+	local, ok := executor.(*localExecutionService)
+	if !ok {
+		return nil, errors.New("RebuildWithStrategy is only supported for local execution")
+	}
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+	if t.Artifact == "" {
+		a, err := meta.GuessArtifact(ctx, t, mux)
+		if err != nil {
+			return nil, errors.Wrap(err, "selecting artifact")
+		}
+		t.Artifact = a
+	}
+	verdict := &schema.Verdict{Target: t}
+	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
+	if err := executeBuild(ctx, t, strategy, local.store, buildOpts{PrebuildURL: local.prebuildURL, LogSink: local.logsink}); err != nil {
+		verdict.Message = err.Error()
+	} else if err := compare(ctx, t, local.store, mux); err != nil {
+		verdict.Message = err.Error()
+	}
+	return verdict, nil
+}
+
 func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (rebuild.Strategy, error) {
 	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
 	if !ok {
