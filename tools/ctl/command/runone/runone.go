@@ -20,6 +20,8 @@ import (
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	benchrun "github.com/google/oss-rebuild/tools/benchmark/run"
+	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -30,6 +32,9 @@ const analyzeMode = schema.ExecutionMode("analyze")
 // Config holds all configuration for the run-one command.
 type Config struct {
 	API               string
+	Local             bool
+	BootstrapBucket   string
+	BootstrapVersion  string
 	Ecosystem         string
 	Package           string
 	Version           string
@@ -43,8 +48,11 @@ type Config struct {
 
 // Validate ensures the configuration is valid.
 func (c Config) Validate() error {
-	if c.API == "" {
-		return errors.New("api is required")
+	if !c.Local && c.API == "" {
+		return errors.New("api is required when not running locally")
+	}
+	if c.Local && (c.BootstrapBucket == "" || c.BootstrapVersion == "") {
+		return errors.New("bootstrap-bucket and bootstrap-version are required when running locally")
 	}
 	if c.Ecosystem == "" {
 		return errors.New("ecosystem is required")
@@ -61,6 +69,9 @@ func (c Config) Validate() error {
 	mode := schema.ExecutionMode(c.Mode)
 	if mode != schema.AttestMode && mode != analyzeMode {
 		return errors.Errorf("unknown mode: %s. Expected one of 'attest', or 'analyze'", c.Mode)
+	}
+	if c.Local && mode == analyzeMode {
+		return errors.New("analyze mode is not supported in local execution")
 	}
 	if c.OverwriteMode != "" && c.OverwriteMode != string(schema.OverwriteServiceUpdate) && c.OverwriteMode != string(schema.OverwriteForce) {
 		return errors.Errorf("invalid overwrite-mode: %s. Expected one of 'SERVICE_UPDATE' or 'FORCE'", c.OverwriteMode)
@@ -91,23 +102,6 @@ func parseArgs(cfg *Config, args []string) error {
 // Handler contains the business logic for the run-one command.
 func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error) {
 	mode := schema.ExecutionMode(cfg.Mode)
-	apiURL, err := url.Parse(cfg.API)
-	if err != nil {
-		return nil, errors.Wrap(err, "parsing API endpoint")
-	}
-	var client *http.Client
-	{
-		if strings.Contains(apiURL.Host, "run.app") {
-			// If the api is on Cloud Run, we need to use an authorized client.
-			apiURL.Scheme = "https"
-			client, err = oauth.AuthorizedUserIDClient(ctx)
-			if err != nil {
-				return nil, errors.Wrap(err, "creating authorized HTTP client")
-			}
-		} else {
-			client = http.DefaultClient
-		}
-	}
 	var strategy *schema.StrategyOneOf
 	{
 		if cfg.Strategy != "" {
@@ -129,8 +123,63 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			}
 		}
 	}
+	_ = strategy // TODO: use strategy when supported
 	enc := json.NewEncoder(deps.IO.Out)
 	enc.SetIndent("", "  ")
+
+	if cfg.Local {
+		return handleLocal(ctx, cfg, deps, enc)
+	}
+	return handleRemote(ctx, cfg, deps, enc)
+}
+
+func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder) (*act.NoOutput, error) {
+	runID := time.Now().UTC().Format(time.RFC3339)
+	store, err := localfiles.AssetStore(runID)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create temp directory")
+	}
+	prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
+	executor := benchrun.NewLocalExecutionService(benchrun.LocalExecutionServiceConfig{
+		PrebuildURL: prebuildURL,
+		Store:       store,
+		LogSink:     deps.IO.Out,
+	})
+	// Local mode only supports attest (validated in Validate)
+	resp, err := executor.RebuildPackage(ctx, schema.RebuildPackageRequest{
+		Ecosystem: rebuild.Ecosystem(cfg.Ecosystem),
+		Package:   cfg.Package,
+		Version:   cfg.Version,
+		Artifact:  cfg.Artifact,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "running local rebuild")
+	}
+	if err := enc.Encode(resp); err != nil {
+		return nil, errors.Wrap(err, "encoding result")
+	}
+	return &act.NoOutput{}, nil
+}
+
+func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder) (*act.NoOutput, error) {
+	mode := schema.ExecutionMode(cfg.Mode)
+	apiURL, err := url.Parse(cfg.API)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing API endpoint")
+	}
+	var client *http.Client
+	{
+		if strings.Contains(apiURL.Host, "run.app") {
+			// If the api is on Cloud Run, we need to use an authorized client.
+			apiURL.Scheme = "https"
+			client, err = oauth.AuthorizedUserIDClient(ctx)
+			if err != nil {
+				return nil, errors.Wrap(err, "creating authorized HTTP client")
+			}
+		} else {
+			client = http.DefaultClient
+		}
+	}
 	switch mode {
 	case analyzeMode:
 		stub := api.Stub[schema.AnalyzeRebuildRequest, api.NoReturn](client, apiURL.JoinPath("analyze"))
@@ -170,7 +219,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-one attest|analyze --api <URI> --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--strategy <strategy.yaml>] [--strategy-from-repo]",
+		Use:   "run-one attest|analyze [--api <URI> | --local --bootstrap-bucket <BUCKET> --bootstrap-version <VERSION>] --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>]",
 		Short: "Run a single target",
 		Args:  cobra.ExactArgs(1),
 		RunE: cli.RunE(
@@ -188,6 +237,9 @@ func Command() *cobra.Command {
 func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.StringVar(&cfg.API, "api", "", "OSS Rebuild API endpoint URI")
+	set.BoolVar(&cfg.Local, "local", false, "run locally instead of through the API")
+	set.StringVar(&cfg.BootstrapBucket, "bootstrap-bucket", "", "the GCS bucket where bootstrap tools are stored (required for local mode)")
+	set.StringVar(&cfg.BootstrapVersion, "bootstrap-version", "", "the version of bootstrap tools to use (required for local mode)")
 	set.StringVar(&cfg.Ecosystem, "ecosystem", "", "the ecosystem")
 	set.StringVar(&cfg.Package, "package", "", "the package name")
 	set.StringVar(&cfg.Version, "version", "", "the version of the package")
