@@ -786,7 +786,7 @@ resource "google_cloud_run_v2_service" "git-cache" {
     containers {
       image = data.google_artifact_registry_docker_image.git-cache.self_link
       args = [
-        "--bucket=${google_storage_bucket.git-cache.name}"
+        "--cache=gs://${google_storage_bucket.git-cache.name}"
       ]
       resources {
         limits = {
