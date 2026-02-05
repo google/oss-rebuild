@@ -111,13 +111,10 @@ func normalizeName(name string) string {
 
 // Recursively check for build files
 func findRecursively(fileType string, tree *object.Tree, hintDir string) ([]foundFile, error) {
-
 	if !supportedFileTypes[fileType] {
 		return nil, errors.New("unsupported file type")
 	}
-
 	var foundFiles []foundFile
-
 	tree.Files().ForEach(func(f *object.File) error {
 		if filepath.Base(f.Name) == fileType && (hintDir == "" || filepath.Dir(f.Name) == hintDir) {
 			foundFiles = append(foundFiles, foundFile{
@@ -129,8 +126,5 @@ func findRecursively(fileType string, tree *object.Tree, hintDir string) ([]foun
 		}
 		return nil
 	})
-	if len(foundFiles) == 0 {
-		return nil, errors.New("no matching files found")
-	}
 	return foundFiles, nil
 }
