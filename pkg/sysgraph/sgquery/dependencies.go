@@ -78,7 +78,7 @@ func mapParallel[I any, O comparable](ctx context.Context, inputs []I, f func(co
 	}
 	close(outputCh)
 	wg.Wait()
-	return outputs, nil
+	return outputs, ctx.Err()
 }
 
 type actionResource struct {
