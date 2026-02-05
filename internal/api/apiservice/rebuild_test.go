@@ -25,7 +25,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/oss-rebuild/internal/gcb/gcbtest"
-	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
@@ -591,7 +590,7 @@ RLpmHHG1JOVdOA==
 			tempDir := must(os.MkdirTemp("", "test-*"))
 			defer os.RemoveAll(tempDir)
 			var gfs osfs.BoundOS
-			repoOpts := gitx.RepositoryOptions{
+			repoOpts := gitxtest.RepositoryOptions{
 				Worktree: must(gfs.Chroot(tempDir)),
 				Storer:   filesystem.NewStorage(must(gfs.Chroot(path.Join(tempDir, ".git"))), cache.NewObjectLRUDefault()),
 			}

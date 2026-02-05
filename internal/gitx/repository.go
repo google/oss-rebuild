@@ -8,6 +8,7 @@ import (
 	"github.com/go-git/go-git/v5/storage"
 )
 
+// RepositoryOptions configures the storage and worktree for repositories.
 type RepositoryOptions struct {
 	Storer   storage.Storer
 	Worktree billy.Filesystem

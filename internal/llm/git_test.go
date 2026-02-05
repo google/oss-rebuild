@@ -10,7 +10,6 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 )
 
@@ -23,7 +22,7 @@ func Test_listRepoFiles(t *testing.T) {
 			},
 		},
 	}
-	repo, err := gitxtest.CreateRepo(commits, &gitx.RepositoryOptions{
+	repo, err := gitxtest.CreateRepo(commits, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault()),
 		Worktree: memfs.New(),
 	})
