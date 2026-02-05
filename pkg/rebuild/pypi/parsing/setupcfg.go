@@ -6,6 +6,7 @@ package parsing
 import (
 	"context"
 	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -32,10 +33,9 @@ func splitRequiresList(value string) []string {
 	return result
 }
 
-func verifySetupCfgFile(ctx context.Context, found foundFile, name, version string) (fileVerification, error) {
+func verifySetupCfgFile(ctx context.Context, f *object.File, name, version string) (fileVerification, error) {
 	var verificationResult fileVerification
-	verificationResult.foundF = found
-	f := found.object
+	verificationResult.foundF = f
 
 	cfgContents, err := f.Contents()
 	if err != nil {
@@ -52,7 +52,7 @@ func verifySetupCfgFile(ctx context.Context, found foundFile, name, version stri
 	foundName, fn := cfg.GetValue("metadata", "name")
 	foundVersion, fv := cfg.GetValue("metadata", "version")
 
-	if found.path == "." {
+	if filepath.Dir(f.Name) == "." {
 		verificationResult.main = true
 	}
 
