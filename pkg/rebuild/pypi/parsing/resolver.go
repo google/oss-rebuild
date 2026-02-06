@@ -12,96 +12,83 @@ import (
 )
 
 func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, version, hintDir string) ([]string, string, error) {
-	log.Println("Extracting any extra requirements from found build file types (pyproject.toml)")
+	dir, err := DiscoverBuildDir(ctx, tree, name, version, hintDir)
+	if err != nil {
+		return nil, "", err
+	}
+	reqs, err := ExtractRequirements(ctx, tree, dir)
+	if err != nil {
+		return nil, "", err
+	}
+	return reqs, dir, nil
+}
+
+// ExtractRequirements extracts requirements from build files in the specified directory.
+func ExtractRequirements(ctx context.Context, tree *object.Tree, searchDir string) ([]string, error) {
 	var reqs []string
-	var foundFiles []foundFile
-
-	foundPyprojFiles, err := findRecursively("pyproject.toml", tree, hintDir)
-	if err != nil {
-		log.Printf("Failed to find pyproject.toml files: %v", err)
-	} else {
-		foundFiles = append(foundFiles, foundPyprojFiles...)
+	// Account for "" as base dir in the provided tree
+	if searchDir == "" {
+		searchDir = "."
 	}
-
-	// TODO setup.py
-
-	foundSetupCfgFiles, err := findRecursively("setup.cfg", tree, hintDir)
-	if err != nil {
-		log.Printf("Failed to find setup.cfg files: %v", err)
-	} else {
-		foundFiles = append(foundFiles, foundSetupCfgFiles...)
+	configTypes := []struct {
+		filename string
+		extract  func(context.Context, *object.File) ([]string, error)
+	}{
+		{"pyproject.toml", extractPyProjectRequirements},
+		{"setup.cfg", extractSetupCfgRequirements},
+		// TODO setup.py
 	}
-
-	if len(foundFiles) == 0 {
-		return nil, "", errors.New("no supported build files found for requirement extraction")
-	}
-
-	var verifiedFiles []fileVerification
-
-	for _, foundFile := range foundFiles {
-		switch foundFile.filetype {
-		case "pyproject.toml":
-			verification, err := verifyPyProjectFile(ctx, foundFile, name, version)
+	for _, h := range configTypes {
+		files, err := findRecursively(h.filename, tree, searchDir)
+		if err != nil {
+			return nil, errors.Wrapf(err, "finding %s files", h.filename)
+		}
+		for _, f := range files {
+			fReqs, err := h.extract(ctx, f.object)
 			if err != nil {
-				log.Printf("Failed to verify pyproject.toml file: %v", err)
-				continue
+				return nil, errors.Wrapf(err, "extracting %s requirements", h.filename)
 			}
-			verifiedFiles = append(verifiedFiles, verification)
-		// TODO case setup.py
-		case "setup.cfg":
-			verification, err := verifySetupCfgFile(ctx, foundFile, name, version)
-			if err != nil {
-				log.Printf("Failed to verify setup.cfg file: %v", err)
-				continue
-			}
-			verifiedFiles = append(verifiedFiles, verification)
-		default:
-			log.Printf("Unsupported file type for verification: %s", foundFile.filetype)
+			reqs = append(reqs, fReqs...)
 		}
 	}
+	return reqs, nil
+}
 
-	if len(verifiedFiles) == 0 {
-		return nil, "", errors.New("no verified build files found for requirement extraction")
+// DiscoverBuildDir searches for the best directory for requirement extraction.
+// Returns the directory path relative to the tree root, with "" representing root.
+func DiscoverBuildDir(ctx context.Context, tree *object.Tree, name, version, hintDir string) (string, error) {
+	var verifiedFiles []fileVerification
+	configTypes := []struct {
+		filename string
+		verify   func(context.Context, foundFile, string, string) (fileVerification, error)
+	}{
+		{"pyproject.toml", verifyPyProjectFile},
+		{"setup.cfg", verifySetupCfgFile},
+		// TODO setup.py
 	}
-
+	for _, h := range configTypes {
+		files, err := findRecursively(h.filename, tree, hintDir)
+		if err != nil {
+			return "", errors.Wrapf(err, "finding %s files", h.filename)
+		}
+		for _, f := range files {
+			verification, err := h.verify(ctx, f, name, version)
+			if err != nil {
+				log.Printf("Failed to verify %s file: %v", h.filename, err)
+				continue
+			}
+			verifiedFiles = append(verifiedFiles, verification)
+		}
+	}
+	if len(verifiedFiles) == 0 {
+		return "", errors.New("no verified build files found for requirement extraction")
+	}
 	sortedVerification := sortVerifications(verifiedFiles)
-
 	bestFile := sortedVerification[0]
 	dir := bestFile.foundF.path
-
-	posFiles := []foundFile{bestFile.foundF}
-	for _, f := range foundFiles {
-		if f.path == dir && f.name != bestFile.foundF.name {
-			posFiles = append(posFiles, f)
-		}
-	}
-
-	for _, f := range posFiles {
-		switch f.filetype {
-		case "pyproject.toml":
-			pyprojReqs, err := extractPyProjectRequirements(ctx, f.object)
-			if err != nil {
-				return nil, "", errors.Wrap(err, "Failed to extract pyproject.toml requirements")
-			}
-
-			reqs = append(reqs, pyprojReqs...)
-		// TODO case setup.py
-		case "setup.cfg":
-			setupCfgReqs, err := extractSetupCfgRequirements(ctx, f.object)
-			if err != nil {
-				return nil, "", errors.Wrap(err, "Failed to extract pyproject.toml requirements")
-			}
-
-			reqs = append(reqs, setupCfgReqs...)
-		default:
-			log.Printf("Unsupported file type for requirement extraction: %s", f.filetype)
-		}
-	}
-
 	// Account for "." as base dir
 	if dir == "." {
 		dir = ""
 	}
-
-	return reqs, dir, nil
+	return dir, nil
 }
