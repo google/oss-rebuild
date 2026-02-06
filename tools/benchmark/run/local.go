@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/cache"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
@@ -32,14 +33,14 @@ type localExecutionService struct {
 	prebuildURL string
 	store       rebuild.LocatableAssetStore
 	logsink     io.Writer
-	gitCache    *gitx.Cache
+	gitCache    *gitcache.Client
 }
 
 type LocalExecutionServiceConfig struct {
 	PrebuildURL string
 	Store       rebuild.LocatableAssetStore
 	LogSink     io.Writer
-	GitCache    *gitx.Cache
+	GitCache    *gitcache.Client
 }
 
 func NewLocalExecutionService(config LocalExecutionServiceConfig) ExecutionService {

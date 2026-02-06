@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/api"
-	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
@@ -167,7 +167,7 @@ func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder,
 			idClient = http.DefaultClient
 			apiClient = http.DefaultClient
 		}
-		localCfg.GitCache = &gitx.Cache{IDClient: idClient, APIClient: apiClient, URL: u}
+		localCfg.GitCache = &gitcache.Client{IDClient: idClient, APIClient: apiClient, URL: u}
 	}
 	executor := benchrun.NewLocalExecutionService(localCfg)
 	t := rebuild.Target{
