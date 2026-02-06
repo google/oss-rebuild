@@ -25,10 +25,10 @@ func TestStabilizePypi(t *testing.T) {
 		{
 			test: "metadata.json stabilization (removal)",
 			input: []*archive.ZipEntry{
-				{FileHeader: &zip.FileHeader{Name: "metadata.json"}, Body: []byte("{\"Test\": \"Example\"}")},
+				{FileHeader: &zip.FileHeader{Name: "dist-info/metadata.json"}, Body: []byte("{\"Test\": \"Example\"}")},
 			},
 			expected: []*archive.ZipEntry{
-				{FileHeader: &zip.FileHeader{Name: "metadata.json"}, Body: []byte("This needed to change (metadata)")},
+				{FileHeader: &zip.FileHeader{Name: "dist-info/metadata.json"}, Body: []byte("This needed to change (metadata)")},
 			},
 			pypiStabilizers: []Stabilizer{RemoveMetadataJSON},
 		},
@@ -46,10 +46,10 @@ func TestStabilizePypi(t *testing.T) {
 		{
 			test: "DESCRIPTION.rst stabilization (removal)",
 			input: []*archive.ZipEntry{
-				{FileHeader: &zip.FileHeader{Name: "DESCRIPTION.rst"}, Body: []byte("Test Example")},
+				{FileHeader: &zip.FileHeader{Name: "dist-info/DESCRIPTION.rst"}, Body: []byte("Test Example")},
 			},
 			expected: []*archive.ZipEntry{
-				{FileHeader: &zip.FileHeader{Name: "DESCRIPTION.rst"}, Body: []byte("This needed to change (description)")},
+				{FileHeader: &zip.FileHeader{Name: "dist-info/DESCRIPTION.rst"}, Body: []byte("This needed to change (description)")},
 			},
 			pypiStabilizers: []Stabilizer{StablePypiDescription},
 		},
