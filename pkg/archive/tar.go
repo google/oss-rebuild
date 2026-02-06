@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/google/oss-rebuild/internal/iterx"
 )
 
 // TarEntry represents an entry in a tar archive.
@@ -45,12 +46,8 @@ type ExtractOptions struct {
 // ExtractTar writes the contents of a tar to a filesystem.
 func ExtractTar(tr *tar.Reader, fs billy.Filesystem, opt ExtractOptions) error {
 	basepath := filepath.Clean(opt.SubDir) + string(filepath.Separator)
-	for {
-		h, err := tr.Next()
+	for h, err := range iterx.ToSeq2(tr, io.EOF) {
 		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
 			return err
 		}
 		path, err := filepath.Rel(basepath, h.Name)
@@ -92,4 +89,5 @@ func ExtractTar(tr *tar.Reader, fs billy.Filesystem, opt ExtractOptions) error {
 			}
 		}
 	}
+	return nil
 }

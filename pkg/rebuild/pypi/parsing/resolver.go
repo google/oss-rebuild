@@ -25,7 +25,12 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 
 	// TODO setup.py
 
-	// TODO setup.cfg
+	foundSetupCfgFiles, err := findRecursively("setup.cfg", tree, hintDir)
+	if err != nil {
+		log.Printf("Failed to find setup.cfg files: %v", err)
+	} else {
+		foundFiles = append(foundFiles, foundSetupCfgFiles...)
+	}
 
 	if len(foundFiles) == 0 {
 		return nil, "", errors.New("no supported build files found for requirement extraction")
@@ -43,7 +48,13 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 			}
 			verifiedFiles = append(verifiedFiles, verification)
 		// TODO case setup.py
-		// TODO case setup.cfg
+		case "setup.cfg":
+			verification, err := verifySetupCfgFile(ctx, foundFile, name, version)
+			if err != nil {
+				log.Printf("Failed to verify setup.cfg file: %v", err)
+				continue
+			}
+			verifiedFiles = append(verifiedFiles, verification)
 		default:
 			log.Printf("Unsupported file type for verification: %s", foundFile.filetype)
 		}
@@ -75,7 +86,13 @@ func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, versio
 
 			reqs = append(reqs, pyprojReqs...)
 		// TODO case setup.py
-		// TODO case setup.cfg
+		case "setup.cfg":
+			setupCfgReqs, err := extractSetupCfgRequirements(ctx, f.object)
+			if err != nil {
+				return nil, "", errors.Wrap(err, "Failed to extract pyproject.toml requirements")
+			}
+
+			reqs = append(reqs, setupCfgReqs...)
 		default:
 			log.Printf("Unsupported file type for requirement extraction: %s", f.filetype)
 		}

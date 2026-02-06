@@ -35,6 +35,7 @@ type Chat struct {
 	session   *genai.Chat
 	toolImpls map[string]Function
 	maxIter   int
+	usage     []*genai.GenerateContentResponseUsageMetadata
 }
 
 // NewChat creates and initializes a new Chat instance for managing a conversation.
@@ -118,6 +119,9 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 				yield(nil, errors.Wrap(err, "sending message"))
 				return
 			}
+			if resp.UsageMetadata != nil {
+				cm.usage = append(cm.usage, resp.UsageMetadata)
+			}
 			if len(resp.Candidates) == 0 || resp.Candidates[0] == nil || resp.Candidates[0].Content == nil {
 				feedback := "received nil or empty candidates/content"
 				if resp.PromptFeedback != nil {
@@ -164,4 +168,9 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 // History returns a copy of the conversation history accumulated so far.
 func (cm *Chat) History() []*genai.Content {
 	return cm.session.History( /*curated=*/ false)
+}
+
+// Usage returns the usage metadata accumulated so far.
+func (cm *Chat) Usage() []*genai.GenerateContentResponseUsageMetadata {
+	return cm.usage
 }

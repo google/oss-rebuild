@@ -141,7 +141,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to chroot into directory %s", dir)
 			}
-			destDex = rundex.NewLocalClient(rundexFS)
+			destDex = rundex.NewFilesystemClient(rundexFS)
 		default:
 			return nil, errors.New("destination must be a gs:// or file:// URL")
 		}

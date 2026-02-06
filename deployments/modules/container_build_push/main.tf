@@ -40,7 +40,7 @@ resource "terraform_data" "image" {
   input = terraform_data.image_deps.output
 
   lifecycle {
-    replace_triggered_by =  [terraform_data.image_deps]
+    replace_triggered_by = [terraform_data.image_deps]
   }
 
   provisioner "local-exec" {

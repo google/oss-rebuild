@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	gcs "cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/iterx"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
@@ -43,11 +45,7 @@ func (g *GCSClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, e
 	// TODO: If opts specifies specific runs, we can query for those directly.
 	query := &gcs.Query{Prefix: path.Join(g.prefix, layout.RundexRunsPath) + "/"}
 	it := g.client.Bucket(g.bucket).Objects(ctx, query)
-	for {
-		attrs, err := it.Next()
-		if err == iterator.Done {
-			break
-		}
+	for attrs, err := range iterx.ToSeq2(it, iterator.Done) {
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over objects")
 		}
@@ -93,11 +91,7 @@ func (g *GCSClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest)
 		for _, p := range prefixes {
 			query := &gcs.Query{Prefix: p}
 			it := g.client.Bucket(g.bucket).Objects(ctx, query)
-			for {
-				attrs, err := it.Next()
-				if err == iterator.Done {
-					break
-				}
+			for attrs, err := range iterx.ToSeq2(it, iterator.Done) {
 				if err != nil {
 					errChan <- errors.Wrap(err, "iterating over objects")
 					return
@@ -135,7 +129,8 @@ func (g *GCSClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest)
 }
 
 func (g *GCSClient) WriteRebuild(ctx context.Context, r Rebuild) error {
-	path := path.Join(g.prefix, layout.RundexRebuildsPath, r.RunID, r.Ecosystem, r.Package, r.Artifact, rebuildFileName)
+	et := rebuild.FilesystemTargetEncoding.Encode(r.Target())
+	path := path.Join(g.prefix, layout.RundexRebuildsPath, r.RunID, string(et.Ecosystem), et.Package, et.Version, et.Artifact, rebuildFileName)
 	obj := g.client.Bucket(g.bucket).Object(path)
 	w := obj.NewWriter(ctx)
 	if err := json.NewEncoder(w).Encode(r); err != nil {

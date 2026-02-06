@@ -65,25 +65,6 @@ func TestRunBenchAsync(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "smoketest",
-			mode: schema.SmoketestMode,
-			set: benchmark.PackageSet{
-				Packages: []benchmark.Package{
-					{
-						Ecosystem: "npm",
-						Name:      "package_name",
-						Versions:  []string{"1.0.0", "1.1.0"},
-					},
-				},
-			},
-			expected: []queueCall{
-				{
-					"https://example.com/smoketest",
-					"ecosystem=npm&id=runid&package=package_name&versions=1.0.0&versions=1.1.0",
-				},
-			},
-		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

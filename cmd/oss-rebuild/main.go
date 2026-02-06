@@ -18,6 +18,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/fatih/color"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -85,6 +86,7 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 			version := args[2]
 			var artifact string
 			if len(args) < 4 {
+				// TODO: Maybe use meta.GuessEcosystem? The downside is that's not hermetic.
 				switch ecosystem {
 				case rebuild.CratesIO:
 					artifact = fmt.Sprintf("%s-%s.crate", pkg, version)
@@ -269,11 +271,7 @@ var listCmd = &cobra.Command{
 		}
 		query.SetAttrSelection([]string{"Name"})
 		it := gcsClient.Bucket(*bucket).Objects(cmd.Context(), query)
-		for {
-			obj, err := it.Next()
-			if err == iterator.Done {
-				break
-			}
+		for obj, err := range iterx.ToSeq2(it, iterator.Done) {
 			if err != nil {
 				return errors.Wrap(err, "listing objects")
 			}

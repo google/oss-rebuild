@@ -64,6 +64,9 @@ func (c Config) Validate() error {
 	if c.Format != "" && c.Format != "summary" && c.Format != "csv" {
 		return errors.Errorf("invalid format: %s. Expected one of 'summary' or 'csv'", c.Format)
 	}
+	if c.OverwriteMode != "" && c.OverwriteMode != string(schema.OverwriteServiceUpdate) && c.OverwriteMode != string(schema.OverwriteForce) {
+		return errors.Errorf("invalid overwrite-mode: %s. Expected one of 'SERVICE_UPDATE' or 'FORCE'", c.OverwriteMode)
+	}
 	return nil
 }
 
@@ -88,8 +91,8 @@ func parseArgs(cfg *Config, args []string) error {
 		return errors.New("expected exactly 2 arguments")
 	}
 	mode := schema.ExecutionMode(args[0])
-	if mode != schema.SmoketestMode && mode != schema.AttestMode {
-		return errors.Errorf("Unknown mode: %s. Expected one of 'smoketest' or 'attest'", string(mode))
+	if mode != schema.AttestMode && mode != benchrun.InferMode {
+		return errors.Errorf("Unknown mode: %s. Expected one of 'attest' or 'infer'", string(mode))
 	}
 	cfg.ExecutionMode = mode
 	cfg.BenchmarkPath = args[1]
@@ -125,13 +128,17 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		}
 		// TODO: Validate this.
 		prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
-		executor = benchrun.NewLocalExecutionService(prebuildURL, store, deps.IO.Out)
-		dex = rundex.NewLocalClient(localfiles.Rundex())
+		executor = benchrun.NewLocalExecutionService(benchrun.LocalExecutionServiceConfig{
+			PrebuildURL: prebuildURL,
+			Store:       store,
+			LogSink:     deps.IO.Out,
+		})
+		dex = rundex.NewFilesystemClient(localfiles.Rundex())
 		if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
 			ID:            runID,
 			BenchmarkName: filepath.Base(cfg.BenchmarkPath),
 			BenchmarkHash: hex.EncodeToString(set.Hash(sha256.New())),
-			Type:          string(schema.SmoketestMode),
+			Type:          string(schema.SmoketestMode), // TODO: Remove this. Needed for now to help TUI find the output assets.
 			Created:       now,
 		})); err != nil {
 			log.Println(errors.Wrap(err, "writing run to rundex"))
@@ -190,6 +197,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		MaxConcurrency:    cfg.MaxConcurrency,
 		UseSyscallMonitor: cfg.UseSyscallMonitor,
 		UseNetworkProxy:   cfg.UseNetworkProxy,
+		OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "running benchmark")
@@ -240,7 +248,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-bench smoketest|attest -api <URI>  [-local -bootstrap-bucket <BUCKET> -bootstrap-version <VERSION>] [-format=summary|csv] <benchmark.json>",
+		Use:   "run-bench attest -api <URI>  [-local -bootstrap-bucket <BUCKET> -bootstrap-version <VERSION>] [-format=summary|csv] <benchmark.json>",
 		Short: "Run benchmark",
 		Args:  cobra.ExactArgs(2),
 		RunE: cli.RunE(

@@ -1,0 +1,209 @@
+// Copyright 2026 Google LLC
+// SPDX-License-Identifier: Apache-2.0
+
+edition = "2024";
+
+package sysgraph;
+
+option go_package = "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph";
+
+import "google/protobuf/timestamp.proto";
+
+// A sysgraph is a graph of all actions that occur during an execution.
+message SysGraph {
+  // The uuid of the sysgraph.
+  string id = 1;
+  // The entry point action ids of the sysgraph.
+  // These actions should have no parent.
+  repeated int64 entry_point_action_ids = 4;
+  // Arbitrary metadata about the sysgraph.
+  map<string, string> metadata = 2;
+
+  reserved 3;
+
+  // The names of the subgraphs that make up this sysgraph. This field is
+  // only populated for multi-step executions.
+  repeated string subgraphs = 5;
+}
+
+// An action is a single step in an execution.
+message Action {
+  // The action id, this must be unique within the sysgraph.
+  int64 id = 1;
+  // The uuid of the sysgraph this action belongs to.
+  string sys_graph_id = 2;
+  // The start time of the action.
+  google.protobuf.Timestamp start_time = 3;
+  // The end time of the action.
+  google.protobuf.Timestamp end_time = 4;
+  // Inputs of this action.
+  // Keys are the digest of the Resource message that is being interacted with
+  // in canonical format <hash>/<size>.
+  //
+  // Example: Opening a socket connection, Opening a file descriptor,
+  // Reading from a file, receiving a network packet, etc.
+  map<string, ResourceInteractions> inputs = 5;
+  // Optional resource digest of the executable that ran to create this action.
+  // Example: The executable that ran to create a child process,
+  string executable_resource_digest = 6;
+  // Outputs of this action.
+  // Keys are the digest of the Resource message that is being interacted with
+  // in canonical format <hash>/<size>.
+  //
+  // These represent side effects the action had on the contents of some
+  // resource. Example: Writing to a file, sending a network packet, etc.
+  map<string, ResourceInteractions> outputs = 7;
+  // All child actions of this action.
+  // Keys are the action ids of the child actions.
+  map<int64, ActionInteraction> children = 8;
+  // The parent action id of this action.
+  int64 parent_action_id = 9;
+  // Exec information for an action.
+  ExecInfo exec_info = 10;
+
+  reserved 11;
+
+  // This is the back edge for the children field above.
+  ActionInteraction parent = 12;
+  // The executable that ran to create this action.
+  ResourceInteraction executable = 13;
+  // Arbitrary metadata about the action (e.g. gid, uid etc).
+  map<string, string> metadata = 14;
+  // The signal that terminated this action.
+  string exit_signal = 15;
+  // The exit status of this action.
+  uint32 exit_status = 16;
+}
+
+// An action interaction is a single effect of an action on another action.
+message ActionInteraction {
+  // The time that this interaction occurred.
+  google.protobuf.Timestamp timestamp = 1;
+}
+
+// Exec information for an interaction.
+message ExecInfo {
+  // Argv is the command line arguments passed to the action.
+  repeated string argv = 1;
+  // Env is the environment variables passed to the action.
+  repeated string env = 2;
+  // Working directory is the working directory of the action.
+  string working_directory = 3;
+  // The process id of the action.
+  int64 pid = 4;
+  // The thread id of the action.
+  int64 tid = 5;
+}
+
+// Resource interactions are a collection of resource interactions by a single
+// action on a single resource.
+message ResourceInteractions {
+  // The resource interactions for a single acton on a single resource.
+  repeated ResourceInteraction interactions = 1;
+}
+
+// A resource interaction is a single effect of an action on a resource.
+message ResourceInteraction {
+  // The time that this interaction occurred.
+  google.protobuf.Timestamp timestamp = 1;
+  // I/O information for this interaction.
+  // This is optional and may not be populated.
+  IOInfo io_info = 4;
+}
+
+// IO information for an interaction.
+message IOInfo {
+  // The total size of the resource.
+  uint64 total_size_bytes = 1;
+  // The number of bytes used by this action.
+  uint64 bytes_used = 2;
+  // The offset of the bytes used by this action.
+  uint64 bytes_used_offset = 3;
+  // Flags for this IO action.
+  repeated string flags = 6;
+}
+
+enum ResourceType {
+  RESOURCE_TYPE_UNSPECIFIED = 0;
+  // A file resource.
+  RESOURCE_TYPE_FILE = 1;
+  // A network address resource.
+  RESOURCE_TYPE_NETWORK_ADDRESS = 2;
+  // A pipe resource.
+  RESOURCE_TYPE_PIPE = 3;
+}
+
+message ResourceWithDigest {
+  // The digest of the Resource message in canonical format <hash>/<size>.
+  string digest = 1;
+  // The resource message.
+  Resource resource = 2;
+}
+
+message ResourceDB {
+  // A map of resource digests in canonical format <hash>/<size> to resource
+  // messages.
+  map<string, Resource> resources = 1;
+}
+
+message Resource {
+  // The type of the resource.
+  ResourceType type = 2;
+  // File information for this resource.
+  // This is optional and may not be populated.
+  FileInfo file_info = 4;
+  // Network address information for this resource.
+  // This is optional and may not be populated.
+  NetworkAddrInfo network_addr_info = 5;
+  PipeInfo pipe_info = 6;
+}
+
+// PipeInfo represents a pipe that two child processes communicate through.
+// The write end dup action redirect the write end of the pipe to its stdout,
+// and the read end dup action redirect the read end of the pipe to its stdin.
+message PipeInfo {
+  StdIODupInfo read_end = 1;
+  StdIODupInfo write_end = 2;
+  // We need the tetragon exec ID here to make each PipeInfo unique.
+  // Due to file descriptor recycling, read/write file descriptor numbers are
+  // not sufficient to distinguish between different pipes. For example, a
+  // parent process may launch multiple pipe actions, and child dup actions
+  // might reuse the same file descriptors. Without exec_id, these pipes'
+  // digests will be identical.
+  string read_exec_id = 3;
+  string write_exec_id = 4;
+}
+
+// StdIODupInfo represents a dup action, the new fd can be any number, but the
+// old fd is either stdin (fd 0) or stdout (fd 1).
+message StdIODupInfo {
+  int32 old_fd = 1;
+  int32 new_fd = 2;
+}
+
+// The type of a file.
+enum FileType {
+  FILE_TYPE_UNSPECIFIED = 0;
+  FILE_TYPE_REGULAR = 1;
+  FILE_TYPE_DIRECTORY = 2;
+  FILE_TYPE_SYMLINK = 3;
+  FILE_TYPE_SOCKET = 4;
+}
+
+// A file is a single file in the sysgraph.
+message FileInfo {
+  // The absolute path to the file.
+  string path = 1;
+  // The digest of the file in canonical format <hash>/<size>.
+  string digest = 2;
+  // The type of the file.
+  FileType type = 3;
+}
+
+// A network address is a single network address in the sysgraph.
+message NetworkAddrInfo {
+  // The protocol of the network address.
+  string protocol = 1;
+  // The network address in string form.
+  string address = 2;
+}

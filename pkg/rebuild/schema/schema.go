@@ -26,6 +26,7 @@ import (
 type StrategyOneOf struct {
 	LocationHint         *rebuild.LocationHint          `json:"rebuild_location_hint,omitempty" yaml:"rebuild_location_hint,omitempty"`
 	PureWheelBuild       *pypi.PureWheelBuild           `json:"pypi_pure_wheel_build,omitempty" yaml:"pypi_pure_wheel_build,omitempty"`
+	PyPISdistBuild       *pypi.SdistBuild               `json:"pypi_sdist_build,omitempty" yaml:"pypi_sdist_build,omitempty"`
 	NPMPackBuild         *npm.NPMPackBuild              `json:"npm_pack_build,omitempty" yaml:"npm_pack_build,omitempty"`
 	NPMCustomBuild       *npm.NPMCustomBuild            `json:"npm_custom_build,omitempty" yaml:"npm_custom_build,omitempty"`
 	CratesIOCargoPackage *cratesio.CratesIOCargoPackage `json:"cratesio_cargo_package,omitempty" yaml:"cratesio_cargo_package,omitempty"`
@@ -33,6 +34,7 @@ type StrategyOneOf struct {
 	GradleBuild          *maven.GradleBuild             `json:"gradle_build,omitempty" yaml:"gradle_build,omitempty"`
 	DebianPackage        *debian.DebianPackage          `json:"debian_package,omitempty" yaml:"debian_package,omitempty"`
 	Debrebuild           *debian.Debrebuild             `json:"debrebuild,omitempty" yaml:"debrebuild,omitempty"`
+	DebootsnapSbuild     *debian.DebootsnapSbuild       `json:"debootsnap_sbuild,omitempty" yaml:"debootsnap_sbuild,omitempty"`
 	ManualStrategy       *rebuild.ManualStrategy        `json:"manual,omitempty" yaml:"manual,omitempty"`
 	WorkflowStrategy     *rebuild.WorkflowStrategy      `json:"flow,omitempty" yaml:"flow,omitempty"`
 }
@@ -45,6 +47,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.LocationHint = t
 	case *pypi.PureWheelBuild:
 		oneof.PureWheelBuild = t
+	case *pypi.SdistBuild:
+		oneof.PyPISdistBuild = t
 	case *maven.MavenBuild:
 		oneof.MavenBuild = t
 	case *maven.GradleBuild:
@@ -59,6 +63,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.DebianPackage = t
 	case *debian.Debrebuild:
 		oneof.Debrebuild = t
+	case *debian.DebootsnapSbuild:
+		oneof.DebootsnapSbuild = t
 	case *rebuild.ManualStrategy:
 		oneof.ManualStrategy = t
 	case *rebuild.WorkflowStrategy:
@@ -80,6 +86,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 			num++
 			s = oneof.PureWheelBuild
 		}
+		if oneof.PyPISdistBuild != nil {
+			num++
+			s = oneof.PyPISdistBuild
+		}
 		if oneof.NPMPackBuild != nil {
 			num++
 			s = oneof.NPMPackBuild
@@ -99,6 +109,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.Debrebuild != nil {
 			num++
 			s = oneof.Debrebuild
+		}
+		if oneof.DebootsnapSbuild != nil {
+			num++
+			s = oneof.DebootsnapSbuild
 		}
 		if oneof.ManualStrategy != nil {
 			num++
@@ -202,11 +216,22 @@ type RebuildPackageRequest struct {
 	UseSyscallMonitor bool              `form:""`
 	UseNetworkProxy   bool              `form:""`
 	BuildTimeout      time.Duration     `form:""` // Cancel the build after this amount of time.
+	OverwriteMode     OverwriteMode     `form:""`
 }
 
 var _ api.Message = RebuildPackageRequest{}
 
-func (RebuildPackageRequest) Validate() error { return nil }
+func (r RebuildPackageRequest) Validate() error {
+	switch r.OverwriteMode {
+	case OverwriteServiceUpdate, OverwriteForce, OverwriteMode(""):
+	default:
+		return errors.Errorf("Unknown OverwriteMode: %s", r.OverwriteMode)
+	}
+	if r.Artifact == "" {
+		return errors.New("artifact must not be empty")
+	}
+	return nil
+}
 
 // InferenceRequest is a single request to the inference endpoint.
 type InferenceRequest struct {
@@ -225,6 +250,9 @@ func (req InferenceRequest) Validate() error {
 		return err
 	} else if _, ok := s.(*rebuild.LocationHint); !ok {
 		return errors.Errorf("strategy hint should be a LocationHint, got: %T", s)
+	}
+	if req.Artifact == "" {
+		return errors.New("artifact must not be empty")
 	}
 	return nil
 }
@@ -321,6 +349,16 @@ const (
 	SmoketestMode ExecutionMode = "smoketest" // No attestations, faster.
 	AttestMode    ExecutionMode = "attest"    // Creates attestations, slower.
 	AgentMode     ExecutionMode = "agent"     // Agent service for debugging.
+)
+
+// OverwriteMode defines the justification for overwriting an existing attestation.
+type OverwriteMode string
+
+const (
+	// OverwriteServiceUpdate indicates a rebuild is justified by a change in the service environment/dependencies.
+	OverwriteServiceUpdate OverwriteMode = "SERVICE_UPDATE"
+	// OverwriteForce indicates a manual, forced rebuild (e.g. for key rotation or other administrative actions).
+	OverwriteForce OverwriteMode = "FORCE"
 )
 
 // Agent-related constants and types for AI agent feature

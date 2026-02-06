@@ -167,8 +167,6 @@ func (t *Tree) makeRunNode(runid string) *tview.TreeNode {
 	var title string
 	if run, ok := t.runs[runid]; ok && run.Type == schema.AttestMode {
 		title = fmt.Sprintf("%s (publish)", runid)
-	} else if run, ok := t.runs[runid]; ok && run.Type == schema.SmoketestMode {
-		title = fmt.Sprintf("%s (evaluate)", runid)
 	} else {
 		title = fmt.Sprintf("%s (unknown)", runid)
 	}

@@ -7,15 +7,12 @@ import (
 	"context"
 	"encoding/csv"
 	"flag"
-	"slices"
 
-	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"google.golang.org/api/iterator"
 )
 
 // Config holds all configuration for the get-sessions command.
@@ -46,33 +43,15 @@ func InitDeps(context.Context) (*Deps, error) {
 
 // Handler contains the business logic for getting sessions.
 func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error) {
-	fire, err := firestore.NewClient(ctx, cfg.Project)
+	dex, err := rundex.NewFirestore(ctx, cfg.Project)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating firestore client")
+		return nil, errors.Wrap(err, "connecting to rundex")
 	}
-	sessionQuery := fire.Collection("agent_sessions").Query
-	if cfg.RunID != "" {
-		sessionQuery = sessionQuery.Where("run_id", "==", cfg.RunID)
+	// TOOD: Add support for difference query options here
+	sessions, err := dex.FetchSessions(ctx, &rundex.FetchSessionsReq{})
+	if err != nil {
+		return nil, errors.Wrap(err, "querying for sessions")
 	}
-	sessions := make([]*schema.AgentSession, 0)
-	docIter := sessionQuery.Documents(ctx)
-	for {
-		doc, err := docIter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, errors.Wrap(err, "iterating over sessions")
-		}
-		session := &schema.AgentSession{}
-		if err := doc.DataTo(session); err != nil {
-			return nil, errors.Wrap(err, "deserializing session data")
-		}
-		sessions = append(sessions, session)
-	}
-	slices.SortFunc(sessions, func(a, b *schema.AgentSession) int {
-		return a.Created.Compare(b.Created)
-	})
 	w := csv.NewWriter(deps.IO.Out)
 	defer w.Flush()
 	for _, s := range sessions {

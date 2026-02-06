@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -57,6 +58,7 @@ var (
 	agentMetadataBucket   = flag.String("agent-metadata-bucket", "", "GCS bucket for agent build metadata")
 	agentLogsBucket       = flag.String("agent-logs-bucket", "", "GCS bucket for agent build logs")
 	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
+	port                  = flag.Int("port", 8080, "port on which to serve")
 )
 
 // Link-time configured service identity
@@ -69,20 +71,27 @@ var (
 
 var httpcfg = httpegress.Config{}
 
-func makeKMSSigner(ctx context.Context, cryptoKeyVersion string) (*dsse.EnvelopeSigner, error) {
+func makeKMSSignerVerifier(ctx context.Context, cryptoKeyVersion string) (*dsse.EnvelopeSigner, *dsse.EnvelopeVerifier, error) {
 	kc, err := kms.NewKeyManagementClient(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating KMS client")
+		return nil, nil, errors.Wrap(err, "creating KMS client")
 	}
-	kmsSigner, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, cryptoKeyVersion)
+	kmsSignerVerifier, err := kmsdsse.NewCloudKMSSignerVerifier(ctx, kc, cryptoKeyVersion)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating Cloud KMS signer")
+		return nil, nil, errors.Wrap(err, "creating Cloud KMS signer/verifier")
 	}
-	dsseSigner, err := dsse.NewEnvelopeSigner(kmsSigner)
+	dsseSigner, err := dsse.NewEnvelopeSigner(kmsSignerVerifier)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating envelope signer")
+		return nil, nil, errors.Wrap(err, "creating envelope signer")
 	}
-	return dsseSigner, nil
+	// Create verifiers for both new (gcpkms://) and legacy (https://) keyid formats
+	// to support verification of existing attestations with legacy keyids
+	legacyVerifier := kmsdsse.NewLegacyKeyIDVerifier(kmsSignerVerifier)
+	dsseVerifier, err := dsse.NewEnvelopeVerifier(kmsSignerVerifier, legacyVerifier)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "creating envelope verifier")
+	}
+	return dsseSigner, dsseVerifier, nil
 }
 
 func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, error) {
@@ -96,9 +105,9 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
-	d.Signer, err = makeKMSSigner(ctx, *signingKeyVersion)
+	d.Signer, d.Verifier, err = makeKMSSignerVerifier(ctx, *signingKeyVersion)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating signer")
+		return nil, errors.Wrap(err, "creating signer/verifier")
 	}
 	svc, err := cloudbuild.NewService(ctx)
 	if err != nil {
@@ -247,7 +256,7 @@ func main() {
 	http.HandleFunc("/version", api.Handler(VersionInit, apiservice.Version))
 	http.HandleFunc("/runs", api.Handler(CreateRunInit, apiservice.CreateRun))
 	http.HandleFunc("/agent", api.Handler(AgentCreateInit, apiservice.AgentCreate))
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}
 }
