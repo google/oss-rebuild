@@ -109,7 +109,7 @@ func normalizeName(name string) string {
 	return strings.ToLower(normalized)
 }
 
-// Recursively check for build files
+// Recursively check for build files. Doesn't recurse if hintDir isn't empty.
 func findRecursively(fileType string, tree *object.Tree, hintDir string) ([]foundFile, error) {
 	if !supportedFileTypes[fileType] {
 		return nil, errors.New("unsupported file type")

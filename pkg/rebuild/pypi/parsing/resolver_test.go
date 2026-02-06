@@ -17,15 +17,14 @@ func must[T any](t T, err error) T {
 	return t
 }
 
-func TestExtractAllRequirements(t *testing.T) {
+func TestDiscoverBuildDir(t *testing.T) {
 	for _, tc := range []struct {
-		name         string
-		pkg          string
-		version      string
-		dirHint      string
-		repoYAML     string
-		expectedReqs []string
-		expectedDir  string
+		name        string
+		pkg         string
+		version     string
+		dirHint     string
+		repoYAML    string
+		expectedDir string
 	}{
 		{
 			name:    "pyproject.toml - Parse the main pyproject.toml",
@@ -36,19 +35,14 @@ commits:
   - id: initial-commit
     files:
       pyproject.toml: |
-        [build-system]
-        requires = ["setuptools>=61.0.0"]
-        build-backend = "setuptools.build_meta"
-
         [project]
         name = "my-project"
         version = "1.2.3"
 `,
-			expectedReqs: []string{"setuptools>=61.0.0"},
-			expectedDir:  "",
+			expectedDir: "",
 		},
 		{
-			name:    "pyproject.toml - For unknown packages, us main pyproject.toml",
+			name:    "pyproject.toml - For unknown packages, use main pyproject.toml",
 			pkg:     "unknown",
 			version: "1.2.3",
 			repoYAML: `
@@ -58,10 +52,8 @@ commits:
       pyproject.toml: |
         [build-system]
         requires = ["setuptools>=61.0.0"]
-        build-backend = "setuptools.build_meta"
 `,
-			expectedReqs: []string{"setuptools>=61.0.0"},
-			expectedDir:  "",
+			expectedDir: "",
 		},
 		{
 			name:    "pyproject.toml - Use the correct subproject for the package",
@@ -72,28 +64,19 @@ commits:
   - id: initial-commit
     files:
       pyproject.toml: |
-        [build-system]
-        requires = ["setuptools>=61.0.0"]
-        build-backend = "setuptools.build_meta"
-      sub1/pyproject.toml: |
-        [build-system]
-        requires = ["setuptools>=59.0.0"]
-        build-backend = "setuptools.build_meta"
-        
         [project]
         name = "something-else"
         version = "1.2.3"
+      sub1/pyproject.toml: |
+        [project]
+        name = "other"
+        version = "1.2.3"
       sub2/pyproject.toml: |
-        [build-system]
-        requires = ["setuptools>=42.0.0"]
-        build-backend = "setuptools.build_meta"
-        
         [project]
         name = "pygad"
         version = "3.5.0"
 `,
-			expectedReqs: []string{"setuptools>=42.0.0"},
-			expectedDir:  "sub2",
+			expectedDir: "sub2",
 		},
 		{
 			name:    "pyproject.toml - Detect poetry packages",
@@ -103,26 +86,17 @@ commits:
 commits:
   - id: initial-commit
     files:
-      pyproject.toml: |
-        [build-system]
-        requires = ["setuptools>=61.0.0"]
-        build-backend = "setuptools.build_meta"
       sub3/pyproject.toml: |
         [tool.poetry]
         name = "msteamsapi"
         version = "0.9.5"
-        
-        [build-system]
-        requires = ["poetry-core"]
-        build-backend = "poetry.core.masonry.api"
 `,
-			expectedReqs: []string{"poetry-core"},
-			expectedDir:  "sub3",
+			expectedDir: "sub3",
 		},
 		{
 			name:    "pyproject.toml - Detect package with dir hint",
-			pkg:     "something-else", // Intentionally set to match the other pyproject.toml file.
-			version: "1.2.3",          //   Making sure the hint overrides it.
+			pkg:     "something-else",
+			version: "1.2.3",
 			dirHint: "sub4",
 			repoYAML: `
 commits:
@@ -131,22 +105,16 @@ commits:
       sub4/pyproject.toml: |
         [build-system]
         requires = ["setuptools>=61.0.0"]
-        build-backend = "setuptools.build_meta"
       sub3/pyproject.toml: |
-        [build-system]
-        requires = ["setuptools>=59.0.0"]
-        build-backend = "setuptools.build_meta"
-        
         [project]
         name = "something-else"
         version = "1.2.3"
 `,
-			expectedReqs: []string{"setuptools>=61.0.0"},
-			expectedDir:  "sub4",
+			expectedDir: "sub4",
 		},
 		{
-			name:    "setup.cfg - Parse a cfg with a single entry setup_requires",
-			pkg:     "single-cfg-package",
+			name:    "setup.cfg - Basic discovery",
+			pkg:     "cfg-package",
 			version: "1.7.2",
 			repoYAML: `
 commits:
@@ -154,58 +122,13 @@ commits:
     files:
       setup.cfg: |
         [metadata]
-        name = single-cfg-package
+        name = cfg-package
         version = 1.7.2
-        
-        [options]
-        setup_requires = setuptools_scm
 `,
-			expectedReqs: []string{"setuptools_scm"},
-			expectedDir:  "",
+			expectedDir: "",
 		},
 		{
-			name:    "setup.cfg - Parse a cfg with a semi-colon seperated setup_requires",
-			pkg:     "semi-cfg-package",
-			version: "1.4.5",
-			repoYAML: `
-commits:
-  - id: initial-commit
-    files:
-      setup.cfg: |
-        [metadata]
-        name = semi-cfg-package
-        version = 1.4.5
-        
-        [options]
-        setup_requires = setuptools; setuptools_scm[toml]
-`,
-			expectedReqs: []string{"setuptools", "setuptools_scm[toml]"},
-			expectedDir:  "",
-		},
-		{
-			name:    "setup.cfg - Parse a cfg with a dangling list",
-			pkg:     "hard-cfg-package",
-			version: "1.2",
-			repoYAML: `
-commits:
-  - id: initial-commit
-    files:
-      setup.cfg: |
-        [metadata]
-        name = hard-cfg-package
-        version = 1.2
-        
-        [options]
-        setup_requires =
-            setuptools
-            wheel
-            pytest-runner
-`,
-			expectedReqs: []string{"setuptools", "wheel", "pytest-runner"},
-			expectedDir:  "",
-		},
-		{
-			name:    "setup.cfg with pyproject- Parse the correct cfg with a dangling list using the pyproject file",
+			name:    "setup.cfg with pyproject- Select directory with matching project info",
 			pkg:     "hard-cfg-pyproject-package",
 			version: "5.7.3",
 			repoYAML: `
@@ -216,26 +139,15 @@ commits:
         [metadata]
         name = hard-cfg-package
         version = 1.2
-        
-        [options]
-        setup_requires =
-            setuptools
-            wheel
-            pytest-runner
       pyproject.toml: |
         [build-system]
         requires = ["setuptools>=61.0.0"]
-        build-backend = "setuptools.build_meta"
       sub1/setup.cfg: |
-        [options]
-        setup_requires = setuptools_scm
-      sub1/pyproject.toml: |
-        [project]
-        name = "hard-cfg-pyproject-package"
-        version = "5.7.3"
+        [metadata]
+        name = hard-cfg-pyproject-package
+        version = 5.7.3
 `,
-			expectedReqs: []string{"setuptools_scm"},
-			expectedDir:  "sub1",
+			expectedDir: "sub1",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -245,7 +157,127 @@ commits:
 			tree := must(commit.Tree())
 			ctx := context.Background()
 
-			reqs, dir, err := ExtractAllRequirements(ctx, tree, tc.pkg, tc.version, tc.dirHint)
+			dir, err := DiscoverBuildDir(ctx, tree, tc.pkg, tc.version, tc.dirHint)
+			if err != nil {
+				t.Fatalf("Failed to discover build dir: %v", err)
+			}
+
+			if dir != tc.expectedDir {
+				t.Fatalf("Unexpected directory extracted. Wanted: %q, Got: %q", tc.expectedDir, dir)
+			}
+		})
+	}
+}
+
+func TestExtractRequirements(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		searchDir    string
+		repoYAML     string
+		expectedReqs []string
+	}{
+		{
+			name:      "pyproject.toml - Standard requires",
+			searchDir: "",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["setuptools>=61.0.0", "wheel"]
+`,
+			expectedReqs: []string{"setuptools>=61.0.0", "wheel"},
+		},
+		{
+			name:      "pyproject.toml - Poetry requires",
+			searchDir: "",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["poetry-core"]
+`,
+			expectedReqs: []string{"poetry-core"},
+		},
+		{
+			name:      "setup.cfg - Single entry",
+			searchDir: "",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.cfg: |
+        [options]
+        setup_requires = setuptools_scm
+`,
+			expectedReqs: []string{"setuptools_scm"},
+		},
+		{
+			name:      "setup.cfg - Multi-line and semi-colon",
+			searchDir: "",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.cfg: |
+        [options]
+        setup_requires =
+            setuptools; python_version < "3.7"
+            wheel
+            pytest-runner
+`,
+			expectedReqs: []string{"setuptools; python_version < \"3.7\"", "wheel", "pytest-runner"},
+		},
+		{
+			name:      "Both pyproject.toml and setup.cfg",
+			searchDir: "sub",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      sub/pyproject.toml: |
+        [build-system]
+        requires = ["setuptools"]
+      sub/setup.cfg: |
+        [options]
+        setup_requires = setuptools_scm
+`,
+			expectedReqs: []string{"setuptools", "setuptools_scm"},
+		},
+		{
+			name:      "Only use searchDir",
+			searchDir: "sub1",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["dep1"]
+      sub1/pyproject.toml: |
+        [build-system]
+        requires = ["dep2"]
+      sub1/sub1.a/pyproject.toml: |
+        [build-system]
+        requires = ["dep3"]
+      sub2/pyproject.toml: |
+        [build-system]
+        requires = ["dep4"]
+`,
+			expectedReqs: []string{"dep2"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup the commit tree using repo yaml
+			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
+			commit := must(repo.CommitObject(repo.Commits["initial-commit"]))
+			tree := must(commit.Tree())
+			ctx := context.Background()
+
+			reqs, err := ExtractRequirements(ctx, tree, tc.searchDir)
 			if err != nil {
 				t.Fatalf("Failed to extract requirements: %v", err)
 			}
@@ -256,10 +288,6 @@ commits:
 			}
 			for _, req := range reqs {
 				diff[req]--
-			}
-
-			if dir != tc.expectedDir {
-				t.Fatalf("Unexpected directory extracted. Wanted: %q, Got: %q", tc.expectedDir, dir)
 			}
 
 			for _, count := range diff {
