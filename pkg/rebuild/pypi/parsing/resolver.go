@@ -11,18 +11,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-func ExtractAllRequirements(ctx context.Context, tree *object.Tree, name, version, hintDir string) ([]string, string, error) {
-	dir, err := DiscoverBuildDir(ctx, tree, name, version, hintDir)
-	if err != nil {
-		return nil, "", err
-	}
-	reqs, err := ExtractRequirements(ctx, tree, dir)
-	if err != nil {
-		return nil, "", err
-	}
-	return reqs, dir, nil
-}
-
 // ExtractRequirements extracts requirements from build files in the specified directory.
 func ExtractRequirements(ctx context.Context, tree *object.Tree, searchDir string) ([]string, error) {
 	var reqs []string
