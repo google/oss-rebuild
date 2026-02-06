@@ -103,37 +103,34 @@ func parseArgs(cfg *Config, args []string) error {
 func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error) {
 	mode := schema.ExecutionMode(cfg.Mode)
 	var strategy *schema.StrategyOneOf
-	{
-		if cfg.Strategy != "" {
-			if mode == schema.AttestMode {
-				return nil, errors.New("--strategy not supported in attest mode, use --strategy-from-repo")
-			}
-			if mode == analyzeMode {
-				return nil, errors.New("--strategy not supported in analyze mode")
-			}
-			f, err := os.Open(cfg.Strategy)
-			if err != nil {
-				return nil, err
-			}
-			defer f.Close()
-			strategy = &schema.StrategyOneOf{}
-			err = yaml.NewDecoder(f).Decode(strategy)
-			if err != nil {
-				return nil, errors.Wrap(err, "reading strategy file")
-			}
+	if cfg.Strategy != "" {
+		if mode == schema.AttestMode && !cfg.Local {
+			return nil, errors.New("--strategy not supported in remote attest mode, use --strategy-from-repo")
+		}
+		if mode == analyzeMode {
+			return nil, errors.New("--strategy not supported in analyze mode")
+		}
+		f, err := os.Open(cfg.Strategy)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		strategy = &schema.StrategyOneOf{}
+		err = yaml.NewDecoder(f).Decode(strategy)
+		if err != nil {
+			return nil, errors.Wrap(err, "reading strategy file")
 		}
 	}
-	_ = strategy // TODO: use strategy when supported
 	enc := json.NewEncoder(deps.IO.Out)
 	enc.SetIndent("", "  ")
 
 	if cfg.Local {
-		return handleLocal(ctx, cfg, deps, enc)
+		return handleLocal(ctx, cfg, deps, enc, strategy)
 	}
 	return handleRemote(ctx, cfg, deps, enc)
 }
 
-func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder) (*act.NoOutput, error) {
+func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder, strategyOneOf *schema.StrategyOneOf) (*act.NoOutput, error) {
 	runID := time.Now().UTC().Format(time.RFC3339)
 	store, err := localfiles.AssetStore(runID)
 	if err != nil {
@@ -145,15 +142,32 @@ func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder)
 		Store:       store,
 		LogSink:     deps.IO.Out,
 	})
-	// Local mode only supports attest (validated in Validate)
-	resp, err := executor.RebuildPackage(ctx, schema.RebuildPackageRequest{
+	t := rebuild.Target{
 		Ecosystem: rebuild.Ecosystem(cfg.Ecosystem),
 		Package:   cfg.Package,
 		Version:   cfg.Version,
 		Artifact:  cfg.Artifact,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "running local rebuild")
+	}
+	var resp *schema.Verdict
+	if strategyOneOf != nil {
+		strategy, err := strategyOneOf.Strategy()
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing strategy")
+		}
+		resp, err = benchrun.RebuildWithStrategy(ctx, executor, t, strategy)
+		if err != nil {
+			return nil, errors.Wrap(err, "running local rebuild with strategy")
+		}
+	} else {
+		resp, err = executor.RebuildPackage(ctx, schema.RebuildPackageRequest{
+			Ecosystem: t.Ecosystem,
+			Package:   t.Package,
+			Version:   t.Version,
+			Artifact:  t.Artifact,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "running local rebuild")
+		}
 	}
 	if err := enc.Encode(resp); err != nil {
 		return nil, errors.Wrap(err, "encoding result")
