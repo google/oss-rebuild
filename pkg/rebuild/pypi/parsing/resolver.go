@@ -6,6 +6,7 @@ package parsing
 import (
 	"context"
 	"log"
+	"path/filepath"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/pkg/errors"
@@ -27,17 +28,17 @@ func ExtractRequirements(ctx context.Context, tree *object.Tree, searchDir strin
 		// TODO setup.py
 	}
 	for _, h := range configTypes {
-		files, err := findRecursively(h.filename, tree, searchDir)
+		f, err := tree.File(filepath.Join(searchDir, h.filename))
+		if err == object.ErrFileNotFound {
+			continue
+		} else if err != nil {
+			return nil, errors.Wrapf(err, "finding %s file", h.filename)
+		}
+		fReqs, err := h.extract(ctx, f)
 		if err != nil {
-			return nil, errors.Wrapf(err, "finding %s files", h.filename)
+			return nil, errors.Wrapf(err, "extracting %s requirements", h.filename)
 		}
-		for _, f := range files {
-			fReqs, err := h.extract(ctx, f.object)
-			if err != nil {
-				return nil, errors.Wrapf(err, "extracting %s requirements", h.filename)
-			}
-			reqs = append(reqs, fReqs...)
-		}
+		reqs = append(reqs, fReqs...)
 	}
 	return reqs, nil
 }
@@ -48,7 +49,7 @@ func DiscoverBuildDir(ctx context.Context, tree *object.Tree, name, version, hin
 	var verifiedFiles []fileVerification
 	configTypes := []struct {
 		filename string
-		verify   func(context.Context, foundFile, string, string) (fileVerification, error)
+		verify   func(context.Context, *object.File, string, string) (fileVerification, error)
 	}{
 		{"pyproject.toml", verifyPyProjectFile},
 		{"setup.cfg", verifySetupCfgFile},
@@ -73,7 +74,7 @@ func DiscoverBuildDir(ctx context.Context, tree *object.Tree, name, version, hin
 	}
 	sortedVerification := sortVerifications(verifiedFiles)
 	bestFile := sortedVerification[0]
-	dir := bestFile.foundF.path
+	dir := filepath.Dir(bestFile.foundF.Name)
 	// Account for "." as base dir
 	if dir == "." {
 		dir = ""
