@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/pkg/errors"
@@ -62,7 +63,7 @@ func init() {
 		// TODO: We should use the cache but would want to coordinate an update time, not a fixed freshness.
 		currentCloneFunc = gitx.Clone
 		// For snapshots: use cache with infinite freshness (immutable)
-		snapshotGitCache := &gitx.Cache{IDClient: c, APIClient: sc, URL: u, DefaultFreshness: time.Time{}}
+		snapshotGitCache := &gitcache.Client{IDClient: c, APIClient: sc, URL: u, DefaultFreshness: time.Time{}}
 		snapshotCloneFunc = snapshotGitCache.Clone
 	}
 	cfg := index.IndexManagerConfig{

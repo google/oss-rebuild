@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/uri"
@@ -47,7 +48,7 @@ func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target,
 
 type InferDeps struct {
 	HTTPClient         httpx.BasicClient
-	GitCache           *gitx.Cache
+	GitCache           *gitcache.Client
 	RepoOptF           func() *gitx.RepositoryOptions
 	CratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 }
@@ -67,7 +68,7 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		return nil, api.AsStatus(codes.Internal, errors.New("git storage not provided"))
 	}
 	if deps.GitCache != nil {
-		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, *deps.GitCache)
+		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, deps.GitCache)
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	if deps.CratesRegistryStub != nil {

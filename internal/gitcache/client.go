@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package gitx
+package gitcache
 
 import (
 	"archive/tar"
@@ -19,12 +19,13 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/pkg/errors"
 )
 
-// Cache is an interface abstracting the rebuilder git-cache service.
-type Cache struct {
+// Client is an interface abstracting the rebuilder git-cache service.
+type Client struct {
 	// IDClient is the HTTP client to use to access the cache service.
 	IDClient *http.Client
 	// APIClient is the HTTP client to use to access the underlying cache storage.
@@ -36,12 +37,12 @@ type Cache struct {
 }
 
 // GetLink returns a GCS link to the cached repo resource.
-func (c Cache) GetLink(repo string, contains time.Time) (uri string, err error) {
+func (c Client) GetLink(repo string, contains time.Time) (uri string, err error) {
 	return c.GetLinkWithRef(repo, contains, "")
 }
 
 // GetLinkWithRef returns a GCS link to the cached repo resource for a specific ref.
-func (c Cache) GetLinkWithRef(repo string, contains time.Time, ref string) (uri string, err error) {
+func (c Client) GetLinkWithRef(repo string, contains time.Time, ref string) (uri string, err error) {
 	u, err := c.URL.Parse("/get")
 	if err != nil {
 		return "", err
@@ -86,7 +87,7 @@ func (c Cache) GetLinkWithRef(repo string, contains time.Time, ref string) (uri 
 }
 
 // Clone provides an interface to clone a git repo using the GitCache.
-func (c Cache) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
+func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
 	if opt.Auth != nil || opt.RemoteName != "" || opt.Depth != 0 || opt.RecurseSubmodules != 0 || opt.Tags != git.InvalidTagMode || opt.InsecureSkipTLS || len(opt.CABundle) > 0 {
 		// No support for non-trivial opts aside from NoCheckout, ReferenceName, and SingleBranch.
 		return nil, errors.New("Unsupported opt")
@@ -139,4 +140,4 @@ func (c Cache) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem,
 	return repo, nil
 }
 
-var _ CloneFunc = Cache{}.Clone
+var _ gitx.CloneFunc = Client{}.Clone

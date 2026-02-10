@@ -21,7 +21,7 @@ import (
 
 	"github.com/cheggaaa/pb"
 	"github.com/google/oss-rebuild/internal/api"
-	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/act"
@@ -154,7 +154,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 				idClient = http.DefaultClient
 				apiClient = http.DefaultClient
 			}
-			localCfg.GitCache = &gitx.Cache{IDClient: idClient, APIClient: apiClient, URL: u}
+			localCfg.GitCache = &gitcache.Client{IDClient: idClient, APIClient: apiClient, URL: u}
 		}
 		executor = benchrun.NewLocalExecutionService(localCfg)
 		dex = rundex.NewFilesystemClient(localfiles.Rundex())

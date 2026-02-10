@@ -20,6 +20,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -176,7 +177,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 				idClient = http.DefaultClient
 				apiClient = http.DefaultClient
 			}
-			deps.GitCache = &gitx.Cache{IDClient: idClient, APIClient: apiClient, URL: u}
+			deps.GitCache = &gitcache.Client{IDClient: idClient, APIClient: apiClient, URL: u}
 		}
 		var err error
 		resp, err = inferenceservice.Infer(ctx, req, deps)
