@@ -62,7 +62,7 @@ Attestations can be fetched from GCS using the `gsutil` CLI. For example, you ca
 
 ```bash
 # Using gsutil
-gsutil cat gs://google-rebuild-attestations/pypi/absl-py/2.0.0/absl_py-2.0.0-py3-none-any.whl/rebuild.intoto.jsonl
+gcloud storage cat gs://google-rebuild-attestations/pypi/absl-py/2.0.0/absl_py-2.0.0-py3-none-any.whl/rebuild.intoto.jsonl
 ```
 
 ## Verification
