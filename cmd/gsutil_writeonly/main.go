@@ -85,7 +85,7 @@ func copyFile(ctx context.Context, c *storage.Client, src, dest string) error {
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("USAGE: gcloud storage [command] [args...]")
+		log.Fatal("USAGE: gsutil [command] [args...]")
 	}
 	if os.Args[1][0] == '-' {
 		log.Fatal("Global flags not implemented")
@@ -94,7 +94,7 @@ func main() {
 		log.Fatal("Command not implemented")
 	}
 	if len(os.Args) < 4 {
-		log.Fatal("USAGE: gcloud storage cp [srcs...] dest")
+		log.Fatal("USAGE: gsutil cp [srcs...] dest")
 	}
 	args := os.Args[2:]
 	srcs, dest := args[:len(args)-1], args[len(args)-1]
