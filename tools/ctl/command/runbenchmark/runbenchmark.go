@@ -21,6 +21,7 @@ import (
 
 	"github.com/cheggaaa/pb"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/act"
@@ -41,6 +42,7 @@ type Config struct {
 	BenchmarkPath     string
 	BootstrapBucket   string
 	BootstrapVersion  string
+	GitCacheURL       string
 	ExecutionMode     schema.ExecutionMode
 	Format            string
 	Verbose           bool
@@ -63,6 +65,9 @@ func (c Config) Validate() error {
 	}
 	if c.Format != "" && c.Format != "summary" && c.Format != "csv" {
 		return errors.Errorf("invalid format: %s. Expected one of 'summary' or 'csv'", c.Format)
+	}
+	if !c.Local && c.GitCacheURL != "" {
+		return errors.New("git-cache-url is only supported in local mode")
 	}
 	if c.OverwriteMode != "" && c.OverwriteMode != string(schema.OverwriteServiceUpdate) && c.OverwriteMode != string(schema.OverwriteForce) {
 		return errors.Errorf("invalid overwrite-mode: %s. Expected one of 'SERVICE_UPDATE' or 'FORCE'", c.OverwriteMode)
@@ -128,11 +133,30 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		}
 		// TODO: Validate this.
 		prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
-		executor = benchrun.NewLocalExecutionService(benchrun.LocalExecutionServiceConfig{
+		localCfg := benchrun.LocalExecutionServiceConfig{
 			PrebuildURL: prebuildURL,
 			Store:       store,
 			LogSink:     deps.IO.Out,
-		})
+		}
+		if cfg.GitCacheURL != "" {
+			u, err := url.Parse(cfg.GitCacheURL)
+			if err != nil {
+				return nil, errors.Wrap(err, "parsing git cache URL")
+			}
+			var idClient, apiClient *http.Client
+			if isCloudRun(u) {
+				idClient, err = oauth.AuthorizedUserIDClient(ctx)
+				if err != nil {
+					return nil, errors.Wrap(err, "creating authorized ID client for git cache")
+				}
+				apiClient = idClient
+			} else {
+				idClient = http.DefaultClient
+				apiClient = http.DefaultClient
+			}
+			localCfg.GitCache = &gitx.Cache{IDClient: idClient, APIClient: apiClient, URL: u}
+		}
+		executor = benchrun.NewLocalExecutionService(localCfg)
 		dex = rundex.NewFilesystemClient(localfiles.Rundex())
 		if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
 			ID:            runID,
@@ -278,5 +302,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.BoolVar(&cfg.UseNetworkProxy, "use-network-proxy", false, "request the newtwork proxy")
 	set.BoolVar(&cfg.UseSyscallMonitor, "use-syscall-monitor", false, "request syscall monitoring")
 	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
+	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos (local mode only)")
 	return set
 }

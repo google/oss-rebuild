@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
@@ -35,6 +36,7 @@ type Config struct {
 	Local             bool
 	BootstrapBucket   string
 	BootstrapVersion  string
+	GitCacheURL       string
 	Ecosystem         string
 	Package           string
 	Version           string
@@ -72,6 +74,9 @@ func (c Config) Validate() error {
 	}
 	if c.Local && mode == analyzeMode {
 		return errors.New("analyze mode is not supported in local execution")
+	}
+	if !c.Local && c.GitCacheURL != "" {
+		return errors.New("git-cache-url is only supported in local mode")
 	}
 	if c.OverwriteMode != "" && c.OverwriteMode != string(schema.OverwriteServiceUpdate) && c.OverwriteMode != string(schema.OverwriteForce) {
 		return errors.Errorf("invalid overwrite-mode: %s. Expected one of 'SERVICE_UPDATE' or 'FORCE'", c.OverwriteMode)
@@ -130,6 +135,10 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	return handleRemote(ctx, cfg, deps, enc)
 }
 
+func isCloudRun(u *url.URL) bool {
+	return strings.HasSuffix(u.Host, ".run.app")
+}
+
 func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder, strategyOneOf *schema.StrategyOneOf) (*act.NoOutput, error) {
 	runID := time.Now().UTC().Format(time.RFC3339)
 	store, err := localfiles.AssetStore(runID)
@@ -137,11 +146,30 @@ func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder,
 		return nil, errors.Wrap(err, "failed to create temp directory")
 	}
 	prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
-	executor := benchrun.NewLocalExecutionService(benchrun.LocalExecutionServiceConfig{
+	localCfg := benchrun.LocalExecutionServiceConfig{
 		PrebuildURL: prebuildURL,
 		Store:       store,
 		LogSink:     deps.IO.Out,
-	})
+	}
+	if cfg.GitCacheURL != "" {
+		u, err := url.Parse(cfg.GitCacheURL)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing git cache URL")
+		}
+		var idClient, apiClient *http.Client
+		if isCloudRun(u) {
+			idClient, err = oauth.AuthorizedUserIDClient(ctx)
+			if err != nil {
+				return nil, errors.Wrap(err, "creating authorized ID client for git cache")
+			}
+			apiClient = idClient
+		} else {
+			idClient = http.DefaultClient
+			apiClient = http.DefaultClient
+		}
+		localCfg.GitCache = &gitx.Cache{IDClient: idClient, APIClient: apiClient, URL: u}
+	}
+	executor := benchrun.NewLocalExecutionService(localCfg)
 	t := rebuild.Target{
 		Ecosystem: rebuild.Ecosystem(cfg.Ecosystem),
 		Package:   cfg.Package,
@@ -254,6 +282,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.BoolVar(&cfg.Local, "local", false, "run locally instead of through the API")
 	set.StringVar(&cfg.BootstrapBucket, "bootstrap-bucket", "", "the GCS bucket where bootstrap tools are stored (required for local mode)")
 	set.StringVar(&cfg.BootstrapVersion, "bootstrap-version", "", "the version of bootstrap tools to use (required for local mode)")
+	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos (local mode only)")
 	set.StringVar(&cfg.Ecosystem, "ecosystem", "", "the ecosystem")
 	set.StringVar(&cfg.Package, "package", "", "the package name")
 	set.StringVar(&cfg.Version, "version", "", "the version of the package")
