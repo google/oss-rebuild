@@ -17,10 +17,15 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
+
+// RepositoryOptions configures the storage and worktree for test repositories.
+type RepositoryOptions struct {
+	Storer   storage.Storer
+	Worktree billy.Filesystem
+}
 
 type FileContent map[string]string
 
@@ -45,7 +50,7 @@ type Repository struct {
 	Commits map[string]plumbing.Hash
 }
 
-func CreateRepoFromYAML(content string, opts *gitx.RepositoryOptions) (*Repository, error) {
+func CreateRepoFromYAML(content string, opts *RepositoryOptions) (*Repository, error) {
 	var history GitHistory
 	d := yaml.NewDecoder(bytes.NewReader([]byte(content)))
 	d.KnownFields(true) // Fail on unknown fields
@@ -55,7 +60,7 @@ func CreateRepoFromYAML(content string, opts *gitx.RepositoryOptions) (*Reposito
 	return CreateRepo(history.Commits, opts)
 }
 
-func CreateRepo(commits []Commit, opts *gitx.RepositoryOptions) (*Repository, error) {
+func CreateRepo(commits []Commit, opts *RepositoryOptions) (*Repository, error) {
 	var repo Repository
 	var err error
 	// Create a new repository in memory
