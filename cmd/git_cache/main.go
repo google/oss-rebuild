@@ -45,18 +45,19 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/pkg/errors"
 )
@@ -182,34 +183,32 @@ func HandleGet(rw http.ResponseWriter, req *http.Request) {
 	http.Redirect(rw, req, redirect.String(), http.StatusFound)
 }
 
-// nilCache is a fake local cache for git.
+// nilCache is a no-op cache for git objects.
 type nilCache struct{}
 
 func (c nilCache) Get(plumbing.Hash) (plumbing.EncodedObject, bool) { return nil, false }
 func (c nilCache) Put(plumbing.EncodedObject)                       {}
 func (c nilCache) Clear()                                           {}
 
-func doClone(ctx context.Context, mfs billy.Filesystem, cloneOpts *git.CloneOptions) error {
-	s := filesystem.NewStorage(mfs, nilCache{})
-	_, err := git.CloneContext(ctx, s, nil, cloneOpts)
-	return err
-}
-
 // populateCache writes an archived bare checkout of the repo to the GCS object.
 func populateCache(ctx context.Context, repo, ref string, o *storage.ObjectHandle) error {
-	m := memfs.New()
-	dotGit, err := m.Chroot(git.GitDirName)
+	// Create a temp directory for cloning
+	tmpDir, err := os.MkdirTemp("", "git-cache-*")
 	if err != nil {
-		return errors.Wrap(err, "failure allocating .git/")
+		return errors.Wrap(err, "creating temp directory")
 	}
+	defer os.RemoveAll(tmpDir)
+	// Set up filesystem storage in the temp directory
+	m := osfs.New(tmpDir)
+	s := filesystem.NewStorage(m, nilCache{})
 	cloneOpts := &git.CloneOptions{URL: "https://" + repo, NoCheckout: true}
 	if ref != "" {
-		// Clone specific ref/branch
 		cloneOpts.ReferenceName = plumbing.ReferenceName(ref)
 		cloneOpts.SingleBranch = true
 	}
-	log.Printf("Cloning with opts: %v", cloneOpts)
-	if err := doClone(ctx, dotGit, cloneOpts); err != nil {
+	log.Printf("Cloning %s", repo)
+	// gitx.Clone will use native git if available, otherwise fall back to go-git
+	if _, err := gitx.Clone(ctx, s, nil, cloneOpts); err != nil {
 		if ref != "" {
 			return errors.Wrapf(err, "failure cloning %s at ref %s", repo, ref)
 		}
