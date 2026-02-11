@@ -61,11 +61,9 @@ func cleanGenFiles() error {
 }
 
 func mainx() error {
-	fmt.Fprintln(os.Stderr, "Cleaning up...")
 	if err := cleanGenFiles(); err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "Generating test data...")
 
 	testDataDir, err := filepath.Abs("../testdata")
 	if err != nil {
@@ -121,7 +119,6 @@ func mainx() error {
 
 	for _, graph := range graphToZip {
 		zipPath := filepath.Join(graph, graph+".zip")
-		fmt.Fprintln(os.Stderr, "Generating "+zipPath)
 		if err := os.MkdirAll(filepath.Dir(zipPath), 0755); err != nil {
 			return err
 		}
@@ -134,7 +131,6 @@ func mainx() error {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(os.Stderr, "Adding "+path)
 			path = strings.TrimPrefix(path, fmt.Sprintf("%s%c", graph, os.PathSeparator))
 			if strings.HasPrefix(path, graph) {
 				return nil
