@@ -35,7 +35,6 @@ func main() {
 	}
 }
 
-
 func mainx() error {
 	if err := cleanGenFiles(); err != nil {
 		return err
