@@ -1,6 +1,6 @@
 
 multi_graph
 
-bazqux
+foobar
 
-foobar"*sg1*sg2
+bazqux"*sg1*sg2

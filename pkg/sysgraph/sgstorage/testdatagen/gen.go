@@ -28,15 +28,6 @@ var graphToZip = []string{
 	"multi_graph_actions",
 }
 
-func findMessageName(txtBlob []byte) string {
-	for line := range strings.SplitSeq(string(txtBlob), "\n") {
-		if strings.Contains(line, "proto-message:") {
-			return "sysgraph." + strings.TrimSpace(strings.Split(line, "proto-message:")[1])
-		}
-	}
-	return ""
-}
-
 func main() {
 	if err := mainx(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error: ", err)
@@ -44,21 +35,6 @@ func main() {
 	}
 }
 
-func cleanGenFiles() error {
-	fis, err := os.ReadDir("./")
-	if err != nil {
-		return err
-	}
-	for _, fi := range fis {
-		if fi.Name() == "gen.go" {
-			continue
-		}
-		if err := os.RemoveAll(fi.Name()); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 func mainx() error {
 	if err := cleanGenFiles(); err != nil {
@@ -70,34 +46,19 @@ func mainx() error {
 		return err
 	}
 
-	if err := filepath.Walk(testDataDir, func(path string, info os.FileInfo, err error) error {
+	// Convert all txtpb files to pb files.
+	if err := filepath.WalkDir(testDataDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || !strings.HasSuffix(path, ".txtpb") {
+		if d.IsDir() || !strings.HasSuffix(path, ".txtpb") {
 			return nil
 		}
 		txtBlob, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		messageName := findMessageName(txtBlob)
-		if messageName == "" {
-			return fmt.Errorf("could not find message name in %s", path)
-		}
-		descriptor, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(messageName))
-		if err != nil {
-			return err
-		}
-		messageDescriptor, ok := descriptor.(protoreflect.MessageDescriptor)
-		if !ok {
-			return fmt.Errorf("not a message descriptor: %s", messageName)
-		}
-		message := dynamicpb.NewMessage(messageDescriptor)
-		if err := prototext.Unmarshal(txtBlob, message); err != nil {
-			return err
-		}
-		binaryBlob, err := proto.Marshal(message)
+		binaryBlob, err := txtPbToProto(txtBlob)
 		if err != nil {
 			return err
 		}
@@ -117,6 +78,7 @@ func mainx() error {
 		return err
 	}
 
+	// Zip up the graphs.
 	for _, graph := range graphToZip {
 		zipPath := filepath.Join(graph, graph+".zip")
 		if err := os.MkdirAll(filepath.Dir(zipPath), 0755); err != nil {
@@ -136,7 +98,7 @@ func mainx() error {
 				return nil
 			}
 			if d.IsDir() {
-				// add a trailing slash for creating dir
+				// add a trailing slash for creating directory in zip
 				path = fmt.Sprintf("%s%c", path, os.PathSeparator)
 				_, err = zipWriter.Create(path)
 				return nil
@@ -162,4 +124,44 @@ func mainx() error {
 	}
 
 	return nil
+}
+
+// cleanGenFiles removes all files in the current directory except gen.go.
+func cleanGenFiles() error {
+	fis, err := os.ReadDir("./")
+	if err != nil {
+		return err
+	}
+	for _, fi := range fis {
+		if fi.Name() == "gen.go" {
+			continue
+		}
+		if err := os.RemoveAll(fi.Name()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// txtPbToProto converts a text proto blob to a binary proto blob using the proto-message header.
+func txtPbToProto(txtBlob []byte) ([]byte, error) {
+	for line := range strings.SplitSeq(string(txtBlob), "\n") {
+		if strings.Contains(line, "proto-message:") {
+			messageName := "sysgraph." + strings.TrimSpace(strings.Split(line, "proto-message:")[1])
+			descriptor, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(messageName))
+			if err != nil {
+				return nil, err
+			}
+			messageDescriptor, ok := descriptor.(protoreflect.MessageDescriptor)
+			if !ok {
+				return nil, fmt.Errorf("not a message descriptor: %s", messageName)
+			}
+			message := dynamicpb.NewMessage(messageDescriptor)
+			if err := prototext.Unmarshal(txtBlob, message); err != nil {
+				return nil, err
+			}
+			return proto.Marshal(message)
+		}
+	}
+	return nil, fmt.Errorf("could not find message name in txtpb")
 }
