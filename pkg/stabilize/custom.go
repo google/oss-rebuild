@@ -17,7 +17,7 @@ import (
 
 // CustomStabilizerConfig defines a custom stabilizer that can be materialized for many formats
 type CustomStabilizerConfig interface {
-	Stabilizer(name string, format archive.Format) (Stabilizer, error)
+	Stabilizer(name string) Stabilizer
 	Validate() error
 }
 
@@ -87,11 +87,7 @@ func CreateCustomStabilizers(entries []CustomStabilizerEntry, format archive.For
 		if err := ent.Config.CustomStabilizerConfig().Validate(); err != nil {
 			return nil, errors.Wrapf(err, "validating stabilizer config %d", i)
 		}
-		stabilizer, err := ent.Config.CustomStabilizerConfig().Stabilizer(name, format)
-		if err != nil {
-			return nil, errors.Wrapf(err, "creating stabilizer from config %d", i)
-		}
-		stabilizers = append(stabilizers, stabilizer)
+		stabilizers = append(stabilizers, ent.Config.CustomStabilizerConfig().Stabilizer(name))
 	}
 	return stabilizers, nil
 }
@@ -121,42 +117,36 @@ func (rp *ReplacePattern) Validate() error {
 }
 
 // Stabilizer materializes a Stabilizer for the given config, name, and format.
-func (rp *ReplacePattern) Stabilizer(name string, format archive.Format) (Stabilizer, error) {
+func (rp *ReplacePattern) Stabilizer(name string) Stabilizer {
 	re := regexp.MustCompile(rp.Pattern)
-	switch format {
-	case archive.TarGzFormat, archive.TarFormat:
-		return TarEntryStabilizer{
-			Name: "replace-pattern-" + name,
-			Func: func(te *archive.TarEntry) {
-				if match, err := multiMatch(rp.Paths, te.Name); err != nil || !match {
-					return
-				}
-				te.Body = re.ReplaceAll(te.Body, []byte(rp.Replace))
-				te.Size = int64(len(te.Body))
-			},
-		}, nil
-	case archive.ZipFormat:
-		return ZipEntryStabilizer{
-			Name: "replace-pattern-" + name,
-			Func: func(zf *archive.MutableZipFile) {
-				if match, err := multiMatch(rp.Paths, zf.Name); err != nil || !match {
-					return
-				}
-				r, err := zf.Open()
-				if err != nil {
-					return
-				}
-				content, err := io.ReadAll(r)
-				if err != nil {
-					return
-				}
-				transformed := re.ReplaceAll(content, []byte(rp.Replace))
-				zf.SetContent(transformed)
-			},
-		}, nil
-	default:
-		return nil, errors.New("unsupported format")
-	}
+	tarfn := TarEntryFn(func(te *archive.TarEntry) {
+		if match, err := multiMatch(rp.Paths, te.Name); err != nil || !match {
+			return
+		}
+		te.Body = re.ReplaceAll(te.Body, []byte(rp.Replace))
+		te.Size = int64(len(te.Body))
+	})
+	return Stabilizer{
+		Name: "replace-pattern-" + name,
+	}.WithFns(map[archive.Format]StabilizerFn{
+		archive.TarGzFormat: tarfn,
+		archive.TarFormat:   tarfn,
+		archive.ZipFormat: ZipEntryFn(func(zf *archive.MutableZipFile) {
+			if match, err := multiMatch(rp.Paths, zf.Name); err != nil || !match {
+				return
+			}
+			r, err := zf.Open()
+			if err != nil {
+				return
+			}
+			content, err := io.ReadAll(r)
+			if err != nil {
+				return
+			}
+			transformed := re.ReplaceAll(content, []byte(rp.Replace))
+			zf.SetContent(transformed)
+		}),
+	})
 }
 
 // ExcludePath is stabilizer that removes specified path(s) from the output
@@ -177,39 +167,32 @@ func (ep *ExcludePath) Validate() error {
 }
 
 // Stabilizer materializes a Stabilizer for the given config, name, and format.
-func (ep *ExcludePath) Stabilizer(name string, format archive.Format) (Stabilizer, error) {
-	switch format {
-	case archive.TarGzFormat, archive.TarFormat:
-		return TarArchiveStabilizer{
-			Name: "exclude-path-" + name,
-			Func: func(ta *archive.TarArchive) {
-				var files []*archive.TarEntry
-				for _, f := range ta.Files {
-					if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
-						continue
-					}
-					files = append(files, f)
+func (ep *ExcludePath) Stabilizer(name string) Stabilizer {
+	tarfn := TarArchiveFn(func(ta *archive.TarArchive) {
+		var files []*archive.TarEntry
+		for _, f := range ta.Files {
+			if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
+				continue
+			}
+			files = append(files, f)
+		}
+		ta.Files = files
+	})
+	return Stabilizer{
+		Name: "exclude-path-" + name,
+	}.WithFns(map[archive.Format]StabilizerFn{
+		archive.TarGzFormat: tarfn,
+		archive.TarFormat:   tarfn,
+		archive.ZipFormat: ZipArchiveFn(func(mzr *archive.MutableZipReader) {
+			var files []*archive.MutableZipFile
+			for _, f := range mzr.File {
+				if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
+					continue
 				}
-				ta.Files = files
-			},
-		}, nil
-	case archive.ZipFormat:
-		return ZipArchiveStabilizer{
-			Name: "exclude-path-" + name,
-			Func: func(mzr *archive.MutableZipReader) {
-				var files []*archive.MutableZipFile
-				for _, f := range mzr.File {
-					if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
-						continue
-					}
-					files = append(files, f)
-				}
-				mzr.File = files
-			},
-		}, nil
-	default:
-		return nil, errors.New("unsupported format")
-	}
+				files = append(files, f)
+			}
+			mzr.File = files
+		})})
 }
 
 func multiMatch(patterns []string, name string) (bool, error) {
