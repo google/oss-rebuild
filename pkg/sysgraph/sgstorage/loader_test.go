@@ -25,6 +25,9 @@ import (
 	tpb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
+const testdatagDir = "testdatagen"
+
+//go:embed testdatagen/multi_graph testdatagen/multi_graph_actions testdatagen/sysgraph_a
 var testdata embed.FS
 
 var (
@@ -111,7 +114,6 @@ var (
 // TestLoadSysGraph tests loading a sysgraph from
 // from ./testdata/sysgraph_a
 func TestLoadSysGraph(t *testing.T) {
-	t.Skip("Skipping test")
 	context.Background()
 	testCases := []struct {
 		name string
@@ -119,12 +121,14 @@ func TestLoadSysGraph(t *testing.T) {
 	}{
 		{
 			name: "dir",
-			path: func(t *testing.T) string { return writeDirFromFs(t, testdata, "testdata/sysgraph_a") },
+			path: func(t *testing.T) string {
+				return writeDirFromFs(t, testdata, filepath.Join(testdatagDir, "sysgraph_a"))
+			},
 		},
 		{
 			name: "zip",
 			path: func(t *testing.T) string {
-				return writeFileFromFs(t, testdata, "testdata/sysgraph_a/sysgraph_a.zip")
+				return writeFileFromFs(t, testdata, filepath.Join(testdatagDir, "sysgraph_a/sysgraph_a.zip"))
 			},
 		},
 	}
@@ -207,7 +211,6 @@ func TestLoadSysGraph(t *testing.T) {
 }
 
 func TestLoadMultiGraph(t *testing.T) {
-	t.Skip("Skipping test")
 	ctx := context.Background()
 
 	testCases := []struct {
@@ -217,21 +220,27 @@ func TestLoadMultiGraph(t *testing.T) {
 	}{
 		{
 			name: "dir",
-			path: func(t *testing.T) string { return writeDirFromFs(t, testdata, "testdata/multi_graph") },
+			path: func(t *testing.T) string {
+				return writeDirFromFs(t, testdata, filepath.Join(testdatagDir, "multi_graph"))
+			},
 		},
 		{
 			name: "zip",
-			path: func(t *testing.T) string { return writeFileFromFs(t, testdata, "testdata/multi_graph/multi_graph.zip") },
+			path: func(t *testing.T) string {
+				return writeFileFromFs(t, testdata, filepath.Join(testdatagDir, "multi_graph/multi_graph.zip"))
+			},
 		},
 		{
-			name:    "dir with actions in base graph",
-			path:    func(t *testing.T) string { return writeDirFromFs(t, testdata, "testdata/multi_graph_actions") },
+			name: "dir with actions in base graph",
+			path: func(t *testing.T) string {
+				return writeDirFromFs(t, testdata, filepath.Join(testdatagDir, "multi_graph_actions"))
+			},
 			wantErr: "base graph has 2 actions, multi-step graphs must have an empty base graph",
 		},
 		{
 			name: "zip with actions in base graph",
 			path: func(t *testing.T) string {
-				return writeFileFromFs(t, testdata, "testdata/multi_graph_actions/multi_graph_actions.zip")
+				return writeFileFromFs(t, testdata, filepath.Join(testdatagDir, "multi_graph_actions/multi_graph_actions.zip"))
 			},
 			wantErr: "base graph has 2 actions, multi-step graphs must have an empty base graph",
 		},
