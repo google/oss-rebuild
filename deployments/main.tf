@@ -1101,6 +1101,11 @@ resource "google_storage_bucket_iam_binding" "git-cache-manages-git-cache" {
   role    = "roles/storage.objectAdmin"
   members = [google_service_account.git-cache.member]
 }
+resource "google_storage_bucket_iam_binding" "git-cache-views-git-cache" {
+  bucket  = google_storage_bucket.git-cache.name
+  role    = google_project_iam_custom_role.bucket-viewer-role.name
+  members = [google_service_account.git-cache.member]
+}
 resource "google_storage_bucket_iam_binding" "cachers-read-git-cache" {
   bucket = google_storage_bucket.git-cache.name
   role   = "roles/storage.objectViewer"
