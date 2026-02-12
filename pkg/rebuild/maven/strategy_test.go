@@ -40,7 +40,7 @@ func TestStrategies(t *testing.T) {
 				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+					wget -q -O - "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.1%2B13/OpenJDK11U-jdk_x64_linux_hotspot_11.0.1_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
@@ -71,7 +71,7 @@ func TestStrategies(t *testing.T) {
 				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+					wget -q -O - "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.1%2B13/OpenJDK11U-jdk_x64_linux_hotspot_11.0.1_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
 				Build: textwrap.Dedent(`
 					export JAVA_HOME=/opt/jdk
 					export PATH=$JAVA_HOME/bin:$PATH
@@ -103,7 +103,7 @@ func TestStrategies(t *testing.T) {
 				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
-					wget -q -O - "https://download.java.net/java/GA/jdk11/13/GPL/openjdk-11.0.1_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
+					wget -q -O - "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.1%2B13/OpenJDK11U-jdk_x64_linux_hotspot_11.0.1_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
 					wget -q -O tmp.zip https://services.gradle.org/distributions/gradle-8.14.3-bin.zip
 					unzip -q tmp.zip -d /opt/ && mv /opt/gradle-8.14.3 /opt/gradle
 					rm tmp.zip`)[1:],
@@ -124,7 +124,7 @@ func TestStrategies(t *testing.T) {
 					Ref:  "ref",
 					Dir:  "dir",
 				},
-				JDKVersion: "10",
+				JDKVersion: "10.0.2",
 			},
 			want: rebuild.Instructions{
 				Location: rebuild.Location{
@@ -138,7 +138,7 @@ func TestStrategies(t *testing.T) {
 				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
                     mkdir -p /opt/jdk
-                    wget -q -O - "https://download.java.net/java/GA/jdk10/10/binaries/openjdk-10_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
+                    wget -q -O - "https://github.com/AdoptOpenJDK/openjdk10-binaries/releases/download/jdk-10.0.2%2B13.1/OpenJDK10U-jdk_x64_linux_hotspot_10.0.2_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
                     export JAVA_HOME=/opt/jdk
                     export PATH=$JAVA_HOME/bin:$PATH
                     KEYSTORE_FILE="$JAVA_HOME/lib/security/cacerts"
@@ -182,7 +182,7 @@ func TestStrategies(t *testing.T) {
 				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
                     mkdir -p /opt/jdk
-                    wget -q -O - "https://download.java.net/java/GA/jdk9/9/binaries/openjdk-9_linux-x64_bin.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
+                    wget -q -O - "https://github.com/AdoptOpenJDK/openjdk9-binaries/releases/download/jdk-9%2B181/OpenJDK9U-jdk_x64_linux_hotspot_9_181.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
                     export JAVA_HOME=/opt/jdk
                     export PATH=$JAVA_HOME/bin:$PATH
                     KEYSTORE_FILE="$JAVA_HOME/lib/security/cacerts"
