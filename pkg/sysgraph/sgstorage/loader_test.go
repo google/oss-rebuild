@@ -132,7 +132,7 @@ func TestLoadSysGraph(t *testing.T) {
 		{
 			name: "zip",
 			path: func(t *testing.T) string {
-				return zipDir(t, writeDirFromFs(t, testdata, "testdata/sysgraph_a"))
+				return writeZipFromFs(t, testdata, "testdata/sysgraph_a")
 			},
 		},
 	}
@@ -231,7 +231,7 @@ func TestLoadMultiGraph(t *testing.T) {
 		{
 			name: "zip",
 			path: func(t *testing.T) string {
-				return zipDir(t, writeDirFromFs(t, testdata, "testdata/multi_graph"))
+				return writeZipFromFs(t, testdata, "testdata/multi_graph")
 			},
 		},
 		{
@@ -244,7 +244,7 @@ func TestLoadMultiGraph(t *testing.T) {
 		{
 			name: "zip with actions in base graph",
 			path: func(t *testing.T) string {
-				return zipDir(t, writeDirFromFs(t, testdata, "testdata/multi_graph_actions"))
+				return writeZipFromFs(t, testdata, "testdata/multi_graph_actions")
 			},
 			wantErr: "base graph has 2 actions, multi-step graphs must have an empty base graph",
 		},
@@ -409,8 +409,9 @@ func writeDirFromFs(t *testing.T, f fs.FS, path string) string {
 	return outPath
 }
 
-func zipDir(t *testing.T, dir string) string {
+func writeZipFromFs(t *testing.T, f fs.FS, path string) string {
 	t.Helper()
+	dir := writeDirFromFs(t, f, path)
 	outPath := filepath.Join(t.TempDir(), filepath.Base(dir)+".zip")
 	zipFile, err := os.Create(outPath)
 	if err != nil {
@@ -418,25 +419,25 @@ func zipDir(t *testing.T, dir string) string {
 	}
 	defer zipFile.Close()
 	zipWriter := zip.NewWriter(zipFile)
-	if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		path = strings.TrimPrefix(path, fmt.Sprintf("%s%c", dir, os.PathSeparator))
-		if strings.HasPrefix(path, dir) {
+		p = strings.TrimPrefix(p, fmt.Sprintf("%s%c", dir, os.PathSeparator))
+		if strings.HasPrefix(p, dir) {
 			return nil
 		}
 		if d.IsDir() {
 			// add a trailing slash for creating directory in zip
-			path = fmt.Sprintf("%s%c", path, os.PathSeparator)
-			_, err = zipWriter.Create(path)
+			p = fmt.Sprintf("%s%c", p, os.PathSeparator)
+			_, err = zipWriter.Create(p)
 			return nil
 		}
-		blob, err := os.ReadFile(filepath.Join(dir, path))
+		blob, err := os.ReadFile(filepath.Join(dir, p))
 		if err != nil {
 			return err
 		}
-		w, err := zipWriter.Create(path)
+		w, err := zipWriter.Create(p)
 		if err != nil {
 			return err
 		}
