@@ -4,6 +4,8 @@
 package sgstorage
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"embed"
 	"fmt"
@@ -20,11 +22,16 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/sysgraph/pbdigest"
 	sgpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/dynamicpb"
 	tpb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
+//go:embed testdata/multi_graph testdata/multi_graph_actions testdata/sysgraph_a
 var testdata embed.FS
 
 var (
@@ -111,7 +118,6 @@ var (
 // TestLoadSysGraph tests loading a sysgraph from
 // from ./testdata/sysgraph_a
 func TestLoadSysGraph(t *testing.T) {
-	t.Skip("Skipping test")
 	context.Background()
 	testCases := []struct {
 		name string
@@ -119,12 +125,14 @@ func TestLoadSysGraph(t *testing.T) {
 	}{
 		{
 			name: "dir",
-			path: func(t *testing.T) string { return writeDirFromFs(t, testdata, "testdata/sysgraph_a") },
+			path: func(t *testing.T) string {
+				return writeDirFromFs(t, testdata, "testdata/sysgraph_a")
+			},
 		},
 		{
 			name: "zip",
 			path: func(t *testing.T) string {
-				return writeFileFromFs(t, testdata, "testdata/sysgraph_a/sysgraph_a.zip")
+				return writeZipFromFs(t, testdata, "testdata/sysgraph_a")
 			},
 		},
 	}
@@ -207,7 +215,6 @@ func TestLoadSysGraph(t *testing.T) {
 }
 
 func TestLoadMultiGraph(t *testing.T) {
-	t.Skip("Skipping test")
 	ctx := context.Background()
 
 	testCases := []struct {
@@ -217,21 +224,27 @@ func TestLoadMultiGraph(t *testing.T) {
 	}{
 		{
 			name: "dir",
-			path: func(t *testing.T) string { return writeDirFromFs(t, testdata, "testdata/multi_graph") },
+			path: func(t *testing.T) string {
+				return writeDirFromFs(t, testdata, "testdata/multi_graph")
+			},
 		},
 		{
 			name: "zip",
-			path: func(t *testing.T) string { return writeFileFromFs(t, testdata, "testdata/multi_graph/multi_graph.zip") },
+			path: func(t *testing.T) string {
+				return writeZipFromFs(t, testdata, "testdata/multi_graph")
+			},
 		},
 		{
-			name:    "dir with actions in base graph",
-			path:    func(t *testing.T) string { return writeDirFromFs(t, testdata, "testdata/multi_graph_actions") },
+			name: "dir with actions in base graph",
+			path: func(t *testing.T) string {
+				return writeDirFromFs(t, testdata, "testdata/multi_graph_actions")
+			},
 			wantErr: "base graph has 2 actions, multi-step graphs must have an empty base graph",
 		},
 		{
 			name: "zip with actions in base graph",
 			path: func(t *testing.T) string {
-				return writeFileFromFs(t, testdata, "testdata/multi_graph_actions/multi_graph_actions.zip")
+				return writeZipFromFs(t, testdata, "testdata/multi_graph_actions")
 			},
 			wantErr: "base graph has 2 actions, multi-step graphs must have an empty base graph",
 		},
@@ -343,27 +356,6 @@ func TestLoadMultiGraph(t *testing.T) {
 	}
 }
 
-func writeFileFromFs(t *testing.T, f fs.FS, path string) string {
-	t.Helper()
-	outDir := t.TempDir()
-	outPath := filepath.Join(outDir, filepath.Base(path))
-	outFile, err := os.Create(outPath)
-	if err != nil {
-		t.Fatalf("Failed to create file %v", err)
-	}
-	defer outFile.Close()
-	t.Logf("Copying %s to %s", path, outPath)
-	inFile, err := f.Open(path)
-	if err != nil {
-		t.Fatalf("Failed to open file %v", err)
-	}
-	defer inFile.Close()
-	if _, err := io.Copy(outFile, inFile); err != nil {
-		t.Fatalf("Failed to copy file %v", err)
-	}
-	return outPath
-}
-
 func writeDirFromFs(t *testing.T, f fs.FS, path string) string {
 	t.Helper()
 	outDir := t.TempDir()
@@ -388,12 +380,25 @@ func writeDirFromFs(t *testing.T, f fs.FS, path string) string {
 			return fmt.Errorf("Failed to open file %v", err)
 		}
 		defer inFile.Close()
+		inReader := io.Reader(inFile)
+		if filepath.Ext(p) == ".txtpb" {
+			outFilePath = strings.TrimSuffix(outFilePath, ".txtpb") + ".pb"
+			txtBlob, err := io.ReadAll(inReader)
+			if err != nil {
+				return fmt.Errorf("Failed to read file %v", err)
+			}
+			binaryBlob, err := txtPbToProto(txtBlob)
+			if err != nil {
+				return fmt.Errorf("Failed to convert txtpb to proto %v", err)
+			}
+			inReader = bytes.NewReader(binaryBlob)
+		}
 		outFile, err := os.Create(outFilePath)
 		if err != nil {
 			return fmt.Errorf("Failed to create file %v", err)
 		}
 		defer outFile.Close()
-		if _, err := io.Copy(outFile, inFile); err != nil {
+		if _, err := io.Copy(outFile, inReader); err != nil {
 			return fmt.Errorf("Failed to copy file %v", err)
 		}
 		return nil
@@ -402,4 +407,72 @@ func writeDirFromFs(t *testing.T, f fs.FS, path string) string {
 	}
 	t.Logf("Wrote directory %s", outPath)
 	return outPath
+}
+
+func writeZipFromFs(t *testing.T, f fs.FS, path string) string {
+	t.Helper()
+	dir := writeDirFromFs(t, f, path)
+	outPath := filepath.Join(t.TempDir(), filepath.Base(dir)+".zip")
+	zipFile, err := os.Create(outPath)
+	if err != nil {
+		t.Fatalf("Failed to create zip file %v", err)
+	}
+	defer zipFile.Close()
+	zipWriter := zip.NewWriter(zipFile)
+	if err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		p = strings.TrimPrefix(p, fmt.Sprintf("%s%c", dir, os.PathSeparator))
+		if strings.HasPrefix(p, dir) {
+			return nil
+		}
+		if d.IsDir() {
+			// add a trailing slash for creating directory in zip
+			p = fmt.Sprintf("%s%c", p, os.PathSeparator)
+			_, err = zipWriter.Create(p)
+			return nil
+		}
+		blob, err := os.ReadFile(filepath.Join(dir, p))
+		if err != nil {
+			return err
+		}
+		w, err := zipWriter.Create(p)
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(blob); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("failed to walk testdata: %v", err)
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("failed to close zip writer: %v", err)
+	}
+	return outPath
+}
+
+// txtPbToProto converts a text proto blob to a binary proto blob using the proto-message header.
+func txtPbToProto(txtBlob []byte) ([]byte, error) {
+	for line := range strings.SplitSeq(string(txtBlob), "\n") {
+		if strings.Contains(line, "proto-message:") {
+			messageName := "sysgraph." + strings.TrimSpace(strings.Split(line, "proto-message:")[1])
+			descriptor, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(messageName))
+			if err != nil {
+				return nil, err
+			}
+			messageDescriptor, ok := descriptor.(protoreflect.MessageDescriptor)
+			if !ok {
+				return nil, fmt.Errorf("not a message descriptor: %s", messageName)
+			}
+			message := dynamicpb.NewMessage(messageDescriptor)
+			if err := prototext.Unmarshal(txtBlob, message); err != nil {
+				return nil, err
+			}
+			return proto.Marshal(message)
+		}
+	}
+	return nil, fmt.Errorf("could not find message name in txtpb")
 }

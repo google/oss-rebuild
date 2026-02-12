@@ -51,7 +51,6 @@ var (
 )
 
 func TestBuildAndWrite(t *testing.T) {
-	t.Skip("Skipping test")
 	builder := SysGraphBuilder{
 		GraphPb: sgpb.SysGraph_builder{
 			Id: proto.String("abcdefg"),
@@ -127,7 +126,6 @@ func TestBuildAndWrite(t *testing.T) {
 }
 
 func TestBuildAndWriteZip(t *testing.T) {
-	t.Skip("Skipping test")
 	builder := SysGraphBuilder{
 		GraphPb: sgpb.SysGraph_builder{
 			Id: proto.String("abcdefg"),
