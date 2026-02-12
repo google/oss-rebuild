@@ -89,7 +89,7 @@ func TestBuildAndWrite(t *testing.T) {
 	if err := Write(context.Background(), sg, outDir); err != nil {
 		t.Fatalf("Failed to write sysgraph: %v", err)
 	}
-	expectedsgPath := writeDirFromFs(t, testdata, filepath.Join(testdatagDir, "sysgraph_a"))
+	expectedsgPath := writeDirFromFs(t, testdata, "testdata/sysgraph_a")
 	filepath.WalkDir(expectedsgPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			t.Fatalf("Failed to walk expected sysgraph: %v", err)
@@ -180,7 +180,7 @@ func TestBuildAndWriteZip(t *testing.T) {
 	if err := Write(context.Background(), sg, outZip, CopyPath(logsDir, "tetragon_logs")); err != nil {
 		t.Fatalf("Failed to write sysgraph: %v", err)
 	}
-	expectedsgPath := writeDirFromFs(t, testdata, filepath.Join(testdatagDir, "sysgraph_a"))
+	expectedsgPath := writeDirFromFs(t, testdata, "testdata/sysgraph_a")
 	zipReader, err := zip.OpenReader(outZip)
 	if err != nil {
 		t.Fatalf("Failed to open zip file: %v", err)
