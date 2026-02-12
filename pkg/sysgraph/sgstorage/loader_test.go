@@ -454,7 +454,6 @@ func writeZipFromFs(t *testing.T, f fs.FS, path string) string {
 	return outPath
 }
 
-
 // txtPbToProto converts a text proto blob to a binary proto blob using the proto-message header.
 func txtPbToProto(txtBlob []byte) ([]byte, error) {
 	for line := range strings.SplitSeq(string(txtBlob), "\n") {
