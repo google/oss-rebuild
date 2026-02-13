@@ -168,6 +168,14 @@ func (e *DockerRunExecutor) Close(ctx context.Context) error {
 
 // executeBuild runs the actual Docker run process
 func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandle, plan *DockerRunPlan, t rebuild.Target, opts build.Options) {
+	// TODO: Add support for SaveContainerImage in DockerRunExecutor.
+	if opts.SaveContainerImage {
+		handle.updateStatus(build.BuildStateCompleted)
+		handle.setResult(build.Result{
+			Error: errors.New("SaveContainerImage not yet supported for DockerRunExecutor"),
+		})
+		return
+	}
 	defer e.activeBuilds.Delete(handle.id)
 	defer handle.output.Close()
 	// Acquire semaphore slot
