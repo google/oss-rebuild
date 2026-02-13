@@ -6,9 +6,9 @@ package stabilize
 import (
 	"archive/zip"
 	"bytes"
-	"time"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/google/oss-rebuild/pkg/archive"
 )
