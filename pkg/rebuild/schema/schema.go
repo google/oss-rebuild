@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	debreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
 )
@@ -205,6 +206,15 @@ type SmoketestResponse struct {
 	Executor string
 }
 
+func validateDebianVersion(version string) error {
+	if v, err := debreg.ParseVersion(version); err != nil {
+		return errors.Wrap(err, "parsing version")
+	} else if v.Epoch == "" {
+		return errors.New("version must specify epoch prefix e.g. 1:")
+	}
+	return nil
+}
+
 // RebuildPackageRequest is a single request to the rebuild package endpoint.
 type RebuildPackageRequest struct {
 	Ecosystem         rebuild.Ecosystem `form:",required"`
@@ -230,6 +240,11 @@ func (r RebuildPackageRequest) Validate() error {
 	if r.Artifact == "" {
 		return errors.New("artifact must not be empty")
 	}
+	if r.Ecosystem == rebuild.Debian {
+		if err := validateDebianVersion(r.Version); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -253,6 +268,11 @@ func (req InferenceRequest) Validate() error {
 	}
 	if req.Artifact == "" {
 		return errors.New("artifact must not be empty")
+	}
+	if req.Ecosystem == rebuild.Debian {
+		if err := validateDebianVersion(req.Version); err != nil {
+			return err
+		}
 	}
 	return nil
 }
