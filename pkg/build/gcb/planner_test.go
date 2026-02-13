@@ -8,9 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"google.golang.org/api/cloudbuild/v1"
 )
 
 func TestMakeDockerfile(t *testing.T) {
@@ -340,5 +342,81 @@ func TestGCBPlannerNoSaveWhenFlagFalse(t *testing.T) {
 		if step.Script != "" && strings.Contains(step.Script, "docker save") {
 			t.Error("Save step should not be present when SaveContainerImage is false")
 		}
+	}
+}
+
+func TestGCBPlannerSavePostBuildContainer(t *testing.T) {
+	ctx := context.Background()
+
+	config := PlannerConfig{
+		Project:        "test-project",
+		ServiceAccount: "test@test.iam.gserviceaccount.com",
+	}
+	planner := NewPlanner(config)
+
+	baseImageConfig := build.BaseImageConfig{
+		Default: "docker.io/library/alpine:3.19",
+	}
+
+	input := rebuild.Input{
+		Target: rebuild.Target{
+			Ecosystem: rebuild.NPM,
+			Package:   "test-package",
+			Version:   "1.0.0",
+			Artifact:  "test-package-1.0.0.tgz",
+		},
+		Strategy: &rebuild.ManualStrategy{
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
+			Deps:       "npm install",
+			Build:      "npm run build",
+			OutputPath: "dist/test-package-1.0.0.tgz",
+		},
+	}
+
+	opts := build.PlanOptions{
+		SavePostBuildContainer: true,
+		Resources: build.Resources{
+			BaseImageConfig: baseImageConfig,
+			AssetStore:      rebuild.NewFilesystemAssetStore(memfs.New()),
+			ToolURLs: map[build.ToolType]string{
+				build.GSUtilTool: "https://storage.googleapis.com/test-bucket/gsutil_writeonly",
+			},
+		},
+	}
+
+	plan, err := planner.GeneratePlan(ctx, input, opts)
+	if err != nil {
+		t.Fatalf("GeneratePlan failed: %v", err)
+	}
+
+	if len(plan.Steps) != 4 {
+		t.Fatalf("Expected 4 steps, got %d", len(plan.Steps))
+	}
+
+	// Skip step 0 (build) since its script embeds the full Dockerfile which is tested elsewhere.
+	wantSteps := []*cloudbuild.BuildStep{
+		{
+			Name: "gcr.io/cloud-builders/docker",
+			Args: []string{"cp", "container:/out/test-package-1.0.0.tgz", "/workspace/test-package-1.0.0.tgz"},
+		},
+		{
+			Name:   "gcr.io/cloud-builders/docker",
+			Script: "docker commit container container-postbuild && docker save container-postbuild | gzip > /workspace/image_postbuild.tgz && docker rmi container-postbuild",
+		},
+		{
+			Name: "docker.io/library/alpine:3.19",
+			Script: `set -eux
+wget https://storage.googleapis.com/test-bucket/gsutil_writeonly
+chmod +x gsutil_writeonly
+./gsutil_writeonly cp /workspace/test-package-1.0.0.tgz file:///npm/test-package/1.0.0/test-package-1.0.0.tgz/test-package-1.0.0.tgz
+./gsutil_writeonly cp /workspace/image_postbuild.tgz file:///npm/test-package/1.0.0/test-package-1.0.0.tgz/image_postbuild.tgz
+`,
+		},
+	}
+	if diff := cmp.Diff(wantSteps, plan.Steps[1:]); diff != "" {
+		t.Errorf("Steps[1:] mismatch (-want +got):\n%s", diff)
 	}
 }
