@@ -448,12 +448,14 @@ func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, reqs r
 		Args: []string{"cp", "container:" + path.Join("/out", target.Artifact), path.Join("/workspace", target.Artifact)},
 	}
 	steps = append(steps, extractStep)
-	// Save container image
-	saveStep := &cloudbuild.BuildStep{
-		Name:   "gcr.io/cloud-builders/docker",
-		Script: "docker save img | gzip > /workspace/image.tgz",
+	// Save container image if requested
+	if opts.SaveContainerImage {
+		saveStep := &cloudbuild.BuildStep{
+			Name:   "gcr.io/cloud-builders/docker",
+			Script: "docker save img | gzip > /workspace/image.tgz",
+		}
+		steps = append(steps, saveStep)
 	}
-	steps = append(steps, saveStep)
 	// Upload assets
 	uploadScript, err := p.generateAssetUploadScript(target, opts)
 	if err != nil {
@@ -553,8 +555,10 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 	// Add uploads for each asset if asset store is configured
 	if opts.Resources.AssetStore != nil {
 		assetTypes := []rebuild.AssetType{
-			rebuild.ContainerImageAsset,
 			rebuild.RebuildAsset,
+		}
+		if opts.SaveContainerImage {
+			assetTypes = append(assetTypes, rebuild.ContainerImageAsset)
 		}
 		if opts.UseSyscallMonitor {
 			assetTypes = append(assetTypes, rebuild.TetragonLogAsset)
