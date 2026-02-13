@@ -62,6 +62,16 @@ func TestUnstablePypi(t *testing.T) {
 			},
 			pypiStabilizers: []Stabilizer{StableCrlf, StablePypiRecord},
 		},
+		{
+			test: "**.py Comment stabilization (augmentation)",
+			input: []*archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "test.py"}, Body: []byte("# This is a test file\nprint('Hello, World!')\ndef test(inp):\n	\"\"\"\n	Args: inp - test input\n	\"\"\"\n	return inp\n")},
+			},
+			expected: []*archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: "test.py"}, Body: []byte("\nprint('Hello, World!')\ndef test(inp):\n\t\n\n	return inp\n")},
+			},
+			pypiStabilizers: []Stabilizer{StableCommentsCollapse},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.test, func(t *testing.T) {
