@@ -33,7 +33,7 @@ type CloneFunc func(context.Context, storage.Storer, billy.Filesystem, *git.Clon
 // Clone performs a clone operation, using native git if available,
 // otherwise falling back to go-git.
 func Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
-	if NativeGitAvailable() {
+	if NativeGitAvailable() && opt.Auth == nil {
 		switch s.(type) {
 		case *filesystem.Storage:
 			log.Println("Found git binary. Cloning using git")
@@ -47,7 +47,11 @@ func Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.
 			return git.CloneContext(ctx, s, fs, opt)
 		}
 	}
-	log.Println("No git binary found. Cloning using go-git")
+	if NativeGitAvailable() && opt.Auth != nil {
+		log.Println("Found git binary but Auth is set. Cloning using go-git")
+	} else {
+		log.Println("No git binary found. Cloning using go-git")
+	}
 	return git.CloneContext(ctx, s, fs, opt)
 }
 
