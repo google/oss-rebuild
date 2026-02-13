@@ -357,6 +357,63 @@ func TestDockerBuildExecutor(t *testing.T) {
 			expectSuccess: true,
 		},
 		{
+			name: "save post-build container",
+			plan: &DockerBuildPlan{
+				Dockerfile: "FROM alpine:3.19\nRUN echo 'building'\nCMD echo 'done'",
+				OutputPath: "/out/result.tar.gz",
+			},
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.NPM,
+					Package:   "test-pkg",
+					Version:   "1.0.0",
+					Artifact:  "test-pkg-1.0.0.tgz",
+				},
+			},
+			options: build.Options{
+				BuildID:                "test-build-postbuild",
+				SavePostBuildContainer: true,
+				Resources: build.Resources{
+					AssetStore: newMockBuildAssetStore(),
+				},
+			},
+			maxParallel: 1,
+			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+				if opts.Output != nil {
+					if len(args) > 0 && args[0] == "build" {
+						opts.Output.Write([]byte("Successfully built image\n"))
+					} else if len(args) > 0 && args[0] == "run" {
+						opts.Output.Write([]byte("Container executed successfully\n"))
+					}
+				}
+				return nil
+			},
+			expectedCommands: []MockCommand{
+				{
+					Name:  "docker",
+					Args:  []string{"buildx", "build", "-t", "test-build-postbuild", "-"},
+					Input: "FROM alpine:3.19\nRUN echo 'building'\nCMD echo 'done'",
+				},
+				{
+					Name: "docker",
+					Args: []string{"run", "--name", "test-build-postbuild", "-v", "/tmp/oss-rebuild-test-build-postbuild:/out", "test-build-postbuild"},
+				},
+				{
+					Name: "sh",
+					Args: []string{"-c", "docker export test-build-postbuild | gzip > /tmp/oss-rebuild-test-build-postbuild/container.tgz"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rm", "test-build-postbuild"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rmi", "test-build-postbuild"},
+				},
+			},
+			expectSuccess: true,
+		},
+		{
 			name:      "plan generation failure",
 			planError: errors.New("failed to generate plan"),
 			input: rebuild.Input{

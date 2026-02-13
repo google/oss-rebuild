@@ -44,6 +44,8 @@ const (
 	BuildInfoAsset AssetType = "info.json"
 	// ContainerImageAsset is the container image prior to executing the rebuild.
 	ContainerImageAsset AssetType = "image.tgz"
+	// PostBuildContainerAsset is the container state after executing the rebuild.
+	PostBuildContainerAsset AssetType = "container.tgz"
 	// ProxyNetlogAsset is the network activity from the rebuild process.
 	ProxyNetlogAsset AssetType = "netlog.json"
 	// TetragonLogAsset is the log of all tetragon events.

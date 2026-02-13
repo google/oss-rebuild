@@ -456,6 +456,14 @@ func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, reqs r
 		}
 		steps = append(steps, saveStep)
 	}
+	// Export post-build container if requested
+	if opts.SavePostBuildContainer {
+		exportStep := &cloudbuild.BuildStep{
+			Name:   "gcr.io/cloud-builders/docker",
+			Script: "docker export container | gzip > /workspace/container.tgz",
+		}
+		steps = append(steps, exportStep)
+	}
 	// Upload assets
 	uploadScript, err := p.generateAssetUploadScript(target, opts)
 	if err != nil {
@@ -566,6 +574,9 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 		if opts.UseNetworkProxy {
 			assetTypes = append(assetTypes, rebuild.ProxyNetlogAsset)
 		}
+		if opts.SavePostBuildContainer {
+			assetTypes = append(assetTypes, rebuild.PostBuildContainerAsset)
+		}
 		for _, assetType := range assetTypes {
 			url := opts.Resources.AssetStore.URL(assetType.For(target))
 			if url == nil {
@@ -590,6 +601,11 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 			case rebuild.ProxyNetlogAsset:
 				uploads = append(uploads, upload{
 					From: "/workspace/netlog.json",
+					To:   url.String(),
+				})
+			case rebuild.PostBuildContainerAsset:
+				uploads = append(uploads, upload{
+					From: "/workspace/container.tgz",
 					To:   url.String(),
 				})
 			}
