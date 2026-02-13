@@ -7,17 +7,15 @@ import (
 	"context"
 	"flag"
 
-	"cloud.google.com/go/firestore"
 	gcs "cloud.google.com/go/storage"
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	agentide "github.com/google/oss-rebuild/tools/ctl/ide/agent"
+	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 	"github.com/spf13/cobra"
-	"google.golang.org/api/iterator"
 )
 
 // Config holds all configuration for the view-session command.
@@ -67,36 +65,25 @@ func parseArgs(cfg *Config, args []string) error {
 
 // Handler contains the business logic for viewing a session.
 func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error) {
-	fire, err := firestore.NewClient(ctx, cfg.Project)
+	dex, err := rundex.NewFirestore(ctx, cfg.Project)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating firestore client")
+		return nil, errors.Wrap(err, "connecting to rundex")
 	}
-	// Fetch session
-	sessionDoc := fire.Collection("agent_sessions").Doc(cfg.SessionID)
-	sessionSnap, err := sessionDoc.Get(ctx)
+	// TOOD: Add support for difference query options here
+	sessions, err := dex.FetchSessions(ctx, &rundex.FetchSessionsReq{IDs: []string{cfg.SessionID}})
 	if err != nil {
-		return nil, errors.Wrap(err, "getting session document")
+		return nil, errors.Wrap(err, "querying for sessions")
 	}
-	session := &schema.AgentSession{}
-	if err := sessionSnap.DataTo(session); err != nil {
-		return nil, errors.Wrap(err, "deserializing session data")
+	if len(sessions) == 0 {
+		return nil, errors.Errorf("session %s not found", cfg.SessionID)
+	} else if len(sessions) > 1 {
+		return nil, errors.Errorf("multiple sessions with ID %s found", cfg.SessionID)
 	}
+	session := sessions[0]
 	// Fetch iterations
-	var iters []*schema.AgentIteration
-	iter := sessionDoc.Collection("agent_iterations").Documents(ctx)
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, errors.Wrap(err, "iterating over iterations")
-		}
-		iteration := &schema.AgentIteration{}
-		if err := doc.DataTo(iteration); err != nil {
-			return nil, errors.Wrap(err, "deserializing iteration data")
-		}
-		iters = append(iters, iteration)
+	iters, err := dex.FetchIterations(ctx, &rundex.FetchIterationsReq{SessionID: session.ID})
+	if err != nil {
+		return nil, errors.Wrap(err, "querying for iterations")
 	}
 	gcsClient, err := gcs.NewClient(ctx)
 	if err != nil {
@@ -110,7 +97,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		}
 		return event
 	})
-	v := agentide.NewSessionView(session, iters, agentide.SessionViewDeps{
+	v := agentide.NewSessionView(&session, iters, agentide.SessionViewDeps{
 		GCS:            gcsClient,
 		App:            app,
 		MetadataBucket: cfg.MetadataBucket,

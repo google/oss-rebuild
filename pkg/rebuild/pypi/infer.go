@@ -13,6 +13,7 @@ import (
 	"log"
 	re "regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -153,6 +154,15 @@ func FindPureWheel(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
 	return nil, fs.ErrNotExist
 }
 
+func FindSourceDist(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
+	for _, r := range artifacts {
+		if strings.HasSuffix(r.Filename, ".tar.gz") {
+			return &r, nil
+		}
+	}
+	return nil, fs.ErrNotExist
+}
+
 func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 	// Name and version have "-" replaced with "_". See https://packaging.python.org/en/latest/specifications/recording-installed-packages/#the-dist-info-directory
 	// TODO: Search for dist-info in the gzip using a regex. It sounds like many tools do varying amounts of normalization on the path name.
@@ -202,6 +212,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	// TODO: support different build types.
 	cfg := &PureWheelBuild{}
 	var ref, dir string
+	var a *pypireg.Artifact
 	lh, ok := hint.(*rebuild.LocationHint)
 	if hint != nil && !ok {
 		return nil, errors.Errorf("unsupported hint type: %T", hint)
@@ -220,9 +231,15 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		}
 		dir = rcfg.Dir
 	}
-	a, err := FindPureWheel(release.Artifacts)
-	if err != nil {
-		return cfg, errors.Wrap(err, "finding pure wheel")
+
+	for _, art := range release.Artifacts {
+		if art.Filename == t.Artifact {
+			a = &art
+			break
+		}
+	}
+	if a == nil {
+		return cfg, errors.Errorf("artifact %s not found in release", t.Artifact)
 	}
 	log.Printf("Downloading artifact: %s", a.URL)
 	r, err := mux.PyPI.Artifact(ctx, name, version, a.Filename)
@@ -233,13 +250,20 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to read upstream artifact")
 	}
-	zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
-	if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to initialize upstream zip reader")
-	}
-	reqs, err := inferRequirements(release.Name, version, zr)
-	if err != nil {
-		return cfg, err
+	var reqs []string
+	if strings.HasSuffix(a.Filename, ".whl") {
+		zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
+		if err != nil {
+			return nil, errors.Wrapf(err, "[INTERNAL] Failed to initialize upstream zip reader")
+		}
+		reqs, err = inferRequirements(release.Name, version, zr)
+		if err != nil {
+			return cfg, err
+		}
+	} else if strings.HasSuffix(a.Filename, ".tar.gz") {
+		// For .tar.gz files (source distributions), we don't infer requirements from the archive
+		// We'll get them from pyproject.toml below
+		reqs = []string{}
 	}
 	// Extract pyproject.toml requirements.
 	{
@@ -274,14 +298,56 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			}
 		}
 	}
-	return &PureWheelBuild{
-		Location: rebuild.Location{
-			Repo: rcfg.URI,
-			Dir:  dir,
-			Ref:  ref,
-		},
-		Requirements: reqs,
-	}, nil
+	if strings.HasSuffix(a.Filename, ".tar.gz") {
+		return &SdistBuild{
+			Location: rebuild.Location{
+				Repo: rcfg.URI,
+				Dir:  dir,
+				Ref:  ref,
+			},
+			PythonVersion: inferPythonVersion(reqs),
+			Requirements:  reqs,
+		}, nil
+	} else {
+		return &PureWheelBuild{
+			Location: rebuild.Location{
+				Repo: rcfg.URI,
+				Dir:  dir,
+				Ref:  ref,
+			},
+			PythonVersion: inferPythonVersion(reqs),
+			Requirements:  reqs,
+		}, nil
+	}
+}
+
+func inferPythonVersion(reqs []string) string {
+	constraintPat := re.MustCompile(`([<>=!~]+)\s*(\d+)`)
+	for _, req := range reqs {
+		parts := strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~! \t[", r) })
+		if len(parts) == 0 || strings.ToLower(parts[0]) != "setuptools" {
+			continue
+		}
+		allConstraints := constraintPat.FindAllStringSubmatch(req, -1)
+		for _, matches := range allConstraints {
+			op := matches[1]
+			ver, err := strconv.Atoi(matches[2])
+			if err != nil {
+				continue
+			}
+			switch op {
+			case "<":
+				if ver <= 60 {
+					return "3.11"
+				}
+			case "<=", "==":
+				if ver < 60 {
+					return "3.11"
+				}
+			}
+		}
+	}
+	return "" // unconstrained
 }
 
 var bdistWheelPat = re.MustCompile(`^Generator: bdist_wheel \(([\d\.]+)\)`)

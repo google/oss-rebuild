@@ -63,6 +63,7 @@ import (
 
 var (
 	bucket = flag.String("bucket", "", "the bucket to use as the git cache")
+	port   = flag.Int("port", 8080, "port on which to serve")
 )
 
 var thresholdFudgeFactor = 24 * time.Hour
@@ -287,7 +288,7 @@ func populateCache(ctx context.Context, repo, ref string, o *storage.ObjectHandl
 func main() {
 	flag.Parse()
 	http.HandleFunc("/get", HandleGet)
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}
 }

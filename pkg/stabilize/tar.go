@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/hash"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/pkg/errors"
 )
@@ -143,12 +144,8 @@ var StabilizeCargoVCSHash = TarEntryStabilizer{
 func StabilizeTar(tr *tar.Reader, tw *tar.Writer, opts StabilizeOpts) error {
 	defer tw.Close()
 	var ents []*archive.TarEntry
-	for {
-		header, err := tr.Next()
+	for header, err := range iterx.ToSeq2(tr, io.EOF) {
 		if err != nil {
-			if err == io.EOF {
-				break // End of archive
-			}
 			return err
 		}
 		// NOTE: Non-PAX header type support can be added, if necessary.

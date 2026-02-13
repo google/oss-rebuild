@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/archive"
 )
 
@@ -74,11 +75,7 @@ func TestStabilizeTar(t *testing.T) {
 			var got []*archive.TarEntry
 			{
 				zr := tar.NewReader(bytes.NewReader(output.Bytes()))
-				for {
-					th, err := zr.Next()
-					if err == io.EOF {
-						break
-					}
+				for th, err := range iterx.ToSeq2(zr, io.EOF) {
 					must(th, err)
 					got = append(got, &archive.TarEntry{Header: th, Body: must(io.ReadAll(zr))})
 				}
@@ -188,11 +185,7 @@ version = "1.0.0"`)},
 			var got []*archive.TarEntry
 			{
 				zr := tar.NewReader(bytes.NewReader(output.Bytes()))
-				for {
-					th, err := zr.Next()
-					if err == io.EOF {
-						break
-					}
+				for th, err := range iterx.ToSeq2(zr, io.EOF) {
 					must(th, err)
 					got = append(got, &archive.TarEntry{Header: th, Body: must(io.ReadAll(zr))})
 				}

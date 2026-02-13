@@ -1,0 +1,21 @@
+name: TF Format
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["**/*.tf"]
+  pull_request:
+    branches: ["main"]
+    paths: ["**/*.tf"]
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: OpenTofu Format Check
+        run: tofu fmt -check -recursive

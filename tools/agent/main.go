@@ -133,92 +133,9 @@ func main() {
 	}
 
 	log.Println("Cloning repository using go-git...")
-	t, err := getRepoTree(repo, loc.Ref)
-	if err != nil {
-		log.Fatalf("Failed to get repo tree: %v", err)
-	}
-	functionDefinitions := []*llm.FunctionDefinition{
-		{
-			FunctionDeclaration: genai.FunctionDeclaration{
-				Name:        "read_repo_file",
-				Description: "Fetch the content of the file from the source repository",
-				Parameters: &genai.Schema{
-					Type: genai.TypeObject,
-					Properties: map[string]*genai.Schema{
-						"path": {Type: genai.TypeString, Description: "Path of the file to be read, relative to the repository root"},
-					},
-					Required: []string{"path"},
-				},
-				Response: &genai.Schema{
-					Type: genai.TypeObject,
-					Properties: map[string]*genai.Schema{
-						"content": {Type: genai.TypeString, Description: "The file content, if read was successful"},
-						"error":   {Type: genai.TypeString, Description: "The error reading the requested file, if unsuccessful"},
-					},
-				},
-			},
-			Function: func(args map[string]any) genai.FunctionResponse {
-				path := args["path"].(string)
-				var content, errStr string
-				content, err := getRepoFile(t, path)
-				if err != nil {
-					errStr = err.Error()
-				}
-				return genai.FunctionResponse{
-					Name: "read_repo_file", // Name must match the FunctionDeclaration
-					Response: map[string]any{
-						"content": content,
-						"error":   errStr,
-					},
-				}
-			},
-		},
-		{
-			FunctionDeclaration: genai.FunctionDeclaration{
-				Name:        "list_repo_files",
-				Description: "Fetch the list of the file from the source repository",
-				Parameters: &genai.Schema{
-					Type: genai.TypeObject,
-					Properties: map[string]*genai.Schema{
-						"path": {Type: genai.TypeString, Description: "Path of the directory to be read, relative to the repository root. Omit or use empty string for root."}, // Clarified description
-					},
-					Required: []string{},
-				},
-				Response: &genai.Schema{
-					Type: genai.TypeObject,
-					Properties: map[string]*genai.Schema{
-						"entries": {Type: genai.TypeArray, Description: "The list of files and directories at the requested path, if read was successful", Items: &genai.Schema{Type: genai.TypeString, Description: "A file path, ending with a slash if a directory"}},
-						"error":   {Type: genai.TypeString, Description: "The error listing the requested path, if unsuccessful"},
-					},
-				},
-			},
-			Function: func(args map[string]any) genai.FunctionResponse {
-				var path string
-				if patharg, ok := args["path"]; ok {
-					if p, ok := patharg.(string); ok {
-						path = p
-					}
-					// TODO: Handle case where path exists but is not a string?
-				}
-				var errStr string
-				content, err := listRepoFiles(t, path)
-				if err != nil {
-					errStr = err.Error()
-				}
-				entries := make([]any, 0, len(content))
-				for _, entry := range content {
-					entries = append(entries, entry)
-				}
-				return genai.FunctionResponse{
-					Name: "list_repo_files", // Name must match the FunctionDeclaration
-					Response: map[string]any{
-						"entries": entries,
-						"error":   errStr,
-					},
-				}
-			},
-		},
-	}
+	functionDefinitions := llm.GitTools(func() (*git.Repository, string) {
+		return repo, loc.Ref
+	})
 	// Create the model with appropriate configuration
 	systemPrompt := []*genai.Part{
 		genai.NewPartFromText(`You are an expert in building npm packages from source. Given a git repository with a JavaScript/TypeScript project, you will analyze the code to determine how to build an npm package from it.

@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -37,6 +38,7 @@ var (
 	overwriteAttestations = flag.Bool("overwrite-attestations", false, "whether to overwrite existing attestations")
 	gcbPrivatePoolName    = flag.String("gcb-private-pool-name", "", "Resource name of GCB private pool to use, if configured")
 	gcbPrivatePoolRegion  = flag.String("gcb-private-pool-region", "", "GCP location to use for GCB private pool builds, if configured. Note: This should generally be the same as the region where the private pool is located.")
+	port                  = flag.Int("port", 8080, "port on which to serve")
 )
 
 // Link-time configured service identity
@@ -156,7 +158,7 @@ func main() {
 	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 	http.HandleFunc("/analyze", api.Handler(AnalyzerInit, analyzerservice.Analyze))
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}
 }

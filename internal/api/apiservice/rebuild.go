@@ -12,7 +12,6 @@ import (
 	"log"
 	"net/url"
 	"path"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -22,13 +21,12 @@ import (
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/build"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
-	cratesrb "github.com/google/oss-rebuild/pkg/rebuild/cratesio"
+	"github.com/google/oss-rebuild/pkg/changelog"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
-	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
-	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
@@ -39,38 +37,12 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-func populateArtifact(ctx context.Context, t *rebuild.Target, mux rebuild.RegistryMux) error {
-	if t.Artifact != "" {
-		return nil
-	}
-	switch t.Ecosystem {
-	case rebuild.NPM:
-		t.Artifact = npmrb.ArtifactName(*t)
-	case rebuild.CratesIO:
-		t.Artifact = cratesrb.ArtifactName(*t)
-	case rebuild.PyPI:
-		release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
-		if err != nil {
-			return errors.Wrap(err, "fetching metadata failed")
-		}
-		a, err := pypirb.FindPureWheel(release.Artifacts)
-		if err != nil {
-			return errors.Wrap(err, "locating pure wheel failed")
-		}
-		t.Artifact = a.Filename
-	case rebuild.Debian:
-		return errors.New("debian requires explicit artifact")
-	default:
-		return errors.New("unknown ecosystem")
-	}
-	return nil
-}
-
 // TODO: LocalMetadataStore and DebugStoreBuilder can be combined into a layered AssetStore.
 type RebuildPackageDeps struct {
 	HTTPClient                 httpx.BasicClient
 	FirestoreClient            *firestore.Client
 	Signer                     *dsse.EnvelopeSigner
+	Verifier                   *dsse.EnvelopeVerifier
 	GCBExecutor                *buildgcb.Executor
 	PrebuildConfig             rebuild.PrebuildConfig
 	ServiceRepo                rebuild.Location
@@ -81,7 +53,7 @@ type RebuildPackageDeps struct {
 	LocalMetadataStore         rebuild.LocatableAssetStore
 	DebugStoreBuilder          func(ctx context.Context) (rebuild.AssetStore, error)
 	RemoteMetadataStoreBuilder func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error)
-	OverwriteAttestations      bool
+	OverwriteAttestations      bool // TODO: Remove in favor of req.OverwriteMode
 	InferStub                  api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
 }
 
@@ -159,7 +131,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 	return strategy, entry, nil
 }
 
-func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, useProxy bool, useSyscallMonitor bool) (err error) {
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, useProxy bool, useSyscallMonitor bool, mode schema.OverwriteMode) (err error) {
 	debugStore, err := deps.DebugStoreBuilder(ctx)
 	if err != nil {
 		return errors.Wrap(err, "creating debug store")
@@ -256,7 +228,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	} else if (u.Scheme == "file" || u.Scheme == "") && !deps.PublishForLocalServiceRepo {
 		return errors.New("disallowed file:// ServiceRepo URL")
 	}
-	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, obID, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo, deps.PrebuildConfig)
+	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, obID, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo, deps.PrebuildConfig, mode)
 	if err != nil {
 		return errors.Wrap(err, "creating attestations")
 	}
@@ -268,29 +240,80 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 
 func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
 	t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
-	if req.Ecosystem == rebuild.Debian && strings.TrimSpace(req.Artifact) == "" {
-		return nil, api.AsStatus(codes.InvalidArgument, errors.New("debian requires artifact"))
-	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
-	if err := populateArtifact(ctx, &t, mux); err != nil {
-		// If we fail to populate artifact, the verdict has an incomplete target, which might prevent the storage of the verdict.
-		// For this reason, we don't return a nil error and expect no verdict to be written.
-		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "selecting artifact"))
-	}
 	v := schema.Verdict{
 		Target: t,
 	}
 	signer := verifier.InTotoEnvelopeSigner{EnvelopeSigner: deps.Signer}
 	a := verifier.Attestor{Store: deps.AttestationStore, Signer: signer, AllowOverwrite: deps.OverwriteAttestations}
-	if !deps.OverwriteAttestations {
-		if exists, err := a.BundleExists(ctx, t); err != nil {
-			v.Message = errors.Wrap(err, "checking existing bundle").Error()
-			return &v, nil
-		} else if exists {
+	// Check that, if one exists, the existing attestation should be overwritten.
+	if exists, err := a.BundleExists(ctx, t); err != nil {
+		v.Message = errors.Wrap(err, "checking existing bundle").Error()
+		return &v, nil
+	} else if exists {
+		allow := false
+		switch req.OverwriteMode {
+		case schema.OverwriteForce:
+			allow = true
+		case schema.OverwriteServiceUpdate:
+			r, err := deps.AttestationStore.Reader(ctx, rebuild.AttestationBundleAsset.For(t))
+			if err != nil {
+				v.Message = errors.Wrap(err, "reading existing bundle").Error()
+				return &v, nil
+			}
+			defer r.Close()
+			bundleData, err := io.ReadAll(r)
+			if err != nil {
+				v.Message = errors.Wrap(err, "reading bundle data").Error()
+				return &v, nil
+			}
+			bundle, err := attestation.NewBundle(ctx, bundleData, deps.Verifier)
+			if err != nil {
+				v.Message = errors.Wrap(err, "parsing attestation bundle").Error()
+				return &v, nil
+			}
+			rebuildAtt, err := attestation.FilterForOne[attestation.RebuildAttestation](
+				bundle,
+				attestation.WithBuildType(attestation.BuildTypeRebuildV01),
+			)
+			if err != nil {
+				v.Message = errors.Wrap(err, "overwrite denied: no rebuild attestation in bundle").Error()
+				return &v, nil
+			}
+			prevVersion := rebuildAtt.Predicate.BuildDefinition.InternalParameters.ServiceSource.Ref
+			// NOTE: We could pull the changelog from the repo at head in the future
+			// so we should keep ServiceRepo.Ref as the upper limit instead of
+			// just comparing the max changelog entry with prevVersion.
+			if !changelog.EntryOnInterval(prevVersion, deps.ServiceRepo.Ref) {
+				// NOTE: AsStatus is used here even with the immediate coercion to
+				// string with the intent of moving this logic into a Stub.
+				v.Message = api.AsStatus(codes.AlreadyExists, errors.New("overwrite denied: no service updates found")).Error()
+				return &v, nil
+			}
+			allow = true
+		case "":
+			allow = false
+		default:
+			log.Printf("Unknown OverwriteMode: %s", req.OverwriteMode)
+			allow = false
+		}
+		if !allow {
 			v.Message = api.AsStatus(codes.AlreadyExists, errors.New("conflict with existing attestation bundle")).Error()
 			return &v, nil
 		}
+		a.AllowOverwrite = true
+	} else { // Bundle doesn't exist
+		switch req.OverwriteMode {
+		case schema.OverwriteForce:
+			// Allow overwrite but empty out the value to omit from the attestation.
+			req.OverwriteMode = schema.OverwriteMode("")
+		case schema.OverwriteServiceUpdate:
+			v.Message = api.AsStatus(codes.FailedPrecondition, errors.Wrap(err, "overwrite denied: no attestation to overwrite")).Error()
+			return &v, nil
+		}
+		// NOTE: This ensures racing rebuilds won't result in multiple attestations being written.
+		a.AllowOverwrite = false
 	}
 	strategy, entry, err := getStrategy(ctx, deps, t, req.UseRepoDefinition)
 	if err != nil {
@@ -300,7 +323,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if strategy != nil {
 		v.StrategyOneof = schema.NewStrategyOneOf(strategy)
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, req.UseNetworkProxy, req.UseSyscallMonitor)
+	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, req.UseNetworkProxy, req.UseSyscallMonitor, req.OverwriteMode)
 	if err != nil {
 		v.Message = errors.Wrap(err, "executing rebuild").Error()
 		return &v, nil

@@ -51,18 +51,18 @@ func TestMakeDockerfile(t *testing.T) {
 			},
 			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
-RUN <<'EOF'
+RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  apk add git make
 EOF
-RUN <<'EOF'
+RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
  make deps ...
 EOF
-RUN cat <<'EOF' >/build
+RUN sed 's/^ //' <<'EOF' >/build
  set -eux
  make build ...
  mkdir /out && cp /src/output/foo.tgz /out/
@@ -97,13 +97,13 @@ ENTRYPOINT ["/bin/sh","/build"]
 			},
 			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
-RUN <<'EOF'
+RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  wget https://my-bucket.storage.googleapis.com/timewarp
  chmod +x timewarp
  apk add git make
 EOF
-RUN <<'EOF'
+RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  ./timewarp -port 8080 &
  while ! nc -z localhost 8080;do sleep 1;done
@@ -112,7 +112,7 @@ RUN <<'EOF'
  git checkout --force 'main'
  make deps ...
 EOF
-RUN cat <<'EOF' >/build
+RUN sed 's/^ //' <<'EOF' >/build
  set -eux
  make build ...
  mkdir /out && cp /src/output/foo.tgz /out/
@@ -148,13 +148,13 @@ ENTRYPOINT ["/bin/sh","/build"]
 			},
 			expected: `#syntax=docker/dockerfile:1.10
 FROM docker.io/library/alpine:3.19
-RUN --mount=type=secret,id=auth_header <<'EOF'
+RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
  set -eux
  apk add curl && curl -O -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp
  chmod +x timewarp
  apk add git make
 EOF
-RUN <<'EOF'
+RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  ./timewarp -port 8080 &
  while ! nc -z localhost 8080;do sleep 1;done
@@ -163,7 +163,7 @@ RUN <<'EOF'
  git checkout --force 'main'
  make deps ...
 EOF
-RUN cat <<'EOF' >/build
+RUN sed 's/^ //' <<'EOF' >/build
  set -eux
  make build ...
  mkdir /out && cp /src/output/foo.tgz /out/

@@ -8,11 +8,14 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"time"
 )
+
+var port = flag.Int("port", 8080, "port on which to serve")
 
 func consumeEvery(d time.Duration) chan<- func() {
 	var q = make(chan func(), 300)
@@ -63,7 +66,7 @@ func Handle(rw http.ResponseWriter, req *http.Request) {
 func main() {
 	flag.Parse()
 	http.HandleFunc("/", Handle)
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}
 }

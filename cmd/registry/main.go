@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -27,6 +28,7 @@ var (
 	maxSnapshots              = flag.Int("max-snapshots", 4, "Maximum number of snapshot indices to cache")
 	currentUpdateIntervalMins = flag.Int("current-update-interval-mins", 30, "Update interval for current index in minutes")
 	gitCacheURL               = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
+	port                      = flag.Int("port", 8080, "port on which to serve")
 )
 
 var indexManager *index.IndexManager
@@ -83,8 +85,8 @@ func FindRegistryCommitInit(ctx context.Context) (*cratesregistryservice.FindReg
 func main() {
 	// Register the handler
 	http.HandleFunc("/resolve", api.Handler(FindRegistryCommitInit, cratesregistryservice.FindRegistryCommit))
-	log.Println("Registry service listening on :8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	log.Printf("Registry service listening on :%d\n", *port)
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

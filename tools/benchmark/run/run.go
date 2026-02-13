@@ -13,44 +13,58 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/cache"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/google/oss-rebuild/internal/taskqueue"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/pkg/errors"
 )
 
-// ExecutionService defines the contract for services that can execute rebuilds or smoketests.
+const (
+	InferMode = schema.ExecutionMode("infer")
+)
+
+// ExecutionService defines the contract for services that can execute rebuilds.
 type ExecutionService interface {
 	RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error)
-	SmoketestPackage(ctx context.Context, req schema.SmoketestRequest) (*schema.SmoketestResponse, error)
+	Infer(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error)
 	// Warmup can be called to prepare the service, e.g., for remote Cloud Run instances.
 	Warmup(ctx context.Context)
 }
 
 // remoteExecutionService interacts with a remote benchmark execution API.
 type remoteExecutionService struct {
-	rebuildStub   api.StubT[schema.RebuildPackageRequest, schema.Verdict]
-	smoketestStub api.StubT[schema.SmoketestRequest, schema.SmoketestResponse]
-	versionStub   api.StubT[schema.VersionRequest, schema.VersionResponse]
+	rebuildStub api.StubT[schema.RebuildPackageRequest, schema.Verdict]
+	versionStub api.StubT[schema.VersionRequest, schema.VersionResponse]
 }
 
 // NewRemoteExecutionService creates a new service for remote API execution.
 func NewRemoteExecutionService(client *http.Client, baseURL *url.URL) ExecutionService {
 	return &remoteExecutionService{
-		rebuildStub:   api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, baseURL.JoinPath("rebuild")),
-		smoketestStub: api.Stub[schema.SmoketestRequest, schema.SmoketestResponse](client, baseURL.JoinPath("smoketest")),
-		versionStub:   api.Stub[schema.VersionRequest, schema.VersionResponse](client, baseURL.JoinPath("version")),
+		rebuildStub: api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, baseURL.JoinPath("rebuild")),
+		versionStub: api.Stub[schema.VersionRequest, schema.VersionResponse](client, baseURL.JoinPath("version")),
 	}
 }
 
 func (s *remoteExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
+	if req.Artifact == "" {
+		mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+		t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
+		a, err := meta.GuessArtifact(ctx, t, mux)
+		if err != nil {
+			return nil, errors.Wrap(err, "selecting artifact")
+		}
+		req.Artifact = a
+	}
 	return s.rebuildStub(ctx, req)
 }
 
-func (s *remoteExecutionService) SmoketestPackage(ctx context.Context, req schema.SmoketestRequest) (*schema.SmoketestResponse, error) {
-	return s.smoketestStub(ctx, req)
+func (s *remoteExecutionService) Infer(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (s *remoteExecutionService) Warmup(ctx context.Context) {
@@ -111,6 +125,7 @@ type attestWorker struct {
 	workerConfig
 	useSyscallMonitor bool
 	useNetworkProxy   bool
+	overwriteMode     schema.OverwriteMode
 }
 
 var _ packageWorker = &attestWorker{}
@@ -136,6 +151,7 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 			ID:                w.runID,
 			UseSyscallMonitor: w.useSyscallMonitor,
 			UseNetworkProxy:   w.useNetworkProxy,
+			OverwriteMode:     w.overwriteMode,
 		}
 		var verdict *schema.Verdict
 		var err error
@@ -173,41 +189,73 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 	}
 }
 
-type smoketestWorker struct {
+type inferenceWorker struct {
 	workerConfig
 }
 
-var _ packageWorker = &smoketestWorker{}
+var _ packageWorker = &inferenceWorker{}
 
-func (w *smoketestWorker) Setup(ctx context.Context) {
+func (w *inferenceWorker) Setup(ctx context.Context) {
 	w.execService.Warmup(ctx)
 }
 
-func (w *smoketestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
-	w.limiters[p.Ecosystem].Wait(ctx)
-	req := schema.SmoketestRequest{
-		Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-		Package:   p.Name,
-		Versions:  p.Versions,
-		ID:        w.runID,
+func (w *inferenceWorker) ProcessOne(ctx context.Context, p benchmark.Package, out chan schema.Verdict) {
+	if len(p.Artifacts) > 0 && len(p.Artifacts) != len(p.Versions) {
+		log.Fatalf("Provided artifact slice does not match versions: %s", p.Name)
 	}
-	resp, err := w.execService.SmoketestPackage(ctx, req)
-	if err != nil {
-		errMsg := err.Error()
-		for _, v := range p.Versions {
+	for i, v := range p.Versions {
+		var artifact string
+		if len(p.Artifacts) > 0 {
+			artifact = p.Artifacts[i]
+		}
+		req := schema.InferenceRequest{
+			Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+			Package:   p.Name,
+			Version:   v,
+			Artifact:  artifact,
+		}
+		var strat *schema.StrategyOneOf
+		var err error
+		// TODO: Maybe implement this rate-limiting using the internal task queue interface?
+		// Then some of these parameters can be configured there.
+		for range 3 {
+			if err := w.limiters[p.Ecosystem].Wait(ctx); err != nil {
+				log.Printf("limiter wait error: %v", err)
+				break
+			}
+			strat, err = w.execService.Infer(ctx, req)
+			if err != nil && errors.Is(err, api.ErrExhausted) {
+				w.limiters[p.Ecosystem].Backoff()
+				log.Printf("rate limited, backing off to %s", w.limiters[p.Ecosystem].CurrentPeriod())
+				continue
+			}
+			break
+		}
+		if err == nil {
+			w.limiters[p.Ecosystem].Success()
+		}
+		if err != nil {
 			out <- schema.Verdict{
 				Target: rebuild.Target{
 					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 					Package:   p.Name,
 					Version:   v,
+					Artifact:  artifact,
 				},
-				Message: errMsg,
+				Message: err.Error(),
+			}
+		} else {
+			out <- schema.Verdict{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
+					Package:   p.Name,
+					Version:   v,
+					Artifact:  artifact,
+				},
+				StrategyOneof: *strat,
+				Message:       "inference success",
 			}
 		}
-		return
-	}
-	for _, verdict := range resp.Verdicts {
-		out <- verdict
 	}
 }
 
@@ -229,6 +277,7 @@ type RunBenchOpts struct {
 	MaxConcurrency    int
 	UseSyscallMonitor bool
 	UseNetworkProxy   bool
+	OverwriteMode     schema.OverwriteMode
 	ExecService       ExecutionService
 }
 
@@ -249,15 +298,16 @@ func RunBench(ctx context.Context, set benchmark.PackageSet, opts RunBenchOpts) 
 	}
 	ex := executor{Concurrency: opts.MaxConcurrency}
 	switch opts.Mode {
-	case schema.SmoketestMode:
-		ex.Worker = &smoketestWorker{
-			workerConfig: conf,
-		}
 	case schema.AttestMode:
 		ex.Worker = &attestWorker{
 			workerConfig:      conf,
 			useSyscallMonitor: opts.UseSyscallMonitor,
 			useNetworkProxy:   opts.UseNetworkProxy,
+			overwriteMode:     opts.OverwriteMode,
+		}
+	case InferMode:
+		ex.Worker = &inferenceWorker{
+			workerConfig: conf,
 		}
 	default:
 		return nil, fmt.Errorf("invalid mode: %s", string(opts.Mode))
@@ -273,31 +323,22 @@ func RunBenchAsync(ctx context.Context, set benchmark.PackageSet, mode schema.Ex
 	if apiURL == nil {
 		return errors.New("apiURL must be provided for RunBenchAsync")
 	}
+	if mode != schema.AttestMode {
+		return errors.New("mode must be attest for RunBenchAsync")
+	}
 	for _, p := range set.Packages {
-		if mode == schema.AttestMode {
-			for i, v := range p.Versions {
-				req := schema.RebuildPackageRequest{
-					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-					Package:   p.Name,
-					Version:   v,
-					ID:        runID,
-				}
-				if len(p.Artifacts) > 0 {
-					req.Artifact = p.Artifacts[i]
-				}
-				if _, err := queue.Add(ctx, apiURL.JoinPath("rebuild").String(), req); err != nil {
-					return errors.Wrap(err, "queing rebuild task")
-				}
-			}
-		} else if mode == schema.SmoketestMode {
-			req := schema.SmoketestRequest{
+		for i, v := range p.Versions {
+			req := schema.RebuildPackageRequest{
 				Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 				Package:   p.Name,
-				Versions:  p.Versions,
+				Version:   v,
 				ID:        runID,
 			}
-			if _, err := queue.Add(ctx, apiURL.JoinPath("smoketest").String(), req); err != nil {
-				return errors.Wrap(err, "queing smoketest task")
+			if len(p.Artifacts) > 0 {
+				req.Artifact = p.Artifacts[i]
+			}
+			if _, err := queue.Add(ctx, apiURL.JoinPath("rebuild").String(), req); err != nil {
+				return errors.Wrap(err, "queing rebuild task")
 			}
 		}
 	}

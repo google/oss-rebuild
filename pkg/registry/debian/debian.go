@@ -4,7 +4,6 @@
 package debian
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/urlx"
+	"github.com/google/oss-rebuild/pkg/registry/debian/control"
 	"github.com/pkg/errors"
 )
 
@@ -112,6 +112,12 @@ func (v *Version) BinaryIndependentString() string {
 	return strings.TrimSuffix(v.String(), "+b"+v.BinaryNonMaintainerUpload())
 }
 
+// Epochless converts this version into a string, minus any epoch.
+// Helpful when constructing file names, which commonly elide the epoch.
+func (v *Version) Epochless() string {
+	return strings.TrimPrefix(v.String(), v.Epoch+":")
+}
+
 type ArtifactIdentifier struct {
 	// Name is the name of the artifact (different from the source package)
 	Name string
@@ -139,19 +145,12 @@ func ParseDebianArtifact(artifact string) (ArtifactIdentifier, error) {
 	}, nil
 }
 
-type ControlStanza struct {
-	Fields map[string][]string
-}
-
-type DSC struct {
-	Stanzas []ControlStanza
-}
-
 // Registry is a debian package registry.
 type Registry interface {
 	ArtifactURL(context.Context, string, string) (string, error)
 	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
-	DSC(context.Context, string, string, string) (string, *DSC, error)
+	DSC(context.Context, string, string, string) (string, *control.ControlFile, error)
+	BuildInfo(context.Context, string, string, *Version, string) (string, *control.BuildInfo, error)
 }
 
 // HTTPRegistry is a Registry implementation that uses the debian HTTP API.
@@ -187,77 +186,38 @@ func PoolURL(component, name, artifact string) string {
 	return u.String()
 }
 
-func BuildInfoURL(name, version, arch string) string {
+func BuildInfoURL(name string, version *Version, arch string) string {
 	u := urlx.Copy(buildinfoURL)
-	u.Path += path.Join(poolDir(name), name, fmt.Sprintf("%s_%s_%s.buildinfo", name, version, arch))
+	// The buildinfo file name does not contain the epoch.
+	u.Path += path.Join(poolDir(name), name, fmt.Sprintf("%s_%s_%s.buildinfo", name, version.Epochless(), arch))
 	return u.String()
 }
 
+func (r HTTPRegistry) BuildInfo(ctx context.Context, component, name string, version *Version, arch string) (string, *control.BuildInfo, error) {
+	// We pass the full version string to BuildInfoURL, which will handle stripping the epoch for the URL.
+	buildinfoURL := BuildInfoURL(name, version, arch)
+	log.Printf("Fetching buildinfo from %s", buildinfoURL)
+	re, err := r.get(ctx, buildinfoURL)
+	if err != nil {
+		return "", nil, errors.Wrapf(err, "failed to get .buildinfo file %s", buildinfoURL)
+	}
+	b, err := control.ParseBuildInfo(re)
+	if err != nil {
+		return "", nil, err
+	}
+	// Validate that the fetched buildinfo matches the requested version (including epoch).
+	// The file name excludes the epoch, so we must rely on the file content.
+	if b.Version != version.String() {
+		return "", nil, errors.Errorf("buildinfo version mismatch: requested %s, got %s", version, b.Version)
+	}
+	return buildinfoURL, b, nil
+}
+
 func guessDSCURL(component, name string, version *Version) string {
-	return PoolURL(component, name, fmt.Sprintf("%s_%s.dsc", name, version.String()))
+	return PoolURL(component, name, fmt.Sprintf("%s_%s.dsc", name, version.Epochless()))
 }
 
-func parseDSC(r io.ReadCloser) (*DSC, error) {
-	b := bufio.NewScanner(r)
-	if !b.Scan() {
-		return nil, errors.New("failed to scan .dsc file")
-	}
-	// Skip PGP signature header.
-	if strings.HasPrefix(b.Text(), "-----BEGIN PGP SIGNED MESSAGE-----") {
-		b.Scan()
-	}
-	d := DSC{}
-	stanza := ControlStanza{Fields: map[string][]string{}}
-	var lastField string
-	for {
-		// Check for PGP signature footer.
-		if strings.HasPrefix(b.Text(), "-----BEGIN PGP SIGNATURE-----") {
-			break
-		}
-		line := b.Text()
-		if strings.TrimSpace(line) == "" {
-			// Handle empty lines as stanza separators.
-			if len(stanza.Fields) > 0 {
-				d.Stanzas = append(d.Stanzas, stanza)
-				stanza = ControlStanza{Fields: map[string][]string{}}
-				lastField = ""
-			}
-		} else if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
-			// Handle continuation lines.
-			if lastField != "" {
-				stanza.Fields[lastField] = append(stanza.Fields[lastField], strings.TrimSpace(line))
-			} else {
-				return nil, errors.Errorf("unexpected continuation line")
-			}
-		} else {
-			// Handle new field.
-			field, value, found := strings.Cut(line, ":")
-			if !found {
-				return nil, errors.Errorf("expected new field: %v", line)
-			}
-			if _, ok := stanza.Fields[field]; ok {
-				return nil, errors.Errorf("duplicate field in stanza: %s", field)
-			}
-			stanza.Fields[field] = []string{}
-			// Skip empty first lines (start of a multiline field).
-			if strings.TrimSpace(value) != "" {
-				stanza.Fields[field] = []string{strings.TrimSpace(value)}
-			}
-			lastField = field
-		}
-		if !b.Scan() {
-			break
-		}
-	}
-	// Add the final stanza if it's not empty.
-	if len(stanza.Fields) > 0 {
-		d.Stanzas = append(d.Stanzas, stanza)
-	}
-
-	return &d, nil
-}
-
-func (r HTTPRegistry) DSC(ctx context.Context, component, name, version string) (string, *DSC, error) {
+func (r HTTPRegistry) DSC(ctx context.Context, component, name, version string) (string, *control.ControlFile, error) {
 	v, err := ParseVersion(version)
 	if err != nil {
 		return "", nil, err
@@ -267,7 +227,7 @@ func (r HTTPRegistry) DSC(ctx context.Context, component, name, version string) 
 	if err != nil {
 		return "", nil, errors.Wrapf(err, "failed to get .dsc file %s", DSCURI)
 	}
-	d, err := parseDSC(re)
+	d, err := control.Parse(re)
 	return DSCURI, d, err
 }
 

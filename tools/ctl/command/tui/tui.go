@@ -105,7 +105,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 				return nil, err
 			}
 		} else {
-			lc := rundex.NewLocalClient(localfiles.Rundex())
+			lc := rundex.NewFilesystemClient(localfiles.Rundex())
 			dex = lc
 			watcher = lc
 		}

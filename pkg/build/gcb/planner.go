@@ -134,7 +134,7 @@ var gcbDockerfileTpl = template.Must(
 		textwrap.Dedent(`
 			#syntax=docker/dockerfile:1.10
 			FROM {{.BaseImage}}
-			RUN {{if or .TimewarpAuth .ProxyAuth}}--mount=type=secret,id=auth_header {{end}}<<'EOF'
+			RUN {{if or .TimewarpAuth .ProxyAuth}}--mount=type=secret,id=auth_header {{end}}sed 's/^ //' <<'EOF' | sh
 			 set -eux
 			{{- if .UseTimewarp}}
 			 {{- $hasCurl := or (eq .OS "debian") (eq .OS "ubuntu")}}
@@ -153,7 +153,7 @@ var gcbDockerfileTpl = template.Must(
 			 {{- end}}
 			 {{.PackageManager.InstallCommand .Instructions.Requires.SystemDeps}}
 			EOF
-			RUN <<'EOF'
+			RUN sed 's/^ //' <<'EOF' | sh
 			 set -eux
 			{{- if .UseTimewarp}}
 			 ./timewarp -port 8080 &
@@ -163,7 +163,7 @@ var gcbDockerfileTpl = template.Must(
 			 {{.Instructions.Source| indent}}
 			 {{.Instructions.Deps | indent}}
 			EOF
-			RUN cat <<'EOF' >/build
+			RUN sed 's/^ //' <<'EOF' >/build
 			 set -eux
 			 {{.Instructions.Build | indent}}
 			 mkdir /out && cp /src/{{.Instructions.OutputPath}} /out/
