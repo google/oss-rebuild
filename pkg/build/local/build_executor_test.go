@@ -88,8 +88,8 @@ func TestDockerBuildExecutor(t *testing.T) {
 					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-123:/out", "test-build-123"},
 				},
 				{
-					Name: "docker",
-					Args: []string{"save", "-o", "/tmp/oss-rebuild-test-build-123/image.tgz", "test-build-123"},
+					Name: "sh",
+					Args: []string{"-c", "docker save test-build-123 | gzip > /tmp/oss-rebuild-test-build-123/image.tgz"},
 				},
 				{
 					Name: "docker",
@@ -278,8 +278,8 @@ func TestDockerBuildExecutor(t *testing.T) {
 					Args: []string{"run", "-v", "/tmp/oss-rebuild-test-build-retain-container:/out", "test-build-retain-container"},
 				},
 				{
-					Name: "docker",
-					Args: []string{"save", "-o", "/tmp/oss-rebuild-test-build-retain-container/image.tgz", "test-build-retain-container"},
+					Name: "sh",
+					Args: []string{"-c", "docker save test-build-retain-container | gzip > /tmp/oss-rebuild-test-build-retain-container/image.tgz"},
 				},
 				{
 					Name: "docker",
@@ -363,8 +363,8 @@ func TestDockerBuildExecutor(t *testing.T) {
 					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-retain-image:/out", "test-build-retain-image"},
 				},
 				{
-					Name: "docker",
-					Args: []string{"save", "-o", "/tmp/oss-rebuild-test-build-retain-image/image.tgz", "test-build-retain-image"},
+					Name: "sh",
+					Args: []string{"-c", "docker save test-build-retain-image | gzip > /tmp/oss-rebuild-test-build-retain-image/image.tgz"},
 				},
 			},
 			expectSuccess: true,
