@@ -171,22 +171,24 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		authRequired = append(authRequired, "gs://"+deps.PrebuildConfig.Bucket)
 	}
 	buildStore := rebuild.NewMixedAssetStore(map[rebuild.AssetType]rebuild.LocatableAssetStore{
-		rebuild.ContainerImageAsset: remoteMetadata,
-		rebuild.RebuildAsset:        remoteMetadata,
-		rebuild.TetragonLogAsset:    remoteMetadata,
-		rebuild.ProxyNetlogAsset:    remoteMetadata,
-		rebuild.DockerfileAsset:     deps.LocalMetadataStore,
-		rebuild.BuildInfoAsset:      deps.LocalMetadataStore,
+		rebuild.ContainerImageAsset:     remoteMetadata,
+		rebuild.PostBuildContainerAsset: remoteMetadata,
+		rebuild.RebuildAsset:            remoteMetadata,
+		rebuild.TetragonLogAsset:        remoteMetadata,
+		rebuild.ProxyNetlogAsset:        remoteMetadata,
+		rebuild.DockerfileAsset:         deps.LocalMetadataStore,
+		rebuild.BuildInfoAsset:          deps.LocalMetadataStore,
 	})
 	in := rebuild.Input{
 		Target:   t,
 		Strategy: strategy,
 	}
 	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
-		BuildID:           obID,
-		UseTimewarp:       meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
-		UseNetworkProxy:   useProxy,
-		UseSyscallMonitor: useSyscallMonitor,
+		BuildID:            obID,
+		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
+		UseNetworkProxy:    useProxy,
+		UseSyscallMonitor:  useSyscallMonitor,
+		SaveContainerImage: true,
 		Resources: build.Resources{
 			AssetStore:       buildStore,
 			ToolURLs:         toolURLs,
