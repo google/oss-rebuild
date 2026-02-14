@@ -38,6 +38,8 @@ type Options struct {
 	UseSyscallMonitor bool
 	// Resources configures URLs and authentication for build resources
 	Resources Resources
+	// SaveContainerImage saves the pre-build container image
+	SaveContainerImage bool
 }
 
 // PlanOptions configures plan generation behavior and resources
@@ -50,6 +52,8 @@ type PlanOptions struct {
 	UseSyscallMonitor bool
 	// Resources configures URLs and authentication for build resources
 	Resources Resources
+	// SaveContainerImage saves the pre-build container image
+	SaveContainerImage bool
 }
 
 // CancelPolicy determines how build cancellation is handled

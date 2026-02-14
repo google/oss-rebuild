@@ -66,8 +66,9 @@ func runLocal(ctx context.Context, executor build.Executor, prebuildConfig rebui
 	assets := rebuild.NewFilesystemAssetStore(memfs.New())
 	h, err := executor.Start(ctx, inp, build.Options{
 		// Use a constant BuildID to make sure we overwrite the container each run
-		BuildID:     containerName,
-		UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
+		BuildID:            containerName,
+		UseTimewarp:        meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
+		SaveContainerImage: true,
 		Resources: build.Resources{
 			AssetStore: assets,
 			ToolURLs: map[build.ToolType]string{

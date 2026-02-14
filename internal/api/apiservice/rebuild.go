@@ -183,10 +183,11 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		Strategy: strategy,
 	}
 	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
-		BuildID:           obID,
-		UseTimewarp:       meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
-		UseNetworkProxy:   useProxy,
-		UseSyscallMonitor: useSyscallMonitor,
+		BuildID:            obID,
+		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
+		UseNetworkProxy:    useProxy,
+		UseSyscallMonitor:  useSyscallMonitor,
+		SaveContainerImage: true,
 		Resources: build.Resources{
 			AssetStore:       buildStore,
 			ToolURLs:         toolURLs,
