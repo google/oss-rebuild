@@ -10,12 +10,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -92,12 +95,21 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 		// No support for non-trivial opts aside from NoCheckout, ReferenceName, and SingleBranch.
 		return nil, errors.New("Unsupported opt")
 	}
-	sf, ok := s.(*filesystem.Storage)
-	if !ok {
-		// Must have access to Filesystem to populate from cache.
-		return nil, errors.New("Unsupported Storer")
+	// Determine extraction target: use the filesystem directly for
+	// filesystem.Storage, otherwise stage via a temp directory.
+	var extractFS billy.Filesystem
+	var needsStaging bool
+	if sf, ok := s.(*filesystem.Storage); ok {
+		extractFS = sf.Filesystem()
+	} else {
+		needsStaging = true
+		tmpDir, err := os.MkdirTemp("", "gitcache-clone-*")
+		if err != nil {
+			return nil, errors.Wrap(err, "creating staging directory")
+		}
+		defer os.RemoveAll(tmpDir)
+		extractFS = osfs.New(tmpDir)
 	}
-	sfs := sf.Filesystem()
 	// Use ref if specified in CloneOptions
 	var ref string
 	if opt.ReferenceName != "" {
@@ -121,8 +133,15 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 	}
 	defer gr.Close()
 	tr := tar.NewReader(gr)
-	if err := archive.ExtractTar(tr, sfs, archive.ExtractOptions{SubDir: git.GitDirName}); err != nil {
+	if err := archive.ExtractTar(tr, extractFS, archive.ExtractOptions{SubDir: git.GitDirName}); err != nil {
 		return nil, errors.Wrap(err, "tar extract error")
+	}
+	// Copy staged data into the target storer if needed.
+	if needsStaging {
+		stagingStorer := filesystem.NewStorage(extractFS, cache.NewObjectLRUDefault())
+		if err := gitx.CopyStorer(s, stagingStorer); err != nil {
+			return nil, errors.Wrap(err, "copying from staging to storage")
+		}
 	}
 	repo, err := git.Open(s, fs)
 	if err != nil {
