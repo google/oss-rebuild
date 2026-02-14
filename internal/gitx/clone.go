@@ -256,7 +256,33 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 			return nil, errors.Wrap(err, "checking out worktree")
 		}
 	}
+	// If submodules requested, init and update them
+	if fs != nil && !opt.NoCheckout && opt.RecurseSubmodules != git.NoRecurseSubmodules {
+		if err := UpdateSubmodules(ctx, repo, opt.RecurseSubmodules); err != nil {
+			return nil, errors.Wrap(err, "updating submodules")
+		}
+	}
 	return repo, nil
 }
 
 var _ CloneFunc = NativeClone
+
+// UpdateSubmodules initializes and updates submodules for the given repository.
+// If the repository has no submodules, this is a no-op.
+func UpdateSubmodules(ctx context.Context, repo *git.Repository, recurse git.SubmoduleRescursivity) error {
+	wt, err := repo.Worktree()
+	if err != nil {
+		return errors.Wrap(err, "getting worktree")
+	}
+	subs, err := wt.Submodules()
+	if err != nil {
+		return errors.Wrap(err, "reading submodules")
+	}
+	if len(subs) == 0 {
+		return nil
+	}
+	return subs.UpdateContext(ctx, &git.SubmoduleUpdateOptions{
+		Init:              true,
+		RecurseSubmodules: recurse,
+	})
+}
