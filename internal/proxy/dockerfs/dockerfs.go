@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -34,8 +35,17 @@ type Filesystem struct {
 	Container string
 }
 
+func (c Filesystem) ReadFile(path string) ([]byte, error) {
+	log.Printf("ReadFile for path: %s", path)
+	f, err := c.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	return f.(*File).Contents, nil
+}
+
 // Open returns a File from a Docker container.
-func (c Filesystem) Open(path string) (*File, error) {
+func (c Filesystem) Open(path string) (fs.File, error) {
 	log.Printf("Open for path: %s", path)
 	if !filepath.IsAbs(path) {
 		return nil, fs.ErrInvalid
@@ -125,7 +135,11 @@ func (c Filesystem) OpenAndResolve(path string) (*File, error) {
 			return nil, err
 		}
 		if fi.Mode()&fs.ModeSymlink == 0 {
-			return c.Open(path)
+			f, err := c.Open(path)
+			if err != nil {
+				return nil, err
+			}
+			return f.(*File), nil
 		}
 		linkPath := fi.LinkTarget
 		if !filepath.IsAbs(linkPath) {
@@ -178,7 +192,11 @@ func (fi FileInfo) IsDir() bool { return fi.Mode().IsDir() }
 func (fi FileInfo) Sys() any { return fi }
 
 // Resolve attempts to resolve the symlink of the provided file.
-func (c Filesystem) Resolve(f *File) (*File, error) {
+func (c Filesystem) Resolve(ff fs.File) (fs.File, error) {
+	f, ok := ff.(*File)
+	if !ok {
+		return nil, fmt.Errorf("unknown file type: %v", f)
+	}
 	log.Printf("Resolve for file: %s", f.Path)
 	s, err := f.Stat()
 	if err != nil {
