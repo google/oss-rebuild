@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"github.com/google/oss-rebuild/tools/ctl/command/agentexport"
+	"github.com/google/oss-rebuild/tools/ctl/command/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/command/export"
 	"github.com/google/oss-rebuild/tools/ctl/command/getgradlegav"
 	"github.com/google/oss-rebuild/tools/ctl/command/getresults"
@@ -39,6 +40,7 @@ func init() {
 	rootCmd.AddCommand(runagent.Command())
 	rootCmd.AddCommand(localagent.Command())
 	rootCmd.AddCommand(runagentbenchmark.Command())
+	rootCmd.AddCommand(benchmark.Command())
 	// Reading data
 	rootCmd.AddCommand(tui.Command())
 	rootCmd.AddCommand(getresults.Command())
