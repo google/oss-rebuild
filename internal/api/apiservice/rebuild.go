@@ -140,7 +140,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 	return strategy, entry, nil
 }
 
-func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, useProxy bool, useSyscallMonitor bool, mode schema.OverwriteMode) (err error) {
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, useProxy bool, useSyscallMonitor bool, timeout time.Duration, mode schema.OverwriteMode) (err error) {
 	debugStore, err := deps.DebugStoreBuilder(ctx)
 	if err != nil {
 		return errors.Wrap(err, "creating debug store")
@@ -197,6 +197,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	}
 	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
 		BuildID:            obID,
+		Timeout:            timeout,
 		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
 		UseNetworkProxy:    useProxy,
 		UseSyscallMonitor:  useSyscallMonitor,
@@ -337,7 +338,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if strategy != nil {
 		v.StrategyOneof = schema.NewStrategyOneOf(strategy)
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, req.UseNetworkProxy, req.UseSyscallMonitor, req.OverwriteMode)
+	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, req.UseNetworkProxy, req.UseSyscallMonitor, req.BuildTimeout, req.OverwriteMode)
 	if err != nil {
 		v.Message = errors.Wrap(err, "executing rebuild").Error()
 		return &v, nil

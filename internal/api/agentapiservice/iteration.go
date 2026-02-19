@@ -119,6 +119,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		BuildID:            obliviousID,
 		UseTimewarp:        meta.AllRebuilders[input.Target.Ecosystem].UsesTimewarp(input),
 		SaveContainerImage: true,
+		// TODO: Should we set a Timeout?
 		Resources: build.Resources{
 			AssetStore:       store,
 			ToolURLs:         toolURLs,
