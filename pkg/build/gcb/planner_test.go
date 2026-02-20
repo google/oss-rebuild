@@ -5,11 +5,13 @@ package gcb
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"google.golang.org/api/cloudbuild/v1"
@@ -342,6 +344,97 @@ func TestGCBPlannerNoSaveWhenFlagFalse(t *testing.T) {
 		if step.Script != "" && strings.Contains(step.Script, "docker save") {
 			t.Error("Save step should not be present when SaveContainerImage is false")
 		}
+	}
+}
+
+func TestGCBPlannerBuildScriptWithSyscallMonitor(t *testing.T) {
+	ctx := context.Background()
+
+	config := PlannerConfig{
+		Project:        "test-project",
+		ServiceAccount: "test@test.iam.gserviceaccount.com",
+	}
+	planner := NewPlanner(config)
+
+	baseImageConfig := build.BaseImageConfig{
+		Default: "docker.io/library/alpine:3.19",
+	}
+
+	input := rebuild.Input{
+		Target: rebuild.Target{
+			Ecosystem: rebuild.NPM,
+			Package:   "test-package",
+			Version:   "1.0.0",
+			Artifact:  "test-package-1.0.0.tgz",
+		},
+		Strategy: &rebuild.ManualStrategy{
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
+			Deps:       "npm install",
+			Build:      "npm run build",
+			OutputPath: "dist/test-package-1.0.0.tgz",
+		},
+	}
+
+	opts := build.PlanOptions{
+		UseSyscallMonitor: true,
+		Resources: build.Resources{
+			BaseImageConfig: baseImageConfig,
+			AssetStore:      rebuild.NewFilesystemAssetStore(memfs.New()),
+		},
+	}
+
+	plan, err := planner.GeneratePlan(ctx, input, opts)
+	if err != nil {
+		t.Fatalf("GeneratePlan failed: %v", err)
+	}
+
+	var policyLines string
+	for i, policy := range tetragonPoliciesJSON {
+		policyLines += fmt.Sprintf("\n\t\t\techo '%s' > \"/workspace/tetragon/policy_%d.json\"", policy, i)
+	}
+	policyLines = strings.TrimLeft(policyLines, "\n\t ")
+
+	want := textwrap.Dedent(fmt.Sprintf(`
+			#!/usr/bin/env bash
+			set -eux
+			echo 'Starting rebuild for {Ecosystem:npm Package:test-package Version:1.0.0 Artifact:test-package-1.0.0.tgz}'
+			touch /workspace/tetragon.jsonl
+			mkdir /workspace/tetragon/
+			%s
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
+			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
+			cat <<'EOS' | docker buildx build --tag=img -
+			#syntax=docker/dockerfile:1.10
+			FROM docker.io/library/alpine:3.19
+			RUN sed 's/^ //' <<'EOF' | sh
+			 set -eux
+			 apk add git node npm
+			EOF
+			RUN sed 's/^ //' <<'EOF' | sh
+			 set -eux
+			 mkdir /src && cd /src
+			 git clone github.com/example .
+			 git checkout --force 'main'
+			 npm install
+			EOF
+			RUN sed 's/^ //' <<'EOF' >/build
+			 set -eux
+			 npm run build
+			 mkdir /out && cp /src/dist/test-package-1.0.0.tgz /out/
+			EOF
+			WORKDIR "/src"
+			ENTRYPOINT ["/bin/sh","/build"]
+
+			EOS
+			docker run --name=container img
+			docker stop -t 30 tetragon
+			`, policyLines))[1:]
+
+	if diff := cmp.Diff(want, plan.Steps[0].Script); diff != "" {
+		t.Errorf("build script mismatch (-want +got):\n%s", diff)
 	}
 }
 
