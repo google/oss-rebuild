@@ -54,6 +54,8 @@ spec:
         isNamespacePID: true
         values:
         - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
   - call: "security_mmap_file"
     syscall: false
     args:
@@ -75,6 +77,8 @@ spec:
         isNamespacePID: true
         values:
         - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
   - call: "security_path_truncate"
     syscall: false
     args:
@@ -92,6 +96,8 @@ spec:
         isNamespacePID: true
         values:
         - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
 `,
 }
 
@@ -165,27 +171,51 @@ var gcbStandardBuildTpl = template.Must(
 			set -eux
 			echo 'Starting rebuild for {{.TargetStr}}'
 			{{- if .UseSyscallMonitor}}
-			touch /workspace/tetragon.jsonl
 			mkdir -p /workspace/tetragon/
+			{{- if .TetragonSysgraphURL}}
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+			{{- else}}
+			touch /workspace/tetragon.jsonl
 			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
+			{{- end}}
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 			TETRAGON_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
+			{{- end}}
+			{{- if or .TimewarpAuth .TetragonSysgraphAuth}}
+			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
+			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
+			{{- end}}
+			{{- if .TetragonSysgraphURL}}
+			curl -O {{if .TetragonSysgraphAuth}}-H @/tmp/auth_header {{end}}{{.TetragonSysgraphURL}}
+			chmod +x tetragon_sysgraph
+			docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
+			docker logs --follow sysgraph &
+			SYSGRAPH_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' sysgraph)
+			{{- end}}
+			{{- if .UseSyscallMonitor}}
+			{{- if not .TetragonSysgraphURL}}
+			SYSGRAPH_PID=0
+			{{- end}}
+			PROXY_PID=0
 			{{- range $i, $policy := .SyscallPolicies}}
 			cat > /workspace/tetragon/policy_{{$i}}.yaml <<EOPOLICY
 			{{$policy}}EOPOLICY
 			docker exec tetragon tetra tracingpolicy add /workspace/tetragon/policy_{{$i}}.yaml
 			{{- end}}
 			{{- end}}
-			{{- if .TimewarpAuth}}
-			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
-			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
-			{{- end}}
 			cat <<'EOS' | docker buildx build {{if .TimewarpAuth}}--secret id=auth_header,src=/tmp/auth_header {{end}}--tag=img -
 			{{.Dockerfile}}
 			EOS
 			docker run {{if .Privileged}}--privileged -v=/var/run/docker.sock:/var/run/docker.sock {{end}}--name=container img
 			{{- if .UseSyscallMonitor}}
+			echo '=== Build finished, signaling sysgraph to drain ==='
+			{{- if .TetragonSysgraphURL}}
+			docker kill -s USR1 sysgraph || true
+			docker wait sysgraph || true
+			docker stop -t 5 tetragon
+			{{- else}}
 			docker stop -t 30 tetragon
+			{{- end}}
 			{{- end}}
 			`)[1:], // remove leading newline
 	))
@@ -239,7 +269,7 @@ var gcbProxyBuildTpl = template.Must(
 			#!/usr/bin/env bash
 			set -eux
 			echo 'Starting rebuild for {{.TargetStr}}'
-			{{- if .ProxyAuth}}
+			{{- if or .ProxyAuth .TetragonSysgraphAuth}}
 			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 			{{- end}}
@@ -278,11 +308,26 @@ var gcbProxyBuildTpl = template.Must(
 				iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':{{.TLSPort}}
 			'
 			{{- if .UseSyscallMonitor}}
-			touch /workspace/tetragon.jsonl
 			mkdir -p /workspace/tetragon/
+			{{- if .TetragonSysgraphURL}}
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+			{{- else}}
+			touch /workspace/tetragon.jsonl
 			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
+			{{- end}}
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 			TETRAGON_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
+			{{- if .TetragonSysgraphURL}}
+			curl -O {{if .TetragonSysgraphAuth}}-H @/tmp/auth_header {{end}}{{.TetragonSysgraphURL}}
+			chmod +x tetragon_sysgraph
+			docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
+			docker logs --follow sysgraph &
+			SYSGRAPH_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' sysgraph)
+			PROXY_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' proxy)
+			{{- else}}
+			SYSGRAPH_PID=0
+			PROXY_PID=0
+			{{- end}}
 			{{- range $i, $policy := .SyscallPolicies}}
 			cat > /workspace/tetragon/policy_{{$i}}.yaml <<EOPOLICY
 			{{$policy}}EOPOLICY
@@ -301,7 +346,14 @@ var gcbProxyBuildTpl = template.Must(
 				docker run {{if .Privileged}}--privileged -e DOCKER_HOST {{end}}--name=container img
 			'
 			{{- if .UseSyscallMonitor}}
+			echo '=== Build finished, signaling sysgraph to drain ==='
+			{{- if .TetragonSysgraphURL}}
+			docker kill -s USR1 sysgraph || true
+			docker wait sysgraph || true
+			docker stop -t 5 tetragon
+			{{- else}}
 			docker stop -t 30 tetragon
+			{{- end}}
 			{{- end}}
 			curl http://proxy:{{.CtrlPort}}/summary > /workspace/netlog.json
 			`)[1:], // remove leading newline
@@ -483,6 +535,10 @@ func (p *Planner) generateStandardBuildScript(target rebuild.Target, dockerfile 
 	if err != nil {
 		return "", errors.Wrap(err, "failed to process timewarp URL")
 	}
+	tetragonSysgraphURL, tetragonSysgraphAuth, err := p.getToolURL(build.TetragonSysgraphTool, opts)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to process tetragon_sysgraph URL")
+	}
 	var privileged bool
 	if reqs.Privileged {
 		if p.allowPrivileged {
@@ -493,13 +549,15 @@ func (p *Planner) generateStandardBuildScript(target rebuild.Target, dockerfile 
 	}
 	var buf bytes.Buffer
 	if err := gcbStandardBuildTpl.Execute(&buf, map[string]any{
-		"TargetStr":           fmt.Sprintf("%+v", target),
-		"Dockerfile":          dockerfile,
-		"Privileged":          privileged,
-		"UseSyscallMonitor":   opts.UseSyscallMonitor,
-		"SyscallPolicies":     tetragonPoliciesYaml,
-		"TimewarpAuth":        timewarpAuth,
-		"ServiceAccountEmail": serviceAccountEmail,
+		"TargetStr":            fmt.Sprintf("%+v", target),
+		"Dockerfile":           dockerfile,
+		"Privileged":           privileged,
+		"UseSyscallMonitor":    opts.UseSyscallMonitor,
+		"SyscallPolicies":      tetragonPoliciesYaml,
+		"TimewarpAuth":         timewarpAuth,
+		"ServiceAccountEmail":  serviceAccountEmail,
+		"TetragonSysgraphURL":  tetragonSysgraphURL,
+		"TetragonSysgraphAuth": tetragonSysgraphAuth,
 	}); err != nil {
 		return "", errors.Wrap(err, "failed to execute standard build template")
 	}
@@ -517,6 +575,10 @@ func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile str
 	if err != nil {
 		return "", errors.Wrap(err, "failed to process timewarp URL")
 	}
+	tetragonSysgraphURL, tetragonSysgraphAuth, err := p.getToolURL(build.TetragonSysgraphTool, opts)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to process tetragon_sysgraph URL")
+	}
 	var privileged bool
 	if reqs.Privileged {
 		if p.allowPrivileged {
@@ -527,21 +589,23 @@ func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile str
 	}
 	var buf bytes.Buffer
 	if err := gcbProxyBuildTpl.Execute(&buf, map[string]any{
-		"TargetStr":           fmt.Sprintf("%+v", target),
-		"Dockerfile":          dockerfile,
-		"Privileged":          privileged,
-		"UseSyscallMonitor":   opts.UseSyscallMonitor,
-		"SyscallPolicies":     tetragonPoliciesYaml,
-		"TimewarpAuth":        timewarpAuth,
-		"ProxyURL":            proxyURL,
-		"ProxyAuth":           proxyAuth,
-		"ServiceAccountEmail": serviceAccountEmail,
-		"User":                "proxyu",
-		"HTTPPort":            "3128",
-		"TLSPort":             "3129",
-		"CtrlPort":            "3127",
-		"DockerPort":          "3130",
-		"CertEnvVars":         []string{"PIP_CERT", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE", "NIX_SSL_CERT_FILE"},
+		"TargetStr":            fmt.Sprintf("%+v", target),
+		"Dockerfile":           dockerfile,
+		"Privileged":           privileged,
+		"UseSyscallMonitor":    opts.UseSyscallMonitor,
+		"SyscallPolicies":      tetragonPoliciesYaml,
+		"TimewarpAuth":         timewarpAuth,
+		"ProxyURL":             proxyURL,
+		"ProxyAuth":            proxyAuth,
+		"ServiceAccountEmail":  serviceAccountEmail,
+		"User":                 "proxyu",
+		"HTTPPort":             "3128",
+		"TLSPort":              "3129",
+		"CtrlPort":             "3127",
+		"DockerPort":           "3130",
+		"CertEnvVars":          []string{"PIP_CERT", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE", "NIX_SSL_CERT_FILE"},
+		"TetragonSysgraphURL":  tetragonSysgraphURL,
+		"TetragonSysgraphAuth": tetragonSysgraphAuth,
 	}); err != nil {
 		return "", errors.Wrap(err, "failed to execute proxy build template")
 	}
@@ -560,7 +624,11 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 			assetTypes = append(assetTypes, rebuild.ContainerImageAsset)
 		}
 		if opts.UseSyscallMonitor {
-			assetTypes = append(assetTypes, rebuild.TetragonLogAsset)
+			if _, exists := opts.Resources.ToolURLs[build.TetragonSysgraphTool]; exists {
+				assetTypes = append(assetTypes, rebuild.SysgraphAsset)
+			} else {
+				assetTypes = append(assetTypes, rebuild.TetragonLogAsset)
+			}
 		}
 		if opts.UseNetworkProxy {
 			assetTypes = append(assetTypes, rebuild.ProxyNetlogAsset)
@@ -592,6 +660,11 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 			case rebuild.ProxyNetlogAsset:
 				uploads = append(uploads, upload{
 					From: "/workspace/netlog.json",
+					To:   url.String(),
+				})
+			case rebuild.SysgraphAsset:
+				uploads = append(uploads, upload{
+					From: "/workspace/sysgraph.zip",
 					To:   url.String(),
 				})
 			case rebuild.PostBuildContainerAsset:

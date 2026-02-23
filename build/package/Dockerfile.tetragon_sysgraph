@@ -1,0 +1,8 @@
+FROM golang:1.25-alpine AS binary
+ARG DEBUG=false
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w')" -gcflags="-l=4" ./cmd/tetragon_sysgraph
+FROM scratch
+COPY --from=binary /src/tetragon_sysgraph /
+ENTRYPOINT ["/tetragon_sysgraph"]
