@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -46,24 +47,23 @@ func main() {
 
 	ctx := context.Background()
 
-	// Set up IR writer.
+	conv := tetragon.NewConverter()
+	// Convert events using BufferedDiskWriter (buffered file I/O, bounded memory).
+	var reader sgir.Reader
 	irDir, err := os.MkdirTemp("", "sysgraph-ir-*")
 	if err != nil {
 		log.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(irDir)
-
 	diskFmt := &sgir.DiskFormat{BasePath: irDir, Format: sgir.PBDelim}
-	conv := tetragon.NewConverter()
-
-	// Convert events.
+	reader = diskFmt
+	bw := sgir.NewBufferedDiskWriter(irDir, sgir.PBDelim)
 	if *server != "" {
 		// Set up signal handling for graceful teardown.
 		//   SIGUSR1: build is done. Record the current timestamp and keep
 		//     consuming events until we see one at or after that time.
 		//   SIGTERM: stop immediately (fallback).
 		var drainAfter atomic.Pointer[time.Time]
-
 		streamCtx, streamCancel := context.WithCancel(ctx)
 		defer streamCancel()
 		sigCh := make(chan os.Signal, 1)
@@ -79,8 +79,7 @@ func main() {
 				streamCancel()
 			}
 		}()
-
-		if err := streamEvents(streamCtx, *server, conv, diskFmt, &drainAfter); err != nil {
+		if err := streamEvents(streamCtx, *server, conv, bw, &drainAfter); err != nil {
 			log.Fatalf("Failed to stream events: %v", err)
 		}
 	} else {
@@ -89,11 +88,13 @@ func main() {
 			log.Fatalf("Failed to parse tetragon JSONL: %v", err)
 		}
 		log.Printf("Parsed %d tetragon events", len(events))
-		if err := conv.Convert(ctx, events, diskFmt); err != nil {
+		if err := conv.Convert(ctx, events, bw); err != nil {
 			log.Fatalf("Failed to convert events: %v", err)
 		}
 	}
-
+	if err := bw.Close(); err != nil {
+		log.Fatalf("Failed to close buffered writer: %v", err)
+	}
 	// Build sysgraph from IR.
 	// Use background context since streamCtx may be cancelled.
 	sgDir, err := os.MkdirTemp("", "sysgraph-out-*")
@@ -105,7 +106,7 @@ func main() {
 	builder := &sgir.Builder{
 		ConcurrencyLimit: 8,
 	}
-	if err := builder.ToSysGraph(ctx, *graphID, diskFmt, sgDir); err != nil {
+	if err := builder.ToSysGraph(ctx, *graphID, reader, sgDir); err != nil {
 		log.Fatalf("Failed to build sysgraph: %v", err)
 	}
 
@@ -176,6 +177,26 @@ func streamEvents(ctx context.Context, addr string, conv *tetragon.Converter, w 
 		}
 	}()
 
+	// Convert events directly into the in-memory writer.
+	const writeBufSize = 100_000
+	writeCh := make(chan *tetragonpb.GetEventsResponse, writeBufSize)
+	var writeCount atomic.Int64
+	var writerErr error
+	var writerWg sync.WaitGroup
+	writerWg.Add(1)
+	go func() {
+		defer writerWg.Done()
+		for event := range writeCh {
+			if err := conv.ConvertEvent(ctx, event, w); err != nil {
+				writerErr = fmt.Errorf("converting event %d: %w", writeCount.Load(), err)
+				for range writeCh {
+				}
+				return
+			}
+			writeCount.Add(1)
+		}
+	}()
+
 	// Process events from the buffer. If drainAfter is set (SIGUSR1 received),
 	// wait until we see an event at or after that timestamp, then continue
 	// processing until there is a period of stragglerTimeout duration with no
@@ -196,9 +217,6 @@ loop:
 			if !ok {
 				break loop
 			}
-			if err := conv.ConvertEvent(ctx, event, w); err != nil {
-				return fmt.Errorf("converting event %d: %w", processCount, err)
-			}
 			processCount++
 			var eventTime time.Time
 			if t := event.GetTime(); t != nil {
@@ -209,8 +227,9 @@ loop:
 			}
 			if processCount%10000 == 0 {
 				buffered := readCount.Load() - int64(processCount)
-				log.Printf("Processed %d events (buffered: ~%d, latest: %v)...", processCount, buffered, latestEventTime.Format(time.RFC3339))
+				log.Printf("Processed %d events (buffered: ~%d, written: %d, latest: %v)...", processCount, buffered, writeCount.Load(), latestEventTime.Format(time.RFC3339))
 			}
+			writeCh <- event
 			target := drainAfter.Load()
 			if target == nil {
 				continue
@@ -233,10 +252,21 @@ loop:
 			}
 		case <-stragglerCh:
 			log.Printf("No stragglers for %v, stopping after %d events", stragglerTimeout, processCount)
+			close(writeCh)
+			writerWg.Wait()
+			if writerErr != nil {
+				return writerErr
+			}
+			log.Printf("Writer finished: %d events written", writeCount.Load())
 			return nil
 		}
 	}
-
+	// Main loop exited. Wait for writer to finish.
+	close(writeCh)
+	writerWg.Wait()
+	if writerErr != nil {
+		return writerErr
+	}
 	if readerErr != nil {
 		if ctx.Err() != nil {
 			log.Printf("Stream stopped (signal received) after %d read, %d processed", readCount.Load(), processCount)
@@ -244,7 +274,7 @@ loop:
 			log.Printf("Stream ended with error after %d read, %d processed: %v", readCount.Load(), processCount, readerErr)
 		}
 	}
-	log.Printf("Processed %d total events", processCount)
+	log.Printf("Processed %d total events, %d written", processCount, writeCount.Load())
 	return nil
 }
 
