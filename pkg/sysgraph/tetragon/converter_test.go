@@ -4,6 +4,7 @@
 package tetragon
 
 import (
+	"sort"
 	"testing"
 	"time"
 
@@ -417,6 +418,111 @@ func TestConvertSecurityPathTruncate(t *testing.T) {
 			}
 			if re.GetResource().GetFileInfo().GetPath() != "/tmp/output.log" {
 				t.Errorf("Path = %q, want %q", re.GetResource().GetFileInfo().GetPath(), "/tmp/output.log")
+			}
+			return
+		}
+	}
+	t.Error("expected ResourceEvent")
+}
+
+func TestConvertSecurityPathRename(t *testing.T) {
+	ts := tpb.New(time.Unix(510, 0))
+	events := []*tetragonpb.GetEventsResponse{
+		{
+			Event: &tetragonpb.GetEventsResponse_ProcessKprobe{
+				ProcessKprobe: &tetragonpb.ProcessKprobe{
+					Process: &tetragonpb.Process{
+						ExecId:    "rename-exec-id",
+						Binary:    "/bin/mv",
+						StartTime: ts,
+					},
+					FunctionName: "security_path_rename",
+					Args: []*tetragonpb.KprobeArgument{
+						{Arg: &tetragonpb.KprobeArgument_PathArg{
+							PathArg: &tetragonpb.KprobePath{Mount: "/", Path: "src"},
+						}},
+						{Arg: &tetragonpb.KprobeArgument_PathArg{
+							PathArg: &tetragonpb.KprobePath{Path: "old.txt"},
+						}},
+						{Arg: &tetragonpb.KprobeArgument_PathArg{
+							PathArg: &tetragonpb.KprobePath{Mount: "/", Path: "dst"},
+						}},
+						{Arg: &tetragonpb.KprobeArgument_PathArg{
+							PathArg: &tetragonpb.KprobePath{Path: "new.txt"},
+						}},
+					},
+				},
+			},
+			Time: ts,
+		},
+	}
+
+	mem := &sgir.InMemoryFormat{}
+	conv := NewConverter()
+	if err := conv.Convert(t.Context(), events, mem); err != nil {
+		t.Fatalf("Convert() error: %v", err)
+	}
+
+	actionEvents := mem.EventMap["rename-exec-id"]
+	var paths []string
+	for _, e := range actionEvents.Events {
+		if e.HasResourceEvent() {
+			re := e.GetResourceEvent()
+			if re.GetEventType() != sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT {
+				t.Errorf("EventType = %v, want OUTPUT", re.GetEventType())
+			}
+			paths = append(paths, re.GetResource().GetFileInfo().GetPath())
+		}
+	}
+	wantPaths := []string{"/src/old.txt", "/dst/new.txt"}
+	sort.Strings(paths)
+	sort.Strings(wantPaths)
+	if diff := cmp.Diff(wantPaths, paths); diff != "" {
+		t.Errorf("paths mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestConvertSecurityPathUnlink(t *testing.T) {
+	ts := tpb.New(time.Unix(520, 0))
+	events := []*tetragonpb.GetEventsResponse{
+		{
+			Event: &tetragonpb.GetEventsResponse_ProcessKprobe{
+				ProcessKprobe: &tetragonpb.ProcessKprobe{
+					Process: &tetragonpb.Process{
+						ExecId:    "unlink-exec-id",
+						Binary:    "/bin/rm",
+						StartTime: ts,
+					},
+					FunctionName: "security_path_unlink",
+					Args: []*tetragonpb.KprobeArgument{
+						{Arg: &tetragonpb.KprobeArgument_PathArg{
+							PathArg: &tetragonpb.KprobePath{Mount: "/", Path: "tmp"},
+						}},
+						{Arg: &tetragonpb.KprobeArgument_PathArg{
+							PathArg: &tetragonpb.KprobePath{Path: "garbage.o"},
+						}},
+					},
+				},
+			},
+			Time: ts,
+		},
+	}
+
+	mem := &sgir.InMemoryFormat{}
+	conv := NewConverter()
+	if err := conv.Convert(t.Context(), events, mem); err != nil {
+		t.Fatalf("Convert() error: %v", err)
+	}
+
+	actionEvents := mem.EventMap["unlink-exec-id"]
+	for _, e := range actionEvents.Events {
+		if e.HasResourceEvent() {
+			re := e.GetResourceEvent()
+			if re.GetEventType() != sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT {
+				t.Errorf("EventType = %v, want OUTPUT", re.GetEventType())
+			}
+			if re.GetResource().GetFileInfo().GetPath() != "/tmp/garbage.o" {
+				t.Errorf("Path = %q, want %q", re.GetResource().GetFileInfo().GetPath(), "/tmp/garbage.o")
 			}
 			return
 		}
