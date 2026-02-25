@@ -35,6 +35,7 @@ type Executor struct {
 	outputBufferSize   int
 	builderName        string
 	terminateOnTimeout bool
+	extraTags          map[string]string
 	activeBuilds       syncx.Map[string, *gcbHandle]
 }
 
@@ -68,6 +69,7 @@ func NewExecutor(config ExecutorConfig) (*Executor, error) {
 		outputBufferSize:   outputBufferSize,
 		builderName:        config.BuilderName,
 		terminateOnTimeout: config.TerminateOnTimeout,
+		extraTags:          config.ExtraTags,
 		activeBuilds:       syncx.Map[string, *gcbHandle]{},
 	}, nil
 }
@@ -83,6 +85,7 @@ type ExecutorConfig struct {
 	OutputBufferSize   int
 	BuilderName        string
 	TerminateOnTimeout bool
+	ExtraTags          map[string]string
 }
 
 // Start implements build.Executor
@@ -104,6 +107,9 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 	}
 	// Make the Cloud Build "Build" request
 	gcbBuild := e.makeBuild(input.Target, plan)
+	if opts.Timeout > 0 {
+		gcbBuild.Timeout = fmt.Sprintf("%ds", int(opts.Timeout.Seconds()))
+	}
 	// Create a buffered pipe for streaming output
 	pipe := bufiox.NewBufferedPipe(bufiox.NewLineBuffer(e.outputBufferSize))
 	handle := &gcbHandle{
@@ -281,16 +287,20 @@ func (e *Executor) makeBuild(t rebuild.Target, plan *Plan) *cloudbuild.Build {
 			Name: e.privatePool.Name,
 		}
 	}
+	tags := []string{
+		buildTag("ecosystem", string(t.Ecosystem)),
+		buildTag("package", t.Package),
+		buildTag("version", t.Version),
+	}
+	for k, v := range e.extraTags {
+		tags = append(tags, buildTag(k, v))
+	}
 	return &cloudbuild.Build{
 		Steps:          plan.Steps,
 		Options:        buildOptions,
 		LogsBucket:     e.logsBucket,
 		ServiceAccount: e.serviceAccount,
-		Tags: []string{
-			buildTag("ecosystem", string(t.Ecosystem)),
-			buildTag("package", t.Package),
-			buildTag("version", t.Version),
-		},
+		Tags:           tags,
 	}
 }
 

@@ -100,6 +100,7 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 		ServiceAccount: *buildServiceAccount,
 		LogsBucket:     *logsBucket,
 		Client:         nil, // Defined depending on gcbPrivatePoolName
+		ExtraTags:      map[string]string{"analyzer": "network"},
 	}
 	if *gcbPrivatePoolName != "" {
 		pool := &gcb.PrivatePoolConfig{
