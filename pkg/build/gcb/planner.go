@@ -34,6 +34,18 @@ kind: TracingPolicy
 metadata:
   name: "sysgraph"
 spec:
+  lists:
+  - name: "pipe"
+    values:
+    - "sys_pipe"
+    - "sys_pipe2"
+    type: "syscalls"
+  - name: "dup"
+    values:
+    - "sys_dup"
+    - "sys_dup2"
+    - "sys_dup3"
+    type: "syscalls"
   kprobes:
   - call: "security_file_permission"
     syscall: false
@@ -130,6 +142,55 @@ spec:
       type: "path"
     - index: 1
       type: "dentry"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
+  - call: "list:dup"
+    syscall: true
+    args:
+    - index: 0
+      type: "int"
+      label: "old_fd"
+    - index: 1
+      type: "int"
+      label: "new_fd"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
+      matchArgs:
+      - index: 1
+        operator: Equal
+        values:
+        - "0"
+        - "1"
+  - call: "list:pipe"
+    syscall: true
+    args:
+    - index: 0
+      type: "uint64"
+      label: "fd[2]"
     selectors:
     - matchNamespaces:
       - namespace: Pid
