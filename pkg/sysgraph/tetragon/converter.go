@@ -236,6 +236,10 @@ func convertProcessKprobe(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb
 		return convertSecurityMmapFile(actionID, ts, kprobe)
 	case "security_path_truncate":
 		return convertSecurityPathTruncate(actionID, ts, kprobe)
+	case "security_path_rename":
+		return convertSecurityPathRename(actionID, ts, kprobe)
+	case "security_path_unlink":
+		return convertSecurityPathUnlink(actionID, ts, kprobe)
 	default:
 		log.Printf("unknown kprobe function name: %q", kprobe.GetFunctionName())
 		return nil
@@ -274,6 +278,44 @@ func convertSecurityPathTruncate(actionID string, ts *tpb.Timestamp, kprobe *tet
 		return nil
 	}
 	filePath := resolveFilePath(args[0].GetPathArg().GetMount(), args[0].GetPathArg().GetPath())
+	if filePath == "" {
+		return nil
+	}
+	return buildResourceEvent(actionID, ts, filePath, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT)
+}
+
+func convertSecurityPathRename(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+	args := kprobe.GetArgs()
+	if len(args) < 4 || args[0].GetPathArg() == nil || args[1].GetPathArg() == nil || args[2].GetPathArg() == nil || args[3].GetPathArg() == nil {
+		return nil
+	}
+	oldDir := resolveFilePath(args[0].GetPathArg().GetMount(), args[0].GetPathArg().GetPath())
+	oldName := args[1].GetPathArg().GetPath()
+	newDir := resolveFilePath(args[2].GetPathArg().GetMount(), args[2].GetPathArg().GetPath())
+	newName := args[3].GetPathArg().GetPath()
+	oldPath := filepath.Join(oldDir, oldName)
+	newPath := filepath.Join(newDir, newName)
+	if oldPath == "" && newPath == "" {
+		return nil
+	}
+	var events []*sgevpb.SysGraphEvent
+	if oldPath != "" {
+		events = append(events, buildResourceEvent(actionID, ts, oldPath, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT)...)
+	}
+	if newPath != "" {
+		events = append(events, buildResourceEvent(actionID, ts, newPath, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT)...)
+	}
+	return events
+}
+
+func convertSecurityPathUnlink(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+	args := kprobe.GetArgs()
+	if len(args) < 2 || args[0].GetPathArg() == nil || args[1].GetPathArg() == nil {
+		return nil
+	}
+	dir := resolveFilePath(args[0].GetPathArg().GetMount(), args[0].GetPathArg().GetPath())
+	name := args[1].GetPathArg().GetPath()
+	filePath := filepath.Join(dir, name)
 	if filePath == "" {
 		return nil
 	}

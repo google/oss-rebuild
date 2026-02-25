@@ -98,6 +98,52 @@ spec:
         - $TETRAGON_PID
         - $SYSGRAPH_PID
         - $PROXY_PID
+  - call: "security_path_rename"
+    syscall: false
+    args:
+    - index: 0
+      type: "path"
+    - index: 1
+      type: "dentry"
+    - index: 2
+      type: "path"
+    - index: 3
+      type: "dentry"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
+  - call: "security_path_unlink"
+    syscall: false
+    args:
+    - index: 0
+      type: "path"
+    - index: 1
+      type: "dentry"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
 `,
 }
 
