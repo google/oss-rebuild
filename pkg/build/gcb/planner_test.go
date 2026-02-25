@@ -406,7 +406,7 @@ func TestGCBPlannerBuildScriptWithSyscallMonitor(t *testing.T) {
 			mkdir -p /workspace/tetragon/
 			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
-			TETRAGON_PID=$(docker inspect --format '{{.State.Pid}}' tetragon)
+			TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
 			`)[1:] + policyLines + textwrap.Dedent(`
 			cat <<'EOS' | docker buildx build --tag=img -
 			#syntax=docker/dockerfile:1.10
