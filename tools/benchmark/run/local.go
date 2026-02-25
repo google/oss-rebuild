@@ -37,6 +37,7 @@ type localExecutionService struct {
 	logsink            io.Writer
 	gitCache           *gitcache.Client
 	cratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	dockerConfig       local.DockerRunExecutorConfig
 }
 
 type LocalExecutionServiceConfig struct {
@@ -45,10 +46,11 @@ type LocalExecutionServiceConfig struct {
 	LogSink            io.Writer
 	GitCache           *gitcache.Client
 	CratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	DockerConfig       local.DockerRunExecutorConfig
 }
 
 func NewLocalExecutionService(config LocalExecutionServiceConfig) ExecutionService {
-	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink, gitCache: config.GitCache, cratesRegistryStub: config.CratesRegistryStub}
+	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink, gitCache: config.GitCache, cratesRegistryStub: config.CratesRegistryStub, dockerConfig: config.DockerConfig}
 }
 
 func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
@@ -77,7 +79,7 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		return verdict, nil
 	}
 	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
-	if err := executeBuild(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}); err != nil {
+	if err := executeBuild(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}, s.dockerConfig); err != nil {
 		verdict.Message = err.Error()
 	} else if err := compare(ctx, t, s.store, mux); err != nil {
 		verdict.Message = err.Error()
@@ -102,7 +104,7 @@ func RebuildWithStrategy(ctx context.Context, executor ExecutionService, t rebui
 	}
 	verdict := &schema.Verdict{Target: t}
 	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
-	if err := executeBuild(ctx, t, strategy, local.store, buildOpts{PrebuildURL: local.prebuildURL, LogSink: local.logsink}); err != nil {
+	if err := executeBuild(ctx, t, strategy, local.store, buildOpts{PrebuildURL: local.prebuildURL, LogSink: local.logsink}, local.dockerConfig); err != nil {
 		verdict.Message = err.Error()
 	} else if err := compare(ctx, t, local.store, mux); err != nil {
 		verdict.Message = err.Error()
@@ -158,11 +160,8 @@ type buildOpts struct {
 	LogSink     io.Writer
 }
 
-func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts) error {
-	executor, err := local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
-		Planner:     local.NewDockerRunPlanner(),
-		MaxParallel: 1,
-	})
+func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts, config local.DockerRunExecutorConfig) error {
+	executor, err := local.NewDockerRunExecutor(config)
 	if err != nil {
 		return errors.Wrap(err, "failed to create executor")
 	}
