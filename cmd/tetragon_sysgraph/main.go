@@ -181,26 +181,62 @@ func streamEvents(ctx context.Context, addr string, conv *tetragon.Converter, w 
 	}()
 
 	// Process events from the buffer. If drainAfter is set (SIGUSR1 received),
-	// stop once we see an event at or after that timestamp.
+	// wait until we see an event at or after that timestamp, then continue
+	// processing until there is a period of stragglerTimeout duration with no
+	// qualifying events received.
+	// NOTE: Events may arrive out of order as the independent queues within
+	// tetragon are drained simultaneously. We don't have the data necessary to
+	// know for sure whether all events we care about have arrived but this
+	// straggler approach should effectively approximate it.
+	const stragglerTimeout = 5 * time.Second
 	var processCount int
 	var latestEventTime time.Time
-	for event := range eventCh {
-		if err := conv.ConvertEvent(ctx, event, w); err != nil {
-			return fmt.Errorf("converting event %d: %w", processCount, err)
-		}
-		processCount++
-		if t := event.GetTime(); t != nil {
-			if et := t.AsTime(); et.After(latestEventTime) {
-				latestEventTime = et
+	var stragglerTimer *time.Timer
+	var stragglerCh <-chan time.Time // nil until drain target reached
+loop:
+	for {
+		select {
+		case event, ok := <-eventCh:
+			if !ok {
+				break loop
 			}
-		}
-		if processCount%100_000 == 0 {
-			buffered := readCount.Load() - int64(processCount)
-			log.Printf("Processed %d events (buffered: ~%d, latest: %v)...", processCount, buffered, latestEventTime.Format(time.RFC3339))
-		}
-		if target := drainAfter.Load(); target != nil && !latestEventTime.IsZero() && !latestEventTime.Before(*target) {
-			log.Printf("Events caught up to drain target (latest=%v, target=%v), stopping after %d events",
-				latestEventTime.Format(time.RFC3339), target.Format(time.RFC3339), processCount)
+			if err := conv.ConvertEvent(ctx, event, w); err != nil {
+				return fmt.Errorf("converting event %d: %w", processCount, err)
+			}
+			processCount++
+			var eventTime time.Time
+			if t := event.GetTime(); t != nil {
+				eventTime = t.AsTime()
+				if eventTime.After(latestEventTime) {
+					latestEventTime = eventTime
+				}
+			}
+			if processCount%100_000 == 0 {
+				buffered := readCount.Load() - int64(processCount)
+				log.Printf("Processed %d events (buffered: ~%d, latest: %v)...", processCount, buffered, latestEventTime.Format(time.RFC3339))
+			}
+			target := drainAfter.Load()
+			if target == nil {
+				continue
+			}
+			if stragglerTimer == nil && !latestEventTime.IsZero() && !latestEventTime.Before(*target) {
+				// First event at or after target -> start the straggler timer.
+				stragglerTimer = time.NewTimer(stragglerTimeout)
+				stragglerCh = stragglerTimer.C
+				log.Printf("Events reached drain target (latest=%v, target=%v), waiting %v for stragglers...",
+					latestEventTime.Format(time.RFC3339), target.Format(time.RFC3339), stragglerTimeout)
+			} else if stragglerTimer != nil && !eventTime.IsZero() && eventTime.Before(*target) {
+				// Got a straggler (event before target) -> reset the timer.
+				if !stragglerTimer.Stop() {
+					select {
+					case <-stragglerTimer.C:
+					default:
+					}
+				}
+				stragglerTimer.Reset(stragglerTimeout)
+			}
+		case <-stragglerCh:
+			log.Printf("No stragglers for %v, stopping after %d events", stragglerTimeout, processCount)
 			return nil
 		}
 	}
