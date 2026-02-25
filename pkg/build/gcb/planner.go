@@ -37,16 +37,11 @@ spec:
   kprobes:
   - call: "security_file_permission"
     syscall: false
-    return: true
     args:
     - index: 0
       type: "file" # (struct file *) used for getting the path
     - index: 1
       type: "int" # 0x04 is MAY_READ, 0x02 is MAY_WRITE
-    returnArg:
-      index: 0
-      type: "int"
-    returnArgAction: "Post"
     selectors:
     - matchNamespaces:
       - namespace: Pid
@@ -61,7 +56,6 @@ spec:
         - $TETRAGON_PID
   - call: "security_mmap_file"
     syscall: false
-    return: true
     args:
     - index: 0
       type: "file" # (struct file *) used for getting the path
@@ -69,10 +63,6 @@ spec:
       type: "uint64" # the prot flags PROT_READ(0x01), PROT_WRITE(0x02), PROT_EXEC(0x04)
     - index: 2
       type: "uint32" # the mmap flags (i.e. MAP_SHARED, ...)
-    returnArg:
-      index: 0
-      type: "int"
-    returnArgAction: "Post"
     selectors:
     - matchNamespaces:
       - namespace: Pid
@@ -87,14 +77,9 @@ spec:
         - $TETRAGON_PID
   - call: "security_path_truncate"
     syscall: false
-    return: true
     args:
     - index: 0
       type: "path" # (struct path *) used for getting the path
-    returnArg:
-      index: 0
-      type: "int"
-    returnArgAction: "Post"
     selectors:
     - matchNamespaces:
       - namespace: Pid
