@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	tetragonpb "github.com/cilium/tetragon/api/v1/tetragon"
@@ -233,7 +234,8 @@ func convertProcessKprobe(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb
 		return nil
 	}
 
-	switch kprobe.GetFunctionName() {
+	fn := trimSyscallPrefix(kprobe.GetFunctionName())
+	switch fn {
 	case "security_file_permission":
 		return convertSecurityFilePermission(actionID, ts, kprobe)
 	case "security_mmap_file":
@@ -244,6 +246,10 @@ func convertProcessKprobe(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb
 		return convertSecurityPathRename(actionID, ts, kprobe)
 	case "security_path_unlink":
 		return convertSecurityPathUnlink(actionID, ts, kprobe)
+	case "sys_pipe", "sys_pipe2":
+		return convertPipeSyscall(actionID, ts, kprobe)
+	case "sys_dup", "sys_dup2", "sys_dup3":
+		return convertDupSyscall(actionID, ts, kprobe)
 	default:
 		log.Printf("unknown kprobe function name: %q", kprobe.GetFunctionName())
 		return nil
@@ -326,6 +332,39 @@ func convertSecurityPathUnlink(actionID string, ts *tpb.Timestamp, kprobe *tetra
 	return buildResourceEvent(actionID, ts, filePath, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT)
 }
 
+func convertPipeSyscall(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+	return []*sgevpb.SysGraphEvent{
+		sgevpb.SysGraphEvent_builder{
+			ActionId:  proto.String(actionID),
+			Timestamp: ts,
+			PipeEvent: sgevpb.PipeEvent_builder{}.Build(),
+		}.Build(),
+	}
+}
+
+func convertDupSyscall(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+	args := kprobe.GetArgs()
+	if len(args) < 2 {
+		return nil
+	}
+	oldFd := args[0].GetIntArg()
+	newFd := args[1].GetIntArg()
+	parentExecID := kprobe.GetProcess().GetParentExecId()
+
+	return []*sgevpb.SysGraphEvent{
+		sgevpb.SysGraphEvent_builder{
+			ActionId:  proto.String(actionID),
+			Timestamp: ts,
+			DupEvent: sgevpb.DupEvent_builder{
+				OldFd:        proto.Int32(oldFd),
+				NewFd:        proto.Int32(newFd),
+				ParentExecId: proto.String(parentExecID),
+				Timestamp:    kprobe.GetProcess().GetStartTime(),
+			}.Build(),
+		}.Build(),
+	}
+}
+
 func convertProcessTracepoint(actionID string, ts *tpb.Timestamp, tp *tetragonpb.ProcessTracepoint) []*sgevpb.SysGraphEvent {
 	if actionID == "" {
 		return nil
@@ -351,6 +390,24 @@ func buildResourceEvent(actionID string, ts *tpb.Timestamp, filePath string, eve
 			}.Build(),
 		}.Build(),
 	}
+}
+
+// syscallPrefixes are architecture-specific prefixes that the kernel prepends
+// to syscall entry points. Tetragon reports the full symbol name, so we strip
+// these to normalize function names across architectures.
+var syscallPrefixes = []string{
+	"__x64_",   // amd64
+	"__arm64_", // arm64
+	"__ia32_",  // i386
+}
+
+func trimSyscallPrefix(fn string) string {
+	for _, p := range syscallPrefixes {
+		if strings.HasPrefix(fn, p) {
+			return fn[len(p):]
+		}
+	}
+	return fn
 }
 
 // resolveFilePath combines mount and path into a full file path.

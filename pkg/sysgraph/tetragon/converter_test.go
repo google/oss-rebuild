@@ -530,6 +530,151 @@ func TestConvertSecurityPathUnlink(t *testing.T) {
 	t.Error("expected ResourceEvent")
 }
 
+func TestConvertPipeSyscall(t *testing.T) {
+	ts := tpb.New(time.Unix(550, 0))
+	for _, fn := range []string{"sys_pipe", "sys_pipe2", "__x64_sys_pipe", "__arm64_sys_pipe2"} {
+		t.Run(fn, func(t *testing.T) {
+			events := []*tetragonpb.GetEventsResponse{
+				{
+					Event: &tetragonpb.GetEventsResponse_ProcessKprobe{
+						ProcessKprobe: &tetragonpb.ProcessKprobe{
+							Process: &tetragonpb.Process{
+								ExecId:       "pipe-parent",
+								Binary:       "/bin/sh",
+								StartTime:    ts,
+								ParentExecId: "grandparent",
+							},
+							FunctionName: fn,
+							Args: []*tetragonpb.KprobeArgument{
+								{Arg: &tetragonpb.KprobeArgument_UintArg{UintArg: 0x00030004}},
+							},
+						},
+					},
+					Time: ts,
+				},
+			}
+
+			mem := &sgir.InMemoryFormat{}
+			conv := NewConverter()
+			if err := conv.Convert(t.Context(), events, mem); err != nil {
+				t.Fatalf("Convert() error: %v", err)
+			}
+
+			actionEvents, ok := mem.EventMap["pipe-parent"]
+			if !ok {
+				t.Fatal("expected events for pipe-parent")
+			}
+			var foundPipe bool
+			for _, e := range actionEvents.Events {
+				if e.HasPipeEvent() {
+					foundPipe = true
+				}
+			}
+			if !foundPipe {
+				t.Error("expected PipeEvent")
+			}
+		})
+	}
+}
+
+func TestConvertDupSyscall(t *testing.T) {
+	for _, fn := range []string{"sys_dup2", "__x64_sys_dup2"} {
+		processStart := tpb.New(time.Unix(555, 0))
+		eventTime := tpb.New(time.Unix(560, 0))
+		t.Run(fn, func(t *testing.T) {
+			events := []*tetragonpb.GetEventsResponse{
+				{
+					Event: &tetragonpb.GetEventsResponse_ProcessKprobe{
+						ProcessKprobe: &tetragonpb.ProcessKprobe{
+							Process: &tetragonpb.Process{
+								ExecId:       "dup-child",
+								Binary:       "/usr/bin/cat",
+								StartTime:    processStart,
+								ParentExecId: "dup-parent",
+							},
+							FunctionName: fn,
+							Args: []*tetragonpb.KprobeArgument{
+								{Arg: &tetragonpb.KprobeArgument_IntArg{IntArg: 5}}, // old_fd
+								{Arg: &tetragonpb.KprobeArgument_IntArg{IntArg: 1}}, // new_fd (stdout)
+							},
+						},
+					},
+					Time: eventTime,
+				},
+			}
+
+			mem := &sgir.InMemoryFormat{}
+			conv := NewConverter()
+			if err := conv.Convert(t.Context(), events, mem); err != nil {
+				t.Fatalf("Convert() error: %v", err)
+			}
+
+			actionEvents, ok := mem.EventMap["dup-child"]
+			if !ok {
+				t.Fatal("expected events for dup-child")
+			}
+			var foundDup bool
+			for _, e := range actionEvents.Events {
+				if e.HasDupEvent() {
+					foundDup = true
+					de := e.GetDupEvent()
+					if de.GetOldFd() != 5 {
+						t.Errorf("OldFd = %d, want 5", de.GetOldFd())
+					}
+					if de.GetNewFd() != 1 {
+						t.Errorf("NewFd = %d, want 1", de.GetNewFd())
+					}
+					if de.GetParentExecId() != "dup-parent" {
+						t.Errorf("ParentExecId = %q, want %q", de.GetParentExecId(), "dup-parent")
+					}
+					if de.GetTimestamp().AsTime() != processStart.AsTime() {
+						t.Errorf("Timestamp = %v, want process start time %v", de.GetTimestamp().AsTime(), processStart.AsTime())
+					}
+				}
+			}
+			if !foundDup {
+				t.Error("expected DupEvent")
+			}
+		})
+	}
+}
+
+func TestConvertDupSyscallMissingArgs(t *testing.T) {
+	ts := tpb.New(time.Unix(570, 0))
+	events := []*tetragonpb.GetEventsResponse{
+		{
+			Event: &tetragonpb.GetEventsResponse_ProcessKprobe{
+				ProcessKprobe: &tetragonpb.ProcessKprobe{
+					Process: &tetragonpb.Process{
+						ExecId:    "dup-no-args",
+						Binary:    "/usr/bin/cat",
+						StartTime: ts,
+					},
+					FunctionName: "sys_dup2",
+					Args:         []*tetragonpb.KprobeArgument{}, // missing args
+				},
+			},
+			Time: ts,
+		},
+	}
+
+	mem := &sgir.InMemoryFormat{}
+	conv := NewConverter()
+	if err := conv.Convert(t.Context(), events, mem); err != nil {
+		t.Fatalf("Convert() error: %v", err)
+	}
+
+	actionEvents, ok := mem.EventMap["dup-no-args"]
+	if !ok {
+		t.Fatal("expected events for dup-no-args")
+	}
+	for _, e := range actionEvents.Events {
+		if e.HasDupEvent() {
+			t.Error("unexpected DupEvent with missing args")
+		}
+	}
+}
+
 func TestConvertParentProcessAccounting(t *testing.T) {
 	ts := tpb.New(time.Unix(100, 0))
 
