@@ -19,6 +19,7 @@ import (
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	benchrun "github.com/google/oss-rebuild/tools/benchmark/run"
@@ -34,6 +35,7 @@ const analyzeMode = schema.ExecutionMode("analyze")
 type Config struct {
 	API               string
 	Local             bool
+	MemoryLimit       string
 	BootstrapBucket   string
 	BootstrapVersion  string
 	GitCacheURL       string
@@ -74,6 +76,9 @@ func (c Config) Validate() error {
 	}
 	if c.Local && mode == analyzeMode {
 		return errors.New("analyze mode is not supported in local execution")
+	}
+	if !c.Local && c.MemoryLimit != "" {
+		return errors.New("memory is only supported in local mode")
 	}
 	if !c.Local && c.GitCacheURL != "" {
 		return errors.New("git-cache-url is only supported in local mode")
@@ -150,6 +155,10 @@ func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder,
 		PrebuildURL: prebuildURL,
 		Store:       store,
 		LogSink:     deps.IO.Out,
+		DockerConfig: local.DockerRunExecutorConfig{
+			MaxParallel: 1,
+			MemoryLimit: cfg.MemoryLimit,
+		},
 	}
 	if cfg.GitCacheURL != "" {
 		u, err := url.Parse(cfg.GitCacheURL)
@@ -280,6 +289,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.StringVar(&cfg.API, "api", "", "OSS Rebuild API endpoint URI")
 	set.BoolVar(&cfg.Local, "local", false, "run locally instead of through the API")
+	set.StringVar(&cfg.MemoryLimit, "memory", "", "memory limit to be passed to docker (local mode only)")
 	set.StringVar(&cfg.BootstrapBucket, "bootstrap-bucket", "", "the GCS bucket where bootstrap tools are stored (required for local mode)")
 	set.StringVar(&cfg.BootstrapVersion, "bootstrap-version", "", "the version of bootstrap tools to use (required for local mode)")
 	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos (local mode only)")
