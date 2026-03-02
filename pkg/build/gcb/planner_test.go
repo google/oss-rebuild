@@ -234,8 +234,9 @@ func TestGCBPlannerGeneratePlan(t *testing.T) {
 	}
 
 	opts := build.PlanOptions{
-		UseTimewarp:     false,
-		UseNetworkProxy: false,
+		UseTimewarp:        false,
+		UseNetworkProxy:    false,
+		SaveContainerImage: true,
 		Resources: build.Resources{
 			BaseImageConfig: baseImageConfig,
 		},
@@ -289,5 +290,55 @@ func TestGCBPlannerGeneratePlan(t *testing.T) {
 	}
 	if !foundUploadStep {
 		t.Error("Expected upload step not found")
+	}
+}
+
+func TestGCBPlannerNoSaveWhenFlagFalse(t *testing.T) {
+	ctx := context.Background()
+
+	config := PlannerConfig{
+		Project:        "test-project",
+		ServiceAccount: "test@test.iam.gserviceaccount.com",
+	}
+	planner := NewPlanner(config)
+
+	baseImageConfig := build.BaseImageConfig{
+		Default: "docker.io/library/alpine:3.19",
+	}
+
+	input := rebuild.Input{
+		Target: rebuild.Target{
+			Ecosystem: rebuild.NPM,
+			Package:   "test-package",
+			Version:   "1.0.0",
+			Artifact:  "test-package-1.0.0.tgz",
+		},
+		Strategy: &rebuild.ManualStrategy{
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
+			Deps:       "npm install",
+			Build:      "npm run build",
+			OutputPath: "dist/test-package-1.0.0.tgz",
+		},
+	}
+
+	opts := build.PlanOptions{
+		SaveContainerImage: false,
+		Resources: build.Resources{
+			BaseImageConfig: baseImageConfig,
+		},
+	}
+
+	plan, err := planner.GeneratePlan(ctx, input, opts)
+	if err != nil {
+		t.Fatalf("GeneratePlan failed: %v", err)
+	}
+
+	for _, step := range plan.Steps {
+		if step.Script != "" && strings.Contains(step.Script, "docker save") {
+			t.Error("Save step should not be present when SaveContainerImage is false")
+		}
 	}
 }
