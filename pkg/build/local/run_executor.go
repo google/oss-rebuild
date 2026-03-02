@@ -168,6 +168,14 @@ func (e *DockerRunExecutor) Close(ctx context.Context) error {
 
 // executeBuild runs the actual Docker run process
 func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandle, plan *DockerRunPlan, t rebuild.Target, opts build.Options) {
+	// TODO: Add support for SaveContainerImage in DockerRunExecutor.
+	if opts.SaveContainerImage {
+		handle.updateStatus(build.BuildStateCompleted)
+		handle.setResult(build.Result{
+			Error: errors.New("SaveContainerImage not yet supported for DockerRunExecutor"),
+		})
+		return
+	}
 	defer e.activeBuilds.Delete(handle.id)
 	defer handle.output.Close()
 	// Acquire semaphore slot
@@ -198,7 +206,7 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	}()
 	// Compose command args
 	runArgs := []string{"run"}
-	if !e.retainContainer {
+	if !e.retainContainer && !opts.SavePostBuildContainer {
 		runArgs = append(runArgs, "--rm")
 	}
 	runArgs = append(runArgs, "--name", handle.id) // Use BuildID as container name
@@ -249,6 +257,13 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	buildErr := e.cmdExecutor.Execute(ctx, CommandOptions{
 		Output: runWriter,
 	}, e.dockerCmd, runArgs...)
+	// Export post-build container if requested.
+	if opts.SavePostBuildContainer {
+		postBuildPath := filepath.Join(hostOutputPath, string(rebuild.PostBuildContainerAsset))
+		if err := e.exportContainer(ctx, handle.id, postBuildPath); err != nil {
+			log.Printf("Failed to export post-build container: %v", err)
+		}
+	}
 	// Upload assets to asset store
 	// NOTE: Upload failures don't fail the build
 	if opts.Resources.AssetStore != nil {
@@ -260,6 +275,19 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		}
 		if err := e.uploadContent(ctx, opts.Resources.AssetStore, rebuild.DebugLogsAsset.For(t), outbuf.Bytes()); err != nil {
 			log.Printf("Failed to upload debug logs: %v", err)
+		}
+		// Upload post-build container export if it exists.
+		postBuildPath := filepath.Join(hostOutputPath, string(rebuild.PostBuildContainerAsset))
+		if _, err := os.Stat(postBuildPath); err == nil {
+			if err := e.uploadFile(ctx, opts.Resources.AssetStore, rebuild.PostBuildContainerAsset.For(t), postBuildPath); err != nil {
+				log.Printf("Failed to upload post-build container: %v", err)
+			}
+		}
+	}
+	// Clean up post-build container if it was retained for export.
+	if opts.SavePostBuildContainer && !e.retainContainer {
+		if rmErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "rm", handle.id); rmErr != nil {
+			log.Printf("Failed to remove container %s: %v", handle.id, rmErr)
 		}
 	}
 	handle.updateStatus(build.BuildStateCompleted)
@@ -297,4 +325,10 @@ func (e *DockerRunExecutor) uploadContent(ctx context.Context, store rebuild.Ass
 		return errors.Wrap(err, "failed to write content to asset store")
 	}
 	return nil
+}
+
+// exportContainer exports the container filesystem as a gzipped tarball.
+func (e *DockerRunExecutor) exportContainer(ctx context.Context, containerName, outputPath string) error {
+	return e.cmdExecutor.Execute(ctx, CommandOptions{}, "sh", "-c",
+		fmt.Sprintf("%s export %s | gzip > %s", e.dockerCmd, containerName, outputPath))
 }
