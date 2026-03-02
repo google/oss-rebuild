@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/attestation"
@@ -79,13 +80,21 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		if deps.BuildDefRepo.Dir != "." {
 			sparseDirs = append(sparseDirs, deps.BuildDefRepo.Dir)
 		}
-		defs, err := builddef.NewBuildDefinitionSetFromGit(&builddef.GitBuildDefinitionSetOptions{
-			CloneOptions: git.CloneOptions{
-				URL:           deps.BuildDefRepo.Repo,
-				ReferenceName: plumbing.ReferenceName(deps.BuildDefRepo.Ref),
-				Depth:         1,
-				NoCheckout:    true,
-			},
+		cloneOpts := git.CloneOptions{
+			URL:           deps.BuildDefRepo.Repo,
+			ReferenceName: plumbing.ReferenceName(deps.BuildDefRepo.Ref),
+			Depth:         1,
+			NoCheckout:    true,
+		}
+		if gitx.IsSSMURL(cloneOpts.URL) {
+			auth, err := gitx.GCPBasicAuth(ctx)
+			if err != nil {
+				return nil, nil, errors.Wrap(err, "getting GCP auth for SSM repo")
+			}
+			cloneOpts.Auth = auth
+		}
+		defs, err := builddef.NewBuildDefinitionSetFromGit(ctx, &builddef.GitBuildDefinitionSetOptions{
+			CloneOptions: cloneOpts,
 			RelativePath: deps.BuildDefRepo.Dir,
 			// TODO: Limit this further to only the target's path we want.
 			SparseCheckoutDirs: sparseDirs,
