@@ -32,7 +32,7 @@ type upload struct {
 var tetragonPoliciesYaml = []string{`apiVersion: cilium.io/v1alpha1
 kind: TracingPolicy
 metadata:
-  name: "process-and-memory"
+  name: "sysgraph"
 spec:
   kprobes:
   - call: "security_file_permission"
@@ -102,31 +102,6 @@ spec:
         values:
         - "host_ns"
       matchPIDs:
-      - operator: NotIn
-        followForks: true
-        isNamespacePID: true
-        values:
-        - $TETRAGON_PID
-`,
-	`apiVersion: cilium.io/v1alpha1
-kind: TracingPolicy
-metadata:
-  name: "file-open-at"
-spec:
-  tracepoints:
-  - subsystem: syscalls
-    event: sys_enter_openat
-    args:
-    - index: 5
-      type: int32
-    - index: 6
-      type: string
-    - index: 7
-      type: uint32
-    - index: 8
-      type: uint32
-    selectors:
-    - matchPIDs:
       - operator: NotIn
         followForks: true
         isNamespacePID: true
