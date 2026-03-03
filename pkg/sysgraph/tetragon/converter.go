@@ -13,7 +13,7 @@ import (
 	"sync"
 
 	tetragonpb "github.com/cilium/tetragon/api/v1/tetragon"
-	sgevpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
+	sgpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
 	"github.com/google/oss-rebuild/pkg/sysgraph/sgir"
 	"github.com/google/shlex"
 	"google.golang.org/protobuf/proto"
@@ -70,7 +70,7 @@ func (c *Converter) ConvertEvent(ctx context.Context, event *tetragonpb.GetEvent
 }
 
 func (c *Converter) convertEvent(ctx context.Context, event *tetragonpb.GetEventsResponse, w sgir.Writer) error {
-	var bgEvents []*sgevpb.SysGraphEvent
+	var bgEvents []*sgpb.SysGraphEvent
 	var actionID string
 
 	switch ev := event.Event.(type) {
@@ -93,10 +93,10 @@ func (c *Converter) convertEvent(ctx context.Context, event *tetragonpb.GetEvent
 			ts = event.GetTime()
 		}
 		if actionID != "" {
-			bgEvents = append(bgEvents, sgevpb.SysGraphEvent_builder{
+			bgEvents = append(bgEvents, sgpb.SysGraphEvent_builder{
 				ActionId:  proto.String(actionID),
 				Timestamp: ts,
-				EndEvent: sgevpb.EndEvent_builder{
+				EndEvent: sgpb.EndEvent_builder{
 					Timestamp: ts,
 					Status:    proto.Uint32(ev.ProcessExit.GetStatus()),
 					Signal:    proto.String(ev.ProcessExit.GetSignal()),
@@ -142,7 +142,7 @@ func (c *Converter) convertEvent(ctx context.Context, event *tetragonpb.GetEvent
 
 // eventsFromProcess generates Start, Exec, Metadata, and Child events for a given process.
 // It uses internal state to ensure these are only emitted once per process.
-func (c *Converter) eventsFromProcess(process *tetragonpb.Process) []*sgevpb.SysGraphEvent {
+func (c *Converter) eventsFromProcess(process *tetragonpb.Process) []*sgpb.SysGraphEvent {
 	if process == nil || process.GetExecId() == "" {
 		return nil
 	}
@@ -160,19 +160,19 @@ func (c *Converter) eventsFromProcess(process *tetragonpb.Process) []*sgevpb.Sys
 	ts := process.GetStartTime()
 	argv := buildArgv(process.GetBinary(), process.GetArguments())
 
-	events := []*sgevpb.SysGraphEvent{
-		sgevpb.SysGraphEvent_builder{
+	events := []*sgpb.SysGraphEvent{
+		sgpb.SysGraphEvent_builder{
 			ActionId:  proto.String(execID),
 			Timestamp: ts,
-			ExecEvent: sgevpb.ExecEvent_builder{
-				Executable: sgevpb.Resource_builder{
-					Type: sgevpb.ResourceType_RESOURCE_TYPE_FILE.Enum(),
-					FileInfo: sgevpb.FileInfo_builder{
+			ExecEvent: sgpb.ExecEvent_builder{
+				Executable: sgpb.Resource_builder{
+					Type: sgpb.ResourceType_RESOURCE_TYPE_FILE.Enum(),
+					FileInfo: sgpb.FileInfo_builder{
 						Path: proto.String(process.GetBinary()),
-						Type: sgevpb.FileType_FILE_TYPE_REGULAR.Enum(),
+						Type: sgpb.FileType_FILE_TYPE_REGULAR.Enum(),
 					}.Build(),
 				}.Build(),
-				ExecInfo: sgevpb.ExecInfo_builder{
+				ExecInfo: sgpb.ExecInfo_builder{
 					Argv:             argv,
 					WorkingDirectory: proto.String(process.GetCwd()),
 					Pid:              proto.Int64(int64(process.GetPid().GetValue())),
@@ -180,25 +180,25 @@ func (c *Converter) eventsFromProcess(process *tetragonpb.Process) []*sgevpb.Sys
 				}.Build(),
 			}.Build(),
 		}.Build(),
-		sgevpb.SysGraphEvent_builder{
+		sgpb.SysGraphEvent_builder{
 			ActionId:  proto.String(execID),
 			Timestamp: ts,
-			StartEvent: sgevpb.StartEvent_builder{
+			StartEvent: sgpb.StartEvent_builder{
 				Timestamp: ts,
 			}.Build(),
 		}.Build(),
-		sgevpb.SysGraphEvent_builder{
+		sgpb.SysGraphEvent_builder{
 			ActionId:  proto.String(execID),
 			Timestamp: ts,
-			MetadataEvent: sgevpb.MetadataEvent_builder{
+			MetadataEvent: sgpb.MetadataEvent_builder{
 				Key:   proto.String("exec_id"),
 				Value: proto.String(execID),
 			}.Build(),
 		}.Build(),
-		sgevpb.SysGraphEvent_builder{
+		sgpb.SysGraphEvent_builder{
 			ActionId:  proto.String(execID),
 			Timestamp: ts,
-			MetadataEvent: sgevpb.MetadataEvent_builder{
+			MetadataEvent: sgpb.MetadataEvent_builder{
 				Key:   proto.String("psns"),
 				Value: proto.String(fmt.Sprintf("%d", process.GetNs().GetPid().GetInum())),
 			}.Build(),
@@ -206,10 +206,10 @@ func (c *Converter) eventsFromProcess(process *tetragonpb.Process) []*sgevpb.Sys
 	}
 
 	if docker := process.GetDocker(); docker != "" {
-		events = append(events, sgevpb.SysGraphEvent_builder{
+		events = append(events, sgpb.SysGraphEvent_builder{
 			ActionId:  proto.String(execID),
 			Timestamp: ts,
-			MetadataEvent: sgevpb.MetadataEvent_builder{
+			MetadataEvent: sgpb.MetadataEvent_builder{
 				Key:   proto.String("docker"),
 				Value: proto.String(docker),
 			}.Build(),
@@ -217,10 +217,10 @@ func (c *Converter) eventsFromProcess(process *tetragonpb.Process) []*sgevpb.Sys
 	}
 
 	if parentExecID := process.GetParentExecId(); parentExecID != "" {
-		events = append(events, sgevpb.SysGraphEvent_builder{
+		events = append(events, sgpb.SysGraphEvent_builder{
 			ActionId:  proto.String(parentExecID),
 			Timestamp: ts,
-			ChildEvent: sgevpb.ChildEvent_builder{
+			ChildEvent: sgpb.ChildEvent_builder{
 				ChildActionId: proto.String(execID),
 			}.Build(),
 		}.Build())
@@ -229,7 +229,7 @@ func (c *Converter) eventsFromProcess(process *tetragonpb.Process) []*sgevpb.Sys
 	return events
 }
 
-func convertProcessKprobe(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+func convertProcessKprobe(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgpb.SysGraphEvent {
 	if actionID == "" {
 		return nil
 	}
@@ -256,7 +256,7 @@ func convertProcessKprobe(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb
 	}
 }
 
-func convertSecurityFilePermission(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+func convertSecurityFilePermission(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgpb.SysGraphEvent {
 	args := kprobe.GetArgs()
 	if len(args) < 2 || args[0].GetFileArg() == nil {
 		return nil
@@ -269,7 +269,7 @@ func convertSecurityFilePermission(actionID string, ts *tpb.Timestamp, kprobe *t
 	return buildResourceEvent(actionID, ts, filePath, permToEventType(int(permArg)))
 }
 
-func convertSecurityMmapFile(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+func convertSecurityMmapFile(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgpb.SysGraphEvent {
 	args := kprobe.GetArgs()
 	if len(args) < 2 || args[0].GetFileArg() == nil {
 		return nil
@@ -282,7 +282,7 @@ func convertSecurityMmapFile(actionID string, ts *tpb.Timestamp, kprobe *tetrago
 	return buildResourceEvent(actionID, ts, filePath, protToEventType(protFlags))
 }
 
-func convertSecurityPathTruncate(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+func convertSecurityPathTruncate(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgpb.SysGraphEvent {
 	args := kprobe.GetArgs()
 	if len(args) < 1 || args[0].GetPathArg() == nil {
 		return nil
@@ -291,10 +291,10 @@ func convertSecurityPathTruncate(actionID string, ts *tpb.Timestamp, kprobe *tet
 	if filePath == "" {
 		return nil
 	}
-	return buildResourceEvent(actionID, ts, filePath, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT)
+	return buildResourceEvent(actionID, ts, filePath, sgpb.ResourceEvent_EVENT_TYPE_OUTPUT)
 }
 
-func convertSecurityPathRename(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+func convertSecurityPathRename(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgpb.SysGraphEvent {
 	args := kprobe.GetArgs()
 	if len(args) < 4 || args[0].GetPathArg() == nil || args[1].GetPathArg() == nil || args[2].GetPathArg() == nil || args[3].GetPathArg() == nil {
 		return nil
@@ -308,17 +308,17 @@ func convertSecurityPathRename(actionID string, ts *tpb.Timestamp, kprobe *tetra
 	if oldPath == "" && newPath == "" {
 		return nil
 	}
-	var events []*sgevpb.SysGraphEvent
+	var events []*sgpb.SysGraphEvent
 	if oldPath != "" {
-		events = append(events, buildResourceEvent(actionID, ts, oldPath, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT)...)
+		events = append(events, buildResourceEvent(actionID, ts, oldPath, sgpb.ResourceEvent_EVENT_TYPE_OUTPUT)...)
 	}
 	if newPath != "" {
-		events = append(events, buildResourceEvent(actionID, ts, newPath, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT)...)
+		events = append(events, buildResourceEvent(actionID, ts, newPath, sgpb.ResourceEvent_EVENT_TYPE_OUTPUT)...)
 	}
 	return events
 }
 
-func convertSecurityPathUnlink(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+func convertSecurityPathUnlink(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgpb.SysGraphEvent {
 	args := kprobe.GetArgs()
 	if len(args) < 2 || args[0].GetPathArg() == nil || args[1].GetPathArg() == nil {
 		return nil
@@ -329,20 +329,20 @@ func convertSecurityPathUnlink(actionID string, ts *tpb.Timestamp, kprobe *tetra
 	if filePath == "" {
 		return nil
 	}
-	return buildResourceEvent(actionID, ts, filePath, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT)
+	return buildResourceEvent(actionID, ts, filePath, sgpb.ResourceEvent_EVENT_TYPE_OUTPUT)
 }
 
-func convertPipeSyscall(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
-	return []*sgevpb.SysGraphEvent{
-		sgevpb.SysGraphEvent_builder{
+func convertPipeSyscall(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgpb.SysGraphEvent {
+	return []*sgpb.SysGraphEvent{
+		sgpb.SysGraphEvent_builder{
 			ActionId:  proto.String(actionID),
 			Timestamp: ts,
-			PipeEvent: sgevpb.PipeEvent_builder{}.Build(),
+			PipeEvent: sgpb.PipeEvent_builder{}.Build(),
 		}.Build(),
 	}
 }
 
-func convertDupSyscall(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgevpb.SysGraphEvent {
+func convertDupSyscall(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgpb.SysGraphEvent {
 	args := kprobe.GetArgs()
 	if len(args) < 2 {
 		return nil
@@ -351,11 +351,11 @@ func convertDupSyscall(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.Pr
 	newFd := args[1].GetIntArg()
 	parentExecID := kprobe.GetProcess().GetParentExecId()
 
-	return []*sgevpb.SysGraphEvent{
-		sgevpb.SysGraphEvent_builder{
+	return []*sgpb.SysGraphEvent{
+		sgpb.SysGraphEvent_builder{
 			ActionId:  proto.String(actionID),
 			Timestamp: ts,
-			DupEvent: sgevpb.DupEvent_builder{
+			DupEvent: sgpb.DupEvent_builder{
 				OldFd:        proto.Int32(oldFd),
 				NewFd:        proto.Int32(newFd),
 				ParentExecId: proto.String(parentExecID),
@@ -365,7 +365,7 @@ func convertDupSyscall(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.Pr
 	}
 }
 
-func convertProcessTracepoint(actionID string, ts *tpb.Timestamp, tp *tetragonpb.ProcessTracepoint) []*sgevpb.SysGraphEvent {
+func convertProcessTracepoint(actionID string, ts *tpb.Timestamp, tp *tetragonpb.ProcessTracepoint) []*sgpb.SysGraphEvent {
 	if actionID == "" {
 		return nil
 	}
@@ -373,18 +373,18 @@ func convertProcessTracepoint(actionID string, ts *tpb.Timestamp, tp *tetragonpb
 	return nil
 }
 
-func buildResourceEvent(actionID string, ts *tpb.Timestamp, filePath string, eventType sgevpb.ResourceEvent_EventType) []*sgevpb.SysGraphEvent {
-	return []*sgevpb.SysGraphEvent{
-		sgevpb.SysGraphEvent_builder{
+func buildResourceEvent(actionID string, ts *tpb.Timestamp, filePath string, eventType sgpb.ResourceEvent_EventType) []*sgpb.SysGraphEvent {
+	return []*sgpb.SysGraphEvent{
+		sgpb.SysGraphEvent_builder{
 			ActionId:  proto.String(actionID),
 			Timestamp: ts,
-			ResourceEvent: sgevpb.ResourceEvent_builder{
+			ResourceEvent: sgpb.ResourceEvent_builder{
 				EventType: eventType.Enum(),
-				Resource: sgevpb.Resource_builder{
-					Type: sgevpb.ResourceType_RESOURCE_TYPE_FILE.Enum(),
-					FileInfo: sgevpb.FileInfo_builder{
+				Resource: sgpb.Resource_builder{
+					Type: sgpb.ResourceType_RESOURCE_TYPE_FILE.Enum(),
+					FileInfo: sgpb.FileInfo_builder{
 						Path: proto.String(filePath),
-						Type: sgevpb.FileType_FILE_TYPE_REGULAR.Enum(),
+						Type: sgpb.FileType_FILE_TYPE_REGULAR.Enum(),
 					}.Build(),
 				}.Build(),
 			}.Build(),
@@ -439,17 +439,17 @@ func buildArgv(binary, arguments string) []string {
 }
 
 // permToEventType converts kernel MAY_READ/MAY_WRITE permission masks to event types.
-func permToEventType(perm int) sgevpb.ResourceEvent_EventType {
+func permToEventType(perm int) sgpb.ResourceEvent_EventType {
 	if perm&mayWrite != 0 {
-		return sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT
+		return sgpb.ResourceEvent_EVENT_TYPE_OUTPUT
 	}
-	return sgevpb.ResourceEvent_EVENT_TYPE_INPUT
+	return sgpb.ResourceEvent_EVENT_TYPE_INPUT
 }
 
 // protToEventType converts mmap PROT_READ/PROT_WRITE flags to event types.
-func protToEventType(prot uint32) sgevpb.ResourceEvent_EventType {
+func protToEventType(prot uint32) sgpb.ResourceEvent_EventType {
 	if prot&protWrite != 0 {
-		return sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT
+		return sgpb.ResourceEvent_EVENT_TYPE_OUTPUT
 	}
-	return sgevpb.ResourceEvent_EVENT_TYPE_INPUT
+	return sgpb.ResourceEvent_EVENT_TYPE_INPUT
 }
