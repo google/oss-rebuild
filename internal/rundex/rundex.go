@@ -87,6 +87,7 @@ type FetchRebuildRequest struct {
 type FetchRunsOpts struct {
 	IDs           []string
 	BenchmarkHash string
+	BenchmarkName string
 }
 
 type FetchSessionsReq struct {

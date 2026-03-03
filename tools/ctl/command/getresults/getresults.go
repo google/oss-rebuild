@@ -30,6 +30,8 @@ type Config struct {
 	Project          string
 	Run              string
 	Bench            string
+	BenchmarkName    string
+	Since            time.Duration
 	Prefix           string
 	Pattern          string
 	Sample           int
@@ -37,12 +39,16 @@ type Config struct {
 	Fields           string
 	Clean            bool
 	LatestPerPackage bool
+	SuccessOnly      bool
 }
 
 // Validate ensures the configuration is valid.
 func (c Config) Validate() error {
-	if c.Run == "" {
-		return errors.New("run is required")
+	if c.Run != "" && c.BenchmarkName != "" {
+		return errors.New("only one of --run and --bench-name may be provided")
+	}
+	if c.Run == "" && c.BenchmarkName == "" {
+		return errors.New("one of --run or --bench-name must be provided")
 	}
 	if c.Format != "" && c.Format != "summary" && c.Format != "bench" && c.Format != "csv" && c.Format != "jsonl" {
 		return errors.Errorf("invalid format: %s. Expected one of 'summary', 'bench', 'csv', or 'jsonl'", c.Format)
@@ -74,9 +80,6 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestP
 			Pattern: pattern,
 			Clean:   clean,
 		},
-	}
-	if len(req.Runs) == 0 {
-		return nil, errors.New("'run' must be supplied")
 	}
 	// Load the benchmark, if provided.
 	if bench != "" {
@@ -133,10 +136,37 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			return nil, err
 		}
 	}
+	if cfg.BenchmarkName != "" {
+		log.Printf("Finding runs for benchmark %s...", cfg.BenchmarkName)
+		runs, err := dex.FetchRuns(ctx, rundex.FetchRunsOpts{BenchmarkName: cfg.BenchmarkName})
+		if err != nil {
+			return nil, errors.Wrap(err, "fetching runs by benchmark name")
+		}
+		for _, r := range runs {
+			if cfg.Since != 0 && time.Since(r.Created) > cfg.Since {
+				continue
+			}
+			req.Runs = append(req.Runs, r.ID)
+		}
+		if len(req.Runs) == 0 {
+			log.Println("No runs found for benchmark")
+			return &act.NoOutput{}, nil
+		}
+		log.Printf("Found %d runs", len(req.Runs))
+	}
 	log.Printf("Querying results for [executors=%v,runs=%v,bench=%s,prefix=%s,pattern=%s]", req.Executors, req.Runs, cfg.Bench, req.Opts.Prefix, req.Opts.Pattern)
 	rebuilds, err := dex.FetchRebuilds(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.SuccessOnly {
+		var filtered []rundex.Rebuild
+		for _, r := range rebuilds {
+			if r.Success {
+				filtered = append(filtered, r)
+			}
+		}
+		rebuilds = filtered
 	}
 	log.Printf("Fetched %d rebuilds", len(rebuilds))
 	if len(rebuilds) == 0 {
@@ -232,7 +262,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "get-results -project <ID> -run <ID> [-bench <benchmark.json>] [-prefix <prefix>] [-pattern <regex>] [-sample N] [-format=summary|bench|csv]",
+		Use:   "get-results --project <ID> [--run <ID> | --bench-name <name>] [--since <duration>] [--bench <benchmark.json>] [--prefix <prefix>] [--pattern <regex>] [--sample N] [--format=summary|bench|csv|jsonl] [--fields <field1,field2,...>] [--success-only]",
 		Short: "Analyze rebuild results",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -251,6 +281,8 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.StringVar(&cfg.Project, "project", "", "the project from which to fetch the Firestore data")
 	set.StringVar(&cfg.Run, "run", "", "the run(s) from which to fetch results")
+	set.StringVar(&cfg.BenchmarkName, "bench-name", "", "the name of the benchmark to filter by")
+	set.DurationVar(&cfg.Since, "since", 0, "only fetch results from runs created within this duration (e.g. 24h)")
 	set.StringVar(&cfg.Bench, "bench", "", "a path to a benchmark file for filtering")
 	set.StringVar(&cfg.Prefix, "prefix", "", "filter results to those matching this prefix")
 	set.StringVar(&cfg.Pattern, "pattern", "", "filter results to those matching this regex pattern")
@@ -258,5 +290,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Format, "format", "", "format of the output (summary|bench|csv|jsonl)")
 	set.StringVar(&cfg.Fields, "fields", "runid,ecosystem,package,version,artifact", "comma-separated list of fields to include in csv or jsonl output")
 	set.BoolVar(&cfg.Clean, "clean", false, "whether to apply normalization heuristics to group similar verdicts")
+	set.BoolVar(&cfg.SuccessOnly, "success-only", false, "only fetch successful rebuilds")
 	return set
 }

@@ -153,6 +153,9 @@ func (f *FirestoreClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]
 	if opts.BenchmarkHash != "" {
 		q = q.Where("benchmark_hash", "==", opts.BenchmarkHash)
 	}
+	if opts.BenchmarkName != "" {
+		q = q.Where("benchmark_name", "==", opts.BenchmarkName)
+	}
 	runs := make(chan Run)
 	cerr := doQuery(ctx, q, newRunFromFirestore, runs)
 	var runSlice []Run

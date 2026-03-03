@@ -69,6 +69,9 @@ func (g *GCSClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, e
 		if opts.BenchmarkHash != "" && run.BenchmarkHash != opts.BenchmarkHash {
 			continue
 		}
+		if opts.BenchmarkName != "" && run.BenchmarkName != opts.BenchmarkName {
+			continue
+		}
 		runs = append(runs, run)
 	}
 	return runs, nil
