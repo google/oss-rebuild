@@ -73,6 +73,9 @@ message Action {
   string exit_signal = 15;
   // The exit status of this action.
   uint32 exit_status = 16;
+  // If true, this action is a fork/vfork/clone of the parent action without an
+  // execve (i.e. no new executable).
+  bool is_fork = 17;
 }
 
 // An action interaction is a single effect of an action on another action.

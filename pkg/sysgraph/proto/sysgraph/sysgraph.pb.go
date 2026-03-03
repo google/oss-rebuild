@@ -328,6 +328,7 @@ type Action struct {
 	xxx_hidden_Metadata                 map[string]string                `protobuf:"bytes,14,rep,name=metadata" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	xxx_hidden_ExitSignal               *string                          `protobuf:"bytes,15,opt,name=exit_signal,json=exitSignal"`
 	xxx_hidden_ExitStatus               uint32                           `protobuf:"varint,16,opt,name=exit_status,json=exitStatus"`
+	xxx_hidden_IsFork                   bool                             `protobuf:"varint,17,opt,name=is_fork,json=isFork"`
 	XXX_raceDetectHookData              protoimpl.RaceDetectHookData
 	XXX_presence                        [1]uint32
 	unknownFields                       protoimpl.UnknownFields
@@ -473,14 +474,21 @@ func (x *Action) GetExitStatus() uint32 {
 	return 0
 }
 
+func (x *Action) GetIsFork() bool {
+	if x != nil {
+		return x.xxx_hidden_IsFork
+	}
+	return false
+}
+
 func (x *Action) SetId(v int64) {
 	x.xxx_hidden_Id = v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 15)
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 16)
 }
 
 func (x *Action) SetSysGraphId(v string) {
 	x.xxx_hidden_SysGraphId = &v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 1, 15)
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 1, 16)
 }
 
 func (x *Action) SetStartTime(v *timestamppb.Timestamp) {
@@ -497,7 +505,7 @@ func (x *Action) SetInputs(v map[string]*ResourceInteractions) {
 
 func (x *Action) SetExecutableResourceDigest(v string) {
 	x.xxx_hidden_ExecutableResourceDigest = &v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 5, 15)
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 5, 16)
 }
 
 func (x *Action) SetOutputs(v map[string]*ResourceInteractions) {
@@ -510,7 +518,7 @@ func (x *Action) SetChildren(v map[int64]*ActionInteraction) {
 
 func (x *Action) SetParentActionId(v int64) {
 	x.xxx_hidden_ParentActionId = v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 8, 15)
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 8, 16)
 }
 
 func (x *Action) SetExecInfo(v *ExecInfo) {
@@ -531,12 +539,17 @@ func (x *Action) SetMetadata(v map[string]string) {
 
 func (x *Action) SetExitSignal(v string) {
 	x.xxx_hidden_ExitSignal = &v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 13, 15)
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 13, 16)
 }
 
 func (x *Action) SetExitStatus(v uint32) {
 	x.xxx_hidden_ExitStatus = v
-	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 14, 15)
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 14, 16)
+}
+
+func (x *Action) SetIsFork(v bool) {
+	x.xxx_hidden_IsFork = v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 15, 16)
 }
 
 func (x *Action) HasId() bool {
@@ -616,6 +629,13 @@ func (x *Action) HasExitStatus() bool {
 	return protoimpl.X.Present(&(x.XXX_presence[0]), 14)
 }
 
+func (x *Action) HasIsFork() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 15)
+}
+
 func (x *Action) ClearId() {
 	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
 	x.xxx_hidden_Id = 0
@@ -666,6 +686,11 @@ func (x *Action) ClearExitStatus() {
 	x.xxx_hidden_ExitStatus = 0
 }
 
+func (x *Action) ClearIsFork() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 15)
+	x.xxx_hidden_IsFork = false
+}
+
 type Action_builder struct {
 	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
 
@@ -711,6 +736,9 @@ type Action_builder struct {
 	ExitSignal *string
 	// The exit status of this action.
 	ExitStatus *uint32
+	// If true, this action is a fork/vfork/clone of the parent action without an
+	// execve (i.e. no new executable).
+	IsFork *bool
 }
 
 func (b0 Action_builder) Build() *Action {
@@ -718,24 +746,24 @@ func (b0 Action_builder) Build() *Action {
 	b, x := &b0, m0
 	_, _ = b, x
 	if b.Id != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 15)
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 16)
 		x.xxx_hidden_Id = *b.Id
 	}
 	if b.SysGraphId != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 1, 15)
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 1, 16)
 		x.xxx_hidden_SysGraphId = b.SysGraphId
 	}
 	x.xxx_hidden_StartTime = b.StartTime
 	x.xxx_hidden_EndTime = b.EndTime
 	x.xxx_hidden_Inputs = b.Inputs
 	if b.ExecutableResourceDigest != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 5, 15)
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 5, 16)
 		x.xxx_hidden_ExecutableResourceDigest = b.ExecutableResourceDigest
 	}
 	x.xxx_hidden_Outputs = b.Outputs
 	x.xxx_hidden_Children = b.Children
 	if b.ParentActionId != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 8, 15)
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 8, 16)
 		x.xxx_hidden_ParentActionId = *b.ParentActionId
 	}
 	x.xxx_hidden_ExecInfo = b.ExecInfo
@@ -743,12 +771,16 @@ func (b0 Action_builder) Build() *Action {
 	x.xxx_hidden_Executable = b.Executable
 	x.xxx_hidden_Metadata = b.Metadata
 	if b.ExitSignal != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 13, 15)
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 13, 16)
 		x.xxx_hidden_ExitSignal = b.ExitSignal
 	}
 	if b.ExitStatus != nil {
-		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 14, 15)
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 14, 16)
 		x.xxx_hidden_ExitStatus = *b.ExitStatus
+	}
+	if b.IsFork != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 15, 16)
+		x.xxx_hidden_IsFork = *b.IsFork
 	}
 	return m0
 }
@@ -2250,7 +2282,7 @@ const file_sysgraph_proto_rawDesc = "" +
 	"\tsubgraphs\x18\x05 \x03(\tR\tsubgraphs\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x03\x10\x04\"\xb6\b\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x03\x10\x04\"\xcf\b\n" +
 	"\x06Action\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12 \n" +
 	"\fsys_graph_id\x18\x02 \x01(\tR\n" +
@@ -2273,7 +2305,8 @@ const file_sysgraph_proto_rawDesc = "" +
 	"\vexit_signal\x18\x0f \x01(\tR\n" +
 	"exitSignal\x12\x1f\n" +
 	"\vexit_status\x18\x10 \x01(\rR\n" +
-	"exitStatus\x1aY\n" +
+	"exitStatus\x12\x17\n" +
+	"\ais_fork\x18\x11 \x01(\bR\x06isFork\x1aY\n" +
 	"\vInputsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x124\n" +
 	"\x05value\x18\x02 \x01(\v2\x1e.sysgraph.ResourceInteractionsR\x05value:\x028\x01\x1aZ\n" +

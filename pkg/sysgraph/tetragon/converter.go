@@ -79,6 +79,15 @@ func (c *Converter) convertEvent(ctx context.Context, event *tetragonpb.GetEvent
 		if parent := ev.ProcessExec.GetParent(); parent != nil {
 			bgEvents = append(bgEvents, c.eventsFromProcess(parent)...)
 		}
+		process := ev.ProcessExec.GetProcess()
+		bgEvents = append(bgEvents, sgpb.SysGraphEvent_builder{
+			ActionId:  proto.String(process.GetExecId()),
+			Timestamp: ev.ProcessExec.GetProcess().GetStartTime(),
+			MetadataEvent: sgpb.MetadataEvent_builder{
+				Key:   proto.String("is_execve"),
+				Value: proto.String("true"),
+			}.Build(),
+		}.Build())
 		bgEvents = append(bgEvents, c.eventsFromProcess(ev.ProcessExec.GetProcess())...)
 
 	case *tetragonpb.GetEventsResponse_ProcessExit:
