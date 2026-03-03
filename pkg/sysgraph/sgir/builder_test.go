@@ -139,6 +139,14 @@ func TestConstructSysGraph(t *testing.T) {
 							}.Build(),
 							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
+								Timestamp: tpb.New(time.Unix(1, 1)),
+								MetadataEvent: sgpb.MetadataEvent_builder{
+									Key:   proto.String("is_execve"),
+									Value: proto.String("true"),
+								}.Build(),
+							}.Build(),
+							sgpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(2, 2)),
 								ChildEvent: sgpb.ChildEvent_builder{
 									ChildActionId: proto.String(action2),
@@ -219,6 +227,14 @@ func TestConstructSysGraph(t *testing.T) {
 								Timestamp: tpb.New(time.Unix(2, 2)),
 								StartEvent: sgpb.StartEvent_builder{
 									Timestamp: tpb.New(time.Unix(2, 2)),
+								}.Build(),
+							}.Build(),
+							sgpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action2),
+								Timestamp: tpb.New(time.Unix(2, 2)),
+								MetadataEvent: sgpb.MetadataEvent_builder{
+									Key:   proto.String("is_execve"),
+									Value: proto.String("true"),
 								}.Build(),
 							}.Build(),
 							sgpb.SysGraphEvent_builder{
@@ -316,6 +332,14 @@ func TestConstructSysGraph(t *testing.T) {
 							}.Build(),
 							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action6),
+								Timestamp: tpb.New(time.Unix(6, 6)),
+								MetadataEvent: sgpb.MetadataEvent_builder{
+									Key:   proto.String("is_execve"),
+									Value: proto.String("true"),
+								}.Build(),
+							}.Build(),
+							sgpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action6),
 								Timestamp: tpb.New(time.Unix(7, 7)),
 								ChildEvent: sgpb.ChildEvent_builder{
 									ChildActionId: proto.String(action7),
@@ -382,6 +406,7 @@ func TestConstructSysGraph(t *testing.T) {
 					1: sgpb.Action_builder{
 						Id:         proto.Int64(1),
 						SysGraphId: proto.String("graphID"),
+						IsFork:     proto.Bool(false),
 						StartTime:  &tpb.Timestamp{Seconds: 1, Nanos: 1},
 						EndTime:    &tpb.Timestamp{Seconds: 20, Nanos: 20},
 						Children: map[int64]*sgpb.ActionInteraction{
@@ -431,6 +456,7 @@ func TestConstructSysGraph(t *testing.T) {
 					2: sgpb.Action_builder{
 						Id:             proto.Int64(2),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(false),
 						ParentActionId: proto.Int64(1),
 						Parent: sgpb.ActionInteraction_builder{
 							Timestamp: &tpb.Timestamp{Seconds: 2, Nanos: 2},
@@ -472,6 +498,7 @@ func TestConstructSysGraph(t *testing.T) {
 					3: sgpb.Action_builder{
 						Id:             proto.Int64(3),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(true),
 						ParentActionId: proto.Int64(1),
 						Parent: sgpb.ActionInteraction_builder{
 							Timestamp: &tpb.Timestamp{Seconds: 3, Nanos: 3},
@@ -490,6 +517,7 @@ func TestConstructSysGraph(t *testing.T) {
 					4: sgpb.Action_builder{
 						Id:             proto.Int64(4),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(true),
 						ParentActionId: proto.Int64(1),
 						Parent: sgpb.ActionInteraction_builder{
 							Timestamp: &tpb.Timestamp{Seconds: 2, Nanos: 2},
@@ -508,6 +536,7 @@ func TestConstructSysGraph(t *testing.T) {
 					5: sgpb.Action_builder{
 						Id:             proto.Int64(5),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(true),
 						ParentActionId: proto.Int64(1),
 						Parent: sgpb.ActionInteraction_builder{
 							Timestamp: &tpb.Timestamp{Seconds: 5, Nanos: 5},
@@ -516,6 +545,7 @@ func TestConstructSysGraph(t *testing.T) {
 					6: sgpb.Action_builder{
 						Id:             proto.Int64(6),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(false),
 						StartTime:      &tpb.Timestamp{Seconds: 6, Nanos: 6},
 						EndTime:        &tpb.Timestamp{Seconds: 10, Nanos: 10},
 						ParentActionId: proto.Int64(1),
@@ -533,6 +563,7 @@ func TestConstructSysGraph(t *testing.T) {
 					7: sgpb.Action_builder{
 						Id:             proto.Int64(7),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(true),
 						ParentActionId: proto.Int64(6),
 						Parent: sgpb.ActionInteraction_builder{
 							Timestamp: &tpb.Timestamp{Seconds: 7, Nanos: 7},

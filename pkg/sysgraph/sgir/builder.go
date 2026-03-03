@@ -101,6 +101,7 @@ func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, er
 	pendingRenamesByPath := make(map[string]*interactionAndDigest)
 	inputs := make(map[string][]*sgpb.ResourceInteraction)
 	outputs := make(map[string][]*sgpb.ResourceInteraction)
+	var isExecve bool
 	for _, event := range b.events {
 		switch event.WhichEvent() {
 		case sgpb.SysGraphEvent_ResourceEvent_case:
@@ -167,6 +168,10 @@ func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, er
 			builder.ExecInfo = execEvent.GetExecInfo()
 		case sgpb.SysGraphEvent_MetadataEvent_case:
 			metadataEvent := event.GetMetadataEvent()
+			if metadataEvent.GetKey() == "is_execve" {
+				isExecve = true
+				break
+			}
 			if builder.Metadata == nil {
 				builder.Metadata = make(map[string]string)
 			}
@@ -223,6 +228,7 @@ func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, er
 			}
 		}
 	}
+	builder.IsFork = proto.Bool(!isExecve)
 	if len(inputs) > 0 {
 		builder.Inputs = map[string]*sgpb.ResourceInteractions{}
 		for dg, input := range inputs {
