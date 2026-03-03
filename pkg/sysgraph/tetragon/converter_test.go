@@ -13,7 +13,7 @@ import (
 	tetragonpb "github.com/cilium/tetragon/api/v1/tetragon"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	sgevpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
+	sgpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
 	"github.com/google/oss-rebuild/pkg/sysgraph/sgir"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -91,15 +91,15 @@ func TestConvertProcessExec(t *testing.T) {
 	// Check ExecEvent details
 	for _, e := range childEvents.Events {
 		if e.HasExecEvent() {
-			wantExec := sgevpb.ExecEvent_builder{
-				Executable: sgevpb.Resource_builder{
-					Type: sgevpb.ResourceType_RESOURCE_TYPE_FILE.Enum(),
-					FileInfo: sgevpb.FileInfo_builder{
+			wantExec := sgpb.ExecEvent_builder{
+				Executable: sgpb.Resource_builder{
+					Type: sgpb.ResourceType_RESOURCE_TYPE_FILE.Enum(),
+					FileInfo: sgpb.FileInfo_builder{
 						Path: proto.String("/usr/bin/gcc"),
-						Type: sgevpb.FileType_FILE_TYPE_REGULAR.Enum(),
+						Type: sgpb.FileType_FILE_TYPE_REGULAR.Enum(),
 					}.Build(),
 				}.Build(),
-				ExecInfo: sgevpb.ExecInfo_builder{
+				ExecInfo: sgpb.ExecInfo_builder{
 					Argv:             []string{"/usr/bin/gcc", "-o", "main", "main.c"},
 					WorkingDirectory: proto.String("/src"),
 					Pid:              proto.Int64(42),
@@ -249,11 +249,11 @@ func TestConvertSecurityFilePermission(t *testing.T) {
 	tests := []struct {
 		name     string
 		perm     int32
-		wantType sgevpb.ResourceEvent_EventType
+		wantType sgpb.ResourceEvent_EventType
 	}{
-		{"read", 0x04, sgevpb.ResourceEvent_EVENT_TYPE_INPUT},
-		{"write", 0x02, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT},
-		{"read_write", 0x06, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT},
+		{"read", 0x04, sgpb.ResourceEvent_EVENT_TYPE_INPUT},
+		{"write", 0x02, sgpb.ResourceEvent_EVENT_TYPE_OUTPUT},
+		{"read_write", 0x06, sgpb.ResourceEvent_EVENT_TYPE_OUTPUT},
 	}
 
 	for _, tc := range tests {
@@ -320,11 +320,11 @@ func TestConvertSecurityMmapFile(t *testing.T) {
 	tests := []struct {
 		name     string
 		prot     uint32
-		wantType sgevpb.ResourceEvent_EventType
+		wantType sgpb.ResourceEvent_EventType
 	}{
-		{"read", 0x01, sgevpb.ResourceEvent_EVENT_TYPE_INPUT},
-		{"write", 0x02, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT},
-		{"exec", 0x04, sgevpb.ResourceEvent_EVENT_TYPE_INPUT},
+		{"read", 0x01, sgpb.ResourceEvent_EVENT_TYPE_INPUT},
+		{"write", 0x02, sgpb.ResourceEvent_EVENT_TYPE_OUTPUT},
+		{"exec", 0x04, sgpb.ResourceEvent_EVENT_TYPE_INPUT},
 	}
 
 	for _, tc := range tests {
@@ -413,7 +413,7 @@ func TestConvertSecurityPathTruncate(t *testing.T) {
 	for _, e := range actionEvents.Events {
 		if e.HasResourceEvent() {
 			re := e.GetResourceEvent()
-			if re.GetEventType() != sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT {
+			if re.GetEventType() != sgpb.ResourceEvent_EVENT_TYPE_OUTPUT {
 				t.Errorf("EventType = %v, want OUTPUT", re.GetEventType())
 			}
 			if re.GetResource().GetFileInfo().GetPath() != "/tmp/output.log" {
@@ -468,7 +468,7 @@ func TestConvertSecurityPathRename(t *testing.T) {
 	for _, e := range actionEvents.Events {
 		if e.HasResourceEvent() {
 			re := e.GetResourceEvent()
-			if re.GetEventType() != sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT {
+			if re.GetEventType() != sgpb.ResourceEvent_EVENT_TYPE_OUTPUT {
 				t.Errorf("EventType = %v, want OUTPUT", re.GetEventType())
 			}
 			paths = append(paths, re.GetResource().GetFileInfo().GetPath())
@@ -518,7 +518,7 @@ func TestConvertSecurityPathUnlink(t *testing.T) {
 	for _, e := range actionEvents.Events {
 		if e.HasResourceEvent() {
 			re := e.GetResourceEvent()
-			if re.GetEventType() != sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT {
+			if re.GetEventType() != sgpb.ResourceEvent_EVENT_TYPE_OUTPUT {
 				t.Errorf("EventType = %v, want OUTPUT", re.GetEventType())
 			}
 			if re.GetResource().GetFileInfo().GetPath() != "/tmp/garbage.o" {
@@ -879,7 +879,7 @@ func TestConvertEndToEnd(t *testing.T) {
 		if e.HasResourceEvent() {
 			hasResource = true
 			re := e.GetResourceEvent()
-			if re.GetEventType() != sgevpb.ResourceEvent_EVENT_TYPE_INPUT {
+			if re.GetEventType() != sgpb.ResourceEvent_EVENT_TYPE_INPUT {
 				t.Errorf("ResourceEvent type = %v, want INPUT", re.GetEventType())
 			}
 		}
@@ -952,12 +952,12 @@ func TestBuildArgv(t *testing.T) {
 func TestPermToEventType(t *testing.T) {
 	tests := []struct {
 		perm int
-		want sgevpb.ResourceEvent_EventType
+		want sgpb.ResourceEvent_EventType
 	}{
-		{0x04, sgevpb.ResourceEvent_EVENT_TYPE_INPUT},
-		{0x02, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT},
-		{0x06, sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT},
-		{0x00, sgevpb.ResourceEvent_EVENT_TYPE_INPUT},
+		{0x04, sgpb.ResourceEvent_EVENT_TYPE_INPUT},
+		{0x02, sgpb.ResourceEvent_EVENT_TYPE_OUTPUT},
+		{0x06, sgpb.ResourceEvent_EVENT_TYPE_OUTPUT},
+		{0x00, sgpb.ResourceEvent_EVENT_TYPE_INPUT},
 	}
 	for _, tc := range tests {
 		got := permToEventType(tc.perm)
