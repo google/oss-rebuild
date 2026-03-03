@@ -45,6 +45,7 @@ type Config struct {
 	UseNetworkProxy   bool
 	UseSyscallMonitor bool
 	OverwriteMode     string
+	BuildTimeout      time.Duration
 	Mode              string
 }
 
@@ -244,6 +245,7 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 			Artifact:          cfg.Artifact,
 			UseNetworkProxy:   cfg.UseNetworkProxy,
 			UseSyscallMonitor: cfg.UseSyscallMonitor,
+			BuildTimeout:      cfg.BuildTimeout,
 			OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
 			ID:                time.Now().UTC().Format(time.RFC3339),
 		})
@@ -261,7 +263,7 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-one attest|analyze [--api <URI> | --local --bootstrap-bucket <BUCKET> --bootstrap-version <VERSION>] --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>]",
+		Use:   "run-one attest|analyze [--api <URI> | --local --bootstrap-bucket <BUCKET> --bootstrap-version <VERSION>] --ecosystem <ecosystem> --package <name> --version <version> [--artifact <name>] [--build-timeout <duration>]",
 		Short: "Run a single target",
 		Args:  cobra.ExactArgs(1),
 		RunE: cli.RunE(
@@ -290,6 +292,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Strategy, "strategy", "", "the strategy file to use")
 	set.BoolVar(&cfg.UseNetworkProxy, "use-network-proxy", false, "request the newtwork proxy")
 	set.BoolVar(&cfg.UseSyscallMonitor, "use-syscall-monitor", false, "request syscall monitoring")
+	set.DurationVar(&cfg.BuildTimeout, "build-timeout", time.Duration(0), "manual timeout")
 	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
 	return set
 }
