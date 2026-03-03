@@ -78,6 +78,11 @@ type actionBuilderOptions struct {
 	graphID    string
 }
 
+type interactionAndDigest struct {
+	interaction *sgpb.ResourceInteraction
+	dgStr       string
+}
+
 func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, error) {
 	aid, ok := b.sidToID[b.irActionID]
 	if !ok {
@@ -93,6 +98,8 @@ func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, er
 			Timestamp: tpb.New(p.timestamp),
 		}.Build()
 	}
+	pathsToDigest := make(map[string]string)
+	pendingRenamesByPath := make(map[string]*interactionAndDigest)
 	inputs := make(map[string][]*sgpb.ResourceInteraction)
 	outputs := make(map[string][]*sgpb.ResourceInteraction)
 	for _, event := range b.events {
@@ -103,17 +110,50 @@ func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, er
 			if err != nil {
 				return nil, err
 			}
+			path := resourceEvent.GetResource().GetFileInfo().GetPath()
+			if path != "" {
+				pathsToDigest[path] = dg.String()
+			}
 			switch resourceEvent.GetEventType() {
 			case sgevpb.ResourceEvent_EVENT_TYPE_INPUT:
 				inputs[dg.String()] = append(inputs[dg.String()], sgpb.ResourceInteraction_builder{
 					Timestamp: event.GetTimestamp(),
 					IoInfo:    resourceEvent.GetIoInfo(),
+					Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_READ.Enum(),
 				}.Build())
 			case sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT:
 				outputs[dg.String()] = append(outputs[dg.String()], sgpb.ResourceInteraction_builder{
 					Timestamp: event.GetTimestamp(),
 					IoInfo:    resourceEvent.GetIoInfo(),
+					Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_WRITE.Enum(),
 				}.Build())
+			case sgevpb.ResourceEvent_EVENT_TYPE_DELETE:
+				outputs[dg.String()] = append(outputs[dg.String()], sgpb.ResourceInteraction_builder{
+					Timestamp: event.GetTimestamp(),
+					IoInfo:    resourceEvent.GetIoInfo(),
+					Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_DELETE.Enum(),
+				}.Build())
+			case sgevpb.ResourceEvent_EVENT_TYPE_RENAME_SOURCE, sgevpb.ResourceEvent_EVENT_TYPE_RENAME_DEST:
+				typ := sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_RENAME_SOURCE
+				if resourceEvent.GetEventType() == sgevpb.ResourceEvent_EVENT_TYPE_RENAME_DEST {
+					typ = sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_RENAME_DESTINATION
+				}
+				interaction := sgpb.ResourceInteraction_builder{
+					Timestamp: event.GetTimestamp(),
+					IoInfo:    resourceEvent.GetIoInfo(),
+					Type:      typ.Enum(),
+				}.Build()
+				if dgStr, ok := pathsToDigest[resourceEvent.GetRenamePartnerPath()]; ok {
+					interaction.SetRenamePartnerDigest(dgStr)
+					outputs[dg.String()] = append(outputs[dg.String()], interaction)
+				} else {
+					pendingRenamesByPath[path] = &interactionAndDigest{interaction, dg.String()}
+				}
+				if partner, ok := pendingRenamesByPath[resourceEvent.GetRenamePartnerPath()]; ok {
+					partner.interaction.SetRenamePartnerDigest(dg.String())
+					outputs[partner.dgStr] = append(outputs[partner.dgStr], partner.interaction)
+					delete(pendingRenamesByPath, resourceEvent.GetRenamePartnerPath())
+				}
 			}
 		case sgevpb.SysGraphEvent_ExecEvent_case:
 			execEvent := event.GetExecEvent()
