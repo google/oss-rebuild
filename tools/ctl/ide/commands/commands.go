@@ -21,9 +21,9 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/glob"
-	"github.com/google/oss-rebuild/internal/llm"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/diffr"
+	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
