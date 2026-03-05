@@ -57,7 +57,9 @@ func TestGCBExecutorStart(t *testing.T) {
 	}
 	createChan := make(chan struct{})
 	defer close(createChan)
+	var capturedTags []string
 	mockClient.CreateBuildFunc = func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
+		capturedTags = build.Tags
 		<-createChan
 		return operation, nil
 	}
@@ -72,6 +74,9 @@ func TestGCBExecutorStart(t *testing.T) {
 		ServiceAccount:   "test@test.iam.gserviceaccount.com",
 		LogsBucket:       "test-bucket",
 		OutputBufferSize: 1024,
+		ExtraTags: map[string]string{
+			"foo": "bar",
+		},
 	}
 
 	executor, err := NewExecutor(config)
@@ -136,6 +141,21 @@ func TestGCBExecutorStart(t *testing.T) {
 	}
 	if result.Error != nil {
 		t.Fatal(result.Error)
+	}
+
+	// Verify tags
+	expectedTags := []string{"ecosystem-npm", "package-test-package", "version-1.0.0", "foo-bar"}
+	for _, expected := range expectedTags {
+		found := false
+		for _, actual := range capturedTags {
+			if actual == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Tag %s not found in %v", expected, capturedTags)
+		}
 	}
 
 	// Clean up
