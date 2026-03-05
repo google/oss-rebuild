@@ -27,8 +27,9 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/apiservice"
 	"github.com/google/oss-rebuild/internal/httpx"
-	"github.com/google/oss-rebuild/internal/llm"
+	"github.com/google/oss-rebuild/internal/npmllm"
 	"github.com/google/oss-rebuild/internal/oauth"
+	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
@@ -179,7 +180,7 @@ func generateRecovery(ctx context.Context, client *genai.Client, modelName strin
 		if err != nil {
 			return nil, errors.Wrap(err, "reading package.json")
 		}
-		return llm.InferNPMBuild(ctx, client, modelName, packageJSON)
+		return npmllm.InferNPMBuild(ctx, client, modelName, packageJSON)
 	case OutcomeFailedRunBuild:
 		packageJSON, err := fromSourceZip(ctx, cache, r.Target(), filepath.Join(location(s).Dir, "package.json"))
 		if err != nil {
@@ -194,7 +195,7 @@ func generateRecovery(ctx context.Context, client *genai.Client, modelName strin
 			return nil, errors.Wrap(err, "reading build log")
 		}
 		buildLog := string(logBytes)
-		return llm.FixNPMBreakage(ctx, client, modelName, strings.Join(commands, "\n"), packageJSON, buildLog)
+		return npmllm.FixNPMBreakage(ctx, client, modelName, strings.Join(commands, "\n"), packageJSON, buildLog)
 	default:
 		return nil, errors.Errorf("unhandled outcome '%s'", outcome)
 	}

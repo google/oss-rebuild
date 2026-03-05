@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package llm
+package npmllm
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	"text/template"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/google/oss-rebuild/pkg/llm"
 	"google.golang.org/genai"
 )
 
@@ -45,7 +46,7 @@ func executeTemplate(tpl *template.Template, data any) (string, error) {
 }
 
 type inferParams struct {
-	Original    ScriptResponse
+	Original    llm.ScriptResponse
 	PackageJSON string
 }
 
@@ -80,21 +81,21 @@ var inferPromptTpl = template.Must(
 	))
 
 // InferNPMBuild attempts to generate an NPM package build script.
-func InferNPMBuild(ctx context.Context, client *genai.Client, model string, packageJSON string) (*ScriptResponse, error) {
-	var resp ScriptResponse
+func InferNPMBuild(ctx context.Context, client *genai.Client, model string, packageJSON string) (*llm.ScriptResponse, error) {
+	var resp llm.ScriptResponse
 	config := &genai.GenerateContentConfig{
-		ResponseSchema:   ScriptResponseSchema,
-		ResponseMIMEType: JSONMIMEType,
+		ResponseSchema:   llm.ScriptResponseSchema,
+		ResponseMIMEType: llm.JSONMIMEType,
 		Temperature:      genai.Ptr[float32](1.),
 	}
-	config = WithSystemPrompt(config, NPMSystemPrompt)
+	config = llm.WithSystemPrompt(config, NPMSystemPrompt)
 	originalReleasePrompt, err := executeTemplate(originalPromptTpl, originalParams{
 		PackageJSON: packageJSON,
 	})
 	if err != nil {
 		return nil, err
 	}
-	if err := GenerateTypedContent(ctx, client, model, config, &resp, genai.NewPartFromText(originalReleasePrompt)); err != nil {
+	if err := llm.GenerateTypedContent(ctx, client, model, config, &resp, genai.NewPartFromText(originalReleasePrompt)); err != nil {
 		return nil, err
 	}
 	inferPrompt, err := executeTemplate(inferPromptTpl, inferParams{
@@ -104,7 +105,7 @@ func InferNPMBuild(ctx context.Context, client *genai.Client, model string, pack
 	if err != nil {
 		return nil, err
 	}
-	if err := GenerateTypedContent(ctx, client, model, config, &resp, genai.NewPartFromText(inferPrompt)); err != nil {
+	if err := llm.GenerateTypedContent(ctx, client, model, config, &resp, genai.NewPartFromText(inferPrompt)); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -144,7 +145,7 @@ var recoverPromptTpl = template.Must(
 	))
 
 // FixNPMBreakage attempts to repair an observed build failure by suggesting another script.
-func FixNPMBreakage(ctx context.Context, client *genai.Client, model string, script, packageJSON, log string) (*ScriptResponse, error) {
+func FixNPMBreakage(ctx context.Context, client *genai.Client, model string, script, packageJSON, log string) (*llm.ScriptResponse, error) {
 	p, err := executeTemplate(recoverPromptTpl, recoverParams{
 		Script:      script,
 		PackageJSON: packageJSON,
@@ -153,14 +154,14 @@ func FixNPMBreakage(ctx context.Context, client *genai.Client, model string, scr
 	if err != nil {
 		return nil, err
 	}
-	var resp ScriptResponse
+	var resp llm.ScriptResponse
 	config := &genai.GenerateContentConfig{
-		ResponseSchema:   ScriptResponseSchema,
-		ResponseMIMEType: JSONMIMEType,
+		ResponseSchema:   llm.ScriptResponseSchema,
+		ResponseMIMEType: llm.JSONMIMEType,
 		Temperature:      genai.Ptr[float32](1.),
 	}
-	config = WithSystemPrompt(config, NPMSystemPrompt)
-	if err := GenerateTypedContent(ctx, client, model, config, &resp, genai.NewPartFromText(p)); err != nil {
+	config = llm.WithSystemPrompt(config, NPMSystemPrompt)
+	if err := llm.GenerateTypedContent(ctx, client, model, config, &resp, genai.NewPartFromText(p)); err != nil {
 		return nil, err
 	}
 	return &resp, nil
