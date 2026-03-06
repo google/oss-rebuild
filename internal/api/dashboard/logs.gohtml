@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<!--
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Logs for {{.Ecosystem}}:{{.PackageName}} {{.Version}}</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: monospace;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <pre>{{.Logs}}</pre>
+</body>
+</html>
