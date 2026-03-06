@@ -73,6 +73,9 @@ message Action {
   string exit_signal = 15;
   // The exit status of this action.
   uint32 exit_status = 16;
+  // If true, this action is a fork/vfork/clone of the parent action without an
+  // execve (i.e. no new executable).
+  bool is_fork = 17;
 }
 
 // An action interaction is a single effect of an action on another action.
@@ -109,6 +112,26 @@ message ResourceInteraction {
   // I/O information for this interaction.
   // This is optional and may not be populated.
   IOInfo io_info = 4;
+  // The type of resource interaction.
+  ResourceInteractionType type = 5;
+  // On renames, we generate a resource interaction to represent both the
+  // removal of the old file and the creation of the new file. This field
+  // contains the digest of the file that isn't represented by this interaction.
+  string rename_partner_digest = 6;
+}
+
+enum ResourceInteractionType {
+  RESOURCE_INTERACTION_TYPE_UNKNOWN = 0;
+  // The action read from the resource.
+  RESOURCE_INTERACTION_TYPE_READ = 1;
+  // The action wrote to the resource.
+  RESOURCE_INTERACTION_TYPE_WRITE = 2;
+  // The action deleted the resource.
+  RESOURCE_INTERACTION_TYPE_DELETE = 3;
+  // The action renamed this resource to another resource.
+  RESOURCE_INTERACTION_TYPE_RENAME_SOURCE = 4;
+  // The action renamed another resource to this resource.
+  RESOURCE_INTERACTION_TYPE_RENAME_DESTINATION = 5;
 }
 
 // IO information for an interaction.
