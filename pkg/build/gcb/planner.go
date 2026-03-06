@@ -173,10 +173,10 @@ var gcbStandardBuildTpl = template.Must(
 			{{- if .UseSyscallMonitor}}
 			mkdir -p /workspace/tetragon/
 			{{- if .TetragonSysgraphURL}}
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
 			{{- else}}
 			touch /workspace/tetragon.jsonl
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
 			{{- end}}
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 			TETRAGON_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
@@ -305,10 +305,10 @@ var gcbProxyBuildTpl = template.Must(
 			{{- if .UseSyscallMonitor}}
 			mkdir -p /workspace/tetragon/
 			{{- if .TetragonSysgraphURL}}
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
 			{{- else}}
 			touch /workspace/tetragon.jsonl
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
 			{{- end}}
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 			TETRAGON_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
