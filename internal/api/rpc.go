@@ -4,6 +4,7 @@
 package api
 
 import (
+	"html/template"
 	"net/http"
 	"net/url"
 
@@ -48,6 +49,10 @@ func StubFromHandler[I act.Input, O any, D act.Deps](client httpx.BasicClient, u
 
 func Handler[I act.Input, O any, D act.Deps](initDeps InitT[D], handler HandlerT[I, O, D]) http.HandlerFunc {
 	return actapi.Handler(initDeps, handler)
+}
+
+func HTMLHandler[I act.Input, O any, D act.Deps](initDeps InitT[D], handler HandlerT[I, O, D], tmpl *template.Template) http.HandlerFunc {
+	return actapi.HTMLHandler(initDeps, handler, tmpl)
 }
 
 func Translate[O act.Input](t Translator[O], h http.HandlerFunc) http.HandlerFunc {
