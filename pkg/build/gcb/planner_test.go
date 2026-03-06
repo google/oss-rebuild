@@ -407,7 +407,7 @@ func TestGCBPlannerBuildScriptWithSyscallMonitor(t *testing.T) {
 			echo 'Starting rebuild for {Ecosystem:npm Package:test-package Version:1.0.0 Artifact:test-package-1.0.0.tgz}'
 			mkdir -p /workspace/tetragon/
 			touch /workspace/tetragon.jsonl
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 			TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
 			SYSGRAPH_PID=0
@@ -483,7 +483,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					set -eux
 					echo 'Starting rebuild for {Ecosystem:npm Package:test-package Version:1.0.0 Artifact:test-package-1.0.0.tgz}'
 					mkdir -p /workspace/tetragon/
-					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
 					grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
 					curl -O https://storage.googleapis.com/bucket/tetragon_sysgraph
@@ -523,7 +523,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					set -eux
 					echo 'Starting rebuild for {Ecosystem:npm Package:test-package Version:1.0.0 Artifact:test-package-1.0.0.tgz}'
 					mkdir -p /workspace/tetragon/
-					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
 					grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
 					apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test@test.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
@@ -596,7 +596,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 						iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':3129
 					'
 					mkdir -p /workspace/tetragon/
-					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
 					grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
 					curl -O https://storage.googleapis.com/bucket/tetragon_sysgraph
