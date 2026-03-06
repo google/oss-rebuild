@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/sysgraph/pbdigest"
-	sgevpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
 	sgpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
 	"github.com/google/oss-rebuild/pkg/sysgraph/sgstorage"
 	"golang.org/x/sync/errgroup"
@@ -70,12 +69,17 @@ func (rdb *syncRdb) Proto() (*sgpb.ResourceDB, error) {
 
 type actionBuilderOptions struct {
 	irActionID string
-	events     []*sgevpb.SysGraphEvent
+	events     []*sgpb.SysGraphEvent
 	riskyPipes *pipeCommunication
 	parents    map[string]parent
 	sidToID    map[string]int64
 	rdb        *syncRdb
 	graphID    string
+}
+
+type interactionAndDigest struct {
+	interaction *sgpb.ResourceInteraction
+	dgStr       string
 }
 
 func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, error) {
@@ -93,29 +97,64 @@ func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, er
 			Timestamp: tpb.New(p.timestamp),
 		}.Build()
 	}
+	pathsToDigest := make(map[string]string)
+	pendingRenamesByPath := make(map[string]*interactionAndDigest)
 	inputs := make(map[string][]*sgpb.ResourceInteraction)
 	outputs := make(map[string][]*sgpb.ResourceInteraction)
 	for _, event := range b.events {
 		switch event.WhichEvent() {
-		case sgevpb.SysGraphEvent_ResourceEvent_case:
+		case sgpb.SysGraphEvent_ResourceEvent_case:
 			resourceEvent := event.GetResourceEvent()
 			dg, err := b.rdb.addResource(resourceEvent.GetResource())
 			if err != nil {
 				return nil, err
 			}
+			path := resourceEvent.GetResource().GetFileInfo().GetPath()
+			if path != "" {
+				pathsToDigest[path] = dg.String()
+			}
 			switch resourceEvent.GetEventType() {
-			case sgevpb.ResourceEvent_EVENT_TYPE_INPUT:
+			case sgpb.ResourceEvent_EVENT_TYPE_INPUT:
 				inputs[dg.String()] = append(inputs[dg.String()], sgpb.ResourceInteraction_builder{
 					Timestamp: event.GetTimestamp(),
 					IoInfo:    resourceEvent.GetIoInfo(),
+					Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_READ.Enum(),
 				}.Build())
-			case sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT:
+			case sgpb.ResourceEvent_EVENT_TYPE_OUTPUT:
 				outputs[dg.String()] = append(outputs[dg.String()], sgpb.ResourceInteraction_builder{
 					Timestamp: event.GetTimestamp(),
 					IoInfo:    resourceEvent.GetIoInfo(),
+					Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_WRITE.Enum(),
 				}.Build())
+			case sgpb.ResourceEvent_EVENT_TYPE_DELETE:
+				outputs[dg.String()] = append(outputs[dg.String()], sgpb.ResourceInteraction_builder{
+					Timestamp: event.GetTimestamp(),
+					IoInfo:    resourceEvent.GetIoInfo(),
+					Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_DELETE.Enum(),
+				}.Build())
+			case sgpb.ResourceEvent_EVENT_TYPE_RENAME_SOURCE, sgpb.ResourceEvent_EVENT_TYPE_RENAME_DEST:
+				typ := sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_RENAME_SOURCE
+				if resourceEvent.GetEventType() == sgpb.ResourceEvent_EVENT_TYPE_RENAME_DEST {
+					typ = sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_RENAME_DESTINATION
+				}
+				interaction := sgpb.ResourceInteraction_builder{
+					Timestamp: event.GetTimestamp(),
+					IoInfo:    resourceEvent.GetIoInfo(),
+					Type:      typ.Enum(),
+				}.Build()
+				if dgStr, ok := pathsToDigest[resourceEvent.GetRenamePartnerPath()]; ok {
+					interaction.SetRenamePartnerDigest(dgStr)
+					outputs[dg.String()] = append(outputs[dg.String()], interaction)
+				} else {
+					pendingRenamesByPath[path] = &interactionAndDigest{interaction, dg.String()}
+				}
+				if partner, ok := pendingRenamesByPath[resourceEvent.GetRenamePartnerPath()]; ok {
+					partner.interaction.SetRenamePartnerDigest(dg.String())
+					outputs[partner.dgStr] = append(outputs[partner.dgStr], partner.interaction)
+					delete(pendingRenamesByPath, resourceEvent.GetRenamePartnerPath())
+				}
 			}
-		case sgevpb.SysGraphEvent_ExecEvent_case:
+		case sgpb.SysGraphEvent_ExecEvent_case:
 			execEvent := event.GetExecEvent()
 			dg, err := b.rdb.addResource(execEvent.GetExecutable())
 			if err != nil {
@@ -126,13 +165,13 @@ func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, er
 				Timestamp: event.GetTimestamp(),
 			}.Build()
 			builder.ExecInfo = execEvent.GetExecInfo()
-		case sgevpb.SysGraphEvent_MetadataEvent_case:
+		case sgpb.SysGraphEvent_MetadataEvent_case:
 			metadataEvent := event.GetMetadataEvent()
 			if builder.Metadata == nil {
 				builder.Metadata = make(map[string]string)
 			}
 			builder.Metadata[metadataEvent.GetKey()] = metadataEvent.GetValue()
-		case sgevpb.SysGraphEvent_ChildEvent_case:
+		case sgpb.SysGraphEvent_ChildEvent_case:
 			childEvent := event.GetChildEvent()
 			childActionID, ok := b.sidToID[childEvent.GetChildActionId()]
 			if !ok {
@@ -144,13 +183,13 @@ func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, er
 			builder.Children[childActionID] = sgpb.ActionInteraction_builder{
 				Timestamp: event.GetTimestamp(),
 			}.Build()
-		case sgevpb.SysGraphEvent_StartEvent_case:
+		case sgpb.SysGraphEvent_StartEvent_case:
 			builder.StartTime = event.GetStartEvent().GetTimestamp()
-		case sgevpb.SysGraphEvent_EndEvent_case:
+		case sgpb.SysGraphEvent_EndEvent_case:
 			builder.EndTime = event.GetEndEvent().GetTimestamp()
 			builder.ExitSignal = proto.String(event.GetEndEvent().GetSignal())
 			builder.ExitStatus = proto.Uint32(event.GetEndEvent().GetStatus())
-		case sgevpb.SysGraphEvent_PipeEvent_case:
+		case sgpb.SysGraphEvent_PipeEvent_case:
 			if b.riskyPipes != nil {
 				//  actionIDs are guaranteed not nil.
 				if _, ok := b.riskyPipes.actionIDs[aid]; ok {
@@ -160,7 +199,7 @@ func (b actionBuilderOptions) buildAction(ctx context.Context) (*sgpb.Action, er
 					builder.Metadata["risky_pipe"] = "true"
 				}
 			}
-		case sgevpb.SysGraphEvent_DupEvent_case:
+		case sgpb.SysGraphEvent_DupEvent_case:
 			if b.riskyPipes != nil {
 				//  readers/writers are guaranteed not nil.
 				if pipeResource, ok := b.riskyPipes.readers[b.irActionID]; ok {
@@ -226,15 +265,15 @@ func (c *Builder) parents(ctx context.Context, ep Reader, irToBGActionIDMap map[
 			}
 			for _, event := range events {
 				switch event.WhichEvent() {
-				case sgevpb.SysGraphEvent_ChildEvent_case:
+				case sgpb.SysGraphEvent_ChildEvent_case:
 					childEvent := event.GetChildEvent()
 					parents.Store(childEvent.GetChildActionId(), parent{
 						actionID:  aid,
 						timestamp: event.GetTimestamp().AsTime(),
 					})
-				case sgevpb.SysGraphEvent_PipeEvent_case:
+				case sgpb.SysGraphEvent_PipeEvent_case:
 					pipeActions.Store(aid, struct{}{})
-				case sgevpb.SysGraphEvent_DupEvent_case:
+				case sgpb.SysGraphEvent_DupEvent_case:
 					// The string, parentExecID, is the tetragon exec ID, also the IR format's action ID.
 					// The int64, parentActID, is the SysGraph action ID.
 					parentExecID := event.GetDupEvent().GetParentExecId()
@@ -355,7 +394,7 @@ func (c *Builder) eg(ctx context.Context) (*errgroup.Group, context.Context) {
 type Reader interface {
 	// Events returns the IR events where SysGraphEvent.action_id == actionID.
 	// Events are sorted by timestamp.
-	Events(ctx context.Context, actionID string) ([]*sgevpb.SysGraphEvent, error)
+	Events(ctx context.Context, actionID string) ([]*sgpb.SysGraphEvent, error)
 	// Actions returns all values of SysGraphEvent.action_id.
 	Actions(ctx context.Context) ([]string, error)
 	// RawEvents returns the raw events for the action where SysGraphEvent.action_id == actionID.
