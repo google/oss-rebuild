@@ -5,7 +5,8 @@ package analyzer
 
 import (
 	"bytes"
-	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -181,7 +182,8 @@ func TestGCSEventBodyToTargetEvent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := GCSEventBodyToTargetEvent(io.NopCloser(strings.NewReader(tt.body)))
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tt.body))
+			got, err := GCSEventBodyToTargetEvent(req)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("GCSEventBodyToTargetEvent() expected error, got nil")
@@ -220,7 +222,8 @@ func TestGCSEventBodyToTargetEvent_BodyClosure(t *testing.T) {
 		Reader: bytes.NewReader([]byte(validJSON)),
 		closed: false,
 	}
-	result, err := GCSEventBodyToTargetEvent(mock)
+	req := &http.Request{Body: mock}
+	result, err := GCSEventBodyToTargetEvent(req)
 	if err != nil {
 		t.Errorf("GCSEventBodyToTargetEvent() unexpected error = %v", err)
 	}

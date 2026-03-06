@@ -287,12 +287,12 @@ func (h *fakeHandler) handle(_ http.ResponseWriter, r *http.Request) {
 }
 
 type fakeTransltor struct {
-	got  string
-	send FooRequest
+	gotBody string
+	send    FooRequest
 }
 
-func (t *fakeTransltor) translate(r io.ReadCloser) (FooRequest, error) {
-	t.got = string(must(io.ReadAll(r)))
+func (t *fakeTransltor) translate(r *http.Request) (FooRequest, error) {
+	t.gotBody = string(must(io.ReadAll(r.Body)))
 	return t.send, nil
 }
 
@@ -301,8 +301,8 @@ func TestTranslate(t *testing.T) {
 	ft := &fakeTransltor{send: FooRequest{Foo: "foo"}}
 	handler := Translate(ft.translate, h.handle)
 	handler(nil, &http.Request{URL: must(url.Parse("http://example.com")), Body: io.NopCloser(strings.NewReader("foo"))})
-	if ft.got != "foo" {
-		t.Errorf("ft.got = %q, want %q", ft.got, "foo")
+	if ft.gotBody != "foo" {
+		t.Errorf("ft.gotBody = %q, want %q", ft.gotBody, "foo")
 	}
 	if h.got.URL.RawQuery != "foo=foo" {
 		t.Errorf("h.got.URL.RawQuery = %q, want %q", h.got.URL.RawQuery, "foo=foo")
