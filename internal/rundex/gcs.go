@@ -14,7 +14,9 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/pipe"
+	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -129,6 +131,57 @@ func (g *GCSClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest)
 		return nil, err
 	}
 	return rebuilds, nil
+}
+
+// RecentRebuilds fetches the 100 most recent rebuild results.
+func (g *GCSClient) RecentRebuilds(ctx context.Context) ([]Rebuild, error) {
+	return g.FetchRebuilds(ctx, &FetchRebuildRequest{Limit: 100})
+}
+
+// RecentEcosystemRebuilds fetches the 100 most recent rebuild results for a specific ecosystem.
+func (g *GCSClient) RecentEcosystemRebuilds(ctx context.Context, eco rebuild.Ecosystem) ([]Rebuild, error) {
+	return g.FetchRebuilds(ctx, &FetchRebuildRequest{Target: &rebuild.Target{Ecosystem: eco}, Limit: 100})
+}
+
+// RecentPackageRebuilds fetches the 100 most recent rebuild results for a specific package.
+func (g *GCSClient) RecentPackageRebuilds(ctx context.Context, eco rebuild.Ecosystem, pkg string) ([]Rebuild, error) {
+	return g.FetchRebuilds(ctx, &FetchRebuildRequest{Target: &rebuild.Target{Ecosystem: eco, Package: pkg}, Limit: 100})
+}
+
+// FetchAttempt fetches a specific Rebuild object from GCS.
+func (g *GCSClient) FetchAttempt(ctx context.Context, target rebuild.Target, runID string) (Rebuild, error) {
+	et := rebuild.FilesystemTargetEncoding.Encode(target)
+	p := path.Join(g.prefix, layout.RundexRebuildsPath, runID, string(et.Ecosystem), et.Package, et.Version, et.Artifact, rebuildFileName)
+	obj := g.client.Bucket(g.bucket).Object(p)
+	r, err := obj.NewReader(ctx)
+	if err != nil {
+		return Rebuild{}, errors.Wrap(err, "creating reader for rebuild file")
+	}
+	defer r.Close()
+	var rebuild Rebuild
+	if err := json.NewDecoder(r).Decode(&rebuild); err != nil {
+		return Rebuild{}, errors.Wrap(err, "decoding rebuild file")
+	}
+	return rebuild, nil
+}
+
+// LatestTrackedPackages fetches the most recent rebuild result for each tracked package.
+func (g *GCSClient) LatestTrackedPackages(ctx context.Context, tracked feed.TrackedPackageIndex) ([]Rebuild, error) {
+	var packages []benchmark.Package
+	for eco, pkgs := range tracked {
+		for pkg := range pkgs {
+			packages = append(packages, benchmark.Package{Ecosystem: string(eco), Name: pkg})
+		}
+	}
+	return g.FetchRebuilds(ctx, &FetchRebuildRequest{
+		Bench: &benchmark.PackageSet{
+			Packages: packages,
+			Metadata: benchmark.Metadata{
+				Count: len(packages),
+			},
+		},
+		LatestPerPackage: true,
+	})
 }
 
 func (g *GCSClient) WriteRebuild(ctx context.Context, r Rebuild) error {

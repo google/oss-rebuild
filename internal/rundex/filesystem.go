@@ -13,7 +13,9 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
+	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/pkg/errors"
 )
@@ -177,4 +179,53 @@ func (f *FilesystemClient) WriteRun(ctx context.Context, r Run) error {
 		}()
 	}
 	return nil
+}
+
+func (f *FilesystemClient) RecentRebuilds(ctx context.Context) ([]Rebuild, error) {
+	return f.FetchRebuilds(ctx, &FetchRebuildRequest{Limit: 100})
+}
+
+// RecentEcosystemRebuilds fetches the 100 most recent rebuild results for a specific ecosystem.
+func (f *FilesystemClient) RecentEcosystemRebuilds(ctx context.Context, eco rebuild.Ecosystem) ([]Rebuild, error) {
+	return f.FetchRebuilds(ctx, &FetchRebuildRequest{Target: &rebuild.Target{Ecosystem: eco}, Limit: 100})
+}
+
+// RecentPackageRebuilds fetches the 100 most recent rebuild results for a specific package.
+func (f *FilesystemClient) RecentPackageRebuilds(ctx context.Context, eco rebuild.Ecosystem, pkg string) ([]Rebuild, error) {
+	return f.FetchRebuilds(ctx, &FetchRebuildRequest{Target: &rebuild.Target{Ecosystem: eco, Package: pkg}, Limit: 100})
+}
+
+// FetchAttempt fetches a specific Rebuild object from local path.
+func (f *FilesystemClient) FetchAttempt(ctx context.Context, target rebuild.Target, runID string) (Rebuild, error) {
+	et := rebuild.FilesystemTargetEncoding.Encode(target)
+	path := filepath.Join(layout.RundexRebuildsDir, runID, string(et.Ecosystem), et.Package, et.Version, et.Artifact, rebuildFileName)
+	file, err := f.fs.Open(path)
+	if err != nil {
+		return Rebuild{}, errors.Wrap(err, "opening rebuild file")
+	}
+	defer file.Close()
+	var r Rebuild
+	if err := json.NewDecoder(file).Decode(&r); err != nil {
+		return Rebuild{}, errors.Wrap(err, "decoding rebuild file")
+	}
+	return r, nil
+}
+
+// LatestTrackedPackages fetches the most recent rebuild result for each tracked package.
+func (f *FilesystemClient) LatestTrackedPackages(ctx context.Context, tracked feed.TrackedPackageIndex) ([]Rebuild, error) {
+	var packages []benchmark.Package
+	for eco, pkgs := range tracked {
+		for pkg := range pkgs {
+			packages = append(packages, benchmark.Package{Ecosystem: string(eco), Name: pkg})
+		}
+	}
+	return f.FetchRebuilds(ctx, &FetchRebuildRequest{
+		Bench: &benchmark.PackageSet{
+			Packages: packages,
+			Metadata: benchmark.Metadata{
+				Count: len(packages),
+			},
+		},
+		LatestPerPackage: true,
+	})
 }
