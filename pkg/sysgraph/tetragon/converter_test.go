@@ -675,6 +675,59 @@ func TestConvertDupSyscallMissingArgs(t *testing.T) {
 	}
 }
 
+func TestConvertTCPConnect(t *testing.T) {
+	ts := tpb.New(time.Unix(570, 0))
+	events := []*tetragonpb.GetEventsResponse{
+		{
+			Event: &tetragonpb.GetEventsResponse_ProcessKprobe{
+				ProcessKprobe: &tetragonpb.ProcessKprobe{
+					Process: &tetragonpb.Process{
+						ExecId:    "tcp-connect",
+						Binary:    "/usr/bin/local/curl",
+						StartTime: ts,
+					},
+					FunctionName: "tcp_connect",
+					Args: []*tetragonpb.KprobeArgument{{
+						Arg: &tetragonpb.KprobeArgument_SockArg{
+							SockArg: &tetragonpb.KprobeSock{
+								Saddr: "from",
+								Sport: 10,
+								Daddr: "to",
+								Dport: 20,
+							}}},
+					},
+				},
+			},
+			Time: ts,
+		},
+	}
+
+	mem := &sgir.InMemoryFormat{}
+	conv := NewConverter()
+	if err := conv.Convert(t.Context(), events, mem); err != nil {
+		t.Fatalf("Convert() error: %v", err)
+	}
+
+	actionEvents, ok := mem.EventMap["tcp-connect"]
+	if !ok {
+		t.Fatal("expected events for tcp-connect")
+	}
+	var foundConnect bool
+	for _, e := range actionEvents.Events {
+		if e.HasResourceEvent() {
+			foundConnect = true
+			de := e.GetResourceEvent()
+			wantAddr := "from:10->to:20"
+			if gotAddr := de.GetResource().GetNetworkAddrInfo().GetAddress(); gotAddr != wantAddr {
+				t.Errorf("Address = %s, want %s", gotAddr, wantAddr)
+			}
+		}
+	}
+	if !foundConnect {
+		t.Error("expected ResourceEvent")
+	}
+}
+
 func TestConvertParentProcessAccounting(t *testing.T) {
 	ts := tpb.New(time.Unix(100, 0))
 

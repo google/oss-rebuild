@@ -255,6 +255,8 @@ func convertProcessKprobe(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb
 		return convertPipeSyscall(actionID, ts, kprobe)
 	case "sys_dup", "sys_dup2", "sys_dup3":
 		return convertDupSyscall(actionID, ts, kprobe)
+	case "tcp_connect":
+		return convertTcpConnect(actionID, ts, kprobe)
 	default:
 		log.Printf("unknown kprobe function name: %q", kprobe.GetFunctionName())
 		return nil
@@ -365,6 +367,38 @@ func convertDupSyscall(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.Pr
 				NewFd:        proto.Int32(newFd),
 				ParentExecId: proto.String(parentExecID),
 				Timestamp:    kprobe.GetProcess().GetStartTime(),
+			}.Build(),
+		}.Build(),
+	}
+}
+
+func convertTcpConnect(actionID string, ts *tpb.Timestamp, kprobe *tetragonpb.ProcessKprobe) []*sgpb.SysGraphEvent {
+	args := kprobe.GetArgs()
+	if len(args) < 1 {
+		return nil
+	}
+	sock := args[0].GetSockArg()
+	if sock == nil {
+		return nil
+	}
+	daddr := sock.GetDaddr()
+	if daddr == "" {
+		return nil
+	}
+	address := fmt.Sprintf("%s:%d->%s:%d", sock.GetSaddr(), sock.GetSport(), daddr, sock.GetDport())
+	return []*sgpb.SysGraphEvent{
+		sgpb.SysGraphEvent_builder{
+			ActionId:  proto.String(actionID),
+			Timestamp: ts,
+			ResourceEvent: sgpb.ResourceEvent_builder{
+				EventType: sgpb.ResourceEvent_EVENT_TYPE_OUTPUT.Enum(),
+				Resource: sgpb.Resource_builder{
+					Type: sgpb.ResourceType_RESOURCE_TYPE_NETWORK_ADDRESS.Enum(),
+					NetworkAddrInfo: sgpb.NetworkAddrInfo_builder{
+						Protocol: proto.String("tcp"),
+						Address:  proto.String(address),
+					}.Build(),
+				}.Build(),
 			}.Build(),
 		}.Build(),
 	}
