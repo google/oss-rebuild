@@ -388,6 +388,7 @@ var gcbProxyBuildTpl = template.Must(
 		"join": func(sep string, s []string) string { return strings.Join(s, sep) },
 	}).Parse(
 		textwrap.Dedent(`
+			#!/usr/bin/env bash
 			set -eux
 			echo 'Starting rebuild for {{.TargetStr}}'
 			{{- if or .ProxyAuth .TetragonSysgraphAuth}}
