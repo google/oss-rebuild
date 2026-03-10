@@ -7,15 +7,18 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/elazarl/goproxy"
 )
 
 type HTTPRequestLog struct {
-	Method string
-	Scheme string
-	Host   string
-	Path   string
+	Method   string    `json:"Method"`
+	Scheme   string    `json:"Scheme"`
+	Host     string    `json:"Host"`
+	Path     string    `json:"Path"`
+	PeerPort string    `json:"PeerPort,omitempty"`
+	Time     time.Time `json:"Time,omitempty"`
 }
 
 type NetworkActivityLog struct {
@@ -35,11 +38,14 @@ func CaptureActivityLog(t *goproxy.ProxyHttpServer, mx *sync.Mutex) *NetworkActi
 		if err != nil || !((port == "80" && req.URL.Scheme == "http") || (port == "443" && req.URL.Scheme == "https")) {
 			host = req.URL.Host
 		}
+		_, peerPort, _ := net.SplitHostPort(req.RemoteAddr)
 		httpReqs <- HTTPRequestLog{
-			Method: req.Method,
-			Scheme: req.URL.Scheme,
-			Host:   host,
-			Path:   req.URL.Path,
+			Method:   req.Method,
+			Scheme:   req.URL.Scheme,
+			Host:     host,
+			Path:     req.URL.Path,
+			PeerPort: peerPort,
+			Time:     time.Now(),
 		}
 		return req, nil
 	})
