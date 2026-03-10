@@ -5,6 +5,7 @@ package sysgraph
 
 import (
 	"github.com/google/oss-rebuild/tools/ctl/command/sysgraph/annotatenetwork"
+	"github.com/google/oss-rebuild/tools/ctl/command/sysgraph/diff"
 	"github.com/spf13/cobra"
 )
 
@@ -15,5 +16,6 @@ func Command() *cobra.Command {
 		Short: "Sysgraph analysis and transformation commands",
 	}
 	cmd.AddCommand(annotatenetwork.Command())
+	cmd.AddCommand(diff.Command())
 	return cmd
 }
