@@ -40,11 +40,11 @@ var (
 	testTask  = run("go", "test", "./...")
 	lintTask  = run("go", "vet", "./...")
 
-	fmtCheckTask = run("gofmt", "-l", ".").failIfOutput("files need formatting")
-	fmtFixTask   = run("gofmt", "-w", ".")
+	fmtCheckTask = run("sh", "-c", "find . -name '*.go' ! -name '*.pb.go' -print0 | xargs -0 gofmt -l").failIfOutput("files need formatting")
+	fmtFixTask   = run("sh", "-c", "find . -name '*.go' ! -name '*.pb.go' -print0 | xargs -0 gofmt -w")
 
-	importsCheckTask = run("go", "tool", "goimports", "-l", ".").failIfOutput("files need import formatting")
-	importsFixTask   = run("go", "tool", "goimports", "-w", ".")
+	importsCheckTask = run("sh", "-c", "find . -name '*.go' ! -name '*.pb.go' -print0 | xargs -0 go tool goimports -l").failIfOutput("files need import formatting")
+	importsFixTask   = run("sh", "-c", "find . -name '*.go' ! -name '*.pb.go' -print0 | xargs -0 go tool goimports -w")
 
 	// NOTE: docs/layouts are Hugo Go templates which do not carry the correct file extension.
 	licenseCheckTask = run("go", "tool", "addlicense", "-check", "-s=only", "-ignore=.*/**", "-ignore=bin/**", "-ignore=**/.terraform.lock.hcl", "-ignore=definitions/**", "-ignore=docs/layouts/**", "-ignore=**/*.pb.go", ".")
