@@ -6,7 +6,6 @@ package gcb
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"path"
@@ -19,7 +18,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
-	"gopkg.in/yaml.v3"
 )
 
 // upload struct for asset upload template
@@ -28,28 +26,50 @@ type upload struct {
 	To   string
 }
 
-// tetragonPoliciesYaml contains the Tetragon policy used for build syscall monitoring
+// tetragonPoliciesYaml contains the Tetragon policies used for build syscall monitoring.
+// NOTE: $TETRAGON_PID is a shell variable placeholder expanded at runtime
+// using the tetragon container's host PID inside an unquoted heredoc.
 var tetragonPoliciesYaml = []string{`apiVersion: cilium.io/v1alpha1
 kind: TracingPolicy
 metadata:
-  name: "process-and-memory"
+  name: "sysgraph"
 spec:
+  lists:
+  - name: "pipe"
+    values:
+    - "sys_pipe"
+    - "sys_pipe2"
+    type: "syscalls"
+  - name: "dup"
+    values:
+    - "sys_dup"
+    - "sys_dup2"
+    - "sys_dup3"
+    type: "syscalls"
   kprobes:
   - call: "security_file_permission"
     syscall: false
-    return: true
     args:
     - index: 0
       type: "file" # (struct file *) used for getting the path
     - index: 1
       type: "int" # 0x04 is MAY_READ, 0x02 is MAY_WRITE
-    returnArg:
-      index: 0
-      type: "int"
-    returnArgAction: "Post"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
   - call: "security_mmap_file"
     syscall: false
-    return: true
     args:
     - index: 0
       type: "file" # (struct file *) used for getting the path
@@ -57,58 +77,154 @@ spec:
       type: "uint64" # the prot flags PROT_READ(0x01), PROT_WRITE(0x02), PROT_EXEC(0x04)
     - index: 2
       type: "uint32" # the mmap flags (i.e. MAP_SHARED, ...)
-    returnArg:
-      index: 0
-      type: "int"
-    returnArgAction: "Post"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
   - call: "security_path_truncate"
     syscall: false
-    return: true
     args:
     - index: 0
       type: "path" # (struct path *) used for getting the path
-    returnArg:
-      index: 0
-      type: "int"
-    returnArgAction: "Post"
-`,
-	`apiVersion: cilium.io/v1alpha1
-kind: TracingPolicy
-metadata:
-  name: "file-open-at"
-spec:
-  tracepoints:
-  - subsystem: syscalls
-    event: sys_enter_openat
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
+  - call: "security_path_rename"
+    syscall: false
     args:
-    - index: 5
-      type: int32
-    - index: 6
-      type: string
-    - index: 7
-      type: uint32
-    - index: 8
-      type: uint32
+    - index: 0
+      type: "path"
+    - index: 1
+      type: "dentry"
+    - index: 2
+      type: "path"
+    - index: 3
+      type: "dentry"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
+  - call: "security_path_unlink"
+    syscall: false
+    args:
+    - index: 0
+      type: "path"
+    - index: 1
+      type: "dentry"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
+  - call: "list:dup"
+    syscall: true
+    args:
+    - index: 0
+      type: "int"
+      label: "old_fd"
+    - index: 1
+      type: "int"
+      label: "new_fd"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
+      matchArgs:
+      - index: 1
+        operator: Equal
+        values:
+        - "0"
+        - "1"
+  - call: "list:pipe"
+    syscall: true
+    args:
+    - index: 0
+      type: "uint64"
+      label: "fd[2]"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
+  - call: "tcp_connect"
+    syscall: false
+    args:
+    - index: 0
+      type: "sock"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
 `,
-}
-
-var tetragonPoliciesJSON []string
-
-func init() {
-	for _, policyYaml := range tetragonPoliciesYaml {
-		var data any
-		if err := yaml.Unmarshal([]byte(policyYaml), &data); err != nil {
-			log.Fatalf("Malformed tetragon policy: %v", err)
-		}
-		b, err := json.Marshal(data)
-		if err != nil {
-			log.Fatalf("Converting tetragon policy to json: %v", err)
-		}
-		if bytes.Contains(b, []byte("'")) {
-			log.Fatalf("Policy cannot contain single quotes: %s", string(b))
-		}
-		tetragonPoliciesJSON = append(tetragonPoliciesJSON, string(b))
-	}
 }
 
 type gcbContainerArgs struct {
@@ -181,24 +297,47 @@ var gcbStandardBuildTpl = template.Must(
 			set -eux
 			echo 'Starting rebuild for {{.TargetStr}}'
 			{{- if .UseSyscallMonitor}}
+			mkdir -p /workspace/tetragon/
+			{{- if .TetragonSysgraphURL}}
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+			{{- else}}
 			touch /workspace/tetragon.jsonl
-			mkdir /workspace/tetragon/
-			{{- range $i, $policy := .SyscallPolicies}}
-			echo '{{$policy}}' > "/workspace/tetragon/policy_{{ $i }}.json"
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
 			{{- end}}
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
+			TETRAGON_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
 			{{- end}}
-			{{- if .TimewarpAuth}}
+			{{- if or .TimewarpAuth .TetragonSysgraphAuth}}
 			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
+			{{- end}}
+			{{- if .TetragonSysgraphURL}}
+			curl -O {{if .TetragonSysgraphAuth}}-H @/tmp/auth_header {{end}}{{.TetragonSysgraphURL}}
+			chmod +x tetragon_sysgraph
+			docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
+			docker logs --follow sysgraph &
+			SYSGRAPH_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' sysgraph)
+			{{- end}}
+			{{- if .UseSyscallMonitor}}
+			SYSGRAPH_PID=${SYSGRAPH_PID:-0}
+			PROXY_PID=0
+			{{- range $i, $policy := .SyscallPolicies}}
+			cat > /workspace/tetragon/policy_{{$i}}.yaml <<EOPOLICY
+			{{$policy}}EOPOLICY
+			docker exec tetragon tetra tracingpolicy add /workspace/tetragon/policy_{{$i}}.yaml
+			{{- end}}
 			{{- end}}
 			cat <<'EOS' | docker buildx build {{if .TimewarpAuth}}--secret id=auth_header,src=/tmp/auth_header {{end}}--tag=img -
 			{{.Dockerfile}}
 			EOS
 			docker run {{if .Privileged}}--privileged {{end}}--name=container img
 			{{- if .UseSyscallMonitor}}
-			docker kill tetragon
+			echo '=== Build finished, signaling sysgraph to drain ==='
+			{{- if .TetragonSysgraphURL}}
+			docker kill -s USR1 sysgraph || true
+			docker wait sysgraph || true
+			{{- end}}
+			docker stop -t 5 tetragon
 			{{- end}}
 			`)[1:], // remove leading newline
 	))
@@ -251,7 +390,7 @@ var gcbProxyBuildTpl = template.Must(
 		textwrap.Dedent(`
 			set -eux
 			echo 'Starting rebuild for {{.TargetStr}}'
-			{{- if .ProxyAuth}}
+			{{- if or .ProxyAuth .TetragonSysgraphAuth}}
 			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 			{{- end}}
@@ -290,13 +429,30 @@ var gcbProxyBuildTpl = template.Must(
 				iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':{{.TLSPort}}
 			'
 			{{- if .UseSyscallMonitor}}
+			mkdir -p /workspace/tetragon/
+			{{- if .TetragonSysgraphURL}}
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+			{{- else}}
 			touch /workspace/tetragon.jsonl
-			mkdir /workspace/tetragon/
-			{{- range $i, $policy := .SyscallPolicies}}
-			echo '{{$policy}}' > "/workspace/tetragon/policy_{{ $i }}.json"
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
 			{{- end}}
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
+			TETRAGON_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
+			{{- if .TetragonSysgraphURL}}
+			curl -O {{if .TetragonSysgraphAuth}}-H @/tmp/auth_header {{end}}{{.TetragonSysgraphURL}}
+			chmod +x tetragon_sysgraph
+			docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
+			docker logs --follow sysgraph &
+			SYSGRAPH_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' sysgraph)
+			PROXY_PID=$(docker inspect -f '{{printf "%s" "{{Process.Pid}}"}}' proxy)
+			{{- end}}
+			SYSGRAPH_PID=${SYSGRAPH_PID:-0}
+			PROXY_PID=${PROXY_PID:-0}
+			{{- range $i, $policy := .SyscallPolicies}}
+			cat > /workspace/tetragon/policy_{{$i}}.yaml <<EOPOLICY
+			{{$policy}}EOPOLICY
+			docker exec tetragon tetra tracingpolicy add /workspace/tetragon/policy_{{$i}}.yaml
+			{{- end}}
 			{{- end}}
 			cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" > /Dockerfile
 			{{.Dockerfile}}
@@ -310,7 +466,12 @@ var gcbProxyBuildTpl = template.Must(
 				docker run {{if .Privileged}}--privileged {{end}}--name=container img
 			'
 			{{- if .UseSyscallMonitor}}
-			docker kill tetragon
+			echo '=== Build finished, signaling sysgraph to drain ==='
+			{{- if .TetragonSysgraphURL}}
+			docker kill -s USR1 sysgraph || true
+			docker wait sysgraph || true
+			{{- end}}
+			docker stop -t 5 tetragon
 			{{- end}}
 			curl http://proxy:{{.CtrlPort}}/summary > /workspace/netlog.json
 			`)[1:], // remove leading newline
@@ -482,6 +643,10 @@ func (p *Planner) generateStandardBuildScript(target rebuild.Target, dockerfile 
 	if err != nil {
 		return "", errors.Wrap(err, "failed to process timewarp URL")
 	}
+	tetragonSysgraphURL, tetragonSysgraphAuth, err := p.getToolURL(build.TetragonSysgraphTool, opts)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to process tetragon_sysgraph URL")
+	}
 	var privileged bool
 	if reqs.Privileged {
 		if p.allowPrivileged {
@@ -492,13 +657,15 @@ func (p *Planner) generateStandardBuildScript(target rebuild.Target, dockerfile 
 	}
 	var buf bytes.Buffer
 	if err := gcbStandardBuildTpl.Execute(&buf, map[string]any{
-		"TargetStr":           fmt.Sprintf("%+v", target),
-		"Dockerfile":          dockerfile,
-		"Privileged":          privileged,
-		"UseSyscallMonitor":   opts.UseSyscallMonitor,
-		"SyscallPolicies":     tetragonPoliciesJSON,
-		"TimewarpAuth":        timewarpAuth,
-		"ServiceAccountEmail": serviceAccountEmail,
+		"TargetStr":            fmt.Sprintf("%+v", target),
+		"Dockerfile":           dockerfile,
+		"Privileged":           privileged,
+		"UseSyscallMonitor":    opts.UseSyscallMonitor,
+		"SyscallPolicies":      tetragonPoliciesYaml,
+		"TimewarpAuth":         timewarpAuth,
+		"ServiceAccountEmail":  serviceAccountEmail,
+		"TetragonSysgraphURL":  tetragonSysgraphURL,
+		"TetragonSysgraphAuth": tetragonSysgraphAuth,
 	}); err != nil {
 		return "", errors.Wrap(err, "failed to execute standard build template")
 	}
@@ -516,6 +683,10 @@ func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile str
 	if err != nil {
 		return "", errors.Wrap(err, "failed to process timewarp URL")
 	}
+	tetragonSysgraphURL, tetragonSysgraphAuth, err := p.getToolURL(build.TetragonSysgraphTool, opts)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to process tetragon_sysgraph URL")
+	}
 	var privileged bool
 	if reqs.Privileged {
 		if p.allowPrivileged {
@@ -526,21 +697,23 @@ func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile str
 	}
 	var buf bytes.Buffer
 	if err := gcbProxyBuildTpl.Execute(&buf, map[string]any{
-		"TargetStr":           fmt.Sprintf("%+v", target),
-		"Dockerfile":          dockerfile,
-		"Privileged":          privileged,
-		"UseSyscallMonitor":   opts.UseSyscallMonitor,
-		"SyscallPolicies":     tetragonPoliciesJSON,
-		"TimewarpAuth":        timewarpAuth,
-		"ProxyURL":            proxyURL,
-		"ProxyAuth":           proxyAuth,
-		"ServiceAccountEmail": serviceAccountEmail,
-		"User":                "proxyu",
-		"HTTPPort":            "3128",
-		"TLSPort":             "3129",
-		"CtrlPort":            "3127",
-		"DockerPort":          "3130",
-		"CertEnvVars":         []string{"PIP_CERT", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE", "NIX_SSL_CERT_FILE"},
+		"TargetStr":            fmt.Sprintf("%+v", target),
+		"Dockerfile":           dockerfile,
+		"Privileged":           privileged,
+		"UseSyscallMonitor":    opts.UseSyscallMonitor,
+		"SyscallPolicies":      tetragonPoliciesYaml,
+		"TimewarpAuth":         timewarpAuth,
+		"ProxyURL":             proxyURL,
+		"ProxyAuth":            proxyAuth,
+		"ServiceAccountEmail":  serviceAccountEmail,
+		"User":                 "proxyu",
+		"HTTPPort":             "3128",
+		"TLSPort":              "3129",
+		"CtrlPort":             "3127",
+		"DockerPort":           "3130",
+		"CertEnvVars":          []string{"PIP_CERT", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE", "NIX_SSL_CERT_FILE"},
+		"TetragonSysgraphURL":  tetragonSysgraphURL,
+		"TetragonSysgraphAuth": tetragonSysgraphAuth,
 	}); err != nil {
 		return "", errors.Wrap(err, "failed to execute proxy build template")
 	}
@@ -557,7 +730,11 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 			rebuild.RebuildAsset,
 		}
 		if opts.UseSyscallMonitor {
-			assetTypes = append(assetTypes, rebuild.TetragonLogAsset)
+			if _, exists := opts.Resources.ToolURLs[build.TetragonSysgraphTool]; exists {
+				assetTypes = append(assetTypes, rebuild.SysgraphAsset)
+			} else {
+				assetTypes = append(assetTypes, rebuild.TetragonLogAsset)
+			}
 		}
 		if opts.UseNetworkProxy {
 			assetTypes = append(assetTypes, rebuild.ProxyNetlogAsset)
@@ -586,6 +763,11 @@ func (p *Planner) generateAssetUploadScript(target rebuild.Target, opts build.Pl
 			case rebuild.ProxyNetlogAsset:
 				uploads = append(uploads, upload{
 					From: "/workspace/netlog.json",
+					To:   url.String(),
+				})
+			case rebuild.SysgraphAsset:
+				uploads = append(uploads, upload{
+					From: "/workspace/sysgraph.zip",
 					To:   url.String(),
 				})
 			}
