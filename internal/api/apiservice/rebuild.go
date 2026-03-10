@@ -175,6 +175,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	toolURLs := map[build.ToolType]string{
 		build.TimewarpTool:         "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "timewarp"),
 		build.GSUtilTool:           "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "gsutil_writeonly"),
+		build.ProxyTool:            "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "proxy"),
 		build.TetragonSysgraphTool: "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "tetragon_sysgraph"),
 	}
 	var authRequired []string
