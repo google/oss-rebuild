@@ -172,8 +172,9 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
 	toolURLs := map[build.ToolType]string{
-		build.TimewarpTool: "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "timewarp"),
-		build.GSUtilTool:   "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "gsutil_writeonly"),
+		build.TimewarpTool:         "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "timewarp"),
+		build.GSUtilTool:           "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "gsutil_writeonly"),
+		build.TetragonSysgraphTool: "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "tetragon_sysgraph"),
 	}
 	var authRequired []string
 	if deps.PrebuildConfig.Auth {
@@ -183,6 +184,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		rebuild.ContainerImageAsset: remoteMetadata,
 		rebuild.RebuildAsset:        remoteMetadata,
 		rebuild.TetragonLogAsset:    remoteMetadata,
+		rebuild.SysgraphAsset:       remoteMetadata,
 		rebuild.ProxyNetlogAsset:    remoteMetadata,
 		rebuild.DockerfileAsset:     deps.LocalMetadataStore,
 		rebuild.BuildInfoAsset:      deps.LocalMetadataStore,
