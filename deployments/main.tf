@@ -105,6 +105,23 @@ variable "enable_vpc" {
   description = "Whether to create and use VPC infrastructure for private build pools"
   default     = false
 }
+variable "build_def_repo" {
+  type        = string
+  description = "Repository URI containing rebuild build definitions"
+  default     = "https://github.com/google/oss-rebuild"
+  validation {
+    condition = can(regex((
+      # v--------- scheme ----------vv----------------- host -----------------------vv-- port --vv-- path --
+      "^(?:[a-zA-Z][a-zA-Z0-9+.-]*:)?(?:[a-zA-Z0-9-._~!$&'()*+,;=]+|%[0-9a-fA-F]{2})*(?::[0-9]+)?(?:/(?:[a-zA-Z0-9-._~!$&'()*+,;=:@]+|%[0-9a-fA-F]{2})*)*$"
+    ), var.build_def_repo))
+    error_message = "The build_def_repo must be a valid URI."
+  }
+}
+variable "build_def_repo_dir" {
+  type        = string
+  description = "Directory within build_def_repo containing build definitions"
+  default     = "definitions"
+}
 
 data "google_project" "project" {
   project_id = var.project
@@ -885,8 +902,8 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--debug-storage=gs://${google_storage_bucket.debug.name}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--user-agent=oss-rebuild+${var.host}/0.0.0",
-        "--build-def-repo=https://github.com/google/oss-rebuild",
-        "--build-def-repo-dir=definitions",
+        "--build-def-repo=${var.build_def_repo}",
+        "--build-def-repo-dir=${var.build_def_repo_dir}",
         "--block-local-repo-publish=${var.public}",
         "--agent-job-name=${google_cloud_run_v2_job.agent.id}",
         "--agent-api-url=${google_cloud_run_v2_service.agent-api.uri}",
