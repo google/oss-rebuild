@@ -6,6 +6,7 @@
 package proxy_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -529,6 +530,109 @@ func TestTruststorePatching(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDockerInDocker(t *testing.T) {
+	checkDockerAvailable(t)
+	bin := buildProxyBinary(t)
+	env := setupProxyTestEnv(t, bin, proxyTestEnvOpts{
+		WithDockerProxy: true,
+	})
+	env.runInBuild(t, "apk add --no-cache docker-cli")
+	proxyCert := strings.TrimSpace(strings.ReplaceAll(string(env.getProxyCert(t)), "\r\n", "\n"))
+	dh := fmt.Sprintf("DOCKER_HOST=tcp://%s:3130", env.ProxyIP)
+
+	// Scope inner resource names to the test to avoid collisions.
+	name := strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-"))
+	innerContainer := "dind-running-" + name
+	innerImage := "dind-built-" + name
+	commitImage := "saved-image-" + name
+	inspectContainer := "inspect-saved-" + name
+
+	// Dump proxy logs on failure for debugging.
+	t.Cleanup(func() {
+		if t.Failed() {
+			logs, _, _ := runDockerCommand(t, "exec", env.ProxyContainer, "sh", "-c", "tail -100 /proxy.log")
+			t.Logf("Proxy logs:\n%s", logs)
+		}
+	})
+
+	// Clean up stale volumes and register future resource cleanups.
+	cleanupProxyVolumes(t)
+	t.Cleanup(func() {
+		exec.Command("docker", "rm", "-f", innerContainer, inspectContainer).Run()
+		exec.Command("docker", "rmi", "-f", innerImage, commitImage).Run()
+	})
+
+	// 1. docker build: create a simple image via the Docker API proxy.
+	env.runInBuild(t, "mkdir -p /tmp/dind-build && "+
+		`printf 'FROM alpine:3.21\nRUN echo "built-via-proxy" > /marker.txt\n' > /tmp/dind-build/Dockerfile`)
+	env.runInBuild(t, dh+" docker build -t "+innerImage+" /tmp/dind-build")
+
+	// Verify the build artifact is present.
+	stdout, _ := env.runInBuild(t, dh+" docker run --rm "+innerImage+" cat /marker.txt")
+	if !strings.Contains(stdout, "built-via-proxy") {
+		t.Fatalf("Build artifact missing: expected 'built-via-proxy', got: %s", stdout)
+	}
+
+	// 2. docker run: use a clean base image (not the built image, which has
+	// the cert baked in from the build process) to verify cert injection.
+	stdout, _ = env.runInBuild(t, dh+" docker run --rm alpine:3.21 cat /var/cache/proxy.crt")
+	stdoutNorm := strings.TrimSpace(strings.ReplaceAll(stdout, "\r\n", "\n"))
+	if !strings.Contains(stdoutNorm, proxyCert) {
+		t.Fatalf("Proxy cert not found in /var/cache/proxy.crt for docker run")
+	}
+
+	// Verify the system truststore was patched (Alpine has the truststore).
+	stdout, _ = env.runInBuild(t, dh+" docker run --rm alpine:3.21 cat /etc/ssl/cert.pem")
+	stdoutNorm = strings.TrimSpace(strings.ReplaceAll(stdout, "\r\n", "\n"))
+	if !strings.Contains(stdoutNorm, proxyCert) {
+		t.Fatalf("Proxy cert not found in system truststore for docker run")
+	}
+
+	// 3. docker run -d + docker commit: start a container, then commit it.
+	// The proxy should unpatch the truststore before commit so the proxy
+	// cert is not baked into the committed image.
+	env.runInBuild(t, dh+" docker run -d --name="+innerContainer+" alpine:3.21 sleep 120")
+	env.runInBuild(t, dh+" docker commit "+innerContainer+" "+commitImage)
+
+	// 4. Verify the committed image directly on the host (bypassing the
+	// proxy) so docker create doesn't add volume bindings and docker export
+	// doesn't trigger unpatchTruststoreDuring.
+	if _, _, err := runDockerCommand(t, "create", "--name="+inspectContainer, commitImage, "true"); err != nil {
+		t.Fatalf("Failed to create inspection container: %v", err)
+	}
+
+	// Extract the truststore from the committed image using docker cp on the
+	// host. docker cp outputs a tar stream to stdout, so pipe through tar.
+	extractFile := func(container, path string) (string, error) {
+		cmd := exec.Command("sh", "-c",
+			fmt.Sprintf("docker cp %s:%s - | tar -xO", container, path))
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("%w: %s", err, stderr.String())
+		}
+		return string(out), nil
+	}
+
+	// Verify the proxy cert was NOT baked into the committed image's truststore.
+	truststore, err := extractFile(inspectContainer, "/etc/ssl/cert.pem")
+	if err != nil {
+		t.Fatalf("Failed to extract truststore from committed image: %v", err)
+	}
+	truststoreNorm := strings.TrimSpace(strings.ReplaceAll(truststore, "\r\n", "\n"))
+	if strings.Contains(truststoreNorm, proxyCert) {
+		t.Errorf("Proxy cert should NOT be in committed image's system truststore (was not unpatched before commit)")
+	}
+
+	// Verify /var/cache/proxy.crt was NOT baked into the committed image
+	// (the volume binding should prevent it from being captured).
+	_, err = extractFile(inspectContainer, "/var/cache/proxy.crt")
+	if err == nil {
+		t.Errorf("proxy.crt should NOT be in committed image (volume binding should exclude it)")
 	}
 }
 
