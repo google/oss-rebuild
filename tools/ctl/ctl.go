@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"github.com/google/oss-rebuild/tools/ctl/command/agentexport"
+	"github.com/google/oss-rebuild/tools/ctl/command/diffruns"
 	"github.com/google/oss-rebuild/tools/ctl/command/export"
 	"github.com/google/oss-rebuild/tools/ctl/command/getgradlegav"
 	"github.com/google/oss-rebuild/tools/ctl/command/getresults"
@@ -47,6 +48,7 @@ func init() {
 	rootCmd.AddCommand(getsessions.Command())
 	rootCmd.AddCommand(viewsession.Command())
 	rootCmd.AddCommand(agentexport.Command())
+	rootCmd.AddCommand(diffruns.Command())
 	// Rebuild logic
 	rootCmd.AddCommand(infer.Command())
 	rootCmd.AddCommand(getgradlegav.Command())
