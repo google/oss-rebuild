@@ -62,7 +62,7 @@ func (m *assetStore) Reader(ctx context.Context, a rebuild.Asset) (io.ReadCloser
 		// NOTE: RebuildRemote doesn't store the upstream, so we have to re-download it.
 		// If RebuildRemote stored the upstream in the debug bucket, this wouldn't be necessary.
 		return meta.AllRebuilders[a.Target.Ecosystem].Upstream(ctx, a.Target, m.metaAssetStore.Mux)
-	case rebuild.RebuildAsset, rebuild.TetragonLogAsset:
+	case rebuild.RebuildAsset, rebuild.TetragonLogAsset, rebuild.SysgraphAsset, rebuild.ProxyNetlogAsset:
 		// NOTE: RebuildRemote stores the RebuildAsset and TetragonLogAsset in the metadata bucket.
 		// If rebuild remote copied the rebuild artifact into debug, this wouldn't be necessary.
 		bi, err := m.buildInfo(ctx, a.Target)
