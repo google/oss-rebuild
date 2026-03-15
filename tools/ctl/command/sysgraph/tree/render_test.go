@@ -180,20 +180,53 @@ func TestRenderTree_MaxDepth(t *testing.T) {
 	}
 }
 
-func TestRenderTree_DockerAnnotation(t *testing.T) {
-	a := makeAction(1, 0, []string{"/bin/sh"}, false, 100)
-	a.SetMetadata(map[string]string{"docker": "abcdef1234567890abcdef"})
-	root := &treeNode{
-		action:   a,
-		execPath: "/bin/sh",
+func TestRenderTree_ContainerGrafting(t *testing.T) {
+	// Simulate: docker exec runs a command whose container-internal
+	// process lives under a containerd-shim in a separate subtree.
+	dockerExec := makeAction(1, 0, []string{"/usr/bin/docker", "exec", "mycontainer", "/bin/sh", "-c", "build"}, false, 100)
+	dockerExecNode := &treeNode{
+		action:   dockerExec,
+		execPath: "/usr/bin/docker",
+		children: nil, // leaf in original tree
+	}
+
+	// Container entry point under infrastructure.
+	containerEntry := makeAction(3, 2, []string{"/bin/sh", "-c", "build"}, false, 101)
+	containerEntry.SetMetadata(map[string]string{"docker": "abcdef1234567890"})
+	containerChild := makeAction(4, 3, []string{"/usr/bin/make"}, false, 102)
+
+	shimAction := makeAction(2, 0, []string{"/usr/bin/containerd-shim-runc-v2", "-id", "abcdef1234567890"}, false, 99)
+	shimNode := &treeNode{
+		action:   shimAction,
+		execPath: "/usr/bin/containerd-shim-runc-v2",
+		children: []*treeNode{
+			{
+				action:   containerEntry,
+				execPath: "/bin/sh",
+				children: []*treeNode{
+					{
+						action:   containerChild,
+						execPath: "/usr/bin/make",
+					},
+				},
+			},
+		},
 	}
 
 	var buf bytes.Buffer
-	renderTree(&buf, []*treeNode{root}, renderOpts{})
+	renderTree(&buf, []*treeNode{dockerExecNode, shimNode}, renderOpts{})
 	got := buf.String()
 
-	if !strings.Contains(got, "[container:abcdef123456]") {
-		t.Errorf("expected docker annotation, got:\n%s", got)
+	// The container entry should be grafted under docker exec.
+	if !strings.Contains(got, "++ /bin/sh -c build") {
+		t.Errorf("container entry should be grafted under docker exec, got:\n%s", got)
+	}
+	if !strings.Contains(got, "+++ /usr/bin/make") {
+		t.Errorf("container child should appear under grafted entry, got:\n%s", got)
+	}
+	// The containerd-shim should be pruned (no remaining children).
+	if strings.Contains(got, "containerd-shim") {
+		t.Errorf("infrastructure should be pruned, got:\n%s", got)
 	}
 }
 
