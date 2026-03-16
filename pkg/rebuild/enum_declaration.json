@@ -1,0 +1,66 @@
+{
+  "Count": 6,
+  "Updated": "2025-10-16T16:01:42.593924",
+  "Packages": [
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.xml.ws:jaxws-rt",
+      "Versions": [
+        "4.0.3"
+      ],
+      "Artifacts": [
+        "jaxws-rt-4.0.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "cn.dev33:sa-token-core",
+      "Versions": [
+        "1.37.0"
+      ],
+      "Artifacts": [
+        "sa-token-core-1.37.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "software.amazon.smithy:smithy-aws-traits",
+      "Versions": [
+        "1.51.0"
+      ],
+      "Artifacts": [
+        "smithy-aws-traits-1.51.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.roaringbitmap:RoaringBitmap",
+      "Versions": [
+        "1.2.0"
+      ],
+      "Artifacts": [
+        "RoaringBitmap-1.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.nutz:nutz",
+      "Versions": [
+        "1.r.72"
+      ],
+      "Artifacts": [
+        "nutz-1.r.72.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.etcd:jetcd-core",
+      "Versions": [
+        "0.7.7"
+      ],
+      "Artifacts": [
+        "jetcd-core-0.7.7.jar"
+      ]
+    }
+  ]
+}
