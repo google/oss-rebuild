@@ -26,6 +26,7 @@ import (
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	benchrun "github.com/google/oss-rebuild/tools/benchmark/run"
@@ -39,6 +40,7 @@ import (
 type Config struct {
 	API               string
 	Local             bool
+	MemoryLimit       string
 	BenchmarkPath     string
 	BootstrapBucket   string
 	BootstrapVersion  string
@@ -65,6 +67,9 @@ func (c Config) Validate() error {
 	}
 	if c.Format != "" && c.Format != "summary" && c.Format != "csv" {
 		return errors.Errorf("invalid format: %s. Expected one of 'summary' or 'csv'", c.Format)
+	}
+	if !c.Local && c.MemoryLimit != "" {
+		return errors.New("memory is only supported in local mode")
 	}
 	if !c.Local && c.GitCacheURL != "" {
 		return errors.New("git-cache-url is only supported in local mode")
@@ -137,6 +142,10 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			PrebuildURL: prebuildURL,
 			Store:       store,
 			LogSink:     deps.IO.Out,
+			DockerConfig: local.DockerRunExecutorConfig{
+				MaxParallel: 1,
+				MemoryLimit: cfg.MemoryLimit,
+			},
 		}
 		if cfg.GitCacheURL != "" {
 			u, err := url.Parse(cfg.GitCacheURL)
@@ -292,6 +301,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.API, "api", "", "OSS Rebuild API endpoint URI")
 	set.IntVar(&cfg.MaxConcurrency, "max-concurrency", 90, "maximum number of inflight requests")
 	set.BoolVar(&cfg.Local, "local", false, "true if this request is going direct to build-local (not through API first)")
+	set.StringVar(&cfg.MemoryLimit, "memory", "", "memory limit to be passed to docker (local mode only)")
 	set.StringVar(&cfg.BootstrapBucket, "bootstrap-bucket", "", "the gcs bucket where bootstrap tools are stored")
 	set.StringVar(&cfg.BootstrapVersion, "bootstrap-version", "", "the version of bootstrap tools to use")
 	set.StringVar(&cfg.Format, "format", "", "format of the output (summary|csv)")
