@@ -199,11 +199,12 @@ func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Ta
 		return "", errors.Wrap(err, "creating rebuild store")
 	}
 	buildStore := rebuild.NewMixedAssetStore(map[rebuild.AssetType]rebuild.LocatableAssetStore{
-		rebuild.ContainerImageAsset: remoteMetadata,
-		rebuild.RebuildAsset:        remoteMetadata,
-		rebuild.ProxyNetlogAsset:    remoteMetadata,
-		rebuild.DockerfileAsset:     deps.LocalMetadataStore,
-		rebuild.BuildInfoAsset:      deps.LocalMetadataStore,
+		rebuild.ContainerImageAsset:     remoteMetadata,
+		rebuild.PostBuildContainerAsset: remoteMetadata,
+		rebuild.RebuildAsset:            remoteMetadata,
+		rebuild.ProxyNetlogAsset:        remoteMetadata,
+		rebuild.DockerfileAsset:         deps.LocalMetadataStore,
+		rebuild.BuildInfoAsset:          deps.LocalMetadataStore,
 	})
 	prebuildConfig := rebuildAttestation.Predicate.BuildDefinition.InternalParameters.PrebuildConfig
 	toolURLs := map[build.ToolType]string{
@@ -219,9 +220,10 @@ func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Ta
 		Strategy: strategy,
 	}
 	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
-		BuildID:         obID,
-		UseTimewarp:     meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
-		UseNetworkProxy: true, // The whole point of the analyzer
+		BuildID:            obID,
+		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
+		UseNetworkProxy:    true, // The whole point of the analyzer
+		SaveContainerImage: true,
 		Resources: build.Resources{
 			AssetStore:       buildStore,
 			ToolURLs:         toolURLs,
