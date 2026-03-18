@@ -125,6 +125,7 @@ type attestWorker struct {
 	workerConfig
 	useSyscallMonitor bool
 	useNetworkProxy   bool
+	useRepoDefinition bool
 	overwriteMode     schema.OverwriteMode
 }
 
@@ -151,6 +152,7 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 			ID:                w.runID,
 			UseSyscallMonitor: w.useSyscallMonitor,
 			UseNetworkProxy:   w.useNetworkProxy,
+			UseRepoDefinition: w.useRepoDefinition,
 			OverwriteMode:     w.overwriteMode,
 		}
 		var verdict *schema.Verdict
@@ -277,6 +279,7 @@ type RunBenchOpts struct {
 	MaxConcurrency    int
 	UseSyscallMonitor bool
 	UseNetworkProxy   bool
+	UseRepoDefinition bool
 	OverwriteMode     schema.OverwriteMode
 	ExecService       ExecutionService
 }
@@ -291,6 +294,9 @@ func RunBench(ctx context.Context, set benchmark.PackageSet, opts RunBenchOpts) 
 	if (opts.UseNetworkProxy || opts.UseSyscallMonitor) && opts.Mode != schema.AttestMode {
 		return nil, errors.New("cannot enable network proxy or syscall monitor for non-attest mode")
 	}
+	if opts.UseRepoDefinition && opts.Mode != schema.AttestMode {
+		return nil, errors.New("--use-repo-definition is only supported in attest mode")
+	}
 	conf := workerConfig{
 		execService: opts.ExecService,
 		limiters:    defaultLimiters(),
@@ -303,6 +309,7 @@ func RunBench(ctx context.Context, set benchmark.PackageSet, opts RunBenchOpts) 
 			workerConfig:      conf,
 			useSyscallMonitor: opts.UseSyscallMonitor,
 			useNetworkProxy:   opts.UseNetworkProxy,
+			useRepoDefinition: opts.UseRepoDefinition,
 			overwriteMode:     opts.OverwriteMode,
 		}
 	case InferMode:
@@ -329,10 +336,11 @@ func RunBenchAsync(ctx context.Context, set benchmark.PackageSet, opts RunBenchO
 	for _, p := range set.Packages {
 		for i, v := range p.Versions {
 			req := schema.RebuildPackageRequest{
-				Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-				Package:   p.Name,
-				Version:   v,
-				ID:        opts.RunID,
+				Ecosystem:         rebuild.Ecosystem(p.Ecosystem),
+				Package:           p.Name,
+				Version:           v,
+				ID:                opts.RunID,
+				UseRepoDefinition: opts.UseRepoDefinition,
 			}
 			if len(p.Artifacts) > 0 {
 				req.Artifact = p.Artifacts[i]

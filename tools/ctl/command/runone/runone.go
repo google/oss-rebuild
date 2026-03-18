@@ -44,6 +44,7 @@ type Config struct {
 	Strategy          string
 	UseNetworkProxy   bool
 	UseSyscallMonitor bool
+	UseRepoDefinition bool
 	OverwriteMode     string
 	Mode              string
 }
@@ -74,6 +75,12 @@ func (c Config) Validate() error {
 	}
 	if c.Local && mode == analyzeMode {
 		return errors.New("analyze mode is not supported in local execution")
+	}
+	if c.UseRepoDefinition && c.Local {
+		return errors.New("--use-repo-definition is not supported in local mode")
+	}
+	if c.UseRepoDefinition && mode == analyzeMode {
+		return errors.New("--use-repo-definition is not supported in analyze mode")
 	}
 	if !c.Local && c.GitCacheURL != "" {
 		return errors.New("git-cache-url is only supported in local mode")
@@ -110,7 +117,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	var strategy *schema.StrategyOneOf
 	if cfg.Strategy != "" {
 		if mode == schema.AttestMode && !cfg.Local {
-			return nil, errors.New("--strategy not supported in remote attest mode, use --strategy-from-repo")
+			return nil, errors.New("--strategy not supported in remote attest mode, use --use-repo-definition")
 		}
 		if mode == analyzeMode {
 			return nil, errors.New("--strategy not supported in analyze mode")
@@ -244,6 +251,7 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 			Artifact:          cfg.Artifact,
 			UseNetworkProxy:   cfg.UseNetworkProxy,
 			UseSyscallMonitor: cfg.UseSyscallMonitor,
+			UseRepoDefinition: cfg.UseRepoDefinition,
 			OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
 			ID:                time.Now().UTC().Format(time.RFC3339),
 		})
@@ -290,6 +298,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Strategy, "strategy", "", "the strategy file to use")
 	set.BoolVar(&cfg.UseNetworkProxy, "use-network-proxy", false, "request the newtwork proxy")
 	set.BoolVar(&cfg.UseSyscallMonitor, "use-syscall-monitor", false, "request syscall monitoring")
+	set.BoolVar(&cfg.UseRepoDefinition, "use-repo-definition", false, "use build definition from the build definition repository")
 	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
 	return set
 }
