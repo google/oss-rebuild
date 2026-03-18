@@ -39,6 +39,22 @@ var (
 			Type:   sgpb.FileType_FILE_TYPE_REGULAR.Enum(),
 		}.Build(),
 	}.Build()
+	file3Res = sgpb.Resource_builder{
+		Type: sgpb.ResourceType_RESOURCE_TYPE_FILE.Enum(),
+		FileInfo: sgpb.FileInfo_builder{
+			Path:   proto.String("path/to/file3"),
+			Digest: proto.String("1234567890123456789012345678901234567890123456789012345678901234/103"),
+			Type:   sgpb.FileType_FILE_TYPE_REGULAR.Enum(),
+		}.Build(),
+	}.Build()
+	file4Res = sgpb.Resource_builder{
+		Type: sgpb.ResourceType_RESOURCE_TYPE_FILE.Enum(),
+		FileInfo: sgpb.FileInfo_builder{
+			Path:   proto.String("path/to/file4"),
+			Digest: proto.String("1234567890123456789012345678901234567890123456789012345678901234/104"),
+			Type:   sgpb.FileType_FILE_TYPE_REGULAR.Enum(),
+		}.Build(),
+	}.Build()
 	tcpRes = sgpb.Resource_builder{
 		Type: sgpb.ResourceType_RESOURCE_TYPE_NETWORK_ADDRESS.Enum(),
 		NetworkAddrInfo: sgpb.NetworkAddrInfo_builder{
@@ -175,6 +191,14 @@ func TestConstructSysGraph(t *testing.T) {
 							}.Build(),
 							sgevpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
+								Timestamp: tpb.New(time.Unix(3, 3)),
+								ResourceEvent: sgevpb.ResourceEvent_builder{
+									Resource:  file3Res,
+									EventType: sgevpb.ResourceEvent_EVENT_TYPE_DELETE.Enum(),
+								}.Build(),
+							}.Build(),
+							sgevpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(4, 4)),
 								PipeEvent: sgevpb.PipeEvent_builder{}.Build(),
 							}.Build(),
@@ -204,6 +228,24 @@ func TestConstructSysGraph(t *testing.T) {
 								ResourceEvent: sgevpb.ResourceEvent_builder{
 									Resource:  file2Res,
 									EventType: sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT.Enum(),
+								}.Build(),
+							}.Build(),
+							sgevpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action2),
+								Timestamp: tpb.New(time.Unix(3, 3)),
+								ResourceEvent: sgevpb.ResourceEvent_builder{
+									Resource:          file3Res,
+									EventType:         sgevpb.ResourceEvent_EVENT_TYPE_RENAME_SOURCE.Enum(),
+									RenamePartnerPath: proto.String(file4Res.GetFileInfo().GetPath()),
+								}.Build(),
+							}.Build(),
+							sgevpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action2),
+								Timestamp: tpb.New(time.Unix(3, 3)),
+								ResourceEvent: sgevpb.ResourceEvent_builder{
+									Resource:          file4Res,
+									EventType:         sgevpb.ResourceEvent_EVENT_TYPE_RENAME_DEST.Enum(),
+									RenamePartnerPath: proto.String(file3Res.GetFileInfo().GetPath()),
 								}.Build(),
 							}.Build(),
 							sgevpb.SysGraphEvent_builder{
@@ -365,6 +407,17 @@ func TestConstructSysGraph(t *testing.T) {
 								Interactions: []*sgpb.ResourceInteraction{
 									sgpb.ResourceInteraction_builder{
 										Timestamp: &tpb.Timestamp{Seconds: 3, Nanos: 3},
+										Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_READ.Enum(),
+									}.Build(),
+								},
+							}.Build(),
+						},
+						Outputs: map[string]*sgpb.ResourceInteractions{
+							mustDigest(t, file3Res).String(): sgpb.ResourceInteractions_builder{
+								Interactions: []*sgpb.ResourceInteraction{
+									sgpb.ResourceInteraction_builder{
+										Timestamp: &tpb.Timestamp{Seconds: 3, Nanos: 3},
+										Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_DELETE.Enum(),
 									}.Build(),
 								},
 							}.Build(),
@@ -390,6 +443,25 @@ func TestConstructSysGraph(t *testing.T) {
 								Interactions: []*sgpb.ResourceInteraction{
 									sgpb.ResourceInteraction_builder{
 										Timestamp: &tpb.Timestamp{Seconds: 3, Nanos: 3},
+										Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_WRITE.Enum(),
+									}.Build(),
+								},
+							}.Build(),
+							mustDigest(t, file3Res).String(): sgpb.ResourceInteractions_builder{
+								Interactions: []*sgpb.ResourceInteraction{
+									sgpb.ResourceInteraction_builder{
+										Timestamp:           &tpb.Timestamp{Seconds: 3, Nanos: 3},
+										Type:                sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_RENAME_SOURCE.Enum(),
+										RenamePartnerDigest: proto.String(mustDigest(t, file4Res).String()),
+									}.Build(),
+								},
+							}.Build(),
+							mustDigest(t, file4Res).String(): sgpb.ResourceInteractions_builder{
+								Interactions: []*sgpb.ResourceInteraction{
+									sgpb.ResourceInteraction_builder{
+										Timestamp:           &tpb.Timestamp{Seconds: 3, Nanos: 3},
+										Type:                sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_RENAME_DESTINATION.Enum(),
+										RenamePartnerDigest: proto.String(mustDigest(t, file3Res).String()),
 									}.Build(),
 								},
 							}.Build(),
@@ -471,6 +543,8 @@ func TestConstructSysGraph(t *testing.T) {
 				ResourceMap: map[pbdigest.Digest]*sgpb.Resource{
 					mustDigest(t, fileRes):  fileRes,
 					mustDigest(t, file2Res): file2Res,
+					mustDigest(t, file3Res): file3Res,
+					mustDigest(t, file4Res): file4Res,
 					mustDigest(t, pipeRes):  pipeRes,
 				},
 				Events: wantEvents,
