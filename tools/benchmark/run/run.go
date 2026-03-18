@@ -319,11 +319,11 @@ func RunBench(ctx context.Context, set benchmark.PackageSet, opts RunBenchOpts) 
 	return verdicts, nil
 }
 
-func RunBenchAsync(ctx context.Context, set benchmark.PackageSet, mode schema.ExecutionMode, apiURL *url.URL, runID string, queue taskqueue.Queue) error {
+func RunBenchAsync(ctx context.Context, set benchmark.PackageSet, opts RunBenchOpts, apiURL *url.URL, queue taskqueue.Queue) error {
 	if apiURL == nil {
 		return errors.New("apiURL must be provided for RunBenchAsync")
 	}
-	if mode != schema.AttestMode {
+	if opts.Mode != schema.AttestMode {
 		return errors.New("mode must be attest for RunBenchAsync")
 	}
 	for _, p := range set.Packages {
@@ -332,7 +332,7 @@ func RunBenchAsync(ctx context.Context, set benchmark.PackageSet, mode schema.Ex
 				Ecosystem: rebuild.Ecosystem(p.Ecosystem),
 				Package:   p.Name,
 				Version:   v,
-				ID:        runID,
+				ID:        opts.RunID,
 			}
 			if len(p.Artifacts) > 0 {
 				req.Artifact = p.Artifacts[i]

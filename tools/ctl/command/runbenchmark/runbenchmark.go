@@ -206,7 +206,10 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "making taskqueue client")
 		}
-		if err := benchrun.RunBenchAsync(ctx, set, cfg.ExecutionMode, apiURL, runID, queue); err != nil {
+		if err := benchrun.RunBenchAsync(ctx, set, benchrun.RunBenchOpts{
+			Mode:  cfg.ExecutionMode,
+			RunID: runID,
+		}, apiURL, queue); err != nil {
 			return nil, errors.Wrap(err, "adding benchmark to queue")
 		}
 		return &act.NoOutput{}, nil
