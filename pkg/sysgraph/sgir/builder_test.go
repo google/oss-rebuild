@@ -12,7 +12,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/oss-rebuild/pkg/sysgraph/inmemory"
 	"github.com/google/oss-rebuild/pkg/sysgraph/pbdigest"
-	sgevpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
 	sgpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
 	"github.com/google/oss-rebuild/pkg/sysgraph/sgstorage"
 	"github.com/google/oss-rebuild/pkg/sysgraph/sgtransform"
@@ -36,6 +35,22 @@ var (
 		FileInfo: sgpb.FileInfo_builder{
 			Path:   proto.String("path/to/file2"),
 			Digest: proto.String("1234567890123456789012345678901234567890123456789012345678901234/100"),
+			Type:   sgpb.FileType_FILE_TYPE_REGULAR.Enum(),
+		}.Build(),
+	}.Build()
+	file3Res = sgpb.Resource_builder{
+		Type: sgpb.ResourceType_RESOURCE_TYPE_FILE.Enum(),
+		FileInfo: sgpb.FileInfo_builder{
+			Path:   proto.String("path/to/file3"),
+			Digest: proto.String("1234567890123456789012345678901234567890123456789012345678901234/103"),
+			Type:   sgpb.FileType_FILE_TYPE_REGULAR.Enum(),
+		}.Build(),
+	}.Build()
+	file4Res = sgpb.Resource_builder{
+		Type: sgpb.ResourceType_RESOURCE_TYPE_FILE.Enum(),
+		FileInfo: sgpb.FileInfo_builder{
+			Path:   proto.String("path/to/file4"),
+			Digest: proto.String("1234567890123456789012345678901234567890123456789012345678901234/104"),
 			Type:   sgpb.FileType_FILE_TYPE_REGULAR.Enum(),
 		}.Build(),
 	}.Build()
@@ -114,74 +129,90 @@ func TestConstructSysGraph(t *testing.T) {
 			events := &InMemoryFormat{
 				EventMap: map[string]*Events{
 					action1: {
-						Events: []*sgevpb.SysGraphEvent{
-							sgevpb.SysGraphEvent_builder{
+						Events: []*sgpb.SysGraphEvent{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(1, 1)),
-								StartEvent: sgevpb.StartEvent_builder{
+								StartEvent: sgpb.StartEvent_builder{
 									Timestamp: tpb.New(time.Unix(1, 1)),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action1),
+								Timestamp: tpb.New(time.Unix(1, 1)),
+								MetadataEvent: sgpb.MetadataEvent_builder{
+									Key:   proto.String("is_execve"),
+									Value: proto.String("true"),
+								}.Build(),
+							}.Build(),
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(2, 2)),
-								ChildEvent: sgevpb.ChildEvent_builder{
+								ChildEvent: sgpb.ChildEvent_builder{
 									ChildActionId: proto.String(action2),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(3, 3)),
-								ChildEvent: sgevpb.ChildEvent_builder{
+								ChildEvent: sgpb.ChildEvent_builder{
 									ChildActionId: proto.String(action3),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(2, 2)),
-								ChildEvent: sgevpb.ChildEvent_builder{
+								ChildEvent: sgpb.ChildEvent_builder{
 									ChildActionId: proto.String(action4),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(5, 5)),
-								ChildEvent: sgevpb.ChildEvent_builder{
+								ChildEvent: sgpb.ChildEvent_builder{
 									ChildActionId: proto.String(action5),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(6, 6)),
-								ChildEvent: sgevpb.ChildEvent_builder{
+								ChildEvent: sgpb.ChildEvent_builder{
 									ChildActionId: proto.String(action6),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(3, 3)),
-								MetadataEvent: sgevpb.MetadataEvent_builder{
+								MetadataEvent: sgpb.MetadataEvent_builder{
 									Key:   proto.String("key1"),
 									Value: proto.String("value1"),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(3, 3)),
-								ResourceEvent: sgevpb.ResourceEvent_builder{
+								ResourceEvent: sgpb.ResourceEvent_builder{
 									Resource:  fileRes,
-									EventType: sgevpb.ResourceEvent_EVENT_TYPE_INPUT.Enum(),
+									EventType: sgpb.ResourceEvent_EVENT_TYPE_INPUT.Enum(),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action1),
+								Timestamp: tpb.New(time.Unix(3, 3)),
+								ResourceEvent: sgpb.ResourceEvent_builder{
+									Resource:  file3Res,
+									EventType: sgpb.ResourceEvent_EVENT_TYPE_DELETE.Enum(),
+								}.Build(),
+							}.Build(),
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(4, 4)),
-								PipeEvent: sgevpb.PipeEvent_builder{}.Build(),
+								PipeEvent: sgpb.PipeEvent_builder{}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action1),
 								Timestamp: tpb.New(time.Unix(1, 1)),
-								EndEvent: sgevpb.EndEvent_builder{
+								EndEvent: sgpb.EndEvent_builder{
 									Timestamp: tpb.New(time.Unix(20, 20)),
 									Status:    proto.Uint32(0),
 									Signal:    proto.String(""),
@@ -190,26 +221,52 @@ func TestConstructSysGraph(t *testing.T) {
 						},
 					},
 					action2: {
-						Events: []*sgevpb.SysGraphEvent{
-							sgevpb.SysGraphEvent_builder{
+						Events: []*sgpb.SysGraphEvent{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action2),
 								Timestamp: tpb.New(time.Unix(2, 2)),
-								StartEvent: sgevpb.StartEvent_builder{
+								StartEvent: sgpb.StartEvent_builder{
 									Timestamp: tpb.New(time.Unix(2, 2)),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
-								ActionId:  proto.String(action2),
-								Timestamp: tpb.New(time.Unix(3, 3)),
-								ResourceEvent: sgevpb.ResourceEvent_builder{
-									Resource:  file2Res,
-									EventType: sgevpb.ResourceEvent_EVENT_TYPE_OUTPUT.Enum(),
-								}.Build(),
-							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action2),
 								Timestamp: tpb.New(time.Unix(2, 2)),
-								EndEvent: sgevpb.EndEvent_builder{
+								MetadataEvent: sgpb.MetadataEvent_builder{
+									Key:   proto.String("is_execve"),
+									Value: proto.String("true"),
+								}.Build(),
+							}.Build(),
+							sgpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action2),
+								Timestamp: tpb.New(time.Unix(3, 3)),
+								ResourceEvent: sgpb.ResourceEvent_builder{
+									Resource:  file2Res,
+									EventType: sgpb.ResourceEvent_EVENT_TYPE_OUTPUT.Enum(),
+								}.Build(),
+							}.Build(),
+							sgpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action2),
+								Timestamp: tpb.New(time.Unix(3, 3)),
+								ResourceEvent: sgpb.ResourceEvent_builder{
+									Resource:          file3Res,
+									EventType:         sgpb.ResourceEvent_EVENT_TYPE_RENAME_SOURCE.Enum(),
+									RenamePartnerPath: proto.String(file4Res.GetFileInfo().GetPath()),
+								}.Build(),
+							}.Build(),
+							sgpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action2),
+								Timestamp: tpb.New(time.Unix(3, 3)),
+								ResourceEvent: sgpb.ResourceEvent_builder{
+									Resource:          file4Res,
+									EventType:         sgpb.ResourceEvent_EVENT_TYPE_RENAME_DEST.Enum(),
+									RenamePartnerPath: proto.String(file3Res.GetFileInfo().GetPath()),
+								}.Build(),
+							}.Build(),
+							sgpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action2),
+								Timestamp: tpb.New(time.Unix(2, 2)),
+								EndEvent: sgpb.EndEvent_builder{
 									Timestamp: tpb.New(time.Unix(10, 10)),
 									Status:    proto.Uint32(1),
 									Signal:    proto.String("SIGKILL"),
@@ -223,11 +280,11 @@ func TestConstructSysGraph(t *testing.T) {
 						},
 					},
 					action3: {
-						Events: []*sgevpb.SysGraphEvent{
-							sgevpb.SysGraphEvent_builder{
+						Events: []*sgpb.SysGraphEvent{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action3),
 								Timestamp: tpb.New(time.Unix(3, 3)),
-								DupEvent: sgevpb.DupEvent_builder{
+								DupEvent: sgpb.DupEvent_builder{
 									OldFd:        proto.Int32(4),
 									NewFd:        proto.Int32(1),
 									ParentExecId: proto.String(action1),
@@ -237,11 +294,11 @@ func TestConstructSysGraph(t *testing.T) {
 						},
 					},
 					action4: {
-						Events: []*sgevpb.SysGraphEvent{
-							sgevpb.SysGraphEvent_builder{
+						Events: []*sgpb.SysGraphEvent{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action4),
 								Timestamp: tpb.New(time.Unix(2, 2)),
-								DupEvent: sgevpb.DupEvent_builder{
+								DupEvent: sgpb.DupEvent_builder{
 									OldFd:        proto.Int32(3),
 									NewFd:        proto.Int32(0),
 									ParentExecId: proto.String(action1),
@@ -252,11 +309,11 @@ func TestConstructSysGraph(t *testing.T) {
 							}.Build(),
 						}},
 					action5: {
-						Events: []*sgevpb.SysGraphEvent{
-							sgevpb.SysGraphEvent_builder{
+						Events: []*sgpb.SysGraphEvent{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action5),
 								Timestamp: tpb.New(time.Unix(5, 5)),
-								DupEvent: sgevpb.DupEvent_builder{
+								DupEvent: sgpb.DupEvent_builder{
 									OldFd:        proto.Int32(5),
 									NewFd:        proto.Int32(0),
 									ParentExecId: proto.String(action1),
@@ -265,30 +322,38 @@ func TestConstructSysGraph(t *testing.T) {
 							}.Build(),
 						}},
 					action6: {
-						Events: []*sgevpb.SysGraphEvent{
-							sgevpb.SysGraphEvent_builder{
+						Events: []*sgpb.SysGraphEvent{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action6),
 								Timestamp: tpb.New(time.Unix(6, 6)),
-								StartEvent: sgevpb.StartEvent_builder{
+								StartEvent: sgpb.StartEvent_builder{
 									Timestamp: tpb.New(time.Unix(6, 6)),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
+								ActionId:  proto.String(action6),
+								Timestamp: tpb.New(time.Unix(6, 6)),
+								MetadataEvent: sgpb.MetadataEvent_builder{
+									Key:   proto.String("is_execve"),
+									Value: proto.String("true"),
+								}.Build(),
+							}.Build(),
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action6),
 								Timestamp: tpb.New(time.Unix(7, 7)),
-								ChildEvent: sgevpb.ChildEvent_builder{
+								ChildEvent: sgpb.ChildEvent_builder{
 									ChildActionId: proto.String(action7),
 								}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action6),
 								Timestamp: tpb.New(time.Unix(7, 7)),
-								PipeEvent: sgevpb.PipeEvent_builder{}.Build(),
+								PipeEvent: sgpb.PipeEvent_builder{}.Build(),
 							}.Build(),
-							sgevpb.SysGraphEvent_builder{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action6),
 								Timestamp: tpb.New(time.Unix(6, 6)),
-								EndEvent: sgevpb.EndEvent_builder{
+								EndEvent: sgpb.EndEvent_builder{
 									Timestamp: tpb.New(time.Unix(10, 10)),
 									Status:    proto.Uint32(0),
 									Signal:    proto.String(""),
@@ -296,11 +361,11 @@ func TestConstructSysGraph(t *testing.T) {
 							}.Build(),
 						}},
 					action7: {
-						Events: []*sgevpb.SysGraphEvent{
-							sgevpb.SysGraphEvent_builder{
+						Events: []*sgpb.SysGraphEvent{
+							sgpb.SysGraphEvent_builder{
 								ActionId:  proto.String(action7),
 								Timestamp: tpb.New(time.Unix(7, 7)),
-								DupEvent: sgevpb.DupEvent_builder{
+								DupEvent: sgpb.DupEvent_builder{
 									OldFd:        proto.Int32(3),
 									NewFd:        proto.Int32(0),
 									ParentExecId: proto.String(action6),
@@ -341,6 +406,7 @@ func TestConstructSysGraph(t *testing.T) {
 					1: sgpb.Action_builder{
 						Id:         proto.Int64(1),
 						SysGraphId: proto.String("graphID"),
+						IsFork:     proto.Bool(false),
 						StartTime:  &tpb.Timestamp{Seconds: 1, Nanos: 1},
 						EndTime:    &tpb.Timestamp{Seconds: 20, Nanos: 20},
 						Children: map[int64]*sgpb.ActionInteraction{
@@ -365,6 +431,17 @@ func TestConstructSysGraph(t *testing.T) {
 								Interactions: []*sgpb.ResourceInteraction{
 									sgpb.ResourceInteraction_builder{
 										Timestamp: &tpb.Timestamp{Seconds: 3, Nanos: 3},
+										Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_READ.Enum(),
+									}.Build(),
+								},
+							}.Build(),
+						},
+						Outputs: map[string]*sgpb.ResourceInteractions{
+							mustDigest(t, file3Res).String(): sgpb.ResourceInteractions_builder{
+								Interactions: []*sgpb.ResourceInteraction{
+									sgpb.ResourceInteraction_builder{
+										Timestamp: &tpb.Timestamp{Seconds: 3, Nanos: 3},
+										Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_DELETE.Enum(),
 									}.Build(),
 								},
 							}.Build(),
@@ -379,6 +456,7 @@ func TestConstructSysGraph(t *testing.T) {
 					2: sgpb.Action_builder{
 						Id:             proto.Int64(2),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(false),
 						ParentActionId: proto.Int64(1),
 						Parent: sgpb.ActionInteraction_builder{
 							Timestamp: &tpb.Timestamp{Seconds: 2, Nanos: 2},
@@ -390,6 +468,25 @@ func TestConstructSysGraph(t *testing.T) {
 								Interactions: []*sgpb.ResourceInteraction{
 									sgpb.ResourceInteraction_builder{
 										Timestamp: &tpb.Timestamp{Seconds: 3, Nanos: 3},
+										Type:      sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_WRITE.Enum(),
+									}.Build(),
+								},
+							}.Build(),
+							mustDigest(t, file3Res).String(): sgpb.ResourceInteractions_builder{
+								Interactions: []*sgpb.ResourceInteraction{
+									sgpb.ResourceInteraction_builder{
+										Timestamp:           &tpb.Timestamp{Seconds: 3, Nanos: 3},
+										Type:                sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_RENAME_SOURCE.Enum(),
+										RenamePartnerDigest: proto.String(mustDigest(t, file4Res).String()),
+									}.Build(),
+								},
+							}.Build(),
+							mustDigest(t, file4Res).String(): sgpb.ResourceInteractions_builder{
+								Interactions: []*sgpb.ResourceInteraction{
+									sgpb.ResourceInteraction_builder{
+										Timestamp:           &tpb.Timestamp{Seconds: 3, Nanos: 3},
+										Type:                sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_RENAME_DESTINATION.Enum(),
+										RenamePartnerDigest: proto.String(mustDigest(t, file3Res).String()),
 									}.Build(),
 								},
 							}.Build(),
@@ -401,6 +498,7 @@ func TestConstructSysGraph(t *testing.T) {
 					3: sgpb.Action_builder{
 						Id:             proto.Int64(3),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(true),
 						ParentActionId: proto.Int64(1),
 						Parent: sgpb.ActionInteraction_builder{
 							Timestamp: &tpb.Timestamp{Seconds: 3, Nanos: 3},
@@ -419,6 +517,7 @@ func TestConstructSysGraph(t *testing.T) {
 					4: sgpb.Action_builder{
 						Id:             proto.Int64(4),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(true),
 						ParentActionId: proto.Int64(1),
 						Parent: sgpb.ActionInteraction_builder{
 							Timestamp: &tpb.Timestamp{Seconds: 2, Nanos: 2},
@@ -437,6 +536,7 @@ func TestConstructSysGraph(t *testing.T) {
 					5: sgpb.Action_builder{
 						Id:             proto.Int64(5),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(true),
 						ParentActionId: proto.Int64(1),
 						Parent: sgpb.ActionInteraction_builder{
 							Timestamp: &tpb.Timestamp{Seconds: 5, Nanos: 5},
@@ -445,6 +545,7 @@ func TestConstructSysGraph(t *testing.T) {
 					6: sgpb.Action_builder{
 						Id:             proto.Int64(6),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(false),
 						StartTime:      &tpb.Timestamp{Seconds: 6, Nanos: 6},
 						EndTime:        &tpb.Timestamp{Seconds: 10, Nanos: 10},
 						ParentActionId: proto.Int64(1),
@@ -462,6 +563,7 @@ func TestConstructSysGraph(t *testing.T) {
 					7: sgpb.Action_builder{
 						Id:             proto.Int64(7),
 						SysGraphId:     proto.String("graphID"),
+						IsFork:         proto.Bool(true),
 						ParentActionId: proto.Int64(6),
 						Parent: sgpb.ActionInteraction_builder{
 							Timestamp: &tpb.Timestamp{Seconds: 7, Nanos: 7},
@@ -471,6 +573,8 @@ func TestConstructSysGraph(t *testing.T) {
 				ResourceMap: map[pbdigest.Digest]*sgpb.Resource{
 					mustDigest(t, fileRes):  fileRes,
 					mustDigest(t, file2Res): file2Res,
+					mustDigest(t, file3Res): file3Res,
+					mustDigest(t, file4Res): file4Res,
 					mustDigest(t, pipeRes):  pipeRes,
 				},
 				Events: wantEvents,
