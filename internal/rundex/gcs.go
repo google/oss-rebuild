@@ -16,7 +16,6 @@ import (
 	"github.com/google/oss-rebuild/internal/pipe"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -167,19 +166,8 @@ func (g *GCSClient) FetchAttempt(ctx context.Context, target rebuild.Target, run
 
 // LatestTrackedPackages fetches the most recent rebuild result for each tracked package.
 func (g *GCSClient) LatestTrackedPackages(ctx context.Context, tracked feed.TrackedPackageIndex) ([]Rebuild, error) {
-	var packages []benchmark.Package
-	for eco, pkgs := range tracked {
-		for pkg := range pkgs {
-			packages = append(packages, benchmark.Package{Ecosystem: string(eco), Name: pkg})
-		}
-	}
 	return g.FetchRebuilds(ctx, &FetchRebuildRequest{
-		Bench: &benchmark.PackageSet{
-			Packages: packages,
-			Metadata: benchmark.Metadata{
-				Count: len(packages),
-			},
-		},
+		Tracked:          tracked,
 		LatestPerPackage: true,
 	})
 }

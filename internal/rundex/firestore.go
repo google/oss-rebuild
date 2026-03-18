@@ -48,12 +48,24 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 	if req.Bench != nil && req.Bench.Count == 0 {
 		return nil, errors.New("empty bench provided")
 	}
-	// If a benchmark is provided, we can optimize by querying for specific packages.
-	if req.Bench != nil {
+	// If a benchmark or tracked set is provided, we can optimize by querying for specific packages.
+	if req.Bench != nil || req.Tracked != nil {
+		// TODO: Should we use feed.TrackedPackageSet
 		packagesByEcosystem := make(map[string][]string)
-		for _, p := range req.Bench.Packages {
-			if !slices.Contains(packagesByEcosystem[p.Ecosystem], p.Name) {
-				packagesByEcosystem[p.Ecosystem] = append(packagesByEcosystem[p.Ecosystem], p.Name)
+		if req.Bench != nil {
+			for _, p := range req.Bench.Packages {
+				if !slices.Contains(packagesByEcosystem[p.Ecosystem], p.Name) {
+					packagesByEcosystem[p.Ecosystem] = append(packagesByEcosystem[p.Ecosystem], p.Name)
+				}
+			}
+		}
+		if req.Tracked != nil {
+			for eco, pkgs := range req.Tracked {
+				for pkg := range pkgs {
+					if !slices.Contains(packagesByEcosystem[string(eco)], pkg) {
+						packagesByEcosystem[string(eco)] = append(packagesByEcosystem[string(eco)], pkg)
+					}
+				}
 			}
 		}
 

@@ -79,6 +79,7 @@ type FetchRebuildOpts struct {
 type FetchRebuildRequest struct {
 	Target           *rebuild.Target
 	Bench            *benchmark.PackageSet
+	Tracked          feed.TrackedPackageIndex
 	Executors        []string
 	Runs             []string
 	Opts             FetchRebuildOpts
@@ -247,6 +248,13 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 		}
 		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
 			if bp, ok := benchMap[in.Package]; ok && (len(bp.Versions) == 0 || slices.Contains(bp.Versions, in.Version)) && bp.Ecosystem == in.Ecosystem {
+				out <- in
+			}
+		})
+	}
+	if req.Tracked != nil {
+		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
+			if pkgs, ok := req.Tracked[rebuild.Ecosystem(in.Ecosystem)]; ok && pkgs[in.Package] {
 				out <- in
 			}
 		})

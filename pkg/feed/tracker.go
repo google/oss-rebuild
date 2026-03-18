@@ -29,5 +29,18 @@ func TrackerFromFunc(isTracked func(schema.TargetEvent) (bool, error)) Tracker {
 // TrackedPackageSet is a map from ecosystem to list of packages. Optimized for storage, not access.
 type TrackedPackageSet map[rebuild.Ecosystem][]string
 
+func (tps TrackedPackageSet) Index() TrackedPackageIndex {
+	idx := make(TrackedPackageIndex)
+	for eco, pkgs := range tps {
+		if _, ok := idx[eco]; !ok {
+			idx[eco] = make(map[string]bool)
+		}
+		for _, pkg := range pkgs {
+			idx[eco][pkg] = true
+		}
+	}
+	return idx
+}
+
 // TrackedPackageIndex is a map from ecosystem to a set of tracked package names. Optimized for access, not storage.
 type TrackedPackageIndex map[rebuild.Ecosystem]map[string]bool
