@@ -10,8 +10,8 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/google/oss-rebuild/tools/benchmark"
 )
 
 var (
@@ -47,7 +47,7 @@ type Deps struct {
 	Rundex        *rundex.FirestoreClient
 	GCSClient     *storage.Client
 	LogsBucket    string
-	Benchmark     *benchmark.PackageSet
+	Tracked       feed.TrackedPackageIndex
 	BenchmarkName string
 	SuccessRegex  *regexp.Regexp
 }
