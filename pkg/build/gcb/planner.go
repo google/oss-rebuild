@@ -6,7 +6,6 @@ package gcb
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"path"
@@ -19,7 +18,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
-	"gopkg.in/yaml.v3"
 )
 
 // upload struct for asset upload template
@@ -28,7 +26,9 @@ type upload struct {
 	To   string
 }
 
-// tetragonPoliciesYaml contains the Tetragon policy used for build syscall monitoring
+// tetragonPoliciesYaml contains the Tetragon policies used for build syscall monitoring.
+// NOTE: $TETRAGON_PID is a shell variable placeholder expanded at runtime
+// using the tetragon container's host PID inside an unquoted heredoc.
 var tetragonPoliciesYaml = []string{`apiVersion: cilium.io/v1alpha1
 kind: TracingPolicy
 metadata:
@@ -47,6 +47,13 @@ spec:
       index: 0
       type: "int"
     returnArgAction: "Post"
+    selectors:
+    - matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
   - call: "security_mmap_file"
     syscall: false
     return: true
@@ -61,6 +68,13 @@ spec:
       index: 0
       type: "int"
     returnArgAction: "Post"
+    selectors:
+    - matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
   - call: "security_path_truncate"
     syscall: false
     return: true
@@ -71,6 +85,13 @@ spec:
       index: 0
       type: "int"
     returnArgAction: "Post"
+    selectors:
+    - matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
 `,
 	`apiVersion: cilium.io/v1alpha1
 kind: TracingPolicy
@@ -89,26 +110,14 @@ spec:
       type: uint32
     - index: 8
       type: uint32
+    selectors:
+    - matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
 `,
-}
-
-var tetragonPoliciesJSON []string
-
-func init() {
-	for _, policyYaml := range tetragonPoliciesYaml {
-		var data any
-		if err := yaml.Unmarshal([]byte(policyYaml), &data); err != nil {
-			log.Fatalf("Malformed tetragon policy: %v", err)
-		}
-		b, err := json.Marshal(data)
-		if err != nil {
-			log.Fatalf("Converting tetragon policy to json: %v", err)
-		}
-		if bytes.Contains(b, []byte("'")) {
-			log.Fatalf("Policy cannot contain single quotes: %s", string(b))
-		}
-		tetragonPoliciesJSON = append(tetragonPoliciesJSON, string(b))
-	}
 }
 
 type gcbContainerArgs struct {
@@ -182,12 +191,15 @@ var gcbStandardBuildTpl = template.Must(
 			echo 'Starting rebuild for {{.TargetStr}}'
 			{{- if .UseSyscallMonitor}}
 			touch /workspace/tetragon.jsonl
-			mkdir /workspace/tetragon/
-			{{- range $i, $policy := .SyscallPolicies}}
-			echo '{{$policy}}' > "/workspace/tetragon/policy_{{ $i }}.json"
-			{{- end}}
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
+			mkdir -p /workspace/tetragon/
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
+			TETRAGON_PID=$(docker inspect --format '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
+			{{- range $i, $policy := .SyscallPolicies}}
+			cat > /workspace/tetragon/policy_{{$i}}.yaml <<EOPOLICY
+			{{$policy}}EOPOLICY
+			docker exec tetragon tetra tracingpolicy add /workspace/tetragon/policy_{{$i}}.yaml
+			{{- end}}
 			{{- end}}
 			{{- if .TimewarpAuth}}
 			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
@@ -198,7 +210,7 @@ var gcbStandardBuildTpl = template.Must(
 			EOS
 			docker run {{if .Privileged}}--privileged {{end}}--name=container img
 			{{- if .UseSyscallMonitor}}
-			docker kill tetragon
+			docker stop -t 30 tetragon
 			{{- end}}
 			`)[1:], // remove leading newline
 	))
@@ -291,12 +303,15 @@ var gcbProxyBuildTpl = template.Must(
 			'
 			{{- if .UseSyscallMonitor}}
 			touch /workspace/tetragon.jsonl
-			mkdir /workspace/tetragon/
-			{{- range $i, $policy := .SyscallPolicies}}
-			echo '{{$policy}}' > "/workspace/tetragon/policy_{{ $i }}.json"
-			{{- end}}
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
+			mkdir -p /workspace/tetragon/
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
+			TETRAGON_PID=$(docker inspect --format '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
+			{{- range $i, $policy := .SyscallPolicies}}
+			cat > /workspace/tetragon/policy_{{$i}}.yaml <<EOPOLICY
+			{{$policy}}EOPOLICY
+			docker exec tetragon tetra tracingpolicy add /workspace/tetragon/policy_{{$i}}.yaml
+			{{- end}}
 			{{- end}}
 			cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" > /Dockerfile
 			{{.Dockerfile}}
@@ -310,7 +325,7 @@ var gcbProxyBuildTpl = template.Must(
 				docker run {{if .Privileged}}--privileged {{end}}--name=container img
 			'
 			{{- if .UseSyscallMonitor}}
-			docker kill tetragon
+			docker stop -t 30 tetragon
 			{{- end}}
 			curl http://proxy:{{.CtrlPort}}/summary > /workspace/netlog.json
 			`)[1:], // remove leading newline
@@ -496,7 +511,7 @@ func (p *Planner) generateStandardBuildScript(target rebuild.Target, dockerfile 
 		"Dockerfile":          dockerfile,
 		"Privileged":          privileged,
 		"UseSyscallMonitor":   opts.UseSyscallMonitor,
-		"SyscallPolicies":     tetragonPoliciesJSON,
+		"SyscallPolicies":     tetragonPoliciesYaml,
 		"TimewarpAuth":        timewarpAuth,
 		"ServiceAccountEmail": serviceAccountEmail,
 	}); err != nil {
@@ -530,7 +545,7 @@ func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile str
 		"Dockerfile":          dockerfile,
 		"Privileged":          privileged,
 		"UseSyscallMonitor":   opts.UseSyscallMonitor,
-		"SyscallPolicies":     tetragonPoliciesJSON,
+		"SyscallPolicies":     tetragonPoliciesYaml,
 		"TimewarpAuth":        timewarpAuth,
 		"ProxyURL":            proxyURL,
 		"ProxyAuth":           proxyAuth,
