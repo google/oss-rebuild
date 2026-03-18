@@ -14,9 +14,10 @@ import (
 type ToolType string
 
 const (
-	TimewarpTool ToolType = "timewarp"
-	ProxyTool    ToolType = "proxy"
-	GSUtilTool   ToolType = "gsutil_writeonly"
+	TimewarpTool         ToolType = "timewarp"
+	ProxyTool            ToolType = "proxy"
+	GSUtilTool           ToolType = "gsutil_writeonly"
+	TetragonSysgraphTool ToolType = "tetragon_sysgraph"
 )
 
 // Executor manages build execution for a specific backend
