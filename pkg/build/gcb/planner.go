@@ -186,7 +186,7 @@ var gcbStandardBuildTpl = template.Must(
 			{{- range $i, $policy := .SyscallPolicies}}
 			echo '{{$policy}}' > "/workspace/tetragon/policy_{{ $i }}.json"
 			{{- end}}
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 			{{- end}}
 			{{- if .TimewarpAuth}}
@@ -295,7 +295,7 @@ var gcbProxyBuildTpl = template.Must(
 			{{- range $i, $policy := .SyscallPolicies}}
 			echo '{{$policy}}' > "/workspace/tetragon/policy_{{ $i }}.json"
 			{{- end}}
-			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl)
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.1.2 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
 			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 			{{- end}}
 			cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs{{range .CertEnvVars}} --mount=type=secret,id=PROXYCERT,env={{.}}{{end}}|" > /Dockerfile
