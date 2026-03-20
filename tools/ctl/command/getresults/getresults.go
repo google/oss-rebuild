@@ -34,6 +34,7 @@ type Config struct {
 	Pattern          string
 	Sample           int
 	Format           string
+	Fields           string
 	Clean            bool
 	LatestPerPackage bool
 }
@@ -90,6 +91,33 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestP
 	return &req, nil
 }
 
+func getField(r rundex.Rebuild, field string) any {
+	switch strings.ToLower(field) {
+	case "runid":
+		return r.RunID
+	case "ecosystem":
+		return r.Ecosystem
+	case "package":
+		return r.Package
+	case "version":
+		return r.Version
+	case "artifact":
+		return r.Artifact
+	case "oblivious_id":
+		return r.ObliviousID
+	case "message":
+		return r.Message
+	case "success":
+		return r.Success
+	case "created":
+		return r.Created
+	case "build_id":
+		return r.BuildID
+	default:
+		return nil
+	}
+}
+
 // Handler contains the business logic for the get-results command.
 func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error) {
 	req, err := buildFetchRebuildRequest(cfg.Bench, cfg.Run, cfg.Prefix, cfg.Pattern, cfg.Clean, true)
@@ -111,13 +139,13 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		return nil, err
 	}
 	log.Printf("Fetched %d rebuilds", len(rebuilds))
-	byCount := rundex.GroupRebuilds(rebuilds)
-	if len(byCount) == 0 {
+	if len(rebuilds) == 0 {
 		log.Println("No results")
 		return &act.NoOutput{}, nil
 	}
 	switch cfg.Format {
 	case "", "summary":
+		byCount := rundex.GroupRebuilds(rebuilds)
 		log.Println("Verdict summary:")
 		for _, vg := range byCount {
 			fmt.Fprintf(deps.IO.Out, " %4d - %s (example: %s)\n", vg.Count, vg.Msg[:min(len(vg.Msg), 1000)], vg.Examples[0].ID())
@@ -169,10 +197,15 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		}
 		fmt.Fprintln(deps.IO.Out, string(b))
 	case "csv":
+		fields := strings.Split(cfg.Fields, ",")
 		w := csv.NewWriter(deps.IO.Out)
 		defer w.Flush()
 		for _, r := range rebuilds {
-			if err := w.Write([]string{r.Ecosystem, r.Package, r.Version, r.Artifact, r.RunID, r.Message}); err != nil {
+			var row []string
+			for _, f := range fields {
+				row = append(row, fmt.Sprintf("%v", getField(r, f)))
+			}
+			if err := w.Write(row); err != nil {
 				return nil, errors.Wrap(err, "writing CSV")
 			}
 		}
@@ -210,6 +243,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Pattern, "pattern", "", "filter results to those matching this regex pattern")
 	set.IntVar(&cfg.Sample, "sample", -1, "if provided, only N results will be displayed")
 	set.StringVar(&cfg.Format, "format", "", "format of the output (summary|bench|csv)")
+	set.StringVar(&cfg.Fields, "fields", "runid,ecosystem,package,version,artifact", "comma-separated list of fields to include in csv or jsonl output")
 	set.BoolVar(&cfg.Clean, "clean", false, "whether to apply normalization heuristics to group similar verdicts")
 	return set
 }
