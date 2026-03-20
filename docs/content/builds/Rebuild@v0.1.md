@@ -97,9 +97,9 @@ Example:
         },
         {
           "digest": {
-            "sha256": "sha256:9d37de9af1bec96c09bc3e86fa6388d3eccf468370813602d03c7d9ed72a26f8"
+            "sha256": "c3f8e73fdb79deaebaa2037150150191b9dcbfba68b4a46d70103204c53f4709"
           },
-          "name": "gcr.io/cloud-builders/gsutil"
+          "name": "docker.io/library/alpine:3.21"
         },
         {
           "digest": {
