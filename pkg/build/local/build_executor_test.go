@@ -75,16 +75,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 			},
 			maxParallel: 2,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
-				if opts.Output != nil {
-					if len(args) > 0 && args[0] == "build" {
-						opts.Output.Write([]byte("Successfully built image\n"))
-					} else if len(args) > 0 && args[0] == "run" {
-						opts.Output.Write([]byte("Container executed successfully\n"))
-					}
-				}
-				return nil
-			},
+			executeFunc: successExecuteFake,
 			expectedCommands: []MockCommand{
 				{
 					Name:  "docker",
@@ -224,16 +215,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 			},
 			maxParallel:     1,
 			retainContainer: true,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
-				if opts.Output != nil {
-					if len(args) > 0 && args[0] == "build" {
-						opts.Output.Write([]byte("Successfully built image\n"))
-					} else if len(args) > 0 && args[0] == "run" {
-						opts.Output.Write([]byte("Container executed successfully\n"))
-					}
-				}
-				return nil
-			},
+			executeFunc:     successExecuteFake,
 			expectedCommands: []MockCommand{
 				{
 					Name:  "docker",
@@ -251,6 +233,50 @@ func TestDockerBuildExecutor(t *testing.T) {
 				{
 					Name: "docker",
 					Args: []string{"rmi", "test-build-retain-container"},
+				},
+			},
+			expectSuccess: true,
+		},
+		{
+			name: "context dir functionality",
+			plan: &DockerBuildPlan{
+				Dockerfile: "FROM alpine:3.19\nRUN echo 'building with context'",
+				ContextDir: "/path/to/local/context",
+				OutputPath: "/out/result.tar.gz",
+			},
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.NPM,
+					Package:   "test-pkg-context",
+					Version:   "1.0.0",
+					Artifact:  "test-pkg-context-1.0.0.tgz",
+				},
+			},
+			options: build.Options{
+				BuildID: "test-build-context",
+				Resources: build.Resources{
+					AssetStore: newMockBuildAssetStore(),
+				},
+			},
+			maxParallel: 1,
+			executeFunc: successExecuteFake,
+			expectedCommands: []MockCommand{
+				{
+					Name:  "docker",
+					Args:  []string{"buildx", "build", "-t", "test-build-context", "-f-", "/path/to/local/context"},
+					Input: "FROM alpine:3.19\nRUN echo 'building with context'",
+				},
+				{
+					Name: "docker",
+					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-context:/out", "test-build-context"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"save", "-o", "/tmp/oss-rebuild-test-build-context/image.tgz", "test-build-context"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rmi", "test-build-context"},
 				},
 			},
 			expectSuccess: true,
@@ -277,16 +303,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 			},
 			maxParallel: 1,
 			retainImage: true,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
-				if opts.Output != nil {
-					if len(args) > 0 && args[0] == "build" {
-						opts.Output.Write([]byte("Successfully built image\n"))
-					} else if len(args) > 0 && args[0] == "run" {
-						opts.Output.Write([]byte("Container executed successfully\n"))
-					}
-				}
-				return nil
-			},
+			executeFunc: successExecuteFake,
 			expectedCommands: []MockCommand{
 				{
 					Name:  "docker",
@@ -447,6 +464,18 @@ func TestDockerBuildExecutor(t *testing.T) {
 			}
 		})
 	}
+}
+
+// successExecuteFake is a fake implementation of Execute that always succeeds.
+var successExecuteFake = func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+	if opts.Output != nil {
+		if len(args) > 0 && args[0] == "build" {
+			opts.Output.Write([]byte("Successfully built image\n"))
+		} else if len(args) > 0 && args[0] == "run" {
+			opts.Output.Write([]byte("Container executed successfully\n"))
+		}
+	}
+	return nil
 }
 
 func TestDockerBuildExecutorConcurrency(t *testing.T) {
