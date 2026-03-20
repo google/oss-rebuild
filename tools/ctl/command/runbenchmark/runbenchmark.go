@@ -51,6 +51,7 @@ type Config struct {
 	TaskQueueEmail    string
 	UseNetworkProxy   bool
 	UseSyscallMonitor bool
+	UseRepoDefinition bool
 	OverwriteMode     string
 	MaxConcurrency    int
 }
@@ -206,7 +207,11 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "making taskqueue client")
 		}
-		if err := benchrun.RunBenchAsync(ctx, set, cfg.ExecutionMode, apiURL, runID, queue); err != nil {
+		if err := benchrun.RunBenchAsync(ctx, set, benchrun.RunBenchOpts{
+			Mode:              cfg.ExecutionMode,
+			RunID:             runID,
+			UseRepoDefinition: cfg.UseRepoDefinition,
+		}, apiURL, queue); err != nil {
 			return nil, errors.Wrap(err, "adding benchmark to queue")
 		}
 		return &act.NoOutput{}, nil
@@ -221,6 +226,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		MaxConcurrency:    cfg.MaxConcurrency,
 		UseSyscallMonitor: cfg.UseSyscallMonitor,
 		UseNetworkProxy:   cfg.UseNetworkProxy,
+		UseRepoDefinition: cfg.UseRepoDefinition,
 		OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
 	})
 	if err != nil {
@@ -301,6 +307,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.TaskQueueEmail, "task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
 	set.BoolVar(&cfg.UseNetworkProxy, "use-network-proxy", false, "request the newtwork proxy")
 	set.BoolVar(&cfg.UseSyscallMonitor, "use-syscall-monitor", false, "request syscall monitoring")
+	set.BoolVar(&cfg.UseRepoDefinition, "use-repo-definition", false, "use build definitions from the build definition repository")
 	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
 	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos (local mode only)")
 	return set
