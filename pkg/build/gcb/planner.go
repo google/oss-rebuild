@@ -198,7 +198,7 @@ var gcbStandardBuildTpl = template.Must(
 			EOS
 			docker run {{if .Privileged}}--privileged {{end}}--name=container img
 			{{- if .UseSyscallMonitor}}
-			docker kill tetragon
+			docker stop -t 30 tetragon
 			{{- end}}
 			`)[1:], // remove leading newline
 	))
@@ -311,7 +311,7 @@ var gcbProxyBuildTpl = template.Must(
 				docker run {{if .Privileged}}--privileged {{end}}--name=container img
 			'
 			{{- if .UseSyscallMonitor}}
-			docker kill tetragon
+			docker stop -t 30 tetragon
 			{{- end}}
 			curl http://proxy:{{.CtrlPort}}/summary > /workspace/netlog.json
 			`)[1:], // remove leading newline
