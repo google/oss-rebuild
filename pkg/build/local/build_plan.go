@@ -7,6 +7,9 @@ package local
 type DockerBuildPlan struct {
 	// Dockerfile contains the generated Dockerfile content
 	Dockerfile string
+	// ContextDir specifies the local directory to use as the build context.
+	// If empty, no context is passed and stdin '-' is used as the context.
+	ContextDir string
 	// OutputPath specifies where artifacts should be copied from the container
 	OutputPath string
 	// Indicates whether to run the container in privileged mode
