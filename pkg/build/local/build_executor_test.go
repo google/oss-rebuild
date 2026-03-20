@@ -69,7 +69,8 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 			},
 			options: build.Options{
-				BuildID: "test-build-123",
+				BuildID:            "test-build-123",
+				SaveContainerImage: true,
 				Resources: build.Resources{
 					AssetStore: newMockBuildAssetStore(),
 				},
@@ -96,12 +97,61 @@ func TestDockerBuildExecutor(t *testing.T) {
 					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-123:/out", "test-build-123"},
 				},
 				{
-					Name: "docker",
-					Args: []string{"save", "-o", "/tmp/oss-rebuild-test-build-123/image.tgz", "test-build-123"},
+					Name: "sh",
+					Args: []string{"-c", "docker save test-build-123 | gzip > /tmp/oss-rebuild-test-build-123/image.tgz"},
 				},
 				{
 					Name: "docker",
 					Args: []string{"rmi", "test-build-123"},
+				},
+			},
+			expectSuccess: true,
+		},
+		{
+			name: "no container image save when flag is false",
+			plan: &DockerBuildPlan{
+				Dockerfile: "FROM alpine:3.19\nRUN echo 'building'\nCMD echo 'done'",
+				OutputPath: "/out/result.tar.gz",
+			},
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.NPM,
+					Package:   "test-pkg",
+					Version:   "1.0.0",
+					Artifact:  "test-pkg-1.0.0.tgz",
+				},
+			},
+			options: build.Options{
+				BuildID:            "test-build-nosave",
+				SaveContainerImage: false,
+				Resources: build.Resources{
+					AssetStore: newMockBuildAssetStore(),
+				},
+			},
+			maxParallel: 1,
+			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+				if opts.Output != nil {
+					if len(args) > 0 && args[0] == "build" {
+						opts.Output.Write([]byte("Successfully built image\n"))
+					} else if len(args) > 0 && args[0] == "run" {
+						opts.Output.Write([]byte("Container executed successfully\n"))
+					}
+				}
+				return nil
+			},
+			expectedCommands: []MockCommand{
+				{
+					Name:  "docker",
+					Args:  []string{"buildx", "build", "-t", "test-build-nosave", "-"},
+					Input: "FROM alpine:3.19\nRUN echo 'building'\nCMD echo 'done'",
+				},
+				{
+					Name: "docker",
+					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-nosave:/out", "test-build-nosave"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rmi", "test-build-nosave"},
 				},
 			},
 			expectSuccess: true,
@@ -217,7 +267,8 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 			},
 			options: build.Options{
-				BuildID: "test-build-retain-container",
+				BuildID:            "test-build-retain-container",
+				SaveContainerImage: true,
 				Resources: build.Resources{
 					AssetStore: newMockBuildAssetStore(),
 				},
@@ -245,8 +296,8 @@ func TestDockerBuildExecutor(t *testing.T) {
 					Args: []string{"run", "-v", "/tmp/oss-rebuild-test-build-retain-container:/out", "test-build-retain-container"},
 				},
 				{
-					Name: "docker",
-					Args: []string{"save", "-o", "/tmp/oss-rebuild-test-build-retain-container/image.tgz", "test-build-retain-container"},
+					Name: "sh",
+					Args: []string{"-c", "docker save test-build-retain-container | gzip > /tmp/oss-rebuild-test-build-retain-container/image.tgz"},
 				},
 				{
 					Name: "docker",
@@ -270,7 +321,8 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 			},
 			options: build.Options{
-				BuildID: "test-build-retain-image",
+				BuildID:            "test-build-retain-image",
+				SaveContainerImage: true,
 				Resources: build.Resources{
 					AssetStore: newMockBuildAssetStore(),
 				},
@@ -298,8 +350,8 @@ func TestDockerBuildExecutor(t *testing.T) {
 					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-retain-image:/out", "test-build-retain-image"},
 				},
 				{
-					Name: "docker",
-					Args: []string{"save", "-o", "/tmp/oss-rebuild-test-build-retain-image/image.tgz", "test-build-retain-image"},
+					Name: "sh",
+					Args: []string{"-c", "docker save test-build-retain-image | gzip > /tmp/oss-rebuild-test-build-retain-image/image.tgz"},
 				},
 			},
 			expectSuccess: true,

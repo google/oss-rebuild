@@ -219,9 +219,10 @@ func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Ta
 		Strategy: strategy,
 	}
 	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
-		BuildID:         obID,
-		UseTimewarp:     meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
-		UseNetworkProxy: true, // The whole point of the analyzer
+		BuildID:            obID,
+		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
+		UseNetworkProxy:    true, // The whole point of the analyzer
+		SaveContainerImage: true,
 		Resources: build.Resources{
 			AssetStore:       buildStore,
 			ToolURLs:         toolURLs,
