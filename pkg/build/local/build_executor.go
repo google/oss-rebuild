@@ -200,7 +200,12 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	multiWriter := io.MultiWriter(handle.output, outbuf)
 	// Build Docker image with streaming and captured output.
 	imageTag := handle.id
-	buildArgs := []string{"buildx", "build", "-t", imageTag, "-"}
+	buildArgs := []string{"buildx", "build", "-t", imageTag}
+	if plan.ContextDir != "" {
+		buildArgs = append(buildArgs, "-f-", plan.ContextDir)
+	} else {
+		buildArgs = append(buildArgs, "-")
+	}
 	err := e.cmdExecutor.Execute(ctx, CommandOptions{
 		Input:  strings.NewReader(plan.Dockerfile),
 		Output: multiWriter,
