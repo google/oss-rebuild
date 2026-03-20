@@ -91,8 +91,8 @@ func (c Client) GetLinkWithRef(repo string, contains time.Time, ref string) (uri
 
 // Clone provides an interface to clone a git repo using the GitCache.
 func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
-	if opt.Auth != nil || opt.RemoteName != "" || opt.Depth != 0 || opt.RecurseSubmodules != 0 || opt.Tags != git.InvalidTagMode || opt.InsecureSkipTLS || len(opt.CABundle) > 0 {
-		// No support for non-trivial opts aside from NoCheckout, ReferenceName, and SingleBranch.
+	if opt.Auth != nil || opt.RemoteName != "" || opt.Depth != 0 || opt.Tags != git.InvalidTagMode || opt.InsecureSkipTLS || len(opt.CABundle) > 0 {
+		// No support for non-trivial opts aside from NoCheckout, ReferenceName, SingleBranch, and RecurseSubmodules.
 		return nil, errors.New("Unsupported opt")
 	}
 	// Determine extraction target: use the filesystem directly for
@@ -154,6 +154,11 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 		}
 		if err := wt.Checkout(&git.CheckoutOptions{Branch: plumbing.HEAD}); err != nil {
 			return nil, errors.Wrap(err, "checkout error")
+		}
+		if opt.RecurseSubmodules != git.NoRecurseSubmodules {
+			if err := gitx.UpdateSubmodules(ctx, repo, opt.RecurseSubmodules); err != nil {
+				return nil, errors.Wrap(err, "updating submodules")
+			}
 		}
 	}
 	return repo, nil
