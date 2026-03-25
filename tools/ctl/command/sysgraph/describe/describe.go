@@ -34,6 +34,12 @@ type Config struct {
 	SysgraphPath string
 	NetlogPath   string
 	JSON         bool
+	Sections     string // comma-separated list of sections to display (empty = all)
+}
+
+// validSections lists the recognized section names for --sections.
+var validSections = map[string]bool{
+	"git": true, "network": true, "tools": true, "compile": true,
 }
 
 // Validate ensures the configuration is valid.
@@ -41,7 +47,34 @@ func (c Config) Validate() error {
 	if c.SysgraphPath == "" {
 		return errors.New("sysgraph path is required")
 	}
+	for _, s := range c.parseSections() {
+		if !validSections[s] {
+			return fmt.Errorf("unknown section %q (valid: git, network, tools, compile)", s)
+		}
+	}
 	return nil
+}
+
+// parseSections returns the requested sections, or nil for all.
+func (c Config) parseSections() []string {
+	if c.Sections == "" {
+		return nil
+	}
+	return strings.Split(c.Sections, ",")
+}
+
+// showSection reports whether the given section should be displayed.
+func (c Config) showSection(name string) bool {
+	sections := c.parseSections()
+	if sections == nil {
+		return true
+	}
+	for _, s := range sections {
+		if s == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Deps holds dependencies for the command.
@@ -183,7 +216,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		}
 		fmt.Fprintln(deps.IO.Out, string(out))
 	} else {
-		printDescription(deps, desc)
+		printDescription(cfg, deps, desc)
 	}
 
 	return &act.NoOutput{}, nil
@@ -809,137 +842,145 @@ func normalizeGitURL(rawURL string) string {
 	return rawURL
 }
 
-func printDescription(deps *Deps, desc *BuildDescription) {
+func printDescription(cfg Config, deps *Deps, desc *BuildDescription) {
 	w := deps.IO.Out
 
 	fmt.Fprintln(w, "=== Build Description ===")
 	fmt.Fprintln(w)
 
 	// Git repos.
-	fmt.Fprintf(w, "Git Repositories (%d):\n", len(desc.GitRepos))
-	if len(desc.GitRepos) == 0 {
-		fmt.Fprintln(w, "  (none detected)")
+	if cfg.showSection("git") {
+		fmt.Fprintf(w, "Git Repositories (%d):\n", len(desc.GitRepos))
+		if len(desc.GitRepos) == 0 {
+			fmt.Fprintln(w, "  (none detected)")
+		}
+		for _, repo := range desc.GitRepos {
+			fmt.Fprintf(w, "  %s\n", repo.URL)
+			if repo.Ref != "" {
+				fmt.Fprintf(w, "    ref: %s\n", repo.Ref)
+			}
+			if repo.Dir != "" {
+				fmt.Fprintf(w, "    dir: %s\n", repo.Dir)
+			}
+			if repo.Shallow {
+				fmt.Fprintln(w, "    shallow: true")
+			}
+			if repo.Command != "" {
+				fmt.Fprintf(w, "    command: %s\n", repo.Command)
+			}
+		}
+		fmt.Fprintln(w)
 	}
-	for _, repo := range desc.GitRepos {
-		fmt.Fprintf(w, "  %s\n", repo.URL)
-		if repo.Ref != "" {
-			fmt.Fprintf(w, "    ref: %s\n", repo.Ref)
-		}
-		if repo.Dir != "" {
-			fmt.Fprintf(w, "    dir: %s\n", repo.Dir)
-		}
-		if repo.Shallow {
-			fmt.Fprintln(w, "    shallow: true")
-		}
-		if repo.Command != "" {
-			fmt.Fprintf(w, "    command: %s\n", repo.Command)
-		}
-	}
-	fmt.Fprintln(w)
 
 	// Dependencies: group classified by pURL type, show unclassified separately.
-	fmt.Fprintf(w, "Network Dependencies (%d):\n", len(desc.Dependencies))
-	if len(desc.Dependencies) == 0 {
-		fmt.Fprintln(w, "  (none detected)")
-	}
-
-	// Separate classified (pURL) from unclassified (raw URL).
-	purlsByType := map[string][]string{} // type prefix -> list of pURLs
-	var unclassified []string
-	for _, dep := range desc.Dependencies {
-		if dep.PURL != "" {
-			// Extract type from pURL (e.g. "pkg:deb" from "pkg:deb/debian/zlib1g@1.2.13").
-			typePart := dep.PURL
-			if idx := strings.Index(typePart, "/"); idx >= 0 {
-				typePart = typePart[:idx]
-			}
-			purlsByType[typePart] = append(purlsByType[typePart], dep.PURL)
-		} else if dep.URL != "" {
-			unclassified = append(unclassified, dep.URL)
+	if cfg.showSection("network") {
+		fmt.Fprintf(w, "Network Dependencies (%d):\n", len(desc.Dependencies))
+		if len(desc.Dependencies) == 0 {
+			fmt.Fprintln(w, "  (none detected)")
 		}
-	}
 
-	// Print unclassified deps first (most interesting).
-	if len(unclassified) > 0 {
-		sort.Strings(unclassified)
-		fmt.Fprintf(w, "  unclassified (%d):\n", len(unclassified))
-		for _, u := range unclassified {
-			fmt.Fprintf(w, "    %s\n", u)
-		}
-	}
-
-	// Print classified deps grouped by type.
-	var types []string
-	for t := range purlsByType {
-		types = append(types, t)
-	}
-	sort.Strings(types)
-	for _, typ := range types {
-		purls := purlsByType[typ]
-		sort.Strings(purls)
-
-		// For deb packages, use a compact comma-separated format with the
-		// distro prefix (e.g. "debian/") pulled into the header.
-		if typ == "pkg:deb" {
-			// Group by distro (e.g. "debian", "ubuntu").
-			distroPackages := map[string][]string{}
-			for _, p := range purls {
-				// p is like "pkg:deb/debian/zlib1g@1.2.13"
-				rest := strings.TrimPrefix(p, "pkg:deb/")
-				if idx := strings.Index(rest, "/"); idx >= 0 {
-					distro := rest[:idx]
-					pkg := rest[idx+1:]
-					distroPackages[distro] = append(distroPackages[distro], pkg)
+		// Separate classified (pURL) from unclassified (raw URL).
+		purlsByType := map[string][]string{} // type prefix -> list of pURLs
+		var unclassified []string
+		for _, dep := range desc.Dependencies {
+			if dep.PURL != "" {
+				// Extract type from pURL (e.g. "pkg:deb" from "pkg:deb/debian/zlib1g@1.2.13").
+				typePart := dep.PURL
+				if idx := strings.Index(typePart, "/"); idx >= 0 {
+					typePart = typePart[:idx]
 				}
+				purlsByType[typePart] = append(purlsByType[typePart], dep.PURL)
+			} else if dep.URL != "" {
+				unclassified = append(unclassified, dep.URL)
 			}
-			var distros []string
-			for d := range distroPackages {
-				distros = append(distros, d)
-			}
-			sort.Strings(distros)
-			for _, distro := range distros {
-				pkgs := distroPackages[distro]
-				fmt.Fprintf(w, "  %s/%s (%d): ", typ, distro, len(pkgs))
-				fmt.Fprintln(w, strings.Join(pkgs, ", "))
-			}
-			continue
 		}
 
-		fmt.Fprintf(w, "  %s (%d):\n", typ, len(purls))
-		for _, p := range purls {
-			short := p
-			if idx := strings.Index(p, "/"); idx >= 0 {
-				short = p[idx+1:]
+		// Print unclassified deps first (most interesting).
+		if len(unclassified) > 0 {
+			sort.Strings(unclassified)
+			fmt.Fprintf(w, "  unclassified (%d):\n", len(unclassified))
+			for _, u := range unclassified {
+				fmt.Fprintf(w, "    %s\n", u)
 			}
-			fmt.Fprintf(w, "    %s\n", short)
 		}
+
+		// Print classified deps grouped by type.
+		var types []string
+		for t := range purlsByType {
+			types = append(types, t)
+		}
+		sort.Strings(types)
+		for _, typ := range types {
+			purls := purlsByType[typ]
+			sort.Strings(purls)
+
+			// For deb packages, use a compact comma-separated format with the
+			// distro prefix (e.g. "debian/") pulled into the header.
+			if typ == "pkg:deb" {
+				// Group by distro (e.g. "debian", "ubuntu").
+				distroPackages := map[string][]string{}
+				for _, p := range purls {
+					// p is like "pkg:deb/debian/zlib1g@1.2.13"
+					rest := strings.TrimPrefix(p, "pkg:deb/")
+					if idx := strings.Index(rest, "/"); idx >= 0 {
+						distro := rest[:idx]
+						pkg := rest[idx+1:]
+						distroPackages[distro] = append(distroPackages[distro], pkg)
+					}
+				}
+				var distros []string
+				for d := range distroPackages {
+					distros = append(distros, d)
+				}
+				sort.Strings(distros)
+				for _, distro := range distros {
+					pkgs := distroPackages[distro]
+					fmt.Fprintf(w, "  %s/%s (%d): ", typ, distro, len(pkgs))
+					fmt.Fprintln(w, strings.Join(pkgs, ", "))
+				}
+				continue
+			}
+
+			fmt.Fprintf(w, "  %s (%d):\n", typ, len(purls))
+			for _, p := range purls {
+				short := p
+				if idx := strings.Index(p, "/"); idx >= 0 {
+					short = p[idx+1:]
+				}
+				fmt.Fprintf(w, "    %s\n", short)
+			}
+		}
+		fmt.Fprintln(w)
 	}
-	fmt.Fprintln(w)
 
 	// Build tools.
-	fmt.Fprintf(w, "Build Tools (%d):\n", len(desc.BuildTools))
-	if len(desc.BuildTools) == 0 {
-		fmt.Fprintln(w, "  (none detected)")
-	}
-	for _, tool := range desc.BuildTools {
-		fmt.Fprintf(w, "  %s (%s) - %d invocations\n", tool.Name, tool.Path, tool.InvokeCount)
-		if len(tool.ExampleArgs) > 0 {
-			fmt.Fprintf(w, "    example: %s\n", strings.Join(tool.ExampleArgs, " "))
+	if cfg.showSection("tools") {
+		fmt.Fprintf(w, "Build Tools (%d):\n", len(desc.BuildTools))
+		if len(desc.BuildTools) == 0 {
+			fmt.Fprintln(w, "  (none detected)")
 		}
+		for _, tool := range desc.BuildTools {
+			fmt.Fprintf(w, "  %s (%s) - %d invocations\n", tool.Name, tool.Path, tool.InvokeCount)
+			if len(tool.ExampleArgs) > 0 {
+				fmt.Fprintf(w, "    example: %s\n", strings.Join(tool.ExampleArgs, " "))
+			}
+		}
+		fmt.Fprintln(w)
 	}
-	fmt.Fprintln(w)
 
 	// Compile stats.
-	fmt.Fprintln(w, "Compile Statistics:")
-	if desc.CompileStats == nil {
-		fmt.Fprintln(w, "  (no compile commands detected)")
-	} else {
-		s := desc.CompileStats
-		fmt.Fprintf(w, "  count:  %d\n", s.Count)
-		fmt.Fprintf(w, "  min:    %s\n", roundDuration(s.MinDuration))
-		fmt.Fprintf(w, "  max:    %s\n", roundDuration(s.MaxDuration))
-		fmt.Fprintf(w, "  mean:   %s\n", roundDuration(s.MeanDuration))
-		fmt.Fprintf(w, "  median: %s\n", roundDuration(s.MedianDuration))
+	if cfg.showSection("compile") {
+		fmt.Fprintln(w, "Compile Statistics:")
+		if desc.CompileStats == nil {
+			fmt.Fprintln(w, "  (no compile commands detected)")
+		} else {
+			s := desc.CompileStats
+			fmt.Fprintf(w, "  count:  %d\n", s.Count)
+			fmt.Fprintf(w, "  min:    %s\n", roundDuration(s.MinDuration))
+			fmt.Fprintf(w, "  max:    %s\n", roundDuration(s.MaxDuration))
+			fmt.Fprintf(w, "  mean:   %s\n", roundDuration(s.MeanDuration))
+			fmt.Fprintf(w, "  median: %s\n", roundDuration(s.MedianDuration))
+		}
 	}
 }
 
@@ -989,5 +1030,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.StringVar(&cfg.NetlogPath, "netlog", "", "path to netlog.json for complete network dependency info")
 	set.BoolVar(&cfg.JSON, "json", false, "output as JSON")
+	set.StringVar(&cfg.Sections, "sections", "", "comma-separated sections to display: git,network,tools,compile (default: all)")
 	return set
 }
