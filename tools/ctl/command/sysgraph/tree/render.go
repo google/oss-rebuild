@@ -453,6 +453,7 @@ type renderOpts struct {
 	ShowFiles    bool
 	AncestorID   int64 // if set, show only the ancestor path to this node
 	resources    map[pbdigest.Digest]*sgpb.Resource
+	actionURLs   map[int64][]string // action ID -> URLs fetched
 }
 
 // renderTree writes the process tree to w. It first grafts container-internal
@@ -542,6 +543,10 @@ func renderNode(w io.Writer, n *treeNode, depth int, opts renderOpts) {
 	if opts.ShowFiles {
 		renderFileOps(w, n, prefix, opts)
 	}
+	if opts.actionURLs != nil {
+		renderNetlogURLs(w, n, prefix, opts)
+	}
+
 	// Render children with sibling collapsing.
 	renderChildren(w, n.children, depth+1, opts)
 }
@@ -698,6 +703,34 @@ func renderFileOps(w io.Writer, n *treeNode, prefix string, opts renderOpts) {
 			connector = "└"
 		}
 		fmt.Fprintf(w, "%s%s %s %s\n", indent, connector, op.op, op.path)
+	}
+}
+
+// renderNetlogURLs prints HTTP URLs fetched by a process, using box-drawing
+// characters beneath the process line (same style as file ops).
+func renderNetlogURLs(w io.Writer, n *treeNode, prefix string, opts renderOpts) {
+	urls, ok := opts.actionURLs[n.action.GetId()]
+	if !ok || len(urls) == 0 {
+		return
+	}
+	// Deduplicate and sort.
+	seen := map[string]bool{}
+	var unique []string
+	for _, u := range urls {
+		if !seen[u] {
+			seen[u] = true
+			unique = append(unique, u)
+		}
+	}
+	sort.Strings(unique)
+
+	indent := strings.Repeat(" ", len(prefix))
+	for i, u := range unique {
+		connector := "├"
+		if i == len(unique)-1 {
+			connector = "└"
+		}
+		fmt.Fprintf(w, "%s%s %s\n", indent, connector, u)
 	}
 }
 
