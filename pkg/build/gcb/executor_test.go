@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/google/oss-rebuild/internal/gcb/gcbtest"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/gcb/gcbtest"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/googleapi"

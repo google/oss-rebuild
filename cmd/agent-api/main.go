@@ -14,9 +14,9 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/agentapiservice"
-	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
 )

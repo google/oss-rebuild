@@ -6,7 +6,7 @@ package gcbtest
 import (
 	"testing"
 
-	"github.com/google/oss-rebuild/internal/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb"
 )
 
 func TestBuild(t *testing.T) {

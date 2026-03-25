@@ -13,7 +13,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/gdamore/tcell/v2"
-	"github.com/google/oss-rebuild/internal/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"

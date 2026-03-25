@@ -10,7 +10,7 @@ import (
 	"io"
 
 	gcs "cloud.google.com/go/storage"
-	"github.com/google/oss-rebuild/internal/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
