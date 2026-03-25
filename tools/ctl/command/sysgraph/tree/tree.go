@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
+	"github.com/google/oss-rebuild/pkg/sysgraph/pbdigest"
+	sgpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
 	"github.com/google/oss-rebuild/pkg/sysgraph/sgstorage"
 	"github.com/google/oss-rebuild/pkg/sysgraph/sgtransform"
 	"github.com/spf13/cobra"
@@ -24,6 +26,7 @@ type Config struct {
 	MaxDepth     int   // limit recursion (0 = unlimited)
 	Collapse     int   // group N+ siblings with same exec (default 10)
 	ShowForks    bool  // include fork-only actions
+	ShowFiles    bool  // show file reads/writes per process
 	Verbose      bool  // show ids, cwd, and duration
 }
 
@@ -68,6 +71,14 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		return nil, fmt.Errorf("building tree: %w", err)
 	}
 
+	var resources map[pbdigest.Digest]*sgpb.Resource
+	if cfg.ShowFiles {
+		resources, err = filtered.Resources(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("loading resources: %w", err)
+		}
+	}
+
 	opts := renderOpts{
 		MaxDepth:     cfg.MaxDepth,
 		Collapse:     cfg.Collapse,
@@ -75,7 +86,9 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		ShowIDs:      cfg.Verbose,
 		ShowCwd:      cfg.Verbose,
 		ShowDuration: cfg.Verbose,
+		ShowFiles:    cfg.ShowFiles,
 		AncestorID:   cfg.AncestorID,
+		resources:    resources,
 	}
 	renderTree(deps.IO.Out, tree, opts)
 	return &act.NoOutput{}, nil
@@ -118,6 +131,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.IntVar(&cfg.MaxDepth, "max-depth", 0, "limit recursion depth (0 = unlimited)")
 	set.IntVar(&cfg.Collapse, "collapse", 0, "group N+ consecutive siblings with same executable (0 = disable)")
 	set.BoolVar(&cfg.ShowForks, "show-forks", false, "include fork-only actions in output")
+	set.BoolVar(&cfg.ShowFiles, "show-files", false, "show file reads and writes for each process")
 	set.BoolVar(&cfg.Verbose, "v", false, "verbose output (show ids, cwd, and duration)")
 	return set
 }
