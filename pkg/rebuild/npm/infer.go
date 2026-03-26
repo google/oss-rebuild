@@ -4,9 +4,13 @@
 package npm
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"path"
 	"path/filepath"
@@ -22,6 +26,7 @@ import (
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
+	"github.com/google/oss-rebuild/pkg/vcs/gitscan"
 	"github.com/pkg/errors"
 )
 
@@ -125,7 +130,7 @@ func PickNPMVersion(meta *npmreg.NPMVersion) (string, error) {
 	return npmv, nil
 }
 
-func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.RepoConfig) (loc rebuild.Location, versionOverride string, err error) {
+func InferLocation(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, vmeta *npmreg.NPMVersion, rcfg *rebuild.RepoConfig) (loc rebuild.Location, versionOverride string, err error) {
 	// Initialize location with repo URI from config
 	loc = rebuild.Location{
 		Repo: rcfg.URI,
@@ -150,6 +155,9 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 	}
 	var c *object.Commit
 	var badVersionRef string
+	registryRef = ""
+	pkgJSONGuess = ""
+	tagGuess = ""
 	switch {
 	case registryRef != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(registryRef))
@@ -211,16 +219,24 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 		}
 		fallthrough
 	default:
-		if badVersionRef != "" {
-			log.Printf("using version override recovery: %s", badVersionRef[:9])
-			c, _ = rcfg.Repository.CommitObject(plumbing.NewHash(badVersionRef))
-			loc.Ref = badVersionRef
-			versionOverride = t.Version
-			return loc, versionOverride, nil
-		} else if registryRef == "" && tagGuess == "" && pkgJSONGuess == "" {
-			return loc, "", errors.Errorf("no git ref")
+		commitHashHex, err := findClosestCommitToSource(ctx, t, mux, rcfg.Repository)
+		if err == nil {
+			log.Printf("Got commit %s", commitHashHex)
+			loc.Ref = commitHashHex
+			return loc, "", nil
 		} else {
-			return loc, "", errors.Errorf("no valid git ref")
+			log.Printf("Failed to use closest commit as ref: %s", err)
+			if badVersionRef != "" {
+				log.Printf("using version override recovery: %s", badVersionRef[:9])
+				c, _ = rcfg.Repository.CommitObject(plumbing.NewHash(badVersionRef))
+				loc.Ref = badVersionRef
+				versionOverride = t.Version
+				return loc, versionOverride, nil
+			} else if registryRef == "" && tagGuess == "" && pkgJSONGuess == "" {
+				return loc, "", errors.Errorf("no git ref")
+			} else {
+				return loc, "", errors.Errorf("no valid git ref")
+			}
 		}
 	}
 }
@@ -245,7 +261,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			loc.Dir = lh.Dir
 		}
 	} else {
-		loc, versionOverride, err = InferLocation(t, vmeta, rcfg)
+		loc, versionOverride, err = InferLocation(ctx, t, mux, vmeta, rcfg)
 		if err != nil {
 			return nil, err
 		}
@@ -454,4 +470,54 @@ func pkgJSONSearch(pkg, pkgJSONPath string, repo *git.Repository) (tm map[string
 		}
 	}
 	return
+}
+
+func findClosestCommitToSource(ctx context.Context, target rebuild.Target, mux rebuild.RegistryMux, repo *git.Repository) (string, error) {
+	sourceTar, err := mux.NPM.Artifact(ctx, target.Package, target.Version)
+	if err != nil {
+		return "", err
+	}
+	defer sourceTar.Close()
+	gzReader, err := gzip.NewReader(sourceTar)
+	if err != nil {
+		return "", err
+	}
+	defer gzReader.Close()
+	tarData, err := io.ReadAll(gzReader)
+	if err != nil {
+		return "", err
+	}
+	tarReader := tar.NewReader(bytes.NewReader(tarData))
+	// NOTE: we *could* refactor out a function in gitscan that gets a repo and the hash list and
+	// finds the closest commit?
+	// That way, the ecosystem specific part is just getting the hashes from the specific file
+	// types.
+	// Arguably, these are also somewhat generic over ecosystems, as they really just depend on the
+	// file type.
+	// Then, the only ecosystem specific thing is to fetch the artifact, and the rest is then a
+	// filetype specific, but ecosystem agnostic repo scan.
+	hashes, err := gitscan.BlobHashesFromTar(tarReader)
+	if err != nil {
+		return "", errors.Wrap(err, "hashing source jar contents")
+	}
+	searchStrategy := gitscan.ExactTreeCount{}
+	closest, matched, total, err := searchStrategy.Search(ctx, repo, hashes)
+	if err != nil {
+		return "", errors.Wrap(err, "searching for matching commit based on source jar")
+	}
+	log.Printf("commits (%d): %v", len(closest), closest)
+	log.Printf("matched %d/%d files using git index scan", matched, total)
+	if len(closest) == 0 {
+		log.Printf("no matching commit found using commit overlap heuristic")
+		return "", nil
+	}
+	// TODO: use a better heuristic here like using commit time
+	commitHashHex := closest[0]
+	// Verify if commit exists in the repository
+	commitHash := plumbing.NewHash(commitHashHex)
+	_, err = repo.CommitObject(commitHash)
+	if err != nil {
+		return "", errors.Wrapf(err, "resolving commit %s", commitHashHex)
+	}
+	return commitHashHex, nil
 }

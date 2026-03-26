@@ -4,6 +4,7 @@
 package gitscan
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"context"
 	"io"
@@ -42,6 +43,30 @@ func BlobHashesFromZip(zr *zip.Reader) (files []plumbing.Hash, err error) {
 			return nil, err
 		}
 		files = append(files, h.Sum())
+	}
+	return files, nil
+}
+
+// BlobHashesFromTar computes the git blob hashes for all files in the provided tar archive.
+func BlobHashesFromTar(tr *tar.Reader) (files []plumbing.Hash, err error) {
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, errors.Errorf("failed reading tar file: %s", err)
+		}
+		// tar.TypeReg is the flag for a regular file
+		// unsure if we need to support other file types like links?
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+		hasher := plumbing.NewHasher(plumbing.BlobObject, header.Size)
+		if _, err := io.CopyN(hasher, tr, header.Size); err != nil {
+			return nil, err
+		}
+		files = append(files, hasher.Sum())
 	}
 	return files, nil
 }
