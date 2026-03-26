@@ -17,12 +17,12 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/google/oss-rebuild/internal/gcb/gcbtest"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	"github.com/google/oss-rebuild/pkg/attestation"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb/gcbtest"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"

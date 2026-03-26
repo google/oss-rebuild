@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/bufiox"
-	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
