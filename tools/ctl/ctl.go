@@ -62,6 +62,7 @@ func init() {
 	rootCmd.AddCommand(gettrackedpackages.Command())
 	// Sysgraph tools
 	rootCmd.AddCommand(sysgraph.Command())
+	// TODO: Add query command.
 }
 
 func main() {
