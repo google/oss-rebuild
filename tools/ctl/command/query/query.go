@@ -111,6 +111,16 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err := registerNetlogVTab(db, ctx, assets); err != nil {
 			return nil, errors.Wrap(err, "registering netlog vtable")
 		}
+		sgc := newSGCache(ctx, assets)
+		if err := registerSGActionsVTab(db, sgc); err != nil {
+			return nil, errors.Wrap(err, "registering sg_actions vtable")
+		}
+		if err := registerSGIOVTab(db, sgc); err != nil {
+			return nil, errors.Wrap(err, "registering sg_io vtable")
+		}
+		if err := registerSGResourcesVTab(db, sgc); err != nil {
+			return nil, errors.Wrap(err, "registering sg_resources vtable")
+		}
 	}
 	// Execute the query.
 	stmt, _, err := db.Prepare(cfg.query)
@@ -158,7 +168,16 @@ Available tables:
   logs      (ecosystem, package, version, artifact, run_id, content)
   netlog    (ecosystem, package, version, artifact, run_id,
              method, scheme, host, path, url, purl, time)
-             -- logs and netlog require --logs-bucket, --metadata-bucket,
+  sg_actions (ecosystem, package, version, artifact, run_id,
+             action_id, parent_id, is_entry_point, command,
+             executable, cwd, pid, start_time, end_time, duration_s,
+             is_fork, exit_status)
+  sg_io     (ecosystem, package, version, artifact, run_id,
+             action_id, resource_digest, direction, io_type, time,
+             total_size, bytes_used, resource_type, path, address)
+  sg_resources (ecosystem, package, version, artifact, run_id,
+             digest, type, path, file_type, file_digest, address, protocol)
+             -- asset tables require --logs-bucket, --metadata-bucket,
                 --debug-storage
 
 Note: All virtual tables are read-only; write operations (INSERT, UPDATE, DELETE)
