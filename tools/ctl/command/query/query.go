@@ -108,6 +108,9 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err := registerLogsVTab(db, ctx, assets); err != nil {
 			return nil, errors.Wrap(err, "registering logs vtable")
 		}
+		if err := registerNetlogVTab(db, ctx, assets); err != nil {
+			return nil, errors.Wrap(err, "registering netlog vtable")
+		}
 	}
 	// Execute the query.
 	stmt, _, err := db.Prepare(cfg.query)
@@ -153,7 +156,10 @@ Available tables:
              executor_version, run_id, build_id, started, ended,
              duration_s)
   logs      (ecosystem, package, version, artifact, run_id, content)
-             -- requires --logs-bucket, --metadata-bucket, --debug-storage
+  netlog    (ecosystem, package, version, artifact, run_id,
+             method, scheme, host, path, url, purl, time)
+             -- logs and netlog require --logs-bucket, --metadata-bucket,
+                --debug-storage
 
 Note: All virtual tables are read-only; write operations (INSERT, UPDATE, DELETE)
 are not supported and will fail.
