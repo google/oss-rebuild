@@ -226,6 +226,9 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	if plan.Privileged {
 		if e.allowPrivileged {
 			runArgs = append(runArgs, "--privileged")
+			runArgs = append(runArgs, "-v", "/var/run/docker.sock:/var/run/docker.sock")
+			// TODO: Also provide docker access during the docker buildx build step
+			// for privileged builds that need docker-in-docker at build time.
 		} else {
 			log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
 		}
