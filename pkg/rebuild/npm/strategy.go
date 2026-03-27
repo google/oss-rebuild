@@ -120,7 +120,7 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{.With.locator}}npx --package=npm@{{.With.npmVersion}} -c '
-						{{- if and (ne .With.dir ".") (ne .With.dir "")}}cd {{.With.dir}} && {{end -}}
+						{{- if and (ne .With.dir ".") (ne .With.dir "")}}cd {{shellQuote .With.dir}} && {{end -}}
 						{{.With.command}}'`)[1:],
 			Needs: []string{"npm"},
 		}},
