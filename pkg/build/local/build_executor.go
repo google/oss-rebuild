@@ -325,7 +325,8 @@ func (e *DockerBuildExecutor) uploadContent(ctx context.Context, store rebuild.A
 	return nil
 }
 
-// saveContainerImage saves the built container image as a tarball.
+// saveContainerImage saves the built container image as a gzipped tarball.
 func (e *DockerBuildExecutor) saveContainerImage(ctx context.Context, imageTag, outputPath string) error {
-	return e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "save", "-o", outputPath, imageTag)
+	return e.cmdExecutor.Execute(ctx, CommandOptions{}, "sh", "-c",
+		fmt.Sprintf("%s save %s | gzip > %s", e.dockerCmd, imageTag, outputPath))
 }
