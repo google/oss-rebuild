@@ -199,11 +199,12 @@ func executeSystemTraceRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuil
 		return "", errors.Wrap(err, "creating rebuild store")
 	}
 	buildStore := rebuild.NewMixedAssetStore(map[rebuild.AssetType]rebuild.LocatableAssetStore{
-		rebuild.ContainerImageAsset: remoteMetadata,
-		rebuild.RebuildAsset:        remoteMetadata,
-		rebuild.TetragonLogAsset:    remoteMetadata,
-		rebuild.DockerfileAsset:     deps.LocalMetadataStore,
-		rebuild.BuildInfoAsset:      deps.LocalMetadataStore,
+		rebuild.ContainerImageAsset:     remoteMetadata,
+		rebuild.PostBuildContainerAsset: remoteMetadata,
+		rebuild.RebuildAsset:            remoteMetadata,
+		rebuild.TetragonLogAsset:        remoteMetadata,
+		rebuild.DockerfileAsset:         deps.LocalMetadataStore,
+		rebuild.BuildInfoAsset:          deps.LocalMetadataStore,
 	})
 	prebuildConfig := rebuildAttestation.Predicate.BuildDefinition.InternalParameters.PrebuildConfig
 	toolURLs := map[build.ToolType]string{

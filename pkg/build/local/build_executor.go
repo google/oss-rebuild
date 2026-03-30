@@ -107,11 +107,12 @@ func (e *DockerBuildExecutor) Start(ctx context.Context, input rebuild.Input, op
 		buildID = fmt.Sprintf("docker-build-%d", time.Now().UnixNano())
 	}
 	planOpts := build.PlanOptions{
-		UseTimewarp:        opts.UseTimewarp,
-		UseNetworkProxy:    opts.UseNetworkProxy,
-		UseSyscallMonitor:  opts.UseSyscallMonitor,
-		Resources:          opts.Resources,
-		SaveContainerImage: opts.SaveContainerImage,
+		UseTimewarp:            opts.UseTimewarp,
+		UseNetworkProxy:        opts.UseNetworkProxy,
+		UseSyscallMonitor:      opts.UseSyscallMonitor,
+		Resources:              opts.Resources,
+		SaveContainerImage:     opts.SaveContainerImage,
+		SavePostBuildContainer: opts.SavePostBuildContainer,
 	}
 	plan, err := e.planner.GeneratePlan(ctx, input, planOpts)
 	if err != nil {
@@ -220,8 +221,11 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	}
 	// Run Docker container with streaming and captured output.
 	runArgs := []string{"run"}
-	if !e.retainContainer {
+	if !e.retainContainer && !opts.SavePostBuildContainer {
 		runArgs = append(runArgs, "--rm")
+	}
+	if opts.SavePostBuildContainer {
+		runArgs = append(runArgs, "--name", handle.id)
 	}
 	runArgs = append(runArgs, "-v", fmt.Sprintf("%s:%s", hostOutputPath, path.Dir(plan.OutputPath)), imageTag)
 	if plan.Privileged {
@@ -237,9 +241,22 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	err = e.cmdExecutor.Execute(ctx, CommandOptions{
 		Output: multiWriter,
 	}, e.dockerCmd, runArgs...)
+	// Export post-build container if requested.
+	if opts.SavePostBuildContainer {
+		postBuildPath := filepath.Join(hostOutputPath, string(rebuild.PostBuildContainerAsset))
+		if err := e.exportContainer(ctx, handle.id, postBuildPath); err != nil {
+			log.Printf("Failed to export post-build container: %v", err)
+		}
+	}
 	// Upload assets to asset store
 	if opts.Resources.AssetStore != nil {
 		e.uploadAssets(ctx, plan, hostOutputPath, t, opts, handle.id, outbuf.Bytes())
+	}
+	// Clean up post-build container if it was retained for export.
+	if opts.SavePostBuildContainer && !e.retainContainer {
+		if rmErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "rm", handle.id); rmErr != nil {
+			log.Printf("Failed to remove container %s: %v", handle.id, rmErr)
+		}
 	}
 	// Clean up the built image if RetainImage is false
 	if !e.retainImage {
@@ -292,6 +309,13 @@ func (e *DockerBuildExecutor) uploadAssets(ctx context.Context, plan *DockerBuil
 			log.Printf("Failed to upload container image: %v", err)
 		}
 	}
+	// Upload post-build container export if it exists.
+	postBuildPath := filepath.Join(hostOutputPath, string(rebuild.PostBuildContainerAsset))
+	if _, err := os.Stat(postBuildPath); err == nil {
+		if err := e.uploadFile(ctx, store, rebuild.PostBuildContainerAsset.For(t), postBuildPath); err != nil {
+			log.Printf("Failed to upload post-build container: %v", err)
+		}
+	}
 }
 
 // uploadFile uploads a local file to the asset store.
@@ -329,4 +353,18 @@ func (e *DockerBuildExecutor) uploadContent(ctx context.Context, store rebuild.A
 func (e *DockerBuildExecutor) saveContainerImage(ctx context.Context, imageTag, outputPath string) error {
 	return e.cmdExecutor.Execute(ctx, CommandOptions{}, "sh", "-c",
 		fmt.Sprintf("%s save %s | gzip > %s", e.dockerCmd, imageTag, outputPath))
+}
+
+// exportContainer commits the container state to an image, saves it as a gzipped tarball, then removes the committed image.
+func (e *DockerBuildExecutor) exportContainer(ctx context.Context, containerName, outputPath string) error {
+	committedImage := containerName + "-postbuild"
+	if err := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "commit", containerName, committedImage); err != nil {
+		return errors.Wrap(err, "docker commit failed")
+	}
+	saveErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, "sh", "-c",
+		fmt.Sprintf("%s save %s | gzip > %s", e.dockerCmd, committedImage, outputPath))
+	if rmErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "rmi", committedImage); rmErr != nil {
+		log.Printf("Failed to remove committed image %s: %v", committedImage, rmErr)
+	}
+	return saveErr
 }
