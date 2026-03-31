@@ -697,7 +697,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		allVars := append(otherVars, d.envVars...)
 		allVars = append(otherVars, d.truststoreEnvVars...)
 		var newBody []byte
-		if !bytes.Equal(body, nullJSONBody) {
+		if len(body) > 0 && !bytes.Equal(body, nullJSONBody) {
 			newBody, err = removeEnvVars(body, allVars)
 			if err != nil {
 				log.Fatalf("failed to remove env vars for request %s: %s", req.URL.Path, err)
@@ -705,7 +705,8 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		} else {
 			// With a null body, the docker daemon will access the container
 			// specifications internally. As such, we need to substitute this out for
-			// out own specification.
+			// our own specification.
+			origBody := body
 			origID := id
 			resp, err := serverClient.Get("/containers/" + id + "/json")
 			if err != nil {
@@ -754,10 +755,12 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			resp.Body.Close()
 			newID := container.ID
 			req.URL.RawQuery = strings.Replace(req.URL.RawQuery, "container="+origID, "container="+newID, -1)
-			newBody = nullJSONBody
+			newBody = origBody
 		}
-		req.ContentLength = int64(len(newBody))
-		req.Body = io.NopCloser(bytes.NewReader(newBody))
+		if len(body) > 0 {
+			req.ContentLength = int64(len(newBody))
+			req.Body = io.NopCloser(bytes.NewReader(newBody))
+		}
 		fallthrough
 	case unpatchTruststoreDuring:
 		id, err = resolveContainerID(serverClient, id)
