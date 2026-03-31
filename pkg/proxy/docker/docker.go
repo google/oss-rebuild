@@ -819,7 +819,11 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		clientConn.Write(httpInternalServerErrorResponse)
 		return
 	}
-	resp, err := http.ReadResponse(bufio.NewReader(serverConn), req)
+	// Use a buffered reader so that any bytes the server sends immediately
+	// after the HTTP response (e.g. gRPC/HTTP2 frames after a 101 upgrade)
+	// are not lost when we switch to raw byte proxying.
+	serverBuf := bufio.NewReader(serverConn)
+	resp, err := http.ReadResponse(serverBuf, req)
 	if err != nil {
 		log.Printf("Failed to read server response: %s", err)
 		clientConn.Write(httpInternalServerErrorResponse)
@@ -839,7 +843,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		// Transparently proxy bytes between client and server.
 		// Server dictates termination.
 		clientChunks := readChunks(clientConn)
-		serverChunks := readChunks(serverConn)
+		serverChunks := readChunks(serverBuf)
 		for {
 			select {
 			case b := <-clientChunks:
