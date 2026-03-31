@@ -315,12 +315,12 @@ const (
 )
 
 var (
-	containerCreatePattern  = re.MustCompile(`(/v[^/]+)?/containers/create`)
-	containerStartPattern   = re.MustCompile(`(/v[^/]+)?/containers/([^/]+)/start`)
-	containerExportPattern  = re.MustCompile(`(/v[^/]+)?/containers/([^/]+)/export`)
-	containerRestartPattern = re.MustCompile(`(/v[^/]+)?/containers/([^/]+)/restart`)
-	containerUnpausePattern = re.MustCompile(`(/v[^/]+)?/containers/([^/]+)/unpause`)
-	commitPattern           = re.MustCompile(`(/v[^/]+)?/commit`)
+	containerCreatePattern  = re.MustCompile(`^(/v[^/]+)?/containers/create$`)
+	containerStartPattern   = re.MustCompile(`^(/v[^/]+)?/containers/([^/]+)/start$`)
+	containerExportPattern  = re.MustCompile(`^(/v[^/]+)?/containers/([^/]+)/export$`)
+	containerRestartPattern = re.MustCompile(`^(/v[^/]+)?/containers/([^/]+)/restart$`)
+	containerUnpausePattern = re.MustCompile(`^(/v[^/]+)?/containers/([^/]+)/unpause$`)
+	commitPattern           = re.MustCompile(`^(/v[^/]+)?/commit$`)
 )
 
 // getActionType determines the actionType that should be taken along with the container ID on which the action should be taken.
