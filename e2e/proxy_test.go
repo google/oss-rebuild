@@ -133,7 +133,9 @@ func setupProxyTestEnv(t *testing.T, bin string, opts proxyTestEnvOpts) *proxyTe
 		proxyFlags = append(proxyFlags,
 			"--docker_addr=0.0.0.0:3130",
 			"--docker_socket=/var/run/docker.sock",
-			"--docker_network="+network,
+			// Use container:buildName so inner containers share the build
+			// container's network namespace (inheriting iptables DNAT rules).
+			"--docker_network=container:"+buildName,
 		)
 	}
 	proxyFlags = append(proxyFlags, opts.ExtraProxyFlags...)
@@ -309,6 +311,21 @@ func (e *proxyTestEnv) runInBuildExpectFail(t *testing.T, cmd string) (stdout, s
 	return stdout, stderr, err
 }
 
+// getProxyCert fetches the proxy CA certificate in PEM format from the admin endpoint.
+func (e *proxyTestEnv) getProxyCert(t *testing.T) []byte {
+	t.Helper()
+	resp, err := http.Get(fmt.Sprintf("http://%s/cert", e.AdminPort))
+	if err != nil {
+		t.Fatalf("Failed to fetch proxy cert: %v", err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("Failed to read proxy cert: %v", err)
+	}
+	return data
+}
+
 // getNetworkLog fetches the network activity log from the admin endpoint.
 func (e *proxyTestEnv) getNetworkLog(t *testing.T) netlog.NetworkActivityLog {
 	t.Helper()
@@ -451,6 +468,67 @@ func TestNetworkActivityLog(t *testing.T) {
 		if !found {
 			t.Errorf("Expected log entry for %s %s, got: %+v", want.scheme, want.host, log.HTTPRequests)
 		}
+	}
+}
+
+func TestTruststorePatching(t *testing.T) {
+	checkDockerAvailable(t)
+	bin := buildProxyBinary(t)
+
+	// The Docker API proxy always creates /var/cache/proxy.crt in containers.
+	// For distros with a pre-existing system truststore, it also appends the
+	// cert there. Slim images (debian/ubuntu) lack ca-certificates so the
+	// system truststore file doesn't exist; the proxy gracefully skips that.
+	images := []struct {
+		name                 string
+		image                string
+		systemTruststorePath string // empty = system truststore not expected
+	}{
+		{"alpine", "alpine:3.21", "/etc/ssl/cert.pem"},
+		{"debian", "debian:bookworm-slim", ""},
+		{"ubuntu", "ubuntu:24.04", ""},
+	}
+
+	for _, img := range images {
+		t.Run(img.name, func(t *testing.T) {
+			env := setupProxyTestEnv(t, bin, proxyTestEnvOpts{
+				WithDockerProxy: true,
+			})
+
+			// Install docker CLI in the build container so we can invoke docker commands.
+			env.runInBuild(t, "apk add --no-cache docker-cli")
+
+			// Fetch the proxy cert so we can verify it was injected.
+			// Normalize line endings to handle \r\n from docker exec.
+			proxyCert := strings.TrimSpace(strings.ReplaceAll(string(env.getProxyCert(t)), "\r\n", "\n"))
+
+			// The proxy always creates /var/cache/proxy.crt in every container.
+			dockerRunCmd := fmt.Sprintf(
+				"DOCKER_HOST=tcp://%s:3130 docker run --rm %s cat /var/cache/proxy.crt",
+				env.ProxyIP, img.image,
+			)
+			stdout, _ := env.runInBuild(t, dockerRunCmd)
+			stdoutNorm := strings.TrimSpace(strings.ReplaceAll(stdout, "\r\n", "\n"))
+			if !strings.Contains(stdoutNorm, proxyCert) {
+				t.Errorf("Proxy cert not found in /var/cache/proxy.crt for %s\nExpected (%d bytes):\n%s\nGot (%d bytes):\n%s",
+					img.name, len(proxyCert), proxyCert, len(stdoutNorm), stdoutNorm)
+			}
+
+			// For distros with a pre-existing system truststore, verify the
+			// cert was also appended to the system CA bundle.
+			if img.systemTruststorePath != "" {
+				dockerRunCmd = fmt.Sprintf(
+					"DOCKER_HOST=tcp://%s:3130 docker run --rm %s cat %s",
+					env.ProxyIP, img.image, img.systemTruststorePath,
+				)
+				stdout, _ = env.runInBuild(t, dockerRunCmd)
+				stdoutNorm = strings.TrimSpace(strings.ReplaceAll(stdout, "\r\n", "\n"))
+				if !strings.Contains(stdoutNorm, proxyCert) {
+					t.Errorf("Proxy cert not found in %s system truststore (%s)\nTruststore tail:\n%s",
+						img.name, img.systemTruststorePath, stdoutNorm[max(0, len(stdoutNorm)-500):])
+				}
+			}
+		})
 	}
 }
 
