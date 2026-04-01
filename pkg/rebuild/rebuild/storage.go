@@ -50,6 +50,8 @@ const (
 	ProxyNetlogAsset AssetType = "netlog.json"
 	// TetragonLogAsset is the log of all tetragon events.
 	TetragonLogAsset AssetType = "tetragon.jsonl"
+	// SysgraphAsset is the sysgraph generated from tetragon events.
+	SysgraphAsset AssetType = "sysgraph.zip"
 
 	// AttestationBundleAsset is the signed attestation bundle generated for a rebuild.
 	AttestationBundleAsset AssetType = "rebuild.intoto.jsonl"

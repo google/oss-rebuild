@@ -545,6 +545,10 @@ locals {
       dockerfile = "build/package/Dockerfile.timewarp"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
     }
+    tetragon_sysgraph = {
+      dockerfile = "build/package/Dockerfile.tetragon_sysgraph"
+      build_args = ["DEBUG=${terraform_data.debug.output}"]
+    }
   }
 }
 

@@ -203,13 +203,15 @@ func executeSystemTraceRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuil
 		rebuild.PostBuildContainerAsset: remoteMetadata,
 		rebuild.RebuildAsset:            remoteMetadata,
 		rebuild.TetragonLogAsset:        remoteMetadata,
+		rebuild.SysgraphAsset:           remoteMetadata,
 		rebuild.DockerfileAsset:         deps.LocalMetadataStore,
 		rebuild.BuildInfoAsset:          deps.LocalMetadataStore,
 	})
 	prebuildConfig := rebuildAttestation.Predicate.BuildDefinition.InternalParameters.PrebuildConfig
 	toolURLs := map[build.ToolType]string{
-		build.TimewarpTool: "gs://" + path.Join(prebuildConfig.Bucket, prebuildConfig.Dir, "timewarp"),
-		build.GSUtilTool:   "gs://" + path.Join(prebuildConfig.Bucket, prebuildConfig.Dir, "gsutil_writeonly"),
+		build.TimewarpTool:         "gs://" + path.Join(prebuildConfig.Bucket, prebuildConfig.Dir, "timewarp"),
+		build.GSUtilTool:           "gs://" + path.Join(prebuildConfig.Bucket, prebuildConfig.Dir, "gsutil_writeonly"),
+		build.TetragonSysgraphTool: "gs://" + path.Join(prebuildConfig.Bucket, prebuildConfig.Dir, "tetragon_sysgraph"),
 	}
 	var authRequired []string
 	if prebuildConfig.Auth {
