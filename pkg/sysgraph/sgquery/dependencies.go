@@ -385,12 +385,12 @@ func AllTransitiveDeps(ctx context.Context, sg ActionResourceProvider, ids []int
 		return nil, err
 	}
 	visited := map[int64]bool{}
-	topoOrder := make([]*sgpb.Action, 0, len(ids))
+	stack := make([]int64, 0, len(actions))
+	topoOrder := make([]*sgpb.Action, 0, len(actions))
 	for _, id := range ids {
 		if visited[id] {
 			continue
 		}
-		stack := make([]int64, 0, len(ids))
 		stack = append(stack, id)
 		for len(stack) > 0 {
 			n := stack[len(stack)-1]
@@ -401,10 +401,14 @@ func AllTransitiveDeps(ctx context.Context, sg ActionResourceProvider, ids []int
 			visited[n] = true
 			a, ok := actions[n]
 			if !ok {
-				return nil, fmt.Errorf("action %d not found", id)
+				return nil, fmt.Errorf("under root action: %d, child action %d not found", id, n)
 			}
 			topoOrder = append(topoOrder, a)
-			stack = append(stack, slices.Collect(maps.Keys(a.GetChildren()))...)
+			for childID := range a.GetChildren() {
+				if !visited[childID] {
+					stack = append(stack, childID)
+				}
+			}
 		}
 	}
 	transitiveDeps := make(map[int64]TransitiveDeps, len(ids))
@@ -432,7 +436,11 @@ func AllTransitiveDeps(ctx context.Context, sg ActionResourceProvider, ids []int
 			Resources: resources,
 		}
 	}
-	return transitiveDeps, nil
+	ret := make(map[int64]TransitiveDeps, len(ids))
+	for _, id := range ids {
+		ret[id] = transitiveDeps[id]
+	}
+	return ret, nil
 }
 
 // AllInputs returns all the inputs for the given action.

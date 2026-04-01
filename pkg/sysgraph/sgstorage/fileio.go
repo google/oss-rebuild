@@ -153,7 +153,10 @@ func (fs *zipFs) MkdirAll(ctx context.Context, path string, perm os.FileMode) er
 func (fs *zipFs) WriteFile(ctx context.Context, path string, blob []byte) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	f, err := fs.Create(path)
+	f, err := fs.CreateHeader(&zip.FileHeader{
+		Name:   path,
+		Method: zip.Store,
+	})
 	if err != nil {
 		return err
 	}
