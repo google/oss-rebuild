@@ -7,10 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"regexp"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/bufiox"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
@@ -28,6 +30,7 @@ var buildTagDisallowedChar = regexp.MustCompile(`[^\w.-]`)
 type Executor struct {
 	planner            build.Planner[*Plan]
 	client             gcb.Client
+	logsClient         gcb.LogsClient
 	project            string
 	serviceAccount     string
 	logsBucket         string
@@ -39,9 +42,18 @@ type Executor struct {
 	activeBuilds       syncx.Map[string, *gcbHandle]
 }
 
+// GCSLogsClientFunc func creates a LogsClient for a given bucket.
+type GCSLogsClientFunc func(bucket string) gcb.LogsClient
+
+func GCSLogsClient(gcsClient *storage.Client) GCSLogsClientFunc {
+	return func(bucket string) gcb.LogsClient {
+		return gcb.NewGCSLogsClient(gcsClient, bucket)
+	}
+}
+
 // NewExecutor creates a new GCB executor with the specified configuration
 func NewExecutor(config ExecutorConfig) (*Executor, error) {
-	if config.LogsBucket == "" {
+	if config.LogsBucket == "" || config.LogsClientFunc == nil {
 		return nil, errors.New("Logs configuration is required")
 	}
 	// Set defaults for unset config params
@@ -50,7 +62,6 @@ func NewExecutor(config ExecutorConfig) (*Executor, error) {
 		plannerConfig := PlannerConfig{
 			Project:        config.Project,
 			ServiceAccount: config.ServiceAccount,
-			LogsBucket:     config.LogsBucket,
 			PrivatePool:    config.PrivatePool,
 		}
 		planner = NewPlanner(plannerConfig)
@@ -62,6 +73,7 @@ func NewExecutor(config ExecutorConfig) (*Executor, error) {
 	return &Executor{
 		planner:            planner,
 		client:             config.Client,
+		logsClient:         config.LogsClientFunc(config.LogsBucket),
 		project:            config.Project,
 		serviceAccount:     config.ServiceAccount,
 		logsBucket:         config.LogsBucket,
@@ -78,6 +90,7 @@ func NewExecutor(config ExecutorConfig) (*Executor, error) {
 type ExecutorConfig struct {
 	Planner            build.Planner[*Plan]
 	Client             gcb.Client
+	LogsClientFunc     GCSLogsClientFunc
 	Project            string
 	ServiceAccount     string
 	LogsBucket         string
@@ -214,6 +227,11 @@ func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBui
 		if err := e.uploadBuildInfo(ctx, opts.Resources.AssetStore, rebuild.BuildInfoAsset.For(t), buildInfo); err != nil {
 			buildErr = errors.Wrap(err, "uploading build info")
 		}
+		if buildInfo.BuildID != "" {
+			if err := e.copyBuildLogs(ctx, opts.Resources.AssetStore, rebuild.DebugLogsAsset.For(t), buildInfo.BuildID); err != nil {
+				buildErr = errors.Wrap(err, "uploading build logs")
+			}
+		}
 	}
 	handle.updateStatus(build.BuildStateCompleted)
 	// NOTE: Delete before setResult so handle.Wait returns *after* executor considers it retired.
@@ -325,4 +343,24 @@ func (e *Executor) uploadContent(ctx context.Context, store rebuild.AssetStore, 
 		return errors.Wrap(err, "failed to write content to asset store")
 	}
 	return nil
+}
+
+// copyBuildLogs copies build logs using the logs client to the asset store.
+// If the asset type is not supported by the store, the copy is skipped.
+func (e *Executor) copyBuildLogs(ctx context.Context, store rebuild.AssetStore, asset rebuild.Asset, buildID string) error {
+	writer, err := store.Writer(ctx, asset)
+	if err != nil {
+		if errors.Is(err, rebuild.ErrAssetTypeNotSupported) {
+			return nil
+		}
+		return errors.Wrap(err, "creating asset writer")
+	}
+	defer writer.Close()
+	reader, err := e.logsClient.ReadBuildLogs(ctx, buildID)
+	if err != nil {
+		return errors.Wrap(err, "reading build logs")
+	}
+	defer reader.Close()
+	_, err = io.Copy(writer, reader)
+	return errors.Wrap(err, "copying to asset")
 }

@@ -14,6 +14,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
+	"cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
@@ -116,13 +117,17 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	plannerConfig := buildgcb.PlannerConfig{
 		Project:         *project,
 		ServiceAccount:  *buildRemoteIdentity,
-		LogsBucket:      *logsBucket,
 		AllowPrivileged: true,
+	}
+	gcsClient, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating GCS client")
 	}
 	executorConfig := buildgcb.ExecutorConfig{
 		Project:        *project,
 		ServiceAccount: *buildRemoteIdentity,
 		LogsBucket:     *logsBucket,
+		LogsClientFunc: buildgcb.GCSLogsClient(gcsClient),
 		Client:         nil, // Defined depending on gcbPrivatePoolName
 	}
 	if *gcbPrivatePoolName != "" {

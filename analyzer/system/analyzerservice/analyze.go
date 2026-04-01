@@ -206,6 +206,7 @@ func executeSystemTraceRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuil
 		rebuild.SysgraphAsset:           remoteMetadata,
 		rebuild.DockerfileAsset:         deps.LocalMetadataStore,
 		rebuild.BuildInfoAsset:          deps.LocalMetadataStore,
+		// NOTE: Omit rebuild.DebugLogsAsset for now since we're not using it.
 	})
 	prebuildConfig := rebuildAttestation.Predicate.BuildDefinition.InternalParameters.PrebuildConfig
 	toolURLs := map[build.ToolType]string{

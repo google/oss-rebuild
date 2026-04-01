@@ -22,6 +22,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	"github.com/google/oss-rebuild/pkg/attestation"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/gcb/gcbtest"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -265,7 +266,14 @@ func TestAnalyze(t *testing.T) {
 				Project:        "test-project",
 				ServiceAccount: "test-service-account",
 				LogsBucket:     "test-logs-bucket",
-				Client:         gcbclient,
+				LogsClientFunc: func(bucket string) gcb.LogsClient {
+					return &gcbtest.MockLogsClient{
+						ReadBuildLogsFunc: func(ctx context.Context, buildID string) (io.ReadCloser, error) {
+							return io.NopCloser(bytes.NewBuffer(nil)), nil
+						},
+					}
+				},
+				Client: gcbclient,
 			}))
 			d.ServiceRepo = rebuild.Location{Repo: "https://github.com/test/service", Ref: "main", Dir: "."}
 			d.OverwriteAttestations = false

@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	kms "cloud.google.com/go/kms/apiv1"
+	"cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/analyzer/network/analyzerservice"
 	"github.com/google/oss-rebuild/internal/api"
@@ -91,6 +92,10 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 		}
 	}
 	// Cloud Build client
+	gcsClient, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating GCS client")
+	}
 	cloudbuildService, err := cloudbuild.NewService(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating Cloud Build service")
@@ -99,6 +104,7 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 		Project:        *project,
 		ServiceAccount: *buildServiceAccount,
 		LogsBucket:     *logsBucket,
+		LogsClientFunc: buildgcb.GCSLogsClient(gcsClient),
 		Client:         nil, // Defined depending on gcbPrivatePoolName
 		ExtraTags:      map[string]string{"analyzer": "network"},
 	}
