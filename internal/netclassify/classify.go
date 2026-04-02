@@ -17,6 +17,7 @@ var (
 	ociRegistries = []*regexp.Regexp{
 		regexp.MustCompile(`^https://registry-1\.docker\.io/`),
 		regexp.MustCompile(`^https://production\.cloudflare\.docker\.com/registry-v2/docker/registry/`),
+		regexp.MustCompile(`^https://docker-images-prod\.[a-f0-9]+\.r2\.cloudflarestorage\.com/registry-v2/docker/registry/`),
 	}
 	// Standard OCI API
 	ociManifestRegex = regexp.MustCompile(`/v2/(?P<image>(?:\w+/)?[^/]+)/manifests/(?P<id>[^/]+)$`)
