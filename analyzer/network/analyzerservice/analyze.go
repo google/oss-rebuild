@@ -211,6 +211,7 @@ func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Ta
 	toolURLs := map[build.ToolType]string{
 		build.TimewarpTool: "gs://" + path.Join(prebuildConfig.Bucket, prebuildConfig.Dir, "timewarp"),
 		build.GSUtilTool:   "gs://" + path.Join(prebuildConfig.Bucket, prebuildConfig.Dir, "gsutil_writeonly"),
+		build.ProxyTool:    "gs://" + path.Join(prebuildConfig.Bucket, prebuildConfig.Dir, "proxy"),
 	}
 	var authRequired []string
 	if prebuildConfig.Auth {
