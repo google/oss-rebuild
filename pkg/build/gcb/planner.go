@@ -205,6 +205,25 @@ spec:
         - $TETRAGON_PID
         - $SYSGRAPH_PID
         - $PROXY_PID
+  - call: "tcp_connect"
+    syscall: false
+    args:
+    - index: 0
+      type: "sock"
+    selectors:
+    - matchNamespaces:
+      - namespace: Pid
+        operator: NotIn
+        values:
+        - "host_ns"
+      matchPIDs:
+      - operator: NotIn
+        followForks: true
+        isNamespacePID: true
+        values:
+        - $TETRAGON_PID
+        - $SYSGRAPH_PID
+        - $PROXY_PID
 `,
 }
 
