@@ -209,7 +209,7 @@ Checksums-Sha256:
 			expectedErr: false,
 		},
 		{
-			name:        "Epoch Mismatch",
+			name:        "Epoch Match (implied)",
 			component:   "main",
 			pkg:         "pkg",
 			version:     must(ParseVersion("1:1.0")),
@@ -218,6 +218,23 @@ Checksums-Sha256:
 			contents: `Format: 1.0
 Source: pkg
 Version: 1.0`,
+			expected: &control.BuildInfo{
+				Format:  "1.0",
+				Source:  "pkg",
+				Version: "1.0",
+			},
+			expectedErr: false,
+		},
+		{
+			name:        "Epoch Mismatch",
+			component:   "main",
+			pkg:         "pkg",
+			version:     must(ParseVersion("2:1.0")),
+			arch:        "amd64",
+			expectedURL: "https://buildinfos.debian.net/buildinfo-pool/p/pkg/pkg_1.0_amd64.buildinfo",
+			contents: `Format: 1.0
+Source: pkg
+Version: 1:1.0`,
 			expectedErr: true,
 		},
 		{
@@ -434,6 +451,7 @@ func TestParseVersion(t *testing.T) {
 		expectedBinNMU       string
 		expectedBinIndep     string
 		expectedEpochless    string
+		expectedImpliedEpoch string
 	}{
 		{
 			name:    "Standard Native Package",
@@ -447,6 +465,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0",
 			expectedEpochless:    "1.0",
+			expectedImpliedEpoch: "1",
 		},
 		{
 			name:    "Standard Non-Native Package",
@@ -461,6 +480,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0-1",
 			expectedEpochless:    "1.0-1",
+			expectedImpliedEpoch: "1",
 		},
 		{
 			name:    "Native with Epoch",
@@ -475,6 +495,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1:2.0",
 			expectedEpochless:    "2.0",
+			expectedImpliedEpoch: "1",
 		},
 		{
 			name:    "Non-Native with Epoch",
@@ -490,6 +511,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "2:3.0-4",
 			expectedEpochless:    "3.0-4",
+			expectedImpliedEpoch: "2",
 		},
 		{
 			name:    "Upstream with Hyphens (Non-Native)",
@@ -504,6 +526,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0-beta-1",
 			expectedEpochless:    "1.0-beta-1",
+			expectedImpliedEpoch: "1",
 		},
 		{
 			name:    "Complex Revision",
@@ -518,6 +541,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0-0.1ubuntu1",
 			expectedEpochless:    "1.0-0.1ubuntu1",
+			expectedImpliedEpoch: "1",
 		},
 		{
 			name:    "Native Binary Non-Maintainer Upload (BinNMU)",
@@ -531,6 +555,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "1",
 			expectedBinIndep:     "1.0",
 			expectedEpochless:    "1.0+b1",
+			expectedImpliedEpoch: "1",
 		},
 		{
 			name:    "Non-Native Binary Non-Maintainer Upload (BinNMU)",
@@ -545,6 +570,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "1",
 			expectedBinIndep:     "1.0-1",
 			expectedEpochless:    "1.0-1+b1",
+			expectedImpliedEpoch: "1",
 		},
 		{
 			name:    "Rollback Package (+really)",
@@ -558,6 +584,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0+really0.9",
 			expectedEpochless:    "1.0+really0.9",
+			expectedImpliedEpoch: "1",
 		},
 		{
 			name:    "Multiple Rollbacks (+really)",
@@ -571,6 +598,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0+really0.9+really0.8",
 			expectedEpochless:    "1.0+really0.9+really0.8",
+			expectedImpliedEpoch: "1",
 		},
 		{
 			name:    "Invalid: Empty String",
@@ -586,6 +614,21 @@ func TestParseVersion(t *testing.T) {
 			name:    "Invalid: Hyphen but empty revision",
 			version: "1.0-",
 			wantErr: true,
+		},
+		{
+			name:    "Explicit Epoch 0",
+			version: "0:1.0",
+			expected: Version{
+				Epoch:    "0",
+				Upstream: "1.0",
+			},
+			expectedString:       "0:1.0",
+			expectedNative:       true,
+			expectedRollbackBase: "",
+			expectedBinNMU:       "",
+			expectedBinIndep:     "0:1.0",
+			expectedEpochless:    "1.0",
+			expectedImpliedEpoch: "0",
 		},
 	}
 
@@ -622,6 +665,9 @@ func TestParseVersion(t *testing.T) {
 			}
 			if got := v.Epochless(); got != tc.expectedEpochless {
 				t.Errorf("Epochless(): got %q, want %q", got, tc.expectedEpochless)
+			}
+			if got := v.ImpliedEpoch(); got != tc.expectedImpliedEpoch {
+				t.Errorf("ImpliedEpoch(): got %q, want %q", got, tc.expectedImpliedEpoch)
 			}
 		})
 	}
