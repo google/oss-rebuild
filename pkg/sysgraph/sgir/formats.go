@@ -19,7 +19,7 @@ import (
 
 	"maps"
 
-	sgevpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
+	sgpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
 	"github.com/google/oss-rebuild/pkg/sysgraph/sgstorage"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -28,7 +28,7 @@ import (
 
 // Writer is an interface for writing IR events.
 type Writer interface {
-	WriteEvents(ctx context.Context, events ...*sgevpb.SysGraphEvent) (int64, error)
+	WriteEvents(ctx context.Context, events ...*sgpb.SysGraphEvent) (int64, error)
 	WriteRawEvents(ctx context.Context, actionID string, rawEvents ...proto.Message) (int64, error)
 }
 
@@ -163,12 +163,12 @@ func (ep *DiskFormat) Actions(ctx context.Context) ([]string, error) {
 	return sids, nil
 }
 
-func readEvent(path string) (*sgevpb.SysGraphEvent, error) {
+func readEvent(path string) (*sgpb.SysGraphEvent, error) {
 	blob, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	event := &sgevpb.SysGraphEvent{}
+	event := &sgpb.SysGraphEvent{}
 	if err := proto.Unmarshal(blob, event); err != nil {
 		return nil, err
 	}
@@ -177,8 +177,8 @@ func readEvent(path string) (*sgevpb.SysGraphEvent, error) {
 
 // Events returns the events for the action.
 // Events are sorted by timestamp.
-func (ep *DiskFormat) Events(ctx context.Context, actionID string) ([]*sgevpb.SysGraphEvent, error) {
-	allEvents := []*sgevpb.SysGraphEvent{}
+func (ep *DiskFormat) Events(ctx context.Context, actionID string) ([]*sgpb.SysGraphEvent, error) {
+	allEvents := []*sgpb.SysGraphEvent{}
 	f, err := os.Open(filepath.Join(ep.BasePath, actionID+ep.Format.ext()))
 	if err != nil {
 		return nil, err
@@ -186,7 +186,7 @@ func (ep *DiskFormat) Events(ctx context.Context, actionID string) ([]*sgevpb.Sy
 	defer f.Close()
 	buf := bufio.NewReader(f)
 	for {
-		event := &sgevpb.SysGraphEvent{}
+		event := &sgpb.SysGraphEvent{}
 		if err := ep.Format.unmarshalMsg(buf, event); err != nil {
 			if err == io.EOF {
 				break
@@ -195,7 +195,7 @@ func (ep *DiskFormat) Events(ctx context.Context, actionID string) ([]*sgevpb.Sy
 		}
 		allEvents = append(allEvents, event)
 	}
-	slices.SortFunc(allEvents, func(a *sgevpb.SysGraphEvent, b *sgevpb.SysGraphEvent) int {
+	slices.SortFunc(allEvents, func(a *sgpb.SysGraphEvent, b *sgpb.SysGraphEvent) int {
 		return a.GetTimestamp().AsTime().Compare(b.GetTimestamp().AsTime())
 	})
 	return allEvents, nil
@@ -231,8 +231,8 @@ func appendMsgs[T proto.Message](ctx context.Context, filePath string, fmt Event
 //
 // There is room for optimization here by writing the events for different actions in parallel but
 // that can be done later if this becomes a bottleneck.
-func (ep *DiskFormat) WriteEvents(ctx context.Context, events ...*sgevpb.SysGraphEvent) (int64, error) {
-	eventsByID := make(map[string][]*sgevpb.SysGraphEvent)
+func (ep *DiskFormat) WriteEvents(ctx context.Context, events ...*sgpb.SysGraphEvent) (int64, error) {
+	eventsByID := make(map[string][]*sgpb.SysGraphEvent)
 	for _, e := range events {
 		eventsByID[e.GetActionId()] = append(eventsByID[e.GetActionId()], e)
 	}
@@ -317,7 +317,7 @@ func (w *BufferedDiskWriter) getOrCreateWriter(writers map[string]*openWriter, f
 }
 
 // WriteEvents writes the events to disk, keeping file handles open for reuse.
-func (w *BufferedDiskWriter) WriteEvents(ctx context.Context, events ...*sgevpb.SysGraphEvent) (int64, error) {
+func (w *BufferedDiskWriter) WriteEvents(ctx context.Context, events ...*sgpb.SysGraphEvent) (int64, error) {
 	totalBytesWritten := int64(0)
 	for _, e := range events {
 		actionID := e.GetActionId()
@@ -445,7 +445,7 @@ type InMemoryFormat struct {
 
 // Events is a struct that contains events and raw events for an action.
 type Events struct {
-	Events    []*sgevpb.SysGraphEvent
+	Events    []*sgpb.SysGraphEvent
 	RawEvents []*anypb.Any
 }
 
@@ -455,7 +455,7 @@ func (ep *InMemoryFormat) Actions(ctx context.Context) ([]string, error) {
 }
 
 // Events returns the events for the action.
-func (ep *InMemoryFormat) Events(ctx context.Context, actionID string) ([]*sgevpb.SysGraphEvent, error) {
+func (ep *InMemoryFormat) Events(ctx context.Context, actionID string) ([]*sgpb.SysGraphEvent, error) {
 	if _, ok := ep.EventMap[actionID]; !ok {
 		return nil, fmt.Errorf("action %s not found", actionID)
 	}
@@ -484,7 +484,7 @@ func (ep *InMemoryFormat) RawEvents(ctx context.Context, actionID string) (<-cha
 
 // WriteEvents writes the events to the in memory EventMap.
 // Returns the total number of bytes written and any error.
-func (ep *InMemoryFormat) WriteEvents(ctx context.Context, events ...*sgevpb.SysGraphEvent) (int64, error) {
+func (ep *InMemoryFormat) WriteEvents(ctx context.Context, events ...*sgpb.SysGraphEvent) (int64, error) {
 	if len(events) == 0 {
 		return 0, nil
 	}

@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	sgevpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
+	sgpb "github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -23,7 +23,7 @@ func TestDiskFormat(t *testing.T) {
 		name       string
 		format     EventFileFormat
 		wantFiles  []string
-		wantEvents map[string][]*sgevpb.SysGraphEvent
+		wantEvents map[string][]*sgpb.SysGraphEvent
 	}{
 		{
 			name:   "jsonl",
@@ -32,20 +32,20 @@ func TestDiskFormat(t *testing.T) {
 				"action1.jsonl",
 				"action2.jsonl",
 			},
-			wantEvents: map[string][]*sgevpb.SysGraphEvent{
+			wantEvents: map[string][]*sgpb.SysGraphEvent{
 				"action1": {
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action1"),
 					}.Build(),
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action1"),
-						ChildEvent: sgevpb.ChildEvent_builder{
+						ChildEvent: sgpb.ChildEvent_builder{
 							ChildActionId: proto.String("action2"),
 						}.Build(),
 					}.Build(),
 				},
 				"action2": {
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action2"),
 					}.Build(),
 				},
@@ -58,20 +58,20 @@ func TestDiskFormat(t *testing.T) {
 				"action1.pbdelim",
 				"action2.pbdelim",
 			},
-			wantEvents: map[string][]*sgevpb.SysGraphEvent{
+			wantEvents: map[string][]*sgpb.SysGraphEvent{
 				"action1": {
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action1"),
 					}.Build(),
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action1"),
-						ChildEvent: sgevpb.ChildEvent_builder{
+						ChildEvent: sgpb.ChildEvent_builder{
 							ChildActionId: proto.String("action2"),
 						}.Build(),
 					}.Build(),
 				},
 				"action2": {
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action2"),
 					}.Build(),
 				},
@@ -86,15 +86,15 @@ func TestDiskFormat(t *testing.T) {
 				Format:   tc.format,
 			}
 			if _, err := df.WriteEvents(context.Background(),
-				sgevpb.SysGraphEvent_builder{
+				sgpb.SysGraphEvent_builder{
 					ActionId: proto.String("action1"),
 				}.Build(),
-				sgevpb.SysGraphEvent_builder{
+				sgpb.SysGraphEvent_builder{
 					ActionId: proto.String("action2"),
 				}.Build(),
-				sgevpb.SysGraphEvent_builder{
+				sgpb.SysGraphEvent_builder{
 					ActionId: proto.String("action1"),
-					ChildEvent: sgevpb.ChildEvent_builder{
+					ChildEvent: sgpb.ChildEvent_builder{
 						ChildActionId: proto.String("action2"),
 					}.Build(),
 				}.Build(),
@@ -129,7 +129,7 @@ func TestDiskFormat(t *testing.T) {
 				if err != nil {
 					t.Fatalf("DiskFormat.Events(%q) failed: %v", id, err)
 				}
-				if diff := cmp.Diff(wantEvents, gotEvents, protocmp.Transform(), cmpopts.SortSlices(func(a, b *sgevpb.SysGraphEvent) bool { return a.String() < b.String() })); diff != "" {
+				if diff := cmp.Diff(wantEvents, gotEvents, protocmp.Transform(), cmpopts.SortSlices(func(a, b *sgpb.SysGraphEvent) bool { return a.String() < b.String() })); diff != "" {
 					t.Errorf("Events(%q) returned unexpected events (-want +got):\n%s", id, diff)
 				}
 			}
@@ -143,7 +143,7 @@ func TestBufferedDiskWriter(t *testing.T) {
 		name       string
 		format     EventFileFormat
 		wantFiles  []string
-		wantEvents map[string][]*sgevpb.SysGraphEvent
+		wantEvents map[string][]*sgpb.SysGraphEvent
 	}{
 		{
 			name:   "jsonl",
@@ -152,20 +152,20 @@ func TestBufferedDiskWriter(t *testing.T) {
 				"action1.jsonl",
 				"action2.jsonl",
 			},
-			wantEvents: map[string][]*sgevpb.SysGraphEvent{
+			wantEvents: map[string][]*sgpb.SysGraphEvent{
 				"action1": {
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action1"),
 					}.Build(),
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action1"),
-						ChildEvent: sgevpb.ChildEvent_builder{
+						ChildEvent: sgpb.ChildEvent_builder{
 							ChildActionId: proto.String("action2"),
 						}.Build(),
 					}.Build(),
 				},
 				"action2": {
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action2"),
 					}.Build(),
 				},
@@ -178,20 +178,20 @@ func TestBufferedDiskWriter(t *testing.T) {
 				"action1.pbdelim",
 				"action2.pbdelim",
 			},
-			wantEvents: map[string][]*sgevpb.SysGraphEvent{
+			wantEvents: map[string][]*sgpb.SysGraphEvent{
 				"action1": {
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action1"),
 					}.Build(),
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action1"),
-						ChildEvent: sgevpb.ChildEvent_builder{
+						ChildEvent: sgpb.ChildEvent_builder{
 							ChildActionId: proto.String("action2"),
 						}.Build(),
 					}.Build(),
 				},
 				"action2": {
-					sgevpb.SysGraphEvent_builder{
+					sgpb.SysGraphEvent_builder{
 						ActionId: proto.String("action2"),
 					}.Build(),
 				},
@@ -204,15 +204,15 @@ func TestBufferedDiskWriter(t *testing.T) {
 			bw := NewBufferedDiskWriter(evDir, tc.format)
 
 			if _, err := bw.WriteEvents(context.Background(),
-				sgevpb.SysGraphEvent_builder{
+				sgpb.SysGraphEvent_builder{
 					ActionId: proto.String("action1"),
 				}.Build(),
-				sgevpb.SysGraphEvent_builder{
+				sgpb.SysGraphEvent_builder{
 					ActionId: proto.String("action2"),
 				}.Build(),
-				sgevpb.SysGraphEvent_builder{
+				sgpb.SysGraphEvent_builder{
 					ActionId: proto.String("action1"),
-					ChildEvent: sgevpb.ChildEvent_builder{
+					ChildEvent: sgpb.ChildEvent_builder{
 						ChildActionId: proto.String("action2"),
 					}.Build(),
 				}.Build(),
@@ -254,7 +254,7 @@ func TestBufferedDiskWriter(t *testing.T) {
 				if err != nil {
 					t.Fatalf("DiskFormat.Events(%q) failed: %v", id, err)
 				}
-				if diff := cmp.Diff(wantEvents, gotEvents, protocmp.Transform(), cmpopts.SortSlices(func(a, b *sgevpb.SysGraphEvent) bool { return a.String() < b.String() })); diff != "" {
+				if diff := cmp.Diff(wantEvents, gotEvents, protocmp.Transform(), cmpopts.SortSlices(func(a, b *sgpb.SysGraphEvent) bool { return a.String() < b.String() })); diff != "" {
 					t.Errorf("Events(%q) returned unexpected events (-want +got):\n%s", id, diff)
 				}
 			}
@@ -268,7 +268,7 @@ func TestBufferedDiskWriterMultipleCalls(t *testing.T) {
 
 	// First call: one event for action1.
 	if _, err := bw.WriteEvents(context.Background(),
-		sgevpb.SysGraphEvent_builder{
+		sgpb.SysGraphEvent_builder{
 			ActionId: proto.String("action1"),
 		}.Build(),
 	); err != nil {
@@ -277,9 +277,9 @@ func TestBufferedDiskWriterMultipleCalls(t *testing.T) {
 
 	// Second call: another event for action1.
 	if _, err := bw.WriteEvents(context.Background(),
-		sgevpb.SysGraphEvent_builder{
+		sgpb.SysGraphEvent_builder{
 			ActionId: proto.String("action1"),
-			ChildEvent: sgevpb.ChildEvent_builder{
+			ChildEvent: sgpb.ChildEvent_builder{
 				ChildActionId: proto.String("action2"),
 			}.Build(),
 		}.Build(),
@@ -298,18 +298,18 @@ func TestBufferedDiskWriterMultipleCalls(t *testing.T) {
 		t.Fatalf("DiskFormat.Events(action1) failed: %v", err)
 	}
 
-	wantEvents := []*sgevpb.SysGraphEvent{
-		sgevpb.SysGraphEvent_builder{
+	wantEvents := []*sgpb.SysGraphEvent{
+		sgpb.SysGraphEvent_builder{
 			ActionId: proto.String("action1"),
 		}.Build(),
-		sgevpb.SysGraphEvent_builder{
+		sgpb.SysGraphEvent_builder{
 			ActionId: proto.String("action1"),
-			ChildEvent: sgevpb.ChildEvent_builder{
+			ChildEvent: sgpb.ChildEvent_builder{
 				ChildActionId: proto.String("action2"),
 			}.Build(),
 		}.Build(),
 	}
-	if diff := cmp.Diff(wantEvents, gotEvents, protocmp.Transform(), cmpopts.SortSlices(func(a, b *sgevpb.SysGraphEvent) bool { return a.String() < b.String() })); diff != "" {
+	if diff := cmp.Diff(wantEvents, gotEvents, protocmp.Transform(), cmpopts.SortSlices(func(a, b *sgpb.SysGraphEvent) bool { return a.String() < b.String() })); diff != "" {
 		t.Errorf("Events(action1) returned unexpected events (-want +got):\n%s", diff)
 	}
 }
