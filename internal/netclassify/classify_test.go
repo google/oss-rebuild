@@ -180,6 +180,43 @@ func TestClassifyURL(t *testing.T) {
 			want: "pkg:generic/gcs/foo/bar/baz",
 		},
 
+		// Debian/Ubuntu test cases
+		{
+			name: "debian binary package",
+			url:  "http://deb.debian.org/debian/pool/main/z/zlib/zlib1g_1.2.13.dfsg-1_amd64.deb",
+			want: "pkg:deb/debian/zlib1g@1.2.13.dfsg-1",
+		},
+		{
+			name: "debian source dsc",
+			url:  "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4-1.dsc",
+			want: "pkg:deb/debian/xz-utils@5.2.4-1",
+		},
+		{
+			name: "debian orig tarball",
+			url:  "https://deb.debian.org/debian/pool/main/x/xz-utils/xz-utils_5.2.4.orig.tar.xz",
+			want: "pkg:deb/debian/xz-utils@5.2.4",
+		},
+		{
+			name: "debian security pool",
+			url:  "http://security.debian.org/debian-security/pool/main/o/openssl/libssl3_3.0.11-1~deb12u2_amd64.deb",
+			want: "pkg:deb/debian/libssl3@3.0.11-1~deb12u2",
+		},
+		{
+			name: "ubuntu binary package",
+			url:  "http://archive.ubuntu.com/ubuntu/pool/main/z/zlib/zlib1g_1.2.13.dfsg-1ubuntu4_amd64.deb",
+			want: "pkg:deb/ubuntu/zlib1g@1.2.13.dfsg-1ubuntu4",
+		},
+		{
+			name:    "debian metadata InRelease",
+			url:     "http://deb.debian.org/debian/dists/bookworm/InRelease",
+			wantErr: ErrSkipped,
+		},
+		{
+			name:    "debian metadata Packages.xz",
+			url:     "http://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packages.xz",
+			wantErr: ErrSkipped,
+		},
+
 		// Other cases
 		{
 			name:    "unknown URL",
