@@ -20,6 +20,7 @@ const (
 	CratesIO Ecosystem = "cratesio"
 	Maven    Ecosystem = "maven"
 	Debian   Ecosystem = "debian"
+	Go       Ecosystem = "go"
 )
 
 // Target is a single target we might attempt to rebuild.
@@ -37,6 +38,8 @@ func (t Target) ArchiveType() archive.Format {
 		return archive.RawFormat
 	case CratesIO, NPM:
 		return archive.TarGzFormat
+	case Go:
+		return archive.ZipFormat
 	case PyPI:
 		switch {
 		case strings.HasSuffix(t.Artifact, ".whl"), strings.HasSuffix(t.Artifact, ".zip"):
