@@ -241,7 +241,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			"img",
 		}
 		if plan.Privileged {
-			args = append([]string{"--privileged"}, args...)
+			args = append([]string{"--privileged", "-v=/var/run/docker.sock:/var/run/docker.sock"}, args...)
 		}
 		buildScript := fmt.Sprintf(textwrap.Dedent(`
 			#!/usr/bin/env bash
