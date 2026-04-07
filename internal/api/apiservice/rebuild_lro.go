@@ -14,6 +14,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/pkg/errors"
 	"google.golang.org/api/run/v2"
 )
 
@@ -88,6 +89,7 @@ type CreateRebuildOpDeps struct {
 	Location   string
 	JobName    string
 	DepsConfig schema.RebuildDepsConfig
+	DepsFunc   func(context.Context, *schema.RebuildDepsConfig) (*RebuildPackageDeps, error)
 }
 
 type RunJobFunc func(ctx context.Context, name string, req *run.GoogleCloudRunV2RunJobRequest) (*run.GoogleLongrunningOperation, error)
@@ -103,8 +105,6 @@ func CreateRebuildOp(
 	req schema.RebuildPackageRequest,
 	deps *CreateRebuildOpDeps,
 ) (*longrunning.Operation[schema.Verdict], error) {
-	// RebuildAttempt is the source of truth for the LRO.
-	// We use the request ID as the RunID for now to identify this specific attempt.
 	key := db.AttemptKey{
 		Target: rebuild.Target{
 			Ecosystem: req.Ecosystem,
@@ -114,31 +114,53 @@ func CreateRebuildOp(
 		},
 		RunID: req.ID,
 	}
-
-	attempt := schema.RebuildAttempt{
-		Ecosystem: string(req.Ecosystem),
-		Package:   req.Package,
-		Version:   req.Version,
-		Artifact:  req.Artifact,
-		RunID:     req.ID,
-		Status:    schema.RebuildStatusRunning,
-	}
-
-	if err := deps.Attempts.Insert(ctx, attempt); err != nil {
-		return nil, err
-	}
-
 	opID := toOperationID(key)
-	if err := launchRebuildJob(ctx, deps.RunJob, deps.DepsConfig, opID, req, deps.Project, deps.Location, deps.JobName); err != nil {
-		// Best-effort mark the attempt as failed.
-		attempt.Status = schema.RebuildStatusError
-		attempt.Message = "failed to launch rebuild job: " + err.Error()
-		_ = deps.Attempts.Update(ctx, attempt)
-		return nil, err
-	}
 
-	op := ProjectRebuildAttempt(attempt)
-	return &op, nil
+	switch req.ExecutionHint {
+	case schema.ExtendedExecution:
+		attempt := schema.RebuildAttempt{
+			Ecosystem: string(req.Ecosystem),
+			Package:   req.Package,
+			Version:   req.Version,
+			Artifact:  req.Artifact,
+			RunID:     req.ID,
+			Status:    schema.RebuildStatusRunning,
+		}
+
+		if err := deps.Attempts.Insert(ctx, attempt); err != nil {
+			return nil, err
+		}
+
+		if err := launchRebuildJob(ctx, deps.RunJob, deps.DepsConfig, opID, req, deps.Project, deps.Location, deps.JobName); err != nil {
+			// Best-effort mark the attempt as failed.
+			attempt.Status = schema.RebuildStatusError
+			attempt.Message = "failed to launch rebuild job: " + err.Error()
+			_ = deps.Attempts.Update(ctx, attempt)
+			return nil, err
+		}
+
+		op := ProjectRebuildAttempt(attempt)
+		return &op, nil
+
+	case schema.FastExecution, schema.UnspecifiedExecution:
+		rebuildDeps, err := deps.DepsFunc(ctx, &deps.DepsConfig)
+		if err != nil {
+			return nil, err
+		}
+		// Execute in-process. RebuildPackage already handles Firestore persistence of the attempt.
+		_, _ = RebuildPackage(ctx, req, rebuildDeps)
+
+		// Get the final state from DB to project it correctly.
+		attempt, err := deps.Attempts.Get(ctx, key)
+		if err != nil {
+			return nil, errors.Wrap(err, "fetching finished attempt")
+		}
+		op := ProjectRebuildAttempt(attempt)
+		return &op, nil
+
+	default:
+		return nil, errors.Errorf("unhandled execution hint: %s", req.ExecutionHint)
+	}
 }
 
 // GetRebuildOp gets a rebuild operation.

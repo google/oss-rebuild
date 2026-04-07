@@ -243,6 +243,14 @@ func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, 
 		BuildDefDir:                path.Clean(*buildDefRepoDir),
 		BuildRemoteIdentity:        *buildRemoteIdentity,
 	}
+	d.DepsFunc = func(ctx context.Context, rdc *schema.RebuildDepsConfig) (*apiservice.RebuildPackageDeps, error) {
+		deps, err := apiservice.MakeRebuildPackageDeps(ctx, rdc)
+		deps.ServiceRepo, err = serviceid.ParseLocation(BuildRepo, BuildVersion)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing service location")
+		}
+		return deps, nil
+	}
 	return &d, nil
 }
 
