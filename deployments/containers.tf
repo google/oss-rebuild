@@ -47,6 +47,14 @@ locals {
         "BUILD_VERSION=${terraform_data.service_version.output}"
       ]
     }
+    rebuild-job = {
+      dockerfile = "build/package/Dockerfile.rebuild-job"
+      build_args = [
+        "DEBUG=${terraform_data.debug.output}",
+        "BUILD_REPO=${var.repo}",
+        "BUILD_VERSION=${terraform_data.service_version.output}"
+      ]
+    }
     agent-api = {
       dockerfile = "build/package/Dockerfile.agent-api"
       build_args = [
@@ -176,6 +184,13 @@ data "google_artifact_registry_docker_image" "api" {
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "api:${module.service_images["api"].image_version}"
   depends_on    = [module.service_images["api"]]
+}
+
+data "google_artifact_registry_docker_image" "rebuild-job" {
+  location      = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name    = "rebuild-job:${module.service_images["rebuild-job"].image_version}"
+  depends_on    = [module.service_images["rebuild-job"]]
 }
 
 data "google_artifact_registry_docker_image" "agent-api" {

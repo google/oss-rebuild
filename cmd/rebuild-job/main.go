@@ -1,0 +1,89 @@
+// Copyright 2025 Google LLC
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"log"
+	"os"
+	"time"
+
+	"github.com/google/oss-rebuild/internal/api/apiservice"
+	"github.com/google/oss-rebuild/internal/serviceid"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+)
+
+// Link-time configured service identity
+var (
+	// Repo from which the service was built
+	BuildRepo string
+	// Golang version identifier of the service container builds
+	BuildVersion string
+)
+
+func main() {
+	ctx := context.Background()
+
+	cfg, err := schema.RebuildDepsConfigFromEnv()
+	if err != nil {
+		log.Fatalf("failed to load rebuild deps config: %v", err)
+	}
+	if cfg == nil {
+		log.Fatalf("REBUILD_DEPS_CONFIG not set")
+	}
+
+	opID := os.Getenv("OP_ID")
+	if opID == "" {
+		log.Fatalf("OP_ID not set")
+	}
+
+	reqJSON := os.Getenv("REBUILD_REQUEST")
+	if reqJSON == "" {
+		log.Fatalf("REBUILD_REQUEST not set")
+	}
+	var req schema.RebuildPackageRequest
+	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
+		log.Fatalf("failed to unmarshal rebuild request: %v", err)
+	}
+
+	// Reconstruct deps for RebuildPackage.
+	deps, err := apiservice.MakeRebuildPackageDeps(ctx, cfg)
+	if err != nil {
+		log.Fatalf("failed to make rebuild package deps: %v", err)
+	}
+	deps.ServiceRepo, err = serviceid.ParseLocation(BuildRepo, BuildVersion)
+	if err != nil {
+		log.Fatalf("parsing service location: %v", err)
+	}
+	view := apiservice.NewRebuildView(deps.Attempts)
+	key, err := view.KeyFor(opID)
+	if err != nil {
+		log.Fatalf("parsing op ID: %v", err)
+	}
+	attempt, err := deps.Attempts.Get(ctx, key)
+	if err != nil {
+		log.Fatalf("fetching attempt: %v", err)
+	}
+
+	verdict, rebuildErr := apiservice.RebuildPackage(ctx, req, deps)
+
+	var status schema.RebuildStatus
+	switch {
+	case errors.Is(rebuildErr, context.Canceled):
+		status = schema.RebuildStatusCancelled
+	case rebuildErr != nil:
+		status = schema.RebuildStatusError
+	case verdict.Message == "":
+		status = schema.RebuildStatusSuccess
+	default:
+		status = schema.RebuildStatusFailure
+	}
+	attempt.Status = status
+	attempt.Finished = time.Now().UTC()
+	if err := deps.Attempts.Update(ctx, attempt); err != nil {
+		log.Fatalf("updating attempt: %v", err)
+	}
+}

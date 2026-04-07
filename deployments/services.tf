@@ -166,6 +166,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--agent-sessions-bucket=${google_storage_bucket.agent-sessions.name}",
         "--agent-metadata-bucket=${google_storage_bucket.agent-metadata.name}",
         "--agent-logs-bucket=${google_storage_bucket.agent-logs.name}",
+        "--rebuild-job-name=${google_cloud_run_v2_job.rebuild-job.id}",
         ], var.enable_private_build_pool ? [
         "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
         "--gcb-private-pool-region=us-central1",
@@ -348,6 +349,34 @@ resource "google_cloud_run_v2_job" "agent" {
           limits = {
             cpu    = "2000m"
             memory = "8G"
+          }
+        }
+      }
+    }
+  }
+  lifecycle {
+    ignore_changes = [
+      launch_stage,
+    ]
+  }
+  depends_on = [google_project_service.run]
+}
+
+resource "google_cloud_run_v2_job" "rebuild-job" {
+  name                = "rebuild-job"
+  location            = "us-central1"
+  deletion_protection = false
+  template {
+    template {
+      service_account = google_service_account.orchestrator.email
+      timeout         = "84600s" // 24 hour default
+      max_retries     = 0
+      containers {
+        image = data.google_artifact_registry_docker_image.rebuild-job.self_link
+        resources {
+          limits = {
+            cpu    = "100m"
+            memory = "512Mi"
           }
         }
       }
