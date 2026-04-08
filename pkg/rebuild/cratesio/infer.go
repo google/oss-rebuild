@@ -257,6 +257,17 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	var indexCommit string
 	var packageNames []string
 	if lockContent != nil && semver.Cmp(rustVersion, "1.34.0") >= 0 {
+		lf, err := cargolock.ParseLockfile(string(lockContent))
+		if err != nil {
+			return nil, errors.Wrap(err, "[INTERNAL] failed to parse Cargo.lock")
+		}
+		// Use lock file format version to refine the Rust version lower bound.
+		// v1 (no header) predates meaningful cargo package normalization changes.
+		// v2 was introduced in cargo 1.57; v3 in cargo 1.78 (auto-inclusion in packages stabilized in 1.79); v4 in cargo 1.82.
+		lockfileLo := map[int]string{2: "1.57.0", 3: "1.79.0", 4: "1.82.0"}[lf.FormatVersion]
+		if lockfileLo != "" && semver.Cmp(rustVersion, lockfileLo) < 0 {
+			rustVersion = lockfileLo
+		}
 		// Registry search is only usable in builds that support the local or sparse registry protocols.
 		// Sparse support: http://releases.rs/docs/1.68.0/#cargo
 		// Local support: http://releases.rs/docs/1.34.0/#cargo
@@ -277,12 +288,8 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		indexCommit = resp.CommitHash
 		// TODO: If we want to default to sparse registry, we can predicate this on `if semver.Cmp(rustVersion, "1.68.0") < 0`
 		// If only local registry supported, parse package names from Cargo.lock.
-		packages, err := cargolock.Parse(string(lockContent))
-		if err != nil {
-			return nil, errors.Wrap(err, "[INTERNAL] failed to parse Cargo.lock")
-		}
 		packageSet := make(map[string]bool)
-		for _, pkg := range packages {
+		for _, pkg := range lf.Packages {
 			packageSet[pkg.Name] = true
 		}
 		for pkgName := range packageSet {
