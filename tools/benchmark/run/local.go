@@ -13,6 +13,8 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
@@ -30,21 +32,23 @@ import (
 )
 
 type localExecutionService struct {
-	prebuildURL string
-	store       rebuild.LocatableAssetStore
-	logsink     io.Writer
-	gitCache    *gitcache.Client
+	prebuildURL        string
+	store              rebuild.LocatableAssetStore
+	logsink            io.Writer
+	gitCache           *gitcache.Client
+	cratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 }
 
 type LocalExecutionServiceConfig struct {
-	PrebuildURL string
-	Store       rebuild.LocatableAssetStore
-	LogSink     io.Writer
-	GitCache    *gitcache.Client
+	PrebuildURL        string
+	Store              rebuild.LocatableAssetStore
+	LogSink            io.Writer
+	GitCache           *gitcache.Client
+	CratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 }
 
 func NewLocalExecutionService(config LocalExecutionServiceConfig) ExecutionService {
-	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink, gitCache: config.GitCache}
+	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink, gitCache: config.GitCache, cratesRegistryStub: config.CratesRegistryStub}
 }
 
 func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
@@ -113,6 +117,9 @@ func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux
 	}
 	if s.gitCache != nil {
 		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, s.gitCache)
+	}
+	if s.cratesRegistryStub != nil {
+		ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, s.cratesRegistryStub)
 	}
 	repo, err := rebuilder.InferRepo(ctx, t, mux)
 	if err != nil {

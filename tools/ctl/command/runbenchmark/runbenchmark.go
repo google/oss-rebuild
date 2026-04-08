@@ -14,19 +14,24 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cheggaaa/pb"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	benchrun "github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
@@ -156,6 +161,23 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 				apiClient = http.DefaultClient
 			}
 			localCfg.GitCache = &gitcache.Client{IDClient: idClient, APIClient: apiClient, URL: u}
+		}
+		mgrInit := sync.OnceValues(func() (*index.IndexManager, error) {
+			if err := os.MkdirAll("/tmp/crates-registry-cache", 0o755); err != nil {
+				return nil, errors.Wrap(err, "initializing crates registry cache")
+			}
+			return index.NewIndexManagerFromFS(index.IndexManagerConfig{
+				Filesystem:            osfs.New("/tmp/crates-registry-cache"),
+				CurrentUpdateInterval: 6 * time.Hour,
+				MaxSnapshots:          3,
+			})
+		})
+		localCfg.CratesRegistryStub = func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
+			mgr, err := mgrInit()
+			if err != nil {
+				return nil, errors.Wrap(err, "creating crates index manager")
+			}
+			return cratesregistryservice.FindRegistryCommit(ctx, req, &cratesregistryservice.FindRegistryCommitDeps{IndexManager: mgr})
 		}
 		executor = benchrun.NewLocalExecutionService(localCfg)
 		dex = rundex.NewFilesystemClient(localfiles.Rundex())
