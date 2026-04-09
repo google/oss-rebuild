@@ -44,8 +44,8 @@ func (c Config) Validate() error {
 	if c.Run == "" {
 		return errors.New("run is required")
 	}
-	if c.Format != "" && c.Format != "summary" && c.Format != "bench" && c.Format != "csv" {
-		return errors.Errorf("invalid format: %s. Expected one of 'summary', 'bench', or 'csv'", c.Format)
+	if c.Format != "" && c.Format != "summary" && c.Format != "bench" && c.Format != "csv" && c.Format != "jsonl" {
+		return errors.Errorf("invalid format: %s. Expected one of 'summary', 'bench', 'csv', or 'jsonl'", c.Format)
 	}
 	return nil
 }
@@ -209,6 +209,19 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 				return nil, errors.Wrap(err, "writing CSV")
 			}
 		}
+	case "jsonl":
+		fields := strings.Split(cfg.Fields, ",")
+		for _, r := range rebuilds {
+			out := make(map[string]any)
+			for _, f := range fields {
+				out[f] = getField(r, f)
+			}
+			b, err := json.Marshal(out)
+			if err != nil {
+				return nil, errors.Wrap(err, "marshalling JSONL")
+			}
+			fmt.Fprintln(deps.IO.Out, string(b))
+		}
 	default:
 		return nil, errors.Errorf("Unknown --format type: %s", cfg.Format)
 	}
@@ -242,7 +255,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Prefix, "prefix", "", "filter results to those matching this prefix")
 	set.StringVar(&cfg.Pattern, "pattern", "", "filter results to those matching this regex pattern")
 	set.IntVar(&cfg.Sample, "sample", -1, "if provided, only N results will be displayed")
-	set.StringVar(&cfg.Format, "format", "", "format of the output (summary|bench|csv)")
+	set.StringVar(&cfg.Format, "format", "", "format of the output (summary|bench|csv|jsonl)")
 	set.StringVar(&cfg.Fields, "fields", "runid,ecosystem,package,version,artifact", "comma-separated list of fields to include in csv or jsonl output")
 	set.BoolVar(&cfg.Clean, "clean", false, "whether to apply normalization heuristics to group similar verdicts")
 	return set
