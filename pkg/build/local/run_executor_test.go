@@ -86,7 +86,7 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "--name", "test-build-123", "-v", "/tmp/oss-rebuild-test-build-123:/out", "-w", "/workspace", "alpine:3.19", "/bin/sh", "-c", "echo hello"},
+					Args: []string{"run", "--rm", "--name", "test-build-123", "-v", "/tmp/oss-rebuild-test-build-123:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "/bin/sh", "-c", "echo hello"},
 				},
 			},
 			expectSuccess: true,
@@ -138,7 +138,7 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name:  "docker",
-					Args:  []string{"run", "--rm", "--name", "test-build-789", "-v", "/tmp/oss-rebuild-test-build-789:/out", "alpine:3.19", "/bin/sh", "-c", "false"},
+					Args:  []string{"run", "--rm", "--name", "test-build-789", "-v", "/tmp/oss-rebuild-test-build-789:/out", "--ulimit", "core=0", "alpine:3.19", "/bin/sh", "-c", "false"},
 					Error: errors.New("exit status 1"),
 				},
 			},
@@ -217,7 +217,7 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "--name", "test-build-workdir", "-v", "/tmp/oss-rebuild-test-build-workdir:/out", "-w", "/custom/workdir", "ubuntu:20.04", "/bin/sh", "-c", "pwd"},
+					Args: []string{"run", "--rm", "--name", "test-build-workdir", "-v", "/tmp/oss-rebuild-test-build-workdir:/out", "-w", "/custom/workdir", "--ulimit", "core=0", "ubuntu:20.04", "/bin/sh", "-c", "pwd"},
 				},
 			},
 			expectSuccess: true,
@@ -437,7 +437,7 @@ func TestDockerRunExecutorSavePostBuildContainer(t *testing.T) {
 	expectedCommands := []MockCommand{
 		{
 			Name: "docker",
-			Args: []string{"run", "--name", "test-postbuild", "-v", "/tmp/oss-rebuild-test-postbuild:/out", "-w", "/workspace", "alpine:3.19", "/bin/sh", "-c", "echo hello"},
+			Args: []string{"run", "--name", "test-postbuild", "-v", "/tmp/oss-rebuild-test-postbuild:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "/bin/sh", "-c", "echo hello"},
 		},
 		{
 			Name: "docker",

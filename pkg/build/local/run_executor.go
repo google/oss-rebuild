@@ -242,6 +242,9 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		runArgs = append(runArgs, "-e", fmt.Sprintf("AUTH_HEADER=%s", authHeader))
 	}
 
+	// Disable core dumps
+	runArgs = append(runArgs, "--ulimit", "core=0")
+
 	runArgs = append(runArgs, plan.Image)
 	if e.keepalive {
 		// To keep the container alive, we need to execute the build script in the background and keep an infinte process in the forground.

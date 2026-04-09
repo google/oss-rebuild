@@ -238,6 +238,8 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 			log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
 		}
 	}
+	// Disable core dumps
+	runArgs = append(runArgs, "--ulimit", "core=0")
 	err = e.cmdExecutor.Execute(ctx, CommandOptions{
 		Output: multiWriter,
 	}, e.dockerCmd, runArgs...)
