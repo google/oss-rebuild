@@ -21,8 +21,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/pipe"
 	"github.com/google/oss-rebuild/internal/syncx"
-	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
 )
 

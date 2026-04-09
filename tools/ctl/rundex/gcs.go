@@ -13,9 +13,9 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/iterx"
+	"github.com/google/oss-rebuild/internal/pipe"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
-	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
 )

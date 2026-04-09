@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/pipe"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/pipe"
 )
 
 // Rebuild represents the result of a specific rebuild.
