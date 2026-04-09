@@ -9,10 +9,10 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/gdamore/tcell/v2"
+	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	agentide "github.com/google/oss-rebuild/tools/ctl/ide/agent"
-	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 	"github.com/spf13/cobra"

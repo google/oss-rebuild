@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
-	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 )
