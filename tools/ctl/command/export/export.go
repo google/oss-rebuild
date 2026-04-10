@@ -19,6 +19,7 @@ import (
 	"github.com/cheggaaa/pb"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/pipe"
+	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
@@ -28,7 +29,6 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/difftool"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
-	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )

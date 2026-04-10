@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/oss-rebuild/tools/ctl/rundex"
+	"github.com/google/oss-rebuild/internal/rundex"
 )
 
 type RebuildCmd struct {
