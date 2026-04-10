@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/glob"
+	"github.com/google/oss-rebuild/internal/pipe"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/diffr"
 	"github.com/google/oss-rebuild/pkg/llm"
@@ -41,7 +42,6 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide/textinput"
 	"github.com/google/oss-rebuild/tools/ctl/ide/tmux"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
-	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"

@@ -11,9 +11,9 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/iterx"
+	"github.com/google/oss-rebuild/internal/pipe"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/google/oss-rebuild/tools/ctl/pipe"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
 )

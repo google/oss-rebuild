@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb"
+	"github.com/google/oss-rebuild/internal/pipe"
 	"github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/pipe"
 )
 
 // --- Structs for the Snapshot API Response ---
