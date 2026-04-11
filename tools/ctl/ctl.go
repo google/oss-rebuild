@@ -22,6 +22,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/command/runbenchmark"
 	"github.com/google/oss-rebuild/tools/ctl/command/runone"
 	"github.com/google/oss-rebuild/tools/ctl/command/settrackedpackages"
+	"github.com/google/oss-rebuild/tools/ctl/command/sysgraph"
 	"github.com/google/oss-rebuild/tools/ctl/command/tui"
 	"github.com/google/oss-rebuild/tools/ctl/command/viewsession"
 	"github.com/spf13/cobra"
@@ -54,6 +55,8 @@ func init() {
 	rootCmd.AddCommand(migrate.Command())
 	rootCmd.AddCommand(settrackedpackages.Command())
 	rootCmd.AddCommand(gettrackedpackages.Command())
+	// Sysgraph tools
+	rootCmd.AddCommand(sysgraph.Command())
 }
 
 func main() {
