@@ -203,11 +203,6 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 
 func VersionInit(ctx context.Context) (*apiservice.VersionDeps, error) {
 	var d apiservice.VersionDeps
-	var err error
-	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating firestore client")
-	}
 	{
 		u, err := url.Parse(*inferenceURL)
 		if err != nil {

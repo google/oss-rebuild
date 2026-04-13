@@ -8,14 +8,12 @@ import (
 	"errors"
 	"os"
 
-	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/grpc/codes"
 )
 
 type VersionDeps struct {
-	FirestoreClient      *firestore.Client
 	InferenceVersionStub api.StubT[schema.VersionRequest, schema.VersionResponse]
 }
 
