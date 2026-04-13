@@ -7,11 +7,13 @@ import (
 	"context"
 	"path"
 	"slices"
+	"strings"
 	"sync"
 
 	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/pipe"
+	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
@@ -91,6 +93,14 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 			if len(req.Runs) != 0 {
 				q = q.Where("run_id", "in", req.Runs)
 			}
+			// Avoid composite index requirement for 'in' queries + OrderBy.
+			// Results are sorted in memory by filterRebuilds anyway.
+			if len(req.Executors) == 0 && len(req.Runs) == 0 {
+				q = q.OrderBy("created", firestore.Desc)
+			}
+			if req.Limit > 0 {
+				q = q.Limit(req.Limit)
+			}
 			iter := q.Documents(pctx)
 			for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
 				if err != nil {
@@ -119,24 +129,50 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 		return filterRebuilds(allChan, req), nil
 	}
 
+	isCollectionGroup := true
 	q := f.client.CollectionGroup("attempts").Query
 	if req.Target != nil {
 		t := *req.Target
-		if t.Artifact == "" {
-			if a, err := f.findArtifactName(ctx, t); err != nil {
-				return nil, errors.Wrap(err, "inferring missing artifact")
-			} else {
-				t.Artifact = a
+		if t.Ecosystem != "" && t.Package != "" && t.Version != "" {
+			if t.Artifact == "" {
+				if a, err := f.findArtifactName(ctx, t); err == nil {
+					t.Artifact = a
+				}
+			}
+			if t.Artifact != "" {
+				et := rebuild.FirestoreTargetEncoding.Encode(t)
+				q = f.client.Collection(path.Join("ecosystem", string(et.Ecosystem), "packages", et.Package, "versions", et.Version, "artifacts", et.Artifact, "attempts")).Query
+				isCollectionGroup = false
 			}
 		}
-		et := rebuild.FirestoreTargetEncoding.Encode(t)
-		q = f.client.Collection(path.Join("ecosystem", string(et.Ecosystem), "packages", et.Package, "versions", et.Version, "artifacts", et.Artifact, "attempts")).Query
+		if isCollectionGroup {
+			if t.Ecosystem != "" {
+				q = q.Where("ecosystem", "==", string(t.Ecosystem))
+			}
+			if t.Package != "" {
+				q = q.Where("package", "==", t.Package)
+			}
+			if t.Version != "" {
+				q = q.Where("version", "==", t.Version)
+			}
+			if t.Artifact != "" {
+				q = q.Where("artifact", "==", t.Artifact)
+			}
+		}
 	}
 	if len(req.Executors) != 0 {
 		q = q.Where("executor_version", "in", req.Executors)
 	}
 	if len(req.Runs) != 0 {
 		q = q.Where("run_id", "in", req.Runs)
+	}
+	// Avoid composite index requirement for 'in' queries + OrderBy.
+	// Results are sorted in memory by filterRebuilds anyway.
+	if len(req.Executors) == 0 && len(req.Runs) == 0 {
+		q = q.OrderBy("created", firestore.Desc)
+	}
+	if req.Limit > 0 {
+		q = q.Limit(req.Limit)
 	}
 	all := make(chan Rebuild)
 	cerr := doQuery(ctx, q, newRebuildFromFirestore, all)
@@ -147,20 +183,133 @@ func (f *FirestoreClient) FetchRebuilds(ctx context.Context, req *FetchRebuildRe
 	return rebuilds, nil
 }
 
+// RecentRebuilds fetches the 100 most recent rebuild results.
+func (f *FirestoreClient) RecentRebuilds(ctx context.Context) ([]Rebuild, error) {
+	q := f.client.CollectionGroup("attempts").Query.OrderBy("created", firestore.Desc).Limit(100)
+	return f.fetchRebuildsQuery(ctx, q)
+}
+
+// RecentEcosystemRebuilds fetches the 100 most recent rebuild results for a specific ecosystem.
+func (f *FirestoreClient) RecentEcosystemRebuilds(ctx context.Context, eco rebuild.Ecosystem) ([]Rebuild, error) {
+	q := f.client.CollectionGroup("attempts").Query.
+		Where("ecosystem", "==", string(eco)).
+		OrderBy("created", firestore.Desc).
+		Limit(100)
+	return f.fetchRebuildsQuery(ctx, q)
+}
+
+// RecentPackageRebuilds fetches the 100 most recent rebuild results for a specific package.
+func (f *FirestoreClient) RecentPackageRebuilds(ctx context.Context, eco rebuild.Ecosystem, pkg string) ([]Rebuild, error) {
+	q := f.client.CollectionGroup("attempts").Query.
+		Where("ecosystem", "==", string(eco)).
+		Where("package", "==", pkg).
+		OrderBy("created", firestore.Desc).
+		Limit(100)
+	return f.fetchRebuildsQuery(ctx, q)
+}
+
+func (f *FirestoreClient) fetchRebuildsQuery(ctx context.Context, q firestore.Query) ([]Rebuild, error) {
+	all := make(chan Rebuild)
+	cerr := doQuery(ctx, q, newRebuildFromFirestore, all)
+	var rebuilds []Rebuild
+	for r := range all {
+		r.Message = strings.ReplaceAll(r.Message, "\n", "\\n")
+		rebuilds = append(rebuilds, r)
+	}
+	if err := <-cerr; err != nil {
+		return nil, errors.Wrap(err, "query error")
+	}
+	return rebuilds, nil
+}
+
+// FetchAttempt fetches a specific Rebuild object out of firestore.
+func (f *FirestoreClient) FetchAttempt(ctx context.Context, target rebuild.Target, runID string) (Rebuild, error) {
+	et := rebuild.FirestoreTargetEncoding.Encode(target)
+	doc, err := f.client.Collection(path.Join("ecosystem", string(et.Ecosystem), "packages", et.Package, "versions", et.Version, "artifacts", et.Artifact, "attempts")).Doc(runID).Get(ctx)
+	if err != nil {
+		return Rebuild{}, err
+	}
+	return newRebuildFromFirestore(doc), nil
+}
+
+// LatestTrackedPackages fetches the most recent rebuild result for each tracked package.
+func (f *FirestoreClient) LatestTrackedPackages(ctx context.Context, tracked feed.TrackedPackageIndex) ([]Rebuild, error) {
+	type queryBatch struct {
+		ecosystem string
+		packages  []string
+	}
+	var batches []queryBatch
+	const batchSize = 30 // Firestore 'in' queries are limited to 30 values.
+	for eco, pkgs := range tracked {
+		var pkgList []string
+		for pkg := range pkgs {
+			pkgList = append(pkgList, pkg)
+		}
+		for i := 0; i < len(pkgList); i += batchSize {
+			end := i + batchSize
+			if end > len(pkgList) {
+				end = len(pkgList)
+			}
+			batches = append(batches, queryBatch{ecosystem: string(eco), packages: pkgList[i:end]})
+		}
+	}
+
+	p := pipe.FromSlice(batches)
+
+	var queryErr error
+	var once sync.Once
+	pctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	const queryConcurrency = 10
+	rebuildsPipe := pipe.ParInto(queryConcurrency, p, func(batch queryBatch, out chan<- Rebuild) {
+		if pctx.Err() != nil {
+			return
+		}
+		q := f.client.CollectionGroup("attempts").Query.Where("ecosystem", "==", batch.ecosystem).Where("package", "in", batch.packages)
+		q = q.OrderBy("created", firestore.Desc)
+		iter := q.Documents(pctx)
+		// Track latest per package in this batch.
+		latest := make(map[string]Rebuild)
+		for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
+			if err != nil {
+				once.Do(func() {
+					queryErr = errors.Wrap(err, "query error")
+					cancel()
+				})
+				break
+			}
+			r := newRebuildFromFirestore(doc)
+			if _, seen := latest[r.Package]; !seen {
+				latest[r.Package] = r
+				out <- r
+			}
+		}
+	})
+	var res []Rebuild
+	for r := range rebuildsPipe.Out() {
+		res = append(res, r)
+	}
+	if queryErr != nil {
+		return nil, queryErr
+	}
+	return res, nil
+}
+
 // FetchRuns fetches Runs out of firestore.
 func (f *FirestoreClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([]Run, error) {
 	q := f.client.CollectionGroup("runs").Query
 	if opts.BenchmarkHash != "" {
 		q = q.Where("benchmark_hash", "==", opts.BenchmarkHash)
 	}
-	if opts.BenchmarkName != "" {
-		q = q.Where("benchmark_name", "==", opts.BenchmarkName)
-	}
 	runs := make(chan Run)
 	cerr := doQuery(ctx, q, newRunFromFirestore, runs)
 	var runSlice []Run
 	for r := range runs {
 		if len(opts.IDs) != 0 && !slices.Contains(opts.IDs, r.ID) {
+			continue
+		}
+		if opts.BenchmarkName != "" && r.BenchmarkName != opts.BenchmarkName {
 			continue
 		}
 		runSlice = append(runSlice, r)

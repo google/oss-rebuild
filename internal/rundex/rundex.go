@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/pipe"
+	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -81,6 +82,7 @@ type FetchRebuildRequest struct {
 	Runs             []string
 	Opts             FetchRebuildOpts
 	LatestPerPackage bool
+	Limit            int
 }
 
 // FetchRunsOpts describes which Runs you would like to fetch from firestore.
@@ -106,6 +108,11 @@ type FetchIterationsReq struct {
 type Reader interface {
 	FetchRuns(context.Context, FetchRunsOpts) ([]Run, error)
 	FetchRebuilds(context.Context, *FetchRebuildRequest) ([]Rebuild, error)
+	FetchAttempt(ctx context.Context, target rebuild.Target, runID string) (Rebuild, error)
+	RecentRebuilds(context.Context) ([]Rebuild, error)
+	RecentEcosystemRebuilds(context.Context, rebuild.Ecosystem) ([]Rebuild, error)
+	RecentPackageRebuilds(context.Context, rebuild.Ecosystem, string) ([]Rebuild, error)
+	LatestTrackedPackages(context.Context, feed.TrackedPackageIndex) ([]Rebuild, error)
 }
 
 // TOOD: Move SessionReader into Reader when more impls exist.
@@ -215,13 +222,23 @@ func cleanVerdict(m string) string {
 
 func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 	p := pipe.From(all)
+	if req.Target != nil {
+		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
+			if (req.Target.Ecosystem == "" || rebuild.Ecosystem(in.Ecosystem) == req.Target.Ecosystem) &&
+				(req.Target.Package == "" || in.Package == req.Target.Package) &&
+				(req.Target.Version == "" || in.Version == req.Target.Version) &&
+				(req.Target.Artifact == "" || in.Artifact == req.Target.Artifact) {
+				out <- in
+			}
+		})
+	}
 	if req.Bench != nil {
 		benchMap := make(map[string]benchmark.Package)
 		for _, bp := range req.Bench.Packages {
 			benchMap[bp.Name] = bp
 		}
 		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
-			if bp, ok := benchMap[in.Package]; ok && slices.Contains(bp.Versions, in.Version) && bp.Ecosystem == in.Ecosystem {
+			if bp, ok := benchMap[in.Package]; ok && (len(bp.Versions) == 0 || slices.Contains(bp.Versions, in.Version)) && bp.Ecosystem == in.Ecosystem {
 				out <- in
 			}
 		})
@@ -267,6 +284,12 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 		for r := range p.Out() {
 			res = append(res, r)
 		}
+	}
+	slices.SortFunc(res, func(a, b Rebuild) int {
+		return b.Created.Compare(a.Created)
+	})
+	if req.Limit > 0 && len(res) > req.Limit {
+		res = res[:req.Limit]
 	}
 	return res
 }
