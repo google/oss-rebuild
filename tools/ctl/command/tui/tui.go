@@ -182,7 +182,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	}
 	benches := benchmark.NewFSRepository(osfs.New(cfg.BenchmarkDir))
 	prebuildConfig := rebuild.PrebuildConfig{Bucket: cfg.BootstrapBucket, Dir: cfg.BootstrapVersion}
-	tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: cfg.Clean}, benches, buildDefs, butler, aiClient, prebuildConfig)
+	tapp := ide.NewTuiApp(dex, watcher, rundex.FetchRebuildOpts{Clean: cfg.Clean, IncludePending: false}, benches, buildDefs, butler, aiClient, prebuildConfig)
 	if err := tapp.Run(ctx); err != nil {
 		// TODO: This cleanup will be unnecessary once NewTuiApp does split logging.
 		log.Default().SetOutput(os.Stdout)

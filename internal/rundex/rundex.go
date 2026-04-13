@@ -69,9 +69,10 @@ func FromRun(r schema.Run) Run {
 }
 
 type FetchRebuildOpts struct {
-	Clean   bool
-	Prefix  string
-	Pattern string
+	Clean          bool
+	Prefix         string
+	Pattern        string
+	IncludePending bool
 }
 
 // FetchRebuildRequest describes which Rebuild results you would like to fetch from firestore.
@@ -222,6 +223,13 @@ func cleanVerdict(m string) string {
 
 func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 	p := pipe.From(all)
+	if !req.Opts.IncludePending {
+		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
+			if in.Status != schema.RebuildStatusRunning {
+				out <- in
+			}
+		})
+	}
 	if req.Target != nil {
 		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
 			if (req.Target.Ecosystem == "" || rebuild.Ecosystem(in.Ecosystem) == req.Target.Ecosystem) &&
