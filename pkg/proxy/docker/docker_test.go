@@ -838,8 +838,11 @@ func TestPatchOnStartWithNewBazelRC(t *testing.T) {
 }
 func TestPatchOnStartWithCustomFiles(t *testing.T) {
 	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{
-		CustomFiles: map[string][]byte{
-			"/etc/custom.conf": []byte("my content"),
+		CustomFiles: map[string]CustomFile{
+			"/etc/custom.conf": {
+				Content: []byte("my content"),
+				Mode:    OverwriteExisting,
+			},
 		},
 	})
 	sock := tempSocketName(t)

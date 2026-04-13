@@ -551,12 +551,7 @@ func TestDockerInDocker(t *testing.T) {
 	inspectContainer := "inspect-saved-" + name
 
 	// Dump proxy logs on failure for debugging.
-	t.Cleanup(func() {
-		if t.Failed() {
-			logs, _, _ := runDockerCommand(t, "exec", env.ProxyContainer, "sh", "-c", "tail -100 /proxy.log")
-			t.Logf("Proxy logs:\n%s", logs)
-		}
-	})
+	registerLogDump(t, env)
 
 	// Clean up stale volumes and register future resource cleanups.
 	cleanupProxyVolumes(t)
@@ -713,4 +708,73 @@ func TestNetworkPolicyDynamic(t *testing.T) {
 
 	// Same request to example.com should now fail.
 	env.runInBuildExpectFail(t, "wget -qO- http://example.com")
+}
+
+func TestDockerCustomFiles(t *testing.T) {
+	checkDockerAvailable(t)
+	bin := buildProxyBinary(t)
+
+	tests := []struct {
+		name            string
+		customFilesJSON string
+		fileName        string
+		imageName       string
+		expectedContent string
+	}{
+		{
+			name:            "OverwriteExisting",
+			customFilesJSON: `{"/etc/overwrite.conf":{"Content":"bmV3","Mode":0}}`,
+			fileName:        "/etc/overwrite.conf",
+			imageName:       "base-overwrite",
+			expectedContent: "new",
+		},
+		{
+			name:            "AppendToExisting",
+			customFilesJSON: `{"/etc/append.conf":{"Content":"bmV3","Mode":1}}`,
+			fileName:        "/etc/append.conf",
+			imageName:       "base-append",
+			expectedContent: "originalnew",
+		},
+		{
+			name:            "ErrorOnExisting",
+			customFilesJSON: `{"/etc/error.conf":{"Content":"bmV3","Mode":2}}`,
+			fileName:        "/etc/error.conf",
+			imageName:       "base-error",
+			expectedContent: "original",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := setupProxyTestEnv(t, bin, proxyTestEnvOpts{
+				WithDockerProxy: true,
+				ExtraProxyFlags: []string{
+					"--docker_custom_files='" + tc.customFilesJSON + "'",
+				},
+			})
+			registerLogDump(t, env)
+			env.runInBuild(t, "apk add --no-cache docker-cli")
+			dh := fmt.Sprintf("DOCKER_HOST=tcp://%s:3130", env.ProxyIP)
+
+			// Build base image with file.
+			env.runInBuild(t, "mkdir -p /tmp/build && "+
+				fmt.Sprintf(`printf 'FROM alpine:3.21\nRUN echo -n "original" > %s\n' > /tmp/build/Dockerfile`, tc.fileName))
+			env.runInBuild(t, dh+" docker build -t "+tc.imageName+" /tmp/build")
+
+			// Run container and verify.
+			stdout, _ := env.runInBuild(t, dh+" docker run --rm "+tc.imageName+" cat "+tc.fileName)
+			if stdout != tc.expectedContent {
+				t.Fatalf("Expected %q, got: %q", tc.expectedContent, stdout)
+			}
+		})
+	}
+}
+
+func registerLogDump(t *testing.T, env *proxyTestEnv) {
+	t.Cleanup(func() {
+		if t.Failed() {
+			logs, _, _ := runDockerCommand(t, "exec", env.ProxyContainer, "sh", "-c", "tail -100 /proxy.log")
+			t.Logf("Proxy logs:\n%s", logs)
+		}
+	})
 }

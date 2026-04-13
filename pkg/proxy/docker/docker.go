@@ -407,6 +407,19 @@ type patchSet struct {
 	Patches []patch
 }
 
+type FileWriteMode int
+
+const (
+	OverwriteExisting FileWriteMode = iota
+	AppendToExisting
+	ErrorOnExisting
+)
+
+type CustomFile struct {
+	Content []byte
+	Mode    FileWriteMode
+}
+
 // ContainerTruststorePatcher provides a Docker API proxy that patches the container truststore while running.
 type ContainerTruststorePatcher struct {
 	cert                 x509.Certificate
@@ -414,7 +427,7 @@ type ContainerTruststorePatcher struct {
 	truststoreEnvVars    []string
 	javaTruststoreEnvVar bool
 	bazelTruststore      bool
-	customFiles          map[string][]byte
+	customFiles          map[string]CustomFile
 	networkOverride      string // TODO: Not a good fit for this abstraction
 	proxySocket          string
 	patchMap             map[string]*patchSet
@@ -428,7 +441,7 @@ type ContainerTruststorePatcherOpts struct {
 	TruststoreEnvVars    []string
 	JavaTruststoreEnvVar bool
 	BazelTruststore      bool
-	CustomFiles          map[string][]byte
+	CustomFiles          map[string]CustomFile
 	RecursiveProxy       bool
 	NetworkOverride      string
 }
@@ -667,11 +680,11 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			}
 		}
 		customFilesFailed := false
-		for path, content := range d.customFiles {
+		for path, file := range d.customFiles {
 			f, err := dfs.OpenAndResolve(path)
 			if err != nil {
 				if err == iofs.ErrNotExist {
-					if err := createFile(dfs, content, path); err != nil {
+					if err := createFile(dfs, file.Content, path); err != nil {
 						log.Printf("Creating custom file %s: %v", path, err)
 						customFilesFailed = true
 						break
@@ -682,8 +695,20 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 					break
 				}
 			} else {
-				f.Contents = append(f.Contents[:], content...)
-				err = dfs.WriteFile(f)
+				switch file.Mode {
+				case OverwriteExisting:
+					f.Contents = file.Content
+					err = dfs.WriteFile(f)
+				case AppendToExisting:
+					f.Contents = append(f.Contents[:], file.Content...)
+					err = dfs.WriteFile(f)
+				case ErrorOnExisting:
+					log.Printf("Custom file %s already exists", path)
+					customFilesFailed = true
+				}
+				if customFilesFailed {
+					break
+				}
 				if err != nil {
 					log.Printf("Writing to custom file %s: %v", path, err)
 					customFilesFailed = true
