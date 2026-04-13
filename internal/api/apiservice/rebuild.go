@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/firestore"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
@@ -42,7 +42,7 @@ import (
 // TODO: LocalMetadataStore and DebugStoreBuilder can be combined into a layered AssetStore.
 type RebuildPackageDeps struct {
 	HTTPClient                 httpx.BasicClient
-	FirestoreClient            *firestore.Client
+	Attempts                   db.Attempts
 	Signer                     *dsse.EnvelopeSigner
 	Verifier                   *dsse.EnvelopeVerifier
 	GCBExecutor                *buildgcb.Executor
@@ -357,8 +357,6 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	}
 
 	target := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
-	et := rebuild.FirestoreTargetEncoding.Encode(target)
-	docRef := deps.FirestoreClient.Collection("ecosystem").Doc(string(et.Ecosystem)).Collection("packages").Doc(et.Package).Collection("versions").Doc(et.Version).Collection("artifacts").Doc(et.Artifact).Collection("attempts").Doc(req.ID)
 
 	attempt := schema.RebuildAttempt{
 		Ecosystem:       string(target.Ecosystem),
@@ -371,8 +369,8 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Started:         started,
 		Created:         time.Now().UTC(),
 	}
-	if _, err := docRef.Set(ctx, attempt); err != nil {
-		return nil, errors.Wrap(err, "initial write to firestore")
+	if err := deps.Attempts.Insert(ctx, attempt); err != nil {
+		return nil, errors.Wrap(err, "initial write to db")
 	}
 
 	finish := func(status schema.RebuildStatus) {
@@ -380,7 +378,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		attempt.Finished = time.Now().UTC()
 		// We use a background context for the terminal write to ensure it completes
 		// even if the request context is cancelled.
-		if _, err := docRef.Set(context.Background(), attempt); err != nil {
+		if err := deps.Attempts.Update(context.Background(), attempt); err != nil {
 			log.Printf("failed to write terminal RebuildAttempt %s (status=%s): %v", req.ID, status, err)
 		}
 	}

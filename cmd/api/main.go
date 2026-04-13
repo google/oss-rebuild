@@ -20,6 +20,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/apiservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	"github.com/google/oss-rebuild/internal/uri"
@@ -102,10 +103,11 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "making http client")
 	}
-	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
+	firestoreClient, err := firestore.NewClient(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
+	d.Attempts = db.NewFirestoreAttempts(firestoreClient)
 	d.Signer, d.Verifier, err = makeKMSSignerVerifier(ctx, *signingKeyVersion)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating signer/verifier")
@@ -219,11 +221,11 @@ func VersionInit(ctx context.Context) (*apiservice.VersionDeps, error) {
 
 func CreateRunInit(ctx context.Context) (*apiservice.CreateRunDeps, error) {
 	var d apiservice.CreateRunDeps
-	var err error
-	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
+	firestoreClient, err := firestore.NewClient(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
+	d.Runs = db.NewFirestoreRuns(firestoreClient)
 	return &d, nil
 }
 

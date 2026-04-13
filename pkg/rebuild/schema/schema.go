@@ -342,6 +342,15 @@ type RebuildAttempt struct {
 	Created         time.Time       `firestore:"created,omitempty"`  // The time this record was created
 }
 
+func (a RebuildAttempt) Target() rebuild.Target {
+	return rebuild.Target{
+		Ecosystem: rebuild.Ecosystem(a.Ecosystem),
+		Package:   a.Package,
+		Version:   a.Version,
+		Artifact:  a.Artifact,
+	}
+}
+
 // Run stores metadata on an execution grouping.
 type Run struct {
 	ID            string    `firestore:"id,omitempty"`
