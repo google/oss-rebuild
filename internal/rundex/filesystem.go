@@ -67,6 +67,9 @@ func (f *FilesystemClient) FetchRuns(ctx context.Context, opts FetchRunsOpts) ([
 		if opts.BenchmarkHash != "" && r.BenchmarkHash != opts.BenchmarkHash {
 			return nil
 		}
+		if opts.BenchmarkName != "" && r.BenchmarkName != opts.BenchmarkName {
+			return nil
+		}
 		runs = append(runs, r)
 		return nil
 	})
