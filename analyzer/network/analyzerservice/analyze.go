@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"io"
 	"path"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
@@ -68,7 +69,7 @@ func Analyze(ctx context.Context, req schema.AnalyzeRebuildRequest, deps *Analyz
 			return nil, api.AsStatus(codes.AlreadyExists, errors.New("analysis already exists"))
 		}
 	}
-	return analyzeRebuild(ctx, t, deps)
+	return analyzeRebuild(ctx, t, req.Timeout, deps)
 }
 
 func analysisExists(ctx context.Context, store rebuild.AssetStore, t rebuild.Target) (bool, error) {
@@ -81,7 +82,7 @@ func analysisExists(ctx context.Context, store rebuild.AssetStore, t rebuild.Tar
 	return true, nil
 }
 
-func analyzeRebuild(ctx context.Context, t rebuild.Target, deps *AnalyzerDeps) (*api.NoReturn, error) {
+func analyzeRebuild(ctx context.Context, t rebuild.Target, timeout time.Duration, deps *AnalyzerDeps) (*api.NoReturn, error) {
 	rebuildAttestation, err := getRebuildAttestation(ctx, deps.InputAttestationStore, t, deps.Verifier)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting rebuild attestation")
@@ -92,7 +93,7 @@ func analyzeRebuild(ctx context.Context, t rebuild.Target, deps *AnalyzerDeps) (
 	}
 	ctx = context.WithValue(ctx, rebuild.HTTPBasicClientID, deps.HTTPClient)
 	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
-	id, err := executeNetworkRebuild(ctx, deps, t, strategy, rebuildAttestation)
+	id, err := executeNetworkRebuild(ctx, deps, t, strategy, rebuildAttestation, timeout)
 	if err != nil {
 		return nil, errors.Wrap(err, "network rebuild failed")
 	}
@@ -188,7 +189,7 @@ func compareArtifacts(ctx context.Context, mux rebuild.RegistryMux, t rebuild.Ta
 	return &rb, &up, nil
 }
 
-func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Target, strategy rebuild.Strategy, rebuildAttestation *attestation.RebuildAttestation) (string, error) {
+func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Target, strategy rebuild.Strategy, rebuildAttestation *attestation.RebuildAttestation, timeout time.Duration) (string, error) {
 	obID := uuid.New().String()
 	debugStore, err := deps.DebugStoreBuilder(context.WithValue(ctx, rebuild.RunID, obID))
 	if err != nil {
@@ -223,6 +224,7 @@ func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Ta
 	}
 	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
 		BuildID:            obID,
+		Timeout:            timeout,
 		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
 		UseNetworkProxy:    true, // The whole point of the analyzer
 		SaveContainerImage: true,

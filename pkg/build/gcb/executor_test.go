@@ -67,9 +67,9 @@ func TestExecutorStart(t *testing.T) {
 	}
 	createChan := make(chan struct{})
 	defer close(createChan)
-	var capturedTags []string
+	var gotBuild *cloudbuild.Build
 	mockClient.CreateBuildFunc = func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
-		capturedTags = build.Tags
+		gotBuild = build
 		<-createChan
 		return operation, nil
 	}
@@ -125,6 +125,7 @@ func TestExecutorStart(t *testing.T) {
 		Resources: build.Resources{
 			BaseImageConfig: baseImageConfig,
 		},
+		Timeout: 10 * time.Minute,
 	}
 
 	// Test Start method
@@ -154,18 +155,22 @@ func TestExecutorStart(t *testing.T) {
 		t.Fatal(result.Error)
 	}
 
+	if gotBuild.Timeout != "600s" {
+		t.Errorf("Timeout = %s, want 600s", gotBuild.Timeout)
+	}
+
 	// Verify tags
 	expectedTags := []string{"ecosystem-npm", "package-test-package", "version-1.0.0", "foo-bar"}
 	for _, expected := range expectedTags {
 		found := false
-		for _, actual := range capturedTags {
+		for _, actual := range gotBuild.Tags {
 			if actual == expected {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Errorf("Tag %s not found in %v", expected, capturedTags)
+			t.Errorf("Tag %s not found in %v", expected, gotBuild.Tags)
 		}
 	}
 
