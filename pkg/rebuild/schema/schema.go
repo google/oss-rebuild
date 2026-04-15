@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/rubygems"
 	debreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
@@ -36,6 +37,7 @@ type StrategyOneOf struct {
 	DebianPackage        *debian.DebianPackage          `json:"debian_package,omitempty" yaml:"debian_package,omitempty"`
 	Debrebuild           *debian.Debrebuild             `json:"debrebuild,omitempty" yaml:"debrebuild,omitempty"`
 	DebootsnapSbuild     *debian.DebootsnapSbuild       `json:"debootsnap_sbuild,omitempty" yaml:"debootsnap_sbuild,omitempty"`
+	GemBuild             *rubygems.GemBuild             `json:"rubygems_gem_build,omitempty" yaml:"rubygems_gem_build,omitempty"`
 	ManualStrategy       *rebuild.ManualStrategy        `json:"manual,omitempty" yaml:"manual,omitempty"`
 	WorkflowStrategy     *rebuild.WorkflowStrategy      `json:"flow,omitempty" yaml:"flow,omitempty"`
 }
@@ -66,6 +68,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.Debrebuild = t
 	case *debian.DebootsnapSbuild:
 		oneof.DebootsnapSbuild = t
+	case *rubygems.GemBuild:
+		oneof.GemBuild = t
 	case *rebuild.ManualStrategy:
 		oneof.ManualStrategy = t
 	case *rebuild.WorkflowStrategy:
@@ -114,6 +118,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.DebootsnapSbuild != nil {
 			num++
 			s = oneof.DebootsnapSbuild
+		}
+		if oneof.GemBuild != nil {
+			num++
+			s = oneof.GemBuild
 		}
 		if oneof.ManualStrategy != nil {
 			num++
