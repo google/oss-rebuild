@@ -4,6 +4,7 @@
 package sysgraph
 
 import (
+	"github.com/google/oss-rebuild/tools/ctl/command/sysgraph/diff"
 	"github.com/spf13/cobra"
 )
 
@@ -13,5 +14,6 @@ func Command() *cobra.Command {
 		Use:   "sysgraph",
 		Short: "Sysgraph analysis and transformation commands",
 	}
+	cmd.AddCommand(diff.Command())
 	return cmd
 }
