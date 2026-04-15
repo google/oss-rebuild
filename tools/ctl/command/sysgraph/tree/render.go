@@ -450,7 +450,9 @@ type renderOpts struct {
 	ShowIDs      bool
 	ShowCwd      bool
 	ShowDuration bool
+	ShowFiles    bool
 	AncestorID   int64 // if set, show only the ancestor path to this node
+	resources    map[pbdigest.Digest]*sgpb.Resource
 }
 
 // renderTree writes the process tree to w. It first grafts container-internal
@@ -537,6 +539,9 @@ func renderNode(w io.Writer, n *treeNode, depth int, opts renderOpts) {
 	}
 	fmt.Fprintln(w, line)
 
+	if opts.ShowFiles {
+		renderFileOps(w, n, prefix, opts)
+	}
 	// Render children with sibling collapsing.
 	renderChildren(w, n.children, depth+1, opts)
 }
@@ -609,6 +614,109 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}
 	return d.Truncate(time.Millisecond).String()
+}
+
+// renderFileOps prints file read/write/delete operations for a node, indented
+// beneath the process line.
+func renderFileOps(w io.Writer, n *treeNode, prefix string, opts renderOpts) {
+	if opts.resources == nil {
+		return
+	}
+	type fileOp struct {
+		path string
+		op   string
+	}
+	var ops []fileOp
+
+	// Collect from inputs.
+	for digestStr, interactions := range n.action.GetInputs() {
+		dg, err := pbdigest.NewFromString(digestStr)
+		if err != nil {
+			continue
+		}
+		res, ok := opts.resources[dg]
+		if !ok || res.GetType() != sgpb.ResourceType_RESOURCE_TYPE_FILE {
+			continue
+		}
+		path := res.GetFileInfo().GetPath()
+		if path == "" {
+			continue
+		}
+		for _, ri := range interactions.GetInteractions() {
+			if label := interactionLabel(ri.GetType()); label != "" {
+				ops = append(ops, fileOp{path: path, op: label})
+			}
+		}
+	}
+	// Collect from outputs.
+	for digestStr, interactions := range n.action.GetOutputs() {
+		dg, err := pbdigest.NewFromString(digestStr)
+		if err != nil {
+			continue
+		}
+		res, ok := opts.resources[dg]
+		if !ok || res.GetType() != sgpb.ResourceType_RESOURCE_TYPE_FILE {
+			continue
+		}
+		path := res.GetFileInfo().GetPath()
+		if path == "" {
+			continue
+		}
+		for _, ri := range interactions.GetInteractions() {
+			if label := interactionLabel(ri.GetType()); label != "" {
+				ops = append(ops, fileOp{path: path, op: label})
+			}
+		}
+	}
+
+	if len(ops) == 0 {
+		return
+	}
+
+	// Deduplicate: keep unique (op, path) pairs.
+	seen := map[fileOp]bool{}
+	var unique []fileOp
+	for _, op := range ops {
+		if !seen[op] {
+			seen[op] = true
+			unique = append(unique, op)
+		}
+	}
+
+	// Sort by op then path for stable output.
+	sort.Slice(unique, func(i, j int) bool {
+		if unique[i].op != unique[j].op {
+			return unique[i].op < unique[j].op
+		}
+		return unique[i].path < unique[j].path
+	})
+
+	indent := strings.Repeat(" ", len(prefix))
+	for i, op := range unique {
+		connector := "├"
+		if i == len(unique)-1 {
+			connector = "└"
+		}
+		fmt.Fprintf(w, "%s%s %s %s\n", indent, connector, op.op, op.path)
+	}
+}
+
+// interactionLabel returns a short display label for a resource interaction type.
+func interactionLabel(t sgpb.ResourceInteractionType) string {
+	switch t {
+	case sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_READ:
+		return "R"
+	case sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_WRITE:
+		return "W"
+	case sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_DELETE:
+		return "D"
+	case sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_RENAME_SOURCE:
+		return "R>"
+	case sgpb.ResourceInteractionType_RESOURCE_INTERACTION_TYPE_RENAME_DESTINATION:
+		return ">R"
+	default:
+		return ""
+	}
 }
 
 // shortID returns the first 12 characters of an ID string (like Docker short IDs).
