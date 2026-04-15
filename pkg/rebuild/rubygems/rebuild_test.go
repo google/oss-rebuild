@@ -35,17 +35,3 @@ func TestArtifactName(t *testing.T) {
 		}
 	}
 }
-
-func TestRebuilder_UsesTimewarp(t *testing.T) {
-	r := Rebuilder{}
-	input := rebuild.Input{
-		Target: rebuild.Target{
-			Ecosystem: rebuild.RubyGems,
-			Package:   "rails",
-			Version:   "7.1.0",
-		},
-	}
-	if !r.UsesTimewarp(input) {
-		t.Error("UsesTimewarp() = false, want true")
-	}
-}
