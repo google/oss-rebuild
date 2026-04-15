@@ -69,12 +69,57 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 			},
 			options: build.Options{
-				BuildID: "test-build-123",
+				BuildID:            "test-build-123",
+				SaveContainerImage: true,
 				Resources: build.Resources{
 					AssetStore: newMockBuildAssetStore(),
 				},
 			},
 			maxParallel: 2,
+			executeFunc: successExecuteFake,
+			expectedCommands: []MockCommand{
+				{
+					Name:  "docker",
+					Args:  []string{"buildx", "build", "-t", "test-build-123", "-"},
+					Input: "FROM alpine:3.19\nRUN echo 'building'\nCMD echo 'done'",
+				},
+				{
+					Name: "docker",
+					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-123:/out", "test-build-123", "--ulimit", "core=0"},
+				},
+				{
+					Name: "sh",
+					Args: []string{"-c", "docker save test-build-123 | gzip > /tmp/oss-rebuild-test-build-123/image.tgz"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rmi", "test-build-123"},
+				},
+			},
+			expectSuccess: true,
+		},
+		{
+			name: "no container image save when flag is false",
+			plan: &DockerBuildPlan{
+				Dockerfile: "FROM alpine:3.19\nRUN echo 'building'\nCMD echo 'done'",
+				OutputPath: "/out/result.tar.gz",
+			},
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.NPM,
+					Package:   "test-pkg",
+					Version:   "1.0.0",
+					Artifact:  "test-pkg-1.0.0.tgz",
+				},
+			},
+			options: build.Options{
+				BuildID:            "test-build-nosave",
+				SaveContainerImage: false,
+				Resources: build.Resources{
+					AssetStore: newMockBuildAssetStore(),
+				},
+			},
+			maxParallel: 1,
 			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
 				if opts.Output != nil {
 					if len(args) > 0 && args[0] == "build" {
@@ -88,20 +133,16 @@ func TestDockerBuildExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name:  "docker",
-					Args:  []string{"buildx", "build", "-t", "test-build-123", "-"},
+					Args:  []string{"buildx", "build", "-t", "test-build-nosave", "-"},
 					Input: "FROM alpine:3.19\nRUN echo 'building'\nCMD echo 'done'",
 				},
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-123:/out", "test-build-123"},
+					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-nosave:/out", "test-build-nosave", "--ulimit", "core=0"},
 				},
 				{
 					Name: "docker",
-					Args: []string{"save", "-o", "/tmp/oss-rebuild-test-build-123/image.tgz", "test-build-123"},
-				},
-				{
-					Name: "docker",
-					Args: []string{"rmi", "test-build-123"},
+					Args: []string{"rmi", "test-build-nosave"},
 				},
 			},
 			expectSuccess: true,
@@ -192,7 +233,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 				{
 					Name:  "docker",
-					Args:  []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-run-fail:/out", "test-build-run-fail"},
+					Args:  []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-run-fail:/out", "test-build-run-fail", "--ulimit", "core=0"},
 					Error: errors.New("container exited with code 1"),
 				},
 				{
@@ -217,23 +258,15 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 			},
 			options: build.Options{
-				BuildID: "test-build-retain-container",
+				BuildID:            "test-build-retain-container",
+				SaveContainerImage: true,
 				Resources: build.Resources{
 					AssetStore: newMockBuildAssetStore(),
 				},
 			},
 			maxParallel:     1,
 			retainContainer: true,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
-				if opts.Output != nil {
-					if len(args) > 0 && args[0] == "build" {
-						opts.Output.Write([]byte("Successfully built image\n"))
-					} else if len(args) > 0 && args[0] == "run" {
-						opts.Output.Write([]byte("Container executed successfully\n"))
-					}
-				}
-				return nil
-			},
+			executeFunc:     successExecuteFake,
 			expectedCommands: []MockCommand{
 				{
 					Name:  "docker",
@@ -242,15 +275,55 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 				{
 					Name: "docker",
-					Args: []string{"run", "-v", "/tmp/oss-rebuild-test-build-retain-container:/out", "test-build-retain-container"},
+					Args: []string{"run", "-v", "/tmp/oss-rebuild-test-build-retain-container:/out", "test-build-retain-container", "--ulimit", "core=0"},
 				},
 				{
-					Name: "docker",
-					Args: []string{"save", "-o", "/tmp/oss-rebuild-test-build-retain-container/image.tgz", "test-build-retain-container"},
+					Name: "sh",
+					Args: []string{"-c", "docker save test-build-retain-container | gzip > /tmp/oss-rebuild-test-build-retain-container/image.tgz"},
 				},
 				{
 					Name: "docker",
 					Args: []string{"rmi", "test-build-retain-container"},
+				},
+			},
+			expectSuccess: true,
+		},
+		{
+			name: "context dir functionality",
+			plan: &DockerBuildPlan{
+				Dockerfile: "FROM alpine:3.19\nRUN echo 'building with context'",
+				ContextDir: "/path/to/local/context",
+				OutputPath: "/out/result.tar.gz",
+			},
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.NPM,
+					Package:   "test-pkg-context",
+					Version:   "1.0.0",
+					Artifact:  "test-pkg-context-1.0.0.tgz",
+				},
+			},
+			options: build.Options{
+				BuildID: "test-build-context",
+				Resources: build.Resources{
+					AssetStore: newMockBuildAssetStore(),
+				},
+			},
+			maxParallel: 1,
+			executeFunc: successExecuteFake,
+			expectedCommands: []MockCommand{
+				{
+					Name:  "docker",
+					Args:  []string{"buildx", "build", "-t", "test-build-context", "-f-", "/path/to/local/context"},
+					Input: "FROM alpine:3.19\nRUN echo 'building with context'",
+				},
+				{
+					Name: "docker",
+					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-context:/out", "test-build-context", "--ulimit", "core=0"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rmi", "test-build-context"},
 				},
 			},
 			expectSuccess: true,
@@ -270,13 +343,54 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 			},
 			options: build.Options{
-				BuildID: "test-build-retain-image",
+				BuildID:            "test-build-retain-image",
+				SaveContainerImage: true,
 				Resources: build.Resources{
 					AssetStore: newMockBuildAssetStore(),
 				},
 			},
 			maxParallel: 1,
 			retainImage: true,
+			executeFunc: successExecuteFake,
+			expectedCommands: []MockCommand{
+				{
+					Name:  "docker",
+					Args:  []string{"buildx", "build", "-t", "test-build-retain-image", "-"},
+					Input: "FROM alpine:3.19\nRUN echo 'building with retain image'",
+				},
+				{
+					Name: "docker",
+					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-retain-image:/out", "test-build-retain-image", "--ulimit", "core=0"},
+				},
+				{
+					Name: "sh",
+					Args: []string{"-c", "docker save test-build-retain-image | gzip > /tmp/oss-rebuild-test-build-retain-image/image.tgz"},
+				},
+			},
+			expectSuccess: true,
+		},
+		{
+			name: "save post-build container",
+			plan: &DockerBuildPlan{
+				Dockerfile: "FROM alpine:3.19\nRUN echo 'building'\nCMD echo 'done'",
+				OutputPath: "/out/result.tar.gz",
+			},
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.NPM,
+					Package:   "test-pkg",
+					Version:   "1.0.0",
+					Artifact:  "test-pkg-1.0.0.tgz",
+				},
+			},
+			options: build.Options{
+				BuildID:                "test-build-postbuild",
+				SavePostBuildContainer: true,
+				Resources: build.Resources{
+					AssetStore: newMockBuildAssetStore(),
+				},
+			},
+			maxParallel: 1,
 			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
 				if opts.Output != nil {
 					if len(args) > 0 && args[0] == "build" {
@@ -290,16 +404,32 @@ func TestDockerBuildExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name:  "docker",
-					Args:  []string{"buildx", "build", "-t", "test-build-retain-image", "-"},
-					Input: "FROM alpine:3.19\nRUN echo 'building with retain image'",
+					Args:  []string{"buildx", "build", "-t", "test-build-postbuild", "-"},
+					Input: "FROM alpine:3.19\nRUN echo 'building'\nCMD echo 'done'",
 				},
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-retain-image:/out", "test-build-retain-image"},
+					Args: []string{"run", "--name", "test-build-postbuild", "-v", "/tmp/oss-rebuild-test-build-postbuild:/out", "test-build-postbuild", "--ulimit", "core=0"},
 				},
 				{
 					Name: "docker",
-					Args: []string{"save", "-o", "/tmp/oss-rebuild-test-build-retain-image/image.tgz", "test-build-retain-image"},
+					Args: []string{"commit", "test-build-postbuild", "test-build-postbuild-postbuild"},
+				},
+				{
+					Name: "sh",
+					Args: []string{"-c", "docker save test-build-postbuild-postbuild | gzip > /tmp/oss-rebuild-test-build-postbuild/image_postbuild.tgz"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rmi", "test-build-postbuild-postbuild"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rm", "test-build-postbuild"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rmi", "test-build-postbuild"},
 				},
 			},
 			expectSuccess: true,
@@ -447,6 +577,18 @@ func TestDockerBuildExecutor(t *testing.T) {
 			}
 		})
 	}
+}
+
+// successExecuteFake is a fake implementation of Execute that always succeeds.
+var successExecuteFake = func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+	if opts.Output != nil {
+		if len(args) > 0 && args[0] == "build" {
+			opts.Output.Write([]byte("Successfully built image\n"))
+		} else if len(args) > 0 && args[0] == "run" {
+			opts.Output.Write([]byte("Container executed successfully\n"))
+		}
+	}
+	return nil
 }
 
 func TestDockerBuildExecutorConcurrency(t *testing.T) {

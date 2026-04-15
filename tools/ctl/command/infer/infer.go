@@ -20,13 +20,14 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
-	"github.com/google/oss-rebuild/internal/oauth"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/local"
+	"github.com/google/oss-rebuild/pkg/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -47,6 +48,7 @@ type Config struct {
 	Format           string
 	BootstrapBucket  string
 	BootstrapVersion string
+	GitCacheURL      string
 }
 
 // Validate ensures the configuration is valid.
@@ -59,6 +61,9 @@ func (c Config) Validate() error {
 	}
 	if c.Version == "" {
 		return errors.New("version is required")
+	}
+	if c.API != "" && c.GitCacheURL != "" {
+		return errors.New("git-cache-url is not supported when using a remote API")
 	}
 	return nil
 }
@@ -154,6 +159,26 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			},
 			CratesRegistryStub: regstub,
 		}
+		if cfg.GitCacheURL != "" {
+			u, err := url.Parse(cfg.GitCacheURL)
+			if err != nil {
+				return nil, errors.Wrap(err, "parsing git cache URL")
+			}
+			var idClient, apiClient *http.Client
+			if isCloudRun(u) {
+				idClient, err = oauth.AuthorizedUserIDClient(ctx)
+				if err != nil {
+					return nil, errors.Wrap(err, "creating authorized ID client for git cache")
+				}
+				// Use the same authenticated client for GCS access.
+				apiClient = idClient
+			} else {
+				// For local git_cache instances, use unauthenticated clients.
+				idClient = http.DefaultClient
+				apiClient = http.DefaultClient
+			}
+			deps.GitCache = &gitcache.Client{IDClient: idClient, APIClient: apiClient, URL: u}
+		}
 		var err error
 		resp, err = inferenceservice.Infer(ctx, req, deps)
 		if err != nil {
@@ -216,7 +241,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			"img",
 		}
 		if plan.Privileged {
-			args = append([]string{"--privileged"}, args...)
+			args = append([]string{"--privileged", "-v=/var/run/docker.sock:/var/run/docker.sock"}, args...)
 		}
 		buildScript := fmt.Sprintf(textwrap.Dedent(`
 			#!/usr/bin/env bash
@@ -277,5 +302,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Format, "format", "", "format of the output (strategy|dockerfile|debug-steps|shell-script)")
 	set.StringVar(&cfg.BootstrapBucket, "bootstrap-bucket", "", "the gcs bucket where bootstrap tools are stored")
 	set.StringVar(&cfg.BootstrapVersion, "bootstrap-version", "", "the version of bootstrap tools to use")
+	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
 	return set
 }

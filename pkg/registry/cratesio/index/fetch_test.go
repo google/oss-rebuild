@@ -16,7 +16,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 )
 
@@ -69,7 +68,7 @@ commits:
       experimental.txt: "This is not a snapshot"
 `
 	osFS := osfs.New(tempDir)
-	must(gitxtest.CreateRepoFromYAML(yamlRepo, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(yamlRepo, &gitxtest.RepositoryOptions{
 		Storer: filesystem.NewStorage(osFS, objCache),
 	}))
 	{
@@ -119,7 +118,7 @@ commits:
         {"name":"tokio","vers":"1.0.0","deps":[],"cksum":"eee...","features":{},"yanked":false}
 `
 	osFS := osfs.New(tempDir)
-	must(gitxtest.CreateRepoFromYAML(yamlRepo, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(yamlRepo, &gitxtest.RepositoryOptions{
 		Storer: filesystem.NewStorage(osFS, cache.NewObjectLRUDefault()),
 	}))
 	{
@@ -206,7 +205,7 @@ commits:
         {"name":"rand","vers":"0.8.0","deps":[],"cksum":"mar4...","features":{},"yanked":false}
 `
 	osFS := osfs.New(tempDir)
-	testRepo := must(gitxtest.CreateRepoFromYAML(yamlRepo, &gitx.RepositoryOptions{
+	testRepo := must(gitxtest.CreateRepoFromYAML(yamlRepo, &gitxtest.RepositoryOptions{
 		Storer: filesystem.NewStorage(osFS, cache.NewObjectLRUDefault()),
 	}))
 	{
@@ -286,7 +285,7 @@ commits:
       config.json: |
         {"dl": "https://crates.io/api/v1/crates"}
 `
-	upstream := must(gitxtest.CreateRepoFromYAML(yamlRepo, &gitx.RepositoryOptions{
+	upstream := must(gitxtest.CreateRepoFromYAML(yamlRepo, &gitxtest.RepositoryOptions{
 		Storer: filesystem.NewStorage(osfs.New(tempDir), cache.NewObjectLRUDefault()),
 	}))
 	{

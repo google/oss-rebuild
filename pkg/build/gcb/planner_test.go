@@ -5,12 +5,16 @@ package gcb
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"google.golang.org/api/cloudbuild/v1"
 )
 
 func TestMakeDockerfile(t *testing.T) {
@@ -234,8 +238,9 @@ func TestGCBPlannerGeneratePlan(t *testing.T) {
 	}
 
 	opts := build.PlanOptions{
-		UseTimewarp:     false,
-		UseNetworkProxy: false,
+		UseTimewarp:        false,
+		UseNetworkProxy:    false,
+		SaveContainerImage: true,
 		Resources: build.Resources{
 			BaseImageConfig: baseImageConfig,
 		},
@@ -289,5 +294,422 @@ func TestGCBPlannerGeneratePlan(t *testing.T) {
 	}
 	if !foundUploadStep {
 		t.Error("Expected upload step not found")
+	}
+}
+
+func TestGCBPlannerNoSaveWhenFlagFalse(t *testing.T) {
+	ctx := context.Background()
+
+	config := PlannerConfig{
+		Project:        "test-project",
+		ServiceAccount: "test@test.iam.gserviceaccount.com",
+	}
+	planner := NewPlanner(config)
+
+	baseImageConfig := build.BaseImageConfig{
+		Default: "docker.io/library/alpine:3.19",
+	}
+
+	input := rebuild.Input{
+		Target: rebuild.Target{
+			Ecosystem: rebuild.NPM,
+			Package:   "test-package",
+			Version:   "1.0.0",
+			Artifact:  "test-package-1.0.0.tgz",
+		},
+		Strategy: &rebuild.ManualStrategy{
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
+			Deps:       "npm install",
+			Build:      "npm run build",
+			OutputPath: "dist/test-package-1.0.0.tgz",
+		},
+	}
+
+	opts := build.PlanOptions{
+		SaveContainerImage: false,
+		Resources: build.Resources{
+			BaseImageConfig: baseImageConfig,
+		},
+	}
+
+	plan, err := planner.GeneratePlan(ctx, input, opts)
+	if err != nil {
+		t.Fatalf("GeneratePlan failed: %v", err)
+	}
+
+	for _, step := range plan.Steps {
+		if step.Script != "" && strings.Contains(step.Script, "docker save") {
+			t.Error("Save step should not be present when SaveContainerImage is false")
+		}
+	}
+}
+
+func policyBlock() string {
+	var b string
+	for i, policy := range tetragonPoliciesYaml {
+		b += fmt.Sprintf(
+			"cat > /workspace/tetragon/policy_%d.yaml <<EOPOLICY\n%sEOPOLICY\ndocker exec tetragon tetra tracingpolicy add /workspace/tetragon/policy_%d.yaml\n",
+			i, policy, i)
+	}
+	return b
+}
+
+func TestGCBPlannerBuildScriptWithSyscallMonitor(t *testing.T) {
+	ctx := context.Background()
+
+	config := PlannerConfig{
+		Project:        "test-project",
+		ServiceAccount: "test@test.iam.gserviceaccount.com",
+	}
+	planner := NewPlanner(config)
+
+	baseImageConfig := build.BaseImageConfig{
+		Default: "docker.io/library/alpine:3.19",
+	}
+
+	input := rebuild.Input{
+		Target: rebuild.Target{
+			Ecosystem: rebuild.NPM,
+			Package:   "test-package",
+			Version:   "1.0.0",
+			Artifact:  "test-package-1.0.0.tgz",
+		},
+		Strategy: &rebuild.ManualStrategy{
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
+			Deps:       "npm install",
+			Build:      "npm run build",
+			OutputPath: "dist/test-package-1.0.0.tgz",
+		},
+	}
+
+	opts := build.PlanOptions{
+		UseSyscallMonitor: true,
+		Resources: build.Resources{
+			BaseImageConfig: baseImageConfig,
+			AssetStore:      rebuild.NewFilesystemAssetStore(memfs.New()),
+		},
+	}
+
+	plan, err := planner.GeneratePlan(ctx, input, opts)
+	if err != nil {
+		t.Fatalf("GeneratePlan failed: %v", err)
+	}
+
+	want := textwrap.Dedent(`
+			#!/usr/bin/env bash
+			set -eux
+			echo 'Starting rebuild for {Ecosystem:npm Package:test-package Version:1.0.0 Artifact:test-package-1.0.0.tgz}'
+			mkdir -p /workspace/tetragon/
+			touch /workspace/tetragon.jsonl
+			export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon.jsonl:/workspace/tetragon.jsonl -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --export-filename=/workspace/tetragon.jsonl --export-file-max-size-mb=2048)
+			grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
+			TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
+			SYSGRAPH_PID=0
+			PROXY_PID=0
+			`)[1:] + policyBlock() + textwrap.Dedent(`
+			cat <<'EOS' | docker buildx build --tag=img -
+			`)[1:] + plan.Dockerfile + "\nEOS" + textwrap.Dedent(`
+
+			docker run --name=container img
+			echo '=== Build finished, signaling sysgraph to drain ==='
+			docker stop -t 30 tetragon
+			`)[1:]
+
+	if diff := cmp.Diff(want, plan.Steps[0].Script); diff != "" {
+		t.Errorf("build script mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
+	ctx := context.Background()
+
+	config := PlannerConfig{
+		Project:        "test-project",
+		ServiceAccount: "test@test.iam.gserviceaccount.com",
+	}
+	planner := NewPlanner(config)
+
+	baseImageConfig := build.BaseImageConfig{
+		Default: "docker.io/library/alpine:3.19",
+	}
+
+	input := rebuild.Input{
+		Target: rebuild.Target{
+			Ecosystem: rebuild.NPM,
+			Package:   "test-package",
+			Version:   "1.0.0",
+			Artifact:  "test-package-1.0.0.tgz",
+		},
+		Strategy: &rebuild.ManualStrategy{
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
+			Deps:       "npm install",
+			Build:      "npm run build",
+			OutputPath: "dist/test-package-1.0.0.tgz",
+		},
+	}
+
+	sysgraphURL := "https://storage.googleapis.com/bucket/tetragon_sysgraph"
+	proxyURL := "https://storage.googleapis.com/bucket/proxy"
+
+	for _, tc := range []struct {
+		name string
+		opts build.PlanOptions
+		want func(dockerfile string) string
+	}{
+		{
+			name: "Standard without auth",
+			opts: build.PlanOptions{
+				UseSyscallMonitor: true,
+				Resources: build.Resources{
+					BaseImageConfig: baseImageConfig,
+					AssetStore:      rebuild.NewFilesystemAssetStore(memfs.New()),
+					ToolURLs: map[build.ToolType]string{
+						build.TetragonSysgraphTool: sysgraphURL,
+					},
+				},
+			},
+			want: func(dockerfile string) string {
+				return textwrap.Dedent(`
+					#!/usr/bin/env bash
+					set -eux
+					echo 'Starting rebuild for {Ecosystem:npm Package:test-package Version:1.0.0 Artifact:test-package-1.0.0.tgz}'
+					mkdir -p /workspace/tetragon/
+					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+					grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
+					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
+					curl -O https://storage.googleapis.com/bucket/tetragon_sysgraph
+					chmod +x tetragon_sysgraph
+					docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
+					docker logs --follow sysgraph &
+					SYSGRAPH_PID=$(docker inspect -f '{{.State.Pid}}' sysgraph)
+					PROXY_PID=0
+					`)[1:] + policyBlock() + textwrap.Dedent(`
+					cat <<'EOS' | docker buildx build --tag=img -
+					`)[1:] + dockerfile + "\nEOS" + textwrap.Dedent(`
+
+					docker run --name=container img
+					echo '=== Build finished, signaling sysgraph to drain ==='
+					docker kill -s USR1 sysgraph || true
+					docker wait sysgraph || true
+					docker stop -t 5 tetragon
+					`)[1:]
+			},
+		},
+		{
+			name: "Standard with auth",
+			opts: build.PlanOptions{
+				UseSyscallMonitor: true,
+				Resources: build.Resources{
+					BaseImageConfig: baseImageConfig,
+					AssetStore:      rebuild.NewFilesystemAssetStore(memfs.New()),
+					ToolURLs: map[build.ToolType]string{
+						build.TetragonSysgraphTool: sysgraphURL,
+					},
+					ToolAuthRequired: []string{"https://storage.googleapis.com/"},
+				},
+			},
+			want: func(dockerfile string) string {
+				return textwrap.Dedent(`
+					#!/usr/bin/env bash
+					set -eux
+					echo 'Starting rebuild for {Ecosystem:npm Package:test-package Version:1.0.0 Artifact:test-package-1.0.0.tgz}'
+					mkdir -p /workspace/tetragon/
+					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+					grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
+					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
+					apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test@test.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+					(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
+					curl -O -H @/tmp/auth_header https://storage.googleapis.com/bucket/tetragon_sysgraph
+					chmod +x tetragon_sysgraph
+					docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
+					docker logs --follow sysgraph &
+					SYSGRAPH_PID=$(docker inspect -f '{{.State.Pid}}' sysgraph)
+					PROXY_PID=0
+					`)[1:] + policyBlock() + textwrap.Dedent(`
+					cat <<'EOS' | docker buildx build --tag=img -
+					`)[1:] + dockerfile + "\nEOS" + textwrap.Dedent(`
+
+					docker run --name=container img
+					echo '=== Build finished, signaling sysgraph to drain ==='
+					docker kill -s USR1 sysgraph || true
+					docker wait sysgraph || true
+					docker stop -t 5 tetragon
+					`)[1:]
+			},
+		},
+		{
+			name: "Proxy without auth",
+			opts: build.PlanOptions{
+				UseSyscallMonitor: true,
+				UseNetworkProxy:   true,
+				Resources: build.Resources{
+					BaseImageConfig: baseImageConfig,
+					AssetStore:      rebuild.NewFilesystemAssetStore(memfs.New()),
+					ToolURLs: map[build.ToolType]string{
+						build.TetragonSysgraphTool: sysgraphURL,
+						build.ProxyTool:            proxyURL,
+					},
+				},
+			},
+			want: func(dockerfile string) string {
+				return textwrap.Dedent(`
+					#!/usr/bin/env bash
+					set -eux
+					echo 'Starting rebuild for {Ecosystem:npm Package:test-package Version:1.0.0 Artifact:test-package-1.0.0.tgz}'
+					curl -O https://storage.googleapis.com/bucket/proxy
+					chmod +x proxy
+					docker network create proxynet
+					useradd --system proxyu
+					uid=$(id -u proxyu)
+					docker run --detach --name=proxy --network=proxynet --privileged -v=/workspace/proxy:/workspace/proxy -v=/var/run/docker.sock:/var/run/docker.sock --entrypoint /bin/sh gcr.io/cloud-builders/docker -euxc '
+						useradd --system --non-unique --uid '$uid' proxyu
+						chown proxyu /workspace/proxy
+						chown proxyu /var/run/docker.sock
+						su - proxyu -c "/workspace/proxy \
+							-verbose=true \
+							-http_addr=:3128 \
+							-tls_addr=:3129 \
+							-ctrl_addr=:3127 \
+							-docker_addr=:3130 \
+							-docker_socket=/var/run/docker.sock \
+							-docker_truststore_env_vars=PIP_CERT,CURL_CA_BUNDLE,NODE_EXTRA_CA_CERTS,CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE,NIX_SSL_CERT_FILE \
+							-docker_network=container:build \
+							-docker_java_truststore=true"
+					'
+					proxyIP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' proxy)
+					docker network connect cloudbuild proxy
+					docker run --detach --name=build --network=proxynet --entrypoint=/bin/sh gcr.io/cloud-builders/docker -c 'sleep infinity'
+					docker exec --privileged build /bin/sh -euxc '
+						iptables -t nat -A OUTPUT -p tcp --dport 3128 -j ACCEPT
+						iptables -t nat -A OUTPUT -p tcp --dport 3129 -j ACCEPT
+						iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner '$uid' -j ACCEPT
+						iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination '$proxyIP':3128
+						iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':3129
+					'
+					mkdir -p /workspace/tetragon/
+					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
+					grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
+					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
+					curl -O https://storage.googleapis.com/bucket/tetragon_sysgraph
+					chmod +x tetragon_sysgraph
+					docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
+					docker logs --follow sysgraph &
+					SYSGRAPH_PID=$(docker inspect -f '{{.State.Pid}}' sysgraph)
+					PROXY_PID=$(docker inspect -f '{{.State.Pid}}' proxy)
+					`)[1:] + policyBlock() + textwrap.Dedent(`
+					cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs --mount=type=secret,id=PROXYCERT,env=PIP_CERT --mount=type=secret,id=PROXYCERT,env=CURL_CA_BUNDLE --mount=type=secret,id=PROXYCERT,env=NODE_EXTRA_CA_CERTS --mount=type=secret,id=PROXYCERT,env=CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE --mount=type=secret,id=PROXYCERT,env=NIX_SSL_CERT_FILE|" > /Dockerfile
+					`)[1:] + dockerfile + "\nEOS" + textwrap.Dedent(`
+
+					docker cp /Dockerfile build:/Dockerfile
+					docker exec build /bin/sh -euxc '
+						curl http://proxy:3127/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
+						export DOCKER_HOST=tcp://proxy:3130 PROXYCERT=/etc/ssl/certs/proxy.crt
+						docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
+						cat /Dockerfile | docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT --load --tag=img -
+						docker run --name=container img
+					'
+					echo '=== Build finished, signaling sysgraph to drain ==='
+					docker kill -s USR1 sysgraph || true
+					docker wait sysgraph || true
+					docker stop -t 5 tetragon
+					curl http://proxy:3127/summary > /workspace/netlog.json
+					`)[1:]
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, err := planner.GeneratePlan(ctx, input, tc.opts)
+			if err != nil {
+				t.Fatalf("GeneratePlan failed: %v", err)
+			}
+			if diff := cmp.Diff(tc.want(plan.Dockerfile), plan.Steps[0].Script); diff != "" {
+				t.Errorf("build script mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestGCBPlannerSavePostBuildContainer(t *testing.T) {
+	ctx := context.Background()
+
+	config := PlannerConfig{
+		Project:        "test-project",
+		ServiceAccount: "test@test.iam.gserviceaccount.com",
+	}
+	planner := NewPlanner(config)
+
+	baseImageConfig := build.BaseImageConfig{
+		Default: "docker.io/library/alpine:3.19",
+	}
+
+	input := rebuild.Input{
+		Target: rebuild.Target{
+			Ecosystem: rebuild.NPM,
+			Package:   "test-package",
+			Version:   "1.0.0",
+			Artifact:  "test-package-1.0.0.tgz",
+		},
+		Strategy: &rebuild.ManualStrategy{
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Requires: rebuild.RequiredEnv{
+				SystemDeps: []string{"git", "node", "npm"},
+			},
+			Deps:       "npm install",
+			Build:      "npm run build",
+			OutputPath: "dist/test-package-1.0.0.tgz",
+		},
+	}
+
+	opts := build.PlanOptions{
+		SavePostBuildContainer: true,
+		Resources: build.Resources{
+			BaseImageConfig: baseImageConfig,
+			AssetStore:      rebuild.NewFilesystemAssetStore(memfs.New()),
+			ToolURLs: map[build.ToolType]string{
+				build.GSUtilTool: "https://storage.googleapis.com/test-bucket/gsutil_writeonly",
+			},
+		},
+	}
+
+	plan, err := planner.GeneratePlan(ctx, input, opts)
+	if err != nil {
+		t.Fatalf("GeneratePlan failed: %v", err)
+	}
+
+	if len(plan.Steps) != 4 {
+		t.Fatalf("Expected 4 steps, got %d", len(plan.Steps))
+	}
+
+	// Skip step 0 (build) since its script embeds the full Dockerfile which is tested elsewhere.
+	wantSteps := []*cloudbuild.BuildStep{
+		{
+			Name: "gcr.io/cloud-builders/docker",
+			Args: []string{"cp", "container:/out/test-package-1.0.0.tgz", "/workspace/test-package-1.0.0.tgz"},
+		},
+		{
+			Name:   "gcr.io/cloud-builders/docker",
+			Script: "docker commit container container-postbuild && docker save container-postbuild | gzip > /workspace/image_postbuild.tgz && docker rmi container-postbuild",
+		},
+		{
+			Name: "docker.io/library/alpine:3.19",
+			Script: `set -eux
+wget https://storage.googleapis.com/test-bucket/gsutil_writeonly
+chmod +x gsutil_writeonly
+./gsutil_writeonly cp /workspace/test-package-1.0.0.tgz file:///npm/test-package/1.0.0/test-package-1.0.0.tgz/test-package-1.0.0.tgz
+./gsutil_writeonly cp /workspace/image_postbuild.tgz file:///npm/test-package/1.0.0/test-package-1.0.0.tgz/image_postbuild.tgz
+`,
+		},
+	}
+	if diff := cmp.Diff(wantSteps, plan.Steps[1:]); diff != "" {
+		t.Errorf("Steps[1:] mismatch (-want +got):\n%s", diff)
 	}
 }

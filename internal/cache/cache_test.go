@@ -5,6 +5,7 @@ package cache
 
 import (
 	"errors"
+	"math/rand"
 	"testing"
 	"time"
 )
@@ -60,7 +61,7 @@ func TestCoalescingMemoryCache_GetOrSet(t *testing.T) {
 		go func() {
 			val, err := cache.GetOrSet("key", func() (any, error) {
 				called++
-				time.Sleep(time.Second)
+				time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
 				return want, nil
 			})
 			if err != nil {

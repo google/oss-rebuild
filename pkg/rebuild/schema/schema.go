@@ -17,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/rubygems"
+	debreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
 )
@@ -27,6 +28,7 @@ import (
 type StrategyOneOf struct {
 	LocationHint         *rebuild.LocationHint          `json:"rebuild_location_hint,omitempty" yaml:"rebuild_location_hint,omitempty"`
 	PureWheelBuild       *pypi.PureWheelBuild           `json:"pypi_pure_wheel_build,omitempty" yaml:"pypi_pure_wheel_build,omitempty"`
+	PyPISdistBuild       *pypi.SdistBuild               `json:"pypi_sdist_build,omitempty" yaml:"pypi_sdist_build,omitempty"`
 	NPMPackBuild         *npm.NPMPackBuild              `json:"npm_pack_build,omitempty" yaml:"npm_pack_build,omitempty"`
 	NPMCustomBuild       *npm.NPMCustomBuild            `json:"npm_custom_build,omitempty" yaml:"npm_custom_build,omitempty"`
 	CratesIOCargoPackage *cratesio.CratesIOCargoPackage `json:"cratesio_cargo_package,omitempty" yaml:"cratesio_cargo_package,omitempty"`
@@ -48,6 +50,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.LocationHint = t
 	case *pypi.PureWheelBuild:
 		oneof.PureWheelBuild = t
+	case *pypi.SdistBuild:
+		oneof.PyPISdistBuild = t
 	case *maven.MavenBuild:
 		oneof.MavenBuild = t
 	case *maven.GradleBuild:
@@ -86,6 +90,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.PureWheelBuild != nil {
 			num++
 			s = oneof.PureWheelBuild
+		}
+		if oneof.PyPISdistBuild != nil {
+			num++
+			s = oneof.PyPISdistBuild
 		}
 		if oneof.NPMPackBuild != nil {
 			num++
@@ -206,6 +214,15 @@ type SmoketestResponse struct {
 	Executor string
 }
 
+func validateDebianVersion(version string) error {
+	if v, err := debreg.ParseVersion(version); err != nil {
+		return errors.Wrap(err, "parsing version")
+	} else if v.Epoch == "" {
+		return errors.New("version must specify epoch prefix e.g. 1:")
+	}
+	return nil
+}
+
 // RebuildPackageRequest is a single request to the rebuild package endpoint.
 type RebuildPackageRequest struct {
 	Ecosystem         rebuild.Ecosystem `form:",required"`
@@ -231,6 +248,11 @@ func (r RebuildPackageRequest) Validate() error {
 	if r.Artifact == "" {
 		return errors.New("artifact must not be empty")
 	}
+	if r.Ecosystem == rebuild.Debian {
+		if err := validateDebianVersion(r.Version); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -254,6 +276,11 @@ func (req InferenceRequest) Validate() error {
 	}
 	if req.Artifact == "" {
 		return errors.New("artifact must not be empty")
+	}
+	if req.Ecosystem == rebuild.Debian {
+		if err := validateDebianVersion(req.Version); err != nil {
+			return err
+		}
 	}
 	return nil
 }

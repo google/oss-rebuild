@@ -21,9 +21,11 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/glob"
-	"github.com/google/oss-rebuild/internal/llm"
+	"github.com/google/oss-rebuild/internal/pipe"
+	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/diffr"
+	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -41,8 +43,6 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/ide/textinput"
 	"github.com/google/oss-rebuild/tools/ctl/ide/tmux"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
-	"github.com/google/oss-rebuild/tools/ctl/pipe"
-	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 	"google.golang.org/genai"
@@ -66,8 +66,9 @@ func runLocal(ctx context.Context, executor build.Executor, prebuildConfig rebui
 	assets := rebuild.NewFilesystemAssetStore(memfs.New())
 	h, err := executor.Start(ctx, inp, build.Options{
 		// Use a constant BuildID to make sure we overwrite the container each run
-		BuildID:     containerName,
-		UseTimewarp: meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
+		BuildID:            containerName,
+		UseTimewarp:        meta.AllRebuilders[inp.Target.Ecosystem].UsesTimewarp(inp),
+		SaveContainerImage: true,
 		Resources: build.Resources{
 			AssetStore: assets,
 			ToolURLs: map[build.ToolType]string{

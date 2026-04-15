@@ -12,11 +12,12 @@ import (
 	"os"
 
 	"cloud.google.com/go/firestore"
+	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/agentapiservice"
-	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
 )
@@ -47,6 +48,10 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
+	gcsClient, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating GCS client")
+	}
 	svc, err := cloudbuild.NewService(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating CloudBuild service")
@@ -65,6 +70,7 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 		Project:            *project,
 		ServiceAccount:     *buildRemoteIdentity,
 		LogsBucket:         *logsBucket,
+		LogsClientFunc:     buildgcb.GCSLogsClient(gcsClient),
 		Client:             gcbClient,
 		BuilderName:        fmt.Sprintf("%s@%s", os.Getenv("K_SERVICE"), os.Getenv("K_REVISION")),
 		TerminateOnTimeout: true,

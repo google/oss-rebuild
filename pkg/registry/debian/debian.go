@@ -118,6 +118,15 @@ func (v *Version) Epochless() string {
 	return strings.TrimPrefix(v.String(), v.Epoch+":")
 }
 
+// ImpliedEpoch returns any explicit epoch, otherwise "1".
+func (v *Version) ImpliedEpoch() string {
+	if v.Epoch != "" {
+		return v.Epoch
+	} else {
+		return "1"
+	}
+}
+
 type ArtifactIdentifier struct {
 	// Name is the name of the artifact (different from the source package)
 	Name string
@@ -206,8 +215,11 @@ func (r HTTPRegistry) BuildInfo(ctx context.Context, component, name string, ver
 		return "", nil, err
 	}
 	// Validate that the fetched buildinfo matches the requested version (including epoch).
-	// The file name excludes the epoch, so we must rely on the file content.
-	if b.Version != version.String() {
+	buildinfoVer, err := ParseVersion(b.Version)
+	if err != nil {
+		return "", nil, errors.Wrap(err, "parsing version from .buildinfo")
+	}
+	if buildinfoVer.Epochless() != version.Epochless() || buildinfoVer.ImpliedEpoch() != version.ImpliedEpoch() {
 		return "", nil, errors.Errorf("buildinfo version mismatch: requested %s, got %s", version, b.Version)
 	}
 	return buildinfoURL, b, nil

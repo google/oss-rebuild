@@ -86,7 +86,7 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "--name", "test-build-123", "-v", "/tmp/oss-rebuild-test-build-123:/out", "-w", "/workspace", "alpine:3.19", "/bin/sh", "-c", "echo hello"},
+					Args: []string{"run", "--rm", "--name", "test-build-123", "-v", "/tmp/oss-rebuild-test-build-123:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "/bin/sh", "-c", "echo hello"},
 				},
 			},
 			expectSuccess: true,
@@ -138,7 +138,7 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name:  "docker",
-					Args:  []string{"run", "--rm", "--name", "test-build-789", "-v", "/tmp/oss-rebuild-test-build-789:/out", "alpine:3.19", "/bin/sh", "-c", "false"},
+					Args:  []string{"run", "--rm", "--name", "test-build-789", "-v", "/tmp/oss-rebuild-test-build-789:/out", "--ulimit", "core=0", "alpine:3.19", "/bin/sh", "-c", "false"},
 					Error: errors.New("exit status 1"),
 				},
 			},
@@ -217,7 +217,7 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "--name", "test-build-workdir", "-v", "/tmp/oss-rebuild-test-build-workdir:/out", "-w", "/custom/workdir", "ubuntu:20.04", "/bin/sh", "-c", "pwd"},
+					Args: []string{"run", "--rm", "--name", "test-build-workdir", "-v", "/tmp/oss-rebuild-test-build-workdir:/out", "-w", "/custom/workdir", "--ulimit", "core=0", "ubuntu:20.04", "/bin/sh", "-c", "pwd"},
 				},
 			},
 			expectSuccess: true,
@@ -386,6 +386,84 @@ func TestDockerRunExecutorConcurrency(t *testing.T) {
 	closeCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	executor.Close(closeCtx)
+}
+
+func TestDockerRunExecutorSavePostBuildContainer(t *testing.T) {
+	cmdExecutor := NewMockCommandExecutor()
+	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+		if opts.Output != nil {
+			opts.Output.Write([]byte("Build successful\n"))
+		}
+		return nil
+	})
+	executor, err := NewDockerRunExecutor(DockerRunExecutorConfig{
+		Planner: &mockPlanner{
+			plan: &DockerRunPlan{
+				Image:      "alpine:3.19",
+				Script:     "echo hello",
+				OutputPath: "/out/result.txt",
+				WorkingDir: "/workspace",
+			},
+		},
+		CommandExecutor: cmdExecutor,
+		MaxParallel:     1,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+	ctx := context.Background()
+	handle, err := executor.Start(ctx, rebuild.Input{
+		Target: rebuild.Target{
+			Ecosystem: rebuild.NPM,
+			Package:   "test-pkg",
+			Version:   "1.0.0",
+			Artifact:  "test-pkg-1.0.0.tgz",
+		},
+	}, build.Options{
+		BuildID:                "test-postbuild",
+		SavePostBuildContainer: true,
+		Resources: build.Resources{
+			AssetStore: newMockAssetStore(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error from Start: %v", err)
+	}
+	result, _ := handle.Wait(ctx)
+	if result.Error != nil {
+		t.Fatalf("Expected success, got error: %v", result.Error)
+	}
+	commands := cmdExecutor.GetCommands()
+	expectedCommands := []MockCommand{
+		{
+			Name: "docker",
+			Args: []string{"run", "--name", "test-postbuild", "-v", "/tmp/oss-rebuild-test-postbuild:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "/bin/sh", "-c", "echo hello"},
+		},
+		{
+			Name: "docker",
+			Args: []string{"commit", "test-postbuild", "test-postbuild-postbuild"},
+		},
+		{
+			Name: "sh",
+			Args: []string{"-c", "docker save test-postbuild-postbuild | gzip > /tmp/oss-rebuild-test-postbuild/image_postbuild.tgz"},
+		},
+		{
+			Name: "docker",
+			Args: []string{"rmi", "test-postbuild-postbuild"},
+		},
+		{
+			Name: "docker",
+			Args: []string{"rm", "test-postbuild"},
+		},
+	}
+	if diff := cmp.Diff(expectedCommands, commands, cmp.Comparer(func(e1 error, e2 error) bool {
+		if e1 == nil || e2 == nil {
+			return e1 == e2
+		}
+		return e1.Error() == e2.Error()
+	})); diff != "" {
+		t.Errorf("Command mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestDockerRunExecutorConfig(t *testing.T) {

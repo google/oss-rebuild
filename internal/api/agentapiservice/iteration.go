@@ -116,8 +116,10 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		Strategy: strategy,
 	}
 	h, err := deps.GCBExecutor.Start(ctx, input, build.Options{
-		BuildID:     obliviousID,
-		UseTimewarp: meta.AllRebuilders[input.Target.Ecosystem].UsesTimewarp(input),
+		BuildID:            obliviousID,
+		UseTimewarp:        meta.AllRebuilders[input.Target.Ecosystem].UsesTimewarp(input),
+		SaveContainerImage: true,
+		// TODO: Should we set a Timeout?
 		Resources: build.Resources{
 			AssetStore:       store,
 			ToolURLs:         toolURLs,

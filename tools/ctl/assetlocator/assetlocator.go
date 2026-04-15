@@ -10,7 +10,7 @@ import (
 	"io"
 
 	gcs "cloud.google.com/go/storage"
-	"github.com/google/oss-rebuild/internal/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -62,7 +62,7 @@ func (m *assetStore) Reader(ctx context.Context, a rebuild.Asset) (io.ReadCloser
 		// NOTE: RebuildRemote doesn't store the upstream, so we have to re-download it.
 		// If RebuildRemote stored the upstream in the debug bucket, this wouldn't be necessary.
 		return meta.AllRebuilders[a.Target.Ecosystem].Upstream(ctx, a.Target, m.metaAssetStore.Mux)
-	case rebuild.RebuildAsset, rebuild.TetragonLogAsset:
+	case rebuild.RebuildAsset, rebuild.TetragonLogAsset, rebuild.SysgraphAsset, rebuild.ProxyNetlogAsset:
 		// NOTE: RebuildRemote stores the RebuildAsset and TetragonLogAsset in the metadata bucket.
 		// If rebuild remote copied the rebuild artifact into debug, this wouldn't be necessary.
 		bi, err := m.buildInfo(ctx, a.Target)
@@ -88,8 +88,7 @@ func (m *assetStore) Reader(ctx context.Context, a rebuild.Asset) (io.ReadCloser
 		if err != nil {
 			return nil, errors.Wrap(err, "creating gcs client")
 		}
-		obj := client.Bucket(m.metaAssetStore.LogsBucket).Object(gcb.MergedLogFile(bi.BuildID))
-		return obj.NewReader(ctx)
+		return gcb.NewGCSLogsClient(client, m.metaAssetStore.LogsBucket).ReadBuildLogs(ctx, bi.BuildID)
 	default:
 		return nil, errors.Errorf("Unsupported asset type: %s", a.Type)
 	}

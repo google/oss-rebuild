@@ -4,6 +4,7 @@
 package gcb
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -12,14 +13,23 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/google/oss-rebuild/internal/gcb/gcbtest"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb/gcbtest"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/googleapi"
 )
 
-func TestGCBExecutorStart(t *testing.T) {
+var mockLogsClientFunc = GCSLogsClientFunc(func(bucket string) gcb.LogsClient {
+	return &gcbtest.MockLogsClient{
+		ReadBuildLogsFunc: func(ctx context.Context, buildID string) (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewBuffer(nil)), nil
+		},
+	}
+})
+
+func TestExecutorStart(t *testing.T) {
 	ctx := context.Background()
 
 	// Create mock client
@@ -57,7 +67,9 @@ func TestGCBExecutorStart(t *testing.T) {
 	}
 	createChan := make(chan struct{})
 	defer close(createChan)
+	var gotBuild *cloudbuild.Build
 	mockClient.CreateBuildFunc = func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
+		gotBuild = build
 		<-createChan
 		return operation, nil
 	}
@@ -71,12 +83,16 @@ func TestGCBExecutorStart(t *testing.T) {
 		Project:          "test-project",
 		ServiceAccount:   "test@test.iam.gserviceaccount.com",
 		LogsBucket:       "test-bucket",
+		LogsClientFunc:   mockLogsClientFunc,
 		OutputBufferSize: 1024,
+		ExtraTags: map[string]string{
+			"foo": "bar",
+		},
 	}
 
 	executor, err := NewExecutor(config)
 	if err != nil {
-		t.Fatalf("NewGCBExecutor failed: %v", err)
+		t.Fatalf("NewExecutor failed: %v", err)
 	}
 
 	// Create test input
@@ -109,6 +125,7 @@ func TestGCBExecutorStart(t *testing.T) {
 		Resources: build.Resources{
 			BaseImageConfig: baseImageConfig,
 		},
+		Timeout: 10 * time.Minute,
 	}
 
 	// Test Start method
@@ -138,13 +155,32 @@ func TestGCBExecutorStart(t *testing.T) {
 		t.Fatal(result.Error)
 	}
 
+	if gotBuild.Timeout != "600s" {
+		t.Errorf("Timeout = %s, want 600s", gotBuild.Timeout)
+	}
+
+	// Verify tags
+	expectedTags := []string{"ecosystem-npm", "package-test-package", "version-1.0.0", "foo-bar"}
+	for _, expected := range expectedTags {
+		found := false
+		for _, actual := range gotBuild.Tags {
+			if actual == expected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Tag %s not found in %v", expected, gotBuild.Tags)
+		}
+	}
+
 	// Clean up
 	if err := executor.Close(ctx); err != nil {
 		t.Errorf("Close failed: %v", err)
 	}
 }
 
-func TestGCBExecutorStatus(t *testing.T) {
+func TestExecutorStatus(t *testing.T) {
 	mockClient := &gcbtest.MockClient{}
 
 	config := ExecutorConfig{
@@ -152,11 +188,12 @@ func TestGCBExecutorStatus(t *testing.T) {
 		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 		LogsBucket:     "test-bucket",
+		LogsClientFunc: mockLogsClientFunc,
 	}
 
 	executor, err := NewExecutor(config)
 	if err != nil {
-		t.Fatalf("NewGCBExecutor failed: %v", err)
+		t.Fatalf("NewExecutor failed: %v", err)
 	}
 
 	status := executor.Status()
@@ -174,7 +211,7 @@ func TestGCBExecutorStatus(t *testing.T) {
 	}
 }
 
-func TestGCBExecutorClose(t *testing.T) {
+func TestExecutorClose(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -185,11 +222,12 @@ func TestGCBExecutorClose(t *testing.T) {
 		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 		LogsBucket:     "test-bucket",
+		LogsClientFunc: mockLogsClientFunc,
 	}
 
 	executor, err := NewExecutor(config)
 	if err != nil {
-		t.Fatalf("NewGCBExecutor failed: %v", err)
+		t.Fatalf("NewExecutor failed: %v", err)
 	}
 
 	err = executor.Close(ctx)
@@ -198,7 +236,7 @@ func TestGCBExecutorClose(t *testing.T) {
 	}
 }
 
-func TestGCBExecutorWithSyscallMonitor(t *testing.T) {
+func TestExecutorWithSyscallMonitor(t *testing.T) {
 	ctx := context.Background()
 
 	mockClient := &gcbtest.MockClient{}
@@ -221,11 +259,12 @@ func TestGCBExecutorWithSyscallMonitor(t *testing.T) {
 		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 		LogsBucket:     "test-bucket",
+		LogsClientFunc: mockLogsClientFunc,
 	}
 
 	executor, err := NewExecutor(config)
 	if err != nil {
-		t.Fatalf("NewGCBExecutor failed: %v", err)
+		t.Fatalf("NewExecutor failed: %v", err)
 	}
 
 	input := rebuild.Input{
@@ -286,7 +325,7 @@ func TestGCBExecutorWithSyscallMonitor(t *testing.T) {
 	}
 }
 
-func TestGCBExecutorAssetUpload(t *testing.T) {
+func TestExecutorAssetUpload(t *testing.T) {
 	ctx := context.Background()
 	// Create mock asset store
 	fsStore := rebuild.NewFilesystemAssetStore(memfs.New())
@@ -333,6 +372,7 @@ func TestGCBExecutorAssetUpload(t *testing.T) {
 		Project:          "test-project",
 		ServiceAccount:   "test@test.iam.gserviceaccount.com",
 		LogsBucket:       "test-bucket",
+		LogsClientFunc:   mockLogsClientFunc,
 		OutputBufferSize: 1024,
 		BuilderName:      "test-k-revision-123",
 	}
@@ -471,6 +511,7 @@ func TestGCBExecutorFailedBuild(t *testing.T) {
 		Project:          "test-project",
 		ServiceAccount:   "test@test.iam.gserviceaccount.com",
 		LogsBucket:       "test-bucket",
+		LogsClientFunc:   mockLogsClientFunc,
 		OutputBufferSize: 1024,
 	}
 	executor, err := NewExecutor(config)

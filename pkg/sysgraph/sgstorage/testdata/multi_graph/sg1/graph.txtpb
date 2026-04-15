@@ -1,0 +1,13 @@
+# proto-file: github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph/sysgraph.proto
+# proto-message: SysGraph
+
+id: "abcdefg"
+metadata: {
+  key: "foo"
+  value: "bar"
+}
+metadata: {
+  key: "baz"
+  value: "qux"
+}
+entry_point_action_ids: 1

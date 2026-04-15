@@ -19,7 +19,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/safememfs"
 )
@@ -36,7 +35,7 @@ commits:
         {"dl": "https://crates.io/api/v1/crates"}
       test.txt: "Test content for branch %s"
 `, branchName, branchName, branchName)
-	must(gitxtest.CreateRepoFromYAML(yamlRepo, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(yamlRepo, &gitxtest.RepositoryOptions{
 		Storer: filesystem.NewStorage(fs, cache.NewObjectLRUDefault()),
 	}))
 }
@@ -103,7 +102,7 @@ commits:
         {"dl": "https://crates.io/api/v1/crates"}
 `
 	upstreamFs := osfs.New(tempDir)
-	must(gitxtest.CreateRepoFromYAML(upstreamYaml, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(upstreamYaml, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(upstreamFs, cache.NewObjectLRUDefault()),
 		Worktree: memfs.New(),
 	}))
@@ -184,7 +183,7 @@ commits:
       config.json: |
         {"dl": "https://crates.io/api/v1/crates"}
 `
-	must(gitxtest.CreateRepoFromYAML(upstreamYaml, &gitx.RepositoryOptions{Storer: storer}))
+	must(gitxtest.CreateRepoFromYAML(upstreamYaml, &gitxtest.RepositoryOptions{Storer: storer}))
 
 	// Patch the archiveIndexURL to point to our test repository
 	{
@@ -256,7 +255,7 @@ commits:
         {"dl": "https://crates.io/api/v1/crates"}
 `
 	currentUpstreamFs := osfs.New(currentTempDir)
-	must(gitxtest.CreateRepoFromYAML(currentUpstreamYaml, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(currentUpstreamYaml, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(currentUpstreamFs, cache.NewObjectLRUDefault()),
 		Worktree: memfs.New(),
 	}))
@@ -286,7 +285,7 @@ commits:
         {"dl": "https://crates.io/api/v1/crates"}
 `
 	archiveUpstreamFs := osfs.New(archiveTempDir)
-	must(gitxtest.CreateRepoFromYAML(archiveUpstreamYaml, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(archiveUpstreamYaml, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(archiveUpstreamFs, cache.NewObjectLRUDefault()),
 		Worktree: memfs.New(),
 	}))
@@ -351,7 +350,7 @@ commits:
         {"dl": "https://crates.io/api/v1/crates"}
 `
 	upstreamFs := osfs.New(tempDir)
-	must(gitxtest.CreateRepoFromYAML(upstreamYaml, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(upstreamYaml, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(upstreamFs, cache.NewObjectLRUDefault()),
 		Worktree: memfs.New(),
 	}))
@@ -430,7 +429,7 @@ commits:
         {"dl": "https://crates.io/api/v1/crates"}
 `
 	upstreamFs := osfs.New(tempDir)
-	repo := must(gitxtest.CreateRepoFromYAML(upstreamYaml, &gitx.RepositoryOptions{
+	repo := must(gitxtest.CreateRepoFromYAML(upstreamYaml, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(upstreamFs, cache.NewObjectLRUDefault()),
 		Worktree: memfs.New(),
 	}))
@@ -532,7 +531,7 @@ commits:
         {"dl": "https://crates.io/api/v1/crates"}
 `
 	currentUpstreamFs := osfs.New(currentTempDir)
-	must(gitxtest.CreateRepoFromYAML(currentUpstreamYaml, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(currentUpstreamYaml, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(currentUpstreamFs, cache.NewObjectLRUDefault()),
 		Worktree: memfs.New(),
 	}))
@@ -562,7 +561,7 @@ commits:
         {"dl": "https://crates.io/api/v1/crates"}
 `
 	archiveUpstreamFs := osfs.New(archiveTempDir)
-	must(gitxtest.CreateRepoFromYAML(archiveUpstreamYaml, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(archiveUpstreamYaml, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(archiveUpstreamFs, cache.NewObjectLRUDefault()),
 		Worktree: memfs.New(),
 	}))
@@ -685,7 +684,7 @@ commits:
         {"dl": "https://crates.io/api/v1/crates"}
 `
 	archiveUpstreamFs := osfs.New(archiveTempDir)
-	must(gitxtest.CreateRepoFromYAML(archiveUpstreamYaml, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(archiveUpstreamYaml, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(archiveUpstreamFs, cache.NewObjectLRUDefault()),
 		Worktree: memfs.New(),
 	}))
@@ -779,7 +778,7 @@ commits:
 	}
 
 	archiveUpstreamFs := osfs.New(archiveTempDir)
-	must(gitxtest.CreateRepoFromYAML(archiveUpstreamYaml, &gitx.RepositoryOptions{
+	must(gitxtest.CreateRepoFromYAML(archiveUpstreamYaml, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(archiveUpstreamFs, cache.NewObjectLRUDefault()),
 		Worktree: memfs.New(),
 	}))

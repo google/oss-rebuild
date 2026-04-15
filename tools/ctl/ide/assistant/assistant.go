@@ -6,10 +6,10 @@ package assistant
 import (
 	"context"
 
-	"github.com/google/oss-rebuild/internal/llm"
+	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/tools/ctl/ide/chatbox"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
-	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
 )

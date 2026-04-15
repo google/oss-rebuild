@@ -107,10 +107,12 @@ func (e *DockerBuildExecutor) Start(ctx context.Context, input rebuild.Input, op
 		buildID = fmt.Sprintf("docker-build-%d", time.Now().UnixNano())
 	}
 	planOpts := build.PlanOptions{
-		UseTimewarp:       opts.UseTimewarp,
-		UseNetworkProxy:   opts.UseNetworkProxy,
-		UseSyscallMonitor: opts.UseSyscallMonitor,
-		Resources:         opts.Resources,
+		UseTimewarp:            opts.UseTimewarp,
+		UseNetworkProxy:        opts.UseNetworkProxy,
+		UseSyscallMonitor:      opts.UseSyscallMonitor,
+		Resources:              opts.Resources,
+		SaveContainerImage:     opts.SaveContainerImage,
+		SavePostBuildContainer: opts.SavePostBuildContainer,
 	}
 	plan, err := e.planner.GeneratePlan(ctx, input, planOpts)
 	if err != nil {
@@ -200,7 +202,12 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	multiWriter := io.MultiWriter(handle.output, outbuf)
 	// Build Docker image with streaming and captured output.
 	imageTag := handle.id
-	buildArgs := []string{"buildx", "build", "-t", imageTag, "-"}
+	buildArgs := []string{"buildx", "build", "-t", imageTag}
+	if plan.ContextDir != "" {
+		buildArgs = append(buildArgs, "-f-", plan.ContextDir)
+	} else {
+		buildArgs = append(buildArgs, "-")
+	}
 	err := e.cmdExecutor.Execute(ctx, CommandOptions{
 		Input:  strings.NewReader(plan.Dockerfile),
 		Output: multiWriter,
@@ -214,23 +221,44 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	}
 	// Run Docker container with streaming and captured output.
 	runArgs := []string{"run"}
-	if !e.retainContainer {
+	if !e.retainContainer && !opts.SavePostBuildContainer {
 		runArgs = append(runArgs, "--rm")
+	}
+	if opts.SavePostBuildContainer {
+		runArgs = append(runArgs, "--name", handle.id)
 	}
 	runArgs = append(runArgs, "-v", fmt.Sprintf("%s:%s", hostOutputPath, path.Dir(plan.OutputPath)), imageTag)
 	if plan.Privileged {
 		if e.allowPrivileged {
 			runArgs = append(runArgs, "--privileged")
+			runArgs = append(runArgs, "-v", "/var/run/docker.sock:/var/run/docker.sock")
+			// TODO: Also provide docker access during the docker buildx build step
+			// for privileged builds that need docker-in-docker at build time.
 		} else {
 			log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
 		}
 	}
+	// Disable core dumps
+	runArgs = append(runArgs, "--ulimit", "core=0")
 	err = e.cmdExecutor.Execute(ctx, CommandOptions{
 		Output: multiWriter,
 	}, e.dockerCmd, runArgs...)
+	// Export post-build container if requested.
+	if opts.SavePostBuildContainer {
+		postBuildPath := filepath.Join(hostOutputPath, string(rebuild.PostBuildContainerAsset))
+		if err := e.exportContainer(ctx, handle.id, postBuildPath); err != nil {
+			log.Printf("Failed to export post-build container: %v", err)
+		}
+	}
 	// Upload assets to asset store
 	if opts.Resources.AssetStore != nil {
 		e.uploadAssets(ctx, plan, hostOutputPath, t, opts, handle.id, outbuf.Bytes())
+	}
+	// Clean up post-build container if it was retained for export.
+	if opts.SavePostBuildContainer && !e.retainContainer {
+		if rmErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "rm", handle.id); rmErr != nil {
+			log.Printf("Failed to remove container %s: %v", handle.id, rmErr)
+		}
 	}
 	// Clean up the built image if RetainImage is false
 	if !e.retainImage {
@@ -274,12 +302,21 @@ func (e *DockerBuildExecutor) uploadAssets(ctx context.Context, plan *DockerBuil
 	if err := e.uploadContent(ctx, store, rebuild.DebugLogsAsset.For(t), logs); err != nil {
 		log.Printf("Failed to upload build logs: %v", err)
 	}
-	// Save and upload container image.
-	imagePath := filepath.Join(hostOutputPath, string(rebuild.ContainerImageAsset))
-	if err := e.saveContainerImage(ctx, imageTag, imagePath); err != nil {
-		log.Printf("Failed to save container image: %v", err)
-	} else if err := e.uploadFile(ctx, store, rebuild.ContainerImageAsset.For(t), imagePath); err != nil {
-		log.Printf("Failed to upload container image: %v", err)
+	// Save and upload container image if requested.
+	if opts.SaveContainerImage {
+		imagePath := filepath.Join(hostOutputPath, string(rebuild.ContainerImageAsset))
+		if err := e.saveContainerImage(ctx, imageTag, imagePath); err != nil {
+			log.Printf("Failed to save container image: %v", err)
+		} else if err := e.uploadFile(ctx, store, rebuild.ContainerImageAsset.For(t), imagePath); err != nil {
+			log.Printf("Failed to upload container image: %v", err)
+		}
+	}
+	// Upload post-build container export if it exists.
+	postBuildPath := filepath.Join(hostOutputPath, string(rebuild.PostBuildContainerAsset))
+	if _, err := os.Stat(postBuildPath); err == nil {
+		if err := e.uploadFile(ctx, store, rebuild.PostBuildContainerAsset.For(t), postBuildPath); err != nil {
+			log.Printf("Failed to upload post-build container: %v", err)
+		}
 	}
 }
 
@@ -314,7 +351,22 @@ func (e *DockerBuildExecutor) uploadContent(ctx context.Context, store rebuild.A
 	return nil
 }
 
-// saveContainerImage saves the built container image as a tarball.
+// saveContainerImage saves the built container image as a gzipped tarball.
 func (e *DockerBuildExecutor) saveContainerImage(ctx context.Context, imageTag, outputPath string) error {
-	return e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "save", "-o", outputPath, imageTag)
+	return e.cmdExecutor.Execute(ctx, CommandOptions{}, "sh", "-c",
+		fmt.Sprintf("%s save %s | gzip > %s", e.dockerCmd, imageTag, outputPath))
+}
+
+// exportContainer commits the container state to an image, saves it as a gzipped tarball, then removes the committed image.
+func (e *DockerBuildExecutor) exportContainer(ctx context.Context, containerName, outputPath string) error {
+	committedImage := containerName + "-postbuild"
+	if err := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "commit", containerName, committedImage); err != nil {
+		return errors.Wrap(err, "docker commit failed")
+	}
+	saveErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, "sh", "-c",
+		fmt.Sprintf("%s save %s | gzip > %s", e.dockerCmd, committedImage, outputPath))
+	if rmErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "rmi", committedImage); rmErr != nil {
+		log.Printf("Failed to remove committed image %s: %v", committedImage, rmErr)
+	}
+	return saveErr
 }

@@ -68,12 +68,12 @@ type GitBuildDefinitionSetOptions struct {
 }
 
 // NewBuildDefinitionSetFromGit creates a BuildDefinitionSet from a new Git repository.
-func NewBuildDefinitionSetFromGit(opts *GitBuildDefinitionSetOptions) (*GitBuildDefinitionSet, error) {
+func NewBuildDefinitionSetFromGit(ctx context.Context, opts *GitBuildDefinitionSetOptions) (*GitBuildDefinitionSet, error) {
 	if opts.ReferenceName.String() == "" {
 		opts.ReferenceName = plumbing.Main
 	}
 	mfs := memfs.New()
-	r, err := git.Clone(memory.NewStorage(), mfs, &opts.CloneOptions)
+	r, err := git.CloneContext(ctx, memory.NewStorage(), mfs, &opts.CloneOptions)
 	if err != nil {
 		return nil, errors.Wrap(err, "cloning repository")
 	}

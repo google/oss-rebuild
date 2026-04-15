@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/pkg/errors"
@@ -51,7 +52,7 @@ func InferInit(ctx context.Context) (*inferenceservice.InferDeps, error) {
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing git cache URL")
 		}
-		d.GitCache = &gitx.Cache{IDClient: c, APIClient: sc, URL: u}
+		d.GitCache = &gitcache.Client{IDClient: c, APIClient: sc, URL: u}
 	}
 	d.RepoOptF = func() *gitx.RepositoryOptions {
 		return &gitx.RepositoryOptions{

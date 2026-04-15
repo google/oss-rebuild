@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/attestation"
@@ -79,13 +80,21 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		if deps.BuildDefRepo.Dir != "." {
 			sparseDirs = append(sparseDirs, deps.BuildDefRepo.Dir)
 		}
-		defs, err := builddef.NewBuildDefinitionSetFromGit(&builddef.GitBuildDefinitionSetOptions{
-			CloneOptions: git.CloneOptions{
-				URL:           deps.BuildDefRepo.Repo,
-				ReferenceName: plumbing.ReferenceName(deps.BuildDefRepo.Ref),
-				Depth:         1,
-				NoCheckout:    true,
-			},
+		cloneOpts := git.CloneOptions{
+			URL:           deps.BuildDefRepo.Repo,
+			ReferenceName: plumbing.ReferenceName(deps.BuildDefRepo.Ref),
+			Depth:         1,
+			NoCheckout:    true,
+		}
+		if gitx.IsSSMURL(cloneOpts.URL) {
+			auth, err := gitx.GCPBasicAuth(ctx)
+			if err != nil {
+				return nil, nil, errors.Wrap(err, "getting GCP auth for SSM repo")
+			}
+			cloneOpts.Auth = auth
+		}
+		defs, err := builddef.NewBuildDefinitionSetFromGit(ctx, &builddef.GitBuildDefinitionSetOptions{
+			CloneOptions: cloneOpts,
 			RelativePath: deps.BuildDefRepo.Dir,
 			// TODO: Limit this further to only the target's path we want.
 			SparseCheckoutDirs: sparseDirs,
@@ -131,7 +140,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 	return strategy, entry, nil
 }
 
-func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, useProxy bool, useSyscallMonitor bool, mode schema.OverwriteMode) (err error) {
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, useProxy bool, useSyscallMonitor bool, timeout time.Duration, mode schema.OverwriteMode) (err error) {
 	debugStore, err := deps.DebugStoreBuilder(ctx)
 	if err != nil {
 		return errors.Wrap(err, "creating debug store")
@@ -163,30 +172,36 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
 	toolURLs := map[build.ToolType]string{
-		build.TimewarpTool: "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "timewarp"),
-		build.GSUtilTool:   "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "gsutil_writeonly"),
+		build.TimewarpTool:         "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "timewarp"),
+		build.GSUtilTool:           "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "gsutil_writeonly"),
+		build.TetragonSysgraphTool: "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "tetragon_sysgraph"),
 	}
 	var authRequired []string
 	if deps.PrebuildConfig.Auth {
 		authRequired = append(authRequired, "gs://"+deps.PrebuildConfig.Bucket)
 	}
 	buildStore := rebuild.NewMixedAssetStore(map[rebuild.AssetType]rebuild.LocatableAssetStore{
-		rebuild.ContainerImageAsset: remoteMetadata,
-		rebuild.RebuildAsset:        remoteMetadata,
-		rebuild.TetragonLogAsset:    remoteMetadata,
-		rebuild.ProxyNetlogAsset:    remoteMetadata,
-		rebuild.DockerfileAsset:     deps.LocalMetadataStore,
-		rebuild.BuildInfoAsset:      deps.LocalMetadataStore,
+		rebuild.ContainerImageAsset:     remoteMetadata,
+		rebuild.PostBuildContainerAsset: remoteMetadata,
+		rebuild.RebuildAsset:            remoteMetadata,
+		rebuild.TetragonLogAsset:        remoteMetadata,
+		rebuild.SysgraphAsset:           remoteMetadata,
+		rebuild.ProxyNetlogAsset:        remoteMetadata,
+		rebuild.DockerfileAsset:         deps.LocalMetadataStore,
+		rebuild.BuildInfoAsset:          deps.LocalMetadataStore,
+		// NOTE: Omit rebuild.DebugLogsAsset for now since we're not using it.
 	})
 	in := rebuild.Input{
 		Target:   t,
 		Strategy: strategy,
 	}
 	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
-		BuildID:           obID,
-		UseTimewarp:       meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
-		UseNetworkProxy:   useProxy,
-		UseSyscallMonitor: useSyscallMonitor,
+		BuildID:            obID,
+		Timeout:            timeout,
+		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
+		UseNetworkProxy:    useProxy,
+		UseSyscallMonitor:  useSyscallMonitor,
+		SaveContainerImage: true,
 		Resources: build.Resources{
 			AssetStore:       buildStore,
 			ToolURLs:         toolURLs,
@@ -323,7 +338,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if strategy != nil {
 		v.StrategyOneof = schema.NewStrategyOneOf(strategy)
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, req.UseNetworkProxy, req.UseSyscallMonitor, req.OverwriteMode)
+	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, req.UseNetworkProxy, req.UseSyscallMonitor, req.BuildTimeout, req.OverwriteMode)
 	if err != nil {
 		v.Message = errors.Wrap(err, "executing rebuild").Error()
 		return &v, nil

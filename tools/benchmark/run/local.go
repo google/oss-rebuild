@@ -13,7 +13,10 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/cache"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
@@ -29,19 +32,25 @@ import (
 )
 
 type localExecutionService struct {
-	prebuildURL string
-	store       rebuild.LocatableAssetStore
-	logsink     io.Writer
+	prebuildURL        string
+	store              rebuild.LocatableAssetStore
+	logsink            io.Writer
+	gitCache           *gitcache.Client
+	cratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	dockerConfig       local.DockerRunExecutorConfig
 }
 
 type LocalExecutionServiceConfig struct {
-	PrebuildURL string
-	Store       rebuild.LocatableAssetStore
-	LogSink     io.Writer
+	PrebuildURL        string
+	Store              rebuild.LocatableAssetStore
+	LogSink            io.Writer
+	GitCache           *gitcache.Client
+	CratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	DockerConfig       local.DockerRunExecutorConfig
 }
 
 func NewLocalExecutionService(config LocalExecutionServiceConfig) ExecutionService {
-	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink}
+	return &localExecutionService{prebuildURL: config.PrebuildURL, store: config.Store, logsink: config.LogSink, gitCache: config.GitCache, cratesRegistryStub: config.CratesRegistryStub, dockerConfig: config.DockerConfig}
 }
 
 func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
@@ -70,9 +79,34 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		return verdict, nil
 	}
 	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
-	if err := executeBuild(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}); err != nil {
+	if err := executeBuild(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}, s.dockerConfig); err != nil {
 		verdict.Message = err.Error()
 	} else if err := compare(ctx, t, s.store, mux); err != nil {
+		verdict.Message = err.Error()
+	}
+	return verdict, nil
+}
+
+// RebuildWithStrategy rebuilds a package using a provided strategy instead of inferring one.
+// This is only supported for local execution services.
+func RebuildWithStrategy(ctx context.Context, executor ExecutionService, t rebuild.Target, strategy rebuild.Strategy) (*schema.Verdict, error) {
+	local, ok := executor.(*localExecutionService)
+	if !ok {
+		return nil, errors.New("RebuildWithStrategy is only supported for local execution")
+	}
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+	if t.Artifact == "" {
+		a, err := meta.GuessArtifact(ctx, t, mux)
+		if err != nil {
+			return nil, errors.Wrap(err, "selecting artifact")
+		}
+		t.Artifact = a
+	}
+	verdict := &schema.Verdict{Target: t}
+	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
+	if err := executeBuild(ctx, t, strategy, local.store, buildOpts{PrebuildURL: local.prebuildURL, LogSink: local.logsink}, local.dockerConfig); err != nil {
+		verdict.Message = err.Error()
+	} else if err := compare(ctx, t, local.store, mux); err != nil {
 		verdict.Message = err.Error()
 	}
 	return verdict, nil
@@ -82,6 +116,12 @@ func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux
 	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
 	if !ok {
 		return nil, errors.New("unsupported ecosystem")
+	}
+	if s.gitCache != nil {
+		ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, s.gitCache)
+	}
+	if s.cratesRegistryStub != nil {
+		ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, s.cratesRegistryStub)
 	}
 	repo, err := rebuilder.InferRepo(ctx, t, mux)
 	if err != nil {
@@ -120,11 +160,8 @@ type buildOpts struct {
 	LogSink     io.Writer
 }
 
-func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts) error {
-	executor, err := local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
-		Planner:     local.NewDockerRunPlanner(),
-		MaxParallel: 1,
-	})
+func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts, config local.DockerRunExecutorConfig) error {
+	executor, err := local.NewDockerRunExecutor(config)
 	if err != nil {
 		return errors.Wrap(err, "failed to create executor")
 	}

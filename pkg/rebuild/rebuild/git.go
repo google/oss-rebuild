@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/pkg/errors"
@@ -123,7 +124,7 @@ func LoadRepo(ctx context.Context, pkg string, s storage.Storer, fs billy.Filesy
 		}
 		fallthrough
 	case git.ErrRepositoryNotExists:
-		if c, ok := ctx.Value(RepoCacheClientID).(*gitx.Cache); ok && c != nil {
+		if c, ok := ctx.Value(RepoCacheClientID).(*gitcache.Client); ok && c != nil {
 			r, err = c.Clone(ctx, s, fs, &opt)
 			if err != nil {
 				return nil, errors.Wrap(err, "using repo cache")

@@ -11,11 +11,12 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"time"
 
+	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/tools/benchmark"
-	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -24,6 +25,8 @@ import (
 type Config struct {
 	Project       string
 	BenchmarkPath string
+	BenchmarkName string
+	Since         time.Duration
 }
 
 // Validate ensures the configuration is valid.
@@ -48,7 +51,9 @@ func InitDeps(context.Context) (*Deps, error) {
 
 // Handler contains the business logic for listing runs.
 func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error) {
-	var opts rundex.FetchRunsOpts
+	opts := rundex.FetchRunsOpts{
+		BenchmarkName: cfg.BenchmarkName,
+	}
 	if cfg.BenchmarkPath != "" {
 		log.Printf("Extracting benchmark %s...\n", filepath.Base(cfg.BenchmarkPath))
 		set, err := benchmark.ReadBenchmark(cfg.BenchmarkPath)
@@ -68,7 +73,10 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	}
 	var count int
 	for _, r := range runs {
-		fmt.Fprintf(deps.IO.Out, "  %s [bench=%s hash=%s]\n", r.ID, r.BenchmarkName, r.BenchmarkHash)
+		if cfg.Since != 0 && time.Since(r.Created) > cfg.Since {
+			continue
+		}
+		fmt.Fprintf(deps.IO.Out, "  %s [bench=%s hash=%s created=%s]\n", r.ID, r.BenchmarkName, r.BenchmarkHash, r.Created.Format(time.RFC3339))
 		count++
 	}
 	switch count {
@@ -86,7 +94,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "list-runs --project <ID> [--bench <benchmark.json>]",
+		Use:   "list-runs --project <ID> [--bench <benchmark.json>] [--bench-name <name>] [--since <duration>]",
 		Short: "List runs",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -105,5 +113,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.StringVar(&cfg.Project, "project", "", "the project from which to fetch the Firestore data")
 	set.StringVar(&cfg.BenchmarkPath, "bench", "", "a path to a benchmark file for filtering")
+	set.StringVar(&cfg.BenchmarkName, "bench-name", "", "the name of the benchmark to filter by")
+	set.DurationVar(&cfg.Since, "since", 0, "only list runs created within this duration (e.g. 24h)")
 	return set
 }

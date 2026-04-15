@@ -9,13 +9,14 @@ import (
 	"log"
 	"slices"
 	"sort"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/ide/commandreg"
 	"github.com/google/oss-rebuild/tools/ctl/ide/modal"
-	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/rivo/tview"
 )
@@ -108,7 +109,8 @@ type NodeData struct {
 }
 
 func (t *Tree) makeExampleNode(example rundex.Rebuild) *tview.TreeNode {
-	name := fmt.Sprintf("%s [%ds]", example.ID(), int(example.Timings.EstimateCleanBuild().Seconds()))
+	dur := (example.Created.Sub(example.Started)).Truncate(time.Second)
+	name := fmt.Sprintf("%s [%s]", example.ID(), dur.String())
 	node := tview.NewTreeNode(name).SetColor(tcell.ColorYellow)
 	node.SetReference(&NodeData{NodeID: example.ID(), Rebuilds: []*rundex.Rebuild{&example}})
 	node.SetSelectedFunc(func() {

@@ -1,0 +1,13 @@
+# proto-file: github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph/sysgraph.proto
+# proto-message: SysGraph
+
+id: "hijklmno"
+metadata: {
+  key: "xyz"
+  value: "abc"
+}
+metadata: {
+  key: "demo"
+  value: "test"
+}
+entry_point_action_ids: 1

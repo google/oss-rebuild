@@ -61,6 +61,56 @@ func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (reb
 	return b.ToWorkflow().GenerateFor(t, be)
 }
 
+// SdistBuild includes elements for building an sdist.
+type SdistBuild struct {
+	rebuild.Location
+	PythonVersion string    `json:"python_version" yaml:"python_version"`
+	Requirements  []string  `json:"requirements" yaml:"requirements"`
+	RegistryTime  time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+}
+
+var _ rebuild.Strategy = &SdistBuild{}
+
+func (b *SdistBuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	var registryTime string
+	if !b.RegistryTime.IsZero() {
+		registryTime = b.RegistryTime.Format(time.RFC3339)
+	}
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Source: []flow.Step{{
+			Uses: "git-checkout",
+		}},
+		Deps: []flow.Step{{
+			Uses: "pypi/deps/basic",
+			With: map[string]string{
+				"registryTime":  registryTime,
+				"requirements":  flow.MustToJSON(b.Requirements),
+				"pythonVersion": b.PythonVersion,
+				"venv":          "/deps",
+			},
+		}},
+		Build: []flow.Step{{
+			Uses: "pypi/build/sdist",
+			With: map[string]string{
+				"dir":     b.Location.Dir,
+				"locator": "/deps/bin/",
+			},
+		}},
+		OutputDir: func() string {
+			if b.Location.Dir != "" {
+				return b.Location.Dir + "/dist"
+			}
+			return "dist"
+		}(),
+	}
+}
+
+// GenerateFor generates the instructions for a SourceDistBuild.
+func (b *SdistBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	return b.ToWorkflow().GenerateFor(t, be)
+}
+
 func init() {
 	for _, t := range toolkit {
 		flow.Tools.MustRegister(t)
@@ -134,5 +184,13 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
 		}},
+	},
+	{
+		Name: "pypi/build/sdist",
+		Steps: []flow.Step{
+			{
+				Runs: textwrap.Dedent(`
+				{{.With.locator}}python3 -m build --sdist -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
+			}},
 	},
 }

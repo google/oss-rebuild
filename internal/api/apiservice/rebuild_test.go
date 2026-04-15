@@ -24,14 +24,14 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/google/oss-rebuild/internal/gcb/gcbtest"
-	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
+	"github.com/google/oss-rebuild/pkg/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb/gcbtest"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/maven"
@@ -584,14 +584,26 @@ RLpmHHG1JOVdOA==
 			d.GCBExecutor = must(buildgcb.NewExecutor(buildgcb.ExecutorConfig{
 				Project:        "foo-project",
 				ServiceAccount: "foo-role",
-				LogsBucket:     "foo-logs-bucket",
-				Client:         gcbclient,
+				Planner: buildgcb.NewPlanner(buildgcb.PlannerConfig{
+					Project:         "foo-project",
+					ServiceAccount:  "foo-role",
+					AllowPrivileged: true,
+				}),
+				LogsBucket: "foo-logs-bucket",
+				LogsClientFunc: func(bucket string) gcb.LogsClient {
+					return &gcbtest.MockLogsClient{
+						ReadBuildLogsFunc: func(ctx context.Context, buildID string) (io.ReadCloser, error) {
+							return io.NopCloser(bytes.NewBuffer(nil)), nil
+						},
+					}
+				},
+				Client: gcbclient,
 			}))
 			d.PrebuildConfig.Bucket = "foo-prebuild-bucket"
 			tempDir := must(os.MkdirTemp("", "test-*"))
 			defer os.RemoveAll(tempDir)
 			var gfs osfs.BoundOS
-			repoOpts := gitx.RepositoryOptions{
+			repoOpts := gitxtest.RepositoryOptions{
 				Worktree: must(gfs.Chroot(tempDir)),
 				Storer:   filesystem.NewStorage(must(gfs.Chroot(path.Join(tempDir, ".git"))), cache.NewObjectLRUDefault()),
 			}

@@ -1,0 +1,35 @@
+# proto-file: github.com/google/oss-rebuild/pkg/sysgraph/proto/sysgraph/sysgraph.proto
+# proto-message: ResourceDB
+
+resources: {
+  key: "49ef35511c267514f67ebbb6eac0d2c006cc92677817cc747b67218224395f64/89"
+  value: {
+    type: RESOURCE_TYPE_FILE
+    file_info: {
+      path: "path/to/file"
+      digest: "1234567890123456789012345678901234567890123456789012345678901234/10"
+      type: FILE_TYPE_REGULAR
+    }
+  }
+}
+resources: {
+  key: "5df334548b8ba87841189714473268e64cc306042ceb70b2c9e28a55da2fbe04/25"
+  value: {
+    type: RESOURCE_TYPE_NETWORK_ADDRESS
+    network_addr_info: {
+      protocol: "tcp"
+      address: "127.0.0.1:8080"
+    }
+  }
+}
+resources: {
+  key: "f9c2c3380d4de562fb87db83108822814e88197aad8d482709e615e963a031d1/91"
+  value: {
+    type: RESOURCE_TYPE_FILE
+    file_info: {
+      path: "path/to/file2"
+      digest: "1234567890123456789012345678901234567890123456789012345678901234/100"
+      type: FILE_TYPE_REGULAR
+    }
+  }
+}

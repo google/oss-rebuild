@@ -70,7 +70,7 @@ func TestRunBenchAsync(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			queue := &mockQueue{}
 			url := urlx.MustParse("https://example.com")
-			if err := RunBenchAsync(context.Background(), tc.set, tc.mode, url, "runid", queue); err != nil {
+			if err := RunBenchAsync(context.Background(), tc.set, RunBenchOpts{Mode: tc.mode, RunID: "runid"}, url, queue); err != nil {
 				t.Error(errors.Wrap(err, "RunBenchAsync"))
 			}
 			if diff := cmp.Diff(queue.calls, tc.expected); diff != "" {

@@ -18,15 +18,8 @@ var supportedFileTypes = map[string]bool{
 	"setup.cfg":      true,
 }
 
-type foundFile struct {
-	name     string
-	filetype string
-	path     string
-	object   *object.File
-}
-
 type fileVerification struct {
-	foundF       foundFile
+	foundF       *object.File
 	main         bool
 	nameMatch    bool
 	versionMatch bool
@@ -97,7 +90,7 @@ func sortVerifications(verifications []fileVerification) []fileVerification {
 		}
 
 		// If scores are equal, we sort by Name lexicographically
-		return a.foundF.name < b.foundF.name
+		return a.foundF.Name < b.foundF.Name
 	})
 
 	return verifications
@@ -109,28 +102,17 @@ func normalizeName(name string) string {
 	return strings.ToLower(normalized)
 }
 
-// Recursively check for build files
-func findRecursively(fileType string, tree *object.Tree, hintDir string) ([]foundFile, error) {
-
+// Recursively check for build files. Doesn't recurse if hintDir isn't empty.
+func findRecursively(fileType string, tree *object.Tree, hintDir string) ([]*object.File, error) {
 	if !supportedFileTypes[fileType] {
 		return nil, errors.New("unsupported file type")
 	}
-
-	var foundFiles []foundFile
-
+	var foundFiles []*object.File
 	tree.Files().ForEach(func(f *object.File) error {
 		if filepath.Base(f.Name) == fileType && (hintDir == "" || filepath.Dir(f.Name) == hintDir) {
-			foundFiles = append(foundFiles, foundFile{
-				name:     f.Name,
-				filetype: fileType,
-				path:     filepath.Dir(f.Name),
-				object:   f,
-			})
+			foundFiles = append(foundFiles, f)
 		}
 		return nil
 	})
-	if len(foundFiles) == 0 {
-		return nil, errors.New("no matching files found")
-	}
 	return foundFiles, nil
 }

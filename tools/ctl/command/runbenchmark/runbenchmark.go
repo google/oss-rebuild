@@ -14,22 +14,29 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cheggaaa/pb"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api"
-	"github.com/google/oss-rebuild/internal/oauth"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/gitcache"
+	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
+	"github.com/google/oss-rebuild/pkg/build/local"
+	"github.com/google/oss-rebuild/pkg/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	benchrun "github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
-	"github.com/google/oss-rebuild/tools/ctl/rundex"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -38,9 +45,11 @@ import (
 type Config struct {
 	API               string
 	Local             bool
+	MemoryLimit       string
 	BenchmarkPath     string
 	BootstrapBucket   string
 	BootstrapVersion  string
+	GitCacheURL       string
 	ExecutionMode     schema.ExecutionMode
 	Format            string
 	Verbose           bool
@@ -49,6 +58,7 @@ type Config struct {
 	TaskQueueEmail    string
 	UseNetworkProxy   bool
 	UseSyscallMonitor bool
+	UseRepoDefinition bool
 	OverwriteMode     string
 	MaxConcurrency    int
 }
@@ -63,6 +73,12 @@ func (c Config) Validate() error {
 	}
 	if c.Format != "" && c.Format != "summary" && c.Format != "csv" {
 		return errors.Errorf("invalid format: %s. Expected one of 'summary' or 'csv'", c.Format)
+	}
+	if !c.Local && c.MemoryLimit != "" {
+		return errors.New("memory is only supported in local mode")
+	}
+	if !c.Local && c.GitCacheURL != "" {
+		return errors.New("git-cache-url is only supported in local mode")
 	}
 	if c.OverwriteMode != "" && c.OverwriteMode != string(schema.OverwriteServiceUpdate) && c.OverwriteMode != string(schema.OverwriteForce) {
 		return errors.Errorf("invalid overwrite-mode: %s. Expected one of 'SERVICE_UPDATE' or 'FORCE'", c.OverwriteMode)
@@ -128,11 +144,51 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		}
 		// TODO: Validate this.
 		prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
-		executor = benchrun.NewLocalExecutionService(benchrun.LocalExecutionServiceConfig{
+		localCfg := benchrun.LocalExecutionServiceConfig{
 			PrebuildURL: prebuildURL,
 			Store:       store,
 			LogSink:     deps.IO.Out,
+			DockerConfig: local.DockerRunExecutorConfig{
+				MaxParallel: 1,
+				MemoryLimit: cfg.MemoryLimit,
+			},
+		}
+		if cfg.GitCacheURL != "" {
+			u, err := url.Parse(cfg.GitCacheURL)
+			if err != nil {
+				return nil, errors.Wrap(err, "parsing git cache URL")
+			}
+			var idClient, apiClient *http.Client
+			if isCloudRun(u) {
+				idClient, err = oauth.AuthorizedUserIDClient(ctx)
+				if err != nil {
+					return nil, errors.Wrap(err, "creating authorized ID client for git cache")
+				}
+				apiClient = idClient
+			} else {
+				idClient = http.DefaultClient
+				apiClient = http.DefaultClient
+			}
+			localCfg.GitCache = &gitcache.Client{IDClient: idClient, APIClient: apiClient, URL: u}
+		}
+		mgrInit := sync.OnceValues(func() (*index.IndexManager, error) {
+			if err := os.MkdirAll("/tmp/crates-registry-cache", 0o755); err != nil {
+				return nil, errors.Wrap(err, "initializing crates registry cache")
+			}
+			return index.NewIndexManagerFromFS(index.IndexManagerConfig{
+				Filesystem:            osfs.New("/tmp/crates-registry-cache"),
+				CurrentUpdateInterval: 6 * time.Hour,
+				MaxSnapshots:          3,
+			})
 		})
+		localCfg.CratesRegistryStub = func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
+			mgr, err := mgrInit()
+			if err != nil {
+				return nil, errors.Wrap(err, "creating crates index manager")
+			}
+			return cratesregistryservice.FindRegistryCommit(ctx, req, &cratesregistryservice.FindRegistryCommitDeps{IndexManager: mgr})
+		}
+		executor = benchrun.NewLocalExecutionService(localCfg)
 		dex = rundex.NewFilesystemClient(localfiles.Rundex())
 		if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
 			ID:            runID,
@@ -182,7 +238,11 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "making taskqueue client")
 		}
-		if err := benchrun.RunBenchAsync(ctx, set, cfg.ExecutionMode, apiURL, runID, queue); err != nil {
+		if err := benchrun.RunBenchAsync(ctx, set, benchrun.RunBenchOpts{
+			Mode:              cfg.ExecutionMode,
+			RunID:             runID,
+			UseRepoDefinition: cfg.UseRepoDefinition,
+		}, apiURL, queue); err != nil {
 			return nil, errors.Wrap(err, "adding benchmark to queue")
 		}
 		return &act.NoOutput{}, nil
@@ -197,6 +257,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		MaxConcurrency:    cfg.MaxConcurrency,
 		UseSyscallMonitor: cfg.UseSyscallMonitor,
 		UseNetworkProxy:   cfg.UseNetworkProxy,
+		UseRepoDefinition: cfg.UseRepoDefinition,
 		OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
 	})
 	if err != nil {
@@ -268,6 +329,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.API, "api", "", "OSS Rebuild API endpoint URI")
 	set.IntVar(&cfg.MaxConcurrency, "max-concurrency", 90, "maximum number of inflight requests")
 	set.BoolVar(&cfg.Local, "local", false, "true if this request is going direct to build-local (not through API first)")
+	set.StringVar(&cfg.MemoryLimit, "memory", "", "memory limit to be passed to docker (local mode only)")
 	set.StringVar(&cfg.BootstrapBucket, "bootstrap-bucket", "", "the gcs bucket where bootstrap tools are stored")
 	set.StringVar(&cfg.BootstrapVersion, "bootstrap-version", "", "the version of bootstrap tools to use")
 	set.StringVar(&cfg.Format, "format", "", "format of the output (summary|csv)")
@@ -277,6 +339,8 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.TaskQueueEmail, "task-queue-email", "", "the email address of the serivce account Cloud Tasks should authorize as")
 	set.BoolVar(&cfg.UseNetworkProxy, "use-network-proxy", false, "request the newtwork proxy")
 	set.BoolVar(&cfg.UseSyscallMonitor, "use-syscall-monitor", false, "request syscall monitoring")
+	set.BoolVar(&cfg.UseRepoDefinition, "use-repo-definition", false, "use build definitions from the build definition repository")
 	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
+	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos (local mode only)")
 	return set
 }

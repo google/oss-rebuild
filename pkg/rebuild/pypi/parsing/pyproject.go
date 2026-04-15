@@ -6,6 +6,7 @@ package parsing
 import (
 	"context"
 	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -27,10 +28,9 @@ type pyProjectProject struct {
 	Tool     toolMetadata    `toml:"tool"`
 }
 
-func verifyPyProjectFile(ctx context.Context, foundFile foundFile, name, version string) (fileVerification, error) {
+func verifyPyProjectFile(ctx context.Context, f *object.File, name, version string) (fileVerification, error) {
 	var verificationResult fileVerification
-	verificationResult.foundF = foundFile
-	f := foundFile.object
+	verificationResult.foundF = f
 
 	pyprojContents, err := f.Contents()
 	if err != nil {
@@ -50,7 +50,7 @@ func verifyPyProjectFile(ctx context.Context, foundFile foundFile, name, version
 		foundVersion = pyProject.Tool.Poetry.Version
 	}
 
-	if foundFile.path == "." {
+	if filepath.Dir(f.Name) == "." {
 		verificationResult.main = true
 	}
 

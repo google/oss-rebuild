@@ -17,6 +17,7 @@ var (
 	ociRegistries = []*regexp.Regexp{
 		regexp.MustCompile(`^https://registry-1\.docker\.io/`),
 		regexp.MustCompile(`^https://production\.cloudflare\.docker\.com/registry-v2/docker/registry/`),
+		regexp.MustCompile(`^https://docker-images-prod\.[a-f0-9]+\.r2\.cloudflarestorage\.com/registry-v2/docker/registry/`),
 	}
 	// Standard OCI API
 	ociManifestRegex = regexp.MustCompile(`/v2/(?P<image>(?:\w+/)?[^/]+)/manifests/(?P<id>[^/]+)$`)
@@ -77,6 +78,14 @@ var (
 	gitObjectRegex      = regexp.MustCompile(`^/objects/[a-f0-9]{2}/(?P<digeststub>[a-f0-9]{38}|[a-f0-9]{62})$`)
 )
 
+// Debian/Ubuntu apt
+var (
+	debPoolRegex     = regexp.MustCompile(`^https?://(?:deb\.debian\.org/(?:debian|debian-security)|security\.debian\.org/debian-security|archive\.ubuntu\.com/ubuntu)/pool/(?:updates/)?[^/]+/[^/]+/[^/]+/(?P<filename>[^/]+)$`)
+	debBinaryRegex   = regexp.MustCompile(`^(?P<package>[^_]+)_(?P<version>[^_]+)_(?P<arch>[^.]+)\.u?deb$`)
+	debSourceRegex   = regexp.MustCompile(`^(?P<package>[^_]+)_(?P<version>[^_]+)\.(?:dsc|orig\.tar\.\w+|debian\.tar\.\w+|diff\.gz|native\.tar\.\w+)$`)
+	debMetadataRegex = regexp.MustCompile(`^https?://(?:deb\.debian\.org|security\.debian\.org|archive\.ubuntu\.com)/.*/(?:InRelease|Release(?:\.gpg)?|Packages(?:\.xz|\.gz|\.bz2)?|Sources(?:\.xz|\.gz)?|Contents[^/]*|Translation[^/]*|by-hash/.+)$`)
+)
+
 // misc
 var (
 	dockerAPITokenURL = "https://auth.docker.io/token"
@@ -114,6 +123,10 @@ func ClassifyURL(rawURL string) (string, error) {
 		return classifyGCSURL(rawURL, gcsJSONRegex)
 	} else if gcsXMLRegex.MatchString(rawURL) {
 		return classifyGCSURL(rawURL, gcsXMLRegex)
+	} else if debMetadataRegex.MatchString(rawURL) {
+		return "", ErrSkipped
+	} else if debPoolRegex.MatchString(rawURL) {
+		return classifyDebURL(rawURL)
 	} else if rawURL == dockerAPITokenURL {
 		return "", ErrSkipped
 	} else {
@@ -262,6 +275,30 @@ func classifyMavenURL(rawURL string) (string, error) {
 	version := matches[4]
 	namespace := strings.Join(pathSegments, ".")
 	return fmt.Sprintf("pkg:maven/%s/%s@%s", namespace, name, version), nil
+}
+
+func classifyDebURL(rawURL string) (string, error) {
+	matches := debPoolRegex.FindStringSubmatch(rawURL)
+	if matches == nil {
+		return "", fmt.Errorf("invalid Debian pool URL format")
+	}
+	filename := matches[debPoolRegex.SubexpIndex("filename")]
+
+	// Determine distro from URL host.
+	distro := "debian"
+	if strings.Contains(rawURL, "archive.ubuntu.com") {
+		distro = "ubuntu"
+	}
+
+	// Try binary .deb first, then source file patterns.
+	if m := debBinaryRegex.FindStringSubmatch(filename); m != nil {
+		return fmt.Sprintf("pkg:deb/%s/%s@%s", distro, m[debBinaryRegex.SubexpIndex("package")], m[debBinaryRegex.SubexpIndex("version")]), nil
+	}
+	if m := debSourceRegex.FindStringSubmatch(filename); m != nil {
+		return fmt.Sprintf("pkg:deb/%s/%s@%s", distro, m[debSourceRegex.SubexpIndex("package")], m[debSourceRegex.SubexpIndex("version")]), nil
+	}
+
+	return "", ErrUnclassified
 }
 
 func classifyGCSURL(rawURL string, pattern *regexp.Regexp) (string, error) {

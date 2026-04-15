@@ -315,12 +315,12 @@ const (
 )
 
 var (
-	containerCreatePattern  = re.MustCompile(`(/v[^/]+)?/containers/create`)
-	containerStartPattern   = re.MustCompile(`(/v[^/]+)?/containers/([^/]+)/start`)
-	containerExportPattern  = re.MustCompile(`(/v[^/]+)?/containers/([^/]+)/export`)
-	containerRestartPattern = re.MustCompile(`(/v[^/]+)?/containers/([^/]+)/restart`)
-	containerUnpausePattern = re.MustCompile(`(/v[^/]+)?/containers/([^/]+)/unpause`)
-	commitPattern           = re.MustCompile(`(/v[^/]+)?/commit`)
+	containerCreatePattern  = re.MustCompile(`^(/v[^/]+)?/containers/create$`)
+	containerStartPattern   = re.MustCompile(`^(/v[^/]+)?/containers/([^/]+)/start$`)
+	containerExportPattern  = re.MustCompile(`^(/v[^/]+)?/containers/([^/]+)/export$`)
+	containerRestartPattern = re.MustCompile(`^(/v[^/]+)?/containers/([^/]+)/restart$`)
+	containerUnpausePattern = re.MustCompile(`^(/v[^/]+)?/containers/([^/]+)/unpause$`)
+	commitPattern           = re.MustCompile(`^(/v[^/]+)?/commit$`)
 )
 
 // getActionType determines the actionType that should be taken along with the container ID on which the action should be taken.
@@ -697,7 +697,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		allVars := append(otherVars, d.envVars...)
 		allVars = append(otherVars, d.truststoreEnvVars...)
 		var newBody []byte
-		if !bytes.Equal(body, nullJSONBody) {
+		if len(body) > 0 && !bytes.Equal(body, nullJSONBody) {
 			newBody, err = removeEnvVars(body, allVars)
 			if err != nil {
 				log.Fatalf("failed to remove env vars for request %s: %s", req.URL.Path, err)
@@ -705,7 +705,8 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		} else {
 			// With a null body, the docker daemon will access the container
 			// specifications internally. As such, we need to substitute this out for
-			// out own specification.
+			// our own specification.
+			origBody := body
 			origID := id
 			resp, err := serverClient.Get("/containers/" + id + "/json")
 			if err != nil {
@@ -754,10 +755,12 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			resp.Body.Close()
 			newID := container.ID
 			req.URL.RawQuery = strings.Replace(req.URL.RawQuery, "container="+origID, "container="+newID, -1)
-			newBody = nullJSONBody
+			newBody = origBody
 		}
-		req.ContentLength = int64(len(newBody))
-		req.Body = io.NopCloser(bytes.NewReader(newBody))
+		if len(body) > 0 {
+			req.ContentLength = int64(len(newBody))
+			req.Body = io.NopCloser(bytes.NewReader(newBody))
+		}
 		fallthrough
 	case unpatchTruststoreDuring:
 		id, err = resolveContainerID(serverClient, id)
@@ -819,7 +822,11 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		clientConn.Write(httpInternalServerErrorResponse)
 		return
 	}
-	resp, err := http.ReadResponse(bufio.NewReader(serverConn), req)
+	// Use a buffered reader so that any bytes the server sends immediately
+	// after the HTTP response (e.g. gRPC/HTTP2 frames after a 101 upgrade)
+	// are not lost when we switch to raw byte proxying.
+	serverBuf := bufio.NewReader(serverConn)
+	resp, err := http.ReadResponse(serverBuf, req)
 	if err != nil {
 		log.Printf("Failed to read server response: %s", err)
 		clientConn.Write(httpInternalServerErrorResponse)
@@ -839,7 +846,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		// Transparently proxy bytes between client and server.
 		// Server dictates termination.
 		clientChunks := readChunks(clientConn)
-		serverChunks := readChunks(serverConn)
+		serverChunks := readChunks(serverBuf)
 		for {
 			select {
 			case b := <-clientChunks:

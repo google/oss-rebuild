@@ -14,16 +14,17 @@ import (
 
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
+	"cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/apiservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
-	"github.com/google/oss-rebuild/internal/gcb"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	"github.com/google/oss-rebuild/internal/uri"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
+	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -116,13 +117,17 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	plannerConfig := buildgcb.PlannerConfig{
 		Project:         *project,
 		ServiceAccount:  *buildRemoteIdentity,
-		LogsBucket:      *logsBucket,
 		AllowPrivileged: true,
+	}
+	gcsClient, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating GCS client")
 	}
 	executorConfig := buildgcb.ExecutorConfig{
 		Project:        *project,
 		ServiceAccount: *buildRemoteIdentity,
 		LogsBucket:     *logsBucket,
+		LogsClientFunc: buildgcb.GCSLogsClient(gcsClient),
 		Client:         nil, // Defined depending on gcbPrivatePoolName
 	}
 	if *gcbPrivatePoolName != "" {
@@ -198,11 +203,6 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 
 func VersionInit(ctx context.Context) (*apiservice.VersionDeps, error) {
 	var d apiservice.VersionDeps
-	var err error
-	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating firestore client")
-	}
 	{
 		u, err := url.Parse(*inferenceURL)
 		if err != nil {
