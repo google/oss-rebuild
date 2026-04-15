@@ -679,6 +679,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 				}
 			}
 		}
+		// TODO: Consider supporting templating in file content to allow dynamic insertion of cert paths.
 		customFilesFailed := false
 		for path, file := range d.customFiles {
 			f, err := dfs.OpenAndResolve(path)
