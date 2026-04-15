@@ -126,6 +126,322 @@ func buildTree(ctx context.Context, sg sgtransform.SysGraph) ([]*treeNode, error
 	return roots, nil
 }
 
+// containerEntry represents a container-internal subtree root found via
+// docker metadata transitions.
+type containerEntry struct {
+	node        *treeNode
+	containerID string
+}
+
+// graftContainers finds docker CLI commands (docker run/exec) and matches
+// them to container-internal subtrees. Matched container subtrees are grafted
+// as children of the docker command, and the containerd/shim/runc
+// infrastructure that previously hosted them is pruned.
+//
+// The matching works as follows:
+//   - Walk the tree to find container entry points: nodes where the "docker"
+//     metadata transitions from empty (or a different value) to a container ID.
+//   - Walk the tree to find docker CLI commands (docker run, exec, build).
+//   - For docker exec: match by comparing the command tail in argv with the
+//     container entry point's argv.
+//   - Fallback: match by timing (container starts after docker command).
+//   - Grafted entry points are removed from their original parent, and
+//     infrastructure nodes left without meaningful children are pruned.
+func graftContainers(roots []*treeNode) []*treeNode {
+	// Phase 1: collect container entry points.
+	var entries []containerEntry
+	walkTree(roots, "", func(n *treeNode, parentDockerID string) string {
+		dockerID := n.action.GetMetadata()["docker"]
+		if dockerID != "" && dockerID != parentDockerID {
+			entries = append(entries, containerEntry{node: n, containerID: dockerID})
+		}
+		if dockerID != "" {
+			return dockerID
+		}
+		return parentDockerID
+	})
+	if len(entries) == 0 {
+		return roots
+	}
+
+	// Phase 2: collect docker CLI commands.
+	var dockerCmds []*treeNode
+	walkTreeNodes(roots, func(n *treeNode) {
+		if isDockerCLI(n) {
+			dockerCmds = append(dockerCmds, n)
+		}
+	})
+	if len(dockerCmds) == 0 {
+		return roots
+	}
+
+	// Phase 3: match docker commands to container entries.
+	grafted := map[*treeNode]bool{}
+
+	// Sort docker commands by start time so timing-based matching is
+	// deterministic.
+	sort.Slice(dockerCmds, func(i, j int) bool {
+		return dockerCmds[i].action.GetStartTime().AsTime().Before(dockerCmds[j].action.GetStartTime().AsTime())
+	})
+
+	for _, cmd := range dockerCmds {
+		argv := cmd.action.GetExecInfo().GetArgv()
+		subCmd, cmdArgs := parseDockerSubcommand(argv)
+		if subCmd == "" {
+			continue
+		}
+
+		var matched *containerEntry
+		switch subCmd {
+		case "exec":
+			matched = matchDockerExec(cmdArgs, entries, grafted)
+		case "run":
+			matched = matchDockerRun(cmd, entries, grafted)
+		case "build":
+			matched = matchByTiming(cmd, entries, grafted)
+		}
+		if matched == nil {
+			matched = matchByTiming(cmd, entries, grafted)
+		}
+		if matched != nil {
+			cmd.children = append(cmd.children, matched.node)
+			grafted[matched.node] = true
+		}
+	}
+
+	if len(grafted) == 0 {
+		return roots
+	}
+
+	// Phase 4: remove grafted nodes from their original parents and prune
+	// empty infrastructure.
+	graftTargets := map[*treeNode]bool{}
+	for _, cmd := range dockerCmds {
+		graftTargets[cmd] = true
+	}
+	roots = removeGrafted(roots, grafted, graftTargets)
+	roots = pruneInfrastructure(roots)
+	return roots
+}
+
+// walkTree traverses the tree, calling f on each node with the parent's docker
+// metadata value. f returns the docker ID to propagate to children.
+func walkTree(nodes []*treeNode, parentDockerID string, f func(n *treeNode, parentDockerID string) string) {
+	for _, n := range nodes {
+		dockerID := f(n, parentDockerID)
+		walkTree(n.children, dockerID, f)
+	}
+}
+
+// walkTreeNodes traverses the tree, calling f on each node.
+func walkTreeNodes(nodes []*treeNode, f func(n *treeNode)) {
+	for _, n := range nodes {
+		f(n)
+		walkTreeNodes(n.children, f)
+	}
+}
+
+// isDockerCLI returns true if the node represents a docker CLI invocation.
+func isDockerCLI(n *treeNode) bool {
+	base := filepath.Base(n.execPath)
+	if base != "docker" {
+		return false
+	}
+	if n.action.GetIsFork() {
+		return false
+	}
+	argv := n.action.GetExecInfo().GetArgv()
+	if len(argv) < 2 {
+		return false
+	}
+	sub, _ := parseDockerSubcommand(argv)
+	return sub == "exec" || sub == "run" || sub == "build"
+}
+
+// parseDockerSubcommand extracts the docker subcommand and remaining args.
+// Skips global flags.
+func parseDockerSubcommand(argv []string) (string, []string) {
+	i := 1
+	for i < len(argv) {
+		arg := argv[i]
+		// Skip global docker flags that take a value.
+		if arg == "-H" || arg == "--host" || arg == "--config" || arg == "--context" || arg == "-l" || arg == "--log-level" {
+			i += 2
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			i++
+			continue
+		}
+		return arg, argv[i+1:]
+	}
+	return "", nil
+}
+
+// matchDockerExec tries to match a "docker exec" command to a container entry
+// by comparing the command suffix with the entry's argv.
+func matchDockerExec(args []string, entries []containerEntry, grafted map[*treeNode]bool) *containerEntry {
+	// docker exec [flags] <container> <cmd> [args...]
+	// Find the container name and command.
+	var cmdStart int
+	foundContainer := false
+	for i := 0; i < len(args); i++ {
+		if strings.HasPrefix(args[i], "-") {
+			// Skip flags; some take values.
+			if args[i] == "-e" || args[i] == "--env" || args[i] == "-w" || args[i] == "--workdir" || args[i] == "-u" || args[i] == "--user" {
+				i++
+			}
+			continue
+		}
+		if !foundContainer {
+			foundContainer = true
+			continue // skip the container name
+		}
+		cmdStart = i
+		break
+	}
+	if cmdStart == 0 || cmdStart >= len(args) {
+		return nil
+	}
+	execCmd := args[cmdStart:]
+
+	// Find an entry whose argv matches the exec command.
+	for i := range entries {
+		e := &entries[i]
+		if grafted[e.node] {
+			continue
+		}
+		entryArgv := e.node.action.GetExecInfo().GetArgv()
+		if argvSuffixMatch(execCmd, entryArgv) {
+			return e
+		}
+	}
+	return nil
+}
+
+// argvSuffixMatch returns true if the exec command matches the entry's argv.
+// The entry argv basenames should match the command (the entry may have full
+// paths while the exec command has basenames).
+func argvSuffixMatch(execCmd, entryArgv []string) bool {
+	if len(execCmd) == 0 || len(entryArgv) == 0 {
+		return false
+	}
+	// Compare the first element by basename, rest literally.
+	if filepath.Base(execCmd[0]) != filepath.Base(entryArgv[0]) {
+		return false
+	}
+	// For single-command matches, basename match is sufficient.
+	if len(execCmd) == 1 {
+		return true
+	}
+	// Compare remaining args. The entry might have more or fewer args
+	// (e.g. shell expansion), so check prefix.
+	limit := len(execCmd)
+	if limit > len(entryArgv) {
+		limit = len(entryArgv)
+	}
+	for i := 1; i < limit; i++ {
+		if execCmd[i] != entryArgv[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// matchDockerRun tries to match a "docker run" command to a container entry
+// by timing (container starts after docker run).
+func matchDockerRun(cmd *treeNode, entries []containerEntry, grafted map[*treeNode]bool) *containerEntry {
+	cmdStart := cmd.action.GetStartTime().AsTime()
+	if cmdStart.IsZero() {
+		return nil
+	}
+	var best *containerEntry
+	var bestStart time.Time
+	for i := range entries {
+		e := &entries[i]
+		if grafted[e.node] {
+			continue
+		}
+		entryStart := e.node.action.GetStartTime().AsTime()
+		if entryStart.IsZero() || entryStart.Before(cmdStart) {
+			continue
+		}
+		if best == nil || entryStart.Before(bestStart) {
+			best = e
+			bestStart = entryStart
+		}
+	}
+	return best
+}
+
+// matchByTiming matches a docker command to the temporally closest ungrafted
+// container entry that starts after the command.
+func matchByTiming(cmd *treeNode, entries []containerEntry, grafted map[*treeNode]bool) *containerEntry {
+	return matchDockerRun(cmd, entries, grafted) // same logic
+}
+
+// removeGrafted removes grafted nodes from their original parent's children
+// lists. It does not recurse into graft targets (docker CLI nodes) since
+// their newly-appended children are the grafted entries themselves.
+func removeGrafted(roots []*treeNode, grafted map[*treeNode]bool, graftTargets map[*treeNode]bool) []*treeNode {
+	var filtered []*treeNode
+	for _, r := range roots {
+		if grafted[r] {
+			continue
+		}
+		if !graftTargets[r] {
+			r.children = removeGraftedChildren(r.children, grafted, graftTargets)
+		}
+		filtered = append(filtered, r)
+	}
+	return filtered
+}
+
+func removeGraftedChildren(children []*treeNode, grafted map[*treeNode]bool, graftTargets map[*treeNode]bool) []*treeNode {
+	var result []*treeNode
+	for _, c := range children {
+		if grafted[c] {
+			continue
+		}
+		if !graftTargets[c] {
+			c.children = removeGraftedChildren(c.children, grafted, graftTargets)
+		}
+		result = append(result, c)
+	}
+	return result
+}
+
+// pruneInfrastructure removes containerd-shim, runc, and docker-init nodes
+// that have no remaining children (after grafting removed their meaningful
+// subtrees).
+func pruneInfrastructure(roots []*treeNode) []*treeNode {
+	var result []*treeNode
+	for _, r := range roots {
+		r.children = pruneInfrastructure(r.children)
+		if isInfrastructure(r) && len(r.children) == 0 {
+			continue
+		}
+		result = append(result, r)
+	}
+	return result
+}
+
+// isInfrastructure returns true for docker/container infrastructure processes
+// that should be pruned when they have no meaningful children.
+var infrastructureBasenames = map[string]bool{
+	"containerd-shim-runc-v2": true,
+	"containerd-shim":         true,
+	"runc":                    true,
+	"docker-runc":             true,
+	"docker-init":             true,
+	"buildkit-runc":           true,
+}
+
+func isInfrastructure(n *treeNode) bool {
+	base := filepath.Base(n.execPath)
+	return infrastructureBasenames[base]
+}
+
 // renderOpts bundles all rendering configuration.
 type renderOpts struct {
 	MaxDepth     int
@@ -137,8 +453,10 @@ type renderOpts struct {
 	AncestorID   int64 // if set, show only the ancestor path to this node
 }
 
-// renderTree writes the process tree to w.
+// renderTree writes the process tree to w. It first grafts container-internal
+// subtrees onto their triggering docker commands.
 func renderTree(w io.Writer, roots []*treeNode, opts renderOpts) {
+	roots = graftContainers(roots)
 	if opts.AncestorID != 0 {
 		roots = pruneToAncestors(roots, opts.AncestorID)
 	}
@@ -199,9 +517,6 @@ func renderNode(w io.Writer, n *treeNode, depth int, opts renderOpts) {
 	}
 	if isFork {
 		annotations = append(annotations, "fork")
-	}
-	if docker, ok := n.action.GetMetadata()["docker"]; ok && docker != "" {
-		annotations = append(annotations, fmt.Sprintf("container:%s", shortID(docker)))
 	}
 	if opts.ShowCwd && n.action.GetExecInfo() != nil {
 		if cwd := n.action.GetExecInfo().GetWorkingDirectory(); cwd != "" {
