@@ -235,7 +235,22 @@ type RebuildPackageRequest struct {
 	UseNetworkProxy   bool              `form:""`
 	BuildTimeout      time.Duration     `form:""` // Cancel the build after this amount of time.
 	OverwriteMode     OverwriteMode     `form:""`
+	ExecutionHint     ExecutionHint     `form:""`
 }
+
+// ExecutionHint describes the preferred execution mode for a rebuild.
+type ExecutionHint string
+
+const (
+	// UnspecifiedExecution is the zero value for ExecutionHint.
+	UnspecifiedExecution ExecutionHint = ""
+	// FastExecution hints that the build should be executed in-process if possible,
+	// returning only when the operation is complete.
+	FastExecution ExecutionHint = "FAST"
+	// ExtendedExecution hints that the build is expected to take a long time
+	// and should be executed asynchronously via a background job.
+	ExtendedExecution ExecutionHint = "EXTENDED"
+)
 
 var _ api.Message = RebuildPackageRequest{}
 
