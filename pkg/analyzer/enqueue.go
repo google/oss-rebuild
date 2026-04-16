@@ -6,7 +6,7 @@ package analyzer
 
 import (
 	"encoding/json"
-	"io"
+	"net/http"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -56,13 +56,13 @@ func GCSEventToTargetEvent(event schema.GCSObjectEvent) (*schema.TargetEvent, er
 }
 
 // GCSEventBodyToTargetEvent converts an HTTP request body containing GCS object event data
-// to a TargetEvent. This provides backward compatibility with the existing io.ReadCloser interface.
-func GCSEventBodyToTargetEvent(body io.ReadCloser) (*schema.TargetEvent, error) {
+// to a TargetEvent.
+func GCSEventBodyToTargetEvent(r *http.Request) (*schema.TargetEvent, error) {
 	event := schema.GCSObjectEvent{}
-	if err := json.NewDecoder(body).Decode(&event); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
 		return nil, errors.Wrap(err, "decoding event")
 	}
-	if err := body.Close(); err != nil {
+	if err := r.Body.Close(); err != nil {
 		return nil, errors.Wrap(err, "closing request body")
 	}
 	return GCSEventToTargetEvent(event)

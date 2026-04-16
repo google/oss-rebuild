@@ -194,12 +194,12 @@ func Handler[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler Handl
 	}
 }
 
-type Translator[O act.Input] func(io.ReadCloser) (O, error)
+type Translator[O act.Input] func(*http.Request) (O, error)
 
-// Translate applies a Translator on the Request.Body to populate the Request.URL params.
+// Translate applies a Translator on the Request to populate the Request.URL params.
 func Translate[O act.Input](t Translator[O], h http.HandlerFunc) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
-		m, err := t(r.Body)
+		m, err := t(r)
 		if err != nil {
 			log.Println(errors.Wrap(err, "translating request"))
 			http.Error(rw, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
