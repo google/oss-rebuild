@@ -309,12 +309,25 @@ func (req CreateRunRequest) Validate() error {
 	return nil
 }
 
+// RebuildStatus is the status of a rebuild attempt.
+type RebuildStatus string
+
+const (
+	RebuildStatusUnspecified RebuildStatus = "" // zero value; old records
+	RebuildStatusRunning     RebuildStatus = "RUNNING"
+	RebuildStatusSuccess     RebuildStatus = "SUCCESS"
+	RebuildStatusFailure     RebuildStatus = "FAILURE" // ran, verification didn't match
+	RebuildStatusError       RebuildStatus = "ERROR"   // infra/internal error
+	RebuildStatusCancelled   RebuildStatus = "CANCELLED"
+)
+
 // RebuildAttempt stores rebuild and execution metadata on a single smoketest run.
 type RebuildAttempt struct {
 	Ecosystem       string          `firestore:"ecosystem,omitempty"`
 	Package         string          `firestore:"package,omitempty"`
 	Version         string          `firestore:"version,omitempty"`
 	Artifact        string          `firestore:"artifact,omitempty"`
+	Status          RebuildStatus   `firestore:"status,omitempty"`
 	Success         bool            `firestore:"success,omitempty"`
 	Message         string          `firestore:"message,omitempty"`
 	Strategy        StrategyOneOf   `firestore:"strategyoneof,omitempty"`
@@ -324,8 +337,9 @@ type RebuildAttempt struct {
 	RunID           string          `firestore:"run_id,omitempty"`
 	BuildID         string          `firestore:"build_id,omitempty"`
 	ObliviousID     string          `firestore:"oblivious_id,omitempty"`
-	Started         time.Time       `firestore:"started,omitempty"` // The time rebuild started
-	Created         time.Time       `firestore:"created,omitempty"` // The time this record was created
+	Started         time.Time       `firestore:"started,omitempty"`  // The time rebuild started
+	Finished        time.Time       `firestore:"finished,omitempty"` // The time rebuild finished
+	Created         time.Time       `firestore:"created,omitempty"`  // The time this record was created
 }
 
 // Run stores metadata on an execution grouping.

@@ -75,9 +75,10 @@ func buildFetchRebuildRequest(bench, run, prefix, pattern string, clean, latestP
 	req := rundex.FetchRebuildRequest{
 		Runs: runs,
 		Opts: rundex.FetchRebuildOpts{
-			Prefix:  prefix,
-			Pattern: pattern,
-			Clean:   clean,
+			Prefix:         prefix,
+			Pattern:        pattern,
+			Clean:          clean,
+			IncludePending: false, // TODO: Add support for including pending attempts.
 		},
 		LatestPerPackage: latestPerPackage,
 	}

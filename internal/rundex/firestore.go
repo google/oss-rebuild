@@ -7,7 +7,6 @@ import (
 	"context"
 	"path"
 	"slices"
-	"strings"
 	"sync"
 
 	"cloud.google.com/go/firestore"
@@ -211,11 +210,7 @@ func (f *FirestoreClient) RecentPackageRebuilds(ctx context.Context, eco rebuild
 func (f *FirestoreClient) fetchRebuildsQuery(ctx context.Context, q firestore.Query) ([]Rebuild, error) {
 	all := make(chan Rebuild)
 	cerr := doQuery(ctx, q, newRebuildFromFirestore, all)
-	var rebuilds []Rebuild
-	for r := range all {
-		r.Message = strings.ReplaceAll(r.Message, "\n", "\\n")
-		rebuilds = append(rebuilds, r)
-	}
+	rebuilds := filterRebuilds(all, &FetchRebuildRequest{}) // filter pending attempts and clean Message
 	if err := <-cerr; err != nil {
 		return nil, errors.Wrap(err, "query error")
 	}
@@ -280,6 +275,9 @@ func (f *FirestoreClient) LatestTrackedPackages(ctx context.Context, tracked fee
 				break
 			}
 			r := newRebuildFromFirestore(doc)
+			if r.Status == schema.RebuildStatusRunning {
+				continue
+			}
 			if _, seen := latest[r.Package]; !seen {
 				latest[r.Package] = r
 				out <- r

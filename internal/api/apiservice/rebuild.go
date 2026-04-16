@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/url"
 	"path"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -354,10 +355,42 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if req.BuildTimeout != 0 {
 		ctx = context.WithValue(ctx, rebuild.GCBCancelDeadlineID, time.Now().Add(req.BuildTimeout))
 	}
+
+	target := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
+	et := rebuild.FirestoreTargetEncoding.Encode(target)
+	docRef := deps.FirestoreClient.Collection("ecosystem").Doc(string(et.Ecosystem)).Collection("packages").Doc(et.Package).Collection("versions").Doc(et.Version).Collection("artifacts").Doc(et.Artifact).Collection("attempts").Doc(req.ID)
+
+	attempt := schema.RebuildAttempt{
+		Ecosystem:       string(target.Ecosystem),
+		Package:         target.Package,
+		Version:         target.Version,
+		Artifact:        target.Artifact,
+		Status:          schema.RebuildStatusRunning,
+		ExecutorVersion: deps.ServiceRepo.Ref,
+		RunID:           req.ID,
+		Started:         started,
+		Created:         time.Now().UTC(),
+	}
+	if _, err := docRef.Set(ctx, attempt); err != nil {
+		return nil, errors.Wrap(err, "initial write to firestore")
+	}
+
+	finish := func(status schema.RebuildStatus) {
+		attempt.Status = status
+		attempt.Finished = time.Now().UTC()
+		// We use a background context for the terminal write to ensure it completes
+		// even if the request context is cancelled.
+		if _, err := docRef.Set(context.Background(), attempt); err != nil {
+			log.Printf("failed to write terminal RebuildAttempt %s (status=%s): %v", req.ID, status, err)
+		}
+	}
+
 	v, err := rebuildPackage(ctx, req, deps)
 	if err != nil {
+		finish(schema.RebuildStatusError)
 		return nil, err
 	}
+
 	var dockerfile string
 	r, err := deps.LocalMetadataStore.Reader(ctx, rebuild.DockerfileAsset.For(v.Target))
 	if err == nil {
@@ -374,26 +407,26 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 			log.Println("Failed to load build info:", err)
 		}
 	}
-	// Encode target for Firestore document IDs (handles NPM slashes, etc.)
-	et := rebuild.FirestoreTargetEncoding.Encode(v.Target)
-	_, err = deps.FirestoreClient.Collection("ecosystem").Doc(string(et.Ecosystem)).Collection("packages").Doc(et.Package).Collection("versions").Doc(et.Version).Collection("artifacts").Doc(et.Artifact).Collection("attempts").Doc(req.ID).Set(ctx, schema.RebuildAttempt{
-		Ecosystem:       string(v.Target.Ecosystem),
-		Package:         v.Target.Package,
-		Version:         v.Target.Version,
-		Artifact:        v.Target.Artifact,
-		Success:         v.Message == "",
-		Message:         v.Message,
-		Strategy:        v.StrategyOneof,
-		Dockerfile:      dockerfile,
-		ExecutorVersion: deps.ServiceRepo.Ref,
-		RunID:           req.ID,
-		BuildID:         bi.BuildID,
-		ObliviousID:     bi.ObliviousID,
-		Started:         started,
-		Created:         time.Now().UTC(),
-	})
-	if err != nil {
-		log.Print(errors.Wrap(err, "storing results in firestore"))
+
+	attempt.Success = v.Message == ""
+	attempt.Message = v.Message
+	attempt.Strategy = v.StrategyOneof
+	attempt.Timings = v.Timings
+	attempt.Dockerfile = dockerfile
+	attempt.BuildID = bi.BuildID
+	attempt.ObliviousID = bi.ObliviousID
+
+	status := schema.RebuildStatusSuccess
+	if !attempt.Success {
+		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			status = schema.RebuildStatusCancelled
+		} else if strings.Contains(v.Message, "rebuild content mismatch") {
+			status = schema.RebuildStatusFailure
+		} else {
+			status = schema.RebuildStatusError
+		}
 	}
+	finish(status)
+
 	return v, nil
 }
