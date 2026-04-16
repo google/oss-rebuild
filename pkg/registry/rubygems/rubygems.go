@@ -57,9 +57,20 @@ type VersionMetadata struct {
 	HomepageURI   string `json:"homepage_uri"`
 }
 
+// VersionDetail provides detailed metadata for a specific gem version,
+// fetched from the v2 API.
+type VersionDetail struct {
+	Name      string    `json:"name"`
+	Version   string    `json:"version"`
+	Platform  string    `json:"platform"`
+	SHA       string    `json:"sha"`
+	CreatedAt time.Time `json:"version_created_at"`
+}
+
 // Registry is a RubyGems package registry.
 type Registry interface {
 	Gem(context.Context, string) (*Gem, error)
+	Version(ctx context.Context, name, version string) (*VersionDetail, error)
 	Versions(context.Context, string) ([]VersionInfo, error)
 	Artifact(context.Context, string, string) (io.ReadCloser, error)
 }
@@ -89,6 +100,25 @@ func (r HTTPRegistry) Gem(ctx context.Context, name string) (*Gem, error) {
 		return nil, err
 	}
 	return &g, nil
+}
+
+// Version provides detailed metadata for a specific version of a gem.
+func (r HTTPRegistry) Version(ctx context.Context, name, version string) (*VersionDetail, error) {
+	u := fmt.Sprintf("%s/api/v2/rubygems/%s/versions/%s.json", registryURL.String(), name, version)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	resp, err := r.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, errors.Wrap(errors.New(resp.Status), "fetching version detail")
+	}
+	var vd VersionDetail
+	if err := json.NewDecoder(resp.Body).Decode(&vd); err != nil {
+		return nil, err
+	}
+	return &vd, nil
 }
 
 // Versions provides all version information for the given gem.

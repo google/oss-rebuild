@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
@@ -51,7 +52,8 @@ func TestInferStrategy(t *testing.T) {
 						Repo: "https://github.com/test-org/test-gem",
 						Ref:  commitHash,
 					},
-					RubyVersion: "3.3.11",
+					RubyVersion:  "3.3.11",
+					RegistryTime: must(parseTime("2023-06-01T00:00:00Z")),
 				}
 			},
 		},
@@ -68,7 +70,8 @@ func TestInferStrategy(t *testing.T) {
           s.version = '1.0.0'
         end
 `,
-			wantErr: true,
+			versionDetail: `{"name":"test-gem","version":"1.0.0","platform":"ruby","sha":"abc","version_created_at":"2023-06-01T00:00:00Z"}`,
+			wantErr:       true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,4 +128,15 @@ func TestInferStrategy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func must[T any](t T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
+func parseTime(s string) (t time.Time, err error) {
+	return time.Parse(time.RFC3339, s)
 }

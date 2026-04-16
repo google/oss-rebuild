@@ -640,6 +640,97 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			},
 		},
 		{
+			name:      "rubygems compact index - successful time warp",
+			url:       "http://localhost:8081/info/some-gem",
+			basicAuth: "rubygems:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://rubygems.org/info/some-gem",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header:     http.Header{},
+							Body:       io.NopCloser(bytes.NewBufferString("---\n1.0.0 |checksum:abc123,ruby:>= 2.5\n2.0.0 dep1:~> 1.0|checksum:def456,ruby:>= 3.0\n3.0.0 dep1:~> 2.0|checksum:ghi789,ruby:>= 3.1\n")),
+						},
+					},
+					{
+						Method: "GET",
+						URL:    "https://rubygems.org/api/v1/versions/some-gem.json",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header:     http.Header{"Content-Type": []string{"application/json"}},
+							Body: io.NopCloser(bytes.NewBufferString(`[
+								{"number":"1.0.0","platform":"ruby","created_at":"2021-01-01T00:00:00Z"},
+								{"number":"2.0.0","platform":"ruby","created_at":"2021-06-01T00:00:00Z"},
+								{"number":"3.0.0","platform":"ruby","created_at":"2023-01-01T00:00:00Z"}
+							]`)),
+						},
+					},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"text/plain; charset=utf-8"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString("---\n1.0.0 |checksum:abc123,ruby:>= 2.5\n2.0.0 dep1:~> 1.0|checksum:def456,ruby:>= 3.0\n")),
+			},
+		},
+		{
+			name:      "rubygems gem download - proxy to upstream",
+			url:       "http://localhost:8081/gems/some-gem-1.0.0.gem",
+			basicAuth: "rubygems:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://rubygems.org/gems/some-gem-1.0.0.gem",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header:     http.Header{"Content-Type": []string{"application/octet-stream"}},
+							Body:       io.NopCloser(bytes.NewBufferString("gem-binary-data")),
+						},
+					},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/octet-stream"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString("gem-binary-data")),
+			},
+		},
+		{
+			name:      "rubygems specs - proxy to upstream",
+			url:       "http://localhost:8081/specs.4.8.gz",
+			basicAuth: "rubygems:2022-01-01T00:00:00Z",
+			client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://rubygems.org/specs.4.8.gz",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header:     http.Header{"Content-Type": []string{"application/octet-stream"}},
+							Body:       io.NopCloser(bytes.NewBufferString("marshal-data")),
+						},
+					},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/octet-stream"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString("marshal-data")),
+			},
+		},
+		{
 			name:      "cargogitarchive missing commit hash",
 			url:       "http://localhost:8081/index.git.tar",
 			basicAuth: "cargogitarchive:",

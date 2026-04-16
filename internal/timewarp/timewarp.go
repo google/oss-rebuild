@@ -44,6 +44,7 @@ import (
 var (
 	npmRegistry         = urlx.MustParse("https://registry.npmjs.org/")
 	pypiRegistry        = urlx.MustParse("https://pypi.org/")
+	rubygemsRegistry    = urlx.MustParse("https://rubygems.org/")
 	cratesIndexURL      = urlx.MustParse("https://raw.githubusercontent.com/rust-lang/crates.io-index")
 	lowTimeBound        = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
 	commitHashRegex     = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
@@ -122,6 +123,9 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 	case "pypi":
 		r.URL.Host = pypiRegistry.Host
 		r.URL.Scheme = pypiRegistry.Scheme
+	case "rubygems":
+		r.URL.Host = rubygemsRegistry.Host
+		r.URL.Scheme = rubygemsRegistry.Scheme
 	// TODO: We should add cargogit which serves the repo from a given set of packages. This is built into go-git v6.
 	case "cargogitarchive":
 		// Hard-code the only available endpoint since we only serve the archive
@@ -201,6 +205,18 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 		// Reference: https://warehouse.pypa.io/api-reference/json.html
 		case platform == "pypi" && len(parts) == 3 && parts[0] == "pypi" && parts[2] == "json": // /pypi/{pkg}/json
 		case platform == "pypi" && len(parts) == 2 && parts[0] == "simple": // /simple/{pkg}/ (path.Clean removes trailing slash)
+		// Reference: https://guides.rubygems.org/rubygems-org-compact-index-api/
+		case platform == "rubygems" && len(parts) == 2 && parts[0] == "info": // /info/{gem_name}
+		case platform == "rubygems":
+			// All non-compact-index rubygems paths (specs, versions, gem
+			// downloads, etc.) are proxied to upstream unfiltered and the
+			// subsequent version resolution will use the compact index
+			// /info/{gem} path above which IS time-filtered.
+			// NOTE: These requests must be proxied rather than redirected to
+			// upstream because a redirect causes the gem client to switch to
+			// the upstream host for all subsequent requests, bypassing
+			// timewarp, which breaks time-filtering.
+			return h.proxyUpstream(rw, r)
 		default:
 			http.Redirect(rw, r, r.URL.String(), http.StatusFound)
 			return nil
@@ -257,6 +273,24 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 		}
 		return nil
 	}
+	// RubyGems compact index responses are text, not JSON. Handle separately.
+	if platform == "rubygems" {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return herror{errors.Wrap(err, "reading response"), http.StatusBadGateway}
+		}
+		parts := strings.Split(strings.Trim(path.Clean(r.URL.Path), "/"), "/")
+		gemName := parts[len(parts)-1]
+		filtered, err := h.timeWarpRubyGemsCompactIndexRequest(gemName, string(body), *t)
+		if err != nil {
+			return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
+		}
+		rw.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if _, err := io.WriteString(rw, filtered); err != nil {
+			return herror{errors.Wrap(err, "writing response"), http.StatusBadGateway}
+		}
+		return nil
+	}
 	contentType := resp.Header.Get("Content-Type")
 	if platform == "npm" && contentType != "application/json" {
 		return herror{errors.New("unexpected content type"), http.StatusBadGateway}
@@ -284,6 +318,29 @@ func (h Handler) handleRequest(rw http.ResponseWriter, r *http.Request) error {
 	}
 	if err := json.NewEncoder(rw).Encode(obj); err != nil {
 		return herror{errors.Wrap(err, "serializing response"), http.StatusBadGateway}
+	}
+	return nil
+}
+
+// proxyUpstream forwards a request to the upstream registry without time filtering.
+func (h Handler) proxyUpstream(rw http.ResponseWriter, r *http.Request) error {
+	nr, _ := http.NewRequest(r.Method, r.URL.String(), r.Body)
+	nr.Header = r.Header.Clone()
+	nr.Header.Del("Authorization")
+	nr.Header.Del("Accept-Encoding")
+	resp, err := h.Client.Do(nr)
+	if err != nil {
+		return herror{errors.Wrap(err, "proxying upstream"), http.StatusBadGateway}
+	}
+	defer resp.Body.Close()
+	for key, values := range resp.Header {
+		for _, value := range values {
+			rw.Header().Add(key, value)
+		}
+	}
+	rw.WriteHeader(resp.StatusCode)
+	if _, err := io.Copy(rw, resp.Body); err != nil {
+		log.Printf("error proxying upstream: %v", err)
 	}
 	return nil
 }
@@ -496,6 +553,74 @@ func timeWarpPyPISimpleRequest(obj map[string]any, at time.Time) error {
 	}
 	obj["versions"] = fixedVersions
 	return nil
+}
+
+// timeWarpRubyGemsCompactIndexRequest filters a RubyGems compact index response to
+// exclude versions published after "at". The compact index format has one line per
+// version: "VERSION DEPS|checksum:SHA,ruby:CONSTRAINT". Since the compact index
+// doesn't include timestamps, we fetch them from the versions API.
+func (h Handler) timeWarpRubyGemsCompactIndexRequest(gemName, body string, at time.Time) (string, error) {
+	// Fetch version timestamps from the versions API.
+	versionsURL := rubygemsRegistry.JoinPath("api/v1/versions", gemName+".json")
+	req, err := http.NewRequest(http.MethodGet, versionsURL.String(), nil)
+	if err != nil {
+		return "", errors.Wrap(err, "creating versions request")
+	}
+	resp, err := h.Client.Do(req)
+	if err != nil {
+		return "", errors.Wrap(err, "fetching versions")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return "", errors.Errorf("versions API returned %d", resp.StatusCode)
+	}
+	var versions []struct {
+		Number    string    `json:"number"`
+		Platform  string    `json:"platform"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&versions); err != nil {
+		return "", errors.Wrap(err, "parsing versions")
+	}
+	// Build a set of versions created before the cutoff time.
+	// Use version+platform as key since the compact index includes platform variants.
+	type versionKey struct {
+		number   string
+		platform string
+	}
+	pastVersions := make(map[versionKey]bool)
+	for _, v := range versions {
+		if !v.CreatedAt.After(at) {
+			pastVersions[versionKey{v.Number, v.Platform}] = true
+			// Also allow "ruby" platform (the default) when platform matches.
+			if v.Platform == "ruby" {
+				pastVersions[versionKey{v.Number, ""}] = true
+			}
+		}
+	}
+	// Filter the compact index line by line.
+	var filtered strings.Builder
+	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	for _, line := range lines {
+		// Preserve the header line.
+		if line == "---" {
+			filtered.WriteString(line)
+			filtered.WriteString("\n")
+			continue
+		}
+		// Parse version from the line. Format: "VERSION DEPS|..." or "VERSION |..."
+		version, _, _ := strings.Cut(line, " ")
+		if version == "" {
+			continue
+		}
+		// Check if this version is in the past set.
+		// The compact index uses "ruby" as the default platform (no platform suffix).
+		if pastVersions[versionKey{version, ""}] || pastVersions[versionKey{version, "ruby"}] {
+			filtered.WriteString(line)
+			filtered.WriteString("\n")
+		}
+	}
+	return filtered.String(), nil
 }
 
 // extractVersionFromPyFilename parses a wheel or sdist filename to find its version.

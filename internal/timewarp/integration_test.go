@@ -342,3 +342,104 @@ func TestTimewarpPyPILatestResolution(t *testing.T) {
 		})
 	}
 }
+
+// TestTimewarpRubyGemsClientVersions tests that timewarp works correctly with gem install
+func TestTimewarpRubyGemsClientVersions(t *testing.T) {
+	checkDockerAvailable(t)
+	port, cleanup := startTimewarpServer(t)
+	t.Cleanup(cleanup)
+	// Test that "gem install rake" resolves the correct version at a given timestamp.
+	// Rake version history: https://rubygems.org/gems/rake/versions
+	timestamp := "2020-01-01T00:00:00Z"
+	expectedVersion := "13.0.1" // Latest rake as of 2020-01-01
+	images := []struct {
+		image       string
+		description string
+	}{
+		{"ruby:3.2-slim", "Ruby 3.2"},
+		{"ruby:3.3-slim", "Ruby 3.3"},
+		{"ruby:3.4-slim", "Ruby 3.4"},
+	}
+	for _, img := range images {
+		t.Run(img.description, func(t *testing.T) {
+			t.Parallel()
+			registryURL := fmt.Sprintf("http://rubygems:%s@127.0.0.1:%d", timestamp, port)
+			tempDir := t.TempDir()
+			dockerArgs := []string{
+				"run",
+				"--rm",
+				"--network=host",
+				"--user", getUserID(),
+				"-v", fmt.Sprintf("%s:/workspace", tempDir),
+				"-w", "/workspace",
+				"-e", "HOME=/workspace",
+				img.image,
+				"sh", "-c",
+				fmt.Sprintf(
+					"printf -- '---\\n:sources:\\n- %%s\\n' '%s' > $HOME/.gemrc && "+
+						"gem install --install-dir /workspace/gems rake && "+
+						"cat /workspace/gems/specifications/rake-*.gemspec | head -5",
+					registryURL,
+				),
+			}
+			stdout, stderr, err := runDockerCommand(t, dockerArgs...)
+			if err != nil {
+				t.Fatalf("Docker command failed: %v\nStderr: %s", err, stderr)
+			}
+			// Check that the installed version matches expectations
+			if !strings.Contains(stdout, expectedVersion) {
+				t.Errorf("Expected output to contain version %s, got:\n%s", expectedVersion, stdout)
+			}
+			t.Logf("Installed rake version with %s, output: %s", img.description, stdout)
+		})
+	}
+}
+
+// TestTimewarpRubyGemsLatestResolution tests that gem install resolves correct latest at different timestamps
+func TestTimewarpRubyGemsLatestResolution(t *testing.T) {
+	checkDockerAvailable(t)
+	port, cleanup := startTimewarpServer(t)
+	t.Cleanup(cleanup)
+	tests := []struct {
+		timestamp       string
+		expectedVersion string
+	}{
+		// Rake version history: https://rubygems.org/gems/rake/versions
+		{"2019-01-01T00:00:00Z", "12.3.2"},
+		{"2020-01-01T00:00:00Z", "13.0.1"},
+		{"2022-01-01T00:00:00Z", "13.0.6"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.timestamp, func(t *testing.T) {
+			t.Parallel()
+			registryURL := fmt.Sprintf("http://rubygems:%s@127.0.0.1:%d", tt.timestamp, port)
+			tempDir := t.TempDir()
+			dockerArgs := []string{
+				"run",
+				"--rm",
+				"--network=host",
+				"--user", getUserID(),
+				"-v", fmt.Sprintf("%s:/workspace", tempDir),
+				"-w", "/workspace",
+				"-e", "HOME=/workspace",
+				"ruby:3.3-slim",
+				"sh", "-c",
+				fmt.Sprintf(
+					"printf -- '---\\n:sources:\\n- %%s\\n' '%s' > $HOME/.gemrc && "+
+						"gem install --install-dir /workspace/gems rake && "+
+						"ls /workspace/gems/specifications/",
+					registryURL,
+				),
+			}
+			stdout, stderr, err := runDockerCommand(t, dockerArgs...)
+			if err != nil {
+				t.Fatalf("Docker command failed: %v\nStderr: %s", err, stderr)
+			}
+			expectedSpec := fmt.Sprintf("rake-%s.gemspec", tt.expectedVersion)
+			if !strings.Contains(stdout, expectedSpec) {
+				t.Errorf("At %s, expected %s but got:\n%s", tt.timestamp, expectedSpec, stdout)
+			}
+			t.Logf("At %s, rake latest was %s", tt.timestamp, tt.expectedVersion)
+		})
+	}
+}
