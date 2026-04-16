@@ -61,3 +61,11 @@ func (ctx *StabilizationContext) WithEntry(path string) *StabilizationContext {
 		Stabilizers: ctx.Stabilizers,
 	}
 }
+
+// WithNestedArchive returns a new context with an additional nesting level.
+func (ctx *StabilizationContext) WithNestedArchive(format archive.Format, path string) *StabilizationContext {
+	levels := make([]ArchiveLevel, len(ctx.Levels)+1)
+	copy(levels, ctx.Levels)
+	levels[len(ctx.Levels)] = ArchiveLevel{Format: format, Path: path}
+	return &StabilizationContext{Levels: levels, Stabilizers: ctx.Stabilizers}
+}
