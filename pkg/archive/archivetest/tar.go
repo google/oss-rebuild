@@ -34,13 +34,5 @@ func TgzFile(entries []archive.TarEntry) (*bytes.Buffer, error) {
 	if err != nil {
 		return nil, err
 	}
-	zbuf := new(bytes.Buffer)
-	w := gzip.NewWriter(zbuf)
-	if _, err := w.Write(buf.Bytes()); err != nil {
-		return nil, err
-	}
-	if err := w.Close(); err != nil {
-		return nil, err
-	}
-	return zbuf, nil
+	return GzFile(buf.Bytes(), gzip.Header{})
 }
