@@ -28,6 +28,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"github.com/secure-systems-lab/go-securesystemslib/dsse"
 	"google.golang.org/api/cloudbuild/v1"
@@ -60,6 +61,7 @@ var (
 	agentMetadataBucket   = flag.String("agent-metadata-bucket", "", "GCS bucket for agent build metadata")
 	agentLogsBucket       = flag.String("agent-logs-bucket", "", "GCS bucket for agent build logs")
 	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
+	rebuildJobName        = flag.String("rebuild-job-name", "", "Name of the pre-created Cloud Run Job for rebuilds")
 	port                  = flag.Int("port", 8080, "port on which to serve")
 )
 
@@ -203,6 +205,57 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	return &d, nil
 }
 
+func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, error) {
+	var d apiservice.CreateRebuildOpDeps
+	var err error
+	d.Project = *project
+	d.Location = *location
+	d.JobName = *rebuildJobName
+	fsClient, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating firestore client")
+	}
+	d.Attempts = db.NewFirestoreAttempts(fsClient)
+	runService, err := run.NewService(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating Cloud Run service")
+	}
+	d.RunJob = func(ctx context.Context, name string, req *run.GoogleCloudRunV2RunJobRequest) (*run.GoogleLongrunningOperation, error) {
+		return runService.Projects.Locations.Jobs.Run(name, req).Context(ctx).Do()
+	}
+	d.DepsConfig = schema.RebuildDepsConfig{
+		AssetBucket:                *metadataBucket,
+		BuildProject:               *project,
+		FirestoreProject:           *project,
+		InferenceURL:               *inferenceURL,
+		SigningKeyVersion:          *signingKeyVersion,
+		PublishForLocalServiceRepo: !*blockLocalRepoPublish,
+		OverwriteAttestations:      *overwriteAttestations,
+		AttestationBucket:          *attestationBucket,
+		DebugStorage:               *debugStorage,
+		LogsBucket:                 *logsBucket,
+		PrebuildRepo:               BuildRepo,
+		PrebuildRef:                *prebuildVersion,
+		PrebuildAuth:               *prebuildAuth,
+		PrebuildBucket:             *prebuildBucket,
+		BuildDefRepo:               *buildDefRepo,
+		BuildDefRef:                plumbing.Main.String(),
+		BuildDefDir:                path.Clean(*buildDefRepoDir),
+		BuildRemoteIdentity:        *buildRemoteIdentity,
+	}
+	return &d, nil
+}
+
+func GetRebuildOpInit(ctx context.Context) (*apiservice.GetRebuildOpDeps, error) {
+	var d apiservice.GetRebuildOpDeps
+	fsClient, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating firestore client")
+	}
+	d.Reader = apiservice.NewRebuildView(db.NewFirestoreAttempts(fsClient))
+	return &d, nil
+}
+
 func VersionInit(ctx context.Context) (*apiservice.VersionDeps, error) {
 	var d apiservice.VersionDeps
 	{
@@ -255,6 +308,8 @@ func main() {
 	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 	http.HandleFunc("/rebuild", api.Handler(RebuildPackageInit, apiservice.RebuildPackage))
+	http.HandleFunc("/rebuild/op/create", api.Handler(CreateRebuildOpInit, apiservice.CreateRebuildOp))
+	http.HandleFunc("/rebuild/op/get", api.Handler(GetRebuildOpInit, apiservice.GetRebuildOp))
 	http.HandleFunc("/version", api.Handler(VersionInit, apiservice.Version))
 	http.HandleFunc("/runs", api.Handler(CreateRunInit, apiservice.CreateRun))
 	http.HandleFunc("/agent", api.Handler(AgentCreateInit, apiservice.AgentCreate))
