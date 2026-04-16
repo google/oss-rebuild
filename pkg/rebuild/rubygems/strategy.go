@@ -19,13 +19,21 @@ type GemBuild struct {
 var _ rebuild.Strategy = &GemBuild{}
 
 func (b *GemBuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	deps := []flow.Step{}
+	if b.RubyVersion != "" {
+		deps = append(deps, flow.Step{
+			Uses: "rubygems/install-ruby",
+			With: map[string]string{
+				"rubyVersion": b.RubyVersion,
+			},
+		})
+	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Source: []flow.Step{{
 			Uses: "git-checkout",
 		}},
-		// TODO: Install toolchain based on RubyVersion
-		Deps: []flow.Step{},
+		Deps: deps,
 		Build: []flow.Step{{
 			Uses: "rubygems/build/gem",
 			With: map[string]string{
@@ -50,13 +58,27 @@ func init() {
 // Base tools for individual operations
 var toolkit = []*flow.Tool{
 	{
+		Name: "rubygems/install-ruby",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				{{- $prefix := printf "/opt/hostedtoolcache/Ruby/%s/x64" .With.rubyVersion -}}
+				apt-get update && apt-get install -y --no-install-recommends build-essential wget ca-certificates libyaml-dev
+				wget -q -O /tmp/ruby.tar.gz "https://github.com/ruby/ruby-builder/releases/download/ruby-{{.With.rubyVersion}}/ruby-{{.With.rubyVersion}}-ubuntu-24.04-x64.tar.gz"
+				mkdir -p {{$prefix}}
+				tar xzf /tmp/ruby.tar.gz --strip-components=1 -C {{$prefix}}
+				ln -sf {{$prefix}}/bin/* /usr/local/bin/
+				rm -f /tmp/ruby.tar.gz`)[1:],
+			Needs: []string{},
+		}},
+	},
+	{
 		Name: "rubygems/build/gem",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{- $dir := .With.dir -}}
 				{{- if and (ne $dir ".") (ne $dir "")}}cd {{$dir}} && {{end -}}
 				gem build *.gemspec`)[1:],
-			Needs: []string{"ruby"},
+			Needs: []string{},
 		}},
 	},
 }

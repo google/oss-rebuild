@@ -21,8 +21,9 @@ func DefaultBaseImageConfig() BaseImageConfig {
 	return BaseImageConfig{
 		Default: "docker.io/library/alpine:3.21",
 		Ecosystems: map[rebuild.Ecosystem]string{
-			rebuild.Debian: "docker.io/library/debian:stable-20251103-slim",
-			rebuild.Maven:  "docker.io/library/debian:stable-20251103-slim",
+			rebuild.Debian:   "docker.io/library/debian:stable-20251103-slim",
+			rebuild.Maven:    "docker.io/library/debian:stable-20251103-slim",
+			rebuild.RubyGems: "docker.io/library/debian:stable-20251103-slim",
 		},
 	}
 }
