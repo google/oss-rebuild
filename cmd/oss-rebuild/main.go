@@ -46,6 +46,10 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "oss-rebuild [subcommand]",
 	Short: "A CLI tool for OSS Rebuild",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(logo)
+		cmd.Help()
+	},
 }
 
 func writeIndentedJson(out io.Writer, b []byte) error {
