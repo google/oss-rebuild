@@ -14,6 +14,11 @@ type GemBuild struct {
 	rebuild.Location
 	// RubyVersion is the version of Ruby to use for the build.
 	RubyVersion string `json:"ruby_version,omitempty" yaml:"ruby_version,omitempty"`
+	// RubygemsVersion is the version of RubyGems to install. If set, the build
+	// will run "gem update --system" to install this version before building.
+	// This is needed when the upstream gem was built with a RubyGems version
+	// different from the one bundled with the inferred Ruby version.
+	RubygemsVersion string `json:"rubygems_version,omitempty" yaml:"rubygems_version,omitempty"`
 }
 
 var _ rebuild.Strategy = &GemBuild{}
@@ -25,6 +30,14 @@ func (b *GemBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 			Uses: "rubygems/install-ruby",
 			With: map[string]string{
 				"rubyVersion": b.RubyVersion,
+			},
+		})
+	}
+	if b.RubygemsVersion != "" {
+		deps = append(deps, flow.Step{
+			Uses: "rubygems/update-rubygems",
+			With: map[string]string{
+				"rubygemsVersion": b.RubygemsVersion,
 			},
 		})
 	}
@@ -69,6 +82,12 @@ var toolkit = []*flow.Tool{
 				ln -sf {{$prefix}}/bin/* /usr/local/bin/
 				rm -f /tmp/ruby.tar.gz`)[1:],
 			Needs: []string{},
+		}},
+	},
+	{
+		Name: "rubygems/update-rubygems",
+		Steps: []flow.Step{{
+			Runs: `gem update --system {{.With.rubygemsVersion}}`,
 		}},
 	},
 	{
