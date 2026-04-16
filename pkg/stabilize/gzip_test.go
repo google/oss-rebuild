@@ -103,7 +103,7 @@ func TestNewStabilizedGzipWriter(t *testing.T) {
 			// Apply stabilization to gzip data
 			outBuf := &bytes.Buffer{}
 			gr := must(gzip.NewReader(bytes.NewReader(inBuf.Bytes())))
-			gw = must(NewStabilizedGzipWriter(gr, outBuf, StabilizeOpts{Stabilizers: tt.stabilizers}, NewContext(archive.GzipFormat)))
+			gw = must(NewStabilizedGzipWriter(gr, outBuf, NewContext(archive.GzipFormat).WithStabilizers(tt.stabilizers)))
 			must(io.Copy(gw, gr))
 			orDie(gw.Close())
 

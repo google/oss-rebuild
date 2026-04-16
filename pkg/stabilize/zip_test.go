@@ -74,7 +74,7 @@ func TestStabilizeZip(t *testing.T) {
 			}
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
-			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{Stabilizers: AllZipStabilizers}, NewContext(archive.ZipFormat))
+			err := StabilizeZip(zr, zip.NewWriter(&output), NewContext(archive.ZipFormat).WithStabilizers(AllZipStabilizers))
 			if err != nil {
 				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
 			}

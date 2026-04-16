@@ -131,7 +131,7 @@ func Stabilize(dst io.Writer, src io.Reader, f archive.Format) error {
 
 // StabilizeWithOpts selects and applies the provided stabilization routine for the given archive format.
 func StabilizeWithOpts(dst io.Writer, src io.Reader, f archive.Format, opts StabilizeOpts) error {
-	ctx := NewContext(f)
+	ctx := NewContext(f).WithStabilizers(opts.Stabilizers)
 	switch f {
 	case archive.ZipFormat:
 		srcReader, size, err := archive.ToZipCompatibleReader(src)
@@ -144,7 +144,7 @@ func StabilizeWithOpts(dst io.Writer, src io.Reader, f archive.Format, opts Stab
 		}
 		zw := zip.NewWriter(dst)
 		defer zw.Close()
-		err = StabilizeZip(zr, zw, opts, ctx)
+		err = StabilizeZip(zr, zw, ctx)
 		if err != nil {
 			return errors.Wrap(err, "stabilizing zip")
 		}
@@ -154,12 +154,12 @@ func StabilizeWithOpts(dst io.Writer, src io.Reader, f archive.Format, opts Stab
 			return errors.Wrap(err, "initializing gzip reader")
 		}
 		defer gzr.Close()
-		gzw, err := NewStabilizedGzipWriter(gzr, dst, opts, ctx)
+		gzw, err := NewStabilizedGzipWriter(gzr, dst, ctx)
 		if err != nil {
 			return errors.Wrap(err, "initializing gzip writer")
 		}
 		defer gzw.Close()
-		err = StabilizeTar(tar.NewReader(gzr), tar.NewWriter(gzw), opts, ctx)
+		err = StabilizeTar(tar.NewReader(gzr), tar.NewWriter(gzw), ctx)
 		if err != nil {
 			return errors.Wrap(err, "stabilizing tar.gz")
 		}
@@ -169,7 +169,7 @@ func StabilizeWithOpts(dst io.Writer, src io.Reader, f archive.Format, opts Stab
 			return errors.Wrap(err, "initializing gzip reader")
 		}
 		defer gzr.Close()
-		gzw, err := NewStabilizedGzipWriter(gzr, dst, opts, ctx)
+		gzw, err := NewStabilizedGzipWriter(gzr, dst, ctx)
 		if err != nil {
 			return errors.Wrap(err, "stabilizing gzip")
 		}
@@ -178,7 +178,7 @@ func StabilizeWithOpts(dst io.Writer, src io.Reader, f archive.Format, opts Stab
 			return errors.Wrap(err, "copying gzip content")
 		}
 	case archive.TarFormat:
-		err := StabilizeTar(tar.NewReader(src), tar.NewWriter(dst), opts, ctx)
+		err := StabilizeTar(tar.NewReader(src), tar.NewWriter(dst), ctx)
 		if err != nil {
 			return errors.Wrap(err, "stabilizing tar")
 		}

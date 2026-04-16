@@ -149,9 +149,7 @@ func TestStableJARBuildMetadata(t *testing.T) {
 			// Process with stabilizer
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
-			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
-				Stabilizers: []Stabilizer{StableJARBuildMetadata},
-			}, NewContext(archive.ZipFormat))
+			err := StabilizeZip(zr, zip.NewWriter(&output), NewContext(archive.ZipFormat).WithStabilizers([]Stabilizer{StableJARBuildMetadata}))
 			if err != nil {
 				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
 			}
@@ -348,9 +346,7 @@ func TestStableOrderOfAttributeValues(t *testing.T) {
 			// Process with stabilizer
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
-			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
-				Stabilizers: []Stabilizer{StableJAROrderOfAttributeValues},
-			}, NewContext(archive.ZipFormat))
+			err := StabilizeZip(zr, zip.NewWriter(&output), NewContext(archive.ZipFormat).WithStabilizers([]Stabilizer{StableJAROrderOfAttributeValues}))
 			if err != nil {
 				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
 			}
@@ -498,9 +494,7 @@ func TestStableGitProperties(t *testing.T) {
 			// Process with stabilizer
 			var output bytes.Buffer
 			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
-			err := StabilizeZip(zr, zip.NewWriter(&output), StabilizeOpts{
-				Stabilizers: []Stabilizer{StableGitProperties},
-			}, NewContext(archive.ZipFormat))
+			err := StabilizeZip(zr, zip.NewWriter(&output), NewContext(archive.ZipFormat).WithStabilizers([]Stabilizer{StableGitProperties}))
 			if err != nil {
 				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
 			}

@@ -105,11 +105,11 @@ var StableZipMisc = Stabilizer{
 }))
 
 // StabilizeZip strips volatile metadata and rewrites the provided archive in a standard form.
-func StabilizeZip(zr *zip.Reader, zw *zip.Writer, opts StabilizeOpts, ctx *StabilizationContext) error {
+func StabilizeZip(zr *zip.Reader, zw *zip.Writer, ctx *StabilizationContext) error {
 	defer zw.Close()
 	mr := archive.NewMutableReader(zr)
 	// TODO: This ordering is inefficient as it lacks reuse for entryCtx
-	for _, s := range opts.Stabilizers {
+	for _, s := range ctx.Stabilizers {
 		if fn, ok := s.FnFor(ctx).(ZipArchiveFn); ok && fn != nil {
 			fn(&mr)
 		} else {

@@ -5,10 +5,12 @@ package stabilize
 
 import "github.com/google/oss-rebuild/pkg/archive"
 
-// StabilizationContext tracks position within potentially nested archives.
+// StabilizationContext tracks position within potentially nested archives
+// and carries the stabilizer pipeline for recursive application.
 type StabilizationContext struct {
-	Levels []ArchiveLevel
-	Entry  *EntryInfo
+	Levels      []ArchiveLevel
+	Entry       *EntryInfo
+	Stabilizers []Stabilizer
 }
 
 // ArchiveLevel represents a single level in a nested archive.
@@ -45,10 +47,17 @@ func (ctx *StabilizationContext) Format() archive.Format {
 	return ctx.Levels[len(ctx.Levels)-1].Format
 }
 
+// WithStabilizers returns a new context with the given stabilizers.
+func (ctx *StabilizationContext) WithStabilizers(stabilizers []Stabilizer) *StabilizationContext {
+	ctx.Stabilizers = stabilizers
+	return ctx
+}
+
 // WithEntry returns a new context with the given entry information.
 func (ctx *StabilizationContext) WithEntry(path string) *StabilizationContext {
 	return &StabilizationContext{
-		Levels: ctx.Levels,
-		Entry:  &EntryInfo{Path: path},
+		Levels:      ctx.Levels,
+		Entry:       &EntryInfo{Path: path},
+		Stabilizers: ctx.Stabilizers,
 	}
 }
