@@ -4,7 +4,7 @@
 -->
 
     <h2>Attempt Details</h2>
-    <p><strong>Package:</strong> <a href="/package/{{.Ecosystem}}/{{.EncodedPackage}}">{{.Ecosystem}}:{{.PackageName}}</a> {{.Attempt.Version}}</p>
+    <p><strong>Package:</strong> <a href="/package/{{.Attempt.Encoded.Ecosystem}}/{{.Attempt.Encoded.Package}}">{{.Attempt.Ecosystem}}:{{.Attempt.Package}}</a> {{.Attempt.Version}}</p>
     <p><strong>Artifact:</strong> {{.Attempt.Artifact}}</p>
     <p><strong>Status:</strong>
         {{if .Attempt.Success}}
@@ -26,7 +26,7 @@
     {{end}}
 
     {{if $logID}}
-    <p><strong>Logs:</strong> <a href="/attempt/{{.Ecosystem}}/{{.EncodedPackage}}/{{.Attempt.EncodedVersion}}/{{.Attempt.EncodedArtifact}}/{{.Attempt.RunID}}/build-logs/">View Raw Logs</a></p>
+    <p><strong>Logs:</strong> <a href="/attempt/{{.Attempt.Encoded.Ecosystem}}/{{.Attempt.Encoded.Package}}/{{.Attempt.Encoded.Version}}/{{.Attempt.Encoded.Artifact}}/{{.Attempt.RunID}}/build-logs/">View Raw Logs</a></p>
     {{end}}
 
     <h3>Strategy</h3>
