@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -135,7 +136,31 @@ var grpcToHTTP = map[codes.Code]int{
 	codes.Unauthenticated:    http.StatusUnauthorized,
 }
 
+func jsonResponse[O any](rw http.ResponseWriter, o *O) error {
+	if o != nil {
+		return json.NewEncoder(rw).Encode(o)
+	}
+	return nil
+}
+
+func templateResponse[O any](tmpl *template.Template) func(http.ResponseWriter, *O) error {
+	return func(rw http.ResponseWriter, o *O) error {
+		if o != nil {
+			return tmpl.Execute(rw, o)
+		}
+		return nil
+	}
+}
+
 func Handler[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler HandlerFunc[I, O, D]) http.HandlerFunc {
+	return handleUsingResponder(initDeps, handler, jsonResponse)
+}
+
+func HTMLHandler[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler HandlerFunc[I, O, D], tmpl *template.Template) http.HandlerFunc {
+	return handleUsingResponder(initDeps, handler, templateResponse[O](tmpl))
+}
+
+func handleUsingResponder[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler HandlerFunc[I, O, D], responder func(http.ResponseWriter, *O) error) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
 		r.ParseForm()
@@ -186,7 +211,7 @@ func Handler[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler Handl
 			return
 		}
 		if o != nil {
-			if err := json.NewEncoder(rw).Encode(o); err != nil {
+			if err := responder(rw, o); err != nil {
 				log.Println(errors.Wrap(err, "encoding response"))
 				http.Error(rw, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
