@@ -37,6 +37,7 @@ var (
 	dockerJavaTruststoreEnvVar = flag.Bool("docker_java_truststore", false, "whether to patch containers with Java proxy cert truststore file and env var")
 	dockerBazelTruststore      = flag.Bool("docker_bazel_truststore", false, "whether to patch containers with global .bazelrc file pointing to the Java proxy cert truststore")
 	dockerProxySocket          = flag.Bool("docker_recursive_proxy", false, "whether to patch containers with a unix domain socket which proxies docker requests from created containers")
+	dockerCustomFiles          = flag.String("docker_custom_files", "", "JSON string mapping path to CustomFile. Content must be Base64 encoded because it is unmarshaled into a Go []byte.")
 	policyMode                 = flag.String("policy_mode", "disabled", "mode to run the proxy in. Options: disabled, enforce")
 	policyFile                 = flag.String("policy_file", "", "path to a json file specifying the policy to apply to the proxy")
 )
@@ -85,11 +86,18 @@ func main() {
 		if *dockerTruststoreEnvVars != "" {
 			truststoreEnvVars = strings.Split(*dockerTruststoreEnvVars, ",")
 		}
+		var customFiles map[string]docker.CustomFile
+		if *dockerCustomFiles != "" {
+			if err := json.Unmarshal([]byte(*dockerCustomFiles), &customFiles); err != nil {
+				log.Fatalf("Error parsing docker_custom_files: %v", err)
+			}
+		}
 		ctp, err := docker.NewContainerTruststorePatcher(*ca.Leaf, docker.ContainerTruststorePatcherOpts{
 			EnvVars:              envVars,
 			TruststoreEnvVars:    truststoreEnvVars,
 			JavaTruststoreEnvVar: *dockerJavaTruststoreEnvVar,
 			BazelTruststore:      *dockerBazelTruststore,
+			CustomFiles:          customFiles,
 			RecursiveProxy:       *dockerProxySocket,
 			NetworkOverride:      *dockerNetwork,
 		})

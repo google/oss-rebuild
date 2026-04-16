@@ -55,8 +55,8 @@ const (
 	// NOTE: /var/cache is chosen since it exists by default on almost every
 	// distro and since it, by its semantics, can be emptied without having a
 	// functional impact on running applications.
-	proxyCertPath    = "/var/cache/proxy.crt"
-	proxyCertJKSPath = "/var/cache/proxy.crt.jks"
+	ProxyCertPath    = "/var/cache/proxy.crt"
+	ProxyCertJKSPath = "/var/cache/proxy.crt.jks"
 	// Official interface for providing additional args to JVMs.
 	javaTruststoreEnvVar = "JAVA_TOOL_OPTIONS"
 	// Bazel configuration file that is interpreted first.
@@ -407,6 +407,19 @@ type patchSet struct {
 	Patches []patch
 }
 
+type FileWriteMode int
+
+const (
+	OverwriteExisting FileWriteMode = iota
+	AppendToExisting
+	ErrorOnExisting
+)
+
+type CustomFile struct {
+	Content []byte
+	Mode    FileWriteMode
+}
+
 // ContainerTruststorePatcher provides a Docker API proxy that patches the container truststore while running.
 type ContainerTruststorePatcher struct {
 	cert                 x509.Certificate
@@ -414,6 +427,7 @@ type ContainerTruststorePatcher struct {
 	truststoreEnvVars    []string
 	javaTruststoreEnvVar bool
 	bazelTruststore      bool
+	customFiles          map[string]CustomFile
 	networkOverride      string // TODO: Not a good fit for this abstraction
 	proxySocket          string
 	patchMap             map[string]*patchSet
@@ -427,6 +441,7 @@ type ContainerTruststorePatcherOpts struct {
 	TruststoreEnvVars    []string
 	JavaTruststoreEnvVar bool
 	BazelTruststore      bool
+	CustomFiles          map[string]CustomFile
 	RecursiveProxy       bool
 	NetworkOverride      string
 }
@@ -451,6 +466,7 @@ func NewContainerTruststorePatcher(cert x509.Certificate, opts ContainerTruststo
 		truststoreEnvVars:    opts.TruststoreEnvVars,
 		javaTruststoreEnvVar: opts.JavaTruststoreEnvVar,
 		bazelTruststore:      opts.BazelTruststore,
+		customFiles:          opts.CustomFiles,
 		networkOverride:      opts.NetworkOverride,
 		proxySocket:          sockName,
 		patchMap:             make(map[string]*patchSet),
@@ -558,7 +574,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		// and commit operations on the container won't pick up any new files or
 		// directories written to the dir during its execution.
 		volName := fmt.Sprintf("proxy-vol%d", d.created.Add(1))
-		newBody, err = addBinding(newBody, volName, filepath.Dir(proxyCertPath), "rw")
+		newBody, err = addBinding(newBody, volName, filepath.Dir(ProxyCertPath), "rw")
 		if err != nil {
 			log.Fatalf("Failed to add volume for request %s: %s", req.URL.Path, err)
 		}
@@ -567,7 +583,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			vars = append(vars, v)
 		}
 		for _, v := range d.truststoreEnvVars {
-			vars = append(vars, v+"="+proxyCertPath)
+			vars = append(vars, v+"="+ProxyCertPath)
 		}
 		if d.javaTruststoreEnvVar {
 			// NOTE: Since other user-provided values can be set in JAVA_TOOL_OPTIONS,
@@ -580,7 +596,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			if val != "" {
 				newVal = trimQuotes(val) + " "
 			}
-			newVal += "-Djavax.net.ssl.trustStore=" + proxyCertJKSPath
+			newVal += "-Djavax.net.ssl.trustStore=" + ProxyCertJKSPath
 			vars = append(vars, javaTruststoreEnvVar+"="+newVal)
 			log.Printf("Updated %s [old=%s, new=%s]", javaTruststoreEnvVar, val, newVal)
 		}
@@ -625,7 +641,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		certBytes := cert.ToPEM(&d.cert)
 		// NOTE: This doesn't need to be cleaned up due to the enclosing volume
 		// binding made at creation time.
-		if err := createFile(dfs, certBytes, proxyCertPath); err != nil {
+		if err := createFile(dfs, certBytes, ProxyCertPath); err != nil {
 			log.Printf("Creating proxy cert: %v", err)
 			break
 		}
@@ -635,13 +651,13 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 				log.Printf("Generating java proxy cert: %v", err)
 				break
 			}
-			if err := createFile(dfs, jks, proxyCertJKSPath); err != nil {
+			if err := createFile(dfs, jks, ProxyCertJKSPath); err != nil {
 				log.Printf("Creating java proxy cert: %v", err)
 				break
 			}
 		}
 		if d.bazelTruststore {
-			bazelRCContents := fmt.Sprintf("startup --host_jvm_args=-Djavax.net.ssl.trustStore=%s", proxyCertJKSPath)
+			bazelRCContents := fmt.Sprintf("startup --host_jvm_args=-Djavax.net.ssl.trustStore=%s", ProxyCertJKSPath)
 			bazelRCBytes := []byte(bazelRCContents)
 			f, err := dfs.OpenAndResolve(bazelSystemRCPath)
 			if err != nil {
@@ -662,6 +678,47 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 					break
 				}
 			}
+		}
+		// TODO: Consider supporting templating in file content to allow dynamic insertion of cert paths.
+		customFilesFailed := false
+		for path, file := range d.customFiles {
+			f, err := dfs.OpenAndResolve(path)
+			if err != nil {
+				if err == iofs.ErrNotExist {
+					if err := createFile(dfs, file.Content, path); err != nil {
+						log.Printf("Creating custom file %s: %v", path, err)
+						customFilesFailed = true
+						break
+					}
+				} else {
+					log.Printf("Reading custom file %s: %v", path, err)
+					customFilesFailed = true
+					break
+				}
+			} else {
+				switch file.Mode {
+				case OverwriteExisting:
+					f.Contents = file.Content
+					err = dfs.WriteFile(f)
+				case AppendToExisting:
+					f.Contents = append(f.Contents[:], file.Content...)
+					err = dfs.WriteFile(f)
+				case ErrorOnExisting:
+					log.Printf("Custom file %s already exists", path)
+					customFilesFailed = true
+				}
+				if customFilesFailed {
+					break
+				}
+				if err != nil {
+					log.Printf("Writing to custom file %s: %v", path, err)
+					customFilesFailed = true
+					break
+				}
+			}
+		}
+		if customFilesFailed {
+			break
 		}
 		patchset := d.leasePatchSet(id)
 		if len(patchset.Patches) > 0 {
