@@ -7,15 +7,15 @@ import (
 	"context"
 	"time"
 
-	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 )
 
 type CreateRunDeps struct {
-	FirestoreClient *firestore.Client
+	Runs db.Runs
 }
 
 func CreateRun(ctx context.Context, req schema.CreateRunRequest, deps *CreateRunDeps) (*schema.Run, error) {
@@ -24,13 +24,14 @@ func CreateRun(ctx context.Context, req schema.CreateRunRequest, deps *CreateRun
 		BenchmarkName: req.BenchmarkName,
 		BenchmarkHash: req.BenchmarkHash,
 		Type:          req.Type,
+		Created:       time.Now().UTC(),
 	}
-	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
-		run.Created = time.Now().UTC()
-		return t.Create(deps.FirestoreClient.Collection("runs").Doc(run.ID), run)
-	})
-	if err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "firestore write"))
+	if err := deps.Runs.Insert(ctx, run); err != nil {
+		code := codes.Internal
+		if errors.Is(err, db.ErrAlreadyExists) {
+			code = codes.AlreadyExists
+		}
+		return nil, api.AsStatus(code, errors.Wrap(err, "db write"))
 	}
 	return &run, nil
 }

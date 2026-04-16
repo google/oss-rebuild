@@ -24,6 +24,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
@@ -58,13 +59,14 @@ func (FakeSigner) KeyID() (string, error) {
 // a strategy type that's dependent on artifact.
 func TestRebuildPackage(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		target      rebuild.Target
-		calls       []httpxtest.Call
-		strategy    rebuild.Strategy
-		file        *bytes.Buffer
-		buildDef    *schema.BuildDefinition
-		expectedMsg string
+		name           string
+		target         rebuild.Target
+		calls          []httpxtest.Call
+		strategy       rebuild.Strategy
+		file           *bytes.Buffer
+		buildDef       *schema.BuildDefinition
+		expectedMsg    string
+		expectedStatus schema.RebuildStatus
 	}{
 		{
 			name:   "python wheel success",
@@ -104,6 +106,7 @@ func TestRebuildPackage(t *testing.T) {
 			file: must(archivetest.ZipFile([]archive.ZipEntry{
 				{FileHeader: &zip.FileHeader{Name: "foo", Modified: time.UnixMilli(0)}, Body: []byte("foo")},
 			})),
+			expectedStatus: schema.RebuildStatusSuccess,
 		},
 		{
 			name:   "python wheel mismatch",
@@ -143,7 +146,8 @@ func TestRebuildPackage(t *testing.T) {
 			file: must(archivetest.ZipFile([]archive.ZipEntry{
 				{FileHeader: &zip.FileHeader{Name: "foo", Modified: time.UnixMilli(0)}, Body: []byte("foo")},
 			})),
-			expectedMsg: "rebuild content mismatch",
+			expectedMsg:    "rebuild content mismatch",
+			expectedStatus: schema.RebuildStatusFailure,
 		},
 		{
 			name:   "rust crate success",
@@ -173,6 +177,7 @@ func TestRebuildPackage(t *testing.T) {
 			file: must(archivetest.TgzFile([]archive.TarEntry{
 				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
 			})),
+			expectedStatus: schema.RebuildStatusSuccess,
 		},
 		{
 			name:   "npm package success",
@@ -202,6 +207,7 @@ func TestRebuildPackage(t *testing.T) {
 			file: must(archivetest.TgzFile([]archive.TarEntry{
 				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
 			})),
+			expectedStatus: schema.RebuildStatusSuccess,
 		},
 		{
 			name:   "deb binary-only release success",
@@ -266,7 +272,8 @@ RLpmHHG1JOVdOA==
 				},
 				Requirements: []string{"debhelper", "autopoint", "doxygen"},
 			},
-			file: bytes.NewBuffer([]byte("deb_contents")),
+			file:           bytes.NewBuffer([]byte("deb_contents")),
+			expectedStatus: schema.RebuildStatusSuccess,
 		},
 		{
 			name:   "deb native package success",
@@ -325,7 +332,8 @@ RLpmHHG1JOVdOA==
 				},
 				Requirements: []string{"debhelper", "autopoint", "doxygen"},
 			},
-			file: bytes.NewBuffer([]byte("deb_contents")),
+			file:           bytes.NewBuffer([]byte("deb_contents")),
+			expectedStatus: schema.RebuildStatusSuccess,
 		},
 		{
 			name:   "debrebuild success",
@@ -359,7 +367,8 @@ RLpmHHG1JOVdOA==
 					MD5: "deadcafe",
 				},
 			},
-			file: bytes.NewBuffer([]byte("deb_contents")),
+			file:           bytes.NewBuffer([]byte("deb_contents")),
+			expectedStatus: schema.RebuildStatusSuccess,
 		},
 		{
 			name:   "deb guess epoch 1 on fileinfo not found",
@@ -426,7 +435,8 @@ RLpmHHG1JOVdOA==
 				},
 				Requirements: []string{"debhelper", "autopoint", "doxygen"},
 			},
-			file: bytes.NewBuffer([]byte("deb_contents")),
+			file:           bytes.NewBuffer([]byte("deb_contents")),
+			expectedStatus: schema.RebuildStatusSuccess,
 		},
 		{
 			name:   "manual build def success",
@@ -460,6 +470,7 @@ RLpmHHG1JOVdOA==
 			file: must(archivetest.TgzFile([]archive.TarEntry{
 				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
 			})),
+			expectedStatus: schema.RebuildStatusSuccess,
 		},
 		{
 			name:   "manual build def with custom stabilizer success",
@@ -501,6 +512,7 @@ RLpmHHG1JOVdOA==
 			file: must(archivetest.TgzFile([]archive.TarEntry{
 				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
 			})),
+			expectedStatus: schema.RebuildStatusSuccess,
 		},
 		{
 			name:   "maven jar success",
@@ -526,6 +538,7 @@ RLpmHHG1JOVdOA==
 				// checks for stabilize too
 				{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\n\n")}},
 			)),
+			expectedStatus: schema.RebuildStatusSuccess,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -547,6 +560,7 @@ RLpmHHG1JOVdOA==
 				return remoteMetadata, nil
 			}
 			d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(must(mfs.Chroot("local-metadata")))
+			d.Attempts = db.NewMemoryAttempts()
 			buildSteps := []*cloudbuild.BuildStep{
 				{Name: "gcr.io/foo/bar", Script: "./bar"},
 			}
@@ -633,10 +647,31 @@ RLpmHHG1JOVdOA==
 				must(gitxtest.CreateRepo(commits, &repoOpts))
 			}
 
-			verdict, err := rebuildPackage(ctx, schema.RebuildPackageRequest{Ecosystem: tc.target.Ecosystem, Package: tc.target.Package, Version: tc.target.Version, Artifact: tc.target.Artifact, UseRepoDefinition: tc.buildDef != nil}, &d)
+			req := schema.RebuildPackageRequest{
+				Ecosystem:         tc.target.Ecosystem,
+				Package:           tc.target.Package,
+				Version:           tc.target.Version,
+				Artifact:          tc.target.Artifact,
+				ID:                "test-run",
+				UseRepoDefinition: tc.buildDef != nil,
+			}
+			verdict, err := RebuildPackage(ctx, req, &d)
 			if err != nil {
 				t.Fatalf("RebuildPackage(): %v", err)
 			}
+
+			// Assert attempt was stored correctly
+			got, err := d.Attempts.Get(ctx, db.AttemptKey{Target: tc.target, RunID: req.ID})
+			if err != nil {
+				t.Fatalf("Attempts.Get: %v", err)
+			}
+			if got.Status != tc.expectedStatus {
+				t.Errorf("Status = %s, want %s", got.Status, tc.expectedStatus)
+			}
+			if got.Started.IsZero() || got.Created.IsZero() {
+				t.Errorf("timestamps not set: started=%v created=%v", got.Started, got.Created)
+			}
+
 			if tc.expectedMsg != "" {
 				if !strings.Contains(verdict.Message, tc.expectedMsg) {
 					t.Fatalf("RebuildPackage(): verdict=%v,want=%s", verdict.Message, tc.expectedMsg)
