@@ -100,8 +100,8 @@ func runParallelSimple(tasks []task) error {
 	if len(failed) > 0 {
 		fmt.Println()
 		for _, r := range failed {
-			fmt.Printf("=== %s failed ===\n", r.name)
-			printFailure(r, "")
+			fmt.Printf("✗ %s failed:\n", r.name)
+			printFailure(r, "  ")
 		}
 		return fmt.Errorf("%d task(s) failed", len(failed))
 	}
@@ -195,8 +195,8 @@ func runSequentialSimple(tasks []task) error {
 	for _, t := range tasks {
 		stdout, stderr, err := t.fn(ctx)
 		if err != nil {
-			fmt.Printf("✗ %s\n", t.name)
-			printFailure(taskResult{name: t.name, stdout: stdout, stderr: stderr, err: err}, "")
+			fmt.Printf("✗ %s failed:\n", t.name)
+			printFailure(taskResult{name: t.name, stdout: stdout, stderr: stderr, err: err}, "  ")
 			if !continueOnFailure {
 				return err
 			}
