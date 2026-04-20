@@ -16,7 +16,5 @@ const (
 	TimewarpID
 	RunID
 	GCSClientOptionsID
-	GCBCancelDeadlineID
-	GCBWaitDeadlineID
 	CratesRegistryStubID
 )
