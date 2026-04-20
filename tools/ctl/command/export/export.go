@@ -271,7 +271,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Project, "project", "", "the project from which to fetch the Firestore data")
 	set.StringVar(&cfg.Run, "run", "", "the run from which to export results")
 	set.StringVar(&cfg.Destination, "destination", "", "the destination for the export, e.g. gs://bucket/prefix")
-	set.StringVar(&cfg.Pattern, "pattern", "", "filter results to those matching this regex pattern")
+	set.StringVar(&cfg.Pattern, "pattern", "", "filter results to those whose status message match this regex pattern")
 	set.BoolVar(&cfg.ExportRundex, "rundex", false, "whether to include the rundex in the export")
 	set.StringVar(&cfg.AssetTypes, "asset-types", "", "a comma-separated list of asset types to export")
 	set.IntVar(&cfg.MaxConcurrency, "max-concurrency", 90, "maximum number of inflight requests")
