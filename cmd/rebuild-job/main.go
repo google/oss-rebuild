@@ -6,10 +6,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log"
 	"os"
-	"time"
 
 	"github.com/google/oss-rebuild/internal/api/apiservice"
 	"github.com/google/oss-rebuild/internal/serviceid"
@@ -58,32 +56,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("parsing service location: %v", err)
 	}
-	view := apiservice.NewRebuildView(deps.Attempts)
-	key, err := view.KeyFor(opID)
-	if err != nil {
-		log.Fatalf("parsing op ID: %v", err)
+	if _, err := apiservice.RebuildPackage(ctx, req, deps); err != nil {
+		log.Fatalf("Rebuilding package: %v", err)
 	}
-	attempt, err := deps.Attempts.Get(ctx, key)
-	if err != nil {
-		log.Fatalf("fetching attempt: %v", err)
-	}
-
-	verdict, rebuildErr := apiservice.RebuildPackage(ctx, req, deps)
-
-	var status schema.RebuildStatus
-	switch {
-	case errors.Is(rebuildErr, context.Canceled):
-		status = schema.RebuildStatusCancelled
-	case rebuildErr != nil:
-		status = schema.RebuildStatusError
-	case verdict.Message == "":
-		status = schema.RebuildStatusSuccess
-	default:
-		status = schema.RebuildStatusFailure
-	}
-	attempt.Status = status
-	attempt.Finished = time.Now().UTC()
-	if err := deps.Attempts.Update(ctx, attempt); err != nil {
-		log.Fatalf("updating attempt: %v", err)
-	}
+	// No need to update deps.Attempts, RebuildPackage will handle the terminal state.
 }
