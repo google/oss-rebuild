@@ -119,7 +119,6 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 		return nil, errors.Wrap(err, "creating CloudBuild service")
 	}
 	plannerConfig := buildgcb.PlannerConfig{
-		Project:         *project,
 		ServiceAccount:  *buildRemoteIdentity,
 		AllowPrivileged: true,
 	}
@@ -141,7 +140,6 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 		}
 		executorConfig.PrivatePool = pool
 		executorConfig.Client = gcb.NewRegionalClient(svc, *gcbPrivatePoolRegion)
-		plannerConfig.PrivatePool = pool
 	} else {
 		executorConfig.Client = gcb.NewClient(svc)
 	}

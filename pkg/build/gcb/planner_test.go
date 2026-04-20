@@ -181,7 +181,6 @@ ENTRYPOINT ["/bin/sh","/build"]
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			config := PlannerConfig{
-				Project:        "test-project",
 				ServiceAccount: "test@test.iam.gserviceaccount.com",
 			}
 			instructions, _ := tc.input.Strategy.GenerateFor(tc.input.Target, rebuild.BuildEnv{TimewarpHost: "localhost:8080"})
@@ -210,7 +209,6 @@ func TestGCBPlannerGeneratePlan(t *testing.T) {
 	ctx := context.Background()
 
 	config := PlannerConfig{
-		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 	}
 	planner := NewPlanner(config)
@@ -301,7 +299,6 @@ func TestGCBPlannerNoSaveWhenFlagFalse(t *testing.T) {
 	ctx := context.Background()
 
 	config := PlannerConfig{
-		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 	}
 	planner := NewPlanner(config)
@@ -361,7 +358,6 @@ func TestGCBPlannerBuildScriptWithSyscallMonitor(t *testing.T) {
 	ctx := context.Background()
 
 	config := PlannerConfig{
-		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 	}
 	planner := NewPlanner(config)
@@ -430,7 +426,6 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 	ctx := context.Background()
 
 	config := PlannerConfig{
-		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 	}
 	planner := NewPlanner(config)
@@ -642,7 +637,6 @@ func TestGCBPlannerSavePostBuildContainer(t *testing.T) {
 	ctx := context.Background()
 
 	config := PlannerConfig{
-		Project:        "test-project",
 		ServiceAccount: "test@test.iam.gserviceaccount.com",
 	}
 	planner := NewPlanner(config)

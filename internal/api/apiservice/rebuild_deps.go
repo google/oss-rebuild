@@ -64,7 +64,6 @@ func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) 
 		return nil, errors.Wrap(err, "creating CloudBuild service")
 	}
 	plannerConfig := buildgcb.PlannerConfig{
-		Project:         cfg.BuildProject,
 		ServiceAccount:  cfg.BuildRemoteIdentity,
 		AllowPrivileged: true,
 	}
