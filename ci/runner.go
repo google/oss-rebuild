@@ -98,9 +98,9 @@ func runParallelSimple(tasks []task) error {
 	}
 
 	if len(failed) > 0 {
-		fmt.Println()
+		fmt.Fprintln(os.Stderr)
 		for _, r := range failed {
-			fmt.Printf("✗ %s failed:\n", r.name)
+			fmt.Fprintf(os.Stderr, "✗ %s failed:\n", r.name)
 			printFailure(r, "  ")
 		}
 		return fmt.Errorf("%d task(s) failed", len(failed))
@@ -172,9 +172,9 @@ func runParallelInteractive(tasks []task) error {
 	}
 
 	if len(failed) > 0 {
-		fmt.Println()
+		fmt.Fprintln(os.Stderr)
 		for _, r := range failed {
-			fmt.Printf(ansiRed+"✗ %s failed:"+ansiReset+"\n", r.name)
+			fmt.Fprintf(os.Stderr, ansiRed+"✗ %s failed:"+ansiReset+"\n", r.name)
 			printFailure(r, "  ")
 		}
 		return fmt.Errorf("%d task(s) failed", len(failed))
@@ -195,7 +195,7 @@ func runSequentialSimple(tasks []task) error {
 	for _, t := range tasks {
 		stdout, stderr, err := t.fn(ctx)
 		if err != nil {
-			fmt.Printf("✗ %s failed:\n", t.name)
+			fmt.Fprintf(os.Stderr, "✗ %s failed:\n", t.name)
 			printFailure(taskResult{name: t.name, stdout: stdout, stderr: stderr, err: err}, "  ")
 			if !continueOnFailure {
 				return err
@@ -247,7 +247,7 @@ func runSequentialInteractive(tasks []task) error {
 		if err != nil {
 			status[t.name] = "fail"
 			render(tasks, status, &mu)
-			fmt.Printf("\n"+ansiRed+"✗ %s failed:"+ansiReset+"\n", t.name)
+			fmt.Fprintf(os.Stderr, "\n"+ansiRed+"✗ %s failed:"+ansiReset+"\n", t.name)
 			printFailure(taskResult{name: t.name, stdout: stdout, stderr: stderr, err: err}, "  ")
 			if !continueOnFailure {
 				return err
@@ -298,13 +298,13 @@ func indent(s, prefix string) string {
 
 func printFailure(r taskResult, prefix string) {
 	if r.stdout != "" {
-		fmt.Println(indent(r.stdout, prefix))
+		fmt.Fprintln(os.Stderr, indent(r.stdout, prefix))
 	}
 	if r.stderr != "" {
-		fmt.Println(indent(r.stderr, prefix))
+		fmt.Fprintln(os.Stderr, indent(r.stderr, prefix))
 	}
 	if r.err != nil && r.err.Error() != "exit status 1" {
-		fmt.Printf("%s%v\n", prefix, r.err)
+		fmt.Fprintf(os.Stderr, "%s%v\n", prefix, r.err)
 	}
 }
 
