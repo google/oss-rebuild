@@ -1,0 +1,56 @@
+<!--
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+    {{if .BenchmarkTargets}}
+        <h2>{{if .BenchmarkTitle}}{{.BenchmarkTitle}}{{else}}Tracked Packages{{end}}</h2>
+        <p>Total: {{.BenchmarkStats.Total}} | Success: {{.BenchmarkStats.Success}} | Failed: {{.BenchmarkStats.Failed}}</p>
+        <div class="benchmark-grid">
+            {{range .BenchmarkTargets}}
+                <a href="/package/{{.Ecosystem}}/{{.EncodedPackage}}" class="benchmark-item {{if not .HasRun}}bg-gray{{else if .Success}}bg-green{{else}}bg-red{{end}}" title="{{.Ecosystem}}: {{.PackageName}}">
+                    {{.PackageName}}
+                </a>
+            {{end}}
+        </div>
+    {{end}}
+
+    {{if .RecentRebuilds}}
+        <h2>Recent Rebuilds</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Ecosystem</th>
+                    <th>Package</th>
+                    <th>Version</th>
+                    <th>Artifact</th>
+                    <th>Status</th>
+                    <th>RunID</th>
+                    <th>Attempt</th>
+                    <th>Completed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .RecentRebuilds}}
+                <tr>
+                    <td>{{.Ecosystem}}</td>
+                    <td><a href="/package/{{.Ecosystem}}/{{.EncodedPackage}}">{{.Package}}</a></td>
+                    <td>{{.Version}}</td>
+                    <td>{{.Artifact}}</td>
+                    <td>
+                        {{if .Success}}
+                            <span class="status-success">Success</span>
+                        {{else}}
+                            <span class="status-fail">Failed</span>
+                        {{end}}
+                    </td>
+                    <td>{{.RunID}}</td>
+                    <td><a href="/attempt/{{.Ecosystem}}/{{.EncodedPackage}}/{{.EncodedVersion}}/{{.EncodedArtifact}}/{{.RunID}}">view</a></td>
+                    <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    {{end}}
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!--
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+    <h2>Attempt Details</h2>
+    <p><strong>Package:</strong> <a href="/package/{{.Ecosystem}}/{{.EncodedPackage}}">{{.Ecosystem}}:{{.PackageName}}</a> {{.Attempt.Version}}</p>
+    <p><strong>Artifact:</strong> {{.Attempt.Artifact}}</p>
+    <p><strong>Status:</strong>
+        {{if .Attempt.Success}}
+            <span class="status-success">Success</span>
+        {{else}}
+            <span class="status-fail">Failed</span>
+        {{end}}
+    </p>
+    <p><strong>Run ID:</strong> {{.Attempt.RunID}}</p>
+    <p><strong>Started:</strong> {{if not .Attempt.Started.IsZero}}{{.Attempt.Started.Format "2006-01-02 15:04:05"}}{{else}}N/A{{end}}</p>
+    <p><strong>Created:</strong> {{.Attempt.Created.Format "2006-01-02 15:04:05"}}</p>
+    <p><strong>Duration:</strong> {{.AttemptDuration}}</p>
+
+    {{$logID := ""}}
+    {{if .Attempt.BuildID}}
+        {{$logID = .Attempt.BuildID}}
+    {{else if .Attempt.ObliviousID}}
+        {{$logID = .Attempt.ObliviousID}}
+    {{end}}
+
+    {{if $logID}}
+    <p><strong>Logs:</strong> <a href="/attempt/{{.Ecosystem}}/{{.EncodedPackage}}/{{.Attempt.EncodedVersion}}/{{.Attempt.EncodedArtifact}}/{{.Attempt.RunID}}/build-logs/">View Raw Logs</a></p>
+    {{end}}
+
+    <h3>Strategy</h3>
+    <pre>{{.AttemptStrategy}}</pre>
+
+    <h3>Full Message</h3>
+    <pre>{{.Attempt.Message}}</pre>
+
+    <h3>Dockerfile</h3>
+    <pre>{{if .Attempt.Dockerfile}}{{.Attempt.Dockerfile}}{{else}}N/A{{end}}</pre>
+</body>
+</html>

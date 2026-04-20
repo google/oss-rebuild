@@ -1,0 +1,40 @@
+<!--
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+    <h2>History for {{.Ecosystem}}: {{.PackageName}}</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Version</th>
+                <th>Artifact</th>
+                <th>Status</th>
+                <th>Message</th>
+                <th>RunID</th>
+                <th>Attempt</th>
+                <th>Completed</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .PackageRebuilds}}
+            <tr>
+                <td>{{.Version}}</td>
+                <td>{{.Artifact}}</td>
+                <td>
+                    {{if .Success}}
+                        <span class="status-success">Success</span>
+                    {{else}}
+                        <span class="status-fail">Failed</span>
+                    {{end}}
+                </td>
+                <td><small>{{.Message}}</small></td>
+                <td>{{.RunID}}</td>
+                <td><a href="/attempt/{{$.Ecosystem}}/{{$.EncodedPackage}}/{{.EncodedVersion}}/{{.EncodedArtifact}}/{{.RunID}}">view</a></td>
+                <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</body>
+</html>
