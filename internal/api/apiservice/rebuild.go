@@ -350,11 +350,6 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
 	started := time.Now().UTC()
 	ctx = context.WithValue(ctx, rebuild.RunID, req.ID)
-	// Cloud Run times out after 60 minutes, give ourselves 5 minutes to cleanup and log results.
-	ctx = context.WithValue(ctx, rebuild.GCBWaitDeadlineID, time.Now().Add(55*time.Minute))
-	if req.BuildTimeout != 0 {
-		ctx = context.WithValue(ctx, rebuild.GCBCancelDeadlineID, time.Now().Add(req.BuildTimeout))
-	}
 
 	target := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
 
