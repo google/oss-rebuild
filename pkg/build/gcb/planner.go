@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
 )
@@ -542,6 +543,7 @@ func (p *Planner) GeneratePlan(ctx context.Context, input rebuild.Input, opts bu
 	return &Plan{
 		Steps:      steps,
 		Dockerfile: dockerfile,
+		JumboPool:  (opts.SizeHint == schema.JumboSize), // Use larger pool for Jumbo builds.
 	}, nil
 }
 

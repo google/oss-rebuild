@@ -13,4 +13,6 @@ type Plan struct {
 	Steps []*cloudbuild.BuildStep
 	// Dockerfile contains the generated Dockerfile content
 	Dockerfile string
+	// Whether to use larger worker pool if available
+	JumboPool bool
 }

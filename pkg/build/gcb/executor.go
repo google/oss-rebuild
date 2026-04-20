@@ -109,6 +109,7 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 	}
 	// Generate the execution plan
 	planOpts := build.PlanOptions{
+		SizeHint:          opts.SizeHint,
 		UseTimewarp:       opts.UseTimewarp,
 		UseNetworkProxy:   opts.UseNetworkProxy,
 		UseSyscallMonitor: opts.UseSyscallMonitor,
@@ -305,8 +306,17 @@ func (e *Executor) makeBuild(t rebuild.Target, plan *Plan) *cloudbuild.Build {
 		Logging: "GCS_ONLY",
 	}
 	if e.privatePool != nil {
-		buildOptions.Pool = &cloudbuild.PoolOption{
-			Name: e.privatePool.Name,
+		if plan.JumboPool {
+			buildOptions.Pool = &cloudbuild.PoolOption{
+				// We assume there's a similarly named -jumbo pool.
+				// TODO: Check this pool exists when the Executor is started.
+				// Alternatively, we could make this configurable?
+				Name: e.privatePool.Name + "-jumbo",
+			}
+		} else {
+			buildOptions.Pool = &cloudbuild.PoolOption{
+				Name: e.privatePool.Name,
+			}
 		}
 	}
 	tags := []string{

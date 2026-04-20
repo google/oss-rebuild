@@ -110,6 +110,7 @@ func (e *DockerRunExecutor) Start(ctx context.Context, input rebuild.Input, opts
 		buildID = fmt.Sprintf("docker-run-%d", time.Now().UnixNano())
 	}
 	planOpts := build.PlanOptions{
+		SizeHint:          opts.SizeHint,
 		UseTimewarp:       opts.UseTimewarp,
 		UseNetworkProxy:   opts.UseNetworkProxy,
 		UseSyscallMonitor: opts.UseSyscallMonitor,

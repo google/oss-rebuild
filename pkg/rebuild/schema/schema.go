@@ -236,6 +236,7 @@ type RebuildPackageRequest struct {
 	BuildTimeout      time.Duration     `form:""` // Cancel the build after this amount of time.
 	OverwriteMode     OverwriteMode     `form:""`
 	ExecutionHint     ExecutionHint     `form:""`
+	SizeHint          SizeHint          `form:""`
 }
 
 // ExecutionHint describes the preferred execution mode for a rebuild.
@@ -250,6 +251,20 @@ const (
 	// ExtendedExecution hints that the build is expected to take a long time
 	// and should be executed asynchronously via a background job.
 	ExtendedExecution ExecutionHint = "EXTENDED"
+)
+
+// SizeHint describes the amount of resources (disk, ram, cpu) a rebuild is expected to utilize.
+type SizeHint string
+
+const (
+	// UnspecifiedSize is the zero value for SizeHint.
+	UnspecifiedSize SizeHint = ""
+	// ShrimpSize hints that the build is expected to use minimal resources
+	// and can be accommodated on smaller, standard workers.
+	ShrimpSize SizeHint = "SHRIMP"
+	// JumboSize hints that the build is resource-intensive and requires
+	// allocation to larger, high-capacity workers.
+	JumboSize SizeHint = "JUMBO"
 )
 
 var _ api.Message = RebuildPackageRequest{}
