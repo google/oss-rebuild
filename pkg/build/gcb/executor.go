@@ -18,6 +18,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/grpc/codes"
@@ -35,6 +36,7 @@ type Executor struct {
 	serviceAccount     string
 	logsBucket         string
 	privatePool        *gcb.PrivatePoolConfig
+	jumboPool          *gcb.PrivatePoolConfig
 	outputBufferSize   int
 	builderName        string
 	terminateOnTimeout bool
@@ -78,6 +80,7 @@ func NewExecutor(config ExecutorConfig) (*Executor, error) {
 		serviceAccount:     config.ServiceAccount,
 		logsBucket:         config.LogsBucket,
 		privatePool:        config.PrivatePool,
+		jumboPool:          config.JumboPool,
 		outputBufferSize:   outputBufferSize,
 		builderName:        config.BuilderName,
 		terminateOnTimeout: config.TerminateOnTimeout,
@@ -95,6 +98,7 @@ type ExecutorConfig struct {
 	ServiceAccount     string
 	LogsBucket         string
 	PrivatePool        *gcb.PrivatePoolConfig
+	JumboPool          *gcb.PrivatePoolConfig
 	OutputBufferSize   int
 	BuilderName        string
 	TerminateOnTimeout bool
@@ -119,9 +123,41 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 		return nil, errors.Wrap(err, "failed to generate execution plan")
 	}
 	// Make the Cloud Build "Build" request
-	gcbBuild := e.makeBuild(input.Target, plan)
-	if opts.Timeout > 0 {
-		gcbBuild.Timeout = fmt.Sprintf("%ds", int(opts.Timeout.Seconds()))
+	var gcbBuild *cloudbuild.Build
+	{
+		var pool *cloudbuild.PoolOption
+		if opts.SizeHint == schema.JumboSize && e.jumboPool != nil {
+			pool = &cloudbuild.PoolOption{
+				Name: e.jumboPool.Name,
+			}
+		} else if e.privatePool != nil {
+			pool = &cloudbuild.PoolOption{
+				Name: e.privatePool.Name,
+			}
+		}
+		var timeout string
+		if opts.Timeout > 0 {
+			timeout = fmt.Sprintf("%ds", int(opts.Timeout.Seconds()))
+		}
+		tags := []string{
+			buildTag("ecosystem", string(input.Target.Ecosystem)),
+			buildTag("package", input.Target.Package),
+			buildTag("version", input.Target.Version),
+		}
+		for k, v := range e.extraTags {
+			tags = append(tags, buildTag(k, v))
+		}
+		gcbBuild = &cloudbuild.Build{
+			Steps: plan.Steps,
+			Options: &cloudbuild.BuildOptions{
+				Logging: "GCS_ONLY",
+				Pool:    pool,
+			},
+			LogsBucket:     e.logsBucket,
+			ServiceAccount: e.serviceAccount,
+			Tags:           tags,
+			Timeout:        timeout,
+		}
 	}
 	// Create a buffered pipe for streaming output
 	pipe := bufiox.NewBufferedPipe(bufiox.NewLineBuffer(e.outputBufferSize))
@@ -297,33 +333,6 @@ func (e *Executor) doBuild(ctx context.Context, handle *gcbHandle, cloudBuild *c
 func buildTag(desc, val string) string {
 	tag := buildTagDisallowedChar.ReplaceAllString(fmt.Sprintf("%s-%s", desc, val), "")
 	return tag[:min(len(tag), 127)]
-}
-
-// makeBuild constructs a cloudbuild.Build from plan and executor config
-func (e *Executor) makeBuild(t rebuild.Target, plan *Plan) *cloudbuild.Build {
-	buildOptions := &cloudbuild.BuildOptions{
-		Logging: "GCS_ONLY",
-	}
-	if e.privatePool != nil {
-		buildOptions.Pool = &cloudbuild.PoolOption{
-			Name: e.privatePool.Name,
-		}
-	}
-	tags := []string{
-		buildTag("ecosystem", string(t.Ecosystem)),
-		buildTag("package", t.Package),
-		buildTag("version", t.Version),
-	}
-	for k, v := range e.extraTags {
-		tags = append(tags, buildTag(k, v))
-	}
-	return &cloudbuild.Build{
-		Steps:          plan.Steps,
-		Options:        buildOptions,
-		LogsBucket:     e.logsBucket,
-		ServiceAccount: e.serviceAccount,
-		Tags:           tags,
-	}
 }
 
 // uploadBuildInfo uploads BuildInfo as JSON to the asset store
