@@ -245,6 +245,9 @@ func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, 
 	}
 	d.DepsFunc = func(ctx context.Context, rdc *schema.RebuildDepsConfig) (*apiservice.RebuildPackageDeps, error) {
 		deps, err := apiservice.MakeRebuildPackageDeps(ctx, rdc)
+		if err != nil {
+			return nil, err
+		}
 		deps.ServiceRepo, err = serviceid.ParseLocation(BuildRepo, BuildVersion)
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing service location")
