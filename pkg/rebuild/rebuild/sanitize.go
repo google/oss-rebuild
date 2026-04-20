@@ -3,7 +3,11 @@
 
 package rebuild
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/pkg/errors"
+)
 
 // Target Encoding
 //
@@ -38,7 +42,8 @@ type TargetEncoder struct {
 // targetEncoding represents an encoding format for package identifiers.
 // Singleton instances are provided for each supported encoding format.
 type targetEncoding struct {
-	name string // for debugging/error messages
+	name      string // name of the encoding context
+	forbidden []rune // characters that must not appear in encoded output
 }
 
 var (
@@ -50,11 +55,18 @@ var (
 	//   - Colon (:) is reserved for alternate file streams
 	//   - Reference: https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file
 	//
+	// Filesystem (golang modules):
+	//   - Allowed symbol characters: - . _ ~
+	//   - Reference: https://go.dev/ref/mod#go-mod-file-ident
+	//
 	// GCS Object Names:
 	//   - Technically allows all Unicode, but same restrictions as Windows filesystem
 	//     should be applied for cross-platform compatibility
 	//   - Reference: https://cloud.google.com/storage/docs/objects
-	FilesystemTargetEncoding = &targetEncoding{name: "filesystem"}
+	FilesystemTargetEncoding = &targetEncoding{
+		name:      "filesystem",
+		forbidden: []rune{'/', '\\', ':', '*', '?', '"', '<', '>', '|'},
+	}
 
 	// FirestoreTargetEncoding encodes targets for Firestore document IDs.
 	//
@@ -64,7 +76,10 @@ var (
 	//   - Cannot match pattern: __.*__
 	//   - Maximum: 1500 bytes UTF-8
 	//   - Reference: https://firebase.google.com/docs/firestore/quotas
-	FirestoreTargetEncoding = &targetEncoding{name: "firestore"}
+	FirestoreTargetEncoding = &targetEncoding{
+		name:      "firestore",
+		forbidden: []rune{'/'},
+	}
 )
 
 // EncodedTarget represents a Target with fields encoded for a specific encoding format.
@@ -80,6 +95,7 @@ type EncodedTarget struct {
 
 // Encode encodes a Target using this encoding format, returning an EncodedTarget
 // with encoded fields that are safe for use in that encoding's storage system.
+// Panics if the encoded output contains forbidden characters.
 //
 // Example:
 //
@@ -87,13 +103,32 @@ type EncodedTarget struct {
 //	path := filepath.Join(string(et.Ecosystem), et.Package, et.Version, et.Artifact)
 func (te *targetEncoding) Encode(t Target) EncodedTarget {
 	enc := getEncoder(t.Ecosystem, te)
-	return EncodedTarget{
+	et := EncodedTarget{
 		Ecosystem: t.Ecosystem,
 		Package:   enc.Package.Encode(t.Package),
 		Version:   enc.Version.Encode(t.Version),
 		Artifact:  enc.Artifact.Encode(t.Artifact),
 		encoding:  te,
 	}
+	if err := te.Validate(et); err != nil {
+		panic(err)
+	}
+	return et
+}
+
+// Validate checks that an EncodedTarget does not contain any forbidden characters.
+func (te *targetEncoding) Validate(et EncodedTarget) error {
+	forbidden := string(te.forbidden)
+	if i := strings.IndexAny(et.Package, forbidden); i >= 0 {
+		return errors.Errorf("%s encoding violation: forbidden character %q in Package field %q", te.name, et.Package[i], et.Package)
+	}
+	if i := strings.IndexAny(et.Version, forbidden); i >= 0 {
+		return errors.Errorf("%s encoding violation: forbidden character %q in Version field %q", te.name, et.Version[i], et.Version)
+	}
+	if i := strings.IndexAny(et.Artifact, forbidden); i >= 0 {
+		return errors.Errorf("%s encoding violation: forbidden character %q in Artifact field %q", te.name, et.Artifact[i], et.Artifact)
+	}
+	return nil
 }
 
 // New creates an EncodedTarget for decoding purposes.
