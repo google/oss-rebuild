@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
 
 // PackageSet is a grouping of packages to evaluate rebuilds.
@@ -50,6 +52,7 @@ type Metadata struct {
 type Package struct {
 	Ecosystem string
 	Name      string
+	Size      schema.SizeHint
 	Versions  []string
 	Artifacts []string
 }
