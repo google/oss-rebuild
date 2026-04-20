@@ -141,7 +141,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 	return strategy, entry, nil
 }
 
-func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, sizeHint schema.SizeHint, useProxy bool, useSyscallMonitor bool, timeout time.Duration, mode schema.OverwriteMode) (err error) {
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, buildOpts build.Options, mode schema.OverwriteMode) (err error) {
 	debugStore, err := deps.DebugStoreBuilder(ctx)
 	if err != nil {
 		return errors.Wrap(err, "creating debug store")
@@ -196,21 +196,15 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		Target:   t,
 		Strategy: strategy,
 	}
-	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
-		BuildID:            obID,
-		Timeout:            timeout,
-		SizeHint:           sizeHint,
-		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
-		UseNetworkProxy:    useProxy,
-		UseSyscallMonitor:  useSyscallMonitor,
-		SaveContainerImage: true,
-		Resources: build.Resources{
-			AssetStore:       buildStore,
-			ToolURLs:         toolURLs,
-			ToolAuthRequired: authRequired,
-			BaseImageConfig:  build.DefaultBaseImageConfig(),
-		},
-	})
+	buildOpts.BuildID = obID
+	buildOpts.UseTimewarp = meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in)
+	buildOpts.Resources = build.Resources{
+		AssetStore:       buildStore,
+		ToolURLs:         toolURLs,
+		ToolAuthRequired: authRequired,
+		BaseImageConfig:  build.DefaultBaseImageConfig(),
+	}
+	h, err := deps.GCBExecutor.Start(ctx, in, buildOpts)
 	if err != nil {
 		return api.AsStatus(codes.Internal, errors.Wrap(err, "starting build"))
 	}
@@ -340,7 +334,14 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if strategy != nil {
 		v.StrategyOneof = schema.NewStrategyOneOf(strategy)
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, req.SizeHint, req.UseNetworkProxy, req.UseSyscallMonitor, req.BuildTimeout, req.OverwriteMode)
+	opts := build.Options{
+		Timeout:            req.BuildTimeout,
+		SizeHint:           req.SizeHint,
+		UseNetworkProxy:    req.UseNetworkProxy,
+		UseSyscallMonitor:  req.UseSyscallMonitor,
+		SaveContainerImage: true,
+	}
+	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, opts, req.OverwriteMode)
 	if err != nil {
 		v.Message = errors.Wrap(err, "executing rebuild").Error()
 		return &v, nil
