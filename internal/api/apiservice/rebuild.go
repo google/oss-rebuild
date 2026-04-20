@@ -385,6 +385,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 
 	v, err := rebuildPackage(ctx, req, deps)
 	if err != nil {
+		attempt.Message = errors.Wrap(err, "executing rebuild").Error()
 		finish(schema.RebuildStatusError)
 		return nil, err
 	}
