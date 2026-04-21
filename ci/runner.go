@@ -298,11 +298,10 @@ func indent(s, prefix string) string {
 
 func printFailure(r taskResult, prefix string) {
 	if r.stdout != "" {
-		if prefix == "" {
-			fmt.Println(r.stdout)
-		} else {
-			fmt.Println(indent(r.stdout, prefix))
-		}
+		fmt.Println(indent(r.stdout, prefix))
+	}
+	if r.stderr != "" {
+		fmt.Println(indent(r.stderr, prefix))
 	}
 	if r.err != nil && r.err.Error() != "exit status 1" {
 		fmt.Printf("%s%v\n", prefix, r.err)
