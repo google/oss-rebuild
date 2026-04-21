@@ -114,7 +114,7 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 			Region: *gcbPrivatePoolRegion,
 		}
 		executorConfig.PrivatePool = pool
-		executorConfig.Client = gcb.NewClientWithPrivatePool(cloudbuildService, pool)
+		executorConfig.Client = gcb.NewRegionalClient(cloudbuildService, *gcbPrivatePoolRegion)
 	} else {
 		executorConfig.Client = gcb.NewClient(cloudbuildService)
 	}

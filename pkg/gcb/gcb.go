@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"regexp"
 	"syscall"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+var poolPat = regexp.MustCompile(`^projects/(?P<project>[^/]+)/locations/(?P<location>[^/]+)/workerPools/(?P<pool>[^/]+)$`)
 
 // PrivatePoolConfig holds configuration for using GCB private pools.
 type PrivatePoolConfig struct {
@@ -87,46 +90,47 @@ func (c *gcsLogsClient) ListStepLogs(ctx context.Context, buildID string) (int, 
 
 // clientImpl is a concrete implementation of the Client interface using the Cloud Build service.
 type clientImpl struct {
-	service           *cloudbuild.Service
-	pollInterval      time.Duration
-	privatePoolConfig *PrivatePoolConfig
+	service      *cloudbuild.Service
+	pollInterval time.Duration
+	region       string
 }
 
 // NewClient creates a new Client with the given options.
 func NewClient(s *cloudbuild.Service) Client {
 	// TODO: Add optional configuration of poll value if/when needed.
 	return &clientImpl{
-		service:           s,
-		pollInterval:      10 * time.Second, // default GCB API quota is low
-		privatePoolConfig: nil,
+		service:      s,
+		pollInterval: 10 * time.Second, // default GCB API quota is low
 	}
 }
 
-// NewClientWithPrivatePool creates a new Client with private pool support.
-func NewClientWithPrivatePool(s *cloudbuild.Service, privatePool *PrivatePoolConfig) Client {
+// NewRegionalClient creates a new Client that uses regional GCB backends.
+func NewRegionalClient(s *cloudbuild.Service, region string) Client {
 	return &clientImpl{
-		service:           s,
-		pollInterval:      10 * time.Second, // default GCB API quota is low
-		privatePoolConfig: privatePool,
+		service:      s,
+		pollInterval: 10 * time.Second, // default GCB API quota is low
+		region:       region,
 	}
 }
 
 // CreateBuild creates and starts a GCB Build.
 func (c *clientImpl) CreateBuild(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
-	if c.privatePoolConfig != nil {
-		if c.privatePoolConfig.Name == "" {
-			return nil, errors.New("no private pool name configured")
+	if build.Options != nil && build.Options.Pool != nil {
+		if c.region == "" {
+			return nil, fmt.Errorf("attempting to use a non-regional client with private pool: %s", build.Options.Pool.Name)
 		}
-		if build.Options == nil {
-			build.Options = &cloudbuild.BuildOptions{}
-		}
-		build.Options.Pool = &cloudbuild.PoolOption{
-			Name: c.privatePoolConfig.Name,
-		}
-	}
-	if c.privatePoolConfig != nil && c.privatePoolConfig.Region != "" {
 		// For private pools, use the regional API endpoint if specified
-		return c.service.Projects.Locations.Builds.Create(fmt.Sprintf("projects/%s/locations/%s", project, c.privatePoolConfig.Region), build).Context(ctx).Do()
+		// TODO: Should we verify these regions match?
+		if matches := poolPat.FindStringSubmatch(build.Options.Pool.Name); matches != nil {
+			p := matches[poolPat.SubexpIndex("project")] // ignore provided project, extract from the pool
+			l := matches[poolPat.SubexpIndex("location")]
+			if l != c.region || p != project {
+				return nil, fmt.Errorf("build pool '%s' doesn't match region: %s or project: %s", build.Options.Pool.Name, c.region, project)
+			}
+			return c.service.Projects.Locations.Builds.Create(fmt.Sprintf("projects/%s/locations/%s", p, l), build).Context(ctx).Do()
+		} else {
+			return nil, fmt.Errorf("invalid pool name: '%s'", build.Options.Pool.Name)
+		}
 	}
 	return c.service.Projects.Builds.Create(project, build).Context(ctx).Do()
 }
@@ -154,11 +158,11 @@ func (c *clientImpl) WaitForOperation(ctx context.Context, op *cloudbuild.Operat
 }
 
 func (c *clientImpl) operations() *cloudbuild.OperationsService {
-	if c.privatePoolConfig != nil && c.privatePoolConfig.Region != "" {
+	if c.region != "" {
 		// NOTE: There is currently no resource name routing to regional backends due to GCB's legacy operation ID format.
 		// This workaround encodes the proper regional backend in the domain so we query the right db.
 		regionalService := *c.service
-		regionalService.BasePath = fmt.Sprintf("https://%s-cloudbuild.googleapis.com", c.privatePoolConfig.Region)
+		regionalService.BasePath = fmt.Sprintf("https://%s-cloudbuild.googleapis.com", c.region)
 		return cloudbuild.NewOperationsService(&regionalService)
 	} else {
 		return c.service.Operations

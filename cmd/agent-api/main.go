@@ -57,12 +57,13 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 		return nil, errors.Wrap(err, "creating CloudBuild service")
 	}
 	var gcbClient gcb.Client
+	var pool *gcb.PrivatePoolConfig
 	if *gcbPrivatePoolName != "" {
-		privatePoolConfig := &gcb.PrivatePoolConfig{
+		pool = &gcb.PrivatePoolConfig{
 			Name:   *gcbPrivatePoolName,
 			Region: *gcbPrivatePoolRegion,
 		}
-		gcbClient = gcb.NewClientWithPrivatePool(svc, privatePoolConfig)
+		gcbClient = gcb.NewRegionalClient(svc, *gcbPrivatePoolRegion)
 	} else {
 		gcbClient = gcb.NewClient(svc)
 	}
@@ -72,6 +73,7 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 		LogsBucket:         *logsBucket,
 		LogsClientFunc:     buildgcb.GCSLogsClient(gcsClient),
 		Client:             gcbClient,
+		PrivatePool:        pool,
 		BuilderName:        fmt.Sprintf("%s@%s", os.Getenv("K_SERVICE"), os.Getenv("K_REVISION")),
 		TerminateOnTimeout: true,
 	}
