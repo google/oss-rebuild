@@ -28,11 +28,18 @@ type Step struct {
 	With map[string]string `json:"with" yaml:"with,omitempty"`
 }
 
+// shellQuote escapes a string for safe inclusion in a shell command.
+// It wraps the value in single quotes and escapes any existing single quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 func resolveTemplate(buf *bytes.Buffer, tmpl string, data any) error {
 	t, err := template.New("").Option("missingkey=zero").Funcs(template.FuncMap{
-		"fromJSON":  FromJSON,
-		"toJSON":    ToJSON,
-		"cmpSemver": semver.Cmp,
+		"fromJSON":   FromJSON,
+		"toJSON":     ToJSON,
+		"shellQuote": shellQuote,
+		"cmpSemver":  semver.Cmp,
 		"regexReplace": func(src, pattern, repl string) (string, error) {
 			if re, err := regexp.Compile(pattern); err != nil {
 				return "", errors.Wrap(err, "compiling regex")
