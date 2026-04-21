@@ -51,6 +51,7 @@ type Config struct {
 	BuildTimeout      time.Duration
 	Mode              string
 	SizeHint          string
+	ExecutionHint     string
 }
 
 // Validate ensures the configuration is valid.
@@ -97,6 +98,9 @@ func (c Config) Validate() error {
 	}
 	if c.SizeHint != "" && c.SizeHint != string(schema.ShrimpSize) && c.SizeHint != string(schema.JumboSize) {
 		return errors.Errorf("invalid size-hint: %s. Expected one of 'SHRIMP' or 'JUMBO'", c.SizeHint)
+	}
+	if c.ExecutionHint != "" && c.ExecutionHint != string(schema.FastExecution) && c.ExecutionHint != string(schema.ExtendedExecution) {
+		return errors.Errorf("invalid execution-hint: %s. Expected one of 'FAST' or 'EXTENDED'", c.ExecutionHint)
 	}
 	return nil
 }
@@ -270,6 +274,7 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 			OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
 			ID:                time.Now().UTC().Format(time.RFC3339),
 			SizeHint:          schema.SizeHint(cfg.SizeHint),
+			ExecutionHint:     schema.ExecutionHint(cfg.ExecutionHint),
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "running attest")
@@ -319,5 +324,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.DurationVar(&cfg.BuildTimeout, "build-timeout", time.Duration(0), "manual timeout")
 	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
 	set.StringVar(&cfg.SizeHint, "size-hint", "", "build size hint (SHRIMP or JUMBO), defaults to SHRIMP")
+	set.StringVar(&cfg.ExecutionHint, "execution-hint", "", "execution hint (FAST or EXTENDED)")
 	return set
 }
