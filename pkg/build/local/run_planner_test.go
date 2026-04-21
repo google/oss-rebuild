@@ -104,7 +104,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				Script: textwrap.Dedent(`
 			set -eux
 			apk update
-			apk add curl
+			apk add curl netcat-openbsd
 			curl  https://example.com/timewarp > timewarp
 			chmod +x timewarp
 			./timewarp -port 8081 &
