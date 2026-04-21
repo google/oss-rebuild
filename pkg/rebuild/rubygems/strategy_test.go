@@ -150,6 +150,35 @@ printf -- '---\n:sources:\n- %s\n' 'http://rubygems:2023-06-01T00:00:00Z@orange'
 			},
 		},
 		{
+			name: "gem build with explicit gemspec",
+			strategy: &GemBuild{
+				Location:    defaultLocation,
+				RubyVersion: "3.3.6",
+				Gemspec:     "concurrent-ruby.gemspec",
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.RubyGems,
+				Package:   "concurrent-ruby",
+				Version:   "1.2.2",
+				Artifact:  "concurrent-ruby-1.2.2.gem",
+			},
+			want: rebuild.Instructions{
+				Location: defaultLocation,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git"},
+				},
+				Source: "git clone the_repo .\ngit checkout --force 'the_ref'",
+				Deps: `apt-get update && apt-get install -y --no-install-recommends build-essential wget ca-certificates libyaml-dev
+wget -q -O /tmp/ruby.tar.gz "https://github.com/ruby/ruby-builder/releases/download/ruby-3.3.6/ruby-3.3.6-ubuntu-24.04-x64.tar.gz"
+mkdir -p /opt/hostedtoolcache/Ruby/3.3.6/x64
+tar xzf /tmp/ruby.tar.gz --strip-components=1 -C /opt/hostedtoolcache/Ruby/3.3.6/x64
+ln -sf /opt/hostedtoolcache/Ruby/3.3.6/x64/bin/* /usr/local/bin/
+rm -f /tmp/ruby.tar.gz`,
+				Build:      "cd the_dir && gem build concurrent-ruby.gemspec",
+				OutputPath: "the_dir/concurrent-ruby-1.2.2.gem",
+			},
+		},
+		{
 			name: "gem build no ruby version",
 			strategy: &GemBuild{
 				Location: defaultLocation,
