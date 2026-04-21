@@ -56,6 +56,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("parsing service location: %v", err)
 	}
+	ctx, cancel := context.WithTimeout(ctx, req.BuildTimeout)
+	defer cancel()
 	if _, err := apiservice.RebuildPackage(ctx, req, deps); err != nil {
 		log.Fatalf("Rebuilding package: %v", err)
 	}
