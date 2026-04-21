@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
 
 // Resources configures URLs and authentication for build resources
@@ -30,6 +31,8 @@ type Options struct {
 	Timeout time.Duration
 	// BuildID allows specifying a custom build identifier
 	BuildID string
+	// SizeHint indicates how many resources this build is expected to utilize
+	SizeHint schema.SizeHint
 	// UseTimewarp enables timewarp functionality for builds
 	UseTimewarp bool
 	// UseNetworkProxy enables network proxy functionality

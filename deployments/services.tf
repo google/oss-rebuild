@@ -24,6 +24,23 @@ resource "google_cloudbuild_worker_pool" "private-pool" {
   }
   depends_on = [google_project_service.cloudbuild]
 }
+resource "google_cloudbuild_worker_pool" "jumbo-pool" {
+  count    = var.enable_private_build_pool ? 1 : 0
+  name     = "${var.host}-rebuild-pool-jumbo"
+  location = "us-central1"
+  worker_config {
+    machine_type = "e2-standard-32"
+    disk_size_gb = 500
+  }
+  dynamic "network_config" {
+    for_each = var.enable_vpc ? [1] : []
+    content {
+      peered_network          = google_compute_network.vpc[0].id
+      peered_network_ip_range = "/22" # 1k IPs
+    }
+  }
+  depends_on = [google_project_service.cloudbuild]
+}
 
 resource "google_project_service" "run" {
   service = "run.googleapis.com"
