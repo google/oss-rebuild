@@ -28,6 +28,15 @@ func (GzipFn) Constraints() Constraints {
 	return []Constraint{Formats(gzipFormats)}
 }
 
+// GzipContentFn applies stabilization to the decompressed content of a
+// standalone gzip archive. It is only applied for GzipFormat (not TarGzFormat,
+// where the inner content is a tar archive handled by tar stabilizers).
+type GzipContentFn func([]byte) []byte
+
+func (GzipContentFn) Constraints() Constraints {
+	return []Constraint{Format(archive.GzipFormat)}
+}
+
 // defaultCompression enables us to configure the default compression value
 // used in tests.
 var defaultCompression = gzip.DefaultCompression

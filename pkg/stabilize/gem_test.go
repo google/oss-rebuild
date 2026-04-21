@@ -86,6 +86,68 @@ func TestStableGemInnerArchives(t *testing.T) {
 	}
 }
 
+func TestStableGemMetadata(t *testing.T) {
+	libBody := []byte("hello")
+	stableEntry := func(name string) *tar.Header {
+		h := stableTarHeader
+		h.Name = name
+		h.Typeflag = tar.TypeReg
+		return &h
+	}
+	allStabs := append(append(append([]Stabilizer{}, AllTarStabilizers...), AllGzipStabilizers...), AllGemStabilizers...)
+
+	for _, tc := range []struct {
+		name, in, want string
+	}{
+		{
+			name: "rewrites top-level date and rubygems_version",
+			in:   "name: foo\ndate: 2024-06-15 00:00:00.000000000 Z\nrubygems_version: 3.5.11\n",
+			want: "name: foo\ndate: 1980-01-02 00:00:00.000000000 Z\nrubygems_version: 0.0.0\n",
+		},
+		{
+			name: "preserves CRLF terminator",
+			in:   "date: 2024-06-15 00:00:00.000000000 Z\r\n",
+			want: "date: 1980-01-02 00:00:00.000000000 Z\r\n",
+		},
+		{
+			name: "leaves indented (nested) date untouched",
+			in:   "dependencies:\n  date: 2020-01-01\n",
+			want: "dependencies:\n  date: 2020-01-01\n",
+		},
+		{
+			name: "no-op when target fields absent",
+			in:   "name: foo\n",
+			want: "name: foo\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := must(archivetest.TarFile([]archive.TarEntry{
+				{Header: &tar.Header{Name: "data.tar.gz", Typeflag: tar.TypeReg}, Body: must(archivetest.TgzFile([]archive.TarEntry{
+					{Header: &tar.Header{Name: "lib/foo.rb", Typeflag: tar.TypeReg}, Body: libBody},
+				})).Bytes()},
+				{Header: &tar.Header{Name: "metadata.gz", Typeflag: tar.TypeReg}, Body: must(archivetest.GzFile([]byte(tc.in), gzip.Header{})).Bytes()},
+				{Header: &tar.Header{Name: "checksums.yaml.gz", Typeflag: tar.TypeReg}, Body: []byte("sums")},
+			}))
+			want := must(archivetest.TarFile([]archive.TarEntry{
+				{Header: stableEntry("data.tar.gz"), Body: must(archivetest.GzFile(
+					must(archivetest.TarFile([]archive.TarEntry{
+						{Header: stableEntry("lib/foo.rb"), Body: libBody},
+					})).Bytes(),
+					stableGzipHeader, gzip.NoCompression,
+				)).Bytes()},
+				{Header: stableEntry("metadata.gz"), Body: must(archivetest.GzFile(
+					[]byte(tc.want), stableGzipHeader, gzip.NoCompression,
+				)).Bytes()},
+			}))
+			var got bytes.Buffer
+			orDie(StabilizeWithOpts(&got, bytes.NewReader(input.Bytes()), archive.TarFormat, StabilizeOpts{Stabilizers: allStabs}))
+			if diff := cmp.Diff(want.Bytes(), got.Bytes()); diff != "" {
+				t.Errorf("StabilizeWithOpts() output mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestStableGemIdempotent(t *testing.T) {
 	nonEpoch := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	gemTar := must(archivetest.TarFile([]archive.TarEntry{

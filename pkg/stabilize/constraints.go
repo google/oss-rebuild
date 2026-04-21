@@ -53,3 +53,14 @@ type MinDepth int
 func (c MinDepth) Matches(ctx *StabilizationContext) bool {
 	return ctx.Depth() >= int(c)
 }
+
+// ArchivePath matches when the current archive level's path equals the given value.
+type ArchivePath string
+
+// Matches returns true if the innermost archive level's path matches.
+func (c ArchivePath) Matches(ctx *StabilizationContext) bool {
+	if len(ctx.Levels) == 0 {
+		return false
+	}
+	return ctx.Levels[len(ctx.Levels)-1].Path == string(c)
+}
