@@ -57,17 +57,21 @@ func toCert(pemCert []byte) x509.Certificate {
 
 func tempSocketName(t *testing.T) string {
 	t.Helper()
-	f, err := os.CreateTemp(t.TempDir(), "test*.sock")
+	// Explicitly use /tmp over t.TempDir as the former yields a shorter path,
+	// which fits better into the small Unix socket name limit (~100 chars).
+	f, err := os.CreateTemp("/tmp", "test*.sock")
 	if err != nil {
 		t.Fatal(err)
 	}
+	name := f.Name()
+	t.Cleanup(func() { os.Remove(name) })
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(f.Name()); err != nil {
+	if err := os.Remove(name); err != nil {
 		t.Fatal(err)
 	}
-	return f.Name()
+	return name
 }
 
 func asBody(body []byte) io.ReadCloser {
