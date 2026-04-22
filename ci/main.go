@@ -4,6 +4,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"slices"
@@ -26,33 +27,38 @@ func main() {
 		os.Exit(1)
 	}
 
-	commands := map[string]func() error{
-		"build":         build,
-		"test":          test,
-		"lint":          lint,
-		"fmt":           fmtFix,
-		"fmt-check":     fmtCheck,
-		"imports":       importsFix,
-		"imports-check": importsCheck,
-		"license":       licenseFix,
-		"license-check": licenseCheck,
-		"check":         check,
-		"fix":           fix,
+	// Resolve args to a flat task list.
+	var allTasks []task
+	var sequential bool
+	for _, name := range args {
+		if fn, ok := tasks[name]; ok {
+			allTasks = append(allTasks, task{name: name, fn: fn})
+		} else if comp, ok := composites[name]; ok {
+			allTasks = append(allTasks, comp.tasks...)
+			sequential = cmp.Or(sequential, comp.sequential)
+		} else {
+			fmt.Fprintf(os.Stderr, "unknown command: %s\n", name)
+			usage()
+			os.Exit(1)
+		}
 	}
 
-	cmd, ok := commands[args[0]]
-	if !ok {
-		usage()
-		os.Exit(1)
+	var err error
+	if sequential {
+		err = runSequential(allTasks)
+	} else {
+		err = runParallel(allTasks)
 	}
-
-	if err := cmd(); err != nil {
+	if err != nil {
 		os.Exit(1)
 	}
 }
 
 func usage() {
-	fmt.Print(`Usage: go run ./ci [-v] [-keep-going] <command>
+	fmt.Print(`Usage: go run ./ci [-v] [-keep-going] <command> [command...]
+
+Multiple commands are run in parallel. Composite commands (check, fix)
+expand to their own parallel/sequential task sets.
 
 Options:
   -v             Verbose output (stream command output to terminal)

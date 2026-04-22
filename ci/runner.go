@@ -45,6 +45,11 @@ type task struct {
 
 type taskFn func(context.Context) (stdout, stderr string, err error)
 
+type composite struct {
+	tasks      []task
+	sequential bool
+}
+
 type taskResult struct {
 	name   string
 	stdout string
@@ -324,8 +329,4 @@ func runLoud(ctx context.Context, name string, args ...string) (string, string, 
 	cmd.Stderr = io.MultiWriter(os.Stderr, &errbuf)
 	err := cmd.Run()
 	return outbuf.String(), errbuf.String(), err
-}
-
-func runSingle(name string, fn taskFn) error {
-	return runParallel([]task{{name: name, fn: fn}})
 }

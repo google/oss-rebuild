@@ -51,36 +51,36 @@ var (
 	licenseFixTask   = run("go", "tool", "addlicense" /*     */, "-s=only", "-ignore=.*/**", "-ignore=bin/**", "-ignore=**/.terraform.lock.hcl", "-ignore=definitions/**", "-ignore=docs/layouts/**", "-ignore=**/*.pb.go", ".")
 )
 
-// --- Single commands ---
+// --- Commands ---
 
-func build() error        { return runSingle("build", buildTask) }
-func test() error         { return runSingle("test", testTask) }
-func lint() error         { return runSingle("lint", lintTask) }
-func fmtCheck() error     { return runSingle("fmt-check", fmtCheckTask) }
-func importsCheck() error { return runSingle("imports-check", importsCheckTask) }
-func licenseCheck() error { return runSingle("license-check", licenseCheckTask) }
-
-func fmtFix() error     { return runSingle("fmt", fmtFixTask) }
-func importsFix() error { return runSingle("imports", importsFixTask) }
-func licenseFix() error { return runSingle("license", licenseFixTask) }
+var tasks = map[string]taskFn{
+	"build":         buildTask,
+	"test":          testTask,
+	"lint":          lintTask,
+	"fmt-check":     fmtCheckTask,
+	"imports-check": importsCheckTask,
+	"license-check": licenseCheckTask,
+}
 
 // --- Composite commands ---
 
-func check() error {
-	return runParallel([]task{
+// Mutating commands are composites to ensure sequential execution when
+// combined with other mutating commands (e.g. "fmt imports" must not race).
+var composites = map[string]composite{
+	"fmt":     {tasks: []task{{"fmt", fmtFixTask}}, sequential: true},
+	"imports": {tasks: []task{{"imports", importsFixTask}}, sequential: true},
+	"license": {tasks: []task{{"license", licenseFixTask}}, sequential: true},
+	"check": {tasks: []task{
 		{"build", buildTask},
 		{"test", testTask},
 		{"lint", lintTask},
 		{"fmt", fmtCheckTask},
 		{"imports", importsCheckTask},
 		{"license", licenseCheckTask},
-	})
-}
-
-func fix() error {
-	return runSequential([]task{
+	}},
+	"fix": {tasks: []task{
 		{"fmt", fmtFixTask},
 		{"imports", importsFixTask},
 		{"license", licenseFixTask},
-	})
+	}, sequential: true},
 }
