@@ -499,6 +499,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				CommandExecutor: cmdExecutor,
 				MaxParallel:     tc.maxParallel,
 				OutputDir:       "/tmp",
+				TempDirBase:     "/tmp",
 				RetainContainer: tc.retainContainer,
 				RetainImage:     tc.retainImage,
 			})
@@ -635,6 +636,7 @@ func TestDockerBuildExecutorConcurrency(t *testing.T) {
 		CommandExecutor: cmdExecutor,
 		MaxParallel:     maxParallel,
 		OutputDir:       "/tmp",
+		TempDirBase:     "/tmp",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create executor: %v", err)
