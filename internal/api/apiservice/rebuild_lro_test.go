@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,6 +100,72 @@ func TestCreateAndGetRebuildOp(t *testing.T) {
 	}
 	if got.Result == nil || got.Result.Message != "success" {
 		t.Errorf("expected success result, got %+v", got.Result)
+	}
+}
+
+func TestRebuildPackageDuplicateInsert(t *testing.T) {
+	ctx := context.Background()
+	attempts := db.NewMemoryAttempts()
+
+	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "absl-py", Version: "2.0.0", Artifact: "absl_py-2.0.0-py3-none-any.whl"}
+	req := schema.RebuildPackageRequest{
+		Ecosystem: target.Ecosystem,
+		Package:   target.Package,
+		Version:   target.Version,
+		Artifact:  target.Artifact,
+		ID:        "duplicate-run-id",
+	}
+
+	// Pre-insert the attempt (simulating CreateRebuildOp)
+	attempt := schema.RebuildAttempt{
+		Ecosystem: string(req.Ecosystem),
+		Package:   req.Package,
+		Version:   req.Version,
+		Artifact:  req.Artifact,
+		RunID:     req.ID,
+		Status:    schema.RebuildStatusRunning,
+	}
+	if err := attempts.Insert(ctx, attempt); err != nil {
+		t.Fatalf("Initial Insert failed: %v", err)
+	}
+
+	// Now call RebuildPackage, which will call Upsert.
+	// We need to provide minimal deps.
+	var d RebuildPackageDeps
+	d.Attempts = attempts
+	d.ServiceRepo = rebuild.Location{Ref: "test-ref"}
+	mfs := memfs.New()
+	d.AttestationStore = rebuild.NewFilesystemAssetStore(mfs)
+	d.LocalMetadataStore = rebuild.NewFilesystemAssetStore(mfs)
+	d.HTTPClient = &httpxtest.MockClient{}
+	d.Signer = must(dsse.NewEnvelopeSigner(&FakeSigner{}))
+
+	// Mock other things to fail fast after the initial write
+	d.InferStub = func(context.Context, schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+		return nil, io.EOF // arbitrary error
+	}
+
+	// RebuildPackage should not fail on the initial write.
+	// It will return a verdict with an error message later due to InferStub returning EOF.
+	v, err := RebuildPackage(ctx, req, &d)
+	if err != nil {
+		t.Errorf("expected no error from RebuildPackage, got %v", err)
+	}
+	if v == nil || !strings.Contains(v.Message, "fetching inference") {
+		t.Errorf("expected fetching inference error in verdict, got %+v", v)
+	}
+
+	// Verify it didn't fail at the initial write by checking the fields that RebuildPackage sets.
+	got, err := attempts.Get(ctx, db.AttemptKey{Target: target, RunID: req.ID})
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	// RebuildPackage would have set Started and ExecutorVersion
+	if got.ExecutorVersion != "test-ref" {
+		t.Errorf("Expected ExecutorVersion test-ref, got %s", got.ExecutorVersion)
+	}
+	if got.Started.IsZero() {
+		t.Error("Expected Started time to be set")
 	}
 }
 
