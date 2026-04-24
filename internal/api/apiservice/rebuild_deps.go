@@ -76,7 +76,20 @@ func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) 
 		ServiceAccount: cfg.BuildRemoteIdentity,
 		LogsBucket:     cfg.LogsBucket,
 		LogsClientFunc: buildgcb.GCSLogsClient(gcsClient),
-		Client:         gcb.NewClient(svc), // TODO: support private pools if needed
+		Client:         nil, // Defined depending on GCBPrivatePoolName
+	}
+	if cfg.GCBPrivatePoolName != "" {
+		executorConfig.Client = gcb.NewRegionalClient(svc, cfg.GCBPrivatePoolRegion)
+		executorConfig.PrivatePool = &gcb.PrivatePoolConfig{
+			Name:   cfg.GCBPrivatePoolName,
+			Region: cfg.GCBPrivatePoolRegion,
+		}
+		executorConfig.JumboPool = &gcb.PrivatePoolConfig{
+			Name:   cfg.GCBPrivatePoolName + "-jumbo",
+			Region: cfg.GCBPrivatePoolRegion,
+		}
+	} else {
+		executorConfig.Client = gcb.NewClient(svc)
 	}
 	executorConfig.Planner = buildgcb.NewPlanner(plannerConfig)
 	d.GCBExecutor, err = buildgcb.NewExecutor(executorConfig)

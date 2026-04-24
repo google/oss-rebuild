@@ -243,6 +243,8 @@ func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, 
 		BuildDefRef:                plumbing.Main.String(),
 		BuildDefDir:                path.Clean(*buildDefRepoDir),
 		BuildRemoteIdentity:        *buildRemoteIdentity,
+		GCBPrivatePoolName:         *gcbPrivatePoolName,
+		GCBPrivatePoolRegion:       *gcbPrivatePoolRegion,
 	}
 	d.DepsFunc = func(ctx context.Context, rdc *schema.RebuildDepsConfig) (*apiservice.RebuildPackageDeps, error) {
 		deps, err := apiservice.MakeRebuildPackageDeps(ctx, rdc)
