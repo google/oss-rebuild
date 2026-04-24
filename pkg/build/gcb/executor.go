@@ -133,9 +133,15 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 				Name: e.privatePool.Name,
 			}
 		}
-		var timeout string
+		var timeout time.Duration
 		if opts.Timeout > 0 {
-			timeout = fmt.Sprintf("%ds", int(opts.Timeout.Seconds()))
+			timeout = opts.Timeout
+		} else if pool != nil {
+			// Force GCB to extend the timeout beyond 60 minutes for private pools, close to the maximum of 24 hours
+			timeout = 23 * time.Hour
+		} else {
+			// Maximum timeout for public pool is 60 minutes
+			timeout = 55 * time.Minute
 		}
 		tags := []string{
 			buildTag("ecosystem", string(input.Target.Ecosystem)),
@@ -154,7 +160,7 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 			LogsBucket:     e.logsBucket,
 			ServiceAccount: e.serviceAccount,
 			Tags:           tags,
-			Timeout:        timeout,
+			Timeout:        fmt.Sprintf("%ds", int(timeout.Seconds())),
 		}
 	}
 	// Create a buffered pipe for streaming output
