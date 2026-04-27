@@ -365,7 +365,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		Started:         started,
 		Created:         time.Now().UTC(),
 	}
-	if err := deps.Attempts.Insert(ctx, attempt); err != nil {
+	if err := deps.Attempts.Upsert(ctx, attempt); err != nil {
 		return nil, errors.Wrap(err, "initial write to db")
 	}
 

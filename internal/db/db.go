@@ -21,6 +21,7 @@ type Resource[T, K any] interface {
 	Get(ctx context.Context, key K) (T, error)
 	Insert(ctx context.Context, v T) error
 	Update(ctx context.Context, v T) error
+	Upsert(ctx context.Context, v T) error
 }
 
 var (
@@ -86,6 +87,11 @@ func (r *firestoreResource[T, K]) Update(ctx context.Context, v T) error {
 	return err
 }
 
+func (r *firestoreResource[T, K]) Upsert(ctx context.Context, v T) error {
+	_, err := r.doc(r.pathFor(v)).Set(ctx, v)
+	return err
+}
+
 // memoryResource is an internal generic implementation of Resource using an in-memory map.
 type memoryResource[T, K any] struct {
 	mu         sync.Mutex
@@ -123,6 +129,14 @@ func (r *memoryResource[T, K]) Update(ctx context.Context, v T) error {
 	if _, ok := r.data[p]; !ok {
 		return ErrNotFound
 	}
+	r.data[p] = v
+	return nil
+}
+
+func (r *memoryResource[T, K]) Upsert(ctx context.Context, v T) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p := path.Join(r.pathFor(v)...)
 	r.data[p] = v
 	return nil
 }
