@@ -5,11 +5,15 @@ package rubygems
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
+	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	reg "github.com/google/oss-rebuild/pkg/registry/rubygems"
 )
 
 func TestInferStrategy(t *testing.T) {
@@ -18,6 +22,7 @@ func TestInferStrategy(t *testing.T) {
 		pkg            string
 		version        string
 		repoYAML       string
+		versionDetail  string // JSON for /api/v2/rubygems/{name}/versions/{version}.json
 		wantCommitID   string
 		wantStrategyFn func(commitHash string) rebuild.Strategy
 		wantErr        bool
@@ -38,7 +43,8 @@ func TestInferStrategy(t *testing.T) {
       lib/test_gem.rb: |
         module TestGem; end
 `,
-			wantCommitID: "initial",
+			versionDetail: `{"name":"test-gem","version":"1.0.0","platform":"ruby","sha":"abc","version_created_at":"2023-06-01T00:00:00Z"}`,
+			wantCommitID:  "initial",
 			wantStrategyFn: func(commitHash string) rebuild.Strategy {
 				return &GemBuild{
 					Location: rebuild.Location{
@@ -81,7 +87,27 @@ func TestInferStrategy(t *testing.T) {
 				Repository: repo.Repository,
 				URI:        "https://github.com/test-org/test-gem",
 			}
-			mux := rebuild.RegistryMux{}
+			// Mock the registry: Artifact call (for gem spec) and Version call.
+			client := httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{
+						URL: fmt.Sprintf("https://rubygems.org/gems/%s-%s.gem", tc.pkg, tc.version),
+						Response: &http.Response{
+							StatusCode: 200,
+							Body:       httpxtest.Body(""), // Empty body; parseUpstreamGemSpec will fail gracefully
+						},
+					},
+					{
+						URL: fmt.Sprintf("https://rubygems.org/api/v2/rubygems/%s/versions/%s.json", tc.pkg, tc.version),
+						Response: &http.Response{
+							StatusCode: 200,
+							Body:       httpxtest.Body(tc.versionDetail),
+						},
+					},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			}
+			mux := rebuild.RegistryMux{RubyGems: reg.HTTPRegistry{Client: &client}}
 			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, nil)
 			if tc.wantErr {
 				if err == nil {
