@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"crypto"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -23,12 +22,10 @@ import (
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/local"
-	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
-	"github.com/google/oss-rebuild/pkg/registry/maven"
 	"github.com/pkg/errors"
 )
 
@@ -207,51 +204,13 @@ func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAsset
 		return errors.Wrap(err, "getting stabilizers")
 	}
 	var upstreamURL string
-	switch t.Ecosystem {
-	case rebuild.NPM:
-		vmeta, err := mux.NPM.Version(ctx, t.Package, t.Version)
-		if err != nil {
-			return errors.Wrap(err, "fetching npm metadata")
-		}
-		upstreamURL = vmeta.Dist.URL
-	case rebuild.PyPI:
-		release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
-		if err != nil {
-			return errors.Wrap(err, "fetching pypi metadata")
-		}
-		for _, r := range release.Artifacts {
-			if r.Filename == t.Artifact {
-				upstreamURL = r.URL
-				break
-			}
-		}
-		if upstreamURL == "" {
-			return errors.Errorf("artifact %s not found in release", t.Artifact)
-		}
-	case rebuild.CratesIO:
-		vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
-		if err != nil {
-			return errors.Wrap(err, "fetching crates.io metadata")
-		}
-		upstreamURL = vmeta.DownloadURL
-	case rebuild.Debian:
-		_, name, err := debian.ParseComponent(t.Package)
-		if err != nil {
-			return errors.Wrap(err, "parsing debian component")
-		}
-		upstreamURL, err = mux.Debian.ArtifactURL(ctx, name, t.Artifact)
-		if err != nil {
-			return errors.Wrap(err, "getting debian artifact URL")
-		}
-	case rebuild.Maven:
-		upstreamURL, err = mux.Maven.ReleaseURL(ctx, t.Package, t.Version, maven.TypeJar)
-		if err != nil {
-			return errors.Wrap(err, "getting maven artifact URL")
-		}
-	case rebuild.RubyGems:
-		upstreamURL = fmt.Sprintf("https://rubygems.org/gems/%s-%s.gem", t.Package, t.Version)
-	default:
-		return errors.Errorf("unsupported ecosystem: %s", t.Ecosystem)
+	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
+	if !ok {
+		return errors.New("unsupported ecosystem")
+	}
+	upstreamURL, err = rebuilder.UpstreamURL(ctx, t, mux)
+	if err != nil {
+		return errors.Wrap(err, "getting upstream URL")
 	}
 	if upstreamURL == "" {
 		return errors.New("couldn't determine upstream URL")
