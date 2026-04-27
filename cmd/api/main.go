@@ -140,7 +140,7 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 			Region: *gcbPrivatePoolRegion,
 		}
 		executorConfig.PrivatePool = pool
-		executorConfig.Client = gcb.NewClientWithPrivatePool(svc, pool)
+		executorConfig.Client = gcb.NewRegionalClient(svc, *gcbPrivatePoolRegion)
 		plannerConfig.PrivatePool = pool
 	} else {
 		executorConfig.Client = gcb.NewClient(svc)
