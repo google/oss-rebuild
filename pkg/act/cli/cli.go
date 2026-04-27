@@ -45,6 +45,10 @@ func RunE[I act.Input, O any, D Deps](
 		if err != nil {
 			return errors.Wrap(err, "initializing dependencies")
 		}
+		// Beyond this point in the code, failures are not usually related to command usage.
+		// Instead, they're application failures which should be reflected in the error message.
+		// See this discussion for more details: https://github.com/spf13/cobra/issues/340#issuecomment-374617413
+		cmd.SilenceUsage = true
 		deps.SetIO(IO{
 			In:  cmd.InOrStdin(),
 			Out: cmd.OutOrStdout(),
