@@ -93,11 +93,20 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		dir = rcfg.Dir
 	}
 
+	// Infer Ruby versions from the upstream gem's metadata.
+	var rubyVersion string
+	// TODO: Add real version inference
+	if rubyVersion == "" {
+		// Fallback: recent stable Ruby available from ruby-builder.
+		rubyVersion = "3.3.11"
+	}
+
 	return &GemBuild{
 		Location: rebuild.Location{
 			Repo: rcfg.URI,
 			Dir:  dir,
 			Ref:  ref,
 		},
+		RubyVersion: rubyVersion,
 	}, nil
 }
