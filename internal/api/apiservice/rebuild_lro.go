@@ -34,16 +34,16 @@ func NewRebuildView(attempts db.Attempts) *RebuildView {
 func ProjectRebuildAttempt(a schema.RebuildAttempt) longrunning.Operation[schema.Verdict] {
 	op := longrunning.Operation[schema.Verdict]{
 		ID: toOperationID(db.AttemptKey{Target: a.Target(), RunID: a.RunID}),
-	}
-	switch a.Status {
-	case schema.RebuildStatusSuccess, schema.RebuildStatusFailure:
-		op.Done = true
-		op.Result = &schema.Verdict{
+		Result: &schema.Verdict{
 			Target:        a.Target(),
 			Message:       a.Message,
 			StrategyOneof: a.Strategy,
 			Timings:       a.Timings,
-		}
+		},
+	}
+	switch a.Status {
+	case schema.RebuildStatusSuccess, schema.RebuildStatusFailure:
+		op.Done = true
 	case schema.RebuildStatusError:
 		op.Done = true
 		op.Error = &longrunning.OperationError{
