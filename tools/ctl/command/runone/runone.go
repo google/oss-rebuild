@@ -19,6 +19,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/build/local"
+	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -261,8 +262,9 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 		}
 		fmt.Fprintln(deps.IO.Out, "Analysis completed successfully")
 	case schema.AttestMode:
-		stub := api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, apiURL.JoinPath("rebuild"))
-		resp, err := stub(ctx, schema.RebuildPackageRequest{
+		createStub := api.Stub[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]](client, apiURL.JoinPath("rebuild", "op", "create"))
+		getStub := api.Stub[schema.GetOperationRequest, longrunning.Operation[schema.Verdict]](client, apiURL.JoinPath("rebuild", "op", "get"))
+		op, err := createStub(ctx, schema.RebuildPackageRequest{
 			Ecosystem:         rebuild.Ecosystem(cfg.Ecosystem),
 			Package:           cfg.Package,
 			Version:           cfg.Version,
@@ -277,11 +279,23 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 			ExecutionHint:     schema.ExecutionHint(cfg.ExecutionHint),
 		})
 		if err != nil {
-			return nil, errors.Wrap(err, "running attest")
+			return nil, errors.Wrap(err, "creating attest operation")
 		}
-		if err := enc.Encode(resp); err != nil {
-			return nil, errors.Wrap(err, "encoding result")
+		for !op.Done {
+			time.Sleep(5 * time.Second)
+			op, err = getStub(ctx, schema.GetOperationRequest{ID: op.ID})
+			if err != nil {
+				return nil, errors.Wrap(err, "getting attest operation")
+			}
 		}
+		if op.Result != nil {
+			if err := enc.Encode(op.Result); err != nil {
+				return nil, errors.Wrap(err, "encoding result")
+			}
+		}
+		return nil, op.Error
+	default:
+		return nil, errors.Errorf("unknown mode: %s", mode)
 	}
 	return &act.NoOutput{}, nil
 }

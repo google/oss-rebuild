@@ -17,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/google/oss-rebuild/internal/taskqueue"
+	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -38,15 +39,17 @@ type ExecutionService interface {
 
 // remoteExecutionService interacts with a remote benchmark execution API.
 type remoteExecutionService struct {
-	rebuildStub api.StubT[schema.RebuildPackageRequest, schema.Verdict]
-	versionStub api.StubT[schema.VersionRequest, schema.VersionResponse]
+	createOpStub api.StubT[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]]
+	getOpStub    api.StubT[schema.GetOperationRequest, longrunning.Operation[schema.Verdict]]
+	versionStub  api.StubT[schema.VersionRequest, schema.VersionResponse]
 }
 
 // NewRemoteExecutionService creates a new service for remote API execution.
 func NewRemoteExecutionService(client *http.Client, baseURL *url.URL) ExecutionService {
 	return &remoteExecutionService{
-		rebuildStub: api.Stub[schema.RebuildPackageRequest, schema.Verdict](client, baseURL.JoinPath("rebuild")),
-		versionStub: api.Stub[schema.VersionRequest, schema.VersionResponse](client, baseURL.JoinPath("version")),
+		createOpStub: api.Stub[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]](client, baseURL.JoinPath("rebuild", "op", "create")),
+		getOpStub:    api.Stub[schema.GetOperationRequest, longrunning.Operation[schema.Verdict]](client, baseURL.JoinPath("rebuild", "op", "get")),
+		versionStub:  api.Stub[schema.VersionRequest, schema.VersionResponse](client, baseURL.JoinPath("version")),
 	}
 }
 
@@ -60,7 +63,18 @@ func (s *remoteExecutionService) RebuildPackage(ctx context.Context, req schema.
 		}
 		req.Artifact = a
 	}
-	return s.rebuildStub(ctx, req)
+	op, err := s.createOpStub(ctx, req)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating rebuild operation")
+	}
+	for !op.Done {
+		time.Sleep(5 * time.Second)
+		op, err = s.getOpStub(ctx, schema.GetOperationRequest{ID: op.ID})
+		if err != nil {
+			return nil, errors.Wrap(err, "getting rebuild operation")
+		}
+	}
+	return op.Result, op.Error
 }
 
 func (s *remoteExecutionService) Infer(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
