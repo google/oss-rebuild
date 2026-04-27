@@ -4,10 +4,7 @@
 package rebuild
 
 import (
-	"context"
 	"errors"
-	"log"
-	"strings"
 
 	cacheinternal "github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/httpx"
@@ -63,53 +60,4 @@ func RegistryMuxWithCache(registry RegistryMux, c cacheinternal.Cache) (Registry
 		return newmux, errors.New("unknown rubygems registry type")
 	}
 	return newmux, nil
-}
-
-func warmCacheforArtifact(ctx context.Context, registry RegistryMux, t Target) {
-	switch t.Ecosystem {
-	case NPM:
-		registry.NPM.Package(ctx, t.Package)
-		registry.NPM.Version(ctx, t.Package, t.Version)
-		registry.NPM.Artifact(ctx, t.Package, t.Version)
-	case PyPI:
-		registry.PyPI.Project(ctx, t.Package)
-		registry.PyPI.Release(ctx, t.Package, t.Version)
-		registry.PyPI.Artifact(ctx, t.Package, t.Version, t.Artifact)
-	case CratesIO:
-		registry.CratesIO.Crate(ctx, t.Package)
-		registry.CratesIO.Version(ctx, t.Package, t.Version)
-		registry.CratesIO.Artifact(ctx, t.Package, t.Version)
-	case Maven:
-		registry.Maven.PackageMetadata(ctx, t.Package)
-		registry.Maven.PackageVersion(ctx, t.Package, t.Version)
-	case Debian:
-		component, name, found := strings.Cut(t.Package, "/")
-		if !found {
-			log.Printf("warming cache failed, expected component in debian package name %s", t.Package)
-			return
-		}
-		registry.Debian.DSC(ctx, component, name, t.Version)
-		registry.Debian.Artifact(ctx, component, name, t.Artifact)
-	case RubyGems:
-		registry.RubyGems.Gem(ctx, t.Package)
-		registry.RubyGems.Versions(ctx, t.Package)
-		registry.RubyGems.Artifact(ctx, t.Package, t.Version)
-	}
-}
-
-func warmCacheForPackage(ctx context.Context, registry RegistryMux, t Target) {
-	switch t.Ecosystem {
-	case NPM:
-		registry.NPM.Package(ctx, t.Package)
-	case PyPI:
-		registry.PyPI.Project(ctx, t.Package)
-	case CratesIO:
-		registry.CratesIO.Crate(ctx, t.Package)
-	case Maven:
-		registry.Maven.PackageMetadata(ctx, t.Package)
-	case Debian:
-		// There is no Debian resource shared across versions.
-	case RubyGems:
-		registry.RubyGems.Gem(ctx, t.Package)
-	}
 }
