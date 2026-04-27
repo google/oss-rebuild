@@ -31,6 +31,9 @@ type RebuildDepsConfig struct {
 	BuildDefRepo string `json:"build_def_repo"`
 	BuildDefRef  string `json:"build_def_ref"`
 	BuildDefDir  string `json:"build_def_dir"`
+
+	GCBPrivatePoolName   string `json:"gcb_private_pool_name"`
+	GCBPrivatePoolRegion string `json:"gcb_private_pool_region"`
 }
 
 // EnvVar is a simple key-value pair for environment variables.
