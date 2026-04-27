@@ -42,9 +42,9 @@ func ProjectRebuildAttempt(a schema.RebuildAttempt) longrunning.Operation[schema
 		},
 	}
 	switch a.Status {
-	case schema.RebuildStatusSuccess, schema.RebuildStatusFailure:
+	case schema.RebuildStatusSuccess:
 		op.Done = true
-	case schema.RebuildStatusError:
+	case schema.RebuildStatusFailure, schema.RebuildStatusError:
 		op.Done = true
 		op.Error = &longrunning.OperationError{
 			Code:    http.StatusInternalServerError,
