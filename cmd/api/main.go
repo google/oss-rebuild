@@ -134,12 +134,15 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 		Client:         nil, // Defined depending on gcbPrivatePoolName
 	}
 	if *gcbPrivatePoolName != "" {
-		pool := &gcb.PrivatePoolConfig{
+		executorConfig.Client = gcb.NewRegionalClient(svc, *gcbPrivatePoolRegion)
+		executorConfig.PrivatePool = &gcb.PrivatePoolConfig{
 			Name:   *gcbPrivatePoolName,
 			Region: *gcbPrivatePoolRegion,
 		}
-		executorConfig.PrivatePool = pool
-		executorConfig.Client = gcb.NewRegionalClient(svc, *gcbPrivatePoolRegion)
+		executorConfig.JumboPool = &gcb.PrivatePoolConfig{
+			Name:   (*gcbPrivatePoolName) + "-jumbo",
+			Region: *gcbPrivatePoolRegion,
+		}
 	} else {
 		executorConfig.Client = gcb.NewClient(svc)
 	}
