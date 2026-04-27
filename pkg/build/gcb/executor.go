@@ -62,9 +62,7 @@ func NewExecutor(config ExecutorConfig) (*Executor, error) {
 	planner := config.Planner
 	if planner == nil {
 		plannerConfig := PlannerConfig{
-			Project:        config.Project,
 			ServiceAccount: config.ServiceAccount,
-			PrivatePool:    config.PrivatePool,
 		}
 		planner = NewPlanner(plannerConfig)
 	}

@@ -198,7 +198,6 @@ func TestCreateRebuildOpFast(t *testing.T) {
 		Project:        "foo-project",
 		ServiceAccount: "foo-role",
 		Planner: buildgcb.NewPlanner(buildgcb.PlannerConfig{
-			Project:         "foo-project",
 			ServiceAccount:  "foo-role",
 			AllowPrivileged: true,
 		}),

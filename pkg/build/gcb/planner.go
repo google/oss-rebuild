@@ -14,7 +14,6 @@ import (
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
-	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
@@ -488,9 +487,7 @@ var gcbProxyBuildTpl = template.Must(
 // Planner generates Google Cloud Build execution plans
 type Planner struct {
 	// GCB-specific configuration
-	project        string
 	serviceAccount string
-	privatePool    *gcb.PrivatePoolConfig
 
 	// Internal configuration - not exposed to users
 	timewarpHost    string
@@ -501,9 +498,7 @@ type Planner struct {
 // NewPlanner creates a new GCB planner with the given configuration
 func NewPlanner(config PlannerConfig) *Planner {
 	return &Planner{
-		project:         config.Project,
 		serviceAccount:  config.ServiceAccount,
-		privatePool:     config.PrivatePool,
 		timewarpHost:    "localhost:8080", // Internal default
 		hasRepo:         false,            // Repository needs to be cloned in container
 		allowPrivileged: config.AllowPrivileged,
@@ -512,9 +507,7 @@ func NewPlanner(config PlannerConfig) *Planner {
 
 // PlannerConfig contains configuration for the GCB planner
 type PlannerConfig struct {
-	Project         string
 	ServiceAccount  string
-	PrivatePool     *gcb.PrivatePoolConfig
 	AllowPrivileged bool
 }
 
