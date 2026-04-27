@@ -50,6 +50,7 @@ type Config struct {
 	OverwriteMode     string
 	BuildTimeout      time.Duration
 	Mode              string
+	SizeHint          string
 }
 
 // Validate ensures the configuration is valid.
@@ -93,6 +94,9 @@ func (c Config) Validate() error {
 	}
 	if c.OverwriteMode != "" && c.OverwriteMode != string(schema.OverwriteServiceUpdate) && c.OverwriteMode != string(schema.OverwriteForce) {
 		return errors.Errorf("invalid overwrite-mode: %s. Expected one of 'SERVICE_UPDATE' or 'FORCE'", c.OverwriteMode)
+	}
+	if c.SizeHint != "" && c.SizeHint != string(schema.ShrimpSize) && c.SizeHint != string(schema.JumboSize) {
+		return errors.Errorf("invalid size-hint: %s. Expected one of 'SHRIMP' or 'JUMBO'", c.SizeHint)
 	}
 	return nil
 }
@@ -265,6 +269,7 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 			BuildTimeout:      cfg.BuildTimeout,
 			OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
 			ID:                time.Now().UTC().Format(time.RFC3339),
+			SizeHint:          schema.SizeHint(cfg.SizeHint),
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "running attest")
@@ -313,5 +318,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.BoolVar(&cfg.UseRepoDefinition, "use-repo-definition", false, "use build definition from the build definition repository")
 	set.DurationVar(&cfg.BuildTimeout, "build-timeout", time.Duration(0), "manual timeout")
 	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
+	set.StringVar(&cfg.SizeHint, "size-hint", "", "build size hint (SHRIMP or JUMBO), defaults to SHRIMP")
 	return set
 }
