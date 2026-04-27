@@ -392,7 +392,7 @@ resource "google_cloud_run_v2_job" "rebuild-job" {
         image = data.google_artifact_registry_docker_image.rebuild-job.self_link
         resources {
           limits = {
-            cpu    = "100m"
+            cpu    = "1000m"
             memory = "512Mi"
           }
         }
