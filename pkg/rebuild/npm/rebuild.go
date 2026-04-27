@@ -7,15 +7,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
-	"log"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-billy/v5/util"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -46,26 +40,6 @@ func sanitize(name string) string {
 
 func ArtifactName(t rebuild.Target) string {
 	return fmt.Sprintf("%s-%s.tgz", sanitize(t.Package), t.Version)
-}
-
-func makeUsrLocalCleanup() func() {
-	existing := make(map[string]bool)
-	basepath := "/usr/local"
-	basefs := osfs.New(basepath)
-	util.Walk(basefs, ".", func(path string, info fs.FileInfo, err error) error {
-		existing[filepath.Join(basepath, path)] = true
-		return nil
-	})
-	return func() {
-		log.Println("cleaning up Node install")
-		util.Walk(basefs, ".", func(path string, info fs.FileInfo, err error) error {
-			fullpath := filepath.Join(basepath, path)
-			if !existing[fullpath] {
-				os.RemoveAll(fullpath)
-			}
-			return nil
-		})
-	}
 }
 
 type Rebuilder struct{}
