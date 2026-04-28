@@ -5,10 +5,15 @@ package rubygems
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"path"
+	"regexp"
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
@@ -96,6 +101,22 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		dir = rcfg.Dir
 	}
 
+	// Locate the gemspec file within the repo tree, unless dir was set explicitly.
+	if dir == "" {
+		if hash, err := rcfg.Repository.ResolveRevision(plumbing.Revision(ref)); err != nil {
+			log.Printf("warning: failed to resolve ref %s for gemspec search: %v", ref, err)
+		} else if commit, err := rcfg.Repository.CommitObject(*hash); err != nil {
+			log.Printf("warning: failed to get commit for ref %s: %v", ref, err)
+		} else if gemspecPath, err := findGemspec(rcfg.Repository, commit, t.Package); err != nil {
+			log.Printf("warning: gemspec search failed for %s: %v", t.Package, err)
+		} else {
+			dir = path.Dir(gemspecPath)
+			if dir == "." {
+				dir = ""
+			}
+		}
+	}
+
 	// Infer Ruby and RubyGems versions from the upstream gem's metadata.
 	var rubyVersion, rubygemsVersion string
 	if spec, err := parseUpstreamGemSpec(ctx, t, mux); err != nil {
@@ -137,6 +158,45 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		RubygemsVersion: rubygemsVersion,
 		RegistryTime:    registryTime,
 	}, nil
+}
+
+// findGemspec locates the gemspec file for the given package in the repo tree.
+// It first checks well-known paths, then falls back to a content-based grep.
+func findGemspec(repo *git.Repository, c *object.Commit, pkg string) (gemspecPath string, err error) {
+	t, err := c.Tree()
+	if err != nil {
+		return "", errors.Wrap(err, "getting commit tree")
+	}
+	// Check well-known paths: root and common subdirectory conventions.
+	wellKnownPaths := []string{
+		pkg + ".gemspec",
+		path.Join(pkg, pkg+".gemspec"),
+	}
+	for _, p := range wellKnownPaths {
+		if _, err := t.File(p); err == nil {
+			return p, nil
+		}
+	}
+	// Fallback: grep for .gemspec files containing the gem name.
+	grs, err := repo.Grep(&git.GrepOptions{
+		CommitHash: c.Hash,
+		PathSpecs:  []*regexp.Regexp{regexp.MustCompile(`\.gemspec$`)},
+		Patterns:   []*regexp.Regexp{regexp.MustCompile(fmt.Sprintf(`\.name\s*=\s*['"]%s['"]`, regexp.QuoteMeta(pkg)))},
+	})
+	if err != nil {
+		return "", errors.Wrap(err, "grepping for gemspec")
+	}
+	if len(grs) == 0 {
+		return "", errors.Errorf("no gemspec found for %s", pkg)
+	}
+	if len(grs) > 1 {
+		var names []string
+		for _, gr := range grs {
+			names = append(names, gr.FileName)
+		}
+		log.Printf("Multiple gemspec candidates for %s: %v", pkg, names)
+	}
+	return grs[0].FileName, nil
 }
 
 // parseUpstreamGemSpec downloads the upstream .gem file and parses its

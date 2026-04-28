@@ -24,6 +24,7 @@ func TestInferStrategy(t *testing.T) {
 		version        string
 		repoYAML       string
 		versionDetail  string // JSON for /api/v2/rubygems/{name}/versions/{version}.json
+		hintFn         func(commitHash string) rebuild.Strategy
 		wantCommitID   string
 		wantStrategyFn func(commitHash string) rebuild.Strategy
 		wantErr        bool
@@ -51,6 +52,103 @@ func TestInferStrategy(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/test-org/test-gem",
 						Ref:  commitHash,
+					},
+					RubyVersion:  "3.3.11",
+					RegistryTime: must(parseTime("2023-06-01T00:00:00Z")),
+				}
+			},
+		},
+		{
+			name:    "gemspec in subdirectory found by grep",
+			pkg:     "minitest",
+			version: "5.20.0",
+			repoYAML: `commits:
+  - id: initial
+    tag: v5.20.0
+    files:
+      subdir/minitest.gemspec: |
+        Gem::Specification.new do |s|
+          s.name = 'minitest'
+          s.version = '5.20.0'
+        end
+      subdir/lib/minitest.rb: |
+        module Minitest; end
+`,
+			versionDetail: `{"name":"minitest","version":"5.20.0","platform":"ruby","sha":"def","version_created_at":"2023-09-06T00:00:00Z"}`,
+			wantCommitID:  "initial",
+			wantStrategyFn: func(commitHash string) rebuild.Strategy {
+				return &GemBuild{
+					Location: rebuild.Location{
+						Repo: "https://github.com/test-org/test-gem",
+						Ref:  commitHash,
+						Dir:  "subdir",
+					},
+					RubyVersion:  "3.3.11",
+					RegistryTime: must(parseTime("2023-09-06T00:00:00Z")),
+				}
+			},
+		},
+		{
+			name:    "well-known path disambiguates sibling gemspecs",
+			pkg:     "concurrent-ruby",
+			version: "1.2.2",
+			repoYAML: `commits:
+  - id: initial
+    tag: v1.2.2
+    files:
+      concurrent-ruby.gemspec: |
+        Gem::Specification.new do |s|
+          s.name = 'concurrent-ruby'
+          s.version = '1.2.2'
+        end
+      concurrent-ruby-ext.gemspec: |
+        Gem::Specification.new do |s|
+          s.name = 'concurrent-ruby-ext'
+          s.version = '1.2.2'
+        end
+      lib/concurrent-ruby.rb: |
+        module Concurrent; end
+`,
+			versionDetail: `{"name":"concurrent-ruby","version":"1.2.2","platform":"ruby","sha":"ghi","version_created_at":"2023-02-24T00:00:00Z"}`,
+			wantCommitID:  "initial",
+			wantStrategyFn: func(commitHash string) rebuild.Strategy {
+				return &GemBuild{
+					Location: rebuild.Location{
+						Repo: "https://github.com/test-org/test-gem",
+						Ref:  commitHash,
+					},
+					RubyVersion:  "3.3.11",
+					RegistryTime: must(parseTime("2023-02-24T00:00:00Z")),
+				}
+			},
+		},
+		{
+			name:    "LocationHint.Dir wins over gemspec discovery",
+			pkg:     "test-gem",
+			version: "1.0.0",
+			repoYAML: `commits:
+  - id: initial
+    tag: v1.0.0
+    files:
+      discovered/test-gem.gemspec: |
+        Gem::Specification.new do |s|
+          s.name = 'test-gem'
+          s.version = '1.0.0'
+        end
+      explicit/lib/test_gem.rb: |
+        module TestGem; end
+`,
+			versionDetail: `{"name":"test-gem","version":"1.0.0","platform":"ruby","sha":"abc","version_created_at":"2023-06-01T00:00:00Z"}`,
+			wantCommitID:  "initial",
+			hintFn: func(commitHash string) rebuild.Strategy {
+				return &rebuild.LocationHint{Location: rebuild.Location{Ref: commitHash, Dir: "explicit"}}
+			},
+			wantStrategyFn: func(commitHash string) rebuild.Strategy {
+				return &GemBuild{
+					Location: rebuild.Location{
+						Repo: "https://github.com/test-org/test-gem",
+						Ref:  commitHash,
+						Dir:  "explicit",
 					},
 					RubyVersion:  "3.3.11",
 					RegistryTime: must(parseTime("2023-06-01T00:00:00Z")),
@@ -111,7 +209,11 @@ func TestInferStrategy(t *testing.T) {
 				URLValidator: httpxtest.NewURLValidator(t),
 			}
 			mux := rebuild.RegistryMux{RubyGems: reg.HTTPRegistry{Client: &client}}
-			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, nil)
+			var hint rebuild.Strategy
+			if tc.hintFn != nil {
+				hint = tc.hintFn(repo.Commits[tc.wantCommitID].String())
+			}
+			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, hint)
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)
