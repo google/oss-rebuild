@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -16,22 +17,24 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/dashboard"
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
 )
 
 var (
-	project      = flag.String("project", "", "GCP Project ID for storage and build resources")
-	bench        = flag.String("bench", "", "Path to a benchmark file")
-	port         = flag.Int("port", 8080, "port on which to serve")
-	successRegex = flag.String("success-regex", "", "Regex to determine if a rebuild is successful based on its message")
-	logsBucket   = flag.String("logs-bucket", "", "GCS bucket containing build logs")
+	project         = flag.String("project", "", "GCP Project ID for storage and build resources")
+	bench           = flag.String("bench", "", "Path to a benchmark file")
+	trackedPackages = flag.String("tracked-packages", "", "JSON string of TrackedPackageSet")
+	port            = flag.Int("port", 8080, "port on which to serve")
+	successRegex    = flag.String("success-regex", "", "Regex to determine if a rebuild is successful based on its message")
+	logsBucket      = flag.String("logs-bucket", "", "GCS bucket containing build logs")
 )
 
 var (
-	benchSet   *benchmark.PackageSet
-	benchName  string
 	successPat *regexp.Regexp
+	tracked    feed.TrackedPackageIndex
+	benchName  string
 )
 
 func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
@@ -50,7 +53,7 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 		Rundex:        rundexClient,
 		GCSClient:     storageClient,
 		LogsBucket:    *logsBucket,
-		Benchmark:     benchSet,
+		Tracked:       tracked,
 		BenchmarkName: benchName,
 		SuccessRegex:  successPat,
 	}, nil
@@ -58,14 +61,12 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 
 func main() {
 	flag.Parse()
-
 	if *project == "" {
 		log.Fatal("Must provide -project")
 	}
 	if *logsBucket == "" {
 		log.Printf("Warning: -logs-bucket not provided, log viewing will be unavailable")
 	}
-
 	if *successRegex != "" {
 		var err error
 		successPat, err = regexp.Compile(*successRegex)
@@ -73,18 +74,32 @@ func main() {
 			log.Fatalf("Failed to compile success regex: %v", err)
 		}
 	}
-
+	if (*bench != "") != (*trackedPackages != "") {
+		log.Fatalf("Must provide exactly one of -bench or -tracked-packages")
+	}
 	if *bench != "" {
 		set, err := benchmark.ReadBenchmark(*bench)
 		if err != nil {
 			log.Fatalf("Failed to read benchmark file: %v", err)
 		}
-		benchSet = &set
+		tracked = make(feed.TrackedPackageIndex)
+		for _, p := range set.Packages {
+			eco := rebuild.Ecosystem(p.Ecosystem)
+			if _, ok := tracked[eco]; !ok {
+				tracked[eco] = make(map[string]bool)
+			}
+			tracked[eco][p.Name] = true
+		}
 		benchName = filepath.Base(*bench)
+	} else if *trackedPackages != "" {
+		var tps feed.TrackedPackageSet
+		if err := json.Unmarshal([]byte(*trackedPackages), &tps); err != nil {
+			log.Fatalf("Failed to unmarshal tracked-packages: %v", err)
+		}
+		tracked = tps.Index()
+		benchName = "Tracked Packages"
 	}
-
 	encoding := rebuild.FilesystemTargetEncoding
-
 	http.HandleFunc("/", api.HTMLHandler(DashboardInit, dashboard.Index, dashboard.IndexTmpl))
 	http.HandleFunc("/package/{ecosystem}/{package}", api.Translate(func(r *http.Request) (dashboard.PackageRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), "", "").Decode()
@@ -123,7 +138,6 @@ func main() {
 			RunID:     r.PathValue("runid"),
 		}, nil
 	}, api.HTMLHandler(DashboardInit, dashboard.Logs, dashboard.LogsTmpl)))
-
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Starting dashboard on %s\n", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {

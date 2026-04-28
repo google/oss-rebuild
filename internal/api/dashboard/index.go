@@ -48,78 +48,73 @@ type IndexData struct {
 func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-
 	data := IndexData{}
-	if deps.Benchmark != nil {
-		// Compile benchmark stats
-		tracked := make(feed.TrackedPackageIndex)
-		for _, p := range deps.Benchmark.Packages {
-			eco := rebuild.Ecosystem(p.Ecosystem)
-			if _, ok := tracked[eco]; !ok {
-				tracked[eco] = make(map[string]bool)
-			}
-			tracked[eco][p.Name] = true
-		}
-
-		benchRebuilds, err := deps.Rundex.LatestTrackedPackages(ctx, tracked)
+	// Only populate the status grid at the top if deps.Tracked is provided.
+	if deps.Tracked != nil {
+		benchRebuilds, err := deps.Rundex.LatestTrackedPackages(ctx, deps.Tracked)
 		if err != nil {
 			return nil, errors.Wrap(err, "fetching benchmark rebuilds")
 		}
-
 		applySuccessRegex(deps.SuccessRegex, benchRebuilds)
-
-		successMap := make(map[string]bool)
+		ran := feed.TrackedPackageIndex{}
+		success := feed.TrackedPackageIndex{}
 		for _, rb := range benchRebuilds {
-			key := rb.Ecosystem + ":" + rb.Package
-			successMap[key] = rb.Success
-		}
-
-		var targets []BenchmarkTarget
-		stats := BenchmarkStats{Total: deps.Benchmark.Count}
-
-		for _, p := range deps.Benchmark.Packages {
-			key := p.Ecosystem + ":" + p.Name
-			success, hasRun := successMap[key]
-			if hasRun && success {
-				stats.Success++
-			} else if hasRun && !success {
-				stats.Failed++
+			eco := rebuild.Ecosystem(rb.Ecosystem)
+			if _, ok := ran[eco]; !ok {
+				ran[eco] = make(map[string]bool)
 			}
-
-			et := packagePathEncoding.Encode(rebuild.Target{
-				Ecosystem: rebuild.Ecosystem(p.Ecosystem),
-				Package:   p.Name,
-			})
-
-			targets = append(targets, BenchmarkTarget{
-				Ecosystem:        p.Ecosystem,
-				Package:          p.Name,
-				EncodedEcosystem: string(et.Ecosystem),
-				EncodedPackage:   et.Package,
-				Success:          success,
-				HasRun:           hasRun,
-			})
+			ran[eco][rb.Package] = true
+			if !rb.Success {
+				continue
+			}
+			if _, ok := success[eco]; !ok {
+				success[eco] = make(map[string]bool)
+			}
+			success[eco][rb.Package] = true
 		}
-
+		var targets []BenchmarkTarget
+		var stats BenchmarkStats
+		for eco, pkgs := range deps.Tracked {
+			for pkg := range pkgs {
+				stats.Total++
+				hasRun := ran[eco][pkg]
+				success := success[eco][pkg]
+				if hasRun && success {
+					stats.Success++
+				} else if hasRun && !success {
+					stats.Failed++
+				}
+				et := packagePathEncoding.Encode(rebuild.Target{
+					Ecosystem: eco,
+					Package:   pkg,
+				})
+				targets = append(targets, BenchmarkTarget{
+					Ecosystem:        string(eco),
+					Package:          pkg,
+					EncodedEcosystem: string(et.Ecosystem),
+					EncodedPackage:   et.Package,
+					Success:          success,
+					HasRun:           hasRun,
+				})
+			}
+		}
 		slices.SortFunc(targets, func(a, b BenchmarkTarget) int {
 			if a.Ecosystem != b.Ecosystem {
 				return strings.Compare(a.Ecosystem, b.Ecosystem)
 			}
 			return strings.Compare(a.Package, b.Package)
 		})
-
 		data.BenchmarkTitle = deps.BenchmarkName
 		data.BenchmarkStats = stats
 		data.BenchmarkTargets = targets
 	}
-
 	var rebuilds []rundex.Rebuild
 	var err error
-	if deps.Benchmark != nil {
-		// Fetch recent rebuilds filtered by benchmark
+	if deps.Tracked != nil {
+		// Fetch recent rebuilds filtered by Tracked
 		rebuilds, err = deps.Rundex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{
-			Bench: deps.Benchmark,
-			Limit: 100,
+			Tracked: deps.Tracked,
+			Limit:   100,
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "fetching benchmark filtered rebuilds")
@@ -132,7 +127,6 @@ func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) 
 		}
 	}
 	applySuccessRegex(deps.SuccessRegex, rebuilds)
-
 	data.RecentRebuilds = make([]RebuildView, len(rebuilds))
 	for i, rb := range rebuilds {
 		data.RecentRebuilds[i] = NewRebuildView(rb)

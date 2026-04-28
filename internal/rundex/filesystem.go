@@ -15,7 +15,6 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/google/oss-rebuild/tools/ctl/layout"
 	"github.com/pkg/errors"
 )
@@ -181,6 +180,7 @@ func (f *FilesystemClient) WriteRun(ctx context.Context, r Run) error {
 	return nil
 }
 
+// RecentRebuilds fetches the 100 most recent rebuild results.
 func (f *FilesystemClient) RecentRebuilds(ctx context.Context) ([]Rebuild, error) {
 	return f.FetchRebuilds(ctx, &FetchRebuildRequest{Limit: 100})
 }
@@ -213,19 +213,8 @@ func (f *FilesystemClient) FetchAttempt(ctx context.Context, target rebuild.Targ
 
 // LatestTrackedPackages fetches the most recent rebuild result for each tracked package.
 func (f *FilesystemClient) LatestTrackedPackages(ctx context.Context, tracked feed.TrackedPackageIndex) ([]Rebuild, error) {
-	var packages []benchmark.Package
-	for eco, pkgs := range tracked {
-		for pkg := range pkgs {
-			packages = append(packages, benchmark.Package{Ecosystem: string(eco), Name: pkg})
-		}
-	}
 	return f.FetchRebuilds(ctx, &FetchRebuildRequest{
-		Bench: &benchmark.PackageSet{
-			Packages: packages,
-			Metadata: benchmark.Metadata{
-				Count: len(packages),
-			},
-		},
+		Tracked:          tracked,
 		LatestPerPackage: true,
 	})
 }
