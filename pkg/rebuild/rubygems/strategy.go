@@ -21,6 +21,9 @@ type GemBuild struct {
 	// This is needed when the upstream gem was built with a RubyGems version
 	// different from the one bundled with the inferred Ruby version.
 	RubygemsVersion string `json:"rubygems_version,omitempty" yaml:"rubygems_version,omitempty"`
+	// Gemspec is the path to the gemspec file relative to Dir. If empty,
+	// the build step falls back to "*.gemspec".
+	Gemspec string `json:"gemspec,omitempty" yaml:"gemspec,omitempty"`
 	// RegistryTime is the timestamp used for time-based dependency resolution.
 	RegistryTime time.Time `json:"registry_time,omitempty" yaml:"registry_time,omitempty"`
 }
@@ -66,7 +69,8 @@ func (b *GemBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "rubygems/build/gem",
 			With: map[string]string{
-				"dir": b.Location.Dir,
+				"dir":     b.Location.Dir,
+				"gemspec": b.Gemspec,
 			},
 		}},
 		OutputDir: b.Location.Dir,
@@ -121,8 +125,9 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{- $dir := .With.dir -}}
+				{{- $gemspec := .With.gemspec -}}
 				{{- if and (ne $dir ".") (ne $dir "")}}cd {{$dir}} && {{end -}}
-				gem build *.gemspec`)[1:],
+				gem build {{if ne $gemspec ""}}{{$gemspec}}{{else}}*.gemspec{{end}}`)[1:],
 			Needs: []string{},
 		}},
 	},

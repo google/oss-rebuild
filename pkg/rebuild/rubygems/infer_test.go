@@ -54,6 +54,7 @@ func TestInferStrategy(t *testing.T) {
 						Ref:  commitHash,
 					},
 					RubyVersion:  "3.3.11",
+					Gemspec:      "test-gem.gemspec",
 					RegistryTime: must(parseTime("2023-06-01T00:00:00Z")),
 				}
 			},
@@ -84,6 +85,7 @@ func TestInferStrategy(t *testing.T) {
 						Dir:  "subdir",
 					},
 					RubyVersion:  "3.3.11",
+					Gemspec:      "minitest.gemspec",
 					RegistryTime: must(parseTime("2023-09-06T00:00:00Z")),
 				}
 			},
@@ -118,6 +120,7 @@ func TestInferStrategy(t *testing.T) {
 						Ref:  commitHash,
 					},
 					RubyVersion:  "3.3.11",
+					Gemspec:      "concurrent-ruby.gemspec",
 					RegistryTime: must(parseTime("2023-02-24T00:00:00Z")),
 				}
 			},

@@ -102,6 +102,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 
 	// Locate the gemspec file within the repo tree, unless dir was set explicitly.
+	var gemspec string
 	if dir == "" {
 		if hash, err := rcfg.Repository.ResolveRevision(plumbing.Revision(ref)); err != nil {
 			log.Printf("warning: failed to resolve ref %s for gemspec search: %v", ref, err)
@@ -110,11 +111,14 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		} else if gemspecPath, err := findGemspec(rcfg.Repository, commit, t.Package); err != nil {
 			log.Printf("warning: gemspec search failed for %s: %v", t.Package, err)
 		} else {
+			gemspec = path.Base(gemspecPath)
 			dir = path.Dir(gemspecPath)
 			if dir == "." {
 				dir = ""
 			}
 		}
+	} else {
+		// TODO: Find gemspec when dir hint provided.
 	}
 
 	// Infer Ruby and RubyGems versions from the upstream gem's metadata.
@@ -156,6 +160,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		},
 		RubyVersion:     rubyVersion,
 		RubygemsVersion: rubygemsVersion,
+		Gemspec:         gemspec,
 		RegistryTime:    registryTime,
 	}, nil
 }
