@@ -5,6 +5,7 @@ package rubygems
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -20,6 +21,7 @@ func TestGemBuildStrategies(t *testing.T) {
 		name     string
 		strategy rebuild.Strategy
 		target   rebuild.Target
+		buildEnv rebuild.BuildEnv
 		want     rebuild.Instructions
 	}{
 		{
@@ -117,6 +119,37 @@ rm -f /tmp/ruby.tar.gz`,
 			},
 		},
 		{
+			name: "gem build with registry time",
+			strategy: &GemBuild{
+				Location:     defaultLocation,
+				RubyVersion:  "3.3.6",
+				RegistryTime: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.RubyGems,
+				Package:   "example",
+				Version:   "1.0.0",
+				Artifact:  "example-1.0.0.gem",
+			},
+			buildEnv: rebuild.BuildEnv{TimewarpHost: "orange"},
+			want: rebuild.Instructions{
+				Location: defaultLocation,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git"},
+				},
+				Source: "git clone the_repo .\ngit checkout --force 'the_ref'",
+				Deps: `apt-get update && apt-get install -y --no-install-recommends build-essential wget ca-certificates libyaml-dev
+wget -q -O /tmp/ruby.tar.gz "https://github.com/ruby/ruby-builder/releases/download/ruby-3.3.6/ruby-3.3.6-ubuntu-24.04-x64.tar.gz"
+mkdir -p /opt/hostedtoolcache/Ruby/3.3.6/x64
+tar xzf /tmp/ruby.tar.gz --strip-components=1 -C /opt/hostedtoolcache/Ruby/3.3.6/x64
+ln -sf /opt/hostedtoolcache/Ruby/3.3.6/x64/bin/* /usr/local/bin/
+rm -f /tmp/ruby.tar.gz
+printf -- '---\n:sources:\n- %s\n' 'http://rubygems:2023-06-01T00:00:00Z@orange' > $HOME/.gemrc`,
+				Build:      "cd the_dir && gem build *.gemspec",
+				OutputPath: "the_dir/example-1.0.0.gem",
+			},
+		},
+		{
 			name: "gem build no ruby version",
 			strategy: &GemBuild{
 				Location: defaultLocation,
@@ -142,8 +175,7 @@ rm -f /tmp/ruby.tar.gz`,
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			be := rebuild.BuildEnv{HasRepo: false}
-			got, err := tc.strategy.GenerateFor(tc.target, be)
+			got, err := tc.strategy.GenerateFor(tc.target, tc.buildEnv)
 			if err != nil {
 				t.Fatalf("GenerateFor() error = %v", err)
 			}

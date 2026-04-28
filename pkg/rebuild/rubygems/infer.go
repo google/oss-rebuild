@@ -6,6 +6,7 @@ package rubygems
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -119,6 +120,13 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		rubyVersion = "3.3.11"
 	}
 
+	var registryTime time.Time
+	if vd, err := mux.RubyGems.Version(ctx, t.Package, t.Version); err != nil {
+		log.Printf("warning: failed to fetch version detail for %s@%s: %v", t.Package, t.Version, err)
+	} else {
+		registryTime = vd.CreatedAt
+	}
+
 	return &GemBuild{
 		Location: rebuild.Location{
 			Repo: rcfg.URI,
@@ -127,6 +135,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		},
 		RubyVersion:     rubyVersion,
 		RubygemsVersion: rubygemsVersion,
+		RegistryTime:    registryTime,
 	}, nil
 }
 

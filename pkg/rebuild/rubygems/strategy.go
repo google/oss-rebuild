@@ -4,6 +4,8 @@
 package rubygems
 
 import (
+	"time"
+
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -19,11 +21,17 @@ type GemBuild struct {
 	// This is needed when the upstream gem was built with a RubyGems version
 	// different from the one bundled with the inferred Ruby version.
 	RubygemsVersion string `json:"rubygems_version,omitempty" yaml:"rubygems_version,omitempty"`
+	// RegistryTime is the timestamp used for time-based dependency resolution.
+	RegistryTime time.Time `json:"registry_time,omitempty" yaml:"registry_time,omitempty"`
 }
 
 var _ rebuild.Strategy = &GemBuild{}
 
 func (b *GemBuild) ToWorkflow() *rebuild.WorkflowStrategy {
+	var registryTime string
+	if !b.RegistryTime.IsZero() {
+		registryTime = b.RegistryTime.Format(time.RFC3339)
+	}
 	deps := []flow.Step{}
 	if b.RubyVersion != "" {
 		deps = append(deps, flow.Step{
@@ -38,6 +46,14 @@ func (b *GemBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 			Uses: "rubygems/update-rubygems",
 			With: map[string]string{
 				"rubygemsVersion": b.RubygemsVersion,
+			},
+		})
+	}
+	if registryTime != "" {
+		deps = append(deps, flow.Step{
+			Uses: "rubygems/setup-registry",
+			With: map[string]string{
+				"registryTime": registryTime,
 			},
 		})
 	}
@@ -88,6 +104,16 @@ var toolkit = []*flow.Tool{
 		Name: "rubygems/update-rubygems",
 		Steps: []flow.Step{{
 			Runs: `gem update --system {{.With.rubygemsVersion}}`,
+		}},
+	},
+	{
+		Name: "rubygems/setup-registry",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				{{- if ne .With.registryTime "" -}}
+				printf -- '---\n:sources:\n- %s\n' '{{.BuildEnv.TimewarpURLFromString "rubygems" .With.registryTime}}' > $HOME/.gemrc
+				{{- end -}}`)[1:],
+			Needs: []string{},
 		}},
 	},
 	{
