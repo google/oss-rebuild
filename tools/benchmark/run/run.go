@@ -285,6 +285,7 @@ func defaultLimiters() map[string]*ratex.BackoffLimiter {
 		// NOTE: cratesio needs to be especially slow given our registry API
 		// constraint of 1QPS. At minimum, we expect to make 4 calls per test.
 		"cratesio": ratex.NewBackoffLimiter(8 * time.Second),
+		"rubygems": ratex.NewBackoffLimiter(time.Second),
 	}
 }
 

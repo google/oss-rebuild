@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -247,6 +248,8 @@ func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAsset
 		if err != nil {
 			return errors.Wrap(err, "getting maven artifact URL")
 		}
+	case rebuild.RubyGems:
+		upstreamURL = fmt.Sprintf("https://rubygems.org/gems/%s-%s.gem", t.Package, t.Version)
 	default:
 		return errors.Errorf("unsupported ecosystem: %s", t.Ecosystem)
 	}
