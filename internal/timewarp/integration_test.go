@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,8 @@ import (
 func getUserID() string {
 	return fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
 }
+
+const dockerHostAddr = "host.docker.internal"
 
 // startTimewarpServer starts an in-process timewarp HTTP server and returns the port and cleanup function
 func startTimewarpServer(t *testing.T) (int, func()) {
@@ -120,15 +123,16 @@ func TestTimewarpNPMClientVersions(t *testing.T) {
 		{"node:18-alpine", "npm 9.x"},
 		{"node:20-alpine", "npm 10.x"},
 	}
+
 	for _, img := range images {
 		t.Run(img.description, func(t *testing.T) {
 			t.Parallel()
-			registryURL := fmt.Sprintf("http://npm:%s@127.0.0.1:%d", timestamp, port)
+			registryURL := fmt.Sprintf("http://npm:%s@%s:%d", timestamp, dockerHostAddr, port)
 			tempDir := t.TempDir()
 			dockerArgs := []string{
 				"run",
 				"--rm",
-				"--network=host",
+				"--add-host=host.docker.internal:host-gateway",
 				"--user", getUserID(),
 				"-v", fmt.Sprintf("%s:/workspace", tempDir),
 				"-w", "/workspace",
@@ -184,20 +188,22 @@ func TestTimewarpPyPIClientVersions(t *testing.T) {
 		{"python:3.9-alpine", "pip ~22"},
 		{"python:3.11-alpine", "pip ~24"},
 	}
+
 	for _, img := range images {
 		t.Run(img.description, func(t *testing.T) {
 			t.Parallel()
-			indexURL := fmt.Sprintf("http://pypi:%s@127.0.0.1:%d/simple", timestamp, port)
+			indexURL := fmt.Sprintf("http://pypi:%s@%s:%d/simple", timestamp, dockerHostAddr, port)
 			tempDir := t.TempDir()
 			dockerArgs := []string{
 				"run",
 				"--rm",
-				"--network=host",
+				"--add-host=host.docker.internal:host-gateway",
 				"--user", getUserID(),
 				"-v", fmt.Sprintf("%s:/workspace", tempDir),
 				"-w", "/workspace",
 				"-e", "HOME=/workspace",
 				"-e", fmt.Sprintf("PIP_INDEX_URL=%s", indexURL),
+				"-e", fmt.Sprintf("PIP_TRUSTED_HOST=%s", dockerHostAddr),
 				img.image,
 				"sh", "-c",
 				"pip install --no-cache-dir requests && pip show requests",
@@ -240,15 +246,16 @@ func TestTimewarpNPMLatestResolution(t *testing.T) {
 		{"2018-01-01T00:00:00Z", "4.16.2"},
 		{"2020-01-01T00:00:00Z", "4.17.1"},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.timestamp, func(t *testing.T) {
 			t.Parallel()
-			registryURL := fmt.Sprintf("http://npm:%s@127.0.0.1:%d", tt.timestamp, port)
+			registryURL := fmt.Sprintf("http://npm:%s@%s:%d", tt.timestamp, dockerHostAddr, port)
 			tempDir := t.TempDir()
 			dockerArgs := []string{
 				"run",
 				"--rm",
-				"--network=host",
+				"--add-host=host.docker.internal:host-gateway",
 				"--user", getUserID(),
 				"-v", fmt.Sprintf("%s:/workspace", tempDir),
 				"-w", "/workspace",
@@ -302,20 +309,22 @@ func TestTimewarpPyPILatestResolution(t *testing.T) {
 		{"2019-06-01T00:00:00Z", "2.22.0"},
 		{"2020-01-01T00:00:00Z", "2.22.0"},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.timestamp, func(t *testing.T) {
 			t.Parallel()
-			indexURL := fmt.Sprintf("http://pypi:%s@127.0.0.1:%d/simple", tt.timestamp, port)
+			indexURL := fmt.Sprintf("http://pypi:%s@%s:%d/simple", tt.timestamp, dockerHostAddr, port)
 			tempDir := t.TempDir()
 			dockerArgs := []string{
 				"run",
 				"--rm",
-				"--network=host",
+				"--add-host=host.docker.internal:host-gateway",
 				"--user", getUserID(),
 				"-v", fmt.Sprintf("%s:/workspace", tempDir),
 				"-w", "/workspace",
 				"-e", "HOME=/workspace",
 				"-e", fmt.Sprintf("PIP_INDEX_URL=%s", indexURL),
+				"-e", fmt.Sprintf("PIP_TRUSTED_HOST=%s", dockerHostAddr),
 				"python:3.11-alpine",
 				"sh", "-c",
 				"pip install --no-cache-dir requests && pip show requests",
@@ -360,15 +369,16 @@ func TestTimewarpRubyGemsClientVersions(t *testing.T) {
 		{"ruby:3.3-slim", "Ruby 3.3"},
 		{"ruby:3.4-slim", "Ruby 3.4"},
 	}
+
 	for _, img := range images {
 		t.Run(img.description, func(t *testing.T) {
 			t.Parallel()
-			registryURL := fmt.Sprintf("http://rubygems:%s@127.0.0.1:%d", timestamp, port)
+			registryURL := fmt.Sprintf("http://rubygems:%s@%s:%d", timestamp, dockerHostAddr, port)
 			tempDir := t.TempDir()
 			dockerArgs := []string{
 				"run",
 				"--rm",
-				"--network=host",
+				"--add-host=host.docker.internal:host-gateway",
 				"--user", getUserID(),
 				"-v", fmt.Sprintf("%s:/workspace", tempDir),
 				"-w", "/workspace",
@@ -409,15 +419,16 @@ func TestTimewarpRubyGemsLatestResolution(t *testing.T) {
 		{"2020-01-01T00:00:00Z", "13.0.1"},
 		{"2022-01-01T00:00:00Z", "13.0.6"},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.timestamp, func(t *testing.T) {
 			t.Parallel()
-			registryURL := fmt.Sprintf("http://rubygems:%s@127.0.0.1:%d", tt.timestamp, port)
+			registryURL := fmt.Sprintf("http://rubygems:%s@%s:%d", tt.timestamp, dockerHostAddr, port)
 			tempDir := t.TempDir()
 			dockerArgs := []string{
 				"run",
 				"--rm",
-				"--network=host",
+				"--add-host=host.docker.internal:host-gateway",
 				"--user", getUserID(),
 				"-v", fmt.Sprintf("%s:/workspace", tempDir),
 				"-w", "/workspace",
