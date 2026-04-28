@@ -44,6 +44,14 @@ func (TarEntryFn) Constraints() Constraints {
 	return []Constraint{Formats(tarFormats)}
 }
 
+// TarEntryContextFn is a context-aware variant of TarEntryFn. It receives
+// the stabilization context, enabling stabilization of nested archives.
+type TarEntryContextFn func(entry *archive.TarEntry, ctx *StabilizationContext)
+
+func (TarEntryContextFn) Constraints() Constraints {
+	return []Constraint{Formats(tarFormats)}
+}
+
 // StableTarFileOrder sorts tar entries by name.
 var StableTarFileOrder = Stabilizer{
 	Name: "tar-file-order",
@@ -158,6 +166,8 @@ func StabilizeTar(tr *tar.Reader, tw *tar.Writer, ctx *StabilizationContext) err
 				entryCtx := ctx.WithEntry(ent.Name)
 				if fn, ok := s.FnFor(entryCtx).(TarEntryFn); ok {
 					fn(ent)
+				} else if fn, ok := s.FnFor(entryCtx).(TarEntryContextFn); ok {
+					fn(ent, entryCtx)
 				}
 			}
 		}

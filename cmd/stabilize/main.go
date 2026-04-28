@@ -30,7 +30,7 @@ var (
 func filetype(path string) archive.Format {
 	ext := filepath.Ext(path)
 	switch ext {
-	case ".tar":
+	case ".tar", ".gem":
 		return archive.TarFormat
 	case ".tgz", ".crate":
 		return archive.TarGzFormat
@@ -143,6 +143,8 @@ func candidateEcosystems(filename string) []rebuild.Ecosystem {
 		}
 	case ".tar":
 		return []rebuild.Ecosystem{rebuild.PyPI}
+	case ".gem":
+		return []rebuild.Ecosystem{rebuild.RubyGems}
 	case ".zip":
 		return []rebuild.Ecosystem{rebuild.PyPI}
 	default:

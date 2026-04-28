@@ -131,7 +131,10 @@ func Stabilize(dst io.Writer, src io.Reader, f archive.Format) error {
 
 // StabilizeWithOpts selects and applies the provided stabilization routine for the given archive format.
 func StabilizeWithOpts(dst io.Writer, src io.Reader, f archive.Format, opts StabilizeOpts) error {
-	ctx := NewContext(f).WithStabilizers(opts.Stabilizers)
+	return stabilizeWithCtx(dst, src, f, NewContext(f).WithStabilizers(opts.Stabilizers))
+}
+
+func stabilizeWithCtx(dst io.Writer, src io.Reader, f archive.Format, ctx *StabilizationContext) error {
 	switch f {
 	case archive.ZipFormat:
 		srcReader, size, err := archive.ToZipCompatibleReader(src)

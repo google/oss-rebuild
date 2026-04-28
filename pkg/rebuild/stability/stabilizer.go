@@ -36,6 +36,10 @@ func StabilizersForTarget(t rebuild.Target) ([]stabilize.Stabilizer, error) {
 		if format == archive.TarGzFormat {
 			stabilizers = append(stabilizers, stabilize.AllCrateStabilizers...)
 		}
+	case rebuild.RubyGems:
+		if format == archive.TarFormat {
+			stabilizers = append(stabilizers, stabilize.AllGemStabilizers...)
+		}
 	}
 	return stabilizers, nil
 }
