@@ -5,13 +5,13 @@ package verifier
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto"
 	"io"
 	"net/http"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
@@ -62,16 +62,14 @@ func TestSummarizeArtifacts(t *testing.T) {
 			},
 			URLValidator: httpxtest.NewURLValidator(t),
 		})
-		stabilizedHash := hashext.NewMultiHash(crypto.SHA256)
-		stabilizedZip := must(archivetest.ZipFile([]archive.ZipEntry{
-			{FileHeader: &zip.FileHeader{Name: "foo-0.0.1.dist-info/WHEEL", Modified: time.UnixMilli(0)}, Body: []byte("data")},
-		}))
-		must(stabilizedHash.Write(stabilizedZip.Bytes()))
 		customStabilizers := must(stabilize.CreateCustomStabilizers([]stabilize.CustomStabilizerEntry{
 			{Config: stabilize.CustomStabilizerConfigOneOf{ExcludePath: &stabilize.ExcludePath{Paths: []string{"**/REBUILD"}}}, Reason: "not supposed to be there"},
 			{Config: stabilize.CustomStabilizerConfigOneOf{ExcludePath: &stabilize.ExcludePath{Paths: []string{"**/UPSTREAM"}}}, Reason: "not supposed to be there"},
 		}, archive.ZipFormat))
-		rb, up, err := SummarizeArtifacts(ctx, metadata, target, upstreamURI, []crypto.Hash{crypto.SHA256}, slices.Concat(stabilize.AllStabilizers, customStabilizers))
+		stabilizers := slices.Concat(stabilize.AllStabilizers, customStabilizers)
+		stabilizedHash := hashext.NewMultiHash(crypto.SHA256)
+		orDie(stabilize.StabilizeWithOpts(stabilizedHash, bytes.NewReader(origZip.Bytes()), target.ArchiveType(), stabilize.StabilizeOpts{Stabilizers: stabilizers}))
+		rb, up, err := SummarizeArtifacts(ctx, metadata, target, upstreamURI, []crypto.Hash{crypto.SHA256}, stabilizers)
 		if err != nil {
 			t.Fatalf("SummarizeArtifacts() returned error: %v", err)
 		}
