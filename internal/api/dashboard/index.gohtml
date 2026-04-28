@@ -8,8 +8,8 @@
         <p>Total: {{.BenchmarkStats.Total}} | Success: {{.BenchmarkStats.Success}} | Failed: {{.BenchmarkStats.Failed}}</p>
         <div class="benchmark-grid">
             {{range .BenchmarkTargets}}
-                <a href="/package/{{.Ecosystem}}/{{.EncodedPackage}}" class="benchmark-item {{if not .HasRun}}bg-gray{{else if .Success}}bg-green{{else}}bg-red{{end}}" title="{{.Ecosystem}}: {{.PackageName}}">
-                    {{.PackageName}}
+                <a href="/package/{{.EncodedEcosystem}}/{{.EncodedPackage}}" class="benchmark-item {{if not .HasRun}}bg-gray{{else if .Success}}bg-green{{else}}bg-red{{end}}" title="{{.Ecosystem}}: {{.Package}}">
+                    {{.Package}}
                 </a>
             {{end}}
         </div>
@@ -34,7 +34,7 @@
                 {{range .RecentRebuilds}}
                 <tr>
                     <td>{{.Ecosystem}}</td>
-                    <td><a href="/package/{{.Ecosystem}}/{{.EncodedPackage}}">{{.Package}}</a></td>
+                    <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}">{{.Package}}</a></td>
                     <td>{{.Version}}</td>
                     <td>{{.Artifact}}</td>
                     <td>
@@ -45,7 +45,7 @@
                         {{end}}
                     </td>
                     <td>{{.RunID}}</td>
-                    <td><a href="/attempt/{{.Ecosystem}}/{{.EncodedPackage}}/{{.EncodedVersion}}/{{.EncodedArtifact}}/{{.RunID}}">view</a></td>
+                    <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">view</a></td>
                     <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
                 </tr>
                 {{end}}

@@ -30,7 +30,7 @@
                 </td>
                 <td><small>{{.Message}}</small></td>
                 <td>{{.RunID}}</td>
-                <td><a href="/attempt/{{$.Ecosystem}}/{{$.EncodedPackage}}/{{.EncodedVersion}}/{{.EncodedArtifact}}/{{.RunID}}">view</a></td>
+                <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">view</a></td>
                 <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
             </tr>
             {{end}}
