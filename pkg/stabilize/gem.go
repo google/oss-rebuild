@@ -5,6 +5,7 @@ package stabilize
 
 import (
 	"bytes"
+	"regexp"
 	"slices"
 
 	"github.com/google/oss-rebuild/pkg/archive"
@@ -13,6 +14,8 @@ import (
 // AllGemStabilizers is the list of all available gem stabilizers.
 var AllGemStabilizers = []Stabilizer{
 	StableGemExcludeChecksums,
+	StableGemMetadataDate,
+	StableGemMetadataRubygemsVersion,
 	StableGemInnerArchives,
 }
 
@@ -25,6 +28,28 @@ var StableGemExcludeChecksums = Stabilizer{
 	ta.Files = slices.DeleteFunc(ta.Files, func(e *archive.TarEntry) bool {
 		return e.Name == "checksums.yaml.gz"
 	})
+}))
+
+var gemMetadataDateRe = regexp.MustCompile(`(?m)^date: [^\r\n]+`)
+var gemMetadataRubygemsVersionRe = regexp.MustCompile(`(?m)^rubygems_version: [^\r\n]+`)
+
+// StableGemMetadataDate normalizes the date field in gem metadata YAML.
+// The date is stamped by `gem build` at build time and so varies across rebuilds.
+// The replacement value matches RubyGems' DEFAULT_SOURCE_DATE_EPOCH (1980-01-02 UTC):
+// https://github.com/rubygems/rubygems/blob/0b469ed/lib/rubygems.rb#L151
+var StableGemMetadataDate = Stabilizer{
+	Name: "gem-metadata-date",
+}.WithConstraints(AtDepth(1), ArchivePath("metadata.gz")).WithFn(GzipContentFn(func(b []byte) []byte {
+	return gemMetadataDateRe.ReplaceAll(b, []byte("date: 1980-01-02 00:00:00.000000000 Z"))
+}))
+
+// StableGemMetadataRubygemsVersion normalizes the rubygems_version field in gem metadata YAML.
+// This field records the RubyGems version used to build the
+// gem and may differ between the original and rebuild environments.
+var StableGemMetadataRubygemsVersion = Stabilizer{
+	Name: "gem-metadata-rubygems-version",
+}.WithConstraints(AtDepth(1), ArchivePath("metadata.gz")).WithFn(GzipContentFn(func(b []byte) []byte {
+	return gemMetadataRubygemsVersionRe.ReplaceAll(b, []byte("rubygems_version: 0.0.0"))
 }))
 
 // StableGemInnerArchives recursively stabilizes the inner archives within a gem.
