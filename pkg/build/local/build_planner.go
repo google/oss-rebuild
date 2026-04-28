@@ -43,7 +43,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			 {{- $hasCurl := or (eq .OS "debian") (eq .OS "ubuntu")}}
 			 {{- $hasWget := eq .OS "alpine"}}
 			 {{- if .TimewarpAuth}}
-			 {{if not $hasCurl}}{{.PackageManager.InstallCommand (list "curl")}} && {{end}}curl -H @/run/secrets/auth_header
+			 {{if not $hasCurl}}{{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}} && {{end}}curl -H @/run/secrets/auth_header
 			 {{- else if $hasWget}}
 			 wget -O -
 			 {{- else if $hasCurl}}

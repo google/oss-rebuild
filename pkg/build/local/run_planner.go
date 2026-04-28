@@ -38,7 +38,7 @@ var dockerRunScriptTpl = template.Must(
 			set -eux
 			{{.PackageManager.UpdateCmd}}
 			{{- if .UseTimewarp}}
-			{{.PackageManager.InstallCommand (list "curl")}}
+			{{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
 			curl {{if .TimewarpAuth}}-H "$AUTH_HEADER" {{end}} {{.TimewarpURL}} > timewarp
 			chmod +x timewarp
 			./timewarp -port 8081 &
