@@ -6,7 +6,6 @@ package dashboard
 import (
 	"context"
 	"slices"
-	"time"
 
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/rundex"
@@ -31,9 +30,6 @@ type PackageData struct {
 }
 
 func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
 	// Fetch rebuild attempts for this specific package.
 	rebuilds, err := deps.Rundex.RecentPackageRebuilds(ctx, rebuild.Ecosystem(req.Ecosystem), req.Package)
 	if err != nil {
