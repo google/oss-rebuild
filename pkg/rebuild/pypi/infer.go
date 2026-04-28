@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"path"
 	re "regexp"
 	"slices"
 	"strconv"
@@ -37,6 +38,8 @@ var commonRepoLinks = []string{
 	"project",
 	"github",
 }
+
+var distInfoFieldPat = re.MustCompile(`[-_.]+`)
 
 // There are two places to find the repo:
 // 1. In the ProjectURLs (project links)
@@ -164,10 +167,7 @@ func FindSourceDist(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
 }
 
 func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
-	// Name and version have "-" replaced with "_". See https://packaging.python.org/en/latest/specifications/recording-installed-packages/#the-dist-info-directory
-	// TODO: Search for dist-info in the gzip using a regex. It sounds like many tools do varying amounts of normalization on the path name.
-	wheelPath := fmt.Sprintf("%s-%s.dist-info/WHEEL", strings.ReplaceAll(name, "-", "_"), strings.ReplaceAll(version, "-", "_"))
-	wheel, err := getFile(wheelPath, zr)
+	wheel, wheelPath, err := getDistInfoFile(name, version, "WHEEL", zr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", wheelPath)
 	}
@@ -180,9 +180,7 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 		// setuptools already set.
 		return reqs, nil
 	}
-	// TODO: Also find this with a regex.
-	metadataPath := fmt.Sprintf("%s-%s.dist-info/METADATA", strings.ReplaceAll(name, "-", "_"), strings.ReplaceAll(version, "-", "_"))
-	metadata, err := getFile(metadataPath, zr)
+	metadata, _, err := getDistInfoFile(name, version, "METADATA", zr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream dist-info/METADATA")
 	}
@@ -201,6 +199,50 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 		reqs = append(reqs, "setuptools==67.7.2")
 	}
 	return reqs, nil
+}
+
+func normalizeDistInfoName(name string) string {
+	normalized := distInfoFieldPat.ReplaceAllString(name, "-")
+	return strings.ReplaceAll(strings.ToLower(normalized), "-", "_")
+}
+
+func normalizeDistInfoVersion(version string) string {
+	return strings.ReplaceAll(strings.ToLower(version), "-", "_")
+}
+
+func getDistInfoFile(name, version, fileName string, zr *zip.Reader) ([]byte, string, error) {
+	expectedPath := fmt.Sprintf("%s-%s.dist-info/%s", normalizeDistInfoName(name), normalizeDistInfoVersion(version), fileName)
+	b, err := getFile(expectedPath, zr)
+	if err == nil || !errors.Is(err, fs.ErrNotExist) {
+		return b, expectedPath, err
+	}
+	for _, f := range zr.File {
+		if path.Base(f.Name) != fileName {
+			continue
+		}
+		if strings.Count(f.Name, "/") != 1 {
+			continue
+		}
+		dir := path.Base(path.Dir(f.Name))
+		stem, ok := strings.CutSuffix(dir, ".dist-info")
+		if !ok {
+			continue
+		}
+		dash := strings.LastIndexByte(stem, '-')
+		if dash == -1 {
+			continue
+		}
+		foundName, foundVersion := stem[:dash], stem[dash+1:]
+		if normalizeDistInfoName(foundName) != normalizeDistInfoName(name) {
+			continue
+		}
+		if normalizeDistInfoVersion(foundVersion) != normalizeDistInfoVersion(version) {
+			continue
+		}
+		b, err := getFile(f.Name, zr)
+		return b, f.Name, err
+	}
+	return nil, expectedPath, fs.ErrNotExist
 }
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
