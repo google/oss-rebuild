@@ -152,6 +152,14 @@ func templateResponse[O any](tmpl *template.Template) func(http.ResponseWriter, 
 	}
 }
 
+func WithTimeout[I act.Input, O any, D act.Deps](timeout time.Duration, handler HandlerFunc[I, O, D]) HandlerFunc[I, O, D] {
+	return func(ctx context.Context, req I, deps D) (*O, error) {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return handler(ctx, req, deps)
+	}
+}
+
 func Handler[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler HandlerFunc[I, O, D]) http.HandlerFunc {
 	return handleUsingResponder(initDeps, handler, jsonResponse)
 }

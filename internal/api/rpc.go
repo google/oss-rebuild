@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/act"
@@ -45,6 +46,10 @@ func Stub[I act.Input, O any](client httpx.BasicClient, u *url.URL) StubT[I, O] 
 
 func StubFromHandler[I act.Input, O any, D act.Deps](client httpx.BasicClient, u *url.URL, handler HandlerT[I, O, D]) StubT[I, O] {
 	return actapi.StubFromHandler(client, u, handler)
+}
+
+func WithTimeout[I act.Input, O any, D act.Deps](timeout time.Duration, handler HandlerT[I, O, D]) HandlerT[I, O, D] {
+	return actapi.WithTimeout(timeout, handler)
 }
 
 func Handler[I act.Input, O any, D act.Deps](initDeps InitT[D], handler HandlerT[I, O, D]) http.HandlerFunc {

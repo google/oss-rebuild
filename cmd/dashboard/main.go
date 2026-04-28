@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api"
@@ -85,14 +86,14 @@ func main() {
 
 	encoding := rebuild.FilesystemTargetEncoding
 
-	http.HandleFunc("/", api.HTMLHandler(DashboardInit, dashboard.Index, dashboard.IndexTmpl))
+	http.HandleFunc("/", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Index), dashboard.IndexTmpl))
 	http.HandleFunc("/package/{ecosystem}/{package}", api.Translate(func(r *http.Request) (dashboard.PackageRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), "", "").Decode()
 		return dashboard.PackageRequest{
 			Ecosystem: string(t.Ecosystem),
 			Package:   t.Package,
 		}, nil
-	}, api.HTMLHandler(DashboardInit, dashboard.Package, dashboard.PackageTmpl)))
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Package), dashboard.PackageTmpl)))
 	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}", api.Translate(func(r *http.Request) (dashboard.AttemptRequest, error) {
 		t := encoding.New(
 			rebuild.Ecosystem(r.PathValue("ecosystem")),
@@ -107,7 +108,7 @@ func main() {
 			Artifact:  t.Artifact,
 			RunID:     r.PathValue("runid"),
 		}, nil
-	}, api.HTMLHandler(DashboardInit, dashboard.Attempt, dashboard.AttemptTmpl)))
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Attempt), dashboard.AttemptTmpl)))
 	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}/build-logs/", api.Translate(func(r *http.Request) (dashboard.LogsRequest, error) {
 		t := encoding.New(
 			rebuild.Ecosystem(r.PathValue("ecosystem")),
@@ -122,7 +123,7 @@ func main() {
 			Artifact:  t.Artifact,
 			RunID:     r.PathValue("runid"),
 		}, nil
-	}, api.HTMLHandler(DashboardInit, dashboard.Logs, dashboard.LogsTmpl)))
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Logs), dashboard.LogsTmpl)))
 
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Starting dashboard on %s\n", addr)

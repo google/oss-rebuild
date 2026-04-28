@@ -36,9 +36,6 @@ type AttemptData struct {
 }
 
 func Attempt(ctx context.Context, req AttemptRequest, deps *Deps) (*AttemptData, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
 	attempt, err := deps.Rundex.FetchAttempt(ctx, rebuild.Target{
 		Ecosystem: rebuild.Ecosystem(req.Ecosystem),
 		Package:   req.Package,

@@ -7,7 +7,6 @@ import (
 	"context"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/rundex"
@@ -46,9 +45,6 @@ type IndexData struct {
 }
 
 func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
 	data := IndexData{}
 	if deps.Benchmark != nil {
 		// Compile benchmark stats
