@@ -719,7 +719,7 @@ func TestCustomStabilizers_EndToEnd_Tar(t *testing.T) {
 			allStabilizers := append(AllTarStabilizers, customStabilizers...)
 			var output bytes.Buffer
 			tr := tar.NewReader(bytes.NewReader(input.Bytes()))
-			err = StabilizeTar(tr, tar.NewWriter(&output), StabilizeOpts{Stabilizers: allStabilizers}, NewContext(archive.TarFormat))
+			err = StabilizeTar(tr, tar.NewWriter(&output), NewContext(archive.TarFormat).WithStabilizers(allStabilizers))
 			if err != nil {
 				if tc.wantErr {
 					return
@@ -822,8 +822,7 @@ func TestReplacePattern_NestedTar(t *testing.T) {
 			err = StabilizeTar(
 				tar.NewReader(bytes.NewReader(outer.Bytes())),
 				tar.NewWriter(&output),
-				StabilizeOpts{Stabilizers: append(AllTarStabilizers, customStabilizers...)},
-				NewContext(archive.TarFormat),
+				NewContext(archive.TarFormat).WithStabilizers(append(AllTarStabilizers, customStabilizers...)),
 			)
 			if err != nil {
 				t.Fatalf("StabilizeTar() error: %v", err)
@@ -1011,7 +1010,7 @@ func TestCustomStabilizers_EndToEnd_Zip(t *testing.T) {
 			}
 			var output bytes.Buffer
 			zipWriter := zip.NewWriter(&output)
-			err = StabilizeZip(zipReader, zipWriter, StabilizeOpts{Stabilizers: allStabilizers}, NewContext(archive.ZipFormat))
+			err = StabilizeZip(zipReader, zipWriter, NewContext(archive.ZipFormat).WithStabilizers(allStabilizers))
 			if err != nil {
 				if tc.wantErr {
 					return

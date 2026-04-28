@@ -68,7 +68,7 @@ func TestStabilizeTar(t *testing.T) {
 			}
 			var output bytes.Buffer
 			zr := tar.NewReader(bytes.NewReader(input.Bytes()))
-			err := StabilizeTar(zr, tar.NewWriter(&output), StabilizeOpts{Stabilizers: AllTarStabilizers}, NewContext(archive.TarFormat))
+			err := StabilizeTar(zr, tar.NewWriter(&output), NewContext(archive.TarFormat).WithStabilizers(AllTarStabilizers))
 			if err != nil {
 				t.Fatalf("StabilizeTar(%v) = %v, want nil", tc.test, err)
 			}
@@ -178,7 +178,7 @@ version = "1.0.0"`)},
 			}
 			var output bytes.Buffer
 			zr := tar.NewReader(bytes.NewReader(input.Bytes()))
-			err := StabilizeTar(zr, tar.NewWriter(&output), StabilizeOpts{Stabilizers: tc.stabilizers}, NewContext(archive.TarFormat))
+			err := StabilizeTar(zr, tar.NewWriter(&output), NewContext(archive.TarFormat).WithStabilizers(tc.stabilizers))
 			if err != nil {
 				t.Fatalf("StabilizeTar(%v) = %v, want nil", tc.test, err)
 			}

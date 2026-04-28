@@ -128,7 +128,7 @@ var StabilizeCargoVCSHash = Stabilizer{
 }))
 
 // StabilizeTar strips volatile metadata and re-writes the provided archive in a standard form.
-func StabilizeTar(tr *tar.Reader, tw *tar.Writer, opts StabilizeOpts, ctx *StabilizationContext) error {
+func StabilizeTar(tr *tar.Reader, tw *tar.Writer, ctx *StabilizationContext) error {
 	defer tw.Close()
 	var ents []*archive.TarEntry
 	for header, err := range iterx.ToSeq2(tr, io.EOF) {
@@ -150,7 +150,7 @@ func StabilizeTar(tr *tar.Reader, tw *tar.Writer, opts StabilizeOpts, ctx *Stabi
 	}
 	f := archive.TarArchive{Files: ents}
 	// TODO: This ordering is inefficient as it lacks reuse for entryCtx
-	for _, s := range opts.Stabilizers {
+	for _, s := range ctx.Stabilizers {
 		if fn, ok := s.FnFor(ctx).(TarArchiveFn); ok && fn != nil {
 			fn(&f)
 		} else {
