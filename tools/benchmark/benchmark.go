@@ -53,6 +53,7 @@ type Package struct {
 	Ecosystem string
 	Name      string
 	Size      schema.SizeHint
+	Execution schema.ExecutionHint
 	Versions  []string
 	Artifacts []string
 }

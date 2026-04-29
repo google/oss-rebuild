@@ -168,6 +168,7 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 			UseNetworkProxy:   w.useNetworkProxy,
 			UseRepoDefinition: w.useRepoDefinition,
 			OverwriteMode:     w.overwriteMode,
+			ExecutionHint:     p.Execution,
 			SizeHint:          p.Size,
 		}
 		var verdict *schema.Verdict
