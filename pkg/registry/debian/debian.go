@@ -118,12 +118,12 @@ func (v *Version) Epochless() string {
 	return strings.TrimPrefix(v.String(), v.Epoch+":")
 }
 
-// ImpliedEpoch returns any explicit epoch, otherwise "1".
+// ImpliedEpoch returns any explicit epoch, otherwise "0".
 func (v *Version) ImpliedEpoch() string {
 	if v.Epoch != "" {
 		return v.Epoch
 	} else {
-		return "1"
+		return "0"
 	}
 }
 

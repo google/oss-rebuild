@@ -212,7 +212,7 @@ Checksums-Sha256:
 			name:        "Epoch Match (implied)",
 			component:   "main",
 			pkg:         "pkg",
-			version:     must(ParseVersion("1:1.0")),
+			version:     must(ParseVersion("0:1.0")),
 			arch:        "amd64",
 			expectedURL: "https://buildinfos.debian.net/buildinfo-pool/p/pkg/pkg_1.0_amd64.buildinfo",
 			contents: `Format: 1.0
@@ -465,7 +465,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0",
 			expectedEpochless:    "1.0",
-			expectedImpliedEpoch: "1",
+			expectedImpliedEpoch: "0",
 		},
 		{
 			name:    "Standard Non-Native Package",
@@ -480,7 +480,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0-1",
 			expectedEpochless:    "1.0-1",
-			expectedImpliedEpoch: "1",
+			expectedImpliedEpoch: "0",
 		},
 		{
 			name:    "Native with Epoch",
@@ -526,7 +526,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0-beta-1",
 			expectedEpochless:    "1.0-beta-1",
-			expectedImpliedEpoch: "1",
+			expectedImpliedEpoch: "0",
 		},
 		{
 			name:    "Complex Revision",
@@ -541,7 +541,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0-0.1ubuntu1",
 			expectedEpochless:    "1.0-0.1ubuntu1",
-			expectedImpliedEpoch: "1",
+			expectedImpliedEpoch: "0",
 		},
 		{
 			name:    "Native Binary Non-Maintainer Upload (BinNMU)",
@@ -555,7 +555,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "1",
 			expectedBinIndep:     "1.0",
 			expectedEpochless:    "1.0+b1",
-			expectedImpliedEpoch: "1",
+			expectedImpliedEpoch: "0",
 		},
 		{
 			name:    "Non-Native Binary Non-Maintainer Upload (BinNMU)",
@@ -570,7 +570,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "1",
 			expectedBinIndep:     "1.0-1",
 			expectedEpochless:    "1.0-1+b1",
-			expectedImpliedEpoch: "1",
+			expectedImpliedEpoch: "0",
 		},
 		{
 			name:    "Rollback Package (+really)",
@@ -584,7 +584,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0+really0.9",
 			expectedEpochless:    "1.0+really0.9",
-			expectedImpliedEpoch: "1",
+			expectedImpliedEpoch: "0",
 		},
 		{
 			name:    "Multiple Rollbacks (+really)",
@@ -598,7 +598,7 @@ func TestParseVersion(t *testing.T) {
 			expectedBinNMU:       "",
 			expectedBinIndep:     "1.0+really0.9+really0.8",
 			expectedEpochless:    "1.0+really0.9+really0.8",
-			expectedImpliedEpoch: "1",
+			expectedImpliedEpoch: "0",
 		},
 		{
 			name:    "Invalid: Empty String",
