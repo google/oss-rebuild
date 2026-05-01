@@ -36,6 +36,7 @@ type DockerBuildExecutor struct {
 	retainImage      bool
 	tempDirBase      string
 	allowPrivileged  bool
+	memoryLimit      string
 }
 
 // NewDockerBuildExecutor creates a new Docker build executor with configuration
@@ -83,6 +84,7 @@ func NewDockerBuildExecutor(config DockerBuildExecutorConfig) (*DockerBuildExecu
 		retainImage:      config.RetainImage,
 		tempDirBase:      tempBase,
 		allowPrivileged:  config.AllowPrivileged,
+		memoryLimit:      config.MemoryLimit,
 	}, nil
 }
 
@@ -97,6 +99,7 @@ type DockerBuildExecutorConfig struct {
 	RetainImage      bool   // If true, don't remove built image after build completes
 	TempDirBase      string // Base directory for temp files, if empty uses os.TempDir()
 	AllowPrivileged  bool   // If true, allow privileged builds
+	MemoryLimit      string // If provided, sets a memory limit on the builder (ex 512m or 1g)
 }
 
 // Start implements build.Executor.
@@ -203,6 +206,9 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	// Build Docker image with streaming and captured output.
 	imageTag := handle.id
 	buildArgs := []string{"buildx", "build", "-t", imageTag}
+	if e.memoryLimit != "" {
+		buildArgs = append(buildArgs, "--memory", e.memoryLimit)
+	}
 	if plan.ContextDir != "" {
 		buildArgs = append(buildArgs, "-f-", plan.ContextDir)
 	} else {
@@ -240,6 +246,9 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	}
 	// Disable core dumps
 	runArgs = append(runArgs, "--ulimit", "core=0")
+	if e.memoryLimit != "" {
+		runArgs = append(runArgs, "--memory", e.memoryLimit)
+	}
 	err = e.cmdExecutor.Execute(ctx, CommandOptions{
 		Output: multiWriter,
 	}, e.dockerCmd, runArgs...)
