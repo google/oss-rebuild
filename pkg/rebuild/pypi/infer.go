@@ -309,6 +309,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			},
 			PythonVersion: inferPythonVersion(reqs),
 			Requirements:  reqs,
+			RegistryTime:  a.UploadTime,
 		}, nil
 	} else {
 		return &PureWheelBuild{
@@ -319,6 +320,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			},
 			PythonVersion: inferPythonVersion(reqs),
 			Requirements:  reqs,
+			RegistryTime:  a.UploadTime,
 		}, nil
 	}
 }
