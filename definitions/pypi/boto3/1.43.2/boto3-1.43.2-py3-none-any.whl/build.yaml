@@ -1,0 +1,33 @@
+# inference differs:
+#  deps diff:
+#    /usr/bin/python3 -m venv /deps
+#    export PIP_INDEX_URL=http://pypi:2026-05-01T19:43:10Z@TIMEWARP/simple
+#   -/deps/bin/pip install build setuptools==75.1.0
+#   +/deps/bin/pip install --no-deps setuptools==75.1.0 wheel==0.40.0 packaging==24.1
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +/deps/bin/python3 setup.py bdist_wheel
+flow:
+  location:
+    repo: https://github.com/boto/boto3
+    ref: 7dc336e0d346a065cc537332d9d4ffc1663230ae
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-05-01T19:43:10Z"
+    # Match upstream's METADATA Requires-Dist format — wheel<=0.41 wraps the
+    # specifier in parens (`foo (<2,>=1)`), then wheel 0.42 dropped the parens,
+    # then 0.46 re-parses through packaging which strips spaces and switches
+    # quotes. Pin wheel 0.40.0 to keep the parenthesised form upstream uses.
+    - runs: /deps/bin/pip install --no-deps setuptools==75.1.0 wheel==0.40.0 packaging==24.1
+  build:
+    # Boto3's CI script invokes the legacy `setup.py bdist_wheel` entry point
+    # rather than `python -m build`, so honour that here.
+    - runs: /deps/bin/python3 setup.py bdist_wheel
+  output_dir: dist

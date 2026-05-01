@@ -1,0 +1,10 @@
+# inference differs:
+#   requirements: removed flit==3.12.0 (vs inferred)
+pypi_pure_wheel_build:
+  location:
+    repo: https://github.com/pyparsing/pyparsing
+    ref: fa24016d953353f8ba566abb5c8fc12e1d07556c
+  requirements:
+    - flit_core==3.12.0
+    - setuptools==67.7.2
+  registry_time: "2026-01-21T03:57:55Z"

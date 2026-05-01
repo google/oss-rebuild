@@ -1,0 +1,28 @@
+# inference differs:
+#  deps diff:
+#    /usr/bin/uvx uv venv /deps --seed --python 3.11
+#    export PIP_INDEX_URL=http://pypi:2022-06-08T12:05:22Z@TIMEWARP/simple
+#   -/deps/bin/pip install build poetry-core>=1.0.0 poetry==1.0.7 setuptools==56.2.0
+#   +/deps/bin/pip install --no-deps poetry-core==1.0.7 build pep517 tomli packaging
+flow:
+  location:
+    repo: https://github.com/litl/backoff
+    ref: 24ae1b9d5e29b2770944d431f9e0cca98481f412
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        pythonVersion: "3.11"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2022-06-08T12:05:22Z"
+    # Inferer's `poetry==1.0.7` would pull in cffi (which won't build under
+    # timewarp). poetry-core==1.0.7 is the actual build backend; its
+    # `Generator:` line matches upstream's WHEEL header.
+    - runs: /deps/bin/pip install --no-deps poetry-core==1.0.7 build pep517 tomli packaging
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

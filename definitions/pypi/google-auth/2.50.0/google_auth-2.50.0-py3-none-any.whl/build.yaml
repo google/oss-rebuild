@@ -1,0 +1,29 @@
+# inference fails: no git ref
+flow:
+  location:
+    repo: https://github.com/googleapis/google-cloud-python
+    # google-auth's old repo (googleapis/google-auth-library-python) is
+    # archived; sources moved into this monorepo under packages/google-auth.
+    # Release commit for 2.50.0 (uploaded 2026-04-30T21:19:27Z) is the
+    # librarian-generated PR merge.
+    ref: a41f6b2f93d2060c39670d7ecffeac668067ed85
+    dir: packages/google-auth
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-04-30T21:19:27Z"
+    - runs: /deps/bin/pip install setuptools build
+  build:
+    # The git tree carries a `testing/` directory of constraints-*.txt files
+    # which `find_namespace_packages` picks up as a namespace package.
+    # Upstream's sdist excludes testing/ (MANIFEST.in only opts in tests/),
+    # so the wheel built from sdist doesn't see it. Run sdist→wheel here so
+    # the same MANIFEST.in filter applies.
+    - runs: cd /src/packages/google-auth && /deps/bin/python3 -m build -n
+  output_dir: packages/google-auth/dist

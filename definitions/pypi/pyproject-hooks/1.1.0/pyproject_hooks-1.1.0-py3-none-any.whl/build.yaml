@@ -1,0 +1,29 @@
+# inference differs:
+#  source diff:
+#    git clone https://github.com/pypa/pyproject-hooks .
+#    git checkout --force '903ad919c7857a7321dee080e708e13afb2bd4d5'
+#   +rm /src/LICENSE
+flow:
+  location:
+    repo: https://github.com/pypa/pyproject-hooks
+    ref: 903ad919c7857a7321dee080e708e13afb2bd4d5
+  src:
+    - uses: git-checkout
+    # Upstream wheel has no LICENSE in dist-info. flit_core auto-includes
+    # any project-root LICENSE/COPYING file unless it's absent. The 1.1.0
+    # release was apparently built from a working tree where LICENSE was
+    # missing or moved; remove it to match.
+    - runs: rm /src/LICENSE
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        pythonVersion: "3.11"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2024-04-29T07:28:56Z"
+    - runs: /deps/bin/pip install flit_core==3.9.0 flit==3.9.0 setuptools==56.2.0 build
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

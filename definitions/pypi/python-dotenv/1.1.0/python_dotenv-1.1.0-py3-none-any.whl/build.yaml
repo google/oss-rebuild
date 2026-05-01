@@ -1,0 +1,13 @@
+# inference differs:
+#   ref: 2198b698c021851201261fac27884ee8db6553d5 (inferred: 6a02ef5a1034d66338811757df07a113a1169af6)
+pypi_pure_wheel_build:
+  location:
+    repo: https://github.com/theskumar/python-dotenv
+    # tools/ctl infer picks the tag commit (6a02ef5, "update mkdocs"), but
+    # CHANGELOG.md was updated post-release: the upstream wheel embeds
+    # `## [Unrelased]` (sic), which is only present at the version-bump
+    # commit before the changelog backfill.
+    ref: 2198b698c021851201261fac27884ee8db6553d5
+  requirements:
+    - setuptools==78.0.2
+  registry_time: "2025-03-25T10:14:55Z"

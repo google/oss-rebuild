@@ -1,0 +1,30 @@
+# inference differs:
+#  deps diff:
+#    /usr/bin/python3 -m venv /deps
+#    export PIP_INDEX_URL=http://pypi:2026-04-29T22:07:34Z@TIMEWARP/simple
+#   -/deps/bin/pip install build setuptools==75.1.0
+#   +/deps/bin/pip install --no-deps setuptools==75.1.0 wheel==0.40.0 packaging==24.1
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +/deps/bin/python3 setup.py bdist_wheel
+flow:
+  location:
+    repo: https://github.com/boto/s3transfer
+    ref: 28fe009e64b8041b41624d289b804eb78fe0b8ef
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-04-29T22:07:34Z"
+    # Same boto-org pattern as boto3 / botocore: scripts/ci/install runs
+    # `python setup.py bdist_wheel`, and the upstream wheel's METADATA has
+    # parens around Requires-Dist specs (wheel<=0.41 format).
+    - runs: /deps/bin/pip install --no-deps setuptools==75.1.0 wheel==0.40.0 packaging==24.1
+  build:
+    - runs: /deps/bin/python3 setup.py bdist_wheel
+  output_dir: dist

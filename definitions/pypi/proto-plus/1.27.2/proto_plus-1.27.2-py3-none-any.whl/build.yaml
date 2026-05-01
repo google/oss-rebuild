@@ -1,0 +1,29 @@
+# inference differs:
+#   output_dir: dist (inferred: packages/proto-plus/dist)
+#  deps diff:
+#    /usr/bin/python3 -m venv /deps
+#   -export PIP_INDEX_URL=http://pypi:2026-03-26T22:13:42Z@TIMEWARP/simple
+#   +export PIP_INDEX_URL=http://pypi:2026-03-26T22:13:43Z@TIMEWARP/simple
+#    /deps/bin/pip install build setuptools==82.0.1
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n packages/proto-plus
+#   +/deps/bin/python3 -m build --wheel -n
+flow:
+  location:
+    repo: https://github.com/googleapis/google-cloud-python
+    ref: 7a05a34dc0d4bd9ded9ab3ce97b5e61f2780e081
+    dir: packages/proto-plus
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-03-26T22:13:43Z"
+    - runs: /deps/bin/pip install setuptools==82.0.1 build
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

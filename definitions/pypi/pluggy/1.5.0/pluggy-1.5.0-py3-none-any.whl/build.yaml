@@ -1,0 +1,11 @@
+# inference differs:
+#   requirements: removed setuptools-scm (vs inferred)
+pypi_pure_wheel_build:
+  location:
+    repo: https://github.com/pytest-dev/pluggy
+    ref: f8aa4a009716a7994f2f6c1947d9fa69feccbdd5
+  requirements:
+    - wheel==0.43.0
+    - setuptools==67.7.2
+    - setuptools-scm[toml]>=6.2.3
+  registry_time: "2024-04-20T21:34:40Z"

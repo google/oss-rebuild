@@ -1,0 +1,34 @@
+# inference differs:
+#  deps diff:
+#   -/usr/bin/python3 -m venv /deps
+#   +/usr/bin/uvx uv venv /deps --seed --python 3.9
+#    export PIP_INDEX_URL=http://pypi:2022-09-09T20:15:04Z@TIMEWARP/simple
+#   -/deps/bin/pip install build setuptools==67.7.2 wheel==0.37.1
+#   +/deps/bin/pip install --no-deps setuptools==60.10.0 wheel==0.37.1
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +/deps/bin/python3 setup.py bdist_wheel
+flow:
+  location:
+    repo: https://github.com/oauthlib/oauthlib
+    ref: 88bb1562930a9bd9368bf26120655794d90d9585
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        # Pin Python 3.9 + setuptools 60.10.0 to land the upstream's
+        # `.\n\n\n` METADATA tail. Empirically: setuptools 58.5.3-62.0.0
+        # writes PKG-INFO with three trailing newlines; 62.6.0 strips back
+        # to one. Python 3.9's email.parser preserves them when wheel reads
+        # PKG-INFO; 3.10 strips them. Both pieces are needed.
+        pythonVersion: "3.9"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2022-09-09T20:15:04Z"
+    - runs: /deps/bin/pip install --no-deps setuptools==60.10.0 wheel==0.37.1
+  build:
+    - runs: /deps/bin/python3 setup.py bdist_wheel
+  output_dir: dist

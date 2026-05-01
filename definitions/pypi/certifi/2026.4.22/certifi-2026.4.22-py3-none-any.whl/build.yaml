@@ -1,0 +1,10 @@
+# inference fails: no git ref
+pypi_pure_wheel_build:
+  location:
+    repo: https://github.com/certifi/python-certifi
+    # Tag is 2026.04.22 (zero-padded month) but PyPI version is 2026.4.22, so
+    # infer can't auto-derive the ref.
+    ref: b3adbce4af6f889fb6d7828da503c00fb8f54fc5
+  requirements:
+    - setuptools
+  registry_time: "2026-04-22T11:26:09Z"

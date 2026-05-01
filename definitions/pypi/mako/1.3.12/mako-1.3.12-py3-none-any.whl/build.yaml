@@ -1,0 +1,29 @@
+# inference differs:
+#  source diff:
+#    git clone https://github.com/sqlalchemy/mako .
+#    git checkout --force 'd4d1639222d2da4f18c32d11f32c37f172f603bd'
+#   +sed -i 's/^tag_build = dev$/tag_build =/' /src/setup.cfg
+flow:
+  location:
+    repo: https://github.com/sqlalchemy/mako
+    ref: d4d1639222d2da4f18c32d11f32c37f172f603bd
+  src:
+    - uses: git-checkout
+    # setup.cfg has `[egg_info] tag_build = dev` which causes setuptools'
+    # egg_info command to suffix the version with `.dev0` during PKG-INFO
+    # generation (an old distutils convention). Upstream's release pipeline
+    # clears this knob before tagging. Clear it here too so the wheel
+    # filename and METADATA Version: line are "1.3.12" not "1.3.12.dev0".
+    - runs: sed -i 's/^tag_build = dev$/tag_build =/' /src/setup.cfg
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-04-28T19:01:10Z"
+    - runs: /deps/bin/pip install setuptools==82.0.1 wheel build
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

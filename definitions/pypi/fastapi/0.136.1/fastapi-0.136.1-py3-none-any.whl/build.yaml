@@ -1,0 +1,10 @@
+# inference fails: Failed to get upstream generator: unsupported generator: pdm-backend (2.4.8)
+pypi_pure_wheel_build:
+  location:
+    repo: https://github.com/fastapi/fastapi
+    ref: e54e5a8980ffa6d7ff68ee7b25a1c46036375521
+  # Upstream WHEEL: `Generator: pdm-backend (2.4.8)`. The pypi inference
+  # doesn't model pdm-backend yet.
+  requirements:
+    - pdm-backend==2.4.8
+  registry_time: "2026-04-23T16:49:42Z"

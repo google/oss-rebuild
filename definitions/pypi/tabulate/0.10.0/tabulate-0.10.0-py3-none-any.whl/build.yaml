@@ -1,0 +1,26 @@
+pypi_pure_wheel_build:
+  location:
+    repo: https://github.com/astanin/python-tabulate
+    ref: 3b4cd509820e4c45cd2aaba833aa585ea6308b94
+  requirements:
+    - setuptools==82.0.0
+    - "setuptools_scm[toml]>=3.4.3"
+  registry_time: "2026-03-04T18:55:31Z"
+custom_stabilizers:
+  - replace_pattern:
+      paths: ["*/METADATA"]
+      pattern: "\r\n"
+      replace: "\n"
+    reason: |
+      Upstream wheel was built on Windows. METADATA embeds the README, and
+      the README in upstream's working tree had CRLF line endings; setuptools'
+      _core_metadata wrote them through to the wheel verbatim. On Linux the
+      same README has LF, so the rebuild produces LF-only METADATA. Normalise
+      to LF for comparison (build metadata, not packaged code).
+  - replace_pattern:
+      paths: ["*/RECORD"]
+      pattern: "(?m)^.*METADATA.*\n"
+      replace: ""
+    reason: |
+      RECORD records each file's sha256+size at write time. After METADATA
+      is normalised, its RECORD entry differs across builds. Drop the line.

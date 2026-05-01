@@ -1,0 +1,28 @@
+# inference differs:
+#  deps diff:
+#   -/usr/bin/python3 -m venv /deps
+#   +/usr/bin/uvx uv venv /deps --seed --python 3.11
+#    export PIP_INDEX_URL=http://pypi:2022-02-15T18:15:18Z@TIMEWARP/simple
+#   -/deps/bin/pip install build setuptools==67.7.2 wheel==0.37.1
+#   +/deps/bin/pip install --no-deps setuptools==60.9.0 wheel==0.37.1 build pep517 tomli packaging
+flow:
+  location:
+    repo: https://github.com/python-distro/distro
+    ref: 697b2dbb20ab12cb86becf57f062645de723d5ac
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        pythonVersion: "3.11"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2022-02-15T18:15:18Z"
+    # Latest setuptools at registry-time (2022-02) is 60.9.0; the inferer's
+    # setuptools==67.7.2 heuristic doesn't apply this far back.
+    - runs: /deps/bin/pip install --no-deps setuptools==60.9.0 wheel==0.37.1 build pep517 tomli packaging
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

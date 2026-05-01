@@ -1,0 +1,25 @@
+# inference differs:
+#  source diff:
+#    git clone https://github.com/jquast/wcwidth .
+#    git checkout --force 'ed93a0581935dca7d2fe657cc884cbd4971f2ee3'
+#   +sed -i 's/by ``wrap()``/by `wrap()`_/g' docs/intro.rst
+flow:
+  location:
+    repo: https://github.com/jquast/wcwidth
+    ref: ed93a0581935dca7d2fe657cc884cbd4971f2ee3
+  src:
+    - uses: git-checkout
+    # Publisher mid-edit: between tagging 0.5.0 and uploading the wheel,
+    # docs/intro.rst was patched to use link-reference syntax in two
+    # changelog entries (``wrap()`` → `wrap()`_). The fix isn't committed
+    # anywhere — re-apply it to make METADATA byte-equal.
+    - runs: sed -i 's/by ``wrap()``/by `wrap()`_/g' docs/intro.rst
+  deps:
+    - uses: pypi/deps/basic
+      with:
+        registryTime: "2026-01-27T01:31:43Z"
+        requirements: '["hatchling==1.28.0","setuptools==67.7.2"]'
+        venv: /deps
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

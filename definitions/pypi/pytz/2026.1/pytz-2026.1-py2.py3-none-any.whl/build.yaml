@@ -1,0 +1,46 @@
+# inference differs:
+#   dir: "" (inferred: src)
+#   output_dir: build/dist/dist (inferred: src/dist)
+#  source diff:
+#    git clone https://github.com/stub42/pytz .
+#    git checkout --force '95fe75d8f15cfc3d5b70e1e71258ddebf0776436'
+#   +apk add --no-cache build-base bash rsync gawk
+#  deps diff:
+#    /usr/bin/python3 -m venv /deps
+#    export PIP_INDEX_URL=http://pypi:2026-03-03T06:52:14Z@TIMEWARP/simple
+#   -/deps/bin/pip install build setuptools==67.7.2 wheel==0.42.0
+#   +/deps/bin/pip install setuptools==67.7.2 wheel==0.42.0
+#   +cd /src && PYTHON=/deps/bin/python3 make .stamp-tzinfo
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n src
+#   +cd /src/build/dist && /deps/bin/python3 setup.py -q bdist_wheel --universal --dist-dir=dist
+flow:
+  location:
+    repo: https://github.com/stub42/pytz
+    ref: 95fe75d8f15cfc3d5b70e1e71258ddebf0776436
+  src:
+    - uses: git-checkout
+    # `Makefile::.stamp-zoneinfo` invokes `make` in the IANA tz/ subdir,
+    # which needs a C toolchain + awk + bash (the IANA Makefile uses
+    # bash-isms). Alpine ships these in `build-base` + `bash`.
+    # IANA's `ziguard.awk` / `zishrink.awk` use gawk-only features; alpine's
+    # default busybox awk produces a structurally different `tzdata.zi`.
+    - runs: apk add --no-cache build-base bash rsync gawk
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-03-03T06:52:14Z"
+    - runs: /deps/bin/pip install setuptools==67.7.2 wheel==0.42.0
+    # `make .stamp-tzinfo` runs the IANA tz make, then `gen_tzinfo.py`,
+    # then copies the compiled tzdata into `build/dist/pytz/zoneinfo`.
+    - runs: cd /src && PYTHON=/deps/bin/python3 make .stamp-tzinfo
+  build:
+    # `Makefile::wheels` runs `python setup.py -q bdist_wheel --universal`
+    # from `build/dist`, which is the hydrated copy of `src/` carrying the
+    # generated zoneinfo tree.
+    - runs: cd /src/build/dist && /deps/bin/python3 setup.py -q bdist_wheel --universal --dist-dir=dist
+  output_dir: build/dist/dist

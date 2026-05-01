@@ -1,0 +1,10 @@
+# inference differs:
+#   requirements: removed flit==3.11.0 (vs inferred)
+pypi_pure_wheel_build:
+  location:
+    repo: https://github.com/pallets/jinja
+    ref: 15206881c006c79667fe5154fe80c01c65410679
+  requirements:
+    - flit_core==3.11.0
+    - setuptools==67.7.2
+  registry_time: "2025-03-05T20:05:00Z"
