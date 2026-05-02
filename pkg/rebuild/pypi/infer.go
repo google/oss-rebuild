@@ -167,7 +167,13 @@ func FindSourceDist(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
 }
 
 func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
-	wheel, wheelPath, err := getDistInfoFile(name, version, "WHEEL", zr)
+	distInfoDir, err := getDistInfoDir(name, version, zr)
+	if err != nil {
+		wheelPath := path.Join(expectedDistInfoDir(name, version), "WHEEL")
+		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", wheelPath)
+	}
+	wheelPath := path.Join(distInfoDir, "WHEEL")
+	wheel, err := getFile(wheelPath, zr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", wheelPath)
 	}
@@ -180,9 +186,10 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 		// setuptools already set.
 		return reqs, nil
 	}
-	metadata, _, err := getDistInfoFile(name, version, "METADATA", zr)
+	metadataPath := path.Join(distInfoDir, "METADATA")
+	metadata, err := getFile(metadataPath, zr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream dist-info/METADATA")
+		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", metadataPath)
 	}
 	switch {
 	case !bytes.Contains(metadata, []byte("License-File")):
@@ -201,6 +208,10 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 	return reqs, nil
 }
 
+// Wheel dist-info names use escaped distribution/version components:
+// https://packaging.python.org/en/latest/specifications/binary-distribution-format/#escaping-and-unicode
+// Name comparisons use PyPA name normalization:
+// https://packaging.python.org/en/latest/specifications/name-normalization/
 func normalizeDistInfoName(name string) string {
 	normalized := distInfoFieldPat.ReplaceAllString(name, "-")
 	return strings.ReplaceAll(strings.ToLower(normalized), "-", "_")
@@ -210,20 +221,22 @@ func normalizeDistInfoVersion(version string) string {
 	return strings.ReplaceAll(strings.ToLower(version), "-", "_")
 }
 
-func getDistInfoFile(name, version, fileName string, zr *zip.Reader) ([]byte, string, error) {
-	expectedPath := fmt.Sprintf("%s-%s.dist-info/%s", normalizeDistInfoName(name), normalizeDistInfoVersion(version), fileName)
-	b, err := getFile(expectedPath, zr)
-	if err == nil || !errors.Is(err, fs.ErrNotExist) {
-		return b, expectedPath, err
+func expectedDistInfoDir(name, version string) string {
+	return fmt.Sprintf("%s-%s.dist-info", normalizeDistInfoName(name), normalizeDistInfoVersion(version))
+}
+
+func getDistInfoDir(name, version string, zr *zip.Reader) (string, error) {
+	expectedDir := expectedDistInfoDir(name, version)
+	if hasZipDir(expectedDir, zr) {
+		return expectedDir, nil
 	}
+	// Older wheels may use equivalent but unescaped names with uppercase letters
+	// or "." separators; the wheel spec requires consumers to accept them.
 	for _, f := range zr.File {
-		if path.Base(f.Name) != fileName {
+		dir := path.Dir(f.Name)
+		if dir == "." || path.Dir(dir) != "." {
 			continue
 		}
-		if strings.Count(f.Name, "/") != 1 {
-			continue
-		}
-		dir := path.Base(path.Dir(f.Name))
 		stem, ok := strings.CutSuffix(dir, ".dist-info")
 		if !ok {
 			continue
@@ -239,10 +252,19 @@ func getDistInfoFile(name, version, fileName string, zr *zip.Reader) ([]byte, st
 		if normalizeDistInfoVersion(foundVersion) != normalizeDistInfoVersion(version) {
 			continue
 		}
-		b, err := getFile(f.Name, zr)
-		return b, f.Name, err
+		return dir, nil
 	}
-	return nil, expectedPath, fs.ErrNotExist
+	return "", fs.ErrNotExist
+}
+
+func hasZipDir(dir string, zr *zip.Reader) bool {
+	prefix := dir + "/"
+	for _, f := range zr.File {
+		if f.Name == dir || strings.HasPrefix(f.Name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {

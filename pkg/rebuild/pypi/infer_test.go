@@ -7,6 +7,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"testing"
+
+	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 )
 
 func TestInferPythonVersion(t *testing.T) {
@@ -76,91 +79,83 @@ func TestInferPythonVersion(t *testing.T) {
 	}
 }
 
-func TestInferRequirementsAcceptsEquivalentDistInfoNames(t *testing.T) {
+func TestGetDistInfoDirAcceptsEquivalentNames(t *testing.T) {
 	tests := []struct {
 		name    string
 		pkg     string
 		version string
-		files   map[string]string
-		want    []string
+		files   []string
+		want    string
 	}{
 		{
 			name:    "exact normalized path",
 			pkg:     "friendly-bard",
 			version: "1.2.3",
-			files: map[string]string{
-				"friendly_bard-1.2.3.dist-info/WHEEL":    "Wheel-Version: 1.0\nGenerator: bdist_wheel (0.43.0)\nTag: py3-none-any\n",
-				"friendly_bard-1.2.3.dist-info/METADATA": "Metadata-Version: 2.1\nName: friendly-bard\n",
+			files: []string{
+				"friendly_bard-1.2.3.dist-info/WHEEL",
+				"friendly_bard-1.2.3.dist-info/METADATA",
 			},
-			want: []string{"wheel==0.43.0", "setuptools==56.2.0"},
+			want: "friendly_bard-1.2.3.dist-info",
 		},
 		{
 			name:    "lowercased historical path",
 			pkg:     "128Autograder",
 			version: "5.2.3",
-			files: map[string]string{
-				"128autograder-5.2.3.dist-info/WHEEL":    "Wheel-Version: 1.0\nGenerator: bdist_wheel (0.43.0)\nTag: py3-none-any\n",
-				"128autograder-5.2.3.dist-info/METADATA": "Metadata-Version: 2.1\nName: 128Autograder\n",
+			files: []string{
+				"128autograder-5.2.3.dist-info/WHEEL",
+				"128autograder-5.2.3.dist-info/METADATA",
 			},
-			want: []string{"wheel==0.43.0", "setuptools==56.2.0"},
+			want: "128autograder-5.2.3.dist-info",
 		},
 		{
 			name:    "dot and hyphen equivalence",
 			pkg:     "Friendly.Bard",
 			version: "2.0.0",
-			files: map[string]string{
-				"friendly_bard-2.0.0.dist-info/WHEEL":    "Wheel-Version: 1.0\nGenerator: bdist_wheel (0.43.0)\nTag: py3-none-any\n",
-				"friendly_bard-2.0.0.dist-info/METADATA": "Metadata-Version: 2.1\nName: Friendly.Bard\n",
+			files: []string{
+				"friendly_bard-2.0.0.dist-info/WHEEL",
+				"friendly_bard-2.0.0.dist-info/METADATA",
 			},
-			want: []string{"wheel==0.43.0", "setuptools==56.2.0"},
+			want: "friendly_bard-2.0.0.dist-info",
 		},
 		{
 			name:    "historical uppercase hyphenated path",
 			pkg:     "friendly-bard",
 			version: "3.1.4",
-			files: map[string]string{
-				"Friendly-Bard-3.1.4.dist-info/WHEEL":    "Wheel-Version: 1.0\nGenerator: bdist_wheel (0.43.0)\nTag: py3-none-any\n",
-				"Friendly-Bard-3.1.4.dist-info/METADATA": "Metadata-Version: 2.1\nName: friendly-bard\n",
+			files: []string{
+				"Friendly-Bard-3.1.4.dist-info/WHEEL",
+				"Friendly-Bard-3.1.4.dist-info/METADATA",
 			},
-			want: []string{"wheel==0.43.0", "setuptools==56.2.0"},
+			want: "Friendly-Bard-3.1.4.dist-info",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			zr := testZipReader(t, tt.files)
-			got, err := inferRequirements(tt.pkg, tt.version, zr)
+			got, err := getDistInfoDir(tt.pkg, tt.version, zr)
 			if err != nil {
-				t.Fatalf("inferRequirements() error = %v", err)
+				t.Fatalf("getDistInfoDir() error = %v", err)
 			}
-			if len(got) != len(tt.want) {
-				t.Fatalf("inferRequirements() len = %d, want %d; got %v", len(got), len(tt.want), got)
-			}
-			for i := range tt.want {
-				if got[i] != tt.want[i] {
-					t.Fatalf("inferRequirements()[%d] = %q, want %q; got %v", i, got[i], tt.want[i], got)
-				}
+			if got != tt.want {
+				t.Fatalf("getDistInfoDir() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func testZipReader(t *testing.T, files map[string]string) *zip.Reader {
+func testZipReader(t *testing.T, files []string) *zip.Reader {
 	t.Helper()
 
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	for name, body := range files {
-		w, err := zw.Create(name)
-		if err != nil {
-			t.Fatalf("Create(%q): %v", name, err)
-		}
-		if _, err := w.Write([]byte(body)); err != nil {
-			t.Fatalf("Write(%q): %v", name, err)
-		}
+	entries := make([]archive.ZipEntry, 0, len(files))
+	for _, name := range files {
+		entries = append(entries, archive.ZipEntry{
+			FileHeader: &zip.FileHeader{Name: name},
+			Body:       []byte("data"),
+		})
 	}
-	if err := zw.Close(); err != nil {
-		t.Fatalf("Close(): %v", err)
+	buf, err := archivetest.ZipFile(entries)
+	if err != nil {
+		t.Fatalf("ZipFile(): %v", err)
 	}
 	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if err != nil {
