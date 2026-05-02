@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 )
 
 const (
@@ -17,7 +18,10 @@ const (
 )
 
 // Differ compares two artifacts and returns diff output.
+//
+// extraStabilizers are applied in addition to the default stabilizer set
+// returned by stability.StabilizersForTarget to support custom stabilizers.
 type Differ interface {
-	Diff(ctx context.Context, rebuildPath, upstreamPath string, target rebuild.Target) ([]byte, error)
+	Diff(ctx context.Context, rebuildPath, upstreamPath string, target rebuild.Target, extraStabilizers ...stabilize.Stabilizer) ([]byte, error)
 	AssetType() rebuild.AssetType
 }

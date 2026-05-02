@@ -12,6 +12,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/diffr"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
 )
 
@@ -22,7 +23,7 @@ func (d Diffr) AssetType() rebuild.AssetType {
 	return DiffrAsset
 }
 
-func (d Diffr) Diff(ctx context.Context, rebuildPath, upstreamPath string, target rebuild.Target) ([]byte, error) {
+func (d Diffr) Diff(ctx context.Context, rebuildPath, upstreamPath string, target rebuild.Target, extraStabilizers ...stabilize.Stabilizer) ([]byte, error) {
 	dir, err := os.MkdirTemp("", "*")
 	if err != nil {
 		return nil, errors.Wrap(err, "creating tempdir")
@@ -33,6 +34,7 @@ func (d Diffr) Diff(ctx context.Context, rebuildPath, upstreamPath string, targe
 	if err != nil {
 		return nil, errors.Wrap(err, "getting stabilizers")
 	}
+	stabilizers = append(stabilizers, extraStabilizers...)
 	// TODO: We should use the version of Stabilize used in the rebuild.
 	stabilizedRebuildPath := filepath.Join(dir, "stabilized-"+filepath.Base(rebuildPath))
 	if err := stabilizeToFile(rebuildPath, stabilizedRebuildPath, target, stabilizers); err != nil {
