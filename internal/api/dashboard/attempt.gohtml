@@ -16,6 +16,7 @@
     <p><strong>Run ID:</strong> {{.Attempt.RunID}}</p>
     <p><strong>Started:</strong> {{if not .Attempt.Started.IsZero}}{{.Attempt.Started.Format "2006-01-02 15:04:05"}}{{else}}N/A{{end}}</p>
     <p><strong>Created:</strong> {{.Attempt.Created.Format "2006-01-02 15:04:05"}}</p>
+    <p><strong>Finished:</strong> {{.Attempt.Finished.Format "2006-01-02 15:04:05"}}</p>
     <p><strong>Duration:</strong> {{.AttemptDuration}}</p>
 
     {{$logID := ""}}

@@ -53,8 +53,14 @@ func Attempt(ctx context.Context, req AttemptRequest, deps *Deps) (*AttemptData,
 	strategyBytes, _ := json.MarshalIndent(attempt.Strategy, "", "  ")
 
 	durationStr := "N/A"
-	if !attempt.Started.IsZero() && !attempt.Created.IsZero() {
-		durationStr = attempt.Created.Sub(attempt.Started).Round(time.Second).String()
+	var finished time.Time
+	if !attempt.Finished.IsZero() {
+		finished = attempt.Finished
+	} else {
+		finished = attempt.Created
+	}
+	if !attempt.Started.IsZero() && !finished.IsZero() {
+		durationStr = finished.Sub(attempt.Started).Round(time.Second).String()
 	}
 
 	view := NewRebuildView(attempt)
