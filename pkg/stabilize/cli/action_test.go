@@ -6,20 +6,22 @@ package cli
 import (
 	"archive/tar"
 	"context"
+	"errors"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"testing"
 
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 )
 
 func TestStabilizeFile(t *testing.T) {
 	// Create a temp input file (tar)
-	dir := t.TempDir()
-	infile := filepath.Join(dir, "input.tar")
-	outfile := filepath.Join(dir, "output.tar")
+	fsys := memfs.New()
+	infile := "/input.tar"
+	outfile := "/output.tar"
 
-	f, err := os.Create(infile)
+	f, err := fsys.Create(infile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +39,9 @@ func TestStabilizeFile(t *testing.T) {
 		DisablePasses: []string{"none"},
 	}
 
-	deps := &Deps{}
+	deps := &Deps{
+		FS: fsys,
+	}
 	deps.SetIO(cli.IO{Out: os.Stdout, Err: os.Stderr})
 
 	_, err = StabilizeFile(context.Background(), cfg, deps)
@@ -45,7 +49,7 @@ func TestStabilizeFile(t *testing.T) {
 		t.Fatalf("StabilizeFile failed: %v", err)
 	}
 
-	if _, err := os.Stat(outfile); os.IsNotExist(err) {
+	if _, err := fsys.Stat(outfile); errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Output file not created")
 	}
 }

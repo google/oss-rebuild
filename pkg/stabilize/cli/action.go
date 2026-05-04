@@ -7,11 +7,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/archive"
@@ -57,6 +58,7 @@ func (c Config) Validate() error {
 // Deps defines the dependencies for the stabilization action.
 type Deps struct {
 	IO cli.IO
+	FS billy.Filesystem
 }
 
 // SetIO sets the IO streams.
@@ -66,7 +68,9 @@ func (d *Deps) SetIO(io cli.IO) {
 
 // InitDeps initializes the dependencies.
 func InitDeps(ctx context.Context) (*Deps, error) {
-	return &Deps{}, nil
+	return &Deps{
+		FS: osfs.New("/"),
+	}, nil
 }
 
 // StabilizeFile is the action to stabilize a file.
@@ -82,13 +86,13 @@ func StabilizeFile(ctx context.Context, cfg Config, d *Deps) (*act.NoOutput, err
 		return nil, err
 	}
 
-	in, err := os.Open(cfg.Infile)
+	in, err := d.FS.Open(cfg.Infile)
 	if err != nil {
 		return nil, errors.Wrap(err, "opening input file")
 	}
 	defer in.Close()
 
-	out, err := os.Create(cfg.Outfile)
+	out, err := d.FS.Create(cfg.Outfile)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating output file")
 	}
