@@ -110,7 +110,7 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				{{if ne .With.version "" -}}
 				{{- /* NOTE: Prefer builtin npm for 'npm version' as it wasn't introduced until NPM v6. */ -}}
-				PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix {{.With.dir}} --no-git-tag-version {{.With.version}}
+				PATH=/usr/bin:/bin:/usr/local/bin npm version --ignore-scripts --prefix {{.With.dir}} --no-git-tag-version {{.With.version}}
 				{{- end -}}`)[1:],
 			Needs: []string{"npm"},
 		}},

@@ -38,7 +38,7 @@ func TestNPMStrategies(t *testing.T) {
 				},
 				Source: "git checkout --force 'the_ref'",
 				Deps:   "",
-				Build: `PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix the_dir --no-git-tag-version green
+				Build: `PATH=/usr/bin:/bin:/usr/local/bin npm version --ignore-scripts --prefix the_dir --no-git-tag-version green
 /usr/bin/npx --package=npm@red -c 'cd the_dir && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
 			},
@@ -106,7 +106,7 @@ func TestNPMStrategies(t *testing.T) {
 				Source: "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
-				Build: `PATH=/usr/bin:/bin:/usr/local/bin npm version --prefix the_dir --no-git-tag-version green
+				Build: `PATH=/usr/bin:/bin:/usr/local/bin npm version --ignore-scripts --prefix the_dir --no-git-tag-version green
 /usr/local/bin/npx --package=npm@red -c 'cd the_dir && npm run yellow && rm -rf node_modules && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
 			},
