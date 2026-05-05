@@ -1,0 +1,37 @@
+# inference fails: No NPM version
+flow:
+  location:
+    repo: https://github.com/babel/babel
+    # @babel/preset-env 7.23.2 was published same day as the v7.23.2
+    # monorepo tag and matches that tag's
+    # `packages/babel-preset-env/package.json` version. No
+    # preset-env-specific tag was made.
+    ref: b4b9942a6cde0685c222eb3412347880aae40ad5
+    dir: packages/babel-preset-env
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "20.8.1"
+    - runs: corepack enable && corepack prepare yarn@3.6.2 --activate
+    - runs: |
+        export YARN_NPM_REGISTRY_SERVER=http://npm:2023-10-11T18:51:31Z@127.0.0.1:8080
+        export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+        cd /src && YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+  build:
+    - runs: |
+        cd /src && \
+          export YARN_NPM_REGISTRY_SERVER=http://npm:2023-10-11T18:51:31Z@127.0.0.1:8080
+          export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+          node scripts/set-module-type.js commonjs && \
+          NODE_ENV=production BABEL_ENV=production STRIP_BABEL_8_FLAG=true \
+            IS_PUBLISH=true make prepublish-build && \
+          node scripts/set-module-type.js clean && \
+          cd packages/babel-preset-env && yarn pack --out babel-preset-env-7.23.2.tgz
+  output_dir: packages/babel-preset-env
+  requires:
+    system_deps:
+      - git
+      - make
+      - libstdc++

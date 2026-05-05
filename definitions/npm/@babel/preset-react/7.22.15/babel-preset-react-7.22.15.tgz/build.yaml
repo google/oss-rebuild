@@ -1,0 +1,33 @@
+# inference fails: No NPM version
+flow:
+  location:
+    repo: https://github.com/babel/babel
+    ref: e658c7239f3b1bf6c96676f34071e1ea01804905
+    dir: packages/babel-preset-react
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "20.6.1"
+    - runs: corepack enable && corepack prepare yarn@3.6.2 --activate
+    - runs: |
+        export YARN_NPM_REGISTRY_SERVER=http://npm:2023-09-04T12:25:25Z@127.0.0.1:8080
+        export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+        cd /src && YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+  build:
+    - runs: |
+        cd /src && \
+          export YARN_NPM_REGISTRY_SERVER=http://npm:2023-09-04T12:25:25Z@127.0.0.1:8080
+          export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+          node scripts/set-module-type.js commonjs && \
+          NODE_ENV=production BABEL_ENV=production STRIP_BABEL_8_FLAG=true \
+            IS_PUBLISH=true make prepublish-build && \
+          node scripts/set-module-type.js clean && \
+          cd packages/babel-preset-react && yarn pack --out babel-preset-react-7.22.15.tgz
+  output_dir: packages/babel-preset-react
+  requires:
+    system_deps:
+      - git
+      - make
+      - libstdc++

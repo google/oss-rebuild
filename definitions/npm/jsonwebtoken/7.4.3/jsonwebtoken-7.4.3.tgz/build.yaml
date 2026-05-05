@@ -1,0 +1,44 @@
+# inference differs:
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v8.17.0/node-v8.17.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#  build diff:
+#   -/usr/bin/npx --package=npm@5.0.4 -c 'npm pack'
+#   +cd /src && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/auth0/node-jsonwebtoken
+    # Registry's `gitHead` (e54e53c) is "update changelog" — the commit
+    # right after the v7.4.3 tag (fb48dde). The publisher pushed the tag,
+    # added the changelog entry, then published. e54e53c only changes
+    # CHANGELOG.md from the v7.4.3 tag.
+    ref: e54e53c70ad3fa0d6b54f916ea4a2a2d5a8c47c2
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    # Era of node 8 / npm 5; npm 5.4.2 itself crashes on node ≥ 9, and
+    # alpine 3.21's bundled npm 10.x changes the tarball bytes.
+    - uses: npm/install-node
+      with:
+        nodeVersion: "8.17.0"
+  build:
+    - runs: cd /src && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++
+custom_stabilizers:
+  - exclude_path:
+      paths:
+        - "package/.history/**"
+        - "package/.npmignore"
+    reason: |
+      Upstream tarball contains a `.history/` directory (~30 files like
+      `verify_2017062503708.js`) — VS Code's "Local History" extension
+      dumps a snapshot of every save. None of those files exist in any
+      branch of the repo; they're maintainer working-tree noise. Same
+      story for `.npmignore` (npm consistently strips it from packs but
+      this version bundled an accidental copy). Both are build-time
+      metadata, no shipped code, safe to exclude.
+

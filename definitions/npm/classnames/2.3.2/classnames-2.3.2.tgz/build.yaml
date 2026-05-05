@@ -1,0 +1,29 @@
+# inference differs:
+#   repo: https://github.com/JedWatson/classnames (inferred: https://github.com/jedwatson/classnames)
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  source diff:
+#   -git clone https://github.com/jedwatson/classnames .
+#   +git clone https://github.com/JedWatson/classnames .
+#    git checkout --force 'b6d2a5a7cd8db240523c49ab735ef677ee9dddee'
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v16.18.0/node-v16.18.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#  build diff:
+#   -/usr/bin/npx --package=npm@8.19.1 -c 'npm pack'
+#   +cd /src && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/JedWatson/classnames
+    ref: b6d2a5a7cd8db240523c49ab735ef677ee9dddee
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "16.18.0"
+  build:
+    - runs: cd /src && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

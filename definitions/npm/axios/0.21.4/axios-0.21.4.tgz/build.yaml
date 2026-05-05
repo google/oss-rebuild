@@ -1,0 +1,40 @@
+# inference differs:
+#   ref: fc15665cc372bc7d2c59901e04c216c590364a67 (inferred: 66c46020bd01b39081259ae74edc2afc283818fa)
+#  source diff:
+#    git clone https://github.com/axios/axios .
+#   -git checkout --force '66c46020bd01b39081259ae74edc2afc283818fa'
+#   +git checkout --force 'fc15665cc372bc7d2c59901e04c216c590364a67'
+#  deps diff:
+#   -wget -O - https://unofficial-builds.nodejs.org/download/release/v12.21.0/node-v12.21.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@7.20.3 -c 'npm_config_registry=http://npm:2021-09-06T15:35:43Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@7.20.3 -c 'npm run build && rm -rf node_modules && npm pack'
+#   +/usr/bin/npx --package=npm@6.14.18 -c 'npm pack'
+npm_pack_build:
+  location:
+    repo: https://github.com/axios/axios
+    # Registry's `gitHead` (84f009d8...) isn't in the public repo. The
+    # v0.21.4 tag (66c4602) is a merge whose tree includes post-tag
+    # commits the published wheel doesn't (cd7ff04 added `status:` to
+    # enhanceError.js, c26762f added `"types"` to package.json). The
+    # actual release commit `fc15665` ("[Releasing] v0.21.4") sits on
+    # top of c2714f0 ("README typo fix") and 0fc7248 ("fix json
+    # transform"); its tree has version=0.21.4, freshly-rebuilt dist/
+    # files with the `axios v0.21.4` banner, and none of cd7ff04 /
+    # c26762f. `npm pack` against fc15665 reproduces upstream except
+    # for one CHANGELOG.md typo fix the publisher hand-applied before
+    # publishing — see the custom stabilizer below.
+    ref: fc15665cc372bc7d2c59901e04c216c590364a67
+  npm_version: "6.14.18"
+custom_stabilizers:
+  - replace_pattern:
+      paths: ["package/CHANGELOG.md"]
+      pattern: "backward compatability and complying"
+      replace: "backward compatibility and complying"
+    reason: |
+      The fc15665 release commit's CHANGELOG.md still says
+      "backward compatability" (typo). Upstream wheel says
+      "compatibility" — the publisher hand-fixed the typo in the
+      working tree before `npm pack`, but never committed the fix; it
+      didn't land in the repo until 008dd9d (a v0.27.0 release commit
+      in 2022). Normalize so the rebuild matches upstream.

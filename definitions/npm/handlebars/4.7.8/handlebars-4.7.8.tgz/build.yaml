@@ -1,0 +1,40 @@
+# inference differs:
+#   requires.system_deps: added libstdc++ (vs inferred)
+#  deps diff:
+#    wget -O - https://unofficial-builds.nodejs.org/download/release/v18.16.1/node-v18.16.1-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@9.5.1 -c 'npm_config_registry=http://npm:2023-08-01T21:19:12Z@TIMEWARP npm install --force --no-audit'
+#   +/usr/local/bin/npx --package=npm@9.5.1 -c 'npm_config_registry=http://npm:2023-08-01T21:19:13Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@9.5.1 -c 'npm run build && rm -rf node_modules && npm pack'
+#   +cd /src && \
+#   +  ./node_modules/.bin/grunt build uglify copy:dist copy:components copy:cdnjs && \
+#   +  /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/handlebars-lang/handlebars.js
+    ref: 8dc3d2517b41d12b1e06f88a449f30d27c137c21
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "18.16.1"
+    - uses: npm/install
+      with:
+        npmVersion: "9.5.1"
+        registryTime: "2023-08-01T21:19:13Z"
+        locator: /usr/local/bin/
+  build:
+    # `grunt build` produces dist/{amd,cjs}/. The release task adds the
+    # minified bundles (`dist/*.min.js`). Run the release sub-tasks
+    # directly — `release` itself includes `test:min`, which needs the
+    # mustache spec submodule we don't have.
+    - runs: |
+        cd /src && \
+          ./node_modules/.bin/grunt build uglify copy:dist copy:components copy:cdnjs && \
+          /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

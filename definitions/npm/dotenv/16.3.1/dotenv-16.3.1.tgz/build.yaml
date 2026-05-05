@@ -1,0 +1,7 @@
+# inference differs:
+#   npm_version: 9.8.1 (inferred: 9.6.6)
+npm_pack_build:
+  location:
+    repo: https://github.com/motdotla/dotenv
+    ref: b13ca7bbdae868e2565db1188a033761ff59cb47
+  npm_version: "9.8.1"

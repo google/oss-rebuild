@@ -1,0 +1,53 @@
+# inference fails: No NPM version
+flow:
+  location:
+    repo: https://github.com/babel/babel
+    ref: b4b9942a6cde0685c222eb3412347880aae40ad5
+    dir: packages/babel-runtime
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "20.8.1"
+    # corepack is bundled with node 20; enable it to get yarn 3.6.2 (the
+    # `packageManager` entry in the root package.json).
+    - runs: corepack enable && corepack prepare yarn@3.6.2 --activate
+    # Point yarn at the timewarped npm registry. yarn 3 reads
+    # YARN_NPM_REGISTRY_SERVER for installs and ignores `npm config`.
+    - runs: |
+        export YARN_NPM_REGISTRY_SERVER=http://npm:2023-10-11T18:51:25Z@127.0.0.1:8080
+        # yarn 3 refuses http registries by default; whitelist the timewarp.
+        export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+        cd /src && YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+  build:
+    # `make prepublish` would also run set-module-type and tests; we
+    # mirror just the parts that affect the published artifact:
+    #   1. set-module-type.js commonjs — writes `lib/package.json` files
+    #      with `{ "type": "commonjs" }` (used by node module resolution).
+    #   2. make prepublish-build — runs gulp build-bundle, which
+    #      generates the runtime helpers under packages/babel-runtime/helpers/.
+    #   3. set-module-type.js clean — removes those `lib/package.json`
+    #      files. Upstream's tarball doesn't include `lib/package.json`,
+    #      so we must run clean before pack.
+    #   4. yarn pack — triggers the babel `plugin-conditions`
+    #      `beforeWorkspacePacking` hook, which strips the `conditions`
+    #      block from the published package.json. `npm pack` would not
+    #      run that hook.
+    - runs: |
+        cd /src && \
+          export YARN_NPM_REGISTRY_SERVER=http://npm:2023-10-11T18:51:25Z@127.0.0.1:8080
+          export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+          node scripts/set-module-type.js commonjs && \
+          NODE_ENV=production BABEL_ENV=production STRIP_BABEL_8_FLAG=true \
+            IS_PUBLISH=true make prepublish-build && \
+          node scripts/set-module-type.js clean && \
+          cd packages/babel-runtime && yarn pack --out babel-runtime-7.23.2.tgz
+  output_dir: packages/babel-runtime
+  requires:
+    system_deps:
+      - git
+      - make
+      # node v20 musl needs the C++ runtime (alpine 3.21's libstdc++ ships
+      # the symbols `unofficial-builds.nodejs.org` was built against).
+      - libstdc++

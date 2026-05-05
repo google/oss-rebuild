@@ -1,0 +1,22 @@
+# inference fails: No NPM version
+flow:
+  location:
+    repo: https://github.com/vuejs/vuex
+    ref: 9039c2169634925682ffcb21c57f5df355e16ad1
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "12.20.1"
+    # vuex publishes via `yarn publish` (see scripts/release.js); use
+    # `yarn pack` to match the upstream tar layout (explicit dir entries,
+    # `files` glob semantics).
+    - runs: /usr/local/bin/npm install -g yarn@1.22.5
+  build:
+    - runs: cd /src && /usr/local/bin/yarn pack --filename vuex-3.6.2.tgz
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

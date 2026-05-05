@@ -1,0 +1,59 @@
+# inference differs:
+#  deps diff:
+#   -wget -O - https://unofficial-builds.nodejs.org/download/release/v17.3.0/node-v17.3.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@8.3.0 -c 'npm_config_registry=http://npm:2022-01-05T00:08:33Z@TIMEWARP npm install --force --no-audit'
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v16.13.2/node-v16.13.2-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +/usr/local/bin/npm install -g yarn@1.22.19
+#   +/usr/local/bin/npx --package=npm@8.1.2 -c 'npm_config_registry=http://npm:2022-01-05T00:08:34Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@8.3.0 -c 'npm run build && rm -rf node_modules && npm pack'
+#   +git checkout 90c8c47^ -- factoryWithTypeCheckers.js
+#   +/usr/local/bin/npx --package=npm@8.1.2 -c 'npm run build'
+#   +git checkout 70330a4430ba74467b41b8b4aa8c97a4814327a9 -- factoryWithTypeCheckers.js
+#   +/usr/local/bin/npx --package=npm@8.1.2 -c 'npm pack'
+flow:
+  location:
+    repo: https://github.com/facebook/prop-types
+    ref: 70330a4430ba74467b41b8b4aa8c97a4814327a9
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "16.13.2"
+    # The "build" script is "yarn umd && yarn umd-min"; need yarn on PATH.
+    - runs: /usr/local/bin/npm install -g yarn@1.22.19
+    - uses: npm/install
+      with:
+        npmVersion: "8.1.2"
+        registryTime: "2022-01-05T00:08:34Z"
+        locator: /usr/local/bin/
+  build:
+    # The published wheel is a Frankenstein:
+    #   * Sources match v15.8.1 (commit 70330a4), which includes commit
+    #     90c8c47 ("[Fix] ... call `hasOwnProperty` properly") that
+    #     rewrote `checkerResult.data.hasOwnProperty(...)` to
+    #     `checkerResult.data && has(checkerResult.data, ...)`.
+    #   * The bundled prop-types.js still carries the *pre-fix*
+    #     `.hasOwnProperty(...)` form, i.e. it was built before 90c8c47
+    #     was applied.
+    # Maintainer must have published with a stale prop-types.js in their
+    # working tree. To reproduce: revert factoryWithTypeCheckers.js to
+    # 90c8c47^ (b93deca) just for the bundle build, then restore it to
+    # v15.8.1 before pack so the published source matches.
+    - runs: git checkout 90c8c47^ -- factoryWithTypeCheckers.js
+    - uses: npm/npx
+      with:
+        command: "npm run build"
+        npmVersion: "8.1.2"
+        dir: ""
+        locator: /usr/local/bin/
+    - runs: git checkout 70330a4430ba74467b41b8b4aa8c97a4814327a9 -- factoryWithTypeCheckers.js
+    - uses: npm/npx
+      with:
+        command: "npm pack"
+        npmVersion: "8.1.2"
+        dir: ""
+        locator: /usr/local/bin/
+  output_dir: ""
