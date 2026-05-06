@@ -291,6 +291,7 @@ func TestBuiltinCommand_GitCheckout(t *testing.T) {
 		name     string
 		location Location
 		buildEnv BuildEnv
+		with     map[string]string
 		want     string
 	}{
 		{
@@ -311,11 +312,21 @@ func TestBuiltinCommand_GitCheckout(t *testing.T) {
 			buildEnv: BuildEnv{HasRepo: true},
 			want:     "git checkout --force '0000'",
 		},
+		{
+			name: "fresh_checkout_crlf",
+			location: Location{
+				Repo: "https://github.com/test/repo",
+				Ref:  "deadbeef",
+			},
+			buildEnv: BuildEnv{HasRepo: false},
+			with:     map[string]string{"crlf": "true"},
+			want:     "git clone -c core.autocrlf=true https://github.com/test/repo .\ngit checkout --force 'deadbeef'",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, err := flow.Step{Uses: "git-checkout"}.Resolve(nil, flow.Data{"Location": tt.location, "BuildEnv": tt.buildEnv})
+			c, err := flow.Step{Uses: "git-checkout", With: tt.with}.Resolve(nil, flow.Data{"Location": tt.location, "BuildEnv": tt.buildEnv})
 			if err != nil {
 				t.Fatalf("Step.Resolve failed: %v", err)
 			}

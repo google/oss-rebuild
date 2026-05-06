@@ -89,7 +89,7 @@ func init() {
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{ if not .BuildEnv.HasRepo -}}
-				git clone {{.Location.Repo}} .
+				git clone {{ if eq .With.crlf "true" }}-c core.autocrlf=true {{ end }}{{.Location.Repo}} .
 				{{ end -}}
 				git checkout --force '{{.Location.Ref}}'`)[1:],
 			Needs: []string{"git"},
