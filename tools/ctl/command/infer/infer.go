@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +51,7 @@ type Config struct {
 	BootstrapBucket  string
 	BootstrapVersion string
 	GitCacheURL      string
+	MemoryLimit      string
 }
 
 // Validate ensures the configuration is valid.
@@ -84,8 +87,42 @@ func isCloudRun(u *url.URL) bool {
 	return strings.HasSuffix(u.Host, ".run.app")
 }
 
+// parseMemoryLimit accepts a docker-style size suffix (g/G, m/M, k/K) and
+// returns the equivalent number of bytes. Empty input is reported as 0.
+func parseMemoryLimit(s string) (int64, error) {
+	if s == "" {
+		return 0, nil
+	}
+	s = strings.TrimSpace(s)
+	mult := int64(1)
+	switch s[len(s)-1] {
+	case 'g', 'G':
+		mult = 1 << 30
+		s = s[:len(s)-1]
+	case 'm', 'M':
+		mult = 1 << 20
+		s = s[:len(s)-1]
+	case 'k', 'K':
+		mult = 1 << 10
+		s = s[:len(s)-1]
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		return 0, errors.Wrapf(err, "parsing memory limit %q", s)
+	}
+	if n < 0 {
+		return 0, errors.New("memory limit must be non-negative")
+	}
+	return n * mult, nil
+}
+
 // Handler contains the business logic for the infer command.
 func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error) {
+	if n, err := parseMemoryLimit(cfg.MemoryLimit); err != nil {
+		return nil, err
+	} else if n > 0 {
+		debug.SetMemoryLimit(n)
+	}
 	var strategyHint *schema.StrategyOneOf
 	if cfg.RepoHint != "" {
 		strategyHint = &schema.StrategyOneOf{
@@ -303,5 +340,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.BootstrapBucket, "bootstrap-bucket", "", "the gcs bucket where bootstrap tools are stored")
 	set.StringVar(&cfg.BootstrapVersion, "bootstrap-version", "", "the version of bootstrap tools to use")
 	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
+	set.StringVar(&cfg.MemoryLimit, "memory", "", "soft cap on this process's resident memory (e.g. 20g, 8192m). Implemented via Go's runtime/debug.SetMemoryLimit; lets the GC throttle before huge in-memory git clones (memory.NewStorage) take down the host.")
 	return set
 }
