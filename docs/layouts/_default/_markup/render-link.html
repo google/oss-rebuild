@@ -17,5 +17,10 @@
   {{- end -}}
 {{- else -}}
   {{- /* Not a .md link, pass through normally */ -}}
-  <a href="{{ $destination | relURL }}"{{- with $title }} title="{{ . }}"{{- end }}>{{ $text | safeHTML }}</a>
+  {{- $href := $destination | relURL -}}
+  {{- if strings.HasPrefix $destination "#" -}}
+    {{- /* Bypass relURL for bare anchors to prevent navigating to the site root */ -}}
+    {{- $href = $destination -}}
+  {{- end -}}
+  <a href="{{ $href }}"{{- with $title }} title="{{ . }}"{{- end }}>{{ $text | safeHTML }}</a>
 {{- end -}}
