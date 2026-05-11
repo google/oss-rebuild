@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/google/oss-rebuild/tools/ctl/command/agentexport"
+	"github.com/google/oss-rebuild/tools/ctl/command/annotateinferencediff"
 	"github.com/google/oss-rebuild/tools/ctl/command/export"
 	"github.com/google/oss-rebuild/tools/ctl/command/getgradlegav"
 	"github.com/google/oss-rebuild/tools/ctl/command/getresults"
@@ -55,6 +56,7 @@ func init() {
 	rootCmd.AddCommand(agentexport.Command())
 	// Rebuild logic
 	rootCmd.AddCommand(infer.Command())
+	rootCmd.AddCommand(annotateinferencediff.Command())
 	rootCmd.AddCommand(getgradlegav.Command())
 	// Infra tools
 	rootCmd.AddCommand(migrate.Command())
