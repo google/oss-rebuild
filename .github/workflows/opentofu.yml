@@ -8,6 +8,9 @@ on:
     branches: ["main"]
     paths: ["**/*.tf"]
 
+permissions:
+  contents: read
+
 jobs:
   fmt:
     runs-on: ubuntu-latest
