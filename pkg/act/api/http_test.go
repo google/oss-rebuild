@@ -18,10 +18,24 @@ import (
 
 	"github.com/google/oss-rebuild/internal/urlx"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
+
+// parseStatusBody decodes a protojson-encoded google.rpc.Status response body.
+// Direct byte comparison on protojson output is unsafe (the encoder
+// intentionally varies whitespace), so tests assert on the parsed proto.
+func parseStatusBody(t *testing.T, body []byte) *status.Status {
+	t.Helper()
+	sp := &spb.Status{}
+	if err := protojson.Unmarshal(body, sp); err != nil {
+		t.Fatalf("protojson.Unmarshal(%q): %v", string(body), err)
+	}
+	return status.FromProto(sp)
+}
 
 type FooRequest struct {
 	Foo string `form:",required"`
@@ -241,19 +255,22 @@ func TestHandlerWithError(t *testing.T) {
 		name           string
 		handlerErr     error
 		expectedStatus int
-		expectedBody   string
+		expectedCode   codes.Code
+		expectedMsg    string
 	}{
 		{
 			name:           "normal error",
 			handlerErr:     errors.New("foo"),
 			expectedStatus: http.StatusInternalServerError,
-			expectedBody:   "foo\n",
+			expectedCode:   codes.Unknown,
+			expectedMsg:    "foo",
 		},
 		{
 			name:           "grpc error",
 			handlerErr:     AsStatus(codes.InvalidArgument, errors.New("foo")),
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "foo\n",
+			expectedCode:   codes.InvalidArgument,
+			expectedMsg:    "foo",
 		},
 	}
 	for _, tc := range tests {
@@ -271,8 +288,12 @@ func TestHandlerWithError(t *testing.T) {
 				t.Errorf("Expected status code %d (%s), got %d (%s)", tc.expectedStatus, http.StatusText(tc.expectedStatus), resp.StatusCode, http.StatusText(resp.StatusCode))
 			}
 			b, _ := io.ReadAll(resp.Body)
-			if string(b) != tc.expectedBody {
-				t.Errorf("Expected body '%s', got '%s'", tc.expectedBody, string(b))
+			st := parseStatusBody(t, b)
+			if st.Code() != tc.expectedCode {
+				t.Errorf("status code = %v, want %v", st.Code(), tc.expectedCode)
+			}
+			if st.Message() != tc.expectedMsg {
+				t.Errorf("status message = %q, want %q", st.Message(), tc.expectedMsg)
 			}
 		})
 	}
@@ -469,21 +490,26 @@ func TestHandler_Errors(t *testing.T) {
 		handlerError             error
 		expectedHTTPStatus       int
 		expectedRetryAfterHeader string
-		expectedResponseBody     string
+		expectedCode             codes.Code
+		expectedMessage          string
+		expectedRetryInfo        *time.Duration
+		expectedErrorInfoReason  string
 	}{
 		{
 			name:                     "normal error",
 			handlerError:             AsStatus(codes.NotFound, errors.New("not found")),
 			expectedHTTPStatus:       http.StatusNotFound,
 			expectedRetryAfterHeader: "",
-			expectedResponseBody:     "not found\n",
+			expectedCode:             codes.NotFound,
+			expectedMessage:          "not found",
 		},
 		{
 			name:                     "normal error (non-grpc)",
 			handlerError:             errors.New("regular error"),
 			expectedHTTPStatus:       http.StatusInternalServerError,
 			expectedRetryAfterHeader: "",
-			expectedResponseBody:     "regular error\n",
+			expectedCode:             codes.Unknown,
+			expectedMessage:          "regular error",
 		},
 		{
 			name: "unavailable with retry info",
@@ -492,14 +518,17 @@ func TestHandler_Errors(t *testing.T) {
 				RetryAfter(45*time.Second)),
 			expectedHTTPStatus:       http.StatusServiceUnavailable,
 			expectedRetryAfterHeader: "45",
-			expectedResponseBody:     "service unavailable\n",
+			expectedCode:             codes.Unavailable,
+			expectedMessage:          "service unavailable",
+			expectedRetryInfo:        timePtr(45 * time.Second),
 		},
 		{
 			name:                     "unavailable without retry info",
 			handlerError:             AsStatus(codes.Unavailable, errors.New("unavailable")),
 			expectedHTTPStatus:       http.StatusServiceUnavailable,
 			expectedRetryAfterHeader: "", // no header should be set
-			expectedResponseBody:     "unavailable\n",
+			expectedCode:             codes.Unavailable,
+			expectedMessage:          "unavailable",
 		},
 		{
 			name: "retry info with zero duration",
@@ -508,7 +537,9 @@ func TestHandler_Errors(t *testing.T) {
 				RetryAfter(0)),
 			expectedHTTPStatus:       http.StatusServiceUnavailable,
 			expectedRetryAfterHeader: "", // zero duration should not set header
-			expectedResponseBody:     "unavailable\n",
+			expectedCode:             codes.Unavailable,
+			expectedMessage:          "unavailable",
+			expectedRetryInfo:        timePtr(0),
 		},
 		{
 			name: "multiple details with retry info",
@@ -518,7 +549,10 @@ func TestHandler_Errors(t *testing.T) {
 				&errdetails.ErrorInfo{Reason: "QUOTA_ERROR"}),
 			expectedHTTPStatus:       http.StatusTooManyRequests,
 			expectedRetryAfterHeader: "120",
-			expectedResponseBody:     "resource exhausted\n",
+			expectedCode:             codes.ResourceExhausted,
+			expectedMessage:          "resource exhausted",
+			expectedRetryInfo:        timePtr(120 * time.Second),
+			expectedErrorInfoReason:  "QUOTA_ERROR",
 		},
 	}
 	for _, tc := range tests {
@@ -533,26 +567,57 @@ func TestHandler_Errors(t *testing.T) {
 				t.Fatalf("Request returned an error: %v", err)
 			}
 			defer resp.Body.Close()
-			// Check HTTP status
 			if resp.StatusCode != tc.expectedHTTPStatus {
 				t.Errorf("status code = %d (%s), want %d (%s)",
 					resp.StatusCode, http.StatusText(resp.StatusCode),
 					tc.expectedHTTPStatus, http.StatusText(tc.expectedHTTPStatus))
 			}
-			// Check Retry-After header
 			retryAfterHeader := resp.Header.Get("Retry-After")
 			if retryAfterHeader != tc.expectedRetryAfterHeader {
 				t.Errorf("Retry-After header = %q, want %q",
 					retryAfterHeader, tc.expectedRetryAfterHeader)
 			}
-			// Check response body
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				t.Fatalf("Error reading response body: %v", err)
 			}
-			if string(body) != tc.expectedResponseBody {
-				t.Errorf("response body = %q, want %q",
-					string(body), tc.expectedResponseBody)
+			st := parseStatusBody(t, body)
+			if st.Code() != tc.expectedCode {
+				t.Errorf("status code = %v, want %v", st.Code(), tc.expectedCode)
+			}
+			if st.Message() != tc.expectedMessage {
+				t.Errorf("status message = %q, want %q", st.Message(), tc.expectedMessage)
+			}
+			details := st.Details()
+			if tc.expectedRetryInfo != nil {
+				var ri *errdetails.RetryInfo
+				for _, d := range details {
+					if r, ok := d.(*errdetails.RetryInfo); ok {
+						ri = r
+						break
+					}
+				}
+				if ri == nil {
+					t.Errorf("expected RetryInfo detail, got none")
+				} else if ri.RetryDelay.AsDuration() != *tc.expectedRetryInfo {
+					t.Errorf("retry duration = %v, want %v",
+						ri.RetryDelay.AsDuration(), *tc.expectedRetryInfo)
+				}
+			}
+			if tc.expectedErrorInfoReason != "" {
+				var ei *errdetails.ErrorInfo
+				for _, d := range details {
+					if e, ok := d.(*errdetails.ErrorInfo); ok {
+						ei = e
+						break
+					}
+				}
+				if ei == nil {
+					t.Errorf("expected ErrorInfo detail, got none")
+				} else if ei.Reason != tc.expectedErrorInfoReason {
+					t.Errorf("ErrorInfo.Reason = %q, want %q",
+						ei.Reason, tc.expectedErrorInfoReason)
+				}
 			}
 		})
 	}
@@ -583,11 +648,14 @@ func TestStubHandlerRoundTrip_RetryAfter(t *testing.T) {
 			expectedGRPCCode:      codes.Unavailable,
 		},
 		{
-			name: "round-trip with zero retry (should not preserve)",
+			name: "round-trip with zero retry (body preserves zero duration)",
 			handlerError: AsStatus(codes.Unavailable,
 				errors.New("unavailable"),
 				RetryAfter(0)),
-			expectedRetryDuration: nil, // zero should not create retry header or be parsed
+			// The Retry-After header is still suppressed for zero durations
+			// (handler-side, HTTP semantic), but the protojson Status body
+			// carries the attached RetryInfo detail through losslessly.
+			expectedRetryDuration: timePtr(0),
 			expectedGRPCCode:      codes.Unavailable,
 		},
 		{

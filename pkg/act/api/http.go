@@ -20,8 +20,10 @@ import (
 	"github.com/google/oss-rebuild/pkg/act/api/form"
 	"github.com/pkg/errors"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -61,21 +63,27 @@ func Stub[I act.Input, O any](client httpx.BasicClient, u *url.URL) StubFunc[I, 
 			return nil, errors.Wrap(err, "making http request")
 		}
 		defer resp.Body.Close()
-		switch resp.StatusCode {
-		case http.StatusOK: // Success: Skip error generation
-		case http.StatusServiceUnavailable:
-			if retryAfterStr := resp.Header.Get("Retry-After"); retryAfterStr != "" {
-				if seconds, err := strconv.Atoi(retryAfterStr); err == nil && seconds > 0 {
-					d := time.Duration(seconds) * time.Second
-					return nil, AsStatus(codes.Unavailable, ErrUnavailable, RetryAfter(d))
-				}
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			if st, ok := readStatusFromBody(body); ok && st.Code() != codes.OK {
+				return nil, st.Err()
 			}
-			return nil, ErrUnavailable
-		case http.StatusTooManyRequests:
-			return nil, ErrExhausted
-		default:
-			b, _ := io.ReadAll(resp.Body)
-			return nil, errors.Wrap(errors.Wrap(ErrNotOK, resp.Status), string(b))
+			// Fallback for servers that don't emit a Status body (or non-parseable
+			// body, e.g. load-balancer error pages). Synthesize from HTTP code.
+			switch resp.StatusCode {
+			case http.StatusServiceUnavailable:
+				if retryAfterStr := resp.Header.Get("Retry-After"); retryAfterStr != "" {
+					if seconds, err := strconv.Atoi(retryAfterStr); err == nil && seconds > 0 {
+						d := time.Duration(seconds) * time.Second
+						return nil, AsStatus(codes.Unavailable, ErrUnavailable, RetryAfter(d))
+					}
+				}
+				return nil, ErrUnavailable
+			case http.StatusTooManyRequests:
+				return nil, ErrExhausted
+			default:
+				return nil, errors.Wrap(errors.Wrap(ErrNotOK, resp.Status), string(body))
+			}
 		}
 		var o O
 		if err := json.NewDecoder(resp.Body).Decode(&o); err != nil {
@@ -87,6 +95,19 @@ func Stub[I act.Input, O any](client httpx.BasicClient, u *url.URL) StubFunc[I, 
 
 func StubFromHandler[I act.Input, O any, D act.Deps](client httpx.BasicClient, u *url.URL, handler HandlerFunc[I, O, D]) StubFunc[I, O] {
 	return Stub[I, O](client, u)
+}
+
+// readStatusFromBody decodes a gRPC Status proto from an HTTP error response
+// body. Returns (status, true) on successful parse.
+func readStatusFromBody(b []byte) (*status.Status, bool) {
+	if len(b) == 0 {
+		return nil, false
+	}
+	sp := &spb.Status{}
+	if err := protojson.Unmarshal(b, sp); err != nil {
+		return nil, false
+	}
+	return status.FromProto(sp), true
 }
 
 // AsStatus creates a gRPC status with the given code and error message.
@@ -209,13 +230,21 @@ func handleUsingResponder[I act.Input, O any, D act.Deps](initDeps InitDeps[D], 
 		}
 		if httpStatus != http.StatusOK {
 			log.Println(s.Err())
-			// NOTE: Use s.Message() as the body, instead of err.Error() This is
-			// in case err was already a grpc status, then calling err.Error()
-			// would be a verbose grpc error message.
-			// TODO: Use a structured error type to avoid including unwanted
-			// data. grpc status objects is one option. Another might be using
-			// constant error messages with no dynamic information
-			http.Error(rw, s.Message(), httpStatus)
+			// Emit the gRPC Status proto as protojson so stubs can recover the
+			// full code/message/details on the other side. The HTTP status code
+			// is the wire-level tag (success vs. error); the body carries the
+			// structured detail. Retry-After is also set above for HTTP-aware
+			// infra (proxies/load balancers) that doesn't read the body.
+			rw.Header().Set("Content-Type", "application/json")
+			rw.WriteHeader(httpStatus)
+			body, err := protojson.Marshal(s.Proto())
+			if err != nil {
+				log.Printf("encoding status proto: %v", err)
+				return
+			}
+			if _, err := rw.Write(body); err != nil {
+				log.Printf("writing status body: %v", err)
+			}
 			return
 		}
 		if o != nil {
