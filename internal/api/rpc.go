@@ -50,6 +50,10 @@ func StubFromHandler[I act.Input, O any, D act.Deps](client httpx.BasicClient, u
 	return actapi.StubFromHandler(client, u, handler)
 }
 
+func Local[I act.Input, O any, D act.Deps](h HandlerT[I, O, D], d D) StubT[I, O] {
+	return actapi.Local(h, d)
+}
+
 func WithTimeout[I act.Input, O any, D act.Deps](timeout time.Duration, handler HandlerT[I, O, D]) HandlerT[I, O, D] {
 	return actapi.WithTimeout(timeout, handler)
 }
