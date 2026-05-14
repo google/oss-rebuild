@@ -1,7 +1,7 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package archive
+package archive_test
 
 import (
 	"archive/tar"
@@ -10,29 +10,19 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 )
 
-// buildTarWithSymlink creates a tar reader containing a single symlink entry.
-func buildTarWithSymlink(name, linkname string) *tar.Reader {
-	buf := &bytes.Buffer{}
-	tw := tar.NewWriter(buf)
-	_ = tw.WriteHeader(&tar.Header{
-		Typeflag: tar.TypeSymlink,
-		Name:     name,
-		Linkname: linkname,
-	})
-	_ = tw.Close()
-	return tar.NewReader(bytes.NewReader(buf.Bytes()))
-}
-
-// TestExtractTarSymlinkTraversal verifies that symlink entries whose destination
-// path or target escapes the extraction root are silently skipped rather than
-// written to the filesystem.
-func TestExtractTarSymlinkTraversal(t *testing.T) {
+// TestExtractTarSymlink verifies that symlink entries whose destination path
+// or target escapes the extraction root are silently skipped, while
+// well-formed symlinks within the root are extracted.
+func TestExtractTarSymlink(t *testing.T) {
 	tests := []struct {
-		desc     string
-		name     string
-		linkname string
+		desc        string
+		name        string
+		linkname    string
+		wantEntries int
 	}{
 		{
 			desc:     "symlink destination escapes via dotdot",
@@ -54,36 +44,34 @@ func TestExtractTarSymlinkTraversal(t *testing.T) {
 			name:     "../../link",
 			linkname: "../../../../etc/shadow",
 		},
+		{
+			desc:        "well-formed symlink within root",
+			name:        "mylink",
+			linkname:    "target_file",
+			wantEntries: 1,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
+			buf, err := archivetest.TarFile([]archive.TarEntry{{
+				Header: &tar.Header{
+					Typeflag: tar.TypeSymlink,
+					Name:     tc.name,
+					Linkname: tc.linkname,
+				},
+			}})
+			if err != nil {
+				t.Fatalf("TarFile() error: %v", err)
+			}
 			fs := memfs.New()
-			tr := buildTarWithSymlink(tc.name, tc.linkname)
-			if err := ExtractTar(tr, fs, ExtractOptions{SubDir: "."}); err != nil {
+			tr := tar.NewReader(bytes.NewReader(buf.Bytes()))
+			if err := archive.ExtractTar(tr, fs, archive.ExtractOptions{SubDir: "."}); err != nil {
 				t.Fatalf("ExtractTar() returned unexpected error: %v", err)
 			}
-			// Verify that no symlink was created inside the memfs root.
 			entries, _ := fs.ReadDir(filepath.Clean("."))
-			if len(entries) != 0 {
-				t.Errorf("ExtractTar() created %d unexpected entries in root: %v", len(entries), entries)
+			if len(entries) != tc.wantEntries {
+				t.Errorf("ExtractTar() created %d entries, want %d: %v", len(entries), tc.wantEntries, entries)
 			}
 		})
-	}
-}
-
-// TestExtractTarSymlinkSafe verifies that a well-formed symlink (both name and
-// target within the extraction root) is extracted successfully.
-func TestExtractTarSymlinkSafe(t *testing.T) {
-	fs := memfs.New()
-	tr := buildTarWithSymlink("mylink", "target_file")
-	if err := ExtractTar(tr, fs, ExtractOptions{SubDir: "."}); err != nil {
-		t.Fatalf("ExtractTar() returned unexpected error: %v", err)
-	}
-	entries, err := fs.ReadDir(filepath.Clean("."))
-	if err != nil {
-		t.Fatalf("ReadDir() error: %v", err)
-	}
-	if len(entries) != 1 {
-		t.Errorf("ExtractTar() created %d entries, want 1", len(entries))
 	}
 }
