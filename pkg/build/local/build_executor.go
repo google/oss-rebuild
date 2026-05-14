@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/bufiox"
+	"github.com/google/oss-rebuild/internal/fileio"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -331,9 +332,9 @@ func (e *DockerBuildExecutor) uploadAssets(ctx context.Context, plan *DockerBuil
 
 // uploadFile uploads a local file to the asset store.
 func (e *DockerBuildExecutor) uploadFile(ctx context.Context, store rebuild.AssetStore, asset rebuild.Asset, filePath string) error {
-	file, err := os.Open(filePath)
+	file, err := fileio.OpenRegular(filePath)
 	if err != nil {
-		return errors.Wrapf(err, "failed to open file %s", filePath)
+		return errors.Wrapf(err, "failed to open file for upload %s", filePath)
 	}
 	defer file.Close()
 	writer, err := store.Writer(ctx, asset)

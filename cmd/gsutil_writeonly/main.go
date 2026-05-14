@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/fileio"
 	"github.com/pkg/errors"
 )
 
@@ -46,7 +47,7 @@ func copyFile(ctx context.Context, c *storage.Client, src, dest string) error {
 			return err
 		}
 	} else {
-		srcR, err = os.Open(src)
+		srcR, err = fileio.OpenRegular(src)
 		if err != nil {
 			return err
 		}
