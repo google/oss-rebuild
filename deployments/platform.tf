@@ -162,7 +162,7 @@ resource "google_storage_notification" "attestation-notification" {
   payload_format = "JSON_API_V1"
   topic          = google_pubsub_topic.attestation-topic.id
   event_types    = ["OBJECT_FINALIZE"]
-  depends_on     = [google_pubsub_topic_iam_binding.readers-can-read-from-attestation-topic, google_pubsub_topic_iam_binding.can-publish-to-attestation-topic]
+  depends_on     = [google_pubsub_topic_iam_member.readers-can-read-from-attestation-topic, google_pubsub_topic_iam_member.can-publish-to-attestation-topic]
 }
 
 resource "google_project_service" "cloudtasks" {
