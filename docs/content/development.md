@@ -12,7 +12,7 @@ This guide provides a comprehensive overview of how to run and develop OSS Rebui
 
 Benchmarks are the core unit of work for OSS Rebuild systems. They define specific sets of ecosystem, packages, versions, and artifacts to be rebuilt and verified. Taken together, these four values (ecosystem, package, version, artifact name) combine to represent a single rebuild goal, which OSS Rebuild refers to as a "Target".
 
-Benchmark files themselves are JSON documents that provide a structured manifest which runners use to orchestrate builds. The structure is definined in (defined in tools/benchmark/benchmark.go)
+Benchmark files themselves are JSON documents that provide a structured manifest which runners use to orchestrate builds. The structure is defined in (defined in tools/benchmark/benchmark.go)
 
 For example, a benchmark with one package and version would look like this:
 

@@ -57,7 +57,7 @@ The full stabilization process is simply the composition of all configured stabi
 stabilization(package) = stabilizerN(...(stabilizer2(stabilizer1(package))))
 ```
 
-And the equivalence between two pacakges is then the equality of their
+And the equivalence between two packages is then the equality of their
 independent stabilizations:
 
 ```
