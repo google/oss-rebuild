@@ -8,6 +8,9 @@ on:
     branches: ["main"]
     paths: ["**/*.md", "**/*.yml", "**/*.yaml"]
 
+permissions:
+  contents: read
+
 jobs:
   prettier:
     runs-on: ubuntu-latest
