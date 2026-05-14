@@ -70,362 +70,369 @@ resource "google_project_iam_custom_role" "bucket-viewer-role" {
   title       = "Bucket Viewer"
   permissions = ["storage.buckets.get", "storage.buckets.list"]
 }
-resource "google_storage_bucket_iam_binding" "git-cache-manages-git-cache" {
-  bucket  = google_storage_bucket.git-cache.name
-  role    = "roles/storage.objectAdmin"
-  members = [google_service_account.git-cache.member]
+resource "google_storage_bucket_iam_member" "git-cache-manages-git-cache" {
+  bucket = google_storage_bucket.git-cache.name
+  role   = "roles/storage.objectAdmin"
+  member = google_service_account.git-cache.member
 }
-resource "google_storage_bucket_iam_binding" "git-cache-views-git-cache" {
-  bucket  = google_storage_bucket.git-cache.name
-  role    = google_project_iam_custom_role.bucket-viewer-role.name
-  members = [google_service_account.git-cache.member]
+resource "google_storage_bucket_iam_member" "git-cache-views-git-cache" {
+  bucket = google_storage_bucket.git-cache.name
+  role   = google_project_iam_custom_role.bucket-viewer-role.name
+  member = google_service_account.git-cache.member
 }
-resource "google_storage_bucket_iam_binding" "cachers-read-git-cache" {
+resource "google_storage_bucket_iam_member" "cachers-read-git-cache" {
   bucket = google_storage_bucket.git-cache.name
   role   = "roles/storage.objectViewer"
-  members = [
-    google_service_account.crates-registry.member,
-  ]
+  member = google_service_account.crates-registry.member
 }
-resource "google_storage_bucket_iam_binding" "orchestrator-writes-attestations" {
-  bucket  = google_storage_bucket.attestations.name
-  role    = "roles/storage.objectCreator"
-  members = [google_service_account.orchestrator.member]
+resource "google_storage_bucket_iam_member" "orchestrator-writes-attestations" {
+  bucket = google_storage_bucket.attestations.name
+  role   = "roles/storage.objectCreator"
+  member = google_service_account.orchestrator.member
 }
-resource "google_storage_bucket_iam_binding" "analyzers-read-attestations" {
-  count  = !var.public && (var.enable_network_analyzer || var.enable_system_analyzer) ? 1 : 0
+resource "google_storage_bucket_iam_member" "analyzers-read-attestations" {
   bucket = google_storage_bucket.attestations.name
   role   = "roles/storage.objectViewer"
-  members = concat(
+  for_each = toset(!var.public ? concat(
     var.enable_network_analyzer ? [google_service_account.network-analyzer[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer[0].member] : [],
-  )
+  ) : [])
+  member = each.key
 }
-resource "google_storage_bucket_iam_binding" "attestors-manage-metadata" {
+resource "google_storage_bucket_iam_member" "attestors-manage-metadata" {
   bucket = google_storage_bucket.metadata.name
   role   = "roles/storage.objectAdmin"
-  members = concat(
+  for_each = toset(concat(
     [google_service_account.orchestrator.member],
     var.enable_network_analyzer ? [google_service_account.network-analyzer[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer[0].member] : []
-  )
+  ))
+  member = each.key
 }
-resource "google_storage_bucket_iam_binding" "attestors-write-debug" {
+resource "google_storage_bucket_iam_member" "attestors-write-debug" {
   bucket = google_storage_bucket.debug.name
   role   = "roles/storage.objectCreator"
-  members = concat(
+  for_each = toset(concat(
     [google_service_account.orchestrator.member],
     var.enable_network_analyzer ? [google_service_account.network-analyzer[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer[0].member] : []
-  )
+  ))
+  member = each.key
 }
-resource "google_storage_bucket_iam_binding" "builders-write-metadata" {
+resource "google_storage_bucket_iam_member" "builders-write-metadata" {
   bucket = google_storage_bucket.metadata.name
   role   = "roles/storage.objectCreator"
-  members = concat(
+  for_each = toset(concat(
     [google_service_account.builder-remote.member],
     var.enable_network_analyzer ? [google_service_account.network-analyzer-build[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer-build[0].member] : []
-  )
+  ))
+  member = each.key
 }
-resource "google_storage_bucket_iam_binding" "builders-use-logs" {
+resource "google_storage_bucket_iam_member" "builders-use-logs" {
   bucket = google_storage_bucket.logs.name
   role   = "roles/storage.objectUser"
-  members = concat(
+  for_each = toset(concat(
     [google_service_account.builder-remote.member],
     var.enable_network_analyzer ? [google_service_account.network-analyzer-build[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer-build[0].member] : []
-  )
+  ))
+  member = each.key
 }
-resource "google_storage_bucket_iam_binding" "builders-view-logs" {
+resource "google_storage_bucket_iam_member" "builders-view-logs" {
   bucket = google_storage_bucket.logs.name
   role   = google_project_iam_custom_role.bucket-viewer-role.name
-  members = concat(
+  for_each = toset(concat(
     [google_service_account.builder-remote.member],
     var.enable_network_analyzer ? [google_service_account.network-analyzer-build[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer-build[0].member] : []
-  )
+  ))
+  member = each.key
 }
-resource "google_storage_bucket_iam_binding" "orchestrator-manages-attestations" {
-  bucket  = google_storage_bucket.attestations.name
-  role    = "roles/storage.objectAdmin"
-  members = [google_service_account.orchestrator.member]
+resource "google_storage_bucket_iam_member" "orchestrator-manages-attestations" {
+  bucket = google_storage_bucket.attestations.name
+  role   = "roles/storage.objectAdmin"
+  member = google_service_account.orchestrator.member
 }
-resource "google_project_iam_binding" "orchestrator-uses-datastore" {
+resource "google_project_iam_member" "orchestrator-uses-datastore" {
   project = var.project
   role    = "roles/datastore.user"
-  members = [google_service_account.orchestrator.member]
+  member  = google_service_account.orchestrator.member
 }
-resource "google_storage_bucket_iam_binding" "builders-view-bootstrap-bucket" {
-  count  = var.public ? 0 : 1 // NOTE: Non-public objects must still be visible to the builder.
+resource "google_storage_bucket_iam_member" "builders-view-bootstrap-bucket" {
   bucket = google_storage_bucket.bootstrap-tools.name
   role   = "roles/storage.objectViewer"
-  members = concat([
+  for_each = toset(!var.public ? concat([
     google_service_account.builder-remote.member,
     google_service_account.builder-agent.member,
     ],
     var.enable_network_analyzer ? [google_service_account.network-analyzer-build[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer-build[0].member] : []
-  )
+  ) : [])
+  member = each.key
 }
-resource "google_project_iam_binding" "orchestrators-run-workloads-as-others" {
+resource "google_project_iam_member" "orchestrators-run-workloads-as-others" {
   project = var.project
   role    = "roles/iam.serviceAccountUser"
-  members = concat(
+  for_each = toset(concat(
     [google_service_account.orchestrator.member],
     var.enable_network_analyzer ? [google_service_account.network-analyzer[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer[0].member] : []
-  )
+  ))
+  member = each.key
 }
-resource "google_project_iam_binding" "orchestrators-run-gcb-builds" {
+resource "google_project_iam_member" "orchestrators-run-gcb-builds" {
   project = var.project
   role    = "roles/cloudbuild.builds.editor"
-  members = concat(
+  for_each = toset(concat(
     [google_service_account.orchestrator.member],
     var.enable_network_analyzer ? [google_service_account.network-analyzer[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer[0].member] : []
-  )
+  ))
+  member = each.key
 }
-resource "google_cloud_run_v2_service_iam_binding" "orchestrator-calls-inference" {
+resource "google_cloud_run_v2_service_iam_member" "orchestrator-calls-inference" {
   location = google_cloud_run_v2_service.inference.location
   project  = google_cloud_run_v2_service.inference.project
   name     = google_cloud_run_v2_service.inference.name
   role     = "roles/run.invoker"
-  members  = [google_service_account.orchestrator.member]
+  member   = google_service_account.orchestrator.member
 }
-resource "google_cloud_run_v2_service_iam_binding" "inference-calls-crates-registry" {
+resource "google_cloud_run_v2_service_iam_member" "inference-calls-crates-registry" {
   location = google_cloud_run_v2_service.crates-registry.location
   project  = google_cloud_run_v2_service.crates-registry.project
   name     = google_cloud_run_v2_service.crates-registry.name
   role     = "roles/run.invoker"
-  members  = [google_service_account.inference.member]
+  member   = google_service_account.inference.member
 }
-resource "google_kms_crypto_key_iam_binding" "attestors-read-signing-key" {
+resource "google_kms_crypto_key_iam_member" "attestors-read-signing-key" {
   crypto_key_id = google_kms_crypto_key.signing-key.id
   role          = "roles/cloudkms.viewer"
-  members = concat(
+  for_each = toset(concat(
     [google_service_account.orchestrator.member],
     var.enable_network_analyzer ? [google_service_account.network-analyzer[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer[0].member] : []
-  )
+  ))
+  member = each.key
 }
-resource "google_kms_crypto_key_iam_binding" "attestors-uses-signing-key" {
+resource "google_kms_crypto_key_iam_member" "attestors-uses-signing-key" {
   crypto_key_id = google_kms_crypto_key.signing-key.id
   role          = "roles/cloudkms.signerVerifier"
-  members = concat(
+  for_each = toset(concat(
     [google_service_account.orchestrator.member],
     var.enable_network_analyzer ? [google_service_account.network-analyzer[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer[0].member] : []
-  )
+  ))
+  member = each.key
 }
-resource "google_cloud_run_v2_service_iam_binding" "cachers-call-git-cache" {
+resource "google_cloud_run_v2_service_iam_member" "cachers-call-git-cache" {
   location = google_cloud_run_v2_service.git-cache.location
   project  = google_cloud_run_v2_service.git-cache.project
   name     = google_cloud_run_v2_service.git-cache.name
   role     = "roles/run.invoker"
-  members = [
-    google_service_account.crates-registry.member,
-  ]
+  member   = google_service_account.crates-registry.member
 }
-resource "google_cloud_run_v2_service_iam_binding" "api-and-inference-call-gateway" {
+resource "google_cloud_run_v2_service_iam_member" "api-and-inference-call-gateway" {
   location = google_cloud_run_v2_service.gateway.location
   project  = google_cloud_run_v2_service.gateway.project
   name     = google_cloud_run_v2_service.gateway.name
   role     = "roles/run.invoker"
-  members = [
+  for_each = toset([
     google_service_account.inference.member,
     google_service_account.orchestrator.member,
-  ]
+  ])
+  member = each.key
 }
-resource "google_pubsub_topic_iam_binding" "can-publish-to-attestation-topic" {
-  topic   = google_pubsub_topic.attestation-topic.id
-  role    = "roles/pubsub.publisher"
-  members = [data.google_storage_project_service_account.attestation-pubsub-publisher.member]
+resource "google_pubsub_topic_iam_member" "can-publish-to-attestation-topic" {
+  topic  = google_pubsub_topic.attestation-topic.id
+  role   = "roles/pubsub.publisher"
+  member = data.google_storage_project_service_account.attestation-pubsub-publisher.member
 }
-resource "google_pubsub_topic_iam_binding" "readers-can-read-from-attestation-topic" {
-  count   = var.public ? 0 : 1
-  topic   = google_pubsub_topic.attestation-topic.id
-  role    = "roles/pubsub.subscriber"
-  members = [google_service_account.attestation-pubsub-reader[0].member]
+resource "google_pubsub_topic_iam_member" "readers-can-read-from-attestation-topic" {
+  count  = var.public ? 0 : 1
+  topic  = google_pubsub_topic.attestation-topic.id
+  role   = "roles/pubsub.subscriber"
+  member = google_service_account.attestation-pubsub-reader[0].member
 }
-resource "google_storage_bucket_iam_binding" "network-analyzer-writes-analysis" {
-  count   = var.enable_network_analyzer ? 1 : 0
-  bucket  = google_storage_bucket.network-analyzer-attestations[0].name
-  role    = "roles/storage.objectCreator"
-  members = [google_service_account.network-analyzer[0].member]
+resource "google_storage_bucket_iam_member" "network-analyzer-writes-analysis" {
+  count  = var.enable_network_analyzer ? 1 : 0
+  bucket = google_storage_bucket.network-analyzer-attestations[0].name
+  role   = "roles/storage.objectCreator"
+  member = google_service_account.network-analyzer[0].member
 }
-resource "google_storage_bucket_iam_binding" "network-analyzer-reads-network-analyzer-attestations" {
-  count   = !var.public && var.enable_network_analyzer ? 1 : 0
-  bucket  = google_storage_bucket.network-analyzer-attestations[0].name
-  role    = "roles/storage.objectViewer"
-  members = [google_service_account.network-analyzer[0].member]
+resource "google_storage_bucket_iam_member" "network-analyzer-reads-network-analyzer-attestations" {
+  count  = !var.public && var.enable_network_analyzer ? 1 : 0
+  bucket = google_storage_bucket.network-analyzer-attestations[0].name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.network-analyzer[0].member
 }
-resource "google_cloud_tasks_queue_iam_binding" "network-analyzer-enqueues-tasks" {
-  count   = var.enable_network_analyzer ? 1 : 0
-  name    = google_cloud_tasks_queue.network-analyzer-queue[0].name
-  role    = "roles/cloudtasks.enqueuer"
-  members = [google_service_account.network-analyzer[0].member]
+resource "google_cloud_tasks_queue_iam_member" "network-analyzer-enqueues-tasks" {
+  count  = var.enable_network_analyzer ? 1 : 0
+  name   = google_cloud_tasks_queue.network-analyzer-queue[0].name
+  role   = "roles/cloudtasks.enqueuer"
+  member = google_service_account.network-analyzer[0].member
 }
-resource "google_cloud_run_v2_service_iam_binding" "network-analyzer-calls-analyzer" {
+resource "google_cloud_run_v2_service_iam_member" "network-analyzer-calls-analyzer" {
   count    = var.enable_network_analyzer ? 1 : 0
   location = google_cloud_run_v2_service.network-analyzer[0].location
   project  = google_cloud_run_v2_service.network-analyzer[0].project
   name     = google_cloud_run_v2_service.network-analyzer[0].name
   role     = "roles/run.invoker"
-  members  = [google_service_account.network-analyzer[0].member]
+  member   = google_service_account.network-analyzer[0].member
 }
-resource "google_cloud_run_v2_service_iam_binding" "network-analyzer-calls-subscriber" {
+resource "google_cloud_run_v2_service_iam_member" "network-analyzer-calls-subscriber" {
   count    = var.enable_network_analyzer ? 1 : 0
   location = google_cloud_run_v2_service.network-subscriber[0].location
   project  = google_cloud_run_v2_service.network-subscriber[0].project
   name     = google_cloud_run_v2_service.network-subscriber[0].name
   role     = "roles/run.invoker"
-  members  = [google_service_account.network-analyzer[0].member]
+  member   = google_service_account.network-analyzer[0].member
 }
-resource "google_service_account_iam_binding" "network-analyzer-acts-as-itself" {
+resource "google_service_account_iam_member" "network-analyzer-acts-as-itself" {
   count              = var.enable_network_analyzer ? 1 : 0
   service_account_id = google_service_account.network-analyzer[0].name
   role               = "roles/iam.serviceAccountUser"
-  members            = [google_service_account.network-analyzer[0].member]
+  member             = google_service_account.network-analyzer[0].member
 }
 # System analyzer-specific IAM bindings
-resource "google_storage_bucket_iam_binding" "system-analyzer-writes-analysis" {
-  count   = var.enable_system_analyzer ? 1 : 0
-  bucket  = google_storage_bucket.system-analyzer-attestations[0].name
-  role    = "roles/storage.objectCreator"
-  members = [google_service_account.system-analyzer[0].member]
+resource "google_storage_bucket_iam_member" "system-analyzer-writes-analysis" {
+  count  = var.enable_system_analyzer ? 1 : 0
+  bucket = google_storage_bucket.system-analyzer-attestations[0].name
+  role   = "roles/storage.objectCreator"
+  member = google_service_account.system-analyzer[0].member
 }
-resource "google_storage_bucket_iam_binding" "system-analyzer-reads-system-analyzer-attestations" {
-  count   = !var.public && var.enable_system_analyzer ? 1 : 0
-  bucket  = google_storage_bucket.system-analyzer-attestations[0].name
-  role    = "roles/storage.objectViewer"
-  members = [google_service_account.system-analyzer[0].member]
+resource "google_storage_bucket_iam_member" "system-analyzer-reads-system-analyzer-attestations" {
+  count  = !var.public && var.enable_system_analyzer ? 1 : 0
+  bucket = google_storage_bucket.system-analyzer-attestations[0].name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.system-analyzer[0].member
 }
-resource "google_cloud_tasks_queue_iam_binding" "system-analyzer-enqueues-tasks" {
-  count   = var.enable_system_analyzer ? 1 : 0
-  name    = google_cloud_tasks_queue.system-analyzer-queue[0].name
-  role    = "roles/cloudtasks.enqueuer"
-  members = [google_service_account.system-analyzer[0].member]
+resource "google_cloud_tasks_queue_iam_member" "system-analyzer-enqueues-tasks" {
+  count  = var.enable_system_analyzer ? 1 : 0
+  name   = google_cloud_tasks_queue.system-analyzer-queue[0].name
+  role   = "roles/cloudtasks.enqueuer"
+  member = google_service_account.system-analyzer[0].member
 }
-resource "google_cloud_run_v2_service_iam_binding" "system-analyzer-calls-analyzer" {
+resource "google_cloud_run_v2_service_iam_member" "system-analyzer-calls-analyzer" {
   count    = var.enable_system_analyzer ? 1 : 0
   location = google_cloud_run_v2_service.system-analyzer[0].location
   project  = google_cloud_run_v2_service.system-analyzer[0].project
   name     = google_cloud_run_v2_service.system-analyzer[0].name
   role     = "roles/run.invoker"
-  members  = [google_service_account.system-analyzer[0].member]
+  member   = google_service_account.system-analyzer[0].member
 }
-resource "google_cloud_run_v2_service_iam_binding" "system-analyzer-calls-subscriber" {
+resource "google_cloud_run_v2_service_iam_member" "system-analyzer-calls-subscriber" {
   count    = var.enable_system_analyzer ? 1 : 0
   location = google_cloud_run_v2_service.system-subscriber[0].location
   project  = google_cloud_run_v2_service.system-subscriber[0].project
   name     = google_cloud_run_v2_service.system-subscriber[0].name
   role     = "roles/run.invoker"
-  members  = [google_service_account.system-analyzer[0].member]
+  member   = google_service_account.system-analyzer[0].member
 }
-resource "google_service_account_iam_binding" "system-analyzer-acts-as-itself" {
+resource "google_service_account_iam_member" "system-analyzer-acts-as-itself" {
   count              = var.enable_system_analyzer ? 1 : 0
   service_account_id = google_service_account.system-analyzer[0].name
   role               = "roles/iam.serviceAccountUser"
-  members            = [google_service_account.system-analyzer[0].member]
+  member             = google_service_account.system-analyzer[0].member
 }
-resource "google_project_iam_binding" "orchestrators-use-worker-pool" {
-  count   = var.enable_private_build_pool ? 1 : 0
+resource "google_project_iam_member" "orchestrators-use-worker-pool" {
   project = var.project
   role    = "roles/cloudbuild.workerPoolUser"
-  members = concat(
+  for_each = toset(var.enable_private_build_pool ? concat(
     [google_service_account.orchestrator.member],
     var.enable_network_analyzer ? [google_service_account.network-analyzer[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer[0].member] : []
-  )
+  ) : [])
+  member = each.key
 }
 # Agent-specific IAM bindings
-resource "google_project_iam_binding" "agent-uses-aiplatform" {
+resource "google_project_iam_member" "agent-uses-aiplatform" {
   project = var.project
   role    = "roles/aiplatform.user"
-  members = [google_service_account.agent-job.member]
+  member  = google_service_account.agent-job.member
 }
-resource "google_storage_bucket_iam_binding" "agent-manages-sessions" {
-  bucket  = google_storage_bucket.agent-sessions.name
-  role    = "roles/storage.objectCreator"
-  members = [google_service_account.agent-job.member]
+resource "google_storage_bucket_iam_member" "agent-manages-sessions" {
+  bucket = google_storage_bucket.agent-sessions.name
+  role   = "roles/storage.objectCreator"
+  member = google_service_account.agent-job.member
 }
-resource "google_storage_bucket_iam_binding" "agent-reads-metadata" {
+resource "google_storage_bucket_iam_member" "agent-reads-metadata" {
   bucket = google_storage_bucket.agent-metadata.name
   role   = "roles/storage.objectViewer"
-  members = [
+  for_each = toset([
     google_service_account.agent-job.member,
     google_service_account.orchestrator.member, # Orchestrator runs agent-api, needs to do comparison
-  ]
+  ])
+  member = each.key
 }
-resource "google_storage_bucket_iam_binding" "builder-agent-views-buckets" {
-  bucket  = google_storage_bucket.agent-logs.name
-  role    = google_project_iam_custom_role.bucket-viewer-role.name
-  members = [google_service_account.builder-agent.member]
+resource "google_storage_bucket_iam_member" "builder-agent-views-buckets" {
+  bucket = google_storage_bucket.agent-logs.name
+  role   = google_project_iam_custom_role.bucket-viewer-role.name
+  member = google_service_account.builder-agent.member
 }
-resource "google_storage_bucket_iam_binding" "builder-agent-uses-logs" {
-  bucket  = google_storage_bucket.agent-logs.name
-  role    = "roles/storage.objectUser"
-  members = [google_service_account.builder-agent.member]
+resource "google_storage_bucket_iam_member" "builder-agent-uses-logs" {
+  bucket = google_storage_bucket.agent-logs.name
+  role   = "roles/storage.objectUser"
+  member = google_service_account.builder-agent.member
 }
-resource "google_storage_bucket_iam_binding" "agent-job-views-logs" {
-  bucket  = google_storage_bucket.agent-logs.name
-  role    = "roles/storage.objectViewer"
-  members = [google_service_account.agent-job.member]
+resource "google_storage_bucket_iam_member" "agent-job-views-logs" {
+  bucket = google_storage_bucket.agent-logs.name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.agent-job.member
 }
-resource "google_project_iam_binding" "orchestrator-creates-run-jobs" {
+resource "google_project_iam_member" "orchestrator-creates-run-jobs" {
   project = var.project
   role    = "roles/run.jobsExecutorWithOverrides"
-  members = [google_service_account.orchestrator.member]
+  member  = google_service_account.orchestrator.member
 }
-resource "google_cloud_run_v2_service_iam_binding" "agent-calls-agent-api" {
+resource "google_cloud_run_v2_service_iam_member" "agent-calls-agent-api" {
   location = google_cloud_run_v2_service.agent-api.location
   project  = google_cloud_run_v2_service.agent-api.project
   name     = google_cloud_run_v2_service.agent-api.name
   role     = "roles/run.invoker"
-  members  = [google_service_account.agent-job.member]
+  member   = google_service_account.agent-job.member
 }
-resource "google_storage_bucket_iam_binding" "builder-agent-writes-metadata" {
-  bucket  = google_storage_bucket.agent-metadata.name
-  role    = "roles/storage.objectCreator"
-  members = [google_service_account.builder-agent.member]
+resource "google_storage_bucket_iam_member" "builder-agent-writes-metadata" {
+  bucket = google_storage_bucket.agent-metadata.name
+  role   = "roles/storage.objectCreator"
+  member = google_service_account.builder-agent.member
 }
 
 ## Public resources
 
-resource "google_kms_crypto_key_iam_binding" "signing-key-is-public" {
+resource "google_kms_crypto_key_iam_member" "signing-key-is-public" {
   count         = var.public ? 1 : 0
   crypto_key_id = google_kms_crypto_key.signing-key.id
   role          = "roles/cloudkms.verifier"
-  members       = ["allUsers"]
+  member        = "allUsers"
 }
-resource "google_storage_bucket_iam_binding" "attestation-bucket-is-public" {
-  count   = var.public ? 1 : 0
-  bucket  = google_storage_bucket.attestations.name
-  role    = "roles/storage.objectViewer"
-  members = ["allUsers"]
+resource "google_storage_bucket_iam_member" "attestation-bucket-is-public" {
+  count  = var.public ? 1 : 0
+  bucket = google_storage_bucket.attestations.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
 }
-resource "google_storage_bucket_iam_binding" "bootstrap-bucket-is-public" {
-  count   = var.public ? 1 : 0
-  bucket  = google_storage_bucket.bootstrap-tools.name
-  role    = "roles/storage.objectViewer"
-  members = ["allUsers"]
+resource "google_storage_bucket_iam_member" "bootstrap-bucket-is-public" {
+  count  = var.public ? 1 : 0
+  bucket = google_storage_bucket.bootstrap-tools.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
 }
-resource "google_pubsub_topic_iam_binding" "attestation-bucket-topic-is-public" {
-  count   = var.public ? 1 : 0
-  topic   = google_pubsub_topic.attestation-topic.id
-  role    = "roles/pubsub.subscriber"
-  members = ["allUsers"]
+resource "google_pubsub_topic_iam_member" "attestation-bucket-topic-is-public" {
+  count  = var.public ? 1 : 0
+  topic  = google_pubsub_topic.attestation-topic.id
+  role   = "roles/pubsub.subscriber"
+  member = "allUsers"
 }
-resource "google_storage_bucket_iam_binding" "network-analyzer-attestations-bucket-is-public" {
-  count   = var.enable_network_analyzer && var.public ? 1 : 0
-  bucket  = google_storage_bucket.network-analyzer-attestations[0].name
-  role    = "roles/storage.objectViewer"
-  members = ["allUsers"]
+resource "google_storage_bucket_iam_member" "network-analyzer-attestations-bucket-is-public" {
+  count  = var.enable_network_analyzer && var.public ? 1 : 0
+  bucket = google_storage_bucket.network-analyzer-attestations[0].name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
 }
-resource "google_storage_bucket_iam_binding" "system-analyzer-attestations-bucket-is-public" {
-  count   = var.enable_system_analyzer && var.public ? 1 : 0
-  bucket  = google_storage_bucket.system-analyzer-attestations[0].name
-  role    = "roles/storage.objectViewer"
-  members = ["allUsers"]
+resource "google_storage_bucket_iam_member" "system-analyzer-attestations-bucket-is-public" {
+  count  = var.enable_system_analyzer && var.public ? 1 : 0
+  bucket = google_storage_bucket.system-analyzer-attestations[0].name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
 }
