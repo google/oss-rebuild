@@ -373,7 +373,7 @@ func getGenerator(wheel []byte) (reqs []string, err error) {
 			// Each line in a WHEEL file has a `key: value` format.
 			return nil, errors.New("Unexpected file format")
 		}
-		key, value := line[:sep], bytes.TrimSpace(line[sep:])
+		key, value := line[:sep], bytes.TrimSpace(line[sep+1:])
 		if bytes.Equal(key, []byte("Generator")) {
 			if matches := bdistWheelPat.FindSubmatch(line); matches != nil {
 				return []string{"wheel==" + string(matches[1])}, nil
