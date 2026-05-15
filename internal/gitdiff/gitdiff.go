@@ -63,7 +63,7 @@ func createChangeEntry(storer storage.Storer, content string) (*object.ChangeEnt
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to store blob")
 	}
-	entry := object.TreeEntry{Mode: filemode.Regular, Hash: hash}
+	entry := object.TreeEntry{Name: "file", Mode: filemode.Regular, Hash: hash}
 	treeHash, err := storeTree(storer, &object.Tree{Entries: []object.TreeEntry{entry}})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to store tree")
