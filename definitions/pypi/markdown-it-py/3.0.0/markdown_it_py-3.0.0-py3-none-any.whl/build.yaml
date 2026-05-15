@@ -1,0 +1,47 @@
+# inference differs:
+#  source diff:
+#    git clone https://github.com/executablebooks/markdown-it-py .
+#    git checkout --force 'bee6d1953be75717a3f2f6a917da6f464bed421d'
+#   +sed -i 's|"mdit-py-plugins @ git+https://github.com/executablebooks/mdit-py-plugins@master"|"mdit-py-plugins"|' /src/pyproject.toml
+#  deps diff:
+#    /usr/bin/uvx uv venv /deps --seed --python 3.11
+#    export PIP_INDEX_URL=http://pypi:2023-06-03T06:41:11Z@TIMEWARP/simple
+#   -/deps/bin/pip install build flit==3.7.1 flit_core==3.7.1 setuptools==56.2.0
+#   +/deps/bin/pip install flit==3.7.1 flit_core==3.7.1
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +cd /src && /deps/bin/flit build --format wheel
+flow:
+  location:
+    repo: https://github.com/executablebooks/markdown-it-py
+    ref: bee6d1953be75717a3f2f6a917da6f464bed421d
+  src:
+    - uses: git-checkout
+    # The release tag's pyproject.toml lists the rtd extra's mdit-py-plugins
+    # dep as `mdit-py-plugins @ git+https://...@master`, but the published
+    # sdist + wheel both have just `mdit-py-plugins`. flit / flit-core
+    # preserve `@`-URLs verbatim, and the URL was added in 4c3a34d (~9h
+    # before tag bee6d19). Best explanation: the release was built from a
+    # working tree where pyproject.toml hadn't yet picked up that change.
+    # Reproduce the local edit here.
+    - runs: |
+        sed -i 's|"mdit-py-plugins @ git+https://github.com/executablebooks/mdit-py-plugins@master"|"mdit-py-plugins"|' /src/pyproject.toml
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        pythonVersion: "3.11"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2023-06-03T06:41:11Z"
+    # Upstream WHEEL's `Generator: flit 3.7.1`. Pin both flit and flit-core
+    # to that version (just `flit==3.7.1` would let pip install the latest
+    # compatible flit-core, which writes a different WHEEL line).
+    - runs: /deps/bin/pip install flit==3.7.1 flit_core==3.7.1
+  build:
+    # `flit build` enumerates git-tracked files for the sdist (so e.g.
+    # LICENSE.markdown-it gets included alongside LICENSE — flit-core's
+    # sdist alone would only pick up files referenced by metadata).
+    - runs: cd /src && /deps/bin/flit build --format wheel
+  output_dir: dist

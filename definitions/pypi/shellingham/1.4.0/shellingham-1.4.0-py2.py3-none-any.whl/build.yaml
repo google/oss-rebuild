@@ -1,0 +1,54 @@
+# inference differs:
+#  deps diff:
+#    /usr/bin/uvx uv venv /deps --seed --python 3.11
+#    export PIP_INDEX_URL=http://pypi:2021-02-01T09:27:47Z@TIMEWARP/simple
+#   -/deps/bin/pip install build setuptools==56.2.0 wheel==0.36.2
+#   +/deps/bin/pip install --no-deps setuptools==52.0.0 wheel==0.36.2
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +/deps/bin/python3 setup.py bdist_wheel
+flow:
+  location:
+    repo: https://github.com/sarugaku/shellingham
+    ref: ab80cc785e575bb377092380f2efc0c92a5d9dac
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        pythonVersion: "3.11"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2021-02-01T09:27:47Z"
+    # Latest setuptools available at registry-time (2021-02-01) is 52.0.0;
+    # the inferer's setuptools==56.2.0 heuristic doesn't apply this far back.
+    - runs: /deps/bin/pip install --no-deps setuptools==52.0.0 wheel==0.36.2
+  build:
+    - runs: /deps/bin/python3 setup.py bdist_wheel
+  output_dir: dist
+custom_stabilizers:
+  - replace_pattern:
+      paths: ["*/zip-safe"]
+      pattern: "\r\n"
+      replace: "\n"
+    reason: |
+      Upstream wheel was built on Windows. Among all dist-info files, only
+      `zip-safe` carries platform-specific line endings (`\r\n`) — every
+      other writer uses binary mode, but `setuptools/command/bdist_egg.py
+      ::write_safety_flag` opens the flag file in text mode (`'wt'`) and
+      writes a single `'\n'`, which Python text-mode-translates to `\r\n`
+      on Windows. Normalise to LF so Linux and Windows builds compare
+      equal.
+  - replace_pattern:
+      paths: ["*/RECORD"]
+      pattern: "(?m)^.*zip-safe.*\n"
+      replace: ""
+    reason: |
+      RECORD records each file's sha256 + size at wheel-build time. After
+      the previous stabilizer normalizes zip-safe's bytes, RECORD's
+      precomputed entry still differs across builds. Drop the line so
+      RECORD compares equal too. (A general fix would be a final-pass
+      RECORD stabilizer that recomputes hashes after every other
+      stabilizer runs — see pkg/stabilize/DESIGN_RECORD_ORDERING.md.)

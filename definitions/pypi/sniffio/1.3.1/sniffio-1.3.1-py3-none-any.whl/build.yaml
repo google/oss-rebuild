@@ -1,0 +1,28 @@
+pypi_pure_wheel_build:
+  location:
+    repo: https://github.com/python-trio/sniffio
+    ref: ae020e13b98d276a6558ffc25e82509fd4c288f0
+  requirements:
+    - wheel==0.42.0
+    - setuptools==67.7.2
+    - setuptools_scm>=6.4
+  registry_time: "2024-02-25T23:20:01Z"
+custom_stabilizers:
+  - replace_pattern:
+      paths: ["*/METADATA"]
+      pattern: "\r\n"
+      replace: "\n"
+    reason: |
+      Upstream wheel built on Windows. METADATA is the only dist-info file
+      with CRLF — likely the email parser path picked up Windows line
+      endings from PKG-INFO and BytesGenerator preserved them in this
+      wheel-version combo. No version-pinning combination on Linux
+      reproduces this without running the build on Windows.
+  - replace_pattern:
+      paths: ["*/RECORD"]
+      pattern: "(?m)^.*METADATA,sha256=[^,]+,\\d+\n"
+      replace: ""
+    reason: |
+      RECORD's METADATA hash was baked at write time; drop the line so
+      the cascade from the METADATA stabilizer doesn't surface as a
+      RECORD diff.

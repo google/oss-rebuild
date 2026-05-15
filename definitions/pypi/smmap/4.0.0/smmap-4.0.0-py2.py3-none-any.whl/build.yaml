@@ -1,0 +1,30 @@
+# inference differs:
+#  deps diff:
+#    /usr/bin/uvx uv venv /deps --seed --python 3.11
+#    export PIP_INDEX_URL=http://pypi:2021-01-26T11:52:55Z@TIMEWARP/simple
+#   -/deps/bin/pip install build setuptools==56.2.0 wheel==0.33.1
+#   +/deps/bin/pip install --no-deps setuptools==52.0.0 wheel==0.33.1
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +/deps/bin/python3 setup.py bdist_wheel
+flow:
+  location:
+    repo: https://github.com/gitpython-developers/smmap
+    ref: 30e93fee57286afae25c28a97ba65a9770f9a729
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        pythonVersion: "3.11"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2021-01-26T11:52:55Z"
+    # Latest setuptools at registry-time (2021-01) is 52.0.0; the inferer's
+    # setuptools==56.2.0 heuristic doesn't apply this far back.
+    - runs: /deps/bin/pip install --no-deps setuptools==52.0.0 wheel==0.33.1
+  build:
+    - runs: /deps/bin/python3 setup.py bdist_wheel
+  output_dir: dist

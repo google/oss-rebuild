@@ -1,0 +1,38 @@
+# inference differs:
+#  source diff:
+#    git clone https://github.com/annotated-types/annotated-types .
+#    git checkout --force '832acf931a527f34a2b6e6b7ce6bb304b609dde9'
+#   +sed -i 's/^version = "0"$/version = "0.3.1"/' /src/pyproject.toml
+#  deps diff:
+#    /usr/bin/uvx uv venv /deps --seed --python 3.11
+#    export PIP_INDEX_URL=http://pypi:2022-09-25T17:08:04Z@TIMEWARP/simple
+#   -/deps/bin/pip install build poetry-core==1.2.0 setuptools==56.2.0
+#   +/deps/bin/pip install build poetry-core
+flow:
+  location:
+    repo: https://github.com/annotated-types/annotated-types
+    ref: 832acf931a527f34a2b6e6b7ce6bb304b609dde9
+  src:
+    - uses: git-checkout
+    # pyproject.toml hard-codes `version = "0"`; the actual version comes
+    # from `[tool.poetry-version-plugin] source = "init"`, which only kicks
+    # in via the `poetry build` CLI. Reproducing that path here would
+    # require installing poetry+poetry-version-plugin, but at the artifact's
+    # registry_time (2022-09-25) the published poetry deps are unsatisfiable
+    # (poetry 1.2.0 pins `shellingham>=1.5` but shellingham 1.5.0 wasn't
+    # published until 2023-01-04). Patch the literal in pyproject.toml
+    # instead and use the plain poetry-core backend via `python -m build`.
+    - runs: sed -i 's/^version = "0"$/version = "0.3.1"/' /src/pyproject.toml
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        pythonVersion: "3.11"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2022-09-25T17:08:04Z"
+    - runs: /deps/bin/pip install build poetry-core
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

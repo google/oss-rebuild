@@ -1,0 +1,26 @@
+# inference differs:
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +SOURCE_DATE_EPOCH=1768399200 /deps/bin/python3 -m build --wheel -n
+flow:
+  location:
+    repo: https://github.com/pypa/trove-classifiers
+    ref: 05cc151733645d6fe075147ae47cf5cc11aaa84e
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-01-14T14:54:49Z"
+    - runs: /deps/bin/pip install setuptools==80.9.0 calver build
+  build:
+    # setup.py uses `use_calver="%Y.%m.%d.%H"` which auto-stamps with the
+    # current time. calver's integration honours SOURCE_DATE_EPOCH; setting
+    # it to the upstream version's encoded timestamp (2026.1.14.14 → 2026-
+    # 01-14 14:00 UTC) reproduces the version deterministically.
+    - runs: SOURCE_DATE_EPOCH=1768399200 /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

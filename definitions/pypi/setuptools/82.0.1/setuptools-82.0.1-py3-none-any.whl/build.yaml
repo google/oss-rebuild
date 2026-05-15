@@ -1,0 +1,38 @@
+# inference differs:
+#  deps diff:
+#    /usr/bin/python3 -m venv /deps
+#    export PIP_INDEX_URL=http://pypi:2026-03-09T12:47:15Z@TIMEWARP/simple
+#   -/deps/bin/pip install build setuptools==82.0.1
+#   +/deps/bin/pip install build pyproject-hooks==1.0.0
+#   +cd /src && PYTHONPATH=/src /deps/bin/python3 setup.py egg_info
+flow:
+  location:
+    repo: https://github.com/pypa/setuptools
+    ref: 5a13876673a41e3cd21d4d6e587f53d0fb4fd8e5
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-03-09T12:47:15Z"
+    # Pin pyproject-hooks==1.0.0. 1.1+ introduced a _BackendPathFinder whose
+    # find_distributions() drops the inbound name filter, causing
+    # metadata.version('setuptools') to incorrectly return bootstrap.egg-info's
+    # "1.0" — which would be baked into bdist_wheel's WHEEL `Generator:` line.
+    # Setuptools' own release tooling (tox.ini) already excludes 1.1; 1.0.0 also
+    # avoids the 1.2.x regression we hit.
+    - runs: /deps/bin/pip install 'pyproject-hooks==1.0.0' build
+    # Materialise /src/setuptools.egg-info using the in-tree setuptools — no
+    # PyPI install of setuptools needed (which would be circular). bootstrap.egg-info
+    # in the source tree provides the egg_info command via entry_points. The
+    # resulting setuptools.egg-info has Name: setuptools, Version: 82.0.1 (from
+    # pyproject.toml) and is found first on sys.path during the wheel build, so
+    # metadata.version('setuptools') resolves to "82.0.1".
+    - runs: cd /src && PYTHONPATH=/src /deps/bin/python3 setup.py egg_info
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

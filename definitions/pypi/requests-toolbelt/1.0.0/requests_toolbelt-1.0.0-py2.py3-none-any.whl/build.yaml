@@ -1,0 +1,31 @@
+# inference differs:
+#  source diff:
+#    git clone https://github.com/requests/toolbelt .
+#    git checkout --force 'b7d1a1fcdda9ebcd9afe5011690ab860fce780c2'
+#   +git checkout 'da0306dd4f84cdcad6b0e694d674b9d9c9479c61^' -- requests_toolbelt/adapters/appengine.py
+flow:
+  location:
+    repo: https://github.com/requests/toolbelt
+    ref: b7d1a1fcdda9ebcd9afe5011690ab860fce780c2
+  src:
+    - uses: git-checkout
+    # The 1.0.0 release tag (b7d1a1f) does not contain
+    # requests_toolbelt/adapters/appengine.py — it was removed in da0306d
+    # ("Remove Google AppEngine support") two commits earlier — but the
+    # wheel that was uploaded to PyPI does. The published sdist does not.
+    # The wheel was built from a working tree that still had the deleted
+    # file. Restore it from the parent of the deletion commit so the
+    # rebuild matches.
+    - runs: git checkout 'da0306dd4f84cdcad6b0e694d674b9d9c9479c61^' -- requests_toolbelt/adapters/appengine.py
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2023-05-01T04:11:28Z"
+    - runs: /deps/bin/pip install wheel==0.40.0 setuptools==67.7.2 build
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

@@ -1,0 +1,28 @@
+# inference differs:
+#  deps diff:
+#    /usr/bin/uvx uv venv /deps --seed --python 3.11
+#    export PIP_INDEX_URL=http://pypi:2022-09-05T07:36:05Z@TIMEWARP/simple
+#   -/deps/bin/pip install build poetry-core>=1.0.0 poetry==1.0.8 setuptools==56.2.0
+#   +/deps/bin/pip install --no-deps poetry-core==1.0.8 build pep517 tomli packaging
+flow:
+  location:
+    repo: https://github.com/rr-/docstring_parser
+    ref: 6bdde461f94e66e64d6a5576ce33f2117ce60ee0
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        pythonVersion: "3.11"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2022-09-05T07:36:05Z"
+    # Inferer's `poetry==1.0.8` would pull in cffi (which won't build under
+    # timewarp). poetry-core==1.0.8 is the actual build backend and matches
+    # upstream's WHEEL `Generator: poetry 1.0.8` line.
+    - runs: /deps/bin/pip install --no-deps poetry-core==1.0.8 build pep517 tomli packaging
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

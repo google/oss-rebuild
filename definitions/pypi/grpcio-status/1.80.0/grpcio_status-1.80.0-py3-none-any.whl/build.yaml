@@ -1,0 +1,33 @@
+# inference fails: no git repo
+flow:
+  location:
+    repo: https://github.com/grpc/grpc
+    ref: f5e2d6e856176c2f6b7691032adfefe21e5f64c1
+    dir: src/python/grpcio_status
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-03-30T08:54:01Z"
+    - runs: /deps/bin/pip install setuptools wheel
+    # status_commands.Preprocess copies third_party/googleapis/google/rpc/status.proto
+    # into src/python/grpcio_status/grpc_status/google/rpc/status.proto and the
+    # repo-root LICENSE next to setup.py. Must run from the repo root, not
+    # from the grpcio_status subdir, since paths are CWD-relative.
+    - runs: cd /src && /deps/bin/python3 src/python/grpcio_status/setup.py preprocess
+  build:
+    # setuptools 82's auto-discovery (pyproject.toml `tool.setuptools.packages.find={}`
+    # → namespaces=True, include=["*"]) treats every directory it finds as a
+    # namespace package, including the build's own output `dist/`. Build into
+    # a wheelhouse outside the source tree, then move the result into a
+    # plain `dist/` so the standard output_dir copy still works.
+    - runs: |
+        cd /src/src/python/grpcio_status
+        /deps/bin/pip wheel . --no-deps -w /tmp/wheelhouse
+        mkdir -p dist && mv /tmp/wheelhouse/*.whl dist/
+  output_dir: src/python/grpcio_status/dist

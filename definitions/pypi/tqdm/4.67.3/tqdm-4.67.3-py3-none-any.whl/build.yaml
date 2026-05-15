@@ -1,0 +1,26 @@
+# inference differs:
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +/deps/bin/python3 -m build -n
+flow:
+  location:
+    repo: https://github.com/tqdm/tqdm
+    ref: 75bdb6c379bcfc6c592b6342dc791a092b5d6ae0
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-02-03T17:35:50Z"
+    - runs: /deps/bin/pip install setuptools==80.10.2 'setuptools-scm[toml]>=3.4' build
+  build:
+    # Source tree carries `images/` and a `dist/` gets created during build —
+    # both get picked up as namespace packages by setuptools' auto-discovery.
+    # Sdist→wheel applies MANIFEST.in filtering and writes wheel from a
+    # clean working dir.
+    - runs: /deps/bin/python3 -m build -n
+  output_dir: dist

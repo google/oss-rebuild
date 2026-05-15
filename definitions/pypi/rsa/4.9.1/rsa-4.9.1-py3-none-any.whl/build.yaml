@@ -1,0 +1,11 @@
+# inference fails: no git ref
+pypi_pure_wheel_build:
+  location:
+    repo: https://github.com/sybrenstuvel/python-rsa
+    # Repo is archived; no `4.9.1` tag was pushed. Two commits land the
+    # release: 2a21a53 ("Bumped version to 4.9.1") and 7e68539 ("Add 4.9.1
+    # to the changelog"), the latter ~90s before the upload timestamp.
+    ref: 7e68539c4a13d3544a684ab1967e706325c284b5
+  requirements:
+    - poetry-core==2.1.2
+  registry_time: "2025-04-16T09:51:18Z"

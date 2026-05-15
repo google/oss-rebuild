@@ -1,0 +1,24 @@
+# inference fails: Failed to get upstream generator: unsupported generator: uv 0.10.7
+flow:
+  location:
+    repo: https://github.com/BerriAI/litellm
+    # `v1.83.14-stable` and `v1.83.14.rc.1` both point at this SHA; the
+    # `-stable.patch.1` tag is a later hotfix.
+    ref: 3d2b8fed3281f60fcf6908c43df7823d6966897d
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-04-26T03:16:06Z"
+    - runs: /deps/bin/pip install uv_build==0.10.7 build
+  build:
+    # uv_build's PEP 517 hook does shutil.which("uv-build"); putting
+    # /deps/bin on PATH (which the venv would do via activation) lets it
+    # find /deps/bin/uv-build.
+    - runs: PATH=/deps/bin:$PATH /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

@@ -1,0 +1,31 @@
+# inference differs:
+#  deps diff:
+#    /usr/bin/python3 -m venv /deps
+#    export PIP_INDEX_URL=http://pypi:2025-12-21T09:29:42Z@TIMEWARP/simple
+#    /deps/bin/pip install build coherent.licensed setuptools==80.9.0 setuptools_scm[toml]>=3.4.1
+#   +sed -i 's|datetime.date.today().year|2025|' /deps/lib/python*/site-packages/coherent/licensed/__init__.py
+flow:
+  location:
+    repo: https://github.com/jaraco/jaraco.functools
+    ref: b57bb859e09f10f1e2ad7e64e9d71723793517f2
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2025-12-21T09:29:42Z"
+    - runs: /deps/bin/pip install setuptools==80.9.0 'setuptools_scm[toml]>=3.4.1' coherent.licensed build
+    # `coherent.licensed.inject_year` substitutes the current year into
+    # the SPDX license template's `<year>` placeholder via
+    # `datetime.date.today().year` — there's no SOURCE_DATE_EPOCH hook.
+    # Upstream's wheel was built 2025-12-21 (today.year=2025); our rebuild
+    # runs in 2026 and writes "Copyright (c) 2026". Hard-code 2025 so the
+    # LICENSE matches.
+    - runs: sed -i 's|datetime.date.today().year|2025|' /deps/lib/python*/site-packages/coherent/licensed/__init__.py
+  build:
+    - runs: /deps/bin/python3 -m build --wheel -n
+  output_dir: dist

@@ -1,0 +1,30 @@
+# inference differs:
+#  deps diff:
+#    /usr/bin/uvx uv venv /deps --seed --python 3.11
+#    export PIP_INDEX_URL=http://pypi:2020-07-31T01:54:53Z@TIMEWARP/simple
+#   -/deps/bin/pip install build setuptools==56.2.0 wheel==0.34.2
+#   +/deps/bin/pip install --no-deps setuptools==49.2.0 wheel==0.34.2
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +/deps/bin/python3 setup.py bdist_wheel
+flow:
+  location:
+    repo: https://github.com/asottile/cfgv
+    ref: 5ed370e2579f3fef07871f52c90aecc091dbc933
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        pythonVersion: "3.11"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2020-07-31T01:54:53Z"
+    # Latest setuptools at registry-time (2020-07) is 49.2.0; the inferer's
+    # setuptools==56.2.0 heuristic doesn't apply this far back.
+    - runs: /deps/bin/pip install --no-deps setuptools==49.2.0 wheel==0.34.2
+  build:
+    - runs: /deps/bin/python3 setup.py bdist_wheel
+  output_dir: dist

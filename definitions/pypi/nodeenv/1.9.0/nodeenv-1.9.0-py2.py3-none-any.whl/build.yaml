@@ -1,0 +1,27 @@
+pypi_pure_wheel_build:
+  location:
+    repo: https://github.com/ekalinin/nodeenv
+    ref: 2aa4a494b89981269f368e4c29c168d98cd6bd94
+  requirements:
+    - wheel==0.43.0
+    - setuptools==67.7.2
+    - setuptools-scm
+  registry_time: "2024-05-28T22:12:31Z"
+custom_stabilizers:
+  - exclude_path:
+      paths: ["*/AUTHORS"]
+    reason: |
+      Upstream wheel ships an AUTHORS file with ~5 additional contributors
+      (Robert Schwebel, Tomi Belan, Sam James, Philipp A, Johnny Lim) that
+      weren't committed to the repo at the 1.9.0 tag. The release was built
+      from a working tree where AUTHORS had been updated locally before
+      packaging. AUTHORS is in dist-info (build metadata, not packaged
+      code) so masking is acceptable here.
+  - replace_pattern:
+      paths: ["*/RECORD"]
+      pattern: "(?m)^.*AUTHORS.*\n"
+      replace: ""
+    reason: |
+      RECORD records sha256+size at wheel-build time. After AUTHORS is
+      excluded from comparison, its precomputed RECORD line still
+      differs across builds. Drop the line so RECORD compares equal.

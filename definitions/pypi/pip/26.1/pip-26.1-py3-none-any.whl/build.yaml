@@ -1,0 +1,32 @@
+# inference differs:
+#  deps diff:
+#    /usr/bin/python3 -m venv /deps
+#    export PIP_INDEX_URL=http://pypi:2026-04-26T21:00:03Z@TIMEWARP/simple
+#   -/deps/bin/pip install build flit-core>=3.11,<4 flit==3.12.0 flit_core==3.12.0 setuptools==67.7.2
+#   +/deps/bin/pip install build flit_core==3.12.0
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +/deps/bin/python3 -m build -n
+flow:
+  location:
+    repo: https://github.com/pypa/pip
+    ref: 90b2b3e0f7ef75c485155716d904e51654575803
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2026-04-26T21:00:03Z"
+    - runs: /deps/bin/pip install flit_core==3.12.0 build
+  build:
+    # `[tool.flit.sdist] exclude` includes `src/pip/_vendor/**/*.pyi`. Pip's
+    # release builds the wheel *from* the sdist (sdist excludes are applied
+    # first, then the wheel is rebuilt from the trimmed source). `python -m
+    # build` (no flags) does both in that order; just `--wheel` skips the
+    # sdist intermediate and ships the .pyi stubs in the wheel.
+    - runs: /deps/bin/python3 -m build -n
+  output_dir: dist

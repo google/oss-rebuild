@@ -1,0 +1,51 @@
+# inference differs:
+#  deps diff:
+#   -/usr/bin/python3 -m venv /deps
+#   +/usr/bin/uvx uv venv /deps --seed --python 3.10
+#    export PIP_INDEX_URL=http://pypi:2024-03-26T20:38:13Z@TIMEWARP/simple
+#   -/deps/bin/pip install build setuptools==67.7.2 wheel==0.43.0
+#   +/deps/bin/pip install --no-deps setuptools==69.2.0 wheel==0.43.0
+#  build diff:
+#   -/deps/bin/python3 -m build --wheel -n
+#   +cd /src
+#   +/deps/bin/pip wheel . --no-deps --no-build-isolation -w /tmp/wheelhouse
+#   +mkdir -p dist && mv /tmp/wheelhouse/*.whl dist/
+flow:
+  location:
+    repo: https://github.com/pyasn1/pyasn1-modules
+    ref: 98b1e268a30be4b2d6efa5c69eae772edc442c7e
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: pypi/setup-venv
+      with:
+        locator: /usr/bin/
+        path: /deps
+        pythonVersion: "3.10"
+    - uses: pypi/setup-registry
+      with:
+        registryTime: "2024-03-26T20:38:13Z"
+    # `python setup.py bdist_wheel` and `python -m build` both run
+    # setuptools' egg_info, which does `metadata.name = cmd.egg_name`
+    # (=`safe_name(name)`) before writing PKG-INFO. wheel's
+    # pkginfo_to_metadata then carries that normalized name into the
+    # wheel's METADATA. This swap is present in every setuptools from at
+    # least 40.0.0 through 75.x; no version-pin alone avoids it.
+    #
+    # The escape hatch is the PEP 517 prepare_metadata_for_build_wheel
+    # path, which `pip wheel --no-build-isolation` invokes via
+    # setuptools' newer `_core_metadata.write_pkg_file` writer. That path
+    # calls `self.get_name()` directly without the egg_info swap.
+    #
+    # The version sweet spot is setuptools 70.x-74.x: 70.0 introduced the
+    # _core_metadata path (preserves underscore), but the `dist-info/
+    # licenses/LICENSE.txt` placement (PEP 639) didn't land until setuptools
+    # 75. Upstream's wheel has Name: pyasn1_modules and LICENSE.txt directly
+    # under dist-info/.
+    - runs: /deps/bin/pip install --no-deps setuptools==69.2.0 wheel==0.43.0
+  build:
+    - runs: |
+        cd /src
+        /deps/bin/pip wheel . --no-deps --no-build-isolation -w /tmp/wheelhouse
+        mkdir -p dist && mv /tmp/wheelhouse/*.whl dist/
+  output_dir: dist
