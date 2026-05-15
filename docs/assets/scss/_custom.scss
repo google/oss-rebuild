@@ -21,6 +21,11 @@ h1, h2, h3, h4, .serif-font {
     font-family: 'Merriweather', serif;
 }
 
+/* Offset anchor jumps so headings clear the sticky 5rem (h-20) navbar */
+h1, h2, h3, h4, h5, h6 {
+    scroll-margin-top: 6rem;
+}
+
 .prose-content p {
     font-family: 'Merriweather', serif;
     line-height: 1.8; /* Generous line height for reading */
