@@ -26,6 +26,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/google/oss-rebuild/pkg/registry/debian/control"
+	"github.com/google/oss-rebuild/pkg/registry/rubygems"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -55,6 +56,7 @@ var all = []RebuildBenchmark{
 	mavenRecentTop500,
 	mavenRecentAll,
 	rubygemsTop500,
+	rubygemsTop1000Pure,
 }
 
 const (
@@ -1267,6 +1269,122 @@ LIMIT 2500
 				continue
 			}
 			psp.Versions = append(psp.Versions, p.Version)
+		}
+		for _, psp := range ps.Packages {
+			ps.Count += len(psp.Versions)
+		}
+		ps.Updated = now
+		return
+	},
+}
+
+var rubygemsTop1000Pure = RebuildBenchmark{
+	Filename: "rubygems_top_1000_pure.json",
+	Generator: func(ctx context.Context) (ps benchmark.PackageSet) {
+		now := time.Now()
+		client, err := bigquery.NewClient(ctx, *project, option.WithQuotaProject(*project))
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		// Query popular RubyGems by counting their occurrences as runtime dependencies.
+		query := client.Query(`
+SELECT
+  dep.Name AS Package,
+  COUNT(*) AS DependentCount
+FROM
+  ` + "`" + `bigquery-public-data.deps_dev_v1.RubyGemsRequirements` + "`" + `,
+  UNNEST(RuntimeDependencies) AS dep
+GROUP BY
+  Package
+ORDER BY
+  DependentCount DESC
+LIMIT 5000
+`)
+		type entry struct {
+			Package        string
+			DependentCount int64
+		}
+		pkgs := make(chan entry, 100)
+		go func() {
+			j, err := query.Run(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			s, err := j.Wait(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			if s.Err() != nil {
+				log.Fatal(s.Err().Error())
+			}
+			it, err := j.Read(ctx)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+			var e entry
+			for {
+				err := it.Next(&e)
+				if err == iterator.Done {
+					break
+				}
+				if err != nil {
+					log.Fatal(err.Error())
+				}
+				pkgs <- e
+			}
+			close(pkgs)
+		}()
+		// Select packages with versions that satisfy our criteria.
+		reg := rubygems.HTTPRegistry{Client: http.DefaultClient}
+		for p := range pkgs {
+			if len(ps.Packages) >= 1000 {
+				break
+			}
+			versions, err := reg.Versions(ctx, p.Package)
+			if err != nil {
+				log.Printf("error fetching versions for %s: %v", p.Package, err)
+				continue
+			}
+			// Heuristic for pure Ruby: all versions should be platform "ruby".
+			// Native gems (even source-only ones) eventually tend to publish pre-compiled binaries
+			// or have at least one version with a platform.
+			isPure := true
+			for _, v := range versions {
+				if v.Platform != "ruby" && v.Platform != "java" && v.Platform != "jruby" && !strings.HasPrefix(v.Platform, "universal-java") {
+					isPure = false
+					break
+				}
+			}
+			if !isPure {
+				continue
+			}
+
+			var selected []string
+			for _, v := range versions {
+				if len(selected) >= 2 {
+					break
+				}
+				if v.Prerelease {
+					continue
+				}
+				selected = append(selected, v.Number)
+			}
+			if len(selected) == 0 {
+				continue
+			}
+			var artifacts []string
+			for _, v := range selected {
+				artifacts = append(artifacts, fmt.Sprintf("%s-%s.gem", p.Package, v))
+			}
+			ps.Packages = append(ps.Packages, benchmark.Package{
+				Name:      p.Package,
+				Ecosystem: "rubygems",
+				Versions:  selected,
+				Artifacts: artifacts,
+			})
+			if len(ps.Packages)%100 == 0 {
+				log.Printf("Added %d packages", len(ps.Packages))
+			}
 		}
 		for _, psp := range ps.Packages {
 			ps.Count += len(psp.Versions)
