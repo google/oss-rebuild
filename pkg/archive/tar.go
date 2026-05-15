@@ -56,9 +56,18 @@ func ExtractTar(tr *tar.Reader, fs billy.Filesystem, opt ExtractOptions) error {
 		}
 		skip := slices.Contains(strings.Split(path, string(filepath.Separator)), "..")
 		if h.Linkname != "" {
+			if skip {
+				continue
+			}
 			linkpath, err := filepath.Rel(basepath, h.Linkname)
+			// filepath.Rel errors on absolute Linkname paths (e.g. "/etc/passwd")
+			// that cannot be made relative to basepath; skip such entries.
 			if err != nil {
-				return err
+				continue
+			}
+			// Reject symlink targets that escape the extraction root.
+			if slices.Contains(strings.Split(linkpath, string(filepath.Separator)), "..") {
+				continue
 			}
 			if err := fs.Symlink(linkpath, path); err != nil {
 				return err
