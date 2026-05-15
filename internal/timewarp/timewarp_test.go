@@ -473,8 +473,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				},
 				Body: io.NopCloser(bytes.NewBufferString(`{
 					"name": "some-other-package",
-					"files": null,
-					"versions": null
+					"files": [],
+					"versions": []
 				}`)),
 			},
 		},
