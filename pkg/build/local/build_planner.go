@@ -32,7 +32,7 @@ var dockerBuildDockerfileTpl = template.Must(
 	template.New("docker build dockerfile").Funcs(template.FuncMap{
 		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
 		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
-		"list":   func(s string) []string { return []string{s} },
+		"list":   func(items ...string) []string { return items },
 	}).Parse(
 		textwrap.Dedent(`
 			#syntax=docker/dockerfile:1.10
@@ -40,15 +40,13 @@ var dockerBuildDockerfileTpl = template.Must(
 			RUN {{if .TimewarpAuth}}--mount=type=secret,id=auth_header {{end}} sed 's/^ //' <<'EOF' | sh
 			 set -eux
 			{{- if .UseTimewarp}}
-			 {{- $hasCurl := or (eq .OS "debian") (eq .OS "ubuntu")}}
-			 {{- $hasWget := eq .OS "alpine"}}
-			 {{- if .TimewarpAuth}}
-			 {{if not $hasCurl}}{{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}} && {{end}}curl -H @/run/secrets/auth_header
-			 {{- else if $hasWget}}
-			 wget -O -
-			 {{- else if $hasCurl}}
-			 curl
-			 {{- end}} {{.TimewarpURL}} > timewarp
+			 {{- if eq .OS "alpine"}}
+			 {{.PackageManager.InstallCommand (list "curl")}}
+			 {{- else}}
+			 {{.PackageManager.UpdateCmd}}
+			 {{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
+			 {{- end}}
+			 curl {{if .TimewarpAuth}}-H @/run/secrets/auth_header {{end}}{{.TimewarpURL}} > timewarp
 			 chmod +x timewarp
 			{{- end}}
 			 {{.PackageManager.UpdateCmd}}
