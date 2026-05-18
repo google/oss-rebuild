@@ -309,6 +309,10 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 		checkoutOpts := &git.CheckoutOptions{}
 		if opt.ReferenceName != "" {
 			checkoutOpts.Branch = opt.ReferenceName
+		} else if head, err := repo.Head(); err == nil && head.Name().IsBranch() {
+			// NOTE: go-git's checkout defaults to master, so name the branch
+			// the cloned HEAD points at.
+			checkoutOpts.Branch = head.Name()
 		}
 		if err := wt.Checkout(checkoutOpts); err != nil {
 			return nil, errors.Wrap(err, "checking out worktree")
