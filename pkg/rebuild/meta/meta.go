@@ -11,6 +11,7 @@ import (
 	debianrb "github.com/google/oss-rebuild/pkg/rebuild/debian"
 	mavenrb "github.com/google/oss-rebuild/pkg/rebuild/maven"
 	npmrb "github.com/google/oss-rebuild/pkg/rebuild/npm"
+	ocirb "github.com/google/oss-rebuild/pkg/rebuild/oci"
 	pypirb "github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	rubygemsrb "github.com/google/oss-rebuild/pkg/rebuild/rubygems"
@@ -41,6 +42,7 @@ var AllRebuilders = map[rebuild.Ecosystem]rebuild.Rebuilder{
 	rebuild.Debian:   &debianrb.Rebuilder{},
 	rebuild.Maven:    &mavenrb.Rebuilder{},
 	rebuild.RubyGems: &rubygemsrb.Rebuilder{},
+	rebuild.OCI:      &ocirb.Rebuilder{},
 }
 
 func GuessArtifact(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
@@ -69,6 +71,8 @@ func GuessArtifact(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMu
 		return "", errors.New("maven not implemented")
 	case rebuild.RubyGems:
 		guess = rubygemsrb.ArtifactName(t)
+	case rebuild.OCI:
+		guess = "image.tar"
 	default:
 		return "", errors.New("unknown ecosystem")
 	}

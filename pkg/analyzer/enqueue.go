@@ -38,7 +38,7 @@ func GCSEventToTargetEvent(event schema.GCSObjectEvent) (*schema.TargetEvent, er
 			return nil, errors.Errorf("unexpected object path length: path=%s parts=%d", event.Name, len(parts))
 		}
 		fallthrough
-	case rebuild.CratesIO, rebuild.PyPI, rebuild.Maven:
+	case rebuild.CratesIO, rebuild.PyPI, rebuild.Maven, rebuild.OCI:
 		// Format: ecosystem/package/version/artifact/rebuild.intoto.jsonl
 		ecosystem, pkg, version, artifact, obj = parts[0], parts[1], parts[2], parts[3], parts[4]
 	default:

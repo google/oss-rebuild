@@ -320,6 +320,8 @@ func (a *defaultAgent) ecosystemExpertise() []string {
 		return []string{}
 	case rebuild.Debian:
 		return []string{}
+	case rebuild.OCI:
+		return []string{}
 	default:
 		return []string{}
 	}
