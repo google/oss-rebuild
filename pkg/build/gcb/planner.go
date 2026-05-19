@@ -244,7 +244,7 @@ var gcbDockerfileTpl = template.Must(
 	template.New("gcb dockerfile").Funcs(template.FuncMap{
 		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
 		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
-		"list":   func(s string) []string { return []string{s} },
+		"list":   func(items ...string) []string { return items },
 	}).Parse(
 		textwrap.Dedent(`
 			#syntax=docker/dockerfile:1.10
@@ -252,20 +252,17 @@ var gcbDockerfileTpl = template.Must(
 			RUN {{if or .TimewarpAuth .ProxyAuth}}--mount=type=secret,id=auth_header {{end}}sed 's/^ //' <<'EOF' | sh
 			 set -eux
 			{{- if .UseTimewarp}}
-			 {{- $hasCurl := or (eq .OS "debian") (eq .OS "ubuntu")}}
-			 {{- $hasWget := eq .OS "alpine"}}
-			 {{- if .TimewarpAuth}}
-			 {{if not $hasCurl}}{{.PackageManager.InstallCommand (list "curl")}} && {{end}}curl -H @/run/secrets/auth_header {{.TimewarpURL}} > timewarp
-			 {{- else if $hasWget}}
-			 wget -O timewarp {{.TimewarpURL}}
-			 {{- else if $hasCurl}}
-			 curl {{.TimewarpURL}} > timewarp
-			 {{- end}}
-			 chmod +x timewarp
-			{{- end}}
-			 {{- if eq .OS "debian"}}
+			 {{- if eq .OS "alpine"}}
+			 {{.PackageManager.InstallCommand (list "curl")}}
+			 {{- else}}
 			 {{.PackageManager.UpdateCmd}}
+			 {{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
 			 {{- end}}
+			 curl {{if .TimewarpAuth}}-H @/run/secrets/auth_header {{end}}{{.TimewarpURL}} > timewarp
+			 chmod +x timewarp
+			{{- else if eq .OS "debian"}}
+			 {{.PackageManager.UpdateCmd}}
+			{{- end}}
 			 {{.PackageManager.InstallCommand .Instructions.Requires.SystemDeps}}
 			EOF
 			RUN sed 's/^ //' <<'EOF' | sh

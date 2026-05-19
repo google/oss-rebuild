@@ -30,6 +30,9 @@ func TestMakeDockerfile(t *testing.T) {
 	baseImageConfig := build.BaseImageConfig{
 		Default: "docker.io/library/alpine:3.19",
 	}
+	debianBaseImageConfig := build.BaseImageConfig{
+		Default: "docker.io/library/debian:stable-20251103-slim",
+	}
 
 	testCases := []testCase{
 		{
@@ -103,7 +106,8 @@ ENTRYPOINT ["/bin/sh","/build"]
 FROM docker.io/library/alpine:3.19
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- wget -O timewarp https://my-bucket.storage.googleapis.com/timewarp
+ apk add curl
+ curl https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
  apk add git make
 EOF
@@ -154,9 +158,115 @@ ENTRYPOINT ["/bin/sh","/build"]
 FROM docker.io/library/alpine:3.19
 RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
  set -eux
- apk add curl && curl -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
+ apk add curl
+ curl -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
  apk add git make
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ mkdir /src && cd /src
+ git clone github.com/example .
+ git checkout --force 'main'
+ make deps ...
+EOF
+RUN sed 's/^ //' <<'EOF' >/build
+ set -eux
+ make build ...
+ mkdir /out && cp /src/output/foo.tgz /out/
+EOF
+WORKDIR "/src"
+ENTRYPOINT ["/bin/sh","/build"]
+`,
+		},
+		{
+			name: "Debian base, with Timewarp",
+			input: rebuild.Input{
+				Target: rebuild.Target{},
+				Strategy: &rebuild.ManualStrategy{
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Requires: rebuild.RequiredEnv{
+						SystemDeps: []string{"git", "make"},
+					},
+					Deps:       "make deps ...",
+					Build:      "make build ...",
+					OutputPath: "output/foo.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				UseTimewarp:     true,
+				UseNetworkProxy: false,
+				Resources: build.Resources{
+					BaseImageConfig: debianBaseImageConfig,
+					ToolURLs: map[build.ToolType]string{
+						build.TimewarpTool: "https://my-bucket.storage.googleapis.com/timewarp",
+					},
+				},
+			},
+			expected: `#syntax=docker/dockerfile:1.10
+FROM docker.io/library/debian:stable-20251103-slim
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ apt update
+ apt install -y curl netcat-openbsd
+ curl https://my-bucket.storage.googleapis.com/timewarp > timewarp
+ chmod +x timewarp
+ apt install -y git make
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ mkdir /src && cd /src
+ git clone github.com/example .
+ git checkout --force 'main'
+ make deps ...
+EOF
+RUN sed 's/^ //' <<'EOF' >/build
+ set -eux
+ make build ...
+ mkdir /out && cp /src/output/foo.tgz /out/
+EOF
+WORKDIR "/src"
+ENTRYPOINT ["/bin/sh","/build"]
+`,
+		},
+		{
+			name: "Debian base, with Timewarp and auth",
+			input: rebuild.Input{
+				Target: rebuild.Target{},
+				Strategy: &rebuild.ManualStrategy{
+					Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Requires: rebuild.RequiredEnv{
+						SystemDeps: []string{"git", "make"},
+					},
+					Deps:       "make deps ...",
+					Build:      "make build ...",
+					OutputPath: "output/foo.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				UseTimewarp:     true,
+				UseNetworkProxy: false,
+				Resources: build.Resources{
+					BaseImageConfig: debianBaseImageConfig,
+					ToolURLs: map[build.ToolType]string{
+						build.TimewarpTool: "https://my-bucket.storage.googleapis.com/timewarp",
+					},
+					ToolAuthRequired: []string{"https://my-bucket.storage.googleapis.com/"},
+				},
+			},
+			expected: `#syntax=docker/dockerfile:1.10
+FROM docker.io/library/debian:stable-20251103-slim
+RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
+ set -eux
+ apt update
+ apt install -y curl netcat-openbsd
+ curl -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
+ chmod +x timewarp
+ apt install -y git make
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
