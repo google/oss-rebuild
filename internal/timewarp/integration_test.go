@@ -352,6 +352,46 @@ func TestTimewarpPyPILatestResolution(t *testing.T) {
 	}
 }
 
+// TestTimewarpPyPIPackageNotYetPublished verifies pip handles requests for
+// packages that don't exist at the timestamp without crashing. Notably,
+// timewarp previously returned `{"files": null, "versions": null}` for
+// not-yet-published packages which pip crashes on. Returning `[]` instead of
+// `null` lets pip report the package as missing in a recoverable way.
+func TestTimewarpPyPIPackageNotYetPublished(t *testing.T) {
+	checkDockerAvailable(t)
+	port, cleanup := startTimewarpServer(t)
+	t.Cleanup(cleanup)
+	// `build` (the PEP 517 build frontend) was first published 2020-03-06.
+	// At 2019-10-17, pypi.org's simple-API JSON has the package metadata
+	// shell but no files prior to that date.
+	timestamp := "2019-10-17T22:38:55Z"
+	indexURL := fmt.Sprintf("http://pypi:%s@%s:%d/simple", timestamp, dockerHostAddr, port)
+	tempDir := t.TempDir()
+	dockerArgs := []string{
+		"run",
+		"--rm",
+		"--add-host=host.docker.internal:host-gateway",
+		"--user", getUserID(),
+		"-v", fmt.Sprintf("%s:/workspace", tempDir),
+		"-w", "/workspace",
+		"-e", "HOME=/workspace",
+		"-e", fmt.Sprintf("PIP_INDEX_URL=%s", indexURL),
+		"-e", fmt.Sprintf("PIP_TRUSTED_HOST=%s", dockerHostAddr),
+		"python:3.11-alpine",
+		"sh", "-c",
+		"pip install --no-cache-dir build; exit 0",
+	}
+	stdout, stderr, err := runDockerCommand(t, dockerArgs...)
+	if err != nil {
+		t.Fatalf("Docker command failed: %v\nStderr: %s", err, stderr)
+	}
+	combined := stdout + stderr
+	// Expected: pip reports the package missing (any of these phrasings).
+	if !(strings.Contains(combined, "Could not find a version") && strings.Contains(combined, "No matching distribution")) {
+		t.Errorf("Expected pip to report missing package; got:\nstdout: %s\nstderr: %s", stdout, stderr)
+	}
+}
+
 // TestTimewarpRubyGemsClientVersions tests that timewarp works correctly with gem install
 func TestTimewarpRubyGemsClientVersions(t *testing.T) {
 	checkDockerAvailable(t)

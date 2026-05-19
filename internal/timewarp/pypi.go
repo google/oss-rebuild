@@ -168,8 +168,11 @@ func timeWarpPyPISimpleRequest(obj map[string]any, at time.Time) error {
 	if !ok {
 		return errors.New("unexpected response: 'files' key not found or not an array")
 	}
-	var pastFiles []any
-	var pastVersions = make(map[string]struct{})
+	// Initialize as non-nil empty slices so JSON-encoded responses for
+	// packages with no past releases emit e.g. `"files": []` vs `null`.
+	// pip's logic parses this as None and crashes iterating over it.
+	pastFiles := []any{}
+	pastVersions := make(map[string]struct{})
 	for _, fileAny := range files {
 		file, ok := fileAny.(map[string]any)
 		if !ok {
@@ -203,7 +206,7 @@ func timeWarpPyPISimpleRequest(obj map[string]any, at time.Time) error {
 	if !ok {
 		return errors.New("unexpected response: 'versions' key not found or not an array")
 	}
-	var fixedVersions []string
+	fixedVersions := []string{}
 	for _, vAny := range originalVersions {
 		vStr, ok := vAny.(string)
 		if !ok {
