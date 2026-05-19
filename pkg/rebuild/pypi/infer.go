@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"path"
 	re "regexp"
 	"slices"
 	"strconv"
@@ -37,6 +38,8 @@ var commonRepoLinks = []string{
 	"project",
 	"github",
 }
+
+var distInfoFieldPat = re.MustCompile(`[-_.]+`)
 
 // There are two places to find the repo:
 // 1. In the ProjectURLs (project links)
@@ -164,9 +167,12 @@ func FindSourceDist(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
 }
 
 func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
-	// Name and version have "-" replaced with "_". See https://packaging.python.org/en/latest/specifications/recording-installed-packages/#the-dist-info-directory
-	// TODO: Search for dist-info in the gzip using a regex. It sounds like many tools do varying amounts of normalization on the path name.
-	wheelPath := fmt.Sprintf("%s-%s.dist-info/WHEEL", strings.ReplaceAll(name, "-", "_"), strings.ReplaceAll(version, "-", "_"))
+	distInfoDir, err := getDistInfoDir(name, version, zr)
+	if err != nil {
+		wheelPath := path.Join(expectedDistInfoDir(name, version), "WHEEL")
+		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", wheelPath)
+	}
+	wheelPath := path.Join(distInfoDir, "WHEEL")
 	wheel, err := getFile(wheelPath, zr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", wheelPath)
@@ -180,11 +186,10 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 		// setuptools already set.
 		return reqs, nil
 	}
-	// TODO: Also find this with a regex.
-	metadataPath := fmt.Sprintf("%s-%s.dist-info/METADATA", strings.ReplaceAll(name, "-", "_"), strings.ReplaceAll(version, "-", "_"))
+	metadataPath := path.Join(distInfoDir, "METADATA")
 	metadata, err := getFile(metadataPath, zr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream dist-info/METADATA")
+		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", metadataPath)
 	}
 	switch {
 	case !bytes.Contains(metadata, []byte("License-File")):
@@ -201,6 +206,65 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 		reqs = append(reqs, "setuptools==67.7.2")
 	}
 	return reqs, nil
+}
+
+// Wheel dist-info names use escaped distribution/version components:
+// https://packaging.python.org/en/latest/specifications/binary-distribution-format/#escaping-and-unicode
+// Name comparisons use PyPA name normalization:
+// https://packaging.python.org/en/latest/specifications/name-normalization/
+func normalizeDistInfoName(name string) string {
+	normalized := distInfoFieldPat.ReplaceAllString(name, "-")
+	return strings.ReplaceAll(strings.ToLower(normalized), "-", "_")
+}
+
+func normalizeDistInfoVersion(version string) string {
+	return strings.ReplaceAll(strings.ToLower(version), "-", "_")
+}
+
+func expectedDistInfoDir(name, version string) string {
+	return fmt.Sprintf("%s-%s.dist-info", normalizeDistInfoName(name), normalizeDistInfoVersion(version))
+}
+
+func getDistInfoDir(name, version string, zr *zip.Reader) (string, error) {
+	expectedDir := expectedDistInfoDir(name, version)
+	if hasZipDir(expectedDir, zr) {
+		return expectedDir, nil
+	}
+	// Older wheels may use equivalent but unescaped names with uppercase letters
+	// or "." separators; the wheel spec requires consumers to accept them.
+	for _, f := range zr.File {
+		dir := path.Dir(f.Name)
+		if dir == "." || path.Dir(dir) != "." {
+			continue
+		}
+		stem, ok := strings.CutSuffix(dir, ".dist-info")
+		if !ok {
+			continue
+		}
+		dash := strings.LastIndexByte(stem, '-')
+		if dash == -1 {
+			continue
+		}
+		foundName, foundVersion := stem[:dash], stem[dash+1:]
+		if normalizeDistInfoName(foundName) != normalizeDistInfoName(name) {
+			continue
+		}
+		if normalizeDistInfoVersion(foundVersion) != normalizeDistInfoVersion(version) {
+			continue
+		}
+		return dir, nil
+	}
+	return "", fs.ErrNotExist
+}
+
+func hasZipDir(dir string, zr *zip.Reader) bool {
+	prefix := dir + "/"
+	for _, f := range zr.File {
+		if f.Name == dir || strings.HasPrefix(f.Name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
