@@ -37,6 +37,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Config holds all configuration for the infer command.
@@ -141,7 +143,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		StrategyHint: strategyHint,
 		// TODO: Add support providing dir and ref hints.
 	}
-	var resp *schema.StrategyOneOf
+	var stub api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
 	if cfg.API != "" {
 		apiURL, err := url.Parse(cfg.API)
 		if err != nil {
@@ -158,11 +160,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		} else {
 			client = http.DefaultClient
 		}
-		stub := api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, apiURL.JoinPath("/infer"))
-		resp, err = stub(ctx, req)
-		if err != nil {
-			return nil, errors.Wrap(err, "executing inference")
-		}
+		stub = api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, apiURL.JoinPath("/infer"))
 	} else {
 		var regstub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 		if req.Ecosystem == rebuild.CratesIO {
@@ -216,11 +214,23 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			}
 			deps.GitCache = &gitcache.Client{IDClient: idClient, APIClient: apiClient, URL: u}
 		}
-		var err error
-		resp, err = inferenceservice.Infer(ctx, req, deps)
-		if err != nil {
-			return nil, err
+		stub = func(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+			return inferenceservice.Infer(ctx, req, deps)
 		}
+	}
+	resp, err := stub(ctx, req)
+	if err != nil {
+		if cfg.Format == "strategy-or-status" {
+			// Surface the error as its Status proto on stdout.
+			// NOTE: Also exit 0 to maintain the json-validity of the output.
+			body, mErr := protojson.Marshal(status.Convert(err).Proto())
+			if mErr != nil {
+				return nil, errors.Wrap(mErr, "encoding inference status")
+			}
+			fmt.Fprintln(deps.IO.Out, string(body))
+			return &act.NoOutput{}, nil
+		}
+		return nil, err
 	}
 	s, err := resp.Strategy()
 	if err != nil {
@@ -264,7 +274,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		buildScript = plan.Script
 	}
 	switch cfg.Format {
-	case "", "strategy":
+	case "", "strategy", "strategy-or-status":
 		enc := json.NewEncoder(deps.IO.Out)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(resp); err != nil {
@@ -336,7 +346,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Artifact, "artifact", "", "the artifact name")
 	set.StringVar(&cfg.RepoHint, "repo-hint", "", "a hint of the repository URL where the package is hosted")
 	set.StringVar(&cfg.API, "api", "", "OSS Rebuild API endpoint URI")
-	set.StringVar(&cfg.Format, "format", "", "format of the output (strategy|dockerfile|debug-steps|shell-script)")
+	set.StringVar(&cfg.Format, "format", "", "format of the output (strategy|strategy-or-status|dockerfile|debug-steps|shell-script)")
 	set.StringVar(&cfg.BootstrapBucket, "bootstrap-bucket", "", "the gcs bucket where bootstrap tools are stored")
 	set.StringVar(&cfg.BootstrapVersion, "bootstrap-version", "", "the version of bootstrap tools to use")
 	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
