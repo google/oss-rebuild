@@ -96,32 +96,73 @@ func TestFilesystemTargetEncoding(t *testing.T) {
 }
 
 func TestFirestoreTargetEncoding(t *testing.T) {
-	registerTestEncoder(t, NPM, FirestoreTargetEncoding, &TargetEncoder{
-		Package:  MapTransform(map[rune]rune{'/': '!'}),
-		Version:  IdentityTransform,
-		Artifact: IdentityTransform,
-	})
-	// NPM scoped packages contain '/' which must be encoded for Firestore
-	canonical := Target{
-		Ecosystem: NPM,
-		Package:   "@fortawesome/react-fontawesome",
-		Version:   "0.2.0",
-		Artifact:  "react-fontawesome-0.2.0.tgz",
+	tests := []struct {
+		name      string
+		ecosystem Ecosystem
+		encoder   *TargetEncoder
+		canonical Target
+		encoded   EncodedTarget
+	}{
+		{
+			name:      "NPM scoped package",
+			ecosystem: NPM,
+			encoder: &TargetEncoder{
+				Package:  MapTransform(map[rune]rune{'/': '!'}),
+				Version:  IdentityTransform,
+				Artifact: IdentityTransform,
+			},
+			canonical: Target{
+				Ecosystem: NPM,
+				Package:   "@fortawesome/react-fontawesome",
+				Version:   "0.2.0",
+				Artifact:  "react-fontawesome-0.2.0.tgz",
+			},
+			encoded: EncodedTarget{
+				Ecosystem: NPM,
+				Package:   "@fortawesome!react-fontawesome",
+				Version:   "0.2.0",
+				Artifact:  "react-fontawesome-0.2.0.tgz",
+				encoding:  FirestoreTargetEncoding,
+			},
+		},
+		{
+			name:      "Maven package with colon",
+			ecosystem: Maven,
+			encoder: &TargetEncoder{
+				Package:  MapTransform(map[rune]rune{':': '~'}),
+				Version:  IdentityTransform,
+				Artifact: IdentityTransform,
+			},
+			canonical: Target{
+				Ecosystem: Maven,
+				Package:   "org.apache.commons:commons-lang3",
+				Version:   "3.12.0",
+				Artifact:  "commons-lang3-3.12.0.jar",
+			},
+			encoded: EncodedTarget{
+				Ecosystem: Maven,
+				Package:   "org.apache.commons~commons-lang3",
+				Version:   "3.12.0",
+				Artifact:  "commons-lang3-3.12.0.jar",
+				encoding:  FirestoreTargetEncoding,
+			},
+		},
 	}
-	encoded := FirestoreTargetEncoding.Encode(canonical)
-	want := EncodedTarget{
-		Ecosystem: NPM,
-		Package:   "@fortawesome!react-fontawesome",
-		Version:   "0.2.0",
-		Artifact:  "react-fontawesome-0.2.0.tgz",
-		encoding:  FirestoreTargetEncoding,
-	}
-	if diff := cmp.Diff(want, encoded, cmp.AllowUnexported(EncodedTarget{}, targetEncoding{})); diff != "" {
-		t.Errorf("FirestoreTargetEncoding.Encode() mismatch (-want +got):\n%s", diff)
-	}
-	decoded := encoded.Decode()
-	if diff := cmp.Diff(canonical, decoded); diff != "" {
-		t.Errorf("EncodedTarget.Decode() mismatch (-want +got):\n%s", diff)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registerTestEncoder(t, tt.ecosystem, FirestoreTargetEncoding, tt.encoder)
+
+			encoded := FirestoreTargetEncoding.Encode(tt.canonical)
+			if diff := cmp.Diff(tt.encoded, encoded, cmp.AllowUnexported(EncodedTarget{}, targetEncoding{})); diff != "" {
+				t.Errorf("FirestoreTargetEncoding.Encode() mismatch (-want +got):\n%s", diff)
+			}
+
+			decoded := encoded.Decode()
+			if diff := cmp.Diff(tt.canonical, decoded); diff != "" {
+				t.Errorf("EncodedTarget.Decode() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
