@@ -263,7 +263,9 @@ var gcbDockerfileTpl = template.Must(
 			{{- else if eq .OS "debian"}}
 			 {{.PackageManager.UpdateCmd}}
 			{{- end}}
+			{{- if .Instructions.Requires.SystemDeps }}
 			 {{.PackageManager.InstallCommand .Instructions.Requires.SystemDeps}}
+			{{- end}}
 			EOF
 			RUN sed 's/^ //' <<'EOF' | sh
 			 set -eux

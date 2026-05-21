@@ -79,6 +79,82 @@ ENTRYPOINT ["/bin/sh","/build"]
 `,
 		},
 		{
+			name: "Empty System Deps",
+			input: rebuild.Input{
+				Target: rebuild.Target{},
+				Strategy: &rebuild.WorkflowStrategy{
+					Requires: rebuild.RequiredEnv{
+						SystemDeps: []string{},
+					},
+					OutputPath: "output/foo.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				UseTimewarp:     false,
+				UseNetworkProxy: false,
+				Resources: build.Resources{
+					BaseImageConfig: baseImageConfig,
+				},
+			},
+			expected: `#syntax=docker/dockerfile:1.10
+FROM docker.io/library/alpine:3.19
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ mkdir /src && cd /src
+ 
+ 
+EOF
+RUN sed 's/^ //' <<'EOF' >/build
+ set -eux
+ 
+ mkdir /out && cp /src/output/foo.tgz /out/
+EOF
+WORKDIR "/src"
+ENTRYPOINT ["/bin/sh","/build"]
+`,
+		},
+		{
+			name: "Nil System Deps",
+			input: rebuild.Input{
+				Target: rebuild.Target{},
+				Strategy: &rebuild.WorkflowStrategy{
+					Requires: rebuild.RequiredEnv{
+						SystemDeps: nil,
+					},
+					OutputPath: "output/foo.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				UseTimewarp:     false,
+				UseNetworkProxy: false,
+				Resources: build.Resources{
+					BaseImageConfig: baseImageConfig,
+				},
+			},
+			expected: `#syntax=docker/dockerfile:1.10
+FROM docker.io/library/alpine:3.19
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ mkdir /src && cd /src
+ 
+ 
+EOF
+RUN sed 's/^ //' <<'EOF' >/build
+ set -eux
+ 
+ mkdir /out && cp /src/output/foo.tgz /out/
+EOF
+WORKDIR "/src"
+ENTRYPOINT ["/bin/sh","/build"]
+`,
+		},
+		{
 			name: "With Timewarp",
 			input: rebuild.Input{
 				Target: rebuild.Target{},
