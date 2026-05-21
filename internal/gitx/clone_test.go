@@ -7,6 +7,9 @@ import (
 	"context"
 	"testing"
 
+	"io"
+	"os/exec"
+
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
@@ -546,5 +549,108 @@ commits:
 	}
 	if originMaster.Hash() != newCommitHash {
 		t.Errorf("origin/master hash mismatch: expected %s, got %s", newCommitHash, originMaster.Hash())
+	}
+}
+
+func TestNativeClone_Submodules(t *testing.T) {
+	if !NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	ctx := context.Background()
+
+	// Create a "submodule" repo on disk.
+	subDir := t.TempDir()
+	subFS := osfs.New(subDir)
+	_, err := gitxtest.CreateRepoFromYAML(`
+commits:
+  - id: initial
+    branch: master
+    message: "Sub initial"
+    files:
+      sub.txt: "submodule content"
+`, &gitxtest.RepositoryOptions{
+		Storer:   filesystem.NewStorage(subFS, cache.NewObjectLRUDefault()),
+		Worktree: subFS,
+	})
+	if err != nil {
+		t.Fatalf("failed to create submodule repo: %v", err)
+	}
+
+	// Create a "main" repo using native git so we can use `git submodule add`.
+	mainDir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = mainDir
+		cmd.Env = append(cmd.Environ(),
+			"GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@test",
+			"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@test",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-b", "master")
+	run("-c", "protocol.file.allow=always", "submodule", "add", "file://"+subDir, "mysub")
+	run("commit", "-m", "add submodule")
+
+	// Clone with RecurseSubmodules.
+	targetDir := t.TempDir()
+	gitDir := targetDir + "/.git"
+	if err := osfs.New(targetDir).MkdirAll(".git", 0755); err != nil {
+		t.Fatalf("failed to create .git dir: %v", err)
+	}
+	storer := filesystem.NewStorage(osfs.New(gitDir), cache.NewObjectLRUDefault())
+	wtFS := osfs.New(targetDir)
+
+	repo, err := NativeClone(ctx, storer, wtFS, &git.CloneOptions{
+		URL:               "file://" + mainDir,
+		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
+	})
+	if err != nil {
+		t.Fatalf("NativeClone failed: %v", err)
+	}
+
+	// Verify the submodule file exists in the worktree.
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	f, err := wt.Filesystem.Open("mysub/sub.txt")
+	if err != nil {
+		t.Fatalf("submodule file mysub/sub.txt not found: %v", err)
+	}
+	content, err := io.ReadAll(f)
+	f.Close()
+	if err != nil {
+		t.Fatalf("failed to read submodule file: %v", err)
+	}
+	if string(content) != "submodule content" {
+		t.Errorf("unexpected submodule file content: %q", string(content))
+	}
+}
+
+func TestUpdateSubmodules_NoSubmodules(t *testing.T) {
+	// Create a simple repo with no submodules.
+	storer := memory.NewStorage()
+	fs := memfs.New()
+	repo, err := gitxtest.CreateRepoFromYAML(`
+commits:
+  - id: initial
+    branch: master
+    message: "Initial"
+    files:
+      README.md: "hello"
+`, &gitxtest.RepositoryOptions{
+		Storer:   storer,
+		Worktree: fs,
+	})
+	if err != nil {
+		t.Fatalf("failed to create repo: %v", err)
+	}
+	// UpdateSubmodules should return nil when there are no submodules.
+	if err := UpdateSubmodules(context.Background(), repo.Repository, git.DefaultSubmoduleRecursionDepth); err != nil {
+		t.Errorf("UpdateSubmodules returned error on repo without submodules: %v", err)
 	}
 }
