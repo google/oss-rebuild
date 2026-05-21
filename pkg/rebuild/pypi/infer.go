@@ -4,8 +4,10 @@
 package pypi
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -19,12 +21,14 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
 	pypiresolver "github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
+	"github.com/google/oss-rebuild/pkg/vcs/gitscan"
 	"github.com/pkg/errors"
 )
 
@@ -125,26 +129,94 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	}
 }
 
-func findGitRef(pkg string, version string, rcfg *rebuild.RepoConfig) (string, error) {
+func validateCommitCandidate(commitCandidate string, rcfg *rebuild.RepoConfig, heuristicName string) (bool, error) {
+	if commitCandidate == "" {
+		return false, nil
+	}
+	_, err := rcfg.Repository.CommitObject(plumbing.NewHash(commitCandidate))
+	if err != nil {
+		switch err {
+		case plumbing.ErrObjectNotFound:
+			return false, errors.Errorf("[INTERNAL] Commit ref from %s heuristic not found in repo [repo=%s,ref=%s]", heuristicName, rcfg.URI, commitCandidate)
+		default:
+			return false, errors.Wrapf(err, "Checkout failed [repo=%s,ref=%s]", rcfg.URI, commitCandidate)
+		}
+	}
+	return true, nil
+}
+
+func findGitRef(ctx context.Context, target rebuild.Target, mux rebuild.RegistryMux, pkg string, version string, rcfg *rebuild.RepoConfig) (string, error) {
 	tagHeuristic, err := rebuild.FindTagMatch(pkg, version, rcfg.Repository)
 	log.Printf("Version: %s, tag hash: \"%s\"", version, tagHeuristic)
 	if err != nil {
 		return "", errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
-	// TODO: Look for the project.toml and check for version number.
-	if tagHeuristic == "" {
-		return "", errors.New("no git ref")
-	}
-	_, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagHeuristic))
+	valid, err := validateCommitCandidate(tagHeuristic, rcfg, "tag")
 	if err != nil {
-		switch err {
-		case plumbing.ErrObjectNotFound:
-			return "", errors.Errorf("[INTERNAL] Commit ref from tag heuristic not found in repo [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
-		default:
-			return "", errors.Wrapf(err, "Checkout failed [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
-		}
+		return "", err
 	}
-	return tagHeuristic, nil
+	if valid {
+		log.Printf("PyPI Returning result from tag heuristic.")
+		return tagHeuristic, nil
+	}
+
+	closestCommit, err := findClosestCommitToSource(ctx, target, mux, rcfg.Repository)
+	if err != nil {
+		return "", errors.Wrapf(err, "[INTERNAL] commit overlap heuristic error")
+	}
+	commitHeuristic := closestCommit.Hash.String()
+	valid, err = validateCommitCandidate(commitHeuristic, rcfg, "commit")
+	if err != nil {
+		return "", err
+	}
+	if valid {
+		log.Printf("PyPI Returning result from commit heuristic.")
+		return commitHeuristic, nil
+	}
+	return "", errors.New("no git ref")
+}
+
+func findClosestCommitToSource(ctx context.Context, target rebuild.Target, mux rebuild.RegistryMux, repo *git.Repository) (*object.Commit, error) {
+	sourceArtifact, err := mux.PyPI.Artifact(ctx, target.Package, target.Version, target.Artifact)
+	if err != nil {
+		return nil, err
+	}
+	defer sourceArtifact.Close()
+
+	var hashes []plumbing.Hash
+	if strings.HasSuffix(target.Artifact, ".tar.gz") {
+		gzReader, err := gzip.NewReader(sourceArtifact)
+		if err != nil {
+			return nil, err
+		}
+		defer gzReader.Close()
+		tarData, err := io.ReadAll(gzReader)
+		if err != nil {
+			return nil, err
+		}
+		tarReader := tar.NewReader(bytes.NewReader(tarData))
+		hashes, err = gitscan.BlobHashesFromTar(tarReader)
+		if err != nil {
+			return nil, errors.Wrap(err, "hashing source tar contents")
+		}
+	} else if strings.HasSuffix(target.Artifact, ".whl") {
+		zipData, err := io.ReadAll(sourceArtifact)
+		if err != nil {
+			return nil, err
+		}
+		zipReader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+		if err != nil {
+			return nil, err
+		}
+		hashes, err = gitscan.BlobHashesFromZip(zipReader)
+		if err != nil {
+			return nil, errors.Wrap(err, "hashing source zip contents")
+		}
+	} else {
+		return nil, errors.Errorf("Incompatible release type: %s", target.Artifact)
+	}
+
+	return gitscan.FindClosestCommitToSource(ctx, repo, hashes)
 }
 
 // FindPureWheel returns the pure wheel artifact from the given version's releases.
@@ -289,7 +361,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			dir = rcfg.Dir
 		}
 	} else {
-		ref, err = findGitRef(release.Name, version, rcfg)
+		ref, err = findGitRef(ctx, t, mux, release.Name, version, rcfg)
 		if err != nil {
 			return cfg, err
 		}

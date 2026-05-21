@@ -8,6 +8,7 @@ import (
 	"archive/zip"
 	"context"
 	"io"
+	"log"
 	"sort"
 	"time"
 
@@ -18,6 +19,31 @@ import (
 	"github.com/google/oss-rebuild/internal/bitmap"
 	"github.com/pkg/errors"
 )
+
+func FindClosestCommitToSource(ctx context.Context, repo *git.Repository, source_hashes []plumbing.Hash) (*object.Commit, error) {
+	searchStrategy := ExactTreeCount{}
+	closest, matched, total, err := searchStrategy.Search(ctx, repo, source_hashes)
+	if err != nil {
+		return nil, errors.Wrap(err, "searching for matching commit based on commit file overlap")
+	}
+	log.Printf("commits (%d): %v", len(closest), closest)
+	log.Printf("matched %d/%d files using git index scan", matched, total)
+	if len(closest) == 0 {
+		// No matches found so we will not use the commit file overlap heuristic, but this is not an error.
+		// The caller should try other heuristics.
+		log.Printf("no matching commit found using commit file overlap heuristics")
+		return nil, nil
+	}
+	// TODO: use a better heuristic here like using commit time
+	commitString := closest[0]
+	// Verify if commit exists in the repository
+	commitHash := plumbing.NewHash(commitString)
+	commitObject, err := repo.CommitObject(commitHash)
+	if err != nil {
+		return nil, errors.Wrapf(err, "resolving commit %s", commitString)
+	}
+	return commitObject, nil
+}
 
 // BlobHashesFromZip computes the git blob hashes for all files in the provided zip archive.
 func BlobHashesFromZip(zr *zip.Reader) (files []plumbing.Hash, err error) {

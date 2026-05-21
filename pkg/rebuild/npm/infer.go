@@ -219,9 +219,9 @@ func InferLocation(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMu
 		}
 		fallthrough
 	default:
-		commitHashHex, err := findClosestCommitToSource(ctx, t, mux, rcfg.Repository)
-		if err == nil {
-			log.Printf("Got commit %s", commitHashHex)
+		commit, err := findClosestCommitToSource(ctx, t, mux, rcfg.Repository)
+		if err == nil && commit != nil {
+			commitHashHex := commit.Hash.String()
 			loc.Ref = commitHashHex
 			return loc, "", nil
 		} else {
@@ -472,52 +472,27 @@ func pkgJSONSearch(pkg, pkgJSONPath string, repo *git.Repository) (tm map[string
 	return
 }
 
-func findClosestCommitToSource(ctx context.Context, target rebuild.Target, mux rebuild.RegistryMux, repo *git.Repository) (string, error) {
+func findClosestCommitToSource(ctx context.Context, target rebuild.Target, mux rebuild.RegistryMux, repo *git.Repository) (*object.Commit, error) {
 	sourceTar, err := mux.NPM.Artifact(ctx, target.Package, target.Version)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer sourceTar.Close()
 	gzReader, err := gzip.NewReader(sourceTar)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer gzReader.Close()
 	tarData, err := io.ReadAll(gzReader)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	tarReader := tar.NewReader(bytes.NewReader(tarData))
-	// NOTE: we *could* refactor out a function in gitscan that gets a repo and the hash list and
-	// finds the closest commit?
-	// That way, the ecosystem specific part is just getting the hashes from the specific file
-	// types.
-	// Arguably, these are also somewhat generic over ecosystems, as they really just depend on the
-	// file type.
-	// Then, the only ecosystem specific thing is to fetch the artifact, and the rest is then a
-	// filetype specific, but ecosystem agnostic repo scan.
+
 	hashes, err := gitscan.BlobHashesFromTar(tarReader)
 	if err != nil {
-		return "", errors.Wrap(err, "hashing source jar contents")
+		return nil, errors.Wrap(err, "hashing source jar contents")
 	}
-	searchStrategy := gitscan.ExactTreeCount{}
-	closest, matched, total, err := searchStrategy.Search(ctx, repo, hashes)
-	if err != nil {
-		return "", errors.Wrap(err, "searching for matching commit based on source jar")
-	}
-	log.Printf("commits (%d): %v", len(closest), closest)
-	log.Printf("matched %d/%d files using git index scan", matched, total)
-	if len(closest) == 0 {
-		log.Printf("no matching commit found using commit overlap heuristic")
-		return "", nil
-	}
-	// TODO: use a better heuristic here like using commit time
-	commitHashHex := closest[0]
-	// Verify if commit exists in the repository
-	commitHash := plumbing.NewHash(commitHashHex)
-	_, err = repo.CommitObject(commitHash)
-	if err != nil {
-		return "", errors.Wrapf(err, "resolving commit %s", commitHashHex)
-	}
-	return commitHashHex, nil
+
+	return gitscan.FindClosestCommitToSource(ctx, repo, hashes)
 }

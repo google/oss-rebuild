@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
@@ -310,26 +309,5 @@ func findClosestCommitToSource(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, errors.Wrap(err, "hashing source jar contents")
 	}
-	searchStrategy := gitscan.ExactTreeCount{}
-	closest, matched, total, err := searchStrategy.Search(ctx, repo, hashes)
-	if err != nil {
-		return nil, errors.Wrap(err, "searching for matching commit based on source jar")
-	}
-	log.Printf("commits (%d): %v", len(closest), closest)
-	log.Printf("matched %d/%d files using git index scan", matched, total)
-	if len(closest) == 0 {
-		// No matches found so we will not use the source jar heuristic, but this is not an error.
-		// The caller should try other heuristics.
-		log.Printf("no matching commit found using source jar heuristic")
-		return nil, nil
-	}
-	// TODO: use a better heuristic here like using commit time
-	commitString := closest[0]
-	// Verify if commit exists in the repository
-	commitHash := plumbing.NewHash(commitString)
-	commitObject, err := repo.CommitObject(commitHash)
-	if err != nil {
-		return nil, errors.Wrapf(err, "resolving commit %s", commitString)
-	}
-	return commitObject, nil
+	return gitscan.FindClosestCommitToSource(ctx, repo, hashes)
 }
