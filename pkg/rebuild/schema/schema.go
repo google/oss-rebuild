@@ -14,6 +14,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/maven"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
+	"github.com/google/oss-rebuild/pkg/rebuild/oci"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/rubygems"
@@ -38,6 +39,7 @@ type StrategyOneOf struct {
 	Debrebuild           *debian.Debrebuild             `json:"debrebuild,omitempty" yaml:"debrebuild,omitempty"`
 	DebootsnapSbuild     *debian.DebootsnapSbuild       `json:"debootsnap_sbuild,omitempty" yaml:"debootsnap_sbuild,omitempty"`
 	GemBuild             *rubygems.GemBuild             `json:"rubygems_gem_build,omitempty" yaml:"rubygems_gem_build,omitempty"`
+	DockerfileBuild      *oci.DockerfileBuild           `json:"dockerfile_build,omitempty" yaml:"dockerfile_build,omitempty"`
 	ManualStrategy       *rebuild.ManualStrategy        `json:"manual,omitempty" yaml:"manual,omitempty"`
 	WorkflowStrategy     *rebuild.WorkflowStrategy      `json:"flow,omitempty" yaml:"flow,omitempty"`
 }
@@ -70,6 +72,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.DebootsnapSbuild = t
 	case *rubygems.GemBuild:
 		oneof.GemBuild = t
+	case *oci.DockerfileBuild:
+		oneof.DockerfileBuild = t
 	case *rebuild.ManualStrategy:
 		oneof.ManualStrategy = t
 	case *rebuild.WorkflowStrategy:
@@ -122,6 +126,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.GemBuild != nil {
 			num++
 			s = oneof.GemBuild
+		}
+		if oneof.DockerfileBuild != nil {
+			num++
+			s = oneof.DockerfileBuild
 		}
 		if oneof.ManualStrategy != nil {
 			num++

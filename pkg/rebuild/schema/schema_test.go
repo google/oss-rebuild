@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"
+	"github.com/google/oss-rebuild/pkg/rebuild/oci"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"gopkg.in/yaml.v3"
@@ -164,6 +165,26 @@ manual:
     dir: the_dir
   deps: bar
   build: foo
+`,
+	},
+	{
+		name: "OCIDockerfileBuild",
+		strategy: &oci.DockerfileBuild{
+			Location: rebuild.Location{
+				Dir:  "the_dir",
+				Ref:  "the_ref",
+				Repo: "the_repo",
+			},
+			Dockerfile: "FROM alpine",
+		},
+		jsonEncoded: `{"dockerfile_build":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","dockerfile":"FROM alpine"}}`,
+		yamlEncoded: `
+dockerfile_build:
+  location:
+    repo: the_repo
+    ref: the_ref
+    dir: the_dir
+  dockerfile: FROM alpine
 `,
 	},
 	{
