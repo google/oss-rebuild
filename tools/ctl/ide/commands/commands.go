@@ -296,15 +296,13 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 						return
 					}
 					defer rbFile.Close()
-					// Use MaxDepth based on archive format layers
-					maxDepth := example.Target().ArchiveType().Layers()
 					var left, diff, right []string
 					var root diffr.DiffNode
 					err = diffr.Diff(
 						ctx,
 						diffr.File{Name: rebuildPath, Reader: rbFile},
 						diffr.File{Name: upstreamPath, Reader: upFile},
-						diffr.Options{MaxDepth: maxDepth, OutputNode: &root},
+						diffr.Options{OutputNode: &root}, // NOTE: MaxDepth is unlimited
 					)
 					if err != nil && !errors.Is(err, diffr.ErrNoDiff) {
 						log.Println(errors.Wrap(err, "running diffr"))

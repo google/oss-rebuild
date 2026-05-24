@@ -58,13 +58,13 @@ func (d Diffr) Diff(ctx context.Context, rebuildPath, upstreamPath string, targe
 	defer stabilizedUpstream.Close()
 	// Create output buffer
 	var output bytes.Buffer
-	// Run diffr
-	maxDepth := target.ArchiveType().Layers()
+	// Run diffr. MaxDepth defaults to 0 (unlimited): the static format layer count
+	// undercounts nested archives (e.g. .gem tars contain data.tar.gz inside).
 	err = diffr.Diff(
 		ctx,
 		diffr.File{Name: rebuildPath, Reader: stabilizedRebuild},
 		diffr.File{Name: upstreamPath, Reader: stabilizedUpstream},
-		diffr.Options{MaxDepth: maxDepth, Output: &output},
+		diffr.Options{Output: &output},
 	)
 	if err != nil && !errors.Is(err, diffr.ErrNoDiff) {
 		return nil, errors.Wrap(err, "running diffr")
