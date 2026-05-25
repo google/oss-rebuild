@@ -625,3 +625,220 @@ func TestStableMavenPomProperties(t *testing.T) {
 		})
 	}
 }
+
+func TestStableJarSignature(t *testing.T) {
+	testCases := []struct {
+		test     string
+		input    []*archive.ZipEntry
+		expected []*archive.ZipEntry
+	}{
+		{
+			test: "unsigned_no_op",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\nName: org/example/\r\nSHA-256-Digest: abc=\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "com/example/App.class"}, Body: []byte("class")},
+			},
+			expected: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\nName: org/example/\r\nSHA-256-Digest: abc=\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "com/example/App.class"}, Body: []byte("class")},
+			},
+		},
+		{
+			test: "pure_signed_drops_all",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte(
+						"Manifest-Version: 1.0\r\n\r\n" +
+							"Name: com/example/App.class\r\n" +
+							"SHA-256-Digest: aaa=\r\n\r\n" +
+							"Name: com/example/Other.class\r\n" +
+							"SHA-256-Digest: bbb=\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/ECLIPSE_.SF"}, Body: []byte("sig manifest")},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/ECLIPSE_.RSA"}, Body: []byte("sig block")},
+				{FileHeader: &zip.FileHeader{Name: "com/example/App.class"}, Body: []byte("a")},
+				{FileHeader: &zip.FileHeader{Name: "com/example/Other.class"}, Body: []byte("b")},
+			},
+			expected: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "com/example/App.class"}, Body: []byte("a")},
+				{FileHeader: &zip.FileHeader{Name: "com/example/Other.class"}, Body: []byte("b")},
+			},
+		},
+		{
+			test: "multiple_signers",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte(
+						"Manifest-Version: 1.0\r\n\r\n" +
+							"Name: com/example/App.class\r\n" +
+							"SHA-256-Digest: aaa=\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/SIGNER1.SF"}, Body: []byte("a")},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/SIGNER1.RSA"}, Body: []byte("b")},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/SIGNER2.SF"}, Body: []byte("c")},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/SIGNER2.DSA"}, Body: []byte("d")},
+				{FileHeader: &zip.FileHeader{Name: "com/example/App.class"}, Body: []byte("x")},
+			},
+			expected: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "com/example/App.class"}, Body: []byte("x")},
+			},
+		},
+		{
+			test: "hybrid_section_preserves_non_digest_attrs",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte(
+						"Manifest-Version: 1.0\r\n\r\n" +
+							"Name: com/example/PureSig.class\r\n" +
+							"SHA-256-Digest: aaa=\r\n\r\n" +
+							"Name: org/example/\r\n" +
+							"Sealed: true\r\n" +
+							"SHA-256-Digest: bbb=\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/SIG.SF"}, Body: []byte("s")},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/SIG.RSA"}, Body: []byte("r")},
+				{FileHeader: &zip.FileHeader{Name: "com/example/PureSig.class"}, Body: []byte("a")},
+			},
+			expected: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte(
+						"Manifest-Version: 1.0\r\n\r\n" +
+							"Name: org/example/\r\nSealed: true\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "com/example/PureSig.class"}, Body: []byte("a")},
+			},
+		},
+		{
+			test: "ec_extension_dropped",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte(
+						"Manifest-Version: 1.0\r\n\r\n" +
+							"Name: a/B.class\r\nSHA-256-Digest: x=\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/SIG.SF"}, Body: []byte("s")},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/SIG.EC"}, Body: []byte("ec")},
+				{FileHeader: &zip.FileHeader{Name: "a/B.class"}, Body: []byte("b")},
+			},
+			expected: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "a/B.class"}, Body: []byte("b")},
+			},
+		},
+		{
+			test: "multiple_digest_algorithms",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte(
+						"Manifest-Version: 1.0\r\n\r\n" +
+							"Name: a/B.class\r\n" +
+							"SHA-1-Digest: aaa=\r\n" +
+							"SHA-256-Digest: bbb=\r\n" +
+							"SHA-512-Digest: ccc=\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/SIG.SF"}, Body: []byte("s")},
+				{FileHeader: &zip.FileHeader{Name: "a/B.class"}, Body: []byte("b")},
+			},
+			expected: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "a/B.class"}, Body: []byte("b")},
+			},
+		},
+		{
+			test: "legacy_sha1_and_sha_digest_dropped",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte(
+						"Manifest-Version: 1.0\r\n\r\n" +
+							"Name: a/B.class\r\nSHA1-Digest: aaa=\r\n\r\n" +
+							"Name: a/C.class\r\nSHA-Digest: bbb=\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "META-INF/SIG.SF"}, Body: []byte("s")},
+				{FileHeader: &zip.FileHeader{Name: "a/B.class"}, Body: []byte("b")},
+				{FileHeader: &zip.FileHeader{Name: "a/C.class"}, Body: []byte("c")},
+			},
+			expected: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\n\r\n"),
+				},
+				{FileHeader: &zip.FileHeader{Name: "a/B.class"}, Body: []byte("b")},
+				{FileHeader: &zip.FileHeader{Name: "a/C.class"}, Body: []byte("c")},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.test, func(t *testing.T) {
+			var input bytes.Buffer
+			{
+				zw := zip.NewWriter(&input)
+				for _, entry := range tc.input {
+					orDie(entry.WriteTo(zw))
+				}
+				orDie(zw.Close())
+			}
+
+			var output bytes.Buffer
+			zr := must(zip.NewReader(bytes.NewReader(input.Bytes()), int64(input.Len())))
+			err := StabilizeZip(zr, zip.NewWriter(&output), NewContext(archive.ZipFormat).WithStabilizers([]Stabilizer{StableJarSignature}))
+			if err != nil {
+				t.Fatalf("StabilizeZip(%v) = %v, want nil", tc.test, err)
+			}
+
+			var got []archive.ZipEntry
+			{
+				zr := must(zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len())))
+				for _, ent := range zr.File {
+					got = append(got, archive.ZipEntry{FileHeader: &ent.FileHeader, Body: must(io.ReadAll(must(ent.Open())))})
+				}
+			}
+
+			if len(got) != len(tc.expected) {
+				var gotNames, wantNames []string
+				for _, g := range got {
+					gotNames = append(gotNames, g.FileHeader.Name)
+				}
+				for _, e := range tc.expected {
+					wantNames = append(wantNames, e.FileHeader.Name)
+				}
+				t.Fatalf("StabilizeZip(%v) got %d entries %v, want %d %v", tc.test, len(got), gotNames, len(tc.expected), wantNames)
+			}
+			for i := range got {
+				if got[i].FileHeader.Name != tc.expected[i].FileHeader.Name {
+					t.Errorf("Entry %d name: got %q want %q", i, got[i].FileHeader.Name, tc.expected[i].FileHeader.Name)
+				}
+				if diff := cmp.Diff(string(tc.expected[i].Body), string(got[i].Body)); diff != "" {
+					t.Errorf("Entry %d (%s) body mismatch (-want +got):\n%s", i, got[i].FileHeader.Name, diff)
+				}
+			}
+		})
+	}
+}

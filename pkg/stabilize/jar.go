@@ -8,9 +8,11 @@ import (
 	"io"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
+	"github.com/google/oss-rebuild/internal/glob"
 	"github.com/google/oss-rebuild/pkg/archive"
 )
 
@@ -20,6 +22,7 @@ var AllJarStabilizers = []Stabilizer{
 	StableJAROrderOfAttributeValues,
 	StableGitProperties,
 	StableMavenPomProperties,
+	StableJarSignature,
 }
 
 // StableJARBuildMetadata removes build-related metadata from MANIFEST.MF files.
@@ -212,6 +215,95 @@ var StableMavenPomProperties = Stabilizer{
 	}
 	zf.SetContent(mavenPomPropertiesHeaderRe.ReplaceAll(data, nil))
 }))
+
+// jarSignaturePatterns matches the jarsigner signature artifact files.
+var jarSignaturePatterns = []string{
+	"META-INF/*.SF",
+	"META-INF/*.RSA",
+	"META-INF/*.DSA",
+	"META-INF/*.EC",
+}
+
+// jarDigestAttrs is the set of MANIFEST.MF per-entry attribute names that jarsigner writes alongside Name.
+var jarDigestAttrs = []string{
+	"MD5-Digest",
+	"SHA-1-Digest",
+	"SHA-256-Digest",
+	"SHA-384-Digest",
+	"SHA-512-Digest",
+	// Legacy pre-JDK8 names omitted hyphens
+	"SHA-Digest",
+	"SHA1-Digest",
+}
+
+// StableJarSignature removes jarsigner output so comparison is independent of signatures.
+//
+// On signed jars,
+// - drop the signature artifacts (.SF / .RSA / .DSA / .EC)
+// - filters *-Digest attributes added to MANIFEST.MF
+//
+// NOTE: Transforms only applied when a META-INF/*.SF file is present (the
+// canonical indication that jarsigner was run).
+var StableJarSignature = Stabilizer{
+	Name: "jar-signature",
+}.WithFn(ZipArchiveFn(func(mr *archive.MutableZipReader) {
+	if !hasJarSignature(mr) {
+		return
+	}
+	mr.File = slices.DeleteFunc(mr.File, func(mf *archive.MutableZipFile) bool {
+		match, _ := multiMatch(jarSignaturePatterns, mf.Name)
+		return match
+	})
+	for _, mf := range mr.File {
+		if mf.Name != "META-INF/MANIFEST.MF" {
+			continue
+		}
+		stripManifestDigestSections(mf)
+	}
+}))
+
+func hasJarSignature(mr *archive.MutableZipReader) bool {
+	for _, mf := range mr.File {
+		if match, _ := glob.Match("META-INF/*.SF", mf.Name); match {
+			return true
+		}
+	}
+	return false
+}
+
+// stripManifestDigestSections inverts the per-entry manifest edits jarsigner makes when signing.
+//
+// The jarsigner logic we are undoing adds file digests to the manifest one of
+// two ways (see JarSigner.{updateDigests,getDigestAttributes}):
+//   - When entry already has a manifest section: add an <alg>-Digest attribute
+//     and leave its other attributes untouched.
+//   - When entry has no section: create a new section holding only Name and the
+//     <alg>-Digest attribute(s) (only applied to non-directory entries).
+func stripManifestDigestSections(mf *archive.MutableZipFile) {
+	r, err := mf.Open()
+	if err != nil {
+		return
+	}
+	manifest, err := ParseManifest(r)
+	if err != nil {
+		return
+	}
+	kept := manifest.EntrySections[:0]
+	for _, sec := range manifest.EntrySections {
+		for _, a := range jarDigestAttrs {
+			sec.Delete(a)
+		}
+		if len(sec.Names) > 1 || (len(sec.Names) == 1 && sec.Names[0] != "Name") {
+			kept = append(kept, sec)
+		}
+	}
+	manifest.EntrySections = kept
+	buf := bytes.NewBuffer(nil)
+	if err := WriteManifest(buf, manifest); err != nil {
+		return
+	}
+	mf.SetContent(buf.Bytes())
+}
 
 // StableGitProperties clears git.json and git.properties files.
 var StableGitProperties = Stabilizer{
