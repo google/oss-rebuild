@@ -28,6 +28,10 @@ func StabilizersForTarget(t rebuild.Target) ([]stabilize.Stabilizer, error) {
 		stabilizers = slices.Concat(stabilize.AllTarStabilizers, stabilize.AllGzipStabilizers)
 	}
 	switch t.Ecosystem {
+	case rebuild.PyPI:
+		if format == archive.ZipFormat {
+			stabilizers = append(stabilizers, stabilize.AllWheelStabilizers...)
+		}
 	case rebuild.Maven:
 		if format == archive.ZipFormat {
 			stabilizers = append(stabilizers, stabilize.AllJarStabilizers...)
