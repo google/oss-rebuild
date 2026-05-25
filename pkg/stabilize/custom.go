@@ -64,6 +64,7 @@ func (cfg *CustomStabilizerConfigOneOf) CustomStabilizerConfig() CustomStabilize
 type CustomStabilizerEntry struct {
 	Config CustomStabilizerConfigOneOf `yaml:",inline"`
 	Reason string                      `yaml:"reason"`
+	// TODO: Support Ordering customization.
 }
 
 // Validate ensures the entry is valid.
@@ -87,7 +88,7 @@ func CreateCustomStabilizers(entries []CustomStabilizerEntry, format archive.For
 		if err := ent.Config.CustomStabilizerConfig().Validate(); err != nil {
 			return nil, errors.Wrapf(err, "validating stabilizer config %d", i)
 		}
-		stabilizers = append(stabilizers, ent.Config.CustomStabilizerConfig().Stabilizer(name))
+		stabilizers = append(stabilizers, ent.Config.CustomStabilizerConfig().Stabilizer(name).WithOrdering(StagePatch))
 	}
 	return stabilizers, nil
 }

@@ -3,7 +3,11 @@
 
 package stabilize
 
-import "github.com/google/oss-rebuild/pkg/archive"
+import (
+	"slices"
+
+	"github.com/google/oss-rebuild/pkg/archive"
+)
 
 // StabilizationContext tracks position within potentially nested archives
 // and carries the stabilizer pipeline for recursive application.
@@ -48,8 +52,12 @@ func (ctx *StabilizationContext) Format() archive.Format {
 }
 
 // WithStabilizers returns a new context with the given stabilizers.
+// Stabilizers are stable-sorted by Ordering so the pipeline respects the
+// declared Stages regardless of input slice order.
 func (ctx *StabilizationContext) WithStabilizers(stabilizers []Stabilizer) *StabilizationContext {
-	ctx.Stabilizers = stabilizers
+	sorted := slices.Clone(stabilizers)
+	slices.SortStableFunc(sorted, func(a, b Stabilizer) int { return int(a.Ordering) - int(b.Ordering) })
+	ctx.Stabilizers = sorted
 	return ctx
 }
 
