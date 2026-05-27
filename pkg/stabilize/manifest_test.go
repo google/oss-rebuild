@@ -302,3 +302,39 @@ func TestWriteManifestOrder(t *testing.T) {
 		})
 	}
 }
+
+func TestSectionAttributeNamesAreCaseInsensitive(t *testing.T) {
+	section := NewSection()
+	section.Set("Build-Os", "Linux")
+
+	if got, ok := section.Get("Build-OS"); !ok || got != "Linux" {
+		t.Fatalf("Get(Build-OS) = %q, %v; want Linux, true", got, ok)
+	}
+
+	section.Set("BUILD-OS", "Darwin")
+	if got, ok := section.Get("Build-Os"); !ok || got != "Darwin" {
+		t.Fatalf("Get(Build-Os) after Set(BUILD-OS) = %q, %v; want Darwin, true", got, ok)
+	}
+	if diff := cmp.Diff([]string{"Build-Os"}, section.Names); diff != "" {
+		t.Fatalf("Names differ after case-insensitive update (-want,+got):\n%s", diff)
+	}
+
+	section.Delete("build-os")
+	if _, ok := section.Get("Build-Os"); ok {
+		t.Fatal("Get(Build-Os) after Delete(build-os) succeeded; want deleted")
+	}
+	if len(section.Names) != 0 {
+		t.Fatalf("Names after Delete(build-os) = %v, want empty", section.Names)
+	}
+}
+
+func TestParseManifestRejectsCaseInsensitiveDuplicateAttributes(t *testing.T) {
+	input := "Manifest-Version: 1.0\r\n" +
+		"Build-Os: Linux\r\n" +
+		"BUILD-OS: Darwin\r\n" +
+		"\r\n"
+
+	if _, err := ParseManifest(strings.NewReader(input)); err == nil {
+		t.Fatal("ParseManifest() error = nil, want duplicate attribute error")
+	}
+}

@@ -88,6 +88,24 @@ func TestStableJARBuildMetadata(t *testing.T) {
 			},
 		},
 		{
+			test: "build_metadata_attribute_names_are_case_insensitive",
+			input: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body: []byte("Manifest-Version: 1.0\r\n" +
+						"Build-Os: Linux\r\n" +
+						"Scm-Revision: abcdef\r\n" +
+						"Implementation-Title: Test Project\r\n\r\n"),
+				},
+			},
+			expected: []*archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+					Body:       []byte("Manifest-Version: 1.0\r\nImplementation-Title: Test Project\r\n\r\n"),
+				},
+			},
+		},
+		{
 			test: "all_build_metadata_attributes",
 			input: []*archive.ZipEntry{
 				{

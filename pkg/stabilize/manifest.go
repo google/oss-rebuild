@@ -32,30 +32,43 @@ func NewSection() *Section {
 	}
 }
 
+func (s *Section) attributeName(name string) (string, bool) {
+	for _, existing := range s.Names {
+		if strings.EqualFold(existing, name) {
+			return existing, true
+		}
+	}
+	return "", false
+}
+
 // Set adds or updates an attribute while maintaining order
 func (s *Section) Set(name, value string) {
-	if _, exists := s.attributes[name]; !exists {
-		s.Names = append(s.Names, name)
+	if existing, exists := s.attributeName(name); exists {
+		s.attributes[existing] = value
+		return
 	}
+	s.Names = append(s.Names, name)
 	s.attributes[name] = value
 }
 
 // Get retrieves an attribute value
 func (s *Section) Get(name string) (string, bool) {
-	v, ok := s.attributes[name]
-	return v, ok
+	if v, ok := s.attributes[name]; ok {
+		return v, true
+	}
+	if existing, ok := s.attributeName(name); ok {
+		return s.attributes[existing], true
+	}
+	return "", false
 }
 
 // Delete removes an attribute
 func (s *Section) Delete(name string) {
-	if _, ok := s.attributes[name]; !ok {
-		return
-	}
-	delete(s.attributes, name)
 	for i, n := range s.Names {
-		if n == name {
+		if strings.EqualFold(n, name) {
+			delete(s.attributes, n)
 			s.Names = slices.Delete(s.Names, i, i+1)
-			break
+			return
 		}
 	}
 }
