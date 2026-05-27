@@ -139,6 +139,7 @@ func TestStableJARBuildMetadata(t *testing.T) {
 							"SCM-Git-Commit-Description: feat: new feature\r\n" +
 							"SCM-Git-Commit-Timestamp: 1671890378\r\n" +
 							"Source-Date-Epoch: 1671890378\r\n" +
+							"X-Compile-Release-JDK: 8\r\n" +
 							"Implementation-Title: Test Project\r\n" +
 							"Implementation-Version: 1.0.0\r\n\r\n"),
 				},

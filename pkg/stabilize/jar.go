@@ -100,6 +100,7 @@ var StableJARBuildMetadata = Stabilizer{
 		"TODAY",
 		"Tool",
 		"TSTAMP",
+		"X-Compile-Release-JDK",
 		"url",
 	} {
 		manifest.MainSection.Delete(attr)
