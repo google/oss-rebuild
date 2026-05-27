@@ -205,8 +205,8 @@ func TestStrategies(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			"throw an error if JDK installation candidate is not found",
-			&MavenBuild{
+			name: "generate invalid workflow when JDK installation candidate is not found",
+			strategy: &MavenBuild{
 				Location: rebuild.Location{
 					Repo: "https://foo.bar",
 					Ref:  "ref",
@@ -214,8 +214,25 @@ func TestStrategies(t *testing.T) {
 				},
 				JDKVersion: "30",
 			},
-			rebuild.Instructions{},
-			true,
+			want: rebuild.Instructions{
+				Location: rebuild.Location{
+					Repo: "https://foo.bar",
+					Ref:  "ref",
+					Dir:  "repo-dir",
+				},
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "wget", "maven"},
+				},
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
+				Deps: textwrap.Dedent(`
+					mkdir -p /opt/jdk
+					wget -q -O - "http://not-found.invalid/" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
+				Build: textwrap.Dedent(`
+					export JAVA_HOME=/opt/jdk
+					export PATH=$JAVA_HOME/bin:$PATH
+					mvn clean package -DskipTests --batch-mode -f repo-dir -Dmaven.javadoc.skip=true`[1:]),
+				OutputPath: "repo-dir/target/ldapchai-0.8.6.jar",
+			},
 		},
 	}
 	for _, tc := range tests {
