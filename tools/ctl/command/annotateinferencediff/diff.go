@@ -372,8 +372,20 @@ func formatDiffersHeader(diffs []diff) string {
 	return b.String()
 }
 
+// formatFailsHeader emits `# inference fails: <reason>` where reason can be multi-line.
+// In the multi-line case, each additional line is indented with `#  ` indented
+// prefix to ensure it falls inside what we consider to be the header.
 func formatFailsHeader(reason string) string {
-	return fmt.Sprintf("%s %s\n", headerFails, reason)
+	reason = strings.TrimRight(reason, "\n")
+	if !strings.Contains(reason, "\n") {
+		return fmt.Sprintf("%s %s\n", headerFails, reason)
+	}
+	var b strings.Builder
+	b.WriteString(headerFails + "\n")
+	for _, line := range strings.Split(reason, "\n") {
+		fmt.Fprintf(&b, "#  %s\n", line)
+	}
+	return b.String()
 }
 
 func formatScalar(v any) string {
