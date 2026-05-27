@@ -4,13 +4,13 @@
 package maven
 
 import (
+	"log"
 	"path"
 	"strings"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/pkg/errors"
 )
 
 type MavenBuild struct {
@@ -22,10 +22,13 @@ type MavenBuild struct {
 
 var _ rebuild.Strategy = &MavenBuild{}
 
-func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
+func (b *MavenBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 	jdkVersionURL, exists := JDKDownloadURLs[b.JDKVersion]
 	if !exists {
-		return nil, errors.Errorf("no download URL for JDK version %s", b.JDKVersion)
+		// NOTE: There is no error outlet for rebuild.Flowable but we can
+		// return an invalid URL if we aren't aware of how to locate the JDK.
+		log.Printf("Warning: no download URL for JDK version %s; add it to JDKDownloadURLs", b.JDKVersion)
+		jdkVersionURL = "http://not-found.invalid/"
 	}
 	deps := []flow.Step{{
 		Uses: "maven/setup-java",
@@ -61,21 +64,20 @@ func (b *MavenBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 			},
 		},
 		OutputDir: path.Join(b.Dir, "target"),
-	}, nil
+	}
 }
 
 func (b *MavenBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
-	workflow, err := b.ToWorkflow()
-	if err != nil {
-		return rebuild.Instructions{}, err
-	}
-	return workflow.GenerateFor(t, be)
+	return b.ToWorkflow().GenerateFor(t, be)
 }
 
-func (b *GradleBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
+func (b *GradleBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 	jdkVersionURL, exists := JDKDownloadURLs[b.JDKVersion]
 	if !exists {
-		return nil, errors.Errorf("no download URL for JDK version %s", b.JDKVersion)
+		// NOTE: There is no error outlet for rebuild.Flowable but we can
+		// return an invalid URL if we aren't aware of how to locate the JDK.
+		log.Printf("Warning: no download URL for JDK version %s; add it to JDKDownloadURLs", b.JDKVersion)
+		jdkVersionURL = "http://not-found.invalid/"
 	}
 
 	deps := []flow.Step{{
@@ -126,7 +128,7 @@ func (b *GradleBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Deps:      deps,
 		Build:     build,
 		OutputDir: path.Join(b.Dir, "build", "libs"),
-	}, nil
+	}
 }
 
 type GradleBuild struct {
@@ -140,11 +142,7 @@ type GradleBuild struct {
 var _ rebuild.Strategy = &GradleBuild{}
 
 func (b *GradleBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
-	workflow, err := b.ToWorkflow()
-	if err != nil {
-		return rebuild.Instructions{}, err
-	}
-	return workflow.GenerateFor(t, be)
+	return b.ToWorkflow().GenerateFor(t, be)
 }
 
 func init() {
