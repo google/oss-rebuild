@@ -134,6 +134,12 @@ func TestStripExistingHeader(t *testing.T) {
 				"#    git checkout\n#   +rm -rf /src/.git\n# NOTE: keep me\npypi_pure_wheel_build:\n  ref: x\n",
 			want: "# NOTE: keep me\npypi_pure_wheel_build:\n  ref: x\n",
 		},
+		{
+			name: "multiline fails block (indented continuation) stripped",
+			input: "# inference fails:\n#  Cloning into '/tmp/foo'...\n#  fatal: repository not found\n" +
+				"pypi_pure_wheel_build:\n  ref: x\n",
+			want: "pypi_pure_wheel_build:\n  ref: x\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
