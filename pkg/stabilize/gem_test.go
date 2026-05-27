@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
+	"github.com/google/oss-rebuild/pkg/diffr/diffrtest"
 )
 
 var stableGzipHeader = gzip.Header{OS: 255}
@@ -38,7 +38,7 @@ func TestStableGemExcludeChecksums(t *testing.T) {
 		tar.NewWriter(&got),
 		NewContext(archive.TarFormat).WithStabilizers([]Stabilizer{StableGemExcludeChecksums}),
 	))
-	if diff := cmp.Diff(want.Bytes(), got.Bytes()); diff != "" {
+	if diff := diffrtest.Diff(t, want.Bytes(), got.Bytes()); diff != "" {
 		t.Errorf("StabilizeTar() mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -61,7 +61,7 @@ func TestStableGemExcludeSignatures(t *testing.T) {
 		tar.NewWriter(&got),
 		NewContext(archive.TarFormat).WithStabilizers([]Stabilizer{StableGemExcludeSignatures}),
 	))
-	if diff := cmp.Diff(want.Bytes(), got.Bytes()); diff != "" {
+	if diff := diffrtest.Diff(t, want.Bytes(), got.Bytes()); diff != "" {
 		t.Errorf("StabilizeTar() mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -121,7 +121,7 @@ func TestStableGemMetadataCertChain(t *testing.T) {
 			}))
 			var got bytes.Buffer
 			orDie(StabilizeWithOpts(&got, bytes.NewReader(input.Bytes()), archive.TarFormat, StabilizeOpts{Stabilizers: allStabs}))
-			if diff := cmp.Diff(want.Bytes(), got.Bytes()); diff != "" {
+			if diff := diffrtest.Diff(t, want.Bytes(), got.Bytes()); diff != "" {
 				t.Errorf("StabilizeWithOpts() output mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -166,7 +166,7 @@ func TestStableGemInnerArchives(t *testing.T) {
 	var got bytes.Buffer
 	orDie(StabilizeWithOpts(&got, bytes.NewReader(input.Bytes()), archive.TarFormat, StabilizeOpts{Stabilizers: allStabs}))
 
-	if diff := cmp.Diff(want.Bytes(), got.Bytes()); diff != "" {
+	if diff := diffrtest.Diff(t, want.Bytes(), got.Bytes()); diff != "" {
 		t.Errorf("StabilizeWithOpts() output mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -259,7 +259,7 @@ func TestStableGemMetadata(t *testing.T) {
 			}))
 			var got bytes.Buffer
 			orDie(StabilizeWithOpts(&got, bytes.NewReader(input.Bytes()), archive.TarFormat, StabilizeOpts{Stabilizers: allStabs}))
-			if diff := cmp.Diff(want.Bytes(), got.Bytes()); diff != "" {
+			if diff := diffrtest.Diff(t, want.Bytes(), got.Bytes()); diff != "" {
 				t.Errorf("StabilizeWithOpts() output mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -285,7 +285,7 @@ func TestStableGemIdempotent(t *testing.T) {
 	var pass2 bytes.Buffer
 	orDie(StabilizeWithOpts(&pass2, bytes.NewReader(pass1.Bytes()), archive.TarFormat, opts))
 
-	if !bytes.Equal(pass1.Bytes(), pass2.Bytes()) {
-		t.Error("stabilization is not idempotent: pass1 != pass2")
+	if diff := diffrtest.Diff(t, pass1.Bytes(), pass2.Bytes()); diff != "" {
+		t.Errorf("stabilization is not idempotent (pass1 vs pass2):\n%s", diff)
 	}
 }
