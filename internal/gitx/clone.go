@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/go-git/go-billy/v5"
@@ -19,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
@@ -61,6 +64,40 @@ var (
 	// ErrRemoteNotTracked is returned when a reuse is attempted but the remote does not match.
 	ErrRemoteNotTracked = errors.New("existing repository does not track desired remote")
 )
+
+// fatalLineRe matches the `fatal: <reason>` line(s) that `git clone` always emits as the last line of stderr on failure.
+var fatalLineRe = regexp.MustCompile(`(?m)^fatal: (.+)$`)
+
+// classifyCloneError converts `git clone` errors into go-git errors.
+// It extracts the last `fatal: <reason>` line from git's output and
+// classifies known failure modes; anything else is returned as
+// "git clone failed: <reason>" with no env-specific path information.
+func classifyCloneError(output []byte, execErr error) error {
+	matches := fatalLineRe.FindAllSubmatch(output, -1)
+	var reason string
+	if len(matches) > 0 {
+		// The last fatal line is the proximate cause.
+		reason = string(matches[len(matches)-1][1])
+	} else {
+		return errors.Wrap(execErr, "git clone unknown failure")
+	}
+	switch {
+	// NOTE: Must precede the generic "not found" arm since it can also contain this string.
+	case strings.Contains(reason, "couldn't find remote ref"),
+		strings.Contains(reason, "Remote branch") && strings.Contains(reason, "not found"):
+		return errors.Wrap(git.ErrBranchNotFound, reason)
+	case strings.Contains(reason, "not found"),
+		strings.Contains(reason, "does not exist"):
+		return errors.Wrap(transport.ErrRepositoryNotFound, reason)
+	case strings.Contains(reason, "Permission denied"),
+		strings.Contains(reason, "Authentication failed"),
+		strings.Contains(reason, "could not read Username"),
+		strings.Contains(reason, "could not read Password"):
+		return errors.Wrap(transport.ErrAuthenticationRequired, reason)
+	default:
+		return errors.Errorf("git clone unknown failure: %s", reason)
+	}
+}
 
 // Reuse reuses the existing git repo in Storer and Filesystem.
 func Reuse(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
@@ -225,7 +262,7 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 	cmd := exec.CommandContext(ctx, "git", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, errors.Wrapf(err, "native git clone failed: %s", string(output))
+		return nil, classifyCloneError(output, err)
 	}
 	// Copy staging to target storage if needed
 	if needsStaging {
