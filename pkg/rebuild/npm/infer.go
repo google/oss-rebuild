@@ -155,9 +155,6 @@ func InferLocation(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMu
 	}
 	var c *object.Commit
 	var badVersionRef string
-	registryRef = ""
-	pkgJSONGuess = ""
-	tagGuess = ""
 	switch {
 	case registryRef != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(registryRef))

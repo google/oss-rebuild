@@ -29,8 +29,18 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/pkg/vcs/gitscan"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/pkg/errors"
 )
+
+// Copied from pkg/rebuild/pypi/parsing/pyproject.go
+type projectMetadata struct {
+	Name    string `toml:"name"`
+	Version string `toml:"version"`
+}
+type pyProjectProject struct {
+	Metadata projectMetadata `toml:"project"`
+}
 
 // These are commonly used in PyPi metadata to point to the project git repo, using a map as a set.
 // Some people capitalize these differently, or add/remove spaces. We normalized to lower, no space.
@@ -119,18 +129,19 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, ropt *gitx.RepositoryOptions) (r rebuild.RepoConfig, err error) {
 	r.URI = repoURI
 	r.Repository, err = rebuild.LoadRepo(ctx, t.Package, ropt.Storer, ropt.Worktree, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
-	switch err {
-	case nil:
-		return r, nil
-	case transport.ErrAuthenticationRequired:
-		return r, errors.Errorf("repo invalid or private [repo=%s]", r.URI)
-	default:
-		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
+	if err != nil {
+		if err == transport.ErrAuthenticationRequired {
+			return r, errors.Errorf("repo invalid or private [repo=%s]", r.URI)
+		} else {
+			return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
+		}
 	}
+	return r, nil
 }
 
 func validateCommitCandidate(commitCandidate string, rcfg *rebuild.RepoConfig, heuristicName string) (bool, error) {
 	if commitCandidate == "" {
+		log.Printf("Got empty commit for %s.", heuristicName)
 		return false, nil
 	}
 	_, err := rcfg.Repository.CommitObject(plumbing.NewHash(commitCandidate))
@@ -146,6 +157,7 @@ func validateCommitCandidate(commitCandidate string, rcfg *rebuild.RepoConfig, h
 }
 
 func findGitRef(ctx context.Context, target rebuild.Target, mux rebuild.RegistryMux, pkg string, version string, rcfg *rebuild.RepoConfig) (string, error) {
+	// 1. tag heuristic, fast
 	tagHeuristic, err := rebuild.FindTagMatch(pkg, version, rcfg.Repository)
 	log.Printf("Version: %s, tag hash: \"%s\"", version, tagHeuristic)
 	if err != nil {
@@ -160,6 +172,7 @@ func findGitRef(ctx context.Context, target rebuild.Target, mux rebuild.Registry
 		return tagHeuristic, nil
 	}
 
+	// 2. commit file hash overlap, no file parsing, only hash comparisons
 	closestCommit, err := findClosestCommitToSource(ctx, target, mux, rcfg.Repository)
 	if err != nil {
 		return "", errors.Wrapf(err, "[INTERNAL] commit overlap heuristic error")
@@ -173,6 +186,28 @@ func findGitRef(ctx context.Context, target rebuild.Target, mux rebuild.Registry
 		log.Printf("PyPI Returning result from commit heuristic.")
 		return commitHeuristic, nil
 	}
+
+	// 3. Find version switch in pyproject.toml.
+	// May parse a pyproject.toml file for every commit and might thus be very slow.
+	log.Printf("Building pyproject.toml version map, this may take a while.")
+	pkgPath, err := findPyprojectToml(ctx, target, rcfg.Repository)
+	if err == nil {
+		refMap, err := pyprojectTomlSearch(target.Package, pkgPath, rcfg.Repository)
+		if err == nil {
+			rcfg.RefMap = refMap
+		}
+	}
+	manifestHeuristic := rcfg.RefMap[target.Version]
+	valid, err = validateCommitCandidate(manifestHeuristic, rcfg, "manifest")
+	if err != nil {
+		return "", err
+	}
+	if valid {
+		log.Printf("PyPI Returning result from manifest heuristic.")
+		return manifestHeuristic, nil
+	}
+
+	// None of the heuristics matched
 	return "", errors.New("no git ref")
 }
 
@@ -488,6 +523,118 @@ func inferPythonVersion(reqs []string) string {
 		}
 	}
 	return "" // unconstrained
+}
+
+func findPyprojectToml(ctx context.Context, t rebuild.Target, repo *git.Repository) (string, error) {
+	head, err := repo.Head()
+	if err != nil {
+		return "", err
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return "", err
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return "", err
+	}
+	buildDir, err := pypiresolver.DiscoverBuildDir(ctx, tree, t.Package, t.Version, "")
+	if err != nil {
+		return "", err
+	}
+	return path.Join(buildDir, "pyproject.toml"), nil
+}
+
+func pyprojectTomlSearch(pkg, pyprojectTomlPath string, repo *git.Repository) (tm map[string]string, err error) {
+	tm = make(map[string]string)
+	commitIter, err := repo.Log(&git.LogOptions{
+		Order:      git.LogOrderCommitterTime,
+		PathFilter: func(s string) bool { return s == pyprojectTomlPath },
+		All:        true,
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "searching for commits touching pyproject.toml")
+	}
+	duplicates := make(map[string]string)
+	err = commitIter.ForEach(func(c *object.Commit) error {
+		t, err := c.Tree()
+		if err != nil {
+			return errors.Wrapf(err, "fetching tree")
+		}
+		pyprojectToml, err := getPyprojectToml(t, pyprojectTomlPath)
+		if _, ok := err.(*toml.DecodeError); ok {
+			return nil // unable to parse
+		} else if errors.Is(err, object.ErrFileNotFound) {
+			return nil // file deleted at this commit
+		} else if err != nil {
+			return errors.Wrapf(err, "fetching pyproject.toml")
+		}
+		if pyprojectToml.Metadata.Name != pkg {
+			// TODO: Handle the case where the package name has changed.
+			log.Printf(
+				"Package name mismatch [expected=%s,actual=%s,path=%s,ref=%s]\n",
+				pkg, pyprojectToml.Metadata.Name,
+				pyprojectTomlPath,
+				c.Hash.String(),
+			)
+			return nil
+		}
+		ver := pyprojectToml.Metadata.Version
+		if ver == "" {
+			return nil
+		}
+		// If any are the same, return nil. (merges would create duplicates.)
+		var foundMatch bool
+		err = c.Parents().ForEach(func(c *object.Commit) error {
+			t, err := c.Tree()
+			if err != nil {
+				return errors.Wrapf(err, "fetching tree")
+			}
+			pyprojectToml, err := getPyprojectToml(t, pyprojectTomlPath)
+			if err != nil {
+				// TODO: Detect and record file moves.
+				return nil
+			}
+			if pyprojectToml.Metadata.Name == pkg && pyprojectToml.Metadata.Version == ver {
+				foundMatch = true
+			}
+			return nil
+		})
+		if err != nil {
+			return errors.Wrapf(err, "comparing against parent pyproject.toml")
+		}
+		if !foundMatch {
+			if tm[ver] != "" {
+				// NOTE: This ignores commits processed later sequentially. Empirically, this seems to pick the better commit.
+				if duplicates[ver] != "" {
+					duplicates[ver] = fmt.Sprintf("%s,%s", duplicates[ver], c.Hash.String())
+				} else {
+					duplicates[ver] = fmt.Sprintf("%s,%s", tm[ver], c.Hash.String())
+				}
+			} else {
+				tm[ver] = c.Hash.String()
+			}
+		}
+		return nil
+	})
+	if len(duplicates) > 0 {
+		for ver, dupes := range duplicates {
+			log.Printf("Multiple matches found [pkg=%s,ver=%s,refs=%v]\n", pkg, ver, dupes)
+		}
+	}
+	return
+}
+
+func getPyprojectToml(tree *object.Tree, path string) (pyprojectToml pyProjectProject, err error) {
+	f, err := tree.File(path)
+	if err != nil {
+		return pyprojectToml, err
+	}
+	p, err := f.Contents()
+	if err != nil {
+		return pyprojectToml, err
+	}
+	return pyprojectToml, toml.Unmarshal([]byte(p), &pyprojectToml)
 }
 
 var bdistWheelPat = re.MustCompile(`^Generator: bdist_wheel \(([\d\.]+)\)`)
