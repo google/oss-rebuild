@@ -5,6 +5,7 @@ package gitx
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-billy/v5/memfs"
@@ -13,11 +14,13 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
+	"github.com/pkg/errors"
 )
 
 // setupLocalRepo creates a local git repo on disk for testing with native git.
@@ -546,5 +549,63 @@ commits:
 	}
 	if originMaster.Hash() != newCommitHash {
 		t.Errorf("origin/master hash mismatch: expected %s, got %s", newCommitHash, originMaster.Hash())
+	}
+}
+
+func TestClassifyCloneError(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		output    string
+		wantErrIs error
+		// Substring expected in the wrap message (the `errors.Wrap(typed, msg)`
+		// case message). Empty string skips the substring check.
+		wantSub string
+	}{
+		{
+			name:      "repo not found (https 404)",
+			output:    "Cloning into bare repository '/tmp/foo'...\nfatal: repository 'https://github.com/unknown/repo/' not found\n",
+			wantErrIs: transport.ErrRepositoryNotFound,
+			wantSub:   "repository 'https://github.com/unknown/repo/' not found",
+		},
+		{
+			name:      "auth: terminal prompts disabled",
+			output:    "Cloning into bare repository '/tmp/foo'...\nfatal: could not read Username for 'https://github.com': terminal prompts disabled\n",
+			wantErrIs: transport.ErrAuthenticationRequired,
+		},
+		{
+			name:      "auth: explicit authentication failed",
+			output:    "fatal: Authentication failed for 'https://github.com/private/repo/'\n",
+			wantErrIs: transport.ErrAuthenticationRequired,
+		},
+		{
+			name:      "ref not found with --branch",
+			output:    "fatal: Remote branch nonsense not found in upstream origin\n",
+			wantErrIs: git.ErrBranchNotFound,
+		},
+		{
+			name:      "unrecognized: surfaces sanitized reason, drops tmpdir",
+			output:    "Cloning into bare repository '/tmp/foo'...\nfatal: some unknown failure\n",
+			wantErrIs: nil, // matches none of the typed errors
+			wantSub:   "git clone unknown failure: some unknown failure",
+		},
+		{
+			name:      "no fatal: line",
+			output:    "remote: Total 0 (delta 0), reused 0 (delta 0), pack-reused 0\n",
+			wantErrIs: nil,
+			wantSub:   "git clone unknown failure:",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := classifyCloneError([]byte(tc.output), errors.New("exit status 128"))
+			if tc.wantErrIs != nil && !errors.Is(err, tc.wantErrIs) {
+				t.Errorf("got err %v; want errors.Is(_, %v)", err, tc.wantErrIs)
+			}
+			if tc.wantSub != "" && !strings.Contains(err.Error(), tc.wantSub) {
+				t.Errorf("got err %q; want substring %q", err.Error(), tc.wantSub)
+			}
+			if strings.Contains(err.Error(), "/tmp/foo") {
+				t.Errorf("error leaks dir path: %q", err.Error())
+			}
+		})
 	}
 }
