@@ -95,9 +95,9 @@ func TestStableGemMetadataCertChain(t *testing.T) {
 			want: "name: foo\nemail: a@b.c\n",
 		},
 		{
-			name: "leaves indented (nested) cert_chain untouched",
+			name: "leaves indented (nested) cert_chain structurally untouched",
 			in:   "outer:\n  cert_chain:\n  - value\n",
-			want: "outer:\n  cert_chain:\n  - value\n",
+			want: "outer:\n  cert_chain:\n    - value\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -190,9 +190,12 @@ func TestStableGemMetadata(t *testing.T) {
 			want: "name: foo\ndate: 1980-01-02 00:00:00.000000000 Z\nrubygems_version: 0.0.0\n",
 		},
 		{
-			name: "preserves CRLF terminator",
+			// CRLF in metadata is rare in practice (Psych/libyaml emit LF on
+			// every platform). The YAML round-trip normalizes line endings to
+			// LF, which is fine and matches real-world output.
+			name: "normalizes CRLF terminator to LF",
 			in:   "date: 2024-06-15 00:00:00.000000000 Z\r\n",
-			want: "date: 1980-01-02 00:00:00.000000000 Z\r\n",
+			want: "date: 1980-01-02 00:00:00.000000000 Z\n",
 		},
 		{
 			name: "leaves indented (nested) date untouched",
@@ -203,6 +206,36 @@ func TestStableGemMetadata(t *testing.T) {
 			name: "no-op when target fields absent",
 			in:   "name: foo\n",
 			want: "name: foo\n",
+		},
+		{
+			name: "flow-style array normalized to block style",
+			in:   "executables: [bin/a, bin/b, bin/c]\n",
+			want: "executables:\n  - bin/a\n  - bin/b\n  - bin/c\n",
+		},
+		{
+			name: "empty flow array preserved as []",
+			in:   "cert_chain: []\n",
+			want: "cert_chain: []\n",
+		},
+		{
+			name: "4-space indent normalized to 2-space",
+			in:   "metadata:\n    bug_tracker_uri: https://x\n    homepage_uri: https://y\n",
+			want: "metadata:\n  bug_tracker_uri: https://x\n  homepage_uri: https://y\n",
+		},
+		{
+			name: "double-quoted scalar unquoted when safe",
+			in:   "name: \"foo\"\n",
+			want: "name: foo\n",
+		},
+		{
+			name: "single-quoted scalar unquoted when safe",
+			in:   "name: 'foo'\n",
+			want: "name: foo\n",
+		},
+		{
+			name: "mixed array quote styles normalize together",
+			in:   "authors: [\"alice\", 'bob', carol]\n",
+			want: "authors:\n  - alice\n  - bob\n  - carol\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

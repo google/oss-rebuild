@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/archive"
+	"gopkg.in/yaml.v3"
 )
 
 // AllGemStabilizers is the list of all available gem stabilizers.
@@ -19,6 +20,7 @@ var AllGemStabilizers = []Stabilizer{
 	StableGemMetadataDate,
 	StableGemMetadataRubygemsVersion,
 	StableGemMetadataCertChain,
+	StableGemMetadataYAMLNormalize,
 	StableGemInnerArchives,
 }
 
@@ -78,6 +80,43 @@ var StableGemMetadataCertChain = Stabilizer{
 }.WithConstraints(AtDepth(1), ArchivePath("metadata.gz")).WithFn(GzipContentFn(func(b []byte) []byte {
 	return gemMetadataCertChainRe.ReplaceAll(b, []byte("cert_chain: []\n"))
 }))
+
+// StableGemMetadataYAMLNormalize uses the native YAML parsing to apply a uniform style to metadata.
+// This eliminates emitter-level whitespace/style differences between whatever system libyaml version publishers use.
+// Some examples:
+// - trailing space after `key:` on null-valued scalars (≤0.2.4 vs ≥0.2.5)
+// - quote-style drift across rubygems releases (`">="` vs `'>='` vs `>=` for the same string)
+// NOTE: Parse failures fall back to the original bytes.
+var StableGemMetadataYAMLNormalize = Stabilizer{
+	Name: "gem-metadata-yaml-normalize",
+}.WithConstraints(AtDepth(1), ArchivePath("metadata.gz")).WithFn(GzipContentFn(func(b []byte) []byte {
+	var node yaml.Node
+	if err := yaml.Unmarshal(b, &node); err != nil {
+		return b
+	}
+	clearYAMLStyle(&node)
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(&node); err != nil {
+		return b
+	}
+	if err := enc.Close(); err != nil {
+		return b
+	}
+	return buf.Bytes()
+}))
+
+// clearYAMLStyle walks a yaml.Node tree and zeroes out the per-node Style.
+func clearYAMLStyle(n *yaml.Node) {
+	if n == nil {
+		return
+	}
+	n.Style = 0
+	for _, c := range n.Content {
+		clearYAMLStyle(c)
+	}
+}
 
 // StableGemInnerArchives recursively stabilizes the inner archives within a gem.
 // Constrained to depth 0 (the outermost .gem tar) to avoid applying to nested archives.
