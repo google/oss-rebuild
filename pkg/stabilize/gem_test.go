@@ -43,6 +43,91 @@ func TestStableGemExcludeChecksums(t *testing.T) {
 	}
 }
 
+func TestStableGemExcludeSignatures(t *testing.T) {
+	input := must(archivetest.TarFile([]archive.TarEntry{
+		{Header: &tar.Header{Name: "data.tar.gz", Typeflag: tar.TypeReg}, Body: []byte("data")},
+		{Header: &tar.Header{Name: "data.tar.gz.sig", Typeflag: tar.TypeReg}, Body: []byte("dsig")},
+		{Header: &tar.Header{Name: "metadata.gz", Typeflag: tar.TypeReg}, Body: []byte("meta")},
+		{Header: &tar.Header{Name: "metadata.gz.sig", Typeflag: tar.TypeReg}, Body: []byte("msig")},
+		{Header: &tar.Header{Name: "checksums.yaml.gz.sig", Typeflag: tar.TypeReg}, Body: []byte("csig")},
+	}))
+	want := must(archivetest.TarFile([]archive.TarEntry{
+		{Header: &tar.Header{Name: "data.tar.gz", Typeflag: tar.TypeReg}, Body: []byte("data")},
+		{Header: &tar.Header{Name: "metadata.gz", Typeflag: tar.TypeReg}, Body: []byte("meta")},
+	}))
+	var got bytes.Buffer
+	orDie(StabilizeTar(
+		tar.NewReader(bytes.NewReader(input.Bytes())),
+		tar.NewWriter(&got),
+		NewContext(archive.TarFormat).WithStabilizers([]Stabilizer{StableGemExcludeSignatures}),
+	))
+	if diff := cmp.Diff(want.Bytes(), got.Bytes()); diff != "" {
+		t.Errorf("StabilizeTar() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestStableGemMetadataCertChain(t *testing.T) {
+	libBody := []byte("hello")
+	stableEntry := func(name string) *tar.Header {
+		h := stableTarHeader
+		h.Name = name
+		h.Typeflag = tar.TypeReg
+		return &h
+	}
+	allStabs := append(append(append([]Stabilizer{}, AllTarStabilizers...), AllGzipStabilizers...), AllGemStabilizers...)
+
+	for _, tc := range []struct {
+		name, in, want string
+	}{
+		{
+			name: "strips list-form cert_chain",
+			in:   "name: foo\ncert_chain:\n- |\n  -----BEGIN CERTIFICATE-----\n  MIIDxxx\n  -----END CERTIFICATE-----\nemail: a@b.c\n",
+			want: "name: foo\ncert_chain: []\nemail: a@b.c\n",
+		},
+		{
+			name: "strips indented cert_chain block",
+			in:   "name: foo\ncert_chain:\n  some: value\n  other: value\nemail: a@b.c\n",
+			want: "name: foo\ncert_chain: []\nemail: a@b.c\n",
+		},
+		{
+			name: "no-op when cert_chain absent",
+			in:   "name: foo\nemail: a@b.c\n",
+			want: "name: foo\nemail: a@b.c\n",
+		},
+		{
+			name: "leaves indented (nested) cert_chain untouched",
+			in:   "outer:\n  cert_chain:\n  - value\n",
+			want: "outer:\n  cert_chain:\n  - value\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := must(archivetest.TarFile([]archive.TarEntry{
+				{Header: &tar.Header{Name: "data.tar.gz", Typeflag: tar.TypeReg}, Body: must(archivetest.TgzFile([]archive.TarEntry{
+					{Header: &tar.Header{Name: "lib/foo.rb", Typeflag: tar.TypeReg}, Body: libBody},
+				})).Bytes()},
+				{Header: &tar.Header{Name: "metadata.gz", Typeflag: tar.TypeReg}, Body: must(archivetest.GzFile([]byte(tc.in), gzip.Header{})).Bytes()},
+				{Header: &tar.Header{Name: "checksums.yaml.gz", Typeflag: tar.TypeReg}, Body: []byte("sums")},
+			}))
+			want := must(archivetest.TarFile([]archive.TarEntry{
+				{Header: stableEntry("data.tar.gz"), Body: must(archivetest.GzFile(
+					must(archivetest.TarFile([]archive.TarEntry{
+						{Header: stableEntry("lib/foo.rb"), Body: libBody},
+					})).Bytes(),
+					stableGzipHeader, gzip.NoCompression,
+				)).Bytes()},
+				{Header: stableEntry("metadata.gz"), Body: must(archivetest.GzFile(
+					[]byte(tc.want), stableGzipHeader, gzip.NoCompression,
+				)).Bytes()},
+			}))
+			var got bytes.Buffer
+			orDie(StabilizeWithOpts(&got, bytes.NewReader(input.Bytes()), archive.TarFormat, StabilizeOpts{Stabilizers: allStabs}))
+			if diff := cmp.Diff(want.Bytes(), got.Bytes()); diff != "" {
+				t.Errorf("StabilizeWithOpts() output mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestStableGemInnerArchives(t *testing.T) {
 	nonEpoch := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	nonCanonicalGzipHeader := gzip.Header{Name: "metadata", ModTime: nonEpoch}

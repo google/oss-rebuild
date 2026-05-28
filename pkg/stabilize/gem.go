@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/google/oss-rebuild/pkg/archive"
 )
@@ -14,8 +15,10 @@ import (
 // AllGemStabilizers is the list of all available gem stabilizers.
 var AllGemStabilizers = []Stabilizer{
 	StableGemExcludeChecksums,
+	StableGemExcludeSignatures,
 	StableGemMetadataDate,
 	StableGemMetadataRubygemsVersion,
+	StableGemMetadataCertChain,
 	StableGemInnerArchives,
 }
 
@@ -27,6 +30,17 @@ var StableGemExcludeChecksums = Stabilizer{
 }.WithConstraints(AtDepth(0)).WithFn(TarArchiveFn(func(ta *archive.TarArchive) {
 	ta.Files = slices.DeleteFunc(ta.Files, func(e *archive.TarEntry) bool {
 		return e.Name == "checksums.yaml.gz"
+	})
+}))
+
+// StableGemExcludeSignatures removes detached gem-signature files
+// (data.tar.gz.sig, metadata.gz.sig, checksums.yaml.gz.sig). These are
+// produced by `gem build --sign` and isn't reproducible by a third party.
+var StableGemExcludeSignatures = Stabilizer{
+	Name: "gem-exclude-signatures",
+}.WithConstraints(AtDepth(0)).WithFn(TarArchiveFn(func(ta *archive.TarArchive) {
+	ta.Files = slices.DeleteFunc(ta.Files, func(e *archive.TarEntry) bool {
+		return strings.HasSuffix(e.Name, ".sig")
 	})
 }))
 
@@ -50,6 +64,19 @@ var StableGemMetadataRubygemsVersion = Stabilizer{
 	Name: "gem-metadata-rubygems-version",
 }.WithConstraints(AtDepth(1), ArchivePath("metadata.gz")).WithFn(GzipContentFn(func(b []byte) []byte {
 	return gemMetadataRubygemsVersionRe.ReplaceAll(b, []byte("rubygems_version: 0.0.0"))
+}))
+
+// gemMetadataCertChainRe matches the `cert_chain` metadata YAML block.
+// NOTE: This attempts to match the block in both inline and list forms.
+var gemMetadataCertChainRe = regexp.MustCompile(`(?m)^cert_chain:\n(?:[ -].*\n)+`)
+
+// StableGemMetadataCertChain strips an embedded publisher cert_chain from the
+// metadata YAML so that signed and unsigned variants of the same gem compare
+// equal. See StableGemExcludeSignatures.
+var StableGemMetadataCertChain = Stabilizer{
+	Name: "gem-metadata-cert-chain",
+}.WithConstraints(AtDepth(1), ArchivePath("metadata.gz")).WithFn(GzipContentFn(func(b []byte) []byte {
+	return gemMetadataCertChainRe.ReplaceAll(b, []byte("cert_chain: []\n"))
 }))
 
 // StableGemInnerArchives recursively stabilizes the inner archives within a gem.
