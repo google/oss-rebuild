@@ -39,6 +39,8 @@ func StabilizersForTarget(t rebuild.Target) ([]stabilize.Stabilizer, error) {
 	case rebuild.RubyGems:
 		if format == archive.TarFormat {
 			stabilizers = append(stabilizers, stabilize.AllGemStabilizers...)
+			// NOTE: Include gz stabilization for .gem inner archives like data.tar.gz and metadata.gz.
+			stabilizers = append(stabilizers, stabilize.AllGzipStabilizers...)
 		}
 	}
 	return stabilizers, nil
