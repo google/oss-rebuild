@@ -461,6 +461,12 @@ func TestFragment_Join(t *testing.T) {
 				Needs:  []string{"dep1", "dep2", "dep3"},
 			},
 		},
+		{
+			name: "trailing_newline_from_block_scalar",
+			f1:   Fragment{Script: "echo first\n"},
+			f2:   Fragment{Script: "echo second"},
+			want: Fragment{Script: "echo first\necho second"},
+		},
 	}
 
 	for _, tt := range tests {

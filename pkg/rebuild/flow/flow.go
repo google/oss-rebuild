@@ -119,7 +119,9 @@ func (r Fragment) Join(other Fragment) Fragment {
 	if (r.Script == "") || (other.Script == "") {
 		script = cmp.Or(r.Script, other.Script)
 	} else {
-		script = strings.Join([]string{r.Script, other.Script}, "\n")
+		// Trim trailing newlines from the left script (e.g. from a `runs: |`
+		// YAML block scalar) so joining doesn't introduce a blank line.
+		script = strings.TrimRight(r.Script, "\n") + "\n" + other.Script
 	}
 	var needs []string
 	seen := map[string]bool{}
