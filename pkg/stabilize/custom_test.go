@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
+	"github.com/google/oss-rebuild/pkg/diffr/diffrtest"
 )
 
 func TestCustomStabilizerEntry_Validate(t *testing.T) {
@@ -827,8 +828,8 @@ func TestReplacePattern_NestedTar(t *testing.T) {
 			if err != nil {
 				t.Fatalf("StabilizeTar() error: %v", err)
 			}
-			if !bytes.Equal(output.Bytes(), expected.Bytes()) {
-				t.Errorf("stabilized bytes differ from expected (got %d bytes, want %d bytes)", output.Len(), expected.Len())
+			if diff := diffrtest.Diff(t, expected.Bytes(), output.Bytes()); diff != "" {
+				t.Errorf("stabilized output differs from expected (-want +got):\n%s", diff)
 			}
 		})
 	}
