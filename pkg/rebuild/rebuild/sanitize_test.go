@@ -76,6 +76,28 @@ func TestFilesystemTargetEncoding(t *testing.T) {
 				encoding:  FilesystemTargetEncoding,
 			},
 		},
+		{
+			name:      "NPM scoped package",
+			ecosystem: NPM,
+			encoder: &TargetEncoder{
+				Package:  MapTransform(map[rune]rune{'/': '!'}),
+				Version:  IdentityTransform,
+				Artifact: IdentityTransform,
+			},
+			canonical: Target{
+				Ecosystem: NPM,
+				Package:   "@fortawesome/react-fontawesome",
+				Version:   "0.2.0",
+				Artifact:  "react-fontawesome-0.2.0.tgz",
+			},
+			encoded: EncodedTarget{
+				Ecosystem: NPM,
+				Package:   "@fortawesome!react-fontawesome",
+				Version:   "0.2.0",
+				Artifact:  "react-fontawesome-0.2.0.tgz",
+				encoding:  FilesystemTargetEncoding,
+			},
+		},
 	}
 
 	for _, tt := range tests {
