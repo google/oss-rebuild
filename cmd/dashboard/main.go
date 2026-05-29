@@ -125,27 +125,21 @@ func main() {
 			RunID:     r.PathValue("runid"),
 		}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Attempt), dashboard.AttemptTmpl)))
-	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}/build-logs/", func(w http.ResponseWriter, r *http.Request) {
-		deps, err := DashboardInit(r.Context())
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}/build-logs/", api.Translate(func(r *http.Request) (dashboard.LogsRequest, error) {
 		t := encoding.New(
 			rebuild.Ecosystem(r.PathValue("ecosystem")),
 			r.PathValue("package"),
 			r.PathValue("version"),
 			r.PathValue("artifact"),
 		).Decode()
-		req := dashboard.LogsRequest{
+		return dashboard.LogsRequest{
 			Ecosystem: string(t.Ecosystem),
 			Package:   t.Package,
 			Version:   t.Version,
 			Artifact:  t.Artifact,
 			RunID:     r.PathValue("runid"),
-		}
-		dashboard.HandleLogs(w, r, req, deps)
-	})
+		}, nil
+	}, api.HTMLHandler(DashboardInit, dashboard.Logs, dashboard.LogsTmpl)))
 	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}/build-logs/raw/", func(w http.ResponseWriter, r *http.Request) {
 		deps, err := DashboardInit(r.Context())
 		if err != nil {
@@ -167,7 +161,6 @@ func main() {
 		}
 		dashboard.HandleRawLogs(w, r, req, deps)
 	})
-
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Starting dashboard on %s\n", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
