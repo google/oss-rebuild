@@ -18,40 +18,19 @@ import (
 // This is used by analyzer services to process GCS bucket notifications for attestation bundles.
 func GCSEventToTargetEvent(event schema.GCSObjectEvent) (*schema.TargetEvent, error) {
 	parts := strings.Split(event.Name, "/")
-	if len(parts) < 5 {
+	if len(parts) != 5 {
 		return nil, errors.Errorf("unexpected object path length: path=%s parts=%d", event.Name, len(parts))
 	}
-	var ecosystem, pkg, version, artifact, obj string
-	switch rebuild.Ecosystem(parts[0]) {
-	case rebuild.NPM:
-		if len(parts) == 6 && !strings.HasPrefix(parts[1], "@") {
-			// Assert pkgscope has a @ prefix
-			return nil, errors.Errorf("unexpected package scope for scoped object path: path=%s scope=%s", event.Name, parts[1])
-		}
-		fallthrough
-	case rebuild.Debian:
-		if len(parts) == 6 {
-			// Format: ecosystem/pkgscope/package/version/artifact/rebuild.intoto.jsonl
-			ecosystem, pkg, version, artifact, obj = parts[0], parts[1]+"/"+parts[2], parts[3], parts[4], parts[5]
-			break
-		} else if len(parts) != 5 {
-			return nil, errors.Errorf("unexpected object path length: path=%s parts=%d", event.Name, len(parts))
-		}
-		fallthrough
-	case rebuild.CratesIO, rebuild.PyPI, rebuild.Maven:
-		// Format: ecosystem/package/version/artifact/rebuild.intoto.jsonl
-		ecosystem, pkg, version, artifact, obj = parts[0], parts[1], parts[2], parts[3], parts[4]
-	default:
-		return nil, errors.Errorf("unexpected ecosystem: '%s'", event.Name)
-	}
+	ecosystem, pkg, version, artifact, obj := parts[0], parts[1], parts[2], parts[3], parts[4]
+	t := rebuild.FilesystemTargetEncoding.New(rebuild.Ecosystem(ecosystem), pkg, version, artifact).Decode()
 	if obj != string(rebuild.AttestationBundleAsset) {
 		return nil, errors.Errorf("unexpected object name: %s", obj)
 	}
 	return &schema.TargetEvent{
-		Ecosystem: rebuild.Ecosystem(ecosystem),
-		Package:   pkg,
-		Version:   version,
-		Artifact:  artifact,
+		Ecosystem: t.Ecosystem,
+		Package:   t.Package,
+		Version:   t.Version,
+		Artifact:  t.Artifact,
 	}, nil
 }
 
