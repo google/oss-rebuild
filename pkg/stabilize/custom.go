@@ -92,11 +92,16 @@ func CreateCustomStabilizers(entries []CustomStabilizerEntry, format archive.For
 	return stabilizers, nil
 }
 
-// ReplacePattern is a regex replace stabilizer applied to a specified path
+// ReplacePattern is a regex replace stabilizer applied to a specified path.
 // - Paths is a slice of path.Match-like patterns defining the archive paths to apply the exclusion.
 // - Pattern is a regex that accepts the golang RE2 syntax.
 // - Replace can define a substitution for the matched content.
-// NOTE: This does not support archive nesting. All paths are relative to the outermost archive.
+//
+// Patterns are matched against entry names within each archive level at which
+// the stabilizer is invoked. Where a stabilizer recurses into a nested archive
+// (e.g. StableGemInnerArchives descending into data.tar.gz), the same patterns
+// are re-evaluated against the inner entries.
+// TODO: Add syntax to scope a pattern to one particular level.
 type ReplacePattern struct {
 	Paths   []string `yaml:"paths"`
 	Pattern string   `yaml:"pattern"`
@@ -150,9 +155,14 @@ func (rp *ReplacePattern) Stabilizer(name string) Stabilizer {
 	})
 }
 
-// ExcludePath is stabilizer that removes specified path(s) from the output
+// ExcludePath is a stabilizer that removes specified path(s) from the output.
 // - Paths is a slice of path.Match-like patterns defining the archive paths to apply the exclusion.
-// NOTE: This does not support archive nesting. All paths are relative to the outermost archive.
+//
+// Patterns are matched against entry names within each archive level at which
+// the stabilizer is invoked. Where a stabilizer recurses into a nested archive
+// (e.g. StableGemInnerArchives descending into data.tar.gz), the same patterns
+// are re-evaluated against the inner entries.
+// TODO: Add syntax to scope a pattern to one particular level.
 type ExcludePath struct {
 	Paths []string `yaml:"paths"`
 }
