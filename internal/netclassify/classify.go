@@ -39,8 +39,10 @@ var (
 
 // NPM
 var (
-	npmAPIRegex  = regexp.MustCompile(`^https://registry\.(npmjs\.org|yarnpkg\.com)/((@[^/]+/)?[^/]+)/([^/]+)/?$`)
-	npmFileRegex = regexp.MustCompile(`^https://registry\.(npmjs\.org|yarnpkg\.com)/((@[^/]+/)?[^/]+)/-/([^/]+)-([^/-]+)\.tgz$`)
+	npmAPIRegex                 = regexp.MustCompile(`^https://registry\.(npmjs\.org|yarnpkg\.com)/((@[^/]+/)?[^/]+)/([^/]+)/?$`)
+	npmFileRegex                = regexp.MustCompile(`^https://registry\.(npmjs\.org|yarnpkg\.com)/((@[^/]+/)?[^/]+)/-/([^/]+)\.tgz$`)
+	npmVersionSuffixRegex       = regexp.MustCompile(`-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$`)
+	npmLegacyVersionSuffixRegex = regexp.MustCompile(`-(\d+\.\d+\.\d+)(alpha|beta|dev|pre|rc)(\d*)$`)
 )
 
 // Maven
@@ -248,8 +250,14 @@ func classifyNPMURL(rawURL string) (string, error) {
 		return "", errors.New("invalid NPM download URL format")
 	}
 	packagePath := matches[2]
-	version := matches[5]
-	return fmt.Sprintf("pkg:npm/%s@%s", packagePath, version), nil
+	tarball := matches[4]
+	if matches := npmVersionSuffixRegex.FindStringSubmatch(tarball); len(matches) >= 2 {
+		return fmt.Sprintf("pkg:npm/%s@%s", packagePath, matches[1]), nil
+	}
+	if matches := npmLegacyVersionSuffixRegex.FindStringSubmatch(tarball); len(matches) >= 4 {
+		return fmt.Sprintf("pkg:npm/%s@%s-%s%s", packagePath, matches[1], matches[2], matches[3]), nil
+	}
+	return "", errors.New("invalid NPM download URL format")
 }
 
 func classifyCratesURL(rawURL string) (string, error) {

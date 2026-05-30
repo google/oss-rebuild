@@ -109,6 +109,26 @@ func TestClassifyURL(t *testing.T) {
 			want: "pkg:npm/@invisionag/eslint-config-ivx@0.0.2",
 		},
 		{
+			name: "npm_download_prerelease",
+			url:  "https://registry.npmjs.org/vite/-/vite-5.0.0-beta.0.tgz",
+			want: "pkg:npm/vite@5.0.0-beta.0",
+		},
+		{
+			name: "npm_download_scoped_prerelease",
+			url:  "https://registry.npmjs.org/@babel/core/-/core-7.0.0-beta.56.tgz",
+			want: "pkg:npm/@babel/core@7.0.0-beta.56",
+		},
+		{
+			name: "npm_download_hyphenated_package_prerelease",
+			url:  "https://registry.npmjs.org/react-router/-/react-router-7.0.0-pre.0.tgz",
+			want: "pkg:npm/react-router@7.0.0-pre.0",
+		},
+		{
+			name: "npm_download_legacy_prerelease",
+			url:  "https://registry.npmjs.org/express/-/express-2.0.0rc.tgz",
+			want: "pkg:npm/express@2.0.0-rc",
+		},
+		{
 			name: "npm_yarn_download_simple",
 			url:  "https://registry.yarnpkg.com/express/-/express-4.17.1.tgz",
 			want: "pkg:npm/express@4.17.1",
