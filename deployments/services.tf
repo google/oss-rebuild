@@ -393,6 +393,7 @@ resource "google_cloud_run_v2_service" "agent-api" {
         "--scratch-zone=us-central1-a",
         "--scratch-worker-port=8080",
         "--scratch-instance-standard-template=${google_compute_instance_template.scratch-standard[0].self_link}",
+        "--scratch-output-bucket=${google_storage_bucket.scratch-output[0].name}",
       ] : [])
       resources {
         limits = {

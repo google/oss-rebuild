@@ -134,6 +134,16 @@ resource "google_storage_bucket" "agent-metadata" {
   depends_on                  = [google_project_service.storage]
 }
 
+resource "google_storage_bucket" "scratch-output" {
+  count                       = var.enable_scratch ? 1 : 0
+  name                        = "${var.host}-scratch-exec-output"
+  location                    = "us-central1"
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  depends_on                  = [google_project_service.storage]
+  # TODO: Consider an age-based lifecycle rule once we have a feel for realistic retention needs.
+}
+
 ## Firestore
 
 resource "google_project_service" "compute" {

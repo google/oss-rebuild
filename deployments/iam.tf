@@ -397,6 +397,12 @@ resource "google_project_iam_member" "orchestrator-compute-admin" {
   role    = "roles/compute.instanceAdmin.v1"
   member  = google_service_account.orchestrator.member
 }
+resource "google_storage_bucket_iam_member" "orchestrator-rw-scratch-output" {
+  count  = var.enable_scratch ? 1 : 0
+  bucket = google_storage_bucket.scratch-output[0].name
+  role   = "roles/storage.objectAdmin"
+  member = google_service_account.orchestrator.member
+}
 resource "google_cloud_run_v2_service_iam_member" "agent-calls-agent-api" {
   location = google_cloud_run_v2_service.agent-api.location
   project  = google_cloud_run_v2_service.agent-api.project
