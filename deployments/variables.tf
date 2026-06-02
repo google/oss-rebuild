@@ -105,6 +105,11 @@ variable "enable_vpc" {
   description = "Whether to create and use VPC infrastructure for private build pools"
   default     = false
 }
+variable "enable_scratch" {
+  type        = bool
+  description = "Whether to deploy scratch VMs for agent-driven iterative builds."
+  default     = false
+}
 variable "build_def_repo" {
   type        = string
   description = "Repository URI containing rebuild build definitions"

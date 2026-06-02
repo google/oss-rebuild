@@ -15,6 +15,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/agentapiservice"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/gcb"
@@ -33,6 +34,12 @@ var (
 	prebuildVersion      = flag.String("prebuild-version", "", "golang version identifier of the prebuild binary builds")
 	prebuildAuth         = flag.Bool("prebuild-auth", false, "whether to authenticate requests to the prebuild tools bucket")
 	port                 = flag.Int("port", 8080, "port on which to serve")
+
+	// Scratch flags. Gated by --scratch-enabled.
+	scratchEnabled      = flag.Bool("scratch-enabled", false, "register the scratch routes")
+	scratchZone         = flag.String("scratch-zone", "", "GCE zone for scratch VMs (required when scratch enabled)")
+	scratchStandardTmpl = flag.String("scratch-instance-standard-template", "", "GCE instance template URL for the standard machine class (required when scratch enabled)")
+	scratchJumboTmpl    = flag.String("scratch-instance-jumbo-template", "", "GCE instance template URL for the jumbo machine class (optional)")
 )
 
 // Link-time configured service identity
@@ -116,11 +123,66 @@ func AgentCompleteInit(ctx context.Context) (*agentapiservice.AgentCompleteDeps,
 	return &d, nil
 }
 
+func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps, error) {
+	fs, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "firestore client")
+	}
+	gce, err := agentapiservice.NewComputeGCE(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "compute client")
+	}
+	return &agentapiservice.ScratchCreateDeps{
+		Scratches: db.NewFirestoreScratch(fs),
+		GCE:       gce,
+		Standard: agentapiservice.ClassConfig{
+			InstanceTemplate: *scratchStandardTmpl,
+		},
+		Jumbo: func() *agentapiservice.ClassConfig {
+			if *scratchJumboTmpl == "" {
+				return nil
+			}
+			return &agentapiservice.ClassConfig{
+				InstanceTemplate: *scratchJumboTmpl,
+			}
+		}(),
+		Zone: *scratchZone,
+	}, nil
+}
+
+func ScratchGetInit(ctx context.Context) (*agentapiservice.ScratchGetDeps, error) {
+	fs, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "firestore client")
+	}
+	return &agentapiservice.ScratchGetDeps{Scratches: db.NewFirestoreScratch(fs)}, nil
+}
+
+func ScratchDeleteInit(ctx context.Context) (*agentapiservice.ScratchDeleteDeps, error) {
+	fs, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "firestore client")
+	}
+	gce, err := agentapiservice.NewComputeGCE(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "compute client")
+	}
+	return &agentapiservice.ScratchDeleteDeps{Scratches: db.NewFirestoreScratch(fs), GCE: gce}, nil
+}
+
 func main() {
 	flag.Parse()
-	http.HandleFunc("/agent/session/iteration", api.Handler(AgentCreateIterationInit, agentapiservice.AgentCreateIteration))
-	http.HandleFunc("/agent/session/complete", api.Handler(AgentCompleteInit, agentapiservice.AgentComplete))
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/agent/session/iteration", api.Handler(AgentCreateIterationInit, agentapiservice.AgentCreateIteration))
+	mux.HandleFunc("/agent/session/complete", api.Handler(AgentCompleteInit, agentapiservice.AgentComplete))
+
+	if *scratchEnabled {
+		mux.HandleFunc("/scratch/create", api.Handler(ScratchCreateInit, agentapiservice.ScratchCreate))
+		mux.HandleFunc("/scratch/get", api.Handler(ScratchGetInit, agentapiservice.ScratchGet))
+		mux.HandleFunc("/scratch/delete", api.Handler(ScratchDeleteInit, agentapiservice.ScratchDelete))
+	}
+
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), mux); err != nil {
 		log.Fatalln(err)
 	}
 }
