@@ -240,12 +240,11 @@ func ScratchExecGetInit(ctx context.Context) (*agentapiservice.ScratchExecGetDep
 	if err != nil {
 		return nil, errors.Wrap(err, "storage client")
 	}
+	execs := db.NewFirestoreScratchExecs(fs)
 	return &agentapiservice.ScratchExecGetDeps{
-		Scratches:    db.NewFirestoreScratch(fs),
-		Execs:        db.NewFirestoreScratchExecs(fs),
-		WorkerDialer: scratchWorkerDialer(ctx, *scratchWorkerPort),
-		GCS:          gcs,
-		OutputBucket: *scratchOutputBucket,
+		Scratches: db.NewFirestoreScratch(fs),
+		Execs:     execs,
+		Syncer:    agentapiservice.NewGCSSyncer(gcs, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
 	}, nil
 }
 
