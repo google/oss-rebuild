@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/storage"
@@ -38,6 +39,7 @@ var (
 	// Scratch flags. Gated by --scratch-enabled.
 	scratchEnabled      = flag.Bool("scratch-enabled", false, "register the scratch routes")
 	scratchZone         = flag.String("scratch-zone", "", "GCE zone for scratch VMs (required when scratch enabled)")
+	scratchWorkerPort   = flag.Int("scratch-worker-port", 8080, "port the worker listens on")
 	scratchStandardTmpl = flag.String("scratch-instance-standard-template", "", "GCE instance template URL for the standard machine class (required when scratch enabled)")
 	scratchJumboTmpl    = flag.String("scratch-instance-jumbo-template", "", "GCE instance template URL for the jumbo machine class (optional)")
 )
@@ -123,6 +125,28 @@ func AgentCompleteInit(ctx context.Context) (*agentapiservice.AgentCompleteDeps,
 	return &d, nil
 }
 
+// scratchHealthProbe pings http://<ip>:<workerPort>/healthz. Worker
+// /healthz is unauthenticated by design.
+func scratchHealthProbe(workerPort int) agentapiservice.HealthProbe {
+	client := &http.Client{Timeout: 2 * time.Second}
+	return func(ctx context.Context, ip string) error {
+		u := fmt.Sprintf("http://%s:%d/healthz", ip, workerPort)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return errors.Errorf("healthz status %d", resp.StatusCode)
+		}
+		return nil
+	}
+}
+
 func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps, error) {
 	fs, err := firestore.NewClient(ctx, *project)
 	if err != nil {
@@ -146,7 +170,8 @@ func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps,
 				InstanceTemplate: *scratchJumboTmpl,
 			}
 		}(),
-		Zone: *scratchZone,
+		Zone:        *scratchZone,
+		HealthProbe: scratchHealthProbe(*scratchWorkerPort),
 	}, nil
 }
 

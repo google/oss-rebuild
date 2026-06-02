@@ -42,6 +42,15 @@ func selectClass(class schema.MachineClass, standard ClassConfig, jumbo *ClassCo
 	}
 }
 
+// HealthProbe pings the worker at ip and returns nil when /healthz responds.
+// Injected so tests can drive the polling deterministically.
+//
+// /healthz is a plain unauthenticated GET (outside the act framework) so the
+// broker can probe before any caller context exists and so external health
+// checkers (LB, MIG) can hit it without minting tokens. Could be folded into
+// act if those constraints stop mattering.
+type HealthProbe func(ctx context.Context, internalIP string) error
+
 // ScratchCreateDeps wires ScratchCreate.
 type ScratchCreateDeps struct {
 	Scratches db.Scratch
@@ -52,6 +61,12 @@ type ScratchCreateDeps struct {
 	// means jumbo isn't available and requsts returns InvalidArgument.
 	Jumbo *ClassConfig
 	Zone  string
+	// HealthProbe is called until it returns nil or HealthTimeout elapses.
+	HealthProbe HealthProbe
+	// HealthTimeout bounds the polling loop. Zero means 90 seconds.
+	HealthTimeout time.Duration
+	// HealthInterval is the gap between probe attempts. Zero means 500ms.
+	HealthInterval time.Duration
 	// IDGen mints scratch IDs. nil falls back to uuid.New().String().
 	IDGen func() string
 }
@@ -70,12 +85,7 @@ type ScratchDeleteDeps struct {
 // ScratchCreate provisions a new build environment synchronously. Steps:
 //
 //	Scratches.Insert(state=Starting) -> InsertInstance -> Update with
-//	InternalIP -> UpdateState(Ready) -> return.
-//
-// Ready currently means "VM exists." The template supplies the boot disk
-// and local SSD partitions; no additional disks are attached.
-// TODO: Poll a worker /healthz before UpdateState(Ready) so Ready means
-// "worker is reachable" once the worker service exists.
+//	InternalIP -> poll HealthProbe -> UpdateState(Ready) -> return.
 //
 // If any step fails after resources are created, best-effort teardown is
 // run and the record is marked Deleted (records persist for audit).
@@ -134,6 +144,11 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches update with IP"))
 	}
 
+	if err := waitHealthy(ctx, deps, scratch.InternalIP); err != nil {
+		cleanup()
+		return nil, api.AsStatus(codes.DeadlineExceeded, errors.Wrap(err, "worker healthz"))
+	}
+
 	if err := deps.Scratches.UpdateState(ctx, scratchID, schema.ScratchReady); err != nil {
 		cleanup()
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches update state ready"))
@@ -178,6 +193,34 @@ func ScratchDelete(ctx context.Context, req schema.ScratchDeleteRequest, deps *S
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches update state deleted"))
 	}
 	return &schema.ScratchDeleteResponse{ScratchID: scratch.ID, State: schema.ScratchDeleted}, nil
+}
+
+func waitHealthy(ctx context.Context, deps *ScratchCreateDeps, ip string) error {
+	timeout := deps.HealthTimeout
+	if timeout <= 0 {
+		timeout = 90 * time.Second
+	}
+	interval := deps.HealthInterval
+	if interval <= 0 {
+		interval = 500 * time.Millisecond
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := deps.HealthProbe(probeCtx, ip); err == nil {
+		return nil
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-probeCtx.Done():
+			return probeCtx.Err()
+		case <-t.C:
+			if err := deps.HealthProbe(probeCtx, ip); err == nil {
+				return nil
+			}
+		}
+	}
 }
 
 func mintID(gen func() string) string {

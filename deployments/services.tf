@@ -42,9 +42,9 @@ resource "google_cloudbuild_worker_pool" "jumbo-pool" {
   depends_on = [google_project_service.cloudbuild]
 }
 
-# Instance template for scratch VMs.
-# TODO: Add a startup script that fetches and runs the scratch-worker
-# binary once the worker service lands.
+# Instance template for scratch VMs. The startup script fetches and
+# runs the scratch-worker binary; the VM has no attached service account
+# so agent-api drives the worker over private-IP HTTP with an ID token.
 resource "google_compute_instance_template" "scratch-standard" {
   count        = var.enable_scratch ? 1 : 0
   name_prefix  = "${var.host}-scratch-standard-"
@@ -77,6 +77,14 @@ resource "google_compute_instance_template" "scratch-standard" {
 
   tags   = ["scratch"]
   labels = { purpose = "scratch" }
+
+  metadata = {
+    startup-script = templatefile("${path.module}/scratch_startup.sh", {
+      worker_binary_uri = "gs://${google_storage_bucket.bootstrap-tools.name}/${module.prebuild_images["scratch-worker"].image_version}/scratch-worker"
+      caller_sa         = google_service_account.orchestrator.email
+      audience          = "https://builder/$${HOSTNAME}"
+    })
+  }
 
   lifecycle {
     create_before_destroy = true
@@ -382,6 +390,7 @@ resource "google_cloud_run_v2_service" "agent-api" {
         ] : [], var.enable_scratch ? [
         "--scratch-enabled=true",
         "--scratch-zone=us-central1-a",
+        "--scratch-worker-port=8080",
         "--scratch-instance-standard-template=${google_compute_instance_template.scratch-standard[0].self_link}",
       ] : [])
       resources {
@@ -389,6 +398,18 @@ resource "google_cloud_run_v2_service" "agent-api" {
           cpu    = "1000m"
           memory = "1G"
         }
+      }
+    }
+    # When scratch is enabled, agent-api reaches worker VMs on private
+    # IPs via Direct VPC egress.
+    dynamic "vpc_access" {
+      for_each = var.enable_scratch ? [1] : []
+      content {
+        network_interfaces {
+          network    = google_compute_network.vpc[0].name
+          subnetwork = google_compute_subnetwork.subnet[0].name
+        }
+        egress = "ALL_TRAFFIC"
       }
     }
     scaling { max_instance_count = 10 }
