@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Command scratch-worker is the per-VM scratch worker. It serves
-// /healthz and /stat over HTTP. The worker has no GCP credentials of
-// its own; the VM template should set service_account = null.
+// /healthz and /stat over HTTP. The worker process makes no GCP API
+// calls of its own: on public deployments the VM has no attached SA,
+// and on private deployments the VM's SA is scoped narrowly to GCS
+// read for bootstrap fetching of this binary.
 package main
 
 import (
