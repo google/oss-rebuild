@@ -60,7 +60,17 @@ type ScratchCreateDeps struct {
 	// Jumbo is the optional class config for MachineClassJumbo. nil
 	// means jumbo isn't available and requsts returns InvalidArgument.
 	Jumbo *ClassConfig
-	Zone  string
+	// Zones is the ordered list of GCE zones to try for instance
+	// creation. The first listed zone is preferred; subsequent zones
+	// are used only when an earlier zone returns a stockout / quota
+	// error (see isZoneExhausted). Cross-region failover is expressed
+	// by including zones from multiple regions in the list.
+	Zones []string
+	// Cooldown skips zones recently observed to be exhausted so we don't
+	// pay an extra round-trip on each request during sustained outages.
+	// Must be a singleton shared across requests (the binary, not deps,
+	// owns its lifecycle); nil disables the cool-down.
+	Cooldown *ZoneCooldown
 	// HealthProbe is called until it returns nil or HealthTimeout elapses.
 	HealthProbe HealthProbe
 	// HealthTimeout bounds the polling loop. Zero means 90 seconds.
@@ -103,24 +113,25 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 		BuildID:      req.BuildID,
 		ObliviousID:  obliviousID,
 		MachineClass: req.MachineClass,
-		Zone:         deps.Zone,
 		VMName:       "scratch-" + scratchID,
 		State:        schema.ScratchStarting,
 		Created:      now,
 		Updated:      now,
+		// Zone is set after the fallthrough loop is able to allocate.
 	}
 	if err := deps.Scratches.Insert(ctx, scratch); err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches insert"))
 	}
 
-	// Best-effort cleanup on any failure past this point: attempt deletion of
-	// GCE resources we may have created and mark the record Deleted.
-	ranInsertInstance := false
+	// Best-effort teardown on failure past this point. scratch.Zone gates
+	// DeleteInstance: insertWithFallthrough sets it whenever a VM may
+	// exist (success, or non-stockout orphan), and leaves it "" when GCE
+	// semantics guarantee none (all-stockouts).
 	cleanup := func() {
 		bg := context.Background()
-		if ranInsertInstance {
+		if scratch.Zone != "" {
 			if err := deps.GCE.DeleteInstance(bg, scratch.Zone, scratch.VMName); err != nil {
-				log.Printf("teardown DeleteInstance(%s): %v", scratch.VMName, err)
+				log.Printf("teardown DeleteInstance(%s/%s): %v", scratch.Zone, scratch.VMName, err)
 			}
 		}
 		if err := deps.Scratches.UpdateState(bg, scratchID, schema.ScratchDeleted); err != nil {
@@ -128,8 +139,8 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 		}
 	}
 
-	ranInsertInstance = true
-	inst, err := deps.GCE.InsertInstanceFromTemplate(ctx, scratch.Zone, scratch.VMName, class.InstanceTemplate, nil)
+	inst, cleanupZone, err := insertWithFallthrough(ctx, deps.GCE, deps.Zones, deps.Cooldown, scratch.VMName, class.InstanceTemplate)
+	scratch.Zone = cleanupZone
 	if err != nil {
 		cleanup()
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "insert instance"))

@@ -11,7 +11,53 @@ import (
 
 	"github.com/pkg/errors"
 	compute "google.golang.org/api/compute/v0.beta"
+	"google.golang.org/api/googleapi"
 )
+
+// opError wraps a terminal zone-op error so callers can classify it
+// by Code (e.g., ZONE_RESOURCE_POOL_EXHAUSTED) via errors.As.
+type opError struct {
+	OpName  string
+	Code    string
+	Message string
+}
+
+func (e *opError) Error() string {
+	return fmt.Sprintf("op %s failed: %s: %s", e.OpName, e.Code, e.Message)
+}
+
+// zoneExhaustedCodes are GCE error codes that trigger zone fall-through.
+// QUOTA_EXCEEDED is included because CPU quota is typically zone-scoped;
+// project-wide quotas fail everywhere anyway, so the extra attempt is cheap.
+var zoneExhaustedCodes = map[string]bool{
+	"ZONE_RESOURCE_POOL_EXHAUSTED":              true,
+	"ZONE_RESOURCE_POOL_EXHAUSTED_WITH_DETAILS": true,
+	"QUOTA_EXCEEDED":                            true,
+}
+
+// isZoneExhausted reports whether err is a stockout or per-zone quota
+// from Compute Engine. Inspects both *googleapi.Error (immediate Insert
+// failure) and *opError (polled zone-op terminal failure).
+func isZoneExhausted(err error) bool {
+	if err == nil {
+		return false
+	}
+	var gerr *googleapi.Error
+	if errors.As(err, &gerr) {
+		for _, it := range gerr.Errors {
+			if zoneExhaustedCodes[it.Reason] {
+				return true
+			}
+		}
+	}
+	var oerr *opError
+	if errors.As(err, &oerr) {
+		if zoneExhaustedCodes[oerr.Code] {
+			return true
+		}
+	}
+	return false
+}
 
 // Instance summarizes the fields the broker reads back from Compute Engine
 // after creating or looking up an instance.
@@ -153,7 +199,8 @@ func (g *computeGCE) waitZoneOp(ctx context.Context, zone string, op *compute.Op
 	for {
 		if op.Status == "DONE" {
 			if op.Error != nil && len(op.Error.Errors) > 0 {
-				return errors.Errorf("op %s failed: %s", op.Name, op.Error.Errors[0].Message)
+				e := op.Error.Errors[0]
+				return &opError{OpName: op.Name, Code: e.Code, Message: e.Message}
 			}
 			return nil
 		}
