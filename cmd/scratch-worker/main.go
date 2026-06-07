@@ -71,7 +71,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/exec/start", mw(api.Handler(execInit, scratchworkerservice.ExecStart)))
 	mux.Handle("/exec/op/status", mw(api.Handler(statusInit, scratchworkerservice.Status)))
-	mux.Handle("/exec/op/output", mw(api.Handler(outputInit, scratchworkerservice.Output)))
+	mux.Handle("/exec/op/output", mw(api.StreamHandler(outputInit, scratchworkerservice.Output)))
 	// TODO: Add /exec/op/kill
 	mux.Handle("/stat", mw(api.Handler(statInit, scratchworkerservice.Stat)))
 	mux.HandleFunc("/healthz", func(rw http.ResponseWriter, _ *http.Request) { rw.WriteHeader(http.StatusOK) })

@@ -4,7 +4,6 @@
 package agentapiservice
 
 import (
-	"bytes"
 	"context"
 	"log"
 	"net/url"
@@ -254,13 +253,15 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 }
 
 // gcsSyncer pulls from the worker's /status + /output endpoints and
-// overwrites the op's GCS object with the full buffer on every poll
-// that has new bytes.
+// overwrites the op's GCS object with the buffer on every poll that has
+// new bytes.
 //
-// TODO(streaming): the worker JSON-encodes the entire stdout+stderr
-// buffer per poll today (see scratchworkerservice.OutputRequest). Once
-// act gains a streaming-response model, switch to incremental tail
-// fetches + rolling Compose.
+// The /output call gets piped straight into a GCS Writer, so the broker
+// never materializes the whole buffer in memory. Bytes-on-wire is still
+// O(total) per poll (we re-fetch from offset 0 and overwrite GCS, since
+// GCS doesn't expose append). A future optimization is to use Compose to
+// stitch incremental tail objects, at which point the OutputRequest.Offset
+// becomes load-bearing.
 type gcsSyncer struct {
 	gcs          *storage.Client
 	bucket       string
@@ -298,13 +299,8 @@ func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch s
 	}
 
 	if status.TotalBytes > currentSize {
-		outputStub := api.Stub[scratchworkerservice.OutputRequest, scratchworkerservice.OutputResponse](client, baseURL.JoinPath("exec/op/output"))
-		body, err := outputStub(ctx, scratchworkerservice.OutputRequest{ID: exec.ID})
-		if err != nil {
-			return exec, errors.Wrap(err, "worker output")
-		}
-		if err := s.writeOut(ctx, scratch.ObliviousID, exec.ID, body.Bytes); err != nil {
-			return exec, errors.Wrap(err, "write out")
+		if err := s.pullOutput(ctx, client, baseURL, scratch.ObliviousID, exec.ID); err != nil {
+			return exec, errors.Wrap(err, "pull output")
 		}
 	}
 
@@ -372,15 +368,36 @@ func outURIFor(bucket, obliviousID, opID string) string {
 	return "gs://" + bucket + "/" + outObjectFor(obliviousID, opID)
 }
 
-func (s *gcsSyncer) writeOut(ctx context.Context, obliviousID, opID string, buf []byte) error {
-	if len(buf) == 0 {
-		return nil
-	}
+// pullOutput pulls /exec/op/output from offset 0 and pipes each chunk
+// into a fresh GCS Writer that overwrites the op's output object. The
+// broker holds only one chunk in memory at a time, regardless of the
+// total buffer size.
+//
+// On any stream error we cancel the writer's context (aborting the
+// upload server-side) and return the error, avoiding committing truncated
+// content to GCS.
+func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, baseURL *url.URL, obliviousID, opID string) error {
+	output := api.StreamStub[scratchworkerservice.OutputRequest, scratchworkerservice.OutputFrame](client, baseURL.JoinPath("exec/op/output"))
+
+	wctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	out := s.gcs.Bucket(s.bucket).Object(outObjectFor(obliviousID, opID))
-	w := out.NewWriter(ctx)
-	if _, err := bytes.NewReader(buf).WriteTo(w); err != nil {
-		_ = w.Close()
-		return err
+	w := out.NewWriter(wctx)
+
+	for frame, err := range output(ctx, scratchworkerservice.OutputRequest{ID: opID}) {
+		if err != nil {
+			cancel()
+			_ = w.Close()
+			return err
+		}
+		if _, err := w.Write(frame.Content); err != nil {
+			cancel()
+			_ = w.Close()
+			return errors.Wrap(err, "gcs write")
+		}
 	}
-	return w.Close()
+	if err := w.Close(); err != nil {
+		return errors.Wrap(err, "gcs close")
+	}
+	return nil
 }

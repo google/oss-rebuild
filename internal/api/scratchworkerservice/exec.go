@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"iter"
 	"os"
 	"sync"
 	"time"
@@ -15,6 +16,9 @@ import (
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/pkg/errors"
 )
+
+// outputChunkSize is the byte target for each /exec/op/output frame.
+const outputChunkSize = 64 << 10
 
 // StartRequest is the body of POST exec/start. The broker mints OpID,
 // stamps ScratchID, and forwards. The worker spawns the command
@@ -60,6 +64,33 @@ func (r StatusRequest) Validate() error {
 	return nil
 }
 
+// OutputRequest is the input to stream bytes from the op's capture file.
+// It streams bytes from the requested Offset up to the capture file's size at
+// receipt of the request. Writes that land after entry are not included.
+type OutputRequest struct {
+	ID     string `form:"id,required"`
+	Offset int64  `form:"offset"`
+}
+
+// Validate implements act.Input.
+func (r OutputRequest) Validate() error {
+	if r.ID == "" {
+		return errors.New("id is required")
+	}
+	if r.Offset < 0 {
+		return errors.New("offset must be >= 0")
+	}
+	return nil
+}
+
+// OutputFrame is one chunk of the merged stdout+stderr output. Frames are
+// contiguous from the request's Offset; consumers can rely on the chunks
+// arriving in increasing-Offset order.
+type OutputFrame struct {
+	Offset  int64  `json:"offset"`
+	Content []byte `json:"content"`
+}
+
 // ExecStatus is the worker's in-memory view of one op. Returned by
 // exec/op/status. The broker mirrors this into Firestore on sync.
 type ExecStatus struct {
@@ -70,39 +101,6 @@ type ExecStatus struct {
 	StartedAt  time.Time `json:"started_at,omitzero"`
 	FinishedAt time.Time `json:"finished_at,omitzero"`
 	ErrMsg     string    `json:"err_msg,omitempty"` // Run error. If set, Done is true.
-}
-
-// OutputRequest is the body of POST exec/op/output. The broker fetches
-// the entire merged stdout+stderr buffer for an op each sync.
-//
-// TODO: Once act gains a streaming-response model, switch this to a
-// range-style request (Start offset) returning only the new tail bytes.
-// Today the worker JSON-encodes the full buffer on every call; that's
-// O(bytes-so-far) per poll and is fine for shortish builds but wasteful
-// for long-running ones.
-type OutputRequest struct {
-	ID string `form:"id,required"`
-}
-
-// Validate implements act.Input.
-func (r OutputRequest) Validate() error {
-	if r.ID == "" {
-		return errors.New("id is required")
-	}
-	return nil
-}
-
-// OutputResponse carries the full merged stdout+stderr buffer for an
-// op. Bytes is the entire buffer (no offset). TotalBytes equals
-// len(Bytes); it's repeated for parity with ExecStatus.TotalBytes so
-// callers don't need to inspect the byte slice.
-//
-// JSON encodes []byte as a base64 string; that's the in-memory
-// buffering pattern we're using until streaming support exists.
-// XXX: Inefficient
-type OutputResponse struct {
-	Bytes      []byte `json:"bytes,omitempty"`
-	TotalBytes int64  `json:"total_bytes"`
 }
 
 // execEntry is the in-memory record the worker keeps for one op. The
@@ -199,35 +197,62 @@ func (s *ExecStore) status(opID string) (ExecStatus, bool) {
 	}, true
 }
 
-// readAll returns the full merged stdout+stderr buffer for opID. The
-// buffer is read into memory (no streaming); see OutputRequest's TODO
-// about replacing this with a range-style streaming endpoint.
-func (s *ExecStore) readAll(opID string) ([]byte, error) {
-	s.mu.Lock()
-	e, ok := s.entries[opID]
-	s.mu.Unlock()
-	if !ok {
-		return nil, errors.Errorf("unknown op %q", opID)
+// outputFrom emits the captured stdout+stderr buffer for opID, starting
+// at offset, in outputChunkSize-byte chunks. Snapshot at Stat time:
+// bytes written after handler entry are excluded from this response and
+// will be picked up on the next call.
+func (s *ExecStore) outputFrom(ctx context.Context, opID string, offset int64) iter.Seq2[*OutputFrame, error] {
+	return func(yield func(*OutputFrame, error) bool) {
+		s.mu.Lock()
+		e, ok := s.entries[opID]
+		s.mu.Unlock()
+		if !ok {
+			yield(nil, errors.Errorf("unknown op %q", opID))
+			return
+		}
+		if e.file == nil {
+			return
+		}
+		info, err := e.file.Stat()
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		end := info.Size()
+		if offset >= end {
+			return
+		}
+		buf := make([]byte, outputChunkSize)
+		pos := offset
+		for pos < end {
+			if ctx.Err() != nil {
+				yield(nil, ctx.Err())
+				return
+			}
+			n := outputChunkSize
+			if remaining := end - pos; int64(n) > remaining {
+				n = int(remaining)
+			}
+			rd, err := e.file.ReadAt(buf[:n], pos)
+			if rd > 0 {
+				frame := &OutputFrame{
+					Offset:  pos,
+					Content: append([]byte(nil), buf[:rd]...),
+				}
+				if !yield(frame, nil) {
+					return
+				}
+				pos += int64(rd)
+			}
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+		}
 	}
-	if e.file == nil {
-		return nil, nil
-	}
-	info, err := e.file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	end := info.Size()
-	if e.done {
-		end = e.totalBytes
-	}
-	if end == 0 {
-		return nil, nil
-	}
-	buf := make([]byte, end)
-	if _, err := e.file.ReadAt(buf, 0); err != nil && err != io.EOF {
-		return nil, err
-	}
-	return buf, nil
 }
 
 type ExecDeps struct {
@@ -321,21 +346,20 @@ func Status(_ context.Context, req StatusRequest, deps *StatusDeps) (*ExecStatus
 	return nil, errors.Errorf("unknown op %q", req.ID)
 }
 
-// OutputDeps wires Output.
+// OutputDeps wires the Output handler.
 type OutputDeps struct {
 	Store *ExecStore
 }
 
-// Output returns the entire merged stdout+stderr buffer for an op.
+// Output emits the captured output of an op as a sequence of OutputFrames
+// starting at req.Offset. The end of the response is whatever the
+// capture file was sized at when the handler stat'd it; bytes that land
+// after entry are not included (callers fetch them on a subsequent call).
 //
-// TODO(streaming): see OutputRequest godoc. Replace with a streaming
-// range endpoint once act supports it.
-func Output(_ context.Context, req OutputRequest, deps *OutputDeps) (*OutputResponse, error) {
-	buf, err := deps.Store.readAll(req.ID)
-	if err != nil {
-		return nil, err
-	}
-	return &OutputResponse{Bytes: buf, TotalBytes: int64(len(buf))}, nil
+// Unknown opID is a pre-stream error (yielded as the first (nil, err)
+// pair), which the streaming layer maps to a unary HTTP error response.
+func Output(ctx context.Context, req OutputRequest, deps *OutputDeps) iter.Seq2[*OutputFrame, error] {
+	return deps.Store.outputFrom(ctx, req.ID, req.Offset)
 }
 
 func decodeStdin(b64 string) (io.Reader, error) {
