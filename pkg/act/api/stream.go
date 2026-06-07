@@ -20,13 +20,13 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-// StreamHandlerFunc is the server-side type of a server-streaming action.
-// Mirror of HandlerFunc for streams.
-type StreamHandlerFunc[I act.Input, E any, D act.Deps] func(context.Context, I, D) iter.Seq2[*E, error]
+// StreamHandlerFn is the server-side type of a server-streaming action.
+// Mirror of HandlerFn for streams.
+type StreamHandlerFn[I act.Input, E any, D act.Deps] func(context.Context, I, D) iter.Seq2[*E, error]
 
-// StreamStubFunc is a client-side harness for that issues one
+// StreamStubFn is a client-side harness for that issues one
 // streaming request and returns an iterator over events.
-type StreamStubFunc[I act.Input, E any] func(context.Context, I) iter.Seq2[*E, error]
+type StreamStubFn[I act.Input, E any] func(context.Context, I) iter.Seq2[*E, error]
 
 // Streaming wire format (internal): the response is a text/event-stream
 // with three event names:
@@ -47,7 +47,7 @@ const maxSSELineBytes = 16 << 20
 
 // StreamHandler is the streaming counterpart to Handler. The handler
 // returns an iter.Seq2[*E, error]; the framework drives the wire.
-func StreamHandler[I act.Input, E any, D act.Deps](initDeps InitDeps[D], handler StreamHandlerFunc[I, E, D]) http.HandlerFunc {
+func StreamHandler[I act.Input, E any, D act.Deps](depsFn DepsFn[D], handler StreamHandlerFn[I, E, D]) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
 		// Streaming uses the request context so client disconnects propagate
 		// to the producer (unlike the unary handler, which detaches).
@@ -56,7 +56,7 @@ func StreamHandler[I act.Input, E any, D act.Deps](initDeps InitDeps[D], handler
 		if !ok {
 			return
 		}
-		deps, err := initDeps(ctx)
+		deps, err := depsFn(ctx)
 		if err != nil {
 			log.Println(errors.Wrap(err, "initializing dependencies"))
 			http.Error(rw, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -107,7 +107,7 @@ func StreamHandler[I act.Input, E any, D act.Deps](initDeps InitDeps[D], handler
 // StreamStub is the streaming counterpart to Stub. Each call issues one
 // request and returns an iterator that yields events as they arrive.
 // Breaking out of the range cancels the in-flight HTTP request.
-func StreamStub[I act.Input, E any](client httpx.BasicClient, u *url.URL) StreamStubFunc[I, E] {
+func StreamStub[I act.Input, E any](client httpx.BasicClient, u *url.URL) StreamStubFn[I, E] {
 	return func(ctx context.Context, in I) iter.Seq2[*E, error] {
 		return func(yield func(*E, error) bool) {
 			reqCtx, cancel := context.WithCancel(ctx)

@@ -21,11 +21,11 @@ type (
 	NoDeps       = act.NoDeps
 	NoReturn     = act.NoOutput
 
-	InitT[D act.Deps]                              = actapi.InitDeps[D]
-	HandlerT[I act.Input, O any, D act.Deps]       = actapi.HandlerFunc[I, O, D]
-	StubT[I act.Input, O any]                      = actapi.StubFunc[I, O]
-	StreamHandlerT[I act.Input, E any, D act.Deps] = actapi.StreamHandlerFunc[I, E, D]
-	StreamStubT[I act.Input, E any]                = actapi.StreamStubFunc[I, E]
+	InitT[D act.Deps]                              = actapi.DepsFn[D]
+	HandlerT[I act.Input, O any, D act.Deps]       = actapi.HandlerFn[I, O, D]
+	StubT[I act.Input, O any]                      = actapi.StubFn[I, O]
+	StreamHandlerT[I act.Input, E any, D act.Deps] = actapi.StreamHandlerFn[I, E, D]
+	StreamStubT[I act.Input, E any]                = actapi.StreamStubFn[I, E]
 	Translator[O act.Input]                        = actapi.Translator[O]
 )
 
@@ -54,20 +54,20 @@ func WithTimeout[I act.Input, O any, D act.Deps](timeout time.Duration, handler 
 	return actapi.WithTimeout(timeout, handler)
 }
 
-func Handler[I act.Input, O any, D act.Deps](initDeps InitT[D], handler HandlerT[I, O, D]) http.HandlerFunc {
-	return actapi.Handler(initDeps, handler)
+func Handler[I act.Input, O any, D act.Deps](depsFn InitT[D], handler HandlerT[I, O, D]) http.HandlerFunc {
+	return actapi.Handler(depsFn, handler)
 }
 
-func HTMLHandler[I act.Input, O any, D act.Deps](initDeps InitT[D], handler HandlerT[I, O, D], tmpl *template.Template) http.HandlerFunc {
-	return actapi.HTMLHandler(initDeps, handler, tmpl)
+func HTMLHandler[I act.Input, O any, D act.Deps](depsFn InitT[D], handler HandlerT[I, O, D], tmpl *template.Template) http.HandlerFunc {
+	return actapi.HTMLHandler(depsFn, handler, tmpl)
 }
 
 func Translate[O act.Input](t Translator[O], h http.HandlerFunc) http.HandlerFunc {
 	return actapi.Translate(t, h)
 }
 
-func StreamHandler[I act.Input, E any, D act.Deps](initDeps InitT[D], handler StreamHandlerT[I, E, D]) http.HandlerFunc {
-	return actapi.StreamHandler(initDeps, handler)
+func StreamHandler[I act.Input, E any, D act.Deps](depsFn InitT[D], handler StreamHandlerT[I, E, D]) http.HandlerFunc {
+	return actapi.StreamHandler(depsFn, handler)
 }
 
 func StreamStub[I act.Input, E any](client httpx.BasicClient, u *url.URL) StreamStubT[I, E] {

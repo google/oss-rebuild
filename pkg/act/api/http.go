@@ -29,9 +29,9 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-type InitDeps[D act.Deps] func(context.Context) (D, error)
-type HandlerFunc[I act.Input, O any, D act.Deps] func(context.Context, I, D) (*O, error)
-type StubFunc[I act.Input, O any] func(context.Context, I) (*O, error)
+type DepsFn[D act.Deps] func(context.Context) (D, error)
+type HandlerFn[I act.Input, O any, D act.Deps] func(context.Context, I, D) (*O, error)
+type StubFn[I act.Input, O any] func(context.Context, I) (*O, error)
 
 // Type aliases for convenience
 type NoDeps = act.NoDeps
@@ -44,7 +44,7 @@ var (
 	ErrUnavailable = status.New(codes.Unavailable, "service unavailable").Err()
 )
 
-func Stub[I act.Input, O any](client httpx.BasicClient, u *url.URL) StubFunc[I, O] {
+func Stub[I act.Input, O any](client httpx.BasicClient, u *url.URL) StubFn[I, O] {
 	return func(ctx context.Context, i I) (*O, error) {
 		req, err := newFormRequest(ctx, u, i)
 		if err != nil {
@@ -110,7 +110,7 @@ func errorFromResponse(resp *http.Response) error {
 	}
 }
 
-func StubFromHandler[I act.Input, O any, D act.Deps](client httpx.BasicClient, u *url.URL, handler HandlerFunc[I, O, D]) StubFunc[I, O] {
+func StubFromHandler[I act.Input, O any, D act.Deps](client httpx.BasicClient, u *url.URL, handler HandlerFn[I, O, D]) StubFn[I, O] {
 	return Stub[I, O](client, u)
 }
 
@@ -190,7 +190,7 @@ func templateResponse[O any](tmpl *template.Template) func(http.ResponseWriter, 
 	}
 }
 
-func WithTimeout[I act.Input, O any, D act.Deps](timeout time.Duration, handler HandlerFunc[I, O, D]) HandlerFunc[I, O, D] {
+func WithTimeout[I act.Input, O any, D act.Deps](timeout time.Duration, handler HandlerFn[I, O, D]) HandlerFn[I, O, D] {
 	return func(ctx context.Context, req I, deps D) (*O, error) {
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
@@ -198,22 +198,22 @@ func WithTimeout[I act.Input, O any, D act.Deps](timeout time.Duration, handler 
 	}
 }
 
-func Handler[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler HandlerFunc[I, O, D]) http.HandlerFunc {
-	return handleUsingResponder(initDeps, handler, jsonResponse)
+func Handler[I act.Input, O any, D act.Deps](depsFn DepsFn[D], handler HandlerFn[I, O, D]) http.HandlerFunc {
+	return handleUsingResponder(depsFn, handler, jsonResponse)
 }
 
-func HTMLHandler[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler HandlerFunc[I, O, D], tmpl *template.Template) http.HandlerFunc {
-	return handleUsingResponder(initDeps, handler, templateResponse[O](tmpl))
+func HTMLHandler[I act.Input, O any, D act.Deps](depsFn DepsFn[D], handler HandlerFn[I, O, D], tmpl *template.Template) http.HandlerFunc {
+	return handleUsingResponder(depsFn, handler, templateResponse[O](tmpl))
 }
 
-func handleUsingResponder[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler HandlerFunc[I, O, D], responder func(http.ResponseWriter, *O) error) http.HandlerFunc {
+func handleUsingResponder[I act.Input, O any, D act.Deps](depsFn DepsFn[D], handler HandlerFn[I, O, D], responder func(http.ResponseWriter, *O) error) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
 		req, ok := decodeRequest[I](rw, r)
 		if !ok {
 			return
 		}
-		deps, err := initDeps(ctx)
+		deps, err := depsFn(ctx)
 		if err != nil {
 			log.Println(errors.Wrap(err, "initializing dependencies"))
 			http.Error(rw, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)

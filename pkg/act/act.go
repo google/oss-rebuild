@@ -18,8 +18,8 @@ type Input interface {
 // Deps is a marker type for dependency containers.
 type Deps any
 
-// InitDeps initializes dependencies from context.
-type InitDeps[D Deps] func(context.Context) (D, error)
+// DepsFn initializes dependencies from context.
+type DepsFn[D Deps] func(context.Context) (D, error)
 
 // Action is a transport-agnostic operation.
 type Action[I Input, O any, D Deps] func(context.Context, I, D) (*O, error)
@@ -32,7 +32,7 @@ type StreamAction[I Input, E any, D Deps] func(context.Context, I, D) iter.Seq2[
 // NoDeps is a zero-value dependency container.
 type NoDeps struct{}
 
-// NoDepsInit is an InitDeps that returns NoDeps.
+// NoDepsInit is an DepsFn that returns NoDeps.
 func NoDepsInit(context.Context) (*NoDeps, error) { return &NoDeps{}, nil }
 
 // NoOutput is a zero-value output for actions that only produce side effects.
