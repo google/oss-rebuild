@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/google/oss-rebuild/internal/taskqueue"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -39,9 +39,9 @@ type ExecutionService interface {
 
 // remoteExecutionService interacts with a remote benchmark execution API.
 type remoteExecutionService struct {
-	createOpStub api.StubT[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]]
-	getOpStub    api.StubT[schema.GetOperationRequest, longrunning.Operation[schema.Verdict]]
-	versionStub  api.StubT[schema.VersionRequest, schema.VersionResponse]
+	createOpStub api.StubFn[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]]
+	getOpStub    api.StubFn[schema.GetOperationRequest, longrunning.Operation[schema.Verdict]]
+	versionStub  api.StubFn[schema.VersionRequest, schema.VersionResponse]
 }
 
 // NewRemoteExecutionService creates a new service for remote API execution.

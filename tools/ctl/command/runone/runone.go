@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/pkg/act"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/longrunning"
@@ -256,7 +256,7 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 	}
 	switch mode {
 	case analyzeMode:
-		stub := api.Stub[schema.AnalyzeRebuildRequest, api.NoReturn](client, apiURL.JoinPath("analyze"))
+		stub := api.Stub[schema.AnalyzeRebuildRequest, api.NoOutput](client, apiURL.JoinPath("analyze"))
 		_, err := stub(ctx, schema.AnalyzeRebuildRequest{
 			Ecosystem: rebuild.Ecosystem(cfg.Ecosystem),
 			Package:   cfg.Package,

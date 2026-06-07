@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/pkg/errors"

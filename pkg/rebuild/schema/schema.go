@@ -9,7 +9,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/debian"
 	"github.com/google/oss-rebuild/pkg/rebuild/maven"
@@ -155,7 +155,7 @@ type VersionRequest struct {
 	Service string `form:","`
 }
 
-var _ api.Message = VersionRequest{}
+var _ api.Input = VersionRequest{}
 
 func (VersionRequest) Validate() error { return nil }
 
@@ -172,7 +172,7 @@ type SmoketestRequest struct {
 	Strategy  *StrategyOneOf    `form:""`
 }
 
-var _ api.Message = SmoketestRequest{}
+var _ api.Input = SmoketestRequest{}
 
 func (SmoketestRequest) Validate() error { return nil }
 
@@ -267,7 +267,7 @@ const (
 	JumboSize SizeHint = "JUMBO"
 )
 
-var _ api.Message = RebuildPackageRequest{}
+var _ api.Input = RebuildPackageRequest{}
 
 func (r RebuildPackageRequest) Validate() error {
 	switch r.OverwriteMode {
@@ -295,7 +295,7 @@ type InferenceRequest struct {
 	StrategyHint *StrategyOneOf    `form:""`
 }
 
-var _ api.Message = InferenceRequest{}
+var _ api.Input = InferenceRequest{}
 
 func (req InferenceRequest) Validate() error {
 	if req.StrategyHint == nil {
@@ -329,7 +329,7 @@ type CreateRunRequest struct {
 	Type          string `form:","`
 }
 
-var _ api.Message = CreateRunRequest{}
+var _ api.Input = CreateRunRequest{}
 
 // Validate parses the CreateRun form values into a CreateRunRequest.
 func (req CreateRunRequest) Validate() error {
@@ -407,7 +407,7 @@ func (e TargetEvent) From(t rebuild.Target) TargetEvent {
 	return e
 }
 
-var _ api.Message = TargetEvent{}
+var _ api.Input = TargetEvent{}
 
 // AnalyzeRebuildRequest is a request to analyze a rebuilt package.
 type AnalyzeRebuildRequest struct {
@@ -419,7 +419,7 @@ type AnalyzeRebuildRequest struct {
 	Timeout   time.Duration     `form:""`
 }
 
-var _ api.Message = AnalyzeRebuildRequest{}
+var _ api.Input = AnalyzeRebuildRequest{}
 
 func (req AnalyzeRebuildRequest) Validate() error { return nil }
 
@@ -468,7 +468,7 @@ type AgentCreateRequest struct {
 	Context       *AgentContext  `form:""`
 }
 
-var _ api.Message = AgentCreateRequest{}
+var _ api.Input = AgentCreateRequest{}
 
 func (r AgentCreateRequest) Validate() error {
 	if r.Target.Ecosystem == "" || r.Target.Package == "" || r.Target.Version == "" || r.Target.Artifact == "" {
@@ -495,7 +495,7 @@ type AgentCreateIterationRequest struct {
 	Strategy        *StrategyOneOf `form:",required"`
 }
 
-var _ api.Message = AgentCreateIterationRequest{}
+var _ api.Input = AgentCreateIterationRequest{}
 
 func (AgentCreateIterationRequest) Validate() error { return nil }
 
@@ -527,7 +527,7 @@ type AgentCompleteRequest struct {
 	Summary            string `form:""`
 }
 
-var _ api.Message = AgentCompleteRequest{}
+var _ api.Input = AgentCompleteRequest{}
 
 func (AgentCompleteRequest) Validate() error { return nil }
 

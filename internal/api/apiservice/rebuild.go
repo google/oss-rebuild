@@ -17,12 +17,12 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/build"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
@@ -56,7 +56,7 @@ type RebuildPackageDeps struct {
 	DebugStoreBuilder          func(ctx context.Context) (rebuild.AssetStore, error)
 	RemoteMetadataStoreBuilder func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error)
 	OverwriteAttestations      bool // TODO: Remove in favor of req.OverwriteMode
-	InferStub                  api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
+	InferStub                  api.StubFn[schema.InferenceRequest, schema.StrategyOneOf]
 }
 
 type repoEntry struct {

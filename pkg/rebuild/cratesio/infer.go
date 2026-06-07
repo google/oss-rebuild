@@ -24,12 +24,12 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/internal/uri"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
@@ -483,12 +483,12 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 	return tm, err
 }
 
-func getRegistryStub(ctx context.Context) (api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse], error) {
+func getRegistryStub(ctx context.Context) (api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse], error) {
 	stubValue := ctx.Value(rebuild.CratesRegistryStubID)
 	if stubValue == nil {
 		return nil, errors.New("crates registry stub not found in context")
 	}
-	stub, ok := stubValue.(api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse])
+	stub, ok := stubValue.(api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse])
 	if !ok {
 		return nil, errors.New("invalid crates registry stub type in context")
 	}

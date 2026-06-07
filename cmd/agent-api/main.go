@@ -16,11 +16,11 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/storage"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/agentapiservice"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/serviceid"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"

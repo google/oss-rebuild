@@ -11,9 +11,9 @@ import (
 	"net/http"
 
 	"github.com/google/oss-rebuild/analyzer/system/analyzerservice"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/urlx"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/analyzer"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"

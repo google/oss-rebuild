@@ -7,12 +7,12 @@ import (
 	"context"
 	"log"
 
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/uri"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -50,7 +50,7 @@ type InferDeps struct {
 	HTTPClient         httpx.BasicClient
 	GitCache           *gitcache.Client
 	RepoOptF           func() *gitx.RepositoryOptions
-	CratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 }
 
 func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*schema.StrategyOneOf, error) {

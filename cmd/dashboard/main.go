@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/dashboard"
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"

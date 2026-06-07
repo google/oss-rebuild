@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"

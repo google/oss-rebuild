@@ -7,8 +7,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/db"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"

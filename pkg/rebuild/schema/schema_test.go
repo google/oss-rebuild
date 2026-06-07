@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/oss-rebuild/internal/api/form"
+	"github.com/google/oss-rebuild/pkg/act/api/form"
 	"github.com/google/oss-rebuild/pkg/rebuild/cratesio"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/npm"

@@ -7,7 +7,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
 

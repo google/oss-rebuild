@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/scratchworkerservice"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/act"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"

@@ -17,9 +17,9 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/cheggaaa/pb"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/pipe"
 	"github.com/google/oss-rebuild/pkg/act"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -86,8 +86,8 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		return nil, errors.Wrap(err, "creating Cloud Run service")
 	}
 
-	var agentStub api.StubT[schema.AgentCreateRequest, schema.AgentCreateResponse]
-	var runStub api.StubT[schema.CreateRunRequest, schema.Run]
+	var agentStub api.StubFn[schema.AgentCreateRequest, schema.AgentCreateResponse]
+	var runStub api.StubFn[schema.CreateRunRequest, schema.Run]
 	{
 		apiURL, err := url.Parse(cfg.API)
 		if err != nil {

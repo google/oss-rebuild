@@ -23,12 +23,12 @@ import (
 
 	"github.com/cheggaaa/pb"
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/act"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/oauth"

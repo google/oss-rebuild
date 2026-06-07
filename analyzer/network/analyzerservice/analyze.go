@@ -13,11 +13,11 @@ import (
 	"path"
 	"time"
 
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/hashext"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/build"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
@@ -49,7 +49,7 @@ type AnalyzerDeps struct {
 	OverwriteAttestations      bool
 }
 
-func Analyze(ctx context.Context, req schema.AnalyzeRebuildRequest, deps *AnalyzerDeps) (*api.NoReturn, error) {
+func Analyze(ctx context.Context, req schema.AnalyzeRebuildRequest, deps *AnalyzerDeps) (*api.NoOutput, error) {
 	t := rebuild.Target{
 		Ecosystem: req.Ecosystem,
 		Package:   req.Package,
@@ -82,7 +82,7 @@ func analysisExists(ctx context.Context, store rebuild.AssetStore, t rebuild.Tar
 	return true, nil
 }
 
-func analyzeRebuild(ctx context.Context, t rebuild.Target, timeout time.Duration, deps *AnalyzerDeps) (*api.NoReturn, error) {
+func analyzeRebuild(ctx context.Context, t rebuild.Target, timeout time.Duration, deps *AnalyzerDeps) (*api.NoOutput, error) {
 	rebuildAttestation, err := getRebuildAttestation(ctx, deps.InputAttestationStore, t, deps.Verifier)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting rebuild attestation")
@@ -101,7 +101,7 @@ func analyzeRebuild(ctx context.Context, t rebuild.Target, timeout time.Duration
 	if err != nil {
 		return nil, errors.Wrap(err, "publishing attestations")
 	}
-	return &api.NoReturn{}, nil
+	return &api.NoOutput{}, nil
 }
 
 // getRebuildAttestation fetches and parses the rebuild attestation from the store
