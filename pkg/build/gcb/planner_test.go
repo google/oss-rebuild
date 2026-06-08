@@ -730,6 +730,30 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					`)[1:]
 			},
 		},
+		{
+			name: "Syscall monitor disabled but sysgraph URL set",
+			opts: build.PlanOptions{
+				UseSyscallMonitor: false,
+				Resources: build.Resources{
+					BaseImageConfig: baseImageConfig,
+					AssetStore:      rebuild.NewFilesystemAssetStore(memfs.New()),
+					ToolURLs: map[build.ToolType]string{
+						build.TetragonSysgraphTool: sysgraphURL,
+					},
+				},
+			},
+			want: func(dockerfile string) string {
+				return textwrap.Dedent(`
+					#!/usr/bin/env bash
+					set -eux
+					echo 'Starting rebuild for {Ecosystem:npm Package:test-package Version:1.0.0 Artifact:test-package-1.0.0.tgz}'
+					cat <<'EOS' | docker buildx build --tag=img -
+					`)[1:] + dockerfile + "\nEOS" + textwrap.Dedent(`
+
+					docker run --name=container img
+					`)[1:]
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			plan, err := planner.GeneratePlan(ctx, input, tc.opts)

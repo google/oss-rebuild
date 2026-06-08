@@ -307,15 +307,14 @@ var gcbStandardBuildTpl = template.Must(
 			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 			{{- end}}
+			{{- if .UseSyscallMonitor}}
 			{{- if .TetragonSysgraphURL}}
 			curl {{if .TetragonSysgraphAuth}}-H @/tmp/auth_header {{end}}{{.TetragonSysgraphURL}} > tetragon_sysgraph
 			chmod +x tetragon_sysgraph
 			docker run --name=sysgraph --detach --cpu-shares=5120 -v=/workspace/:/workspace/ docker.io/library/alpine:3.21 /workspace/tetragon_sysgraph -server unix:///workspace/tetragon/tetragon.sock -output /workspace/sysgraph.zip
 			docker logs --follow sysgraph &
 			SYSGRAPH_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' sysgraph)
-			{{- end}}
-			{{- if .UseSyscallMonitor}}
-			{{- if not .TetragonSysgraphURL}}
+			{{- else}}
 			SYSGRAPH_PID=0
 			{{- end}}
 			PROXY_PID=0
