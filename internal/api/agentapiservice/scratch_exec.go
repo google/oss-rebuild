@@ -38,6 +38,7 @@ type ScratchExecCreateDeps struct {
 	OutputBucket string
 	IDGen        func() string // For op IDs. If nil, defaults to uuid.New()
 	OpTimeout    time.Duration // Default and max exec timeout. Zero leaves execs unbounded
+	Syncer       Syncer        // For the optimistic wait. Disabled on nil
 }
 
 // ScratchExecGetDeps wires ScratchExecGet.
@@ -86,6 +87,11 @@ func ProjectScratchExec(e schema.ScratchExec) longrunning.Operation[schema.Scrat
 // opID, persists a Pending ScratchExec pre-populated with the immutable parts of
 // the eventual Result, dispatches the work to the worker, and returns the projected
 // operation.
+//
+// When the request sets WaitSeconds and a Syncer is configured, the call holds
+// open up to that long (capped at maxOptimisticWait) polling for completion, so
+// fast commands return a terminal operation in a single round trip. The wait is
+// best-effort: expiry returns the Pending operation as usual.
 //
 // API-error vs Operation-error contract: failures that happen before the exec
 // record is durably inserted surface as API status errors (the operation has no
@@ -174,8 +180,48 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 		log.Printf("scratch %q exec %q: update last_used: %v", req.ScratchID, opID, err)
 	}
 
+	if req.WaitSeconds > 0 && deps.Syncer != nil {
+		exec = optimisticWait(ctx, deps.Syncer, exec, scratch, time.Duration(req.WaitSeconds)*time.Second)
+	}
+
 	op := ProjectScratchExec(exec)
 	return &op, nil
+}
+
+// Bounds for the optimistic wait in ScratchExecCreate. The wait exists to
+// catch trivial commands (cat, ls, quick greps) in a single round trip.
+// The max is low and anything longer-lived should go through the normal poll.
+const (
+	optimisticWaitMax      = 30 * time.Second
+	optimisticPollInterval = 500 * time.Millisecond
+)
+
+// optimisticWait polls the Syncer until the exec turns terminal or the
+// wait expires, returning the latest observed exec. The wait is
+// best-effort, so sync errors are logged and retried rather than
+// finalizing the op as ScratchExecGet would.
+func optimisticWait(ctx context.Context, syncer Syncer, exec schema.ScratchExec, scratch schema.Scratch, wait time.Duration) schema.ScratchExec {
+	deadline := time.Now().Add(min(wait, optimisticWaitMax))
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return exec
+		}
+		select {
+		case <-ctx.Done():
+			return exec
+		case <-time.After(min(optimisticPollInterval, remaining)):
+		}
+		synced, err := syncer.Sync(ctx, exec, scratch)
+		if err != nil {
+			log.Printf("scratch %q exec %q: optimistic sync: %v", exec.ScratchID, exec.ID, err)
+		} else {
+			exec = synced
+			if exec.State != schema.ScratchExecPending {
+				return exec
+			}
+		}
+	}
 }
 
 // ScratchExecGet returns the current state of an exec op. If the op is
