@@ -15,9 +15,24 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Ordering defines where a Stabilizer is sequenced to run.
+// Higher Ordering runs later. Stabilizers should generally not set this and
+// remain at the default as order-dependence is not desirable. However when
+// ordering is unavoidable, a value can be set on the stabilizer itself using
+// either a raw int or a named stage.
+type Ordering int
+
+// Stage constants name well-known slots on the Stabilizer pipeline.
+const (
+	StageDefault  Ordering = 0   // standard Stabilizers
+	StagePatch    Ordering = 10  // package-specific fixes (custom_stabilizers live here)
+	StageFinalize Ordering = 100 // special invariants over the fully-stabilized form (e.g. wheel RECORD)
+)
+
 // Stabilizer defines a stabilization operation with applicability constraints.
 type Stabilizer struct {
 	Name        string
+	Ordering    Ordering
 	constraints Constraints
 	impl        stabilizerImpl
 }
@@ -116,6 +131,12 @@ func (s Stabilizer) WithFns(fns map[archive.Format]StabilizerFn) Stabilizer {
 // WithConstraints returns a Stabilizer with the added constraints.
 func (s Stabilizer) WithConstraints(c ...Constraint) Stabilizer {
 	s.constraints = append(s.constraints, c...)
+	return s
+}
+
+// WithOrdering returns a Stabilizer with the given Ordering.
+func (s Stabilizer) WithOrdering(n Ordering) Stabilizer {
+	s.Ordering = n
 	return s
 }
 
