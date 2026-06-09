@@ -128,7 +128,6 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	default:
 		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
 	}
-	return r, nil
 }
 
 func validateCommitCandidate(commitCandidate string, rcfg *rebuild.RepoConfig, heuristicName string) (bool, error) {
