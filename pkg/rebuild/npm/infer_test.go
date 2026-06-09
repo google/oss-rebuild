@@ -180,6 +180,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 		wantCommitID    string
 		wantStrategyFn  func(commitID string) rebuild.Strategy
 		wantErr         bool
+		extraMockCalls  []httpxtest.Call
 	}{
 		{
 			name:    "NPMPackBuild - ref from gitHead",
@@ -363,8 +364,24 @@ func TestInferStrategy_NPM(t *testing.T) {
       package.json: "this is not json" # Invalid package.json in the repo commit
 `,
 			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"8.0.0","dist":{"tarball":"url6"},"gitHead":"INSERT_COMMIT_ID"}`,
-			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-01-01T12:00:00.000Z"}}`,
 			wantErr:         true,
+			extraMockCalls: []httpxtest.Call{
+				{
+					URL: "https://registry.npmjs.org/test-package/1.0.0",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body(`{"name":"test-package","version":"1.0.0","_npmVersion":"8.0.0","dist":{"tarball":"url6"}}`),
+					},
+				},
+				{
+					URL: "url6",
+					Response: &http.Response{
+						StatusCode: 404,
+						Status:     "Not Found",
+						Body:       httpxtest.Body("not found"),
+					},
+				},
+			},
 		},
 		{
 			name:    "Error - missing upload time for custom build",
@@ -459,6 +476,9 @@ func TestInferStrategy_NPM(t *testing.T) {
 						Body:       httpxtest.Body(tc.packageMetadata),
 					},
 				})
+			}
+			if tc.extraMockCalls != nil {
+				client.Calls = append(client.Calls, tc.extraMockCalls...)
 			}
 			mux := rebuild.RegistryMux{NPM: &reg.HTTPRegistry{Client: &client}}
 			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, tc.locationHint)

@@ -4,9 +4,13 @@
 package npm
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"path"
 	"path/filepath"
@@ -22,6 +26,7 @@ import (
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	npmreg "github.com/google/oss-rebuild/pkg/registry/npm"
+	"github.com/google/oss-rebuild/pkg/vcs/gitscan"
 	"github.com/pkg/errors"
 )
 
@@ -125,7 +130,7 @@ func PickNPMVersion(meta *npmreg.NPMVersion) (string, error) {
 	return npmv, nil
 }
 
-func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.RepoConfig) (loc rebuild.Location, versionOverride string, err error) {
+func InferLocation(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, vmeta *npmreg.NPMVersion, rcfg *rebuild.RepoConfig) (loc rebuild.Location, versionOverride string, err error) {
 	// Initialize location with repo URI from config
 	loc = rebuild.Location{
 		Repo: rcfg.URI,
@@ -211,16 +216,24 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 		}
 		fallthrough
 	default:
-		if badVersionRef != "" {
-			log.Printf("using version override recovery: %s", badVersionRef[:9])
-			c, _ = rcfg.Repository.CommitObject(plumbing.NewHash(badVersionRef))
-			loc.Ref = badVersionRef
-			versionOverride = t.Version
-			return loc, versionOverride, nil
-		} else if registryRef == "" && tagGuess == "" && pkgJSONGuess == "" {
-			return loc, "", errors.Errorf("no git ref")
+		commit, err := findClosestCommitToSource(ctx, t, mux, rcfg.Repository)
+		if err == nil && commit != nil {
+			commitHashHex := commit.Hash.String()
+			loc.Ref = commitHashHex
+			return loc, "", nil
 		} else {
-			return loc, "", errors.Errorf("no valid git ref")
+			log.Printf("Failed to use closest commit as ref: %s", err)
+			if badVersionRef != "" {
+				log.Printf("using version override recovery: %s", badVersionRef[:9])
+				c, _ = rcfg.Repository.CommitObject(plumbing.NewHash(badVersionRef))
+				loc.Ref = badVersionRef
+				versionOverride = t.Version
+				return loc, versionOverride, nil
+			} else if registryRef == "" && tagGuess == "" && pkgJSONGuess == "" {
+				return loc, "", errors.Errorf("no git ref")
+			} else {
+				return loc, "", errors.Errorf("no valid git ref")
+			}
 		}
 	}
 }
@@ -245,7 +258,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			loc.Dir = lh.Dir
 		}
 	} else {
-		loc, versionOverride, err = InferLocation(t, vmeta, rcfg)
+		loc, versionOverride, err = InferLocation(ctx, t, mux, vmeta, rcfg)
 		if err != nil {
 			return nil, err
 		}
@@ -454,4 +467,29 @@ func pkgJSONSearch(pkg, pkgJSONPath string, repo *git.Repository) (tm map[string
 		}
 	}
 	return
+}
+
+func findClosestCommitToSource(ctx context.Context, target rebuild.Target, mux rebuild.RegistryMux, repo *git.Repository) (*object.Commit, error) {
+	sourceTar, err := mux.NPM.Artifact(ctx, target.Package, target.Version)
+	if err != nil {
+		return nil, err
+	}
+	defer sourceTar.Close()
+	gzReader, err := gzip.NewReader(sourceTar)
+	if err != nil {
+		return nil, err
+	}
+	defer gzReader.Close()
+	tarData, err := io.ReadAll(gzReader)
+	if err != nil {
+		return nil, err
+	}
+	tarReader := tar.NewReader(bytes.NewReader(tarData))
+
+	hashes, err := gitscan.BlobHashesFromTar(tarReader)
+	if err != nil {
+		return nil, errors.Wrap(err, "hashing source jar contents")
+	}
+
+	return gitscan.FindClosestCommitToSource(ctx, repo, hashes)
 }
