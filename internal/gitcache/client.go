@@ -69,12 +69,15 @@ func (c Client) GetLinkWithRef(repo string, contains time.Time, ref string) (uri
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
 	var errs []byte
 	switch resp.StatusCode {
 	case http.StatusFound:
 		uri = resp.Header.Get("Location")
 		// FIXME: Figure out why this URL parsing artifact is being reintroduced.
 		return strings.ReplaceAll(uri, "%252F", "%2F"), nil
+	case http.StatusOK:
+		return u.String(), nil
 	case http.StatusBadRequest:
 		errs, err = io.ReadAll(resp.Body)
 		if err != nil {
@@ -91,7 +94,7 @@ func (c Client) GetLinkWithRef(repo string, contains time.Time, ref string) (uri
 
 // Clone provides an interface to clone a git repo using the GitCache.
 func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
-	if opt.Auth != nil || opt.RemoteName != "" || opt.Depth != 0 || opt.RecurseSubmodules != 0 || opt.Tags != git.InvalidTagMode || opt.InsecureSkipTLS || len(opt.CABundle) > 0 {
+	if opt.Auth != nil || opt.RemoteName != "" || opt.Depth != 0 || opt.Tags != git.InvalidTagMode || opt.InsecureSkipTLS || len(opt.CABundle) > 0 {
 		// No support for non-trivial opts aside from NoCheckout, ReferenceName, and SingleBranch.
 		return nil, errors.New("Unsupported opt")
 	}
@@ -133,7 +136,7 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 	}
 	defer gr.Close()
 	tr := tar.NewReader(gr)
-	if err := archive.ExtractTar(tr, extractFS, archive.ExtractOptions{SubDir: git.GitDirName}); err != nil {
+	if err := archive.ExtractTar(tr, extractFS, archive.ExtractOptions{}); err != nil {
 		return nil, errors.Wrap(err, "tar extract error")
 	}
 	// Copy staged data into the target storer if needed.
