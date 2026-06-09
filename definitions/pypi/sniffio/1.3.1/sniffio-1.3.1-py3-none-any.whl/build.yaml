@@ -18,11 +18,3 @@ custom_stabilizers:
       endings from PKG-INFO and BytesGenerator preserved them in this
       wheel-version combo. No version-pinning combination on Linux
       reproduces this without running the build on Windows.
-  - replace_pattern:
-      paths: ["*/RECORD"]
-      pattern: "(?m)^.*METADATA,sha256=[^,]+,\\d+\n"
-      replace: ""
-    reason: |
-      RECORD's METADATA hash was baked at write time; drop the line so
-      the cascade from the METADATA stabilizer doesn't surface as a
-      RECORD diff.
