@@ -221,10 +221,10 @@ func phaseDiffBody(inferred, manual string) (string, error) {
 	manual = normalizePipInstalls(manual)
 	// Equalise trailing newlines so identical last lines don't show as
 	// removed+added under the diff library's no-newline-at-eof handling.
-	if !strings.HasSuffix(inferred, "\n") {
+	if inferred != "" && !strings.HasSuffix(inferred, "\n") {
 		inferred += "\n"
 	}
-	if !strings.HasSuffix(manual, "\n") {
+	if manual != "" && !strings.HasSuffix(manual, "\n") {
 		manual += "\n"
 	}
 	if inferred == manual {
