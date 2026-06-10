@@ -98,7 +98,7 @@ locals {
       build_args = ["DEBUG=${terraform_data.debug.output}"]
     }
   } : {})
-  prebuild_images = {
+  prebuild_images = merge({
     gsutil_writeonly = {
       dockerfile = "build/package/Dockerfile.gsutil_writeonly"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
@@ -115,7 +115,15 @@ locals {
       dockerfile = "build/package/Dockerfile.tetragon_sysgraph"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
     }
-  }
+    }, var.enable_scratch ? {
+    # scratch-worker is downloaded onto scratch VMs at startup via the
+    # cloud-init script in services.tf. Treated as a bootstrap binary
+    # like gsutil_writeonly et al.
+    scratch-worker = {
+      dockerfile = "build/package/Dockerfile.scratch-worker"
+      build_args = ["DEBUG=${terraform_data.debug.output}"]
+    }
+  } : {})
 }
 
 module "service_images" {

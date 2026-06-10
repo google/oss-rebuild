@@ -1,0 +1,12 @@
+FROM golang:1.25-alpine AS binary
+ARG DEBUG=false
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build \
+    -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w')" \
+    -gcflags="-l=4" \
+    -o scratch-worker \
+    ./cmd/scratch-worker
+FROM scratch
+COPY --from=binary /src/scratch-worker /
+ENTRYPOINT ["/scratch-worker"]

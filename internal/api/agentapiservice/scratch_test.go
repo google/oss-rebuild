@@ -10,7 +10,9 @@ import (
 	"maps"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -30,14 +32,40 @@ func testJumbo() *ClassConfig {
 	}
 }
 
-func newCreateDeps(gce GCE, scratches db.Scratch, idGen func() string) *ScratchCreateDeps {
+func newCreateDeps(gce GCE, scratches db.Scratch, probe HealthProbe, idGen func() string) *ScratchCreateDeps {
 	return &ScratchCreateDeps{
-		Scratches: scratches,
-		GCE:       gce,
-		Standard:  testStandard(),
-		Jumbo:     testJumbo(),
-		Zone:      "us-central1-a",
-		IDGen:     idGen,
+		Scratches:      scratches,
+		GCE:            gce,
+		Standard:       testStandard(),
+		Jumbo:          testJumbo(),
+		Zone:           "us-central1-a",
+		HealthProbe:    probe,
+		HealthTimeout:  500 * time.Millisecond,
+		HealthInterval: 10 * time.Millisecond,
+		IDGen:          idGen,
+	}
+}
+
+// okProbe is a HealthProbe that always succeeds, for tests that don't
+// care about the probe behavior.
+func okProbe(_ context.Context, _ string) error { return nil }
+
+// healthyAfter returns a HealthProbe that fails the first n-1 calls and
+// succeeds afterwards. counter is updated atomically with each invocation.
+func healthyAfter(counter *int32, n int32) HealthProbe {
+	return func(_ context.Context, _ string) error {
+		c := atomic.AddInt32(counter, 1)
+		if c < n {
+			return errors.New("not yet")
+		}
+		return nil
+	}
+}
+
+func alwaysUnhealthy(counter *int32) HealthProbe {
+	return func(_ context.Context, _ string) error {
+		atomic.AddInt32(counter, 1)
+		return errors.New("nope")
 	}
 }
 
@@ -45,7 +73,7 @@ func TestScratchCreate_HappyPath(t *testing.T) {
 	gce := NewMemoryGCE()
 	gce.SetNextIP("10.0.0.42")
 	scratches := db.NewMemoryScratch()
-	deps := newCreateDeps(gce, scratches, func() string { return "sA" })
+	deps := newCreateDeps(gce, scratches, okProbe, func() string { return "sA" })
 
 	got, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
 		BuildID: "build-1", MachineClass: schema.MachineClassStandard,
@@ -79,7 +107,7 @@ func TestScratchCreate_HappyPath(t *testing.T) {
 
 func TestScratchCreate_JumboUsesJumboTemplate(t *testing.T) {
 	gce := NewMemoryGCE()
-	deps := newCreateDeps(gce, db.NewMemoryScratch(), func() string { return "sJ" })
+	deps := newCreateDeps(gce, db.NewMemoryScratch(), okProbe, func() string { return "sJ" })
 
 	if _, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
 		BuildID: "b", MachineClass: schema.MachineClassJumbo,
@@ -92,7 +120,7 @@ func TestScratchCreate_JumboUsesJumboTemplate(t *testing.T) {
 }
 
 func TestScratchCreate_UnknownMachineClass(t *testing.T) {
-	deps := newCreateDeps(NewMemoryGCE(), db.NewMemoryScratch(), nil)
+	deps := newCreateDeps(NewMemoryGCE(), db.NewMemoryScratch(), okProbe, nil)
 	_, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
 		BuildID: "b", MachineClass: "exotic",
 	}, deps)
@@ -105,7 +133,7 @@ func TestScratchCreate_InstanceInsertFails(t *testing.T) {
 	gce := NewMemoryGCE()
 	gce.FailNext("InsertInstanceFromTemplate", errors.New("region full"))
 	scratches := db.NewMemoryScratch()
-	deps := newCreateDeps(gce, scratches, func() string { return "sI" })
+	deps := newCreateDeps(gce, scratches, okProbe, func() string { return "sI" })
 
 	_, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
 		BuildID: "b", MachineClass: schema.MachineClassStandard,
@@ -119,6 +147,49 @@ func TestScratchCreate_InstanceInsertFails(t *testing.T) {
 	rec, err := scratches.Get(context.Background(), "sI")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
+	}
+	if rec.State != schema.ScratchDeleted {
+		t.Errorf("State = %q; want deleted", rec.State)
+	}
+}
+
+func TestScratchCreate_HealthzPollsUntilSuccess(t *testing.T) {
+	gce := NewMemoryGCE()
+	var probeCount int32
+	const wantCalls = int32(3)
+	deps := newCreateDeps(gce, db.NewMemoryScratch(), healthyAfter(&probeCount, wantCalls), func() string { return "sP" })
+
+	if _, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps); err != nil {
+		t.Fatalf("ScratchCreate: %v", err)
+	}
+	if got := atomic.LoadInt32(&probeCount); got != wantCalls {
+		t.Errorf("probe calls = %d; want %d", got, wantCalls)
+	}
+}
+
+func TestScratchCreate_HealthzTimeoutTriggersTeardown(t *testing.T) {
+	gce := NewMemoryGCE()
+	scratches := db.NewMemoryScratch()
+	var probeCount int32
+	deps := newCreateDeps(gce, scratches, alwaysUnhealthy(&probeCount), func() string { return "sT" })
+
+	_, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps)
+	if status.Code(err) != codes.DeadlineExceeded {
+		t.Errorf("code = %s; want DeadlineExceeded. err=%v", status.Code(err), err)
+	}
+	if atomic.LoadInt32(&probeCount) < 2 {
+		t.Errorf("probe calls = %d; want >= 2 (polling loop)", probeCount)
+	}
+	if gce.InstanceExists("us-central1-a", "scratch-sT") {
+		t.Errorf("instance still exists after teardown")
+	}
+	rec, err := scratches.Get(context.Background(), "sT")
+	if err != nil {
+		t.Fatalf("Get after teardown: %v", err)
 	}
 	if rec.State != schema.ScratchDeleted {
 		t.Errorf("State = %q; want deleted", rec.State)
