@@ -96,10 +96,12 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 	}
 
 	scratchID := mintID(deps.IDGen)
+	obliviousID := uuid.New().String() // Used in GCS object paths
 	now := time.Now().UTC()
 	scratch := schema.Scratch{
 		ID:           scratchID,
 		BuildID:      req.BuildID,
+		ObliviousID:  obliviousID,
 		MachineClass: req.MachineClass,
 		Zone:         deps.Zone,
 		VMName:       "scratch-" + scratchID,

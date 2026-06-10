@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -17,11 +18,14 @@ import (
 	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/agentapiservice"
 	"github.com/google/oss-rebuild/internal/db"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/gcb"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/idtoken"
 )
 
 var (
@@ -42,6 +46,7 @@ var (
 	scratchWorkerPort   = flag.Int("scratch-worker-port", 8080, "port the worker listens on")
 	scratchStandardTmpl = flag.String("scratch-instance-standard-template", "", "GCE instance template URL for the standard machine class (required when scratch enabled)")
 	scratchJumboTmpl    = flag.String("scratch-instance-jumbo-template", "", "GCE instance template URL for the jumbo machine class (optional)")
+	scratchOutputBucket = flag.String("scratch-output-bucket", "", "GCS bucket the broker writes exec output into (required when --scratch-enabled)")
 )
 
 // Link-time configured service identity
@@ -125,6 +130,24 @@ func AgentCompleteInit(ctx context.Context) (*agentapiservice.AgentCompleteDeps,
 	return &d, nil
 }
 
+// scratchWorkerDialer mints an ID-token-bearing HTTP client per
+// scratch with audience "https://builder/<vm-name>", the audience each
+// worker is configured to verify.
+func scratchWorkerDialer(ctx context.Context, workerPort int) agentapiservice.WorkerDialer {
+	return func(s schema.Scratch) (httpx.BasicClient, *url.URL, error) {
+		audience := fmt.Sprintf("https://builder/%s", s.VMName)
+		c, err := idtoken.NewClient(ctx, audience)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "idtoken client")
+		}
+		u, err := url.Parse(fmt.Sprintf("http://%s:%d", s.InternalIP, workerPort))
+		if err != nil {
+			return nil, nil, err
+		}
+		return c, u, nil
+	}
+}
+
 // scratchHealthProbe pings http://<ip>:<workerPort>/healthz. Worker
 // /healthz is unauthenticated by design.
 func scratchHealthProbe(workerPort int) agentapiservice.HealthProbe {
@@ -195,6 +218,37 @@ func ScratchDeleteInit(ctx context.Context) (*agentapiservice.ScratchDeleteDeps,
 	return &agentapiservice.ScratchDeleteDeps{Scratches: db.NewFirestoreScratch(fs), GCE: gce}, nil
 }
 
+func ScratchExecCreateInit(ctx context.Context) (*agentapiservice.ScratchExecCreateDeps, error) {
+	fs, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "firestore client")
+	}
+	return &agentapiservice.ScratchExecCreateDeps{
+		Scratches:    db.NewFirestoreScratch(fs),
+		Execs:        db.NewFirestoreScratchExecs(fs),
+		WorkerDialer: scratchWorkerDialer(ctx, *scratchWorkerPort),
+		OutputBucket: *scratchOutputBucket,
+	}, nil
+}
+
+func ScratchExecGetInit(ctx context.Context) (*agentapiservice.ScratchExecGetDeps, error) {
+	fs, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "firestore client")
+	}
+	gcs, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "storage client")
+	}
+	return &agentapiservice.ScratchExecGetDeps{
+		Scratches:    db.NewFirestoreScratch(fs),
+		Execs:        db.NewFirestoreScratchExecs(fs),
+		WorkerDialer: scratchWorkerDialer(ctx, *scratchWorkerPort),
+		GCS:          gcs,
+		OutputBucket: *scratchOutputBucket,
+	}, nil
+}
+
 func main() {
 	flag.Parse()
 	mux := http.NewServeMux()
@@ -205,6 +259,8 @@ func main() {
 		mux.HandleFunc("/scratch/create", api.Handler(ScratchCreateInit, agentapiservice.ScratchCreate))
 		mux.HandleFunc("/scratch/get", api.Handler(ScratchGetInit, agentapiservice.ScratchGet))
 		mux.HandleFunc("/scratch/delete", api.Handler(ScratchDeleteInit, agentapiservice.ScratchDelete))
+		mux.HandleFunc("/scratch/exec/op/create", api.Handler(ScratchExecCreateInit, agentapiservice.ScratchExecCreate))
+		mux.HandleFunc("/scratch/exec/op/get", api.Handler(ScratchExecGetInit, agentapiservice.ScratchExecGet))
 	}
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), mux); err != nil {
