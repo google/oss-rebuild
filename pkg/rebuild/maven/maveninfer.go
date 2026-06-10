@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -34,6 +33,7 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		return nil, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
 	var dir, ref string
+	var found bool
 	var commit *object.Commit
 	var msg string
 	if tagGuess != "" {
@@ -41,14 +41,14 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			return nil, errors.Wrapf(err, "[INTERNAL] Failed to get commit from tag [repo=%s,ref=%s]", repoConfig.URI, tagGuess)
 		}
-		if dir, msg = findBuildDir(commit, t); dir != "" {
+		if dir, found, msg = findBuildDir(commit, t); found {
 			ref = tagGuess
 		}
 		log.Printf("using tag heuristic: %s", msg)
 	}
 	// 2. Git Log Heuristic
 	var pomXMLGuess string
-	if dir == "" {
+	if !found {
 		head, _ := repoConfig.Repository.Head()
 		commitObject, _ := repoConfig.Repository.CommitObject(head.Hash())
 		_, pkgPath, err := findPomXML(commitObject, t.Package)
@@ -66,7 +66,7 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}
 		commit, err = repoConfig.Repository.CommitObject(plumbing.NewHash(pomXMLGuess))
 		if err == nil {
-			if dir, msg = findBuildDir(commit, t); dir != "" {
+			if dir, found, msg = findBuildDir(commit, t); found {
 				ref = pomXMLGuess
 			}
 			log.Printf("using git log heuristic: %s", msg)
@@ -76,19 +76,19 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	}
 	// 3. Source Jar Heuristic
 	var sourceJarGuess *object.Commit
-	if dir == "" {
+	if !found {
 		sourceJarGuess, err = findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
 		if err != nil {
 			log.Printf("source jar heuristic failed: %s", err)
 		}
 		if sourceJarGuess != nil {
-			if dir, msg = findBuildDir(sourceJarGuess, t); dir != "" {
+			if dir, found, msg = findBuildDir(sourceJarGuess, t); found {
 				ref = sourceJarGuess.Hash.String()
 			}
 			log.Printf("using source jar heuristic: %s", msg)
 		}
 	}
-	if dir == "" {
+	if !found {
 		if pomXMLGuess != "" || tagGuess != "" || sourceJarGuess != nil {
 			return nil, errors.Errorf("no valid git ref")
 		}
@@ -109,19 +109,19 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 }
 
 // findBuildDir is a helper that checks if a given commit contains a valid pom.xml for the package.
-// It returns the directory containing the pom.xml and a summary.
-// If no valid pom.xml is found, it returns an empty directory and a summary indicating the failure reason.
-func findBuildDir(commit *object.Commit, t rebuild.Target) (dir string, summary string) {
+// It returns the directory containing the pom.xml ("" for the repo root), whether one was found,
+// and a summary. If no valid pom.xml is found, the summary indicates the failure reason.
+func findBuildDir(commit *object.Commit, t rebuild.Target) (dir string, found bool, summary string) {
 	pomXML, foundPkgPath, err := findPomXML(commit, t.Package)
 	if err != nil {
-		return "", fmt.Sprintf("could not find a pom.xml for the package in ref %s", commit.Hash.String()[:9])
+		return "", false, fmt.Sprintf("could not find a pom.xml for the package in ref %s", commit.Hash.String()[:9])
 	}
-	dir = filepath.Dir(foundPkgPath)
+	dir = rebuild.DirOf(foundPkgPath)
 	ref := commit.Hash.String()
 	if pomXML.Version() != t.Version {
-		return dir, fmt.Sprintf("with mismatched version [expected=%s,actual=%s,path=%s,ref=%s]", t.Version, pomXML.Version(), path.Join(dir, "pom.xml"), ref[:9])
+		return dir, true, fmt.Sprintf("with mismatched version [expected=%s,actual=%s,path=%s,ref=%s]", t.Version, pomXML.Version(), path.Join(dir, "pom.xml"), ref[:9])
 	} else {
-		return dir, fmt.Sprintf("with pkg and version match ref [version=%s,path=%s,ref=%s]", t.Version, path.Join(dir, "pom.xml"), ref[:9])
+		return dir, true, fmt.Sprintf("with pkg and version match ref [version=%s,path=%s,ref=%s]", t.Version, path.Join(dir, "pom.xml"), ref[:9])
 	}
 }
 

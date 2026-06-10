@@ -58,7 +58,7 @@ func (b *MavenBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 				Uses: "maven/export-java",
 			},
 			{
-				Runs: "mvn clean package -DskipTests --batch-mode -f {{.Location.Dir}} -Dmaven.javadoc.skip=true",
+				Runs: "mvn clean package -DskipTests --batch-mode{{if and (ne .Location.Dir \".\") (ne .Location.Dir \"\")}} -f {{.Location.Dir}}{{end}} -Dmaven.javadoc.skip=true",
 				// Note `maven` from apt also pull in jdk-21 and hence we must export JAVA_HOME and PATH in the step before
 				Needs: []string{"maven"},
 			},

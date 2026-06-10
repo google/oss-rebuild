@@ -15,7 +15,6 @@ import (
 	"io/fs"
 	"log"
 	"path"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -74,12 +73,11 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	_, pkgPath, err := findCargoTOML(r.Repository, c, t.Package)
 	if err != nil {
 		log.Printf("Cargo.toml path heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
-		r.Dir = "."
 		log.Println("Skipping ref map search")
 		r.RefMap = make(map[string]string)
 		err = nil
 	} else {
-		r.Dir = path.Dir(pkgPath)
+		r.Dir = rebuild.DirOf(pkgPath)
 		// Do version heuristic search.
 		r.RefMap, err = cargoTOMLSearch(t.Package, pkgPath, r.Repository)
 		if err != nil {
@@ -121,7 +119,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 			} else {
 				log.Printf("using registry ref: %s", cargoVCSGuess[:9])
 				ref = cargoVCSGuess
-				dir = filepath.Dir(newPath)
+				dir = rebuild.DirOf(newPath)
 				return ref, dir, nil
 			}
 		} else if err == plumbing.ErrObjectNotFound {
@@ -139,7 +137,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 			} else {
 				log.Printf("using tag heuristic ref: %s", tagGuess[:9])
 				ref = tagGuess
-				dir = filepath.Dir(newPath)
+				dir = rebuild.DirOf(newPath)
 				return ref, dir, nil
 			}
 		} else if err == plumbing.ErrObjectNotFound {
@@ -157,7 +155,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 			} else {
 				log.Printf("using git log heuristic ref: %s", cargoTOMLGuess[:9])
 				ref = cargoTOMLGuess
-				dir = filepath.Dir(newPath)
+				dir = rebuild.DirOf(newPath)
 				return ref, dir, nil
 			}
 		} else if err == plumbing.ErrObjectNotFound {

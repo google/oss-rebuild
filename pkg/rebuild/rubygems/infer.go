@@ -112,10 +112,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			log.Printf("warning: gemspec search failed for %s: %v", t.Package, err)
 		} else {
 			gemspec = path.Base(gemspecPath)
-			dir = path.Dir(gemspecPath)
-			if dir == "." {
-				dir = ""
-			}
+			dir = rebuild.DirOf(gemspecPath)
 		}
 	} else {
 		// TODO: Find gemspec when dir hint provided.

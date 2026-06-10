@@ -203,7 +203,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/test-org/test-package",
 						Ref:  commitID,
-						Dir:  ".",
+						Dir:  "",
 					},
 					NPMVersion: "8.1.2",
 				}
@@ -230,7 +230,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/test-org/test-package",
 						Ref:  commitID,
-						Dir:  ".",
+						Dir:  "",
 					},
 					NPMVersion: "7.5.0",
 				}
@@ -256,7 +256,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/test-org/test-package",
 						Ref:  commitID,
-						Dir:  ".",
+						Dir:  "",
 					},
 					NPMVersion: "6.14.0",
 				}
@@ -282,7 +282,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/test-org/test-package",
 						Ref:  commitID,
-						Dir:  ".",
+						Dir:  "",
 					},
 					NPMVersion:        "8.2.0",
 					NodeVersion:       "10.17.0",
@@ -312,7 +312,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/test-org/test-package",
 						Ref:  commitID,
-						Dir:  ".",
+						Dir:  "",
 					},
 					NPMVersion:   "9.0.0",
 					NodeVersion:  "10.17.0",
@@ -340,7 +340,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/test-org/test-package",
 						Ref:  commitID,
-						Dir:  ".",
+						Dir:  "",
 					},
 					NPMVersion:        "6.2.0",
 					NodeVersion:       "10.17.0",
@@ -412,7 +412,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/test-org/test-package",
 						Ref:  commitID,
-						Dir:  ".",
+						Dir:  "",
 					},
 					NPMVersion: "8.1.2",
 				}
@@ -436,7 +436,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 			rcfg := rebuild.RepoConfig{
 				Repository: repo.Repository,
 				URI:        "https://github.com/test-org/test-package",
-				Dir:        ".",
+				Dir:        "",
 				RefMap:     map[string]string{"1.0.0": repo.Commits["version-bump"].String()},
 			}
 			client := httpxtest.MockClient{

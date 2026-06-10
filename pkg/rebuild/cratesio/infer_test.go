@@ -67,7 +67,7 @@ func TestInferStrategy(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/serde-rs/serde",
 						Ref:  repo.Commits["version-bump"].String(),
-						Dir:  ".",
+						Dir:  "",
 					},
 					RustVersion: "1.35.0",
 				}
@@ -99,7 +99,7 @@ func TestInferStrategy(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/serde-rs/serde",
 						Ref:  repo.Commits["version-bump"].String(),
-						Dir:  ".",
+						Dir:  "",
 					},
 					RustVersion: "1.65.0",
 				}
@@ -132,7 +132,7 @@ func TestInferStrategy(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/serde-rs/serde",
 						Ref:  repo.Commits["tagged-target"].String(),
-						Dir:  ".",
+						Dir:  "",
 					},
 					RustVersion: "1.35.0",
 				}
@@ -165,7 +165,7 @@ func TestInferStrategy(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/serde-rs/serde",
 						Ref:  repo.Commits["tagged-target"].String(),
-						Dir:  ".",
+						Dir:  "",
 					},
 					RustVersion: "1.35.0",
 				}
@@ -197,7 +197,7 @@ func TestInferStrategy(t *testing.T) {
 					Location: rebuild.Location{
 						Repo: "https://github.com/serde-rs/serde",
 						Ref:  repo.Commits["version-bump"].String(),
-						Dir:  ".",
+						Dir:  "",
 					},
 					RustVersion: "1.35.0",
 				}
@@ -386,7 +386,7 @@ version = "1.0.150"
 					Location: rebuild.Location{
 						Repo: "https://github.com/serde-rs/serde",
 						Ref:  repo.Commits["version-bump"].String(),
-						Dir:  ".",
+						Dir:  "",
 					},
 					RustVersion:    "1.79.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
@@ -459,7 +459,7 @@ version = "1.0.150"
 					Location: rebuild.Location{
 						Repo: "https://github.com/serde-rs/serde",
 						Ref:  repo.Commits["version-bump"].String(),
-						Dir:  ".",
+						Dir:  "",
 					},
 					RustVersion: "1.68.0",
 				}
@@ -516,7 +516,7 @@ version = "1.21.2"
 					Location: rebuild.Location{
 						Repo: "https://github.com/serde-rs/serde",
 						Ref:  repo.Commits["version-bump"].String(),
-						Dir:  ".",
+						Dir:  "",
 					},
 					RustVersion:    "1.35.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
@@ -560,7 +560,7 @@ version = 3
 					Location: rebuild.Location{
 						Repo: "https://github.com/serde-rs/serde",
 						Ref:  repo.Commits["version-bump"].String(),
-						Dir:  ".",
+						Dir:  "",
 					},
 					RustVersion:    "1.79.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
@@ -581,7 +581,7 @@ version = 3
 			rcfg := rebuild.RepoConfig{
 				Repository: repo.Repository,
 				URI:        "https://github.com/serde-rs/serde",
-				Dir:        ".",
+				Dir:        "",
 				RefMap:     map[string]string{"1.0.150": repo.Commits["version-bump"].String()},
 			}
 			files := tc.files
