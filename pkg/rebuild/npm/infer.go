@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"path"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -62,7 +61,7 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	if err != nil {
 		log.Printf("package.json path heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
 	}
-	r.Dir = path.Dir(pkgPath)
+	r.Dir = rebuild.DirOf(pkgPath)
 	// Do version heuristic search.
 	r.RefMap, err = pkgJSONSearch(t.Package, pkgPath, r.Repository)
 	if err != nil {
@@ -136,10 +135,8 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 			log.Printf("package.json path disagreement [metadata=%s,heuristic=%s]\n", vmeta.Directory, rcfg.Dir)
 		}
 		loc.Dir = vmeta.Directory
-	} else if rcfg.Dir != "" {
-		loc.Dir = rcfg.Dir
 	} else {
-		loc.Dir = "."
+		loc.Dir = rcfg.Dir
 	}
 	// Determine git ref to rebuild
 	registryRef := vmeta.GitHEAD
@@ -162,7 +159,7 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 			} else {
 				log.Printf("using registry ref: %s", registryRef[:9])
 				loc.Ref = registryRef
-				loc.Dir = filepath.Dir(newPath)
+				loc.Dir = rebuild.DirOf(newPath)
 				return loc, "", nil
 			}
 		} else if err == plumbing.ErrObjectNotFound {
@@ -182,7 +179,7 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 			} else {
 				log.Printf("using tag heuristic ref: %s", tagGuess[:9])
 				loc.Ref = tagGuess
-				loc.Dir = filepath.Dir(newPath)
+				loc.Dir = rebuild.DirOf(newPath)
 				return loc, "", nil
 			}
 		} else if err == plumbing.ErrObjectNotFound {
@@ -201,7 +198,7 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 			} else {
 				log.Printf("using git log heuristic ref: %s", pkgJSONGuess[:9])
 				loc.Ref = pkgJSONGuess
-				loc.Dir = filepath.Dir(newPath)
+				loc.Dir = rebuild.DirOf(newPath)
 				return loc, "", nil
 			}
 		} else if err == plumbing.ErrObjectNotFound {

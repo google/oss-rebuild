@@ -30,7 +30,7 @@ func TestFindBuildGradleDir(t *testing.T) {
                     build.gradle: |
                         group='com.example'`,
 			pkg:         "com.example:myapp",
-			expectedDir: ".",
+			expectedDir: "",
 			wantErr:     false,
 		},
 		{
@@ -42,7 +42,7 @@ func TestFindBuildGradleDir(t *testing.T) {
                     build.gradle.kts: |
                         group='org.sample'`,
 			pkg:         "org.sample:lib",
-			expectedDir: ".",
+			expectedDir: "",
 			wantErr:     false,
 		},
 		{

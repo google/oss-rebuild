@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
 
@@ -74,10 +75,5 @@ func DiscoverBuildDir(ctx context.Context, tree *object.Tree, name, version, hin
 	}
 	sortedVerification := sortVerifications(verifiedFiles)
 	bestFile := sortedVerification[0]
-	dir := filepath.Dir(bestFile.foundF.Name)
-	// Account for "." as base dir
-	if dir == "." {
-		dir = ""
-	}
-	return dir, nil
+	return rebuild.DirOf(bestFile.foundF.Name), nil
 }
