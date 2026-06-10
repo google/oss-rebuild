@@ -159,7 +159,7 @@ func (s *ExecStore) Forget(opID string) {
 	e, ok := s.entries[opID]
 	delete(s.entries, opID)
 	s.mu.Unlock()
-	if ok && e.file != nil {
+	if ok {
 		_ = e.file.Close()
 		_ = os.Remove(e.file.Name())
 	}
@@ -177,10 +177,8 @@ func (s *ExecStore) status(opID string) (ExecStatus, bool) {
 	// Re-stat the file for the current size: writes from runCommand
 	// happen via the kernel's fd, not through this struct.
 	var total int64
-	if e.file != nil {
-		if info, err := e.file.Stat(); err == nil {
-			total = info.Size()
-		}
+	if info, err := e.file.Stat(); err == nil {
+		total = info.Size()
 	}
 	if e.done {
 		// Once done, the size is frozen at the value we recorded.
@@ -208,9 +206,6 @@ func (s *ExecStore) outputFrom(ctx context.Context, opID string, offset int64) i
 		s.mu.Unlock()
 		if !ok {
 			yield(nil, errors.Errorf("unknown op %q", opID))
-			return
-		}
-		if e.file == nil {
 			return
 		}
 		info, err := e.file.Stat()
@@ -264,31 +259,24 @@ type ExecDeps struct {
 	Workdir string
 }
 
-// ExecStart spawns the requested command asynchronously and returns
-// immediately. The broker later polls /exec/op/status and /exec/op/output
-// to learn what happened.
+// ExecStart registers the op and spawns the requested command asynchronously.
 func ExecStart(_ context.Context, req StartRequest, deps *ExecDeps) (*act.NoOutput, error) {
-	go finalizeExec(req, deps)
-	return &act.NoOutput{}, nil
-}
-
-func finalizeExec(req StartRequest, deps *ExecDeps) {
-	// Detached: the HTTP context is gone by now. Use a fresh background
-	// ctx so cancellation of the broker call doesn't kill the spawned
-	// command. (The runspec's TimeoutSeconds is the real bound.)
-	ctx := context.Background()
-	started := time.Now().UTC()
-
 	outF, err := openMergedTemp(deps.TempDir)
 	if err != nil {
-		deps.Store.create(req.OpID, nil, started)
-		deps.Store.finish(req.OpID, 0, false, "open temp file: "+err.Error(), 0)
-		return
+		return nil, errors.Wrap(err, "open temp file")
 	}
 	// NOTE: the file outlives this function. The broker can /output
 	// pull from it any time after we return. ExecStore.Forget (called
 	// after broker finalizes) is what closes + removes it.
-	deps.Store.create(req.OpID, outF, started)
+	deps.Store.create(req.OpID, outF, time.Now().UTC())
+	go finalizeExec(req, outF, deps)
+	return &act.NoOutput{}, nil
+}
+
+func finalizeExec(req StartRequest, outF *os.File, deps *ExecDeps) {
+	// Detached: Use a fresh background ctx so call cancellation
+	// doesn't kill the spawned command.
+	ctx := context.Background()
 
 	cwd := req.Cwd
 	if cwd == "" {
