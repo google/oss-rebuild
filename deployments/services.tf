@@ -42,9 +42,10 @@ resource "google_cloudbuild_worker_pool" "jumbo-pool" {
   depends_on = [google_project_service.cloudbuild]
 }
 
-# Instance template for scratch VMs. The startup script fetches and
-# runs the scratch-worker binary; the VM has no attached service account
-# so agent-api drives the worker over private-IP HTTP with an ID token.
+# Instance template for scratch VMs. The startup script fetches and runs the
+# scratch-worker binary; agent-api drives the worker over private-IP HTTP with
+# an ID token. Conditionally attach a service account for private instances to
+# access (the bootstrap-tools bucket is public-readable). 
 resource "google_compute_instance_template" "scratch-standard" {
   count        = var.enable_scratch ? 1 : 0
   name_prefix  = "${var.host}-scratch-standard-"
@@ -52,8 +53,8 @@ resource "google_compute_instance_template" "scratch-standard" {
   region       = "us-central1"
 
   service_account {
-    email  = ""
-    scopes = []
+    email  = var.public ? "" : google_service_account.scratch-worker[0].email
+    scopes = var.public ? [] : ["https://www.googleapis.com/auth/devstorage.read_only"]
   }
 
   disk {

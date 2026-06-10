@@ -60,6 +60,11 @@ resource "google_service_account" "system-analyzer-build" {
   account_id  = "system-analyzer-build"
   description = "Build identity for the system analyzer"
 }
+resource "google_service_account" "scratch-worker" {
+  count       = !var.public && var.enable_scratch ? 1 : 0
+  account_id  = "scratch-worker"
+  description = "Bootstrap identity for scratch worker VMs, used by the startup script to fetch the worker binary from the bootstrap-tools bucket on private deployments."
+}
 data "google_storage_project_service_account" "attestation-pubsub-publisher" {
 }
 
@@ -167,7 +172,8 @@ resource "google_storage_bucket_iam_member" "builders-view-bootstrap-bucket" {
     google_service_account.builder-agent.member,
     ],
     var.enable_network_analyzer ? [google_service_account.network-analyzer-build[0].member] : [],
-    var.enable_system_analyzer ? [google_service_account.system-analyzer-build[0].member] : []
+    var.enable_system_analyzer ? [google_service_account.system-analyzer-build[0].member] : [],
+    var.enable_scratch ? [google_service_account.scratch-worker[0].member] : []
   ) : [])
   member = each.key
 }

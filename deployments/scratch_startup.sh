@@ -4,14 +4,15 @@
 
 # Worker VM startup script.
 #
-# The worker VM has NO attached service account — it holds zero GCP
-# credentials. This script can still fetch the scratch-worker binary
-# from GCS because the bootstrap-tools bucket is public-readable on
-# public deployments; the binary itself doesn't contain anything
-# sensitive.
-# TODO: For private deployments, attach a narrowly-scoped SA with
-# storage.objects.get on the bootstrap-tools bucket, or expose the
-# binary via a signed URL in instance metadata.
+# The worker process makes no GCP calls of its own; agent-api drives it
+# over private-IP HTTP using an ID token. The bootstrap fetch of the
+# worker binary is the only step that may need GCP credentials:
+#   - On public deployments the VM needs no attached service account as
+#     the bootstrap-tools bucket is public-readable.
+#   - On private deployments a narrowly-scoped SA with objectViewer on
+#     the bootstrap-tools bucket is attached. We detect the SA presence
+#     via the metadata server and authenticate the storage fetch with its
+#     access token.
 #
 # Templated by Terraform with:
 #   worker_binary_uri - gs://... full URI to the scratch-worker binary
@@ -24,6 +25,7 @@ DEBIAN_FRONTEND=noninteractive apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     docker.io \
     curl \
+    jq \
     ca-certificates
 systemctl enable --now docker
 
@@ -39,11 +41,25 @@ useradd --create-home --home-dir /home/builder --shell /bin/bash builder || true
 mkdir -p /opt/builder
 chown -R builder:builder /opt/builder /home/builder
 
-# TODO: Support non-public bootstrap tools.
 WORKER_BINARY_URI='${worker_binary_uri}'
-curl -fsSL -o /opt/builder/scratch-worker \
-    "https://storage.googleapis.com/$${WORKER_BINARY_URI#gs://}"
+WORKER_BINARY_URL="https://storage.googleapis.com/$${WORKER_BINARY_URI#gs://}"
+
+# If an SA is bound to this VM (private deployments), mint an access
+# token from the metadata server and use it to authenticate the
+# bootstrap fetch. On public deployments no SA is attached, the
+# metadata endpoint 404s, and the fetch is anonymous.
+CURL_AUTH=()
+if curl -fsS -H "Metadata-Flavor: Google" \
+       "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" 2>/dev/null \
+       | jq -re .access_token > /tmp/sa_token 2>/dev/null && [ -s /tmp/sa_token ]; then
+  (printf "Authorization: Bearer "; cat /tmp/sa_token) > /tmp/sa_auth_header
+  chmod 600 /tmp/sa_auth_header /tmp/sa_token
+  CURL_AUTH=(-H "@/tmp/sa_auth_header")
+fi
+
+curl -fsSL "$${CURL_AUTH[@]}" -o /opt/builder/scratch-worker "$WORKER_BINARY_URL"
 chmod +x /opt/builder/scratch-worker
+rm -f /tmp/sa_token /tmp/sa_auth_header
 
 cat >/etc/systemd/system/scratch-worker.service <<EOF
 [Unit]
