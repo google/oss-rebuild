@@ -385,6 +385,12 @@ resource "google_project_iam_member" "orchestrator-creates-run-jobs" {
   role    = "roles/run.jobsExecutorWithOverrides"
   member  = google_service_account.orchestrator.member
 }
+resource "google_project_iam_member" "orchestrator-compute-admin" {
+  count   = var.enable_scratch ? 1 : 0
+  project = var.project
+  role    = "roles/compute.instanceAdmin.v1"
+  member  = google_service_account.orchestrator.member
+}
 resource "google_cloud_run_v2_service_iam_member" "agent-calls-agent-api" {
   location = google_cloud_run_v2_service.agent-api.location
   project  = google_cloud_run_v2_service.agent-api.project

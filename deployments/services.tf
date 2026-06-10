@@ -42,6 +42,47 @@ resource "google_cloudbuild_worker_pool" "jumbo-pool" {
   depends_on = [google_project_service.cloudbuild]
 }
 
+# Instance template for scratch VMs.
+# TODO: Add a startup script that fetches and runs the scratch-worker
+# binary once the worker service lands.
+resource "google_compute_instance_template" "scratch-standard" {
+  count        = var.enable_scratch ? 1 : 0
+  name_prefix  = "${var.host}-scratch-standard-"
+  machine_type = "n2-standard-8"
+  region       = "us-central1"
+
+  service_account {
+    email  = ""
+    scopes = []
+  }
+
+  disk {
+    source_image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
+    auto_delete  = true
+    boot         = true
+    disk_size_gb = 50
+  }
+  disk {
+    type         = "SCRATCH"
+    disk_type    = "local-ssd"
+    auto_delete  = true
+    interface    = "NVME"
+    disk_size_gb = 375 # local SSD partitions are fixed at 375 GB on n2; add more disk blocks for more capacity.
+  }
+
+  network_interface {
+    network    = google_compute_network.vpc[0].name
+    subnetwork = google_compute_subnetwork.subnet[0].name
+  }
+
+  tags   = ["scratch"]
+  labels = { purpose = "scratch" }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 resource "google_project_service" "run" {
   service = "run.googleapis.com"
 }
@@ -338,6 +379,10 @@ resource "google_cloud_run_v2_service" "agent-api" {
         ], var.enable_private_build_pool ? [
         "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
         "--gcb-private-pool-region=us-central1",
+        ] : [], var.enable_scratch ? [
+        "--scratch-enabled=true",
+        "--scratch-zone=us-central1-a",
+        "--scratch-instance-standard-template=${google_compute_instance_template.scratch-standard[0].self_link}",
       ] : [])
       resources {
         limits = {
