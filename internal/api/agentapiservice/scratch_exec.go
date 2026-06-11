@@ -6,7 +6,10 @@ package agentapiservice
 import (
 	"context"
 	"log"
+	"math"
+	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -18,6 +21,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 )
 
@@ -252,28 +256,95 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 	return &op, nil
 }
 
-// gcsSyncer pulls from the worker's /status + /output endpoints and
-// overwrites the op's GCS object with the buffer on every poll that has
-// new bytes.
+// SyncStep is one bucket in a SyncSchedule. Until is the upper bound on
+// exec age (exclusive); Interval is the minimum gap between non-terminal
+// composes while the exec's age is below Until.
+type SyncStep struct {
+	Until    time.Duration
+	Interval time.Duration
+}
+
+// DefaultSyncSchedule throttles compose frequency to bound the lifetime
+// component count on the GCS composite object: 5s polls for the first
+// 10 minutes, 30s thereafter.
 //
-// The /output call gets piped straight into a GCS Writer, so the broker
-// never materializes the whole buffer in memory. Bytes-on-wire is still
-// O(total) per poll (we re-fetch from offset 0 and overwrite GCS, since
-// GCS doesn't expose append). A future optimization is to use Compose to
-// stitch incremental tail objects, at which point the OutputRequest.Offset
-// becomes load-bearing.
+// Cumulative composes:
+//   - 10m:   120
+//   - 1h:    220
+//   - 6h:    820  (target ceiling; ~200-component cushion under the 1024 cap)
+//
+// A terminal sync (status.Done) is never skipped, so the final tail
+// always reaches GCS regardless of where in the schedule the exec finishes.
+var DefaultSyncSchedule = []SyncStep{
+	{Until: 10 * time.Minute, Interval: 5 * time.Second},
+	// Sentinel-large Until. This step's Interval applies for the
+	// remainder of any exec's lifetime.
+	{Until: math.MaxInt64, Interval: 30 * time.Second},
+}
+
+// gcsSyncer appends new worker output to the op's GCS object on each
+// poll. Append is implemented as Compose (see pullOutput); the schedule
+// keeps main's lifetime component count under GCS's 1024 cap.
 type gcsSyncer struct {
 	gcs          *storage.Client
 	bucket       string
 	execs        db.ScratchExecs
 	workerDialer WorkerDialer
+	schedule     []SyncStep
 }
 
-// NewGCSSyncer returns a Syncer that overwrites the op's GCS object
-// with the full worker buffer when new bytes are available, and
-// finalizes Firestore on the Done transition.
-func NewGCSSyncer(gcs *storage.Client, bucket string, execs db.ScratchExecs, wd WorkerDialer) Syncer {
-	return &gcsSyncer{gcs: gcs, bucket: bucket, execs: execs, workerDialer: wd}
+// SyncerOption configures a gcsSyncer.
+type SyncerOption func(*gcsSyncer)
+
+// WithSyncSchedule overrides DefaultSyncSchedule. Empty/nil keeps the default.
+func WithSyncSchedule(steps []SyncStep) SyncerOption {
+	return func(s *gcsSyncer) {
+		if len(steps) > 0 {
+			s.schedule = steps
+		}
+	}
+}
+
+// NewGCSSyncer returns a Syncer that appends new worker output to GCS
+// and finalizes Firestore on the Done transition. Tests that need clock
+// control should use [testing/synctest.Run]. The syncer uses
+// [time.Now] directly with no injection hook.
+func NewGCSSyncer(gcs *storage.Client, bucket string, execs db.ScratchExecs, wd WorkerDialer, opts ...SyncerOption) Syncer {
+	s := &gcsSyncer{
+		gcs:          gcs,
+		bucket:       bucket,
+		execs:        execs,
+		workerDialer: wd,
+		schedule:     DefaultSyncSchedule,
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// intervalAt returns the minimum gap between non-terminal composes given
+// the exec's current age. The last step's Interval applies indefinitely
+// past its Until.
+func (s *gcsSyncer) intervalAt(age time.Duration) time.Duration {
+	for _, step := range s.schedule {
+		if age < step.Until {
+			return step.Interval
+		}
+	}
+	return s.schedule[len(s.schedule)-1].Interval
+}
+
+// shouldCompose returns true when this sync should run pullOutput.
+// Terminal syncs always run. First syncs (lastModified zero) always
+// run because sinceLastCompose is effectively unbounded. Otherwise,
+// the schedule's interval-for-age gates the call.
+func (s *gcsSyncer) shouldCompose(now, startedAt, lastModified time.Time, done bool) bool {
+	if done {
+		return true
+	}
+	age := now.Sub(startedAt)
+	return now.Sub(lastModified) >= s.intervalAt(age)
 }
 
 func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch schema.Scratch) (schema.ScratchExec, error) {
@@ -288,18 +359,29 @@ func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch s
 		return exec, errors.Wrap(err, "worker status")
 	}
 
-	// Only round-trip the full buffer if the worker has more bytes than GCS
-	// does. The status call's TotalBytes is cheap; /output is O(buffer).
+	// Only round-trip the tail if the worker has more bytes than GCS
+	// does. The status call's TotalBytes is cheap.
 	out := s.gcs.Bucket(s.bucket).Object(outObjectFor(scratch.ObliviousID, exec.ID))
-	var currentSize int64
+	var (
+		currentSize  int64
+		currentGen   int64
+		lastModified time.Time
+	)
 	if attrs, err := out.Attrs(ctx); err == nil {
 		currentSize = attrs.Size
+		currentGen = attrs.Generation
+		lastModified = attrs.Updated
 	} else if !errors.Is(err, storage.ErrObjectNotExist) {
 		return exec, errors.Wrap(err, "stat out")
 	}
 
-	if status.TotalBytes > currentSize {
-		if err := s.pullOutput(ctx, client, baseURL, scratch.ObliviousID, exec.ID); err != nil {
+	// Compose throttling: skip the upload if we composed recently enough
+	// for our current age bucket. A terminal sync (status.Done) is never
+	// skipped so the final tail always lands in GCS. A first sync
+	// (lastModified zero) is also never skipped because sinceLastCompose
+	// is enormous.
+	if status.TotalBytes > currentSize && s.shouldCompose(time.Now().UTC(), exec.StartedAt, lastModified, status.Done) {
+		if err := s.pullOutput(ctx, client, baseURL, scratch.ObliviousID, exec.ID, currentSize, currentGen); err != nil {
 			return exec, errors.Wrap(err, "pull output")
 		}
 	}
@@ -368,36 +450,93 @@ func outURIFor(bucket, obliviousID, opID string) string {
 	return "gs://" + bucket + "/" + outObjectFor(obliviousID, opID)
 }
 
-// pullOutput pulls /exec/op/output from offset 0 and pipes each chunk
-// into a fresh GCS Writer that overwrites the op's output object. The
-// broker holds only one chunk in memory at a time, regardless of the
-// total buffer size.
+// pullOutput streams the worker's tail past currentSize into a part
+// object and composes it onto main. Race-safety:
 //
-// On any stream error we cancel the writer's context (aborting the
-// upload server-side) and return the error, avoiding committing truncated
-// content to GCS.
-func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, baseURL *url.URL, obliviousID, opID string) error {
+//  1. Part write uses DoesNotExist. Same-offset collisions return 412
+//     and the loser bails cleanly.
+//  2. Compose uses GenerationMatch on main (or DoesNotExist on the
+//     first sync). If another sync extended main since we Stat'd, our
+//     compose returns 412 and we bail. The next poll picks up.
+//
+// The part is deleted on success, failure, and precondition loss. Broker
+// crashes between part write and compose leave orphans; a parts/
+// lifecycle rule is the deploy-side backstop.
+func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, baseURL *url.URL, obliviousID, opID string, currentSize, currentGen int64) error {
 	output := api.StreamStub[scratchworkerservice.OutputRequest, scratchworkerservice.OutputFrame](client, baseURL.JoinPath("exec/op/output"))
+
+	mainName := outObjectFor(obliviousID, opID)
+	// Part name keys on start offset only: concurrent same-offset pulls
+	// collide on DoesNotExist and dedup. End offset isn't stable (the
+	// worker may Stat more bytes than we saw in /status).
+	partName := mainName + "/parts/" + strconv.FormatInt(currentSize, 10)
+	main := s.gcs.Bucket(s.bucket).Object(mainName)
+	part := s.gcs.Bucket(s.bucket).Object(partName)
 
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	out := s.gcs.Bucket(s.bucket).Object(outObjectFor(obliviousID, opID))
-	w := out.NewWriter(wctx)
+	w := part.If(storage.Conditions{DoesNotExist: true}).NewWriter(wctx)
 
-	for frame, err := range output(ctx, scratchworkerservice.OutputRequest{ID: opID}) {
+	var wrote int64
+	for frame, err := range output(ctx, scratchworkerservice.OutputRequest{ID: opID, Offset: currentSize}) {
 		if err != nil {
 			cancel()
 			_ = w.Close()
+			_ = part.Delete(context.Background())
 			return err
 		}
-		if _, err := w.Write(frame.Content); err != nil {
+		n, werr := w.Write(frame.Content)
+		if werr != nil {
 			cancel()
 			_ = w.Close()
-			return errors.Wrap(err, "gcs write")
+			_ = part.Delete(context.Background())
+			return errors.Wrap(werr, "gcs write part")
 		}
+		wrote += int64(n)
 	}
 	if err := w.Close(); err != nil {
-		return errors.Wrap(err, "gcs close")
+		if isPreconditionFailed(err) {
+			// Another sync claimed this offset. Nothing was finalized;
+			// next poll re-stats and continues from the new size.
+			return nil
+		}
+		return errors.Wrap(err, "gcs close part")
 	}
+	if wrote == 0 {
+		// The worker had no bytes past currentSize (its snapshot
+		// disagreed with the earlier /status). Drop the empty part.
+		_ = part.Delete(context.Background())
+		return nil
+	}
+
+	// Compose. First sync: main doesn't exist, copy part → main via a
+	// single-source compose with DoesNotExist. Subsequent syncs:
+	// [main, part] → main with GenerationMatch.
+	var composer *storage.Composer
+	if currentGen == 0 {
+		composer = main.If(storage.Conditions{DoesNotExist: true}).ComposerFrom(part)
+	} else {
+		composer = main.If(storage.Conditions{GenerationMatch: currentGen}).ComposerFrom(main, part)
+	}
+	if _, err := composer.Run(ctx); err != nil {
+		_ = part.Delete(context.Background())
+		if isPreconditionFailed(err) {
+			// Another sync extended main first. Bail cleanly; next poll
+			// re-stats and continues from the new size.
+			return nil
+		}
+		return errors.Wrap(err, "gcs compose")
+	}
+	_ = part.Delete(context.Background())
 	return nil
+}
+
+// isPreconditionFailed reports whether err is an HTTP 412 from GCS,
+// indicating a lost race on a generation / DoesNotExist precondition.
+func isPreconditionFailed(err error) bool {
+	var ae *googleapi.Error
+	if errors.As(err, &ae) {
+		return ae.Code == http.StatusPreconditionFailed
+	}
+	return false
 }
