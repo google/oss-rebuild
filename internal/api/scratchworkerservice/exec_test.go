@@ -160,6 +160,11 @@ func TestExecStart_NonBlocking(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
 		t.Errorf("ExecStart took %v; want <100ms (must not block)", elapsed)
 	}
+	// Registration is synchronous: a status poll arriving any time after
+	// /exec/start returns must find the op.
+	if _, ok := store.status(opID); !ok {
+		t.Error("op not in store at ExecStart return; want synchronous registration")
+	}
 	waitForDone(t, store, opID, 5*time.Second)
 }
 
