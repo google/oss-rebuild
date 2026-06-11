@@ -179,9 +179,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			deps := &cratesregistryservice.FindRegistryCommitDeps{
 				IndexManager: mgr,
 			}
-			regstub = func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
-				return cratesregistryservice.FindRegistryCommit(ctx, req, deps)
-			}
+			regstub = api.Local(cratesregistryservice.FindRegistryCommit, deps)
 		}
 		deps := &inferenceservice.InferDeps{
 			HTTPClient: http.DefaultClient,
@@ -214,9 +212,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			}
 			deps.GitCache = &gitcache.Client{IDClient: idClient, APIClient: apiClient, URL: u}
 		}
-		stub = func(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
-			return inferenceservice.Infer(ctx, req, deps)
-		}
+		stub = api.Local(inferenceservice.Infer, deps)
 	}
 	resp, err := stub(ctx, req)
 	if err != nil {

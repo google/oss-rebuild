@@ -114,6 +114,17 @@ func StubFromHandler[I act.Input, O any, D act.Deps](client httpx.BasicClient, u
 	return Stub[I, O](client, u)
 }
 
+// Local lifts an in-process HandlerFunc (the (ctx, req, deps) shape) into a
+// StubFunc (the (ctx, req) shape) by binding deps. For example:
+//
+//	stub = api.Stub[Req, Resp](client, url)    // remote
+//	stub = api.Local(svc.Handler, deps)        // local
+func Local[I act.Input, O any, D act.Deps](h HandlerFn[I, O, D], d D) StubFn[I, O] {
+	return func(ctx context.Context, i I) (*O, error) {
+		return h(ctx, i, d)
+	}
+}
+
 // readStatusFromBody decodes a gRPC Status proto from an HTTP error response
 // body. Returns (status, true) on successful parse.
 func readStatusFromBody(b []byte) (*status.Status, bool) {
