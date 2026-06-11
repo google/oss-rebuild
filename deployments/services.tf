@@ -42,10 +42,19 @@ resource "google_cloudbuild_worker_pool" "jumbo-pool" {
   depends_on = [google_project_service.cloudbuild]
 }
 
+# Enumerates zones available in the scratch region so agent-api can fall
+# through across all zones on stockout instead of being pinned to one.
+data "google_compute_zones" "scratch" {
+  count   = var.enable_scratch ? 1 : 0
+  region  = "us-central1"
+  status  = "UP"
+  project = var.project
+}
+
 # Instance template for scratch VMs. The startup script fetches and runs the
 # scratch-worker binary; agent-api drives the worker over private-IP HTTP with
 # an ID token. Conditionally attach a service account for private instances to
-# access (the bootstrap-tools bucket is public-readable). 
+# access (the bootstrap-tools bucket is public-readable).
 resource "google_compute_instance_template" "scratch-standard" {
   count        = var.enable_scratch ? 1 : 0
   name_prefix  = "${var.host}-scratch-standard-"
@@ -390,7 +399,7 @@ resource "google_cloud_run_v2_service" "agent-api" {
         "--gcb-private-pool-region=us-central1",
         ] : [], var.enable_scratch ? [
         "--scratch-enabled=true",
-        "--scratch-zone=us-central1-a",
+        "--scratch-zones=${join(",", data.google_compute_zones.scratch[0].names)}",
         "--scratch-worker-port=8080",
         "--scratch-instance-standard-template=${google_compute_instance_template.scratch-standard[0].self_link}",
         "--scratch-output-bucket=${google_storage_bucket.scratch-output[0].name}",

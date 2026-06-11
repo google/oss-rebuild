@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -42,12 +43,30 @@ var (
 
 	// Scratch flags. Gated by --scratch-enabled.
 	scratchEnabled      = flag.Bool("scratch-enabled", false, "register the scratch routes")
+	scratchZones        = flag.String("scratch-zones", "", "comma-separated, ordered list of GCE zones to try for scratch VMs (required when scratch enabled); first listed is preferred, later zones used only on stockout fallthrough")
 	scratchZone         = flag.String("scratch-zone", "", "GCE zone for scratch VMs (required when scratch enabled)")
 	scratchWorkerPort   = flag.Int("scratch-worker-port", 8080, "port the worker listens on")
 	scratchStandardTmpl = flag.String("scratch-instance-standard-template", "", "GCE instance template URL for the standard machine class (required when scratch enabled)")
 	scratchJumboTmpl    = flag.String("scratch-instance-jumbo-template", "", "GCE instance template URL for the jumbo machine class (optional)")
 	scratchOutputBucket = flag.String("scratch-output-bucket", "", "GCS bucket the broker writes exec output into (required when --scratch-enabled)")
 )
+
+// parseScratchZones splits --scratch-zones on commas, trimming whitespace
+// and dropping empty entries.
+func parseScratchZones() []string {
+	parts := strings.Split(*scratchZones, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Binary-wide singleton: ScratchCreateInit runs per request, so a
+// Deps-owned cooldown would be discarded each call.
+var scratchCooldown = agentapiservice.NewZoneCooldown(0)
 
 // Link-time configured service identity
 var (
@@ -179,6 +198,10 @@ func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps,
 	if err != nil {
 		return nil, errors.Wrap(err, "compute client")
 	}
+	zones := parseScratchZones()
+	if len(zones) == 0 {
+		return nil, errors.New("--scratch-zones is required when --scratch-enabled")
+	}
 	return &agentapiservice.ScratchCreateDeps{
 		Scratches: db.NewFirestoreScratch(fs),
 		GCE:       gce,
@@ -193,7 +216,8 @@ func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps,
 				InstanceTemplate: *scratchJumboTmpl,
 			}
 		}(),
-		Zone:        *scratchZone,
+		Zones:       zones,
+		Cooldown:    scratchCooldown,
 		HealthProbe: scratchHealthProbe(*scratchWorkerPort),
 	}, nil
 }

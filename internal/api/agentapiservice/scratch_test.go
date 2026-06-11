@@ -14,11 +14,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// stockoutErr returns a googleapi.Error shaped like a real GCE
+// stockout response so isZoneExhausted classifies it.
+func stockoutErr() error {
+	return &googleapi.Error{
+		Code: 503,
+		Errors: []googleapi.ErrorItem{
+			{Reason: "ZONE_RESOURCE_POOL_EXHAUSTED", Message: "resource pool exhausted"},
+		},
+	}
+}
 
 func testStandard() ClassConfig {
 	return ClassConfig{
@@ -38,7 +51,8 @@ func newCreateDeps(gce GCE, scratches db.Scratch, probe HealthProbe, idGen func(
 		GCE:            gce,
 		Standard:       testStandard(),
 		Jumbo:          testJumbo(),
-		Zone:           "us-central1-a",
+		Zones:          []string{"us-central1-a"},
+		Cooldown:       NewZoneCooldown(time.Minute),
 		HealthProbe:    probe,
 		HealthTimeout:  500 * time.Millisecond,
 		HealthInterval: 10 * time.Millisecond,
@@ -196,6 +210,216 @@ func TestScratchCreate_HealthzTimeoutTriggersTeardown(t *testing.T) {
 	}
 }
 
+func TestScratchCreate_FallsThroughOnStockout(t *testing.T) {
+	gce := NewMemoryGCE()
+	gce.FailNext("InsertInstanceFromTemplate", stockoutErr())
+	scratches := db.NewMemoryScratch()
+	deps := newCreateDeps(gce, scratches, okProbe, func() string { return "sF" })
+	deps.Zones = []string{"us-central1-a", "us-central1-b"}
+
+	got, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps)
+	if err != nil {
+		t.Fatalf("ScratchCreate: %v", err)
+	}
+	if got.Zone != "us-central1-b" {
+		t.Errorf("Zone = %q; want us-central1-b (fell through after stockout)", got.Zone)
+	}
+	// Two Insert attempts logged: one per zone.
+	var inserts int
+	for _, line := range gce.Log() {
+		if strings.HasPrefix(line, "InsertInstanceFromTemplate(") {
+			inserts++
+		}
+	}
+	if inserts != 2 {
+		t.Errorf("InsertInstanceFromTemplate calls = %d; want 2", inserts)
+	}
+	if !gce.InstanceExists("us-central1-b", "scratch-sF") {
+		t.Errorf("VM not created in winning zone")
+	}
+	if gce.InstanceExists("us-central1-a", "scratch-sF") {
+		t.Errorf("VM erroneously exists in stockout zone")
+	}
+}
+
+func TestScratchCreate_AllZonesExhausted(t *testing.T) {
+	gce := NewMemoryGCE()
+	gce.FailNext("InsertInstanceFromTemplate", stockoutErr())
+	gce.FailNext("InsertInstanceFromTemplate", stockoutErr())
+	scratches := db.NewMemoryScratch()
+	deps := newCreateDeps(gce, scratches, okProbe, func() string { return "sX" })
+	deps.Zones = []string{"us-central1-a", "us-central1-b"}
+
+	_, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps)
+	if err == nil {
+		t.Fatalf("ScratchCreate succeeded; want failure")
+	}
+	if !strings.Contains(err.Error(), "all zones exhausted") {
+		t.Errorf("error = %q; want it to mention all zones exhausted", err.Error())
+	}
+	rec, _ := scratches.Get(context.Background(), "sX")
+	if rec.State != schema.ScratchDeleted {
+		t.Errorf("State = %q; want deleted", rec.State)
+	}
+}
+
+func TestScratchCreate_NonStockoutDoesNotFallThrough(t *testing.T) {
+	gce := NewMemoryGCE()
+	gce.FailNext("InsertInstanceFromTemplate", errors.New("permission denied: invalid template"))
+	scratches := db.NewMemoryScratch()
+	deps := newCreateDeps(gce, scratches, okProbe, func() string { return "sN" })
+	deps.Zones = []string{"us-central1-a", "us-central1-b"}
+
+	_, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps)
+	if err == nil {
+		t.Fatalf("ScratchCreate succeeded; want failure")
+	}
+	var inserts int
+	for _, line := range gce.Log() {
+		if strings.HasPrefix(line, "InsertInstanceFromTemplate(") {
+			inserts++
+		}
+	}
+	if inserts != 1 {
+		t.Errorf("InsertInstanceFromTemplate calls = %d; want 1 (non-stockout must not fall through)", inserts)
+	}
+}
+
+// deleteZonesFromLog returns the zone arg of every recorded
+// DeleteInstance call.
+func deleteZonesFromLog(log []string) []string {
+	var out []string
+	for _, line := range log {
+		if !strings.HasPrefix(line, "DeleteInstance(") {
+			continue
+		}
+		z := strings.TrimPrefix(line, "DeleteInstance(")
+		if i := strings.Index(z, ","); i >= 0 {
+			z = z[:i]
+		}
+		out = append(out, z)
+	}
+	return out
+}
+
+func TestScratchCreate_NonStockoutCleansUpPossibleOrphan(t *testing.T) {
+	// zone[0] stockout (safe, no VM); fall through to zone[1] where
+	// Insert returns a non-stockout error (e.g. ctx cancel after the op
+	// started server-side). Cleanup must target zone[1].
+	gce := NewMemoryGCE()
+	gce.FailNext("InsertInstanceFromTemplate", stockoutErr())
+	gce.FailNext("InsertInstanceFromTemplate", errors.New("context canceled mid-op"))
+	scratches := db.NewMemoryScratch()
+	deps := newCreateDeps(gce, scratches, okProbe, func() string { return "sO" })
+	deps.Zones = []string{"us-central1-a", "us-central1-b"}
+
+	if _, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps); err == nil {
+		t.Fatalf("ScratchCreate succeeded; want failure")
+	}
+	if diff := cmp.Diff([]string{"us-central1-b"}, deleteZonesFromLog(gce.Log())); diff != "" {
+		t.Errorf("DeleteInstance target zones mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestScratchCreate_AllStockoutsSkipsDeleteInstance(t *testing.T) {
+	// Stockouts are rejected pre-allocation, so no VM exists in any
+	// zone. Cleanup must NOT issue a DeleteInstance, to avoid needless
+	// 404 round-trips and log noise during sustained outages.
+	gce := NewMemoryGCE()
+	gce.FailNext("InsertInstanceFromTemplate", stockoutErr())
+	gce.FailNext("InsertInstanceFromTemplate", stockoutErr())
+	scratches := db.NewMemoryScratch()
+	deps := newCreateDeps(gce, scratches, okProbe, func() string { return "sA" })
+	deps.Zones = []string{"us-central1-a", "us-central1-b"}
+
+	if _, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps); err == nil {
+		t.Fatalf("ScratchCreate succeeded; want failure")
+	}
+	if got := deleteZonesFromLog(gce.Log()); len(got) != 0 {
+		t.Errorf("DeleteInstance called for zones %v; want none (stockouts create no VMs)", got)
+	}
+	rec, _ := scratches.Get(context.Background(), "sA")
+	if rec.State != schema.ScratchDeleted {
+		t.Errorf("State = %q; want deleted", rec.State)
+	}
+}
+
+func TestScratchCreate_CooldownSkipsZoneOnSubsequentCall(t *testing.T) {
+	gce := NewMemoryGCE()
+	gce.FailNext("InsertInstanceFromTemplate", stockoutErr()) // first call: zone[0] stockout
+	scratches := db.NewMemoryScratch()
+	var seq int
+	deps := newCreateDeps(gce, scratches, okProbe, func() string {
+		seq++
+		return fmt.Sprintf("sC%d", seq)
+	})
+	deps.Zones = []string{"us-central1-a", "us-central1-b"}
+
+	// First call: zone[0] stockouts, falls through to zone[1].
+	if _, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps); err != nil {
+		t.Fatalf("first ScratchCreate: %v", err)
+	}
+
+	// Second call: zone[0] should be skipped (cooldown), zone[1] tried first.
+	startLog := len(gce.Log())
+	if _, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps); err != nil {
+		t.Fatalf("second ScratchCreate: %v", err)
+	}
+	var attempted []string
+	for _, line := range gce.Log()[startLog:] {
+		if strings.HasPrefix(line, "InsertInstanceFromTemplate(") {
+			// log format: "InsertInstanceFromTemplate(zone,name,template)"
+			zone := strings.TrimPrefix(line, "InsertInstanceFromTemplate(")
+			if i := strings.Index(zone, ","); i >= 0 {
+				zone = zone[:i]
+			}
+			attempted = append(attempted, zone)
+		}
+	}
+	if len(attempted) != 1 {
+		t.Fatalf("second-call Insert attempts = %v; want exactly 1 (zone[0] cooled down)", attempted)
+	}
+	if attempted[0] != "us-central1-b" {
+		t.Errorf("attempted = %q; want us-central1-b (zone[0] should be cooled down)", attempted[0])
+	}
+}
+
+func TestZoneCooldown_ActivePreservesOrderAndExpires(t *testing.T) {
+	zones := []string{"a", "b", "c"}
+
+	// Live cooldown: mark sticks, order is preserved.
+	c := NewZoneCooldown(time.Hour)
+	if diff := cmp.Diff(zones, c.active(zones)); diff != "" {
+		t.Errorf("empty cooldown active mismatch (-want +got):\n%s", diff)
+	}
+	c.mark("b")
+	if diff := cmp.Diff([]string{"a", "c"}, c.active(zones)); diff != "" {
+		t.Errorf("after mark(b) active mismatch (-want +got):\n%s", diff)
+	}
+
+	// Instantly-expiring cooldown: mark is observable but pruned on next read.
+	expired := NewZoneCooldown(time.Nanosecond)
+	expired.mark("a")
+	time.Sleep(time.Millisecond)
+	if diff := cmp.Diff(zones, expired.active(zones)); diff != "" {
+		t.Errorf("after expiry active mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestScratchGet_HappyAndMissing(t *testing.T) {
 	scratches := db.NewMemoryScratch()
 	want := schema.Scratch{ID: "s1", State: schema.ScratchReady, InternalIP: "10.0.0.7"}
@@ -262,9 +486,10 @@ type MemoryGCE struct {
 	instances map[string]Instance
 	labels    map[string]map[string]string // instance key -> labels
 	stopped   map[string]bool              // instance key -> stopped (true means terminated, missing/false means running)
-	// failOnce[op]=err returns err once when op is invoked, then clears.
-	// op keys mirror the log prefixes: "InsertInstanceFromTemplate", "DeleteInstance", ...
-	failOnce map[string]error
+	// failQueue[op] is a FIFO of errors to return on successive invocations
+	// of op (one per call). op keys mirror the log prefixes:
+	// "InsertInstanceFromTemplate", "DeleteInstance", ...
+	failQueue map[string][]error
 	// nextIP supplies the InternalIP for the next InsertInstance call. If
 	// empty, a deterministic "10.0.0.N" address is assigned.
 	nextIP string
@@ -277,7 +502,7 @@ func NewMemoryGCE() *MemoryGCE {
 		instances: map[string]Instance{},
 		labels:    map[string]map[string]string{},
 		stopped:   map[string]bool{},
-		failOnce:  map[string]error{},
+		failQueue: map[string][]error{},
 	}
 }
 
@@ -310,11 +535,12 @@ func labelsMatch(have, want map[string]string) bool {
 	return true
 }
 
-// FailNext registers an error to be returned the next time op runs.
+// FailNext queues an error to be returned the next time op runs.
+// Successive FailNext calls queue errors in FIFO order.
 func (m *MemoryGCE) FailNext(op string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.failOnce[op] = err
+	m.failQueue[op] = append(m.failQueue[op], err)
 }
 
 // SetNextIP fixes the InternalIP for the next InsertInstanceFromTemplate.
@@ -342,11 +568,17 @@ func (m *MemoryGCE) InstanceExists(zone, name string) bool {
 }
 
 func (m *MemoryGCE) checkFail(op string) error {
-	if err, ok := m.failOnce[op]; ok {
-		delete(m.failOnce, op)
-		return err
+	q := m.failQueue[op]
+	if len(q) == 0 {
+		return nil
 	}
-	return nil
+	err := q[0]
+	if len(q) == 1 {
+		delete(m.failQueue, op)
+	} else {
+		m.failQueue[op] = q[1:]
+	}
+	return err
 }
 
 func (m *MemoryGCE) record(format string, args ...any) {
