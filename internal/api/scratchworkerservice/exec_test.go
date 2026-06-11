@@ -6,6 +6,8 @@ package scratchworkerservice
 import (
 	"context"
 	"encoding/base64"
+	"errors"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -198,16 +200,39 @@ func TestExecStart_TimeoutPartialOutputPreserved(t *testing.T) {
 	}
 }
 
-func TestExecStore_ForgetReleasesFile(t *testing.T) {
-	deps, store := newTestDeps(t)
-	const opID = "op-forget"
-	if _, err := ExecStart(context.Background(), stdReq(opID, "env-1", "sh", "-c", "echo bye"), deps); err != nil {
-		t.Fatalf("ExecStart: %v", err)
+func TestExecStore_GCReleasesExpiredEntries(t *testing.T) {
+	store := NewExecStore()
+	now := time.Now().UTC()
+	tmpFile := func() *os.File {
+		f, err := os.CreateTemp(t.TempDir(), "exec-out-*")
+		if err != nil {
+			t.Fatalf("CreateTemp: %v", err)
+		}
+		return f
 	}
-	waitForDone(t, store, opID, 3*time.Second)
-	store.Forget(opID)
-	if _, ok := store.status(opID); ok {
-		t.Errorf("status after Forget; want unknown")
+	expired := tmpFile()
+	// Done and past startedAt + timeout + gcGrace: collected.
+	store.create("op-expired", expired, now.Add(-2*time.Hour), 60)
+	store.finish("op-expired", 0, nil, 0)
+	// Done but within retention: kept.
+	store.create("op-recent", tmpFile(), now.Add(-time.Minute), 60)
+	store.finish("op-recent", 0, nil, 0)
+	// Done, ancient, but unbounded: kept for the VM lifetime.
+	store.create("op-unbounded", tmpFile(), now.Add(-24*time.Hour), 0)
+	store.finish("op-unbounded", 0, nil, 0)
+
+	store.create("op-new", tmpFile(), now, 60) // triggers gc
+
+	if _, ok := store.status("op-expired"); ok {
+		t.Errorf("expired entry survived gc")
+	}
+	if _, err := os.Stat(expired.Name()); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expired entry's temp file not removed (stat err=%v)", err)
+	}
+	for _, opID := range []string{"op-recent", "op-unbounded", "op-new"} {
+		if _, ok := store.status(opID); !ok {
+			t.Errorf("%s collected; want retained", opID)
+		}
 	}
 }
 
