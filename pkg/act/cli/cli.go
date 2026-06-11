@@ -31,7 +31,7 @@ func SkipArgs[I act.Input](cfg *I, args []string) error {
 func RunE[I act.Input, O any, D Deps](
 	cfg *I,
 	parseArgs ParseArgs[I],
-	initDeps act.InitDeps[D],
+	depsFn act.DepsFn[D],
 	action act.Action[I, O, D],
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
@@ -41,7 +41,7 @@ func RunE[I act.Input, O any, D Deps](
 		if err := (*cfg).Validate(); err != nil {
 			return err
 		}
-		deps, err := initDeps(cmd.Context())
+		deps, err := depsFn(cmd.Context())
 		if err != nil {
 			return errors.Wrap(err, "initializing dependencies")
 		}
