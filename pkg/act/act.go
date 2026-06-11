@@ -5,7 +5,10 @@
 // that can be exposed via HTTP, CLI, or other interfaces.
 package act
 
-import "context"
+import (
+	"context"
+	"iter"
+)
 
 // Input is a validated input type (request, config, etc.)
 type Input interface {
@@ -20,6 +23,11 @@ type InitDeps[D Deps] func(context.Context) (D, error)
 
 // Action is a transport-agnostic operation.
 type Action[I Input, O any, D Deps] func(context.Context, I, D) (*O, error)
+
+// StreamAction is a server-to-client stream returning a sequence of outputs.
+// Yielding (event, nil) emits; yielding (nil, err) terminates with an error;
+// returning normally terminates cleanly.
+type StreamAction[I Input, E any, D Deps] func(context.Context, I, D) iter.Seq2[*E, error]
 
 // NoDeps is a zero-value dependency container.
 type NoDeps struct{}

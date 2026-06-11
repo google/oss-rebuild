@@ -46,50 +46,67 @@ var (
 
 func Stub[I act.Input, O any](client httpx.BasicClient, u *url.URL) StubFunc[I, O] {
 	return func(ctx context.Context, i I) (*O, error) {
-		values, err := form.Marshal(i)
+		req, err := newFormRequest(ctx, u, i)
 		if err != nil {
-			return nil, errors.Wrap(err, "serializing request")
+			return nil, err
 		}
-		if err := i.Validate(); err != nil {
-			return nil, errors.Wrap(err, "serializing request")
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(values.Encode()))
-		if err != nil {
-			return nil, errors.Wrap(err, "building http request")
-		}
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, errors.Wrap(err, "making http request")
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			if st, ok := readStatusFromBody(body); ok && st.Code() != codes.OK {
-				return nil, st.Err()
-			}
-			// Fallback for servers that don't emit a Status body (or non-parseable
-			// body, e.g. load-balancer error pages). Synthesize from HTTP code.
-			switch resp.StatusCode {
-			case http.StatusServiceUnavailable:
-				if retryAfterStr := resp.Header.Get("Retry-After"); retryAfterStr != "" {
-					if seconds, err := strconv.Atoi(retryAfterStr); err == nil && seconds > 0 {
-						d := time.Duration(seconds) * time.Second
-						return nil, AsStatus(codes.Unavailable, ErrUnavailable, RetryAfter(d))
-					}
-				}
-				return nil, ErrUnavailable
-			case http.StatusTooManyRequests:
-				return nil, ErrExhausted
-			default:
-				return nil, errors.Wrap(errors.Wrap(ErrNotOK, resp.Status), string(body))
-			}
+			return nil, errorFromResponse(resp)
 		}
 		var o O
 		if err := json.NewDecoder(resp.Body).Decode(&o); err != nil {
 			return nil, errors.Wrap(err, "decoding response")
 		}
 		return &o, nil
+	}
+}
+
+// newFormRequest validates in and builds the act-API wire request: a POST
+// with the form-encoded input as an urlencoded body.
+func newFormRequest[I act.Input](ctx context.Context, u *url.URL, in I) (*http.Request, error) {
+	if err := in.Validate(); err != nil {
+		return nil, errors.Wrap(err, "serializing request")
+	}
+	values, err := form.Marshal(in)
+	if err != nil {
+		return nil, errors.Wrap(err, "serializing request")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(values.Encode()))
+	if err != nil {
+		return nil, errors.Wrap(err, "building http request")
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req, nil
+}
+
+// errorFromResponse synthesizes the error for a non-200 response: the parsed
+// google.rpc.Status body when one is present, else a status mapped from the
+// HTTP code.
+func errorFromResponse(resp *http.Response) error {
+	body, _ := io.ReadAll(resp.Body)
+	if st, ok := readStatusFromBody(body); ok && st.Code() != codes.OK {
+		return st.Err()
+	}
+	// Fallback for servers that don't emit a Status body (or non-parseable
+	// body, e.g. load-balancer error pages). Synthesize from HTTP code.
+	switch resp.StatusCode {
+	case http.StatusServiceUnavailable:
+		if retryAfterStr := resp.Header.Get("Retry-After"); retryAfterStr != "" {
+			if seconds, err := strconv.Atoi(retryAfterStr); err == nil && seconds > 0 {
+				d := time.Duration(seconds) * time.Second
+				return AsStatus(codes.Unavailable, ErrUnavailable, RetryAfter(d))
+			}
+		}
+		return ErrUnavailable
+	case http.StatusTooManyRequests:
+		return ErrExhausted
+	default:
+		return errors.Wrap(errors.Wrap(ErrNotOK, resp.Status), string(body))
 	}
 }
 
@@ -192,17 +209,8 @@ func HTMLHandler[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler H
 func handleUsingResponder[I act.Input, O any, D act.Deps](initDeps InitDeps[D], handler HandlerFunc[I, O, D], responder func(http.ResponseWriter, *O) error) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
-		r.ParseForm()
-		var req I
-		if err := form.Unmarshal(r.Form, &req); err != nil {
-			log.Println(errors.Wrap(err, "parsing request"))
-			http.Error(rw, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			return
-		}
-		log.Printf("received request: %+v", req)
-		if err := req.Validate(); err != nil {
-			log.Println(errors.Wrap(err, "validating request"))
-			http.Error(rw, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		req, ok := decodeRequest[I](rw, r)
+		if !ok {
 			return
 		}
 		deps, err := initDeps(ctx)
@@ -212,39 +220,8 @@ func handleUsingResponder[I act.Input, O any, D act.Deps](initDeps InitDeps[D], 
 			return
 		}
 		o, err := handler(ctx, req, deps)
-		s := status.Convert(err)
-		for _, detail := range s.Details() {
-			switch d := detail.(type) {
-			case *errdetails.RetryInfo:
-				if d.RetryDelay != nil {
-					if seconds := int(d.RetryDelay.Seconds); seconds > 0 {
-						rw.Header().Set("Retry-After", strconv.Itoa(seconds))
-					}
-				}
-			}
-		}
-		httpStatus, ok := grpcToHTTP[s.Code()]
-		if !ok {
-			log.Printf("unknown error code: %s\n", s.Code())
-			httpStatus = http.StatusInternalServerError
-		}
-		if httpStatus != http.StatusOK {
-			log.Println(s.Err())
-			// Emit the gRPC Status proto as protojson so stubs can recover the
-			// full code/message/details on the other side. The HTTP status code
-			// is the wire-level tag (success vs. error); the body carries the
-			// structured detail. Retry-After is also set above for HTTP-aware
-			// infra (proxies/load balancers) that doesn't read the body.
-			rw.Header().Set("Content-Type", "application/json")
-			rw.WriteHeader(httpStatus)
-			body, err := protojson.Marshal(s.Proto())
-			if err != nil {
-				log.Printf("encoding status proto: %v", err)
-				return
-			}
-			if _, err := rw.Write(body); err != nil {
-				log.Printf("writing status body: %v", err)
-			}
+		if err != nil {
+			writeStatusError(rw, err)
 			return
 		}
 		if o != nil {
@@ -254,6 +231,67 @@ func handleUsingResponder[I act.Input, O any, D act.Deps](initDeps InitDeps[D], 
 			}
 		}
 	}
+}
+
+// decodeRequest parses and validates an inbound request body into I.
+// On failure, writes an InvalidArgument status responses and returns ok=false
+// indicating the caller should immediately return.
+func decodeRequest[I act.Input](rw http.ResponseWriter, r *http.Request) (I, bool) {
+	var req I
+	if err := r.ParseForm(); err != nil {
+		writeStatusError(rw, AsStatus(codes.InvalidArgument, errors.Wrap(err, "parsing request")))
+		return req, false
+	}
+	if err := form.Unmarshal(r.Form, &req); err != nil {
+		writeStatusError(rw, AsStatus(codes.InvalidArgument, errors.Wrap(err, "parsing request")))
+		return req, false
+	}
+	log.Printf("received request: %+v", req)
+	if err := req.Validate(); err != nil {
+		writeStatusError(rw, AsStatus(codes.InvalidArgument, errors.Wrap(err, "validating request")))
+		return req, false
+	}
+	return req, true
+}
+
+// writeStatusError translates err into an HTTP error response with a
+// Retry-After header (when RetryInfo is attached), an HTTP status mapped
+// via grpcToHTTP, and a protojson google.rpc.Status body.
+func writeStatusError(rw http.ResponseWriter, err error) {
+	s := status.Convert(err)
+	for _, detail := range s.Details() {
+		switch d := detail.(type) {
+		case *errdetails.RetryInfo:
+			if d.RetryDelay != nil {
+				if seconds := int(d.RetryDelay.Seconds); seconds > 0 {
+					rw.Header().Set("Retry-After", strconv.Itoa(seconds))
+				}
+			}
+		}
+	}
+	httpStatus, ok := grpcToHTTP[s.Code()]
+	if !ok {
+		log.Printf("unknown error code: %s\n", s.Code())
+		httpStatus = http.StatusInternalServerError
+	}
+	log.Println(s.Err())
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(httpStatus)
+	if _, wErr := io.WriteString(rw, statusBodyFor(err)); wErr != nil {
+		log.Printf("writing status body: %v", wErr)
+	}
+}
+
+// statusBodyFor renders err as a protojson google.rpc.Status.
+// Used for both unary error response body and streaming error event frame.
+func statusBodyFor(err error) string {
+	s := status.Convert(err)
+	body, mErr := protojson.Marshal(s.Proto())
+	if mErr != nil {
+		log.Printf("encoding status proto: %v", mErr)
+		body, _ = protojson.Marshal(status.New(codes.Unknown, "unknown").Proto())
+	}
+	return string(body)
 }
 
 type Translator[O act.Input] func(*http.Request) (O, error)

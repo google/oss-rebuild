@@ -21,10 +21,12 @@ type (
 	NoDeps       = act.NoDeps
 	NoReturn     = act.NoOutput
 
-	InitT[D act.Deps]                        = actapi.InitDeps[D]
-	HandlerT[I act.Input, O any, D act.Deps] = actapi.HandlerFunc[I, O, D]
-	StubT[I act.Input, O any]                = actapi.StubFunc[I, O]
-	Translator[O act.Input]                  = actapi.Translator[O]
+	InitT[D act.Deps]                              = actapi.InitDeps[D]
+	HandlerT[I act.Input, O any, D act.Deps]       = actapi.HandlerFunc[I, O, D]
+	StubT[I act.Input, O any]                      = actapi.StubFunc[I, O]
+	StreamHandlerT[I act.Input, E any, D act.Deps] = actapi.StreamHandlerFunc[I, E, D]
+	StreamStubT[I act.Input, E any]                = actapi.StreamStubFunc[I, E]
+	Translator[O act.Input]                        = actapi.Translator[O]
 )
 
 var (
@@ -62,4 +64,12 @@ func HTMLHandler[I act.Input, O any, D act.Deps](initDeps InitT[D], handler Hand
 
 func Translate[O act.Input](t Translator[O], h http.HandlerFunc) http.HandlerFunc {
 	return actapi.Translate(t, h)
+}
+
+func StreamHandler[I act.Input, E any, D act.Deps](initDeps InitT[D], handler StreamHandlerT[I, E, D]) http.HandlerFunc {
+	return actapi.StreamHandler(initDeps, handler)
+}
+
+func StreamStub[I act.Input, E any](client httpx.BasicClient, u *url.URL) StreamStubT[I, E] {
+	return actapi.StreamStub[I, E](client, u)
 }
