@@ -40,7 +40,11 @@ type Scratch struct {
 	State        ScratchState `json:"state,omitempty" firestore:"state,omitempty"`
 	Created      time.Time    `json:"created,omitzero" firestore:"created,omitempty"`
 	Updated      time.Time    `json:"updated,omitzero" firestore:"updated,omitempty"`
-	LastUsed     time.Time    `json:"last_used,omitzero" firestore:"last_used,omitempty"`
+	// LastUsed is the last agent interaction: exec dispatch or an
+	// agent poll observing exec completion. The reaper treats Ready
+	// scratches with stale LastUsed and no in-deadline pending execs
+	// as idle.
+	LastUsed time.Time `json:"last_used,omitzero" firestore:"last_used,omitempty"`
 }
 
 // ScratchCreateRequest is the input to /scratch/create.
@@ -135,16 +139,21 @@ type Status struct {
 //   - TimedOut:  ExitCode is the kill exit (typically 124); Error carries detail; OutURI may be partial.
 //   - Lost:      Error non-nil; ExitCode 0 (no exit observed); OutURI may be partial.
 type ScratchExec struct {
-	ID         string           `json:"id" firestore:"id"`
-	ScratchID  string           `json:"scratch_id,omitempty" firestore:"scratch_id,omitempty"`
-	Cmd        []string         `json:"cmd,omitempty" firestore:"cmd,omitempty"`
-	Cwd        string           `json:"cwd,omitempty" firestore:"cwd,omitempty"`
-	OutURI     string           `json:"out_uri,omitempty" firestore:"out_uri,omitempty"`
-	StartedAt  time.Time        `json:"started_at,omitzero" firestore:"started_at,omitempty"`
-	FinishedAt time.Time        `json:"finished_at,omitzero" firestore:"finished_at,omitempty"`
-	State      ScratchExecState `json:"state" firestore:"state"`
-	ExitCode   int              `json:"exit_code,omitempty" firestore:"exit_code,omitempty"`
-	Error      *Status          `json:"error,omitempty" firestore:"error,omitempty"`
+	ID        string   `json:"id" firestore:"id"`
+	ScratchID string   `json:"scratch_id,omitempty" firestore:"scratch_id,omitempty"`
+	Cmd       []string `json:"cmd,omitempty" firestore:"cmd,omitempty"`
+	Cwd       string   `json:"cwd,omitempty" firestore:"cwd,omitempty"`
+	// TimeoutSeconds is the worker-enforced execution bound, stamped by the
+	// broker at create (request value, or the configured default when the
+	// request omits it). The reaper derives each op's hard deadline from it.
+	// Zero means unbounded: the reaper warns and leaves the scratch up.
+	TimeoutSeconds int              `json:"timeout_seconds,omitempty" firestore:"timeout_seconds,omitempty"`
+	OutURI         string           `json:"out_uri,omitempty" firestore:"out_uri,omitempty"`
+	StartedAt      time.Time        `json:"started_at,omitzero" firestore:"started_at,omitempty"`
+	FinishedAt     time.Time        `json:"finished_at,omitzero" firestore:"finished_at,omitempty"`
+	State          ScratchExecState `json:"state" firestore:"state"`
+	ExitCode       int              `json:"exit_code,omitempty" firestore:"exit_code,omitempty"`
+	Error          *Status          `json:"error,omitempty" firestore:"error,omitempty"`
 }
 
 // ScratchExecResult is the API payload inside derived from ScratchExec.

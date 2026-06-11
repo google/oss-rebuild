@@ -34,6 +34,7 @@ type ScratchExecCreateDeps struct {
 	WorkerDialer WorkerDialer
 	OutputBucket string
 	IDGen        func() string // For op IDs. If nil, defaults to uuid.New()
+	OpTimeout    time.Duration // Default and max exec timeout. Zero leaves execs unbounded
 }
 
 // ScratchExecGetDeps wires ScratchExecGet.
@@ -103,6 +104,18 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 	if scratch.ObliviousID == "" {
 		return nil, api.AsStatus(codes.Internal, errors.Errorf("scratch %q missing ObliviousID", req.ScratchID))
 	}
+	// When OpTimeout is configured, every exec gets a worker-enforced bound:
+	// the request value, defaulted when omitted and capped at the maximum.
+	// The reaper derives the op's hard deadline from the stamped value and
+	// leaves unbounded ops' scratches up.
+	maxTimeout := int(deps.OpTimeout.Seconds())
+	if maxTimeout > 0 && req.TimeoutSeconds > maxTimeout {
+		return nil, api.AsStatus(codes.InvalidArgument, errors.Errorf("timeout_seconds %d exceeds maximum %d", req.TimeoutSeconds, maxTimeout))
+	}
+	timeoutSeconds := req.TimeoutSeconds
+	if timeoutSeconds == 0 {
+		timeoutSeconds = maxTimeout
+	}
 
 	// Prepare the worker client before Insert so a dialer failure (auth setup,
 	// URL parse) is a request-time error rather than a dangling Pending record.
@@ -114,13 +127,14 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 	opID := mintID(deps.IDGen)
 	startedAt := time.Now().UTC()
 	exec := schema.ScratchExec{
-		ID:        opID,
-		ScratchID: req.ScratchID,
-		Cmd:       req.Cmd,
-		Cwd:       req.Cwd,
-		State:     schema.ScratchExecPending,
-		OutURI:    outURIFor(deps.OutputBucket, scratch.ObliviousID, opID),
-		StartedAt: startedAt,
+		ID:             opID,
+		ScratchID:      req.ScratchID,
+		Cmd:            req.Cmd,
+		Cwd:            req.Cwd,
+		TimeoutSeconds: timeoutSeconds,
+		State:          schema.ScratchExecPending,
+		OutURI:         outURIFor(deps.OutputBucket, scratch.ObliviousID, opID),
+		StartedAt:      startedAt,
 	}
 	if err := deps.Execs.Insert(ctx, exec); err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "execs insert"))
@@ -137,7 +151,7 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 		Cwd:            req.Cwd,
 		Env:            req.Env,
 		StdinB64:       req.StdinB64,
-		TimeoutSeconds: req.TimeoutSeconds,
+		TimeoutSeconds: timeoutSeconds,
 	}); err != nil {
 		log.Printf("scratch %q exec %q: worker dispatch: %v", req.ScratchID, opID, err)
 		exec, ferr := finalize(ctx, deps.Execs, exec, &schema.Status{
@@ -165,7 +179,8 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 // pending and a Syncer is configured, ScratchExecGet triggers a sync:
 // pulling the worker's latest status + any new output bytes, rolling
 // those bytes into the op's GCS object, and (on the Done transition)
-// finalizing Firestore.
+// finalizing Firestore and bumping the scratch's LastUsed so the agent
+// has a fresh idle window to act on the result.
 //
 // Sync errors follow the last-error-is-final policy: any failure to reach the
 // worker, read its state, or persist the output transitions the exec to Failed
@@ -223,6 +238,16 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 		}
 		op := ProjectScratchExec(exec)
 		return &op, nil
+	}
+	// Bump LastUsed when this poll observed the Pending→terminal transition:
+	// a long exec finishes with LastUsed still at dispatch time, and without
+	// the bump the scratch is reaped before the agent can act on the result.
+	// One write per exec; lives here rather than in Syncer.Sync so the
+	// reaper's pull-through never extends the life of an abandoned scratch.
+	if synced.State != schema.ScratchExecPending {
+		if err := deps.Scratches.UpdateLastUsed(ctx, scratch.ID, time.Now().UTC()); err != nil {
+			log.Printf("exec %q: update last_used: %v", exec.ID, err)
+		}
 	}
 	op := ProjectScratchExec(synced)
 	return &op, nil

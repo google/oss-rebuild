@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/api/scratchworkerservice"
@@ -309,6 +310,49 @@ func TestScratchExecCreate_FinalizePersistFailureSurfacesAPIError(t *testing.T) 
 	}
 }
 
+// A request without TimeoutSeconds gets the configured default stamped on
+// the record and forwarded to the worker, so every exec is bounded.
+func TestScratchExecCreate_TimeoutDefaultedAndStamped(t *testing.T) {
+	const opID = "op-default-timeout"
+	fw := newFakeWorker(t)
+	createDeps, _, _, execs := fixture(t, opID, fw)
+	createDeps.OpTimeout = time.Hour
+
+	if _, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+		ScratchID: "s-1", Cmd: []string{"true"},
+	}, createDeps); err != nil {
+		t.Fatalf("ScratchExecCreate: %v", err)
+	}
+	stored, err := execs.Get(context.Background(), opID)
+	if err != nil {
+		t.Fatalf("execs.Get: %v", err)
+	}
+	if want := 3600; stored.TimeoutSeconds != want {
+		t.Errorf("persisted TimeoutSeconds = %d; want %d", stored.TimeoutSeconds, want)
+	}
+	if fw.received == nil || fw.received.TimeoutSeconds != 3600 {
+		t.Errorf("worker TimeoutSeconds = %+v; want 3600", fw.received)
+	}
+}
+
+func TestScratchExecCreate_TimeoutOverMaxRejected(t *testing.T) {
+	const opID = "op-over-max"
+	fw := newFakeWorker(t)
+	createDeps, _, _, execs := fixture(t, opID, fw)
+	createDeps.OpTimeout = time.Minute
+
+	_, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+		ScratchID: "s-1", Cmd: []string{"true"}, TimeoutSeconds: 61,
+	}, createDeps)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("code = %s; want InvalidArgument. err=%v", status.Code(err), err)
+	}
+	// Rejection happens before Insert: no dangling record.
+	if _, gerr := execs.Get(context.Background(), opID); !errors.Is(gerr, db.ErrNotFound) {
+		t.Errorf("exec exists after rejection; want no record (gerr=%v)", gerr)
+	}
+}
+
 func TestScratchExecCreate_BumpsLastUsedOnSuccess(t *testing.T) {
 	const opID = "op-bump"
 	fw := newFakeWorker(t)
@@ -403,6 +447,56 @@ func TestScratchExecGet_PendingTriggersSync(t *testing.T) {
 	}
 	if !op.Done {
 		t.Errorf("Done = false; want true (Syncer returned terminal)")
+	}
+}
+
+// The poll that observes the Pending→terminal transition bumps LastUsed so
+// the agent gets a fresh idle window to act on the result of a long exec.
+func TestScratchExecGet_CompletionBumpsLastUsed(t *testing.T) {
+	const opID = "op-done-bump"
+	fw := newFakeWorker(t)
+	_, getDeps, scratches, execs := fixture(t, opID, fw)
+	if err := execs.Insert(context.Background(), schema.ScratchExec{
+		ID: opID, ScratchID: "s-1", State: schema.ScratchExecPending,
+	}); err != nil {
+		t.Fatalf("seed exec: %v", err)
+	}
+	getDeps.Syncer = &fakeSyncer{returns: schema.ScratchExec{
+		ID: opID, ScratchID: "s-1", State: schema.ScratchExecCompleted,
+	}}
+	before, _ := scratches.Get(context.Background(), "s-1")
+
+	if _, err := ScratchExecGet(context.Background(), schema.GetOperationRequest{ID: opID}, getDeps); err != nil {
+		t.Fatalf("ScratchExecGet: %v", err)
+	}
+	after, _ := scratches.Get(context.Background(), "s-1")
+	if !after.LastUsed.After(before.LastUsed) {
+		t.Errorf("LastUsed before=%v after=%v; expected bump on completion", before.LastUsed, after.LastUsed)
+	}
+}
+
+// A poll that finds the exec still running writes nothing to the scratch:
+// in-flight liveness is the reaper's busy exemption, not LastUsed churn.
+func TestScratchExecGet_PendingPollDoesNotBumpLastUsed(t *testing.T) {
+	const opID = "op-still-running"
+	fw := newFakeWorker(t)
+	_, getDeps, scratches, execs := fixture(t, opID, fw)
+	if err := execs.Insert(context.Background(), schema.ScratchExec{
+		ID: opID, ScratchID: "s-1", State: schema.ScratchExecPending,
+	}); err != nil {
+		t.Fatalf("seed exec: %v", err)
+	}
+	getDeps.Syncer = &fakeSyncer{returns: schema.ScratchExec{
+		ID: opID, ScratchID: "s-1", State: schema.ScratchExecPending,
+	}}
+	before, _ := scratches.Get(context.Background(), "s-1")
+
+	if _, err := ScratchExecGet(context.Background(), schema.GetOperationRequest{ID: opID}, getDeps); err != nil {
+		t.Fatalf("ScratchExecGet: %v", err)
+	}
+	after, _ := scratches.Get(context.Background(), "s-1")
+	if !after.LastUsed.Equal(before.LastUsed) {
+		t.Errorf("LastUsed before=%v after=%v; want unchanged on pending poll", before.LastUsed, after.LastUsed)
 	}
 }
 

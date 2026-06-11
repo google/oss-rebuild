@@ -42,13 +42,14 @@ var (
 	port                 = flag.Int("port", 8080, "port on which to serve")
 
 	// Scratch flags. Gated by --scratch-enabled.
-	scratchEnabled      = flag.Bool("scratch-enabled", false, "register the scratch routes")
-	scratchZones        = flag.String("scratch-zones", "", "comma-separated, ordered list of GCE zones to try for scratch VMs (required when scratch enabled); first listed is preferred, later zones used only on stockout fallthrough")
-	scratchZone         = flag.String("scratch-zone", "", "GCE zone for scratch VMs (required when scratch enabled)")
-	scratchWorkerPort   = flag.Int("scratch-worker-port", 8080, "port the worker listens on")
-	scratchStandardTmpl = flag.String("scratch-instance-standard-template", "", "GCE instance template URL for the standard machine class (required when scratch enabled)")
-	scratchJumboTmpl    = flag.String("scratch-instance-jumbo-template", "", "GCE instance template URL for the jumbo machine class (optional)")
-	scratchOutputBucket = flag.String("scratch-output-bucket", "", "GCS bucket the broker writes exec output into (required when --scratch-enabled)")
+	scratchEnabled       = flag.Bool("scratch-enabled", false, "register the scratch routes")
+	scratchZones         = flag.String("scratch-zones", "", "comma-separated, ordered list of GCE zones to try for scratch VMs (required when scratch enabled); first listed is preferred, later zones used only on stockout fallthrough")
+	scratchWorkerPort    = flag.Int("scratch-worker-port", 8080, "port the worker listens on")
+	scratchStandardTmpl  = flag.String("scratch-instance-standard-template", "", "GCE instance template URL for the standard machine class (required when scratch enabled)")
+	scratchJumboTmpl     = flag.String("scratch-instance-jumbo-template", "", "GCE instance template URL for the jumbo machine class (optional)")
+	scratchOutputBucket  = flag.String("scratch-output-bucket", "", "GCS bucket the broker writes exec output into (required when --scratch-enabled)")
+	scratchIdleThreshold = flag.Duration("scratch-idle-threshold", 30*time.Minute, "scratches whose LastUsed is older than this and that have no in-deadline pending exec are reaped")
+	scratchOpDeadline    = flag.Duration("scratch-op-deadline", 2*time.Hour, "default and maximum exec duration, stamped on each exec; bounds how long a pending exec exempts its scratch from idle reaping")
 )
 
 // parseScratchZones splits --scratch-zones on commas, trimming whitespace
@@ -252,6 +253,7 @@ func ScratchExecCreateInit(ctx context.Context) (*agentapiservice.ScratchExecCre
 		Execs:        db.NewFirestoreScratchExecs(fs),
 		WorkerDialer: scratchWorkerDialer(ctx, *scratchWorkerPort),
 		OutputBucket: *scratchOutputBucket,
+		OpTimeout:    *scratchOpDeadline,
 	}, nil
 }
 
@@ -272,6 +274,29 @@ func ScratchExecGetInit(ctx context.Context) (*agentapiservice.ScratchExecGetDep
 	}, nil
 }
 
+func ScratchReapInit(ctx context.Context) (*agentapiservice.ScratchReapDeps, error) {
+	fs, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "firestore client")
+	}
+	gce, err := agentapiservice.NewComputeGCE(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "compute client")
+	}
+	gcs, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "storage client")
+	}
+	execs := db.NewFirestoreScratchExecs(fs)
+	return &agentapiservice.ScratchReapDeps{
+		Scratches:     db.NewFirestoreScratch(fs),
+		Execs:         execs,
+		GCE:           gce,
+		Syncer:        agentapiservice.NewGCSSyncer(gcs, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
+		IdleThreshold: *scratchIdleThreshold,
+	}, nil
+}
+
 func main() {
 	flag.Parse()
 	mux := http.NewServeMux()
@@ -284,6 +309,7 @@ func main() {
 		mux.HandleFunc("/scratch/delete", api.Handler(ScratchDeleteInit, agentapiservice.ScratchDelete))
 		mux.HandleFunc("/scratch/exec/op/create", api.Handler(ScratchExecCreateInit, agentapiservice.ScratchExecCreate))
 		mux.HandleFunc("/scratch/exec/op/get", api.Handler(ScratchExecGetInit, agentapiservice.ScratchExecGet))
+		mux.HandleFunc("/scratch/reap", api.Handler(ScratchReapInit, agentapiservice.ScratchReap))
 	}
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), mux); err != nil {

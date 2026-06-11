@@ -410,6 +410,14 @@ resource "google_cloud_run_v2_service_iam_member" "agent-calls-agent-api" {
   role     = "roles/run.invoker"
   member   = google_service_account.agent-job.member
 }
+resource "google_cloud_run_v2_service_iam_member" "orchestrator-calls-agent-api" {
+  count    = var.enable_scratch ? 1 : 0
+  location = google_cloud_run_v2_service.agent-api.location
+  project  = google_cloud_run_v2_service.agent-api.project
+  name     = google_cloud_run_v2_service.agent-api.name
+  role     = "roles/run.invoker"
+  member   = google_service_account.orchestrator.member
+}
 resource "google_storage_bucket_iam_member" "builder-agent-writes-metadata" {
   bucket = google_storage_bucket.agent-metadata.name
   role   = "roles/storage.objectCreator"

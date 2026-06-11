@@ -61,9 +61,14 @@ resource "google_compute_instance_template" "scratch-standard" {
   machine_type = "n2-standard-8"
   region       = "us-central1"
 
-  service_account {
-    email  = var.public ? "" : google_service_account.scratch-worker[0].email
-    scopes = var.public ? [] : ["https://www.googleapis.com/auth/devstorage.read_only"]
+  # NOTE: This block needs to be conditionally omitted to ensure an empty
+  # "email" field isn't interpreted as the default compute service account.
+  dynamic "service_account" {
+    for_each = var.public ? [] : [1]
+    content {
+      email  = google_service_account.scratch-worker[0].email
+      scopes = ["https://www.googleapis.com/auth/devstorage.read_only"]
+    }
   }
 
   disk {

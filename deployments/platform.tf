@@ -160,6 +160,25 @@ resource "google_app_engine_application" "dummy_app" {
   depends_on    = [google_project_service.gae]
 }
 
+# Composite index used by the reaper's ListIdleSince query
+resource "google_firestore_index" "scratch-state-last-used" {
+  count      = var.enable_scratch ? 1 : 0
+  collection = "scratch"
+  fields {
+    field_path = "state"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "last_used"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "__name__"
+    order      = "ASCENDING"
+  }
+  depends_on = [google_app_engine_application.dummy_app]
+}
+
 ## PubSub
 
 resource "google_pubsub_topic" "attestation-topic" {
@@ -336,4 +355,28 @@ resource "google_compute_firewall" "scratch-worker-ingress" {
   }
   source_ranges = [google_compute_subnetwork.subnet[0].ip_cidr_range]
   target_tags   = ["scratch"]
+}
+
+resource "google_project_service" "cloudscheduler" {
+  count   = var.enable_scratch ? 1 : 0
+  service = "cloudscheduler.googleapis.com"
+}
+
+resource "google_cloud_scheduler_job" "scratch-reap" {
+  count    = var.enable_scratch ? 1 : 0
+  name     = "${var.host}-scratch-reap"
+  schedule = "*/30 * * * *" # every 30 minutes
+  region   = "us-central1"
+  http_target {
+    uri         = "${google_cloud_run_v2_service.agent-api.uri}/scratch/reap"
+    http_method = "POST"
+    headers = {
+      "Content-Type" = "application/x-www-form-urlencoded"
+    }
+    oidc_token {
+      service_account_email = google_service_account.orchestrator.email
+      audience              = google_cloud_run_v2_service.agent-api.uri
+    }
+  }
+  depends_on = [google_project_service.cloudscheduler]
 }
