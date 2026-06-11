@@ -158,6 +158,14 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 		if err := wt.Checkout(&git.CheckoutOptions{Branch: plumbing.HEAD}); err != nil {
 			return nil, errors.Wrap(err, "checkout error")
 		}
+		s, err := wt.Submodules()
+		if err != nil {
+			return nil, errors.Wrap(err, "submodule loading error")
+		}
+		o := &git.SubmoduleUpdateOptions{Init: true, RecurseSubmodules: opt.RecurseSubmodules}
+		if err = s.UpdateContext(ctx, o); err != nil {
+			return nil, errors.Wrap(err, "submodule update error")
+		}
 	}
 	return repo, nil
 }
