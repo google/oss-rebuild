@@ -38,6 +38,7 @@ if [ -e /dev/nvme0n1 ]; then
 fi
 
 useradd --create-home --home-dir /home/builder --shell /bin/bash builder || true
+usermod -aG docker builder
 mkdir -p /opt/builder
 chown -R builder:builder /opt/builder /home/builder
 
