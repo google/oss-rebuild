@@ -11,14 +11,33 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-// ScratchExecs persists scratch-exec records. The broker inserts
-// pending execs and updates them as the worker progresses. The reaper
-// enumerates pending execs via ListPending.
+// ScratchExecs persists scratch-exec records. The broker inserts pending
+// execs; all terminal transitions go through Finalize. The interface
+// deliberately omits the raw Resource write methods: exec records race
+// concurrent finalizers (agent polls, the reaper, optimistic waits) and a
+// full-record overwrite from a stale base would clobber a committed
+// terminal state.
 type ScratchExecs interface {
-	Resource[schema.ScratchExec, string]
+	Get(ctx context.Context, id string) (schema.ScratchExec, error)
+	Insert(ctx context.Context, v schema.ScratchExec) error
+	// Finalize commits exec only if the stored record is still Pending,
+	// returning the stored record either way. A lost race returns the
+	// concurrent winner alongside ErrUnchanged, so terminal states are
+	// written exactly once.
+	Finalize(ctx context.Context, exec schema.ScratchExec) (schema.ScratchExec, error)
 	// ListPending returns all execs with State == Pending. Backed by a
 	// single-field index on "state" in Firestore.
 	ListPending(ctx context.Context) ([]schema.ScratchExec, error)
+}
+
+// finalizeExec implements Finalize over the generic Mutate primitive.
+func finalizeExec(ctx context.Context, r Resource[schema.ScratchExec, string], exec schema.ScratchExec) (schema.ScratchExec, error) {
+	return r.Mutate(ctx, exec.ID, func(cur schema.ScratchExec) (schema.ScratchExec, error) {
+		if cur.State != schema.ScratchExecPending {
+			return cur, ErrUnchanged
+		}
+		return exec, nil
+	})
 }
 
 const scratchExecCollection = "scratch-execs"
@@ -39,6 +58,10 @@ func NewFirestoreScratchExecs(c *firestore.Client) ScratchExecs {
 		},
 		client: c,
 	}
+}
+
+func (f *firestoreScratchExecs) Finalize(ctx context.Context, exec schema.ScratchExec) (schema.ScratchExec, error) {
+	return finalizeExec(ctx, f.firestoreResource, exec)
 }
 
 func (f *firestoreScratchExecs) ListPending(ctx context.Context) ([]schema.ScratchExec, error) {
@@ -75,6 +98,10 @@ func NewMemoryScratchExecs() ScratchExecs {
 			data: map[string]schema.ScratchExec{}, pathFor: scratchExecPath, pathForKey: scratchExecKey,
 		},
 	}
+}
+
+func (m *memoryScratchExecs) Finalize(ctx context.Context, exec schema.ScratchExec) (schema.ScratchExec, error) {
+	return finalizeExec(ctx, m.memoryResource, exec)
 }
 
 func (m *memoryScratchExecs) ListPending(ctx context.Context) ([]schema.ScratchExec, error) {

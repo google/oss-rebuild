@@ -42,8 +42,8 @@ type ScratchReapDeps struct {
 	// we capture the worker's final status while it's still reachable.
 	// nil disables; affected ops get finalized blind instead.
 	Syncer Syncer
-	// IdleThreshold: ready scratches with no in-deadline pending exec
-	// and LastUsed older than this get torn down.
+	// IdleThreshold: non-deleted scratches with no in-deadline pending
+	// exec and LastUsed older than this get torn down.
 	IdleThreshold time.Duration // default: 30m
 }
 
@@ -61,14 +61,23 @@ func deadlineFor(exec schema.ScratchExec) time.Time {
 	return exec.StartedAt.Add(time.Duration(exec.TimeoutSeconds)*time.Second + opDeadlineGrace)
 }
 
-// ScratchReap deletes idle scratches and finalizes obsolete ops.
-// A pending op inside its deadline exempts its scratch from idle teardown,
-// so raising the exec timeout — not the idle threshold — is how longer
-// executions are accommodated. Ops bound to a no-longer-Ready scratch are
-// marked Lost and expired ops are pulled through the worker for their real
-// final status before falling back to a blind TimedOut. Best-effort: each
-// item's failure is logged and the loop continues so a single bad row
-// can't block the rest.
+// ScratchReap deletes stale scratches and finalizes obsolete ops.
+//
+// Scratch teardown:
+//   - Stale covers idle Ready scratches and Starting/Deleting records
+//     stranded by crashed creates or failed teardowns.
+//   - A scratch is never torn down while an op may still be running on
+//     it (pending, within deadline). The idle threshold only applies
+//     once all ops have completed.
+//   - Deletes converge across passes since records only reach Deleted
+//     once the VM is confirmed gone.
+//
+// Op finalization:
+//   - Ops on a non-Ready scratch are marked Lost.
+//   - Expired ops are synced and finalized, marking them TimedOut if
+//     still incomplete.
+//
+// Best-effort: per-item failures are logged and the pass continues.
 func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDeps) (*ScratchReapResponse, error) {
 	now := time.Now().UTC()
 	idleCutoff := now.Add(-deps.idleThreshold())
@@ -92,41 +101,40 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 			busy[exec.ScratchID] = true
 		}
 	}
-	// Reap idle, non-busy scratches. Before tearing down each one, try
+	// Reap stale, non-busy scratches. Before tearing down a Ready one, try
 	// to sync any pending ops on it so we capture exit codes while the
-	// worker is still reachable.
-	idle, err := deps.Scratches.ListIdleSince(ctx, idleCutoff)
+	// worker is still reachable. Starting scratches never dispatched and
+	// Deleting ones already had their pre-teardown sync.
+	stale, err := deps.Scratches.ListIdleSince(ctx, idleCutoff)
 	if err != nil {
-		return nil, api.AsStatus(codes.Internal, pkgerrors.Wrap(err, "list idle scratches"))
+		return nil, api.AsStatus(codes.Internal, pkgerrors.Wrap(err, "list stale scratches"))
 	}
 	var scratchesReaped int
-	for _, scratch := range idle {
+	for _, scratch := range stale {
 		if busy[scratch.ID] {
 			continue
 		}
-		if deps.Syncer != nil {
+		if deps.Syncer != nil && scratch.State == schema.ScratchReady {
 			syncPendingFor(ctx, deps, scratch, pending)
 		}
 		// Re-check before the destructive step: an exec dispatched after
-		// the idle snapshot bumps LastUsed, and tearing down its scratch
-		// would orphan it.
+		// the stale snapshot bumps LastUsed, and a Starting scratch may
+		// have come Ready under a still-running create.
 		if cur, err := deps.Scratches.Get(ctx, scratch.ID); err != nil {
 			log.Printf("reap re-check scratch %s: %v", scratch.ID, err)
 			continue
-		} else if cur.State != schema.ScratchReady || !cur.LastUsed.Before(idleCutoff) {
+		} else if cur.State != scratch.State || !cur.LastUsed.Before(idleCutoff) {
 			continue
 		}
-		if err := teardownScratch(ctx, deps, scratch); err != nil {
-			log.Printf("reap teardown scratch %s: %v", scratch.ID, err)
+		if err := deleteScratch(ctx, deps.Scratches, deps.GCE, scratch); err != nil {
+			log.Printf("reap scratch %s: %v", scratch.ID, err)
 			continue
 		}
 		scratchesReaped++
 	}
 	// Sweep pending ops. Mark ops Lost whose scratch is gone and finalize
-	// expired ones. Re-list rather than reuse the earlier snapshot: the
-	// pre-teardown sync may have finalized ops, and Execs.Update is a
-	// full-record overwrite that would clobber those records with a stale
-	// Pending base.
+	// expired ones. Re-list rather than reuse the earlier snapshot so ops
+	// the pre-teardown sync already finalized are skipped up front.
 	pending, err = deps.Execs.ListPending(ctx)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, pkgerrors.Wrap(err, "list pending execs"))
@@ -140,7 +148,9 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		exec.State = next
 		exec.Error = errStatus
 		exec.FinishedAt = now
-		if err := deps.Execs.Update(ctx, exec); err != nil {
+		if _, err := deps.Execs.Finalize(ctx, exec); errors.Is(err, db.ErrUnchanged) {
+			continue // a concurrent finalizer won; its record stands
+		} else if err != nil {
 			log.Printf("reap finalize op %s: %v", exec.ID, err)
 			continue
 		}
@@ -211,21 +221,4 @@ func terminalStateFor(ctx context.Context, deps *ScratchReapDeps, exec schema.Sc
 		}
 	}
 	return schema.ScratchExecPending, nil
-}
-
-// teardownScratch mirrors ScratchDelete's GCE + state flow. Records
-// persist with state=Deleted for audit.
-func teardownScratch(ctx context.Context, deps *ScratchReapDeps, scratch schema.Scratch) error {
-	if err := deps.Scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleting); err != nil {
-		return pkgerrors.Wrap(err, "scratches update state deleting")
-	}
-	if scratch.VMName != "" {
-		if err := deps.GCE.DeleteInstance(ctx, scratch.Zone, scratch.VMName); err != nil {
-			log.Printf("reap DeleteInstance(%s): %v", scratch.VMName, err)
-		}
-	}
-	if err := deps.Scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleted); err != nil {
-		return pkgerrors.Wrap(err, "scratches update state deleted")
-	}
-	return nil
 }

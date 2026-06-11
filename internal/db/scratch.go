@@ -29,9 +29,10 @@ type Scratch interface {
 	UpdateState(ctx context.Context, scratchID string, s schema.ScratchState) error
 	// UpdateLastUsed sets the last_used field (and bumps `updated`).
 	UpdateLastUsed(ctx context.Context, scratchID string, t time.Time) error
-	// ListIdleSince returns scratches in state Ready whose LastUsed is
-	// strictly before t. Backed by a (state, last_used) composite index in
-	// Firestore.
+	// ListIdleSince returns non-deleted scratches whose LastUsed is strictly
+	// before t: idle Ready scratches plus Starting/Deleting records stranded
+	// by a crashed create or a failed teardown. Backed by a (state,
+	// last_used) composite index in Firestore.
 	ListIdleSince(ctx context.Context, t time.Time) ([]schema.Scratch, error)
 	Delete(ctx context.Context, scratchID string) error
 }
@@ -83,7 +84,11 @@ func (f *firestoreScratch) UpdateLastUsed(ctx context.Context, scratchID string,
 
 func (f *firestoreScratch) ListIdleSince(ctx context.Context, t time.Time) ([]schema.Scratch, error) {
 	q := f.client.Collection(scratchCollection).
-		Where("state", "==", string(schema.ScratchReady)).
+		Where("state", "in", []string{
+			string(schema.ScratchReady),
+			string(schema.ScratchStarting),
+			string(schema.ScratchDeleting),
+		}).
 		Where("last_used", "<", t.UTC())
 	iter := q.Documents(ctx)
 	defer iter.Stop()
@@ -167,7 +172,7 @@ func (m *memoryScratch) ListIdleSince(ctx context.Context, t time.Time) ([]schem
 	defer m.mu.Unlock()
 	var out []schema.Scratch
 	for _, e := range m.data {
-		if e.State == schema.ScratchReady && e.LastUsed.Before(t) {
+		if e.State != schema.ScratchDeleted && e.LastUsed.Before(t) {
 			out = append(out, e)
 		}
 	}

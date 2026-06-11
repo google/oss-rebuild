@@ -98,7 +98,7 @@ type ScratchDeleteDeps struct {
 //	InternalIP -> poll HealthProbe -> UpdateState(Ready) -> return.
 //
 // If any step fails after resources are created, best-effort teardown is
-// run and the record is marked Deleted (records persist for audit).
+// run (see deleteScratch; records persist for audit).
 func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *ScratchCreateDeps) (*schema.Scratch, error) {
 	class, err := selectClass(req.MachineClass, deps.Standard, deps.Jumbo)
 	if err != nil {
@@ -117,6 +117,10 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 		State:        schema.ScratchStarting,
 		Created:      now,
 		Updated:      now,
+		// Seeded at insert: Firestore range filters skip docs missing the
+		// field, which would hide a crashed create from the reaper's
+		// ListIdleSince query.
+		LastUsed: now,
 		// Zone is set after the fallthrough loop is able to allocate.
 	}
 	if err := deps.Scratches.Insert(ctx, scratch); err != nil {
@@ -126,16 +130,11 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 	// Best-effort teardown on failure past this point. scratch.Zone gates
 	// DeleteInstance: insertWithFallthrough sets it whenever a VM may
 	// exist (success, or non-stockout orphan), and leaves it "" when GCE
-	// semantics guarantee none (all-stockouts).
+	// semantics guarantee none (all-stockouts). On failure the record is
+	// left in Deleting for the reaper to retry.
 	cleanup := func() {
-		bg := context.Background()
-		if scratch.Zone != "" {
-			if err := deps.GCE.DeleteInstance(bg, scratch.Zone, scratch.VMName); err != nil {
-				log.Printf("teardown DeleteInstance(%s/%s): %v", scratch.Zone, scratch.VMName, err)
-			}
-		}
-		if err := deps.Scratches.UpdateState(bg, scratchID, schema.ScratchDeleted); err != nil {
-			log.Printf("teardown UpdateState(%s, Deleted): %v", scratchID, err)
+		if err := deleteScratch(context.Background(), deps.Scratches, deps.GCE, scratch); err != nil {
+			log.Printf("scratch %s teardown: %v", scratchID, err)
 		}
 	}
 
@@ -148,10 +147,6 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 
 	scratch.InternalIP = inst.InternalIP
 	scratch.Updated = time.Now().UTC()
-	// Seed LastUsed at provisioning so the reaper's ListIdleSince doesn't
-	// pick up a brand-new scratch whose zero-time LastUsed satisfies the
-	// "last_used < cutoff" filter.
-	scratch.LastUsed = scratch.Updated
 	if err := deps.Scratches.Update(ctx, scratch); err != nil {
 		cleanup()
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches update with IP"))
@@ -184,7 +179,8 @@ func ScratchGet(ctx context.Context, req schema.ScratchGetRequest, deps *Scratch
 
 // ScratchDelete tears down the GCE resources and records the scratch as
 // Deleted. The record itself is preserved for audit (a separate retention
-// sweep can later hard-delete via Scratches.Delete).
+// sweep can later hard-delete via Scratches.Delete). On a failed VM delete
+// the record stays Deleting and the reaper retries.
 func ScratchDelete(ctx context.Context, req schema.ScratchDeleteRequest, deps *ScratchDeleteDeps) (*schema.ScratchDeleteResponse, error) {
 	scratch, err := deps.Scratches.Get(ctx, req.ScratchID)
 	if err != nil {
@@ -193,19 +189,29 @@ func ScratchDelete(ctx context.Context, req schema.ScratchDeleteRequest, deps *S
 		}
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches get"))
 	}
-
-	if err := deps.Scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleting); err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches update state deleting"))
-	}
-	if scratch.VMName != "" {
-		if err := deps.GCE.DeleteInstance(ctx, scratch.Zone, scratch.VMName); err != nil {
-			log.Printf("DeleteInstance(%s): %v", scratch.VMName, err)
-		}
-	}
-	if err := deps.Scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleted); err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches update state deleted"))
+	if err := deleteScratch(ctx, deps.Scratches, deps.GCE, scratch); err != nil {
+		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "delete scratch"))
 	}
 	return &schema.ScratchDeleteResponse{ScratchID: scratch.ID, State: schema.ScratchDeleted}, nil
+}
+
+// deleteScratch is the shared teardown: Deleting -> DeleteInstance ->
+// Deleted. The record advances to Deleted only once the VM is confirmed
+// gone (DeleteInstance is idempotent), so any failure leaves it Deleting
+// and a later reap pass retries.
+func deleteScratch(ctx context.Context, scratches db.Scratch, gce GCE, scratch schema.Scratch) error {
+	if err := scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleting); err != nil {
+		return errors.Wrap(err, "update state deleting")
+	}
+	if scratch.VMName != "" && scratch.Zone != "" {
+		if err := gce.DeleteInstance(ctx, scratch.Zone, scratch.VMName); err != nil {
+			return errors.Wrap(err, "delete instance")
+		}
+	}
+	if err := scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleted); err != nil {
+		return errors.Wrap(err, "update state deleted")
+	}
+	return nil
 }
 
 func waitHealthy(ctx context.Context, deps *ScratchCreateDeps, ip string) error {

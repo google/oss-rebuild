@@ -185,12 +185,22 @@ func (g *computeGCE) StopInstance(ctx context.Context, zone, name string) error 
 	return g.waitZoneOp(ctx, zone, op)
 }
 
+// DeleteInstance is idempotent: deleting a missing instance succeeds, so
+// retried teardowns converge after a partially-observed earlier delete.
 func (g *computeGCE) DeleteInstance(ctx context.Context, zone, name string) error {
 	op, err := g.svc.Instances.Delete(g.project, zone, name).Context(ctx).Do()
+	if isNotFound(err) {
+		return nil
+	}
 	if err != nil {
 		return errors.Wrap(err, "instances.delete")
 	}
 	return g.waitZoneOp(ctx, zone, op)
+}
+
+func isNotFound(err error) bool {
+	var gerr *googleapi.Error
+	return errors.As(err, &gerr) && gerr.Code == 404
 }
 
 func (g *computeGCE) waitZoneOp(ctx context.Context, zone string, op *compute.Operation) error {
