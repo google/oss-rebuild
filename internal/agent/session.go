@@ -11,7 +11,7 @@ import (
 	"path"
 
 	gcs "cloud.google.com/go/storage"
-	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -48,8 +48,8 @@ type RunSessionReq struct {
 type RunSessionDeps struct {
 	Client        *genai.Client
 	GCSClient     *gcs.Client
-	IterationStub api.StubT[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse]
-	CompleteStub  api.StubT[schema.AgentCompleteRequest, schema.AgentCompleteResponse]
+	IterationStub api.StubFn[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse]
+	CompleteStub  api.StubFn[schema.AgentCompleteRequest, schema.AgentCompleteResponse]
 	// TODO: Should these be asset stores?
 	SessionsBucket string
 	MetadataBucket string

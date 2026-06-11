@@ -12,14 +12,14 @@ import (
 	"net/http"
 
 	"cloud.google.com/go/storage"
-	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
 const MAX_LOG_SIZE_BYTES = 10 * 1024 * 1024
 
-var _ api.HandlerT[LogsRequest, LogsData, *Deps] = Logs
+var _ api.HandlerFn[LogsRequest, LogsData, *Deps] = Logs
 
 type LogsRequest struct {
 	Ecosystem string

@@ -19,13 +19,13 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/act"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/local"
@@ -143,7 +143,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		StrategyHint: strategyHint,
 		// TODO: Add support providing dir and ref hints.
 	}
-	var stub api.StubT[schema.InferenceRequest, schema.StrategyOneOf]
+	var stub api.StubFn[schema.InferenceRequest, schema.StrategyOneOf]
 	if cfg.API != "" {
 		apiURL, err := url.Parse(cfg.API)
 		if err != nil {
@@ -162,7 +162,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		}
 		stub = api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, apiURL.JoinPath("/infer"))
 	} else {
-		var regstub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+		var regstub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 		if req.Ecosystem == rebuild.CratesIO {
 			err := os.MkdirAll("/tmp/crates-registry-cache", 0o755)
 			if err != nil {

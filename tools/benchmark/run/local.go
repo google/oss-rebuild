@@ -13,13 +13,13 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/verifier"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
@@ -34,7 +34,7 @@ type localExecutionService struct {
 	store              rebuild.LocatableAssetStore
 	logsink            io.Writer
 	gitCache           *gitcache.Client
-	cratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	cratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 	dockerConfig       local.DockerRunExecutorConfig
 }
 
@@ -43,7 +43,7 @@ type LocalExecutionServiceConfig struct {
 	Store              rebuild.LocatableAssetStore
 	LogSink            io.Writer
 	GitCache           *gitcache.Client
-	CratesRegistryStub api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 	DockerConfig       local.DockerRunExecutorConfig
 }
 

@@ -8,13 +8,13 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
 
-var _ api.HandlerT[AttemptRequest, AttemptData, *Deps] = Attempt
+var _ api.HandlerFn[AttemptRequest, AttemptData, *Deps] = Attempt
 
 type AttemptRequest struct {
 	Ecosystem string

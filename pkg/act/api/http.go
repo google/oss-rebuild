@@ -34,7 +34,12 @@ type HandlerFn[I act.Input, O any, D act.Deps] func(context.Context, I, D) (*O, 
 type StubFn[I act.Input, O any] func(context.Context, I) (*O, error)
 
 // Type aliases for convenience
-type NoDeps = act.NoDeps
+type (
+	Input    = act.Input
+	Deps     = act.Deps
+	NoDeps   = act.NoDeps
+	NoOutput = act.NoOutput
+)
 
 var NoDepsInit = act.NoDepsInit
 

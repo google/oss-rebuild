@@ -13,12 +13,12 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpegress"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/pkg/errors"
 	"google.golang.org/api/idtoken"
 	gapihttp "google.golang.org/api/transport/http"

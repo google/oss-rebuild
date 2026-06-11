@@ -7,7 +7,7 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
@@ -18,7 +18,7 @@ type AnalyzerDeps struct {
 	Findings     rebuild.LocatableAssetStore
 }
 
-func Analyze(ctx context.Context, e schema.AnalyzeRebuildRequest, deps *AnalyzerDeps) (*api.NoReturn, error) {
+func Analyze(ctx context.Context, e schema.AnalyzeRebuildRequest, deps *AnalyzerDeps) (*api.NoOutput, error) {
 	// =============================================
 	// ========== Implement analysis here ==========
 	// =============================================

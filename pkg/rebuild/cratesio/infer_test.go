@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -574,7 +574,7 @@ version = 3
 				mockStub := func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
 					return tc.registryResponse, nil
 				}
-				ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, api.StubT[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](mockStub))
+				ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](mockStub))
 			}
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repo, nil))
 			target := rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"}

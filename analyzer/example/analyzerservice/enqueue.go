@@ -7,8 +7,8 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/taskqueue"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
@@ -21,7 +21,7 @@ type EnqueueDeps struct {
 }
 
 // Enqueue sends an event to be analyzed.
-func Enqueue(ctx context.Context, e schema.TargetEvent, deps *EnqueueDeps) (*api.NoReturn, error) {
+func Enqueue(ctx context.Context, e schema.TargetEvent, deps *EnqueueDeps) (*api.NoOutput, error) {
 	if tracked, err := deps.Tracker.IsTracked(e); err != nil {
 		return nil, errors.Wrap(err, "checking if tracked")
 	} else if !tracked {

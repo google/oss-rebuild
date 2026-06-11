@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/pkg/errors"
 	"google.golang.org/api/idtoken"

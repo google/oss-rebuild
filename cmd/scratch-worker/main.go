@@ -15,9 +15,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/oss-rebuild/internal/api"
 	"github.com/google/oss-rebuild/internal/api/scratchworkerservice"
 	"github.com/google/oss-rebuild/internal/api/scratchworkerservice/idauth"
+	"github.com/google/oss-rebuild/pkg/act/api"
 )
 
 var (

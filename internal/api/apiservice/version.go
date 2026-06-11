@@ -8,13 +8,13 @@ import (
 	"errors"
 	"os"
 
-	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/grpc/codes"
 )
 
 type VersionDeps struct {
-	InferenceVersionStub api.StubT[schema.VersionRequest, schema.VersionResponse]
+	InferenceVersionStub api.StubFn[schema.VersionRequest, schema.VersionResponse]
 }
 
 func Version(ctx context.Context, req schema.VersionRequest, deps *VersionDeps) (*schema.VersionResponse, error) {

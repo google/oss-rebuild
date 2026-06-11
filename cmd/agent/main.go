@@ -11,7 +11,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/agent"
-	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/api/idtoken"

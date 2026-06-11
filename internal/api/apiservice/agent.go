@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
-	"github.com/google/oss-rebuild/internal/api"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
