@@ -173,6 +173,7 @@ type ScratchExecRequest struct {
 	Env            map[string]string `form:"env"`
 	StdinB64       string            `form:"stdin_b64"`
 	TimeoutSeconds int               `form:"timeout_seconds"`
+	WaitSeconds    int               `form:"wait_seconds"`
 }
 
 // Validate implements act.Input.
@@ -185,6 +186,9 @@ func (r ScratchExecRequest) Validate() error {
 	}
 	if r.TimeoutSeconds < 0 {
 		return errors.New("timeout_seconds must be >= 0")
+	}
+	if r.WaitSeconds < 0 {
+		return errors.New("wait_seconds must be >= 0")
 	}
 	return nil
 }

@@ -248,12 +248,18 @@ func ScratchExecCreateInit(ctx context.Context) (*agentapiservice.ScratchExecCre
 	if err != nil {
 		return nil, errors.Wrap(err, "firestore client")
 	}
+	gcs, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "storage client")
+	}
+	execs := db.NewFirestoreScratchExecs(fs)
 	return &agentapiservice.ScratchExecCreateDeps{
 		Scratches:    db.NewFirestoreScratch(fs),
-		Execs:        db.NewFirestoreScratchExecs(fs),
+		Execs:        execs,
 		WorkerDialer: scratchWorkerDialer(ctx, *scratchWorkerPort),
 		OutputBucket: *scratchOutputBucket,
 		OpTimeout:    *scratchOpDeadline,
+		Syncer:       agentapiservice.NewGCSSyncer(gcs, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
 	}, nil
 }
 

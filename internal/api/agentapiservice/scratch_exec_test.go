@@ -6,10 +6,13 @@ package agentapiservice
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -367,6 +370,203 @@ func TestScratchExecCreate_BumpsLastUsedOnSuccess(t *testing.T) {
 	after, _ := scratches.Get(context.Background(), "s-1")
 	if !after.LastUsed.After(before.LastUsed) {
 		t.Errorf("LastUsed before=%v after=%v; expected bump", before.LastUsed, after.LastUsed)
+	}
+}
+
+// stubOKClient answers every request with 200 {} in-process: a real
+// httptest server's transport goroutines would deadlock synctest bubble exit.
+type stubOKClient struct{}
+
+func (stubOKClient) Do(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader("{}")),
+	}, nil
+}
+
+func stubDialer() WorkerDialer {
+	return func(schema.Scratch) (httpx.BasicClient, *url.URL, error) {
+		u, _ := url.Parse("http://worker.invalid")
+		return stubOKClient{}, u, nil
+	}
+}
+
+type syncResult struct {
+	exec schema.ScratchExec
+	err  error
+}
+
+// seqSyncer returns its queued results in call order; the last repeats.
+type seqSyncer struct {
+	calls   int
+	results []syncResult
+}
+
+func (s *seqSyncer) Sync(_ context.Context, exec schema.ScratchExec, _ schema.Scratch) (schema.ScratchExec, error) {
+	i := min(s.calls, len(s.results)-1)
+	s.calls++
+	if r := s.results[i]; r.err != nil {
+		return exec, r.err
+	} else {
+		return r.exec, nil
+	}
+}
+
+// waitFixture mints a ready scratch and create deps wired with the
+// network-free stub dialer, suitable for use inside a synctest bubble.
+func waitFixture(t *testing.T, opID string, sync Syncer) (*ScratchExecCreateDeps, db.ScratchExecs) {
+	t.Helper()
+	scratches := db.NewMemoryScratch()
+	if err := scratches.Insert(context.Background(), schema.Scratch{
+		ID: "s-1", State: schema.ScratchReady, VMName: "vm-1", InternalIP: "10.0.0.1",
+		ObliviousID: "obid-s-1",
+	}); err != nil {
+		t.Fatalf("seed scratch: %v", err)
+	}
+	execs := db.NewMemoryScratchExecs()
+	return &ScratchExecCreateDeps{
+		Scratches:    scratches,
+		Execs:        execs,
+		WorkerDialer: stubDialer(),
+		OutputBucket: "test-output",
+		IDGen:        func() string { return opID },
+		Syncer:       sync,
+	}, execs
+}
+
+func TestScratchExecCreate_OptimisticWaitReturnsTerminal(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const opID = "op-wait-done"
+		sync := &seqSyncer{results: []syncResult{
+			{exec: schema.ScratchExec{ID: opID, ScratchID: "s-1", State: schema.ScratchExecCompleted}},
+		}}
+		deps, _ := waitFixture(t, opID, sync)
+
+		start := time.Now()
+		op, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+			ScratchID: "s-1", Cmd: []string{"true"}, WaitSeconds: 5,
+		}, deps)
+		if err != nil {
+			t.Fatalf("ScratchExecCreate: %v", err)
+		}
+		if !op.Done || op.Error != nil {
+			t.Errorf("op = %+v; want Done:true Error:nil", op)
+		}
+		if sync.calls != 1 {
+			t.Errorf("Sync calls = %d; want 1", sync.calls)
+		}
+		// Fast commands return on the first probe, not the full budget.
+		if elapsed := time.Since(start); elapsed != optimisticPollInterval {
+			t.Errorf("elapsed = %v; want %v (first poll)", elapsed, optimisticPollInterval)
+		}
+	})
+}
+
+// Sync errors during the optimistic wait are retried rather than finalized:
+// the wait is best-effort, so a transient sync failure shouldn't finalize an
+// op that a later poll could observe normally.
+func TestScratchExecCreate_OptimisticWaitToleratesEarlySyncError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const opID = "op-wait-race"
+		sync := &seqSyncer{results: []syncResult{
+			{err: errors.New("unknown op")},
+			{exec: schema.ScratchExec{ID: opID, ScratchID: "s-1", State: schema.ScratchExecCompleted}},
+		}}
+		deps, execs := waitFixture(t, opID, sync)
+
+		op, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+			ScratchID: "s-1", Cmd: []string{"true"}, WaitSeconds: 5,
+		}, deps)
+		if err != nil {
+			t.Fatalf("ScratchExecCreate: %v", err)
+		}
+		if !op.Done || op.Error != nil {
+			t.Errorf("op = %+v; want Done:true Error:nil", op)
+		}
+		if sync.calls != 2 {
+			t.Errorf("Sync calls = %d; want 2", sync.calls)
+		}
+		// The error must not have triggered a Lost finalization.
+		stored, gerr := execs.Get(context.Background(), opID)
+		if gerr != nil {
+			t.Fatalf("execs.Get: %v", gerr)
+		}
+		if stored.State != schema.ScratchExecPending {
+			t.Errorf("persisted State = %q; want pending (fake syncer doesn't persist; create must not finalize)", stored.State)
+		}
+	})
+}
+
+func TestScratchExecCreate_OptimisticWaitExpiresPending(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const opID = "op-wait-expire"
+		sync := &seqSyncer{results: []syncResult{
+			{exec: schema.ScratchExec{ID: opID, ScratchID: "s-1", State: schema.ScratchExecPending}},
+		}}
+		deps, _ := waitFixture(t, opID, sync)
+
+		start := time.Now()
+		op, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+			ScratchID: "s-1", Cmd: []string{"sleep", "999"}, WaitSeconds: 2,
+		}, deps)
+		if err != nil {
+			t.Fatalf("ScratchExecCreate: %v", err)
+		}
+		if op.Done || op.Error != nil {
+			t.Errorf("op = %+v; want Done:false Error:nil (still pending)", op)
+		}
+		if sync.calls == 0 {
+			t.Errorf("Sync calls = 0; want > 0")
+		}
+		if elapsed := time.Since(start); elapsed != 2*time.Second {
+			t.Errorf("elapsed = %v; want 2s (full wait budget)", elapsed)
+		}
+	})
+}
+
+func TestScratchExecCreate_OptimisticWaitClampedToMax(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const opID = "op-wait-clamp"
+		sync := &seqSyncer{results: []syncResult{
+			{exec: schema.ScratchExec{ID: opID, ScratchID: "s-1", State: schema.ScratchExecPending}},
+		}}
+		deps, _ := waitFixture(t, opID, sync)
+
+		start := time.Now()
+		op, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+			ScratchID: "s-1", Cmd: []string{"sleep", "999"}, WaitSeconds: 3600,
+		}, deps)
+		if err != nil {
+			t.Fatalf("ScratchExecCreate: %v", err)
+		}
+		if op.Done {
+			t.Errorf("Done = true; want false (still pending)")
+		}
+		if elapsed := time.Since(start); elapsed != optimisticWaitMax {
+			t.Errorf("elapsed = %v; want %v (clamped)", elapsed, optimisticWaitMax)
+		}
+	})
+}
+
+func TestScratchExecCreate_NoWaitSkipsSyncer(t *testing.T) {
+	const opID = "op-no-wait"
+	sync := &seqSyncer{results: []syncResult{
+		{exec: schema.ScratchExec{ID: opID, ScratchID: "s-1", State: schema.ScratchExecCompleted}},
+	}}
+	deps, _ := waitFixture(t, opID, sync)
+
+	op, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+		ScratchID: "s-1", Cmd: []string{"true"},
+	}, deps)
+	if err != nil {
+		t.Fatalf("ScratchExecCreate: %v", err)
+	}
+	if op.Done {
+		t.Errorf("Done = true; want false (no wait requested)")
+	}
+	if sync.calls != 0 {
+		t.Errorf("Sync calls = %d; want 0", sync.calls)
 	}
 }
 
