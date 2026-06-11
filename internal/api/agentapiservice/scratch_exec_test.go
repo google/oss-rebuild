@@ -258,18 +258,18 @@ func TestScratchExecCreate_DialerFailureReturnsAPIError(t *testing.T) {
 	}
 }
 
-// faultingExecs wraps db.ScratchExecs and forces Update to fail with the
+// faultingExecs wraps db.ScratchExecs and forces Finalize to fail with the
 // configured error. Insert and Get pass through unchanged.
 type faultingExecs struct {
 	db.ScratchExecs
-	updateErr error
+	finalizeErr error
 }
 
-func (f *faultingExecs) Update(ctx context.Context, e schema.ScratchExec) error {
-	if f.updateErr != nil {
-		return f.updateErr
+func (f *faultingExecs) Finalize(ctx context.Context, e schema.ScratchExec) (schema.ScratchExec, error) {
+	if f.finalizeErr != nil {
+		return schema.ScratchExec{}, f.finalizeErr
 	}
-	return f.ScratchExecs.Update(ctx, e)
+	return f.ScratchExecs.Finalize(ctx, e)
 }
 
 // TestScratchExecCreate_FinalizePersistFailureSurfacesAPIError covers the
@@ -286,7 +286,7 @@ func TestScratchExecCreate_FinalizePersistFailureSurfacesAPIError(t *testing.T) 
 	_ = scratches.Insert(context.Background(), schema.Scratch{
 		ID: "s-1", State: schema.ScratchReady, ObliviousID: "obid-s-1",
 	})
-	execs := &faultingExecs{ScratchExecs: db.NewMemoryScratchExecs(), updateErr: errors.New("firestore boom")}
+	execs := &faultingExecs{ScratchExecs: db.NewMemoryScratchExecs(), finalizeErr: errors.New("firestore boom")}
 	deps := &ScratchExecCreateDeps{
 		Scratches:    scratches,
 		Execs:        execs,
@@ -593,8 +593,8 @@ func TestScratchExecGet_RoundTrip(t *testing.T) {
 	final, _ := execs.Get(context.Background(), opID)
 	final.State = schema.ScratchExecCompleted
 	final.ExitCode = 0
-	if err := execs.Update(context.Background(), final); err != nil {
-		t.Fatalf("Update final: %v", err)
+	if _, err := execs.Finalize(context.Background(), final); err != nil {
+		t.Fatalf("Finalize: %v", err)
 	}
 
 	op, err = ScratchExecGet(context.Background(), schema.GetOperationRequest{ID: opID}, getDeps)

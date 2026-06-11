@@ -333,7 +333,7 @@ func TestScratchReap_StampedTimeoutExpiryFinalizesTimedOut(t *testing.T) {
 	}
 }
 
-// persistingSyncer finalizes the exec via Execs.Update, mimicking the
+// persistingSyncer finalizes the exec via Execs.Finalize, mimicking the
 // production gcsSyncer observing the worker's Done transition.
 type persistingSyncer struct {
 	execs db.ScratchExecs
@@ -344,10 +344,7 @@ func (p *persistingSyncer) Sync(ctx context.Context, exec schema.ScratchExec, _ 
 	p.calls++
 	exec.State = schema.ScratchExecCompleted
 	exec.FinishedAt = time.Now().UTC()
-	if err := p.execs.Update(ctx, exec); err != nil {
-		return exec, err
-	}
-	return exec, nil
+	return p.execs.Finalize(ctx, exec)
 }
 
 // An expired op on a reachable scratch is pulled through the worker: the

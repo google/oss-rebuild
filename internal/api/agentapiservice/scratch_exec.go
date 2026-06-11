@@ -463,16 +463,21 @@ func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch s
 	default:
 		final.State = schema.ScratchExecCompleted
 	}
-	if err := s.execs.Update(ctx, final); err != nil {
-		return exec, errors.Wrap(err, "execs update final")
+	// Finalize is a CAS on Pending: a concurrent finalizer (reaper sweep,
+	// another poll) may have won, in which case its record stands and is
+	// what we project.
+	won, err := s.execs.Finalize(ctx, final)
+	if err != nil && !errors.Is(err, db.ErrUnchanged) {
+		return exec, errors.Wrap(err, "execs finalize")
 	}
-	return final, nil
+	return won, nil
 }
 
 // finalize transitions exec to Lost with the given status and persists it;
-// idempotent against already-terminal records. On persist failure callers must
-// surface the error rather than project the unpersisted state, or the API
-// response will disagree with what subsequent Gets read from storage.
+// idempotent against already-terminal records: a concurrently-committed
+// terminal record wins and is returned instead. On persist failure callers
+// must surface the error rather than project the unpersisted state, or the
+// API response will disagree with what subsequent Gets read from storage.
 func finalize(ctx context.Context, execs db.ScratchExecs, exec schema.ScratchExec, st *schema.Status) (schema.ScratchExec, error) {
 	if exec.State != schema.ScratchExecPending {
 		return exec, nil
@@ -480,10 +485,11 @@ func finalize(ctx context.Context, execs db.ScratchExecs, exec schema.ScratchExe
 	exec.State = schema.ScratchExecLost
 	exec.Error = st
 	exec.FinishedAt = time.Now().UTC()
-	if err := execs.Update(ctx, exec); err != nil {
-		return exec, errors.Wrap(err, "finalize update")
+	won, err := execs.Finalize(ctx, exec)
+	if err != nil && !errors.Is(err, db.ErrUnchanged) {
+		return exec, errors.Wrap(err, "finalize")
 	}
-	return exec, nil
+	return won, nil
 }
 
 // outObjectFor returns the GCS object name for an op's merged output.

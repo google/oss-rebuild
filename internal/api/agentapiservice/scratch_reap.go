@@ -133,10 +133,8 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		scratchesReaped++
 	}
 	// Sweep pending ops. Mark ops Lost whose scratch is gone and finalize
-	// expired ones. Re-list rather than reuse the earlier snapshot: the
-	// pre-teardown sync may have finalized ops, and Execs.Update is a
-	// full-record overwrite that would clobber those records with a stale
-	// Pending base.
+	// expired ones. Re-list rather than reuse the earlier snapshot so ops
+	// the pre-teardown sync already finalized are skipped up front.
 	pending, err = deps.Execs.ListPending(ctx)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, pkgerrors.Wrap(err, "list pending execs"))
@@ -150,7 +148,9 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		exec.State = next
 		exec.Error = errStatus
 		exec.FinishedAt = now
-		if err := deps.Execs.Update(ctx, exec); err != nil {
+		if _, err := deps.Execs.Finalize(ctx, exec); errors.Is(err, db.ErrUnchanged) {
+			continue // a concurrent finalizer won; its record stands
+		} else if err != nil {
 			log.Printf("reap finalize op %s: %v", exec.ID, err)
 			continue
 		}
