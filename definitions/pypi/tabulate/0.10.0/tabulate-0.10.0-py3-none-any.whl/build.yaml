@@ -17,10 +17,3 @@ custom_stabilizers:
       _core_metadata wrote them through to the wheel verbatim. On Linux the
       same README has LF, so the rebuild produces LF-only METADATA. Normalise
       to LF for comparison (build metadata, not packaged code).
-  - replace_pattern:
-      paths: ["*/RECORD"]
-      pattern: "(?m)^.*METADATA.*\n"
-      replace: ""
-    reason: |
-      RECORD records each file's sha256+size at write time. After METADATA
-      is normalised, its RECORD entry differs across builds. Drop the line.

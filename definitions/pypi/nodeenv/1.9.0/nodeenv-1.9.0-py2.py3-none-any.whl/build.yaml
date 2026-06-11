@@ -17,11 +17,3 @@ custom_stabilizers:
       from a working tree where AUTHORS had been updated locally before
       packaging. AUTHORS is in dist-info (build metadata, not packaged
       code) so masking is acceptable here.
-  - replace_pattern:
-      paths: ["*/RECORD"]
-      pattern: "(?m)^.*AUTHORS.*\n"
-      replace: ""
-    reason: |
-      RECORD records sha256+size at wheel-build time. After AUTHORS is
-      excluded from comparison, its precomputed RECORD line still
-      differs across builds. Drop the line so RECORD compares equal.
