@@ -76,7 +76,7 @@ func diffStrategies(man, inf rebuild.Strategy) ([]diff, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, k := range []string{"src", "deps", "build"} {
+	for _, k := range []string{"src", "deps", "build", "requires"} {
 		delete(mm, k)
 		delete(im, k)
 	}
@@ -127,7 +127,9 @@ func diffMaps(prefix string, a, b map[string]any) []diff {
 		}
 		if la, ok := asSlice[string](va); ok {
 			if lb, ok := asSlice[string](vb); ok {
-				out = append(out, diff{field: path, body: setDiff(la, lb)})
+				if body := setDiff(la, lb); body != "" {
+					out = append(out, diff{field: path, body: body})
+				}
 				continue
 			}
 		}
@@ -163,6 +165,9 @@ func setDiff[T comparable](man, inf []T) string {
 	if len(removed) > 0 {
 		parts = append(parts, "removed "+strings.Join(removed, ", "))
 	}
+	if len(parts) == 0 {
+		return ""
+	}
 	return strings.Join(parts, "; ") + " (vs inferred)"
 }
 
@@ -182,6 +187,17 @@ func renderedPhaseDiffs(man, inf *rebuild.WorkflowStrategy) ([]diff, error) {
 		return nil, fmt.Errorf("rendering inferred: %w", err)
 	}
 	var out []diff
+	// Compare requirements post-resolution: both sides' effective system deps
+	// merge the explicit `requires` field with the Needs of any tools used.
+	if body := setDiff(manInst.Requires.SystemDeps, infInst.Requires.SystemDeps); body != "" {
+		out = append(out, diff{field: "requires.system_deps", body: body})
+	}
+	if manInst.Requires.Privileged != infInst.Requires.Privileged {
+		out = append(out, diff{
+			field: "requires.privileged",
+			body:  fmt.Sprintf("%t (inferred: %t)", manInst.Requires.Privileged, infInst.Requires.Privileged),
+		})
+	}
 	for _, ph := range []struct{ name, man, inf string }{
 		{"source", manInst.Source, infInst.Source},
 		{"deps", manInst.Deps, infInst.Deps},
