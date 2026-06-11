@@ -108,14 +108,15 @@ type ExecStatus struct {
 // broker pulls Status and Output on its own cadence (agent-poll-driven
 // + reaper sweep).
 type execEntry struct {
-	startedAt  time.Time
-	finishedAt time.Time
-	file       *os.File // merged stdout+stderr; lifetime = env lifetime
-	totalBytes int64    // updated under mu after each runCommand returns
-	done       bool
-	exitCode   int
-	timedOut   bool
-	errMsg     string
+	startedAt      time.Time
+	finishedAt     time.Time
+	timeoutSeconds int      // worker-enforced bound; 0 = unbounded, exempt from gc
+	file           *os.File // merged stdout+stderr; released by gc after retention lapses
+	totalBytes     int64    // updated under mu after each runCommand returns
+	done           bool
+	exitCode       int
+	timedOut       bool
+	errMsg         string
 }
 
 // ExecStore tracks per-opID state in the worker process. Concurrent
@@ -130,10 +131,33 @@ type ExecStore struct {
 // NewExecStore returns an empty ExecStore.
 func NewExecStore() *ExecStore { return &ExecStore{entries: map[string]*execEntry{}} }
 
-func (s *ExecStore) create(opID string, f *os.File, started time.Time) {
+func (s *ExecStore) create(opID string, f *os.File, started time.Time, timeoutSeconds int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.entries[opID] = &execEntry{startedAt: started, file: f}
+	s.gc(started)
+	s.entries[opID] = &execEntry{startedAt: started, timeoutSeconds: timeoutSeconds, file: f}
+}
+
+// gcGrace extends retention past each op's timeout so late broker pulls
+// (e.g. the reaper's pull-through) still find the entry.
+const gcGrace = time.Hour
+
+// gc releases done entries and their temp files once startedAt + timeout
+// + gcGrace has lapsed. Unbounded entries (timeoutSeconds 0) are never
+// collected, mirroring the reaper. Must hold mu.
+func (s *ExecStore) gc(now time.Time) {
+	for opID, e := range s.entries {
+		if !e.done || e.timeoutSeconds <= 0 {
+			continue
+		}
+		if now.After(e.startedAt.Add(time.Duration(e.timeoutSeconds)*time.Second + gcGrace)) {
+			delete(s.entries, opID)
+			if e.file != nil {
+				_ = e.file.Close()
+				_ = os.Remove(e.file.Name())
+			}
+		}
+	}
 }
 
 // finish records the op's terminal state.
@@ -153,20 +177,6 @@ func (s *ExecStore) finish(opID string, exitCode int, runErr error, totalBytes i
 	}
 	e.finishedAt = time.Now().UTC()
 	e.totalBytes = totalBytes
-}
-
-// Forget releases the entry and its temp file. Called when the broker
-// has finalized the op via Firestore Update; the file is no longer
-// needed. Best-effort; missing entry is not an error.
-func (s *ExecStore) Forget(opID string) {
-	s.mu.Lock()
-	e, ok := s.entries[opID]
-	delete(s.entries, opID)
-	s.mu.Unlock()
-	if ok {
-		_ = e.file.Close()
-		_ = os.Remove(e.file.Name())
-	}
 }
 
 // status returns a snapshot of the op's state. Returns (ExecStatus{}, false)
@@ -270,9 +280,9 @@ func ExecStart(_ context.Context, req StartRequest, deps *ExecDeps) (*act.NoOutp
 		return nil, errors.Wrap(err, "open temp file")
 	}
 	// NOTE: the file outlives this function. The broker can /output
-	// pull from it any time after we return. ExecStore.Forget (called
-	// after broker finalizes) is what closes + removes it.
-	deps.Store.create(req.OpID, outF, time.Now().UTC())
+	// pull from it any time after we return; ExecStore.gc closes +
+	// removes it once the op's retention lapses.
+	deps.Store.create(req.OpID, outF, time.Now().UTC(), req.TimeoutSeconds)
 	go finalizeExec(req, outF, deps)
 	return &act.NoOutput{}, nil
 }
