@@ -136,7 +136,8 @@ func (s *ExecStore) create(opID string, f *os.File, started time.Time) {
 	s.entries[opID] = &execEntry{startedAt: started, file: f}
 }
 
-func (s *ExecStore) finish(opID string, exitCode int, timedOut bool, errMsg string, totalBytes int64) {
+// finish records the op's terminal state.
+func (s *ExecStore) finish(opID string, exitCode int, runErr error, totalBytes int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	e, ok := s.entries[opID]
@@ -145,8 +146,11 @@ func (s *ExecStore) finish(opID string, exitCode int, timedOut bool, errMsg stri
 	}
 	e.done = true
 	e.exitCode = exitCode
-	e.timedOut = timedOut
-	e.errMsg = errMsg
+	e.timedOut = errors.Is(runErr, context.DeadlineExceeded)
+	// Timeout error message dropped for brevity.
+	if runErr != nil && !e.timedOut {
+		e.errMsg = runErr.Error()
+	}
 	e.finishedAt = time.Now().UTC()
 	e.totalBytes = totalBytes
 }
@@ -290,7 +294,7 @@ func finalizeExec(req StartRequest, outF *os.File, deps *ExecDeps) {
 		if size != nil {
 			totalBytes = size.Size()
 		}
-		deps.Store.finish(req.OpID, 0, false, "decode stdin: "+err.Error(), totalBytes)
+		deps.Store.finish(req.OpID, 0, errors.Wrap(err, "decode stdin"), totalBytes)
 		return
 	}
 
@@ -312,14 +316,7 @@ func finalizeExec(req StartRequest, outF *os.File, deps *ExecDeps) {
 	if statErr == nil {
 		total = info.Size()
 	}
-	// A timeout is fully described by exit 124 + the TimedOut flag; we
-	// suppress the DeadlineExceeded error message to avoid double-reporting.
-	timedOut := errors.Is(runErr, context.DeadlineExceeded)
-	var msg string
-	if runErr != nil && !timedOut {
-		msg = errors.Wrap(runErr, "run").Error()
-	}
-	deps.Store.finish(req.OpID, code, timedOut, msg, total)
+	deps.Store.finish(req.OpID, code, errors.Wrap(runErr, "run"), total)
 }
 
 type StatusDeps struct {
