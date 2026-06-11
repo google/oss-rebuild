@@ -37,16 +37,19 @@ type ScratchExecCreateDeps struct {
 }
 
 // ScratchExecGetDeps wires ScratchExecGet.
-//
-// TODO(streaming-sync): ScratchExecGet today only fetches the worker
-// output on the Done transition (one-shot sync). A follow-up PR
-// introduces a Syncer interface for per-poll partial syncs (live tail).
 type ScratchExecGetDeps struct {
-	Scratches    db.Scratch
-	Execs        db.ScratchExecs
-	WorkerDialer WorkerDialer
-	GCS          *storage.Client // to write the op output. Disabled on nil
-	OutputBucket string
+	Scratches db.Scratch
+	Execs     db.ScratchExecs
+	Syncer    Syncer // to sync the op output. Disabled on nil
+}
+
+// Syncer abstracts the broker-side fetch-and-persist loop. The
+// production impl pulls /exec/op/status and /exec/op/output from the
+// worker, overwrites the op's GCS object with the full buffer (when
+// new bytes are available), and updates Firestore on the Done
+// transition.
+type Syncer interface {
+	Sync(ctx context.Context, exec schema.ScratchExec, scratch schema.Scratch) (schema.ScratchExec, error)
 }
 
 // ProjectScratchExec adapts the stored exec record to its long-running-operation
@@ -158,19 +161,17 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 	return &op, nil
 }
 
-// ScratchExecGet returns the current state of an exec op. If the op is pending
-// and a GCS client is configured, ScratchExecGet polls the worker for status;
-// on the Done transition it fetches the full output buffer, writes it to GCS
-// once, and finalizes the Firestore record.
+// ScratchExecGet returns the current state of an exec op. If the op is
+// pending and a Syncer is configured, ScratchExecGet triggers a sync:
+// pulling the worker's latest status + any new output bytes, rolling
+// those bytes into the op's GCS object, and (on the Done transition)
+// finalizing Firestore.
 //
 // Sync errors follow the last-error-is-final policy: any failure to reach the
 // worker, read its state, or persist the output transitions the exec to Failed
 // immediately. We deliberately do not retry transient errors. For in-VPC
 // broker→worker traffic the blip rate is low enough that an occasional false
 // Failed is the right cost vs. an exec that lingers in Pending indefinitely.
-//
-// TODO(streaming-sync): replace the on-Done one-shot below with a Syncer-based
-// per-poll sync so agents get live tail behavior.
 func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *ScratchExecGetDeps) (*longrunning.Operation[schema.ScratchExecResult], error) {
 	exec, err := deps.Execs.Get(ctx, req.ID)
 	if err != nil {
@@ -179,7 +180,7 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 		}
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "execs get"))
 	}
-	if exec.State != schema.ScratchExecPending || deps.GCS == nil || exec.ScratchID == "" {
+	if exec.State != schema.ScratchExecPending || deps.Syncer == nil || exec.ScratchID == "" {
 		op := ProjectScratchExec(exec)
 		return &op, nil
 	}
@@ -210,7 +211,7 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 		return &op, nil
 	}
 
-	synced, err := syncOnDone(ctx, deps, exec, scratch)
+	synced, err := deps.Syncer.Sync(ctx, exec, scratch)
 	if err != nil {
 		log.Printf("exec %q: sync: %v", exec.ID, err)
 		exec, ferr := finalize(ctx, deps.Execs, exec, &schema.Status{
@@ -227,31 +228,63 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 	return &op, nil
 }
 
-// syncOnDone polls the worker for status. If Done, it fetches the full output
-// buffer, writes it to GCS, and finalizes the Firestore record. Returns the
-// (possibly updated) exec on success; on any error the exec is unchanged and
-// the caller decides whether to finalize.
-func syncOnDone(ctx context.Context, deps *ScratchExecGetDeps, exec schema.ScratchExec, scratch schema.Scratch) (schema.ScratchExec, error) {
-	client, baseURL, err := deps.WorkerDialer(scratch)
+// gcsSyncer pulls from the worker's /status + /output endpoints and
+// overwrites the op's GCS object with the full buffer on every poll
+// that has new bytes.
+//
+// TODO(streaming): the worker JSON-encodes the entire stdout+stderr
+// buffer per poll today (see scratchworkerservice.OutputRequest). Once
+// act gains a streaming-response model, switch to incremental tail
+// fetches + rolling Compose.
+type gcsSyncer struct {
+	gcs          *storage.Client
+	bucket       string
+	execs        db.ScratchExecs
+	workerDialer WorkerDialer
+}
+
+// NewGCSSyncer returns a Syncer that overwrites the op's GCS object
+// with the full worker buffer when new bytes are available, and
+// finalizes Firestore on the Done transition.
+func NewGCSSyncer(gcs *storage.Client, bucket string, execs db.ScratchExecs, wd WorkerDialer) Syncer {
+	return &gcsSyncer{gcs: gcs, bucket: bucket, execs: execs, workerDialer: wd}
+}
+
+func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch schema.Scratch) (schema.ScratchExec, error) {
+	client, baseURL, err := s.workerDialer(scratch)
 	if err != nil {
 		return exec, errors.Wrap(err, "worker client")
 	}
+
 	statusStub := api.Stub[scratchworkerservice.StatusRequest, scratchworkerservice.ExecStatus](client, baseURL.JoinPath("exec/op/status"))
 	status, err := statusStub(ctx, scratchworkerservice.StatusRequest{ID: exec.ID})
 	if err != nil {
 		return exec, errors.Wrap(err, "worker status")
 	}
-	if !status.Done {
-		return exec, nil
+
+	// Only round-trip the full buffer if the worker has more bytes than GCS
+	// does. The status call's TotalBytes is cheap; /output is O(buffer).
+	out := s.gcs.Bucket(s.bucket).Object(outObjectFor(scratch.ObliviousID, exec.ID))
+	var currentSize int64
+	if attrs, err := out.Attrs(ctx); err == nil {
+		currentSize = attrs.Size
+	} else if !errors.Is(err, storage.ErrObjectNotExist) {
+		return exec, errors.Wrap(err, "stat out")
 	}
 
-	outputStub := api.Stub[scratchworkerservice.OutputRequest, scratchworkerservice.OutputResponse](client, baseURL.JoinPath("exec/op/output"))
-	body, err := outputStub(ctx, scratchworkerservice.OutputRequest{ID: exec.ID})
-	if err != nil {
-		return exec, errors.Wrap(err, "worker output")
+	if status.TotalBytes > currentSize {
+		outputStub := api.Stub[scratchworkerservice.OutputRequest, scratchworkerservice.OutputResponse](client, baseURL.JoinPath("exec/op/output"))
+		body, err := outputStub(ctx, scratchworkerservice.OutputRequest{ID: exec.ID})
+		if err != nil {
+			return exec, errors.Wrap(err, "worker output")
+		}
+		if err := s.writeOut(ctx, scratch.ObliviousID, exec.ID, body.Bytes); err != nil {
+			return exec, errors.Wrap(err, "write out")
+		}
 	}
-	if err := writeOut(ctx, deps.GCS, deps.OutputBucket, scratch.ObliviousID, exec.ID, body.Bytes); err != nil {
-		return exec, errors.Wrap(err, "write out")
+
+	if !status.Done {
+		return exec, nil
 	}
 
 	final := exec
@@ -281,7 +314,7 @@ func syncOnDone(ctx context.Context, deps *ScratchExecGetDeps, exec schema.Scrat
 	default:
 		final.State = schema.ScratchExecCompleted
 	}
-	if err := deps.Execs.Update(ctx, final); err != nil {
+	if err := s.execs.Update(ctx, final); err != nil {
 		return exec, errors.Wrap(err, "execs update final")
 	}
 	return final, nil
@@ -314,11 +347,11 @@ func outURIFor(bucket, obliviousID, opID string) string {
 	return "gs://" + bucket + "/" + outObjectFor(obliviousID, opID)
 }
 
-func writeOut(ctx context.Context, gcs *storage.Client, bucket, obliviousID, opID string, buf []byte) error {
+func (s *gcsSyncer) writeOut(ctx context.Context, obliviousID, opID string, buf []byte) error {
 	if len(buf) == 0 {
 		return nil
 	}
-	out := gcs.Bucket(bucket).Object(outObjectFor(obliviousID, opID))
+	out := s.gcs.Bucket(s.bucket).Object(outObjectFor(obliviousID, opID))
 	w := out.NewWriter(ctx)
 	if _, err := bytes.NewReader(buf).WriteTo(w); err != nil {
 		_ = w.Close()

@@ -365,6 +365,101 @@ func TestScratchExecGet_RoundTrip(t *testing.T) {
 	}
 }
 
+// fakeSyncer captures Sync calls and returns a canned exec.
+type fakeSyncer struct {
+	calls   int
+	returns schema.ScratchExec
+	err     error
+}
+
+func (f *fakeSyncer) Sync(_ context.Context, _ schema.ScratchExec, _ schema.Scratch) (schema.ScratchExec, error) {
+	f.calls++
+	return f.returns, f.err
+}
+
+func TestScratchExecGet_PendingTriggersSync(t *testing.T) {
+	const opID = "op-sync"
+	fw := newFakeWorker(t)
+	createDeps, getDeps, _, _ := fixture(t, opID, fw)
+
+	if _, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+		ScratchID: "s-1", Cmd: []string{"true"},
+	}, createDeps); err != nil {
+		t.Fatalf("ScratchExecCreate: %v", err)
+	}
+
+	// Inject a fake Syncer that flips the exec to Completed.
+	sync := &fakeSyncer{returns: schema.ScratchExec{
+		ID: opID, ScratchID: "s-1", State: schema.ScratchExecCompleted,
+	}}
+	getDeps.Syncer = sync
+
+	op, err := ScratchExecGet(context.Background(), schema.GetOperationRequest{ID: opID}, getDeps)
+	if err != nil {
+		t.Fatalf("ScratchExecGet: %v", err)
+	}
+	if sync.calls != 1 {
+		t.Errorf("Sync calls = %d; want 1", sync.calls)
+	}
+	if !op.Done {
+		t.Errorf("Done = false; want true (Syncer returned terminal)")
+	}
+}
+
+func TestScratchExecGet_TerminalRecordSkipsSync(t *testing.T) {
+	const opID = "op-already-done"
+	fw := newFakeWorker(t)
+	_, getDeps, _, execs := fixture(t, opID, fw)
+	if err := execs.Insert(context.Background(), schema.ScratchExec{
+		ID: opID, ScratchID: "s-1", State: schema.ScratchExecCompleted,
+	}); err != nil {
+		t.Fatalf("seed exec: %v", err)
+	}
+	sync := &fakeSyncer{}
+	getDeps.Syncer = sync
+
+	op, err := ScratchExecGet(context.Background(), schema.GetOperationRequest{ID: opID}, getDeps)
+	if err != nil {
+		t.Fatalf("ScratchExecGet: %v", err)
+	}
+	if sync.calls != 0 {
+		t.Errorf("Sync calls = %d; want 0 (already terminal)", sync.calls)
+	}
+	if !op.Done {
+		t.Errorf("Done = false; want true")
+	}
+}
+
+// Under the last-error-is-final policy, a sync error finalizes the exec as
+// Lost on the first failure rather than re-polling. Verifies the resulting
+// Operation is Done with an Unavailable error and the record on storage agrees.
+func TestScratchExecGet_SyncErrorFinalizesLost(t *testing.T) {
+	const opID = "op-sync-err"
+	fw := newFakeWorker(t)
+	createDeps, getDeps, _, execs := fixture(t, opID, fw)
+	if _, err := ScratchExecCreate(context.Background(), schema.ScratchExecRequest{
+		ScratchID: "s-1", Cmd: []string{"true"},
+	}, createDeps); err != nil {
+		t.Fatalf("ScratchExecCreate: %v", err)
+	}
+	getDeps.Syncer = &fakeSyncer{err: errors.New("worker unreachable")}
+
+	op, err := ScratchExecGet(context.Background(), schema.GetOperationRequest{ID: opID}, getDeps)
+	if err != nil {
+		t.Fatalf("ScratchExecGet: %v", err)
+	}
+	if !op.Done || op.Error == nil || op.Error.Code != int(codes.Unavailable) {
+		t.Errorf("op = %+v; want Done:true Error.Code:Unavailable", op)
+	}
+	stored, gerr := execs.Get(context.Background(), opID)
+	if gerr != nil {
+		t.Fatalf("execs.Get: %v", gerr)
+	}
+	if stored.State != schema.ScratchExecLost {
+		t.Errorf("persisted State = %q; want lost", stored.State)
+	}
+}
+
 func TestScratchExecGet_NotFound(t *testing.T) {
 	deps := &ScratchExecGetDeps{Execs: db.NewMemoryScratchExecs()}
 	_, err := ScratchExecGet(context.Background(), schema.GetOperationRequest{ID: "missing"}, deps)
