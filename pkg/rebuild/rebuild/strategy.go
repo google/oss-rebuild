@@ -5,6 +5,7 @@ package rebuild
 
 import (
 	"fmt"
+	"path"
 	"time"
 
 	"github.com/pkg/errors"
@@ -17,6 +18,15 @@ type Location struct {
 	Repo string `json:"repo" yaml:"repo"`
 	Ref  string `json:"ref" yaml:"ref"`
 	Dir  string `json:"dir" yaml:"dir,omitempty"`
+}
+
+// DirOf returns the directory containing the repo-relative file path p for use
+// as a Location.Dir, normalizing the repo root to the canonical "".
+func DirOf(p string) string {
+	if d := path.Dir(p); d != "." {
+		return d
+	}
+	return ""
 }
 
 // RequiredEnv describes any required properties about the build environment

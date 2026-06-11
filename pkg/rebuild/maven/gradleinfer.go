@@ -108,7 +108,7 @@ func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
 		}
 		// Look for build.gradle or build.gradle.kts files to identify potential project directories.
 		if strings.HasSuffix(f.Name, ".gradle") || strings.HasSuffix(f.Name, ".gradle.kts") {
-			candidateDirs = append(candidateDirs, path.Dir(f.Name))
+			candidateDirs = append(candidateDirs, rebuild.DirOf(f.Name))
 		}
 		return nil
 	})
@@ -121,7 +121,7 @@ func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
 	// Find the candidate with the minimum edit distance to the artifact name
 	minDist := math.MaxInt
 	// Default to the root directory if no better match is found
-	bestMatch := "."
+	bestMatch := ""
 	for _, candidate := range candidateDirs {
 		dist := minEditDistance(path.Base(candidate), pkg)
 		if dist == 0 {
