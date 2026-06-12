@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"google.golang.org/api/cloudbuild/v1"
 )
@@ -104,8 +105,6 @@ EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  mkdir /src && cd /src
- 
- 
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
  set -eux
@@ -142,8 +141,80 @@ EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  mkdir /src && cd /src
+EOF
+RUN sed 's/^ //' <<'EOF' >/build
+ set -eux
  
+ mkdir /out && cp /src/output/foo.tgz /out/
+EOF
+WORKDIR "/src"
+ENTRYPOINT ["/bin/sh","/build"]
+`,
+		},
+		{
+			name: "Empty Source, Non-Empty Deps",
+			input: rebuild.Input{
+				Target: rebuild.Target{},
+				Strategy: &rebuild.WorkflowStrategy{
+					Requires: rebuild.RequiredEnv{
+						SystemDeps: []string{"make"},
+					},
+					Deps:       []flow.Step{{Runs: "make deps ..."}},
+					OutputPath: "output/foo.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				UseTimewarp:     false,
+				UseNetworkProxy: false,
+				Resources: build.Resources{
+					BaseImageConfig: baseImageConfig,
+				},
+			},
+			expected: `#syntax=docker/dockerfile:1.10
+FROM docker.io/library/alpine:3.19
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ apk add make
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ mkdir /src && cd /src
+ make deps ...
+EOF
+RUN sed 's/^ //' <<'EOF' >/build
+ set -eux
  
+ mkdir /out && cp /src/output/foo.tgz /out/
+EOF
+WORKDIR "/src"
+ENTRYPOINT ["/bin/sh","/build"]
+`,
+		},
+		{
+			name: "Non-Empty Source, Empty Deps",
+			input: rebuild.Input{
+				Target: rebuild.Target{},
+				Strategy: &rebuild.WorkflowStrategy{
+					Source:     []flow.Step{{Runs: "echo source"}},
+					OutputPath: "output/foo.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				UseTimewarp:     false,
+				UseNetworkProxy: false,
+				Resources: build.Resources{
+					BaseImageConfig: baseImageConfig,
+				},
+			},
+			expected: `#syntax=docker/dockerfile:1.10
+FROM docker.io/library/alpine:3.19
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ mkdir /src && cd /src
+ echo source
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
  set -eux
