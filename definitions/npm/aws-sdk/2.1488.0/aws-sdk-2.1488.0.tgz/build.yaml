@@ -1,0 +1,20 @@
+flow:
+  location:
+    repo: https://github.com/aws/aws-sdk-js
+    ref: 301f35fd12581158436015df624b486ad15bac05
+    dir: ""
+  src:
+    - uses: git-checkout
+    # Source's `.npmignore` excludes `CHANGELOG.md`, but the published
+    # tarball includes 1.1MB of release history. The publisher must
+    # have hand-removed that line from `.npmignore` (or used a
+    # different ignore set) before pack — no committed state captures
+    # that. Replicate by stripping just that line.
+    - runs: sed -i '/^CHANGELOG\.md$/d' /src/.npmignore
+  deps: []
+  build:
+    - runs: cd /src && /usr/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - npm

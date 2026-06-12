@@ -1,0 +1,43 @@
+# inference differs:
+#   requires.system_deps: added libstdc++ (vs inferred)
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v12.13.0/node-v12.13.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +/usr/local/bin/npx --package=npm@6.12.0 -c 'npm_config_registry=http://npm:2019-11-29T00:00:00Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/bin/npx --package=npm@6.9.0 -c 'npm pack'
+#   +cp -a /src /tmp/bluebird
+#   +cd /tmp/bluebird && \
+#   +  /usr/local/bin/npm run generate-browser-core && \
+#   +  /usr/local/bin/npm run generate-browser-full && \
+#   +  /usr/local/bin/npm pack
+#   +cp /tmp/bluebird/bluebird-3.7.2.tgz /src/
+flow:
+  location:
+    repo: https://github.com/petkaantonov/bluebird
+    ref: 750bd7f87fefaa0f918a6f0a25caec32ffdaddd8
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "12.13.0"
+    - uses: npm/install
+      with:
+        npmVersion: "6.12.0"
+        registryTime: "2019-11-29T00:00:00Z"
+        locator: /usr/local/bin/
+  build:
+    # tools/build.js asserts cwd basename starts with "bluebird"; build from
+    # a renamed sibling and copy the tgz back.
+    - runs: |
+        cp -a /src /tmp/bluebird
+        cd /tmp/bluebird && \
+          /usr/local/bin/npm run generate-browser-core && \
+          /usr/local/bin/npm run generate-browser-full && \
+          /usr/local/bin/npm pack
+        cp /tmp/bluebird/bluebird-3.7.2.tgz /src/
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

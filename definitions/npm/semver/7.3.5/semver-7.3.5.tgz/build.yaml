@@ -1,0 +1,7 @@
+# inference differs:
+#   npm_version: 6.14.18 (inferred: 7.6.3)
+npm_pack_build:
+  location:
+    repo: https://github.com/npm/node-semver
+    ref: e79ac3a450e8bb504e78b8159e3efc70895699b8
+  npm_version: "6.14.18"

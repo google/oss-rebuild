@@ -1,0 +1,38 @@
+# inference fails: No NPM version
+flow:
+  location:
+    repo: https://github.com/babel/babel
+    # The `@babel/core@7.23.2` tag (cd28f07) was created one day after
+    # the v7.23.2 monorepo tag (b4b9942). It bumps
+    # packages/babel-core/package.json to 7.23.2 and adds the v7.23.2
+    # CHANGELOG entry. The published @babel/core@7.23.2 wheel is from
+    # this commit.
+    ref: cd28f070310be0f2419924ce8aa526827746795f
+    dir: packages/babel-core
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "20.8.1"
+    - runs: corepack enable && corepack prepare yarn@3.6.2 --activate
+    - runs: |
+        export YARN_NPM_REGISTRY_SERVER=http://npm:2023-10-12T00:25:43Z@127.0.0.1:8080
+        export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+        cd /src && YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+  build:
+    - runs: |
+        cd /src && \
+          export YARN_NPM_REGISTRY_SERVER=http://npm:2023-10-12T00:25:43Z@127.0.0.1:8080
+          export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+          node scripts/set-module-type.js commonjs && \
+          NODE_ENV=production BABEL_ENV=production STRIP_BABEL_8_FLAG=true \
+            IS_PUBLISH=true make prepublish-build && \
+          node scripts/set-module-type.js clean && \
+          cd packages/babel-core && yarn pack --out babel-core-7.23.2.tgz
+  output_dir: packages/babel-core
+  requires:
+    system_deps:
+      - git
+      - make
+      - libstdc++

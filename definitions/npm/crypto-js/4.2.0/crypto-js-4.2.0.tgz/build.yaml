@@ -1,0 +1,36 @@
+# inference differs:
+#   output_dir: build (inferred: "")
+#   requires.system_deps: added libstdc++ (vs inferred)
+#  deps diff:
+#    wget -O - https://unofficial-builds.nodejs.org/download/release/v18.18.0/node-v18.18.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@10.2.1 -c 'npm_config_registry=http://npm:2023-10-24T22:20:29Z@TIMEWARP npm install --force --no-audit'
+#   +/usr/local/bin/npx --package=npm@10.2.1 -c 'npm_config_registry=http://npm:2023-10-24T22:20:30Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@10.2.1 -c 'npm run build && rm -rf node_modules && npm pack'
+#   +cd /src && /usr/local/bin/npm run build && cd /src/build && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/brix/crypto-js
+    ref: ac34a5a584337b33a2e567f50d96819a96ac44bf
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "18.18.0"
+    - uses: npm/install
+      with:
+        npmVersion: "10.2.1"
+        registryTime: "2023-10-24T22:20:30Z"
+        locator: /usr/local/bin/
+  build:
+    # `grunt build` emits modularized .js into `build/` and writes a
+    # filtered `build/package.json` (via update_json:npm) — the publish
+    # tree. Publisher runs `npm publish build/`; we mirror with
+    # `npm pack` from /src/build.
+    - runs: cd /src && /usr/local/bin/npm run build && cd /src/build && /usr/local/bin/npm pack
+  output_dir: build
+  requires:
+    system_deps:
+      - libstdc++

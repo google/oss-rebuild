@@ -1,0 +1,39 @@
+# inference fails: No NPM version
+flow:
+  location:
+    repo: https://github.com/babel/babel-loader
+    ref: 9bf5652c3b718971382c110c4b7f86212aa8cb52
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "16.18.1"
+    # `prepublish` script runs `yarn run clean && yarn run build` —
+    # install yarn 1 first, then install with --ignore-scripts so npm
+    # doesn't fire prepublish before yarn has its own deps. Then run
+    # build via yarn.
+    # repo bundles yarn 3.2.3 via .yarn/releases (yarnPath); corepack
+    # enables `yarn` shim so the bundled binary handles installs.
+    - runs: corepack enable
+    - runs: |
+        cd /src && \
+          export YARN_NPM_REGISTRY_SERVER=http://npm:2022-11-03T14:28:33Z@127.0.0.1:8080 && \
+          export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1 && \
+          export YARN_ENABLE_SCRIPTS=false && \
+          YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+  build:
+    # `yarn pack` matches the upstream tar layout (CHANGELOG.md included,
+    # trailing-newline-less package.json). `npm pack` would strip
+    # CHANGELOG (file is excluded by `files: [lib]`) and add a trailing
+    # newline to package.json.
+    - runs: |
+        cd /src && \
+          export YARN_NPM_REGISTRY_SERVER=http://npm:2022-11-03T14:28:33Z@127.0.0.1:8080 && \
+          export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1 && \
+          yarn run clean && yarn run build && yarn pack --filename babel-loader-8.3.0.tgz
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

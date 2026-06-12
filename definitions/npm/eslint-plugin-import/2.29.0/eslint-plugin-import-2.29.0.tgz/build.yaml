@@ -1,0 +1,35 @@
+# inference differs:
+#   requires.system_deps: added libstdc++ (vs inferred)
+#  deps diff:
+#    wget -O - https://unofficial-builds.nodejs.org/download/release/v20.7.0/node-v20.7.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@10.1.0 -c 'npm_config_registry=http://npm:2023-10-23T06:44:23Z@TIMEWARP npm install --force --no-audit'
+#   +/usr/local/bin/npx --package=npm@10.1.0 -c 'npm_config_registry=http://npm:2023-10-23T06:44:24Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@10.1.0 -c 'npm run build && rm -rf node_modules && npm pack'
+#   +cd /src && /usr/local/bin/npm run build && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/import-js/eslint-plugin-import
+    ref: 6d34c88a91a9cb7556700b7cb83c8a27731ff302
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "20.7.0"
+    - uses: npm/install
+      with:
+        npmVersion: "10.1.0"
+        registryTime: "2023-10-23T06:44:24Z"
+        locator: /usr/local/bin/
+  build:
+    # `prepublishOnly` is `safe-publish-latest && npm run build`.
+    # safe-publish-latest is a publish-time check we don't need; run
+    # build directly. build = babel src -> lib + copy LICENSE/.npmrc
+    # into subdirs (memo-parser, utils, resolvers).
+    - runs: cd /src && /usr/local/bin/npm run build && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

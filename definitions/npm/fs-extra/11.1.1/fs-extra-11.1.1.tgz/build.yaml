@@ -1,0 +1,7 @@
+# inference differs:
+#   npm_version: 9.6.7 (inferred: 8.15.0)
+npm_pack_build:
+  location:
+    repo: https://github.com/jprichardson/node-fs-extra
+    ref: cc7b3b22a984de5124131c7897574091c9df00e1
+  npm_version: "9.6.7"

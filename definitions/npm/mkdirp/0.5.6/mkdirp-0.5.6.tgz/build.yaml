@@ -1,0 +1,8 @@
+# inference fails: clone failed [repo=https://github.com/substack/node-mkdirp]: cloning repo: authentication required: Repository not found.
+npm_pack_build:
+  location:
+    # registry's repo URL points at substack/node-mkdirp (404 now);
+    # the canonical home moved to isaacs/node-mkdirp.
+    repo: https://github.com/isaacs/node-mkdirp
+    ref: 92f086d2e28c6848951776fbe8ecadcf54c80c29
+  npm_version: "6.14.18"

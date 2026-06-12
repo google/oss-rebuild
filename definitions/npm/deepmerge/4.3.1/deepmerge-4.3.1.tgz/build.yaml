@@ -1,0 +1,95 @@
+# inference differs:
+#   output_dir: deepmerge (inferred: "")
+#   repo: https://github.com/TehShrike/deepmerge (inferred: https://github.com/tehshrike/deepmerge)
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  source diff:
+#   -git clone https://github.com/tehshrike/deepmerge .
+#   +git clone https://github.com/TehShrike/deepmerge .
+#    git checkout --force '5b87756a5671635679001cbac72aa42f23472c81'
+#   +cp -a /src /tmp/deepmerge
+#   +find /src -mindepth 1 -delete
+#   +mv /tmp/deepmerge /src/deepmerge
+#  deps diff:
+#   -wget -O - https://unofficial-builds.nodejs.org/download/release/v16.8.0/node-v16.8.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@8.6.0 -c 'npm_config_registry=http://npm:2023-03-16T22:58:56Z@TIMEWARP npm install --force --no-audit'
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v14.21.3/node-v14.21.3-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +cp /src/deepmerge/package.json /tmp/package.json.orig
+#   +cd /src/deepmerge && \
+#   +  /usr/local/bin/node -e '
+#   +    const fs = require("fs");
+#   +    const p = JSON.parse(fs.readFileSync("package.json","utf8"));
+#   +    delete p.devDependencies;
+#   +    fs.writeFileSync("package.json", JSON.stringify(p, null, 2));
+#   +  '
+#   +cd /src/deepmerge && \
+#   +  npm_config_registry=http://npm:2023-03-13T00:00:00Z@127.0.0.1:8080 \
+#   +  /usr/local/bin/npm install --no-save --no-audit --ignore-scripts \
+#   +    'rollup@1.23.1' 'rollup-plugin-commonjs@10.1.0' \
+#   +    'rollup-plugin-node-resolve@5.2.0' \
+#   +    'is-mergeable-object@1.1.0' 'is-plain-object@^5.0.0'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@8.6.0 -c 'npm run build && rm -rf node_modules && npm pack'
+#   +cd /src/deepmerge && /usr/local/bin/npm run build
+#   +cp /tmp/package.json.orig /src/deepmerge/package.json
+#   +cd /src/deepmerge && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/TehShrike/deepmerge
+    ref: 5b87756a5671635679001cbac72aa42f23472c81
+    dir: ""
+  src:
+    - uses: git-checkout
+    # rollup-plugin-commonjs@10.x's `getName(id)` falls back to the
+    # parent directory name when the basename is `index`. We're at
+    # `/src/index.js` so it produces `var src = …`; the publisher
+    # cloned into a `deepmerge/` directory, so it produced
+    # `var deepmerge_1 = …`. Copy the source into a sibling dir of
+    # that name and run the build from there.
+    - runs: |
+        cp -a /src /tmp/deepmerge
+        find /src -mindepth 1 -delete
+        mv /tmp/deepmerge /src/deepmerge
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "14.21.3"
+    # Skip the full devDep tree (a deep transitive dep,
+    # `jkroso/v8-argv`, is a deleted ssh git URL that npm can't
+    # resolve). Save the original package.json, strip `devDependencies`
+    # for the install step, install only the rollup build deps, then
+    # restore the original package.json before pack.
+    - runs: cp /src/deepmerge/package.json /tmp/package.json.orig
+    - runs: |
+        cd /src/deepmerge && \
+          /usr/local/bin/node -e '
+            const fs = require("fs");
+            const p = JSON.parse(fs.readFileSync("package.json","utf8"));
+            delete p.devDependencies;
+            fs.writeFileSync("package.json", JSON.stringify(p, null, 2));
+          '
+    - runs: |
+        cd /src/deepmerge && \
+          npm_config_registry=http://npm:2023-03-13T00:00:00Z@127.0.0.1:8080 \
+          /usr/local/bin/npm install --no-save --no-audit --ignore-scripts \
+            'rollup@1.23.1' 'rollup-plugin-commonjs@10.1.0' \
+            'rollup-plugin-node-resolve@5.2.0' \
+            'is-mergeable-object@1.1.0' 'is-plain-object@^5.0.0'
+  build:
+    - runs: cd /src/deepmerge && /usr/local/bin/npm run build
+    - runs: cp /tmp/package.json.orig /src/deepmerge/package.json
+    - runs: cd /src/deepmerge && /usr/local/bin/npm pack
+  output_dir: deepmerge
+  requires:
+    system_deps:
+      - libstdc++
+custom_stabilizers:
+  - exclude_path:
+      paths:
+        - "package/.eslintcache"
+    reason: |
+      Upstream tarball includes a `.eslintcache` file containing the
+      maintainer's absolute local path
+      (`/Users/joshduff/code/deepmerge/...`) and host-local mtime. It's
+      build-cache metadata that's unreproducible from any other machine.
+      Same publisher-local-files class as jsonwebtoken's `.history/`.
+

@@ -1,0 +1,38 @@
+# inference differs:
+#   requires.system_deps: added bash, libstdc++ (vs inferred)
+#  deps diff:
+#    wget -O - https://unofficial-builds.nodejs.org/download/release/v16.20.2/node-v16.20.2-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@8.19.4 -c 'npm_config_registry=http://npm:2023-09-12T08:56:35Z@TIMEWARP npm install --force --no-audit'
+#   +/usr/local/bin/npx --package=npm@8.19.4 -c 'npm_config_registry=http://npm:2023-09-08T23:21:00Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@8.19.4 -c 'npm run build && npm pack'
+#   +cd /src && /usr/local/bin/npm run build && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/uuidjs/uuid
+    # gitHead `ca1d39d58a` is a "chore(release): 9.0.1" commit that's
+    # NOT the v9.0.1 tag (b3f142f7) — both have identical message but
+    # ca1d39d adds a CHANGELOG.md entry on top. The publisher tagged
+    # b3f142f, then committed the changelog, then published.
+    ref: ca1d39d58a6308d5311bcb356a931aa818ec0ded
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "16.20.2"
+    - uses: npm/install
+      with:
+        npmVersion: "8.19.4"
+        registryTime: "2023-09-08T23:21:00Z"
+        locator: /usr/local/bin/
+  build:
+    # uuid's build needs bash (./scripts/build.sh). prepack hook
+    # silently skipped by npm running as root, so run build explicitly.
+    - runs: cd /src && /usr/local/bin/npm run build && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - bash
+      - libstdc++

@@ -1,0 +1,38 @@
+# inference differs:
+#   requires.system_deps: added libstdc++ (vs inferred)
+#  deps diff:
+#   -wget -O - https://unofficial-builds.nodejs.org/download/release/v20.7.0/node-v20.7.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@10.1.0 -c 'npm_config_registry=http://npm:2023-09-27T05:59:51Z@TIMEWARP npm install --force --no-audit'
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v20.8.1/node-v20.8.1-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +/usr/local/bin/npx --package=npm@10.1.0 -c 'npm_config_registry=http://npm:2023-09-27T05:59:52Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@10.1.0 -c 'npm pack'
+#   +cd /src && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/isaacs/node-glob
+    ref: 4f18d23772133e11b1ccc4b8d7f729dddca206e3
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "20.8.1"
+    - uses: npm/install
+      with:
+        npmVersion: "10.1.0"
+        registryTime: "2023-09-27T05:59:52Z"
+        locator: /usr/local/bin/
+  build:
+    # `prepare` script runs tshy which generates dist/. npm 10 honors
+    # prepack-related lifecycle hooks correctly, so `npm pack` triggers
+    # `npm run prepare` automatically. But the package.json also has
+    # `prepublish: npm run benchclean` which would run, harmless. The
+    # `preversion` and `prepublishOnly` hooks (test, git push) we don't
+    # want — `npm pack` doesn't fire those.
+    - runs: cd /src && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

@@ -1,0 +1,47 @@
+# inference differs:
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v18.18.0/node-v18.18.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +corepack enable && corepack prepare yarn@3.2.3 --activate
+#   +export YARN_NPM_REGISTRY_SERVER=http://npm:2023-05-06T08:49:16Z@127.0.0.1:8080
+#   +export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+#   +export YARN_ENABLE_SCRIPTS=false
+#   +cd /src && YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+#  build diff:
+#   -/usr/bin/npx --package=npm@8.19.4 -c 'cd packages/styled && npm pack'
+#   +cd /src && \
+#   +  export YARN_NPM_REGISTRY_SERVER=http://npm:2023-05-06T08:49:16Z@127.0.0.1:8080
+#   +  export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+#   +  yarn build
+#   +cd /src/packages/styled && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/emotion-js/emotion
+    ref: 1135f8e9d97ea711eb483368313afdfe7b176845
+    dir: packages/styled
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "18.18.0"
+    - runs: corepack enable && corepack prepare yarn@3.2.3 --activate
+    - runs: |
+        export YARN_NPM_REGISTRY_SERVER=http://npm:2023-05-06T08:49:16Z@127.0.0.1:8080
+        export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+        export YARN_ENABLE_SCRIPTS=false
+        cd /src && YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+  build:
+    - runs: |
+        cd /src && \
+          export YARN_NPM_REGISTRY_SERVER=http://npm:2023-05-06T08:49:16Z@127.0.0.1:8080
+          export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+          yarn build
+    # Use npm pack instead of yarn pack — yarn 3 includes CHANGELOG.md
+    # despite the package's `files` array; npm pack honors files strictly
+    # and writes the trailing newline upstream's package.json has.
+    - runs: cd /src/packages/styled && /usr/local/bin/npm pack
+  output_dir: packages/styled
+  requires:
+    system_deps:
+      - libstdc++

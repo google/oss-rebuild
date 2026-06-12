@@ -1,0 +1,54 @@
+# inference differs:
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v18.18.0/node-v18.18.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +corepack enable && corepack prepare yarn@3.2.3 --activate
+#   +export YARN_NPM_REGISTRY_SERVER=http://npm:2023-06-07T11:01:09Z@127.0.0.1:8080
+#   +export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+#   +export YARN_ENABLE_SCRIPTS=false
+#   +cd /src && YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+#  build diff:
+#   -/usr/bin/npx --package=npm@8.19.4 -c 'cd packages/react && npm pack'
+#   +cd /src && \
+#   +  export YARN_NPM_REGISTRY_SERVER=http://npm:2023-06-07T11:01:09Z@127.0.0.1:8080
+#   +  export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+#   +  yarn build
+#   +cd /src/packages/react && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/emotion-js/emotion
+    ref: fef1ea086fbec998caaa016a5ecdace4bbb9d749
+    dir: packages/react
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "18.18.0"
+    - runs: corepack enable && corepack prepare yarn@3.2.3 --activate
+    # YARN_ENABLE_SCRIPTS=false skips postinstall lifecycle scripts;
+    # otherwise transitive native deps (lmdb-store, msgpackr-extract)
+    # try to compile node-gyp under emulation and fail. Emotion's own
+    # packages have no postinstall step that the build needs.
+    - runs: |
+        export YARN_NPM_REGISTRY_SERVER=http://npm:2023-06-07T11:01:09Z@127.0.0.1:8080
+        export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+        export YARN_ENABLE_SCRIPTS=false
+        cd /src && YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
+  build:
+    # `yarn build` runs `preconstruct build` which compiles every
+    # package's src/ into dist/. Then yarn pack from the package dir.
+    - runs: |
+        cd /src && \
+          export YARN_NPM_REGISTRY_SERVER=http://npm:2023-06-07T11:01:09Z@127.0.0.1:8080
+          export YARN_UNSAFE_HTTP_WHITELIST=127.0.0.1
+          yarn build
+    # `yarn pack` (yarn 3.2.3) auto-includes CHANGELOG.md even with a
+    # `files` array that excludes it, and writes package.json without a
+    # trailing newline. `npm pack` honors `files` strictly and writes a
+    # trailing newline. Use npm pack to match upstream.
+    - runs: cd /src/packages/react && /usr/local/bin/npm pack
+  output_dir: packages/react
+  requires:
+    system_deps:
+      - libstdc++

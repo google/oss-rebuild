@@ -1,0 +1,24 @@
+# inference differs:
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v18.5.0/node-v18.5.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#  build diff:
+#   -/usr/bin/npx --package=npm@8.12.1 -c 'npm pack'
+#   +cd /src && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/expressjs/express
+    ref: 8368dc178af16b91b576c4c1d135f701a0007e5d
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "18.5.0"
+  build:
+    - runs: cd /src && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

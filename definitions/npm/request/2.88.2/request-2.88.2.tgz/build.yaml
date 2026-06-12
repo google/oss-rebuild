@@ -1,0 +1,15 @@
+# inference fails: no valid git ref
+npm_pack_build:
+  location:
+    repo: https://github.com/request/request
+    # Registry's `gitHead` (16a7d46f...) doesn't exist in the public repo
+    # and there's no v2.88.2 tag (latest tag is v2.88.1). The published
+    # tarball matches `aded7e4` ("doc: note full deprecation") byte-for-byte
+    # for every file *except* package.json's version field. The next
+    # commit, `3c0cddc` ("README: typo in deprecation message"), changes
+    # README; that change is *not* in the published tarball, so the wheel
+    # was built from `aded7e4` with the version bumped to 2.88.2 at pack
+    # time.
+    ref: aded7e4f8e57f6f33cf39d65634bfb822bfcb2c8
+  npm_version: "6.14.18"
+  version_override: "2.88.2"

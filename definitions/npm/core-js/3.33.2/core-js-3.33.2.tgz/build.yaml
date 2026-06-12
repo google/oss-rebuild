@@ -1,0 +1,36 @@
+# inference differs:
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v20.9.0/node-v20.9.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +cd /src && \
+#   +  npm_config_registry=http://npm:2023-10-30T17:21:56Z@127.0.0.1:8080 \
+#   +  /usr/local/bin/npm install --force --no-audit
+#  build diff:
+#   -/usr/bin/npx --package=npm@10.2.0 -c 'cd packages/core-js && npm pack'
+#   +cd /src/packages/core-js && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/zloirock/core-js
+    ref: 7cbd6b5e9e96cda050ae911c4015b0ecd9875f92
+    dir: packages/core-js
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "20.9.0"
+    # Install from the monorepo root (not the package subdir). The root
+    # package.json declares a `prepare` script that runs the helper-index
+    # generator (scripts/build-indexes.mjs) and the features/ tree
+    # generator (scripts/clean-and-copy.mjs). The published tarball
+    # depends on both.
+    - runs: |
+        cd /src && \
+          npm_config_registry=http://npm:2023-10-30T17:21:56Z@127.0.0.1:8080 \
+          /usr/local/bin/npm install --force --no-audit
+  build:
+    - runs: cd /src/packages/core-js && /usr/local/bin/npm pack
+  output_dir: packages/core-js
+  requires:
+    system_deps:
+      - libstdc++

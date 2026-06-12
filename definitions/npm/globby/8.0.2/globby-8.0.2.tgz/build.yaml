@@ -1,0 +1,18 @@
+# inference differs:
+#  build diff:
+#   -/usr/bin/npx --package=npm@6.5.0 -c 'npm pack'
+#   +cd /src && /usr/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/sindresorhus/globby
+    ref: 946fcea913beb06817d91d8ffb5b4dfe09719a1c
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps: []
+  build:
+    - runs: cd /src && /usr/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - npm
