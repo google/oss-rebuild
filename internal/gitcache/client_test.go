@@ -38,8 +38,7 @@ commits:
 func setupCloneTestServer(t *testing.T, yamlSpec string) Client {
 	t.Helper()
 	// Create a repo on disk with git metadata in a .git subdirectory.
-	// Client.Clone uses ExtractTar with SubDir=".git", so the tarball
-	// entries must be prefixed with ".git/".
+	// The client expects the tarball to contain the bare git files at the root.
 	repoDir := t.TempDir()
 	gitDir := filepath.Join(repoDir, git.GitDirName)
 	if err := os.MkdirAll(gitDir, 0o755); err != nil {
@@ -54,7 +53,7 @@ func setupCloneTestServer(t *testing.T, yamlSpec string) Client {
 	// Remove the index to match production behavior (bare clone has no index).
 	os.Remove(filepath.Join(gitDir, "index"))
 	var tarball bytes.Buffer
-	if err := createTarball(repoDir, &tarball); err != nil {
+	if err := createTarball(gitDir, &tarball); err != nil {
 		t.Fatalf("failed to create tarball: %v", err)
 	}
 	tarballBytes := tarball.Bytes()
