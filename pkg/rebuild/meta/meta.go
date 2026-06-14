@@ -24,6 +24,11 @@ import (
 )
 
 func NewRegistryMux(c httpx.BasicClient) rebuild.RegistryMux {
+	// Ensure requests have a User-Agent header. Some registries (e.g.,
+	// crates.io) reject requests without one.
+	if _, ok := c.(*httpx.WithUserAgent); !ok {
+		c = &httpx.WithUserAgent{BasicClient: c, UserAgent: rebuild.DefaultUserAgent}
+	}
 	return rebuild.RegistryMux{
 		Debian:   debianreg.HTTPRegistry{Client: c},
 		CratesIO: cratesreg.HTTPRegistry{Client: c},
