@@ -68,7 +68,7 @@ func GetPackageManagerCommands(os OS) PackageManagerCommands {
 // DetectOS detects the OS from a base image name
 func DetectOS(baseImage string) OS {
 	switch {
-	case strings.Contains(baseImage, "alpine"):
+	case strings.Contains(baseImage, "alpine"), strings.Contains(baseImage, "library/docker"):
 		return Alpine
 	case strings.Contains(baseImage, "debian"):
 		return Debian
