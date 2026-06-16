@@ -120,6 +120,24 @@ func TestResolveTemplate(t *testing.T) {
 			data:     Data{"With": map[string]string{"text": "test"}},
 			wantErr:  true,
 		},
+		{
+			name:     "indent single line",
+			template: `{{indent .With.text}}`,
+			data:     Data{"With": map[string]string{"text": "hello"}},
+			want:     " hello",
+		},
+		{
+			name:     "indent multi line",
+			template: `{{indent .With.text}}`,
+			data:     Data{"With": map[string]string{"text": "hello\nworld"}},
+			want:     " hello\n world",
+		},
+		{
+			name:     "indent empty string",
+			template: `{{indent .With.text}}`,
+			data:     Data{"With": map[string]string{"text": ""}},
+			want:     " ",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
