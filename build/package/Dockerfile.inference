@@ -1,8 +1,10 @@
 FROM golang:1.25-alpine AS binary
 ARG DEBUG=false
+ARG BUILD_REPO
+ARG BUILD_VERSION
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w')" -gcflags="-l=4" ./cmd/inference
+RUN CGO_ENABLED=0 go build -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w') -X github.com/google/oss-rebuild/internal/buildinfo.Repo=${BUILD_REPO} -X github.com/google/oss-rebuild/internal/buildinfo.Version=${BUILD_VERSION}" -gcflags="-l=4" ./cmd/inference
 FROM alpine
 COPY --from=binary /src/inference /
 RUN apk add npm

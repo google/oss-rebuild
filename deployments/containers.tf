@@ -37,7 +37,11 @@ locals {
     }
     inference = {
       dockerfile = "build/package/Dockerfile.inference"
-      build_args = ["DEBUG=${terraform_data.debug.output}"]
+      build_args = [
+        "DEBUG=${terraform_data.debug.output}",
+        "BUILD_REPO=${var.repo}",
+        "BUILD_VERSION=${terraform_data.service_version.output}"
+      ]
     }
     api = {
       dockerfile = "build/package/Dockerfile.api"

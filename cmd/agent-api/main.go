@@ -17,6 +17,7 @@ import (
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api/agentapiservice"
+	"github.com/google/oss-rebuild/internal/buildinfo"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/httpx"
@@ -72,12 +73,6 @@ func parseScratchZones() []string {
 // Deps-owned cooldown would be discarded each call.
 var scratchCooldown = agentapiservice.NewZoneCooldown(0)
 
-// Link-time configured service identity
-var (
-	BuildRepo    string
-	BuildVersion string
-)
-
 func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreateIterationDeps, error) {
 	var d agentapiservice.AgentCreateIterationDeps
 	var err error
@@ -130,7 +125,7 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 	d.BuildServiceAccount = *buildRemoteIdentity
 	d.MetadataBucket = *metadataBucket
 	if *prebuildVersion != "" {
-		prebuildRepo, err := serviceid.ParseLocation(BuildRepo, *prebuildVersion)
+		prebuildRepo, err := serviceid.ParseLocation(buildinfo.Repo, *prebuildVersion)
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing prebuild location")
 		}
