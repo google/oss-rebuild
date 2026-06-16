@@ -7,6 +7,7 @@ package httpegress
 import (
 	"context"
 	"flag"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -34,6 +35,10 @@ func MakeClient(ctx context.Context, cfg Config) (httpx.BasicClient, error) {
 	if cfg.UserAgent != "" {
 		client = &httpx.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: cfg.UserAgent}
 	} else {
+		// TODO: Promote this to a hard error once the empty-Config{} service
+		// callers (apiservice/rebuild_deps.go, agentapiservice/iteration.go)
+		// thread a User-Agent through.
+		log.Printf("httpegress client built without a User-Agent. Proceeding anonymously (registries may reject UA-less traffic)")
 		client = http.DefaultClient
 	}
 	if cfg.GatewayURL != "" {
