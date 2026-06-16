@@ -98,6 +98,8 @@ The ecosystem is one of npm, pypi, or cratesio. For npm the artifact is the <pac
 					artifact = fmt.Sprintf("%s-%s-py3-none-any.whl", strings.ReplaceAll(pkg, "-", "_"), version)
 				case rebuild.NPM:
 					artifact = fmt.Sprintf("%s-%s.tgz", pkg, version)
+				case rebuild.OCI:
+					return errors.Errorf("%s artifact inference not implemented", ecosystem)
 				default:
 					return errors.Errorf("Unsupported ecosystem: \"%s\"", ecosystem)
 				}

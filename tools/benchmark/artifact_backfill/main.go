@@ -76,6 +76,7 @@ func backfillArtifacts(dataPath string) error {
 		rebuild.NPM:      ratex.NewBackoffLimiter(200 * time.Millisecond),
 		rebuild.Maven:    ratex.NewBackoffLimiter(700 * time.Millisecond),
 		rebuild.CratesIO: ratex.NewBackoffLimiter(1500 * time.Millisecond),
+		rebuild.OCI:      ratex.NewBackoffLimiter(1000 * time.Millisecond),
 	}
 	// Count total work needed
 	totalWork := 0
