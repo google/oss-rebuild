@@ -34,6 +34,7 @@ type AgentCreateIterationDeps struct {
 	BuildServiceAccount string
 	MetadataBucket      string
 	PrebuildConfig      rebuild.PrebuildConfig
+	Host                string
 }
 
 func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRequest, deps *AgentCreateIterationDeps) (*schema.AgentCreateIterationResponse, error) {
@@ -152,7 +153,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		if !ok {
 			return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 		}
-		regclient, err := httpegress.MakeClient(ctx, httpegress.Config{})
+		regclient, err := httpegress.MakeClient(ctx, httpegress.Config{Host: deps.Host})
 		if err != nil {
 			return nil, api.AsStatus(codes.Internal, errors.New("making gateway client"))
 		}
