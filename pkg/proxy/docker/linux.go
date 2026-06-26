@@ -41,7 +41,7 @@ func locateTruststore(dfs *dockerfs.Filesystem) (*dockerfs.File, error) {
 		// Expected Cert File: /etc/ssl/cert.pem
 		// Expected Cert Dir:  /etc/ssl/certs/
 		return dfs.OpenAndResolve("/etc/ssl/cert.pem")
-	case "rhel", "fedora", "centos":
+	case "rhel", "fedora", "centos", "rocky", "almalinux":
 		// Expected Cert File: /etc/pki/tls/cert.pem
 		// Expected Cert Dir:  /etc/pki/tls/certs
 		return dfs.OpenAndResolve("/etc/pki/tls/cert.pem")
