@@ -1,0 +1,7 @@
+# inference differs:
+#   npm_version: 6.14.18 (inferred: 6.14.4)
+npm_pack_build:
+  location:
+    repo: https://github.com/tj/commander.js
+    ref: 64053252cbd5b5434afb7ec3f12c46ad2a352d8a
+  npm_version: "6.14.18"

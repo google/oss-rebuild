@@ -1,0 +1,24 @@
+# inference differs:
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v19.3.0/node-v19.3.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#  build diff:
+#   -/usr/bin/npx --package=npm@9.2.0 -c 'npm pack'
+#   +cd /src && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/moment/moment-timezone
+    ref: 2448cdcbe15875bc22ddfbc184794d0a6b568b90
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "19.3.0"
+  build:
+    - runs: cd /src && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

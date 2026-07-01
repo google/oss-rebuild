@@ -1,0 +1,84 @@
+# inference differs:
+#   dir: "" (inferred: pkgs/core)
+#   output_dir: tmp/package (inferred: pkgs/core)
+#   requires.system_deps: added bash, libstdc++; removed npm (vs inferred)
+#  source diff:
+#    git clone https://github.com/date-fns/date-fns .
+#    git checkout --force '524b5c48e1d2064bc075e7a6d75b942fd8952139'
+#   +cp /src/package.json /tmp/package.json.orig
+#   +cd /src && \
+#   +  sed -i '/"@date-fns\/date-fns-scripts"/d' package.json && \
+#   +  sed -i '/^"@date-fns\/date-fns-scripts/,/^$/d' yarn.lock
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v16.20.2/node-v16.20.2-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +/usr/local/bin/npm install -g yarn@1.22.19
+#   +cd /src && \
+#   +  /usr/local/bin/yarn install --ignore-scripts \
+#   +    --registry http://npm:2023-04-30T02:49:48Z@127.0.0.1:8080
+#  build diff:
+#   -PATH=/usr/bin:/bin:/usr/local/bin npm version --ignore-scripts --prefix pkgs/core --no-git-tag-version 2.30.0
+#   -/usr/bin/npx --package=npm@9.3.1 -c 'cd pkgs/core && npm pack'
+#   +cp /tmp/package.json.orig /src/package.json
+#   +cd /src && env VERSION=v2.30.0 ./scripts/release/writeVersion.js
+#   +cd /src && \
+#   +  ./scripts/build/docs.js && \
+#   +  /usr/local/bin/yarn ts-node ./scripts/build/fp.ts && \
+#   +  /usr/local/bin/yarn ts-node ./scripts/build/typings.js && \
+#   +  /usr/local/bin/yarn ts-node ./scripts/build/indices.ts
+#   +cd /src && env PACKAGE_OUTPUT_PATH=/src/tmp/package ./scripts/build/package.sh
+#   +cd /src/tmp/package && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/date-fns/date-fns
+    ref: 524b5c48e1d2064bc075e7a6d75b942fd8952139
+    dir: ""
+  src:
+    - uses: git-checkout
+    # `@date-fns/date-fns-scripts@0.0.6` was on npm at 2.30.0 publish
+    # time but has since been completely unpublished (npm metadata
+    # returns 404). It's used solely by `scripts/release/updateFirebase.js`
+    # (post-publish), not by the `package.sh` build that produces the
+    # tarball. Save the original package.json, then strip the dep from
+    # both files so yarn install can complete; restore the original
+    # package.json *after* install but *before* package.sh, since
+    # package.sh copies package.json verbatim into the published tarball.
+    - runs: cp /src/package.json /tmp/package.json.orig
+    - runs: |
+        cd /src && \
+          sed -i '/"@date-fns\/date-fns-scripts"/d' package.json && \
+          sed -i '/^"@date-fns\/date-fns-scripts/,/^$/d' yarn.lock
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "16.20.2"
+    - runs: /usr/local/bin/npm install -g yarn@1.22.19
+    # yarn 1.x ignores npm_config_registry; pass --registry directly.
+    - runs: |
+        cd /src && \
+          /usr/local/bin/yarn install --ignore-scripts \
+            --registry http://npm:2023-04-30T02:49:48Z@127.0.0.1:8080
+  build:
+    # The release.sh process: writeVersion.js sets the version field in
+    # the source package.json, then package.sh copies a babel-transpiled
+    # subset of src/ into tmp/package/ and `npm publish` runs from there.
+    # Restore the original package.json so the published tarball's
+    # package.json matches upstream (deps list intact).
+    - runs: cp /tmp/package.json.orig /src/package.json
+    - runs: cd /src && env VERSION=v2.30.0 ./scripts/release/writeVersion.js
+    # build.sh's `./scripts/build/fp.ts` and `indices.ts` use
+    # `#!/usr/bin/env yarn ts-node` shebangs which alpine's busybox env
+    # rejects (no -S flag handling for multi-arg). Replace the script
+    # call with explicit `yarn ts-node` invocations.
+    - runs: |
+        cd /src && \
+          ./scripts/build/docs.js && \
+          /usr/local/bin/yarn ts-node ./scripts/build/fp.ts && \
+          /usr/local/bin/yarn ts-node ./scripts/build/typings.js && \
+          /usr/local/bin/yarn ts-node ./scripts/build/indices.ts
+    - runs: cd /src && env PACKAGE_OUTPUT_PATH=/src/tmp/package ./scripts/build/package.sh
+    - runs: cd /src/tmp/package && /usr/local/bin/npm pack
+  output_dir: tmp/package
+  requires:
+    system_deps:
+      - bash
+      - libstdc++

@@ -1,0 +1,25 @@
+# inference differs:
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  deps diff:
+#    wget -O - https://unofficial-builds.nodejs.org/download/release/v16.17.0/node-v16.17.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@8.15.0 -c 'npm_config_registry=http://npm:2022-09-06T10:10:22Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@8.15.0 -c 'npm run build && rm -rf node_modules && npm pack'
+#   +cd /src && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/vuejs/vue-router
+    ref: 4d73be31f3e6781fcdcaecbd487c38084fd11f92
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "16.17.0"
+  build:
+    - runs: cd /src && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

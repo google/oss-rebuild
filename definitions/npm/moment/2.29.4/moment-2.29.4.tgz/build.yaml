@@ -1,0 +1,58 @@
+# inference differs:
+#   output_dir: publish (inferred: "")
+#  source diff:
+#    git clone https://github.com/moment/moment .
+#    git checkout --force '000ac1800e620f770f4eb31b5ae908f6167b0ab2'
+#   +mkdir -p /src/publish
+#   +cp /src/moment.js /src/publish/
+#   +cp /src/moment.d.ts /src/publish/
+#   +cp /src/package.json /src/publish/
+#   +cp /src/README.md /src/publish/
+#   +cp /src/CHANGELOG.md /src/publish/
+#   +cp /src/LICENSE /src/publish/
+#   +cp -r /src/locale /src/publish/
+#   +cp -r /src/min /src/publish/
+#   +cp -r /src/src /src/publish/ && rm -r /src/publish/src/test
+#   +cp /src/ender.js /src/publish/
+#   +cp /src/package.js /src/publish/
+#   +cp /src/.npmignore /src/publish/
+#   +cp -r /src/ts3.1-typings /src/publish/
+#   +cp -r /src/dist /src/publish/
+#  build diff:
+#   -/usr/bin/npx --package=npm@8.13.2 -c 'npm pack'
+#   +cd /src/publish && /usr/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/moment/moment
+    ref: 000ac1800e620f770f4eb31b5ae908f6167b0ab2
+    dir: ""
+  src:
+    - uses: git-checkout
+    # `scripts/npm_prepublish.sh` (in the source tree) selectively copies
+    # a subset of the repo into a sibling directory and publishes from
+    # there. The published tarball is *much* smaller than what `npm pack`
+    # against the full source would produce. Reproduce that selection
+    # here, into /src/publish, and pack from there.
+    - runs: |
+        mkdir -p /src/publish
+        cp /src/moment.js /src/publish/
+        cp /src/moment.d.ts /src/publish/
+        cp /src/package.json /src/publish/
+        cp /src/README.md /src/publish/
+        cp /src/CHANGELOG.md /src/publish/
+        cp /src/LICENSE /src/publish/
+        cp -r /src/locale /src/publish/
+        cp -r /src/min /src/publish/
+        cp -r /src/src /src/publish/ && rm -r /src/publish/src/test
+        cp /src/ender.js /src/publish/
+        cp /src/package.js /src/publish/
+        cp /src/.npmignore /src/publish/
+        cp -r /src/ts3.1-typings /src/publish/
+        cp -r /src/dist /src/publish/
+  deps: []
+  build:
+    - runs: cd /src/publish && /usr/bin/npm pack
+  output_dir: publish
+  requires:
+    system_deps:
+      - npm

@@ -1,0 +1,21 @@
+# inference differs:
+#  deps diff:
+#   -wget -O - https://unofficial-builds.nodejs.org/download/release/v10.17.0/node-v10.17.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@5.0.4 -c 'npm_config_registry=http://npm:2015-04-02T15:32:54Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@5.0.4 -c 'npm config set unsafe-perm true && npm run build && rm -rf node_modules && npm pack'
+#   +cd /src && /usr/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/jashkenas/underscore
+    ref: e4743ab712b8ab42ad4ccb48b155034d02394e4d
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps: []
+  build:
+    - runs: cd /src && /usr/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - npm

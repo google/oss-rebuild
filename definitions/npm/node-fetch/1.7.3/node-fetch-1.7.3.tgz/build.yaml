@@ -1,0 +1,73 @@
+# inference differs:
+#   repo: https://github.com/node-fetch/node-fetch (inferred: https://github.com/bitinn/node-fetch)
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  source diff:
+#   -git clone https://github.com/bitinn/node-fetch .
+#   +git clone https://github.com/node-fetch/node-fetch .
+#    git checkout --force '16f33bf76f06afb58307a652ceb48f597e48a095'
+#   +git clone https://github.com/node-fetch/node-fetch /tmp/v2x
+#   +cd /tmp/v2x && git checkout e7c1ef88ede64c1a8fa9cfc5a2690d10c11225ce
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v8.17.0/node-v8.17.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +cd /tmp/v2x && \
+#   +  npm_config_registry=http://npm:2017-09-08T06:28:19Z@127.0.0.1:8080 \
+#   +  /usr/local/bin/npm install --force --no-audit --unsafe-perm
+#   +cd /tmp/v2x && /usr/local/bin/npm run build
+#   +mkdir -p /src/lib && cp /tmp/v2x/lib/index.js /src/lib/index.js
+#  build diff:
+#   -/usr/bin/npx --package=npm@5.3.0 -c 'npm pack'
+#   +cd /src && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/node-fetch/node-fetch
+    ref: 16f33bf76f06afb58307a652ceb48f597e48a095
+    dir: ""
+  src:
+    - uses: git-checkout
+    # The 1.7.3 tarball includes `lib/index.js` (35KB) — a rollup bundle
+    # of `src/index.js` (the v2.x source layout). The v1.7.3 tag
+    # (`16f33bf`) has no `src/` dir at all and no rollup config, so this
+    # file was built from the v2.x branch and pasted into the v1.7.3
+    # release tree. The v1.7.3 publish was 2017-09-08; on that date the
+    # v2.x branch was at `e7c1ef8` (just past v2.0.0-alpha.8), so we
+    # build lib/index.js from there.
+    - runs: |
+        git clone https://github.com/node-fetch/node-fetch /tmp/v2x
+        cd /tmp/v2x && git checkout e7c1ef88ede64c1a8fa9cfc5a2690d10c11225ce
+  deps:
+    # node-fetch v2.x uses babel + rollup, era of node 8 / npm 5.
+    - uses: npm/install-node
+      with:
+        nodeVersion: "8.17.0"
+    # Install v2.x deps. The `prepare` script would normally generate
+    # `lib/index.js` via rollup, but npm 5 silently skips lifecycle
+    # scripts when running as root, so we run the build explicitly
+    # afterward.
+    - runs: |
+        cd /tmp/v2x && \
+          npm_config_registry=http://npm:2017-09-08T06:28:19Z@127.0.0.1:8080 \
+          /usr/local/bin/npm install --force --no-audit --unsafe-perm
+    - runs: cd /tmp/v2x && /usr/local/bin/npm run build
+    # Copy the generated bundle into the 1.7.3 source tree.
+    - runs: mkdir -p /src/lib && cp /tmp/v2x/lib/index.js /src/lib/index.js
+  build:
+    - runs: cd /src && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++
+      - git
+custom_stabilizers:
+  - exclude_path:
+      paths: ["package/.npmignore"]
+    reason: |
+      Upstream tarball includes a `.npmignore` that's a byte-for-byte
+      copy of the source's `.gitignore` (same 747-byte md5). Every npm
+      version we've tried (5.4.2 through 6.13.4) silently strips
+      `.npmignore` from the packed tarball, so even creating that file
+      before `npm pack` doesn't put it back in the tar. The publisher
+      must have produced the tarball with a tool that respected
+      `.npmignore` differently. The file is build metadata (lists which
+      sources to skip during pack) and carries no code, so excluding it
+      from the diff is acceptable.
+

@@ -1,0 +1,24 @@
+# inference differs:
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  deps diff:
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v16.19.1/node-v16.19.1-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#  build diff:
+#   -/usr/bin/npx --package=npm@8.19.3 -c 'npm pack'
+#   +cd /src && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/expressjs/body-parser
+    ref: ee91374eae1555af679550b1d2fb5697d9924109
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "16.19.1"
+  build:
+    - runs: cd /src && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

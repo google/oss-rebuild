@@ -1,0 +1,35 @@
+# inference differs:
+#   requires.system_deps: added libstdc++; removed npm (vs inferred)
+#  deps diff:
+#    wget -O - https://unofficial-builds.nodejs.org/download/release/v19.6.0/node-v19.6.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@9.4.0 -c 'npm_config_registry=http://npm:2023-02-09T20:59:49Z@TIMEWARP npm install --force --no-audit'
+#   +/usr/local/bin/npm install -g npmignore@0.3.0 \
+#   +  --registry=http://npm:2023-02-09T20:59:50Z@127.0.0.1:8080
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@9.4.0 -c 'npm pack'
+#   +cd /src && \
+#   +  /usr/local/bin/npmignore --auto --commentLines=auto && \
+#   +  /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/minimistjs/minimist
+    ref: 6901ee286bc4c16da6830b48b46ce1574703cea1
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "19.6.0"
+    - runs: |
+        /usr/local/bin/npm install -g npmignore@0.3.0 \
+          --registry=http://npm:2023-02-09T20:59:50Z@127.0.0.1:8080
+  build:
+    - runs: |
+        cd /src && \
+          /usr/local/bin/npmignore --auto --commentLines=auto && \
+          /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

@@ -1,0 +1,48 @@
+# inference differs:
+#   requires.system_deps: added libstdc++ (vs inferred)
+#  deps diff:
+#   -wget -O - https://unofficial-builds.nodejs.org/download/release/v10.16.3/node-v10.16.3-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@6.4.1 -c 'npm_config_registry=http://npm:2019-01-15T20:29:19Z@TIMEWARP npm install --force --no-audit'
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v10.24.1/node-v10.24.1-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +/usr/local/bin/npx --package=npm@6.14.18 -c 'npm_config_registry=http://npm:2019-01-15T20:29:20Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@6.4.1 -c 'npm config set unsafe-perm true && npm run build && rm -rf node_modules && npm pack'
+#   +cd /src && \
+#   +  rm -f Reflect.js Reflect.js.map && \
+#   +  /usr/local/bin/npx tsc -p tsconfig-release.json
+#   +cd /src && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/rbuckton/reflect-metadata
+    ref: aacaeb1735a5a0e08c470e386eea7e340e15cc0d
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "10.24.1"
+    - uses: npm/install
+      with:
+        npmVersion: "6.14.18"
+        registryTime: "2019-01-15T20:29:20Z"
+        locator: /usr/local/bin/
+  build:
+    # The package.json's `prepublishOnly` hook runs `gulp prepublish`,
+    # which: (1) sets the gulp project to releaseProject (which uses
+    # tsconfig-release.json with sourceMap=false); (2) deletes the
+    # committed Reflect.js + Reflect.js.map; (3) re-runs build:reflect
+    # via the test task. Net effect: Reflect.js is regenerated *without*
+    # the trailing `//# sourceMappingURL=Reflect.js.map` line, which is
+    # what the published wheel has.
+    # `npm pack` doesn't fire `prepublishOnly`, so run it explicitly.
+    # (Skip the test step inside prepublish; just rebuild Reflect.js.)
+    - runs: |
+        cd /src && \
+          rm -f Reflect.js Reflect.js.map && \
+          /usr/local/bin/npx tsc -p tsconfig-release.json
+    - runs: cd /src && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

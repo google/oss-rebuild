@@ -1,0 +1,34 @@
+# inference differs:
+#   requires.system_deps: added libstdc++ (vs inferred)
+#  deps diff:
+#   -wget -O - https://unofficial-builds.nodejs.org/download/release/v14.21.3/node-v14.21.3-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@9.6.5 -c 'npm_config_registry=http://npm:2023-04-27T19:59:02Z@TIMEWARP npm install --force --no-audit'
+#   +wget -O - https://unofficial-builds.nodejs.org/download/release/v18.16.0/node-v18.16.0-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   +/usr/local/bin/npx --package=npm@9.6.5 -c 'npm_config_registry=http://npm:2023-04-27T19:59:03Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@9.6.5 -c 'npm pack'
+#   +cd /src && /usr/local/bin/npm pack
+flow:
+  location:
+    repo: https://github.com/yargs/yargs
+    ref: e1760e45c78538f2fd59d4a09fc0c0c6fd4b2379
+    dir: ""
+  src:
+    - uses: git-checkout
+  deps:
+    - uses: npm/install-node
+      with:
+        nodeVersion: "18.16.0"
+    # `prepare` runs `rimraf build && tsc` to build TS output. Install
+    # devDeps so that runs successfully on `npm pack`.
+    - uses: npm/install
+      with:
+        npmVersion: "9.6.5"
+        registryTime: "2023-04-27T19:59:03Z"
+        locator: /usr/local/bin/
+  build:
+    - runs: cd /src && /usr/local/bin/npm pack
+  output_dir: ""
+  requires:
+    system_deps:
+      - libstdc++

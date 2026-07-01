@@ -1,0 +1,22 @@
+# inference differs:
+#   ref: fde1f76e2799dd877c176abde0ec836553246991 (inferred: f79d5f1a337528940ab7029d4f8bbba72326f269)
+#   repo: https://github.com/jquery/jquery-dist (inferred: https://github.com/jquery/jquery)
+#  source diff:
+#   -git clone https://github.com/jquery/jquery .
+#   -git checkout --force 'f79d5f1a337528940ab7029d4f8bbba72326f269'
+#   +git clone https://github.com/jquery/jquery-dist .
+#   +git checkout --force 'fde1f76e2799dd877c176abde0ec836553246991'
+#  deps diff:
+#   -wget -O - https://unofficial-builds.nodejs.org/download/release/v18.17.1/node-v18.17.1-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+#   -/usr/local/bin/npx --package=npm@9.6.7 -c 'npm_config_registry=http://npm:2023-08-28T13:39:23Z@TIMEWARP npm install --force --no-audit'
+#  build diff:
+#   -/usr/local/bin/npx --package=npm@9.6.7 -c 'npm run build && rm -rf node_modules && npm pack'
+#   +/usr/bin/npx --package=npm@9.6.7 -c 'npm pack'
+npm_pack_build:
+  location:
+    # The published wheel comes from `jquery/jquery-dist`, not the main
+    # `jquery/jquery` repo. The dist repo's tag matches the registry's
+    # gitHead `fde1f76e...`. Build from there directly.
+    repo: https://github.com/jquery/jquery-dist
+    ref: fde1f76e2799dd877c176abde0ec836553246991
+  npm_version: "9.6.7"
