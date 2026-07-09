@@ -44,7 +44,7 @@ To execute a benchmark on your local machine, use the `run-bench` command with t
 > Some strategies depend on timewarp, which is served in production using a "bootstrap tools" bucket.
 > When running locally, a bucket can be specified using `--bootstrap-bucket` and `--bootstrap-version`.
 >
-> Some example values would be `--bootstrap-bucket=google-rebuild-bootstrap-tools --bootstrap-version=v0.0.0-20250428204534-b35098b3c7b7`
+> Some example values would be `--bootstrap-bucket=google-rebuild-bootstrap-tools --bootstrap-version=v0.0.0-20251211001310-499b5fb97512`
 
 ```bash
 cat <<EOF > /tmp/my-benchmark.json
@@ -62,10 +62,13 @@ cat <<EOF > /tmp/my-benchmark.json
   ]
 }
 EOF
-go run ./tools/ctl run-bench attest --local --max-concurrency 1 /tmp/my-benchmark.json
+go run ./tools/ctl run-bench attest --local --max-concurrency 1 \
+  --bootstrap-bucket=google-rebuild-bootstrap-tools \
+  --bootstrap-version=v0.0.0-20251211001310-499b5fb97512 \
+  /tmp/my-benchmark.json
 ```
 
-This will run the pypi_absl_micro.json benchmark locally (as opposed to the hosted execution platform). The local runner spins up a separate Docker container for each build in the benchmark. This guarantees that every build runs in a clean, isolated environment.
+This will run the benchmark locally (as opposed to the hosted execution platform). The local runner spins up a separate Docker container for each build in the benchmark. This guarantees that every build runs in a clean, isolated environment.
 
 If you have a large machine, you might want to increase the `--max-concurrency` beyond 1. One of the benefits of hosted (non-local) infrastructure is that extremely high concurrency is possible.
 
