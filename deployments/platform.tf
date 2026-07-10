@@ -179,6 +179,87 @@ resource "google_firestore_index" "scratch-state-last-used" {
   depends_on = [google_app_engine_application.dummy_app]
 }
 
+# Composite indexes for querying attempts
+
+# Used by rundex.RecentPackageRebuilds
+resource "google_firestore_index" "attempts-ecosystem-package-created" {
+  collection  = "attempts"
+  query_scope = "COLLECTION_GROUP"
+  fields {
+    field_path = "ecosystem"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "package"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "created"
+    order      = "DESCENDING"
+  }
+  fields {
+    field_path = "__name__"
+    order      = "DESCENDING"
+  }
+  depends_on = [google_app_engine_application.dummy_app]
+}
+
+# Used by rundex.FetchRebuilds when filtering just by package
+resource "google_firestore_index" "attempts-package-created" {
+  collection  = "attempts"
+  query_scope = "COLLECTION_GROUP"
+  fields {
+    field_path = "package"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "created"
+    order      = "DESCENDING"
+  }
+  fields {
+    field_path = "__name__"
+    order      = "DESCENDING"
+  }
+  depends_on = [google_app_engine_application.dummy_app]
+}
+
+# Used by rundex.FetchRebuilds when filtering by artifact
+resource "google_firestore_index" "attempts-artifact-created" {
+  collection  = "attempts"
+  query_scope = "COLLECTION_GROUP"
+  fields {
+    field_path = "artifact"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "created"
+    order      = "DESCENDING"
+  }
+  fields {
+    field_path = "__name__"
+    order      = "DESCENDING"
+  }
+  depends_on = [google_app_engine_application.dummy_app]
+}
+
+# Used by rundex.LatestTrackedPackages and rundex.FetchRebuilds (with executors/runs filters)
+resource "google_firestore_index" "attempts-ecosystem-package" {
+  collection  = "attempts"
+  query_scope = "COLLECTION_GROUP"
+  fields {
+    field_path = "ecosystem"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "package"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "__name__"
+    order      = "ASCENDING"
+  }
+  depends_on = [google_app_engine_application.dummy_app]
+}
 ## PubSub
 
 resource "google_pubsub_topic" "attestation-topic" {
