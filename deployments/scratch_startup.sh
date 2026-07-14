@@ -24,6 +24,7 @@ set -euxo pipefail
 DEBIAN_FRONTEND=noninteractive apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     docker.io \
+    docker-buildx \
     curl \
     jq \
     ca-certificates

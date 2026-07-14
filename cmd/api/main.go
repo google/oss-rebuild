@@ -309,6 +309,32 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 	d.SessionsBucket = *agentSessionsBucket
 	d.MetadataBucket = *agentMetadataBucket
 	d.LogsBucket = *agentLogsBucket
+	if *agentAPIURL != "" {
+		// Scratch-mode sessions allocate their scratch VM up front and hand
+		// the agent its handle. Availability is ultimately governed by the
+		// agent API's --scratch-enabled.
+		u, err := url.Parse(*agentAPIURL)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing agent API URL")
+		}
+		agentAPIClient, err := idtoken.NewClient(ctx, *agentAPIURL)
+		if err != nil {
+			return nil, errors.Wrap(err, "initializing agent API client")
+		}
+		d.ScratchCreateStub = api.Stub[schema.ScratchCreateRequest, schema.Scratch](agentAPIClient, u.JoinPath("scratch/create"))
+		d.ScratchDeleteStub = api.Stub[schema.ScratchDeleteRequest, schema.ScratchDeleteResponse](agentAPIClient, u.JoinPath("scratch/delete"))
+	}
+	if *prebuildVersion != "" {
+		prebuildRepo, err := serviceid.ParseLocation(buildinfo.Repo, *prebuildVersion)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing prebuild location")
+		}
+		// NOTE: The subdir matches the version identifier used for the service version.
+		d.PrebuildConfig.Dir = prebuildRepo.Ref
+	}
+	d.PrebuildConfig.Bucket = *prebuildBucket
+	d.PrebuildConfig.Auth = *prebuildAuth
+	d.Host = httpcfg.Host
 	return &d, nil
 }
 

@@ -121,70 +121,81 @@ func (a *defaultAgent) logs(ctx context.Context, obliviousID string) (io.ReadClo
 }
 
 func (a *defaultAgent) getTools() []*llm.FunctionDefinition {
-	return append(a.gitTools, []*llm.FunctionDefinition{
-		{
-			FunctionDeclaration: genai.FunctionDeclaration{
-				Name:        "read_logs_end",
-				Description: "Read tail of the logs from the previous build. If the logs are large, they may be truncated providing only the tail.",
-				Parameters: &genai.Schema{
-					Type:       genai.TypeObject,
-					Properties: map[string]*genai.Schema{},
-					Required:   []string{},
-				},
-				Response: &genai.Schema{
-					Type: genai.TypeObject,
-					Properties: map[string]*genai.Schema{
-						"logs":  {Type: genai.TypeString, Description: "The tail end of the build logs"},
-						"error": {Type: genai.TypeString, Description: "The error listing the requested path, if unsuccessful"},
-					},
+	tools := append(a.gitTools, a.readLogsTool())
+	return tools
+}
+
+func (a *defaultAgent) readLogsTool() *llm.FunctionDefinition {
+	return &llm.FunctionDefinition{
+		FunctionDeclaration: genai.FunctionDeclaration{
+			Name:        "read_logs_end",
+			Description: "Read tail of the logs from the previous build. If the logs are large, they may be truncated providing only the tail.",
+			Parameters: &genai.Schema{
+				Type:       genai.TypeObject,
+				Properties: map[string]*genai.Schema{},
+				Required:   []string{},
+			},
+			Response: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"logs":  {Type: genai.TypeString, Description: "The tail end of the build logs"},
+					"error": {Type: genai.TypeString, Description: "The error listing the requested path, if unsuccessful"},
 				},
 			},
-			Function: func(args map[string]any) genai.FunctionResponse {
-				if len(a.iterHistory) == 0 {
-					return genai.FunctionResponse{
-						Name: "read_logs_end", // Name must match the FunctionDeclaration
-						Response: map[string]any{
-							"logs":  "",
-							"error": "Can't read logs because there was no previous build execution.",
-						},
-					}
-				}
-				prev := a.iterHistory[len(a.iterHistory)-1]
-				r, err := a.logs(context.Background(), prev.ObliviousID)
-				if err != nil {
-					return genai.FunctionResponse{
-						Name: "read_logs_end", // Name must match the FunctionDeclaration
-						Response: map[string]any{
-							"logs":  "",
-							"error": fmt.Sprintf("Reading logs: %v", err),
-						},
-					}
-				}
-				defer r.Close()
-				b, err := io.ReadAll(r)
-				if err != nil {
-					return genai.FunctionResponse{
-						Name: "read_logs_end", // Name must match the FunctionDeclaration
-						Response: map[string]any{
-							"logs":  "",
-							"error": err.Error(),
-						},
-					}
-				}
-				logs := string(b)
-				if len(logs) > uploadBytesLimit {
-					logs = "...(truncated)..." + logs[len(logs)-uploadBytesLimit:]
-				}
+		},
+		Function: func(args map[string]any) genai.FunctionResponse {
+			logs, err := a.readPreviousBuildLogs(context.Background())
+			if err != nil {
 				return genai.FunctionResponse{
 					Name: "read_logs_end", // Name must match the FunctionDeclaration
 					Response: map[string]any{
-						"logs":  logs,
-						"error": "",
+						"logs":  "",
+						"error": err.Error(),
 					},
 				}
-			},
+			}
+			if len(logs) > uploadBytesLimit {
+				logs = "...(truncated)..." + logs[len(logs)-uploadBytesLimit:]
+			}
+			return genai.FunctionResponse{
+				Name: "read_logs_end", // Name must match the FunctionDeclaration
+				Response: map[string]any{
+					"logs":  logs,
+					"error": "",
+				},
+			}
 		},
-	}...)
+	}
+}
+
+// readPreviousBuildLogs returns the previous iteration's build logs from
+// wherever that build actually ran, routed on ObliviousID (present only when
+// the iteration was recorded from GCB).
+// NOTE: A failed scratch-mode confirmation carries an ObliviousID, so its GCB
+// logs win over the retained (successful) local build output.
+func (a *defaultAgent) readPreviousBuildLogs(ctx context.Context) (string, error) {
+	if len(a.iterHistory) > 0 {
+		if prev := a.iterHistory[len(a.iterHistory)-1]; prev.ObliviousID != "" {
+			r, err := a.logs(ctx, prev.ObliviousID)
+			if err != nil {
+				return "", errors.Wrap(err, "reading logs")
+			}
+			defer r.Close()
+			b, err := io.ReadAll(r)
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		}
+	}
+	if a.deps.ScratchRunner != nil {
+		logs, err := a.deps.ScratchRunner.LastBuildLogs(ctx)
+		if err != nil {
+			return "", errors.Wrap(err, "reading logs")
+		}
+		return string(logs), nil
+	}
+	return "", errors.New("can't read logs because there was no previous build execution")
 }
 
 func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initialErr error, wt billy.Filesystem, str *memory.Storage) (*schema.StrategyOneOf, error) {

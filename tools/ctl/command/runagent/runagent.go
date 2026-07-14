@@ -34,6 +34,7 @@ type Config struct {
 	Version         string
 	Artifact        string
 	AgentIterations int
+	ExecutionMode   string
 }
 
 // Validate ensures the configuration is valid.
@@ -55,6 +56,11 @@ func (c Config) Validate() error {
 	}
 	if c.Artifact == "" {
 		return errors.New("artifact is required")
+	}
+	switch schema.AgentExecutionMode(c.ExecutionMode) {
+	case "", schema.AgentExecutionModeGCB, schema.AgentExecutionModeScratch:
+	default:
+		return errors.Errorf("invalid execution-mode %q", c.ExecutionMode)
 	}
 	return nil
 }
@@ -99,6 +105,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	resp, err := stub(ctx, schema.AgentCreateRequest{
 		Target:        t,
 		MaxIterations: cfg.AgentIterations,
+		ExecutionMode: schema.AgentExecutionMode(cfg.ExecutionMode),
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "running attest")
@@ -138,7 +145,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>]",
+		Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>] [--execution-mode <mode>]",
 		Short: "Run the agent on a single target",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -162,5 +169,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Version, "version", "", "the version of the package")
 	set.StringVar(&cfg.Artifact, "artifact", "", "the artifact name")
 	set.IntVar(&cfg.AgentIterations, "agent-iterations", 3, "maximum number of agent iterations before giving up")
+	set.StringVar(&cfg.ExecutionMode, "execution-mode", "", "where iteration builds execute: gcb (default) or scratch")
 	return set
 }
