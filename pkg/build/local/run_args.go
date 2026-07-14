@@ -31,8 +31,8 @@ type RunArgsOpts struct {
 	// output directory.
 	OutputMountSrc string
 	// Remove adds --rm: the daemon removes the container once it exits. In
-	// the start/exec composition the container only exits when the caller
-	// stops its idle init.
+	// the start/exec composition the container only exits when its idle init
+	// stops.
 	Remove bool
 	// AllowPrivileged permits plans that request privileged execution to
 	// receive --privileged and the docker socket mount. Callers gate this on
