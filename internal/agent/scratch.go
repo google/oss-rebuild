@@ -24,12 +24,17 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
 )
 
-// keepAliveInterval spaces the no-op execs that mark the scratch VM active
-// while the session waits on work that produces no exec traffic.
-// NOTE: Must stay comfortably inside the idle reaper's threshold (30m).
-const keepAliveInterval = 5 * time.Minute
+const (
+	// defaultCommandTimeout bounds LLM-initiated diagnostic commands.
+	defaultCommandTimeout = 5 * time.Minute
+	// keepAliveInterval spaces the no-op execs that mark the scratch VM
+	// active while the session waits on work that produces no exec traffic.
+	// NOTE: Must stay comfortably inside the idle reaper's threshold (30m).
+	keepAliveInterval = 5 * time.Minute
+)
 
 // ScratchRunner executes iteration builds on the session's scratch VM via a
 // build.Executor and evaluates each produced artifact against upstream.
@@ -223,4 +228,33 @@ func (r *ScratchRunner) StartKeepAlive(ctx context.Context) (stop func()) {
 		}
 	}()
 	return cancel
+}
+
+// RunCommand executes a diagnostic shell command on the scratch VM on
+// behalf of the LLM and returns its exit code and merged output (truncated
+// to the tail when large). The returned error covers infrastructure
+// failures only. Command failures are expressed via the exit code.
+func (r *ScratchRunner) RunCommand(ctx context.Context, command string, timeoutSeconds int) (exitCode int, output string, err error) {
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = int(defaultCommandTimeout.Seconds())
+	}
+	op, err := scratch.Exec(ctx, r.Stubs, schema.ScratchExecRequest{
+		ScratchID:      r.ScratchID,
+		Cmd:            []string{"/bin/sh", "-c", command},
+		TimeoutSeconds: timeoutSeconds,
+	}, 0)
+	if err != nil {
+		return 0, "", err
+	}
+	out, rerr := scratch.ReadOutput(ctx, r.GCSClient, op, uploadBytesLimit)
+	if rerr != nil {
+		log.Printf("scratch command: reading output: %v", rerr)
+	}
+	if op.Error != nil {
+		if op.Error.Code == int(codes.DeadlineExceeded) {
+			return op.Result.ExitCode, string(out), errors.Errorf("command timed out after %ds", timeoutSeconds)
+		}
+		return 0, string(out), errors.New(op.Error.Message)
+	}
+	return op.Result.ExitCode, string(out), nil
 }
