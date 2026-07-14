@@ -12,7 +12,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/bufiox"
@@ -208,27 +207,17 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		}
 	}()
 	// Compose command args
-	runArgs := []string{"run"}
-	if !e.retainContainer && !opts.SavePostBuildContainer {
-		runArgs = append(runArgs, "--rm")
+	argOpts := RunArgsOpts{
+		ContainerName:   handle.id, // Use BuildID as container name
+		OutputMountSrc:  hostOutputPath,
+		Remove:          !e.retainContainer && !opts.SavePostBuildContainer,
+		AllowPrivileged: e.allowPrivileged,
+		MemoryLimit:     e.memoryLimit,
+		KeepAlive:       e.keepalive,
 	}
-	runArgs = append(runArgs, "--name", handle.id) // Use BuildID as container name
-	runArgs = append(runArgs, "-v", fmt.Sprintf("%s:%s", hostOutputPath, path.Dir(plan.OutputPath)))
-	if plan.WorkingDir != "" {
-		runArgs = append(runArgs, "-w", plan.WorkingDir)
+	if plan.Privileged && !e.allowPrivileged {
+		log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
 	}
-	if plan.Privileged {
-		if e.allowPrivileged {
-			runArgs = append(runArgs, "--privileged")
-			runArgs = append(runArgs, "-v", "/var/run/docker.sock:/var/run/docker.sock")
-		} else {
-			log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
-		}
-	}
-	if e.memoryLimit != "" {
-		runArgs = append(runArgs, "--memory", e.memoryLimit)
-	}
-
 	// Add AUTH_HEADER environment variable if auth is required and callback is available
 	if plan.RequiresAuth && e.authCallback != nil {
 		authHeader, err := e.authCallback()
@@ -239,26 +228,13 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 			})
 			return
 		}
-		runArgs = append(runArgs, "-e", fmt.Sprintf("AUTH_HEADER=%s", authHeader))
+		argOpts.AuthMode, argOpts.AuthValue = AuthInline, authHeader
 	}
-
-	// Disable core dumps
-	runArgs = append(runArgs, "--ulimit", "core=0")
-
-	runArgs = append(runArgs, plan.Image)
-	if e.keepalive {
-		// To keep the container alive, we need to execute the build script in the background and keep an infinte process in the forground.
-		// Write the script to a file then execute it in the background
-		if strings.Contains(plan.Script, "EOF") {
-			handle.updateStatus(build.BuildStateCompleted)
-			handle.setResult(build.Result{
-				Error: errors.New("build script contains unexpected 'EOF' literal"),
-			})
-		}
-		wrappedScript := fmt.Sprintf("cat << 'EOF' > /build.sh\n%s\nEOF\n/bin/sh /build.sh &\ntail -f /dev/null\n", plan.Script)
-		runArgs = append(runArgs, "/bin/sh", "-c", wrappedScript)
-	} else {
-		runArgs = append(runArgs, "/bin/sh", "-c", plan.Script)
+	runArgs, err := ComposeDockerRunArgs(plan, argOpts)
+	if err != nil {
+		handle.updateStatus(build.BuildStateCompleted)
+		handle.setResult(build.Result{Error: err})
+		return
 	}
 	// Execute the Docker run command with streaming output
 	handle.updateStatus(build.BuildStateRunning)
