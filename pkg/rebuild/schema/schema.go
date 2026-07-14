@@ -462,6 +462,23 @@ const (
 	AgentSessionStatusCompleted    = "COMPLETED"
 )
 
+// AgentExecutionMode selects where an agent session's iteration builds execute.
+type AgentExecutionMode string
+
+const (
+	// AgentExecutionModeGCB executes each iteration's build on Cloud Build
+	// inside the agent API's iteration handler (the default).
+	AgentExecutionModeGCB AgentExecutionMode = "gcb"
+	// AgentExecutionModeScratch iterates builds on a per-session scratch
+	// VM, driven by the agent through the scratch exec API. The scratch is
+	// allocated by the session creator and handed to the agent. Iterative
+	// attempts are executed on scratch while final verification attempts are
+	// still routed to GCB.
+	// NOTE: Since only verification attempts go through the API-mediated GCB
+	// execution, only these will appear in the Session's Iterations.
+	AgentExecutionModeScratch AgentExecutionMode = "scratch"
+)
+
 // Agent iteration status constants
 const (
 	AgentIterationStatusPending  = "PENDING"
@@ -473,10 +490,11 @@ const (
 
 // AgentCreateRequest creates a new agent session
 type AgentCreateRequest struct {
-	Target        rebuild.Target `form:",required"`
-	RunID         string         `form:""`
-	MaxIterations int            `form:""`
-	Context       *AgentContext  `form:""`
+	Target        rebuild.Target     `form:",required"`
+	RunID         string             `form:""`
+	MaxIterations int                `form:""`
+	Context       *AgentContext      `form:""`
+	ExecutionMode AgentExecutionMode `form:""` // Empty means AgentExecutionModeGCB
 }
 
 var _ api.Input = AgentCreateRequest{}
@@ -484,6 +502,11 @@ var _ api.Input = AgentCreateRequest{}
 func (r AgentCreateRequest) Validate() error {
 	if r.Target.Ecosystem == "" || r.Target.Package == "" || r.Target.Version == "" || r.Target.Artifact == "" {
 		return errors.New("target must be fully specified")
+	}
+	switch r.ExecutionMode {
+	case "", AgentExecutionModeGCB, AgentExecutionModeScratch:
+	default:
+		return errors.Errorf("invalid execution_mode %q", r.ExecutionMode)
 	}
 	return nil
 }
@@ -499,7 +522,9 @@ type AgentCreateResponse struct {
 	ExeuctionName string `json:"execution_name"`
 }
 
-// AgentCreateIterationRequest records iteration and triggers build
+// AgentCreateIterationRequest records an iteration and triggers its GCB
+// build. Scratch-mode sessions submit only their confirmation builds here.
+// Local attempts are tracked by the scratch exec ledger alone.
 type AgentCreateIterationRequest struct {
 	SessionID       string         `form:",required"`
 	IterationNumber int            `form:",required"`
@@ -549,19 +574,21 @@ type AgentCompleteResponse struct {
 
 // AgentSession stores agent session metadata in Firestore
 type AgentSession struct {
-	ID               string         `firestore:"id,omitempty"`
-	RunID            string         `firestore:"run_id,omitempty"`
-	Target           rebuild.Target `firestore:"target,omitempty"`
-	MaxIterations    int            `firestore:"max_iterations,omitempty"`
-	TimeoutSeconds   int            `firestore:"timeout_seconds,omitempty"`
-	Context          *AgentContext  `firestore:"context,omitempty"`
-	Status           string         `firestore:"status,omitempty"`
-	ExecutionName    string         `firestore:"execution_name,omitempty"`
-	Created          time.Time      `firestore:"created,omitempty"`
-	Updated          time.Time      `firestore:"updated,omitempty"`
-	StopReason       string         `firestore:"stop_reason,omitempty"`
-	SuccessIteration string         `firestore:"success_iteration,omitempty"`
-	Summary          string         `firestore:"summary,omitempty"`
+	ID               string             `firestore:"id,omitempty"`
+	RunID            string             `firestore:"run_id,omitempty"`
+	Target           rebuild.Target     `firestore:"target,omitempty"`
+	MaxIterations    int                `firestore:"max_iterations,omitempty"`
+	TimeoutSeconds   int                `firestore:"timeout_seconds,omitempty"`
+	Context          *AgentContext      `firestore:"context,omitempty"`
+	Status           string             `firestore:"status,omitempty"`
+	ExecutionName    string             `firestore:"execution_name,omitempty"`
+	ExecutionMode    AgentExecutionMode `firestore:"execution_mode,omitempty"` // Empty means GCB (sessions predating scratch support)
+	ScratchID        string             `firestore:"scratch_id,omitempty"`     // Scratch VM bound to the session (scratch execution mode only)
+	Created          time.Time          `firestore:"created,omitempty"`
+	Updated          time.Time          `firestore:"updated,omitempty"`
+	StopReason       string             `firestore:"stop_reason,omitempty"`
+	SuccessIteration string             `firestore:"success_iteration,omitempty"`
+	Summary          string             `firestore:"summary,omitempty"`
 }
 
 // AgentIteration stores iteration metadata in Firestore
