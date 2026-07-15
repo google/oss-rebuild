@@ -35,6 +35,7 @@ type Config struct {
 	Artifact        string
 	AgentIterations int
 	ExecutionMode   string
+	LocalAgent      bool
 }
 
 // Validate ensures the configuration is valid.
@@ -106,6 +107,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		Target:        t,
 		MaxIterations: cfg.AgentIterations,
 		ExecutionMode: schema.AgentExecutionMode(cfg.ExecutionMode),
+		ExternalAgent: cfg.LocalAgent,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "running attest")
@@ -145,7 +147,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>] [--execution-mode <mode>]",
+		Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>] [--execution-mode <mode>] [--local-agent]",
 		Short: "Run the agent on a single target",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -170,5 +172,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Artifact, "artifact", "", "the artifact name")
 	set.IntVar(&cfg.AgentIterations, "agent-iterations", 3, "maximum number of agent iterations before giving up")
 	set.StringVar(&cfg.ExecutionMode, "execution-mode", "", "where iteration builds execute: gcb (default) or scratch")
+	set.BoolVar(&cfg.LocalAgent, "local-agent", false, "run the agent locally instead of launching the hosted agent job (iteration builds still run per --execution-mode)")
 	return set
 }

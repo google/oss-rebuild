@@ -141,60 +141,72 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 			log.Printf("releasing scratch %s for failed session %s: %v", session.ScratchID, sessionID, err)
 		}
 	}
-	args := []string{
-		"--project=" + deps.Project,
-		"--location=" + deps.Location,
-		"--session-id=" + sessionID,
-		"--agent-api-url=" + deps.AgentAPIURL,
-		"--sessions-bucket=" + deps.SessionsBucket,
-		"--metadata-bucket=" + deps.MetadataBucket,
-		"--logs-bucket=" + deps.LogsBucket,
-		"--max-iterations=" + fmt.Sprintf("%d", maxIterations),
-		"--target-ecosystem=" + string(req.Target.Ecosystem),
-		"--target-package=" + req.Target.Package,
-		"--target-version=" + req.Target.Version,
-		"--target-artifact=" + req.Target.Artifact,
-	}
-	if executionMode == schema.AgentExecutionModeScratch {
-		args = append(args,
-			"--execution-mode="+string(schema.AgentExecutionModeScratch),
-			"--scratch-id="+session.ScratchID,
-			"--prebuild-bucket="+deps.PrebuildConfig.Bucket,
-			"--prebuild-dir="+deps.PrebuildConfig.Dir,
-			fmt.Sprintf("--prebuild-auth=%t", deps.PrebuildConfig.Auth),
-		)
+	if !req.ExternalAgent {
+		args := []string{
+			"--project=" + deps.Project,
+			"--location=" + deps.Location,
+			"--session-id=" + sessionID,
+			"--agent-api-url=" + deps.AgentAPIURL,
+			"--sessions-bucket=" + deps.SessionsBucket,
+			"--metadata-bucket=" + deps.MetadataBucket,
+			"--logs-bucket=" + deps.LogsBucket,
+			"--max-iterations=" + fmt.Sprintf("%d", maxIterations),
+			"--target-ecosystem=" + string(req.Target.Ecosystem),
+			"--target-package=" + req.Target.Package,
+			"--target-version=" + req.Target.Version,
+			"--target-artifact=" + req.Target.Artifact,
+		}
 		if deps.Host != "" {
 			args = append(args, "--host="+deps.Host)
 		}
-	}
-	// Create Cloud Run Job
-	op, err := deps.RunService.Projects.Locations.Jobs.Run(deps.AgentJobName, &run.GoogleCloudRunV2RunJobRequest{
-		Overrides: &run.GoogleCloudRunV2Overrides{
-			Timeout: fmt.Sprintf("%ds", deps.AgentTimeoutSeconds),
-			ContainerOverrides: []*run.GoogleCloudRunV2ContainerOverride{
-				{Args: args},
+		if executionMode == schema.AgentExecutionModeScratch {
+			args = append(args,
+				"--execution-mode="+string(schema.AgentExecutionModeScratch),
+				"--scratch-id="+session.ScratchID,
+				"--prebuild-bucket="+deps.PrebuildConfig.Bucket,
+				"--prebuild-dir="+deps.PrebuildConfig.Dir,
+				fmt.Sprintf("--prebuild-auth=%t", deps.PrebuildConfig.Auth),
+			)
+		}
+		// Create Cloud Run Job
+		op, err := deps.RunService.Projects.Locations.Jobs.Run(deps.AgentJobName, &run.GoogleCloudRunV2RunJobRequest{
+			Overrides: &run.GoogleCloudRunV2Overrides{
+				Timeout: fmt.Sprintf("%ds", deps.AgentTimeoutSeconds),
+				ContainerOverrides: []*run.GoogleCloudRunV2ContainerOverride{
+					{Args: args},
+				},
 			},
-		},
-	}).Do()
-	if err != nil {
-		releaseScratch()
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating cloud run job"))
+		}).Do()
+		if err != nil {
+			releaseScratch()
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating cloud run job"))
+		}
+		session.ExecutionName, err = executionFromOp(op)
+		if err != nil {
+			// NOTE: Failing here would strand the launched job (a retry
+			// launches a second job and allocates a second scratch) and skip
+			// persisting ScratchID, which AgentComplete's teardown reads.
+			// Proceed without an execution name, as external-agent sessions do.
+			log.Printf("session %s: getting execution name from operation: %v", sessionID, err)
+		}
 	}
-	// Update session status
-	session.ExecutionName, err = executionFromOp(op)
-	if err != nil {
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "getting execution name from operation"))
-	}
+	// Update session status. External-agent sessions become RUNNING without an
+	// execution: the caller runs the agent binary externally.
 	session.Status = schema.AgentSessionStatusRunning
 	session.Updated = time.Now().UTC()
 	_, err = deps.FirestoreClient.Collection("agent_sessions").Doc(sessionID).Set(ctx, session)
 	if err != nil {
-		// NOTE: The job is already running. Leave the scratch for it and let
-		// the reaper handle any orphan.
+		if req.ExternalAgent {
+			// No agent will ever use the scratch. Release it eagerly.
+			releaseScratch()
+		}
+		// NOTE: With a launched job the scratch is left for the (possibly
+		// still viable) execution. The reaper handles any orphan.
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "updating session status"))
 	}
 	return &schema.AgentCreateResponse{
 		SessionID:     sessionID,
 		ExeuctionName: session.ExecutionName,
+		ScratchID:     session.ScratchID,
 	}, nil
 }
