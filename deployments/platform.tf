@@ -242,6 +242,21 @@ resource "google_firestore_index" "attempts-artifact-created" {
   depends_on = [google_app_engine_application.dummy_app]
 }
 
+# Used by rundex.FetchRebuilds when filtering by run_id
+resource "google_firestore_index" "attempts-run-id" {
+  collection  = "attempts"
+  query_scope = "COLLECTION_GROUP"
+  fields {
+    field_path = "run_id"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "__name__"
+    order      = "DESCENDING"
+  }
+  depends_on = [google_app_engine_application.dummy_app]
+}
+
 # Used by rundex.LatestTrackedPackages and rundex.FetchRebuilds (with executors/runs filters)
 resource "google_firestore_index" "attempts-ecosystem-package" {
   collection  = "attempts"
