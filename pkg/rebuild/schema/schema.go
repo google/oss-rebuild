@@ -495,6 +495,7 @@ type AgentCreateRequest struct {
 	MaxIterations int                `form:""`
 	Context       *AgentContext      `form:""`
 	ExecutionMode AgentExecutionMode `form:""` // Empty means AgentExecutionModeGCB
+	Headless      bool               `form:""` // Skip the hosted agent job launch: the agent binary runs externally
 }
 
 var _ api.Input = AgentCreateRequest{}
@@ -520,6 +521,7 @@ type AgentContext struct {
 type AgentCreateResponse struct {
 	SessionID     string `json:"session_id"`
 	ExeuctionName string `json:"execution_name"`
+	ScratchID     string `json:"scratch_id,omitempty"` // Scratch-mode VM handle, passed by headless callers as --scratch-id
 }
 
 // AgentCreateIterationRequest records an iteration and triggers its GCB
