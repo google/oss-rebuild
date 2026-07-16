@@ -67,8 +67,14 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 }
 
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
-	head, _ := repoConfig.Repository.Head()
-	commitObject, _ := repoConfig.Repository.CommitObject(head.Hash())
+	head, err := repoConfig.Repository.Head()
+	if err != nil {
+		return nil, errors.Wrapf(err, "resolving HEAD [repo=%s]", repoConfig.URI)
+	}
+	commitObject, err := repoConfig.Repository.CommitObject(head.Hash())
+	if err != nil {
+		return nil, errors.Wrapf(err, "resolving HEAD commit [repo=%s]", repoConfig.URI)
+	}
 	// TODO: It is possible that the build tool would have changed between the HEAD commit and the commit used for the build.
 	// Although unlikely, we should ideally check out the specific commit used for the build if known.
 	// This would require to do version heuristic first to determine the correct commit/tag.
@@ -104,8 +110,11 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 	var bestBuildTool string
 	minDepth := math.MaxInt
 
-	fileIter, _ := commit.Files()
-	fileIter.ForEach(func(f *object.File) error {
+	fileIter, err := commit.Files()
+	if err != nil {
+		return "", errors.Wrap(err, "listing commit files")
+	}
+	err = fileIter.ForEach(func(f *object.File) error {
 		currentDepth := strings.Count(f.Name, "/")
 		if currentDepth >= minDepth {
 			// No need to check deeper files if we already have a shallower candidate
@@ -152,6 +161,9 @@ func inferBuildTool(commit *object.Commit) (string, error) {
 		}
 		return nil
 	})
+	if err != nil {
+		return "", errors.Wrap(err, "iterating commit files")
+	}
 	if bestBuildTool != "" {
 		return bestBuildTool, nil
 	}

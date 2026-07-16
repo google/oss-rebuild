@@ -49,8 +49,14 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	// 2. Git Log Heuristic
 	var pomXMLGuess string
 	if !found {
-		head, _ := repoConfig.Repository.Head()
-		commitObject, _ := repoConfig.Repository.CommitObject(head.Hash())
+		head, err := repoConfig.Repository.Head()
+		if err != nil {
+			return nil, errors.Wrapf(err, "[INTERNAL] resolving HEAD [repo=%s]", repoConfig.URI)
+		}
+		commitObject, err := repoConfig.Repository.CommitObject(head.Hash())
+		if err != nil {
+			return nil, errors.Wrapf(err, "[INTERNAL] resolving HEAD commit [repo=%s]", repoConfig.URI)
+		}
 		_, pkgPath, err := findPomXML(commitObject, t.Package)
 		if err != nil {
 			log.Printf("cannot build ref map manifest heuristic: %s", err)
@@ -126,10 +132,13 @@ func findBuildDir(commit *object.Commit, t rebuild.Target) (dir string, found bo
 }
 
 func findPomXML(commit *object.Commit, pkg string) (*PomXML, string, error) {
-	commitTree, _ := commit.Tree()
+	commitTree, err := commit.Tree()
+	if err != nil {
+		return nil, "", errors.Wrap(err, "fetching commit tree")
+	}
 	var names []string
 	var pomXMLs []PomXML
-	commitTree.Files().ForEach(func(f *object.File) error {
+	err = commitTree.Files().ForEach(func(f *object.File) error {
 		// Per Maven conventions, skip non-"pom.xml" files and those inside a `src` directory (unlikely to contain metadata).
 		// Reference: https://maven.apache.org/guides/introduction/introduction-to-the-standard-directory-layout.html
 		// Note: This will miss pom files, with name other than "pom.xml", whose paths are explicitly passed during build via "-f".
@@ -147,6 +156,9 @@ func findPomXML(commit *object.Commit, pkg string) (*PomXML, string, error) {
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, "", errors.Wrap(err, "iterating commit files")
+	}
 	if len(names) > 0 {
 		if len(names) > 1 {
 			log.Printf("Multiple pom.xml file candidates [pkg=%s,ref=%s,matches=%v]\n", pkg, commit.Hash.String(), names)
