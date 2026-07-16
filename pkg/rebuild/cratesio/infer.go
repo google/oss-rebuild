@@ -68,8 +68,14 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
 	}
 	// Do Cargo.toml search.
-	head, _ := r.Repository.Head()
-	c, _ := r.Repository.CommitObject(head.Hash())
+	head, err := r.Repository.Head()
+	if err != nil {
+		return r, errors.Wrapf(err, "resolving HEAD [repo=%s]", r.URI)
+	}
+	c, err := r.Repository.CommitObject(head.Hash())
+	if err != nil {
+		return r, errors.Wrapf(err, "resolving HEAD commit [repo=%s]", r.URI)
+	}
 	_, pkgPath, err := findCargoTOML(r.Repository, c, t.Package)
 	if err != nil {
 		log.Printf("Cargo.toml path heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
@@ -210,7 +216,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, err
 	}
-	tree, _ := c.Tree()
+	tree, err := c.Tree()
+	if err != nil {
+		return nil, errors.Wrap(err, "[INTERNAL] fetching commit tree")
+	}
 	ct, err := getCargoTOML(tree, path.Join(dir, "Cargo.toml"))
 	if err == object.ErrFileNotFound {
 		return nil, errors.Errorf("Cargo.toml file not found [heuristic=%s]", rcfg.Dir)
@@ -339,7 +348,10 @@ func getFileFromCrate(crate io.Reader, path string) ([]byte, error) {
 
 // findAndValidateCargoTOML ensures the package config has the expected name and version, or finds a new version if necessary.
 func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, version, guess string) (string, error) {
-	t, _ := c.Tree()
+	t, err := c.Tree()
+	if err != nil {
+		return "", errors.Wrap(err, "fetching commit tree")
+	}
 	path := path.Join(guess, "Cargo.toml")
 	orig, err := getCargoTOML(t, path)
 	cargoTOML := &orig
@@ -362,7 +374,10 @@ func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, vers
 }
 
 func findCargoTOML(repo *git.Repository, c *object.Commit, pkg string) (*reg.CargoTOML, string, error) {
-	t, _ := c.Tree()
+	t, err := c.Tree()
+	if err != nil {
+		return nil, "", errors.Wrap(err, "fetching commit tree")
+	}
 	path := "Cargo.toml"
 	ct, err := getCargoTOML(t, path)
 	if err == object.ErrFileNotFound {
