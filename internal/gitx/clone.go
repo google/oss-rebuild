@@ -23,7 +23,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/billyx"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/pkg/errors"
@@ -36,18 +35,11 @@ type CloneFunc func(context.Context, storage.Storer, billy.Filesystem, *git.Clon
 // otherwise falling back to go-git.
 func Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
 	if NativeGitAvailable() && opt.Auth == nil {
-		switch s.(type) {
-		case *filesystem.Storage:
-			log.Println("Found git binary. Cloning using git")
-			return NativeClone(ctx, s, fs, opt)
-		case *memory.Storage:
-			// NOTE: While supported, this can range from 2x to 5x slower with great penalties for larger repos.
-			log.Println("Found git binary but using memory.Storage. Cloning using go-git")
-			return git.CloneContext(ctx, s, fs, opt)
-		default:
-			log.Printf("Found git binary but using unknown Storer %T. Cloning using go-git", s)
-			return git.CloneContext(ctx, s, fs, opt)
-		}
+		// NOTE: Native git remains several times faster than go-git even for
+		// non-OS-backed storers, where NativeClone stages the clone on disk
+		// and copies it over.
+		log.Println("Found git binary. Cloning using git")
+		return NativeClone(ctx, s, fs, opt)
 	}
 	if NativeGitAvailable() && opt.Auth != nil {
 		log.Println("Found git binary but Auth is set. Cloning using go-git")

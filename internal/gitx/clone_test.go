@@ -143,6 +143,24 @@ commits:
 				return &struct{ *memory.Storage }{memory.NewStorage()}
 			},
 		},
+		// gitx.Storer wrappers should be unwrapped to reach the direct-clone
+		// (osfs) and byte-copy staging (memfs) paths.
+		{
+			name: "gitx_storer_filesystem_osfs",
+			storer: func(t *testing.T) storage.Storer {
+				return NewStorer(func() storage.Storer {
+					return filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault())
+				})
+			},
+		},
+		{
+			name: "gitx_storer_filesystem_memfs",
+			storer: func(t *testing.T) storage.Storer {
+				return NewStorer(func() storage.Storer {
+					return filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+				})
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
