@@ -5,6 +5,9 @@ package cratesio
 
 import (
 	"regexp"
+
+	"github.com/google/oss-rebuild/internal/semver"
+	"github.com/pelletier/go-toml/v2"
 )
 
 // Compiled regex patterns for detecting Rust version requirements
@@ -23,6 +26,15 @@ var (
 	// docExamplesRegex detects the addition of the scrape indicator (Rust 1.67+)
 	docExamplesRegex = regexp.MustCompile(`(?m)^\s*doc-scrape-examples\s*=\s*(true|false)\s*$`)
 )
+
+func hasPackageEdition2024(cargoTomlText string) bool {
+	var manifest struct {
+		Package struct {
+			Edition string `toml:"edition"`
+		} `toml:"package"`
+	}
+	return toml.Unmarshal([]byte(cargoTomlText), &manifest) == nil && manifest.Package.Edition == "2024"
+}
 
 // detectRustVersionBounds analyzes Cargo.toml for structural patterns that indicate
 // minimum Rust version requirements based on tooling behavior changes.
@@ -60,6 +72,12 @@ func detectRustVersionBounds(cargoTomlText string) (lo, hi string) {
 	}
 	if hi == "999" {
 		hi = ""
+	}
+	if hasPackageEdition2024(cargoTomlText) {
+		lo = max("1.85.0", lo)
+		if hi != "" && semver.Cmp(hi, lo) < 0 {
+			hi = ""
+		}
 	}
 	return
 }

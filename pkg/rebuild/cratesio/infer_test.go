@@ -27,6 +27,51 @@ const (
 	pre150CargoTOML  = `# to registry (e.g., crates.io) dependencies`
 )
 
+func TestHasPackageEdition2024(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		manifest string
+		want     bool
+	}{
+		{
+			name: "package edition",
+			manifest: `[package]
+edition = "2024" # supported since Cargo 1.85
+`,
+			want: true,
+		},
+		{
+			name: "metadata is not package edition",
+			manifest: `[package]
+name = "example"
+
+[package.metadata.example]
+edition = "2024"
+`,
+		},
+		{
+			name: "multiline string is not package edition",
+			manifest: `[package]
+description = """
+edition = "2024"
+"""
+`,
+		},
+		{
+			name: "older package edition",
+			manifest: `[package]
+edition = "2021"
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasPackageEdition2024(tc.manifest); got != tc.want {
+				t.Errorf("hasPackageEdition2024() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestInferStrategy(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
@@ -102,6 +147,44 @@ func TestInferStrategy(t *testing.T) {
 						Dir:  "",
 					},
 					RustVersion: "1.65.0",
+				}
+			},
+		},
+		{
+			name: "edition 2024 raises rust_version floor",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+        edition = "2024"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2025-02-26T00:00:00Z","updated_at":"2025-02-26T00:00:00Z"}}`,
+			files: []archive.TarEntry{
+				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML + `
+[package]
+name = "serde"
+version = "1.0.150"
+edition = "2024"
+`)},
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "",
+					},
+					RustVersion: "1.85.0",
 				}
 			},
 		},
