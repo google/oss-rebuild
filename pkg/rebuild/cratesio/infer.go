@@ -46,6 +46,8 @@ func getCargoTOML(tree *object.Tree, path string) (ct reg.CargoTOML, err error) 
 	if err != nil {
 		return ct, err
 	}
+	// Cargo tolerates a UTF-8 byte order mark in manifests; go-toml does not.
+	p = strings.TrimPrefix(p, "\uFEFF")
 	return ct, toml.Unmarshal([]byte(p), &ct)
 }
 

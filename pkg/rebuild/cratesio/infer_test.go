@@ -973,6 +973,26 @@ func TestFindAndValidateCargoTOMLWorkspaceVersion(t *testing.T) {
 	}
 }
 
+func TestFindAndValidateCargoTOMLStripsManifestBOM(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: target
+    files:
+      Cargo.toml: "\uFEFF[workspace]\nmembers = [\"member\"]\n\n[workspace.package]\nversion = \"1.2.3\"\n"
+      member/Cargo.toml: |
+        [package]
+        name = "member"
+        version.workspace = true
+`, nil))
+	commit := must(repo.CommitObject(repo.Commits["target"]))
+	got, err := findAndValidateCargoTOML(repo.Repository, commit, "member", "1.2.3", "member")
+	if err != nil {
+		t.Fatalf("findAndValidateCargoTOML with BOM workspace root: %v", err)
+	}
+	if want := "member/Cargo.toml"; got != want {
+		t.Errorf("findAndValidateCargoTOML = %q, want %q", got, want)
+	}
+}
+
 func must[T any](t T, err error) T {
 	if err != nil {
 		panic(err)
