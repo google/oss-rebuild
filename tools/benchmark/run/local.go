@@ -12,7 +12,6 @@ import (
 	"net/http"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/gitcache"
@@ -125,7 +124,7 @@ func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux
 	if err != nil {
 		return nil, err
 	}
-	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, &gitx.RepositoryOptions{Worktree: memfs.New(), Storer: memory.NewStorage()})
+	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, &gitx.RepositoryOptions{Worktree: memfs.New(), Storer: gitx.NewInMemoryStorer()})
 	if err != nil {
 		return nil, err
 	}

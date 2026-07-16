@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
@@ -187,7 +186,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			RepoOptF: func() *gitx.RepositoryOptions {
 				return &gitx.RepositoryOptions{
 					Worktree: memfs.New(),
-					Storer:   memory.NewStorage(),
+					Storer:   gitx.NewInMemoryStorer(),
 				}
 			},
 			CratesRegistryStub: regstub,
