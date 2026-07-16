@@ -10,15 +10,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -96,19 +93,16 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 		return nil, errors.New("Unsupported opt")
 	}
 	// Determine extraction target: use the filesystem directly for
-	// filesystem.Storage, otherwise stage via a temp directory.
+	// filesystem.Storage, otherwise stage via an in-memory storer.
+	// NOTE: The staging storer must not be cleaned up as CopyStorer is only a
+	// shallow-copy and retains indirect references to the staging storer.
 	var extractFS billy.Filesystem
-	var needsStaging bool
+	var stagingStorer *filesystem.Storage
 	if sf, ok := s.(*filesystem.Storage); ok {
 		extractFS = sf.Filesystem()
 	} else {
-		needsStaging = true
-		tmpDir, err := os.MkdirTemp("", "gitcache-clone-*")
-		if err != nil {
-			return nil, errors.Wrap(err, "creating staging directory")
-		}
-		defer os.RemoveAll(tmpDir)
-		extractFS = osfs.New(tmpDir)
+		stagingStorer = gitx.NewInMemoryStorer()
+		extractFS = stagingStorer.Filesystem()
 	}
 	// Use ref if specified in CloneOptions
 	var ref string
@@ -137,8 +131,7 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 		return nil, errors.Wrap(err, "tar extract error")
 	}
 	// Copy staged data into the target storer if needed.
-	if needsStaging {
-		stagingStorer := filesystem.NewStorage(extractFS, cache.NewObjectLRUDefault())
+	if stagingStorer != nil {
 		if err := gitx.CopyStorer(s, stagingStorer); err != nil {
 			return nil, errors.Wrap(err, "copying from staging to storage")
 		}

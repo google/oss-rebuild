@@ -11,6 +11,10 @@ import (
 
 // CopyStorer copies all git data from src to dst storage.
 // This includes objects, references, config, and shallow commits.
+// NOTE: dst may end up holding lazily-read objects still backed by src's
+// underlying storage (e.g. memory.Storage retains packfile-backed object
+// references), so src's backing store must remain live and unmodified for
+// the lifetime of dst.
 // NOTE: This is very slow for large repos. If possible, prefer
 // copying the underlying metadata content to the underlying destination.
 func CopyStorer(dst, src storage.Storer) error {

@@ -198,6 +198,53 @@ commits:
 	}
 }
 
+func TestNativeClone_MemoryStorageLargeObject(t *testing.T) {
+	if !NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	ctx := context.Background()
+	// A blob above go-git's 16KiB small-object threshold is read lazily from
+	// the packfile rather than materialized, so reading it after NativeClone
+	// returns catches the staged objects not outliving the temp clone dir.
+	bigContent := strings.Repeat("x", 64*1024)
+	yamlRepo := `
+commits:
+  - id: initial
+    branch: master
+    message: "Initial commit"
+    files:
+      README.md: "hello"
+      big.bin: "` + bigContent + `"
+`
+	upstreamURL := setupLocalRepo(t, yamlRepo)
+	repo, err := NativeClone(ctx, memory.NewStorage(), nil, &git.CloneOptions{
+		URL:        upstreamURL,
+		NoCheckout: true,
+	})
+	if err != nil {
+		t.Fatalf("NativeClone failed: %v", err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatalf("failed to get HEAD: %v", err)
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		t.Fatalf("failed to get commit: %v", err)
+	}
+	f, err := commit.File("big.bin")
+	if err != nil {
+		t.Fatalf("failed to get big.bin: %v", err)
+	}
+	contents, err := f.Contents()
+	if err != nil {
+		t.Fatalf("failed to read big.bin: %v", err)
+	}
+	if len(contents) != len(bigContent) {
+		t.Errorf("big.bin length = %d, want %d", len(contents), len(bigContent))
+	}
+}
+
 func TestNativeClone_RemoteTrackingRefs(t *testing.T) {
 	if !NativeGitAvailable() {
 		t.Skip("native git not available")

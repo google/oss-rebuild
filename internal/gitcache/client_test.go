@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-billy/v5"
@@ -24,13 +25,18 @@ import (
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 )
 
-const testRepoYAML = `
+// bigContent exceeds go-git's 16KiB small-object threshold, so packfile reads
+// will access it lazily via the backed storer.
+var bigContent = strings.Repeat("x", 64*1024)
+
+var testRepoYAML = `
 commits:
   - id: initial
     branch: master
     message: "Initial commit"
     files:
       README.md: "hello world"
+      big.bin: "` + bigContent + `"
 `
 
 // setupCloneTestServer creates a test HTTP server that mimics the gitcache
@@ -45,11 +51,17 @@ func setupCloneTestServer(t *testing.T, yamlSpec string) Client {
 	if err := os.MkdirAll(gitDir, 0o755); err != nil {
 		t.Fatalf("failed to create .git dir: %v", err)
 	}
-	if _, err := gitxtest.CreateRepoFromYAML(yamlSpec, &gitxtest.RepositoryOptions{
+	repo, err := gitxtest.CreateRepoFromYAML(yamlSpec, &gitxtest.RepositoryOptions{
 		Storer:   filesystem.NewStorage(osfs.New(gitDir), cache.NewObjectLRUDefault()),
 		Worktree: osfs.New(repoDir),
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
+	}
+	// Repack loose objects into a packfile to match production tarballs
+	// (cached repos are packed, and only packed objects are read lazily).
+	if err := repo.RepackObjects(&git.RepackConfig{}); err != nil {
+		t.Fatalf("failed to repack test repo: %v", err)
 	}
 	// Remove the index to match production behavior (bare clone has no index).
 	os.Remove(filepath.Join(gitDir, "index"))
@@ -143,6 +155,19 @@ func TestClientClone(t *testing.T) {
 			}
 			if commit.Message != "Initial commit" {
 				t.Errorf("commit message = %q, want %q", commit.Message, "Initial commit")
+			}
+			// Verify a blob above go-git's small-object threshold is readable
+			// after Clone returns to ensure staged storer remains accessible.
+			f, err := commit.File("big.bin")
+			if err != nil {
+				t.Fatalf("File(big.bin) error = %v", err)
+			}
+			contents, err := f.Contents()
+			if err != nil {
+				t.Fatalf("Contents() error = %v", err)
+			}
+			if len(contents) != len(bigContent) {
+				t.Errorf("big.bin length = %d, want %d", len(contents), len(bigContent))
 			}
 			// For checkout case, verify worktree file exists.
 			if !tc.noCheckout {
