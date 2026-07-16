@@ -422,7 +422,7 @@ version = "1.0.150"
 						Ref:  repo.Commits["version-bump"].String(),
 						Dir:  "",
 					},
-					RustVersion:    "1.79.0",
+					RustVersion:    "1.68.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
 					PackageNames:   []string{"serde"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
 				}
@@ -596,7 +596,7 @@ version = 3
 						Ref:  repo.Commits["version-bump"].String(),
 						Dir:  "",
 					},
-					RustVersion:    "1.79.0",
+					RustVersion:    "1.67.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
 				}
 			},
@@ -692,6 +692,22 @@ func TestGetCargoTOMLAllowsMultilineInlineTables(t *testing.T) {
 	}
 	if want := "example"; ct.Name != want {
 		t.Errorf("CargoTOML.Name = %q, want %q", ct.Name, want)
+	}
+}
+
+func TestLockfileRustVersionFloor(t *testing.T) {
+	for _, tc := range []struct {
+		formatVersion int
+		want          string
+	}{
+		{formatVersion: 0, want: ""},
+		{formatVersion: 2, want: ""},
+		{formatVersion: 3, want: "1.47.0"},
+		{formatVersion: 4, want: "1.78.0"},
+	} {
+		if got := lockfileRustVersionFloor(tc.formatVersion); got != tc.want {
+			t.Errorf("lockfileRustVersionFloor(%d) = %q, want %q", tc.formatVersion, got, tc.want)
+		}
 	}
 }
 
