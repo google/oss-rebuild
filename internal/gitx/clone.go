@@ -211,10 +211,15 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 	if len(opt.CABundle) > 0 {
 		return nil, errors.New("unsupported clone option for native git: CABundle")
 	}
+	// Unwrap gitx.Storer so underlying filesystem storers can use fastpath.
+	target := s
+	if ws, ok := s.(*Storer); ok {
+		target = ws.Storer
+	}
 	// Determine storage type and whether staging is needed
 	var targetDir string
 	var needsStaging bool
-	if sf, ok := s.(*filesystem.Storage); ok && isOSFilesystem(sf.Filesystem()) {
+	if sf, ok := target.(*filesystem.Storage); ok && isOSFilesystem(sf.Filesystem()) {
 		// We can clone directly into the target dir for osfs-based fs storers.
 		targetDir = sf.Filesystem().Root()
 	} else {
@@ -266,7 +271,7 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 	// Copy staging to target storage if needed
 	if needsStaging {
 		stagingFS := osfs.New(targetDir)
-		if sf, ok := s.(*filesystem.Storage); ok {
+		if sf, ok := target.(*filesystem.Storage); ok {
 			if err := billyx.CopyFS(sf.Filesystem(), stagingFS); err != nil {
 				return nil, errors.Wrap(err, "copying from staging to storage filesystem")
 			}
@@ -278,7 +283,7 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 			if err := billyx.CopyFS(retained.Filesystem(), stagingFS); err != nil {
 				return nil, errors.Wrap(err, "copying staging to retained storer")
 			}
-			if err := CopyStorer(s, retained); err != nil {
+			if err := CopyStorer(target, retained); err != nil {
 				return nil, errors.Wrap(err, "copying from staging to memory storage")
 			}
 		}
