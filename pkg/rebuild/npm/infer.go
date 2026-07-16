@@ -216,7 +216,6 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 	default:
 		if badVersionRef != "" {
 			log.Printf("using version override recovery: %s", badVersionRef[:9])
-			c, _ = rcfg.Repository.CommitObject(plumbing.NewHash(badVersionRef))
 			loc.Ref = badVersionRef
 			versionOverride = t.Version
 			return loc, versionOverride, nil
