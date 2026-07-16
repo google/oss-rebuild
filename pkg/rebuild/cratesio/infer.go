@@ -242,8 +242,12 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if ct.Name != name {
 		return nil, errors.Errorf("mismatched name [expected=%s,actual=%s,heuristic=%s]", name, ct.Name, rcfg.Dir)
 	}
-	if ct.Version() != version && ct.Version() != reg.WorkspaceVersion {
-		return nil, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, ct.Version())
+	actualVersion, err := cargoPackageVersion(tree, path.Join(dir, "Cargo.toml"), &ct)
+	if err != nil {
+		return nil, errors.Wrap(err, "resolving Cargo.toml version")
+	}
+	if actualVersion != version {
+		return nil, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, actualVersion)
 	}
 	// NOTE: Give a week's margin to allow for toolchain upgrades. Maybe raise.
 	rustVersion, err := reg.RustVersionAt(vmeta.Created.Add(-7 * 24 * time.Hour))
@@ -362,6 +366,52 @@ func getFileFromCrate(crate io.Reader, path string) ([]byte, error) {
 	return nil, fs.ErrNotExist
 }
 
+// cargoPackageVersion resolves package.version, including workspace inheritance.
+func cargoPackageVersion(tree *object.Tree, manifestPath string, cargoTOML *reg.CargoTOML) (string, error) {
+	version := cargoTOML.Version()
+	if version != reg.WorkspaceVersion {
+		return version, nil
+	}
+
+	if workspacePath := cargoTOML.WorkspacePath(); workspacePath != "" {
+		rootPath := path.Join(path.Dir(manifestPath), workspacePath, "Cargo.toml")
+		root, err := getCargoTOML(tree, rootPath)
+		if err != nil {
+			return "", errors.Wrapf(err, "reading workspace manifest [path=%s]", rootPath)
+		}
+		if root.Workspace == nil || root.Workspace.Package.Version == "" {
+			return "", errors.Errorf("workspace package version not found [path=%s]", rootPath)
+		}
+		return root.Workspace.Package.Version, nil
+	}
+
+	for dir := path.Dir(manifestPath); ; dir = path.Dir(dir) {
+		rootPath := path.Join(dir, "Cargo.toml")
+		root := cargoTOML
+		if rootPath != manifestPath {
+			candidate, err := getCargoTOML(tree, rootPath)
+			if err != nil && err != object.ErrFileNotFound {
+				return "", errors.Wrapf(err, "reading workspace manifest [path=%s]", rootPath)
+			}
+			if err == nil {
+				root = &candidate
+			} else {
+				root = nil
+			}
+		}
+		if root != nil && root.Workspace != nil {
+			if root.Workspace.Package.Version == "" {
+				return "", errors.Errorf("workspace package version not found [path=%s]", rootPath)
+			}
+			return root.Workspace.Package.Version, nil
+		}
+		if dir == "." {
+			break
+		}
+	}
+	return "", errors.Errorf("workspace manifest not found [path=%s]", manifestPath)
+}
+
 // findAndValidateCargoTOML ensures the package config has the expected name and version, or finds a new version if necessary.
 func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, version, guess string) (string, error) {
 	t, err := c.Tree()
@@ -371,8 +421,8 @@ func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, vers
 	path := path.Join(guess, "Cargo.toml")
 	orig, err := getCargoTOML(t, path)
 	cargoTOML := &orig
-	// TODO: Validate workspace version.
-	if err != nil || cargoTOML.Name != name || (cargoTOML.Version() != version && cargoTOML.Version() != reg.WorkspaceVersion) {
+	actualVersion, versionErr := cargoPackageVersion(t, path, cargoTOML)
+	if err != nil || cargoTOML.Name != name || versionErr != nil || actualVersion != version {
 		cargoTOML, path, err = findCargoTOML(repo, c, name)
 	}
 	if err == object.ErrFileNotFound {
@@ -383,8 +433,12 @@ func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, vers
 		return path, errors.Wrapf(err, "unknown Cargo.toml error")
 	} else if cargoTOML.Name != name {
 		return path, errors.Errorf("mismatched name [expected=%s,actual=%s,path=%s]", name, cargoTOML.Name, guess)
-	} else if cargoTOML.Version() != version && cargoTOML.Version() != reg.WorkspaceVersion {
-		return path, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, cargoTOML.Version())
+	}
+	actualVersion, err = cargoPackageVersion(t, path, cargoTOML)
+	if err != nil {
+		return path, errors.Wrap(err, "resolving Cargo.toml version")
+	} else if actualVersion != version {
+		return path, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, actualVersion)
 	}
 	return path, nil
 }

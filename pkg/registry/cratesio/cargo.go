@@ -21,6 +21,7 @@ type GitInfo struct {
 // Format: https://doc.rust-lang.org/cargo/reference/manifest.html
 type CargoTOML struct {
 	PackageManifest `toml:"package"`
+	Workspace       *WorkspaceManifest `toml:"workspace"`
 }
 
 // PackageManifest is the [package] section of the Cargo.toml file.
@@ -28,6 +29,16 @@ type PackageManifest struct {
 	Name         string `toml:"name"`
 	RawVersion   any    `toml:"version"`
 	RawWorkspace any    `toml:"workspace"`
+}
+
+// WorkspaceManifest is the [workspace] section of the Cargo.toml file.
+type WorkspaceManifest struct {
+	Package WorkspacePackageManifest `toml:"package"`
+}
+
+// WorkspacePackageManifest is the [workspace.package] section of the Cargo.toml file.
+type WorkspacePackageManifest struct {
+	Version string `toml:"version"`
 }
 
 // WorkspaceVersion is the special version string used for workspace crates.
@@ -42,4 +53,12 @@ func (pm PackageManifest) Version() string {
 	} else {
 		return ""
 	}
+}
+
+// WorkspacePath returns the explicit package.workspace path, if set.
+func (pm PackageManifest) WorkspacePath() string {
+	if p, ok := pm.RawWorkspace.(string); ok {
+		return p
+	}
+	return ""
 }

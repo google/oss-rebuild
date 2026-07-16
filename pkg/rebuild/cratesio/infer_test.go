@@ -9,6 +9,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"path"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -79,6 +81,7 @@ func TestInferStrategy(t *testing.T) {
 		metadata         string
 		files            []archive.TarEntry
 		filesFn          func(*gitxtest.Repository) []archive.TarEntry
+		hintFn           func(*gitxtest.Repository) rebuild.Strategy
 		wantFn           func(*gitxtest.Repository) rebuild.Strategy
 		wantErr          bool
 		registryResponse *cratesregistryservice.FindRegistryCommitResponse
@@ -396,6 +399,36 @@ edition = "2024"
 					RustVersion: "1.35.0",
 				}
 			},
+		},
+		{
+			name: "location hint rejects mismatched workspace version",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [workspace]
+        members = ["serde"]
+
+        [workspace.package]
+        version = "1.0.149"
+      serde/Cargo.toml: |
+        [package]
+        name = "serde"
+        version.workspace = true
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			files: []archive.TarEntry{
+				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
+			},
+			hintFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &rebuild.LocationHint{
+					Location: rebuild.Location{
+						Ref: repo.Commits["version-bump"].String(),
+						Dir: "serde",
+					},
+				}
+			},
+			wantErr: true,
 		},
 		{
 			name: "unreadable Cargo.toml",
@@ -756,6 +789,10 @@ version = 3
 			if tc.filesFn != nil {
 				files = tc.filesFn(repo)
 			}
+			var hint rebuild.Strategy
+			if tc.hintFn != nil {
+				hint = tc.hintFn(repo)
+			}
 			client := httpxtest.MockClient{
 				Calls: []httpxtest.Call{
 					{
@@ -783,7 +820,7 @@ version = 3
 				URLValidator: httpxtest.NewURLValidator(t),
 			}
 			mux := rebuild.RegistryMux{CratesIO: cratesio.HTTPRegistry{Client: &client}}
-			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, nil)
+			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, hint)
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)
@@ -839,6 +876,100 @@ func TestLockfileRustVersionFloor(t *testing.T) {
 		if got := lockfileRustVersionFloor(tc.formatVersion); got != tc.want {
 			t.Errorf("lockfileRustVersionFloor(%d) = %q, want %q", tc.formatVersion, got, tc.want)
 		}
+	}
+}
+
+func TestFindAndValidateCargoTOMLWorkspaceVersion(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: target
+    files:
+      Cargo.toml: |
+        [package]
+        name = "root-example"
+        version.workspace = true
+
+        [workspace]
+        members = ["crates/example", "nested/explicit"]
+
+        [workspace.package]
+        version = "1.2.3"
+      crates/example/Cargo.toml: |
+        [package]
+        name = "example"
+        version.workspace = true
+      nested/explicit/Cargo.toml: |
+        [package]
+        name = "explicit"
+        version.workspace = true
+        workspace = "../.."
+      incomplete/Cargo.toml: |
+        [package]
+        name = "incomplete"
+        version.workspace = true
+
+        [workspace]
+`, nil))
+	commit := must(repo.CommitObject(repo.Commits["target"]))
+	for _, tc := range []struct {
+		name    string
+		pkg     string
+		guess   string
+		version string
+		wantErr string
+	}{
+		{
+			name:    "matching inherited version",
+			pkg:     "example",
+			guess:   "crates/example",
+			version: "1.2.3",
+		},
+		{
+			name:    "mismatched inherited version",
+			pkg:     "example",
+			guess:   "crates/example",
+			version: "1.2.2",
+			wantErr: "mismatched version",
+		},
+		{
+			name:    "mismatched version with explicit workspace path",
+			pkg:     "explicit",
+			guess:   "nested/explicit",
+			version: "1.2.2",
+			wantErr: "mismatched version",
+		},
+		{
+			name:    "matching version with explicit workspace path",
+			pkg:     "explicit",
+			guess:   "nested/explicit",
+			version: "1.2.3",
+		},
+		{
+			name:    "package at workspace root",
+			pkg:     "root-example",
+			version: "1.2.3",
+		},
+		{
+			name:    "missing workspace package version",
+			pkg:     "incomplete",
+			guess:   "incomplete",
+			version: "1.2.3",
+			wantErr: "workspace package version not found",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := findAndValidateCargoTOML(repo.Repository, commit, tc.pkg, tc.version, tc.guess)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Errorf("findAndValidateCargoTOML(%q) = %q, want error", tc.version, got)
+				} else if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("findAndValidateCargoTOML(%q) error = %q, want substring %q", tc.version, err, tc.wantErr)
+				}
+			} else if err != nil {
+				t.Fatalf("findAndValidateCargoTOML(%q): %v", tc.version, err)
+			} else if want := path.Join(tc.guess, "Cargo.toml"); got != want {
+				t.Errorf("findAndValidateCargoTOML(%q) = %q, want %q", tc.version, got, want)
+			}
+		})
 	}
 }
 
