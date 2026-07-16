@@ -37,6 +37,7 @@ func TestInferStrategy(t *testing.T) {
 		wantFn           func(*gitxtest.Repository) rebuild.Strategy
 		wantErr          bool
 		registryResponse *cratesregistryservice.FindRegistryCommitResponse
+		wantPublishTime  string
 	}{
 		{
 			name: "ref from cargo_vcs_info",
@@ -74,7 +75,7 @@ func TestInferStrategy(t *testing.T) {
 			},
 		},
 		{
-			name: "rust_version from updated_at",
+			name: "rust_version from created_at",
 			repo: `commits:
   - id: initial-commit
     files:
@@ -90,7 +91,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","updated_at":"2022-12-12T00:25:28.357Z"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-12-12T00:25:28.357Z","updated_at":"2024-06-01T00:00:00Z"}}`,
 			files: []archive.TarEntry{
 				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
 			},
@@ -363,7 +364,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.68.0", "updated_at":"2023-01-01T00:00:00Z"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.68.0", "created_at":"2023-01-01T00:00:00Z","updated_at":"2024-06-01T00:00:00Z"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -381,6 +382,7 @@ version = "1.0.150"
 			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
 				CommitHash: "abcd1234567890abcdef1234567890abcdef1234",
 			},
+			wantPublishTime: "2023-01-01T00:00:00Z",
 			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
 				return &CratesIOCargoPackage{
 					Location: rebuild.Location{
@@ -572,6 +574,9 @@ version = 3
 			ctx := context.Background()
 			if tc.registryResponse != nil {
 				mockStub := func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
+					if tc.wantPublishTime != "" && req.PublishedTime != tc.wantPublishTime {
+						t.Errorf("PublishedTime = %q, want %q", req.PublishedTime, tc.wantPublishTime)
+					}
 					return tc.registryResponse, nil
 				}
 				ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](mockStub))
