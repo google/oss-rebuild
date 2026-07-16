@@ -221,7 +221,7 @@ doc-scrape-examples = false
 			wantHi: "",
 		},
 		{
-			name: "async-native-tls 0.4.0 (cuddled categories)",
+			name: "async-native-tls 0.4.0 (inline categories)",
 			cargoToml: `
 # Before Rust 1.55, crates.io would automatically add this header to registry (e.g., crates.io) dependencies.
 [package]
@@ -230,8 +230,19 @@ name = "async-native-tls"
 version = "0.4.0"
 categories = ["asynchronous", "cryptography", "network-programming"]
 `,
-			wantLo: "1.55.0", // modernHeader=1.55, cuddledArray (hi=1.59) prevents bump to 1.64
-			wantHi: "1.59.0", // cuddledArray=1.59
+			wantLo: "1.55.0", // modernHeader=1.55, inline multi-element array (hi=1.59) prevents bump to 1.64
+			wantHi: "1.59.0", // inline multi-element array=1.59
+		},
+		{
+			name: "Single-element inline array (Modern Header)",
+			cargoToml: `
+# Before Rust 1.55, crates.io would automatically add this header to registry (e.g., crates.io) dependencies.
+[package]
+name = "my-crate"
+keywords = ["one"]
+`,
+			wantLo: "1.64.0", // modernHeader=1.55, no resolver=2 bumps to 1.64
+			wantHi: "",
 		},
 	}
 
@@ -243,6 +254,29 @@ categories = ["asynchronous", "cryptography", "network-programming"]
 			}
 			if gotHi != tt.wantHi {
 				t.Errorf("detectRustVersionBounds() gotHi = %v, want %v", gotHi, tt.wantHi)
+			}
+		})
+	}
+}
+
+func TestHasInlineMultiElementArray(t *testing.T) {
+	tests := []struct {
+		name      string
+		cargoToml string
+		want      bool
+	}{
+		{name: "Empty", cargoToml: `keywords = []`, want: false},
+		{name: "Single element", cargoToml: `keywords = ["one"]`, want: false},
+		{name: "Comma in string", cargoToml: `authors = ["Example, Inc"]`, want: false},
+		{name: "Inline table", cargoToml: `assets = [{ source = "README.md", dest = "share/doc" }]`, want: false},
+		{name: "Multiple elements", cargoToml: `keywords = ["one", "two"]`, want: true},
+		{name: "Hyphenated key", cargoToml: `crate-type = ["cdylib", "rlib"]`, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasInlineMultiElementArray(tt.cargoToml); got != tt.want {
+				t.Errorf("hasInlineMultiElementArray() = %v, want %v", got, tt.want)
 			}
 		})
 	}
