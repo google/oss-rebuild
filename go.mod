@@ -20,7 +20,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/in-toto-golang v0.9.1-0.20240514222827-dd6278764ab1
 	github.com/pavlo-v-chernykh/keystore-go/v4 v4.5.0
-	github.com/pelletier/go-toml/v2 v2.2.2
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pkg/errors v0.9.1
 	github.com/protocolbuffers/txtpbfmt v0.0.0-20251124094003-fcb97cc64c7b
 	github.com/rivo/tview v0.0.0-20240519200218-0ac5f73025a8
