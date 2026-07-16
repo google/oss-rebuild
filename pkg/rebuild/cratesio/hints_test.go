@@ -60,7 +60,7 @@ name = "my-crate"
 resolver = "2"
 `,
 			wantLo: "1.51.0", // resolver=2 sets lo=1.51
-			wantHi: "1.54.0", // No modern header sets hi=1.54, resolver=2 sets hi=1.63. min(1.54, 1.63) = 1.54
+			wantHi: "1.54.0", // No modern header sets hi=1.54
 		},
 		{
 			name: "Resolver Two (Modern Header)",
@@ -72,8 +72,43 @@ name = "my-crate"
 [workspace]
 resolver = '2'
 `,
-			wantLo: "1.55.0", // modernHeader sets lo=1.55, resolver=2 sets lo=1.51. max(1.55, 1.51) = 1.55
-			wantHi: "1.63.0", // resolver=2 sets hi=1.63
+			wantLo: "1.55.0", // modernHeader=1.55, resolver=2=1.51. Max is 1.55
+			wantHi: "",
+		},
+		{
+			name: "Package Resolver Two Has No Upper Bound",
+			cargoToml: `
+# Before Rust 1.55, crates.io would automatically add this header to registry (e.g., crates.io) dependencies.
+[package]
+name = "my-crate"
+resolver = "2"
+`,
+			wantLo: "1.55.0", // modernHeader=1.55, resolver=2=1.51. Max is 1.55
+			wantHi: "",       // resolver=2 is still retained after Cargo 1.63
+		},
+		{
+			name: "Resolver in Metadata Is Not Evidence",
+			cargoToml: `
+[package]
+name = "my-crate"
+
+[package.metadata.commands]
+resolver = "2"
+`,
+			wantLo: "",
+			wantHi: "1.50.0", // Existing no-resolver rule still applies
+		},
+		{
+			name: "Resolver in Multiline String Is Not Evidence",
+			cargoToml: `
+[package]
+name = "my-crate"
+description = """
+resolver = "2"
+"""
+`,
+			wantLo: "",
+			wantHi: "1.50.0", // Existing no-resolver rule still applies
 		},
 		{
 			name: "Pretty Array (Modern Header)",
@@ -137,7 +172,7 @@ resolver = "2"
 debug = false
 `,
 			wantLo: "1.51.0", // resolver=2 sets lo=1.51
-			wantHi: "1.54.0", // debugDenormalized=1.70, no modernHeader=1.54, resolver=2=1.63. Min is 1.54
+			wantHi: "1.54.0", // No modern header sets hi=1.54
 		},
 		{
 			name: "All Hi Bounds (Modern Header)",
@@ -153,7 +188,7 @@ resolver = "2"
 debug = false
 `,
 			wantLo: "1.55.0", // modernHeader=1.55, resolver=2=1.51. Max is 1.55
-			wantHi: "1.63.0", // debugDenormalized=1.70, resolver=2=1.63. Min is 1.63
+			wantHi: "1.70.0", // debugDenormalized=1.70
 		},
 		{
 			name: "All Bounds (Modern Header)",
@@ -173,7 +208,7 @@ resolver = "2"
 debug = false
 `,
 			wantLo: "1.67.0", // docExamples=1.67, prettyArray=1.60, modernHeader=1.55, resolver=2=1.51. Max is 1.67
-			wantHi: "1.63.0", // debugDenormalized=1.70, resolver=2=1.63. Min is 1.63
+			wantHi: "1.70.0", // debugDenormalized=1.70
 		},
 		{
 			name: "aho-corasick 1.0.4 (debug = 2, pretty arrays)",

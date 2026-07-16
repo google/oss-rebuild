@@ -15,8 +15,8 @@ import (
 var (
 	// debugDenormalizedRegex detects debug = bool (Rust 1.71+ normalized boolean debug to integer)
 	debugDenormalizedRegex = regexp.MustCompile(`(?m)^\s*debug\s*=\s*(true|false)\s*$`)
-	// resolverTwoPattern detects resolver = "2" (became default and was removed in Rust 1.64+)
-	resolverTwoPattern = regexp.MustCompile(`(?m)^\s*resolver\s*=\s*["\']?2["\']?\s*$`)
+	// resolverTwoPattern detects candidate resolver = "2" lines before section-aware TOML parsing.
+	resolverTwoPattern = regexp.MustCompile(`(?m)^\s*resolver\s*=\s*["']2["']\s*$`)
 	// prettyArrayPattern detects pretty-printed arrays (Rust 1.60+)
 	prettyArrayPattern = regexp.MustCompile(`(?s)\[\s*\n\s+.*\n\s*\]`)
 	// inlineArrayLine matches array values that Cargo kept on one line.
@@ -50,6 +50,23 @@ func hasInlineMultiElementArray(cargoTomlText string) bool {
 	return false
 }
 
+// hasResolverTwo reports whether resolver 2 is set in a supported manifest section.
+func hasResolverTwo(cargoTomlText string) bool {
+	if !resolverTwoPattern.MatchString(cargoTomlText) {
+		return false
+	}
+	var manifest struct {
+		Package struct {
+			Resolver string `toml:"resolver"`
+		} `toml:"package"`
+		Workspace struct {
+			Resolver string `toml:"resolver"`
+		} `toml:"workspace"`
+	}
+	return toml.Unmarshal([]byte(cargoTomlText), &manifest) == nil &&
+		(manifest.Package.Resolver == "2" || manifest.Workspace.Resolver == "2")
+}
+
 // detectRustVersionBounds analyzes Cargo.toml for structural patterns that indicate
 // minimum Rust version requirements based on tooling behavior changes.
 func detectRustVersionBounds(cargoTomlText string) (lo, hi string) {
@@ -71,8 +88,7 @@ func detectRustVersionBounds(cargoTomlText string) (lo, hi string) {
 	} else {
 		hi = min("1.54.0", hi)
 	}
-	if resolverTwoPattern.MatchString(cargoTomlText) {
-		hi = min("1.63.0", hi) // After which resolver 2 became default and was omitted
+	if hasResolverTwo(cargoTomlText) {
 		lo = max("1.51.0", lo)
 	} else {
 		// If resolver pattern not found, we know the version lies outside the above range
