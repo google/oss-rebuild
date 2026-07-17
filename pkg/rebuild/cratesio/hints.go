@@ -14,8 +14,6 @@ import (
 var (
 	// debugDenormalizedRegex detects debug = bool (Rust 1.71+ normalized boolean debug to integer)
 	debugDenormalizedRegex = regexp.MustCompile(`(?m)^\s*debug\s*=\s*(true|false)\s*$`)
-	// resolverTwoPattern detects candidate resolver = "2" lines before section-aware TOML parsing.
-	resolverTwoPattern = regexp.MustCompile(`(?m)^\s*resolver\s*=\s*["']2["']\s*$`)
 	// prettyArrayPattern detects pretty-printed arrays (Rust 1.60+)
 	prettyArrayPattern = regexp.MustCompile(`(?s)\[\s*\n\s+.*\n\s*\]`)
 	// cuddledArrayPattern detects cuddled/single-line arrays (Rust < 1.60)
@@ -28,9 +26,6 @@ var (
 
 // hasResolverTwo reports whether resolver 2 is set in a supported manifest section.
 func hasResolverTwo(cargoTomlText string) bool {
-	if !resolverTwoPattern.MatchString(cargoTomlText) {
-		return false
-	}
 	var manifest struct {
 		Package struct {
 			Resolver string `toml:"resolver"`
