@@ -94,7 +94,7 @@ func (c Filesystem) Stat(path string) (*FileInfo, error) {
 	case http.StatusNotFound:
 		return nil, fs.ErrNotExist
 	case http.StatusBadRequest:
-		return nil, errors.New("request error: bad parameter")
+		return nil, fs.ErrNotExist
 	default:
 		return nil, errors.Wrap(errors.New(resp.Status), "response error: Unexpected HTTP response")
 	}

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -944,6 +945,98 @@ func TestAddBinding(t *testing.T) {
 		if bytes.Compare(tc.Want, got) != 0 {
 			t.Fatalf("addBinding(%s, %v, %v, %v): got=%s, want=%s", tc.Body, tc.Src, tc.Dest, tc.Mode, got, tc.Want)
 		}
+	}
+}
+
+func TestRewriteDockerSocketBinds(t *testing.T) {
+	for _, tc := range [](struct {
+		Name string
+		Body []byte
+		Want []byte
+	}){
+		{
+			Name: "Rewrite socket bind",
+			Body: []byte(`{"HostConfig":{"Binds":["/var/run/docker.sock:/var/run/docker.sock"]}}`),
+			Want: []byte(`{"HostConfig":{"Binds":["/run/docker.sock:/var/run/docker.sock"]}}`),
+		},
+		{
+			Name: "Rewrite socket bind with options and other binds",
+			Body: []byte(`{"HostConfig":{"Binds":["/tmp:/tmp:rw","/var/run/docker.sock:/var/run/docker.sock:ro"]}}`),
+			Want: []byte(`{"HostConfig":{"Binds":["/tmp:/tmp:rw","/run/docker.sock:/var/run/docker.sock:ro"]}}`),
+		},
+		{
+			Name: "No socket bind",
+			Body: []byte(`{"HostConfig":{"Binds":["/tmp:/tmp:rw"]}}`),
+			Want: []byte(`{"HostConfig":{"Binds":["/tmp:/tmp:rw"]}}`),
+		},
+		{
+			Name: "No Binds",
+			Body: []byte(`{"HostConfig":{}}`),
+			Want: []byte(`{"HostConfig":{}}`),
+		},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			got, err := rewriteDockerSocketBinds(tc.Body)
+			if err != nil {
+				t.Fatalf("rewriteDockerSocketBinds(%s): got error %v", tc.Body, err)
+			}
+			if !bytes.Equal(got, tc.Want) {
+				t.Fatalf("rewriteDockerSocketBinds(%s): got=%s, want=%s", tc.Body, got, tc.Want)
+			}
+		})
+	}
+}
+
+func TestProxyCreateContainerRewritesSocketBind(t *testing.T) {
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{})
+	sock := tempSocketName(t)
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		err := http.Serve(l, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			if req.RequestURI != "/containers/create?name=abc" {
+				done <- fmt.Errorf("Unexpected request URI: %s", req.RequestURI)
+				return
+			}
+			body, _ := io.ReadAll(req.Body)
+			var img map[string]any
+			if err := json.Unmarshal(body, &img); err != nil {
+				done <- fmt.Errorf("Failed to unmarshal body: %v", err)
+				return
+			}
+			hostConfig, _ := img["HostConfig"].(map[string]any)
+			binds, _ := hostConfig["Binds"].([]any)
+			var foundRewritten bool
+			for _, b := range binds {
+				if s, ok := b.(string); ok && strings.HasPrefix(s, "/run/docker.sock:/var/run/docker.sock") {
+					foundRewritten = true
+				}
+				if s, ok := b.(string); ok && strings.HasPrefix(s, "/var/run/docker.sock:") {
+					done <- fmt.Errorf("Found unrewritten bind: %s", s)
+					return
+				}
+			}
+			if !foundRewritten {
+				done <- fmt.Errorf("Did not find rewritten /run/docker.sock bind in: %v", binds)
+				return
+			}
+			rw.WriteHeader(http.StatusOK)
+			done <- nil
+		}))
+		done <- err
+	}()
+	clientIn := setupProxy(t, sock, ctp)
+	req, err := http.NewRequest(http.MethodPost, "/containers/create?name=abc", asBody([]byte(`{"HostConfig": {"Binds": ["/var/run/docker.sock:/var/run/docker.sock"]}}`)))
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-done)
+	resp, err := http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
 	}
 }
 
