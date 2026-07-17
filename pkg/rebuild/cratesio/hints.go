@@ -61,15 +61,6 @@ func detectRustVersionBounds(cargoTomlText string) (lo, hi string) {
 	}
 	if hasResolverTwo(cargoTomlText) {
 		lo = max("1.51.0", lo)
-	} else {
-		// If resolver pattern not found, we know the version lies outside the above range
-		if lo > "1.51.0" {
-			if hi >= "1.64.0" { // only raise lo if hi is in range
-				lo = max("1.64.0", lo)
-			}
-		} else if hi < "1.63.0" {
-			hi = min("1.50.0", hi)
-		}
 	}
 	if hi == "999" {
 		hi = ""
