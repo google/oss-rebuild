@@ -87,6 +87,17 @@ resolver = "2"
 			wantHi: "",       // resolver=2 is still retained after Cargo 1.63
 		},
 		{
+			name: "Package Resolver Two With Trailing Comment",
+			cargoToml: `
+# Before Rust 1.55, crates.io would automatically add this header to registry (e.g., crates.io) dependencies.
+[package]
+name = "my-crate"
+resolver = "2" # Explicitly retain resolver 2.
+`,
+			wantLo: "1.55.0",
+			wantHi: "",
+		},
+		{
 			name: "Resolver in Metadata Is Not Evidence",
 			cargoToml: `
 [package]
