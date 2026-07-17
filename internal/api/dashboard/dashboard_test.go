@@ -96,6 +96,7 @@ type fakeReader struct {
 	recent []rundex.Rebuild
 }
 
+func (f *fakeReader) RecentRebuilds(context.Context) ([]rundex.Rebuild, error) { return f.recent, nil }
 func (f *fakeReader) RecentPackageRebuilds(context.Context, rebuild.Ecosystem, string) ([]rundex.Rebuild, error) {
 	return f.recent, nil
 }
@@ -110,6 +111,40 @@ func (f *fakeSessionReader) FetchSessions(context.Context, *rundex.FetchSessions
 }
 func (f *fakeSessionReader) FetchIterations(context.Context, *rundex.FetchIterationsReq) ([]schema.AgentIteration, error) {
 	return nil, nil
+}
+
+func TestIndexHandlerSessions(t *testing.T) {
+	older := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Hour)
+	sessions := &fakeSessionReader{sessions: []schema.AgentSession{
+		{ID: "s-old", Target: rebuild.Target{Ecosystem: "npm", Package: "a", Version: "1"}, Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonFailed, Created: older},
+		{ID: "s-new", Target: rebuild.Target{Ecosystem: "npm", Package: "b", Version: "2"}, Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonSuccess, Summary: "Build successful", Created: newer},
+	}}
+	recent := []rundex.Rebuild{
+		{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "1"}},
+	}
+	deps := &Deps{Rundex: &fakeReader{recent: recent}, Sessions: sessions}
+	got, err := Index(context.Background(), IndexRequest{}, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Sessions present, most-recent-first, with encoded target for the package link.
+	if len(got.RecentSessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(got.RecentSessions))
+	}
+	if got.RecentSessions[0].ID != "s-new" || got.RecentSessions[1].ID != "s-old" {
+		t.Errorf("sessions not sorted most-recent-first: %+v", got.RecentSessions)
+	}
+	if got.RecentSessions[0].Encoded.Package == "" {
+		t.Error("expected encoded target on session view")
+	}
+	var buf strings.Builder
+	if err := IndexTmpl.Execute(&buf, got); err != nil {
+		t.Fatalf("rendering index template: %v", err)
+	}
+	if out := buf.String(); !strings.Contains(out, "Recent Agent Sessions") || !strings.Contains(out, "Build successful") {
+		t.Errorf("rendered index missing session content:\n%s", out)
+	}
 }
 
 func TestPackageHandler(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
 
 var (
@@ -96,5 +97,19 @@ func applySuccessRegex(successRegex *regexp.Regexp, rebuilds []rundex.Rebuild) {
 		if !rebuilds[i].Success && successRegex.MatchString(rebuilds[i].Message) {
 			rebuilds[i].Success = true
 		}
+	}
+}
+
+// SessionView pairs an agent session with its encoded target for building
+// dashboard links (e.g. to the package page).
+type SessionView struct {
+	schema.AgentSession
+	Encoded rebuild.EncodedTarget
+}
+
+func NewSessionView(s schema.AgentSession) SessionView {
+	return SessionView{
+		AgentSession: s,
+		Encoded:      packagePathEncoding.Encode(s.Target),
 	}
 }

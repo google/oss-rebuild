@@ -12,6 +12,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 )
 
@@ -42,7 +43,11 @@ type IndexData struct {
 	BenchmarkStats   BenchmarkStats
 	BenchmarkTargets []BenchmarkTarget
 	RecentRebuilds   []RebuildView
+	RecentSessions   []SessionView
 }
+
+// recentSessionLimit bounds the number of agent sessions shown on the landing page.
+const recentSessionLimit = 100
 
 func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) {
 	data := IndexData{}
@@ -127,6 +132,21 @@ func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) 
 	data.RecentRebuilds = make([]RebuildView, len(rebuilds))
 	for i, rb := range rebuilds {
 		data.RecentRebuilds[i] = NewRebuildView(rb)
+	}
+
+	// Fetch the most recent agent sessions (sessions only, not iterations).
+	if deps.Sessions != nil {
+		sessions, err := deps.Sessions.FetchSessions(ctx, &rundex.FetchSessionsReq{Limit: recentSessionLimit})
+		if err != nil {
+			return nil, errors.Wrap(err, "fetching agent sessions")
+		}
+		slices.SortFunc(sessions, func(a, b schema.AgentSession) int {
+			return b.Created.Compare(a.Created)
+		})
+		data.RecentSessions = make([]SessionView, len(sessions))
+		for i, s := range sessions {
+			data.RecentSessions[i] = NewSessionView(s)
+		}
 	}
 	return &data, nil
 }
