@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/google/oss-rebuild/pkg/registry/debian"
@@ -112,9 +113,11 @@ var cratesioTop2000 = RebuildBenchmark{
 					break
 				}
 				isTooOld := v.Created.Before(ageThreshold)
-				// NOTE: Assuming versions are valid SemVer, hyphen detects prerelease.
-				isPrerelease := strings.ContainsRune(v.Version, '-')
-				if v.Yanked || isPrerelease || isTooOld {
+				parsedVersion, err := semver.New(v.Version)
+				if err != nil {
+					log.Fatalf("invalid crates.io version %q for package %s: %v", v.Version, m.Name, err)
+				}
+				if v.Yanked || parsedVersion.Prerelease != "" || isTooOld {
 					continue
 				}
 				versions = append(versions, v.Version)
