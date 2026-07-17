@@ -349,17 +349,19 @@ func (f *FirestoreClient) FetchSessions(ctx context.Context, req *FetchSessionsR
 	var sessionSlice []schema.AgentSession
 	for s := range sessions {
 		// Client-side filtering for target (Firestore doesn't support nested field queries well)
-		if req.PartialTarget.Ecosystem != "" && s.Target.Ecosystem != req.PartialTarget.Ecosystem {
-			continue
-		}
-		if req.PartialTarget.Package != "" && s.Target.Package != req.PartialTarget.Package {
-			continue
-		}
-		if req.PartialTarget.Version != "" && s.Target.Version != req.PartialTarget.Version {
-			continue
-		}
-		if req.PartialTarget.Artifact != "" && s.Target.Artifact != req.PartialTarget.Artifact {
-			continue
+		if req.PartialTarget != nil {
+			if req.PartialTarget.Ecosystem != "" && s.Target.Ecosystem != req.PartialTarget.Ecosystem {
+				continue
+			}
+			if req.PartialTarget.Package != "" && s.Target.Package != req.PartialTarget.Package {
+				continue
+			}
+			if req.PartialTarget.Version != "" && s.Target.Version != req.PartialTarget.Version {
+				continue
+			}
+			if req.PartialTarget.Artifact != "" && s.Target.Artifact != req.PartialTarget.Artifact {
+				continue
+			}
 		}
 		sessionSlice = append(sessionSlice, s)
 	}

@@ -7,18 +7,41 @@
     <table>
         <thead>
             <tr>
+                <th>Type</th>
                 <th>Version</th>
                 <th>Artifact</th>
                 <th>Status</th>
                 <th>Message</th>
-                <th>RunID</th>
-                <th>Attempt</th>
+                <th>Reference</th>
                 <th>Completed</th>
             </tr>
         </thead>
         <tbody>
-            {{range .PackageRebuilds}}
+            {{range .Events}}
+            {{if .Session}}
+            {{with .Session}}
             <tr>
+                <td>Agent</td>
+                <td>{{.Target.Version}}</td>
+                <td>{{.Target.Artifact}}</td>
+                <td>
+                    {{if eq .StopReason "SUCCESS"}}
+                        <span class="status-success">Success</span>
+                    {{else if .StopReason}}
+                        <span class="status-fail">{{.StopReason}}</span>
+                    {{else}}
+                        {{.Status}}
+                    {{end}}
+                </td>
+                <td><small>{{.Summary}}</small></td>
+                <td><small>{{.ID}}</small></td>
+                <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
+            </tr>
+            {{end}}
+            {{else}}
+            {{with .Rebuild}}
+            <tr>
+                <td>Rebuild</td>
                 <td>{{.Version}}</td>
                 <td>{{.Artifact}}</td>
                 <td>
@@ -29,10 +52,11 @@
                     {{end}}
                 </td>
                 <td><small>{{.Message}}</small></td>
-                <td>{{.RunID}}</td>
-                <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">view</a></td>
+                <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">{{.RunID}}</a></td>
                 <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
             </tr>
+            {{end}}
+            {{end}}
             {{end}}
         </tbody>
     </table>

@@ -66,7 +66,8 @@ func init() {
 var packagePathEncoding = rebuild.FilesystemTargetEncoding
 
 type Deps struct {
-	Rundex        *rundex.FirestoreClient
+	Rundex        rundex.Reader
+	Sessions      rundex.SessionReader
 	GCSClient     *storage.Client
 	LogsBucket    string
 	Tracked       feed.TrackedPackageIndex

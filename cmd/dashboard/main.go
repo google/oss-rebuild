@@ -52,6 +52,7 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 	}
 	return &dashboard.Deps{
 		Rundex:        rundexClient,
+		Sessions:      rundexClient,
 		GCSClient:     storageClient,
 		LogsBucket:    *logsBucket,
 		Tracked:       tracked,
