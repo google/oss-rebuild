@@ -49,7 +49,11 @@ checksum = "abc123"
 `,
 			want: Lockfile{
 				FormatVersion: 2,
-				Packages:      []Package{{Name: "serde", Version: "1.0.100"}},
+				Packages: []Package{{
+					Name:    "serde",
+					Version: "1.0.100",
+					Source:  "registry+https://github.com/rust-lang/crates.io-index",
+				}},
 			},
 		},
 		{
@@ -73,8 +77,8 @@ checksum = "c89b4efa943cdcb42a541ed5fafe108b0a0be4c16e8fe0c57e2b5b7a46b002d"
 			want: Lockfile{
 				FormatVersion: 3,
 				Packages: []Package{
-					{Name: "serde", Version: "1.0.193"},
-					{Name: "tokio", Version: "1.35.1"},
+					{Name: "serde", Version: "1.0.193", Source: "registry+https://github.com/rust-lang/crates.io-index"},
+					{Name: "tokio", Version: "1.35.1", Source: "registry+https://github.com/rust-lang/crates.io-index"},
 				},
 			},
 		},
@@ -92,7 +96,11 @@ checksum = "def456"
 `,
 			want: Lockfile{
 				FormatVersion: 4,
-				Packages:      []Package{{Name: "serde", Version: "1.0.210"}},
+				Packages: []Package{{
+					Name:    "serde",
+					Version: "1.0.210",
+					Source:  "registry+https://github.com/rust-lang/crates.io-index",
+				}},
 			},
 		},
 	}
@@ -107,6 +115,42 @@ checksum = "def456"
 				t.Errorf("ParseLockfile() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestCratesIOPackages(t *testing.T) {
+	content := `version = 3
+
+[[package]]
+name = "example"
+version = "1.0.0"
+
+[[package]]
+name = "serde"
+version = "1.0.193"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "tracing"
+version = "0.1.40"
+source = "git+https://github.com/example/tracing#0123456789abcdef"
+
+[[package]]
+name = "private"
+version = "2.0.0"
+source = "registry+https://example.com/index"
+`
+	lf, err := ParseLockfile(content)
+	if err != nil {
+		t.Fatalf("ParseLockfile() error = %v", err)
+	}
+	want := []Package{{
+		Name:    "serde",
+		Version: "1.0.193",
+		Source:  "registry+https://github.com/rust-lang/crates.io-index",
+	}}
+	if diff := cmp.Diff(want, lf.CratesIOPackages()); diff != "" {
+		t.Errorf("CratesIOPackages() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -135,7 +179,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25dd9975e68d0cb5aa1120c288333fc98731bd1dd12f561e468ea4728c042b89"
 `,
 			want: []Package{
-				{Name: "serde", Version: "1.0.193"},
+				{Name: "serde", Version: "1.0.193", Source: "registry+https://github.com/rust-lang/crates.io-index"},
 			},
 		},
 		{
@@ -157,8 +201,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c89b4efa943cdcb42a541ed5fafe108b0a0be4c16e8fe0c57e2b5b7a46b002d"
 `,
 			want: []Package{
-				{Name: "serde", Version: "1.0.193"},
-				{Name: "tokio", Version: "1.35.1"},
+				{Name: "serde", Version: "1.0.193", Source: "registry+https://github.com/rust-lang/crates.io-index"},
+				{Name: "tokio", Version: "1.35.1", Source: "registry+https://github.com/rust-lang/crates.io-index"},
 			},
 		},
 	}

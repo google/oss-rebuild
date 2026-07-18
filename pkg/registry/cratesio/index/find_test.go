@@ -237,3 +237,73 @@ func TestFindRegistryResolution(t *testing.T) {
 		})
 	}
 }
+
+func TestFindRegistryResolutionExcludesPathPackage(t *testing.T) {
+	current := mustCreateRepo(t, `commits:
+  - id: current
+    files:
+      pr/iv/private: |
+        {"name":"private","vers":"2.0.0","deps":[],"cksum":"path","features":{},"yanked":false}
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"dependency","features":{},"yanked":false}
+`)
+	snapshot := mustCreateRepo(t, `commits:
+  - id: snapshot
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"dependency","features":{},"yanked":false}
+`)
+	lockfile, err := cargolock.ParseLockfile(`version = 3
+
+[[package]]
+name = "example"
+version = "1.0.0"
+
+[[package]]
+name = "private"
+version = "2.0.0"
+
+[[package]]
+name = "serde"
+version = "1.0.193"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`)
+	if err != nil {
+		t.Fatalf("ParseLockfile() error = %v", err)
+	}
+
+	unfiltered, err := FindRegistryResolution(
+		[]*git.Repository{current.Repository, snapshot.Repository},
+		lockfile.Packages,
+		time.Now(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("FindRegistryResolution() with all packages error = %v", err)
+	}
+	if unfiltered.CommitHash != current.Commits["current"] {
+		t.Fatalf("unfiltered resolution = %v, want current index", unfiltered.CommitHash)
+	}
+
+	filtered, err := FindRegistryResolution(
+		[]*git.Repository{current.Repository, snapshot.Repository},
+		lockfile.CratesIOPackages(),
+		time.Now(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("FindRegistryResolution() with crates.io packages error = %v", err)
+	}
+	if filtered.CommitHash != snapshot.Commits["snapshot"] {
+		t.Errorf("filtered resolution = %v, want snapshot index", filtered.CommitHash)
+	}
+}
+
+func mustCreateRepo(t *testing.T, history string) *gitxtest.Repository {
+	t.Helper()
+	repo, err := gitxtest.CreateRepoFromYAML(history, nil)
+	if err != nil {
+		t.Fatalf("CreateRepoFromYAML() error = %v", err)
+	}
+	return repo
+}
