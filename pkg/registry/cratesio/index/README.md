@@ -272,8 +272,9 @@ for _, h := range handles {
     repos = append(repos, h.Repository)
 }
 
-// Parse Cargo.lock to get packages
+// Parse Cargo.lock to get crates.io packages
 packages, err := cargolock.Parse(lockfileContent)
+packages = cargolock.CratesIOPackages(packages)
 
 // Find resolution
 resolution, err := index.FindRegistryResolution(repos, packages, publishTime, nil)
