@@ -4,7 +4,6 @@
 package cratesio
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -33,6 +32,10 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 	if b.ExplicitLockfile != nil {
 		lockfile = b.ExplicitLockfile.LockfileBase64
 	}
+	dir := b.Location.Dir
+	if dir == "" {
+		dir = "."
+	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Source: []flow.Step{{
@@ -56,7 +59,7 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 				With: map[string]string{
 					"registryCommit": b.RegistryCommit,
 					"packageNames":   strings.Join(b.PackageNames, ","),
-					"useGitIndex":    fmt.Sprintf("%t", len(b.PackageNames) > 0),
+					"dir":            dir,
 				},
 			},
 		},
@@ -66,7 +69,6 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 				"dir":            b.Location.Dir,
 				"rustVersion":    b.RustVersion,
 				"registryCommit": b.RegistryCommit,
-				"useGitIndex":    fmt.Sprintf("%t", len(b.PackageNames) > 0),
 			},
 		}},
 		OutputDir: "target/package",
@@ -107,14 +109,29 @@ var toolkit = []*flow.Tool{
 		Name: "cargo/setup-registry",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				{{if and (eq .With.useGitIndex "true") (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
+				{{if and (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
+				{{if eq .With.packageNames "" -}}
+				mkdir -p /.cargo
+				printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"\n' > /.cargo/config.toml
+				{{- else -}}
+				# rust-toolchain files can override the strategy's default toolchain.
+				cargo_version="$(cd {{.With.dir}} && /root/.cargo/bin/cargo --version | sed -n 's/^cargo \([0-9][0-9]*\)\.\([0-9][0-9]*\)\..*/\1 \2/p')"
+				if [ -z "$cargo_version" ]; then
+				  echo "Unable to determine Cargo version" >&2
+				  exit 1
+				fi
+				cargo_major="${cargo_version%% *}"
+				cargo_minor="${cargo_version#* }"
+				if [ "$cargo_major" -eq 0 ] || { [ "$cargo_major" -eq 1 ] && [ "$cargo_minor" -lt 68 ]; }; then
 				mkdir -p /cargo-index
 				wget -O - --header "X-Package-Names: {{.With.packageNames}}" "{{.BuildEnv.TimewarpURLFromString "cargogitarchive" .With.registryCommit}}index.git.tar" | tar -xf - -C /cargo-index
 				mkdir -p /.cargo
 				printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/config.toml
-				{{- else if and (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
+				else
 				mkdir -p /.cargo
 				printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"\n' > /.cargo/config.toml
+				fi
+				{{- end -}}
 				{{- else -}}
 				# NOTE: Using current crates.io registry
 				{{- end -}}`)[1:],

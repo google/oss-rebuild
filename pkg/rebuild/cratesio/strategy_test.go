@@ -95,6 +95,49 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 			},
 		},
 		{
+			"NoDirGitIndex",
+			&CratesIOCargoPackage{
+				Location: rebuild.Location{
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				RustVersion:    "1.55.0",
+				RegistryCommit: "abc1234",
+				PackageNames:   []string{"serde", "tokio"},
+			},
+			rebuild.BuildEnv{HasRepo: true, TimewarpHost: "localhost:8081"},
+			rebuild.Instructions{
+				Location: rebuild.Location{
+					Ref:  "the_ref",
+					Repo: "the_repo",
+				},
+				Source: "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.55.0
+# rust-toolchain files can override the strategy's default toolchain.
+cargo_version="$(cd . && /root/.cargo/bin/cargo --version | sed -n 's/^cargo \([0-9][0-9]*\)\.\([0-9][0-9]*\)\..*/\1 \2/p')"
+if [ -z "$cargo_version" ]; then
+  echo "Unable to determine Cargo version" >&2
+  exit 1
+fi
+cargo_major="${cargo_version%% *}"
+cargo_minor="${cargo_version#* }"
+if [ "$cargo_major" -eq 0 ] || { [ "$cargo_major" -eq 1 ] && [ "$cargo_minor" -lt 68 ]; }; then
+mkdir -p /cargo-index
+wget -O - --header "X-Package-Names: serde,tokio" "http://cargogitarchive:abc1234@localhost:8081/index.git.tar" | tar -xf - -C /cargo-index
+mkdir -p /.cargo
+printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/config.toml
+else
+mkdir -p /.cargo
+printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "sparse+http://cargosparse:abc1234@localhost:8081/"\n' > /.cargo/config.toml
+fi`,
+				Build: `/root/.cargo/bin/cargo package --no-verify`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "rustup"},
+				},
+				OutputPath: "target/package/the_artifact",
+			},
+		},
+		{
 			"ExplicitLockfile",
 			&CratesIOCargoPackage{
 				Location:    defaultLocation,
@@ -195,10 +238,23 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.55.0
+# rust-toolchain files can override the strategy's default toolchain.
+cargo_version="$(cd the_dir && /root/.cargo/bin/cargo --version | sed -n 's/^cargo \([0-9][0-9]*\)\.\([0-9][0-9]*\)\..*/\1 \2/p')"
+if [ -z "$cargo_version" ]; then
+  echo "Unable to determine Cargo version" >&2
+  exit 1
+fi
+cargo_major="${cargo_version%% *}"
+cargo_minor="${cargo_version#* }"
+if [ "$cargo_major" -eq 0 ] || { [ "$cargo_major" -eq 1 ] && [ "$cargo_minor" -lt 68 ]; }; then
 mkdir -p /cargo-index
 wget -O - --header "X-Package-Names: serde,tokio" "http://cargogitarchive:abc1234@localhost:8081/index.git.tar" | tar -xf - -C /cargo-index
 mkdir -p /.cargo
-printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/config.toml`,
+printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/config.toml
+else
+mkdir -p /.cargo
+printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "sparse+http://cargosparse:abc1234@localhost:8081/"\n' > /.cargo/config.toml
+fi`,
 				Build: `(cd the_dir && /root/.cargo/bin/cargo package --no-verify)`,
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "rustup"},
@@ -212,14 +268,30 @@ printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-lo
 				Location:       defaultLocation,
 				RustVersion:    "1.77.0",
 				RegistryCommit: "abc1234",
+				PackageNames:   []string{"serde", "tokio"},
 			},
 			rebuild.BuildEnv{HasRepo: true, TimewarpHost: "localhost:8081"},
 			rebuild.Instructions{
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
+# rust-toolchain files can override the strategy's default toolchain.
+cargo_version="$(cd the_dir && /root/.cargo/bin/cargo --version | sed -n 's/^cargo \([0-9][0-9]*\)\.\([0-9][0-9]*\)\..*/\1 \2/p')"
+if [ -z "$cargo_version" ]; then
+  echo "Unable to determine Cargo version" >&2
+  exit 1
+fi
+cargo_major="${cargo_version%% *}"
+cargo_minor="${cargo_version#* }"
+if [ "$cargo_major" -eq 0 ] || { [ "$cargo_major" -eq 1 ] && [ "$cargo_minor" -lt 68 ]; }; then
+mkdir -p /cargo-index
+wget -O - --header "X-Package-Names: serde,tokio" "http://cargogitarchive:abc1234@localhost:8081/index.git.tar" | tar -xf - -C /cargo-index
 mkdir -p /.cargo
-printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "sparse+http://cargosparse:abc1234@localhost:8081/"\n' > /.cargo/config.toml`,
+printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/config.toml
+else
+mkdir -p /.cargo
+printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "sparse+http://cargosparse:abc1234@localhost:8081/"\n' > /.cargo/config.toml
+fi`,
 				Build: `(cd the_dir && /root/.cargo/bin/cargo package --no-verify)`,
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "rustup"},

@@ -62,9 +62,14 @@ func main() {
 		lockfile = string(contentBytes)
 		published = time.Now() // Default to current time for file-based input
 	}
-	packages, err := cargolock.Parse(lockfile)
+	lf, err := cargolock.ParseLockfile(lockfile)
 	if err != nil {
-		fmt.Printf("Error parsing packages: %v\n", err)
+		fmt.Printf("Error parsing Cargo.lock: %v\n", err)
+		os.Exit(1)
+	}
+	packages := lf.CratesIOPackages()
+	if len(packages) == 0 {
+		fmt.Println("Cargo.lock contains no crates.io packages")
 		os.Exit(1)
 	}
 	manager, err := setupIndexManager(cacheDir)

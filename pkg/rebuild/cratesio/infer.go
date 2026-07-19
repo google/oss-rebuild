@@ -275,28 +275,31 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if lockfileLo != "" && semver.Cmp(rustVersion, lockfileLo) < 0 {
 			rustVersion = lockfileLo
 		}
-		// Registry search is only usable in builds that support the local or sparse registry protocols.
-		// Sparse support: http://releases.rs/docs/1.68.0/#cargo
-		// Local support: http://releases.rs/docs/1.34.0/#cargo
-		stub, err := getRegistryStub(ctx)
-		if err != nil {
-			return nil, errors.Wrapf(err, "[INTERNAL] Failed to access registry query stub")
+		registryPackages := lf.CratesIOPackages()
+		if len(registryPackages) > 0 {
+			// Registry search is only usable in builds that support the local or sparse registry protocols.
+			// Sparse support: http://releases.rs/docs/1.68.0/#cargo
+			// Local support: http://releases.rs/docs/1.34.0/#cargo
+			stub, err := getRegistryStub(ctx)
+			if err != nil {
+				return nil, errors.Wrapf(err, "[INTERNAL] Failed to access registry query stub")
+			}
+			resp, err := stub(ctx, cratesregistryservice.FindRegistryCommitRequest{
+				LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
+				PublishedTime:  vmeta.Updated.Format(time.RFC3339),
+			})
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to call registry service")
+			}
+			if resp.CommitHash == "" {
+				return nil, errors.New("no suitable registry commit found")
+			}
+			indexCommit = resp.CommitHash
 		}
-		resp, err := stub(ctx, cratesregistryservice.FindRegistryCommitRequest{
-			LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
-			PublishedTime:  vmeta.Updated.Format(time.RFC3339),
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to call registry service")
-		}
-		if resp.CommitHash == "" {
-			return nil, errors.New("no suitable registry commit found")
-		}
-		indexCommit = resp.CommitHash
 		// TODO: If we want to default to sparse registry, we can predicate this on `if semver.Cmp(rustVersion, "1.68.0") < 0`
-		// If only local registry supported, parse package names from Cargo.lock.
+		// If only local registry is supported, collect crates.io package names from Cargo.lock.
 		packageSet := make(map[string]bool)
-		for _, pkg := range lf.Packages {
+		for _, pkg := range registryPackages {
 			packageSet[pkg.Name] = true
 		}
 		for pkgName := range packageSet {
