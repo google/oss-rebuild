@@ -115,12 +115,14 @@ var toolkit = []*flow.Tool{
 				printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"\n' > /.cargo/config.toml
 				{{- else -}}
 				# rust-toolchain files can override the strategy's default toolchain.
-				cargo_minor="$(cd {{.With.dir}} && /root/.cargo/bin/cargo --version | sed -n 's/^cargo 1\.\([0-9][0-9]*\)\..*/\1/p')"
-				if [ -z "$cargo_minor" ]; then
-				  echo "Unable to determine Cargo minor version" >&2
+				cargo_version="$(cd {{.With.dir}} && /root/.cargo/bin/cargo --version | sed -n 's/^cargo \([0-9][0-9]*\)\.\([0-9][0-9]*\)\..*/\1 \2/p')"
+				if [ -z "$cargo_version" ]; then
+				  echo "Unable to determine Cargo version" >&2
 				  exit 1
 				fi
-				if [ "$cargo_minor" -lt 68 ]; then
+				cargo_major="${cargo_version%% *}"
+				cargo_minor="${cargo_version#* }"
+				if [ "$cargo_major" -eq 0 ] || { [ "$cargo_major" -eq 1 ] && [ "$cargo_minor" -lt 68 ]; }; then
 				mkdir -p /cargo-index
 				wget -O - --header "X-Package-Names: {{.With.packageNames}}" "{{.BuildEnv.TimewarpURLFromString "cargogitarchive" .With.registryCommit}}index.git.tar" | tar -xf - -C /cargo-index
 				mkdir -p /.cargo

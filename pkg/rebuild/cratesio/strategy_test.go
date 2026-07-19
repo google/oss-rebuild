@@ -114,12 +114,14 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 				Source: "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.55.0
 # rust-toolchain files can override the strategy's default toolchain.
-cargo_minor="$(cd . && /root/.cargo/bin/cargo --version | sed -n 's/^cargo 1\.\([0-9][0-9]*\)\..*/\1/p')"
-if [ -z "$cargo_minor" ]; then
-  echo "Unable to determine Cargo minor version" >&2
+cargo_version="$(cd . && /root/.cargo/bin/cargo --version | sed -n 's/^cargo \([0-9][0-9]*\)\.\([0-9][0-9]*\)\..*/\1 \2/p')"
+if [ -z "$cargo_version" ]; then
+  echo "Unable to determine Cargo version" >&2
   exit 1
 fi
-if [ "$cargo_minor" -lt 68 ]; then
+cargo_major="${cargo_version%% *}"
+cargo_minor="${cargo_version#* }"
+if [ "$cargo_major" -eq 0 ] || { [ "$cargo_major" -eq 1 ] && [ "$cargo_minor" -lt 68 ]; }; then
 mkdir -p /cargo-index
 wget -O - --header "X-Package-Names: serde,tokio" "http://cargogitarchive:abc1234@localhost:8081/index.git.tar" | tar -xf - -C /cargo-index
 mkdir -p /.cargo
@@ -237,12 +239,14 @@ fi`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.55.0
 # rust-toolchain files can override the strategy's default toolchain.
-cargo_minor="$(cd the_dir && /root/.cargo/bin/cargo --version | sed -n 's/^cargo 1\.\([0-9][0-9]*\)\..*/\1/p')"
-if [ -z "$cargo_minor" ]; then
-  echo "Unable to determine Cargo minor version" >&2
+cargo_version="$(cd the_dir && /root/.cargo/bin/cargo --version | sed -n 's/^cargo \([0-9][0-9]*\)\.\([0-9][0-9]*\)\..*/\1 \2/p')"
+if [ -z "$cargo_version" ]; then
+  echo "Unable to determine Cargo version" >&2
   exit 1
 fi
-if [ "$cargo_minor" -lt 68 ]; then
+cargo_major="${cargo_version%% *}"
+cargo_minor="${cargo_version#* }"
+if [ "$cargo_major" -eq 0 ] || { [ "$cargo_major" -eq 1 ] && [ "$cargo_minor" -lt 68 ]; }; then
 mkdir -p /cargo-index
 wget -O - --header "X-Package-Names: serde,tokio" "http://cargogitarchive:abc1234@localhost:8081/index.git.tar" | tar -xf - -C /cargo-index
 mkdir -p /.cargo
@@ -272,12 +276,14 @@ fi`,
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
 # rust-toolchain files can override the strategy's default toolchain.
-cargo_minor="$(cd the_dir && /root/.cargo/bin/cargo --version | sed -n 's/^cargo 1\.\([0-9][0-9]*\)\..*/\1/p')"
-if [ -z "$cargo_minor" ]; then
-  echo "Unable to determine Cargo minor version" >&2
+cargo_version="$(cd the_dir && /root/.cargo/bin/cargo --version | sed -n 's/^cargo \([0-9][0-9]*\)\.\([0-9][0-9]*\)\..*/\1 \2/p')"
+if [ -z "$cargo_version" ]; then
+  echo "Unable to determine Cargo version" >&2
   exit 1
 fi
-if [ "$cargo_minor" -lt 68 ]; then
+cargo_major="${cargo_version%% *}"
+cargo_minor="${cargo_version#* }"
+if [ "$cargo_major" -eq 0 ] || { [ "$cargo_major" -eq 1 ] && [ "$cargo_minor" -lt 68 ]; }; then
 mkdir -p /cargo-index
 wget -O - --header "X-Package-Names: serde,tokio" "http://cargogitarchive:abc1234@localhost:8081/index.git.tar" | tar -xf - -C /cargo-index
 mkdir -p /.cargo
