@@ -632,6 +632,32 @@ version = 3
 	}
 }
 
+func TestGetCargoTOMLAllowsMultilineInlineTables(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: target
+    files:
+      Cargo.toml: |
+        [package]
+        name = "example"
+        version = "1.0.0"
+
+        [dependencies]
+        serde = {
+          version = "1",
+          features = ["derive"],
+        }
+`, nil))
+	commit := must(repo.CommitObject(repo.Commits["target"]))
+	tree := must(commit.Tree())
+	ct, err := getCargoTOML(tree, "Cargo.toml")
+	if err != nil {
+		t.Fatalf("getCargoTOML: %v", err)
+	}
+	if want := "example"; ct.Name != want {
+		t.Errorf("CargoTOML.Name = %q, want %q", ct.Name, want)
+	}
+}
+
 func must[T any](t T, err error) T {
 	if err != nil {
 		panic(err)
