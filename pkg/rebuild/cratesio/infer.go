@@ -235,7 +235,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	rustVersion := vmeta.RustVersion
 	if rustVersion == "" {
 		// NOTE: Give a week's margin to allow for toolchain upgrades. Maybe raise.
-		rustVersion, err = reg.RustVersionAt(vmeta.Updated.Add(-7 * 24 * time.Hour))
+		rustVersion, err = reg.RustVersionAt(vmeta.Created.Add(-7 * 24 * time.Hour))
 		if err != nil {
 			return nil, errors.New("rust version heuristic failed")
 		}
@@ -284,7 +284,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		}
 		resp, err := stub(ctx, cratesregistryservice.FindRegistryCommitRequest{
 			LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
-			PublishedTime:  vmeta.Updated.Format(time.RFC3339),
+			PublishedTime:  vmeta.Created.Format(time.RFC3339),
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to call registry service")
