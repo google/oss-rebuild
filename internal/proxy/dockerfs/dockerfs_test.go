@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +29,7 @@ func makeStat(t *testing.T, fi FileInfo) string {
 	}
 	b := must(json.Marshal(ds))
 	buf := new(bytes.Buffer)
-	b64e := base64.NewEncoder(base64.URLEncoding, buf)
+	b64e := base64.NewEncoder(base64.StdEncoding, buf)
 	must(b64e.Write(b))
 	b64e.Close()
 	return buf.String()
@@ -89,6 +90,28 @@ func TestStat(t *testing.T) {
 	}
 	f := Filesystem{Client: &c, Container: "abc"}
 	got := must(f.Stat("/etc/release"))
+	if *got != want {
+		t.Fatalf("Unexpected Stat result: want=%v got=%v", want, *got)
+	}
+}
+
+func TestStatHeaderNonURLSafe(t *testing.T) {
+	// NOTE: The daemon encodes the stat header with std base64 whose '+' and
+	// '/' characters are rejected by URL-safe decoders. This name is chosen
+	// such that its encoding includes one.
+	want := FileInfo{name: "cache~", mode: fs.ModePerm, size: 12, modTime: someTime}
+	encoded := makeStat(t, want)
+	if !strings.ContainsAny(encoded, "+/") {
+		t.Fatalf("Test payload must exercise std-only base64 chars: %s", encoded)
+	}
+	c := httpxtest.MockClient{
+		Calls: []httpxtest.Call{
+			{Method: "HEAD", URL: "/containers/abc/archive?path=/tmp/cache~", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, encoded)}},
+		},
+		URLValidator: httpxtest.NewURLValidator(t),
+	}
+	f := Filesystem{Client: &c, Container: "abc"}
+	got := must(f.Stat("/tmp/cache~"))
 	if *got != want {
 		t.Fatalf("Unexpected Stat result: want=%v got=%v", want, *got)
 	}
