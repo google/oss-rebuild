@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -93,6 +94,53 @@ func TestStat(t *testing.T) {
 	if *got != want {
 		t.Fatalf("Unexpected Stat result: want=%v got=%v", want, *got)
 	}
+}
+
+func TestErrorMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		status  int
+		body    string
+		want    error
+		wantMsg string
+	}{
+		{"bad parameter", http.StatusBadRequest, `{"message":"not a directory"}`, fs.ErrInvalid, "not a directory"},
+		{"forbidden", http.StatusForbidden, `{"message":"container rootfs is marked read-only"}`, fs.ErrPermission, "read-only"},
+		{"not found", http.StatusNotFound, `{"message":"No such container: abc"}`, fs.ErrNotExist, "No such container"},
+		{"server error", http.StatusInternalServerError, `{"message":"boom"}`, nil, "boom"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body))}},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			}
+			f := Filesystem{Client: &c, Container: "abc"}
+			_, err := f.Open("/etc/release")
+			if err == nil {
+				t.Fatal("Expected error")
+			}
+			if tc.want != nil && !errors.Is(err, tc.want) {
+				t.Errorf("Expected sentinel %v, got %v", tc.want, err)
+			}
+			if !strings.Contains(err.Error(), tc.wantMsg) {
+				t.Errorf("Expected message %q in %q", tc.wantMsg, err.Error())
+			}
+		})
+	}
+	t.Run("bodyless HEAD response", func(t *testing.T) {
+		c := httpxtest.MockClient{
+			Calls: []httpxtest.Call{
+				{Method: "HEAD", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusNotFound}},
+			},
+			URLValidator: httpxtest.NewURLValidator(t),
+		}
+		f := Filesystem{Client: &c, Container: "abc"}
+		if _, err := f.Stat("/etc/release"); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("Expected ErrNotExist, got %v", err)
+		}
+	})
 }
 
 func TestStatHeaderNonURLSafe(t *testing.T) {
