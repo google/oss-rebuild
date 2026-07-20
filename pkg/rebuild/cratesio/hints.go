@@ -5,6 +5,8 @@ package cratesio
 
 import (
 	"regexp"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 // Compiled regex patterns for detecting Rust version requirements
@@ -12,8 +14,6 @@ import (
 var (
 	// debugDenormalizedRegex detects debug = bool (Rust 1.71+ normalized boolean debug to integer)
 	debugDenormalizedRegex = regexp.MustCompile(`(?m)^\s*debug\s*=\s*(true|false)\s*$`)
-	// resolverTwoPattern detects resolver = "2" (became default and was removed in Rust 1.64+)
-	resolverTwoPattern = regexp.MustCompile(`(?m)^\s*resolver\s*=\s*["\']?2["\']?\s*$`)
 	// prettyArrayPattern detects pretty-printed arrays (Rust 1.60+)
 	prettyArrayPattern = regexp.MustCompile(`(?s)\[\s*\n\s+.*\n\s*\]`)
 	// cuddledArrayPattern detects cuddled/single-line arrays (Rust < 1.60)
@@ -23,6 +23,20 @@ var (
 	// docExamplesRegex detects the addition of the scrape indicator (Rust 1.67+)
 	docExamplesRegex = regexp.MustCompile(`(?m)^\s*doc-scrape-examples\s*=\s*(true|false)\s*$`)
 )
+
+// hasResolverTwo reports whether resolver 2 is set in a supported manifest section.
+func hasResolverTwo(cargoTomlText string) bool {
+	var manifest struct {
+		Package struct {
+			Resolver string `toml:"resolver"`
+		} `toml:"package"`
+		Workspace struct {
+			Resolver string `toml:"resolver"`
+		} `toml:"workspace"`
+	}
+	return toml.Unmarshal([]byte(cargoTomlText), &manifest) == nil &&
+		(manifest.Package.Resolver == "2" || manifest.Workspace.Resolver == "2")
+}
 
 // detectRustVersionBounds analyzes Cargo.toml for structural patterns that indicate
 // minimum Rust version requirements based on tooling behavior changes.
@@ -45,18 +59,8 @@ func detectRustVersionBounds(cargoTomlText string) (lo, hi string) {
 	} else {
 		hi = min("1.54.0", hi)
 	}
-	if resolverTwoPattern.MatchString(cargoTomlText) {
-		hi = min("1.63.0", hi) // After which resolver 2 became default and was omitted
+	if hasResolverTwo(cargoTomlText) {
 		lo = max("1.51.0", lo)
-	} else {
-		// If resolver pattern not found, we know the version lies outside the above range
-		if lo > "1.51.0" {
-			if hi >= "1.64.0" { // only raise lo if hi is in range
-				lo = max("1.64.0", lo)
-			}
-		} else if hi < "1.63.0" {
-			hi = min("1.50.0", hi)
-		}
 	}
 	if hi == "999" {
 		hi = ""
