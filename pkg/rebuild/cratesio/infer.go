@@ -49,6 +49,19 @@ func getCargoTOML(tree *object.Tree, path string) (ct reg.CargoTOML, err error) 
 	return ct, toml.Unmarshal([]byte(p), &ct)
 }
 
+// lockfileRustVersionFloor returns the earliest Cargo release that preserves
+// an explicit lockfile format version. Cargo writes v1 and v2 without a header.
+func lockfileRustVersionFloor(formatVersion int) string {
+	switch formatVersion {
+	case 3:
+		return "1.47.0"
+	case 4:
+		return "1.78.0"
+	default:
+		return ""
+	}
+}
+
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	pmeta, err := mux.CratesIO.Crate(ctx, t.Package)
 	if err != nil {
@@ -274,9 +287,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			return nil, errors.Wrap(err, "[INTERNAL] failed to parse Cargo.lock")
 		}
 		// Use lock file format version to refine the Rust version lower bound.
-		// v1 (no header) predates meaningful cargo package normalization changes.
-		// v2 was introduced in cargo 1.57; v3 in cargo 1.78 (auto-inclusion in packages stabilized in 1.79); v4 in cargo 1.82.
-		lockfileLo := map[int]string{2: "1.57.0", 3: "1.79.0", 4: "1.82.0"}[lf.FormatVersion]
+		lockfileLo := lockfileRustVersionFloor(lf.FormatVersion)
 		if lockfileLo != "" && semver.Cmp(rustVersion, lockfileLo) < 0 {
 			rustVersion = lockfileLo
 		}
