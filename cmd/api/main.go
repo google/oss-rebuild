@@ -190,12 +190,12 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing inference URL")
 	}
-	u = u.JoinPath("infer")
 	runclient, err := idtoken.NewClient(ctx, *inferenceURL)
 	if err != nil {
 		return nil, errors.Wrap(err, "initializing inference client")
 	}
-	d.InferStub = api.StubFromHandler(runclient, u, inferenceservice.Infer)
+	d.InferStub = api.StubFromHandler(runclient, u.JoinPath("infer"), inferenceservice.Infer)
+	d.InferVersionStub = api.StubFromHandler(runclient, u.JoinPath("version"), inferenceservice.Version)
 	return &d, nil
 }
 

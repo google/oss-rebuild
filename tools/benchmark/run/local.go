@@ -76,6 +76,8 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		return verdict, nil
 	}
 	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
+	// In-process inference ran. There is no service version to report.
+	verdict.Provenance = &schema.StrategyProvenance{Inference: &schema.InferenceRun{}}
 	if err := executeBuild(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}, s.dockerConfig); err != nil {
 		verdict.Message = err.Error()
 	} else if err := compare(ctx, t, s.store, mux); err != nil {

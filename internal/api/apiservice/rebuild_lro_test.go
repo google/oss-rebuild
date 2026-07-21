@@ -144,6 +144,9 @@ func TestRebuildPackageDuplicateInsert(t *testing.T) {
 	d.InferStub = func(context.Context, schema.InferenceRequest) (*schema.StrategyOneOf, error) {
 		return nil, io.EOF // arbitrary error
 	}
+	d.InferVersionStub = func(context.Context, schema.VersionRequest) (*schema.VersionResponse, error) {
+		return &schema.VersionResponse{Version: "test-infer-v1"}, nil
+	}
 
 	// RebuildPackage should not fail on the initial write.
 	// It will return a verdict with an error message later due to InferStub returning EOF.
@@ -282,6 +285,9 @@ func TestCreateRebuildOpFast(t *testing.T) {
 	d.InferStub = func(context.Context, schema.InferenceRequest) (*schema.StrategyOneOf, error) {
 		oneof := schema.NewStrategyOneOf(strategy)
 		return &oneof, nil
+	}
+	d.InferVersionStub = func(context.Context, schema.VersionRequest) (*schema.VersionResponse, error) {
+		return &schema.VersionResponse{Version: "test-infer-v1"}, nil
 	}
 
 	lroDeps := &CreateRebuildOpDeps{

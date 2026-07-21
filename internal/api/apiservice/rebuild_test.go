@@ -636,6 +636,9 @@ RLpmHHG1JOVdOA==
 				must(oneof.Strategy())
 				return &oneof, nil
 			}
+			d.InferVersionStub = func(context.Context, schema.VersionRequest) (*schema.VersionResponse, error) {
+				return &schema.VersionResponse{Version: "test-infer-v1"}, nil
+			}
 			if tc.buildDef != nil {
 				path := must(builddef.NewFilesystemBuildDefinitionSet(memfs.New()).Path(ctx, tc.target))
 				relpath := path[1:]
@@ -669,6 +672,33 @@ RLpmHHG1JOVdOA==
 			}
 			if got.Started.IsZero() || got.Created.IsZero() {
 				t.Errorf("timestamps not set: started=%v created=%v", got.Started, got.Created)
+			}
+			// Provenance expectations derive from the build def input: an entry
+			// with a strategy contributes a Definition, and inference runs (and
+			// records its version) unless that strategy was full (non-hint).
+			wantDef := tc.buildDef != nil && tc.buildDef.StrategyOneOf != nil
+			wantInfer := true
+			if wantDef {
+				if s, err := tc.buildDef.Strategy(); err == nil {
+					if _, isHint := s.(*rebuild.LocationHint); !isHint {
+						wantInfer = false
+					}
+				}
+			}
+			if got.Provenance == nil {
+				t.Error("Provenance not set")
+			} else {
+				if gotDef := got.Provenance.Definition != nil; gotDef != wantDef {
+					t.Errorf("Provenance.Definition set = %v, want %v", gotDef, wantDef)
+				}
+				if wantDef && got.Provenance.Definition.Ref == "" {
+					t.Error("Provenance.Definition.Ref is empty")
+				}
+				if gotInfer := got.Provenance.Inference != nil; gotInfer != wantInfer {
+					t.Errorf("Provenance.Inference set = %v, want %v", gotInfer, wantInfer)
+				} else if wantInfer && got.Provenance.Inference.Version != "test-infer-v1" {
+					t.Errorf("Provenance.Inference.Version = %q, want %q", got.Provenance.Inference.Version, "test-infer-v1")
+				}
 			}
 
 			if tc.expectedMsg != "" {

@@ -213,6 +213,7 @@ type Verdict struct {
 	Target        rebuild.Target
 	Message       string
 	StrategyOneof StrategyOneOf
+	Provenance    *StrategyProvenance // strategy inputs, nil when unresolved or unrecorded by the producer
 	Timings       rebuild.Timings
 }
 
@@ -361,23 +362,24 @@ const (
 
 // RebuildAttempt stores rebuild and execution metadata on a single smoketest run.
 type RebuildAttempt struct {
-	Ecosystem       string          `firestore:"ecosystem,omitempty"`
-	Package         string          `firestore:"package,omitempty"`
-	Version         string          `firestore:"version,omitempty"`
-	Artifact        string          `firestore:"artifact,omitempty"`
-	Status          RebuildStatus   `firestore:"status,omitempty"`
-	Success         bool            `firestore:"success,omitempty"`
-	Message         string          `firestore:"message,omitempty"`
-	Strategy        StrategyOneOf   `firestore:"strategyoneof,omitempty"`
-	Dockerfile      string          `firestore:"dockerfile,omitempty"`
-	Timings         rebuild.Timings `firestore:"timings,omitempty"`
-	ExecutorVersion string          `firestore:"executor_version,omitempty"`
-	RunID           string          `firestore:"run_id,omitempty"`
-	BuildID         string          `firestore:"build_id,omitempty"`
-	ObliviousID     string          `firestore:"oblivious_id,omitempty"`
-	Started         time.Time       `firestore:"started,omitempty"`  // The time rebuild started
-	Finished        time.Time       `firestore:"finished,omitempty"` // The time rebuild finished
-	Created         time.Time       `firestore:"created,omitempty"`  // The time this record was created
+	Ecosystem       string              `firestore:"ecosystem,omitempty"`
+	Package         string              `firestore:"package,omitempty"`
+	Version         string              `firestore:"version,omitempty"`
+	Artifact        string              `firestore:"artifact,omitempty"`
+	Status          RebuildStatus       `firestore:"status,omitempty"`
+	Success         bool                `firestore:"success,omitempty"`
+	Message         string              `firestore:"message,omitempty"`
+	Strategy        StrategyOneOf       `firestore:"strategyoneof,omitempty"`
+	Dockerfile      string              `firestore:"dockerfile,omitempty"`
+	Timings         rebuild.Timings     `firestore:"timings,omitempty"`
+	ExecutorVersion string              `firestore:"executor_version,omitempty"`
+	RunID           string              `firestore:"run_id,omitempty"`
+	BuildID         string              `firestore:"build_id,omitempty"`
+	ObliviousID     string              `firestore:"oblivious_id,omitempty"`
+	Provenance      *StrategyProvenance `firestore:"provenance,omitempty"` // strategy inputs, nil for legacy records or pre-resolution failures
+	Started         time.Time           `firestore:"started,omitempty"`    // The time rebuild started
+	Finished        time.Time           `firestore:"finished,omitempty"`   // The time rebuild finished
+	Created         time.Time           `firestore:"created,omitempty"`    // The time this record was created
 }
 
 func (a RebuildAttempt) Target() rebuild.Target {

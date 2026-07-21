@@ -271,7 +271,9 @@ func (w *inferenceWorker) ProcessOne(ctx context.Context, p benchmark.Package, o
 					Artifact:  artifact,
 				},
 				StrategyOneof: *strat,
-				Message:       "inference success",
+				// Remote inference ran. Its version is not resolved here.
+				Provenance: &schema.StrategyProvenance{Inference: &schema.InferenceRun{}},
+				Message:    "inference success",
 			}
 		}
 	}
