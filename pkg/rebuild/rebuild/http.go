@@ -8,17 +8,23 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/google/oss-rebuild/internal/buildinfo"
 	"github.com/google/oss-rebuild/internal/httpx"
 )
 
-// version identifies the running build in outbound User-Agent strings.
-// TODO: Replace with debug.ReadBuildInfo() once builds embed version info.
-const version = "0.0.0"
+// defaultVersion is used in the User-Agent when the build is unstamped
+// (local `go build`, tests, tooling) and buildinfo.Version is empty.
+const defaultVersion = "0.0.0"
 
 // UserAgent returns the User-Agent string for outbound registry requests
 // originating from the named host. host is a deployment name (var.host) or
-// "localbuild" for anonymous local/interactive traffic.
+// "localbuild" for anonymous local/interactive traffic. The version is the
+// link-time build identity from buildinfo, falling back to defaultVersion.
 func UserAgent(host string) string {
+	version := buildinfo.Version
+	if version == "" {
+		version = defaultVersion
+	}
 	return fmt.Sprintf("oss-rebuild+%s/%s", host, version)
 }
 
