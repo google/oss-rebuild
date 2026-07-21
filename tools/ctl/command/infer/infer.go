@@ -243,7 +243,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	}, Strategy: s}
 	resources := build.Resources{
 		ToolURLs: map[build.ToolType]string{
-			// Ex: https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20250428204534-b35098b3c7b7/timewarp
+			// Ex: https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20251211001310-499b5fb97512/timewarp
 			build.TimewarpTool: fmt.Sprintf("https://storage.googleapis.com/%s/%s/timewarp", cfg.BootstrapBucket, cfg.BootstrapVersion),
 		},
 		BaseImageConfig: build.DefaultBaseImageConfig(),
