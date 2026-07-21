@@ -56,7 +56,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -107,6 +107,38 @@ func TestInferStrategy(t *testing.T) {
 			},
 		},
 		{
+			name: "declared rust_version is a lower bound",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-12-12T00:25:28.357Z","rust_version":"1.35.0"}}`,
+			files: []archive.TarEntry{
+				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "",
+					},
+					RustVersion: "1.65.0",
+				}
+			},
+		},
+		{
 			name: "ref from tag",
 			repo: `commits:
   - id: initial-commit
@@ -124,7 +156,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			files: []archive.TarEntry{
 				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
 			},
@@ -157,7 +189,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35"}}`,
 			files: []archive.TarEntry{
 				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
 			},
@@ -189,7 +221,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			files: []archive.TarEntry{
 				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
 			},
@@ -224,7 +256,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -264,7 +296,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -449,7 +481,7 @@ version = "1.0.150"
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.68.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.68.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -484,7 +516,7 @@ version = "1.0.150"
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
 				CommitHash: "abcd1234567890abcdef1234567890abcdef1234",
 			},
@@ -543,7 +575,7 @@ version = "1.21.2"
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.67.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.67.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},

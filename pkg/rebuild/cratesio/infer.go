@@ -232,15 +232,20 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if ct.Version() != version && ct.Version() != reg.WorkspaceVersion {
 		return nil, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, ct.Version())
 	}
-	rustVersion := vmeta.RustVersion
-	if rustVersion == "" {
-		// NOTE: Give a week's margin to allow for toolchain upgrades. Maybe raise.
-		rustVersion, err = reg.RustVersionAt(vmeta.Created.Add(-7 * 24 * time.Hour))
-		if err != nil {
-			return nil, errors.New("rust version heuristic failed")
+	// NOTE: Give a week's margin to allow for toolchain upgrades. Maybe raise.
+	rustVersion, err := reg.RustVersionAt(vmeta.Created.Add(-7 * 24 * time.Hour))
+	if err != nil {
+		return nil, errors.New("rust version heuristic failed")
+	}
+	// rust_version is the crate's minimum supported Rust version, not
+	// necessarily the toolchain used to publish it.
+	if declared := vmeta.RustVersion; declared != "" {
+		if strings.Count(declared, ".") == 1 {
+			declared += ".0"
 		}
-	} else if strings.Count(rustVersion, ".") == 1 {
-		rustVersion += ".0"
+		if semver.Cmp(rustVersion, declared) < 0 {
+			rustVersion = declared
+		}
 	}
 	// Apply structural hints to ensure minimum Rust version requirements are met
 	// In the presence of options, (arbitrarily) prefer the latest Rust version in the range
