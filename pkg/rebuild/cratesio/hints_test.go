@@ -42,6 +42,15 @@ name = "my-crate"
 			wantHi: "1.50.0", // No modern header sets hi=1.54, no resolver=2 bumps to 1.50
 		},
 		{
+			name: "Edition 2024 overrides older upper bounds",
+			cargoToml: `[package]
+name = "my-crate"
+edition = "2024"
+`,
+			wantLo: "1.85.0",
+			wantHi: "",
+		},
+		{
 			name: "Resolver Two (Old Header)",
 			cargoToml: `
 [package]
