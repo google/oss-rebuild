@@ -225,6 +225,7 @@ func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, 
 		return runService.Projects.Locations.Jobs.Run(name, req).Context(ctx).Do()
 	}
 	d.DepsConfig = schema.RebuildDepsConfig{
+		Host:                       httpcfg.Host,
 		AssetBucket:                *metadataBucket,
 		BuildProject:               *project,
 		FirestoreProject:           *project,

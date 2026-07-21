@@ -12,7 +12,6 @@ import (
 )
 
 // version identifies the running build in outbound User-Agent strings.
-// Keep in sync with deployments/services.tf.
 // TODO: Replace with debug.ReadBuildInfo() once builds embed version info.
 const version = "0.0.0"
 

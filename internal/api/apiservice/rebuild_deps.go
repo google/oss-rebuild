@@ -30,8 +30,7 @@ import (
 func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) (*RebuildPackageDeps, error) {
 	var d RebuildPackageDeps
 	var err error
-	// Use default http config for now, or we could add it to RebuildDepsConfig
-	d.HTTPClient, err = httpegress.MakeClient(ctx, httpegress.Config{})
+	d.HTTPClient, err = httpegress.MakeClient(ctx, httpegress.Config{Host: cfg.Host})
 	if err != nil {
 		return nil, errors.Wrap(err, "making http client")
 	}

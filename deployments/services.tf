@@ -162,7 +162,7 @@ resource "google_cloud_run_v2_service" "inference" {
       image = data.google_artifact_registry_docker_image.inference.self_link
       args = [
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
-        "--user-agent=oss-rebuild+${var.host}/0.0.0",
+        "--host=${var.host}",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
         "--crates-registry-service-url=${google_cloud_run_v2_service.crates-registry.uri}",
       ]
@@ -237,7 +237,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--logs-bucket=${google_storage_bucket.logs.name}",
         "--debug-storage=gs://${google_storage_bucket.debug.name}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
-        "--user-agent=oss-rebuild+${var.host}/0.0.0",
+        "--host=${var.host}",
         "--build-def-repo=${var.build_def_repo}",
         "--build-def-repo-dir=${var.build_def_repo_dir}",
         "--block-local-repo-publish=${var.public}",
@@ -276,6 +276,7 @@ resource "google_cloud_run_v2_service" "network-analyzer" {
         "--project=${var.project}",
         "--analysis-bucket=${google_storage_bucket.network-analyzer-attestations[0].name}",
         "--build-remote-identity=${google_service_account.network-analyzer-build[0].name}",
+        "--host=${var.host}",
         "--logs-bucket=${google_storage_bucket.logs.name}",
         "--metadata-bucket=${google_storage_bucket.metadata.name}",
         "--attestation-bucket=${google_storage_bucket.attestations.name}",
@@ -336,6 +337,7 @@ resource "google_cloud_run_v2_service" "system-analyzer" {
         "--project=${var.project}",
         "--analysis-bucket=${google_storage_bucket.system-analyzer-attestations[0].name}",
         "--build-remote-identity=${google_service_account.system-analyzer-build[0].name}",
+        "--host=${var.host}",
         "--logs-bucket=${google_storage_bucket.logs.name}",
         "--metadata-bucket=${google_storage_bucket.metadata.name}",
         "--attestation-bucket=${google_storage_bucket.attestations.name}",
@@ -399,6 +401,7 @@ resource "google_cloud_run_v2_service" "agent-api" {
         "--prebuild-bucket=${google_storage_bucket.bootstrap-tools.name}",
         "--prebuild-version=${var.prebuild_version}",
         "--prebuild-auth=${var.public ? "false" : "true"}",
+        "--host=${var.host}",
         ], var.enable_private_build_pool ? [
         "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
         "--gcb-private-pool-region=us-central1",

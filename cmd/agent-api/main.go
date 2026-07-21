@@ -18,6 +18,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api/agentapiservice"
 	"github.com/google/oss-rebuild/internal/db"
+	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -51,6 +52,8 @@ var (
 	scratchIdleThreshold = flag.Duration("scratch-idle-threshold", 30*time.Minute, "scratches whose LastUsed is older than this and that have no in-deadline pending exec are reaped")
 	scratchOpDeadline    = flag.Duration("scratch-op-deadline", 2*time.Hour, "default and maximum exec duration, stamped on each exec; bounds how long a pending exec exempts its scratch from idle reaping")
 )
+
+var httpcfg = httpegress.Config{}
 
 // parseScratchZones splits --scratch-zones on commas, trimming whitespace
 // and dropping empty entries.
@@ -136,6 +139,7 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 	}
 	d.PrebuildConfig.Bucket = *prebuildBucket
 	d.PrebuildConfig.Auth = *prebuildAuth
+	d.Host = httpcfg.Host
 
 	return &d, nil
 }
@@ -304,6 +308,7 @@ func ScratchReapInit(ctx context.Context) (*agentapiservice.ScratchReapDeps, err
 }
 
 func main() {
+	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agent/session/iteration", api.Handler(AgentCreateIterationInit, agentapiservice.AgentCreateIteration))

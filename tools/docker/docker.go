@@ -28,7 +28,7 @@ func RunServer(ctx context.Context, img string, port int, opts *RunOptions) erro
 	for _, mount := range opts.Mounts {
 		args = append(args, fmt.Sprintf("-v%s", mount))
 	}
-	args = append(args, []string{img, "--user-agent=OSSRebuildLocal/0.0.0"}...)
+	args = append(args, []string{img, "--host=localbuild"}...)
 	args = append(args, opts.Args...)
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	log.Print(cmd.String())

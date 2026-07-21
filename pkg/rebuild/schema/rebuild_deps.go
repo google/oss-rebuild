@@ -17,6 +17,7 @@ type RebuildDepsConfig struct {
 	AttestationBucket   string `json:"attestation_bucket"`
 	BuildRemoteIdentity string `json:"build_remote_identity"`
 
+	Host                       string `json:"host"`
 	FirestoreProject           string `json:"firestore_project"`
 	InferenceURL               string `json:"inference_url"`
 	SigningKeyVersion          string `json:"signing_key_version"`
