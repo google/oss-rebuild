@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 
+	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/pkg/errors"
@@ -23,9 +23,13 @@ func GetVersions(ctx context.Context, pkg string, mux rebuild.RegistryMux) (vers
 	}
 	var vs []reg.Version
 	for _, v := range p.Versions {
+		parsedVersion, err := semver.New(v.Version)
+		if err != nil {
+			return nil, errors.Wrapf(err, "parsing crate version %q", v.Version)
+		}
 		// Omit pre-release versions.
 		// TODO: Support rebuilding pre-release versions.
-		if strings.ContainsRune(v.Version, '-') {
+		if parsedVersion.Prerelease != "" {
 			continue
 		}
 		vs = append(vs, v)
