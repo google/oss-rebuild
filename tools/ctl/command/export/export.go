@@ -18,6 +18,7 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"github.com/cheggaaa/pb"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/pipe"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/internal/urlx"
@@ -159,7 +160,10 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	if err != nil {
 		return nil, err
 	}
-	mux := meta.NewRegistryMux(http.DefaultClient)
+	mux := meta.NewRegistryMux(&httpx.WithUserAgent{
+		BasicClient: http.DefaultClient,
+		UserAgent:   rebuild.UserAgent("localbuild"),
+	})
 	butler := localfiles.NewButler(cfg.MetadataBucket, cfg.LogsBucket, cfg.DebugStorage, mux, func(_ string) (rebuild.LocatableAssetStore, error) { return destStore, nil })
 	// Butler doesn't handle non-local asset stores well, so we need a local-based butler to implement diffoscope.
 	localAssets, err := localfiles.AssetStore(runID)

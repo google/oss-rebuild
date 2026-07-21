@@ -15,6 +15,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
@@ -123,7 +124,10 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			return nil, errors.Wrap(err, "failed to create local build def asset store")
 		}
 	}
-	mux := meta.NewRegistryMux(http.DefaultClient)
+	mux := meta.NewRegistryMux(&httpx.WithUserAgent{
+		BasicClient: http.DefaultClient,
+		UserAgent:   rebuild.UserAgent("localbuild"),
+	})
 	var assetStoreFn func(runID string) (rebuild.LocatableAssetStore, error)
 	if cfg.SharedAssetStore != "" {
 		u, err := url.Parse(cfg.SharedAssetStore)
