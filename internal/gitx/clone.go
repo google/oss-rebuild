@@ -20,7 +20,6 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -267,13 +266,19 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 	// Copy staging to target storage if needed
 	if needsStaging {
 		stagingFS := osfs.New(targetDir)
-		stagingStorer := filesystem.NewStorage(stagingFS, cache.NewObjectLRUDefault())
 		if sf, ok := s.(*filesystem.Storage); ok {
 			if err := billyx.CopyFS(sf.Filesystem(), stagingFS); err != nil {
 				return nil, errors.Wrap(err, "copying from staging to storage filesystem")
 			}
 		} else {
-			if err := CopyStorer(s, stagingStorer); err != nil {
+			// CopyStorer populates the target storer with lazily-read objects
+			// still backed by the staged packfile, so first move the staged
+			// bytes into an in-memory storer that can outlive targetDir.
+			retained := NewInMemoryStorer()
+			if err := billyx.CopyFS(retained.Filesystem(), stagingFS); err != nil {
+				return nil, errors.Wrap(err, "copying staging to retained storer")
+			}
+			if err := CopyStorer(s, retained); err != nil {
 				return nil, errors.Wrap(err, "copying from staging to memory storage")
 			}
 		}
