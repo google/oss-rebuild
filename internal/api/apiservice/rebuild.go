@@ -72,6 +72,7 @@ type resolution struct {
 	Strategy  rebuild.Strategy
 	Entry     *repoEntry           // consulted build def entry, nil when no repo was used
 	Inference *schema.InferenceRun // set iff inference ran
+	InferTime time.Duration        // duration of the inference call, zero when inference didn't run
 }
 
 // Provenance derives the strategy provenance from the resolution's inputs.
@@ -151,6 +152,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 			}
 		}
 	}
+	var inferTime time.Duration
 	if strategy == nil {
 		// Resolve the inference service's version out-of-band before the call.
 		// A rollout landing between the two calls can misattribute the
@@ -159,38 +161,40 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		if err != nil {
 			return nil, errors.Wrap(err, "fetching inference version")
 		}
+		inferStart := time.Now()
 		s, err := deps.InferStub(ctx, ireq)
 		if err != nil {
 			// TODO: Surface better error than Internal.
 			return nil, errors.Wrap(err, "fetching inference")
 		}
+		inferTime = time.Since(inferStart)
 		strategy, err = s.Strategy()
 		if err != nil {
 			return nil, errors.Wrap(err, "reading strategy")
 		}
 		inference = &schema.InferenceRun{Version: vr.Version}
 	}
-	return &resolution{Strategy: strategy, Entry: entry, Inference: inference}, nil
+	return &resolution{Strategy: strategy, Entry: entry, Inference: inference, InferTime: inferTime}, nil
 }
 
-func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, sizeHint schema.SizeHint, useProxy bool, useSyscallMonitor bool, timeout time.Duration, mode schema.OverwriteMode) (err error) {
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, sizeHint schema.SizeHint, useProxy bool, useSyscallMonitor bool, timeout time.Duration, mode schema.OverwriteMode) (timings *rebuild.BuildTimings, err error) {
 	debugStore, err := deps.DebugStoreBuilder(ctx)
 	if err != nil {
-		return errors.Wrap(err, "creating debug store")
+		return timings, errors.Wrap(err, "creating debug store")
 	}
 	obID := uuid.New().String()
 	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, obID)
 	if err != nil {
-		return errors.Wrap(err, "creating rebuild store")
+		return timings, errors.Wrap(err, "creating rebuild store")
 	}
 	stabilizers, err := stability.StabilizersForTarget(t)
 	if err != nil {
-		return errors.Wrap(err, "getting stabilizers for target")
+		return timings, errors.Wrap(err, "getting stabilizers for target")
 	}
 	if entry != nil && len(entry.BuildDefinition.CustomStabilizers) > 0 {
 		customStabilizers, err := stabilize.CreateCustomStabilizers(entry.BuildDefinition.CustomStabilizers, t.ArchiveType())
 		if err != nil {
-			return errors.Wrap(err, "creating stabilizers")
+			return timings, errors.Wrap(err, "creating stabilizers")
 		}
 		stabilizers = append(stabilizers, customStabilizers...)
 	}
@@ -202,7 +206,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	}
 	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
 	if !ok {
-		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
+		return timings, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
 	toolURLs := map[build.ToolType]string{
 		build.TimewarpTool:         "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "timewarp"),
@@ -236,6 +240,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		UseNetworkProxy:    useProxy,
 		UseSyscallMonitor:  useSyscallMonitor,
 		SaveContainerImage: true,
+		RecordTimings:      true,
 		Resources: build.Resources{
 			AssetStore:       buildStore,
 			ToolURLs:         toolURLs,
@@ -244,7 +249,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		},
 	})
 	if err != nil {
-		return api.AsStatus(codes.Internal, errors.Wrap(err, "starting build"))
+		return timings, api.AsStatus(codes.Internal, errors.Wrap(err, "starting build"))
 	}
 	// Even if we fail, try to copy theses assets to the debug store.
 	defer func() {
@@ -254,37 +259,40 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	}()
 	result, err := h.Wait(ctx)
 	if err != nil {
-		return errors.Wrap(err, "waiting for build")
-	} else if result.Error != nil {
-		return errors.Wrap(result.Error, "executing rebuild")
+		return timings, errors.Wrap(err, "waiting for build")
+	}
+	// Failed builds still carry whatever phase timings were extracted.
+	timings = result.Timings
+	if result.Error != nil {
+		return timings, errors.Wrap(result.Error, "executing rebuild")
 	}
 	upstreamURI, err := rebuilder.UpstreamURL(ctx, t, mux)
 	if err != nil {
-		return errors.Wrap(err, "getting upstream url")
+		return timings, errors.Wrap(err, "getting upstream url")
 	}
 	hashes := []crypto.Hash{crypto.SHA256}
 	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes, stabilizers)
 	if err != nil {
-		return errors.Wrap(err, "comparing artifacts")
+		return timings, errors.Wrap(err, "comparing artifacts")
 	}
 	exactMatch := bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
 	stabilizedMatch := bytes.Equal(rb.StabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil))
 	if !exactMatch && !stabilizedMatch {
-		return api.AsStatus(codes.FailedPrecondition, errors.New("rebuild content mismatch"))
+		return timings, api.AsStatus(codes.FailedPrecondition, errors.New("rebuild content mismatch"))
 	}
 	if u, err := url.Parse(deps.ServiceRepo.Repo); err != nil {
-		return errors.Wrap(err, "bad ServiceRepo URL")
+		return timings, errors.Wrap(err, "bad ServiceRepo URL")
 	} else if (u.Scheme == "file" || u.Scheme == "") && !deps.PublishForLocalServiceRepo {
-		return errors.New("disallowed file:// ServiceRepo URL")
+		return timings, errors.New("disallowed file:// ServiceRepo URL")
 	}
 	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, obID, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo, deps.PrebuildConfig, mode)
 	if err != nil {
-		return errors.Wrap(err, "creating attestations")
+		return timings, errors.Wrap(err, "creating attestations")
 	}
 	if err := a.PublishBundle(ctx, t, eqStmt, buildStmt); err != nil {
-		return errors.Wrap(err, "publishing bundle")
+		return timings, errors.Wrap(err, "publishing bundle")
 	}
-	return nil
+	return timings, nil
 }
 
 func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
@@ -373,10 +381,13 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	if res.Strategy != nil {
 		v.StrategyOneof = schema.NewStrategyOneOf(res.Strategy)
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, res.Strategy, res.Entry, req.SizeHint, req.UseNetworkProxy, req.UseSyscallMonitor, req.BuildTimeout, req.OverwriteMode)
+	timings, err := buildAndAttest(ctx, deps, mux, a, t, res.Strategy, res.Entry, req.SizeHint, req.UseNetworkProxy, req.UseSyscallMonitor, req.BuildTimeout, req.OverwriteMode)
+	v.Timings = rebuild.Timings{Build: timings}
+	if res.Inference != nil {
+		v.Timings.Infer = &res.InferTime
+	}
 	if err != nil {
 		v.Message = errors.Wrap(err, "executing rebuild").Error()
-		return &v, nil
 	}
 	return &v, nil
 }
@@ -443,7 +454,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	attempt.Success = v.Message == ""
 	attempt.Message = v.Message
 	attempt.Strategy = v.StrategyOneof
-	attempt.Timings = v.Timings
+	attempt.BuildTimings = v.Timings.Build
 	attempt.Dockerfile = dockerfile
 	attempt.BuildID = bi.BuildID
 	attempt.ObliviousID = bi.ObliviousID
@@ -469,7 +480,10 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 // are computed best-effort: absent/inaccessible assets leave the byte fields
 // unset.
 func attemptCosts(ctx context.Context, deps *RebuildPackageDeps, v *schema.Verdict, bi rebuild.BuildInfo, sizeHint schema.SizeHint) *schema.AttemptCosts {
-	costs := schema.AttemptCosts{InferenceSeconds: v.Timings.Infer.Seconds()}
+	var costs schema.AttemptCosts
+	if v.Timings.Infer != nil {
+		costs.InferenceSeconds = v.Timings.Infer.Seconds()
+	}
 	if !bi.BuildStart.IsZero() && !bi.BuildEnd.IsZero() {
 		costs.BuilderSeconds = bi.BuildEnd.Sub(bi.BuildStart).Seconds()
 	}
