@@ -515,6 +515,45 @@ RLpmHHG1JOVdOA==
 			expectedStatus: schema.RebuildStatusSuccess,
 		},
 		{
+			name:   "location hint build def uses inference",
+			target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"},
+			calls: []httpxtest.Call{
+				{
+					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
+					},
+				},
+				{
+					URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
+					Response: &http.Response{
+						StatusCode: 200,
+						Body: io.NopCloser(must(archivetest.TgzFile([]archive.TarEntry{
+							{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
+						}))),
+					},
+				},
+			},
+			// The build def only carries a LocationHint, so inference still runs and
+			// returns the full strategy below; provenance is therefore "inferred".
+			buildDef: &schema.BuildDefinition{
+				StrategyOneOf: &schema.StrategyOneOf{
+					LocationHint: &rebuild.LocationHint{
+						Location: rebuild.Location{Repo: "foo", Ref: "aaaabbbbccccddddeeeeaaaabbbbccccddddeeee", Dir: "foo"},
+					},
+				},
+			},
+			strategy: &cratesio.CratesIOCargoPackage{
+				Location:    rebuild.Location{Repo: "foo", Ref: "aaaabbbbccccddddeeeeaaaabbbbccccddddeeee", Dir: "foo"},
+				RustVersion: "1.65.0",
+			},
+			file: must(archivetest.TgzFile([]archive.TarEntry{
+				{Header: &tar.Header{Name: "foo"}, Body: []byte("foo")},
+			})),
+			expectedStatus: schema.RebuildStatusSuccess,
+		},
+		{
 			name:   "maven jar success",
 			target: rebuild.Target{Ecosystem: rebuild.Maven, Package: "com.google.guava:guava", Version: "33.4.8-jre", Artifact: "guava-33.4.8-jre.jar"},
 			calls: []httpxtest.Call{
@@ -606,7 +645,7 @@ RLpmHHG1JOVdOA==
 				LogsClientFunc: func(bucket string) gcb.LogsClient {
 					return &gcbtest.MockLogsClient{
 						ReadBuildLogsFunc: func(ctx context.Context, buildID string) (io.ReadCloser, error) {
-							return io.NopCloser(bytes.NewBuffer(nil)), nil
+							return io.NopCloser(bytes.NewBufferString("BUILD LOG\n")), nil
 						},
 					}
 				},
@@ -674,8 +713,8 @@ RLpmHHG1JOVdOA==
 				t.Errorf("timestamps not set: started=%v created=%v", got.Started, got.Created)
 			}
 			// Provenance expectations derive from the build def input: an entry
-			// with a strategy contributes a Definition, and inference runs (and
-			// records its version) unless that strategy was full (non-hint).
+			// with a strategy contributes BuildDefLoc, and inference runs (and
+			// stamps its version) unless that strategy was full (non-hint).
 			wantDef := tc.buildDef != nil && tc.buildDef.StrategyOneOf != nil
 			wantInfer := true
 			if wantDef {
@@ -698,6 +737,24 @@ RLpmHHG1JOVdOA==
 					t.Errorf("Provenance.Inference set = %v, want %v", gotInfer, wantInfer)
 				} else if wantInfer && got.Provenance.Inference.Version != "test-infer-v1" {
 					t.Errorf("Provenance.Inference.Version = %q, want %q", got.Provenance.Inference.Version, "test-infer-v1")
+				}
+			}
+			// Every case runs the mocked GCB build, which reports a fixed 23-minute
+			// (1380s) window and no explicit SizeHint.
+			if got.Costs == nil {
+				t.Errorf("Costs not set")
+			} else {
+				if got.Costs.BuilderSeconds != 1380 {
+					t.Errorf("Costs.BuilderSeconds = %v, want 1380", got.Costs.BuilderSeconds)
+				}
+				if got.Costs.BuilderPool != schema.UnspecifiedSize {
+					t.Errorf("Costs.BuilderPool = %q, want unspecified", got.Costs.BuilderPool)
+				}
+				if got.Costs.ArtifactBytes <= 0 {
+					t.Errorf("Costs.ArtifactBytes = %d, want > 0", got.Costs.ArtifactBytes)
+				}
+				if got.Costs.LogsBytes <= 0 {
+					t.Errorf("Costs.LogsBytes = %d, want > 0", got.Costs.LogsBytes)
 				}
 			}
 
@@ -738,6 +795,70 @@ RLpmHHG1JOVdOA==
 	}
 }
 
+func TestAttemptCosts(t *testing.T) {
+	buildStart := time.Date(2024, 5, 8, 15, 0, 0, 0, time.UTC)
+	buildEnd := buildStart.Add(23 * time.Minute)
+	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "absl-py", Version: "2.0.0", Artifact: "absl_py-2.0.0-py3-none-any.whl"}
+	for _, tc := range []struct {
+		name     string
+		verdict  *schema.Verdict
+		info     rebuild.BuildInfo
+		assets   map[rebuild.AssetType]int
+		sizeHint schema.SizeHint
+		want     *schema.AttemptCosts
+	}{
+		{
+			name:    "NothingMeasured",
+			verdict: &schema.Verdict{Target: target},
+			info:    rebuild.BuildInfo{},
+			want:    nil,
+		},
+		{
+			name:    "BuilderWindowOnly",
+			verdict: &schema.Verdict{Target: target},
+			info:    rebuild.BuildInfo{BuildStart: buildStart, BuildEnd: buildEnd},
+			want:    &schema.AttemptCosts{BuilderSeconds: 1380},
+		},
+		{
+			name:     "InferAndJumboHint",
+			verdict:  &schema.Verdict{Target: target, Timings: rebuild.Timings{Infer: 4 * time.Second}},
+			info:     rebuild.BuildInfo{BuildStart: buildStart, BuildEnd: buildEnd},
+			sizeHint: schema.JumboSize,
+			want:     &schema.AttemptCosts{InferenceSeconds: 4, BuilderSeconds: 1380, BuilderPool: schema.JumboSize},
+		},
+		{
+			name:    "StoredAssetSizes",
+			verdict: &schema.Verdict{Target: target},
+			info:    rebuild.BuildInfo{ObliviousID: "ob-1"},
+			assets:  map[rebuild.AssetType]int{rebuild.RebuildAsset: 2048, rebuild.ContainerImageAsset: 4096, rebuild.PostBuildContainerAsset: 1024, rebuild.DebugLogsAsset: 512},
+			want:    &schema.AttemptCosts{ArtifactBytes: 2048, ContainerBytes: 5120, LogsBytes: 512},
+		},
+		{
+			name:    "InferWithoutBuilderWindow",
+			verdict: &schema.Verdict{Target: target, Timings: rebuild.Timings{Infer: 7 * time.Second}},
+			info:    rebuild.BuildInfo{},
+			want:    &schema.AttemptCosts{InferenceSeconds: 7},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := rebuild.NewFilesystemAssetStoreWithRunID(memfs.New(), tc.info.ObliviousID)
+			for at, size := range tc.assets {
+				w := must(store.Writer(context.Background(), at.For(target)))
+				must(w.Write(bytes.Repeat([]byte("a"), size)))
+				if err := w.Close(); err != nil {
+					t.Fatalf("writing %s: %v", at, err)
+				}
+			}
+			deps := &RebuildPackageDeps{RemoteMetadataStoreBuilder: func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error) {
+				return store, nil
+			}}
+			got := attemptCosts(context.Background(), deps, tc.verdict, tc.info, tc.sizeHint)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("attemptCosts() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
 func mustJSON[T any](r io.Reader) T {
 	var t T
 	must1(json.NewDecoder(r).Decode(&t))
