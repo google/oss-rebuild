@@ -167,6 +167,42 @@ func addBinding(imageSpec []byte, from, to, mode string) (newSpec []byte, err er
 	return newSpec, nil
 }
 
+func rewriteDockerSocketBinds(imageSpec []byte) (newSpec []byte, err error) {
+	img := make(map[string]any)
+	if err = json.Unmarshal(imageSpec, &img); err != nil {
+		return nil, errors.Errorf("failed to unmarshal json: %s\nBody: %s", err, string(imageSpec))
+	}
+	hostConfig, ok := img["HostConfig"].(map[string]any)
+	if !ok {
+		return imageSpec, nil
+	}
+	bindsObj, ok := hostConfig["Binds"]
+	if !ok || bindsObj == nil {
+		return imageSpec, nil
+	}
+	binds, ok := bindsObj.([]any)
+	if !ok {
+		return nil, errors.Errorf("unexpected type of HostConfig.Binds\nBody: %s", string(imageSpec))
+	}
+	var modified bool
+	for i, b := range binds {
+		s, ok := b.(string)
+		if ok && strings.HasPrefix(s, "/var/run/docker.sock:") {
+			binds[i] = "/run/docker.sock:" + strings.TrimPrefix(s, "/var/run/docker.sock:")
+			modified = true
+		}
+	}
+	if !modified {
+		return imageSpec, nil
+	}
+	hostConfig["Binds"] = binds
+	newSpec, err = json.Marshal(img)
+	if err != nil {
+		return nil, errors.Errorf("failed to re-marshal json: %s\nStruct: %s", err, img)
+	}
+	return newSpec, nil
+}
+
 func getNetwork(imageSpec []byte) (network string, err error) {
 	img := make(map[string]any)
 	if err = json.Unmarshal(imageSpec, &img); err != nil {
@@ -607,6 +643,10 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			}
 			vars = append(vars, dockerEnvVar+"=unix://"+proxySocketPath)
 			log.Printf("Bound %s to %s", d.proxySocket, proxySocketPath)
+		}
+		newBody, err = rewriteDockerSocketBinds(newBody)
+		if err != nil {
+			log.Fatalf("Failed to rewrite docker socket binds for request %s: %s", req.URL.Path, err)
 		}
 		newBody, err = addEnvVars(newBody, vars)
 		if err != nil {

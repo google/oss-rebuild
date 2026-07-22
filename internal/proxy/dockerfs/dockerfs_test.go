@@ -94,6 +94,31 @@ func TestStat(t *testing.T) {
 	}
 }
 
+func TestStatErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		statusCode int
+		wantErr    error
+	}{
+		{"StatusNotFound", http.StatusNotFound, fs.ErrNotExist},
+		{"StatusBadRequest", http.StatusBadRequest, fs.ErrNotExist},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{Method: "HEAD", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: tc.statusCode}},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			}
+			f := Filesystem{Client: &c, Container: "abc"}
+			_, err := f.Stat("/etc/release")
+			if err != tc.wantErr {
+				t.Fatalf("Stat() error: want=%v got=%v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestOpenAndResolve(t *testing.T) {
 	symStat := FileInfo{name: "release", mode: fs.ModePerm | fs.ModeSymlink, size: 25, modTime: someTime, LinkTarget: "../os-release"}
 	wantContents := "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.16.0\n"

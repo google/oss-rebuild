@@ -495,6 +495,7 @@ func TestTruststorePatching(t *testing.T) {
 			env := setupProxyTestEnv(t, bin, proxyTestEnvOpts{
 				WithDockerProxy: true,
 			})
+			registerLogDump(t, env)
 
 			// Install docker CLI in the build container so we can invoke docker commands.
 			env.runInBuild(t, "apk add --no-cache docker-cli")
@@ -628,6 +629,45 @@ func TestDockerInDocker(t *testing.T) {
 	_, err = extractFile(inspectContainer, "/var/cache/proxy.crt")
 	if err == nil {
 		t.Errorf("proxy.crt should NOT be in committed image (volume binding should exclude it)")
+	}
+}
+
+func TestCOSDockerSocketSymlink(t *testing.T) {
+	checkDockerAvailable(t)
+	bin := buildProxyBinary(t)
+	env := setupProxyTestEnv(t, bin, proxyTestEnvOpts{
+		WithDockerProxy: true,
+	})
+	registerLogDump(t, env)
+
+	env.runInBuild(t, "apk add --no-cache docker-cli")
+	proxyCert := strings.TrimSpace(strings.ReplaceAll(string(env.getProxyCert(t)), "\r\n", "\n"))
+	dh := fmt.Sprintf("DOCKER_HOST=tcp://%s:3130", env.ProxyIP)
+
+	name := strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-"))
+	testContainer := "cos-symlink-" + name
+	t.Cleanup(func() {
+		exec.Command("docker", "rm", "-f", testContainer).Run()
+	})
+
+	// Verify that when a user runs a container bind mounting /var/run/docker.sock:/var/run/docker.sock,
+	// the proxy rewrites the bind mount to /run/docker.sock:/var/run/docker.sock on the backend.
+	env.runInBuild(t, dh+" docker create --name="+testContainer+" -v /var/run/docker.sock:/var/run/docker.sock alpine:3.21 sleep 10")
+
+	// Inspect the container's HostConfig.Binds via the proxy to verify symlink bind rewriting.
+	bindsOut, _ := env.runInBuild(t, dh+" docker inspect -f '{{json .HostConfig.Binds}}' "+testContainer)
+	if !strings.Contains(bindsOut, "/run/docker.sock:/var/run/docker.sock") {
+		t.Fatalf("Expected rewritten bind /run/docker.sock:/var/run/docker.sock in HostConfig.Binds, got: %s", bindsOut)
+	}
+	if strings.Contains(bindsOut, `"/var/run/docker.sock:`) {
+		t.Fatalf("Found unrewritten /var/run/docker.sock bind in HostConfig.Binds: %s", bindsOut)
+	}
+
+	// Verify that running a container with the bind mount successfully injects the proxy cert.
+	stdout, _ := env.runInBuild(t, dh+" docker run --rm -v /var/run/docker.sock:/var/run/docker.sock alpine:3.21 cat /var/cache/proxy.crt")
+	stdoutNorm := strings.TrimSpace(strings.ReplaceAll(stdout, "\r\n", "\n"))
+	if !strings.Contains(stdoutNorm, proxyCert) {
+		t.Fatalf("Proxy cert not found in /var/cache/proxy.crt when bind mounting docker socket")
 	}
 }
 
