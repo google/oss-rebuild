@@ -174,3 +174,8 @@ func (cm *Chat) History() []*genai.Content {
 func (cm *Chat) Usage() []*genai.GenerateContentResponseUsageMetadata {
 	return cm.usage
 }
+
+// Model returns the model name backing this chat.
+func (cm *Chat) Model() string {
+	return cm.model
+}

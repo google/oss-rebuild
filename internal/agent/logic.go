@@ -61,6 +61,7 @@ type defaultAgent struct {
 	thoughts    []thoughtData
 	assets      rebuild.AssetStore
 	gitTools    []*llm.FunctionDefinition
+	sideUsage   schema.TokenUsage // accumulates LLM token consumption from calls made outside the main chat
 }
 
 func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
@@ -273,12 +274,13 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 		"Use the tools you have at your disposal to find the URL.",
 		"Finally, if you don't find the URL, just return an empty string.",
 	}
-	repoURL, err := llm.GenerateTextContent(ctx, a.deps.GenaiClient, llm.GeminiPro, &genai.GenerateContentConfig{
+	repoURL, usage, err := llm.GenerateTextContentWithUsage(ctx, a.deps.GenaiClient, llm.GeminiPro, &genai.GenerateContentConfig{
 		Temperature: genai.Ptr(float32(0.0)),
 		Tools: []*genai.Tool{
 			{GoogleSearch: &genai.GoogleSearch{}},
 		},
 	}, genai.NewPartFromText(strings.Join(prompt, "\n")))
+	a.addSideUsage(usage)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting AI repo hint")
 	}
@@ -651,4 +653,23 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 
 func (a *defaultAgent) RecordIteration(i *schema.AgentIteration) {
 	a.iterHistory = append(a.iterHistory, i)
+}
+
+// addSideUsage attributes the token usage of an LLM call made outside the main
+// chat to the agent's running total.
+func (a *defaultAgent) addSideUsage(m *genai.GenerateContentResponseUsageMetadata) {
+	if m == nil {
+		return
+	}
+	a.sideUsage = a.sideUsage.Add(tokenUsageFromMetadata(m, llm.GeminiPro))
+}
+
+// Usage returns the agent's cumulative LLM token consumption: the main chat's
+// tally plus side calls made outside it.
+func (a *defaultAgent) Usage() schema.TokenUsage {
+	u := a.sideUsage
+	if a.deps != nil && a.deps.Chat != nil {
+		u = u.Add(sumTokenUsage(a.deps.Chat.Usage(), a.deps.Chat.Model()))
+	}
+	return u
 }
