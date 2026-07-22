@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5"
@@ -108,6 +109,19 @@ type LocatableAssetStore interface {
 	// TODO: Should URL() return an error?
 	// Not many places actually check the return value, but they just delay inevitible failure.
 	URL(a Asset) *url.URL
+}
+
+// AssetInfo describes a stored asset without reading its content.
+type AssetInfo struct {
+	Bytes   int64
+	Created time.Time // mtime on filesystem stores, which never rewrite assets
+}
+
+// StatAssetStore is an asset store that can describe stored assets without
+// reading them.
+type StatAssetStore interface {
+	AssetStore
+	Stat(ctx context.Context, a Asset) (AssetInfo, error)
 }
 
 // AssetCopy copies an asset from one store to another.
@@ -220,6 +234,20 @@ func (s *GCSStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) 
 	return w, nil
 }
 
+// Stat describes the stored asset without reading its content.
+func (s *GCSStore) Stat(ctx context.Context, a Asset) (AssetInfo, error) {
+	path := s.resourcePath(a)
+	attrs, err := s.gcsClient.Bucket(s.bucket).Object(path).Attrs(ctx)
+	if err != nil {
+		if err == gcs.ErrObjectNotExist {
+			err = fs.ErrNotExist
+		}
+		return AssetInfo{}, errors.Wrapf(err, "statting %s", path)
+	}
+	return AssetInfo{Bytes: attrs.Size, Created: attrs.Created}, nil
+}
+
+var _ StatAssetStore = &GCSStore{}
 var _ LocatableAssetStore = &GCSStore{}
 
 // FilesystemAssetStore will store assets in a billy.Filesystem
@@ -256,6 +284,17 @@ func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (io.WriteClo
 	return f, nil
 }
 
+// Stat describes the stored asset without reading its content.
+func (s *FilesystemAssetStore) Stat(ctx context.Context, a Asset) (AssetInfo, error) {
+	path := s.resourcePath(a)
+	fi, err := s.fs.Stat(path)
+	if err != nil {
+		return AssetInfo{}, errors.Wrapf(err, "statting %s", path)
+	}
+	return AssetInfo{Bytes: fi.Size(), Created: fi.ModTime()}, nil
+}
+
+var _ StatAssetStore = &FilesystemAssetStore{}
 var _ LocatableAssetStore = &FilesystemAssetStore{}
 
 // NewFilesystemAssetStoreWithRunID creates a new FilesystemAssetStore.
