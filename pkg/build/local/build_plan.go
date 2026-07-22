@@ -3,6 +3,8 @@
 
 package local
 
+import "github.com/google/oss-rebuild/pkg/build/timing"
+
 // DockerBuildPlan represents a Docker build execution plan where we build an image and run it
 type DockerBuildPlan struct {
 	// Dockerfile contains the generated Dockerfile content
@@ -16,4 +18,6 @@ type DockerBuildPlan struct {
 	OutputPath string
 	// Indicates whether to run the container in privileged mode
 	Privileged bool
+	// Layers declare the plan's phase boundaries for timing extraction
+	Layers timing.Layers
 }

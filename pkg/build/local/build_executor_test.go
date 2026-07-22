@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -702,5 +703,143 @@ func TestDockerBuildExecutorConfig(t *testing.T) {
 	status := executor.Status()
 	if status.Capacity != 3 {
 		t.Errorf("Expected capacity 3, got %d", status.Capacity)
+	}
+}
+
+func TestDockerBuildExecutorTimings(t *testing.T) {
+	buildxOutput := `#1 [internal] load build definition from Dockerfile
+#1 DONE 0.0s
+#2 [1/5] FROM docker.io/library/alpine:3.21
+#2 DONE 1.0s
+#3 [2/5] RUN sed 's/^ //' <<'EOF' | sh
+#3 DONE 8.0s
+#4 [3/5] RUN sed 's/^ //' <<'EOF' | sh
+#4 DONE 2.0s
+#5 [4/5] RUN sed 's/^ //' <<'EOF' | sh
+#5 1.0 + cd /src
+#5 1.1 + npm install
+#5 DONE 30.0s
+#6 [5/5] RUN sed 's/^ //' <<'EOF' >/build
+#6 DONE 0.1s
+`
+	span := "2026-07-01T00:01:20.500000000Z 2026-07-01T00:01:44.500000000Z\n"
+	for _, tc := range []struct {
+		name        string
+		inspectOut  string
+		runErr      error
+		wantErr     bool
+		wantTimings bool
+	}{
+		{
+			name:        "Extracted",
+			inspectOut:  span,
+			wantTimings: true,
+		},
+		{
+			// Extraction failures never surface as build errors.
+			name:       "UnusableInspectTolerated",
+			inspectOut: "no state clocks here\n",
+		},
+		{
+			// Failed builds still carry whatever phase timings were extracted.
+			name:        "FailedRunStillCarriesTimings",
+			inspectOut:  span,
+			runErr:      errors.New("exit status 2"),
+			wantErr:     true,
+			wantTimings: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// History times are generated relative to the observed buildx call
+			// so the cache guard's comparison against the real host clock passes.
+			var buildxAt time.Time
+			histLine := func(at time.Time, createdBy string) string {
+				return `{"Comment":"buildkit.dockerfile.v0","CreatedAt":"` + at.Format(time.RFC3339) + `","CreatedBy":"` + createdBy + `","ID":"<missing>","Size":"0"}` + "\n"
+			}
+			cmdExecutor := NewMockCommandExecutor()
+			cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+				if len(args) == 0 || opts.Output == nil {
+					return nil
+				}
+				switch args[0] {
+				case "buildx":
+					buildxAt = time.Now()
+					opts.Output.Write([]byte(buildxOutput))
+				case "inspect":
+					opts.Output.Write([]byte(tc.inspectOut))
+				case "run":
+					opts.Output.Write([]byte("+ npm pack\ncontainer output\n"))
+					return tc.runErr
+				case "history":
+					var out strings.Builder
+					for _, e := range []struct {
+						offset    time.Duration
+						createdBy string
+					}{
+						{41 * time.Second, "ENTRYPOINT"},
+						{41 * time.Second, "WORKDIR"},
+						{41 * time.Second, "RUN build"},
+						{40 * time.Second, "RUN deps"},
+						{10 * time.Second, "RUN source"},
+						{8 * time.Second, "RUN setup"},
+					} {
+						out.WriteString(histLine(buildxAt.Add(e.offset), e.createdBy))
+					}
+					out.WriteString(histLine(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), "FROM"))
+					opts.Output.Write([]byte(out.String()))
+				}
+				return nil
+			})
+			executor, err := NewDockerBuildExecutor(DockerBuildExecutorConfig{
+				Planner: &mockBuildPlanner{
+					plan: &DockerBuildPlan{
+						Dockerfile: "FROM alpine:3.21\nRUN a\nRUN b\nRUN c\nRUN d",
+						OutputPath: "/out/result.tar.gz",
+						Layers:     timing.Layers{Appended: 6, Setup: 0, Source: 1, Deps: 2},
+					},
+				},
+				CommandExecutor: cmdExecutor,
+				MaxParallel:     1,
+				TempDirBase:     "/tmp",
+			})
+			if err != nil {
+				t.Fatalf("NewDockerBuildExecutor failed: %v", err)
+			}
+			handle, err := executor.Start(context.Background(), rebuild.Input{
+				Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-pkg", Version: "1.0.0"},
+			}, build.Options{BuildID: "test-build-timings"})
+			if err != nil {
+				t.Fatalf("Start failed: %v", err)
+			}
+			result, err := handle.Wait(context.Background())
+			if err != nil {
+				t.Fatalf("Wait failed: %v", err)
+			}
+			if (result.Error != nil) != tc.wantErr {
+				t.Fatalf("Error = %v, want error %v", result.Error, tc.wantErr)
+			}
+			if (result.Timings != nil) != tc.wantTimings {
+				t.Fatalf("Timings = %+v, want present %v", result.Timings, tc.wantTimings)
+			}
+			if !tc.wantTimings {
+				return
+			}
+			// History clocks are second-granularity and the mock observes buildx
+			// moments after the executor's start clock read, so Setup lands
+			// within a second of the 8s layer time on either side.
+			if got := result.Timings.Setup; got < 7*time.Second || got > 9*time.Second {
+				t.Errorf("Setup = %v, want ~8s", got)
+			}
+			if want := 2 * time.Second; result.Timings.Source != want {
+				t.Errorf("Source = %v, want %v", result.Timings.Source, want)
+			}
+			if want := 30 * time.Second; result.Timings.Deps != want {
+				t.Errorf("Deps = %v, want %v", result.Timings.Deps, want)
+			}
+			// Build comes from the retained container's state clocks.
+			if want := 24 * time.Second; result.Timings.Build != want {
+				t.Errorf("Build = %v, want %v", result.Timings.Build, want)
+			}
+		})
 	}
 }

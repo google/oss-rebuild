@@ -277,6 +277,9 @@ func TestCreateRebuildOpFast(t *testing.T) {
 				ReadBuildLogsFunc: func(ctx context.Context, buildID string) (io.ReadCloser, error) {
 					return io.NopCloser(bytes.NewBuffer(nil)), nil
 				},
+				ReadStepLogsFunc: func(ctx context.Context, buildID string, stepIndex int) (io.ReadCloser, error) {
+					return io.NopCloser(bytes.NewBuffer(nil)), nil
+				},
 			}
 		},
 		Client: gcbclient,
