@@ -3,7 +3,58 @@
 
 package schema
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
+
+// TokenUsage records LLM token consumption, bucketed by billing
+// treatment: cached input is discounted and thinking bills as output.
+type TokenUsage struct {
+	Input       int    `json:"input,omitempty" firestore:"input,omitempty"`               // includes cached and tool-use prompt tokens
+	CachedInput int    `json:"cached_input,omitempty" firestore:"cached_input,omitempty"` // subset of Input
+	Output      int    `json:"output,omitempty" firestore:"output,omitempty"`             // includes thinking tokens
+	Model       string `json:"model,omitempty" firestore:"model,omitempty"`
+}
+
+// Add returns the sum of u and other. Both must name the same model since a
+// sum carries a single label and is priced at that model's rates.
+// TODO: Track per-model subtotals so one session can mix models.
+func (u TokenUsage) Add(other TokenUsage) TokenUsage {
+	if u.Model != "" && other.Model != "" && u.Model != other.Model {
+		panic(fmt.Sprintf("summing TokenUsage across models %q and %q", u.Model, other.Model))
+	}
+	model := u.Model
+	if model == "" {
+		model = other.Model
+	}
+	return TokenUsage{
+		Input:       u.Input + other.Input,
+		CachedInput: u.CachedInput + other.CachedInput,
+		Output:      u.Output + other.Output,
+		Model:       model,
+	}
+}
+
+// Sub returns u minus other, component-wise, keeping u's model label. It
+// isolates the tokens spent between two snapshots of a running total.
+func (u TokenUsage) Sub(other TokenUsage) TokenUsage {
+	return TokenUsage{
+		Input:       u.Input - other.Input,
+		CachedInput: u.CachedInput - other.CachedInput,
+		Output:      u.Output - other.Output,
+		Model:       u.Model,
+	}
+}
+
+// OrNil returns a pointer to u, or nil when no tokens were counted so that
+// omitempty fields stay unset.
+func (u TokenUsage) OrNil() *TokenUsage {
+	if u.Input == 0 && u.CachedInput == 0 && u.Output == 0 {
+		return nil
+	}
+	return &u
+}
 
 // AttemptCosts records the measured resource costs of a single rebuild
 // attempt in raw units (seconds/bytes). Repository size/history lives in

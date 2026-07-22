@@ -22,13 +22,20 @@ import (
 
 type fakeAgent struct {
 	strategy *schema.StrategyOneOf
+	// usage is the cumulative usage reported by Usage. When proposeUsage is
+	// non-zero, usage advances by it on each Propose to emulate token spend.
+	usage        schema.TokenUsage
+	proposeUsage schema.TokenUsage
 }
 
 func (a *fakeAgent) Propose(context.Context, *ProposeOpts) (*schema.StrategyOneOf, error) {
+	a.usage = a.usage.Add(a.proposeUsage)
 	return a.strategy, nil
 }
 
 func (a *fakeAgent) RecordIteration(*schema.AgentIteration) {}
+
+func (a *fakeAgent) Usage() schema.TokenUsage { return a.usage }
 
 func TestDoIterationScratchFailureIsLocalOnly(t *testing.T) {
 	runner := testRunner(&fakeExecutor{result: build.Result{Error: &scratch.ExitError{Code: 7}}})
@@ -58,6 +65,36 @@ func TestDoIterationScratchFailureIsLocalOnly(t *testing.T) {
 	}
 	if iter.Result == nil || !strings.Contains(iter.Result.ErrorMessage, "exit code 7") {
 		t.Errorf("Result = %+v, want exit code message", iter.Result)
+	}
+}
+
+// TestDoIterationAttachesUsageDelta verifies that a GCB-mode iteration charges
+// the request only the tokens consumed by its own Propose, computed as the
+// delta of the agent's cumulative usage.
+func TestDoIterationAttachesUsageDelta(t *testing.T) {
+	strategy := testStrategy()
+	agent := &fakeAgent{
+		strategy: strategy,
+		// Pretend a prior iteration already spent some tokens.
+		usage:        schema.TokenUsage{Input: 100, Model: "m"},
+		proposeUsage: schema.TokenUsage{Input: 10, Output: 5, Model: "m"},
+	}
+	var got *schema.AgentCreateIterationRequest
+	deps := RunSessionDeps{
+		IterationStub: func(_ context.Context, req schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
+			got = &req
+			return &schema.AgentCreateIterationResponse{Iteration: &schema.AgentIteration{Status: schema.AgentIterationStatusFailed}}, nil
+		},
+	}
+	if _, err := doIteration(context.Background(), "sess", 2, agent, deps); err != nil {
+		t.Fatalf("doIteration: %v", err)
+	}
+	if got == nil || got.Usage == nil {
+		t.Fatalf("iteration request usage not set: %+v", got)
+	}
+	want := schema.TokenUsage{Input: 10, Output: 5, Model: "m"}
+	if *got.Usage != want {
+		t.Errorf("iteration usage = %+v, want %+v", *got.Usage, want)
 	}
 }
 
