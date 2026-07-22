@@ -742,6 +742,15 @@ RLpmHHG1JOVdOA==
 					t.Errorf("Provenance.Inference.Version = %q, want %q", got.Provenance.Inference.Version, "test-infer-v1")
 				}
 			}
+			// The mocked GCB build emits no timing step output, so the
+			// all-or-nothing build timings record is absent.
+			if got.BuildTimings != nil {
+				t.Errorf("BuildTimings = %+v, want nil without timing observation", got.BuildTimings)
+			}
+			// Inference cost is recorded independently of the build timings record.
+			if gotInfer := got.Costs != nil && got.Costs.InferenceSeconds > 0; gotInfer != wantInfer {
+				t.Errorf("Costs.InferenceSeconds measured = %v, want %v", gotInfer, wantInfer)
+			}
 			// Every case runs the mocked GCB build, which reports a fixed 23-minute
 			// (1380s) window and no explicit SizeHint.
 			if got.Costs == nil {
@@ -798,6 +807,8 @@ RLpmHHG1JOVdOA==
 	}
 }
 
+func durPtr(d time.Duration) *time.Duration { return &d }
+
 func TestAttemptCosts(t *testing.T) {
 	buildStart := time.Date(2024, 5, 8, 15, 0, 0, 0, time.UTC)
 	buildEnd := buildStart.Add(23 * time.Minute)
@@ -824,7 +835,7 @@ func TestAttemptCosts(t *testing.T) {
 		},
 		{
 			name:     "InferAndJumboHint",
-			verdict:  &schema.Verdict{Target: target, Timings: rebuild.Timings{Infer: 4 * time.Second}},
+			verdict:  &schema.Verdict{Target: target, Timings: rebuild.Timings{Infer: durPtr(4 * time.Second)}},
 			info:     rebuild.BuildInfo{BuildStart: buildStart, BuildEnd: buildEnd},
 			sizeHint: schema.JumboSize,
 			want:     &schema.AttemptCosts{InferenceSeconds: 4, BuilderSeconds: 1380, BuilderPool: schema.JumboSize},
@@ -838,7 +849,7 @@ func TestAttemptCosts(t *testing.T) {
 		},
 		{
 			name:    "InferWithoutBuilderWindow",
-			verdict: &schema.Verdict{Target: target, Timings: rebuild.Timings{Infer: 7 * time.Second}},
+			verdict: &schema.Verdict{Target: target, Timings: rebuild.Timings{Infer: durPtr(7 * time.Second)}},
 			info:    rebuild.BuildInfo{},
 			want:    &schema.AttemptCosts{InferenceSeconds: 7},
 		},

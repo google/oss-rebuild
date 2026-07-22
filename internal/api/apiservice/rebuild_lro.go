@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/longrunning"
@@ -39,7 +40,7 @@ func ProjectRebuildAttempt(a schema.RebuildAttempt) longrunning.Operation[schema
 			Message:       a.Message,
 			StrategyOneof: a.Strategy,
 			Provenance:    a.Provenance,
-			Timings:       a.Timings,
+			Timings:       verdictTimings(a),
 		},
 	}
 	switch a.Status {
@@ -61,6 +62,17 @@ func ProjectRebuildAttempt(a schema.RebuildAttempt) longrunning.Operation[schema
 		op.Done = false
 	}
 	return op
+}
+
+// verdictTimings reassembles the verdict's aggregate from its stored parts:
+// build phases from the attempt record, infer duration from costs.
+func verdictTimings(a schema.RebuildAttempt) rebuild.Timings {
+	t := rebuild.Timings{Build: a.BuildTimings}
+	if a.Costs != nil && a.Costs.InferenceSeconds > 0 {
+		d := time.Duration(a.Costs.InferenceSeconds * float64(time.Second))
+		t.Infer = &d
+	}
+	return t
 }
 
 // toAttemptKey converts an operation ID back into a db.AttemptKey.
