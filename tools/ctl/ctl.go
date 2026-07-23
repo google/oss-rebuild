@@ -23,6 +23,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/command/runagentbenchmark"
 	"github.com/google/oss-rebuild/tools/ctl/command/runbenchmark"
 	"github.com/google/oss-rebuild/tools/ctl/command/runone"
+	"github.com/google/oss-rebuild/tools/ctl/command/scratch"
 	"github.com/google/oss-rebuild/tools/ctl/command/settrackedpackages"
 	"github.com/google/oss-rebuild/tools/ctl/command/sysgraph"
 	"github.com/google/oss-rebuild/tools/ctl/command/tui"
@@ -46,6 +47,7 @@ func init() {
 	rootCmd.AddCommand(runagent.Command())
 	rootCmd.AddCommand(localagent.Command())
 	rootCmd.AddCommand(runagentbenchmark.Command())
+	rootCmd.AddCommand(scratch.Command())
 	// Reading data
 	rootCmd.AddCommand(tui.Command())
 	rootCmd.AddCommand(getresults.Command())
