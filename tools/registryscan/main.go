@@ -64,7 +64,12 @@ func main() {
 	}
 	packages, err := cargolock.Parse(lockfile)
 	if err != nil {
-		fmt.Printf("Error parsing packages: %v\n", err)
+		fmt.Printf("Error parsing Cargo.lock: %v\n", err)
+		os.Exit(1)
+	}
+	packages = cargolock.CratesIOPackages(packages)
+	if len(packages) == 0 {
+		fmt.Println("Cargo.lock contains no crates.io packages")
 		os.Exit(1)
 	}
 	manager, err := setupIndexManager(cacheDir)
