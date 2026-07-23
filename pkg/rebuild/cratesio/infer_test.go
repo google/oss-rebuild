@@ -792,6 +792,12 @@ version = 3
 					if tc.wantPublishTime != "" && req.PublishedTime != tc.wantPublishTime {
 						t.Errorf("PublishedTime = %q, want %q", req.PublishedTime, tc.wantPublishTime)
 					}
+					if req.Package != "serde" {
+						t.Errorf("Package = %q, want %q", req.Package, "serde")
+					}
+					if req.Version != "1.0.150" {
+						t.Errorf("Version = %q, want %q", req.Version, "1.0.150")
+					}
 					return tc.registryResponse, nil
 				}
 				ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](mockStub))
