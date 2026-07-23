@@ -38,6 +38,31 @@ type FindConfig struct {
 // Indices should be ordered from newest to oldest (e.g., current index first, then previous snapshot(s)).
 // An optional config parameter can be provided to control logging and other behaviors.
 func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargolock.Package, cratePublished time.Time, cfg *FindConfig) (*RegistryResolution, error) {
+	return findRegistryResolution(indices, lockfileCrates, nil, &cratePublished, cfg)
+}
+
+// FindRegistryResolutionAtPackage anchors the lock search at the target
+// package's first index-visible commit in the newest supplied index.
+func FindRegistryResolutionAtPackage(indices []*git.Repository, lockfileCrates []cargolock.Package, target cargolock.Package, cfg *FindConfig) (*RegistryResolution, error) {
+	if len(indices) == 0 {
+		return nil, errors.New("no registry indices to search")
+	}
+	head, err := indices[0].Head()
+	if err != nil {
+		return nil, errors.Wrap(err, "reading registry HEAD")
+	}
+	headHash := head.Hash()
+	targetResolution, err := findRegistryResolution(indices[:1], []cargolock.Package{target}, &headHash, nil, cfg)
+	if err != nil {
+		if errors.Is(err, errNoMatches) {
+			return nil, ErrTargetPackageNotFound
+		}
+		return nil, errors.Wrap(err, "finding target in registry")
+	}
+	return findRegistryResolution(indices, lockfileCrates, &targetResolution.CommitHash, nil, cfg)
+}
+
+func findRegistryResolution(indices []*git.Repository, lockfileCrates []cargolock.Package, upperCommit *plumbing.Hash, upperTime *time.Time, cfg *FindConfig) (*RegistryResolution, error) {
 	if len(lockfileCrates) == 0 {
 		return nil, errors.New("no crates to resolve")
 	}
@@ -52,7 +77,11 @@ func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargoloc
 	var lastResult, bestResult *searchResult
 	// Search each index in order until found
 	for i, index := range indices {
-		result, err := findCommitWithVersions(index, internalPackages, cratePublished, cfg)
+		var from *plumbing.Hash
+		if i == 0 {
+			from = upperCommit
+		}
+		result, err := findCommitWithVersions(index, internalPackages, from, upperTime, cfg)
 		if err != nil {
 			if i > 0 && err == errNoMatches {
 				// Edge case: For multi-index searches, subsequent indices may lack matches:
@@ -60,6 +89,9 @@ func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargoloc
 				continue
 			}
 			return nil, errors.Wrap(err, "searching index")
+		}
+		if i == 0 && result.ResolvableCrates != len(internalPackages) {
+			return nil, errors.Errorf("registry search upper bound contains %d of %d packages", result.ResolvableCrates, len(internalPackages))
 		}
 		if lastResult != nil {
 			// Edge case: If the previous repo didn't find a boundary and this one
@@ -111,23 +143,31 @@ func EntryPath(name string) string {
 	}
 }
 
-var errNoMatches = errors.New("no packages found at publish time")
+var errNoMatches = errors.New("no packages found at search upper bound")
 
-func findCommitWithVersions(repo *git.Repository, packages []internalPackage, published time.Time, cfg *FindConfig) (*searchResult, error) {
+// ErrTargetPackageNotFound indicates that the target package version is not
+// present in the newest supplied registry segment.
+var ErrTargetPackageNotFound = errors.New("target package version not found")
+
+func findCommitWithVersions(repo *git.Repository, packages []internalPackage, upperCommit *plumbing.Hash, upperTime *time.Time, cfg *FindConfig) (*searchResult, error) {
 	blobHashes := make(map[string]plumbing.Hash)
-	present := make(map[string]bool)
+	present := make(map[string]map[string]bool)
+	packagesByPath := make(map[string][]internalPackage)
+	for _, pkg := range packages {
+		packagesByPath[pkg.Path] = append(packagesByPath[pkg.Path], pkg)
+	}
 	matchesFor := func(commit *object.Commit) int {
 		tree, err := commit.Tree()
 		if err != nil {
 			return 0
 		}
 		var found int
-		for _, pkg := range packages {
-			entry, err := tree.FindEntry(pkg.Path)
+		for path, pathPackages := range packagesByPath {
+			entry, err := tree.FindEntry(path)
 			if err != nil {
 				continue
 			}
-			if entry.Hash != blobHashes[pkg.Path] {
+			if entry.Hash != blobHashes[path] {
 				blob, err := repo.BlobObject(entry.Hash)
 				if err != nil {
 					continue
@@ -141,11 +181,16 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 				if err != nil {
 					continue
 				}
-				blobHashes[pkg.Path] = entry.Hash
-				present[pkg.Path] = bytes.Contains(content, []byte(`"vers":"`+pkg.Version+`"`))
+				blobHashes[path] = entry.Hash
+				present[path] = make(map[string]bool, len(pathPackages))
+				for _, pkg := range pathPackages {
+					present[path][pkg.Version] = bytes.Contains(content, []byte(`"vers":"`+pkg.Version+`"`))
+				}
 			}
-			if present[pkg.Path] {
-				found++
+			for _, pkg := range pathPackages {
+				if present[path][pkg.Version] {
+					found++
+				}
 			}
 		}
 		if cfg != nil && cfg.VerboseLogging {
@@ -153,9 +198,15 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 		}
 		return found
 	}
-	// Get a single iterator for the entire history up to the publish time.
+	// Get a single iterator for the available history up to the requested bound.
 	// The default order is reverse chronological, which is what we want.
-	commitIter, err := repo.Log(&git.LogOptions{Until: &published})
+	logOpts := &git.LogOptions{}
+	if upperCommit != nil {
+		logOpts.From = *upperCommit
+	} else if upperTime != nil {
+		logOpts.Until = upperTime
+	}
+	commitIter, err := repo.Log(logOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +214,7 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 	// Analyze the very first commit to establish the baseline number of matches.
 	firstCommit, err := commitIter.Next()
 	if err == io.EOF {
-		return nil, errors.New("no commits found before publish time")
+		return nil, errors.New("no commits found before search upper bound")
 	} else if err != nil {
 		return nil, err
 	}
@@ -177,28 +228,21 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 	// until we find a drop in the number of matches.
 	day := 24 * time.Hour
 	nextCheckTime := firstCommit.Committer.When.Add(-day)
-	foundDrop := false
 	for c, err := range iterx.ToSeq2(commitIter, io.EOF) {
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over daily commits")
 		}
 		if c.Committer.When.Before(nextCheckTime) {
 			if matchesFor(c) < maxFound {
-				foundDrop = true
 				break
 			}
 			upperBoundCommit = c
 			nextCheckTime = c.Committer.When.Add(-day)
 		}
 	}
-	if !foundDrop {
-		return &searchResult{
-			ResolutionCommit: upperBoundCommit,
-			ResolvableCrates: maxFound,
-			PriorCommit:      nil,
-		}, nil
-	}
-	// Scan backwards through that day's commits again to find the exact drop
+	// Scan backwards through the remaining commits to find the exact drop.
+	// This is also required when the coarse scan reaches the repository root:
+	// the unexamined tail may be shorter than one day.
 	commitIter, err = repo.Log(&git.LogOptions{From: upperBoundCommit.Hash})
 	if err != nil {
 		return nil, fmt.Errorf("failed to iterate commits: %w", err)

@@ -6,6 +6,7 @@ package cratesregistryservice
 import (
 	"context"
 	"encoding/base64"
+	"sort"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -26,6 +27,8 @@ import (
 type FindRegistryCommitRequest struct {
 	LockfileBase64 string `form:"lockfile_base64"`
 	PublishedTime  string `form:"published_time"`
+	Package        string `form:"package"`
+	Version        string `form:"version"`
 }
 
 func (r FindRegistryCommitRequest) Validate() error {
@@ -34,6 +37,9 @@ func (r FindRegistryCommitRequest) Validate() error {
 	}
 	if r.PublishedTime == "" {
 		return errors.New("published_time is required")
+	}
+	if (r.Package == "") != (r.Version == "") {
+		return errors.New("package and version must be provided together")
 	}
 	if _, err := time.Parse(time.RFC3339, r.PublishedTime); err != nil {
 		return errors.Wrap(err, "invalid published_time format, must be RFC3339")
@@ -69,28 +75,18 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 	if err != nil {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "failed to parse Cargo.lock"))
 	}
+	packages = cargolock.CratesIOPackages(packages)
+	if len(packages) == 0 {
+		return &FindRegistryCommitResponse{}, nil
+	}
 	// Determine which snapshots should be searched based on publish date
 	snapshots, err := index.ListAvailableSnapshots(ctx)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to get available snapshots"))
 	}
 	relevantSnapshots := getRelevantSnapshots(snapshots, publishedTime)
-	// Determine if we need the current repository
-	var needsCurrent bool
-	if len(relevantSnapshots) == 0 {
-		needsCurrent = true
-	} else {
-		mostRecentSnapshotDate := relevantSnapshots[0]
-		needsCurrent = req.PublishedTime > mostRecentSnapshotDate
-	}
 	// Build list of repositories in newest-to-oldest order
-	var keys []index.RepositoryKey
-	if needsCurrent {
-		keys = append(keys, index.RepositoryKey{Type: index.CurrentIndex})
-	}
-	for _, snapshotDate := range relevantSnapshots {
-		keys = append(keys, index.RepositoryKey{Type: index.SnapshotIndex, Name: snapshotDate})
-	}
+	keys := repositoryKeysForPublication(relevantSnapshots, publishedTime, req.Package != "")
 	if len(keys) == 0 {
 		return &FindRegistryCommitResponse{}, nil
 	}
@@ -123,8 +119,32 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 	for _, handle := range handles {
 		repos = append(repos, handle.Repository)
 	}
-	// Find the registry resolution
-	resolution, err := index.FindRegistryResolution(repos, packages, publishedTime, nil)
+	var resolution *index.RegistryResolution
+	if req.Package == "" {
+		// Preserve compatibility with clients deployed before target anchoring.
+		resolution, err = index.FindRegistryResolution(repos, packages, publishedTime, nil)
+	} else {
+		// API publication timestamps can precede the corresponding index updates.
+		// Anchor the lock search at the target's own first index-visible commit.
+		target := cargolock.Package{Name: req.Package, Version: req.Version}
+		resolution, err = index.FindRegistryResolutionAtPackage(repos, packages, target, nil)
+		if errors.Is(err, index.ErrTargetPackageNotFound) {
+			newerKey, ok := nextNewerRepositoryKey(keys[0], snapshots)
+			if !ok {
+				return nil, api.AsStatus(codes.Unavailable, errors.New("target package version is not yet indexed"))
+			}
+			newerHandle, acquireErr := deps.IndexManager.GetRepository(ctx, newerKey)
+			if acquireErr != nil {
+				return nil, api.AsStatus(codes.Internal, errors.Wrap(acquireErr, "failed to get newer registry repository"))
+			}
+			handles = append(handles, newerHandle)
+			repos = append([]*git.Repository{newerHandle.Repository}, repos...)
+			resolution, err = index.FindRegistryResolutionAtPackage(repos, packages, target, nil)
+			if errors.Is(err, index.ErrTargetPackageNotFound) {
+				return nil, api.AsStatus(codes.Unavailable, errors.New("target package version is not yet indexed"))
+			}
+		}
+	}
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to find registry resolution"))
 	}
@@ -134,6 +154,35 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 	return &FindRegistryCommitResponse{
 		CommitHash: resolution.CommitHash.String(),
 	}, nil
+}
+
+func repositoryKeysForPublication(relevantSnapshots []string, published time.Time, targetAware bool) []index.RepositoryKey {
+	var keys []index.RepositoryKey
+	publishedValue := published.Format(time.RFC3339)
+	if targetAware {
+		publishedValue = published.Format(time.DateOnly)
+	}
+	if len(relevantSnapshots) == 0 || publishedValue > relevantSnapshots[0] {
+		keys = append(keys, index.RepositoryKey{Type: index.CurrentIndex})
+	}
+	for _, snapshotDate := range relevantSnapshots {
+		keys = append(keys, index.RepositoryKey{Type: index.SnapshotIndex, Name: snapshotDate})
+	}
+	return keys
+}
+
+func nextNewerRepositoryKey(key index.RepositoryKey, snapshots []string) (index.RepositoryKey, bool) {
+	if key.Type == index.CurrentIndex {
+		return index.RepositoryKey{}, false
+	}
+	position := sort.SearchStrings(snapshots, key.Name)
+	if position >= len(snapshots) || snapshots[position] != key.Name {
+		return index.RepositoryKey{}, false
+	}
+	if position+1 < len(snapshots) {
+		return index.RepositoryKey{Type: index.SnapshotIndex, Name: snapshots[position+1]}, true
+	}
+	return index.RepositoryKey{Type: index.CurrentIndex}, true
 }
 
 // getRelevantSnapshots determines which snapshots are relevant based on publish date

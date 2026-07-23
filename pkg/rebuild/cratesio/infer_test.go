@@ -524,6 +524,16 @@ version = 3
 [[package]]
 name = "serde"
 version = "1.0.150"
+
+[[package]]
+name = "syn"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "tracing"
+version = "0.1.40"
+source = "git+https://github.com/example/tracing#0123456789abcdef"
 `)},
 				}
 			},
@@ -540,7 +550,7 @@ version = "1.0.150"
 					},
 					RustVersion:    "1.68.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
-					PackageNames:   []string{"serde"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
+					PackageNames:   []string{"syn"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
 				}
 			},
 		},
@@ -573,6 +583,11 @@ version = 4
 [[package]]
 name = "serde"
 version = "1.0.150"
+
+[[package]]
+name = "syn"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 `)},
 				}
 			},
@@ -588,7 +603,7 @@ version = "1.0.150"
 					},
 					RustVersion:    "1.78.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
-					PackageNames:   []string{"serde"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
+					PackageNames:   []string{"syn"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
 				}
 			},
 		},
@@ -620,6 +635,11 @@ version = 3
 [[package]]
 name = "serde"
 version = "1.0.150"
+
+[[package]]
+name = "syn"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 `)},
 				}
 			},
@@ -694,10 +714,12 @@ version = "1.0.150"
 [[package]]
 name = "clap"
 version = "4.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "criterion"
 version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "serde"
@@ -706,6 +728,7 @@ version = "1.0.150"
 [[package]]
 name = "tokio"
 version = "1.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 `)},
 				}
 			},
@@ -718,7 +741,7 @@ version = "1.21.2"
 					},
 					RustVersion:    "1.35.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
-					PackageNames:   []string{"clap", "criterion", "serde", "tokio"},
+					PackageNames:   []string{"clap", "criterion", "tokio"},
 				}
 			},
 		},
@@ -750,9 +773,6 @@ version = 3
 `)},
 				}
 			},
-			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
-				CommitHash: "abcd1234567890abcdef1234567890abcdef1234",
-			},
 			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
 				return &CratesIOCargoPackage{
 					Location: rebuild.Location{
@@ -760,8 +780,7 @@ version = 3
 						Ref:  repo.Commits["version-bump"].String(),
 						Dir:  "",
 					},
-					RustVersion:    "1.67.0",
-					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
+					RustVersion: "1.67.0",
 				}
 			},
 		},
@@ -772,6 +791,12 @@ version = 3
 				mockStub := func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
 					if tc.wantPublishTime != "" && req.PublishedTime != tc.wantPublishTime {
 						t.Errorf("PublishedTime = %q, want %q", req.PublishedTime, tc.wantPublishTime)
+					}
+					if req.Package != "serde" {
+						t.Errorf("Package = %q, want %q", req.Package, "serde")
+					}
+					if req.Version != "1.0.150" {
+						t.Errorf("Version = %q, want %q", req.Version, "1.0.150")
 					}
 					return tc.registryResponse, nil
 				}
