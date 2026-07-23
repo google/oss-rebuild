@@ -148,6 +148,31 @@ func TestFindRegistryResolution(t *testing.T) {
 			wantCommit:     "initial-commit",
 		},
 		{
+			name: "distinguish versions sharing an index path across repos",
+			repoYAMLs: []string{
+				`commits:
+  - id: current-commit
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.0","deps":[],"cksum":"abc123","features":{},"yanked":false}
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"new123","features":{},"yanked":false}
+`,
+				`commits:
+  - id: snapshot-commit
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.0","deps":[],"cksum":"abc123","features":{},"yanked":false}
+`,
+			},
+			packages: []cargolock.Package{
+				{Name: "serde", Version: "1.0.0"},
+				{Name: "serde", Version: "1.0.193"},
+			},
+			cratePublished: time.Now(),
+			wantRepoIndex:  0,
+			wantCommit:     "current-commit",
+		},
+		{
 			name: "find in second repo when first not found",
 			repoYAMLs: []string{
 				// Current repo without the packages
