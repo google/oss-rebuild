@@ -256,6 +256,10 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 	args = append(args, opt.URL, targetDir)
 	// Execute the git command
 	cmd := exec.CommandContext(ctx, "git", args...)
+	// NOTE: go-git cannot read the reftable refstorage format so force "files".
+	// See https://github.com/go-git/go-git/issues/1827
+	// Unlike --ref-format, this var is a no-op on git versions predating reftable.
+	cmd.Env = append(os.Environ(), "GIT_DEFAULT_REF_FORMAT=files")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, classifyCloneError(output, err)
