@@ -347,6 +347,17 @@ func TestFindRegistryResolutionAtPackage(t *testing.T) {
 	); err == nil {
 		t.Fatal("FindRegistryResolutionAtPackage() included a later commit with the same timestamp")
 	}
+	if _, err := FindRegistryResolutionAtPackage(
+		[]*git.Repository{repo.Repository},
+		[]cargolock.Package{
+			{Name: "dependency", Version: "1.0.0"},
+			{Name: "dependency", Version: "3.0.0"},
+		},
+		target,
+		nil,
+	); err == nil {
+		t.Fatal("FindRegistryResolutionAtPackage() accepted an incomplete upper bound")
+	}
 
 	if _, err := FindRegistryResolutionAtPackage(
 		[]*git.Repository{repo.Repository},
@@ -392,17 +403,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 		t.Fatalf("ParseLockfile() error = %v", err)
 	}
 
-	unfiltered, err := FindRegistryResolution(
+	if _, err := FindRegistryResolution(
 		[]*git.Repository{current.Repository, snapshot.Repository},
 		lockfile.Packages,
 		time.Now(),
 		nil,
-	)
-	if err != nil {
-		t.Fatalf("FindRegistryResolution() with all packages error = %v", err)
-	}
-	if unfiltered.CommitHash != current.Commits["current"] {
-		t.Fatalf("unfiltered resolution = %v, want current index", unfiltered.CommitHash)
+	); err == nil {
+		t.Fatal("FindRegistryResolution() with all packages succeeded")
 	}
 
 	filtered, err := FindRegistryResolution(

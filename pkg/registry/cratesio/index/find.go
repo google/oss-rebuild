@@ -90,6 +90,9 @@ func findRegistryResolution(indices []*git.Repository, lockfileCrates []cargoloc
 			}
 			return nil, errors.Wrap(err, "searching index")
 		}
+		if i == 0 && result.ResolvableCrates != len(internalPackages) {
+			return nil, errors.Errorf("registry search upper bound contains %d of %d packages", result.ResolvableCrates, len(internalPackages))
+		}
 		if lastResult != nil {
 			// Edge case: If the previous repo didn't find a boundary and this one
 			// has fewer crates, we've found our transition point:
