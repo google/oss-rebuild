@@ -216,6 +216,39 @@ commits:
 	}
 }
 
+func TestNativeClone_ReftableDefaultHost(t *testing.T) {
+	if !NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	// Hosts may default new repos to the reftable format which go-git cannot
+	// read. NativeClone must override it for the cloned repo to be usable.
+	t.Setenv("GIT_DEFAULT_REF_FORMAT", "reftable")
+	ctx := context.Background()
+	upstreamURL := setupLocalRepo(t, `
+commits:
+  - id: initial
+    branch: master
+    message: "Initial commit"
+    files:
+      README.md: "Test content"
+`)
+	storer := filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault())
+	repo, err := NativeClone(ctx, storer, nil, &git.CloneOptions{
+		URL:        upstreamURL,
+		NoCheckout: true,
+	})
+	if err != nil {
+		t.Fatalf("NativeClone failed: %v", err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatalf("failed to get HEAD: %v", err)
+	}
+	if _, err := repo.CommitObject(head.Hash()); err != nil {
+		t.Fatalf("failed to get commit: %v", err)
+	}
+}
+
 func TestNativeClone_MemoryStorageLargeObject(t *testing.T) {
 	if !NativeGitAvailable() {
 		t.Skip("native git not available")
