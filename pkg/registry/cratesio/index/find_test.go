@@ -181,6 +181,27 @@ func TestFindRegistryResolution(t *testing.T) {
 			wantCommit:     "snapshot-commit",
 		},
 		{
+			name: "refine tail when coarse scan finds no drop",
+			repoYAMLs: []string{
+				`commits:
+  - id: initial-commit
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"abc123","features":{},"yanked":false}
+  - id: second-commit
+    parent: initial-commit
+  - id: third-commit
+    parent: second-commit
+`,
+			},
+			packages: []cargolock.Package{
+				{Name: "serde", Version: "1.0.193"},
+			},
+			cratePublished: time.Now(),
+			wantRepoIndex:  0,
+			wantCommit:     "initial-commit",
+		},
+		{
 			name: "empty packages is an error",
 			repoYAMLs: []string{
 				`commits:
