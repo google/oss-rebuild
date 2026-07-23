@@ -156,30 +156,35 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, up
 	for _, pkg := range packages {
 		packagesByPath[pkg.Path] = append(packagesByPath[pkg.Path], pkg)
 	}
-	matchesFor := func(commit *object.Commit) int {
+	matchesFor := func(commit *object.Commit) (int, error) {
 		tree, err := commit.Tree()
 		if err != nil {
-			return 0
+			return 0, err
 		}
 		var found int
 		for path, pathPackages := range packagesByPath {
 			entry, err := tree.FindEntry(path)
-			if err != nil {
+			if errors.Is(err, object.ErrEntryNotFound) || errors.Is(err, object.ErrDirectoryNotFound) {
 				continue
+			} else if err != nil {
+				return 0, err
 			}
 			if entry.Hash != blobHashes[path] {
 				blob, err := repo.BlobObject(entry.Hash)
 				if err != nil {
-					continue
+					return 0, err
 				}
 				reader, err := blob.Reader()
 				if err != nil {
-					continue
+					return 0, err
 				}
-				content, err := io.ReadAll(reader)
-				reader.Close()
-				if err != nil {
-					continue
+				content, readErr := io.ReadAll(reader)
+				closeErr := reader.Close()
+				if readErr != nil {
+					return 0, readErr
+				}
+				if closeErr != nil {
+					return 0, closeErr
 				}
 				blobHashes[path] = entry.Hash
 				present[path] = make(map[string]bool, len(pathPackages))
@@ -196,7 +201,7 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, up
 		if cfg != nil && cfg.VerboseLogging {
 			log.Printf("Analyzed %s [%s]: Found %d matches", commit.Hash.String(), commit.Committer.When.UTC().Format(time.RFC3339), found)
 		}
-		return found
+		return found, nil
 	}
 	// Get a single iterator for the available history up to the requested bound.
 	// The default order is reverse chronological, which is what we want.
@@ -218,7 +223,10 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, up
 	} else if err != nil {
 		return nil, err
 	}
-	maxFound := matchesFor(firstCommit)
+	maxFound, err := matchesFor(firstCommit)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading registry state")
+	}
 	if maxFound == 0 {
 		return nil, errNoMatches
 	}
@@ -233,7 +241,11 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, up
 			return nil, errors.Wrap(err, "iterating over daily commits")
 		}
 		if c.Committer.When.Before(nextCheckTime) {
-			if matchesFor(c) < maxFound {
+			matches, err := matchesFor(c)
+			if err != nil {
+				return nil, errors.Wrap(err, "reading registry state")
+			}
+			if matches < maxFound {
 				break
 			}
 			upperBoundCommit = c
@@ -253,7 +265,11 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, up
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over commits")
 		}
-		if matchesFor(commit) < maxFound {
+		matches, err := matchesFor(commit)
+		if err != nil {
+			return nil, errors.Wrap(err, "reading registry state")
+		}
+		if matches < maxFound {
 			return &searchResult{
 				ResolutionCommit: lastCommit,
 				ResolvableCrates: maxFound,
