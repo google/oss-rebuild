@@ -28,13 +28,32 @@ func TestFilesystemBuildDefinitionSet_Path(t *testing.T) {
 		Artifact:  "test-package-1.0.0.tgz",
 	}
 	ctx := context.Background()
+
 	path, err := bds.Path(ctx, target)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	expectedPath := "/npm/test-package/1.0.0/test-package-1.0.0.tgz/build.yaml"
-	if path != expectedPath {
-		t.Errorf("path mismatch: expected %s, got %s", expectedPath, path)
+	expectedPackagePath := "/npm/test-package/build.yaml"
+	if path != expectedPackagePath {
+		t.Errorf("path mismatch: expected %s, got %s", expectedPackagePath, path)
+	}
+
+	assetPath := filepath.Join(string(target.Ecosystem), target.Package, target.Version, target.Artifact, "build.yaml")
+	orDie(mfs.MkdirAll(filepath.Dir(assetPath), 0755))
+	f, err := mfs.Create(assetPath)
+	if err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	f.Write([]byte("versioned"))
+	f.Close()
+
+	path, err = bds.Path(ctx, target)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expectedVersionedPath := "/npm/test-package/1.0.0/test-package-1.0.0.tgz/build.yaml"
+	if path != expectedVersionedPath {
+		t.Errorf("path mismatch: expected %s, got %s", expectedVersionedPath, path)
 	}
 }
 
@@ -71,6 +90,35 @@ func TestFilesystemBuildDefinitionSet_Get(t *testing.T) {
 					},
 				})
 				f := must(fs.Create("/npm/test-package/1.0.0/test-package-1.0.0.tgz/build.yaml"))
+				defer f.Close()
+				orDie(yaml.NewEncoder(f).Encode(schema.BuildDefinition{StrategyOneOf: &strategyOneOf}))
+			},
+			target: rebuild.Target{
+				Ecosystem: rebuild.NPM,
+				Package:   "test-package",
+				Version:   "1.0.0",
+				Artifact:  "test-package-1.0.0.tgz",
+			},
+			wantStrategy: schema.NewStrategyOneOf(&rebuild.LocationHint{
+				Location: rebuild.Location{
+					Repo: "https://github.com/test/repo",
+					Ref:  "main",
+					Dir:  ".",
+				},
+			}),
+		},
+		{
+			name: "package-level fallback",
+			setupFS: func(fs billy.Filesystem, target rebuild.Target) {
+				strategyOneOf := schema.NewStrategyOneOf(&rebuild.LocationHint{
+					Location: rebuild.Location{
+						Repo: "https://github.com/test/repo",
+						Ref:  "main",
+						Dir:  ".",
+					},
+				})
+				orDie(fs.MkdirAll("/npm/test-package", 0755))
+				f := must(fs.Create("/npm/test-package/build.yaml"))
 				defer f.Close()
 				orDie(yaml.NewEncoder(f).Encode(schema.BuildDefinition{StrategyOneOf: &strategyOneOf}))
 			},
