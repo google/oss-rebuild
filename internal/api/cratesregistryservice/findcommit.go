@@ -69,6 +69,10 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 	if err != nil {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "failed to parse Cargo.lock"))
 	}
+	packages = cargolock.CratesIOPackages(packages)
+	if len(packages) == 0 {
+		return &FindRegistryCommitResponse{}, nil
+	}
 	// Determine which snapshots should be searched based on publish date
 	snapshots, err := index.ListAvailableSnapshots(ctx)
 	if err != nil {
