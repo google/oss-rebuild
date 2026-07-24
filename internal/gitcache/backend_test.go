@@ -5,11 +5,17 @@ package gitcache
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"cloud.google.com/go/storage"
+	"google.golang.org/api/option"
 )
 
 func TestLocalBackendExists(t *testing.T) {
@@ -81,6 +87,79 @@ func TestLocalBackendServe(t *testing.T) {
 	}
 	if rr.Body.String() != "tarball-data" {
 		t.Errorf("body = %q, want %q", rr.Body.String(), "tarball-data")
+	}
+}
+
+func TestGCSBackendServe(t *testing.T) {
+	// Serve fixed object attrs for any request so serve() reaches the redirect.
+	gcs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"bucket": "test-bucket", "generation": "42"}`)
+	}))
+	defer gcs.Close()
+	client, err := storage.NewClient(context.Background(), option.WithEndpoint(gcs.URL), option.WithoutAuthentication())
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	b := &gcsBackend{client: client, bucket: "test-bucket"}
+
+	for _, tc := range []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "slashes",
+			path: "github.com/org/repo/repo.tgz",
+			want: "https://storage.googleapis.com/download/storage/v1/b/test-bucket/o/github.com%2Forg%2Frepo%2Frepo.tgz?alt=media&generation=42",
+		},
+		{
+			name: "space",
+			path: "github.com/org/repo/a b/repo.tgz",
+			want: "https://storage.googleapis.com/download/storage/v1/b/test-bucket/o/github.com%2Forg%2Frepo%2Fa%20b%2Frepo.tgz?alt=media&generation=42",
+		},
+		{
+			name: "percent",
+			path: "github.com/org/repo/100%/repo.tgz",
+			want: "https://storage.googleapis.com/download/storage/v1/b/test-bucket/o/github.com%2Forg%2Frepo%2F100%25%2Frepo.tgz?alt=media&generation=42",
+		},
+		{
+			name: "plus",
+			path: "github.com/org/repo/v1.0+build/repo.tgz",
+			want: "https://storage.googleapis.com/download/storage/v1/b/test-bucket/o/github.com%2Forg%2Frepo%2Fv1.0+build%2Frepo.tgz?alt=media&generation=42",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/get?uri=example", nil)
+			rr := httptest.NewRecorder()
+			b.serve(rr, req, tc.path)
+
+			if rr.Code != http.StatusFound {
+				t.Fatalf("status = %d, want %d", rr.Code, http.StatusFound)
+			}
+			loc := rr.Header().Get("Location")
+			if loc != tc.want {
+				t.Errorf("Location = %q, want %q", loc, tc.want)
+			}
+
+			// Recover the object name the way the JSON API routes it: the
+			// rendered path must hold the object as a single escaped segment
+			// under /o/ that unescapes to the original name.
+			u, err := url.Parse(loc)
+			if err != nil {
+				t.Fatalf("Parse(%q) error = %v", loc, err)
+			}
+			seg, ok := strings.CutPrefix(u.EscapedPath(), "/download/storage/v1/b/test-bucket/o/")
+			if !ok {
+				t.Fatalf("path = %q, want prefix %q", u.EscapedPath(), "/download/storage/v1/b/test-bucket/o/")
+			}
+			if strings.Contains(seg, "/") {
+				t.Errorf("object name %q spans multiple path segments", seg)
+			}
+			if got, err := url.PathUnescape(seg); err != nil || got != tc.path {
+				t.Errorf("PathUnescape(%q) = %q, %v, want %q", seg, got, err, tc.path)
+			}
+		})
 	}
 }
 
