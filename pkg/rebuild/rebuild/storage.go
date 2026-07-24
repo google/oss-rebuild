@@ -17,6 +17,7 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/pkg/errors"
 	"google.golang.org/api/option"
 )
@@ -230,8 +231,7 @@ func (s *GCSStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
 func (s *GCSStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
 	objectPath := s.resourcePath(a)
 	obj := s.gcsClient.Bucket(s.bucket).Object(objectPath)
-	w := obj.NewWriter(ctx)
-	return w, nil
+	return gcsx.NewObjectWriter(ctx, obj), nil
 }
 
 // Stat describes the stored asset without reading its content.
