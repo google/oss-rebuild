@@ -227,7 +227,8 @@ func (s *GCSStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
 	return r, nil
 }
 
-// Writer returns a writer for the given asset.
+// Writer returns a writer for the given asset. Copying a gcsx.ObjectReader
+// to it runs server-side without streaming the content through this process.
 func (s *GCSStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
 	objectPath := s.resourcePath(a)
 	obj := s.gcsClient.Bucket(s.bucket).Object(objectPath)
