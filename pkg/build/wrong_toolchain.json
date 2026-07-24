@@ -1,0 +1,316 @@
+{
+  "Count": 31,
+  "Updated": "2025-10-16T18:26:23.666900+00:00",
+  "Packages": [
+    {
+      "Ecosystem": "maven",
+      "Name": "com.dua3.cabe:cabe-annotations",
+      "Versions": [
+        "2.0"
+      ],
+      "Artifacts": [
+        "cabe-annotations-2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.ben-manes.caffeine:caffeine",
+      "Versions": [
+        "3.2.0"
+      ],
+      "Artifacts": [
+        "caffeine-3.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "ch.qos.reload4j:reload4j",
+      "Versions": [
+        "1.2.26"
+      ],
+      "Artifacts": [
+        "reload4j-1.2.26.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.datadoghq:dd-trace-api",
+      "Versions": [
+        "1.31.2"
+      ],
+      "Artifacts": [
+        "dd-trace-api-1.31.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.package-url:packageurl-java",
+      "Versions": [
+        "1.5.0"
+      ],
+      "Artifacts": [
+        "packageurl-java-1.5.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.knuddels:jtokkit",
+      "Versions": [
+        "1.1.0"
+      ],
+      "Artifacts": [
+        "jtokkit-1.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.microsoft.sqlserver:mssql-jdbc",
+      "Versions": [
+        "12.8.1.jre11"
+      ],
+      "Artifacts": [
+        "mssql-jdbc-12.8.1.jre11.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.michael-bull.kotlin-inline-logger:kotlin-inline-logger-jvm",
+      "Versions": [
+        "1.0.6"
+      ],
+      "Artifacts": [
+        "kotlin-inline-logger-jvm-1.0.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.squareup.retrofit2:retrofit",
+      "Versions": [
+        "2.11.0"
+      ],
+      "Artifacts": [
+        "retrofit-2.11.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.squareup.wire:wire-runtime-jvm",
+      "Versions": [
+        "4.9.3"
+      ],
+      "Artifacts": [
+        "wire-runtime-jvm-4.9.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "de.flapdoodle.embed:de.flapdoodle.embed.mongo",
+      "Versions": [
+        "4.11.1"
+      ],
+      "Artifacts": [
+        "de.flapdoodle.embed.mongo-4.11.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.arrow-kt:arrow-core-jvm",
+      "Versions": [
+        "1.2.4"
+      ],
+      "Artifacts": [
+        "arrow-core-jvm-1.2.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "co.elastic.clients:elasticsearch-java",
+      "Versions": [
+        "8.13.4"
+      ],
+      "Artifacts": [
+        "elasticsearch-java-8.13.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.github.config4k:config4k",
+      "Versions": [
+        "0.7.0"
+      ],
+      "Artifacts": [
+        "config4k-0.7.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.github.oshai:kotlin-logging-jvm",
+      "Versions": [
+        "7.0.0"
+      ],
+      "Artifacts": [
+        "kotlin-logging-jvm-7.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.github.openfeign:feign-jackson",
+      "Versions": [
+        "13.1"
+      ],
+      "Artifacts": [
+        "feign-jackson-13.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.gsonfire:gson-fire",
+      "Versions": [
+        "1.9.0"
+      ],
+      "Artifacts": [
+        "gson-fire-1.9.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.ktor:ktor-client-core-jvm",
+      "Versions": [
+        "2.3.12"
+      ],
+      "Artifacts": [
+        "ktor-client-core-jvm-2.3.12.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.opentelemetry.instrumentation:opentelemetry-instrumentation-annotations",
+      "Versions": [
+        "2.6.0"
+      ],
+      "Artifacts": [
+        "opentelemetry-instrumentation-annotations-2.6.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.opentelemetry:opentelemetry-api",
+      "Versions": [
+        "1.36.0"
+      ],
+      "Artifacts": [
+        "opentelemetry-api-1.36.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.perfmark:perfmark-api",
+      "Versions": [
+        "0.27.0"
+      ],
+      "Artifacts": [
+        "perfmark-api-0.27.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.pebbletemplates:pebble",
+      "Versions": [
+        "3.2.2"
+      ],
+      "Artifacts": [
+        "pebble-3.2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "joda-time:joda-time",
+      "Versions": [
+        "2.12.7"
+      ],
+      "Artifacts": [
+        "joda-time-2.12.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.hibernate.common:hibernate-commons-annotations",
+      "Versions": [
+        "7.0.3.Final"
+      ],
+      "Artifacts": [
+        "hibernate-commons-annotations-7.0.3.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.hibernate.validator:hibernate-validator",
+      "Versions": [
+        "8.0.2.Final"
+      ],
+      "Artifacts": [
+        "hibernate-validator-8.0.2.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.http4k:http4k-core",
+      "Versions": [
+        "5.14.4.0"
+      ],
+      "Artifacts": [
+        "http4k-core-5.14.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.junit-pioneer:junit-pioneer",
+      "Versions": [
+        "2.2.0"
+      ],
+      "Artifacts": [
+        "junit-pioneer-2.2.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mockito:mockito-core",
+      "Versions": [
+        "5.11.0"
+      ],
+      "Artifacts": [
+        "mockito-core-5.11.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.postgresql:postgresql",
+      "Versions": [
+        "42.7.3"
+      ],
+      "Artifacts": [
+        "postgresql-42.7.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mongodb:mongodb-driver-sync",
+      "Versions": [
+        "4.11.1"
+      ],
+      "Artifacts": [
+        "mongodb-driver-sync-4.11.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "se.ansman.kotshi:api",
+      "Versions": [
+        "3.0.0"
+      ],
+      "Artifacts": [
+        "api-3.0.0.jar"
+      ]
+    }
+  ]
+}
