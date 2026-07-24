@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	gcs "cloud.google.com/go/storage"
@@ -181,7 +180,11 @@ type GCSStore struct {
 
 func NewGCSStoreFromClient(ctx context.Context, client *gcs.Client, uploadPrefix string) (*GCSStore, error) {
 	s := &GCSStore{gcsClient: client}
-	s.bucket, s.prefix, _ = strings.Cut(strings.TrimPrefix(uploadPrefix, "gs://"), "/")
+	var err error
+	s.bucket, s.prefix, err = gcsx.ParseURL(uploadPrefix)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing upload prefix")
+	}
 	{
 		var ok bool
 		s.runID, ok = ctx.Value(RunID).(string)

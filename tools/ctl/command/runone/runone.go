@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -177,7 +178,7 @@ func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder,
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create temp directory")
 	}
-	prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
+	prebuildURL := gcsx.VirtualHostedURL(cfg.BootstrapBucket, cfg.BootstrapVersion)
 	localCfg := benchrun.LocalExecutionServiceConfig{
 		PrebuildURL: prebuildURL,
 		Store:       store,

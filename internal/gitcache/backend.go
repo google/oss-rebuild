@@ -5,10 +5,8 @@ package gitcache
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,6 +14,7 @@ import (
 	"log"
 
 	"cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/pkg/errors"
 )
 
@@ -64,18 +63,7 @@ func (g *gcsBackend) serve(rw http.ResponseWriter, req *http.Request, path strin
 		http.Error(rw, "Internal Error", 500)
 		return
 	}
-	redirect := url.URL{
-		Scheme: "https",
-		Host:   "storage.googleapis.com",
-		// The object is a single path segment in the JSON API: RawPath
-		// carries its escaped form and Path the decoded form, matching the
-		// GCS client's httpStorageClient.newRangeReaderXML. Escaping rules:
-		// https://cloud.google.com/storage/docs/request-endpoints#encoding
-		Path:     "/download/storage/v1/b/" + g.bucket + "/o/" + path,
-		RawPath:  "/download/storage/v1/b/" + url.PathEscape(g.bucket) + "/o/" + url.PathEscape(path),
-		RawQuery: fmt.Sprintf("alt=media&generation=%d", a.Generation),
-	}
-	http.Redirect(rw, req, redirect.String(), http.StatusFound)
+	http.Redirect(rw, req, gcsx.MediaURL(g.bucket, path, a.Generation), http.StatusFound)
 }
 
 func (g *gcsBackend) delete(ctx context.Context, path string) error {
