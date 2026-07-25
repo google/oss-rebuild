@@ -40,15 +40,16 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 		}},
 		Deps: []flow.Step{
 			{
-				Uses: "cargo/create-lockfile",
-				With: map[string]string{
-					"lockfile": lockfile,
-				},
-			},
-			{
 				Uses: "cargo/deps/toolchain",
 				With: map[string]string{
 					"rustVersion": b.RustVersion,
+				},
+			},
+			{
+				Uses: "cargo/create-lockfile",
+				With: map[string]string{
+					"dir":      b.Location.Dir,
+					"lockfile": lockfile,
 				},
 			},
 			{
@@ -91,8 +92,14 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{if ne .With.lockfile "" -}}
-				echo '{{.With.lockfile}}' | base64 -d > Cargo.lock
+				metadata="$({{if and (ne .With.dir ".") (ne .With.dir "")}}cd {{.With.dir}} && {{end}}/root/.cargo/bin/cargo metadata --no-deps --format-version 1)" || exit 1
+				workspace_root="$(printf '%s\n' "$metadata" | sed -n 's/.*"workspace_root":"\([^"]*\)".*/\1/p')"
+				if [ -z "$workspace_root" ]; then
+				  workspace_root="$PWD"
+				fi
+				echo '{{.With.lockfile}}' | base64 -d > "$workspace_root/Cargo.lock"
 				{{- end -}}`)[1:],
+			Needs: []string{"rustup"},
 		}},
 	},
 	{

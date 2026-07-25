@@ -107,8 +107,13 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 			rebuild.Instructions{
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
-				Deps: `echo 'lock_base64' | base64 -d > Cargo.lock
-/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
+				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
+metadata="$(cd the_dir && /root/.cargo/bin/cargo metadata --no-deps --format-version 1)" || exit 1
+workspace_root="$(printf '%s\n' "$metadata" | sed -n 's/.*"workspace_root":"\([^"]*\)".*/\1/p')"
+if [ -z "$workspace_root" ]; then
+  workspace_root="$PWD"
+fi
+echo 'lock_base64' | base64 -d > "$workspace_root/Cargo.lock"
 # NOTE: Using current crates.io registry`,
 				Build: `(cd the_dir && /root/.cargo/bin/cargo package --no-verify)`,
 				Requires: rebuild.RequiredEnv{
@@ -153,8 +158,13 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 			rebuild.Instructions{
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
-				Deps: `echo 'lock_base64' | base64 -d > Cargo.lock
-/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
+				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
+metadata="$(cd the_dir && /root/.cargo/bin/cargo metadata --no-deps --format-version 1)" || exit 1
+workspace_root="$(printf '%s\n' "$metadata" | sed -n 's/.*"workspace_root":"\([^"]*\)".*/\1/p')"
+if [ -z "$workspace_root" ]; then
+  workspace_root="$PWD"
+fi
+echo 'lock_base64' | base64 -d > "$workspace_root/Cargo.lock"
 # NOTE: Using current crates.io registry`,
 				Build: `(cd the_dir && /root/.cargo/bin/cargo package --no-verify)`,
 				Requires: rebuild.RequiredEnv{
