@@ -289,7 +289,7 @@ categories = ["asynchronous", "cryptography", "network-programming"]
 name = "my-crate"
 keywords = ["one"]
 `,
-			wantLo: "1.64.0", // modernHeader=1.55, no resolver=2 bumps to 1.64
+			wantLo: "1.55.0", // modernHeader sets lo=1.55; resolver absence is not evidence
 			wantHi: "",
 		},
 	}
