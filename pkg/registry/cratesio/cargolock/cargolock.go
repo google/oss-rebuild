@@ -29,8 +29,8 @@ type Lockfile struct {
 }
 
 // CratesIOPackages returns packages resolved from the crates.io registry.
-// The input slice is modified in place.
 func CratesIOPackages(packages []Package) []Package {
+	packages = slices.Clone(packages)
 	return slices.DeleteFunc(packages, func(pkg Package) bool {
 		return pkg.Source != cratesIOIndexSource
 	})

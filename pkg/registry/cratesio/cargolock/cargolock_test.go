@@ -144,6 +144,7 @@ source = "registry+https://example.com/index"
 	if err != nil {
 		t.Fatalf("ParseLockfile() error = %v", err)
 	}
+	original := append([]Package(nil), lf.Packages...)
 	want := []Package{{
 		Name:    "serde",
 		Version: "1.0.193",
@@ -151,6 +152,9 @@ source = "registry+https://example.com/index"
 	}}
 	if diff := cmp.Diff(want, CratesIOPackages(lf.Packages)); diff != "" {
 		t.Errorf("CratesIOPackages() mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(original, lf.Packages); diff != "" {
+		t.Errorf("CratesIOPackages() modified input (-want +got):\n%s", diff)
 	}
 }
 
