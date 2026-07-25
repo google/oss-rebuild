@@ -125,8 +125,24 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{if and (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
-				manifest="$PWD{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}/{{.With.dir}}{{end}}/Cargo.toml"
-				(cd / && /root/.cargo/bin/cargo package --manifest-path "$manifest" --no-verify)
+				package_dir="$PWD{{if and (ne .With.dir ".") (ne .With.dir "")}}/{{.With.dir}}{{end}}"
+				manifest="$package_dir/Cargo.toml"
+				if (cd "$package_dir" && /root/.cargo/bin/cargo --config 'net.offline=true' locate-project >/dev/null 2>&1); then
+				  (cd "$package_dir" && /root/.cargo/bin/cargo \
+				    {{if eq .With.useGitIndex "true" -}}
+				    --config 'source.crates-io.replace-with="timewarp-local"' \
+				    --config 'source.timewarp-local.registry="file:///cargo-index"' \
+				    {{- else -}}
+				    --config 'source.crates-io.replace-with="timewarp"' \
+				    --config 'source.timewarp.registry="{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"' \
+				    {{- end}}
+				    package --no-verify)
+				else
+				active_toolchain="$(cd "$package_dir" && /root/.cargo/bin/rustup show active-toolchain)" || exit 1
+				active_toolchain="${active_toolchain%% *}"
+				[ -n "$active_toolchain" ] || exit 1
+				(cd / && RUSTUP_TOOLCHAIN="$active_toolchain" /root/.cargo/bin/cargo package --manifest-path "$manifest" --no-verify)
+				fi
 				{{- else -}}
 				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
 				/root/.cargo/bin/cargo package --no-verify
