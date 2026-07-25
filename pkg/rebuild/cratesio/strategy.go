@@ -124,9 +124,14 @@ var toolkit = []*flow.Tool{
 		Name: "cargo/build/package",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				{{if and (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
+				manifest="$PWD{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}/{{.With.dir}}{{end}}/Cargo.toml"
+				(cd / && /root/.cargo/bin/cargo package --manifest-path "$manifest" --no-verify)
+				{{- else -}}
 				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
 				/root/.cargo/bin/cargo package --no-verify
-				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`)[1:],
+				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}
+				{{- end -}}`)[1:],
 			Needs: []string{"rustup"},
 		}},
 	},
