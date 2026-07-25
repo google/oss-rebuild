@@ -44,6 +44,27 @@ func TestCratesIOCargoPackage(t *testing.T) {
 			},
 		},
 		{
+			"ExcludeLockfile",
+			&CratesIOCargoPackage{
+				Location:        defaultLocation,
+				RustVersion:     "1.87.0",
+				ExcludeLockfile: true,
+			},
+			rebuild.BuildEnv{HasRepo: true},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.87.0
+# NOTE: Using current crates.io registry`,
+				Build: `export CARGO_TARGET_DIR="$PWD/target"
+(cd the_dir && /root/.cargo/bin/cargo package --no-verify --exclude-lockfile)`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "rustup"},
+				},
+				OutputPath: "target/package/the_artifact",
+			},
+		},
+		{
 			"NoDir",
 			&CratesIOCargoPackage{
 				Location: rebuild.Location{
