@@ -177,17 +177,30 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 	// until we find a drop in the number of matches.
 	day := 24 * time.Hour
 	nextCheckTime := firstCommit.Committer.When.Add(-day)
+	oldestCommit := firstCommit
+	foundDrop := false
 	for c, err := range iterx.ToSeq2(commitIter, io.EOF) {
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over daily commits")
 		}
+		oldestCommit = c
 		if c.Committer.When.Before(nextCheckTime) {
 			if matchesFor(c) < maxFound {
+				foundDrop = true
 				break
 			}
 			upperBoundCommit = c
 			nextCheckTime = c.Committer.When.Add(-day)
 		}
+	}
+	// The coarse scan leaves up to a day of commits above the root unexamined;
+	// probing the root directly settles the all-matches case without a rescan.
+	if !foundDrop && matchesFor(oldestCommit) == maxFound {
+		return &searchResult{
+			ResolutionCommit: oldestCommit,
+			ResolvableCrates: maxFound,
+			PriorCommit:      nil,
+		}, nil
 	}
 	// Scan backwards through the remaining commits to find the exact drop.
 	// This is also required when the coarse scan reaches the repository root:
