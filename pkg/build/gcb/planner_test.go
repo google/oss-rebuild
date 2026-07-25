@@ -68,6 +68,10 @@ RUN sed 's/^ //' <<'EOF' | sh
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -179,6 +183,10 @@ EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  mkdir /src && cd /src
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -260,11 +268,15 @@ RUN sed 's/^ //' <<'EOF' | sh
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -312,11 +324,15 @@ RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -364,11 +380,15 @@ RUN sed 's/^ //' <<'EOF' | sh
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -417,11 +437,15 @@ RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
