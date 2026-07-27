@@ -20,6 +20,7 @@ import (
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/local"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -244,19 +245,21 @@ func (e *Executor) executeBuild(ctx context.Context, handle *scratchHandle, plan
 		handle.setResult(build.Result{Error: errors.Wrap(ctx.Err(), "enqueuing build")})
 		return
 	}
-	err := e.runBuild(ctx, handle, plan, t, opts, timeout)
+	timings, err := e.runBuild(ctx, handle, plan, t, opts, timeout)
 	if err != nil && ctx.Err() != nil {
 		handle.updateStatus(build.BuildStateCancelled)
 	} else {
 		handle.updateStatus(build.BuildStateCompleted)
 	}
-	handle.setResult(build.Result{Error: err})
+	handle.setResult(build.Result{Error: err, Timings: timings})
 }
 
 // runBuild drives one build on the scratch VM. The container is stopped and,
 // unless RetainContainer is set, removed after the phases. The staging
-// directory is always retained for post-mortem inspection.
-func (e *Executor) runBuild(ctx context.Context, handle *scratchHandle, plan *local.DockerRunPlan, t rebuild.Target, opts build.Options, timeout time.Duration) error {
+// directory is always retained for post-mortem inspection. Timings are
+// non-nil whenever every phase completed measured, even if artifact
+// retrieval subsequently fails.
+func (e *Executor) runBuild(ctx context.Context, handle *scratchHandle, plan *local.DockerRunPlan, t rebuild.Target, opts build.Options, timeout time.Duration) (*rebuild.BuildTimings, error) {
 	dir := path.Join(e.workDir, buildsSubdir, handle.id)
 	container := "rb-" + handle.id
 	prepareScript := strings.Join([]string{
@@ -265,7 +268,7 @@ func (e *Executor) runBuild(ctx context.Context, handle *scratchHandle, plan *lo
 		"docker ps -aq --filter name=^rb- | xargs -r docker rm -f",
 	}, "\n")
 	if err := e.utilityExec(ctx, []string{"/bin/sh", "-c", prepareScript}, nil, "preparing build"); err != nil {
-		return err
+		return nil, err
 	}
 	argOpts := local.RunArgsOpts{
 		ContainerName:   container,
@@ -279,17 +282,17 @@ func (e *Executor) runBuild(ctx context.Context, handle *scratchHandle, plan *lo
 	var env map[string]string
 	if plan.RequiresAuth {
 		if e.authHeader == nil {
-			return errors.New("build plan requires auth but no auth header source is configured")
+			return nil, errors.New("build plan requires auth but no auth header source is configured")
 		}
 		header, err := e.authHeader(ctx)
 		if err != nil {
-			return errors.Wrap(err, "generating auth header")
+			return nil, errors.Wrap(err, "generating auth header")
 		}
 		env = map[string]string{"AUTH_HEADER": header}
 		argOpts.AuthMode = local.AuthEnvPassthrough
 	}
 	if err := e.utilityExec(ctx, append([]string{"docker"}, local.ComposeDockerStartArgs(plan, argOpts)...), env, "starting build container"); err != nil {
-		return err
+		return nil, err
 	}
 	// The phases share one wall-clock budget. Each op's worker-enforced
 	// timeout is clamped to at least 1s: zero means unbounded, and nothing
@@ -297,37 +300,54 @@ func (e *Executor) runBuild(ctx context.Context, handle *scratchHandle, plan *lo
 	handle.updateStatus(build.BuildStateRunning)
 	var phaseOps []*longrunning.Operation[schema.ScratchExecResult]
 	var buildErr error
+	elapsed := rebuild.BuildTimings{}
+	spans := map[string]*time.Duration{"setup": &elapsed.Setup, "source": &elapsed.Source, "deps": &elapsed.Deps, "build": &elapsed.Build}
+	measured := true
 	remaining := timeout
 	for _, ph := range plan.Phases() {
 		var offset int64
 		follow := func(op *longrunning.Operation[schema.ScratchExecResult]) {
 			offset += e.copyNewOutput(ctx, op, offset, handle)
 		}
-		phaseStart := time.Now()
+		execStart := time.Now()
 		op, err := exec(ctx, e.stubs, schema.ScratchExecRequest{
 			ScratchID:      e.scratchID,
 			Cmd:            append([]string{"docker"}, local.ComposeDockerExecArgs(container, ph)...),
 			TimeoutSeconds: max(1, int(remaining.Seconds())),
 		}, e.pollInterval, follow)
-		remaining -= time.Since(phaseStart)
+		remaining -= time.Since(execStart)
 		if err == nil {
 			phaseOps = append(phaseOps, op)
 		}
 		if buildErr = phaseOutcome(ph.Name, op, err); buildErr != nil {
 			break
 		}
+		// Spans come from the VM worker's clock (StartedAt, FinishedAt) which
+		// excludes exec dispatch and poll lag. StartedAt is zero when timeout,
+		// partition occurs in which case no timings are reported.
+		if r := op.Result; r.StartedAt.IsZero() || r.FinishedAt.IsZero() {
+			measured = false
+		} else {
+			*spans[ph.Name] = r.FinishedAt.Sub(r.StartedAt)
+		}
 	}
 	e.stopContainer(ctx, container)
 	e.uploadDebugLogs(ctx, handle.id, phaseOps, t, opts.Resources.AssetStore)
 	if buildErr != nil {
-		return buildErr
+		return nil, buildErr
+	}
+	// A failed build leaves later phases unmeasured. Validated owns the
+	// all-or-nothing invariants.
+	var timings *rebuild.BuildTimings
+	if measured {
+		timings = timing.Validated(elapsed)
 	}
 	// Retrieve and upload the artifact. Unlike the local executor, a
 	// missing artifact or failed upload fails the build.
 	if opts.Resources.AssetStore != nil {
-		return e.fetchAndUploadArtifact(ctx, dir, plan, t, opts.Resources.AssetStore)
+		return timings, e.fetchAndUploadArtifact(ctx, dir, plan, t, opts.Resources.AssetStore)
 	}
-	return nil
+	return timings, nil
 }
 
 // utilityExec runs one short exec op, folding all failure channels into a

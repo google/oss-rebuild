@@ -17,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/internal/bufiox"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -233,16 +234,29 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	// Start the container idling, then execute each phase in it. The start
 	// output is the container ID, not build output: keep it out of the logs.
 	idBuf := &bytes.Buffer{}
+	// Setup's span opens before the container start so it absorbs the image
+	// pull and container create, mirroring the build executor's buildx clock.
+	phaseStart := time.Now()
 	buildErr := e.cmdExecutor.Execute(ctx, CommandOptions{Output: idBuf}, e.dockerCmd, ComposeDockerStartArgs(plan, argOpts)...)
+	elapsed := rebuild.BuildTimings{}
 	if buildErr != nil {
 		buildErr = errors.Wrap(buildErr, "starting build container")
 	} else {
+		spans := map[string]*time.Duration{"setup": &elapsed.Setup, "source": &elapsed.Source, "deps": &elapsed.Deps, "build": &elapsed.Build}
 		for _, ph := range plan.Phases() {
 			if err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: runWriter}, e.dockerCmd, ComposeDockerExecArgs(handle.id, ph)...); err != nil {
 				buildErr = errors.Wrapf(err, "executing %s phase", ph.Name)
 				break
 			}
+			now := time.Now()
+			*spans[ph.Name] = now.Sub(phaseStart)
+			phaseStart = now
 		}
+	}
+	// A failed build leaves later phases unmeasured.
+	var timings *rebuild.BuildTimings
+	if buildErr == nil {
+		timings = timing.Validated(elapsed)
 	}
 	// Export post-build container if requested.
 	if opts.SavePostBuildContainer {
@@ -282,7 +296,7 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		log.Printf("Failed to clean up container %s: %v", handle.id, err)
 	}
 	handle.updateStatus(build.BuildStateCompleted)
-	handle.setResult(build.Result{Error: buildErr})
+	handle.setResult(build.Result{Error: buildErr, Timings: timings})
 }
 
 // uploadFile uploads a local file to the asset store
