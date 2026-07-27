@@ -70,6 +70,7 @@ func ProjectScratchExec(e schema.ScratchExec) longrunning.Operation[schema.Scrat
 			ScratchID:  e.ScratchID,
 			ExitCode:   e.ExitCode,
 			OutURI:     e.OutURI,
+			CreatedAt:  e.CreatedAt,
 			StartedAt:  e.StartedAt,
 			FinishedAt: e.FinishedAt,
 		},
@@ -134,7 +135,6 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 	}
 
 	opID := mintID(deps.IDGen)
-	startedAt := time.Now().UTC()
 	exec := schema.ScratchExec{
 		ID:             opID,
 		ScratchID:      req.ScratchID,
@@ -143,7 +143,7 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 		TimeoutSeconds: timeoutSeconds,
 		State:          schema.ScratchExecPending,
 		OutURI:         outURIFor(deps.OutputBucket, scratch.ObliviousID, opID),
-		StartedAt:      startedAt,
+		CreatedAt:      time.Now().UTC(),
 	}
 	if err := deps.Execs.Insert(ctx, exec); err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "execs insert"))
@@ -385,11 +385,11 @@ func (s *gcsSyncer) intervalAt(age time.Duration) time.Duration {
 // Terminal syncs always run. First syncs (lastModified zero) always
 // run because sinceLastCompose is effectively unbounded. Otherwise,
 // the schedule's interval-for-age gates the call.
-func (s *gcsSyncer) shouldCompose(now, startedAt, lastModified time.Time, done bool) bool {
+func (s *gcsSyncer) shouldCompose(now, createdAt, lastModified time.Time, done bool) bool {
 	if done {
 		return true
 	}
-	age := now.Sub(startedAt)
+	age := now.Sub(createdAt)
 	return now.Sub(lastModified) >= s.intervalAt(age)
 }
 
@@ -426,7 +426,7 @@ func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch s
 	// skipped so the final tail always lands in GCS. A first sync
 	// (lastModified zero) is also never skipped because sinceLastCompose
 	// is enormous.
-	if status.TotalBytes > currentSize && s.shouldCompose(time.Now().UTC(), exec.StartedAt, lastModified, status.Done) {
+	if status.TotalBytes > currentSize && s.shouldCompose(time.Now().UTC(), exec.CreatedAt, lastModified, status.Done) {
 		if err := s.pullOutput(ctx, client, baseURL, scratch.ObliviousID, exec.ID, currentSize, currentGen); err != nil {
 			return exec, errors.Wrap(err, "pull output")
 		}
@@ -436,17 +436,33 @@ func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch s
 		return exec, nil
 	}
 
+	final := finalFromStatus(exec, status, time.Now().UTC())
+	if err := s.execs.Update(ctx, final); err != nil {
+		return exec, errors.Wrap(err, "execs update final")
+	}
+	return final, nil
+}
+
+// finalFromStatus projects a terminal worker status onto the stored exec
+// record. Worker clocks are authoritative for the execution span: the worker
+// stamps both ends with the same VM clock, so their difference is free of
+// dispatch latency and cross-clock skew. StartedAt stays zero when the worker
+// never observed a start, and FinishedAt falls back to the broker clock (now)
+// so terminal records always carry an end time.
+func finalFromStatus(exec schema.ScratchExec, status *scratchworkerservice.ExecStatus, now time.Time) schema.ScratchExec {
 	final := exec
 	final.ExitCode = status.ExitCode
+	final.StartedAt = status.StartedAt
 	if !status.FinishedAt.IsZero() {
 		final.FinishedAt = status.FinishedAt
 	} else {
-		final.FinishedAt = time.Now().UTC()
+		final.FinishedAt = now
 	}
 	switch {
 	case status.TimedOut:
 		// Worker-enforced timeout: command was killed at its deadline.
-		// We observed the kill exit (typically 124); partial output remains in OutURI.
+		// We observed the kill exit (typically 124) and partial output
+		// remains in OutURI.
 		final.State = schema.ScratchExecTimedOut
 		final.Error = &schema.Status{
 			Code:    int(codes.DeadlineExceeded),
@@ -454,7 +470,7 @@ func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch s
 		}
 	case status.ErrMsg != "":
 		// Worker reported an infra failure (spawn failed, stdin decode, ...).
-		// We do not have a known exit; treat as Lost.
+		// We do not have a known exit, so treat as Lost.
 		final.State = schema.ScratchExecLost
 		final.Error = &schema.Status{
 			Code:    int(codes.Internal),
@@ -463,10 +479,7 @@ func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch s
 	default:
 		final.State = schema.ScratchExecCompleted
 	}
-	if err := s.execs.Update(ctx, final); err != nil {
-		return exec, errors.Wrap(err, "execs update final")
-	}
-	return final, nil
+	return final
 }
 
 // finalize transitions exec to Lost with the given status and persists it;

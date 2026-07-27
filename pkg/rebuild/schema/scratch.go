@@ -138,6 +138,14 @@ type Status struct {
 //   - Completed: ExitCode is the observed command exit; Error nil; OutURI complete.
 //   - TimedOut:  ExitCode is the kill exit (typically 124); Error carries detail; OutURI may be partial.
 //   - Lost:      Error non-nil; ExitCode 0 (no exit observed); OutURI may be partial.
+//
+// Clock semantics: CreatedAt is the broker's clock at op creation. StartedAt
+// and FinishedAt are the worker's observed command start and finish, copied
+// at terminal sync, so both ends of the execution span come from the same VM
+// clock and their difference is an accurate execution duration. StartedAt is
+// zero when the worker never reported a start (blind finalization), and
+// FinishedAt then falls back to a broker stamp so terminal records always
+// carry an end time.
 type ScratchExec struct {
 	ID        string   `json:"id" firestore:"id"`
 	ScratchID string   `json:"scratch_id,omitempty" firestore:"scratch_id,omitempty"`
@@ -149,6 +157,7 @@ type ScratchExec struct {
 	// Zero means unbounded: the reaper warns and leaves the scratch up.
 	TimeoutSeconds int              `json:"timeout_seconds,omitempty" firestore:"timeout_seconds,omitempty"`
 	OutURI         string           `json:"out_uri,omitempty" firestore:"out_uri,omitempty"`
+	CreatedAt      time.Time        `json:"created_at,omitzero" firestore:"created_at,omitempty"`
 	StartedAt      time.Time        `json:"started_at,omitzero" firestore:"started_at,omitempty"`
 	FinishedAt     time.Time        `json:"finished_at,omitzero" firestore:"finished_at,omitempty"`
 	State          ScratchExecState `json:"state" firestore:"state"`
@@ -161,6 +170,7 @@ type ScratchExecResult struct {
 	ScratchID  string    `json:"scratch_id"`
 	ExitCode   int       `json:"exit_code"`
 	OutURI     string    `json:"out_uri,omitempty"`
+	CreatedAt  time.Time `json:"created_at,omitzero"`
 	StartedAt  time.Time `json:"started_at,omitzero"`
 	FinishedAt time.Time `json:"finished_at,omitzero"`
 }

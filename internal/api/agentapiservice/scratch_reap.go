@@ -55,10 +55,12 @@ func (d *ScratchReapDeps) idleThreshold() time.Duration {
 }
 
 // deadlineFor returns the op's hard deadline: its worker-enforced timeout
-// plus grace. Only meaningful for bounded ops (TimeoutSeconds set); ops
-// without a bound never expire and exempt their scratch from teardown.
+// plus grace, anchored at broker-side creation since the worker's observed
+// start only lands on the record at terminal sync. Only meaningful for
+// bounded ops (TimeoutSeconds set). Ops without a bound never expire and
+// exempt their scratch from teardown.
 func deadlineFor(exec schema.ScratchExec) time.Time {
-	return exec.StartedAt.Add(time.Duration(exec.TimeoutSeconds)*time.Second + opDeadlineGrace)
+	return exec.CreatedAt.Add(time.Duration(exec.TimeoutSeconds)*time.Second + opDeadlineGrace)
 }
 
 // ScratchReap deletes idle scratches and finalizes obsolete ops.
@@ -80,7 +82,7 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 	}
 	busy := make(map[string]bool)
 	for _, exec := range pending {
-		if exec.StartedAt.IsZero() {
+		if exec.CreatedAt.IsZero() {
 			continue
 		}
 		if exec.TimeoutSeconds <= 0 {
@@ -171,7 +173,7 @@ func syncPendingFor(ctx context.Context, deps *ScratchReapDeps, scratch schema.S
 // The deadline check stays ahead of the scratch-state checks so ops on a
 // scratch torn down earlier in the pass finalize TimedOut, not Lost.
 func terminalStateFor(ctx context.Context, deps *ScratchReapDeps, exec schema.ScratchExec, now time.Time) (schema.ScratchExecState, *schema.Status) {
-	if exec.TimeoutSeconds > 0 && !exec.StartedAt.IsZero() && now.After(deadlineFor(exec)) {
+	if exec.TimeoutSeconds > 0 && !exec.CreatedAt.IsZero() && now.After(deadlineFor(exec)) {
 		// The worker killed the command at its timeout, so a reachable
 		// worker has the real exit status and output. Pull those through
 		// before falling back to a blind TimedOut.
