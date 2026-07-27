@@ -5,7 +5,6 @@ package rebuild
 
 import (
 	"context"
-	stderrors "errors"
 	"io"
 	"io/fs"
 	"net/url"
@@ -64,7 +63,9 @@ var (
 	// ErrNoUploadPath is an error indicating that no upload path was provided and a DebugStorer couldn't be constructed.
 	ErrNoUploadPath = errors.New("no artifact upload path provided")
 	// ErrAssetNotFound indicates the asset requested to be read could not be found.
-	ErrAssetNotFound = errors.New("asset not found")
+	//
+	// Deprecated: Match fs.ErrNotExist instead.
+	ErrAssetNotFound = fs.ErrNotExist
 	// AssetTypeNotSupported indicates that the asset store does not support assets of that type.
 	ErrAssetTypeNotSupported = errors.New("asset type not found")
 )
@@ -204,7 +205,7 @@ func (s *GCSStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
 	r, err := obj.NewReader(ctx)
 	if err != nil {
 		if err == gcs.ErrObjectNotExist {
-			err = stderrors.Join(err, ErrAssetNotFound)
+			err = fs.ErrNotExist
 		}
 		return nil, errors.Wrapf(err, "creating GCS reader for %s", path)
 	}
@@ -240,9 +241,6 @@ func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (io.ReadClos
 	path := s.resourcePath(a)
 	f, err := s.fs.Open(path)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			err = stderrors.Join(err, ErrAssetNotFound)
-		}
 		return nil, errors.Wrapf(err, "creating reader for %v", a)
 	}
 	return f, nil
@@ -304,9 +302,9 @@ func (cr *cachedReader) Close() error {
 	return readErr
 }
 
-// Reader reads from the frontline, unless the frontline returns ErrAssetNotFound
+// Reader reads from the frontline, unless the frontline returns fs.ErrNotExist
 func (s *CachedAssetStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
-	if r, err := s.frontline.Reader(ctx, a); !errors.Is(err, ErrAssetNotFound) {
+	if r, err := s.frontline.Reader(ctx, a); !errors.Is(err, fs.ErrNotExist) {
 		return r, err
 	}
 	// Cache miss, fetch from the backline
