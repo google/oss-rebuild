@@ -534,6 +534,96 @@ func TestDockerRunExecutorSavePostBuildContainer(t *testing.T) {
 	}
 }
 
+func TestDockerRunExecutorTimings(t *testing.T) {
+	cmdExecutor := NewMockCommandExecutor()
+	// Nonzero spans require observable time between clock reads.
+	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+		time.Sleep(time.Millisecond)
+		return nil
+	})
+	executor, err := NewDockerRunExecutor(DockerRunExecutorConfig{
+		Planner: &mockPlanner{
+			plan: &DockerRunPlan{
+				Image:      "alpine:3.19",
+				Setup:      "echo setup",
+				Source:     "echo source",
+				Build:      "echo build",
+				OutputPath: "/out/rebuild",
+			},
+		},
+		CommandExecutor: cmdExecutor,
+		MaxParallel:     1,
+		TempDirBase:     "/tmp",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+	ctx := context.Background()
+	handle, err := executor.Start(ctx, rebuild.Input{
+		Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-pkg", Version: "1.0.0"},
+	}, build.Options{BuildID: "test-timings"})
+	if err != nil {
+		t.Fatalf("Unexpected error from Start: %v", err)
+	}
+	result, _ := handle.Wait(ctx)
+	if result.Error != nil {
+		t.Fatalf("Expected success, got error: %v", result.Error)
+	}
+	if result.Timings == nil {
+		t.Fatal("Expected timings, got nil")
+	}
+	if result.Timings.Setup <= 0 || result.Timings.Source <= 0 || result.Timings.Build <= 0 {
+		t.Errorf("Expected positive measured phases, got %+v", result.Timings)
+	}
+	if result.Timings.Deps != 0 {
+		t.Errorf("Expected zero deps duration for depsless plan, got %v", result.Timings.Deps)
+	}
+}
+
+func TestDockerRunExecutorTimingsAbsentOnFailure(t *testing.T) {
+	cmdExecutor := NewMockCommandExecutor()
+	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+		if len(args) > 0 && args[0] == "exec" && strings.Contains(args[len(args)-1], "false") {
+			return errors.New("exit status 1")
+		}
+		return nil
+	})
+	executor, err := NewDockerRunExecutor(DockerRunExecutorConfig{
+		Planner: &mockPlanner{
+			plan: &DockerRunPlan{
+				Image:      "alpine:3.19",
+				Setup:      "echo setup",
+				Source:     "echo source",
+				Build:      "false",
+				OutputPath: "/out/rebuild",
+			},
+		},
+		CommandExecutor: cmdExecutor,
+		MaxParallel:     1,
+		TempDirBase:     "/tmp",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+	ctx := context.Background()
+	handle, err := executor.Start(ctx, rebuild.Input{
+		Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-pkg", Version: "1.0.0"},
+	}, build.Options{BuildID: "test-timings-fail"})
+	if err != nil {
+		t.Fatalf("Unexpected error from Start: %v", err)
+	}
+	result, _ := handle.Wait(ctx)
+	if result.Error == nil {
+		t.Fatal("Expected error, got success")
+	}
+	if !strings.Contains(result.Error.Error(), "build phase") {
+		t.Errorf("Expected error naming the failed phase, got: %v", result.Error)
+	}
+	if result.Timings != nil {
+		t.Errorf("Expected nil timings on failure, got %+v", result.Timings)
+	}
+}
+
 func TestDockerRunExecutorConfig(t *testing.T) {
 	executor, err := NewDockerRunExecutor(DockerRunExecutorConfig{
 		MaxParallel:     3,
