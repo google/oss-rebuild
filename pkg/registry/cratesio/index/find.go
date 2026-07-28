@@ -202,9 +202,7 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 			PriorCommit:      nil,
 		}, nil
 	}
-	// Scan backwards through the remaining commits to find the exact drop.
-	// This is also required when the coarse scan reaches the repository root:
-	// the unexamined tail may be shorter than one day.
+	// Scan backwards through that day's commits again to find the exact drop
 	commitIter, err = repo.Log(&git.LogOptions{From: upperBoundCommit.Hash})
 	if err != nil {
 		return nil, fmt.Errorf("failed to iterate commits: %w", err)
