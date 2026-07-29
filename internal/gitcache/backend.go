@@ -64,13 +64,16 @@ func (g *gcsBackend) serve(rw http.ResponseWriter, req *http.Request, path strin
 		http.Error(rw, "Internal Error", 500)
 		return
 	}
-	rawPath := fmt.Sprintf("download/storage/v1/b/%s/o/%s", g.bucket, url.QueryEscape(path))
 	redirect := url.URL{
-		Scheme:   "https",
-		Host:     "storage.googleapis.com",
-		Path:     rawPath,
-		RawPath:  rawPath,
-		RawQuery: fmt.Sprintf("generation=%d&alt=media", a.Generation),
+		Scheme: "https",
+		Host:   "storage.googleapis.com",
+		// The object is a single path segment in the JSON API: RawPath
+		// carries its escaped form and Path the decoded form, matching the
+		// GCS client's httpStorageClient.newRangeReaderXML. Escaping rules:
+		// https://cloud.google.com/storage/docs/request-endpoints#encoding
+		Path:     "/download/storage/v1/b/" + g.bucket + "/o/" + path,
+		RawPath:  "/download/storage/v1/b/" + url.PathEscape(g.bucket) + "/o/" + url.PathEscape(path),
+		RawQuery: fmt.Sprintf("alt=media&generation=%d", a.Generation),
 	}
 	http.Redirect(rw, req, redirect.String(), http.StatusFound)
 }
