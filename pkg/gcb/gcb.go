@@ -14,6 +14,7 @@ import (
 	"time"
 
 	gcs "cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/grpc/codes"
@@ -63,8 +64,7 @@ func NewGCSLogsClient(gcsClient *gcs.Client, bucket string) LogsClient {
 
 // ReadBuildLogs reads the complete build logs for a given build ID from the specified bucket.
 func (c *gcsLogsClient) ReadBuildLogs(ctx context.Context, buildID string) (io.ReadCloser, error) {
-	objectName := fmt.Sprintf("log-%s.txt", buildID)
-	return c.bucket.Object(objectName).NewReader(ctx)
+	return gcsx.NewObjectReader(ctx, c.bucket.Object(MergedLogFile(buildID)))
 }
 
 // ReadStepLogs reads logs for a specific step within a build from the specified bucket.
