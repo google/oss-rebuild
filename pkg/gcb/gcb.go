@@ -62,7 +62,9 @@ func NewGCSLogsClient(gcsClient *gcs.Client, bucket string) LogsClient {
 	}
 }
 
-// ReadBuildLogs reads the complete build logs for a given build ID from the specified bucket.
+// ReadBuildLogs reads the complete build logs for a given build ID from the
+// specified bucket. Copying the returned reader to a gcsx.ObjectWriter runs
+// server-side without streaming the content through this process.
 func (c *gcsLogsClient) ReadBuildLogs(ctx context.Context, buildID string) (io.ReadCloser, error) {
 	return gcsx.NewObjectReader(ctx, c.bucket.Object(MergedLogFile(buildID)))
 }

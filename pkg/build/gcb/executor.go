@@ -381,6 +381,8 @@ func (e *Executor) copyBuildLogs(ctx context.Context, store rebuild.AssetStore, 
 		return errors.Wrap(err, "reading build logs")
 	}
 	defer reader.Close()
-	_, err = io.Copy(writer, reader)
-	return errors.Wrap(err, "copying to asset")
+	if _, err := io.Copy(writer, reader); err != nil {
+		return errors.Wrap(err, "copying to asset")
+	}
+	return errors.Wrap(writer.Close(), "committing asset")
 }
