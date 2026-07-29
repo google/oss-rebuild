@@ -55,7 +55,6 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 			// starting the next run. This effectively keeps the "most recent"
 			// container available for interactive exploration
 			RetainContainer: true,
-			KeepAlive:       true,
 		})
 		if err != nil {
 			log.Fatal(err)

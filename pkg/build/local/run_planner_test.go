@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
@@ -55,14 +56,18 @@ func TestDockerRunPlanner(t *testing.T) {
 				Image:      "alpine:3.19",
 				WorkingDir: "/workspace",
 				OutputPath: "/out/rebuild",
-				Script: textwrap.Dedent(`
-			set -eux
+				Setup: textwrap.Dedent(`
 			apk update
-			mkdir /src && cd /src
-			apk add npm git
+			apk add npm git`[1:]),
+				Source: textwrap.Dedent(`
+			mkdir -p /src && cd /src
 			git clone https://github.com/example/test-package .
-			git checkout --force 'v1.0.0'
-			npm install
+			git checkout --force 'v1.0.0'`[1:]),
+				Deps: textwrap.Dedent(`
+			cd /src
+			npm install`[1:]),
+				Build: textwrap.Dedent(`
+			cd /src
 			npm pack
 			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
 			},
@@ -101,19 +106,70 @@ func TestDockerRunPlanner(t *testing.T) {
 				Image:      "alpine:3.19",
 				WorkingDir: "/workspace",
 				OutputPath: "/out/rebuild",
-				Script: textwrap.Dedent(`
-			set -eux
+				Setup: textwrap.Dedent(`
+			apk add curl
+			curl https://example.com/timewarp > /timewarp
+			chmod +x /timewarp
 			apk update
-			apk add curl netcat-openbsd
-			curl  https://example.com/timewarp > timewarp
-			chmod +x timewarp
-			./timewarp -port 8081 &
-			while ! nc -z localhost 8081;do sleep 1;done
-			mkdir /src && cd /src
-			apk add git
+			apk add git`[1:]),
+				Source: textwrap.Dedent(`
+			mkdir -p /src && cd /src
 			git clone https://github.com/example/test-package .
-			git checkout --force 'v1.0.0'
-			npm install
+			git checkout --force 'v1.0.0'`[1:]),
+				Deps: textwrap.Dedent(`
+			/timewarp -port 8081 &
+			while ! nc -z localhost 8081;do sleep 1;done
+			cd /src
+			npm install`[1:]),
+				Build: textwrap.Dedent(`
+			cd /src
+			npm pack
+			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
+			},
+		},
+		{
+			// No deps instructions: no deps phase, and timewarp is fetched
+			// but never started, matching the docker build variants.
+			name: "timewarp without deps",
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.NPM,
+					Package:   "test-package",
+					Version:   "1.0.0",
+					Artifact:  "test-package-1.0.0.tgz",
+				},
+				Strategy: &rebuild.WorkflowStrategy{
+					Source:     []flow.Step{{Runs: "echo source"}},
+					Build:      []flow.Step{{Runs: "npm pack"}},
+					OutputPath: "test-package-1.0.0.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				UseTimewarp: true,
+				Resources: build.Resources{
+					BaseImageConfig: build.BaseImageConfig{
+						Default: "alpine:3.19",
+					},
+					ToolURLs: map[build.ToolType]string{
+						build.TimewarpTool: "https://example.com/timewarp",
+					},
+				},
+			},
+			expected: &DockerRunPlan{
+				Image:      "alpine:3.19",
+				WorkingDir: "/workspace",
+				OutputPath: "/out/rebuild",
+				Setup: textwrap.Dedent(`
+			apk add curl
+			curl https://example.com/timewarp > /timewarp
+			chmod +x /timewarp
+			apk update
+			apk add`[1:]),
+				Source: textwrap.Dedent(`
+			mkdir -p /src && cd /src
+			echo source`[1:]),
+				Build: textwrap.Dedent(`
+			cd /src
 			npm pack
 			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
 			},
@@ -144,12 +200,10 @@ func TestDockerRunPlanner(t *testing.T) {
 			expectedErr: "failed to generate rebuild instructions",
 		},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			planner := NewDockerRunPlanner()
 			plan, err := planner.GeneratePlan(context.Background(), tc.input, tc.opts)
-
 			if tc.expectedErr != "" {
 				if err == nil {
 					t.Fatalf("GeneratePlan() expected error, but got none")
@@ -159,7 +213,6 @@ func TestDockerRunPlanner(t *testing.T) {
 				}
 				return
 			}
-
 			if err != nil {
 				t.Fatalf("GeneratePlan() failed: %v", err)
 			}
@@ -167,5 +220,21 @@ func TestDockerRunPlanner(t *testing.T) {
 				t.Errorf("GeneratePlan() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestDockerRunPlanPhases(t *testing.T) {
+	plan := &DockerRunPlan{Setup: "s1", Source: "s2", Deps: "s3", Build: "s4"}
+	want := []Phase{{"setup", "s1"}, {"source", "s2"}, {"deps", "s3"}, {"build", "s4"}}
+	if diff := cmp.Diff(want, plan.Phases()); diff != "" {
+		t.Errorf("Phases() mismatch (-want +got):\n%s", diff)
+	}
+	plan.Deps = ""
+	want = []Phase{{"setup", "s1"}, {"source", "s2"}, {"build", "s4"}}
+	if diff := cmp.Diff(want, plan.Phases()); diff != "" {
+		t.Errorf("Phases() without deps mismatch (-want +got):\n%s", diff)
+	}
+	if got, want := plan.CombinedScript(), "set -eux\ns1\ns2\ns4"; got != want {
+		t.Errorf("CombinedScript() = %q, want %q", got, want)
 	}
 }

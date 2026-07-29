@@ -266,7 +266,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "generating plan")
 		}
-		buildScript = plan.Script
+		buildScript = plan.CombinedScript()
 	}
 	switch cfg.Format {
 	case "", "strategy", "strategy-or-status":
