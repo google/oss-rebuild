@@ -54,14 +54,20 @@ var dockerBuildDockerfileTpl = template.Must(
 			EOF
 			RUN sed 's/^ //' <<'EOF' | sh
 			 set -eux
+			 mkdir -p /src && cd /src
+			 {{.Instructions.Source| indent}}
+			EOF
+			{{- if .Instructions.Deps}}
+			RUN sed 's/^ //' <<'EOF' | sh
+			 set -eux
 			{{- if .UseTimewarp}}
 			 ./timewarp -port 8080 &
 			 while ! nc -z localhost 8080;do sleep 1;done
 			{{- end}}
-			 mkdir -p /src && cd /src
-			 {{.Instructions.Source| indent}}
+			 cd /src
 			 {{.Instructions.Deps | indent}}
 			EOF
+			{{- end}}
 			RUN sed 's/^ //' <<'EOF' >/build
 			 set -eux
 			 {{.Instructions.Build | indent}}

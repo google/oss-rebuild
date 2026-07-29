@@ -269,18 +269,22 @@ var gcbDockerfileTpl = template.Must(
 			EOF
 			RUN sed 's/^ //' <<'EOF' | sh
 			 set -eux
-			{{- if .UseTimewarp}}
-			 ./timewarp -port 8080 &
-			 while ! nc -z localhost 8080;do sleep 1;done
-			{{- end}}
 			 mkdir /src && cd /src
 			 {{- if .Instructions.Source}}
 			 {{.Instructions.Source | indent}}
 			 {{- end}}
-			 {{- if .Instructions.Deps}}
-			 {{.Instructions.Deps | indent}}
-			 {{- end}}
 			EOF
+			{{- if .Instructions.Deps}}
+			RUN sed 's/^ //' <<'EOF' | sh
+			 set -eux
+			{{- if .UseTimewarp}}
+			 ./timewarp -port 8080 &
+			 while ! nc -z localhost 8080;do sleep 1;done
+			{{- end}}
+			 cd /src
+			 {{.Instructions.Deps | indent}}
+			EOF
+			{{- end}}
 			RUN sed 's/^ //' <<'EOF' >/build
 			 set -eux
 			 {{.Instructions.Build | indent}}
