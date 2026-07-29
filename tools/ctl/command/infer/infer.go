@@ -20,6 +20,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -243,7 +244,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	resources := build.Resources{
 		ToolURLs: map[build.ToolType]string{
 			// Ex: https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20251211001310-499b5fb97512/timewarp
-			build.TimewarpTool: fmt.Sprintf("https://storage.googleapis.com/%s/%s/timewarp", cfg.BootstrapBucket, cfg.BootstrapVersion),
+			build.TimewarpTool: gcsx.HTTPURL(cfg.BootstrapBucket, cfg.BootstrapVersion+"/timewarp"),
 		},
 		BaseImageConfig: build.DefaultBaseImageConfig(),
 	}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"google.golang.org/api/iterator"
 )
 
@@ -144,15 +145,11 @@ func (f *gcsFileInfo) Info() (fs.FileInfo, error) {
 }
 
 func parseGCSPath(fpath string) (bucket, object string, err error) {
-	if !strings.HasPrefix(fpath, "gs://") {
+	bucket, object, err = gcsx.ParseURL(fpath)
+	if err != nil || object == "" {
 		return "", "", fmt.Errorf("invalid GCS path: %s", fpath)
 	}
-	fpath = strings.TrimPrefix(fpath, "gs://")
-	parts := strings.SplitN(fpath, "/", 2)
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid GCS path: %s", fpath)
-	}
-	return parts[0], parts[1], nil
+	return bucket, object, nil
 }
 
 func readFromGCS(ctx context.Context, fpath string) (*BufferedReadCloser, error) {

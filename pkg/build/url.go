@@ -4,24 +4,18 @@
 package build
 
 import (
-	"fmt"
-	"net/url"
 	"strings"
+
+	"github.com/google/oss-rebuild/internal/gcsx"
 )
 
 // gsToHTTP converts a gs:// URL to an HTTP URL
 func gsToHTTP(gsURL string) (string, error) {
-	if !strings.HasPrefix(gsURL, "gs://") {
-		return "", fmt.Errorf("not a gs:// URL: %s", gsURL)
-	}
-	u, err := url.Parse(gsURL)
+	bucket, object, err := gcsx.ParseURL(gsURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid gs:// URL: %w", err)
+		return "", err
 	}
-	bucket := u.Host
-	object := strings.TrimPrefix(u.Path, "/")
-	httpURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", bucket, object)
-	return httpURL, nil
+	return gcsx.HTTPURL(bucket, object), nil
 }
 
 // NeedsAuth determines if a URL requires authentication based on configured prefixes

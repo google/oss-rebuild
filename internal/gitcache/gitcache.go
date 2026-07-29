@@ -50,6 +50,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/pkg/errors"
 )
@@ -86,8 +87,7 @@ func NewServer(ctx context.Context, cacheStr string) (*Server, error) {
 // newBackend creates a cacheBackend from the given cache location string.
 func newBackend(ctx context.Context, cacheStr string) (cacheBackend, error) {
 	if strings.HasPrefix(cacheStr, "gs://") {
-		bucketName := strings.TrimPrefix(cacheStr, "gs://")
-		bucketName = strings.TrimSuffix(bucketName, "/")
+		bucketName, _, _ := gcsx.ParseURL(cacheStr)
 		client, err := storage.NewClient(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating GCS client")
