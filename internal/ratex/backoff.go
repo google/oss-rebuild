@@ -15,6 +15,7 @@ type BackoffLimiter struct {
 	currentPeriod time.Duration
 	minimum       time.Duration
 	ch            chan struct{}
+	done          chan struct{}
 }
 
 func NewBackoffLimiter(minimum time.Duration) *BackoffLimiter {
@@ -22,22 +23,41 @@ func NewBackoffLimiter(minimum time.Duration) *BackoffLimiter {
 		currentPeriod: minimum,
 		minimum:       minimum,
 		ch:            make(chan struct{}),
+		done:          make(chan struct{}),
 	}
 	go func() {
 		for {
-			l.tick()
+			select {
+			case <-l.done:
+				return
+			default:
+				l.tick()
+			}
 		}
 	}()
 	return l
+}
+
+func (l *BackoffLimiter) Close() {
+	close(l.done)
 }
 
 func (l *BackoffLimiter) tick() {
 	l.mu.Lock()
 	duration := l.currentPeriod
 	l.mu.Unlock()
-	// If we want the in-flight sleep period to be interrupted, we can implement this with a time.AfterFunc(), and cancel the in-flight timer when the period is updated.
-	time.Sleep(duration)
-	l.ch <- struct{}{}
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-l.done:
+		return
+	case <-timer.C:
+		select {
+		case <-l.done:
+			return
+		case l.ch <- struct{}{}:
+		}
+	}
 }
 
 // Wait blocks until the limiter permits another event to happen.
