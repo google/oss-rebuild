@@ -226,6 +226,41 @@ func TestBuildRecordTimingsRetainsContainerForObservation(t *testing.T) {
 	}
 }
 
+func TestBuildFailedRunStillObserves(t *testing.T) {
+	timedOp := func(id string) *longrunning.Operation[schema.ScratchExecResult] {
+		op := completedOp(id, 0)
+		op.Result.StartedAt = time.Unix(1700000000, 0)
+		op.Result.FinishedAt = op.Result.StartedAt.Add(time.Minute)
+		return op
+	}
+	f := &fakeStubs{creates: []createFn{
+		respond(completedOp("prepare", 0), nil),
+		respond(timedOp("image-build"), nil),
+		respond(completedOp("container-run", 3), nil),
+		// The history op carries no OutURI so extraction yields nothing.
+		// Dispatching observation at all on a failed run is the property
+		// under test.
+		respond(completedOp("history", 0), nil),
+		respond(completedOp("cleanup", 0), nil),
+	}}
+	opts := testOptions()
+	opts.RecordTimings = true
+	result := awaitBuild(t, testBuildExecutor(t, f), opts)
+	var exitErr *ExitError
+	if !errors.As(result.Error, &exitErr) || exitErr.Phase != "container run" {
+		t.Fatalf("Result.Error = %v, want ExitError in container run", result.Error)
+	}
+	if result.Timings != nil {
+		t.Errorf("Expected nil timings without history output, got %+v", result.Timings)
+	}
+	if len(f.createReqs) != 5 {
+		t.Fatalf("got %d exec creates, want 5 (prepare, image build, run, history, cleanup)", len(f.createReqs))
+	}
+	if history, want := f.createReqs[3].Cmd[:2], []string{"docker", "history"}; !slices.Equal(history, want) {
+		t.Errorf("post-run cmd = %v, want docker history argv", f.createReqs[3].Cmd)
+	}
+}
+
 func TestBuildRetainFlagsSkipRemoval(t *testing.T) {
 	f := &fakeStubs{creates: []createFn{
 		respond(completedOp("prepare", 0), nil),

@@ -6,6 +6,7 @@ package gcb
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1073,6 +1074,12 @@ func TestGCBPlannerLayers(t *testing.T) {
 			if l.Setup != 0 || l.Source != 1 || l.Deps != 2 {
 				t.Errorf("offsets = (%d, %d, %d), want (0, 1, 2)", l.Setup, l.Source, l.Deps)
 			}
+			if want := fmt.Sprintf("--name=container img || exit %d", runFailureExitCode); !strings.Contains(plan.Steps[0].Script, want) {
+				t.Errorf("main script missing run sentinel %q", want)
+			}
+			if got := plan.Steps[0].AllowExitCodes; len(got) != 1 || got[0] != runFailureExitCode {
+				t.Errorf("main step AllowExitCodes = %v, want [%d]", got, runFailureExitCode)
+			}
 		})
 	}
 	t.Run("EmptyDeps", func(t *testing.T) {
@@ -1113,6 +1120,12 @@ func TestGCBPlannerLayers(t *testing.T) {
 		if strings.Contains(script, "set -e") {
 			t.Error("timing step must not exit on error")
 		}
+		extract := slices.IndexFunc(plan.Steps, func(s *cloudbuild.BuildStep) bool {
+			return len(s.Args) > 0 && s.Args[0] == "cp"
+		})
+		if extract < 0 || extract < plan.timingStep() {
+			t.Errorf("extract step at %d, timing step at %d, want timing before extract so a sentinel-failed run is observed", extract, plan.timingStep())
+		}
 	})
 	t.Run("NoTimingStepByDefault", func(t *testing.T) {
 		plan, err := planner.GeneratePlan(ctx, input, baseOpts)
@@ -1129,6 +1142,12 @@ func TestGCBPlannerLayers(t *testing.T) {
 			if strings.Contains(step.Script, "docker history") {
 				t.Error("timing step present without RecordTimings")
 			}
+			if step.AllowExitCodes != nil {
+				t.Errorf("AllowExitCodes = %v without RecordTimings, want none", step.AllowExitCodes)
+			}
+		}
+		if strings.Contains(plan.Steps[0].Script, "|| exit") {
+			t.Error("run sentinel present without RecordTimings")
 		}
 	})
 }

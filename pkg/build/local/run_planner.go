@@ -105,9 +105,9 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 		TimewarpURL:    timewarpURL,
 		TimewarpAuth:   timewarpAuth,
 	}
-	phase := func(name string) (string, error) {
+	phase := func(name rebuild.BuildPhase) (string, error) {
 		var buf strings.Builder
-		if err := dockerRunPhaseTpls.ExecuteTemplate(&buf, name, args); err != nil {
+		if err := dockerRunPhaseTpls.ExecuteTemplate(&buf, string(name), args); err != nil {
 			return "", errors.Wrapf(err, "executing %s phase template", name)
 		}
 		// Conditional first lines leave a leading newline in the render.
@@ -120,20 +120,20 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 		RequiresAuth: len(opts.Resources.ToolAuthRequired) > 0,
 		Privileged:   instructions.Requires.Privileged,
 	}
-	if plan.Setup, err = phase("setup"); err != nil {
+	if plan.Setup, err = phase(rebuild.PhaseSetup); err != nil {
 		return nil, err
 	}
-	if plan.Source, err = phase("source"); err != nil {
+	if plan.Source, err = phase(rebuild.PhaseSource); err != nil {
 		return nil, err
 	}
 	// No deps instructions means no deps phase. Timewarp then never starts,
 	// matching the docker build variants' conditional deps layer.
 	if instructions.Deps != "" {
-		if plan.Deps, err = phase("deps"); err != nil {
+		if plan.Deps, err = phase(rebuild.PhaseDeps); err != nil {
 			return nil, err
 		}
 	}
-	if plan.Build, err = phase("build"); err != nil {
+	if plan.Build, err = phase(rebuild.PhaseBuild); err != nil {
 		return nil, err
 	}
 	return plan, nil

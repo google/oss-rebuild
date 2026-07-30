@@ -190,6 +190,8 @@ func TestContainerSpan(t *testing.T) {
 	}
 }
 
+func d(v time.Duration) *time.Duration { return &v }
+
 func TestValidated(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -198,21 +200,52 @@ func TestValidated(t *testing.T) {
 	}{
 		{
 			name: "Complete",
-			in:   rebuild.BuildTimings{Setup: 30 * time.Second, Source: 45 * time.Second, Deps: 45 * time.Second, Build: 60 * time.Second},
-			want: &rebuild.BuildTimings{Setup: 30 * time.Second, Source: 45 * time.Second, Deps: 45 * time.Second, Build: 60 * time.Second},
+			in:   rebuild.BuildTimings{Setup: d(30 * time.Second), Source: d(45 * time.Second), Deps: d(45 * time.Second), Build: d(60 * time.Second)},
+			want: &rebuild.BuildTimings{Setup: d(30 * time.Second), Source: d(45 * time.Second), Deps: d(45 * time.Second), Build: d(60 * time.Second)},
 		},
 		{
-			name: "DepsLegitimatelyZero",
-			in:   rebuild.BuildTimings{Setup: 30 * time.Second, Source: 90 * time.Second, Build: 60 * time.Second},
-			want: &rebuild.BuildTimings{Setup: 30 * time.Second, Source: 90 * time.Second, Build: 60 * time.Second},
+			name: "DepsPresentZeroMeansNoDepsPhase",
+			in:   rebuild.BuildTimings{Setup: d(30 * time.Second), Source: d(90 * time.Second), Deps: d(0), Build: d(60 * time.Second)},
+			want: &rebuild.BuildTimings{Setup: d(30 * time.Second), Source: d(90 * time.Second), Deps: d(0), Build: d(60 * time.Second)},
 		},
 		{
-			name: "NilWithoutBuild",
-			in:   rebuild.BuildTimings{Setup: 30 * time.Second, Source: 90 * time.Second},
+			name: "CleanHoleTolerated",
+			in:   rebuild.BuildTimings{Setup: d(30 * time.Second), Build: d(60 * time.Second)},
+			want: &rebuild.BuildTimings{Setup: d(30 * time.Second), Build: d(60 * time.Second)},
+		},
+		{
+			name: "FailingSpanWithMeasuredPrefix",
+			in:   rebuild.BuildTimings{Setup: d(30 * time.Second), Source: d(45 * time.Second), Deps: d(5 * time.Second), FailedIn: rebuild.PhaseDeps},
+			want: &rebuild.BuildTimings{Setup: d(30 * time.Second), Source: d(45 * time.Second), Deps: d(5 * time.Second), FailedIn: rebuild.PhaseDeps},
+		},
+		{
+			name: "FailingPhaseUnmeasured",
+			in:   rebuild.BuildTimings{Setup: d(30 * time.Second), Source: d(45 * time.Second), FailedIn: rebuild.PhaseDeps},
+			want: &rebuild.BuildTimings{Setup: d(30 * time.Second), Source: d(45 * time.Second), FailedIn: rebuild.PhaseDeps},
+		},
+		{
+			name: "NilOnEmpty",
+			in:   rebuild.BuildTimings{},
 		},
 		{
 			name: "NilOnNegativePhase",
-			in:   rebuild.BuildTimings{Setup: 30 * time.Second, Source: -time.Second, Build: 60 * time.Second},
+			in:   rebuild.BuildTimings{Setup: d(30 * time.Second), Source: d(-time.Second), Build: d(60 * time.Second)},
+		},
+		{
+			name: "NilOnPresentZeroBuild",
+			in:   rebuild.BuildTimings{Setup: d(30 * time.Second), Build: d(0)},
+		},
+		{
+			name: "NilOnSpanAfterFailure",
+			in:   rebuild.BuildTimings{Setup: d(30 * time.Second), Build: d(60 * time.Second), FailedIn: rebuild.PhaseSource},
+		},
+		{
+			name: "NilOnUnknownFailedIn",
+			in:   rebuild.BuildTimings{Setup: d(30 * time.Second), FailedIn: "bogus"},
+		},
+		{
+			name: "NilOnMarkerAlone",
+			in:   rebuild.BuildTimings{FailedIn: rebuild.PhaseBuild},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -149,15 +149,15 @@ func (e *DockerBuildExecutor) runBuild(ctx context.Context, handle *scratchHandl
 		buildErr = phaseOutcome("container run", op, err)
 		// Extract timings before cleanup discards the image history and
 		// container state clocks.
-		if buildErr == nil && recordTimings {
-			timings = e.extractTimings(ctx, container, imageTag, plan, buildStart)
+		if recordTimings {
+			timings = e.extractTimings(ctx, container, imageTag, plan, buildStart, buildErr != nil)
 		}
 		e.cleanupBuild(ctx, container, imageTag, autoRemove)
 	}
 	e.uploadDebugLogs(ctx, handle.id, phaseOps, t, opts.Resources.AssetStore)
 	e.uploadDockerfile(ctx, handle.id, plan, t, opts.Resources.AssetStore)
 	if buildErr != nil {
-		return nil, buildErr
+		return timings, buildErr
 	}
 	// Retrieve and upload the artifact. Unlike the local executor, a
 	// missing artifact or failed upload fails the build.
@@ -170,9 +170,12 @@ func (e *DockerBuildExecutor) runBuild(ctx context.Context, handle *scratchHandl
 // extractTimings assembles phase timings from the image history and the
 // retained container's state clocks, read off the VM's docker daemon.
 // buildStart is zero under blind finalization: the record is then
-// incomplete and no timings are reported.
+// incomplete and no timings are reported. A failed run yields a marked
+// record: the image phases completed (the image exists), and an unusable
+// container span (a still-running or unclocked container) leaves Build
+// unmeasured without discarding them.
 // NOTE: Extraction failures are logged, never surfaced as build errors.
-func (e *DockerBuildExecutor) extractTimings(ctx context.Context, container, imageTag string, plan *local.DockerBuildPlan, buildStart time.Time) *rebuild.BuildTimings {
+func (e *DockerBuildExecutor) extractTimings(ctx context.Context, container, imageTag string, plan *local.DockerBuildPlan, buildStart time.Time, runFailed bool) *rebuild.BuildTimings {
 	if buildStart.IsZero() {
 		log.Printf("Build %s timing skipped: no worker clock for the image build", container)
 		return nil
@@ -192,17 +195,21 @@ func (e *DockerBuildExecutor) extractTimings(ctx context.Context, container, ima
 		log.Printf("Build %s timing extraction refused: %v", container, err)
 		return nil
 	}
+	in := rebuild.BuildTimings{Setup: &setup, Source: &source, Deps: &deps}
+	if runFailed {
+		in.FailedIn = rebuild.PhaseBuild
+	}
 	span, err := e.utilityExecOutput(ctx, []string{"docker", "inspect", container, "-f", "{{.State.StartedAt}} {{.State.FinishedAt}}"}, "timing inspect")
 	if err != nil {
 		log.Printf("Build %s: %v", container, err)
-		return nil
-	}
-	buildDur, err := timing.ContainerSpan(span)
-	if err != nil {
+	} else if buildDur, err := timing.ContainerSpan(span); err != nil {
 		log.Printf("Build %s timing inspect unparseable: %v", container, err)
-		return nil
+	} else if buildDur <= 0 {
+		log.Printf("Build %s container span non-positive: %v", container, buildDur)
+	} else {
+		in.Build = &buildDur
 	}
-	return timing.Validated(rebuild.BuildTimings{Setup: setup, Source: source, Deps: deps, Build: buildDur})
+	return timing.Validated(in)
 }
 
 // cleanupBuild removes the build's container and image unless retention or
