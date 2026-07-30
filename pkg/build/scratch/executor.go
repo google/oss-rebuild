@@ -19,8 +19,6 @@ import (
 	"github.com/google/oss-rebuild/internal/bufiox"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
-	"github.com/google/oss-rebuild/pkg/build/local"
-	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -58,8 +56,9 @@ var ErrNoArtifact = errors.New("build produced no artifact at the output path")
 // with errors.As.
 type ExitError struct {
 	Code int
-	// Phase is the build phase that exited ("setup", "source", "deps",
-	// "build").
+	// Phase is the build phase that exited: a DockerRunPlan phase name
+	// ("setup", "source", "deps", "build") or a docker build stage
+	// ("image build", "container run").
 	Phase string
 }
 
@@ -71,13 +70,13 @@ func (e *ExitError) Error() string {
 // since the ID is used as a container name and staging directory component.
 var buildIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 
-// ExecutorConfig configures a scratch Executor.
+// ExecutorConfig configures the variant-independent core of a scratch
+// executor. The variant configs embed it.
 type ExecutorConfig struct {
 	ScratchID        string                                // Scratch VM used, allocated and torn down by the session owner
 	Stubs            Stubs                                 // Agent-api scratch exec endpoints
 	GCSClient        *gcs.Client                           // Reads exec output objects
 	WorkDir          string                                // Abspath to the writable VM directory, defaults to /home/builder
-	Planner          build.Planner[*local.DockerRunPlan]   // Defaults to local.NewDockerRunPlanner()
 	MaxParallel      int                                   // Max concurrent builds, defaults to 1
 	OutputBufferSize int                                   // Buffer size for the output pipe, defaults to 512KB
 	PollInterval     time.Duration                         // Steady-state gap between exec op polls
@@ -88,20 +87,20 @@ type ExecutorConfig struct {
 	MaxArtifactBytes int64                                 // Caps artifact retrieval, defaults to 256MiB
 }
 
-// Executor implements build.Executor on a scratch VM via the scratch exec
-// API. It follows the same handle/lifecycle conventions as the local and GCB
-// executors.
+// executor is the variant-independent core of the scratch executors: build
+// lifecycle scaffolding plus the exec, output, and asset plumbing shared by
+// the docker run and docker build compositions.
 //
-// NOTE: On cancellation, there is no worker kill endpoint yet, so cancelling a
-// build (handle cancel, Close) stops driving it client-side while the remote
-// command runs on until its worker-enforced timeout (build.CancelDetached
-// semantics). Every dispatched exec therefore carries a nonzero timeout.
-type Executor struct {
+// NOTE: On cancellation, there is no worker kill endpoint yet, so cancelling
+// a build (handle cancel, Close) stops driving it client-side while the
+// remote command runs on until its worker-enforced timeout
+// (build.CancelDetached semantics). Every dispatched exec therefore carries
+// a nonzero timeout.
+type executor struct {
 	scratchID        string
 	stubs            Stubs
 	gcsClient        *gcs.Client
 	workDir          string
-	planner          build.Planner[*local.DockerRunPlan]
 	maxParallel      int
 	semaphore        chan struct{}
 	outputBufferSize int
@@ -114,10 +113,8 @@ type Executor struct {
 	activeBuilds     syncx.Map[string, *scratchHandle]
 }
 
-var _ build.Executor = (*Executor)(nil)
-
-// NewExecutor creates a scratch executor from config.
-func NewExecutor(config ExecutorConfig) (*Executor, error) {
+// newExecutor creates the shared executor core from config.
+func newExecutor(config ExecutorConfig) (*executor, error) {
 	if config.ScratchID == "" {
 		return nil, errors.New("ScratchID is required")
 	}
@@ -127,21 +124,16 @@ func NewExecutor(config ExecutorConfig) (*Executor, error) {
 	if config.GCSClient == nil {
 		return nil, errors.New("GCSClient is required")
 	}
-	planner := config.Planner
-	if planner == nil {
-		planner = local.NewDockerRunPlanner()
-	}
 	workDir := cmp.Or(config.WorkDir, defaultWorkDir)
 	if !path.IsAbs(workDir) {
 		return nil, errors.Errorf("WorkDir must be absolute, got %q", workDir)
 	}
 	maxParallel := max(config.MaxParallel, 1)
-	return &Executor{
+	return &executor{
 		scratchID:        config.ScratchID,
 		stubs:            config.Stubs,
 		gcsClient:        config.GCSClient,
 		workDir:          workDir,
-		planner:          planner,
 		maxParallel:      maxParallel,
 		semaphore:        make(chan struct{}, maxParallel),
 		outputBufferSize: cmp.Or(config.OutputBufferSize, defaultOutputBufferSize),
@@ -155,8 +147,10 @@ func NewExecutor(config ExecutorConfig) (*Executor, error) {
 	}, nil
 }
 
-// Start implements build.Executor.
-func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Options) (build.Handle, error) {
+// startBuild validates opts, registers a handle, and launches run on the
+// build goroutine. run receives the detached build context and the effective
+// wall-clock budget.
+func (e *executor) startBuild(opts build.Options, run func(ctx context.Context, handle *scratchHandle, timeout time.Duration) (*rebuild.BuildTimings, error)) (build.Handle, error) {
 	// Container image assets would round-trip hundreds of MB through the
 	// exec output channel. Reject rather than degrade.
 	if opts.SaveContainerImage {
@@ -172,22 +166,12 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 	if !buildIDPattern.MatchString(buildID) {
 		return nil, errors.Errorf("invalid build ID %q", buildID)
 	}
-	planOpts := build.PlanOptions{
-		UseTimewarp:       opts.UseTimewarp,
-		UseNetworkProxy:   opts.UseNetworkProxy,
-		UseSyscallMonitor: opts.UseSyscallMonitor,
-		Resources:         opts.Resources,
-	}
-	plan, err := e.planner.GeneratePlan(ctx, input, planOpts)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to generate execution plan")
-	}
 	timeout := opts.Timeout
 	if timeout <= 0 {
 		timeout = e.defaultTimeout
 	}
-	// The build context is detached from ctx (like other executors) and
-	// bounded by the exec poll loop's internal backstop.
+	// The build context is detached from the caller's (like other executors)
+	// and bounded by the exec poll loop's internal backstop.
 	buildCtx, cancel := context.WithCancel(context.Background())
 	pipe := bufiox.NewBufferedPipe(bufiox.NewLineBuffer(e.outputBufferSize))
 	handle := &scratchHandle{
@@ -198,12 +182,12 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 		status:     build.BuildStateStarting,
 	}
 	e.activeBuilds.Store(buildID, handle)
-	go e.executeBuild(buildCtx, handle, plan, input.Target, opts, timeout)
+	go e.executeBuild(buildCtx, handle, timeout, run)
 	return handle, nil
 }
 
 // Status implements build.Executor.
-func (e *Executor) Status() build.ExecutorStatus {
+func (e *executor) Status() build.ExecutorStatus {
 	return build.ExecutorStatus{
 		InProgress: len(e.semaphore),
 		Capacity:   e.maxParallel,
@@ -212,7 +196,7 @@ func (e *Executor) Status() build.ExecutorStatus {
 }
 
 // Close implements build.Executor.
-func (e *Executor) Close(ctx context.Context) error {
+func (e *executor) Close(ctx context.Context) error {
 	for handle := range e.activeBuilds.Values() {
 		handle.Cancel()
 	}
@@ -231,10 +215,10 @@ func (e *Executor) Close(ctx context.Context) error {
 	}
 }
 
-// executeBuild acquires a build slot, runs runBuild, and finalizes the
-// handle exactly once: Cancelled when a failure coincides with build context
+// executeBuild acquires a build slot, runs run, and finalizes the handle
+// exactly once: Cancelled when a failure coincides with build context
 // cancellation, Completed otherwise.
-func (e *Executor) executeBuild(ctx context.Context, handle *scratchHandle, plan *local.DockerRunPlan, t rebuild.Target, opts build.Options, timeout time.Duration) {
+func (e *executor) executeBuild(ctx context.Context, handle *scratchHandle, timeout time.Duration, run func(context.Context, *scratchHandle, time.Duration) (*rebuild.BuildTimings, error)) {
 	defer e.activeBuilds.Delete(handle.id)
 	defer handle.output.Close()
 	select {
@@ -245,7 +229,7 @@ func (e *Executor) executeBuild(ctx context.Context, handle *scratchHandle, plan
 		handle.setResult(build.Result{Error: errors.Wrap(ctx.Err(), "enqueuing build")})
 		return
 	}
-	timings, err := e.runBuild(ctx, handle, plan, t, opts, timeout)
+	timings, err := run(ctx, handle, timeout)
 	if err != nil && ctx.Err() != nil {
 		handle.updateStatus(build.BuildStateCancelled)
 	} else {
@@ -254,105 +238,47 @@ func (e *Executor) executeBuild(ctx context.Context, handle *scratchHandle, plan
 	handle.setResult(build.Result{Error: err, Timings: timings})
 }
 
-// runBuild drives one build on the scratch VM. The container is stopped and,
-// unless RetainContainer is set, removed after the phases. The staging
-// directory is always retained for post-mortem inspection. Timings are
-// non-nil whenever every phase completed measured, even if artifact
-// retrieval subsequently fails.
-func (e *Executor) runBuild(ctx context.Context, handle *scratchHandle, plan *local.DockerRunPlan, t rebuild.Target, opts build.Options, timeout time.Duration) (*rebuild.BuildTimings, error) {
-	dir := path.Join(e.workDir, buildsSubdir, handle.id)
-	container := "rb-" + handle.id
-	prepareScript := strings.Join([]string{
+// prepareBuild creates the build's staging directory and sweeps residue that
+// earlier builds failed to reclaim (crashed executors, missed stops), plus
+// any variant-specific sweeps.
+func (e *executor) prepareBuild(ctx context.Context, dir string, sweeps ...string) error {
+	script := append([]string{
 		"set -eu",
 		fmt.Sprintf("mkdir -p %q", dir+"/out"),
 		"docker ps -aq --filter name=^rb- | xargs -r docker rm -f",
-	}, "\n")
-	if err := e.utilityExec(ctx, []string{"/bin/sh", "-c", prepareScript}, nil, "preparing build"); err != nil {
-		return nil, err
+	}, sweeps...)
+	return e.utilityExec(ctx, []string{"/bin/sh", "-c", strings.Join(script, "\n")}, nil, "preparing build")
+}
+
+// phaseExec dispatches one build-phase exec carrying the phase's share of
+// the build's wall-clock budget, following output into the handle while it
+// polls. The dispatch-to-terminal wall time is charged against remaining.
+// The worker-enforced timeout is clamped to at least 1s: zero means
+// unbounded, and nothing could kill the command (see the cancellation
+// caveat on executor).
+func (e *executor) phaseExec(ctx context.Context, handle *scratchHandle, req schema.ScratchExecRequest, remaining *time.Duration) (*longrunning.Operation[schema.ScratchExecResult], error) {
+	var offset int64
+	follow := func(op *longrunning.Operation[schema.ScratchExecResult]) {
+		offset += e.copyNewOutput(ctx, op, offset, handle)
 	}
-	argOpts := local.RunArgsOpts{
-		ContainerName:   container,
-		OutputMountSrc:  dir + "/out",
-		Remove:          !e.retainContainer,
-		AllowPrivileged: e.allowPrivileged,
-	}
-	if plan.Privileged && !e.allowPrivileged {
-		log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
-	}
-	var env map[string]string
-	if plan.RequiresAuth {
-		if e.authHeader == nil {
-			return nil, errors.New("build plan requires auth but no auth header source is configured")
-		}
-		header, err := e.authHeader(ctx)
-		if err != nil {
-			return nil, errors.Wrap(err, "generating auth header")
-		}
-		env = map[string]string{"AUTH_HEADER": header}
-		argOpts.AuthMode = local.AuthEnvPassthrough
-	}
-	if err := e.utilityExec(ctx, append([]string{"docker"}, local.ComposeDockerStartArgs(plan, argOpts)...), env, "starting build container"); err != nil {
-		return nil, err
-	}
-	// The phases share one wall-clock budget. Each op's worker-enforced
-	// timeout is clamped to at least 1s: zero means unbounded, and nothing
-	// could kill the command (see the cancellation caveat).
-	handle.updateStatus(build.BuildStateRunning)
-	var phaseOps []*longrunning.Operation[schema.ScratchExecResult]
-	var buildErr error
-	elapsed := rebuild.BuildTimings{}
-	spans := map[string]*time.Duration{"setup": &elapsed.Setup, "source": &elapsed.Source, "deps": &elapsed.Deps, "build": &elapsed.Build}
-	measured := true
-	remaining := timeout
-	for _, ph := range plan.Phases() {
-		var offset int64
-		follow := func(op *longrunning.Operation[schema.ScratchExecResult]) {
-			offset += e.copyNewOutput(ctx, op, offset, handle)
-		}
-		execStart := time.Now()
-		op, err := exec(ctx, e.stubs, schema.ScratchExecRequest{
-			ScratchID:      e.scratchID,
-			Cmd:            append([]string{"docker"}, local.ComposeDockerExecArgs(container, ph)...),
-			TimeoutSeconds: max(1, int(remaining.Seconds())),
-		}, e.pollInterval, follow)
-		remaining -= time.Since(execStart)
-		if err == nil {
-			phaseOps = append(phaseOps, op)
-		}
-		if buildErr = phaseOutcome(ph.Name, op, err); buildErr != nil {
-			break
-		}
-		// Spans come from the VM worker's clock (StartedAt, FinishedAt) which
-		// excludes exec dispatch and poll lag. StartedAt is zero when timeout,
-		// partition occurs in which case no timings are reported.
-		if r := op.Result; r.StartedAt.IsZero() || r.FinishedAt.IsZero() {
-			measured = false
-		} else {
-			*spans[ph.Name] = r.FinishedAt.Sub(r.StartedAt)
-		}
-	}
-	e.stopContainer(ctx, container)
-	e.uploadDebugLogs(ctx, handle.id, phaseOps, t, opts.Resources.AssetStore)
-	if buildErr != nil {
-		return nil, buildErr
-	}
-	// A failed build leaves later phases unmeasured. Validated owns the
-	// all-or-nothing invariants.
-	var timings *rebuild.BuildTimings
-	if measured {
-		timings = timing.Validated(elapsed)
-	}
-	// Retrieve and upload the artifact. Unlike the local executor, a
-	// missing artifact or failed upload fails the build.
-	if opts.Resources.AssetStore != nil {
-		return timings, e.fetchAndUploadArtifact(ctx, dir, plan, t, opts.Resources.AssetStore)
-	}
-	return timings, nil
+	req.ScratchID = e.scratchID
+	req.TimeoutSeconds = max(1, int(remaining.Seconds()))
+	start := time.Now()
+	op, err := exec(ctx, e.stubs, req, e.pollInterval, follow)
+	*remaining -= time.Since(start)
+	return op, err
 }
 
 // utilityExec runs one short exec op, folding all failure channels into a
 // single error wrapped with what.
-func (e *Executor) utilityExec(ctx context.Context, cmd []string, env map[string]string, what string) error {
+func (e *executor) utilityExec(ctx context.Context, cmd []string, env map[string]string, what string) error {
+	_, err := e.utilityOp(ctx, cmd, env, what)
+	return err
+}
+
+// utilityOp dispatches one short exec op to a terminal state, folding all
+// failure channels into a single error wrapped with what.
+func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]string, what string) (*longrunning.Operation[schema.ScratchExecResult], error) {
 	op, err := Exec(ctx, e.stubs, schema.ScratchExecRequest{
 		ScratchID:      e.scratchID,
 		Cmd:            cmd,
@@ -360,15 +286,25 @@ func (e *Executor) utilityExec(ctx context.Context, cmd []string, env map[string
 		TimeoutSeconds: int(utilityTimeout.Seconds()),
 	}, e.pollInterval)
 	if err != nil {
-		return errors.Wrap(err, what)
+		return nil, errors.Wrap(err, what)
 	}
 	if op.Error != nil {
-		return errors.Wrap(op.Error, what)
+		return nil, errors.Wrap(op.Error, what)
 	}
 	if op.Result.ExitCode != 0 {
-		return errors.Errorf("%s failed with exit code %d", what, op.Result.ExitCode)
+		return nil, errors.Errorf("%s failed with exit code %d", what, op.Result.ExitCode)
 	}
-	return nil
+	return op, nil
+}
+
+// utilityExecOutput runs one short exec op and returns its merged output.
+func (e *executor) utilityExecOutput(ctx context.Context, cmd []string, what string) ([]byte, error) {
+	op, err := e.utilityOp(ctx, cmd, nil, what)
+	if err != nil {
+		return nil, err
+	}
+	out, err := ReadOutput(ctx, e.gcsClient, op, 0)
+	return out, errors.Wrap(err, what)
 }
 
 // phaseOutcome reduces one phase exec's outcome to an error. A nil op is
@@ -389,20 +325,9 @@ func phaseOutcome(name string, op *longrunning.Operation[schema.ScratchExecResul
 	return nil
 }
 
-// stopContainer halts the build container's idle init once the phases are
-// done, letting --rm reclaim it. Best effort under a fresh context so it
-// runs on cancellation. The next build's prepare sweep covers missed stops.
-func (e *Executor) stopContainer(ctx context.Context, container string) {
-	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), utilityTimeout)
-	defer cancel()
-	if err := e.utilityExec(sctx, []string{"docker", "stop", "-t", "0", container}, nil, "stopping build container"); err != nil {
-		log.Printf("build container %s: %v", container, err)
-	}
-}
-
 // uploadDebugLogs streams the concatenated phase outputs into the asset
 // store. Upload failures never fail the build.
-func (e *Executor) uploadDebugLogs(ctx context.Context, buildID string, phaseOps []*longrunning.Operation[schema.ScratchExecResult], t rebuild.Target, store rebuild.AssetStore) {
+func (e *executor) uploadDebugLogs(ctx context.Context, buildID string, phaseOps []*longrunning.Operation[schema.ScratchExecResult], t rebuild.Target, store rebuild.AssetStore) {
 	if store == nil {
 		return
 	}
@@ -429,7 +354,7 @@ func (e *Executor) uploadDebugLogs(ctx context.Context, buildID string, phaseOps
 // copyNewOutput copies bytes past offset from the op's output object into w,
 // returning the number of bytes copied. Best effort: errors are logged and
 // retried implicitly on the next poll (the output buffer is append-only).
-func (e *Executor) copyNewOutput(ctx context.Context, op *longrunning.Operation[schema.ScratchExecResult], offset int64, w io.Writer) int64 {
+func (e *executor) copyNewOutput(ctx context.Context, op *longrunning.Operation[schema.ScratchExecResult], offset int64, w io.Writer) int64 {
 	obj, err := outputObject(e.gcsClient, op)
 	if err != nil || obj == nil {
 		return 0
@@ -460,11 +385,11 @@ func (e *Executor) copyNewOutput(ctx context.Context, op *longrunning.Operation[
 
 // fetchAndUploadArtifact retrieves the built artifact from the VM by base64
 // over the exec output channel and streams it into the asset store.
-func (e *Executor) fetchAndUploadArtifact(ctx context.Context, dir string, plan *local.DockerRunPlan, t rebuild.Target, store rebuild.AssetStore) error {
+func (e *executor) fetchAndUploadArtifact(ctx context.Context, dir, outputPath string, t rebuild.Target, store rebuild.AssetStore) error {
 	// The build ctx may be spent. Retrieval gets its own bounded context.
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), utilityTimeout)
 	defer cancel()
-	artifactPath := path.Join(dir, "out", path.Base(plan.OutputPath))
+	artifactPath := path.Join(dir, "out", path.Base(outputPath))
 	script := strings.Join([]string{
 		"set -eu",
 		fmt.Sprintf("[ -f %q ] || exit %d", artifactPath, exitNoArtifact),
@@ -504,7 +429,7 @@ func (e *Executor) fetchAndUploadArtifact(ctx context.Context, dir string, plan 
 
 // outputReader opens the op's merged output object, yielding an empty reader
 // when no output was ever synced.
-func (e *Executor) outputReader(ctx context.Context, op *longrunning.Operation[schema.ScratchExecResult]) (io.ReadCloser, error) {
+func (e *executor) outputReader(ctx context.Context, op *longrunning.Operation[schema.ScratchExecResult]) (io.ReadCloser, error) {
 	obj, err := outputObject(e.gcsClient, op)
 	if err != nil {
 		return nil, err
@@ -523,7 +448,7 @@ func (e *Executor) outputReader(ctx context.Context, op *longrunning.Operation[s
 
 // uploadStream copies content into the asset store.
 // TODO: Copy GCS-to-GCS uploads server-side.
-func (e *Executor) uploadStream(ctx context.Context, store rebuild.AssetStore, asset rebuild.Asset, r io.Reader) error {
+func (e *executor) uploadStream(ctx context.Context, store rebuild.AssetStore, asset rebuild.Asset, r io.Reader) error {
 	w, err := store.Writer(ctx, asset)
 	if err != nil {
 		return errors.Wrap(err, "creating asset writer")

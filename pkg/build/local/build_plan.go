@@ -16,6 +16,8 @@ type DockerBuildPlan struct {
 	ContextDir string
 	// OutputPath specifies where artifacts should be copied from the container
 	OutputPath string
+	// RequiresAuth indicates whether the plan requires authentication
+	RequiresAuth bool
 	// Indicates whether to run the container in privileged mode
 	Privileged bool
 	// Layers declare the plan's phase boundaries for timing extraction
