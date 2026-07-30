@@ -86,7 +86,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-123:/out", "test-build-123", "--ulimit", "core=0"},
+					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-123:/out", "--ulimit", "core=0", "test-build-123"},
 				},
 				{
 					Name: "sh",
@@ -139,7 +139,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-nosave:/out", "test-build-nosave", "--ulimit", "core=0"},
+					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-nosave:/out", "--ulimit", "core=0", "test-build-nosave"},
 				},
 				{
 					Name: "docker",
@@ -234,7 +234,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 				{
 					Name:  "docker",
-					Args:  []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-run-fail:/out", "test-build-run-fail", "--ulimit", "core=0"},
+					Args:  []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-run-fail:/out", "--ulimit", "core=0", "test-build-run-fail"},
 					Error: errors.New("container exited with code 1"),
 				},
 				{
@@ -276,7 +276,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 				{
 					Name: "docker",
-					Args: []string{"run", "-v", "/tmp/oss-rebuild-test-build-retain-container:/out", "test-build-retain-container", "--ulimit", "core=0"},
+					Args: []string{"run", "-v", "/tmp/oss-rebuild-test-build-retain-container:/out", "--ulimit", "core=0", "test-build-retain-container"},
 				},
 				{
 					Name: "sh",
@@ -320,7 +320,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-context:/out", "test-build-context", "--ulimit", "core=0"},
+					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-context:/out", "--ulimit", "core=0", "test-build-context"},
 				},
 				{
 					Name: "docker",
@@ -361,7 +361,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-retain-image:/out", "test-build-retain-image", "--ulimit", "core=0"},
+					Args: []string{"run", "--rm", "-v", "/tmp/oss-rebuild-test-build-retain-image:/out", "--ulimit", "core=0", "test-build-retain-image"},
 				},
 				{
 					Name: "sh",
@@ -410,7 +410,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 				{
 					Name: "docker",
-					Args: []string{"run", "--name", "test-build-postbuild", "-v", "/tmp/oss-rebuild-test-build-postbuild:/out", "test-build-postbuild", "--ulimit", "core=0"},
+					Args: []string{"run", "--name", "test-build-postbuild", "-v", "/tmp/oss-rebuild-test-build-postbuild:/out", "--ulimit", "core=0", "test-build-postbuild"},
 				},
 				{
 					Name: "docker",
