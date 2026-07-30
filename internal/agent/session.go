@@ -47,6 +47,7 @@ type RunSessionReq struct {
 	Target           rebuild.Target
 	MaxIterations    int
 	InitialIteration *schema.AgentIteration
+	TaskMode         schema.AgentTaskMode // Selects the agent's task. Empty means AgentTaskModeDebug.
 }
 
 type RunSessionDeps struct {

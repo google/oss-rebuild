@@ -479,6 +479,15 @@ const (
 	AgentExecutionModeScratch AgentExecutionMode = "scratch"
 )
 
+// AgentTaskMode describes the task the agent session performs.
+type AgentTaskMode string
+
+const (
+	// AgentTaskModeDebug iteratively diagnoses and repairs rebuild failures
+	// starting from automated inference (the default).
+	AgentTaskModeDebug AgentTaskMode = "debug"
+)
+
 // Agent iteration status constants
 const (
 	AgentIterationStatusPending  = "PENDING"
@@ -496,6 +505,7 @@ type AgentCreateRequest struct {
 	Context       *AgentContext      `form:""`
 	ExecutionMode AgentExecutionMode `form:""` // Empty means AgentExecutionModeGCB
 	Headless      bool               `form:""` // Skip the hosted agent job launch: the agent binary runs externally
+	TaskMode      AgentTaskMode      `form:""` // Empty means AgentTaskModeDebug
 }
 
 var _ api.Input = AgentCreateRequest{}
@@ -508,6 +518,11 @@ func (r AgentCreateRequest) Validate() error {
 	case "", AgentExecutionModeGCB, AgentExecutionModeScratch:
 	default:
 		return errors.Errorf("invalid execution_mode %q", r.ExecutionMode)
+	}
+	switch r.TaskMode {
+	case "", AgentTaskModeDebug:
+	default:
+		return errors.Errorf("invalid task_mode %q", r.TaskMode)
 	}
 	return nil
 }
@@ -586,6 +601,7 @@ type AgentSession struct {
 	ExecutionName    string             `firestore:"execution_name,omitempty"`
 	ExecutionMode    AgentExecutionMode `firestore:"execution_mode,omitempty"` // Empty means GCB (sessions predating scratch support)
 	ScratchID        string             `firestore:"scratch_id,omitempty"`     // Scratch VM bound to the session (scratch execution mode only)
+	TaskMode         AgentTaskMode      `firestore:"task_mode,omitempty"`      // The task the session performs. Empty means debug.
 	Created          time.Time          `firestore:"created,omitempty"`
 	Updated          time.Time          `firestore:"updated,omitempty"`
 	StopReason       string             `firestore:"stop_reason,omitempty"`

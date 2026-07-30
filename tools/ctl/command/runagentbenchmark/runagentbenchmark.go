@@ -40,6 +40,7 @@ type Config struct {
 	AgentIterations int
 	BenchmarkFile   string
 	ExecutionMode   string
+	TaskMode        string
 }
 
 // Validate ensures the configuration is valid.
@@ -57,6 +58,11 @@ func (c Config) Validate() error {
 	case "", schema.AgentExecutionModeGCB, schema.AgentExecutionModeScratch:
 	default:
 		return errors.Errorf("invalid execution-mode %q", c.ExecutionMode)
+	}
+	switch schema.AgentTaskMode(c.TaskMode) {
+	case "", schema.AgentTaskModeDebug:
+	default:
+		return errors.Errorf("invalid task-mode %q", c.TaskMode)
 	}
 	return nil
 }
@@ -149,6 +155,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 				},
 				MaxIterations: cfg.AgentIterations,
 				ExecutionMode: schema.AgentExecutionMode(cfg.ExecutionMode),
+				TaskMode:      schema.AgentTaskMode(cfg.TaskMode),
 			}
 			if len(in.Artifacts) > 0 {
 				req.Target.Artifact = in.Artifacts[i]
@@ -213,7 +220,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-agent-bench --project <project> --api <URI> [--max-concurrency <concurrency>] [--agent-iterations <max iterations>] [--execution-mode <mode>] <benchmark.json>",
+		Use:   "run-agent-bench --project <project> --api <URI> [--max-concurrency <concurrency>] [--agent-iterations <max iterations>] [--execution-mode <mode>] [--task-mode <mode>] <benchmark.json>",
 		Short: "Run benchmark on the agent",
 		Args:  cobra.ExactArgs(1),
 		RunE: cli.RunE(
@@ -235,5 +242,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.IntVar(&cfg.MaxConcurrency, "max-concurrency", 90, "maximum number of inflight requests")
 	set.IntVar(&cfg.AgentIterations, "agent-iterations", 3, "maximum number of agent iterations before giving up")
 	set.StringVar(&cfg.ExecutionMode, "execution-mode", "", "where iteration builds execute: gcb (default) or scratch")
+	set.StringVar(&cfg.TaskMode, "task-mode", "", "agent task mode (default: debug)")
 	return set
 }

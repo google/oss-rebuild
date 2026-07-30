@@ -36,6 +36,7 @@ type Config struct {
 	AgentIterations int
 	ExecutionMode   string
 	Headless        bool
+	TaskMode        string
 }
 
 // Validate ensures the configuration is valid.
@@ -62,6 +63,11 @@ func (c Config) Validate() error {
 	case "", schema.AgentExecutionModeGCB, schema.AgentExecutionModeScratch:
 	default:
 		return errors.Errorf("invalid execution-mode %q", c.ExecutionMode)
+	}
+	switch schema.AgentTaskMode(c.TaskMode) {
+	case "", schema.AgentTaskModeDebug:
+	default:
+		return errors.Errorf("invalid task-mode %q", c.TaskMode)
 	}
 	return nil
 }
@@ -108,6 +114,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		MaxIterations: cfg.AgentIterations,
 		ExecutionMode: schema.AgentExecutionMode(cfg.ExecutionMode),
 		Headless:      cfg.Headless,
+		TaskMode:      schema.AgentTaskMode(cfg.TaskMode),
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "running attest")
@@ -147,7 +154,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>] [--execution-mode <mode>] [--headless]",
+		Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>] [--execution-mode <mode>] [--headless] [--task-mode <mode>]",
 		Short: "Run the agent on a single target",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -173,5 +180,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.IntVar(&cfg.AgentIterations, "agent-iterations", 3, "maximum number of agent iterations before giving up")
 	set.StringVar(&cfg.ExecutionMode, "execution-mode", "", "where iteration builds execute: gcb (default) or scratch")
 	set.BoolVar(&cfg.Headless, "headless", false, "create the session without launching the hosted agent job (the agent binary is run externally)")
+	set.StringVar(&cfg.TaskMode, "task-mode", "", "agent task mode (default: debug)")
 	return set
 }
