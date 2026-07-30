@@ -61,6 +61,8 @@ func testOptions() build.Options {
 	}
 }
 
+func durPtr(d time.Duration) *time.Duration { return &d }
+
 func testExecutorConfig(f *fakeStubs) ExecutorConfig {
 	return ExecutorConfig{
 		ScratchID:    "s1",

@@ -83,25 +83,46 @@ type Input struct {
 	Strategy Strategy
 }
 
-// BuildTimings describe how long each build phase took.
+// BuildPhase names one phase of the standard rebuild plan, in execution
+// order. Values match Phase.Name in the executors' plans.
+type BuildPhase string
+
+const (
+	PhaseSetup  BuildPhase = "setup"
+	PhaseSource BuildPhase = "source"
+	PhaseDeps   BuildPhase = "deps"
+	PhaseBuild  BuildPhase = "build"
+)
+
+// BuildTimings describe how long each build phase took. Records may be
+// partial: a nil phase carries no data and must never be read as zero. A
+// present phase is a measured span. A present zero Deps means the plan had
+// no deps phase, stamped only once the build provably progressed past the
+// deps slot (a clean record, or one that failed in the build phase), so
+// partial records never imply unreached progress.
 //
-// The record is all-or-nothing: producers emit one iff every build phase was
-// determined, so Deps of zero on a present record always means the plan had
-// no deps phase, never unknown. Records written by the pre-pkg/build pipeline
-// (removed in #949) carry coarser semantics: Source was host-side repo setup
-// and Build was the entire container execution, subsuming what Setup, Deps,
-// and Build now measure separately.
+// TODO: Records stored before this shape (the pre-#949 flat Timings and the
+// all-or-nothing BuildTimings) are assumed absent: they decode without
+// error but carry stray or missing phases. Rederive them from GCB build
+// logs if they are ever needed.
 type BuildTimings struct {
-	Setup  time.Duration
-	Source time.Duration
-	Deps   time.Duration // legitimately zero when the plan had no deps layer
-	Build  time.Duration
+	Setup  *time.Duration
+	Source *time.Duration
+	Deps   *time.Duration
+	Build  *time.Duration
+	// FailedIn names the phase the build failed in. Its span, when present,
+	// runs until termination: complete for a nonzero-exit script, a lower
+	// bound for a kill or timeout. Exclude it from clean-duration estimates.
+	// Phases after it are nil; phases strictly before it are clean spans.
+	// Empty FailedIn does not prove completeness: clocks can be lost on
+	// otherwise clean builds.
+	FailedIn BuildPhase
 }
 
 // Timings aggregate the independently recorded durations of a rebuild.
 type Timings struct {
 	Infer *time.Duration // nil when inference did not run
-	Build *BuildTimings  // nil unless every build phase was measured
+	Build *BuildTimings  // nil when no phase was measured; may be partial
 }
 
 // PrebuildConfig contains deployment-specific prebuild configuration

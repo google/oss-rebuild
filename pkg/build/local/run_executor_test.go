@@ -572,55 +572,120 @@ func TestDockerRunExecutorTimings(t *testing.T) {
 	if result.Timings == nil {
 		t.Fatal("Expected timings, got nil")
 	}
-	if result.Timings.Setup <= 0 || result.Timings.Source <= 0 || result.Timings.Build <= 0 {
+	if result.Timings.Setup == nil || *result.Timings.Setup <= 0 ||
+		result.Timings.Source == nil || *result.Timings.Source <= 0 ||
+		result.Timings.Build == nil || *result.Timings.Build <= 0 {
 		t.Errorf("Expected positive measured phases, got %+v", result.Timings)
 	}
-	if result.Timings.Deps != 0 {
-		t.Errorf("Expected zero deps duration for depsless plan, got %v", result.Timings.Deps)
+	if result.Timings.Deps == nil || *result.Timings.Deps != 0 {
+		t.Errorf("Expected present zero deps for depsless plan, got %v", result.Timings.Deps)
+	}
+	if result.Timings.FailedIn != "" {
+		t.Errorf("FailedIn = %q, want empty", result.Timings.FailedIn)
 	}
 }
 
-func TestDockerRunExecutorTimingsAbsentOnFailure(t *testing.T) {
-	cmdExecutor := NewMockCommandExecutor()
-	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
-		if len(args) > 0 && args[0] == "exec" && strings.Contains(args[len(args)-1], "false") {
-			return errors.New("exit status 1")
-		}
-		return nil
-	})
-	executor, err := NewDockerRunExecutor(DockerRunExecutorConfig{
-		Planner: &mockPlanner{
-			plan: &DockerRunPlan{
-				Image:      "alpine:3.19",
-				Setup:      "echo setup",
-				Source:     "echo source",
-				Build:      "false",
-				OutputPath: "/out/rebuild",
-			},
+func TestDockerRunExecutorTimingsOnFailure(t *testing.T) {
+	type presence struct{ setup, source, deps, build bool }
+	for _, tc := range []struct {
+		name       string
+		source     string
+		build      string
+		failStart  bool
+		wantNil    bool
+		wantFailed rebuild.BuildPhase
+		want       presence
+	}{
+		{
+			// The failing phase's span is captured; later phases stay
+			// unmeasured and the depsless zero is not stamped before the
+			// deps slot is provably passed.
+			name:       "FailAtSource",
+			source:     "false",
+			build:      "echo build",
+			wantFailed: rebuild.PhaseSource,
+			want:       presence{setup: true, source: true},
 		},
-		CommandExecutor: cmdExecutor,
-		MaxParallel:     1,
-		TempDirBase:     "/tmp",
-	})
-	if err != nil {
-		t.Fatalf("Failed to create executor: %v", err)
-	}
-	ctx := context.Background()
-	handle, err := executor.Start(ctx, rebuild.Input{
-		Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-pkg", Version: "1.0.0"},
-	}, build.Options{BuildID: "test-timings-fail"})
-	if err != nil {
-		t.Fatalf("Unexpected error from Start: %v", err)
-	}
-	result, _ := handle.Wait(ctx)
-	if result.Error == nil {
-		t.Fatal("Expected error, got success")
-	}
-	if !strings.Contains(result.Error.Error(), "build phase") {
-		t.Errorf("Expected error naming the failed phase, got: %v", result.Error)
-	}
-	if result.Timings != nil {
-		t.Errorf("Expected nil timings on failure, got %+v", result.Timings)
+		{
+			// A build-phase failure proves the depsless plan passed the deps
+			// slot, so the present zero is stamped.
+			name:       "FailAtBuild",
+			source:     "echo source",
+			build:      "false",
+			wantFailed: rebuild.PhaseBuild,
+			want:       presence{setup: true, source: true, deps: true, build: true},
+		},
+		{
+			name:      "ContainerStartFailure",
+			source:    "echo source",
+			build:     "echo build",
+			failStart: true,
+			wantNil:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmdExecutor := NewMockCommandExecutor()
+			// Nonzero spans require observable time between clock reads.
+			cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+				time.Sleep(time.Millisecond)
+				if tc.failStart && len(args) > 0 && args[0] == "run" {
+					return errors.New("start failed")
+				}
+				if len(args) > 0 && args[0] == "exec" && strings.Contains(args[len(args)-1], "false") {
+					return errors.New("exit status 1")
+				}
+				return nil
+			})
+			executor, err := NewDockerRunExecutor(DockerRunExecutorConfig{
+				Planner: &mockPlanner{
+					plan: &DockerRunPlan{
+						Image:      "alpine:3.19",
+						Setup:      "echo setup",
+						Source:     tc.source,
+						Build:      tc.build,
+						OutputPath: "/out/rebuild",
+					},
+				},
+				CommandExecutor: cmdExecutor,
+				MaxParallel:     1,
+				TempDirBase:     "/tmp",
+			})
+			if err != nil {
+				t.Fatalf("Failed to create executor: %v", err)
+			}
+			ctx := context.Background()
+			handle, err := executor.Start(ctx, rebuild.Input{
+				Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-pkg", Version: "1.0.0"},
+			}, build.Options{BuildID: "test-timings-fail"})
+			if err != nil {
+				t.Fatalf("Unexpected error from Start: %v", err)
+			}
+			result, _ := handle.Wait(ctx)
+			if result.Error == nil {
+				t.Fatal("Expected error, got success")
+			}
+			if tc.wantNil {
+				if result.Timings != nil {
+					t.Errorf("Expected nil timings, got %+v", result.Timings)
+				}
+				return
+			}
+			if result.Timings == nil {
+				t.Fatal("Expected partial timings, got nil")
+			}
+			if result.Timings.FailedIn != tc.wantFailed {
+				t.Errorf("FailedIn = %q, want %q", result.Timings.FailedIn, tc.wantFailed)
+			}
+			got := presence{
+				setup:  result.Timings.Setup != nil,
+				source: result.Timings.Source != nil,
+				deps:   result.Timings.Deps != nil,
+				build:  result.Timings.Build != nil,
+			}
+			if got != tc.want {
+				t.Errorf("Phase presence = %+v, want %+v (record %+v)", got, tc.want, result.Timings)
+			}
+		})
 	}
 }
 

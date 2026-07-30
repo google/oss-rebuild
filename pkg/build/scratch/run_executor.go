@@ -68,9 +68,8 @@ func (e *DockerRunExecutor) Start(ctx context.Context, input rebuild.Input, opts
 
 // runBuild drives one build on the scratch VM. The container is stopped and,
 // unless RetainContainer is set, removed after the phases. The staging
-// directory is always retained for post-mortem inspection. Timings are
-// non-nil whenever every phase completed measured, even if artifact
-// retrieval subsequently fails.
+// directory is always retained for post-mortem inspection. Timings may be
+// partial and accompany a build error or a failed artifact retrieval.
 func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle, plan *local.DockerRunPlan, t rebuild.Target, opts build.Options, timeout time.Duration) (*rebuild.BuildTimings, error) {
 	dir := path.Join(e.workDir, buildsSubdir, handle.id)
 	container := "rb-" + handle.id
@@ -106,8 +105,7 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 	var phaseOps []*longrunning.Operation[schema.ScratchExecResult]
 	var buildErr error
 	in := rebuild.BuildTimings{}
-	spans := map[string]*time.Duration{"setup": &in.Setup, "source": &in.Source, "deps": &in.Deps, "build": &in.Build}
-	measured := true
+	slots := map[string]**time.Duration{"setup": &in.Setup, "source": &in.Source, "deps": &in.Deps, "build": &in.Build}
 	remaining := timeout
 	for _, ph := range plan.Phases() {
 		op, err := e.phaseExec(ctx, handle, schema.ScratchExecRequest{
@@ -116,29 +114,32 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 		if err == nil {
 			phaseOps = append(phaseOps, op)
 		}
-		if buildErr = phaseOutcome(ph.Name, op, err); buildErr != nil {
-			break
-		}
 		// Spans come from the worker's clock: StartedAt/FinishedAt bound the
 		// command execution on the VM, excluding exec dispatch and poll lag.
-		// StartedAt is zero under blind finalization; the record is then
-		// incomplete and no timings are reported.
-		if r := op.Result; r.StartedAt.IsZero() || r.FinishedAt.IsZero() {
-			measured = false
-		} else {
-			*spans[ph.Name] = r.FinishedAt.Sub(r.StartedAt)
+		// They survive a nonzero exit and a worker-synced timeout, so the
+		// failing phase is usually measured; blind finalization leaves them
+		// zero and the phase unmeasured.
+		if op != nil && op.Result != nil && !op.Result.StartedAt.IsZero() && !op.Result.FinishedAt.IsZero() {
+			d := op.Result.FinishedAt.Sub(op.Result.StartedAt)
+			*slots[ph.Name] = &d
 		}
+		if buildErr = phaseOutcome(ph.Name, op, err); buildErr != nil {
+			in.FailedIn = rebuild.BuildPhase(ph.Name)
+			break
+		}
+	}
+	// A present zero Deps means the plan had no deps phase, stamped only once
+	// the build provably progressed past the deps slot.
+	if plan.Deps == "" && (in.FailedIn == "" || in.FailedIn == rebuild.PhaseBuild) {
+		in.Deps = new(time.Duration)
 	}
 	e.stopContainer(ctx, container)
 	e.uploadDebugLogs(ctx, handle.id, phaseOps, t, opts.Resources.AssetStore)
+	// Undispatched phases stay unmeasured. Validated owns the partial-record
+	// invariants.
+	timings := timing.Validated(in)
 	if buildErr != nil {
-		return nil, buildErr
-	}
-	// A failed build leaves later phases unmeasured. Validated owns the
-	// all-or-nothing invariants.
-	var timings *rebuild.BuildTimings
-	if measured {
-		timings = timing.Validated(in)
+		return timings, buildErr
 	}
 	// Retrieve and upload the artifact. Unlike the local executor, a
 	// missing artifact or failed upload fails the build.
