@@ -75,6 +75,10 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 	if executionMode == schema.AgentExecutionModeScratch && deps.ScratchCreateStub == nil {
 		return nil, api.AsStatus(codes.FailedPrecondition, errors.New("scratch execution mode is not configured"))
 	}
+	taskMode := req.TaskMode
+	if taskMode == "" {
+		taskMode = schema.AgentTaskModeDebug
+	}
 	sessionUUID, err := uuid.NewV7()
 	if err != nil {
 		return nil, errors.Wrap(err, "making sessionID")
@@ -95,6 +99,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		Context:        req.Context,
 		Status:         schema.AgentSessionStatusInitializing,
 		ExecutionMode:  executionMode,
+		TaskMode:       taskMode,
 		Created:        sessionTime,
 		Updated:        sessionTime,
 	}

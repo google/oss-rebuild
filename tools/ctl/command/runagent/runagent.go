@@ -35,6 +35,7 @@ type Config struct {
 	Artifact        string
 	AgentIterations int
 	ExecutionMode   string
+	TaskMode        string
 	LocalAgent      bool
 }
 
@@ -62,6 +63,11 @@ func (c Config) Validate() error {
 	case "", schema.AgentExecutionModeGCB, schema.AgentExecutionModeScratch:
 	default:
 		return errors.Errorf("invalid execution-mode %q", c.ExecutionMode)
+	}
+	switch schema.AgentTaskMode(c.TaskMode) {
+	case "", schema.AgentTaskModeDebug:
+	default:
+		return errors.Errorf("invalid task-mode %q", c.TaskMode)
 	}
 	return nil
 }
@@ -108,6 +114,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		MaxIterations: cfg.AgentIterations,
 		ExecutionMode: schema.AgentExecutionMode(cfg.ExecutionMode),
 		ExternalAgent: cfg.LocalAgent,
+		TaskMode:      schema.AgentTaskMode(cfg.TaskMode),
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "running attest")
@@ -147,7 +154,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>] [--execution-mode <mode>] [--local-agent]",
+		Use:   "run-agent --project <project> --api <URI> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> [--agent-iterations <max iterations>] [--execution-mode <mode>] [--local-agent] [--task-mode <mode>]",
 		Short: "Run the agent on a single target",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -173,5 +180,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.IntVar(&cfg.AgentIterations, "agent-iterations", 3, "maximum number of agent iterations before giving up")
 	set.StringVar(&cfg.ExecutionMode, "execution-mode", "", "where iteration builds execute: gcb (default) or scratch")
 	set.BoolVar(&cfg.LocalAgent, "local-agent", false, "run the agent locally instead of launching the hosted agent job (iteration builds still run per --execution-mode)")
+	set.StringVar(&cfg.TaskMode, "task-mode", "", "agent task mode (default: debug)")
 	return set
 }
