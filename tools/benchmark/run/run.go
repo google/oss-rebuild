@@ -74,7 +74,12 @@ func (s *remoteExecutionService) RebuildPackage(ctx context.Context, req schema.
 			return nil, errors.Wrap(err, "getting rebuild operation")
 		}
 	}
-	return op.Result, op.Error
+	// NOTE: A direct return of op.Error would wrap the nil *OperationError
+	// in a non-nil error interface.
+	if op.Error != nil {
+		return op.Result, op.Error
+	}
+	return op.Result, nil
 }
 
 func (s *remoteExecutionService) Infer(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
