@@ -6,8 +6,10 @@ package inferenceservice
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpx"
@@ -20,30 +22,30 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy, ropt *gitx.RepositoryOptions) (rebuild.Strategy, error) {
+func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy, ropt *gitx.RepositoryOptions) (rebuild.Strategy, rebuild.RepoConfig, error) {
 	var repo string
 	if lh, ok := hint.(*rebuild.LocationHint); ok && lh != nil {
 		var err error
 		repo, err = uri.CanonicalizeRepoURI(lh.Location.Repo)
 		if err != nil {
-			return nil, errors.Wrap(err, "canonicalizing repo hint")
+			return nil, rebuild.RepoConfig{}, errors.Wrap(err, "canonicalizing repo hint")
 		}
 	} else {
 		var err error
 		repo, err = rebuilder.InferRepo(ctx, t, mux)
 		if err != nil {
-			return nil, err
+			return nil, rebuild.RepoConfig{}, err
 		}
 	}
 	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, ropt)
 	if err != nil {
-		return nil, err
+		return nil, rebuild.RepoConfig{}, err
 	}
 	strategy, err := rebuilder.InferStrategy(ctx, t, mux, &rcfg, hint)
 	if err != nil {
-		return nil, err
+		return nil, rcfg, err
 	}
-	return strategy, nil
+	return strategy, rcfg, nil
 }
 
 type InferDeps struct {
@@ -51,6 +53,39 @@ type InferDeps struct {
 	GitCache           *gitcache.Client
 	RepoOptF           func() *gitx.RepositoryOptions
 	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	RepoMetrics        db.RepoMetrics // optional. when nil, repos are not measured on clone
+}
+
+// recordRepoMetrics measures rcfg and upserts its repo_metrics record keyed
+// by canonical repo URI.
+func recordRepoMetrics(ctx context.Context, store db.RepoMetrics, rcfg rebuild.RepoConfig) error {
+	canonical, err := uri.CanonicalizeRepoURI(rcfg.URI)
+	if err != nil {
+		return errors.Wrapf(err, "canonicalizing %q", rcfg.URI)
+	}
+	if rcfg.Repository == nil {
+		return errors.New("nil repository")
+	}
+	ref, err := rcfg.Head()
+	if err != nil {
+		return errors.Wrap(err, "resolving head")
+	}
+	bytes, err := gitx.ObjectStoreSize(rcfg.Storer)
+	if err != nil {
+		return errors.Wrap(err, "sizing object store")
+	}
+	commits, err := gitx.CommitCount(rcfg.Storer)
+	if err != nil {
+		return errors.Wrap(err, "counting commits")
+	}
+	m := schema.RepoMetrics{
+		URI:        canonical,
+		Bytes:      bytes,
+		Commits:    commits,
+		Head:       ref.Hash().String(),
+		MeasuredAt: time.Now().UTC(),
+	}
+	return errors.Wrap(store.Upsert(ctx, m), "upserting")
 }
 
 func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*schema.StrategyOneOf, error) {
@@ -86,7 +121,13 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	if !ok {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
-	s, err := doInfer(ctx, rebuilder, t, mux, req.LocationHint(), repoOpt)
+	s, rcfg, err := doInfer(ctx, rebuilder, t, mux, req.LocationHint(), repoOpt)
+	// TODO: Move before doInfer so we record metrics even when inference fails.
+	if deps.RepoMetrics != nil && rcfg.Repository != nil {
+		if err := recordRepoMetrics(ctx, deps.RepoMetrics, rcfg); err != nil {
+			log.Printf("repo_metrics: %s: %v", rcfg.URI, err)
+		}
+	}
 	if err != nil {
 		log.Printf("No inference for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, err)
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to infer strategy"))

@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"net/url"
 
+	"cloud.google.com/go/firestore"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpegress"
@@ -26,6 +28,7 @@ import (
 var (
 	gitCacheURL       = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
 	cratesRegistryURL = flag.String("crates-registry-service-url", "", "if provided, the crates registry service to use for Rust crate index resolution")
+	project           = flag.String("project", "", "if provided, the GCP project whose Firestore holds repo_metrics records")
 	port              = flag.Int("port", 8080, "port on which to serve")
 )
 
@@ -34,6 +37,13 @@ var httpcfg = httpegress.Config{}
 func InferInit(ctx context.Context) (*inferenceservice.InferDeps, error) {
 	var d inferenceservice.InferDeps
 	var err error
+	if *project != "" {
+		fs, err := firestore.NewClient(ctx, *project)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating firestore client")
+		}
+		d.RepoMetrics = db.NewFirestoreRepoMetrics(fs)
+	}
 	d.HTTPClient, err = httpegress.MakeClient(ctx, httpcfg)
 	if err != nil {
 		return nil, errors.Wrap(err, "making http client")

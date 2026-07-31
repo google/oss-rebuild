@@ -88,7 +88,11 @@ resource "google_storage_bucket_iam_member" "git-cache-views-git-cache" {
 resource "google_storage_bucket_iam_member" "cachers-read-git-cache" {
   bucket = google_storage_bucket.git-cache.name
   role   = "roles/storage.objectViewer"
-  member = google_service_account.crates-registry.member
+  for_each = toset([
+    google_service_account.crates-registry.member,
+    google_service_account.inference.member,
+  ])
+  member = each.key
 }
 resource "google_storage_bucket_iam_member" "orchestrator-writes-attestations" {
   bucket = google_storage_bucket.attestations.name
@@ -164,6 +168,11 @@ resource "google_project_iam_member" "orchestrator-uses-datastore" {
   role    = "roles/datastore.user"
   member  = google_service_account.orchestrator.member
 }
+resource "google_project_iam_member" "inference-uses-datastore" {
+  project = var.project
+  role    = "roles/datastore.user"
+  member  = google_service_account.inference.member
+}
 resource "google_storage_bucket_iam_member" "builders-view-bootstrap-bucket" {
   bucket = google_storage_bucket.bootstrap-tools.name
   role   = "roles/storage.objectViewer"
@@ -236,7 +245,11 @@ resource "google_cloud_run_v2_service_iam_member" "cachers-call-git-cache" {
   project  = google_cloud_run_v2_service.git-cache.project
   name     = google_cloud_run_v2_service.git-cache.name
   role     = "roles/run.invoker"
-  member   = google_service_account.crates-registry.member
+  for_each = toset([
+    google_service_account.crates-registry.member,
+    google_service_account.inference.member,
+  ])
+  member = each.key
 }
 resource "google_cloud_run_v2_service_iam_member" "api-and-inference-call-gateway" {
   location = google_cloud_run_v2_service.gateway.location

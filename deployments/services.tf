@@ -161,6 +161,7 @@ resource "google_cloud_run_v2_service" "inference" {
     containers {
       image = data.google_artifact_registry_docker_image.inference.self_link
       args = [
+        "--project=${var.project}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
         "--host=${var.host}",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
