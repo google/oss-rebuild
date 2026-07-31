@@ -28,7 +28,7 @@ const defaultOutputBufferSize = 512 * 1024 // 512KB
 type DockerRunExecutor struct {
 	planner          build.Planner[*DockerRunPlan]
 	maxParallel      int
-	semaphore        chan struct{}
+	semaphore        chan struct{} // one entry per in-flight build, maxParallel wide.
 	dockerCmd        string
 	cmdExecutor      CommandExecutor
 	activeBuilds     syncx.Map[string, *localHandle]
