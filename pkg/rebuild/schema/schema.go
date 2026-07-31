@@ -377,6 +377,7 @@ type RebuildAttempt struct {
 	BuildID         string              `firestore:"build_id,omitempty"`
 	ObliviousID     string              `firestore:"oblivious_id,omitempty"`
 	Provenance      *StrategyProvenance `firestore:"provenance,omitempty"` // strategy inputs, nil for legacy records or pre-resolution failures
+	Costs           *AttemptCosts       `firestore:"costs,omitempty"`      // measured resource costs
 	Started         time.Time           `firestore:"started,omitempty"`    // The time rebuild started
 	Finished        time.Time           `firestore:"finished,omitempty"`   // The time rebuild finished
 	Created         time.Time           `firestore:"created,omitempty"`    // The time this record was created

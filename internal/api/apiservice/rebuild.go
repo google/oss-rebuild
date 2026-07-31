@@ -447,6 +447,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	attempt.Dockerfile = dockerfile
 	attempt.BuildID = bi.BuildID
 	attempt.ObliviousID = bi.ObliviousID
+	attempt.Costs = attemptCosts(ctx, deps, v, bi, req.SizeHint)
 
 	status := schema.RebuildStatusSuccess
 	if !attempt.Success {
@@ -461,4 +462,42 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	finish(status)
 
 	return v, nil
+}
+
+// attemptCosts assembles a summary of resource costs associated with the rebuild.
+// When no costs are incurred (e.g. build never ran), returns nil. Asset sizes
+// are computed best-effort: absent/inaccessible assets leave the byte fields
+// unset.
+func attemptCosts(ctx context.Context, deps *RebuildPackageDeps, v *schema.Verdict, bi rebuild.BuildInfo, sizeHint schema.SizeHint) *schema.AttemptCosts {
+	costs := schema.AttemptCosts{InferenceSeconds: v.Timings.Infer.Seconds()}
+	if !bi.BuildStart.IsZero() && !bi.BuildEnd.IsZero() {
+		costs.BuilderSeconds = bi.BuildEnd.Sub(bi.BuildStart).Seconds()
+	}
+	if bi.ObliviousID != "" {
+		if store, err := deps.RemoteMetadataStoreBuilder(ctx, bi.ObliviousID); err != nil {
+			log.Printf("building store for asset sizes: %v", err)
+		} else if ss, ok := store.(rebuild.StatAssetStore); ok {
+			costs.ArtifactBytes = assetBytes(ctx, ss, rebuild.RebuildAsset.For(v.Target))
+			costs.ContainerBytes = assetBytes(ctx, ss, rebuild.ContainerImageAsset.For(v.Target)) +
+				assetBytes(ctx, ss, rebuild.PostBuildContainerAsset.For(v.Target))
+			costs.LogsBytes = assetBytes(ctx, ss, rebuild.DebugLogsAsset.For(v.Target))
+		}
+	}
+	if costs == (schema.AttemptCosts{}) {
+		return nil
+	}
+	costs.BuilderPool = sizeHint
+	return &costs
+}
+
+// assetBytes reports a stored asset's size, zero when absent or unmeasurable.
+func assetBytes(ctx context.Context, s rebuild.StatAssetStore, a rebuild.Asset) int64 {
+	info, err := s.Stat(ctx, a)
+	if err != nil {
+		if !errors.Is(err, rebuild.ErrAssetNotFound) {
+			log.Printf("statting %s: %v", a.Type, err)
+		}
+		return 0
+	}
+	return info.Bytes
 }
