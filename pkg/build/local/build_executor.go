@@ -27,7 +27,7 @@ import (
 type DockerBuildExecutor struct {
 	planner          build.Planner[*DockerBuildPlan]
 	maxParallel      int
-	semaphore        chan struct{}
+	semaphore        chan struct{} // one entry per in-flight build, maxParallel wide.
 	dockerCmd        string
 	outputDir        string
 	cmdExecutor      CommandExecutor
