@@ -21,6 +21,22 @@ func TestFindARepo(t *testing.T) {
 		{"http://github.com/org/project/tree/branch", "github.com/org/project"}, // GitHub, with path
 		{"GitLab.com/Group/Repo", "GitLab.com/Group/Repo"},                      // GitLab, case insensitive
 		{"https://bitbucket.org/team/repo", "bitbucket.org/team/repo"},          // Bitbucket
+		{
+			"https://gitlab.com/245project/bevy-plugin/bevy-2dviewangle",
+			"gitlab.com/245project/bevy-plugin/bevy-2dviewangle",
+		},
+		{
+			"https://gitlab.com/group/subgroup/repo/-/tree/main",
+			"gitlab.com/group/subgroup/repo",
+		},
+		{
+			"https://gitlab.com/group/repo/tree/main",
+			"gitlab.com/group/repo",
+		},
+		{
+			"https://gitlab.com/group/tree/repo",
+			"gitlab.com/group/tree/repo",
+		},
 	}
 	for _, test := range tests {
 		actual := FindCommonRepo(test.input)
@@ -53,6 +69,31 @@ func TestCanonicalizeRepoURI(t *testing.T) {
 		{"https://Foo.com/This/Path", "https://foo.com/This/Path", false},                                               // Unknown URL, case sensitive
 		{"ssh://git@foo.com/path", "", true},                                                                            // SSH URL
 		{"https://us-east1-proj.sourcemanager.dev/org/repo", "https://us-east1-proj.sourcemanager.dev/org/repo", false}, // SSM URL
+		{
+			"https://gitlab.com/245project/bevy-plugin/bevy-2dviewangle",
+			"https://gitlab.com/245project/bevy-plugin/bevy-2dviewangle",
+			false,
+		},
+		{
+			"git@gitlab.com:group/subgroup/repo.git",
+			"https://gitlab.com/group/subgroup/repo",
+			false,
+		},
+		{
+			"https://gitlab.com/group/subgroup/repo/-/tree/main",
+			"https://gitlab.com/group/subgroup/repo",
+			false,
+		},
+		{
+			"https://gitlab.com/group/repo/tree/main",
+			"https://gitlab.com/group/repo",
+			false,
+		},
+		{
+			"https://gitlab.com/group/tree/repo/-/tree/main",
+			"https://gitlab.com/group/tree/repo",
+			false,
+		},
 	}
 
 	for _, test := range tests {

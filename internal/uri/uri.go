@@ -14,7 +14,7 @@ import (
 var (
 	// NOTE: This is non-exhaustive and should be expanded as necessary.
 	githubRE    = re.MustCompile(`(?i)\bgithub(\.com)?[:/]([\w-]+/[\w-\.]+)`)
-	gitlabRE    = re.MustCompile(`(?i)\bgitlab(\.com)?[:/]([\w-]+/[\w-\.]+)`)
+	gitlabRE    = re.MustCompile(`(?i)\bgitlab(\.com)?[:/]([\w-]+(?:/[\w.-]+)+)`)
 	bitbucketRE = re.MustCompile(`(?i)\bbitbucket(\.org)?[:/]([\w-]+/[\w-\.]+)`)
 	commonRepos = []*re.Regexp{
 		githubRE,
@@ -25,6 +25,19 @@ var (
 
 var errUnsupportedRepo = errors.Errorf("unsupported repo type")
 
+func trimGitLabRoute(repo string) string {
+	if repo, _, found := strings.Cut(repo, "/-/"); found {
+		return repo
+	}
+	if repoRoot, _, found := strings.Cut(repo, "/tree/"); found {
+		pathStart := strings.IndexAny(repoRoot, ":/")
+		if pathStart >= 0 && strings.Count(repoRoot[pathStart+1:], "/") == 1 {
+			return repoRoot
+		}
+	}
+	return repo
+}
+
 // CanonicalizeRepoURI parses repos into a canonical HTTPS URI.
 func CanonicalizeRepoURI(uri string) (string, error) {
 	if uri == "" {
@@ -34,7 +47,7 @@ func CanonicalizeRepoURI(uri string) (string, error) {
 	// NOTE: For these well-known platforms, ToLower canonicalization is safe.
 	if repo = githubRE.FindString(uri); repo != "" {
 		repo = "//github.com/" + strings.TrimSuffix(strings.ToLower(repo[strings.IndexAny(repo, ":/")+1:]), ".git")
-	} else if repo = gitlabRE.FindString(uri); repo != "" {
+	} else if repo = trimGitLabRoute(gitlabRE.FindString(uri)); repo != "" {
 		repo = "//gitlab.com/" + strings.TrimSuffix(strings.ToLower(repo[strings.IndexAny(repo, ":/")+1:]), ".git")
 	} else if repo = bitbucketRE.FindString(uri); repo != "" {
 		repo = "//bitbucket.org/" + strings.TrimSuffix(strings.ToLower(repo[strings.IndexAny(repo, ":/")+1:]), ".git")
@@ -59,6 +72,9 @@ func CanonicalizeRepoURI(uri string) (string, error) {
 func FindCommonRepo(text string) string {
 	for _, pattern := range commonRepos {
 		if repo := pattern.FindString(text); repo != "" {
+			if pattern == gitlabRE {
+				repo = trimGitLabRoute(repo)
+			}
 			return repo
 		}
 	}
