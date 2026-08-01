@@ -42,12 +42,12 @@ func MatchTag(tag, pkg, version string) (strict bool, approx bool) {
 	return
 }
 
-// FindTagMatch searches a repositories tags for a possible version match and returns the commit hash.
-func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err error) {
+// FindTagMatches searches a repository's tags for possible version matches and returns their commit hashes.
+func FindTagMatches(pkg, version string, repo *git.Repository) (commits []string, err error) {
 	var matches, nearMatches []string
 	tags, err := allTags(repo)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	for _, tag := range tags {
 		strict, approx := MatchTag(tag, pkg, version)
@@ -65,17 +65,31 @@ func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err
 		if len(matches) > 1 {
 			log.Printf("Multiple tag matches [pkg=%s,ver=%s,matches=%v]\n", pkg, version, matches)
 		}
-		ref, err := repo.Tag(matches[0])
+	}
+	for _, match := range matches {
+		ref, err := repo.Tag(match)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if t, err := repo.TagObject(ref.Hash()); err == nil {
 			// Annotated tag. Use the Target pointer as the ref hash.
-			return t.Target.String(), nil
+			commits = append(commits, t.Target.String())
 		} else {
 			// Lightweight tag. Use the ref hash itself.
-			return ref.Hash().String(), nil
+			commits = append(commits, ref.Hash().String())
 		}
+	}
+	return commits, nil
+}
+
+// FindTagMatch searches a repository's tags for a possible version match and returns the first commit hash.
+func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err error) {
+	commits, err := FindTagMatches(pkg, version, repo)
+	if err != nil {
+		return "", err
+	}
+	if len(commits) > 0 {
+		return commits[0], nil
 	}
 	return "", nil
 }
