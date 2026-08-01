@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -155,6 +156,38 @@ func TestFindTagMatch(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFindTagMatchOnlyResolvesFirstMatch(t *testing.T) {
+	storer := &failingTagStorage{Storer: memory.NewStorage()}
+	repo := must(git.Init(storer, memfs.New()))
+	commit := createCommit(repo, "commit")
+	createLightweightTag(repo, "mypackage-1.0.0", commit)
+	createLightweightTag(repo, "zzz-1.0.0", commit)
+	storer.fail = plumbing.NewTagReferenceName("zzz-1.0.0")
+
+	got, err := FindTagMatch("mypackage", "1.0.0", repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != commit {
+		t.Errorf("FindTagMatch() = %q, want %q", got, commit)
+	}
+	if _, err := FindTagMatches("mypackage", "1.0.0", repo); err == nil {
+		t.Error("FindTagMatches() error = nil")
+	}
+}
+
+type failingTagStorage struct {
+	storage.Storer
+	fail plumbing.ReferenceName
+}
+
+func (s *failingTagStorage) Reference(name plumbing.ReferenceName) (*plumbing.Reference, error) {
+	if name == s.fail {
+		return nil, plumbing.ErrReferenceNotFound
+	}
+	return s.Storer.Reference(name)
 }
 
 func TestAllTags(t *testing.T) {

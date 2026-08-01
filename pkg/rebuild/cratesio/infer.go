@@ -111,7 +111,7 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte, rcfg *rebuild.RepoConfig) (ref, dir string, err error) {
 	// Determine git ref to rebuild.
 	cargoTOMLGuess := rcfg.RefMap[t.Version]
-	tagGuess, err := rebuild.FindTagMatch(t.Package, t.Version, rcfg.Repository)
+	tagGuesses, err := rebuild.FindTagMatches(t.Package, t.Version, rcfg.Repository)
 	if err != nil {
 		return "", "", errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
@@ -154,21 +154,23 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 		}
 		log.Printf("ref heuristic cargo_vcs_info not found in repo")
 		fallthrough
-	case tagGuess != "":
-		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagGuess))
-		if err == nil {
-			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
-				log.Printf("registry heuristic tag invalid: %v", err)
+	case len(tagGuesses) > 0:
+		for _, tagGuess := range tagGuesses {
+			c, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagGuess))
+			if err == nil {
+				if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
+					log.Printf("registry heuristic tag invalid: %v", err)
+				} else {
+					log.Printf("using tag heuristic ref: %s", tagGuess[:9])
+					ref = tagGuess
+					dir = rebuild.DirOf(newPath)
+					return ref, dir, nil
+				}
+			} else if err == plumbing.ErrObjectNotFound {
+				log.Printf("tag heuristic ref not found in repo")
 			} else {
-				log.Printf("using tag heuristic ref: %s", tagGuess[:9])
-				ref = tagGuess
-				dir = rebuild.DirOf(newPath)
-				return ref, dir, nil
+				return "", "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from tag [repo=%s,ref=%s]", rcfg.URI, tagGuess)
 			}
-		} else if err == plumbing.ErrObjectNotFound {
-			log.Printf("tag heuristic ref not found in repo")
-		} else {
-			return "", "", errors.Wrapf(err, "[INTERNAL] Failed ref resolve from tag [repo=%s,ref=%s]", rcfg.URI, tagGuess)
 		}
 		log.Printf("ref heuristic tag not found in repo")
 		fallthrough
@@ -191,7 +193,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 		log.Printf("ref heuristic git log not found in repo")
 		fallthrough
 	default:
-		if cargoVCSGuess == "" && tagGuess == "" && cargoTOMLGuess == "" {
+		if cargoVCSGuess == "" && len(tagGuesses) == 0 && cargoTOMLGuess == "" {
 			return "", "", errors.Errorf("no git ref")
 		}
 		return "", "", errors.Errorf("no valid git ref")
