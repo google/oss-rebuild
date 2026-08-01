@@ -129,13 +129,17 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 		cargoVCSGuess = info.GitInfo.SHA1
 	}
 	dir = rcfg.Dir
+	vcsDir := dir
+	if info.Dir != nil {
+		vcsDir = *info.Dir
+	}
 	var c *object.Commit
 	switch {
 	// Ensure the package config has the expected name and version.
 	case cargoVCSGuess != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(cargoVCSGuess))
 		if err == nil {
-			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, dir); err != nil {
+			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
 				log.Printf("registry ref invalid: %v", err)
 			} else {
 				log.Printf("using registry ref: %s", cargoVCSGuess[:9])

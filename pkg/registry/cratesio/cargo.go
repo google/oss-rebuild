@@ -8,7 +8,7 @@ package cratesio
 // Format: https://doc.rust-lang.org/cargo/commands/cargo-package.html#cargo_vcs_infojson-format
 type CargoVCSInfo struct {
 	GitInfo `json:"git"`
-	Dir     string `json:"path_in_vcs"`
+	Dir     *string `json:"path_in_vcs"`
 }
 
 // GitInfo is the Git metadata included in the .cargo_vcs_info.json file.
