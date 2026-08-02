@@ -157,7 +157,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 	case tagGuess != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagGuess))
 		if err == nil {
-			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, dir); err != nil {
+			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
 				log.Printf("registry heuristic tag invalid: %v", err)
 			} else {
 				log.Printf("using tag heuristic ref: %s", tagGuess[:9])
@@ -175,7 +175,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 	case cargoTOMLGuess != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(cargoTOMLGuess))
 		if err == nil {
-			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, dir); err != nil {
+			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
 				log.Printf("registry heuristic git log invalid: %v", err)
 			} else {
 				log.Printf("using git log heuristic ref: %s", cargoTOMLGuess[:9])
