@@ -18,28 +18,30 @@ func TestDetectRustVersionBounds(t *testing.T) {
 			name:      "Empty TOML",
 			cargoToml: ``,
 			wantLo:    "",
-			wantHi:    "1.50.0", // No modern header, no resolver=2
+			wantHi:    "1.54.0", // No modern header; resolver absence is not evidence
 		},
 		{
-			name: "Modern Header Only",
+			name: "Edition 2021 Without Resolver",
 			cargoToml: `# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 #
 # Note that this is the newer format, specifying edition explicitly.
 # Before Rust 1.55, crates.io would automatically add this header to registry (e.g., crates.io) dependencies.
 [package]
+edition = "2021"
 name = "my-crate"
 `,
-			wantLo: "1.64.0", // modernHeader sets lo=1.55, no resolver=2 bumps to 1.64
+			wantLo: "1.55.0", // Cargo 1.56-1.63 can emit this shape without a resolver
 			wantHi: "",       // hi remains "999" and gets cleared
 		},
 		{
-			name: "Old Header Only",
+			name: "Old Header Without Resolver",
 			cargoToml: `# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [package]
+edition = "2018"
 name = "my-crate"
 `,
 			wantLo: "",
-			wantHi: "1.50.0", // No modern header sets hi=1.54, no resolver=2 bumps to 1.50
+			wantHi: "1.54.0", // Cargo 1.51-1.54 can emit this shape without a resolver
 		},
 		{
 			name: "Edition 2024 overrides older upper bounds",
@@ -107,7 +109,7 @@ name = "my-crate"
 resolver = "2"
 `,
 			wantLo: "",
-			wantHi: "1.50.0", // Existing no-resolver rule still applies
+			wantHi: "1.54.0", // No modern header sets hi=1.54
 		},
 		{
 			name: "Resolver in Multiline String Is Not Evidence",
@@ -119,7 +121,7 @@ resolver = "2"
 """
 `,
 			wantLo: "",
-			wantHi: "1.50.0", // Existing no-resolver rule still applies
+			wantHi: "1.54.0", // No modern header sets hi=1.54
 		},
 		{
 			name: "Pretty Array (Modern Header)",
@@ -132,7 +134,7 @@ features = [
     "feature-b",
 ]
 `,
-			wantLo: "1.64.0", // prettyArray sets lo=1.60, modernHeader sets lo=1.55. max(1.60, 1.55) = 1.60. no resolver=2 bumps to 1.64
+			wantLo: "1.60.0", // prettyArray=1.60, modernHeader=1.55. Max is 1.60
 			wantHi: "",
 		},
 		{
@@ -143,7 +145,7 @@ features = [
 name = "my-crate"
 doc-scrape-examples = true
 `,
-			wantLo: "1.67.0", // docExamples sets lo=1.67. modernHeader sets lo=1.55. max(1.67, 1.55) = 1.67. no resolver=2 bumps to max(1.64, 1.67) = 1.67
+			wantLo: "1.67.0", // docExamples=1.67, modernHeader=1.55. Max is 1.67
 			wantHi: "",
 		},
 		{
@@ -153,7 +155,7 @@ doc-scrape-examples = true
 [profile.release]
 debug = true
 `,
-			wantLo: "1.64.0", // modernHeader sets lo=1.55. no resolver=2 bumps to 1.64
+			wantLo: "1.55.0", // modernHeader sets lo=1.55
 			wantHi: "1.70.0", // debugDenormalized sets hi=1.70.0
 		},
 		{
@@ -167,7 +169,7 @@ features = [
     "feature-a",
 ]
 `,
-			wantLo: "1.67.0", // docExamples=1.67, prettyArray=1.60, modernHeader=1.55. Max is 1.67. no resolver=2 bumps to max(1.64, 1.67) = 1.67
+			wantLo: "1.67.0", // docExamples=1.67, prettyArray=1.60, modernHeader=1.55. Max is 1.67
 			wantHi: "",
 		},
 		{
@@ -239,7 +241,7 @@ categories = ["text-processing"]
 [profile.release]
 debug = 2
 `,
-			wantLo: "1.64.0", // prettyArray=1.60, modernHeader=1.55, no resolver=max(1.64,1.60)=1.64
+			wantLo: "1.60.0", // prettyArray=1.60, modernHeader=1.55. Max is 1.60
 			wantHi: "",
 		},
 		{
@@ -263,7 +265,7 @@ categories = [
 [lib]
 doc-scrape-examples = false
 `,
-			wantLo: "1.67.0", // docExamples=1.67, prettyArray=1.60, modernHeader=1.55. no resolver=max(1.64,1.67)=1.67
+			wantLo: "1.67.0", // docExamples=1.67, prettyArray=1.60, modernHeader=1.55. Max is 1.67
 			wantHi: "",
 		},
 		{
@@ -287,7 +289,7 @@ categories = ["asynchronous", "cryptography", "network-programming"]
 name = "my-crate"
 keywords = ["one"]
 `,
-			wantLo: "1.64.0", // modernHeader=1.55, no resolver=2 bumps to 1.64
+			wantLo: "1.55.0", // modernHeader sets lo=1.55; resolver absence is not evidence
 			wantHi: "",
 		},
 	}
