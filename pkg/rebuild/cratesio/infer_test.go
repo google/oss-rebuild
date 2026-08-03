@@ -123,6 +123,38 @@ func TestInferStrategy(t *testing.T) {
 			},
 		},
 		{
+			name: "path from cargo_vcs_info",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      published/Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-01-01T00:00:00Z","rust_version": "1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":"published"}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "published",
+					},
+					RustVersion: "1.64.0",
+				}
+			},
+		},
+		{
 			name: "rust_version from created_at",
 			repo: `commits:
   - id: initial-commit
