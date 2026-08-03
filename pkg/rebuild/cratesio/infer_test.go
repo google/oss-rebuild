@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"path"
@@ -864,6 +865,58 @@ version = 3
 				if diff := cmp.Diff(want, s); diff != "" {
 					t.Errorf("InferStrategy mismatch (-want +got):\n%s", diff)
 				}
+			}
+		})
+	}
+}
+
+func TestInferRefAndDirUsesVCSPathForFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		tag    string
+		refMap bool
+	}{
+		{name: "tag", tag: "v1.0.150"},
+		{name: "Cargo.toml history", refMap: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(fmt.Sprintf(`commits:
+  - id: release
+    tag: %s
+    files:
+      current/Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      published/Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`, tc.tag), nil))
+			refMap := map[string]string{}
+			if tc.refMap {
+				refMap["1.0.150"] = repo.Commits["release"].String()
+			}
+			crate := must(archivetest.TgzFile([]archive.TarEntry{
+				{
+					Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"},
+					Body:   []byte(`{"git":{"sha1":"0000000000000000000000000000000000000000"},"path_in_vcs":"published"}`),
+				},
+			}))
+			ref, dir, err := inferRefAndDir(
+				rebuild.Target{Package: "serde", Version: "1.0.150"},
+				&cratesio.CrateVersion{Version: cratesio.Version{Version: "1.0.150"}},
+				crate.Bytes(),
+				&rebuild.RepoConfig{Repository: repo.Repository, Dir: "current", RefMap: refMap},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := repo.Commits["release"].String(); ref != want {
+				t.Errorf("ref = %q, want %q", ref, want)
+			}
+			if want := "published"; dir != want {
+				t.Errorf("dir = %q, want %q", dir, want)
 			}
 		})
 	}
