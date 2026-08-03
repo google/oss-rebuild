@@ -24,6 +24,8 @@ func TestMatchTag(t *testing.T) {
 		approx  bool
 	}{
 		{"v1.0.0", "mypackage", "1.0.0", true, true},
+		{"v1.0.0+meta", "mypackage", "1.0.0+meta", true, true},
+		{"v1x0x0", "mypackage", "1.0.0", false, false},
 		{"v1.0.0-rc1", "mypackage", "1.0.0", false, true},
 		{"mypackage-1.0.0", "mypackage", "1.0.0", true, true},
 		{"1.0.0", "mypackage", "1.0.0", true, true},

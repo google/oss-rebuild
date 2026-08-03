@@ -30,8 +30,9 @@ var (
 
 // MatchTag evaluates whether the given tag is likely to refer to a package version.
 func MatchTag(tag, pkg, version string) (strict bool, approx bool) {
-	boundaryRE := regexp.MustCompile(fmt.Sprintf(boundaryPatternTpl, version))
-	continuationRE := regexp.MustCompile(fmt.Sprintf(continuationPatternTpl, version))
+	escapedVersion := regexp.QuoteMeta(version)
+	boundaryRE := regexp.MustCompile(fmt.Sprintf(boundaryPatternTpl, escapedVersion))
+	continuationRE := regexp.MustCompile(fmt.Sprintf(continuationPatternTpl, escapedVersion))
 	var org string
 	if slash := strings.IndexByte(pkg, '/'); slash != -1 {
 		org = pkg[:slash]
