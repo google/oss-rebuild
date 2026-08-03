@@ -13,9 +13,9 @@ import (
 
 var (
 	// NOTE: This is non-exhaustive and should be expanded as necessary.
-	githubRE    = re.MustCompile(`(?i)\bgithub(\.com)?[:/]([\w-]+/[\w-\.]+)`)
-	gitlabRE    = re.MustCompile(`(?i)\bgitlab(\.com)?[:/]([\w-]+(?:/[\w.-]+)+)`)
-	bitbucketRE = re.MustCompile(`(?i)\bbitbucket(\.org)?[:/]([\w-]+/[\w-\.]+)`)
+	githubRE    = re.MustCompile(`(?i)\bgithub(?:\.com[:/]|:)([\w-]+/[\w-\.]+)`)
+	gitlabRE    = re.MustCompile(`(?i)\bgitlab(?:\.com[:/]|:)([\w-]+(?:/[\w.-]+)+)`)
+	bitbucketRE = re.MustCompile(`(?i)\bbitbucket(?:\.org[:/]|:)([\w-]+/[\w-\.]+)`)
 	commonRepos = []*re.Regexp{
 		githubRE,
 		gitlabRE,
