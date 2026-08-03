@@ -4,12 +4,15 @@
 package gcb
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"regexp"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -44,8 +47,6 @@ type LogsClient interface {
 	ReadBuildLogs(ctx context.Context, buildID string) (io.ReadCloser, error)
 	// ReadStepLogs reads logs for a specific step within a build
 	ReadStepLogs(ctx context.Context, buildID string, stepIndex int) (io.ReadCloser, error)
-	// ListStepLogs returns the available step log files for a build
-	ListStepLogs(ctx context.Context, buildID string) (int, error)
 }
 
 // gcsLogsClient implements LogsClient using Google Cloud Storage.
@@ -69,25 +70,42 @@ func (c *gcsLogsClient) ReadBuildLogs(ctx context.Context, buildID string) (io.R
 	return gcsx.NewObjectReader(ctx, c.bucket.Object(MergedLogFile(buildID)))
 }
 
-// ReadStepLogs reads logs for a specific step within a build from the specified bucket.
+// ReadStepLogs reads logs for a specific step within a build from the
+// specified bucket. GCB writes no per-step log objects: each step's lines
+// appear in the merged log under a "Step #<n>" prefix, which is stripped.
 func (c *gcsLogsClient) ReadStepLogs(ctx context.Context, buildID string, stepIndex int) (io.ReadCloser, error) {
-	objectName := fmt.Sprintf("log-%s.%d.txt", buildID, stepIndex)
-	return c.bucket.Object(objectName).NewReader(ctx)
+	r, err := c.bucket.Object(MergedLogFile(buildID)).NewReader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	section, err := stepSection(r, stepIndex)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading merged log")
+	}
+	return io.NopCloser(bytes.NewReader(section)), nil
 }
 
-// ListStepLogs returns the available step log files for a build in the specified bucket.
-func (c *gcsLogsClient) ListStepLogs(ctx context.Context, buildID string) (int, error) {
-	maxSteps := 100
-	for i := range maxSteps {
-		objectName := fmt.Sprintf("log-%s.%d.txt", buildID, i)
-		_, err := c.bucket.Object(objectName).Attrs(ctx)
-		if errors.Is(err, gcs.ErrObjectNotExist) {
-			return i - 1, nil
+// stepLogPat matches the merged-log prefix on a step's own output lines,
+// with or without a step id ('Step #0: ' or 'Step #2 - "timing": ').
+var stepLogPat = regexp.MustCompile(`^Step #(\d+)(?: - "[^"]*")?: `)
+
+// stepSection extracts one step's prefix-stripped lines from the merged log.
+func stepSection(r io.Reader, stepIndex int) ([]byte, error) {
+	var section bytes.Buffer
+	idx := strconv.Itoa(stepIndex)
+	br := bufio.NewReader(r)
+	for {
+		line, err := br.ReadString('\n')
+		if m := stepLogPat.FindStringSubmatch(line); m != nil && m[1] == idx {
+			section.WriteString(line[len(m[0]):])
+		}
+		if err == io.EOF {
+			return section.Bytes(), nil
 		} else if err != nil {
-			return 0, err
+			return nil, err
 		}
 	}
-	return maxSteps, nil
 }
 
 // clientImpl is a concrete implementation of the Client interface using the Cloud Build service.
@@ -240,7 +258,6 @@ func ToError(build *cloudbuild.Build) error {
 
 }
 
-// NOTE: There are also per-step logs available as log-<id>-step-<n>.txt
 func MergedLogFile(buildID string) string {
 	return fmt.Sprintf("log-%s.txt", buildID)
 }
