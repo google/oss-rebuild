@@ -4,6 +4,7 @@
 package rebuild
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/go-git/go-billy/v5/memfs"
@@ -43,6 +44,76 @@ func TestMatchTag(t *testing.T) {
 			strict, approx := MatchTag(tt.tag, tt.pkg, tt.version)
 			if strict != tt.strict || approx != tt.approx {
 				t.Errorf("MatchTag(%q, %q, %q) = (%v, %v), want (%v, %v)", tt.tag, tt.pkg, tt.version, strict, approx, tt.strict, tt.approx)
+			}
+		})
+	}
+}
+
+func TestSortTagMatches(t *testing.T) {
+	tests := []struct {
+		name    string
+		matches []string
+		pkg     string
+		version string
+		want    []string
+	}{
+		{
+			name:    "package tag beats sibling and repo tag",
+			matches: []string{"0.2.0", "grep-0.2.0", "grep-printer-0.2.0"},
+			pkg:     "grep",
+			version: "0.2.0",
+			want:    []string{"grep-0.2.0", "0.2.0", "grep-printer-0.2.0"},
+		},
+		{
+			name:    "repo tag beats an unrelated sibling",
+			matches: []string{"aaa-v1.0.0", "v1.0.0"},
+			pkg:     "mypackage",
+			version: "1.0.0",
+			want:    []string{"v1.0.0", "aaa-v1.0.0"},
+		},
+		{
+			name:    "scoped npm name matches an unscoped tag",
+			matches: []string{"babel-types@7.0.0", "core@7.0.0", "v7.0.0"},
+			pkg:     "@babel/core",
+			version: "7.0.0",
+			want:    []string{"core@7.0.0", "v7.0.0", "babel-types@7.0.0"},
+		},
+		{
+			name:    "maven coordinate matches the artifact tag",
+			matches: []string{"guava-33.0.0", "other-33.0.0"},
+			pkg:     "com.google.guava:guava",
+			version: "33.0.0",
+			want:    []string{"guava-33.0.0", "other-33.0.0"},
+		},
+		{
+			name:    "decorated package name beats a sibling",
+			matches: []string{"python-mypkg-langchain-v1.0.0", "python-mypkg-openai-v1.0.0"},
+			pkg:     "mypkg-openai",
+			version: "1.0.0",
+			want:    []string{"python-mypkg-openai-v1.0.0", "python-mypkg-langchain-v1.0.0"},
+		},
+		{
+			name:    "unranked tags keep lexicographic order",
+			matches: []string{"zzz-1.0.0", "aaa-1.0.0"},
+			pkg:     "mypackage",
+			version: "1.0.0",
+			want:    []string{"aaa-1.0.0", "zzz-1.0.0"},
+		},
+		{
+			name:    "separator and v-prefix variants all read as the package name",
+			matches: []string{"unrelated-1.0.0", "mypackage/v1.0.0"},
+			pkg:     "mypackage",
+			version: "1.0.0",
+			want:    []string{"mypackage/v1.0.0", "unrelated-1.0.0"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := slices.Clone(tt.matches)
+			sortTagMatches(got, tt.pkg, tt.version)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("sortTagMatches(%v, %q, %q) diff (-want +got):\n%s", tt.matches, tt.pkg, tt.version, diff)
 			}
 		})
 	}
