@@ -6,6 +6,7 @@ package uri
 import (
 	"net/url"
 	re "regexp"
+	"slices"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -21,18 +22,30 @@ var (
 		gitlabRE,
 		bitbucketRE,
 	}
+	// Project routes that directly follow the project path. GitLab has served
+	// these under the /-/ prefix since 12.0 but older links omit it.
+	// NOTE: This is non-exhaustive and should be expanded as necessary.
+	gitlabRoutes = []string{
+		"badges", "blob", "commits", "container_registry", "issues", "packages",
+		"pipelines", "raw", "releases", "tags", "tree", "uploads", "wikis",
+	}
 )
 
 var errUnsupportedRepo = errors.Errorf("unsupported repo type")
 
+// trimGitLabRoute drops any project route from a matched GitLab path.
 func trimGitLabRoute(repo string) string {
-	if repo, _, found := strings.Cut(repo, "/-/"); found {
+	if root, _, found := strings.Cut(repo, "/-/"); found {
+		return root
+	}
+	pathStart := strings.IndexAny(repo, ":/")
+	if pathStart < 0 {
 		return repo
 	}
-	if repoRoot, _, found := strings.Cut(repo, "/tree/"); found {
-		pathStart := strings.IndexAny(repoRoot, ":/")
-		if pathStart >= 0 && strings.Count(repoRoot[pathStart+1:], "/") == 1 {
-			return repoRoot
+	segments := strings.Split(repo[pathStart+1:], "/")
+	for i := 2; i < len(segments); i++ {
+		if slices.Contains(gitlabRoutes, segments[i]) {
+			return repo[:pathStart+1] + strings.Join(segments[:i], "/")
 		}
 	}
 	return repo

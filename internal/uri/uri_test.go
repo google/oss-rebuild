@@ -49,6 +49,22 @@ func TestFindARepo(t *testing.T) {
 			"[![b](https://img.shields.io/github/v/tag/o/r)](https://github.com/org/project)",
 			"github.com/org/project",
 		},
+		{
+			"https://gitlab.com/group/subgroup/repo/blob/main/README.md",
+			"gitlab.com/group/subgroup/repo",
+		},
+		{
+			"https://gitlab.com/group/repo/badges/main/pipeline.svg",
+			"gitlab.com/group/repo",
+		},
+		{
+			"https://gitlab.com/group/repo/issues",
+			"gitlab.com/group/repo",
+		},
+		{
+			"https://gitlab.com/group/blob/repo",
+			"gitlab.com/group/blob/repo",
+		},
 	}
 	for _, test := range tests {
 		actual := FindCommonRepo(test.input)
@@ -104,6 +120,21 @@ func TestCanonicalizeRepoURI(t *testing.T) {
 		{
 			"https://gitlab.com/group/tree/repo/-/tree/main",
 			"https://gitlab.com/group/tree/repo",
+			false,
+		},
+		{
+			"https://gitlab.com/group/subgroup/repo/blob/main/README.md",
+			"https://gitlab.com/group/subgroup/repo",
+			false,
+		},
+		{
+			"https://gitlab.com/group/subgroup/repo/-/blob/main/README.md",
+			"https://gitlab.com/group/subgroup/repo",
+			false,
+		},
+		{
+			"https://gitlab.com/group/repo/badges/main/pipeline.svg",
+			"https://gitlab.com/group/repo",
 			false,
 		},
 	}
