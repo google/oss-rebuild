@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/internal/bufiox"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -115,6 +116,7 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 		UseNetworkProxy:   opts.UseNetworkProxy,
 		UseSyscallMonitor: opts.UseSyscallMonitor,
 		Resources:         opts.Resources,
+		RecordTimings:     opts.RecordTimings,
 	}
 	plan, err := e.planner.GeneratePlan(ctx, input, planOpts)
 	if err != nil {
@@ -262,6 +264,16 @@ func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBui
 			}
 		}
 	}
+	// Extract phase timings from post-build observation.
+	// NOTE: Extraction failures are logged, never surfaced as build errors.
+	var timings *rebuild.BuildTimings
+	if buildErr == nil && buildInfo.BuildID != "" && plan.timingStep() >= 0 {
+		var err error
+		timings, err = e.extractTimings(ctx, buildInfo.BuildID, plan, buildResult)
+		if err != nil {
+			log.Printf("Build %s timing extraction failed: %v", buildInfo.BuildID, err)
+		}
+	}
 	// Upload assets to asset store if configured
 	if opts.Resources.AssetStore != nil {
 		if err := e.uploadContent(ctx, opts.Resources.AssetStore, rebuild.DockerfileAsset.For(t), []byte(plan.Dockerfile)); err != nil {
@@ -280,8 +292,52 @@ func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBui
 	// NOTE: Delete before setResult so handle.Wait returns *after* executor considers it retired.
 	e.activeBuilds.Delete(handle.id)
 	handle.setResult(build.Result{
-		Error: buildErr,
+		Error:   buildErr,
+		Timings: timings,
 	})
+}
+
+// extractTimings assembles phase timings from the timing step's inspect and
+// history output. A sentinel-failed run yields a marked record: the image
+// phases completed (the image exists), and the container span runs until the
+// script's termination. An unusable container span leaves Build unmeasured
+// without discarding the image phases.
+// NOTE: The step's section is filtered out of the shared build log by line
+// prefix, so a line torn by a monitored-mode writer at worst drops that line.
+func (e *Executor) extractTimings(ctx context.Context, buildID string, plan *Plan, buildResult *cloudbuild.Build) (*rebuild.BuildTimings, error) {
+	r, err := e.logsClient.ReadStepLogs(ctx, buildID, plan.timingStep())
+	if err != nil {
+		return nil, errors.Wrap(err, "opening timing step logs")
+	}
+	defer r.Close()
+	section, err := io.ReadAll(r)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading timing step logs")
+	}
+	buildDur, err := timing.ContainerSpan(section)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading container span")
+	}
+	layers, err := timing.ParseHistory(section, plan.Layers)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing image history")
+	}
+	buildStart, err := stepStart(buildResult, 0)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading main step start")
+	}
+	setup, source, deps, err := layers.Phases(buildStart)
+	if err != nil {
+		return nil, errors.Wrap(err, "deriving phase durations")
+	}
+	return timing.Validated(rebuild.BuildTimings{Setup: setup, Source: source, Deps: deps, Build: buildDur}), nil
+}
+
+func stepStart(b *cloudbuild.Build, i int) (time.Time, error) {
+	if b == nil || i >= len(b.Steps) || b.Steps[i] == nil || b.Steps[i].Timing == nil {
+		return time.Time{}, errors.New("step timing unavailable")
+	}
+	return time.Parse(time.RFC3339, b.Steps[i].Timing.StartTime)
 }
 
 // doBuild executes a build on Cloud Build, waits for completion and returns the resulting Build resource.

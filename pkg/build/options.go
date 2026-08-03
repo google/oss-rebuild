@@ -45,6 +45,8 @@ type Options struct {
 	SaveContainerImage bool
 	// SavePostBuildContainer saves the container state after executing the rebuild
 	SavePostBuildContainer bool
+	// RecordTimings appends read-only observation of build phase timings
+	RecordTimings bool
 }
 
 // PlanOptions configures plan generation behavior and resources
@@ -61,6 +63,8 @@ type PlanOptions struct {
 	SaveContainerImage bool
 	// SavePostBuildContainer saves the container state after executing the rebuild
 	SavePostBuildContainer bool
+	// RecordTimings appends read-only observation of build phase timings
+	RecordTimings bool
 }
 
 // CancelPolicy determines how build cancellation is handled

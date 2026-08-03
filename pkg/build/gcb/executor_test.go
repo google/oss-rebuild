@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/gcb/gcbtest"
@@ -566,5 +567,121 @@ func TestGCBExecutorFailedBuild(t *testing.T) {
 	// Clean up
 	if err := executor.Close(ctx); err != nil {
 		t.Errorf("Close failed: %v", err)
+	}
+}
+
+func TestExecutorTimings(t *testing.T) {
+	ctx := context.Background()
+	goodStepLog := `+ docker inspect --format {{.State.StartedAt}} {{.State.FinishedAt}} container
+2026-07-01T00:01:20.500000000Z 2026-07-01T00:01:44.500000000Z
++ docker history --human=false --format {{json .}} img
+{"Comment":"buildkit.dockerfile.v0","CreatedAt":"2026-07-01T00:01:11Z","CreatedBy":"ENTRYPOINT","ID":"<missing>","Size":"0"}
+{"Comment":"buildkit.dockerfile.v0","CreatedAt":"2026-07-01T00:01:11Z","CreatedBy":"WORKDIR","ID":"<missing>","Size":"0"}
+{"Comment":"buildkit.dockerfile.v0","CreatedAt":"2026-07-01T00:01:11Z","CreatedBy":"RUN","ID":"<missing>","Size":"1024"}
+{"Comment":"buildkit.dockerfile.v0","CreatedAt":"2026-07-01T00:01:10Z","CreatedBy":"RUN","ID":"<missing>","Size":"4096"}
+{"Comment":"buildkit.dockerfile.v0","CreatedAt":"2026-07-01T00:00:30Z","CreatedBy":"RUN","ID":"<missing>","Size":"512"}
+{"Comment":"buildkit.dockerfile.v0","CreatedAt":"2026-07-01T00:00:10Z","CreatedBy":"RUN","ID":"<missing>","Size":"2048"}
+{"Comment":"base","CreatedAt":"2025-01-01T00:00:00Z","CreatedBy":"FROM","ID":"abc123","Size":"7340032"}
+`
+	buildResult := &cloudbuild.Build{
+		Id:         "test-build-gcb-123",
+		Status:     "SUCCESS",
+		StartTime:  "2026-07-01T00:00:00Z",
+		FinishTime: "2026-07-01T00:02:00Z",
+		Steps: []*cloudbuild.BuildStep{
+			{
+				Name:   "gcr.io/cloud-builders/docker",
+				Timing: &cloudbuild.TimeSpan{StartTime: "2026-07-01T00:00:00Z", EndTime: "2026-07-01T00:01:50Z"},
+			},
+		},
+	}
+	metadataBytes, _ := json.Marshal(&cloudbuild.BuildOperationMetadata{Build: buildResult})
+	operation := &cloudbuild.Operation{
+		Name:     "projects/test-project/operations/test-build-timings",
+		Metadata: googleapi.RawMessage(metadataBytes),
+	}
+	doneOperation := &cloudbuild.Operation{
+		Name:     operation.Name,
+		Done:     true,
+		Metadata: googleapi.RawMessage(metadataBytes),
+	}
+	mockClient := &gcbtest.MockClient{
+		CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
+			return operation, nil
+		},
+		WaitForOperationFunc: func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
+			return doneOperation, nil
+		},
+	}
+	for _, tc := range []struct {
+		name    string
+		stepLog string
+		want    *rebuild.BuildTimings
+	}{
+		{
+			name:    "Extracted",
+			stepLog: goodStepLog,
+			want: &rebuild.BuildTimings{
+				Setup:  10 * time.Second, // setup layer completion - step start
+				Source: 20 * time.Second, // source layer completion delta
+				Deps:   40 * time.Second, // deps layer completion delta
+				Build:  24 * time.Second, // container FinishedAt - StartedAt
+			},
+		},
+		{
+			// Extraction failures never surface as build errors.
+			name:    "UnusableLogTolerated",
+			stepLog: "no inspect or history output\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			executor, err := NewExecutor(ExecutorConfig{
+				Client:         mockClient,
+				Project:        "test-project",
+				ServiceAccount: "test@test.iam.gserviceaccount.com",
+				LogsBucket:     "test-bucket",
+				LogsClientFunc: func(bucket string) gcb.LogsClient {
+					return &gcbtest.MockLogsClient{
+						ReadStepLogsFunc: func(ctx context.Context, buildID string, stepIndex int) (io.ReadCloser, error) {
+							if stepIndex < 1 {
+								t.Errorf("ReadStepLogs stepIndex = %d, want the appended timing step", stepIndex)
+							}
+							return io.NopCloser(strings.NewReader(tc.stepLog)), nil
+						},
+					}
+				},
+			})
+			if err != nil {
+				t.Fatalf("NewExecutor failed: %v", err)
+			}
+			input := rebuild.Input{
+				Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-package", Version: "1.0.0", Artifact: "test-package-1.0.0.tgz"},
+				Strategy: &rebuild.ManualStrategy{
+					Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Requires:   rebuild.RequiredEnv{SystemDeps: []string{"git", "node", "npm"}},
+					Deps:       "npm install",
+					Build:      "npm run build",
+					OutputPath: "dist/test-package-1.0.0.tgz",
+				},
+			}
+			handle, err := executor.Start(ctx, input, build.Options{
+				BuildID:       "test-build-timings",
+				RecordTimings: true,
+				Resources:     build.Resources{BaseImageConfig: build.BaseImageConfig{Default: "docker.io/library/alpine:3.19"}},
+			})
+			if err != nil {
+				t.Fatalf("Start failed: %v", err)
+			}
+			result, err := handle.Wait(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Error != nil {
+				t.Fatal(result.Error)
+			}
+			if diff := cmp.Diff(tc.want, result.Timings); diff != "" {
+				t.Errorf("Timings diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

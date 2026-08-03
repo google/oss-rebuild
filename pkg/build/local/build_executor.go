@@ -18,6 +18,7 @@ import (
 	"github.com/google/oss-rebuild/internal/bufiox"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -116,6 +117,7 @@ func (e *DockerBuildExecutor) Start(ctx context.Context, input rebuild.Input, op
 		Resources:              opts.Resources,
 		SaveContainerImage:     opts.SaveContainerImage,
 		SavePostBuildContainer: opts.SavePostBuildContainer,
+		RecordTimings:          opts.RecordTimings,
 	}
 	plan, err := e.planner.GeneratePlan(ctx, input, planOpts)
 	if err != nil {
@@ -214,6 +216,7 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	} else {
 		buildArgs = append(buildArgs, "-")
 	}
+	buildxStart := time.Now()
 	err := e.cmdExecutor.Execute(ctx, CommandOptions{
 		Input:  strings.NewReader(plan.Dockerfile),
 		Output: multiWriter,
@@ -225,13 +228,18 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 		})
 		return
 	}
+	// The planner declares layers only under Options.RecordTimings, so the
+	// declaration is the observation gate.
+	recordTimings := plan.Layers.Appended > 0
 	// Run Docker container with streaming and captured output.
+	// NOTE: The container is named and retained when observed so its state
+	// clocks survive for post-build inspection.
 	runArgs := []string{"run"}
-	if !e.retainContainer && !opts.SavePostBuildContainer {
-		runArgs = append(runArgs, "--rm")
-	}
-	if opts.SavePostBuildContainer {
+	if recordTimings || opts.SavePostBuildContainer {
 		runArgs = append(runArgs, "--name", handle.id)
+	}
+	if !e.retainContainer && !opts.SavePostBuildContainer && !recordTimings {
+		runArgs = append(runArgs, "--rm")
 	}
 	runArgs = append(runArgs, "-v", fmt.Sprintf("%s:%s", hostOutputPath, path.Dir(plan.OutputPath)), imageTag)
 	if plan.Privileged {
@@ -252,6 +260,13 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	err = e.cmdExecutor.Execute(ctx, CommandOptions{
 		Output: multiWriter,
 	}, e.dockerCmd, runArgs...)
+	// Extract phase timings before cleanup discards the history and state
+	// clocks.
+	// NOTE: Extraction failures are logged, never surfaced as build errors.
+	var timings *rebuild.BuildTimings
+	if recordTimings {
+		timings = e.extractTimings(ctx, handle.id, imageTag, plan, buildxStart)
+	}
 	// Export post-build container if requested.
 	if opts.SavePostBuildContainer {
 		postBuildPath := filepath.Join(hostOutputPath, string(rebuild.PostBuildContainerAsset))
@@ -263,8 +278,8 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	if opts.Resources.AssetStore != nil {
 		e.uploadAssets(ctx, plan, hostOutputPath, t, opts, handle.id, outbuf.Bytes())
 	}
-	// Clean up post-build container if it was retained for export.
-	if opts.SavePostBuildContainer && !e.retainContainer {
+	// Clean up the container if it was retained for export or observation.
+	if (opts.SavePostBuildContainer || recordTimings) && !e.retainContainer {
 		if rmErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "rm", handle.id); rmErr != nil {
 			log.Printf("Failed to remove container %s: %v", handle.id, rmErr)
 		}
@@ -280,13 +295,45 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	if err != nil {
 		handle.updateStatus(build.BuildStateCompleted)
 		handle.setResult(build.Result{
-			Error: errors.Wrap(err, "docker run failed"),
+			Error:   errors.Wrap(err, "docker run failed"),
+			Timings: timings,
 		})
 		return
 	}
 	// Set final successful result.
 	handle.updateStatus(build.BuildStateCompleted)
-	handle.setResult(build.Result{Error: nil})
+	handle.setResult(build.Result{Timings: timings})
+}
+
+// extractTimings assembles phase timings from image history and the retained
+// container's state clocks.
+func (e *DockerBuildExecutor) extractTimings(ctx context.Context, container, imageTag string, plan *DockerBuildPlan, buildxStart time.Time) *rebuild.BuildTimings {
+	histBuf := &bytes.Buffer{}
+	if err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: histBuf}, e.dockerCmd, "history", "--human=false", "--format", "{{json .}}", imageTag); err != nil {
+		log.Printf("Build %s timing history failed: %v", container, err)
+		return nil
+	}
+	layers, err := timing.ParseHistory(histBuf.Bytes(), plan.Layers)
+	if err != nil {
+		log.Printf("Build %s timing history unparseable: %v", container, err)
+		return nil
+	}
+	setup, source, deps, err := layers.Phases(buildxStart)
+	if err != nil {
+		log.Printf("Build %s timing extraction refused: %v", container, err)
+		return nil
+	}
+	spanBuf := &bytes.Buffer{}
+	if err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: spanBuf}, e.dockerCmd, "inspect", container, "-f", "{{.State.StartedAt}} {{.State.FinishedAt}}"); err != nil {
+		log.Printf("Build %s timing inspect failed: %v", container, err)
+		return nil
+	}
+	buildDur, err := timing.ContainerSpan(spanBuf.Bytes())
+	if err != nil {
+		log.Printf("Build %s timing inspect unparseable: %v", container, err)
+		return nil
+	}
+	return timing.Validated(rebuild.BuildTimings{Setup: setup, Source: source, Deps: deps, Build: buildDur})
 }
 
 // uploadAssets uploads build artifacts to the asset store.

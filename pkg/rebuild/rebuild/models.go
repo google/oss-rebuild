@@ -83,6 +83,14 @@ type Input struct {
 	Strategy Strategy
 }
 
+// BuildTimings are the measured durations of each build phase.
+type BuildTimings struct {
+	Setup  time.Duration
+	Source time.Duration
+	Deps   time.Duration // legitimately zero when the plan had no deps layer
+	Build  time.Duration
+}
+
 // Timings describe how long different sections of the rebuild took.
 type Timings struct {
 	CloneEstimate time.Duration

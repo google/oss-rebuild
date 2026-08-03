@@ -647,6 +647,9 @@ RLpmHHG1JOVdOA==
 						ReadBuildLogsFunc: func(ctx context.Context, buildID string) (io.ReadCloser, error) {
 							return io.NopCloser(bytes.NewBufferString("BUILD LOG\n")), nil
 						},
+						ReadStepLogsFunc: func(ctx context.Context, buildID string, stepIndex int) (io.ReadCloser, error) {
+							return io.NopCloser(bytes.NewBuffer(nil)), nil
+						},
 					}
 				},
 				Client: gcbclient,

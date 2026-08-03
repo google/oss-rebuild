@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
@@ -240,6 +241,7 @@ type gcbContainerArgs struct {
 }
 
 // gcbDockerfileTpl generates Dockerfiles for use in GCB
+// NOTE: Layer mappings must be kept in sync with dockerfileLayers.
 var gcbDockerfileTpl = template.Must(
 	template.New("gcb dockerfile").Funcs(template.FuncMap{
 		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
@@ -294,6 +296,16 @@ var gcbDockerfileTpl = template.Must(
 			ENTRYPOINT ["/bin/sh","/build"]
 			`)[1:], // remove leading newline
 	))
+
+// dockerfileLayers declares gcbDockerfileTpl's instruction shape.
+// NOTE: Template conditionals vary only script contents, never the sequence.
+func dockerfileLayers(hasDeps bool) timing.Layers {
+	l := timing.Layers{Appended: 5, Setup: 0, Source: 1, Deps: -1}
+	if hasDeps {
+		l.Appended, l.Deps = 6, 2
+	}
+	return l
+}
 
 // gcbStandardBuildTpl generates standard build scripts for Cloud Build steps
 var gcbStandardBuildTpl = template.Must(
@@ -538,10 +550,15 @@ func (p *Planner) GeneratePlan(ctx context.Context, input rebuild.Input, opts bu
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate Cloud Build steps")
 	}
-	return &Plan{
+	plan := &Plan{
 		Steps:      steps,
 		Dockerfile: dockerfile,
-	}, nil
+	}
+	// Layers only serve the timing step's extraction.
+	if opts.RecordTimings {
+		plan.Layers = dockerfileLayers(instructions.Deps != "")
+	}
+	return plan, nil
 }
 
 // generateDockerfile creates a Dockerfile from rebuild instructions and options using templates
@@ -613,6 +630,24 @@ func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, reqs r
 		Args: []string{"cp", "container:" + path.Join("/out", target.Artifact), path.Join("/workspace", target.Artifact)},
 	}
 	steps = append(steps, extractStep)
+	// Timing observation step: reads clocks the build's log stream cannot
+	// affect.
+	// NOTE: No -e and || true throughout so a flaking inspect cannot fail a
+	// successful rebuild. GCB guarantees the converse: a failed main step
+	// prevents later steps, so this step cannot mask a failure.
+	// NOTE: The proxied daemon forwards to the step-shared docker socket, so
+	// the inspected container and image are visible here in proxy mode too.
+	if opts.RecordTimings {
+		steps = append(steps, &cloudbuild.BuildStep{
+			Id:   timingStepID,
+			Name: "gcr.io/cloud-builders/docker",
+			Script: strings.Join([]string{
+				"set -ux",
+				`docker inspect container -f '{{.State.StartedAt}} {{.State.FinishedAt}}' || true`,
+				`docker history --human=false --format '{{json .}}' img || true`,
+			}, "\n"),
+		})
+	}
 	// Save container image if requested
 	if opts.SaveContainerImage {
 		saveStep := &cloudbuild.BuildStep{
