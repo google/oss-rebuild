@@ -241,7 +241,7 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	if !e.retainContainer && !opts.SavePostBuildContainer && !recordTimings {
 		runArgs = append(runArgs, "--rm")
 	}
-	runArgs = append(runArgs, "-v", fmt.Sprintf("%s:%s", hostOutputPath, path.Dir(plan.OutputPath)), imageTag)
+	runArgs = append(runArgs, "-v", fmt.Sprintf("%s:%s", hostOutputPath, path.Dir(plan.OutputPath)))
 	if plan.Privileged {
 		if e.allowPrivileged {
 			runArgs = append(runArgs, "--privileged")
@@ -257,6 +257,7 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	if e.memoryLimit != "" {
 		runArgs = append(runArgs, "--memory", e.memoryLimit)
 	}
+	runArgs = append(runArgs, imageTag)
 	err = e.cmdExecutor.Execute(ctx, CommandOptions{
 		Output: multiWriter,
 	}, e.dockerCmd, runArgs...)
