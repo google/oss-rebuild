@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/google/oss-rebuild/internal/gitcache"
 )
@@ -19,9 +20,18 @@ var (
 )
 
 func main() {
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args[0])
+		flag.PrintDefaults()
+		fmt.Fprintf(flag.CommandLine.Output(), `
+Note: The git cache supports checking out submodules but it won't cache them, nor is it used to fetch them.
+`)
+	}
+
 	flag.Parse()
 	if *cache == "" {
-		log.Fatalln("-cache flag is required")
+		flag.Usage()
+		log.Fatalln("Error: -cache flag is required")
 	}
 	ctx := context.Background()
 	s, err := gitcache.NewServer(ctx, *cache)
