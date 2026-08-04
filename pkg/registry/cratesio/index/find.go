@@ -115,19 +115,23 @@ var errNoMatches = errors.New("no packages found at publish time")
 
 func findCommitWithVersions(repo *git.Repository, packages []internalPackage, published time.Time, cfg *FindConfig) (*searchResult, error) {
 	blobHashes := make(map[string]plumbing.Hash)
-	present := make(map[string]bool)
+	present := make(map[string]map[string]bool)
+	packagesByPath := make(map[string][]internalPackage)
+	for _, pkg := range packages {
+		packagesByPath[pkg.Path] = append(packagesByPath[pkg.Path], pkg)
+	}
 	matchesFor := func(commit *object.Commit) int {
 		tree, err := commit.Tree()
 		if err != nil {
 			return 0
 		}
 		var found int
-		for _, pkg := range packages {
-			entry, err := tree.FindEntry(pkg.Path)
+		for path, pathPackages := range packagesByPath {
+			entry, err := tree.FindEntry(path)
 			if err != nil {
 				continue
 			}
-			if entry.Hash != blobHashes[pkg.Path] {
+			if entry.Hash != blobHashes[path] {
 				blob, err := repo.BlobObject(entry.Hash)
 				if err != nil {
 					continue
@@ -141,11 +145,16 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 				if err != nil {
 					continue
 				}
-				blobHashes[pkg.Path] = entry.Hash
-				present[pkg.Path] = bytes.Contains(content, []byte(`"vers":"`+pkg.Version+`"`))
+				blobHashes[path] = entry.Hash
+				present[path] = make(map[string]bool, len(pathPackages))
+				for _, pkg := range pathPackages {
+					present[path][pkg.Version] = bytes.Contains(content, []byte(`"vers":"`+pkg.Version+`"`))
+				}
 			}
-			if present[pkg.Path] {
-				found++
+			for _, pkg := range pathPackages {
+				if present[path][pkg.Version] {
+					found++
+				}
 			}
 		}
 		if cfg != nil && cfg.VerboseLogging {
