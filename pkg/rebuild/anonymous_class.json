@@ -1,0 +1,276 @@
+{
+  "Count": 27,
+  "Updated": "2025-10-16T16:03:16.469407",
+  "Packages": [
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.tika:tika-core",
+      "Versions": [
+        "2.9.2"
+      ],
+      "Artifacts": [
+        "tika-core-2.9.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.fasterxml.jackson.core:jackson-databind",
+      "Versions": [
+        "2.18.3"
+      ],
+      "Artifacts": [
+        "jackson-databind-2.18.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.projectreactor:reactor-core",
+      "Versions": [
+        "3.5.11"
+      ],
+      "Artifacts": [
+        "reactor-core-3.5.11.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.fluxtion:runtime",
+      "Versions": [
+        "9.7.14"
+      ],
+      "Artifacts": [
+        "runtime-9.7.14.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.larksuite.oapi:oapi-sdk",
+      "Versions": [
+        "2.2.4"
+      ],
+      "Artifacts": [
+        "oapi-sdk-2.2.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.httpcomponents.core5:httpcore5",
+      "Versions": [
+        "5.2.4"
+      ],
+      "Artifacts": [
+        "httpcore5-5.2.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.netty:netty-buffer",
+      "Versions": [
+        "4.1.109.Final"
+      ],
+      "Artifacts": [
+        "netty-buffer-4.1.109.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.hamcrest:hamcrest",
+      "Versions": [
+        "3.0"
+      ],
+      "Artifacts": [
+        "hamcrest-3.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.jsonwebtoken:jjwt-impl",
+      "Versions": [
+        "0.12.6"
+      ],
+      "Artifacts": [
+        "jjwt-impl-0.12.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.zeroturnaround:zt-zip",
+      "Versions": [
+        "1.17"
+      ],
+      "Artifacts": [
+        "zt-zip-1.17.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.http-client:google-http-client",
+      "Versions": [
+        "1.44.1"
+      ],
+      "Artifacts": [
+        "google-http-client-1.44.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.avro:avro",
+      "Versions": [
+        "1.11.3"
+      ],
+      "Artifacts": [
+        "avro-1.11.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.jersey.core:jersey-client",
+      "Versions": [
+        "2.41"
+      ],
+      "Artifacts": [
+        "jersey-client-2.41.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.flink:flink-streaming-java",
+      "Versions": [
+        "1.18.1"
+      ],
+      "Artifacts": [
+        "flink-streaming-java-1.18.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.google.api-client:google-api-client",
+      "Versions": [
+        "2.7.2"
+      ],
+      "Artifacts": [
+        "google-api-client-2.7.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework:spring-context",
+      "Versions": [
+        "6.1.2"
+      ],
+      "Artifacts": [
+        "spring-context-6.1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.lettuce:lettuce-core",
+      "Versions": [
+        "6.3.2.RELEASE"
+      ],
+      "Artifacts": [
+        "lettuce-core-6.3.2.RELEASE.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.cedarsoftware:java-util",
+      "Versions": [
+        "2.4.0"
+      ],
+      "Artifacts": [
+        "java-util-2.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.javaparser:javaparser-symbol-solver-core",
+      "Versions": [
+        "3.26.2"
+      ],
+      "Artifacts": [
+        "javaparser-symbol-solver-core-3.26.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.github.bes2008.solution.langx:langx-java",
+      "Versions": [
+        "5.4.4"
+      ],
+      "Artifacts": [
+        "langx-java-5.4.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.binarywang:weixin-java-miniapp",
+      "Versions": [
+        "4.6.0"
+      ],
+      "Artifacts": [
+        "weixin-java-miniapp-4.6.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.thoughtworks.xstream:xstream",
+      "Versions": [
+        "1.4.21"
+      ],
+      "Artifacts": [
+        "xstream-1.4.21.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.codehaus.woodstox:stax2-api",
+      "Versions": [
+        "4.2.2"
+      ],
+      "Artifacts": [
+        "stax2-api-4.2.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mvel:mvel2",
+      "Versions": [
+        "2.5.2.Final"
+      ],
+      "Artifacts": [
+        "mvel2-2.5.2.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.asynchttpclient:async-http-client",
+      "Versions": [
+        "2.12.4"
+      ],
+      "Artifacts": [
+        "async-http-client-2.12.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.vesoft:client",
+      "Versions": [
+        "3.8.0"
+      ],
+      "Artifacts": [
+        "client-3.8.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.cryptacular:cryptacular",
+      "Versions": [
+        "1.2.7"
+      ],
+      "Artifacts": [
+        "cryptacular-1.2.7.jar"
+      ]
+    }
+  ]
+}
