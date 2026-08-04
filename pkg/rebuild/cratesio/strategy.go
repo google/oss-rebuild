@@ -124,6 +124,7 @@ var toolkit = []*flow.Tool{
 		Name: "cargo/build/package",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				export CARGO_TARGET_DIR="$PWD/target"
 				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
 				/root/.cargo/bin/cargo package --no-verify
 				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`)[1:],
