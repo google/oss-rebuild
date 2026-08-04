@@ -14,6 +14,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -174,6 +175,9 @@ func TestPhaseFailureSurfacesExitError(t *testing.T) {
 	var exitErr *ExitError
 	if !errors.As(result.Error, &exitErr) || exitErr.Code != 42 || exitErr.Phase != "deps" {
 		t.Fatalf("Result.Error = %v, want ExitError{42, deps}", result.Error)
+	}
+	if result.Timings != nil {
+		t.Errorf("Expected nil timings on failure, got %+v", result.Timings)
 	}
 	if len(f.createReqs) != 6 {
 		t.Fatalf("got %d exec creates, want 6 (prepare, start, 3 phases, stop)", len(f.createReqs))
@@ -343,6 +347,49 @@ func TestSuccessUploadsAssets(t *testing.T) {
 		if !strings.Contains(script, want) {
 			t.Errorf("fetch script missing %q:\n%s", want, script)
 		}
+	}
+}
+
+func TestTimingsFromWorkerStamps(t *testing.T) {
+	// Each phase op carries worker-clock stamps; the spans must be their
+	// differences, not client-observed wall time.
+	base := time.Unix(1700000000, 0)
+	timedOp := func(id string, i int) *longrunning.Operation[schema.ScratchExecResult] {
+		op := completedOp(id, 0)
+		op.Result.StartedAt = base.Add(time.Duration(i) * time.Minute)
+		op.Result.FinishedAt = op.Result.StartedAt.Add(time.Duration(i+1) * time.Second)
+		return op
+	}
+	f := &fakeStubs{creates: []createFn{
+		respond(completedOp("prepare", 0), nil),
+		respond(completedOp("start", 0), nil),
+		respond(timedOp("setup", 0), nil),
+		respond(timedOp("source", 1), nil),
+		respond(timedOp("deps", 2), nil),
+		respond(timedOp("build", 3), nil),
+		respond(completedOp("stop", 0), nil),
+		respond(completedOp("fetch", 0), nil),
+	}}
+	result := awaitBuild(t, testExecutor(t, f), testOptions())
+	if result.Error != nil {
+		t.Fatalf("Result.Error = %v, want success", result.Error)
+	}
+	want := &rebuild.BuildTimings{Setup: time.Second, Source: 2 * time.Second, Deps: 3 * time.Second, Build: 4 * time.Second}
+	if diff := cmp.Diff(want, result.Timings); diff != "" {
+		t.Errorf("Timings mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestTimingsAbsentWithoutWorkerStamps(t *testing.T) {
+	// completedOp carries no StartedAt/FinishedAt: blind finalization. The
+	// build succeeds but the timing record is incomplete.
+	f := &fakeStubs{creates: append(buildCreates(0, 0, 0, 0), respond(completedOp("fetch", 0), nil))}
+	result := awaitBuild(t, testExecutor(t, f), testOptions())
+	if result.Error != nil {
+		t.Fatalf("Result.Error = %v, want success", result.Error)
+	}
+	if result.Timings != nil {
+		t.Errorf("Expected nil timings without worker stamps, got %+v", result.Timings)
 	}
 }
 
