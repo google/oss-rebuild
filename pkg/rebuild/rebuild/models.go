@@ -83,7 +83,14 @@ type Input struct {
 	Strategy Strategy
 }
 
-// BuildTimings are the measured durations of each build phase.
+// BuildTimings describe how long each build phase took.
+//
+// The record is all-or-nothing: producers emit one iff every build phase was
+// determined, so Deps of zero on a present record always means the plan had
+// no deps phase, never unknown. Records written by the pre-pkg/build pipeline
+// (removed in #949) carry coarser semantics: Source was host-side repo setup
+// and Build was the entire container execution, subsuming what Setup, Deps,
+// and Build now measure separately.
 type BuildTimings struct {
 	Setup  time.Duration
 	Source time.Duration
@@ -91,20 +98,10 @@ type BuildTimings struct {
 	Build  time.Duration
 }
 
-// Timings describe how long different sections of the rebuild took.
+// Timings aggregate the independently recorded durations of a rebuild.
 type Timings struct {
-	CloneEstimate time.Duration
-	Source        time.Duration
-	Infer         time.Duration
-	Build         time.Duration
-}
-
-func (t Timings) Total() time.Duration {
-	return t.Source + t.Infer + t.Build
-}
-
-func (t Timings) EstimateCleanBuild() time.Duration {
-	return t.CloneEstimate + t.Infer + t.Build
+	Infer *time.Duration // nil when inference did not run
+	Build *BuildTimings  // nil unless every build phase was measured
 }
 
 // PrebuildConfig contains deployment-specific prebuild configuration
@@ -112,12 +109,4 @@ type PrebuildConfig struct {
 	Bucket string `json:"bucket"`
 	Dir    string `json:"dir,omitempty"`
 	Auth   bool   `json:"auth,omitempty"`
-}
-
-// Verdict is the result of a single rebuild attempt.
-type Verdict struct {
-	Target   Target
-	Message  string
-	Strategy Strategy
-	Timings  Timings
 }

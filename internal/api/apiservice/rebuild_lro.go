@@ -39,7 +39,7 @@ func ProjectRebuildAttempt(a schema.RebuildAttempt) longrunning.Operation[schema
 			Message:       a.Message,
 			StrategyOneof: a.Strategy,
 			Provenance:    a.Provenance,
-			Timings:       a.Timings,
+			Timings:       a.Timings(),
 		},
 	}
 	switch a.Status {
