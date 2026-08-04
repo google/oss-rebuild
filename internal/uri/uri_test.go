@@ -37,6 +37,18 @@ func TestFindARepo(t *testing.T) {
 			"https://gitlab.com/group/tree/repo",
 			"gitlab.com/group/tree/repo",
 		},
+		{
+			"https://img.shields.io/github/stars/rust-lang/rust",
+			"",
+		},
+		{
+			"https://img.shields.io/gitlab/pipeline/group/repo/main",
+			"",
+		},
+		{
+			"[![b](https://img.shields.io/github/v/tag/o/r)](https://github.com/org/project)",
+			"github.com/org/project",
+		},
 	}
 	for _, test := range tests {
 		actual := FindCommonRepo(test.input)
