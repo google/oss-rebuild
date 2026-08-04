@@ -146,6 +146,14 @@ func AgentCompleteInit(ctx context.Context) (*agentapiservice.AgentCompleteDeps,
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
+	if *scratchEnabled {
+		// Enable eager teardown of scratch-mode sessions' VMs.
+		d.Scratches = db.NewFirestoreScratch(d.FirestoreClient)
+		d.GCE, err = agentapiservice.NewComputeGCE(ctx, *project)
+		if err != nil {
+			return nil, errors.Wrap(err, "compute client")
+		}
+	}
 	return &d, nil
 }
 

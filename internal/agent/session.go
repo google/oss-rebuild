@@ -9,8 +9,10 @@ import (
 	"log"
 	"net/url"
 	"path"
+	"time"
 
 	gcs "cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -27,6 +29,8 @@ type AgentDeps struct {
 	GCSClient      *gcs.Client
 	MaxTurns       int
 	GenaiClient    *genai.Client
+	RegistryClient httpx.BasicClient // Upstream registry requests (e.g. adapt-mode registry refresh) via the session's identified egress path.
+	ScratchRunner  *ScratchRunner    // When set, iteration builds run on a scratch VM with build logs read from exec output.
 }
 
 type ProposeOpts struct {
@@ -54,6 +58,8 @@ type RunSessionDeps struct {
 	SessionsBucket string
 	MetadataBucket string
 	LogsBucket     string
+	RegistryClient httpx.BasicClient // Upstream registry requests via the session's identified egress path.
+	ScratchRunner  *ScratchRunner    // When set, each iteration builds on the scratch VM. Only verified successes reach the iteration API, as GCB confirmations.
 }
 
 func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
@@ -68,6 +74,33 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 	s, err := agent.Propose(ctx, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "generating strategy")
+	}
+	// Scratch-mode attempts run locally on the session's scratch VM and are
+	// not recorded server-side (the scratch exec ledger is their trail).
+	// Only a locally-verified success proceeds to the standard iteration
+	// call below, which re-executes the strategy on GCB as the trusted
+	// confirmation. That server-derived verdict becomes the recorded
+	// iteration and, on success, the session's SuccessIteration.
+	if deps.ScratchRunner != nil {
+		status, result := deps.ScratchRunner.Run(ctx, fmt.Sprintf("iter-%d", iterNum), s)
+		if status != schema.AgentIterationStatusSuccess {
+			now := time.Now().UTC()
+			return &schema.AgentIteration{
+				SessionID: sessionID,
+				Number:    iterNum,
+				Strategy:  s,
+				Status:    status,
+				Result:    result,
+				Created:   now,
+				Updated:   now,
+			}, nil
+		}
+		log.Printf("Session %s Iteration %d: local build verified; confirming on GCB", sessionID, iterNum)
+		// The confirmation build produces no scratch exec traffic for its
+		// (long) duration. Keep the VM visibly active so the idle reaper
+		// doesn't tear it down mid-session.
+		stop := deps.ScratchRunner.StartKeepAlive(ctx)
+		defer stop()
 	}
 	// TODO: Should CreateIteration just return the Iteration object?
 	resp, err := deps.IterationStub(ctx, schema.AgentCreateIterationRequest{
@@ -106,6 +139,8 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		GCSClient:      deps.GCSClient,
 		MaxTurns:       10,
 		GenaiClient:    deps.Client,
+		RegistryClient: deps.RegistryClient,
+		ScratchRunner:  deps.ScratchRunner,
 	})
 	var err error
 	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, llm.GeminiPro, config, &llm.ChatOpts{Tools: a.getTools()})

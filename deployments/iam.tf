@@ -187,7 +187,7 @@ resource "google_storage_bucket_iam_member" "builders-view-bootstrap-bucket" {
     ],
     var.enable_network_analyzer ? [google_service_account.network-analyzer-build[0].member] : [],
     var.enable_system_analyzer ? [google_service_account.system-analyzer-build[0].member] : [],
-    var.enable_scratch ? [google_service_account.scratch-worker[0].member] : []
+    var.enable_scratch ? [google_service_account.scratch-worker[0].member, google_service_account.agent-job.member] : []
   ) : [])
   member = each.key
 }
@@ -424,6 +424,12 @@ resource "google_storage_bucket_iam_member" "orchestrator-rw-scratch-output" {
   bucket = google_storage_bucket.scratch-output[0].name
   role   = "roles/storage.objectAdmin"
   member = google_service_account.orchestrator.member
+}
+resource "google_storage_bucket_iam_member" "agent-reads-scratch-output" {
+  count  = var.enable_scratch ? 1 : 0
+  bucket = google_storage_bucket.scratch-output[0].name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.agent-job.member
 }
 resource "google_cloud_run_v2_service_iam_member" "agent-calls-agent-api" {
   location = google_cloud_run_v2_service.agent-api.location
