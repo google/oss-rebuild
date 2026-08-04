@@ -127,9 +127,10 @@ func truststoreCertPatch(fs dockerfs.Filesystem, cert []byte) (*patch, error) {
 }
 
 func createFile(fs dockerfs.Filesystem, content []byte, path string) error {
-	_, err := fs.Stat(path)
-	if !errors.Is(err, iofs.ErrNotExist) {
+	if _, err := fs.Stat(path); err == nil {
 		return iofs.ErrExist
+	} else if !errors.Is(err, iofs.ErrNotExist) {
+		return errors.Wrap(err, "checking for existing file")
 	}
 	name := filepath.Base(path)
 	hdr, err := tar.FileInfoHeader(dockerfs.NewFileInfo(name, int64(len(content)), os.FileMode(0664), time.Now(), ""), "")
@@ -661,7 +662,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			bazelRCBytes := []byte(bazelRCContents)
 			f, err := dfs.OpenAndResolve(bazelSystemRCPath)
 			if err != nil {
-				if err == iofs.ErrNotExist {
+				if errors.Is(err, iofs.ErrNotExist) {
 					if err := createFile(dfs, bazelRCBytes, bazelSystemRCPath); err != nil {
 						log.Printf("Creating bazelrc file: %v", err)
 						break
@@ -684,7 +685,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		for path, file := range d.customFiles {
 			f, err := dfs.OpenAndResolve(path)
 			if err != nil {
-				if err == iofs.ErrNotExist {
+				if errors.Is(err, iofs.ErrNotExist) {
 					if err := createFile(dfs, file.Content, path); err != nil {
 						log.Printf("Creating custom file %s: %v", path, err)
 						customFilesFailed = true
