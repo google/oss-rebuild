@@ -215,6 +215,32 @@ printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-lo
 			},
 		},
 		{
+			// NOTE: Cargo reads config.toml only from 1.39.
+			"GitIndexRegistryLegacyConfigName",
+			&CratesIOCargoPackage{
+				Location:       defaultLocation,
+				RustVersion:    "1.35.0",
+				RegistryCommit: "abc1234",
+				PackageNames:   []string{"serde", "tokio"},
+			},
+			rebuild.BuildEnv{HasRepo: true, TimewarpHost: "localhost:8081"},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.35.0
+mkdir -p /cargo-index
+wget -O - --header "X-Package-Names: serde,tokio" "http://cargogitarchive:abc1234@localhost:8081/index.git.tar" | tar -xf - -C /cargo-index
+mkdir -p /.cargo
+printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/config`,
+				Build: `export CARGO_TARGET_DIR="$PWD/target"
+(cd the_dir && /root/.cargo/bin/cargo package --no-verify)`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "rustup"},
+				},
+				OutputPath: "target/package/the_artifact",
+			},
+		},
+		{
 			"SparseRegistry",
 			&CratesIOCargoPackage{
 				Location:       defaultLocation,

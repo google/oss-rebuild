@@ -57,6 +57,7 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 					"registryCommit": b.RegistryCommit,
 					"packageNames":   strings.Join(b.PackageNames, ","),
 					"useGitIndex":    fmt.Sprintf("%t", len(b.PackageNames) > 0),
+					"rustVersion":    b.RustVersion,
 				},
 			},
 		},
@@ -107,14 +108,15 @@ var toolkit = []*flow.Tool{
 		Name: "cargo/setup-registry",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				{{if and (eq .With.useGitIndex "true") (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
+				{{- $cfg := "config"}}{{if ge (cmpSemver .With.rustVersion "1.39.0") 0}}{{$cfg = "config.toml"}}{{end}}
+				{{- if and (eq .With.useGitIndex "true") (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
 				mkdir -p /cargo-index
 				wget -O - --header "X-Package-Names: {{.With.packageNames}}" "{{.BuildEnv.TimewarpURLFromString "cargogitarchive" .With.registryCommit}}index.git.tar" | tar -xf - -C /cargo-index
 				mkdir -p /.cargo
-				printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/config.toml
+				printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/{{$cfg}}
 				{{- else if and (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
 				mkdir -p /.cargo
-				printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"\n' > /.cargo/config.toml
+				printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"\n' > /.cargo/{{$cfg}}
 				{{- else -}}
 				# NOTE: Using current crates.io registry
 				{{- end -}}`)[1:],
