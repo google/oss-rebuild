@@ -121,70 +121,148 @@ func (a *defaultAgent) logs(ctx context.Context, obliviousID string) (io.ReadClo
 }
 
 func (a *defaultAgent) getTools() []*llm.FunctionDefinition {
-	return append(a.gitTools, []*llm.FunctionDefinition{
-		{
-			FunctionDeclaration: genai.FunctionDeclaration{
-				Name:        "read_logs_end",
-				Description: "Read tail of the logs from the previous build. If the logs are large, they may be truncated providing only the tail.",
-				Parameters: &genai.Schema{
-					Type:       genai.TypeObject,
-					Properties: map[string]*genai.Schema{},
-					Required:   []string{},
-				},
-				Response: &genai.Schema{
-					Type: genai.TypeObject,
-					Properties: map[string]*genai.Schema{
-						"logs":  {Type: genai.TypeString, Description: "The tail end of the build logs"},
-						"error": {Type: genai.TypeString, Description: "The error listing the requested path, if unsuccessful"},
-					},
+	tools := append(a.gitTools, a.readLogsTool())
+	if a.deps.ScratchRunner != nil {
+		tools = append(tools, a.runCommandTool())
+	}
+	return tools
+}
+
+func (a *defaultAgent) readLogsTool() *llm.FunctionDefinition {
+	return &llm.FunctionDefinition{
+		FunctionDeclaration: genai.FunctionDeclaration{
+			Name:        "read_logs_end",
+			Description: "Read tail of the logs from the previous build. If the logs are large, they may be truncated providing only the tail.",
+			Parameters: &genai.Schema{
+				Type:       genai.TypeObject,
+				Properties: map[string]*genai.Schema{},
+				Required:   []string{},
+			},
+			Response: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"logs":  {Type: genai.TypeString, Description: "The tail end of the build logs"},
+					"error": {Type: genai.TypeString, Description: "The error listing the requested path, if unsuccessful"},
 				},
 			},
-			Function: func(args map[string]any) genai.FunctionResponse {
-				if len(a.iterHistory) == 0 {
-					return genai.FunctionResponse{
-						Name: "read_logs_end", // Name must match the FunctionDeclaration
-						Response: map[string]any{
-							"logs":  "",
-							"error": "Can't read logs because there was no previous build execution.",
-						},
-					}
-				}
-				prev := a.iterHistory[len(a.iterHistory)-1]
-				r, err := a.logs(context.Background(), prev.ObliviousID)
-				if err != nil {
-					return genai.FunctionResponse{
-						Name: "read_logs_end", // Name must match the FunctionDeclaration
-						Response: map[string]any{
-							"logs":  "",
-							"error": fmt.Sprintf("Reading logs: %v", err),
-						},
-					}
-				}
-				defer r.Close()
-				b, err := io.ReadAll(r)
-				if err != nil {
-					return genai.FunctionResponse{
-						Name: "read_logs_end", // Name must match the FunctionDeclaration
-						Response: map[string]any{
-							"logs":  "",
-							"error": err.Error(),
-						},
-					}
-				}
-				logs := string(b)
-				if len(logs) > uploadBytesLimit {
-					logs = "...(truncated)..." + logs[len(logs)-uploadBytesLimit:]
-				}
+		},
+		Function: func(args map[string]any) genai.FunctionResponse {
+			logs, err := a.readPreviousBuildLogs(context.Background())
+			if err != nil {
 				return genai.FunctionResponse{
 					Name: "read_logs_end", // Name must match the FunctionDeclaration
 					Response: map[string]any{
-						"logs":  logs,
-						"error": "",
+						"logs":  "",
+						"error": err.Error(),
 					},
 				}
+			}
+			if len(logs) > uploadBytesLimit {
+				logs = "...(truncated)..." + logs[len(logs)-uploadBytesLimit:]
+			}
+			return genai.FunctionResponse{
+				Name: "read_logs_end", // Name must match the FunctionDeclaration
+				Response: map[string]any{
+					"logs":  logs,
+					"error": "",
+				},
+			}
+		},
+	}
+}
+
+// readPreviousBuildLogs returns the previous iteration's build logs from
+// wherever that build actually ran, routed on ObliviousID (present only when
+// the iteration was recorded from GCB).
+// NOTE: A failed scratch-mode confirmation carries an ObliviousID, so its GCB
+// logs win over the retained (successful) local build output.
+func (a *defaultAgent) readPreviousBuildLogs(ctx context.Context) (string, error) {
+	if len(a.iterHistory) > 0 {
+		if prev := a.iterHistory[len(a.iterHistory)-1]; prev.ObliviousID != "" {
+			r, err := a.logs(ctx, prev.ObliviousID)
+			if err != nil {
+				return "", errors.Wrap(err, "reading logs")
+			}
+			defer r.Close()
+			b, err := io.ReadAll(r)
+			if err != nil {
+				return "", err
+			}
+			return string(b), nil
+		}
+	}
+	if a.deps.ScratchRunner != nil {
+		logs, err := a.deps.ScratchRunner.LastBuildLogs(ctx)
+		if err != nil {
+			return "", errors.Wrap(err, "reading logs")
+		}
+		return string(logs), nil
+	}
+	return "", errors.New("can't read logs because there was no previous build execution")
+}
+
+const runCommandTimeoutMax = 900
+
+func (a *defaultAgent) runCommandTool() *llm.FunctionDefinition {
+	return &llm.FunctionDefinition{
+		FunctionDeclaration: genai.FunctionDeclaration{
+			Name:        "run_command",
+			Description: "Run a shell command on the build VM where the rebuild containers execute. Useful for inspecting docker images, examining files left by previous build attempts under ./builds/<build-id>/ (each contains the attempt's build.sh and out/ directory), and testing package availability. The command runs on the VM host, not inside the build container (containers are removed after each attempt). Returns the merged stdout/stderr (truncated to the tail if large) and the exit code.",
+			Parameters: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"command":         {Type: genai.TypeString, Description: "The shell command to run (interpreted by /bin/sh -c)"},
+					"timeout_seconds": {Type: genai.TypeInteger, Description: fmt.Sprintf("Optional command timeout in seconds (default 300, max %d)", runCommandTimeoutMax)},
+				},
+				Required: []string{"command"},
+			},
+			Response: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"output":    {Type: genai.TypeString, Description: "The merged stdout/stderr of the command"},
+					"exit_code": {Type: genai.TypeInteger, Description: "The command's exit code"},
+					"error":     {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
+				},
 			},
 		},
-	}...)
+		Function: func(args map[string]any) genai.FunctionResponse {
+			command, _ := args["command"].(string)
+			if command == "" {
+				return genai.FunctionResponse{
+					Name:     "run_command", // Name must match the FunctionDeclaration
+					Response: map[string]any{"output": "", "exit_code": 0, "error": "command is required"},
+				}
+			}
+			var timeout int
+			switch v := args["timeout_seconds"].(type) {
+			case nil:
+			case float64:
+				timeout = int(v)
+			case int:
+				timeout = v
+			default:
+				return genai.FunctionResponse{
+					Name:     "run_command", // Name must match the FunctionDeclaration
+					Response: map[string]any{"output": "", "exit_code": 0, "error": fmt.Sprintf("timeout_seconds must be a number, got %T", v)},
+				}
+			}
+			if timeout > runCommandTimeoutMax {
+				timeout = runCommandTimeoutMax
+			}
+			exitCode, output, err := a.deps.ScratchRunner.RunCommand(context.Background(), command, timeout)
+			if len(output) > uploadBytesLimit {
+				output = "...(truncated)..." + output[len(output)-uploadBytesLimit:]
+			}
+			resp := map[string]any{"output": output, "exit_code": exitCode, "error": ""}
+			if err != nil {
+				resp["error"] = err.Error()
+			}
+			return genai.FunctionResponse{
+				Name:     "run_command", // Name must match the FunctionDeclaration
+				Response: resp,
+			}
+		},
+	}
 }
 
 func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initialErr error, wt billy.Filesystem, str *memory.Storage) (*schema.StrategyOneOf, error) {
@@ -289,13 +367,20 @@ func (a *defaultAgent) genericPrompt() []string {
 }
 
 func (a *defaultAgent) diagnoseOnly() []string {
-	return []string{
+	prompt := []string{
 		"Please explain what went wrong with the rebuild, and what might need to be changed to resolve the build.",
 		"You can include in-line code snippets, but the overall description should only be two or three sentences.",
 		"To debug the build, you might want to use the read_build_logs tool to view the build errors to understand what's going wrong.",
 		"You might also want to inspect the contents of the source repo using the read_repo_file or list_repo_files tools.",
-		"Another LLM will use your diagnosis to propose a fix.",
 	}
+	if a.deps.ScratchRunner != nil {
+		prompt = append(prompt,
+			"You can also use the run_command tool to run diagnostic shell commands on the build VM (e.g. inspect docker images, check tool versions, or examine files left by previous build attempts).",
+		)
+	}
+	return append(prompt,
+		"Another LLM will use your diagnosis to propose a fix.",
+	)
 }
 
 func (a *defaultAgent) outputOnlyScript(outputPath string) []string {

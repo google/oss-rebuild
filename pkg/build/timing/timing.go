@@ -3,8 +3,9 @@
 
 // Package timing extracts per-phase build timings by observing a completed
 // build: docker history layer clocks for the phases and container state
-// clocks for the Build phase, never build logs. Extraction is all-or-nothing:
-// a nil BuildTimings is the only failure representation, and extraction
+// clocks for the Build phase, never build logs. Records may be partial: a
+// nil phase means unmeasured, and Validated is the sole gate deciding
+// whether a record carries enough consistent data to emit. Extraction
 // failures never affect build outcome.
 package timing
 

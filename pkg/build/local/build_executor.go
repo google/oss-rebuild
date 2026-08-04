@@ -27,7 +27,7 @@ import (
 type DockerBuildExecutor struct {
 	planner          build.Planner[*DockerBuildPlan]
 	maxParallel      int
-	semaphore        chan struct{}
+	semaphore        chan struct{} // one entry per in-flight build, maxParallel wide.
 	dockerCmd        string
 	outputDir        string
 	cmdExecutor      CommandExecutor
@@ -266,7 +266,7 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 	// NOTE: Extraction failures are logged, never surfaced as build errors.
 	var timings *rebuild.BuildTimings
 	if recordTimings {
-		timings = e.extractTimings(ctx, handle.id, imageTag, plan, buildxStart)
+		timings = e.extractTimings(ctx, handle.id, imageTag, plan, buildxStart, err != nil)
 	}
 	// Export post-build container if requested.
 	if opts.SavePostBuildContainer {
@@ -307,8 +307,11 @@ func (e *DockerBuildExecutor) executeBuild(ctx context.Context, handle *localHan
 }
 
 // extractTimings assembles phase timings from image history and the retained
-// container's state clocks.
-func (e *DockerBuildExecutor) extractTimings(ctx context.Context, container, imageTag string, plan *DockerBuildPlan, buildxStart time.Time) *rebuild.BuildTimings {
+// container's state clocks. A failed run yields a marked record: the image
+// phases completed (the image exists), and the container span runs until the
+// script's termination. An unusable container span leaves Build unmeasured
+// without discarding the image phases.
+func (e *DockerBuildExecutor) extractTimings(ctx context.Context, container, imageTag string, plan *DockerBuildPlan, buildxStart time.Time, runFailed bool) *rebuild.BuildTimings {
 	histBuf := &bytes.Buffer{}
 	if err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: histBuf}, e.dockerCmd, "history", "--human=false", "--format", "{{json .}}", imageTag); err != nil {
 		log.Printf("Build %s timing history failed: %v", container, err)
@@ -324,17 +327,21 @@ func (e *DockerBuildExecutor) extractTimings(ctx context.Context, container, ima
 		log.Printf("Build %s timing extraction refused: %v", container, err)
 		return nil
 	}
+	in := rebuild.BuildTimings{Setup: &setup, Source: &source, Deps: &deps}
+	if runFailed {
+		in.FailedIn = rebuild.PhaseBuild
+	}
 	spanBuf := &bytes.Buffer{}
 	if err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: spanBuf}, e.dockerCmd, "inspect", container, "-f", "{{.State.StartedAt}} {{.State.FinishedAt}}"); err != nil {
 		log.Printf("Build %s timing inspect failed: %v", container, err)
-		return nil
-	}
-	buildDur, err := timing.ContainerSpan(spanBuf.Bytes())
-	if err != nil {
+	} else if buildDur, err := timing.ContainerSpan(spanBuf.Bytes()); err != nil {
 		log.Printf("Build %s timing inspect unparseable: %v", container, err)
-		return nil
+	} else if buildDur <= 0 {
+		log.Printf("Build %s container span non-positive: %v", container, buildDur)
+	} else {
+		in.Build = &buildDur
 	}
-	return timing.Validated(rebuild.BuildTimings{Setup: setup, Source: source, Deps: deps, Build: buildDur})
+	return timing.Validated(in)
 }
 
 // uploadAssets uploads build artifacts to the asset store.

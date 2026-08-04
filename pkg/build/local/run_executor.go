@@ -17,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/internal/bufiox"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -27,7 +28,7 @@ const defaultOutputBufferSize = 512 * 1024 // 512KB
 type DockerRunExecutor struct {
 	planner          build.Planner[*DockerRunPlan]
 	maxParallel      int
-	semaphore        chan struct{}
+	semaphore        chan struct{} // one entry per in-flight build, maxParallel wide.
 	dockerCmd        string
 	cmdExecutor      CommandExecutor
 	activeBuilds     syncx.Map[string, *localHandle]
@@ -233,17 +234,37 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	// Start the container idling, then execute each phase in it. The start
 	// output is the container ID, not build output: keep it out of the logs.
 	idBuf := &bytes.Buffer{}
+	// Setup's span opens before the container start so it absorbs the image
+	// pull and container create, mirroring the build executor's buildx clock.
+	phaseStart := time.Now()
 	buildErr := e.cmdExecutor.Execute(ctx, CommandOptions{Output: idBuf}, e.dockerCmd, ComposeDockerStartArgs(plan, argOpts)...)
+	in := rebuild.BuildTimings{}
 	if buildErr != nil {
 		buildErr = errors.Wrap(buildErr, "starting build container")
 	} else {
+		slots := map[string]**time.Duration{"setup": &in.Setup, "source": &in.Source, "deps": &in.Deps, "build": &in.Build}
 		for _, ph := range plan.Phases() {
-			if err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: runWriter}, e.dockerCmd, ComposeDockerExecArgs(handle.id, ph)...); err != nil {
+			err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: runWriter}, e.dockerCmd, ComposeDockerExecArgs(handle.id, ph)...)
+			now := time.Now()
+			d := now.Sub(phaseStart)
+			phaseStart = now
+			// The failing phase's span runs until its termination.
+			*slots[ph.Name] = &d
+			if err != nil {
 				buildErr = errors.Wrapf(err, "executing %s phase", ph.Name)
+				in.FailedIn = rebuild.BuildPhase(ph.Name)
 				break
 			}
 		}
+		// A present zero Deps means the plan had no deps phase, stamped only
+		// once the build provably progressed past the deps slot.
+		if plan.Deps == "" && (in.FailedIn == "" || in.FailedIn == rebuild.PhaseBuild) {
+			in.Deps = new(time.Duration)
+		}
 	}
+	// A failure leaves undispatched phases unmeasured. Validated owns the
+	// partial-record invariants.
+	timings := timing.Validated(in)
 	// Export post-build container if requested.
 	if opts.SavePostBuildContainer {
 		postBuildPath := filepath.Join(hostOutputPath, string(rebuild.PostBuildContainerAsset))
@@ -282,7 +303,7 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		log.Printf("Failed to clean up container %s: %v", handle.id, err)
 	}
 	handle.updateStatus(build.BuildStateCompleted)
-	handle.setResult(build.Result{Error: buildErr})
+	handle.setResult(build.Result{Error: buildErr, Timings: timings})
 }
 
 // uploadFile uploads a local file to the asset store

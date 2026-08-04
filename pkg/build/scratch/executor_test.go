@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -59,6 +58,17 @@ func testOptions() build.Options {
 			ToolURLs:        map[build.ToolType]string{build.TimewarpTool: "gs://test-bootstrap/timewarp"},
 			BaseImageConfig: build.DefaultBaseImageConfig(),
 		},
+	}
+}
+
+func durPtr(d time.Duration) *time.Duration { return &d }
+
+func testExecutorConfig(f *fakeStubs) ExecutorConfig {
+	return ExecutorConfig{
+		ScratchID:    "s1",
+		Stubs:        f.stubs(),
+		GCSClient:    testGCSClient,
+		PollInterval: time.Millisecond,
 	}
 }
 
@@ -124,34 +134,7 @@ func respond(op *longrunning.Operation[schema.ScratchExecResult], err error) cre
 	}
 }
 
-// buildCreates scripts successful prepare and start ops plus one phase op
-// per exit code, then the post-phase stop.
-func buildCreates(phaseExits ...int) []createFn {
-	creates := []createFn{
-		respond(completedOp("prepare", 0), nil),
-		respond(completedOp("start", 0), nil),
-	}
-	for _, exit := range phaseExits {
-		creates = append(creates, respond(completedOp("phase", exit), nil))
-	}
-	return append(creates, respond(completedOp("stop", 0), nil))
-}
-
-func testExecutor(t *testing.T, f *fakeStubs) *Executor {
-	t.Helper()
-	e, err := NewExecutor(ExecutorConfig{
-		ScratchID:    "s1",
-		Stubs:        f.stubs(),
-		GCSClient:    testGCSClient,
-		PollInterval: time.Millisecond,
-	})
-	if err != nil {
-		t.Fatalf("NewExecutor: %v", err)
-	}
-	return e
-}
-
-func awaitBuild(t *testing.T, e *Executor, opts build.Options) build.Result {
+func awaitBuild(t *testing.T, e build.Executor, opts build.Options) build.Result {
 	t.Helper()
 	h, err := e.Start(context.Background(), testInput(), opts)
 	if err != nil {
@@ -164,61 +147,6 @@ func awaitBuild(t *testing.T, e *Executor, opts build.Options) build.Result {
 		t.Fatalf("Wait: %v", err)
 	}
 	return result
-}
-
-func TestPhaseFailureSurfacesExitError(t *testing.T) {
-	// Phases: setup, source succeed and deps exits 42. The build phase and
-	// artifact fetch must not be dispatched.
-	f := &fakeStubs{creates: buildCreates(0, 0, 42)}
-	result := awaitBuild(t, testExecutor(t, f), testOptions())
-	var exitErr *ExitError
-	if !errors.As(result.Error, &exitErr) || exitErr.Code != 42 || exitErr.Phase != "deps" {
-		t.Fatalf("Result.Error = %v, want ExitError{42, deps}", result.Error)
-	}
-	if len(f.createReqs) != 6 {
-		t.Fatalf("got %d exec creates, want 6 (prepare, start, 3 phases, stop)", len(f.createReqs))
-	}
-	prepare, start := f.createReqs[0], f.createReqs[1]
-	// Prepare creates the output mount point and sweeps prior containers.
-	prepareScript := prepare.Cmd[len(prepare.Cmd)-1]
-	for _, want := range []string{"mkdir -p", "docker rm -f"} {
-		if !strings.Contains(prepareScript, want) {
-			t.Errorf("prepare script missing %q:\n%s", want, prepareScript)
-		}
-	}
-	// Start launches the idle container with direct docker argv.
-	if start.Cmd[0] != "docker" || start.Cmd[1] != "run" {
-		t.Errorf("start cmd = %v, want docker run argv", start.Cmd)
-	}
-	for _, want := range []string{"--detach", "--rm", "rb-iter-1", "sleep", "infinity"} {
-		if !slices.Contains(start.Cmd, want) {
-			t.Errorf("start cmd missing %q: %v", want, start.Cmd)
-		}
-	}
-	// The stop follows the failing phase, letting --rm reclaim the container.
-	if stop, want := f.createReqs[5], []string{"docker", "stop", "-t", "0", "rb-iter-1"}; !slices.Equal(stop.Cmd, want) {
-		t.Errorf("stop cmd = %v, want %v", stop.Cmd, want)
-	}
-	// Phase ops exec into the container with the script inline in the
-	// argv, documenting on the persisted record exactly what ran.
-	wantScript := []string{"apk", "git clone", "npm install"}
-	for i, phase := range f.createReqs[2:5] {
-		wantPrefix := []string{"docker", "exec", "rb-iter-1", "/bin/sh", "-c"}
-		if len(phase.Cmd) != len(wantPrefix)+1 || !slices.Equal(phase.Cmd[:len(wantPrefix)], wantPrefix) {
-			t.Errorf("phase %d cmd = %v, want %v plus script", i, phase.Cmd, wantPrefix)
-			continue
-		}
-		script := phase.Cmd[len(phase.Cmd)-1]
-		if !strings.HasPrefix(script, "set -eux\n") {
-			t.Errorf("phase %d script missing strict-mode prelude:\n%s", i, script)
-		}
-		if !strings.Contains(script, wantScript[i]) {
-			t.Errorf("phase %d script missing %q:\n%s", i, wantScript[i], script)
-		}
-		if phase.StdinB64 != "" {
-			t.Errorf("phase %d carries stdin: %q", i, phase.StdinB64)
-		}
-	}
 }
 
 func TestPhaseOutcome(t *testing.T) {
@@ -249,167 +177,8 @@ func TestPhaseOutcome(t *testing.T) {
 	}
 }
 
-func TestUtilityStepFailures(t *testing.T) {
-	for _, tt := range []struct {
-		name    string
-		creates []createFn
-		want    string
-	}{
-		{name: "PrepareDispatchError", creates: []createFn{respond(nil, errors.New("scratch \"s1\" not found"))}, want: "preparing build"},
-		{name: "StartNonzeroExit", creates: []createFn{respond(completedOp("prepare", 0), nil), respond(completedOp("start", 125), nil)}, want: "starting build container"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			f := &fakeStubs{creates: tt.creates}
-			result := awaitBuild(t, testExecutor(t, f), testOptions())
-			if result.Error == nil || !strings.Contains(result.Error.Error(), tt.want) {
-				t.Fatalf("Result.Error = %v, want %q", result.Error, tt.want)
-			}
-		})
-	}
-}
-
-func TestTimeoutBudget(t *testing.T) {
-	for _, tt := range []struct {
-		name    string
-		timeout time.Duration
-		want    int
-	}{
-		{name: "UnsetUsesDefault", timeout: 0, want: int(defaultBuildTimeout.Seconds())},
-		{name: "SubsecondClampsToOne", timeout: 500 * time.Millisecond, want: 1},
-		{name: "ExplicitPassesThrough", timeout: 2 * time.Minute, want: 120},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			f := &fakeStubs{creates: buildCreates(1)}
-			opts := testOptions()
-			opts.Timeout = tt.timeout
-			awaitBuild(t, testExecutor(t, f), opts)
-			// The utility ops carry the utility bound. The first phase op
-			// gets the full build budget.
-			for _, i := range []int{0, 1, 3} {
-				if got := f.createReqs[i].TimeoutSeconds; got != int(utilityTimeout.Seconds()) {
-					t.Errorf("op %d TimeoutSeconds = %d, want utility %d", i, got, int(utilityTimeout.Seconds()))
-				}
-			}
-			if got := f.createReqs[2].TimeoutSeconds; got != tt.want {
-				t.Errorf("phase TimeoutSeconds = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestMissingArtifactFailsBuild(t *testing.T) {
-	f := &fakeStubs{
-		creates: append(buildCreates(0, 0, 0, 0), respond(completedOp("fetch", exitNoArtifact), nil)),
-	}
-	result := awaitBuild(t, testExecutor(t, f), testOptions())
-	if !errors.Is(result.Error, ErrNoArtifact) {
-		t.Fatalf("Result.Error = %v, want ErrNoArtifact", result.Error)
-	}
-}
-
-func TestOversizeArtifactFailsBuild(t *testing.T) {
-	f := &fakeStubs{
-		creates: append(buildCreates(0, 0, 0, 0), respond(completedOp("fetch", exitArtifactTooBig), nil)),
-	}
-	result := awaitBuild(t, testExecutor(t, f), testOptions())
-	if result.Error == nil || !strings.Contains(result.Error.Error(), "retrieval cap") {
-		t.Fatalf("Result.Error = %v, want retrieval cap error", result.Error)
-	}
-}
-
-func TestSuccessUploadsAssets(t *testing.T) {
-	f := &fakeStubs{
-		// No OutURI on the fetch op: an empty artifact.
-		creates: append(buildCreates(0, 0, 0, 0), respond(completedOp("fetch", 0), nil)),
-	}
-	opts := testOptions()
-	result := awaitBuild(t, testExecutor(t, f), opts)
-	if result.Error != nil {
-		t.Fatalf("Result.Error = %v, want success", result.Error)
-	}
-	// Both assets exist in the store (empty, since the fake ops carry no output).
-	for _, asset := range []rebuild.Asset{rebuild.RebuildAsset.For(testTarget), rebuild.DebugLogsAsset.For(testTarget)} {
-		r, err := opts.Resources.AssetStore.Reader(context.Background(), asset)
-		if err != nil {
-			t.Errorf("missing asset %v: %v", asset, err)
-			continue
-		}
-		r.Close()
-	}
-	// The fetch script guards existence and size before encoding.
-	fetch := f.createReqs[7]
-	script := fetch.Cmd[len(fetch.Cmd)-1]
-	for _, want := range []string{"base64", "wc -c"} {
-		if !strings.Contains(script, want) {
-			t.Errorf("fetch script missing %q:\n%s", want, script)
-		}
-	}
-}
-
-func TestAuthHeaderViaEnvOnly(t *testing.T) {
-	f := &fakeStubs{creates: buildCreates(1)}
-	e, err := NewExecutor(ExecutorConfig{
-		ScratchID:    "s1",
-		Stubs:        f.stubs(),
-		GCSClient:    testGCSClient,
-		PollInterval: time.Millisecond,
-		AuthHeader: func(context.Context) (string, error) {
-			return "Authorization: Bearer sekrit", nil
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewExecutor: %v", err)
-	}
-	opts := testOptions()
-	opts.Resources.ToolAuthRequired = []string{"gs://test-bootstrap"}
-	awaitBuild(t, e, opts)
-	// The container start carries the header via op env and the value-less
-	// -e form in argv. The phase ops inherit it from the container env and
-	// carry nothing themselves.
-	start := f.createReqs[1]
-	if start.Env["AUTH_HEADER"] != "Authorization: Bearer sekrit" {
-		t.Errorf("start Env = %v, want AUTH_HEADER set", start.Env)
-	}
-	for i, arg := range start.Cmd {
-		if strings.Contains(arg, "sekrit") {
-			t.Errorf("start argv[%d] leaks the auth value: %q", i, arg)
-		}
-	}
-	if !slices.Contains(start.Cmd, "AUTH_HEADER") {
-		t.Errorf("start argv missing value-less -e AUTH_HEADER: %v", start.Cmd)
-	}
-	phase := f.createReqs[2]
-	if len(phase.Env) != 0 {
-		t.Errorf("phase Env = %v, want empty", phase.Env)
-	}
-	// The inline phase script may reference AUTH_HEADER by name only.
-	for i, arg := range phase.Cmd {
-		if strings.Contains(arg, "sekrit") {
-			t.Errorf("phase argv[%d] leaks the auth value: %q", i, arg)
-		}
-	}
-}
-
-func TestRetainContainerSkipsRm(t *testing.T) {
-	f := &fakeStubs{creates: buildCreates(1)}
-	e, err := NewExecutor(ExecutorConfig{
-		ScratchID:       "s1",
-		Stubs:           f.stubs(),
-		GCSClient:       testGCSClient,
-		PollInterval:    time.Millisecond,
-		RetainContainer: true,
-	})
-	if err != nil {
-		t.Fatalf("NewExecutor: %v", err)
-	}
-	awaitBuild(t, e, testOptions())
-	if start := f.createReqs[1]; slices.Contains(start.Cmd, "--rm") {
-		t.Errorf("start cmd carries --rm, want retained container: %v", start.Cmd)
-	}
-}
-
 func TestStartRejectsContainerImageOptions(t *testing.T) {
-	e := testExecutor(t, &fakeStubs{})
+	e := testRunExecutor(t, &fakeStubs{})
 	for _, tt := range []struct {
 		name string
 		mod  func(*build.Options)
@@ -428,7 +197,7 @@ func TestStartRejectsContainerImageOptions(t *testing.T) {
 }
 
 func TestStartRejectsUnsafeBuildID(t *testing.T) {
-	e := testExecutor(t, &fakeStubs{})
+	e := testRunExecutor(t, &fakeStubs{})
 	opts := testOptions()
 	opts.BuildID = "bad id; rm -rf /"
 	if _, err := e.Start(context.Background(), testInput(), opts); err == nil {

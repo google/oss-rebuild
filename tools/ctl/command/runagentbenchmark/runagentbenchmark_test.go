@@ -38,11 +38,32 @@ func TestValidation(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "invalid execution mode",
+			cfg: Config{
+				Project:       "test-project",
+				API:           "http://test",
+				BenchmarkFile: "benchmark.json",
+				ExecutionMode: "warp",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid task mode",
+			cfg: Config{
+				Project:       "test-project",
+				API:           "http://test",
+				BenchmarkFile: "benchmark.json",
+				TaskMode:      "juggle",
+			},
+			wantErr: true,
+		},
+		{
 			name: "valid config",
 			cfg: Config{
 				Project:       "test-project",
 				API:           "http://test",
 				BenchmarkFile: "benchmark.json",
+				ExecutionMode: "scratch",
 			},
 			wantErr: false,
 		},
