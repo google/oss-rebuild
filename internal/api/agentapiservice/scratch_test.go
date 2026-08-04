@@ -478,6 +478,34 @@ func TestScratchDelete_NotFound(t *testing.T) {
 	}
 }
 
+// A failed VM delete must not advance the record to Deleted: it stays
+// Deleting so the reaper can retry, and the API surfaces the failure.
+func TestScratchDelete_GCEFailureStaysDeleting(t *testing.T) {
+	gce := NewMemoryGCE()
+	scratches := db.NewMemoryScratch()
+	zone := "us-central1-a"
+	_, _ = gce.InsertInstanceFromTemplate(context.Background(), zone, "scratch-s1", "tmpl", nil)
+	if err := scratches.Insert(context.Background(), schema.Scratch{
+		ID: "s1", State: schema.ScratchReady, Zone: zone, VMName: "scratch-s1",
+	}); err != nil {
+		t.Fatalf("seed scratch: %v", err)
+	}
+	gce.FailNext("DeleteInstance", errors.New("gce unavailable"))
+
+	_, err := ScratchDelete(context.Background(), schema.ScratchDeleteRequest{ScratchID: "s1"},
+		&ScratchDeleteDeps{Scratches: scratches, GCE: gce})
+	if status.Code(err) != codes.Internal {
+		t.Errorf("code = %s; want Internal. err=%v", status.Code(err), err)
+	}
+	rec, _ := scratches.Get(context.Background(), "s1")
+	if rec.State != schema.ScratchDeleting {
+		t.Errorf("State = %q; want deleting (retryable)", rec.State)
+	}
+	if !gce.InstanceExists(zone, "scratch-s1") {
+		t.Errorf("instance gone despite failed delete")
+	}
+}
+
 // MemoryGCE is an in-memory fake of GCE for tests. It records the operation
 // sequence and supports targeted failure injection.
 type MemoryGCE struct {
@@ -668,6 +696,8 @@ func (m *MemoryGCE) StopInstance(_ context.Context, zone, name string) error {
 	return nil
 }
 
+// DeleteInstance is idempotent (missing instance succeeds), matching the
+// 404-as-success semantics of the compute impl.
 func (m *MemoryGCE) DeleteInstance(_ context.Context, zone, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -675,10 +705,6 @@ func (m *MemoryGCE) DeleteInstance(_ context.Context, zone, name string) error {
 	if err := m.checkFail("DeleteInstance"); err != nil {
 		return err
 	}
-	key := zone + "/" + name
-	if _, ok := m.instances[key]; !ok {
-		return errors.New("instance not found")
-	}
-	delete(m.instances, key)
+	delete(m.instances, zone+"/"+name)
 	return nil
 }
