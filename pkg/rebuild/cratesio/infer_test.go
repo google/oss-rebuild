@@ -151,7 +151,7 @@ func TestInferStrategy(t *testing.T) {
 						Ref:  repo.Commits["version-bump"].String(),
 						Dir:  "published",
 					},
-					RustVersion: "1.64.0",
+					RustVersion: "1.57.0",
 				}
 			},
 		},
