@@ -158,6 +158,11 @@ resource "google_storage_bucket_iam_member" "builders-view-logs" {
   ))
   member = each.key
 }
+resource "google_storage_bucket_iam_member" "orchestrator-reads-logs" {
+  bucket = google_storage_bucket.logs.name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.orchestrator.member
+}
 resource "google_storage_bucket_iam_member" "orchestrator-manages-attestations" {
   bucket = google_storage_bucket.attestations.name
   role   = "roles/storage.objectAdmin"
@@ -397,7 +402,11 @@ resource "google_storage_bucket_iam_member" "builder-agent-uses-logs" {
 resource "google_storage_bucket_iam_member" "agent-job-views-logs" {
   bucket = google_storage_bucket.agent-logs.name
   role   = "roles/storage.objectViewer"
-  member = google_service_account.agent-job.member
+  for_each = toset([
+    google_service_account.agent-job.member,
+    google_service_account.orchestrator.member, # Orchestrator runs agent-api and reads agent build logs
+  ])
+  member = each.key
 }
 resource "google_project_iam_member" "orchestrator-creates-run-jobs" {
   project = var.project
