@@ -345,7 +345,11 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 				return nil, errors.Wrap(err, "encoding result")
 			}
 		}
-		return nil, op.Error
+		// NOTE: A direct return of op.Error would wrap the nil
+		// *OperationError in a non-nil error interface.
+		if op.Error != nil {
+			return nil, op.Error
+		}
 	default:
 		return nil, errors.Errorf("unknown mode: %s", mode)
 	}
