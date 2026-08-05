@@ -371,7 +371,7 @@ type RebuildAttempt struct {
 	Message         string                `firestore:"message,omitempty"`
 	Strategy        StrategyOneOf         `firestore:"strategyoneof,omitempty"`
 	Dockerfile      string                `firestore:"dockerfile,omitempty"`
-	BuildTimings    *rebuild.BuildTimings `firestore:"timings,omitempty"` // formerly Timings, key retained so historical records decode
+	BuildTimings    *rebuild.BuildTimings `firestore:"timings,omitempty"` // stored under the legacy "timings" key
 	ExecutorVersion string                `firestore:"executor_version,omitempty"`
 	RunID           string                `firestore:"run_id,omitempty"`
 	BuildID         string                `firestore:"build_id,omitempty"`

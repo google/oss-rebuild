@@ -48,8 +48,10 @@ func TestPhaseFailureSurfacesExitError(t *testing.T) {
 	if !errors.As(result.Error, &exitErr) || exitErr.Code != 42 || exitErr.Phase != "deps" {
 		t.Fatalf("Result.Error = %v, want ExitError{42, deps}", result.Error)
 	}
+	// The scripted ops carry no worker stamps, so the record holds a failure
+	// marker alone and Validated refuses it.
 	if result.Timings != nil {
-		t.Errorf("Expected nil timings on failure, got %+v", result.Timings)
+		t.Errorf("Expected nil timings without worker stamps, got %+v", result.Timings)
 	}
 	if len(f.createReqs) != 6 {
 		t.Fatalf("got %d exec creates, want 6 (prepare, start, 3 phases, stop)", len(f.createReqs))
@@ -218,7 +220,7 @@ func TestTimingsFromWorkerStamps(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("Result.Error = %v, want success", result.Error)
 	}
-	want := &rebuild.BuildTimings{Setup: time.Second, Source: 2 * time.Second, Deps: 3 * time.Second, Build: 4 * time.Second}
+	want := &rebuild.BuildTimings{Setup: durPtr(time.Second), Source: durPtr(2 * time.Second), Deps: durPtr(3 * time.Second), Build: durPtr(4 * time.Second)}
 	if diff := cmp.Diff(want, result.Timings); diff != "" {
 		t.Errorf("Timings mismatch (-want +got):\n%s", diff)
 	}
@@ -226,7 +228,7 @@ func TestTimingsFromWorkerStamps(t *testing.T) {
 
 func TestTimingsAbsentWithoutWorkerStamps(t *testing.T) {
 	// completedOp carries no StartedAt/FinishedAt: blind finalization. The
-	// build succeeds but the timing record is incomplete.
+	// build succeeds but every phase is unmeasured, so no record is emitted.
 	f := &fakeStubs{creates: append(runCreates(0, 0, 0, 0), respond(completedOp("fetch", 0), nil))}
 	result := awaitBuild(t, testRunExecutor(t, f), testOptions())
 	if result.Error != nil {
@@ -234,6 +236,63 @@ func TestTimingsAbsentWithoutWorkerStamps(t *testing.T) {
 	}
 	if result.Timings != nil {
 		t.Errorf("Expected nil timings without worker stamps, got %+v", result.Timings)
+	}
+}
+
+func TestTimingsPartialOnPhaseFailure(t *testing.T) {
+	// A nonzero-exit phase op still carries worker stamps, so the failing
+	// span is measured. The build phase is never dispatched and stays nil.
+	base := time.Unix(1700000000, 0)
+	stamped := func(id string, exit, i int) *longrunning.Operation[schema.ScratchExecResult] {
+		op := completedOp(id, exit)
+		op.Result.StartedAt = base.Add(time.Duration(i) * time.Minute)
+		op.Result.FinishedAt = op.Result.StartedAt.Add(time.Duration(i+1) * time.Second)
+		return op
+	}
+	f := &fakeStubs{creates: []createFn{
+		respond(completedOp("prepare", 0), nil),
+		respond(completedOp("start", 0), nil),
+		respond(stamped("setup", 0, 0), nil),
+		respond(stamped("source", 0, 1), nil),
+		respond(stamped("deps", 42, 2), nil),
+		respond(completedOp("stop", 0), nil),
+	}}
+	result := awaitBuild(t, testRunExecutor(t, f), testOptions())
+	var exitErr *ExitError
+	if !errors.As(result.Error, &exitErr) || exitErr.Phase != "deps" {
+		t.Fatalf("Result.Error = %v, want ExitError in deps", result.Error)
+	}
+	want := &rebuild.BuildTimings{Setup: durPtr(time.Second), Source: durPtr(2 * time.Second), Deps: durPtr(3 * time.Second), FailedIn: rebuild.PhaseDeps}
+	if diff := cmp.Diff(want, result.Timings); diff != "" {
+		t.Errorf("Timings mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestTimingsPartialOnUnstampedFailure(t *testing.T) {
+	// A blind-finalized failing op has no worker stamps: the measured prefix
+	// survives with the marker while the failing phase stays unmeasured.
+	base := time.Unix(1700000000, 0)
+	stamped := func(id string, i int) *longrunning.Operation[schema.ScratchExecResult] {
+		op := completedOp(id, 0)
+		op.Result.StartedAt = base.Add(time.Duration(i) * time.Minute)
+		op.Result.FinishedAt = op.Result.StartedAt.Add(time.Duration(i+1) * time.Second)
+		return op
+	}
+	f := &fakeStubs{creates: []createFn{
+		respond(completedOp("prepare", 0), nil),
+		respond(completedOp("start", 0), nil),
+		respond(stamped("setup", 0), nil),
+		respond(stamped("source", 1), nil),
+		respond(completedOp("deps", 42), nil),
+		respond(completedOp("stop", 0), nil),
+	}}
+	result := awaitBuild(t, testRunExecutor(t, f), testOptions())
+	if result.Error == nil {
+		t.Fatal("Expected error, got success")
+	}
+	want := &rebuild.BuildTimings{Setup: durPtr(time.Second), Source: durPtr(2 * time.Second), FailedIn: rebuild.PhaseDeps}
+	if diff := cmp.Diff(want, result.Timings); diff != "" {
+		t.Errorf("Timings mismatch (-want +got):\n%s", diff)
 	}
 }
 

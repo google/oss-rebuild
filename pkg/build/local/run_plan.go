@@ -3,7 +3,11 @@
 
 package local
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+)
 
 // DockerRunPlan represents a Docker run execution plan where phase scripts
 // run sequentially in one container started from an existing image.
@@ -34,7 +38,7 @@ type DockerRunPlan struct {
 // are cwd-independent: each phase runs in a fresh shell and no state flows
 // between phases beyond the container filesystem.
 type Phase struct {
-	Name   string
+	Name   rebuild.BuildPhase
 	Script string
 }
 
@@ -45,11 +49,11 @@ const strictPrelude = "set -eux"
 // Phases returns the plan's scripts in execution order, omitting the deps
 // phase when the plan has none.
 func (p *DockerRunPlan) Phases() []Phase {
-	phases := []Phase{{"setup", p.Setup}, {"source", p.Source}}
+	phases := []Phase{{rebuild.PhaseSetup, p.Setup}, {rebuild.PhaseSource, p.Source}}
 	if p.Deps != "" {
-		phases = append(phases, Phase{"deps", p.Deps})
+		phases = append(phases, Phase{rebuild.PhaseDeps, p.Deps})
 	}
-	return append(phases, Phase{"build", p.Build})
+	return append(phases, Phase{rebuild.PhaseBuild, p.Build})
 }
 
 // CombinedScript renders the phases as one script for display. Phase

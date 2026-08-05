@@ -242,22 +242,28 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	if buildErr != nil {
 		buildErr = errors.Wrap(buildErr, "starting build container")
 	} else {
-		spans := map[string]*time.Duration{"setup": &elapsed.Setup, "source": &elapsed.Source, "deps": &elapsed.Deps, "build": &elapsed.Build}
+		slots := map[rebuild.BuildPhase]**time.Duration{rebuild.PhaseSetup: &elapsed.Setup, rebuild.PhaseSource: &elapsed.Source, rebuild.PhaseDeps: &elapsed.Deps, rebuild.PhaseBuild: &elapsed.Build}
 		for _, ph := range plan.Phases() {
-			if err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: runWriter}, e.dockerCmd, ComposeDockerExecArgs(handle.id, ph)...); err != nil {
+			err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: runWriter}, e.dockerCmd, ComposeDockerExecArgs(handle.id, ph)...)
+			now := time.Now()
+			d := now.Sub(phaseStart)
+			phaseStart = now
+			// The failing phase's span runs until its termination.
+			*slots[ph.Name] = &d
+			if err != nil {
 				buildErr = errors.Wrapf(err, "executing %s phase", ph.Name)
+				elapsed.FailedIn = ph.Name
 				break
 			}
-			now := time.Now()
-			*spans[ph.Name] = now.Sub(phaseStart)
-			phaseStart = now
+		}
+		// A present zero Deps means the plan had no deps phase, stamped only
+		// once the build provably progressed past the deps slot.
+		if plan.Deps == "" && (elapsed.FailedIn == "" || elapsed.FailedIn == rebuild.PhaseBuild) {
+			elapsed.Deps = new(time.Duration)
 		}
 	}
-	// A failed build leaves later phases unmeasured.
-	var timings *rebuild.BuildTimings
-	if buildErr == nil {
-		timings = timing.Validated(elapsed)
-	}
+	// A failure leaves undispatched phases unmeasured.
+	timings := timing.Validated(elapsed)
 	// Export post-build container if requested.
 	if opts.SavePostBuildContainer {
 		postBuildPath := filepath.Join(hostOutputPath, string(rebuild.PostBuildContainerAsset))

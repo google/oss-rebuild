@@ -14,6 +14,13 @@ import (
 // since step numbering shifts with the conditional save and export steps.
 const timingStepID = "timing"
 
+// runFailureExitCode is the sentinel indicating a failed docker run.
+// In main build script, Build.AllowExitCodes is configured for this value
+// which lets the build proceed to the timing step with the image and exited
+// container intact. The build will still fail on artifact copy but after
+// timing is extracted. Any other main-step exit aborts the build.
+const runFailureExitCode = 43
+
 // Plan represents a Google Cloud Build execution plan
 type Plan struct {
 	// Steps contains the Cloud Build steps to execute

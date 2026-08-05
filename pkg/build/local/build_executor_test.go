@@ -724,29 +724,33 @@ func TestDockerBuildExecutorTimings(t *testing.T) {
 `
 	span := "2026-07-01T00:01:20.500000000Z 2026-07-01T00:01:44.500000000Z\n"
 	for _, tc := range []struct {
-		name        string
-		inspectOut  string
-		runErr      error
-		wantErr     bool
-		wantTimings bool
+		name         string
+		inspectOut   string
+		runErr       error
+		wantErr      bool
+		wantBuild    bool
+		wantFailedIn rebuild.BuildPhase
 	}{
 		{
-			name:        "Extracted",
-			inspectOut:  span,
-			wantTimings: true,
+			name:       "Extracted",
+			inspectOut: span,
+			wantBuild:  true,
 		},
 		{
-			// Extraction failures never surface as build errors.
-			name:       "UnusableInspectTolerated",
+			// An unusable container span leaves Build unmeasured without
+			// discarding the image phases.
+			name:       "UnusableInspectKeepsImagePhases",
 			inspectOut: "no state clocks here\n",
 		},
 		{
-			// Failed builds still carry whatever phase timings were extracted.
-			name:        "FailedRunStillCarriesTimings",
-			inspectOut:  span,
-			runErr:      errors.New("exit status 2"),
-			wantErr:     true,
-			wantTimings: true,
+			// A failed run carries the image phases and the failing script's
+			// complete span, marked as the failure point.
+			name:         "FailedRunCarriesMarkedTimings",
+			inspectOut:   span,
+			runErr:       errors.New("exit status 2"),
+			wantErr:      true,
+			wantBuild:    true,
+			wantFailedIn: rebuild.PhaseBuild,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -818,27 +822,29 @@ func TestDockerBuildExecutorTimings(t *testing.T) {
 			if (result.Error != nil) != tc.wantErr {
 				t.Fatalf("Error = %v, want error %v", result.Error, tc.wantErr)
 			}
-			if (result.Timings != nil) != tc.wantTimings {
-				t.Fatalf("Timings = %+v, want present %v", result.Timings, tc.wantTimings)
+			if result.Timings == nil {
+				t.Fatalf("Timings = nil, want a record")
 			}
-			if !tc.wantTimings {
-				return
+			if result.Timings.FailedIn != tc.wantFailedIn {
+				t.Errorf("FailedIn = %q, want %q", result.Timings.FailedIn, tc.wantFailedIn)
 			}
 			// History clocks are second-granularity and the mock observes buildx
 			// moments after the executor's start clock read, so Setup lands
 			// within a second of the 8s layer time on either side.
-			if got := result.Timings.Setup; got < 7*time.Second || got > 9*time.Second {
+			if got := result.Timings.Setup; got == nil || *got < 7*time.Second || *got > 9*time.Second {
 				t.Errorf("Setup = %v, want ~8s", got)
 			}
-			if want := 2 * time.Second; result.Timings.Source != want {
+			if want := 2 * time.Second; result.Timings.Source == nil || *result.Timings.Source != want {
 				t.Errorf("Source = %v, want %v", result.Timings.Source, want)
 			}
-			if want := 30 * time.Second; result.Timings.Deps != want {
+			if want := 30 * time.Second; result.Timings.Deps == nil || *result.Timings.Deps != want {
 				t.Errorf("Deps = %v, want %v", result.Timings.Deps, want)
 			}
 			// Build comes from the retained container's state clocks.
-			if want := 24 * time.Second; result.Timings.Build != want {
-				t.Errorf("Build = %v, want %v", result.Timings.Build, want)
+			if got := result.Timings.Build; (got != nil) != tc.wantBuild {
+				t.Errorf("Build = %v, want present %v", got, tc.wantBuild)
+			} else if tc.wantBuild && *got != 24*time.Second {
+				t.Errorf("Build = %v, want %v", *got, 24*time.Second)
 			}
 		})
 	}

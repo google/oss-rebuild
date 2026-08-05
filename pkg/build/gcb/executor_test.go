@@ -570,6 +570,8 @@ func TestGCBExecutorFailedBuild(t *testing.T) {
 	}
 }
 
+func durPtr(d time.Duration) *time.Duration { return &d }
+
 func TestExecutorTimings(t *testing.T) {
 	ctx := context.Background()
 	goodStepLog := `+ docker inspect --format {{.State.StartedAt}} {{.State.FinishedAt}} container
@@ -583,58 +585,88 @@ func TestExecutorTimings(t *testing.T) {
 {"Comment":"buildkit.dockerfile.v0","CreatedAt":"2026-07-01T00:00:10Z","CreatedBy":"RUN","ID":"<missing>","Size":"2048"}
 {"Comment":"base","CreatedAt":"2025-01-01T00:00:00Z","CreatedBy":"FROM","ID":"abc123","Size":"7340032"}
 `
-	buildResult := &cloudbuild.Build{
-		Id:         "test-build-gcb-123",
-		Status:     "SUCCESS",
-		StartTime:  "2026-07-01T00:00:00Z",
-		FinishTime: "2026-07-01T00:02:00Z",
-		Steps: []*cloudbuild.BuildStep{
-			{
-				Name:   "gcr.io/cloud-builders/docker",
-				Timing: &cloudbuild.TimeSpan{StartTime: "2026-07-01T00:00:00Z", EndTime: "2026-07-01T00:01:50Z"},
-			},
-		},
-	}
-	metadataBytes, _ := json.Marshal(&cloudbuild.BuildOperationMetadata{Build: buildResult})
-	operation := &cloudbuild.Operation{
-		Name:     "projects/test-project/operations/test-build-timings",
-		Metadata: googleapi.RawMessage(metadataBytes),
-	}
-	doneOperation := &cloudbuild.Operation{
-		Name:     operation.Name,
-		Done:     true,
-		Metadata: googleapi.RawMessage(metadataBytes),
-	}
-	mockClient := &gcbtest.MockClient{
-		CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
-			return operation, nil
-		},
-		WaitForOperationFunc: func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
-			return doneOperation, nil
-		},
-	}
 	for _, tc := range []struct {
-		name    string
-		stepLog string
-		want    *rebuild.BuildTimings
+		name     string
+		stepLog  string
+		status   string
+		exitCode int64
+		wantErr  bool
+		want     *rebuild.BuildTimings
 	}{
 		{
 			name:    "Extracted",
 			stepLog: goodStepLog,
+			status:  "SUCCESS",
 			want: &rebuild.BuildTimings{
-				Setup:  10 * time.Second, // setup layer completion - step start
-				Source: 20 * time.Second, // source layer completion delta
-				Deps:   40 * time.Second, // deps layer completion delta
-				Build:  24 * time.Second, // container FinishedAt - StartedAt
+				Setup:  durPtr(10 * time.Second), // setup layer completion - step start
+				Source: durPtr(20 * time.Second), // source layer completion delta
+				Deps:   durPtr(40 * time.Second), // deps layer completion delta
+				Build:  durPtr(24 * time.Second), // container FinishedAt - StartedAt
 			},
 		},
 		{
 			// Extraction failures never surface as build errors.
 			name:    "UnusableLogTolerated",
 			stepLog: "no inspect or history output\n",
+			status:  "SUCCESS",
+		},
+		{
+			// A run failure mapped to the allowed sentinel reaches the timing
+			// step with the image and exited container intact: full phases
+			// with the failing build span marked.
+			name:     "SentinelRunFailureCaptured",
+			stepLog:  goodStepLog,
+			status:   "FAILURE",
+			exitCode: runFailureExitCode,
+			wantErr:  true,
+			want: &rebuild.BuildTimings{
+				Setup:    durPtr(10 * time.Second),
+				Source:   durPtr(20 * time.Second),
+				Deps:     durPtr(40 * time.Second),
+				Build:    durPtr(24 * time.Second),
+				FailedIn: rebuild.PhaseBuild,
+			},
+		},
+		{
+			// Any other main-step failure aborts before the timing step.
+			name:    "OtherFailureUnmeasured",
+			stepLog: goodStepLog,
+			status:  "FAILURE",
+			wantErr: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			buildResult := &cloudbuild.Build{
+				Id:         "test-build-gcb-123",
+				Status:     tc.status,
+				StartTime:  "2026-07-01T00:00:00Z",
+				FinishTime: "2026-07-01T00:02:00Z",
+				Steps: []*cloudbuild.BuildStep{
+					{
+						Name:     "gcr.io/cloud-builders/docker",
+						Timing:   &cloudbuild.TimeSpan{StartTime: "2026-07-01T00:00:00Z", EndTime: "2026-07-01T00:01:50Z"},
+						ExitCode: tc.exitCode,
+					},
+				},
+			}
+			metadataBytes, _ := json.Marshal(&cloudbuild.BuildOperationMetadata{Build: buildResult})
+			operation := &cloudbuild.Operation{
+				Name:     "projects/test-project/operations/test-build-timings",
+				Metadata: googleapi.RawMessage(metadataBytes),
+			}
+			doneOperation := &cloudbuild.Operation{
+				Name:     operation.Name,
+				Done:     true,
+				Metadata: googleapi.RawMessage(metadataBytes),
+			}
+			mockClient := &gcbtest.MockClient{
+				CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
+					return operation, nil
+				},
+				WaitForOperationFunc: func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
+					return doneOperation, nil
+				},
+			}
 			executor, err := NewExecutor(ExecutorConfig{
 				Client:         mockClient,
 				Project:        "test-project",
@@ -676,8 +708,8 @@ func TestExecutorTimings(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Error != nil {
-				t.Fatal(result.Error)
+			if gotErr := result.Error != nil; gotErr != tc.wantErr {
+				t.Fatalf("Error = %v, want error %t", result.Error, tc.wantErr)
 			}
 			if diff := cmp.Diff(tc.want, result.Timings); diff != "" {
 				t.Errorf("Timings diff (-want +got):\n%s", diff)
