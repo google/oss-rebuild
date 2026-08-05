@@ -11,9 +11,11 @@ import (
 
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
+	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
 )
 
 var testTarget = rebuild.Target{
@@ -169,5 +171,63 @@ func TestLastBuildLogs(t *testing.T) {
 	}
 	if !strings.Contains(string(logs), "npm ERR!") {
 		t.Errorf("logs = %q, want build output", logs)
+	}
+}
+
+func TestRunCommand(t *testing.T) {
+	var gotReq schema.ScratchExecRequest
+	r := testRunner(&fakeExecutor{})
+	r.Stubs = scratch.Stubs{
+		ExecCreate: func(_ context.Context, req schema.ScratchExecRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+			gotReq = req
+			return &longrunning.Operation[schema.ScratchExecResult]{
+				ID:     "cmd",
+				Done:   true,
+				Result: &schema.ScratchExecResult{ScratchID: "s1", ExitCode: 3},
+			}, nil
+		},
+		ExecGet: func(_ context.Context, req schema.GetOperationRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+			return nil, errors.New("unexpected ExecGet")
+		},
+	}
+	exitCode, _, err := r.RunCommand(context.Background(), "docker images", 0)
+	if err != nil {
+		t.Fatalf("RunCommand: %v", err)
+	}
+	if exitCode != 3 {
+		t.Errorf("exitCode = %d, want 3", exitCode)
+	}
+	if len(gotReq.Cmd) != 3 || gotReq.Cmd[2] != "docker images" {
+		t.Errorf("req.Cmd = %v, want /bin/sh -c 'docker images'", gotReq.Cmd)
+	}
+	if gotReq.ScratchID != "s1" {
+		t.Errorf("req.ScratchID = %q, want s1", gotReq.ScratchID)
+	}
+	if gotReq.TimeoutSeconds != int(defaultCommandTimeout.Seconds()) {
+		t.Errorf("req.TimeoutSeconds = %d, want default %d", gotReq.TimeoutSeconds, int(defaultCommandTimeout.Seconds()))
+	}
+}
+
+func TestRunCommandTimeout(t *testing.T) {
+	r := testRunner(&fakeExecutor{})
+	r.Stubs = scratch.Stubs{
+		ExecCreate: func(_ context.Context, req schema.ScratchExecRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+			return &longrunning.Operation[schema.ScratchExecResult]{
+				ID:     "cmd",
+				Done:   true,
+				Error:  &longrunning.OperationError{Code: int(codes.DeadlineExceeded), Message: "command exceeded TimeoutSeconds"},
+				Result: &schema.ScratchExecResult{ScratchID: "s1", ExitCode: 124},
+			}, nil
+		},
+		ExecGet: func(_ context.Context, req schema.GetOperationRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+			return nil, errors.New("unexpected ExecGet")
+		},
+	}
+	exitCode, _, err := r.RunCommand(context.Background(), "sleep 600", 5)
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want timeout error", err)
+	}
+	if exitCode != 124 {
+		t.Errorf("exitCode = %d, want 124", exitCode)
 	}
 }
