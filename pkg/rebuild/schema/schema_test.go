@@ -482,6 +482,10 @@ func TestAgentCreateRequest_Validate(t *testing.T) {
 			req:  AgentCreateRequest{Target: target, ExecutionMode: AgentExecutionModeScratch},
 		},
 		{
+			name: "external agent scratch mode",
+			req:  AgentCreateRequest{Target: target, ExecutionMode: AgentExecutionModeScratch, ExternalAgent: true},
+		},
+		{
 			name:    "invalid execution mode",
 			req:     AgentCreateRequest{Target: target, ExecutionMode: "warp"},
 			wantErr: true,
