@@ -149,6 +149,125 @@ commits:
 `,
 			expectedDir: "sub1",
 		},
+		{
+			name:    "setup.py - Basic discovery",
+			pkg:     "setup-test",
+			version: "1.2",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test',
+            version='1.2',
+            setup_requires=['pytest-runner'],
+        )
+`,
+			expectedDir: "",
+		},
+		{
+			name:    "setup.py - Select the directory whose name matches",
+			pkg:     "setup-test-name",
+			version: "1.4.5",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test',
+            version='1.2',
+            setup_requires=['pytest-runner'],
+        )
+      sub1/setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test-name',
+            version='1.4.5',
+            setup_requires=['wheel'],
+        )
+`,
+			expectedDir: "sub1",
+		},
+		{
+			name:    "setup.py - Fall back when the matching name is computed dynamically",
+			pkg:     "setup-test-dynamic",
+			version: "7.2.8",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      sub1/setup.py: |
+        from setuptools import setup, find_packages
+        from os import path
+
+        here = path.abspath(path.dirname(__file__))
+
+        with open(path.join(here, 'VERSION')) as f:
+            dyn_version = f.read()
+
+        with open(path.join(here, 'PACKAGE')) as f:
+            dyn_name = f.read()
+
+        setup(
+            name=dyn_name,
+            version=dyn_version,
+            setup_requires="pytest-runner",
+        )
+      sub1/VERSION: |
+        7.2.8
+      sub1/PACKAGE: |
+        setup-test-dynamic
+      setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test-name',
+            version='1.4.5',
+            setup_requires=['wheel'],
+        )
+`,
+			expectedDir: "",
+		},
+		{
+			name:    "All three file types - Select the subdirectory naming the package",
+			pkg:     "everything-test",
+			version: "4.5.6",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      pyproject.toml: |
+        [build-system]
+        requires = ["setuptools>=61.0.0"]
+        build-backend = "setuptools.build_meta"
+
+        [project]
+        name = "my-project"
+        version = "1.2.3"
+      sub1/setup.cfg: |
+        [metadata]
+        version = 4.5.6
+
+        [options]
+        setup_requires =
+            setuptools
+            wheel
+            pytest-runner
+      sub1/setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='everything-test',
+        )
+      sub1/pyproject.toml: |
+        [build-system]
+        requires = ["setuptools>=59.0.0"]
+        build-backend = "setuptools.build_meta"
+`,
+			expectedDir: "sub1",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup the commit tree using repo yaml
@@ -268,6 +387,84 @@ commits:
         requires = ["dep4"]
 `,
 			expectedReqs: []string{"dep2"},
+		},
+		{
+			name:      "setup.py - List setup_requires",
+			searchDir: "",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test',
+            version='1.2',
+            setup_requires=['pytest-runner'],
+        )
+`,
+			expectedReqs: []string{"pytest-runner"},
+		},
+		{
+			name:      "setup.py - String setup_requires",
+			searchDir: "",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='setup-test-string',
+            version='1.2.3',
+            setup_requires="wheel",
+        )
+`,
+			expectedReqs: []string{"wheel"},
+		},
+		{
+			name:      "setup.py - setup_requires referencing a variable",
+			searchDir: "",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      setup.py: |
+        from setuptools import setup, find_packages
+
+        BUILD_REQUIRES = ['setuptools_scm', 'wheel']
+
+        setup(
+            name='setup-test-var',
+            version='1.2.3',
+            setup_requires=BUILD_REQUIRES,
+        )
+`,
+			expectedReqs: []string{"setuptools_scm", "wheel"},
+		},
+		{
+			name:      "All three file types",
+			searchDir: "sub1",
+			repoYAML: `
+commits:
+  - id: initial-commit
+    files:
+      sub1/pyproject.toml: |
+        [build-system]
+        requires = ["setuptools>=59.0.0"]
+      sub1/setup.cfg: |
+        [options]
+        setup_requires =
+            setuptools
+            wheel
+      sub1/setup.py: |
+        from setuptools import setup, find_packages
+        setup(
+            name='everything-test',
+            setup_requires=['pytest-runner'],
+        )
+`,
+			expectedReqs: []string{"setuptools>=59.0.0", "setuptools", "wheel", "pytest-runner"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

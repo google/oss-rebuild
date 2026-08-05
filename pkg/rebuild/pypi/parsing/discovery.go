@@ -16,6 +16,7 @@ import (
 var supportedFileTypes = map[string]bool{
 	"pyproject.toml": true,
 	"setup.cfg":      true,
+	"setup.py":       true,
 }
 
 type fileVerification struct {

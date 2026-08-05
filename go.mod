@@ -19,6 +19,8 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
 	github.com/in-toto/in-toto-golang v0.9.1-0.20240514222827-dd6278764ab1
+	github.com/msuozzo/bonsai v0.3.0
+	github.com/msuozzo/bonsai/bonsai-python v0.3.0
 	github.com/pavlo-v-chernykh/keystore-go/v4 v4.5.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pkg/errors v0.9.1
