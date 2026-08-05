@@ -174,6 +174,10 @@ github.com/mattn/go-runewidth v0.0.15 h1:UNAjwbU9l54TA3KzvqLGxwWjHmMgBUVhBiTjelZ
 github.com/mattn/go-runewidth v0.0.15/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/mitchellh/go-wordwrap v1.0.1 h1:TLuKupo69TCn6TQSyGxwI1EblZZEsQ0vMlAFQflz0v0=
 github.com/mitchellh/go-wordwrap v1.0.1/go.mod h1:R62XHJLzvMFRBbcrT7m7WgmE1eOyTSsCt+hzestvNj0=
+github.com/msuozzo/bonsai v0.4.0 h1:WVGqsSctbGcL5ehdCdnckwRxBC3omwsmOtzKH/2tuZw=
+github.com/msuozzo/bonsai v0.4.0/go.mod h1:LDo0Dmp6qaeEoJAG83UuLDHtwHn6H1knSYKqoXMxm4M=
+github.com/msuozzo/bonsai/bonsai-python v0.4.0 h1:spQNWwF6vBL4o8vfC+zoY8iZJfnLue1izNk7FKs0oXo=
+github.com/msuozzo/bonsai/bonsai-python v0.4.0/go.mod h1:yMx1oeH6SQUuru9IhIioteV7cmF7S/UQNp9bDdMSfjs=
 github.com/onsi/gomega v1.34.1 h1:EUMJIKUjM8sKjYbtxQI9A4z2o+rruxnzNvpknOXie6k=
 github.com/onsi/gomega v1.34.1/go.mod h1:kU1QgUvBDLXBJq618Xvm2LUX6rSAfRaFRTcdOeDLwwY=
 github.com/pavlo-v-chernykh/keystore-go/v4 v4.5.0 h1:2nosf3P75OZv2/ZO/9Px5ZgZ5gbKrzA3joN1QMfOGMQ=
