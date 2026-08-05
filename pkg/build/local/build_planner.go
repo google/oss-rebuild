@@ -114,9 +114,10 @@ func (p *DockerBuildPlanner) GeneratePlan(ctx context.Context, input rebuild.Inp
 		return nil, errors.Wrap(err, "failed to generate Dockerfile")
 	}
 	plan := &DockerBuildPlan{
-		Dockerfile: dockerfile,
-		OutputPath: path.Join("/out", path.Base(instructions.OutputPath)),
-		Privileged: instructions.Requires.Privileged,
+		Dockerfile:   dockerfile,
+		OutputPath:   path.Join("/out", path.Base(instructions.OutputPath)),
+		RequiresAuth: len(opts.Resources.ToolAuthRequired) > 0,
+		Privileged:   instructions.Requires.Privileged,
 	}
 	// The declared layers gate the executor's post-build observation.
 	if opts.RecordTimings {

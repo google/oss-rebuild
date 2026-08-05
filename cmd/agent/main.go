@@ -156,15 +156,17 @@ func main() {
 				return "Authorization: Bearer " + t.AccessToken, nil
 			}
 		}
-		executor, err := scratch.NewExecutor(scratch.ExecutorConfig{
-			ScratchID:      *scratchID,
-			Stubs:          stubs,
-			GCSClient:      gcsClient,
-			DefaultTimeout: *buildTimeout,
-			AuthHeader:     authHeader,
-			// NOTE: The scratch VM is dedicated to this session's builds, so
-			// privileged plans are acceptable there.
-			AllowPrivileged: true,
+		executor, err := scratch.NewDockerRunExecutor(scratch.DockerRunExecutorConfig{
+			ExecutorConfig: scratch.ExecutorConfig{
+				ScratchID:      *scratchID,
+				Stubs:          stubs,
+				GCSClient:      gcsClient,
+				DefaultTimeout: *buildTimeout,
+				AuthHeader:     authHeader,
+				// NOTE: The scratch VM is dedicated to this session's builds, so
+				// privileged plans are acceptable there.
+				AllowPrivileged: true,
+			},
 		})
 		if err != nil {
 			log.Fatal("Failed to create scratch executor: ", err)

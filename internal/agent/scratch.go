@@ -46,7 +46,7 @@ const (
 // session can fill the VM's disk.
 type ScratchRunner struct {
 	Target rebuild.Target
-	// Executor runs iteration builds (a scratch.Executor in production).
+	// Executor runs iteration builds (a scratch.DockerRunExecutor in production).
 	Executor build.Executor
 	// ScratchID, Stubs, and GCSClient power the run_command LLM tool's
 	// direct exec access to the VM.
