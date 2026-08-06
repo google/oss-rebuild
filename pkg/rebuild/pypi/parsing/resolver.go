@@ -26,7 +26,7 @@ func ExtractRequirements(ctx context.Context, tree *object.Tree, searchDir strin
 	}{
 		{"pyproject.toml", extractPyProjectRequirements},
 		{"setup.cfg", extractSetupCfgRequirements},
-		// TODO setup.py
+		{"setup.py", extractSetupPyRequirements},
 	}
 	for _, h := range configTypes {
 		f, err := tree.File(filepath.Join(searchDir, h.filename))
@@ -54,7 +54,7 @@ func DiscoverBuildDir(ctx context.Context, tree *object.Tree, name, version, hin
 	}{
 		{"pyproject.toml", verifyPyProjectFile},
 		{"setup.cfg", verifySetupCfgFile},
-		// TODO setup.py
+		{"setup.py", verifySetupPyFile},
 	}
 	for _, h := range configTypes {
 		files, err := findRecursively(h.filename, tree, hintDir)
