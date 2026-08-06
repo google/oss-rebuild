@@ -341,6 +341,8 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if !hasMUSLBuild {
 		return nil, errors.New("rust version unsupported in MUSL builds")
 	}
+	// --exclude-lockfile was added in Cargo 1.87.
+	excludeLockfile := lockContent == nil && semver.Cmp(rustVersion, "1.87.0") >= 0
 
 	return &CratesIOCargoPackage{
 		Location: rebuild.Location{
@@ -348,9 +350,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			Ref:  ref,
 			Dir:  dir,
 		},
-		RustVersion:    rustVersion,
-		RegistryCommit: indexCommit,
-		PackageNames:   packageNames,
+		RustVersion:     rustVersion,
+		ExcludeLockfile: excludeLockfile,
+		RegistryCommit:  indexCommit,
+		PackageNames:    packageNames,
 	}, nil
 }
 
