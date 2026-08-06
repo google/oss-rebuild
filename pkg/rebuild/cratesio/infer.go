@@ -325,7 +325,6 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			}
 			indexCommit = resp.CommitHash
 		}
-		// TODO: If we want to default to sparse registry, we can predicate this on `if semver.Cmp(rustVersion, "1.68.0") < 0`
 		// If only local registry is supported, collect crates.io package names from Cargo.lock.
 		packageSet := make(map[string]bool)
 		for _, pkg := range registryPackages {
@@ -354,6 +353,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			rustVersion = sourceVersion
 			toolchainResolved = true
 		}
+	}
+	// Cargo 1.68 and newer can use the sparse registry.
+	if semver.Cmp(rustVersion, "1.68.0") >= 0 {
+		packageNames = nil
 	}
 	// TODO: This should be moved to build-time since strategies are intended to be, at least notionally, distro-independent.
 	hasMUSLBuild, err := reg.HasMUSLBuild(rustVersion)

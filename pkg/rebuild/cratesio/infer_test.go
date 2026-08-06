@@ -583,7 +583,6 @@ source = "git+https://github.com/example/tracing#0123456789abcdef"
 					},
 					RustVersion:    "1.68.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
-					PackageNames:   []string{"syn"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
 				}
 			},
 		},
@@ -636,7 +635,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 					},
 					RustVersion:    "1.78.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
-					PackageNames:   []string{"syn"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
 				}
 			},
 		},
@@ -889,7 +887,7 @@ version = 3
 			},
 		},
 		{
-			name: "repository toolchain replaces the date heuristic",
+			name: "repository toolchain selects git registry",
 			repo: `commits:
   - id: initial-commit
     files:
@@ -904,14 +902,28 @@ version = 3
         [package]
         name = "serde"
         version = "1.0.150"
-      rust-toolchain: "1.60.0\n"
+      rust-toolchain: "1.67.1\n"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-11-07T00:00:00Z","rust_version":"1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2023-04-01T00:00:00Z","rust_version":"1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
 					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.lock"}, Body: []byte(`version = 3
+
+[[package]]
+name = "serde"
+version = "1.0.150"
+
+[[package]]
+name = "syn"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`)},
 				}
+			},
+			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
+				CommitHash: "abcd1234567890abcdef1234567890abcdef1234",
 			},
 			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
 				return &CratesIOCargoPackage{
@@ -919,8 +931,61 @@ version = 3
 						Repo: "https://github.com/serde-rs/serde",
 						Ref:  repo.Commits["version-bump"].String(),
 					},
-					RustVersion:       "1.60.0",
+					RustVersion:       "1.67.1",
 					ToolchainResolved: true,
+					RegistryCommit:    "abcd1234567890abcdef1234567890abcdef1234",
+					PackageNames:      []string{"syn"},
+				}
+			},
+		},
+		{
+			name: "repository toolchain selects sparse registry",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.68.0\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2023-03-10T00:00:00Z","rust_version":"1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.lock"}, Body: []byte(`version = 3
+
+[[package]]
+name = "serde"
+version = "1.0.150"
+
+[[package]]
+name = "syn"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`)},
+				}
+			},
+			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
+				CommitHash: "abcd1234567890abcdef1234567890abcdef1234",
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion:       "1.68.0",
+					ToolchainResolved: true,
+					RegistryCommit:    "abcd1234567890abcdef1234567890abcdef1234",
 				}
 			},
 		},
