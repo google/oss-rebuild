@@ -60,28 +60,38 @@ type ScriptResponse struct {
 }
 
 func GenerateTextContent(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, prompt ...*genai.Part) (string, error) {
+	text, _, err := GenerateTextContentWithUsage(ctx, client, model, config, prompt...)
+	return text, err
+}
+
+// GenerateTextContentWithUsage is GenerateTextContent that additionally returns
+// the response's token usage metadata (nil if the model reported none). Usage
+// is returned even alongside a formatting error so callers can attribute tokens
+// that were still consumed.
+func GenerateTextContentWithUsage(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, prompt ...*genai.Part) (string, *genai.GenerateContentResponseUsageMetadata, error) {
 	contents := []*genai.Content{{Parts: prompt, Role: "user"}}
 	resp, err := client.Models.GenerateContent(ctx, model, contents, config)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to generate content")
+		return "", nil, errors.Wrap(err, "failed to generate content")
 	}
+	usage := resp.UsageMetadata
 	if len(resp.Candidates) == 0 {
-		return "", errors.New("no candidates returned")
+		return "", usage, errors.New("no candidates returned")
 	}
 	candidate := resp.Candidates[0]
 	if candidate.FinishReason != genai.FinishReasonStop {
-		return "", errors.Errorf("generating content: %s", candidate.FinishMessage)
+		return "", usage, errors.Errorf("generating content: %s", candidate.FinishMessage)
 	}
 	switch len(candidate.Content.Parts) {
 	case 0:
-		return "", errors.New("empty response content")
+		return "", usage, errors.New("empty response content")
 	case 1:
 		if candidate.Content.Parts[0].Text != "" {
-			return candidate.Content.Parts[0].Text, nil
+			return candidate.Content.Parts[0].Text, usage, nil
 		}
-		return "", errors.New("part is not text")
+		return "", usage, errors.New("part is not text")
 	default:
-		return "", errors.New("multiple response parts")
+		return "", usage, errors.New("multiple response parts")
 	}
 }
 

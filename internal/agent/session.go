@@ -40,6 +40,8 @@ type ProposeOpts struct {
 type Agent interface {
 	Propose(context.Context, *ProposeOpts) (*schema.StrategyOneOf, error)
 	RecordIteration(*schema.AgentIteration)
+	// Usage returns the agent's cumulative LLM token consumption so far.
+	Usage() schema.TokenUsage
 }
 
 type RunSessionReq struct {
@@ -71,10 +73,14 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 			Path:   path.Join(sessionID, "messages", fmt.Sprintf("%d", iterNum)),
 		}
 	}
+	// Snapshot the agent's cumulative token usage around Propose so this
+	// iteration is charged only the tokens it consumed.
+	beforeUsage := agent.Usage()
 	s, err := agent.Propose(ctx, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "generating strategy")
 	}
+	iterUsage := agent.Usage().Sub(beforeUsage).OrNil()
 	// Scratch-mode attempts run locally on the session's scratch VM and are
 	// not recorded server-side (the scratch exec ledger is their trail).
 	// Only a locally-verified success proceeds to the standard iteration
@@ -85,12 +91,16 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 		status, result := deps.ScratchRunner.Run(ctx, fmt.Sprintf("iter-%d", iterNum), s)
 		if status != schema.AgentIterationStatusSuccess {
 			now := time.Now().UTC()
+			// This local-only record is never persisted. The session total
+			// accounts for its tokens and the usage stamp is only for local
+			// visibility.
 			return &schema.AgentIteration{
 				SessionID: sessionID,
 				Number:    iterNum,
 				Strategy:  s,
 				Status:    status,
 				Result:    result,
+				Usage:     iterUsage,
 				Created:   now,
 				Updated:   now,
 			}, nil
@@ -107,6 +117,7 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 		SessionID:       sessionID,
 		IterationNumber: iterNum,
 		Strategy:        s,
+		Usage:           iterUsage,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "executing build")
@@ -116,7 +127,7 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 	return resp.Iteration, nil
 }
 
-func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *schema.AgentCompleteRequest {
+func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (completeReq *schema.AgentCompleteRequest) {
 	if req.MaxIterations <= 0 {
 		return &schema.AgentCompleteRequest{
 			StopReason: schema.AgentCompleteReasonError,
@@ -142,6 +153,15 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		RegistryClient: deps.RegistryClient,
 		ScratchRunner:  deps.ScratchRunner,
 	})
+	// Attach the session's total token consumption (both GCB and scratch mode,
+	// including side calls) to whatever completion request we return. Iteration
+	// records only exist for GCB-mode sessions, so completion is the one place
+	// every session reports its total.
+	defer func() {
+		if completeReq != nil {
+			completeReq.Usage = a.Usage().OrNil()
+		}
+	}()
 	var err error
 	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, llm.GeminiPro, config, &llm.ChatOpts{Tools: a.getTools()})
 	if err != nil {
