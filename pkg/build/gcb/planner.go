@@ -326,7 +326,7 @@ var gcbStandardBuildTpl = template.Must(
 			TETRAGON_PID=$(docker inspect -f '{{printf "%s" "{{.State.Pid}}"}}' tetragon)
 			{{- end}}
 			{{- if or .TimewarpAuth .TetragonSysgraphAuth}}
-			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
+			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq -r .access_token > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 			{{- end}}
 			{{- if .UseSyscallMonitor}}
@@ -413,7 +413,7 @@ var gcbProxyBuildTpl = template.Must(
 			set -eux
 			echo 'Starting rebuild for {{.TargetStr}}'
 			{{- if or .ProxyAuth .TetragonSysgraphAuth}}
-			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
+			apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq -r .access_token > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 			{{- end}}
 			curl {{if .ProxyAuth}}-H @/tmp/auth_header {{end -}} {{.ProxyURL}} > proxy
@@ -873,7 +873,7 @@ var gcbAssetUploadTpl = template.Must(
 		textwrap.Dedent(`
 			set -eux
 			{{- if .GSUtilAuth}}
-			apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq .access_token > /tmp/token
+			apk add curl jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/{{.ServiceAccountEmail}}/token | jq -r .access_token > /tmp/token
 			(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 			curl -H @/tmp/auth_header {{.GSUtilURL}} > gsutil_writeonly
 			{{- else}}
