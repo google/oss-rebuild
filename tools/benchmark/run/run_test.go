@@ -6,12 +6,15 @@ package run
 import (
 	"context"
 	"testing"
+	"time"
 
 	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/act/api/form"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/pkg/errors"
@@ -20,6 +23,43 @@ import (
 type queueCall struct {
 	URL  string
 	Body string
+}
+
+type resultWithErrorService struct{}
+
+func (resultWithErrorService) RebuildPackage(_ context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
+	return &schema.Verdict{
+		Target:     rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact},
+		Provenance: &schema.StrategyProvenance{Inference: &schema.InferenceRun{Version: "test-infer"}},
+	}, errors.New("remote operation failed")
+}
+
+func (resultWithErrorService) Infer(context.Context, schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (resultWithErrorService) Warmup(context.Context) {}
+
+func TestAttestWorkerPreservesResultReturnedWithError(t *testing.T) {
+	w := attestWorker{workerConfig: workerConfig{
+		execService: resultWithErrorService{},
+		limiters: map[string]*ratex.BackoffLimiter{
+			"cratesio": ratex.NewBackoffLimiter(time.Nanosecond),
+		},
+	}}
+	out := make(chan schema.Verdict, 1)
+	w.ProcessOne(context.Background(), benchmark.Package{
+		Ecosystem: "cratesio",
+		Name:      "serde",
+		Versions:  []string{"1.0.150"},
+	}, out)
+	got := <-out
+	if got.Provenance == nil || got.Provenance.Inference == nil || got.Provenance.Inference.Version != "test-infer" {
+		t.Fatalf("Provenance = %#v, want returned remote provenance", got.Provenance)
+	}
+	if got.Message != "remote operation failed" {
+		t.Fatalf("Message = %q, want %q", got.Message, "remote operation failed")
+	}
 }
 
 type mockQueue struct {
