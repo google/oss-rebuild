@@ -51,17 +51,19 @@ func TestRunBenchAsync(t *testing.T) {
 						Ecosystem: "npm",
 						Name:      "package_name",
 						Versions:  []string{"1.0.0", "1.1.0"},
+						Execution: schema.ExtendedExecution,
+						Size:      schema.JumboSize,
 					},
 				},
 			},
 			expected: []queueCall{
 				{
 					"https://example.com/rebuild",
-					"ecosystem=npm&id=runid&package=package_name&version=1.0.0",
+					"ecosystem=npm&executionhint=EXTENDED&id=runid&overwritemode=FORCE&package=package_name&sizehint=JUMBO&usenetworkproxy=true&userepodefinition=true&usesyscallmonitor=true&version=1.0.0",
 				},
 				{
 					"https://example.com/rebuild",
-					"ecosystem=npm&id=runid&package=package_name&version=1.1.0",
+					"ecosystem=npm&executionhint=EXTENDED&id=runid&overwritemode=FORCE&package=package_name&sizehint=JUMBO&usenetworkproxy=true&userepodefinition=true&usesyscallmonitor=true&version=1.1.0",
 				},
 			},
 		},
@@ -70,7 +72,14 @@ func TestRunBenchAsync(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			queue := &mockQueue{}
 			url := urlx.MustParse("https://example.com")
-			if err := RunBenchAsync(context.Background(), tc.set, RunBenchOpts{Mode: tc.mode, RunID: "runid"}, url, queue); err != nil {
+			if err := RunBenchAsync(context.Background(), tc.set, RunBenchOpts{
+				Mode:              tc.mode,
+				RunID:             "runid",
+				UseSyscallMonitor: true,
+				UseNetworkProxy:   true,
+				UseRepoDefinition: true,
+				OverwriteMode:     schema.OverwriteForce,
+			}, url, queue); err != nil {
 				t.Error(errors.Wrap(err, "RunBenchAsync"))
 			}
 			if diff := cmp.Diff(queue.calls, tc.expected); diff != "" {
