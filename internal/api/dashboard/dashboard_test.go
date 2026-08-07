@@ -4,12 +4,34 @@
 package dashboard
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
+
+func TestRegisterAssets(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterAssets(mux)
+	for path, want := range map[string]string{ThemeCSSPath: "--accent:", CSSPath: ".benchmark-grid"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s: got status %d, want %d", path, rec.Code, http.StatusOK)
+		}
+		if got := rec.Header().Get("Content-Type"); got != "text/css" {
+			t.Errorf("GET %s: got Content-Type %q, want text/css", path, got)
+		}
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("GET %s: body does not contain %q; wrong asset served", path, want)
+		}
+	}
+}
 
 func TestApplySuccessRegex(t *testing.T) {
 	tests := []struct {
