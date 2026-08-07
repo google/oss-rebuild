@@ -628,6 +628,22 @@ func TestExecutorTimings(t *testing.T) {
 			},
 		},
 		{
+			// An allowed nonzero exit still represents a failed rebuild even
+			// when later steps make the overall Cloud Build successful.
+			name:     "SentinelRunFailureWithSuccessfulBuild",
+			stepLog:  goodStepLog,
+			status:   "SUCCESS",
+			exitCode: runFailureExitCode,
+			wantErr:  true,
+			want: &rebuild.BuildTimings{
+				Setup:    durPtr(10 * time.Second),
+				Source:   durPtr(20 * time.Second),
+				Deps:     durPtr(40 * time.Second),
+				Build:    durPtr(24 * time.Second),
+				FailedIn: rebuild.PhaseBuild,
+			},
+		},
+		{
 			// Any other main-step failure aborts before the timing step.
 			name:    "OtherFailureUnmeasured",
 			stepLog: goodStepLog,
