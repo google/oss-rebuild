@@ -583,7 +583,6 @@ source = "git+https://github.com/example/tracing#0123456789abcdef"
 					},
 					RustVersion:    "1.68.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
-					PackageNames:   []string{"syn"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
 				}
 			},
 		},
@@ -636,7 +635,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 					},
 					RustVersion:    "1.78.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
-					PackageNames:   []string{"syn"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
 				}
 			},
 		},
@@ -814,6 +812,356 @@ version = 3
 						Dir:  "",
 					},
 					RustVersion: "1.67.0",
+				}
+			},
+		},
+		{
+			name: "resolved repository toolchain",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.35.0\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version":"1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion:       "1.35.0",
+					ToolchainResolved: true,
+				}
+			},
+		},
+		{
+			name: "repository toolchain conflicts with artifact bounds",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.41.0\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-11-07T00:00:00Z","rust_version":"1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion: "1.64.0",
+				}
+			},
+		},
+		{
+			name: "repository toolchain selects git registry",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.67.1\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2023-04-01T00:00:00Z","rust_version":"1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.lock"}, Body: []byte(`version = 3
+
+[[package]]
+name = "serde"
+version = "1.0.150"
+
+[[package]]
+name = "syn"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`)},
+				}
+			},
+			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
+				CommitHash: "abcd1234567890abcdef1234567890abcdef1234",
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion:       "1.67.1",
+					ToolchainResolved: true,
+					RegistryCommit:    "abcd1234567890abcdef1234567890abcdef1234",
+					PackageNames:      []string{"syn"},
+				}
+			},
+		},
+		{
+			name: "repository toolchain selects sparse registry",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.68.0\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2023-03-10T00:00:00Z","rust_version":"1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.lock"}, Body: []byte(`version = 3
+
+[[package]]
+name = "serde"
+version = "1.0.150"
+
+[[package]]
+name = "syn"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`)},
+				}
+			},
+			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
+				CommitHash: "abcd1234567890abcdef1234567890abcdef1234",
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion:       "1.68.0",
+					ToolchainResolved: true,
+					RegistryCommit:    "abcd1234567890abcdef1234567890abcdef1234",
+				}
+			},
+		},
+		{
+			name: "repository toolchain published after the crate",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.65.0\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-09-30T00:00:00Z","rust_version":"1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion: "1.64.0",
+				}
+			},
+		},
+		{
+			name: "repository toolchain below declared rust version",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.60.0\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-11-07T00:00:00Z","rust_version":"1.61.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion: "1.64.0",
+				}
+			},
+		},
+		{
+			name: "repository toolchain below lockfile floor",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.77.2\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2024-05-20T00:00:00Z","rust_version":"1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.lock"}, Body: []byte("version = 4\n")},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion: "1.78.0",
+				}
+			},
+		},
+		{
+			name: "repository toolchain above artifact bounds",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.60.0\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-11-07T00:00:00Z","rust_version":"1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion: "1.54.0",
+				}
+			},
+		},
+		{
+			name: "unknown repository toolchain release",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.60.9\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-11-07T00:00:00Z","rust_version":"1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion: "1.64.0",
+				}
+			},
+		},
+		{
+			name: "repository toolchain without musl build",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      rust-toolchain: "1.34.2\n"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version":"1.34.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+					},
+					RustVersion: "1.35.0",
 				}
 			},
 		},
