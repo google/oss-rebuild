@@ -88,7 +88,7 @@ func (a *defaultAgent) InitializeFromIteration(ctx context.Context, initialItera
 		Hash: plumbing.NewHash(loc.Ref),
 	})
 	if err != nil {
-		errors.Wrap(err, "checkout")
+		return errors.Wrap(err, "checkout")
 	}
 	a.RecordIteration(initialIteration)
 	a.loc = *loc
