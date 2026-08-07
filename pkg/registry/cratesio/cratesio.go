@@ -73,6 +73,9 @@ func (r HTTPRegistry) Crate(ctx context.Context, pkg string) (*Crate, error) {
 	if err != nil {
 		return nil, err
 	}
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
 	if resp.StatusCode != 200 {
 		return nil, errors.Wrap(errors.New(resp.Status), "fetching crate metadata")
 	}
@@ -101,6 +104,9 @@ func (r HTTPRegistry) Version(ctx context.Context, pkg, version string) (*CrateV
 	if err != nil {
 		return nil, err
 	}
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
 	if resp.StatusCode != 200 {
 		return nil, errors.Wrap(errors.New(resp.Status), "fetching version")
 	}
@@ -128,6 +134,9 @@ func (r HTTPRegistry) Artifact(ctx context.Context, pkg string, version string) 
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
+		if resp.Body != nil {
+			resp.Body.Close()
+		}
 		return nil, errors.Wrap(errors.New(resp.Status), "fetching artifact")
 	}
 	return resp.Body, nil
