@@ -93,6 +93,12 @@ func (c Config) Validate() error {
 	if c.UseRepoDefinition && c.Local {
 		return errors.New("--use-repo-definition is not supported in local mode")
 	}
+	if c.Local && c.UseNetworkProxy {
+		return errors.New("--use-network-proxy is not supported in local mode")
+	}
+	if c.Local && c.UseSyscallMonitor {
+		return errors.New("--use-syscall-monitor is not supported in local mode")
+	}
 	if c.UseRepoDefinition && mode != schema.AttestMode {
 		return errors.New("--use-repo-definition is only supported in attest mode")
 	}
