@@ -413,8 +413,8 @@ func (m *IndexManager) evictSnapshotsIfNeeded(ctx context.Context, toAllocate, t
 	if toEvict <= 0 {
 		return nil
 	}
-	if len(candidates) < len(toAllocate) {
-		return errors.Errorf("insufficient snapshots available to evict: [need=%d,available=%d]", len(toAllocate), len(candidates))
+	if len(candidates) < toEvict {
+		return errors.Errorf("insufficient snapshots available to evict: [need=%d,available=%d]", toEvict, len(candidates))
 	}
 	// Sort by last access time (LRU first)
 	sort.Slice(candidates, func(i, j int) bool {
