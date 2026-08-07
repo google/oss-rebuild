@@ -186,6 +186,10 @@ func stabilizeWithCtx(dst io.Writer, src io.Reader, f archive.Format, ctx *Stabi
 			_ = gzw.Close()
 			return errors.Wrap(err, "stabilizing tar.gz")
 		}
+		if _, err := io.Copy(io.Discard, gzr); err != nil {
+			_ = gzw.Close()
+			return errors.Wrap(err, "validating gzip stream")
+		}
 		if err := gzw.Close(); err != nil {
 			return errors.Wrap(err, "finalizing tar.gz")
 		}
