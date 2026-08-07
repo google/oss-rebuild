@@ -241,6 +241,43 @@ commits:
 	}
 }
 
+func TestSnapshotEvictionRejectsInsufficientCandidates(t *testing.T) {
+	mgr := NewIndexManager(IndexManagerConfig{
+		Filesystem:            safememfs.New(),
+		MaxSnapshots:          2,
+		CurrentUpdateInterval: time.Hour,
+	})
+	defer mgr.Close()
+
+	var existing []*managedRepository
+	for i := range 4 {
+		repo := &managedRepository{
+			key:  RepositoryKey{Type: SnapshotIndex, Name: fmt.Sprintf("2024-%02d-01", i+1)},
+			path: fmt.Sprintf("snapshot-2024-%02d-01", i+1),
+		}
+		mgr.repositories.Store(repo.key, repo)
+		existing = append(existing, repo)
+	}
+
+	toAllocate := []*managedRepository{{
+		key:  RepositoryKey{Type: SnapshotIndex, Name: "2024-05-01"},
+		path: "snapshot-2024-05-01",
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	err := mgr.evictSnapshotsIfNeeded(ctx, toAllocate, existing[:2])
+	want := "insufficient snapshots available to evict: [need=3,available=2]"
+	if err == nil || err.Error() != want {
+		t.Errorf("evictSnapshotsIfNeeded() error = %v, want %q", err, want)
+	}
+	for _, repo := range existing {
+		if _, ok := mgr.repositories.Load(repo.key); !ok {
+			t.Errorf("repository %v was evicted", repo.key)
+		}
+	}
+}
+
 // TestMultiRepositoryAcquisition tests the new atomic multi-repository feature
 func TestMultiRepositoryAcquisition(t *testing.T) {
 	// Set up upstream repositories
