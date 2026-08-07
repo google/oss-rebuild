@@ -136,8 +136,12 @@ var StabilizeCargoVCSHash = Stabilizer{
 }))
 
 // StabilizeTar strips volatile metadata and re-writes the provided archive in a standard form.
-func StabilizeTar(tr *tar.Reader, tw *tar.Writer, ctx *StabilizationContext) error {
-	defer tw.Close()
+func StabilizeTar(tr *tar.Reader, tw *tar.Writer, ctx *StabilizationContext) (retErr error) {
+	defer func() {
+		if err := tw.Close(); retErr == nil && err != nil {
+			retErr = errors.Wrap(err, "finalizing tar")
+		}
+	}()
 	var ents []*archive.TarEntry
 	for header, err := range iterx.ToSeq2(tr, io.EOF) {
 		if err != nil {
