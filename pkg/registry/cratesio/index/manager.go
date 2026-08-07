@@ -500,6 +500,12 @@ func (m *IndexManager) GetRepositories(ctx context.Context, keys []RepositoryKey
 		case resp := <-response:
 			return resp.handles, resp.err
 		case <-ctx.Done():
+			go func() {
+				resp := <-response
+				for _, handle := range resp.handles {
+					handle.Close()
+				}
+			}()
 			return nil, ctx.Err()
 		}
 	case <-ctx.Done():
