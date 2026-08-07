@@ -38,6 +38,7 @@ type Config struct {
 	Artifact       string
 	RetrySession   string
 	AgentIteration int
+	TaskMode       string
 }
 
 // Validate ensures the configuration is valid.
@@ -65,6 +66,11 @@ func (c Config) Validate() error {
 	}
 	if c.Artifact == "" {
 		return errors.New("artifact is required")
+	}
+	switch schema.AgentTaskMode(c.TaskMode) {
+	case "", schema.AgentTaskModeDebug:
+	default:
+		return errors.Errorf("invalid task-mode %q", c.TaskMode)
 	}
 	return nil
 }
@@ -102,12 +108,17 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	}
 	sessionID := sessionUUID.String()
 	sessionTime := time.Unix(sessionUUID.Time().UnixTime())
+	taskMode := schema.AgentTaskMode(cfg.TaskMode)
+	if taskMode == "" {
+		taskMode = schema.AgentTaskModeDebug
+	}
 	session := schema.AgentSession{
 		ID:             sessionID,
 		Target:         t,
 		MaxIterations:  cfg.AgentIteration,
 		TimeoutSeconds: 60 * 60, // 1 hr
 		Context:        &schema.AgentContext{},
+		TaskMode:       taskMode,
 		// Because we're going to start running the session locally immediately, we can mark it as Running from the start.
 		// This avoids needing to update the session record immediately after creation.
 		Status: schema.AgentSessionStatusRunning,
@@ -180,6 +191,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		Target:           t,
 		MaxIterations:    cfg.AgentIteration,
 		InitialIteration: retryInitialIter,
+		TaskMode:         taskMode,
 	}
 	// TODO: Should RunSession return an error?
 	agent.RunSession(ctx, req, runDeps)
@@ -190,7 +202,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>] [--agent-iterations <max iterations>]",
+		Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>] [--agent-iterations <max iterations>] [--task-mode <mode>]",
 		Short: "Run agent code locally",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -217,5 +229,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Artifact, "artifact", "", "the artifact name")
 	set.StringVar(&cfg.RetrySession, "retry-session", "", "the session to retry")
 	set.IntVar(&cfg.AgentIteration, "agent-iterations", 3, "maximum number of agent iterations before giving up")
+	set.StringVar(&cfg.TaskMode, "task-mode", "", "agent task mode (default: debug)")
 	return set
 }

@@ -45,6 +45,7 @@ var (
 	prebuildBucket = flag.String("prebuild-bucket", "", "GCS bucket from which prebuilt build tools are stored")
 	prebuildDir    = flag.String("prebuild-dir", "", "Prefix within the prebuild bucket under which tools are stored")
 	prebuildAuth   = flag.Bool("prebuild-auth", false, "Whether to authenticate requests to the prebuild tools bucket")
+	taskMode       = flag.String("task-mode", string(schema.AgentTaskModeDebug), "Agent task mode (default: debug)")
 )
 
 var httpcfg = httpegress.Config{}
@@ -81,6 +82,13 @@ func main() {
 		}
 	default:
 		log.Fatalf("invalid execution-mode %q", *executionMode)
+	}
+	task := schema.AgentTaskMode(*taskMode)
+	switch task {
+	case "", schema.AgentTaskModeDebug:
+		task = schema.AgentTaskModeDebug
+	default:
+		log.Fatalf("invalid task-mode %q", *taskMode)
 	}
 	if *targetEcosystem == "" {
 		log.Fatal("target-ecosystem flag is required")
@@ -186,7 +194,8 @@ func main() {
 		SessionID:     *sessionID,
 		Target:        target,
 		MaxIterations: *maxIterations,
+		TaskMode:      task,
 	}
-	log.Printf("Agent running for session %s (execution mode %s), target: %+v", req.SessionID, mode, req.Target)
+	log.Printf("Agent running for session %s (execution mode %s, task mode %s), target: %+v", req.SessionID, mode, task, req.Target)
 	agent.RunSession(ctx, req, deps)
 }
