@@ -366,6 +366,11 @@ func RunBenchAsync(ctx context.Context, set benchmark.PackageSet, opts RunBenchO
 				Version:           v,
 				ID:                opts.RunID,
 				UseRepoDefinition: opts.UseRepoDefinition,
+				UseSyscallMonitor: opts.UseSyscallMonitor,
+				UseNetworkProxy:   opts.UseNetworkProxy,
+				OverwriteMode:     opts.OverwriteMode,
+				ExecutionHint:     p.Execution,
+				SizeHint:          p.Size,
 			}
 			if len(p.Artifacts) > 0 {
 				req.Artifact = p.Artifacts[i]
