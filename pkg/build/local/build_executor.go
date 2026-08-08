@@ -399,7 +399,7 @@ func (e *DockerBuildExecutor) uploadFile(ctx context.Context, store rebuild.Asse
 	if _, err := io.Copy(writer, file); err != nil {
 		return errors.Wrap(err, "failed to upload file to asset store")
 	}
-	return nil
+	return errors.Wrap(writer.Close(), "committing asset")
 }
 
 // uploadContent uploads content directly to the asset store.
@@ -412,7 +412,7 @@ func (e *DockerBuildExecutor) uploadContent(ctx context.Context, store rebuild.A
 	if _, err := writer.Write(content); err != nil {
 		return errors.Wrap(err, "failed to write to asset store")
 	}
-	return nil
+	return errors.Wrap(writer.Close(), "committing asset")
 }
 
 // saveContainerImage saves the built container image as a gzipped tarball.

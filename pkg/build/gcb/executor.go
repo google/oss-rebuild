@@ -430,7 +430,7 @@ func (e *Executor) uploadBuildInfo(ctx context.Context, store rebuild.AssetStore
 	if err := json.NewEncoder(writer).Encode(buildInfo); err != nil {
 		return errors.Wrap(err, "failed to encode and write build info")
 	}
-	return nil
+	return errors.Wrap(writer.Close(), "committing asset")
 }
 
 // uploadContent uploads content directly to the asset store
@@ -443,7 +443,7 @@ func (e *Executor) uploadContent(ctx context.Context, store rebuild.AssetStore, 
 	if _, err := writer.Write(content); err != nil {
 		return errors.Wrap(err, "failed to write content to asset store")
 	}
-	return nil
+	return errors.Wrap(writer.Close(), "committing asset")
 }
 
 // copyBuildLogs copies build logs using the logs client to the asset store.
