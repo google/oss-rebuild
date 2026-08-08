@@ -118,6 +118,26 @@ func TestStabilizeCargoVCSHash(t *testing.T) {
 			stabilizers: AllCrateStabilizers,
 		},
 		{
+			test: "nested cargo_vcs_info.json unchanged",
+			input: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "some-crate-1.0.0/vendor/.cargo_vcs_info.json", Typeflag: tar.TypeReg}, Body: []byte(`{"git":{"sha1":"fa8197f11d79a079fcb1f6ef67fa9119ce6939b9"}}`)},
+			},
+			expected: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "some-crate-1.0.0/vendor/.cargo_vcs_info.json", Typeflag: tar.TypeReg}, Body: []byte(`{"git":{"sha1":"fa8197f11d79a079fcb1f6ef67fa9119ce6939b9"}}`)},
+			},
+			stabilizers: AllCrateStabilizers,
+		},
+		{
+			test: "suffix-only file unchanged",
+			input: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "some-crate-1.0.0/not.cargo_vcs_info.json", Typeflag: tar.TypeReg}, Body: []byte(`{"git":{"sha1":"fa8197f11d79a079fcb1f6ef67fa9119ce6939b9"}}`)},
+			},
+			expected: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "some-crate-1.0.0/not.cargo_vcs_info.json", Typeflag: tar.TypeReg}, Body: []byte(`{"git":{"sha1":"fa8197f11d79a079fcb1f6ef67fa9119ce6939b9"}}`)},
+			},
+			stabilizers: AllCrateStabilizers,
+		},
+		{
 			test: "non-cargo_vcs_info.json file unchanged",
 			input: []*archive.TarEntry{
 				{Header: &tar.Header{Name: "Cargo.toml", Typeflag: tar.TypeReg}, Body: []byte(`[package]
