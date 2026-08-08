@@ -65,6 +65,7 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 			Uses: "cargo/build/package",
 			With: map[string]string{
 				"dir":            b.Location.Dir,
+				"quotedDir":      shellQuote(b.Location.Dir),
 				"rustVersion":    b.RustVersion,
 				"registryCommit": b.RegistryCommit,
 				"useGitIndex":    fmt.Sprintf("%t", len(b.PackageNames) > 0),
@@ -77,6 +78,10 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 // GenerateFor generates the instructions for a CratesIOCargoPackage.
 func (b *CratesIOCargoPackage) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
 	return b.ToWorkflow().GenerateFor(t, be)
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
 func init() {
@@ -127,7 +132,7 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				export CARGO_TARGET_DIR="$PWD/target"
-				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
+				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.quotedDir}} && {{end -}}
 				/root/.cargo/bin/cargo package --no-verify
 				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`)[1:],
 			Needs: []string{"rustup"},
