@@ -366,7 +366,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 			// Allow overwrite but empty out the value to omit from the attestation.
 			req.OverwriteMode = schema.OverwriteMode("")
 		case schema.OverwriteServiceUpdate:
-			v.Message = api.AsStatus(codes.FailedPrecondition, errors.Wrap(err, "overwrite denied: no attestation to overwrite")).Error()
+			v.Message = api.AsStatus(codes.FailedPrecondition, errors.New("overwrite denied: no attestation to overwrite")).Error()
 			return &v, nil
 		}
 		// NOTE: This ensures racing rebuilds won't result in multiple attestations being written.

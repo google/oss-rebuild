@@ -55,6 +55,26 @@ func (FakeSigner) KeyID() (string, error) {
 	return "fake", nil
 }
 
+func TestRebuildPackageServiceUpdateWithoutBundle(t *testing.T) {
+	deps := &RebuildPackageDeps{
+		HTTPClient:       http.DefaultClient,
+		AttestationStore: rebuild.NewFilesystemAssetStore(memfs.New()),
+	}
+	verdict, err := rebuildPackage(context.Background(), schema.RebuildPackageRequest{
+		Ecosystem:     rebuild.CratesIO,
+		Package:       "example",
+		Version:       "1.0.0",
+		Artifact:      "example-1.0.0.crate",
+		OverwriteMode: schema.OverwriteServiceUpdate,
+	}, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "overwrite denied: no attestation to overwrite"; !strings.Contains(verdict.Message, want) {
+		t.Fatalf("message = %q, want substring %q", verdict.Message, want)
+	}
+}
+
 // TODO: Add tests checking that inference properly handles artifacts once we have
 // a strategy type that's dependent on artifact.
 func TestRebuildPackage(t *testing.T) {
