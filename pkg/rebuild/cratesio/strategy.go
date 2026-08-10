@@ -22,6 +22,7 @@ type CratesIOCargoPackage struct {
 	rebuild.Location
 	RustVersion      string            `json:"rust_version" yaml:"rust_version,omitempty"`
 	ExplicitLockfile *ExplicitLockfile `json:"explicit_lockfile" yaml:"explicit_lockfile,omitempty"`
+	ExcludeLockfile  bool              `json:"exclude_lockfile,omitempty" yaml:"exclude_lockfile,omitempty"`
 	RegistryCommit   string            `json:"registry_commit,omitempty" yaml:"registry_commit,omitempty"`
 	PackageNames     []string          `json:"package_names,omitempty" yaml:"package_names,omitempty"`
 }
@@ -64,10 +65,11 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "cargo/build/package",
 			With: map[string]string{
-				"dir":            b.Location.Dir,
-				"rustVersion":    b.RustVersion,
-				"registryCommit": b.RegistryCommit,
-				"useGitIndex":    fmt.Sprintf("%t", len(b.PackageNames) > 0),
+				"dir":             b.Location.Dir,
+				"rustVersion":     b.RustVersion,
+				"excludeLockfile": fmt.Sprintf("%t", b.ExcludeLockfile),
+				"registryCommit":  b.RegistryCommit,
+				"useGitIndex":     fmt.Sprintf("%t", len(b.PackageNames) > 0),
 			},
 		}},
 		OutputDir: "target/package",
@@ -128,7 +130,7 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				export CARGO_TARGET_DIR="$PWD/target"
 				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
-				/root/.cargo/bin/cargo package --no-verify
+				/root/.cargo/bin/cargo package --no-verify{{if eq .With.excludeLockfile "true"}} --exclude-lockfile{{end}}
 				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`)[1:],
 			Needs: []string{"rustup"},
 		}},
