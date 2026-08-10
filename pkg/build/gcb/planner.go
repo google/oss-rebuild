@@ -639,9 +639,9 @@ func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, reqs r
 	// Timing observation step: reads clocks the build's log stream cannot
 	// affect. Placed before extract so it also observes builds whose docker
 	// run exited with the allowed sentinel: the image and exited container
-	// hold complete clocks, and extract then fails on the missing artifact,
-	// so this step cannot mask the failure. Any other main-step exit still
-	// aborts the build here, leaving no record.
+	// hold complete clocks. The executor reports the sentinel as a failure even
+	// if extract succeeds on a file left by the failed run. Any other main-step
+	// exit still aborts the build here, leaving no record.
 	// NOTE: No -e and || true throughout so a flaking inspect cannot fail a
 	// successful rebuild.
 	// NOTE: The proxied daemon forwards to the step-shared docker socket, so

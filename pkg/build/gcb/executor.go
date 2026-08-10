@@ -271,6 +271,9 @@ func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBui
 	// (preamble, image build, timeout) aborts before it, leaving no record.
 	var timings *rebuild.BuildTimings
 	runFailed := stepExitCode(buildResult, 0) == runFailureExitCode
+	if runFailed && buildErr == nil {
+		buildErr = errors.Errorf("GCB build run step failed with exit code %d", runFailureExitCode)
+	}
 	if (buildErr == nil || runFailed) && buildInfo.BuildID != "" && plan.timingStep() >= 0 {
 		var err error
 		timings, err = e.extractTimings(ctx, buildInfo.BuildID, plan, buildResult, runFailed)
