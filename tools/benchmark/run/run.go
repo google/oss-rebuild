@@ -197,6 +197,11 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 			w.limiters[p.Ecosystem].Success()
 		}
 		if err != nil {
+			if verdict != nil {
+				verdict.Message = err.Error()
+				out <- *verdict
+				continue
+			}
 			out <- schema.Verdict{
 				Target: rebuild.Target{
 					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
