@@ -269,7 +269,10 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err := benchrun.RunBenchAsync(ctx, set, benchrun.RunBenchOpts{
 			Mode:              cfg.ExecutionMode,
 			RunID:             runID,
+			UseSyscallMonitor: cfg.UseSyscallMonitor,
+			UseNetworkProxy:   cfg.UseNetworkProxy,
 			UseRepoDefinition: cfg.UseRepoDefinition,
+			OverwriteMode:     schema.OverwriteMode(cfg.OverwriteMode),
 		}, apiURL, queue); err != nil {
 			return nil, errors.Wrap(err, "adding benchmark to queue")
 		}
