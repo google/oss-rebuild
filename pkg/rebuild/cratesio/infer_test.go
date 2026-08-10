@@ -30,18 +30,18 @@ const (
 	pre150CargoTOML  = `# to registry (e.g., crates.io) dependencies`
 )
 
-func TestHasPackageEdition2024(t *testing.T) {
+func TestPackageEditionFloor(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		manifest string
-		want     bool
+		want     string
 	}{
 		{
 			name: "package edition",
 			manifest: `[package]
 edition = "2024" # supported since Cargo 1.85
 `,
-			want: true,
+			want: "1.85.0",
 		},
 		{
 			name: "metadata is not package edition",
@@ -65,11 +65,12 @@ edition = "2024"
 			manifest: `[package]
 edition = "2021"
 `,
+			want: "1.56.0",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := hasPackageEdition2024(tc.manifest); got != tc.want {
-				t.Errorf("hasPackageEdition2024() = %v, want %v", got, tc.want)
+			if got := packageEditionFloor(tc.manifest); got != tc.want {
+				t.Errorf("packageEditionFloor() = %q, want %q", got, tc.want)
 			}
 		})
 	}

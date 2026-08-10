@@ -25,13 +25,25 @@ var (
 	docExamplesRegex = regexp.MustCompile(`(?m)^\s*doc-scrape-examples\s*=\s*(true|false)\s*$`)
 )
 
-func hasPackageEdition2024(cargoTomlText string) bool {
+func packageEditionFloor(cargoTomlText string) string {
 	var manifest struct {
 		Package struct {
 			Edition string `toml:"edition"`
 		} `toml:"package"`
 	}
-	return toml.Unmarshal([]byte(cargoTomlText), &manifest) == nil && manifest.Package.Edition == "2024"
+	if toml.Unmarshal([]byte(cargoTomlText), &manifest) != nil {
+		return ""
+	}
+	switch manifest.Package.Edition {
+	case "2015", "2018":
+		return "1.30.0"
+	case "2021":
+		return "1.56.0"
+	case "2024":
+		return "1.85.0"
+	default:
+		return ""
+	}
 }
 
 // hasInlineMultiElementArray reports whether Cargo.toml contains an inline
@@ -89,8 +101,8 @@ func detectRustVersionBounds(cargoTomlText string) (lo, hi string) {
 	if hi == "999" {
 		hi = ""
 	}
-	if hasPackageEdition2024(cargoTomlText) {
-		lo = max("1.85.0", lo)
+	if editionLo := packageEditionFloor(cargoTomlText); editionLo != "" {
+		lo = max(editionLo, lo)
 		if hi != "" && semver.Cmp(hi, lo) < 0 {
 			hi = ""
 		}

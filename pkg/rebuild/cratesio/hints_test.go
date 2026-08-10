@@ -30,8 +30,8 @@ func TestDetectRustVersionBounds(t *testing.T) {
 edition = "2021"
 name = "my-crate"
 `,
-			wantLo: "1.55.0", // Cargo 1.56-1.63 can emit this shape without a resolver
-			wantHi: "",       // hi remains "999" and gets cleared
+			wantLo: "1.56.0",
+			wantHi: "", // hi remains "999" and gets cleared
 		},
 		{
 			name: "Old Header Without Resolver",
@@ -40,8 +40,35 @@ name = "my-crate"
 edition = "2018"
 name = "my-crate"
 `,
-			wantLo: "",
+			wantLo: "1.30.0",
 			wantHi: "1.54.0", // Cargo 1.51-1.54 can emit this shape without a resolver
+		},
+		{
+			name: "Edition 2015 floor",
+			cargoToml: `[package]
+name = "my-crate"
+edition = "2015"
+`,
+			wantLo: "1.30.0",
+			wantHi: "1.54.0",
+		},
+		{
+			name: "Edition 2018 floor",
+			cargoToml: `[package]
+name = "my-crate"
+edition = "2018"
+`,
+			wantLo: "1.30.0",
+			wantHi: "1.54.0",
+		},
+		{
+			name: "Edition 2021 overrides older upper bounds",
+			cargoToml: `[package]
+name = "my-crate"
+edition = "2021"
+`,
+			wantLo: "1.56.0",
+			wantHi: "",
 		},
 		{
 			name: "Edition 2024 overrides older upper bounds",
