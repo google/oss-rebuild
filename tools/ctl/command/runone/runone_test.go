@@ -7,6 +7,36 @@ import (
 	"testing"
 )
 
+func TestValidationRejectsUnsupportedLocalInstrumentation(t *testing.T) {
+	base := Config{
+		Local:            true,
+		BootstrapBucket:  "bucket",
+		BootstrapVersion: "version",
+		Ecosystem:        "cratesio",
+		Package:          "package",
+		Version:          "1.0.0",
+		Mode:             "attest",
+	}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("Config.Validate() failed without instrumentation: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		edit func(*Config)
+	}{
+		{"network proxy", func(c *Config) { c.UseNetworkProxy = true }},
+		{"syscall monitor", func(c *Config) { c.UseSyscallMonitor = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := base
+			tc.edit(&cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("Config.Validate() succeeded for an unsupported local option")
+			}
+		})
+	}
+}
+
 func TestValidation(t *testing.T) {
 	tests := []struct {
 		name    string
