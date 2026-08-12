@@ -112,6 +112,14 @@ func main() {
 			Package:   t.Package,
 		}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Package), dashboard.PackageTmpl)))
+	http.HandleFunc("/package/{ecosystem}/{package}/version/{version}", api.Translate(func(r *http.Request) (dashboard.VersionRequest, error) {
+		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), r.PathValue("version"), "").Decode()
+		return dashboard.VersionRequest{
+			Ecosystem: string(t.Ecosystem),
+			Package:   t.Package,
+			Version:   t.Version,
+		}, nil
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Version), dashboard.VersionTmpl)))
 	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}", api.Translate(func(r *http.Request) (dashboard.AttemptRequest, error) {
 		t := encoding.New(
 			rebuild.Ecosystem(r.PathValue("ecosystem")),

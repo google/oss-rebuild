@@ -24,6 +24,8 @@ var (
 	indexHTML string
 	//go:embed package.gohtml
 	packageHTML string
+	//go:embed version.gohtml
+	versionHTML string
 	//go:embed attempt.gohtml
 	attemptHTML string
 	//go:embed logs.gohtml
@@ -53,6 +55,7 @@ func RegisterAssets(mux *http.ServeMux) {
 var (
 	IndexTmpl   *template.Template
 	PackageTmpl *template.Template
+	VersionTmpl *template.Template
 	AttemptTmpl *template.Template
 	LogsTmpl    *template.Template
 )
@@ -60,6 +63,7 @@ var (
 func init() {
 	IndexTmpl = template.Must(template.New("index").Parse(headerHTML + indexHTML))
 	PackageTmpl = template.Must(template.New("package").Parse(headerHTML + packageHTML))
+	VersionTmpl = template.Must(template.New("version").Parse(headerHTML + versionHTML))
 	AttemptTmpl = template.Must(template.New("attempt").Parse(headerHTML + attemptHTML))
 	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
 }
@@ -104,7 +108,8 @@ func applySuccessRegex(successRegex *regexp.Regexp, rebuilds []rundex.Rebuild) {
 // dashboard links (e.g. to the package page).
 type SessionView struct {
 	schema.AgentSession
-	Encoded rebuild.EncodedTarget
+	Encoded    rebuild.EncodedTarget
+	Iterations []schema.AgentIteration // NOTE: Only populated by pages where it's required
 }
 
 func NewSessionView(s schema.AgentSession) SessionView {

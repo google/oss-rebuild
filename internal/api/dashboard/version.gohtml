@@ -1,0 +1,75 @@
+<!--
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+    <h2><a href="/package/{{.Ecosystem}}/{{.EncodedPackage}}">{{.Ecosystem}}: {{.PackageName}}</a> @ {{.Version}}</h2>
+
+    <h3>Rebuild attempts</h3>
+    {{if .Attempts}}
+    <table>
+        <thead>
+            <tr>
+                <th>Artifact</th>
+                <th>Status</th>
+                <th>Message</th>
+                <th>Reference</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Attempts}}
+            <tr>
+                <td>{{.Artifact}}</td>
+                <td>
+                    {{if .Success}}<span class="status-success">Success</span>
+                    {{else if eq (printf "%s" .Status) "RUNNING"}}<span class="status-running">Running</span>
+                    {{else}}<span class="status-fail">Failed</span>{{end}}
+                </td>
+                <td><small>{{.Message}}</small></td>
+                <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">{{.RunID}}</a></td>
+                <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="hint">No rebuild attempts recorded for this version.</p>
+    {{end}}
+
+    <h3>Agent sessions</h3>
+    {{if .Sessions}}
+    {{range .Sessions}}
+    <div class="session">
+        <div class="session-head">
+            <span class="session-id">{{.ID}}</span>
+            {{if eq .StopReason "SUCCESS"}}<span class="status-success">Success</span>
+            {{else if .StopReason}}<span class="status-fail">{{.StopReason}}</span>
+            {{else if eq .Status "RUNNING"}}<span class="status-running">Running</span>
+            {{else}}<span>{{.Status}}</span>{{end}}
+            <span class="session-meta">{{.Target.Artifact}} · {{.Created.Format "2006-01-02 15:04:05"}}{{if .ExecutionName}} · hosted{{else}} · local{{end}}</span>
+        </div>
+        {{if .Summary}}<div class="session-summary"><small>{{.Summary}}</small></div>{{end}}
+        {{if .Iterations}}
+        <table>
+            <thead><tr><th>#</th><th>Status</th><th>Build</th><th>Result</th></tr></thead>
+            <tbody>
+                {{range .Iterations}}
+                <tr>
+                    <td>{{.Number}}</td>
+                    <td>{{.Status}}</td>
+                    <td><small>{{.ObliviousID}}</small></td>
+                    <td><small>{{if .Result}}{{if .Result.BuildSuccess}}build ok{{else}}{{.Result.ErrorMessage}}{{end}}{{end}}</small></td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{end}}
+    </div>
+    {{end}}
+    {{else}}
+    <p class="hint">No agent sessions recorded for this version.</p>
+    {{end}}
+
+</body>
+</html>
