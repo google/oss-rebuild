@@ -295,7 +295,8 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 		if err != nil {
 			return nil, errors.Wrap(err, "getting worktree")
 		}
-		checkoutOpts := &git.CheckoutOptions{}
+		// Default to HEAD so checkout follows the repo's actual default branch.
+		checkoutOpts := &git.CheckoutOptions{Branch: plumbing.HEAD}
 		if opt.ReferenceName != "" {
 			checkoutOpts.Branch = opt.ReferenceName
 		}
