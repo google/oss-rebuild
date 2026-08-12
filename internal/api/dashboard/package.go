@@ -17,6 +17,9 @@ import (
 
 var _ api.HandlerFn[PackageRequest, PackageData, *Deps] = Package
 
+// eventsWindow caps how many recent events the timeline renders.
+const eventsWindow = 100
+
 type PackageRequest struct {
 	Ecosystem string
 	Package   string
@@ -40,8 +43,14 @@ type PackageData struct {
 }
 
 func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData, error) {
-	// Fetch rebuild attempts for this specific package.
-	rebuilds, err := deps.Rundex.RecentPackageRebuilds(ctx, rebuild.Ecosystem(req.Ecosystem), req.Package)
+	eco := rebuild.Ecosystem(req.Ecosystem)
+
+	// Fetch attempts across all versions of the package, include in-flight.
+	rebuilds, err := deps.Rundex.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{
+		Target: &rebuild.Target{Ecosystem: eco, Package: req.Package},
+		Opts:   rundex.FetchRebuildOpts{IncludePending: true},
+		Limit:  1000,
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching rebuilds")
 	}
@@ -53,17 +62,15 @@ func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData,
 	var sessions []schema.AgentSession
 	if deps.Sessions != nil {
 		sessions, err = deps.Sessions.FetchSessions(ctx, &rundex.FetchSessionsReq{
-			PartialTarget: &rebuild.Target{
-				Ecosystem: rebuild.Ecosystem(req.Ecosystem),
-				Package:   req.Package,
-			},
+			PartialTarget: &rebuild.Target{Ecosystem: eco, Package: req.Package},
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "fetching agent sessions")
 		}
 	}
 
-	// Intermingle rebuilds and sessions into a single timeline, most recent first.
+	// Intermingle rebuilds and sessions into a single timeline, most recent
+	// first, capped to the events window.
 	events := make([]PackageEvent, 0, len(rebuilds)+len(sessions))
 	for _, rb := range rebuilds {
 		view := NewRebuildView(rb)
@@ -75,11 +82,11 @@ func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData,
 	slices.SortFunc(events, func(a, b PackageEvent) int {
 		return b.Created.Compare(a.Created)
 	})
+	if len(events) > eventsWindow {
+		events = events[:eventsWindow]
+	}
 
-	et := packagePathEncoding.Encode(rebuild.Target{
-		Ecosystem: rebuild.Ecosystem(req.Ecosystem),
-		Package:   req.Package,
-	})
+	et := packagePathEncoding.Encode(rebuild.Target{Ecosystem: eco, Package: req.Package})
 
 	return &PackageData{
 		Ecosystem:      req.Ecosystem,
