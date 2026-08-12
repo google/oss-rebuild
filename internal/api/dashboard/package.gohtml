@@ -3,7 +3,30 @@
  SPDX-License-Identifier: Apache-2.0
 -->
 
-    <h2>History for {{.Ecosystem}}: {{.PackageName}}</h2>
+    <h2>{{.Ecosystem}}: {{.PackageName}}</h2>
+
+    <div class="cards">
+        <div class="card">
+            <div class="card-value">{{.Summary.VerifiedPct}}%</div>
+            <div class="card-label">verified of {{.Summary.Attempted}} attempted</div>
+        </div>
+        <div class="card">
+            <div class="card-value">{{.Summary.Verified}}</div>
+            <div class="card-label">verified</div>
+        </div>
+        <div class="card">
+            <div class="card-value">{{.Summary.Failed}}</div>
+            <div class="card-label">failed</div>
+        </div>
+        <div class="card">
+            <div class="card-value">{{.Summary.Running}}</div>
+            <div class="card-label">running</div>
+        </div>
+        <div class="card">
+            <div class="card-value">{{.Summary.AgentRuns}}</div>
+            <div class="card-label">agent runs</div>
+        </div>
+    </div>
     <table>
         <thead>
             <tr>
