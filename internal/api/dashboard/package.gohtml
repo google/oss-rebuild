@@ -27,6 +27,30 @@
             <div class="card-label">agent runs</div>
         </div>
     </div>
+
+    {{if .Versions}}
+    <div class="strip-head">
+        <span>Versions (most recently active first) &middot; {{.WindowFrom}}-{{.WindowTo}} of {{.Summary.Attempted}}</span>
+        <span class="strip-nav">
+            {{/* TODO: Move these client-side */}}
+            {{if .Expanded}}<a href="?offset={{.Offset}}">Collapse</a>{{else}}<a href="?offset={{.Offset}}&expanded=1">Expand</a>{{end}}
+            {{if .HasPrev}}<a href="?offset={{.PrevOffset}}{{if .Expanded}}&expanded=1{{end}}">newer</a>{{end}}
+            {{if .HasNext}}<a href="?offset={{.NextOffset}}{{if .Expanded}}&expanded=1{{end}}">older</a>{{end}}
+        </span>
+    </div>
+    <div class="strip{{if .Expanded}} expanded{{end}}">
+        {{range .Versions}}
+        <a class="cell state-{{.State}}"
+           href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}"
+           title="{{.Version}} &middot; {{.State}}{{if .Agent}} &middot; agent {{.Agent}}{{end}}"></a>
+        {{end}}
+    </div>
+    <div class="legend">
+        <span class="legend-item"><span class="legend-swatch state-verified"></span>verified</span>
+        <span class="legend-item"><span class="legend-swatch state-failed"></span>failed</span>
+        <span class="legend-item"><span class="legend-swatch state-running"></span>running</span>
+    </div>
+    {{end}}
     <table>
         <thead>
             <tr>
