@@ -513,3 +513,42 @@ func TestScratchReap_TeardownRecheckSparesRevivedScratch(t *testing.T) {
 		t.Errorf("State = %q; want ready (spared by re-check)", got.State)
 	}
 }
+
+func TestScratchReap_StuckStartingAndDeletingReaped(t *testing.T) {
+	ctx := context.Background()
+	scratches := db.NewMemoryScratch()
+	gce := NewMemoryGCE()
+	now := time.Now().UTC()
+	zone := "us-central1-a"
+
+	for _, s := range []schema.Scratch{
+		{ID: "stuck-starting", State: schema.ScratchStarting, Zone: zone, VMName: "vm-start", Updated: now.Add(-time.Hour)},
+		{ID: "fresh-starting", State: schema.ScratchStarting, Zone: zone, VMName: "vm-start-fresh", Updated: now.Add(-5 * time.Minute)},
+		{ID: "stuck-deleting", State: schema.ScratchDeleting, Zone: zone, VMName: "vm-del", Updated: now.Add(-time.Hour)},
+		{ID: "fresh-deleting", State: schema.ScratchDeleting, Zone: zone, VMName: "vm-del-fresh", Updated: now.Add(-5 * time.Minute)},
+	} {
+		if err := scratches.Insert(ctx, s); err != nil {
+			t.Fatalf("seed %s: %v", s.ID, err)
+		}
+	}
+
+	resp, err := ScratchReap(ctx, ScratchReapRequest{}, reapDeps(t, scratches, db.NewMemoryScratchExecs(), gce))
+	if err != nil {
+		t.Fatalf("ScratchReap: %v", err)
+	}
+	if resp.ScratchesReaped != 2 {
+		t.Errorf("ScratchesReaped = %d; want 2 (stuck-starting and stuck-deleting)", resp.ScratchesReaped)
+	}
+	for _, id := range []string{"stuck-starting", "stuck-deleting"} {
+		got, _ := scratches.Get(ctx, id)
+		if got.State != schema.ScratchDeleted {
+			t.Errorf("%s.State = %q; want deleted", id, got.State)
+		}
+	}
+	for _, id := range []string{"fresh-starting", "fresh-deleting"} {
+		got, _ := scratches.Get(ctx, id)
+		if got.State == schema.ScratchDeleted {
+			t.Errorf("%s.State = deleted; want preserved", id)
+		}
+	}
+}
