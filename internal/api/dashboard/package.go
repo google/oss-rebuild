@@ -5,6 +5,7 @@ package dashboard
 
 import (
 	"context"
+	"log"
 	"slices"
 	"time"
 
@@ -72,6 +73,7 @@ type PackageData struct {
 	Events         []PackageEvent  // rebuilds and sessions intermingled, most-recent-first
 	RebuildEvents  []PackageEvent  // the same timeline restricted to rebuild attempts
 	SessionEvents  []PackageEvent  // the same timeline restricted to agent sessions
+	Warning        string          // set when the version lookup failed, not when the ecosystem lacks a lister
 }
 
 func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData, error) {
@@ -101,8 +103,24 @@ func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData,
 		}
 	}
 
-	statuses := computeVersionStatuses(eco, req.Package, rebuilds, sessions)
-	summary := summarize(statuses)
+	// Per-version status aggregation over the published versions (or, where the
+	// ecosystem can't enumerate versions, the attempted set).
+	var supported bool
+	var warning string
+	axis, err := publishedVersions(ctx, deps.Registry, rebuild.Target{Ecosystem: eco, Package: req.Package})
+	switch {
+	case err == nil:
+		supported = true
+	case errors.Is(err, errNoVersionLister):
+		// An expected limitation, reported to the reader as such.
+	default:
+		// A failed lookup degrades the page the same way a missing lister does, so
+		// say which one happened rather than blaming the ecosystem.
+		log.Printf("Listing versions for %s %s: %v", eco, req.Package, err)
+		warning = "Version listing failed, showing attempted versions only."
+	}
+	statuses := computeVersionStatuses(eco, req.Package, axis, supported, rebuilds, sessions)
+	summary := summarize(statuses, supported)
 
 	// Window the version history for the strip.
 	pageSize := stripCols
@@ -151,6 +169,7 @@ func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData,
 		Events:         events,
 		RebuildEvents:  rebuildEvents,
 		SessionEvents:  sessionEvents,
+		Warning:        warning,
 	}
 	if total > 0 {
 		data.WindowFrom = off + 1

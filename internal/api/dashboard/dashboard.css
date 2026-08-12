@@ -139,6 +139,7 @@ pre {
     border: 1px solid rgba(0, 0, 0, 0.10);
 }
 .strip .state-untried { border-style: dashed; }
+.state-regressed { box-shadow: inset 0 0 0 2px var(--failure), 0 0 0 1px var(--failure); }
 .strip .cell:hover { outline: 2px solid var(--heading); outline-offset: 1px; }
 .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; font-size: 0.85rem; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
@@ -185,3 +186,4 @@ pre {
     color: #fff;
 }
 .badge.state-untried { color: var(--secondary); border: 1px solid var(--border); }
+.badge.state-regressed { background: transparent; color: var(--failure); border: 1px solid var(--failure); box-shadow: none; }

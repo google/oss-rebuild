@@ -17,9 +17,11 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api/dashboard"
+	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/feed"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
 )
@@ -33,10 +35,13 @@ var (
 	logsBucket      = flag.String("logs-bucket", "", "GCS bucket containing build logs")
 )
 
+var egressCfg httpegress.Config
+
 var (
 	successPat *regexp.Regexp
 	tracked    feed.TrackedPackageIndex
 	benchName  string
+	registry   rebuild.RegistryMux // built once at startup
 )
 
 func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
@@ -59,10 +64,12 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 		Tracked:       tracked,
 		BenchmarkName: benchName,
 		SuccessRegex:  successPat,
+		Registry:      registry,
 	}, nil
 }
 
 func main() {
+	egressCfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 	if *project == "" {
 		log.Fatal("Must provide -project")
@@ -77,6 +84,11 @@ func main() {
 			log.Fatalf("Failed to compile success regex: %v", err)
 		}
 	}
+	egressClient, err := httpegress.MakeClient(context.Background(), egressCfg)
+	if err != nil {
+		log.Fatalf("Failed to create egress client: %v", err)
+	}
+	registry = meta.NewRegistryMux(egressClient)
 	if (*bench != "") == (*trackedPackages != "") {
 		log.Fatalf("Must provide exactly one of -bench or -tracked-packages")
 	}

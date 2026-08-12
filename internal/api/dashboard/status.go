@@ -37,22 +37,26 @@ const (
 // VersionStatus is the aggregated status of a single package version across all
 // of its rebuild attempts and agent sessions.
 type VersionStatus struct {
-	Version  string
-	Encoded  rebuild.EncodedTarget
-	State    VersionState
-	Agent    AgentState
-	Attempts int
-	Sessions int
+	Version   string
+	Encoded   rebuild.EncodedTarget
+	State     VersionState
+	Agent     AgentState
+	Regressed bool // Failed while an older version is Verified.
+	Attempts  int
+	Sessions  int
 }
 
 // PackageSummary is the high-level status shown at the top of the package view.
 type PackageSummary struct {
-	Attempted   int // versions with at least one attempt or session
-	Verified    int
-	Failed      int
-	Running     int
-	AgentRuns   int
-	VerifiedPct int
+	Supported      bool // whether the version history was enumerable for this ecosystem
+	TotalVersions  int
+	Attempted      int
+	Verified       int
+	Failed         int
+	Running        int
+	AgentRuns      int
+	NeedsAttention int // regressions
+	VerifiedPct    int
 }
 
 // isVerified reports whether an attempt reproduced upstream.
@@ -61,9 +65,11 @@ func isVerified(rb rundex.Rebuild) bool {
 }
 
 // computeVersionStatuses aggregates rebuilds + agent sessions into a per-version
-// status list covering the versions we've touched, most recently active first.
+// status list. When `supported`, `axis` is every published version (newest-first)
+// and untried versions are included. Otherwise the list is derived from versions
+// we've actually touched, ordered by most-recent activity.
 // It is pure (no I/O) so it can be unit tested with canned data.
-func computeVersionStatuses(eco rebuild.Ecosystem, pkg string, rebuilds []rundex.Rebuild, sessions []schema.AgentSession) []VersionStatus {
+func computeVersionStatuses(eco rebuild.Ecosystem, pkg string, axis []string, supported bool, rebuilds []rundex.Rebuild, sessions []schema.AgentSession) []VersionStatus {
 	type bucket struct {
 		attempts []rundex.Rebuild
 		sessions []schema.AgentSession
@@ -92,10 +98,28 @@ func computeVersionStatuses(eco rebuild.Ecosystem, pkg string, rebuilds []rundex
 	}
 
 	var order []string
-	for v := range byVer {
-		order = append(order, v)
+	if supported {
+		order = append(order, axis...)
+		seen := make(map[string]bool, len(axis))
+		for _, v := range axis {
+			seen[v] = true
+		}
+		// Include any attempted version missing from the published axis (e.g. a
+		// pre-release we tried) so its data isn't dropped.
+		var extra []string
+		for v := range byVer {
+			if !seen[v] {
+				extra = append(extra, v)
+			}
+		}
+		sort.Slice(extra, func(i, j int) bool { return byVer[extra[i]].last.After(byVer[extra[j]].last) })
+		order = append(order, extra...)
+	} else {
+		for v := range byVer {
+			order = append(order, v)
+		}
+		sort.Slice(order, func(i, j int) bool { return byVer[order[i]].last.After(byVer[order[j]].last) })
 	}
-	sort.Slice(order, func(i, j int) bool { return byVer[order[i]].last.After(byVer[order[j]].last) })
 
 	out := make([]VersionStatus, 0, len(order))
 	for _, v := range order {
@@ -110,6 +134,10 @@ func computeVersionStatuses(eco rebuild.Ecosystem, pkg string, rebuilds []rundex
 			classifyVersion(&vs, b.attempts, b.sessions)
 		}
 		out = append(out, vs)
+	}
+	// Regression only makes sense on a semver-ordered axis.
+	if supported {
+		markRegressions(out)
 	}
 	return out
 }
@@ -159,9 +187,25 @@ func classifyVersion(vs *VersionStatus, attempts []rundex.Rebuild, sessions []sc
 	}
 }
 
+// markRegressions flags Failed versions that have a Verified *older* version
+// (list is newest-first).
+func markRegressions(vs []VersionStatus) {
+	sawVerifiedOlder := false
+	for i := len(vs) - 1; i >= 0; i-- {
+		switch vs[i].State {
+		case StateVerified:
+			sawVerifiedOlder = true
+		case StateFailed:
+			if sawVerifiedOlder {
+				vs[i].Regressed = true
+			}
+		}
+	}
+}
+
 // summarize rolls up a version-status list into the package header summary.
-func summarize(statuses []VersionStatus) PackageSummary {
-	var s PackageSummary
+func summarize(statuses []VersionStatus, supported bool) PackageSummary {
+	s := PackageSummary{Supported: supported, TotalVersions: len(statuses)}
 	for _, v := range statuses {
 		if v.Attempts > 0 || v.Sessions > 0 {
 			s.Attempted++
@@ -177,9 +221,16 @@ func summarize(statuses []VersionStatus) PackageSummary {
 		case StateRunning:
 			s.Running++
 		}
+		if v.Regressed {
+			s.NeedsAttention++
+		}
 	}
-	if s.Attempted > 0 {
-		s.VerifiedPct = int(100 * s.Verified / s.Attempted)
+	denom := s.Attempted
+	if supported {
+		denom = s.TotalVersions
+	}
+	if denom > 0 {
+		s.VerifiedPct = int(100 * s.Verified / denom)
 	}
 	return s
 }
