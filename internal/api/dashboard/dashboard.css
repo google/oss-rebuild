@@ -143,3 +143,45 @@ pre {
 .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; font-size: 0.85rem; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+/* Tabs (pure CSS via hidden radios). */
+.tabbed { margin-top: 20px; }
+.tab-radio { position: absolute; opacity: 0; width: 0; height: 0; }
+.tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+}
+.tab {
+    padding: 8px 16px;
+    cursor: pointer;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-weight: 600;
+}
+.tab:hover { color: var(--secondary); }
+.tab-panel { display: none; }
+#tab-events:checked ~ #panel-events { display: block; }
+#tab-rebuilds:checked ~ #panel-rebuilds { display: block; }
+#tab-sessions:checked ~ #panel-sessions { display: block; }
+#tab-versions:checked ~ #panel-versions { display: block; }
+#tab-events:checked ~ .tabs label[for="tab-events"],
+#tab-rebuilds:checked ~ .tabs label[for="tab-rebuilds"],
+#tab-sessions:checked ~ .tabs label[for="tab-sessions"],
+#tab-versions:checked ~ .tabs label[for="tab-versions"] {
+    color: var(--heading);
+    border-bottom-color: var(--accent);
+}
+
+/* Status badges in the by-version table. */
+.badge {
+    display: inline-block;
+    padding: 1px 9px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #fff;
+}
+.badge.state-untried { color: var(--secondary); border: 1px solid var(--border); }
