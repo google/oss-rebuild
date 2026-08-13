@@ -39,8 +39,8 @@ const (
 	// utilityTimeout bounds the non-build exec steps (staging, artifact
 	// retrieval).
 	utilityTimeout = 10 * time.Minute
-	// defaultMaxArtifactBytes caps artifact retrieval, which round-trips
-	// base64 over the exec output channel.
+	// defaultMaxArtifactBytes caps artifact retrieval, which round-trips the
+	// artifact through the exec output object.
 	defaultMaxArtifactBytes = 256 << 20
 	// Sentinel exit codes for the artifact retrieval script.
 	exitNoArtifact     = 44
@@ -397,18 +397,20 @@ func (e *executor) copyNewOutput(ctx context.Context, op *longrunning.Operation[
 	return n
 }
 
-// fetchAndUploadArtifact retrieves the built artifact from the VM by base64
-// over the exec output channel and streams it into the asset store.
+// fetchAndUploadArtifact retrieves the built artifact from the VM over the
+// exec output channel and streams it into the asset store.
 func (e *executor) fetchAndUploadArtifact(ctx context.Context, dir, outputPath string, t rebuild.Target, store rebuild.AssetStore) error {
 	// The build ctx may be spent. Retrieval gets its own bounded context.
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), utilityTimeout)
 	defer cancel()
 	artifactPath := path.Join(dir, "out", path.Base(outputPath))
+	// On exit 0 the merged output holds the file bytes alone: the guards
+	// print nothing and a failed copy exits nonzero.
 	script := strings.Join([]string{
 		"set -eu",
 		fmt.Sprintf("[ -f %q ] || exit %d", artifactPath, exitNoArtifact),
 		fmt.Sprintf(`[ "$(wc -c < %q)" -le %d ] || exit %d`, artifactPath, e.maxArtifactBytes, exitArtifactTooBig),
-		fmt.Sprintf("base64 %q", artifactPath),
+		fmt.Sprintf("cat %q", artifactPath),
 	}, "\n")
 	op, err := Exec(fctx, e.stubs, schema.ScratchExecRequest{
 		ScratchID:      e.scratchID,
@@ -430,15 +432,14 @@ func (e *executor) fetchAndUploadArtifact(ctx context.Context, dir, outputPath s
 	default:
 		return errors.Errorf("artifact retrieval failed with exit code %d", op.Result.ExitCode)
 	}
-	// An absent output object means base64 produced no bytes: an empty
+	// An absent output object means the copy produced no bytes: an empty
 	// artifact.
 	rd, err := e.outputReader(fctx, op)
 	if err != nil {
 		return errors.Wrap(err, "resolving artifact output")
 	}
 	defer rd.Close()
-	dec := base64.NewDecoder(base64.StdEncoding, newlineFilteringReader{r: rd})
-	return errors.Wrap(e.uploadStream(fctx, store, rebuild.RebuildAsset.For(t), dec), "uploading artifact")
+	return errors.Wrap(e.uploadStream(fctx, store, rebuild.RebuildAsset.For(t), rd), "uploading artifact")
 }
 
 // outputReader opens the op's merged output object, yielding an empty reader
@@ -477,28 +478,4 @@ func (e *executor) uploadStream(ctx context.Context, store rebuild.AssetStore, a
 		return errors.Wrap(err, "writing asset")
 	}
 	return errors.Wrap(w.Close(), "finalizing asset")
-}
-
-// newlineFilteringReader strips CR/LF from a base64 stream: base64(1) wraps
-// lines and encoding/base64 does not tolerate newlines.
-type newlineFilteringReader struct {
-	r io.Reader
-}
-
-func (f newlineFilteringReader) Read(p []byte) (int, error) {
-	n, err := f.r.Read(p)
-	kept := 0
-	for i := range n {
-		if p[i] == '\n' || p[i] == '\r' {
-			continue
-		}
-		p[kept] = p[i]
-		kept++
-	}
-	// Report progress even when a chunk was all newlines, unless the
-	// underlying reader is exhausted.
-	if kept == 0 && n > 0 && err == nil {
-		return f.Read(p)
-	}
-	return kept, err
 }

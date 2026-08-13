@@ -87,7 +87,10 @@ func (r OutputRequest) Validate() error {
 // contiguous from the request's Offset; consumers can rely on the chunks
 // arriving in increasing-Offset order.
 type OutputFrame struct {
-	Offset  int64  `json:"offset"`
+	Offset int64 `json:"offset"`
+	// NOTE: Content must stay []byte. encoding/json carries it as base64,
+	// where a string would replace invalid UTF-8, and artifacts cross this
+	// frame verbatim.
 	Content []byte `json:"content"`
 }
 

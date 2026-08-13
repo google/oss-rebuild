@@ -197,10 +197,10 @@ func TestSuccessUploadsAssets(t *testing.T) {
 		}
 		r.Close()
 	}
-	// The fetch script guards existence and size before encoding.
+	// The fetch script guards existence and size before the copy.
 	fetch := f.createReqs[7]
 	script := fetch.Cmd[len(fetch.Cmd)-1]
-	for _, want := range []string{"base64", "wc -c"} {
+	for _, want := range []string{"cat ", "wc -c"} {
 		if !strings.Contains(script, want) {
 			t.Errorf("fetch script missing %q:\n%s", want, script)
 		}
