@@ -28,6 +28,8 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl \
     jq \
     ca-certificates
+mkdir -p /etc/docker
+echo '{"registry-mirrors": ["https://mirror.gcr.io"]}' > /etc/docker/daemon.json
 systemctl enable --now docker
 
 # Mount the local SSD at /var/lib/docker for IOPS.
