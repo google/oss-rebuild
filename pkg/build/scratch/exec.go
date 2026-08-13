@@ -6,8 +6,8 @@
 // Builds execute on a per-session scratch VM through the agent API's
 // broker-proxied exec operations (/scratch/exec/op/create|get). The VM has no
 // storage access of its own: command output is read from the GCS object the
-// broker syncs (ScratchExecResult.OutURI), and artifacts are retrieved by
-// base64-encoding them over the exec output channel.
+// broker syncs (ScratchExecResult.OutURI), and artifacts are copied
+// verbatim over the exec output channel.
 //
 // Two executor variants mirror pkg/build/local's compositions:
 // DockerRunExecutor drives phase scripts through an idle container and
