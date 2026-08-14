@@ -1,0 +1,336 @@
+{
+  "Count": 33,
+  "Updated": "2025-10-16T15:54:58.893653",
+  "Packages": [
+    {
+      "Ecosystem": "maven",
+      "Name": "us.ihmc:euclid",
+      "Versions": [
+        "0.21.0"
+      ],
+      "Artifacts": [
+        "euclid-0.21.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.xml.ws:jaxws-rt",
+      "Versions": [
+        "4.0.3"
+      ],
+      "Artifacts": [
+        "jaxws-rt-4.0.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.quarkus.gizmo:gizmo",
+      "Versions": [
+        "1.8.0"
+      ],
+      "Artifacts": [
+        "gizmo-1.8.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.fasterxml.jackson.core:jackson-databind",
+      "Versions": [
+        "2.18.3"
+      ],
+      "Artifacts": [
+        "jackson-databind-2.18.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.funixproductions.api.user.client:funixproductions-user-client",
+      "Versions": [
+        "1.3.0.7"
+      ],
+      "Artifacts": [
+        "funixproductions-user-client-1.3.0.7.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.technologybrewery.habushu:habushu-maven-plugin",
+      "Versions": [
+        "2.16.1"
+      ],
+      "Artifacts": [
+        "habushu-maven-plugin-2.16.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.undertow:undertow-core",
+      "Versions": [
+        "2.3.18.Final"
+      ],
+      "Artifacts": [
+        "undertow-core-2.3.18.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework.cloud:spring-cloud-context",
+      "Versions": [
+        "4.1.0"
+      ],
+      "Artifacts": [
+        "spring-cloud-context-4.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.factset.sdk:utils",
+      "Versions": [
+        "1.1.1"
+      ],
+      "Artifacts": [
+        "utils-1.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.funixproductions.core.crud:crud",
+      "Versions": [
+        "1.1.0.8"
+      ],
+      "Artifacts": [
+        "crud-1.1.0.8.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.zaxxer:HikariCP",
+      "Versions": [
+        "5.1.0"
+      ],
+      "Artifacts": [
+        "HikariCP-5.1.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.el:jakarta.el-api",
+      "Versions": [
+        "6.0.1"
+      ],
+      "Artifacts": [
+        "jakarta.el-api-6.0.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.sun.xml.messaging.saaj:saaj-impl",
+      "Versions": [
+        "3.0.4"
+      ],
+      "Artifacts": [
+        "saaj-impl-3.0.4.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.smallrye.reactive:mutiny",
+      "Versions": [
+        "2.6.2"
+      ],
+      "Artifacts": [
+        "mutiny-2.6.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.apache.opennlp:opennlp-tools",
+      "Versions": [
+        "2.4.0"
+      ],
+      "Artifacts": [
+        "opennlp-tools-2.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework.retry:spring-retry",
+      "Versions": [
+        "2.0.5"
+      ],
+      "Artifacts": [
+        "spring-retry-2.0.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "net.anotheria:ano-util",
+      "Versions": [
+        "4.0.0"
+      ],
+      "Artifacts": [
+        "ano-util-4.0.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.technologybrewery.fermenter:fermenter-mda",
+      "Versions": [
+        "2.10.3"
+      ],
+      "Artifacts": [
+        "fermenter-mda-2.10.3.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.helger.commons:ph-commons",
+      "Versions": [
+        "11.1.6"
+      ],
+      "Artifacts": [
+        "ph-commons-11.1.6.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.springframework:spring-context",
+      "Versions": [
+        "6.1.2"
+      ],
+      "Artifacts": [
+        "spring-context-6.1.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.gitlab.cdc-java.util:cdc-util-core",
+      "Versions": [
+        "0.52.0"
+      ],
+      "Artifacts": [
+        "cdc-util-core-0.52.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.apicurio:apicurio-registry-utils-converter",
+      "Versions": [
+        "2.6.2.Final"
+      ],
+      "Artifacts": [
+        "apicurio-registry-utils-converter-2.6.2.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.micronaut.validation:micronaut-validation",
+      "Versions": [
+        "4.4.0"
+      ],
+      "Artifacts": [
+        "micronaut-validation-4.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.technologybrewery.baton:baton-maven-plugin",
+      "Versions": [
+        "1.1.1"
+      ],
+      "Artifacts": [
+        "baton-maven-plugin-1.1.1.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.hazelcast:hazelcast",
+      "Versions": [
+        "5.5.0"
+      ],
+      "Artifacts": [
+        "hazelcast-5.5.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.h2database:h2",
+      "Versions": [
+        "2.3.232"
+      ],
+      "Artifacts": [
+        "h2-2.3.232.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.mvel:mvel2",
+      "Versions": [
+        "2.5.2.Final"
+      ],
+      "Artifacts": [
+        "mvel2-2.5.2.Final.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.quartz-scheduler:quartz",
+      "Versions": [
+        "2.5.0"
+      ],
+      "Artifacts": [
+        "quartz-2.5.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.glassfish.jaxb:jaxb-runtime",
+      "Versions": [
+        "4.0.5"
+      ],
+      "Artifacts": [
+        "jaxb-runtime-4.0.5.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "io.micronaut.data:micronaut-data-model",
+      "Versions": [
+        "4.6.2"
+      ],
+      "Artifacts": [
+        "micronaut-data-model-4.6.2.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "org.camunda.bpm.model:camunda-xml-model",
+      "Versions": [
+        "7.22.0"
+      ],
+      "Artifacts": [
+        "camunda-xml-model-7.22.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "com.github.jknack:handlebars",
+      "Versions": [
+        "4.4.0"
+      ],
+      "Artifacts": [
+        "handlebars-4.4.0.jar"
+      ]
+    },
+    {
+      "Ecosystem": "maven",
+      "Name": "jakarta.servlet.jsp.jstl:jakarta.servlet.jsp.jstl-api",
+      "Versions": [
+        "3.0.2"
+      ],
+      "Artifacts": [
+        "jakarta.servlet.jsp.jstl-api-3.0.2.jar"
+      ]
+    }
+  ]
+}
