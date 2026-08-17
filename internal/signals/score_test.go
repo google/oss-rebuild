@@ -29,3 +29,24 @@ func TestLogScale(t *testing.T) {
 		})
 	}
 }
+
+func TestPercentile(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rank int
+		n    int
+		want float64
+	}{
+		{"TopOfTen", 0, 10, 1.0},
+		{"LastOfTen", 9, 10, 0.1},
+		{"MedianOfFour", 1, 4, 0.75},
+		{"SoleMember", 0, 1, 1.0},
+		{"EmptyPopulation", 0, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, Percentile(tc.rank, tc.n)); diff != "" {
+				t.Errorf("Percentile(%d, %d) mismatch (-want +got):\n%s", tc.rank, tc.n, diff)
+			}
+		})
+	}
+}
