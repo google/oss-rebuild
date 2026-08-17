@@ -5,6 +5,8 @@
 // package versions are being worked on, in what order, and where each one
 // stands.
 //
+// Tick advances a campaign given the outcome of its last attempt.
+//
 // This package holds only pure types and functions. The commands that drive
 // the queue live in tools/ctl/command/onboard.
 package scheduler
