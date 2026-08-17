@@ -28,10 +28,11 @@ const (
 type AgentState string
 
 const (
-	AgentNone    AgentState = ""
-	AgentRunning AgentState = "running"
-	AgentFixed   AgentState = "fixed"
-	AgentFailed  AgentState = "failed"
+	AgentNone      AgentState = ""
+	AgentRunning   AgentState = "running"
+	AgentFixed     AgentState = "fixed"
+	AgentFailed    AgentState = "failed"
+	AgentThrottled AgentState = "throttled"
 )
 
 // VersionStatus is the aggregated status of a single package version across all
@@ -171,6 +172,10 @@ func classifyVersion(vs *VersionStatus, attempts []rundex.Rebuild, sessions []sc
 			failed = true
 			if agent == AgentNone {
 				agent = AgentFailed
+			}
+		case s.StopReason == schema.AgentCompleteReasonThrottled:
+			if agent == AgentNone {
+				agent = AgentThrottled
 			}
 		}
 	}

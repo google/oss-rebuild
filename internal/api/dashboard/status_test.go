@@ -30,6 +30,9 @@ func sess(version, statusOrStop string, created time.Time) schema.AgentSession {
 	case "failed":
 		s.Status = schema.AgentSessionStatusCompleted
 		s.StopReason = schema.AgentCompleteReasonFailed
+	case "throttled":
+		s.Status = schema.AgentSessionStatusCompleted
+		s.StopReason = schema.AgentCompleteReasonThrottled
 	}
 	return s
 }
@@ -65,11 +68,12 @@ func TestComputeVersionStatuses_Classification(t *testing.T) {
 
 func TestComputeVersionStatuses_Agent(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	axis := []string{"3.0", "2.0", "1.0"}
+	axis := []string{"3.0", "2.0", "1.0", "0.9"}
 	sessions := []schema.AgentSession{
 		sess("3.0", "success", t0),
 		sess("2.0", "running", t0),
 		sess("1.0", "failed", t0),
+		sess("0.9", "throttled", t0),
 	}
 	got := statusByVersion(computeVersionStatuses("npm", "p", axis, true, nil, sessions))
 	if got["3.0"].State != StateVerified || got["3.0"].Agent != AgentFixed {
@@ -80,6 +84,10 @@ func TestComputeVersionStatuses_Agent(t *testing.T) {
 	}
 	if got["1.0"].State != StateFailed || got["1.0"].Agent != AgentFailed {
 		t.Errorf("1.0: cell=%q agent=%q, want failed/failed", got["1.0"].State, got["1.0"].Agent)
+	}
+	// Throttled is neither a failure nor an absence of agent activity.
+	if got["0.9"].State != StateUntried || got["0.9"].Agent != AgentThrottled {
+		t.Errorf("0.9: cell=%q agent=%q, want untried/throttled", got["0.9"].State, got["0.9"].Agent)
 	}
 }
 

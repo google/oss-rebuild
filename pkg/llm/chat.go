@@ -9,6 +9,7 @@ import (
 	"iter"
 	"slices"
 
+	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
 )
@@ -24,6 +25,14 @@ type ChatOpts struct {
 	// MaxIterations sets the maximum number of send/receive cycles.
 	// If zero or less, a default value (defaultMaxToolIterations) is used.
 	MaxToolIterations int
+	// Retrier paces and reattempts sends. Zero value sends exactly once.
+	// NOTE: Retry policy lives here, not in genai's HTTPOptions.RetryOptions
+	// (added in v1.67). That layer would nest blind per-request HTTP backoff
+	// inside each attempt here and lacks shared retry logic, transience
+	// classification, and session throttle accounting. RetryOptions also lacks
+	// handling for server-provided RetryInfo (which we don't observe either).
+	// Keep it unset when upgrading genai.
+	Retrier ratex.Retrier
 }
 
 // Chat manages the state of an ongoing conversation with a generative model,
@@ -35,6 +44,7 @@ type Chat struct {
 	session   *genai.Chat
 	toolImpls map[string]Function
 	maxIter   int
+	retrier   ratex.Retrier
 	usage     []*genai.GenerateContentResponseUsageMetadata
 }
 
@@ -50,10 +60,12 @@ func NewChat(ctx context.Context, client *genai.Client, model string, config *ge
 	}
 	maxIter := defaultMaxToolIterations
 	toolImpls := make(map[string]Function)
+	var retrier ratex.Retrier
 	if opts != nil {
 		if opts.MaxToolIterations > 0 {
 			maxIter = opts.MaxToolIterations
 		}
+		retrier = opts.Retrier
 		config = WithTools(config, opts.Tools)
 		for _, def := range opts.Tools {
 			if def != nil {
@@ -78,6 +90,7 @@ func NewChat(ctx context.Context, client *genai.Client, model string, config *ge
 		session:   session,
 		toolImpls: toolImpls,
 		maxIter:   maxIter,
+		retrier:   retrier,
 	}, nil
 }
 
@@ -114,7 +127,13 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 			if !yield(&genai.Content{Parts: currentParts, Role: UserRole}, nil) {
 				return
 			}
-			resp, err := cm.session.Send(ctx, currentParts...)
+			// NOTE: Re-sending the same parts is safe because genai's Chat.Send
+			// records history only on success.
+			var resp *genai.GenerateContentResponse
+			err := cm.retrier.Do(ctx, func() (err error) {
+				resp, err = cm.session.Send(ctx, currentParts...)
+				return err
+			})
 			if err != nil {
 				yield(nil, errors.Wrap(err, "sending message"))
 				return

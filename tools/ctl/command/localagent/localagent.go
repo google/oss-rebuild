@@ -174,6 +174,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		SessionsBucket: "", // TODO: Add this once it's being used.
 		MetadataBucket: cfg.MetadataBucket,
 		LogsBucket:     cfg.LogsBucket,
+		Retrier:        agent.NewRetrier(),
 	}
 	req := agent.RunSessionReq{
 		SessionID:        sessionID,

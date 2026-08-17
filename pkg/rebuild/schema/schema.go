@@ -562,9 +562,10 @@ type AgentBuildResult struct {
 
 // Agent session complete reasons
 const (
-	AgentCompleteReasonSuccess = "SUCCESS"
-	AgentCompleteReasonFailed  = "FAILED"
-	AgentCompleteReasonError   = "ERROR"
+	AgentCompleteReasonSuccess   = "SUCCESS"
+	AgentCompleteReasonFailed    = "FAILED"
+	AgentCompleteReasonError     = "ERROR"
+	AgentCompleteReasonThrottled = "THROTTLED"
 )
 
 // AgentCompleteRequest finalizes session with results
