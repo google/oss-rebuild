@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"sort"
 	"strings"
 	"time"
 
@@ -186,16 +185,7 @@ func admit(eco rebuild.Ecosystem, pkg string, rows []signals.VersionSignal, cfg 
 			Updated:   now,
 		})
 	}
-	order := func(c scheduler.Campaign) float64 {
-		return c.DispatchOrder(now, cfg.FreshnessK, cfg.FreshnessTauHours)
-	}
-	// Ties go newest first.
-	sort.SliceStable(out, func(i, j int) bool {
-		if oi, oj := order(out[i]), order(out[j]); oi != oj {
-			return oi > oj
-		}
-		return out[i].Published.After(out[j].Published)
-	})
+	out = scheduler.Order(out, now, cfg.FreshnessK, cfg.FreshnessTauHours)
 	if cfg.MaxVersions > 0 && len(out) > cfg.MaxVersions {
 		out = out[:cfg.MaxVersions]
 	}
