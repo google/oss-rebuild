@@ -2,8 +2,8 @@
 
 Bringing a package into oss-rebuild coverage means two things: deciding it is
 worth the capacity, and then spending capacity until it reproduces.
-`ctl onboard priority` answers the first, `ctl onboard enqueue` and its queue
-answer the second.
+`ctl onboard priority` answers the first, `ctl onboard enqueue|dispatch|status`
+answers the second.
 
 ## Priority
 
