@@ -37,7 +37,20 @@ func NewMemoryCampaigns() Campaigns {
 // small enough that a full scan is acceptable. Readers sort and filter in
 // memory, which keeps the collection free of composite indexes.
 func ListCampaigns(ctx context.Context, c *firestore.Client) ([]scheduler.Campaign, error) {
-	it := c.Collection(campaignsCollection).Documents(ctx)
+	return collectCampaigns(c.Collection(campaignsCollection).Documents(ctx))
+}
+
+// ListActiveCampaigns returns the queued and in-flight campaigns, the only
+// states dispatch acts on. Terminal campaigns accumulate for as long as
+// onboarding runs, so filtering server-side keeps the read proportional to
+// queue depth. A single-field filter needs no composite index.
+func ListActiveCampaigns(ctx context.Context, c *firestore.Client) ([]scheduler.Campaign, error) {
+	q := c.Collection(campaignsCollection).
+		Where("state", "in", []string{string(scheduler.StateQueued), string(scheduler.StateInFlight)})
+	return collectCampaigns(q.Documents(ctx))
+}
+
+func collectCampaigns(it *firestore.DocumentIterator) ([]scheduler.Campaign, error) {
 	defer it.Stop()
 	var out []scheduler.Campaign
 	for {
