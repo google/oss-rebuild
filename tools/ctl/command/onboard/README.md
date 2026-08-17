@@ -2,8 +2,8 @@
 
 Bringing a package into oss-rebuild coverage means two things: deciding it is
 worth the capacity, and then spending capacity until it reproduces.
-`ctl onboard priority` answers the first, `ctl onboard enqueue` and its queue
-answer the second.
+`ctl onboard priority` answers the first, `ctl onboard enqueue|dispatch|status`
+answers the second.
 
 ## Priority
 
@@ -70,3 +70,20 @@ waits, letting a fresh release of a mid-tier package outrank a stale version of
 a critical one while keeping a fresh version of a critical package above both.
 
 State lives in Firestore so a run is resumable and mutable.
+
+## Dispatch
+
+`dispatch` drains the queue in passes:
+
+```sh
+ctl onboard dispatch --project ssci-demos --api https://api.example.run.app \
+    --batch 200 --max-agent 20
+```
+
+Each pass observes what finished and launches what fits, so run it on a timer
+until `status` reports the queue drained. Builds run wide, so `--batch` mostly
+bounds how much work one pass creates; `--max-agent` is the real throttle
+because agent sessions occupy scratch compute for their duration. A dispatch
+whose build is lost is requeued after `--inflight-timeout` (default 24h); a
+shorter value recovers faster from outages at the cost of duplicate builds
+for anything that legitimately runs longer.
