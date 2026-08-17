@@ -61,6 +61,17 @@ type defaultAgent struct {
 	thoughts    []thoughtData
 	assets      rebuild.AssetStore
 	gitTools    []*llm.FunctionDefinition
+	oobTokens   int64 // tokens spent on out-of-band model invocations
+}
+
+// TotalTokens returns the agent's full LLM token spend. This includes the main
+// chat as well as any out-of-band model invocations.
+func (a *defaultAgent) TotalTokens() int64 {
+	total := a.oobTokens
+	if a.deps != nil && a.deps.Chat != nil {
+		total += a.deps.Chat.TotalTokens()
+	}
+	return total
 }
 
 func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
@@ -273,12 +284,13 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 		"Use the tools you have at your disposal to find the URL.",
 		"Finally, if you don't find the URL, just return an empty string.",
 	}
-	repoURL, err := llm.GenerateTextContent(ctx, a.deps.GenaiClient, llm.GeminiPro, &genai.GenerateContentConfig{
+	repoURL, usage, err := llm.GenerateTextContentWithUsage(ctx, a.deps.GenaiClient, llm.GeminiPro, &genai.GenerateContentConfig{
 		Temperature: genai.Ptr(float32(0.0)),
 		Tools: []*genai.Tool{
 			{GoogleSearch: &genai.GoogleSearch{}},
 		},
 	}, genai.NewPartFromText(strings.Join(prompt, "\n")))
+	a.oobTokens += llm.SumTokens([]*genai.GenerateContentResponseUsageMetadata{usage})
 	if err != nil {
 		return nil, errors.Wrap(err, "getting AI repo hint")
 	}

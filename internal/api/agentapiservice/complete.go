@@ -54,6 +54,9 @@ func AgentComplete(ctx context.Context, req schema.AgentCompleteRequest, deps *A
 		if req.Summary != "" {
 			session.Summary = req.Summary
 		}
+		if req.TotalTokens > 0 {
+			session.TotalTokens = req.TotalTokens
+		}
 		return t.Set(sessionDoc, session)
 	})
 	if err != nil {
