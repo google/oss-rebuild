@@ -2,7 +2,8 @@
 
 Bringing a package into oss-rebuild coverage means two things: deciding it is
 worth the capacity, and then spending capacity until it reproduces.
-`ctl onboard priority` answers the first.
+`ctl onboard priority` answers the first, `ctl onboard enqueue` and its queue
+answer the second.
 
 ## Priority
 
@@ -39,3 +40,33 @@ gs:// object:
 ctl onboard priority prevalence --project my-project --out prevalence.jsonl
 ctl onboard priority prevalence --project my-project --out gs://my-analytics/priority/prevalence.jsonl
 ```
+
+## The queue
+
+`enqueue` expands a package into one queue document per version, each a
+campaign recording where that version sits on the escalation ladder. The
+ladder's stages are replay, infer, and agent, each more expensive than the
+last, and every version starts at infer (heuristic inference plus a build).
+
+```sh
+ctl onboard enqueue --project ssci-demos --ecosystem npm --from-packages lodash,express \
+    --prevalence gs://my-analytics/priority/prevalence.jsonl
+ctl onboard status --project ssci-demos
+```
+
+Candidates are derived from the signals export which contains both the package
+and version ranking in addition to the registry metadata necessary to enqueue.
+
+Since a package can have hundreds of ranked versions, we use `--max-versions`
+to keep only the top few. It admits versions by the same ordering the queue is
+drained by, so a version that would never reach the front never enters in the
+first place.
+
+Each campaign stores a score and a publication time rather than a precomputed
+order. `Score` is the version's own prevalence from the export. `DispatchOrder`
+multiplies it by a freshness boost derived from the publication time at read
+time, so a recent release spikes and then decays into the backlog while it
+waits, letting a fresh release of a mid-tier package outrank a stale version of
+a critical one while keeping a fresh version of a critical package above both.
+
+State lives in Firestore so a run is resumable and mutable.

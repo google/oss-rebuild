@@ -183,6 +183,14 @@ func PackageSignals(db *sqlite3.Conn) ([]PackageSignal, error) {
 	return out, stmt.Err()
 }
 
+// VersionSignal is one ranked version of a package.
+type VersionSignal struct {
+	Version    string
+	Prevalence float64
+	Published  time.Time
+	Artifact   string
+}
+
 // Fetch downloads the signal database published under dest into dir and
 // returns its local path, refusing a database from a different schema era.
 func Fetch(dest billy.Basic, dir string) (string, error) {
