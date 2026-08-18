@@ -211,3 +211,40 @@ func TestPackageHandlerNilSessions(t *testing.T) {
 		t.Fatalf("rendering package template: %v", err)
 	}
 }
+
+func TestPackageHandlerFilteredTimelines(t *testing.T) {
+	// The per-kind tabs are the merged timeline filtered, so each must carry only
+	// its own kind and together they must account for every event.
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	deps := &Deps{
+		Rundex: &fakeReader{recent: []rundex.Rebuild{
+			{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "1", RunID: "run1", Created: t0.Add(time.Hour)}},
+		}},
+		Sessions: &fakeSessionReader{sessions: []schema.AgentSession{
+			{ID: "s1", Target: rebuild.Target{Ecosystem: "npm", Package: "a", Version: "1"}, Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonSuccess, Created: t0},
+		}},
+	}
+	got, err := Package(context.Background(), PackageRequest{Ecosystem: "npm", Package: "a"}, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.RebuildEvents) != 1 || got.RebuildEvents[0].Rebuild == nil || got.RebuildEvents[0].Session != nil {
+		t.Errorf("RebuildEvents should hold only rebuilds: %+v", got.RebuildEvents)
+	}
+	if len(got.SessionEvents) != 1 || got.SessionEvents[0].Session == nil || got.SessionEvents[0].Rebuild != nil {
+		t.Errorf("SessionEvents should hold only sessions: %+v", got.SessionEvents)
+	}
+	if len(got.Events) != len(got.RebuildEvents)+len(got.SessionEvents) {
+		t.Errorf("merged timeline missed events: %d, want %d", len(got.Events), len(got.RebuildEvents)+len(got.SessionEvents))
+	}
+	var buf strings.Builder
+	if err := PackageTmpl.Execute(&buf, got); err != nil {
+		t.Fatalf("rendering package template: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"panel-rebuilds", "panel-sessions", ">Rebuilds<", ">Agent sessions<"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered output missing %q", want)
+		}
+	}
+}

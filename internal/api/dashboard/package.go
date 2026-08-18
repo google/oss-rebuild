@@ -26,8 +26,17 @@ const (
 	stripExpandedRows = 4
 )
 
-// eventsWindow caps how many recent events the timeline renders.
+// eventsWindow caps how many recent events each timeline renders. The timelines
+// are windowed separately so a busy stream of one kind can't crowd the other out
+// of its own tab.
 const eventsWindow = 100
+
+func windowEvents(events []PackageEvent) []PackageEvent {
+	if len(events) > eventsWindow {
+		return events[:eventsWindow]
+	}
+	return events
+}
 
 type PackageRequest struct {
 	Ecosystem string
@@ -43,7 +52,7 @@ func (PackageRequest) Validate() error { return nil }
 type PackageEvent struct {
 	Created time.Time
 	Rebuild *RebuildView
-	Session *schema.AgentSession
+	Session *SessionView
 }
 
 type PackageData struct {
@@ -60,7 +69,9 @@ type PackageData struct {
 	NextOffset     int             // offset the older-window link jumps to
 	WindowFrom     int             // 1-based index of the first shown version (for the caption)
 	WindowTo       int             // 1-based index of the last shown version
-	Events         []PackageEvent  // rebuild attempts and agent sessions, most-recent-first
+	Events         []PackageEvent  // rebuilds and sessions intermingled, most-recent-first
+	RebuildEvents  []PackageEvent  // the same timeline restricted to rebuild attempts
+	SessionEvents  []PackageEvent  // the same timeline restricted to agent sessions
 }
 
 func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData, error) {
@@ -106,22 +117,26 @@ func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData,
 	end := min(off+pageSize, total)
 	window := statuses[off:end]
 
-	// Intermingle rebuilds and sessions into a single timeline, most recent
-	// first, capped to the events window.
-	events := make([]PackageEvent, 0, len(rebuilds)+len(sessions))
+	// Intermingle rebuilds and sessions into a single timeline, most recent first,
+	// keeping per-kind timelines for the filtered tabs.
+	rebuildEvents := make([]PackageEvent, 0, len(rebuilds))
 	for _, rb := range rebuilds {
 		view := NewRebuildView(rb)
-		events = append(events, PackageEvent{Created: rb.Created, Rebuild: &view})
+		rebuildEvents = append(rebuildEvents, PackageEvent{Created: rb.Created, Rebuild: &view})
 	}
-	for i := range sessions {
-		events = append(events, PackageEvent{Created: sessions[i].Created, Session: &sessions[i]})
+	sessionEvents := make([]PackageEvent, 0, len(sessions))
+	for _, s := range sessions {
+		view := NewSessionView(s)
+		sessionEvents = append(sessionEvents, PackageEvent{Created: s.Created, Session: &view})
 	}
-	slices.SortFunc(events, func(a, b PackageEvent) int {
-		return b.Created.Compare(a.Created)
-	})
-	if len(events) > eventsWindow {
-		events = events[:eventsWindow]
-	}
+	events := slices.Concat(rebuildEvents, sessionEvents)
+	byNewest := func(a, b PackageEvent) int { return b.Created.Compare(a.Created) }
+	slices.SortFunc(events, byNewest)
+	slices.SortFunc(rebuildEvents, byNewest)
+	slices.SortFunc(sessionEvents, byNewest)
+	events = windowEvents(events)
+	rebuildEvents = windowEvents(rebuildEvents)
+	sessionEvents = windowEvents(sessionEvents)
 
 	et := packagePathEncoding.Encode(rebuild.Target{Ecosystem: eco, Package: req.Package})
 
@@ -134,6 +149,8 @@ func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData,
 		Expanded:       req.Expanded,
 		Offset:         off,
 		Events:         events,
+		RebuildEvents:  rebuildEvents,
+		SessionEvents:  sessionEvents,
 	}
 	if total > 0 {
 		data.WindowFrom = off + 1

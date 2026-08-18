@@ -51,6 +51,8 @@
         <span class="legend-item"><span class="legend-swatch state-running"></span>running</span>
     </div>
     {{end}}
+{{define "eventTable"}}
+    {{if .}}
     <table>
         <thead>
             <tr>
@@ -64,7 +66,7 @@
             </tr>
         </thead>
         <tbody>
-            {{range .Events}}
+            {{range .}}
             {{if .Session}}
             {{with .Session}}
             <tr>
@@ -81,7 +83,7 @@
                     {{end}}
                 </td>
                 <td><small>{{.Summary}}</small></td>
-                <td><small>{{.ID}}</small></td>
+                <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}">{{.ID}}</a></td>
                 <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
             </tr>
             {{end}}
@@ -107,5 +109,52 @@
             {{end}}
         </tbody>
     </table>
+    {{else}}
+    <p class="hint">Nothing recorded yet.</p>
+    {{end}}
+{{end}}
+
+    <section class="tabbed">
+        <input type="radio" id="tab-events" name="pkgtab" class="tab-radio" checked>
+        <input type="radio" id="tab-rebuilds" name="pkgtab" class="tab-radio">
+        <input type="radio" id="tab-sessions" name="pkgtab" class="tab-radio">
+        <input type="radio" id="tab-versions" name="pkgtab" class="tab-radio">
+        <div class="tabs">
+            <label for="tab-events" class="tab">Recent events</label>
+            <label for="tab-rebuilds" class="tab">Rebuilds</label>
+            <label for="tab-sessions" class="tab">Agent sessions</label>
+            <label for="tab-versions" class="tab">By version</label>
+        </div>
+
+        <div id="panel-events" class="tab-panel">{{template "eventTable" .Events}}</div>
+        <div id="panel-rebuilds" class="tab-panel">{{template "eventTable" .RebuildEvents}}</div>
+        <div id="panel-sessions" class="tab-panel">{{template "eventTable" .SessionEvents}}</div>
+
+
+        <div id="panel-versions" class="tab-panel">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Version</th>
+                        <th>Status</th>
+                        <th>Agent</th>
+                        <th>Attempts</th>
+                        <th>Sessions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Versions}}
+                    <tr>
+                        <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}">{{.Version}}</a></td>
+                        <td><span class="badge state-{{.State}}">{{.State}}</span></td>
+                        <td>{{if .Agent}}{{.Agent}}{{else}}-{{end}}</td>
+                        <td>{{.Attempts}}</td>
+                        <td>{{.Sessions}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </section>
 </body>
 </html>
