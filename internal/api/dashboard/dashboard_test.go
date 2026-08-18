@@ -100,6 +100,9 @@ func (f *fakeReader) RecentRebuilds(context.Context) ([]rundex.Rebuild, error) {
 func (f *fakeReader) RecentPackageRebuilds(context.Context, rebuild.Ecosystem, string) ([]rundex.Rebuild, error) {
 	return f.recent, nil
 }
+func (f *fakeReader) FetchRebuilds(context.Context, *rundex.FetchRebuildRequest) ([]rundex.Rebuild, error) {
+	return f.recent, nil
+}
 
 // fakeSessionReader is a rundex.SessionReader returning canned sessions.
 type fakeSessionReader struct {
