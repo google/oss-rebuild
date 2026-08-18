@@ -7,14 +7,17 @@
 <head>
     <meta charset="UTF-8">
     <title>Logs for {{.Target.Ecosystem}}:{{.Target.Package}} {{.Target.Version}}</title>
+    <!-- Standalone page (no shared header): take the palette only. -->
+    <link rel="stylesheet" href="/theme.css">
     <style>
-        body { background: #121212; color: #e0e0e0; font-family: monospace; margin: 0; padding: 10px; }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 10px; font-family: monospace; background: var(--bg); color: var(--body); }
         .log-line { display: flex; line-height: 1.2; }
-        .line-number { color: #888; text-decoration: none; padding-right: 15px; user-select: none; text-align: right; min-width: 40px; cursor: pointer; }
+        .line-number { color: var(--muted); text-decoration: none; padding-right: 15px; user-select: none; text-align: right; min-width: 40px; cursor: pointer; }
         .line-content { word-break: break-all; white-space: pre-wrap; }
-        .highlight { background-color: #444; color: #fff; }
-        .warning-box { background: #333; padding: 30px; border-radius: 8px; border: 1px solid #555; text-align: center; max-width: 600px; margin: 50px auto; }
-        a { color: #4fc3f7; text-decoration: none; font-weight: bold; }
+        .highlight { background-color: var(--border); color: var(--heading); }
+        .warning-box { background: #fff; padding: 30px; border-radius: 8px; border: 1px solid var(--border); text-align: center; max-width: 600px; margin: 50px auto; }
+        a { color: var(--accent); text-decoration: none; font-weight: bold; }
         a:hover { text-decoration: underline; }
     </style>
 </head>

@@ -1,0 +1,18 @@
+/*
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+*/
+
+/* Palette only, so standalone pages can theme without dashboard.css. */
+:root {
+    --bg: #fcfbf9;
+    --heading: #1c1917;
+    --body: #292524;
+    --secondary: #57534e;
+    --muted: #78716c;
+    --border: #e7e5e4;
+    --fill: #f5f5f4;
+    --accent: #0f766e;
+    --mismatch: #b91c1c;
+    --failure: #b45309;
+}

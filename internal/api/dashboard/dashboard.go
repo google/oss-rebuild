@@ -6,6 +6,8 @@ package dashboard
 import (
 	_ "embed"
 	"html/template"
+	"io"
+	"net/http"
 	"regexp"
 
 	"cloud.google.com/go/storage"
@@ -25,7 +27,27 @@ var (
 	attemptHTML string
 	//go:embed logs.gohtml
 	logsHTML string
+	//go:embed dashboard.css
+	css string
+	//go:embed theme.css
+	themeCSS string
 )
+
+// Hardcoded by the page templates, so the package owns the routes.
+const (
+	ThemeCSSPath = "/theme.css"
+	CSSPath      = "/dashboard.css"
+)
+
+// RegisterAssets serves the dashboard's stylesheets at the paths above.
+func RegisterAssets(mux *http.ServeMux) {
+	for path, content := range map[string]string{ThemeCSSPath: themeCSS, CSSPath: css} {
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/css")
+			_, _ = io.WriteString(w, content)
+		})
+	}
+}
 
 var (
 	IndexTmpl   *template.Template

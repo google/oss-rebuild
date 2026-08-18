@@ -102,6 +102,7 @@ func main() {
 	}
 	encoding := rebuild.FilesystemTargetEncoding
 
+	dashboard.RegisterAssets(http.DefaultServeMux)
 	http.HandleFunc("/", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Index), dashboard.IndexTmpl))
 	http.HandleFunc("/package/{ecosystem}/{package}", api.Translate(func(r *http.Request) (dashboard.PackageRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), "", "").Decode()
