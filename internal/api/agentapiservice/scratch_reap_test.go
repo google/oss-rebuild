@@ -479,6 +479,88 @@ func (b *bumpingSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scrat
 	return exec, nil
 }
 
+// A Starting record stranded by a crashed create is reaped once stale,
+// while one inside a plausibly-live create window is spared.
+func TestScratchReap_StuckStartingReaped(t *testing.T) {
+	ctx := context.Background()
+	scratches := db.NewMemoryScratch()
+	gce := NewMemoryGCE()
+	now := time.Now().UTC()
+	zone := "us-central1-a"
+
+	_, _ = gce.InsertInstanceFromTemplate(ctx, zone, "scratch-stuck", "tmpl", nil)
+	for _, s := range []schema.Scratch{
+		{ID: "stuck", State: schema.ScratchStarting, Zone: zone, VMName: "scratch-stuck", LastUsed: now.Add(-time.Hour)},
+		{ID: "provisioning", State: schema.ScratchStarting, Zone: zone, VMName: "scratch-prov", LastUsed: now.Add(-time.Minute)},
+	} {
+		if err := scratches.Insert(ctx, s); err != nil {
+			t.Fatalf("seed %s: %v", s.ID, err)
+		}
+	}
+
+	resp, err := ScratchReap(ctx, ScratchReapRequest{}, reapDeps(t, scratches, db.NewMemoryScratchExecs(), gce))
+	if err != nil {
+		t.Fatalf("ScratchReap: %v", err)
+	}
+	if resp.ScratchesReaped != 1 {
+		t.Errorf("ScratchesReaped = %d; want 1", resp.ScratchesReaped)
+	}
+	if got, _ := scratches.Get(ctx, "stuck"); got.State != schema.ScratchDeleted {
+		t.Errorf("stuck.State = %q; want deleted", got.State)
+	}
+	if gce.InstanceExists(zone, "scratch-stuck") {
+		t.Errorf("stuck VM not torn down")
+	}
+	if got, _ := scratches.Get(ctx, "provisioning"); got.State != schema.ScratchStarting {
+		t.Errorf("provisioning.State = %q; want starting (spared)", got.State)
+	}
+}
+
+// A failed VM delete leaves the record Deleting, and the next pass picks
+// it up again and converges to Deleted.
+func TestScratchReap_DeletingRetriedUntilVMGone(t *testing.T) {
+	ctx := context.Background()
+	scratches := db.NewMemoryScratch()
+	gce := NewMemoryGCE()
+	now := time.Now().UTC()
+	zone := "us-central1-a"
+
+	_, _ = gce.InsertInstanceFromTemplate(ctx, zone, "scratch-d", "tmpl", nil)
+	if err := scratches.Insert(ctx, schema.Scratch{
+		ID: "d", State: schema.ScratchDeleting, Zone: zone, VMName: "scratch-d",
+		LastUsed: now.Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("seed scratch: %v", err)
+	}
+	deps := reapDeps(t, scratches, db.NewMemoryScratchExecs(), gce)
+
+	gce.FailNext("DeleteInstance", errors.New("gce unavailable"))
+	resp, err := ScratchReap(ctx, ScratchReapRequest{}, deps)
+	if err != nil {
+		t.Fatalf("ScratchReap(1): %v", err)
+	}
+	if resp.ScratchesReaped != 0 {
+		t.Errorf("pass 1 ScratchesReaped = %d; want 0", resp.ScratchesReaped)
+	}
+	if got, _ := scratches.Get(ctx, "d"); got.State != schema.ScratchDeleting {
+		t.Errorf("State after failed pass = %q; want deleting", got.State)
+	}
+
+	resp, err = ScratchReap(ctx, ScratchReapRequest{}, deps)
+	if err != nil {
+		t.Fatalf("ScratchReap(2): %v", err)
+	}
+	if resp.ScratchesReaped != 1 {
+		t.Errorf("pass 2 ScratchesReaped = %d; want 1", resp.ScratchesReaped)
+	}
+	if got, _ := scratches.Get(ctx, "d"); got.State != schema.ScratchDeleted {
+		t.Errorf("State after retry = %q; want deleted", got.State)
+	}
+	if gce.InstanceExists(zone, "scratch-d") {
+		t.Errorf("VM not torn down after retry")
+	}
+}
+
 func TestScratchReap_TeardownRecheckSparesRevivedScratch(t *testing.T) {
 	ctx := context.Background()
 	scratches := db.NewMemoryScratch()
