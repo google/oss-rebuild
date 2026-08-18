@@ -52,9 +52,9 @@ data "google_compute_zones" "scratch" {
 }
 
 # Instance template for scratch VMs. The startup script fetches and runs the
-# scratch-worker binary; agent-api drives the worker over private-IP HTTP with
-# an ID token. Conditionally attach a service account for private instances to
-# access (the bootstrap-tools bucket is public-readable).
+# scratch-worker binary as a systemd service. agent-api drives the worker over
+# private-IP HTTP with an ID token. Conditionally attach a service account for
+# private instances to access bootstrap tools.
 resource "google_compute_instance_template" "scratch-standard" {
   count        = var.enable_scratch ? 1 : 0
   name_prefix  = "${var.host}-scratch-standard-"
@@ -72,7 +72,7 @@ resource "google_compute_instance_template" "scratch-standard" {
   }
 
   disk {
-    source_image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
+    source_image = "cos-cloud/cos-stable"
     auto_delete  = true
     boot         = true
     disk_size_gb = 400
@@ -88,10 +88,13 @@ resource "google_compute_instance_template" "scratch-standard" {
   labels = { purpose = "scratch" }
 
   metadata = {
+    user-data = templatefile("${path.module}/scratch_cloudinit.yaml", {
+      // NOTE: The official docker distribution is alpine-based.
+      cli_image = "docker:29.5-cli@sha256:11e1133c30f3ceb73c6bdc7dfb78b3f9ed8e8e0d1d0400e91c5ec2eb240bf2ff"
+      caller_sa = google_service_account.orchestrator.email
+    })
     startup-script = templatefile("${path.module}/scratch_startup.sh", {
       worker_binary_uri = "gs://${google_storage_bucket.bootstrap-tools.name}/${module.prebuild_images["scratch-worker"].image_version}/scratch-worker"
-      caller_sa         = google_service_account.orchestrator.email
-      audience          = "https://builder/$${HOSTNAME}"
     })
   }
 
