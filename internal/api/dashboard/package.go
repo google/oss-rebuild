@@ -39,7 +39,8 @@ type PackageData struct {
 	Ecosystem      string
 	PackageName    string
 	EncodedPackage string
-	Events         []PackageEvent // rebuild attempsts and agent sessions, most-recent-first
+	Summary        PackageSummary // high-level per-package status shown at the top
+	Events         []PackageEvent // rebuild attempts and agent sessions, most-recent-first
 }
 
 func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData, error) {
@@ -69,6 +70,8 @@ func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData,
 		}
 	}
 
+	summary := summarize(computeVersionStatuses(eco, req.Package, rebuilds, sessions))
+
 	// Intermingle rebuilds and sessions into a single timeline, most recent
 	// first, capped to the events window.
 	events := make([]PackageEvent, 0, len(rebuilds)+len(sessions))
@@ -92,6 +95,7 @@ func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData,
 		Ecosystem:      req.Ecosystem,
 		PackageName:    req.Package,
 		EncodedPackage: et.Package,
+		Summary:        summary,
 		Events:         events,
 	}, nil
 }

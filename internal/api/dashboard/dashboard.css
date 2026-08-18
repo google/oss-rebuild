@@ -89,3 +89,19 @@ pre {
 .session-meta { color: var(--muted); font-size: 0.85rem; }
 .session-summary { margin: 6px 0; color: var(--body); }
 .session table { margin-top: 8px; }
+
+/* Summary cards. */
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 8px;
+}
+.card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+}
+.card-value { font-family: 'Merriweather', serif; font-size: 2rem; color: var(--heading); }
+.card-label { color: var(--secondary); font-size: 0.9rem; margin-top: 4px; }
