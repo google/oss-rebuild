@@ -32,14 +32,6 @@ mkdir -p /etc/docker
 echo '{"registry-mirrors": ["https://mirror.gcr.io"]}' > /etc/docker/daemon.json
 systemctl enable --now docker
 
-# Mount the local SSD at /var/lib/docker for IOPS.
-if [ -e /dev/nvme0n1 ]; then
-    mkfs.ext4 -F /dev/nvme0n1
-    mkdir -p /var/lib/docker
-    mount /dev/nvme0n1 /var/lib/docker
-    systemctl restart docker
-fi
-
 useradd --create-home --home-dir /home/builder --shell /bin/bash builder || true
 usermod -aG docker builder
 mkdir -p /opt/builder
@@ -79,7 +71,7 @@ ExecStart=/opt/builder/scratch-worker \\
     --caller-sa=${caller_sa} \\
     --audience=${audience} \\
     --docker-socket=/var/run/docker.sock \\
-    --disk-paths=/var/lib/docker,/home/builder \\
+    --disk-paths=/home/builder \\
     --listen=:8080
 Restart=on-failure
 RestartSec=5s

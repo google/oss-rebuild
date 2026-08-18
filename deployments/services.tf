@@ -58,7 +58,7 @@ data "google_compute_zones" "scratch" {
 resource "google_compute_instance_template" "scratch-standard" {
   count        = var.enable_scratch ? 1 : 0
   name_prefix  = "${var.host}-scratch-standard-"
-  machine_type = "n2-standard-8"
+  machine_type = "e2-standard-8"
   region       = "us-central1"
 
   # NOTE: This block needs to be conditionally omitted to ensure an empty
@@ -75,14 +75,8 @@ resource "google_compute_instance_template" "scratch-standard" {
     source_image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
     auto_delete  = true
     boot         = true
-    disk_size_gb = 50
-  }
-  disk {
-    type         = "SCRATCH"
-    disk_type    = "local-ssd"
-    auto_delete  = true
-    interface    = "NVME"
-    disk_size_gb = 375 # local SSD partitions are fixed at 375 GB on n2; add more disk blocks for more capacity.
+    disk_size_gb = 400
+    disk_type    = "pd-ssd"
   }
 
   network_interface {
