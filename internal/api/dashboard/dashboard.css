@@ -105,3 +105,41 @@ pre {
 }
 .card-value { font-family: 'Merriweather', serif; font-size: 2rem; color: var(--heading); }
 .card-label { color: var(--secondary); font-size: 0.9rem; margin-top: 4px; }
+
+/* Version status strip. */
+
+/* Per-version status colors, shared by strip cells and legend swatches. */
+.state-verified { background: var(--accent); }
+.state-failed   { background: var(--mismatch); }
+.state-running  { background: var(--failure); }
+.state-untried  { background: var(--fill); }
+
+.strip-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 18px 0 6px;
+    color: var(--secondary);
+    font-size: 0.9rem;
+}
+.strip-nav a { margin-left: 12px; }
+/* The strip is a fixed-column grid; cells fill each column (1fr) so a row always
+   fits the width without a scrollbar. Collapsed, the server renders one row's
+   worth of cells. Expanded, several rows. Keep the column count in sync with
+   stripCols in package.go. */
+.strip {
+    display: grid;
+    grid-template-columns: repeat(50, 1fr);
+    gap: 3px;
+    margin-bottom: 10px;
+}
+.strip .cell {
+    aspect-ratio: 1;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.10);
+}
+.strip .state-untried { border-style: dashed; }
+.strip .cell:hover { outline: 2px solid var(--heading); outline-offset: 1px; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; font-size: 0.85rem; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -107,9 +108,13 @@ func main() {
 	http.HandleFunc("/", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Index), dashboard.IndexTmpl))
 	http.HandleFunc("/package/{ecosystem}/{package}", api.Translate(func(r *http.Request) (dashboard.PackageRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), "", "").Decode()
+		// TODO: Make this param and field name more precise.
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 		return dashboard.PackageRequest{
 			Ecosystem: string(t.Ecosystem),
 			Package:   t.Package,
+			Offset:    offset,
+			Expanded:  r.URL.Query().Get("expanded") != "",
 		}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Package), dashboard.PackageTmpl)))
 	http.HandleFunc("/package/{ecosystem}/{package}/version/{version}", api.Translate(func(r *http.Request) (dashboard.VersionRequest, error) {
