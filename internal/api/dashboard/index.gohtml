@@ -52,5 +52,43 @@
             </tbody>
         </table>
     {{end}}
+
+    {{if .RecentSessions}}
+        <h2>Recent Agent Sessions</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Ecosystem</th>
+                    <th>Package</th>
+                    <th>Version</th>
+                    <th>Status</th>
+                    <th>Summary</th>
+                    <th>Session</th>
+                    <th>Completed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .RecentSessions}}
+                <tr>
+                    <td>{{.Target.Ecosystem}}</td>
+                    <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}">{{.Target.Package}}</a></td>
+                    <td>{{.Target.Version}}</td>
+                    <td>
+                        {{if eq .StopReason "SUCCESS"}}
+                            <span class="status-success">Success</span>
+                        {{else if .StopReason}}
+                            <span class="status-fail">{{.StopReason}}</span>
+                        {{else}}
+                            {{.Status}}
+                        {{end}}
+                    </td>
+                    <td><small>{{.Summary}}</small></td>
+                    <td><small>{{.ID}}</small></td>
+                    <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    {{end}}
 </body>
 </html>

@@ -344,6 +344,9 @@ func (f *FirestoreClient) FetchSessions(ctx context.Context, req *FetchSessionsR
 	if !req.Until.IsZero() {
 		query = query.Where("created", "<=", req.Until)
 	}
+	if req.Limit > 0 {
+		query = query.OrderBy("created", firestore.Desc).Limit(req.Limit)
+	}
 	sessions := make(chan schema.AgentSession)
 	cerr := doQuery(ctx, query, newSessionFromFirestore, sessions)
 	var sessionSlice []schema.AgentSession

@@ -100,6 +100,7 @@ type FetchSessionsReq struct {
 	Since         time.Time
 	Until         time.Time
 	StopReason    string
+	Limit         int
 }
 
 type FetchIterationsReq struct {
