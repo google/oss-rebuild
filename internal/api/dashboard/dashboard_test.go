@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/pkg/errors"
 )
 
 func TestRegisterAssets(t *testing.T) {
@@ -104,6 +106,16 @@ func (f *fakeReader) FetchRebuilds(context.Context, *rundex.FetchRebuildRequest)
 	return f.recent, nil
 }
 
+// failingClient stands in for the registry in tests that don't exercise version
+// enumeration. Its failures drive Package's degraded path.
+type failingClient struct{}
+
+func (failingClient) Do(*http.Request) (*http.Response, error) {
+	return nil, errors.New("no registry in tests")
+}
+
+func unreachableRegistry() rebuild.RegistryMux { return meta.NewRegistryMux(failingClient{}) }
+
 // fakeSessionReader is a rundex.SessionReader returning canned sessions.
 type fakeSessionReader struct {
 	sessions []schema.AgentSession
@@ -163,7 +175,7 @@ func TestPackageHandler(t *testing.T) {
 		{ID: "old-session", Target: rebuild.Target{Ecosystem: "npm", Package: "a", Version: "1"}, Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonFailed, Created: t0},
 		{ID: "new-session", Target: rebuild.Target{Ecosystem: "npm", Package: "a", Version: "2"}, Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonSuccess, Summary: "Build successful", Created: t2},
 	}}
-	deps := &Deps{Rundex: rebuilds, Sessions: sessions}
+	deps := &Deps{Rundex: rebuilds, Sessions: sessions, Registry: unreachableRegistry()}
 	got, err := Package(context.Background(), PackageRequest{Ecosystem: "npm", Package: "a"}, deps)
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +210,7 @@ func TestPackageHandlerNilSessions(t *testing.T) {
 	// A nil session reader should still render the page with only rebuilds.
 	deps := &Deps{Rundex: &fakeReader{recent: []rundex.Rebuild{
 		{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "1", RunID: "run1"}},
-	}}}
+	}}, Registry: unreachableRegistry()}
 	got, err := Package(context.Background(), PackageRequest{Ecosystem: "npm", Package: "a"}, deps)
 	if err != nil {
 		t.Fatal(err)
@@ -223,6 +235,7 @@ func TestPackageHandlerFilteredTimelines(t *testing.T) {
 		Sessions: &fakeSessionReader{sessions: []schema.AgentSession{
 			{ID: "s1", Target: rebuild.Target{Ecosystem: "npm", Package: "a", Version: "1"}, Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonSuccess, Created: t0},
 		}},
+		Registry: unreachableRegistry(),
 	}
 	got, err := Package(context.Background(), PackageRequest{Ecosystem: "npm", Package: "a"}, deps)
 	if err != nil {
@@ -246,5 +259,35 @@ func TestPackageHandlerFilteredTimelines(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered output missing %q", want)
 		}
+	}
+}
+
+func TestPackageHandlerVersionListingFailure(t *testing.T) {
+	// A failed lookup must be distinguishable from an ecosystem that has no
+	// lister, since only one of the two is worth telling the reader about.
+	deps := &Deps{
+		Rundex: &fakeReader{recent: []rundex.Rebuild{
+			{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "1", RunID: "run1"}},
+		}},
+		Registry: unreachableRegistry(),
+	}
+	got, err := Package(context.Background(), PackageRequest{Ecosystem: "npm", Package: "a"}, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Warning == "" {
+		t.Error("expected a warning for a failed version lookup")
+	}
+	if got.Summary.Supported {
+		t.Error("a failed lookup must not report the version history as enumerable")
+	}
+
+	// An ecosystem with no lister degrades identically but stays quiet.
+	got, err = Package(context.Background(), PackageRequest{Ecosystem: "debian", Package: "curl"}, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Warning != "" {
+		t.Errorf("no-lister case should not warn, got %q", got.Warning)
 	}
 }

@@ -78,6 +78,7 @@ type Deps struct {
 	Tracked       feed.TrackedPackageIndex
 	BenchmarkName string
 	SuccessRegex  *regexp.Regexp
+	Registry      rebuild.RegistryMux // enumerates published versions for status
 }
 
 type RebuildView struct {

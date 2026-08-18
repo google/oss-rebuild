@@ -8,7 +8,7 @@
     <div class="cards">
         <div class="card">
             <div class="card-value">{{.Summary.VerifiedPct}}%</div>
-            <div class="card-label">verified of {{.Summary.Attempted}} attempted</div>
+            <div class="card-label">verified{{if .Summary.Supported}} of {{.Summary.TotalVersions}} versions{{else}} of {{.Summary.Attempted}} attempted{{end}}</div>
         </div>
         <div class="card">
             <div class="card-value">{{.Summary.Verified}}</div>
@@ -23,6 +23,10 @@
             <div class="card-label">running</div>
         </div>
         <div class="card">
+            <div class="card-value">{{.Summary.NeedsAttention}}</div>
+            <div class="card-label">regressions</div>
+        </div>
+        <div class="card">
             <div class="card-value">{{.Summary.AgentRuns}}</div>
             <div class="card-label">agent runs</div>
         </div>
@@ -30,7 +34,7 @@
 
     {{if .Versions}}
     <div class="strip-head">
-        <span>Versions (most recently active first) &middot; {{.WindowFrom}}-{{.WindowTo}} of {{.Summary.Attempted}}</span>
+        <span>Versions ({{if .Summary.Supported}}newest to oldest{{else}}most recently active first{{end}}) &middot; {{.WindowFrom}}-{{.WindowTo}} of {{if .Summary.Supported}}{{.Summary.TotalVersions}}{{else}}{{.Summary.Attempted}}{{end}}</span>
         <span class="strip-nav">
             {{/* TODO: Move these client-side */}}
             {{if .Expanded}}<a href="?offset={{.Offset}}">Collapse</a>{{else}}<a href="?offset={{.Offset}}&expanded=1">Expand</a>{{end}}
@@ -40,16 +44,20 @@
     </div>
     <div class="strip{{if .Expanded}} expanded{{end}}">
         {{range .Versions}}
-        <a class="cell state-{{.State}}"
+        <a class="cell state-{{.State}}{{if .Regressed}} state-regressed{{end}}"
            href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}"
-           title="{{.Version}} &middot; {{.State}}{{if .Agent}} &middot; agent {{.Agent}}{{end}}"></a>
+           title="{{.Version}} &middot; {{.State}}{{if .Regressed}} (regressed){{end}}{{if .Agent}} &middot; agent {{.Agent}}{{end}}"></a>
         {{end}}
     </div>
     <div class="legend">
         <span class="legend-item"><span class="legend-swatch state-verified"></span>verified</span>
         <span class="legend-item"><span class="legend-swatch state-failed"></span>failed</span>
         <span class="legend-item"><span class="legend-swatch state-running"></span>running</span>
+        <span class="legend-item"><span class="legend-swatch state-untried"></span>untried</span>
+        <span class="legend-item"><span class="legend-swatch state-regressed"></span>regression</span>
     </div>
+    {{if .Warning}}<p class="hint">{{.Warning}}</p>
+    {{else if not .Summary.Supported}}<p class="hint">Version enumeration isn't available for this ecosystem, showing attempted versions only.</p>{{end}}
     {{end}}
 {{define "eventTable"}}
     {{if .}}
@@ -146,7 +154,7 @@
                     {{range .Versions}}
                     <tr>
                         <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}">{{.Version}}</a></td>
-                        <td><span class="badge state-{{.State}}">{{.State}}</span></td>
+                        <td><span class="badge state-{{.State}}">{{.State}}</span>{{if .Regressed}} <span class="badge state-regressed">regressed</span>{{end}}</td>
                         <td>{{if .Agent}}{{.Agent}}{{else}}-{{end}}</td>
                         <td>{{.Attempts}}</td>
                         <td>{{.Sessions}}</td>
