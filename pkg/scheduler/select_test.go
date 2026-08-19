@@ -54,6 +54,18 @@ func TestSelect(t *testing.T) {
 			caps:   Caps{Agent: 1},
 			want:   []string{"a1", "i1"},
 		},
+		{
+			name:   "BuildCapPassesOver",
+			queued: []Campaign{campaign("i1", StageInfer, 0.9, 0), campaign("i2", StageInfer, 0.8, 0), campaign("a1", StageAgent, 0.1, 0)},
+			caps:   Caps{Build: 1},
+			want:   []string{"i1", "a1"},
+		},
+		{
+			name:   "CapNoneAdmitsNone",
+			queued: []Campaign{campaign("a1", StageAgent, 0.9, 0), campaign("i1", StageInfer, 0.1, 0)},
+			caps:   Caps{Agent: CapNone},
+			want:   []string{"i1"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var got []string

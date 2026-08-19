@@ -9,10 +9,19 @@ import (
 	"time"
 )
 
-// Caps bound one dispatch pass. Zero means unbounded.
+// Caps bound one dispatch pass. Zero means unbounded and CapNone admits none.
 type Caps struct {
 	Batch int // dispatches of any stage
+	Build int // dispatches at the build stages
 	Agent int // dispatches at StageAgent, the rationed stage
+}
+
+// CapNone is the cap of a pool with no room left.
+const CapNone = -1
+
+// full reports whether used dispatches exhaust limit.
+func full(limit, used int) bool {
+	return limit < 0 || (limit > 0 && used >= limit)
 }
 
 // Order sorts campaigns by DispatchOrder as of now, highest first, ties
@@ -30,20 +39,25 @@ func Order(cs []Campaign, now time.Time, k, tauHours float64) []Campaign {
 }
 
 // Select returns the queued campaigns one pass dispatches: the ordered prefix
-// that fits under caps. An agent campaign over the agent cap is passed over
-// rather than ending the pass, so cheaper stages behind it still run.
+// that fits under caps. A campaign over its stage's cap is passed over rather
+// than ending the pass, so the other stage's campaigns behind it still run.
 func Select(queued []Campaign, caps Caps, now time.Time, k, tauHours float64) []Campaign {
 	var out []Campaign
-	var agents int
+	var builds, agents int
 	for _, c := range Order(queued, now, k, tauHours) {
 		if caps.Batch > 0 && len(out) >= caps.Batch {
 			break
 		}
 		if c.Stage == StageAgent {
-			if caps.Agent > 0 && agents >= caps.Agent {
+			if full(caps.Agent, agents) {
 				continue
 			}
 			agents++
+		} else {
+			if full(caps.Build, builds) {
+				continue
+			}
+			builds++
 		}
 		out = append(out, c)
 	}
