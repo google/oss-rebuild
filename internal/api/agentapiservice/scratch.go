@@ -124,10 +124,10 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 	}
 
 	// insertWithFallthrough sets scratch.Zone whenever a VM may exist and
-	// leaves it "" when none can (every zone stocked out), and
-	// deleteScratch deletes no VM for a record without a zone.
+	// leaves it "" when none can (every zone stocked out), so cleanup
+	// needs no zone sweep.
 	cleanup := func() {
-		if err := deleteScratch(context.Background(), deps.Scratches, deps.GCE, scratch); err != nil {
+		if err := deleteScratch(context.Background(), deps.Scratches, deps.GCE, scratch, nil); err != nil {
 			log.Printf("scratch %s teardown: %v", scratchID, err)
 		}
 	}
@@ -176,7 +176,8 @@ func ScratchGet(ctx context.Context, req schema.ScratchGetRequest, deps *Scratch
 }
 
 // ScratchDelete tears down the scratch's VM and records it as Deleted.
-// The record is kept for audit.
+// The record is kept for audit. A failed VM delete leaves it Deleting for
+// the reaper to retry.
 func ScratchDelete(ctx context.Context, req schema.ScratchDeleteRequest, deps *ScratchDeleteDeps) (*schema.ScratchDeleteResponse, error) {
 	scratch, err := deps.Scratches.Get(ctx, req.ScratchID)
 	if err != nil {
@@ -185,26 +186,36 @@ func ScratchDelete(ctx context.Context, req schema.ScratchDeleteRequest, deps *S
 		}
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "scratches get"))
 	}
-	if err := deleteScratch(ctx, deps.Scratches, deps.GCE, scratch); err != nil {
+	if err := deleteScratch(ctx, deps.Scratches, deps.GCE, scratch, nil); err != nil {
 		return nil, api.AsStatus(codes.Internal, err)
 	}
 	return &schema.ScratchDeleteResponse{ScratchID: scratch.ID, State: schema.ScratchDeleted}, nil
 }
 
-// deleteScratch is the only path into Deleting and Deleted: the record is
-// marked Deleting, the VM is deleted, and the record advances to Deleted.
-// A failed instance delete is logged and the record still advances. The
-// Deleting write bumps Updated, which keeps the record out of the reaper's
-// stuck sweep for IdleThreshold while this delete runs.
-func deleteScratch(ctx context.Context, scratches db.Scratch, gce GCE, scratch schema.Scratch) error {
+// deleteScratch is the only path into Deleting and Deleted. The record is
+// marked Deleting, the VM is deleted, and only once the VM is confirmed
+// gone does the record advance to Deleted, so any failure leaves it
+// Deleting for the reaper's stuck sweep. The Deleting write bumps Updated,
+// which keeps the record out of that sweep for IdleThreshold while this
+// delete runs.
+//
+// zones is where the VM may sit when the record carries no zone, which
+// only a create that died before persisting placement produces. Callers
+// whose record has a zone, or never had a VM, pass nil.
+func deleteScratch(ctx context.Context, scratches db.Scratch, gce GCE, scratch schema.Scratch, zones []string) error {
 	if scratch.State != schema.ScratchDeleting {
 		if err := scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleting); err != nil {
 			return errors.Wrap(err, "marking deleting")
 		}
 	}
-	if scratch.VMName != "" && scratch.Zone != "" {
-		if err := gce.DeleteInstance(ctx, scratch.Zone, scratch.VMName); err != nil {
-			log.Printf("scratch %s: DeleteInstance(%s/%s): %v", scratch.ID, scratch.Zone, scratch.VMName, err)
+	if scratch.Zone != "" {
+		zones = []string{scratch.Zone}
+	}
+	if scratch.VMName != "" {
+		for _, zone := range zones {
+			if err := gce.DeleteInstance(ctx, zone, scratch.VMName); err != nil {
+				return errors.Wrapf(err, "deleting instance %s/%s", zone, scratch.VMName)
+			}
 		}
 	}
 	if err := scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleted); err != nil {

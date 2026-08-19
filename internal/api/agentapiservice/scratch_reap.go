@@ -41,6 +41,7 @@ type ScratchReapDeps struct {
 	// before the scratch is torn down or the op declared expired. nil
 	// finalizes such ops blind.
 	Syncer Syncer
+	Zones  []string // zones a VM may sit in when its record has none (see deleteScratch)
 	// IdleThreshold is how long a scratch may go without a write before
 	// the reaper takes it (see db.ScratchIdleSince).
 	IdleThreshold time.Duration // default: 30m
@@ -121,7 +122,7 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		if !db.ScratchIdleSince(cur, idleCutoff) {
 			continue
 		}
-		if err := deleteScratch(ctx, deps.Scratches, deps.GCE, cur); err != nil {
+		if err := deleteScratch(ctx, deps.Scratches, deps.GCE, cur, deps.Zones); err != nil {
 			log.Printf("reap teardown scratch %s: %v", scratch.ID, err)
 			continue
 		}
