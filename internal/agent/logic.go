@@ -339,7 +339,7 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 		"Finally, if you don't find the URL, just return an empty string.",
 	}
 	repoURL, usage, err := llm.GenerateTextContentWithUsage(ctx, a.deps.GenaiClient, cmp.Or(a.deps.Model, llm.GeminiPro), &genai.GenerateContentConfig{
-		Temperature: genai.Ptr(float32(0.0)),
+		Temperature: new(float32(0.0)),
 		Tools: []*genai.Tool{
 			{GoogleSearch: &genai.GoogleSearch{}},
 		},
@@ -694,15 +694,13 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 	}
 	a.thoughts = append(a.thoughts, thought)
 	// TODO: Try to format the bash script into a structured strategy?
-	strat := rebuild.ManualStrategy{
+	return new(schema.NewStrategyOneOf(&rebuild.ManualStrategy{
 		Location:   a.loc,
 		Requires:   prev.Instructions.Requires,
 		Deps:       prev.Instructions.Deps,
 		Build:      thought.UpdatedScript,
 		OutputPath: prev.Instructions.OutputPath,
-	}
-	stratOneOf := schema.NewStrategyOneOf(&strat)
-	return &stratOneOf, nil
+	})), nil
 }
 
 func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {

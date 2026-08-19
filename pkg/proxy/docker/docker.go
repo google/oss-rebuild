@@ -136,8 +136,7 @@ func createFile(fs dockerfs.Filesystem, content []byte, path string) error {
 	if err != nil {
 		return errors.Wrap(err, "constructing file header")
 	}
-	f := dockerfs.File{Path: path, Metadata: *hdr, Contents: content}
-	return fs.WriteFile(&f)
+	return fs.WriteFile(&dockerfs.File{Path: path, Metadata: *hdr, Contents: content})
 }
 
 func addBinding(imageSpec []byte, from, to, mode string) (newSpec []byte, err error) {

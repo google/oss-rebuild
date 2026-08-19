@@ -216,8 +216,7 @@ func TestRebuildByproducts_UnmarshalErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var restored RebuildByproducts
-			err := json.Unmarshal([]byte(tt.input), &restored)
+			err := json.Unmarshal([]byte(tt.input), new(RebuildByproducts))
 			if err == nil {
 				t.Error("Expected error but got none")
 			}
@@ -313,8 +312,7 @@ func TestArtifactEquivalenceByproducts_UnmarshalErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var restored ArtifactEquivalenceByproducts
-			err := json.Unmarshal([]byte(tt.input), &restored)
+			err := json.Unmarshal([]byte(tt.input), new(ArtifactEquivalenceByproducts))
 			if err == nil {
 				t.Error("Expected error but got none")
 			}

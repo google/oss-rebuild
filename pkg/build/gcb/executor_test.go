@@ -570,8 +570,6 @@ func TestGCBExecutorFailedBuild(t *testing.T) {
 	}
 }
 
-func durPtr(d time.Duration) *time.Duration { return &d }
-
 func TestExecutorTimings(t *testing.T) {
 	ctx := context.Background()
 	goodStepLog := `+ docker inspect --format {{.State.StartedAt}} {{.State.FinishedAt}} container
@@ -598,10 +596,10 @@ func TestExecutorTimings(t *testing.T) {
 			stepLog: goodStepLog,
 			status:  "SUCCESS",
 			want: &rebuild.BuildTimings{
-				Setup:  durPtr(10 * time.Second), // setup layer completion - step start
-				Source: durPtr(20 * time.Second), // source layer completion delta
-				Deps:   durPtr(40 * time.Second), // deps layer completion delta
-				Build:  durPtr(24 * time.Second), // container FinishedAt - StartedAt
+				Setup:  new(10 * time.Second), // setup layer completion - step start
+				Source: new(20 * time.Second), // source layer completion delta
+				Deps:   new(40 * time.Second), // deps layer completion delta
+				Build:  new(24 * time.Second), // container FinishedAt - StartedAt
 			},
 		},
 		{
@@ -620,10 +618,10 @@ func TestExecutorTimings(t *testing.T) {
 			exitCode: runFailureExitCode,
 			wantErr:  true,
 			want: &rebuild.BuildTimings{
-				Setup:    durPtr(10 * time.Second),
-				Source:   durPtr(20 * time.Second),
-				Deps:     durPtr(40 * time.Second),
-				Build:    durPtr(24 * time.Second),
+				Setup:    new(10 * time.Second),
+				Source:   new(20 * time.Second),
+				Deps:     new(40 * time.Second),
+				Build:    new(24 * time.Second),
 				FailedIn: rebuild.PhaseBuild,
 			},
 		},
@@ -636,10 +634,10 @@ func TestExecutorTimings(t *testing.T) {
 			exitCode: runFailureExitCode,
 			wantErr:  true,
 			want: &rebuild.BuildTimings{
-				Setup:    durPtr(10 * time.Second),
-				Source:   durPtr(20 * time.Second),
-				Deps:     durPtr(40 * time.Second),
-				Build:    durPtr(24 * time.Second),
+				Setup:    new(10 * time.Second),
+				Source:   new(20 * time.Second),
+				Deps:     new(40 * time.Second),
+				Build:    new(24 * time.Second),
 				FailedIn: rebuild.PhaseBuild,
 			},
 		},

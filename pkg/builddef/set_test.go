@@ -63,16 +63,15 @@ func TestFilesystemBuildDefinitionSet_Get(t *testing.T) {
 				asset := rebuild.BuildDef.For(target)
 				assetPath := filepath.Dir(asset.Target.Artifact)
 				orDie(fs.MkdirAll(assetPath, 0755))
-				strategyOneOf := schema.NewStrategyOneOf(&rebuild.LocationHint{
+				f := must(fs.Create("/npm/test-package/1.0.0/test-package-1.0.0.tgz/build.yaml"))
+				defer f.Close()
+				orDie(yaml.NewEncoder(f).Encode(schema.BuildDefinition{StrategyOneOf: new(schema.NewStrategyOneOf(&rebuild.LocationHint{
 					Location: rebuild.Location{
 						Repo: "https://github.com/test/repo",
 						Ref:  "main",
 						Dir:  ".",
 					},
-				})
-				f := must(fs.Create("/npm/test-package/1.0.0/test-package-1.0.0.tgz/build.yaml"))
-				defer f.Close()
-				orDie(yaml.NewEncoder(f).Encode(schema.BuildDefinition{StrategyOneOf: &strategyOneOf}))
+				}))}))
 			},
 			target: rebuild.Target{
 				Ecosystem: rebuild.NPM,

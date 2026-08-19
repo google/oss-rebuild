@@ -678,10 +678,6 @@ RLpmHHG1JOVdOA==
 			tempDir := must(os.MkdirTemp("", "test-*"))
 			defer os.RemoveAll(tempDir)
 			var gfs osfs.BoundOS
-			repoOpts := gitxtest.RepositoryOptions{
-				Worktree: must(gfs.Chroot(tempDir)),
-				Storer:   filesystem.NewStorage(must(gfs.Chroot(path.Join(tempDir, ".git"))), cache.NewObjectLRUDefault()),
-			}
 			d.BuildDefRepo = rebuild.Location{
 				Repo: "file://" + tempDir,
 				Ref:  plumbing.Master.String(),
@@ -702,13 +698,16 @@ RLpmHHG1JOVdOA==
 				return &schema.VersionResponse{Version: "test-infer-v1"}, nil
 			}
 			if tc.buildDef != nil {
-				path := must(builddef.NewFilesystemBuildDefinitionSet(memfs.New()).Path(ctx, tc.target))
-				relpath := path[1:]
+				defPath := must(builddef.NewFilesystemBuildDefinitionSet(memfs.New()).Path(ctx, tc.target))
+				relpath := defPath[1:]
 				buildDef := string(must(yaml.Marshal(tc.buildDef)))
 				commits := []gitxtest.Commit{
 					{Files: gitxtest.FileContent{relpath: buildDef}},
 				}
-				must(gitxtest.CreateRepo(commits, &repoOpts))
+				must(gitxtest.CreateRepo(commits, &gitxtest.RepositoryOptions{
+					Worktree: must(gfs.Chroot(tempDir)),
+					Storer:   filesystem.NewStorage(must(gfs.Chroot(path.Join(tempDir, ".git"))), cache.NewObjectLRUDefault()),
+				}))
 			}
 
 			req := schema.RebuildPackageRequest{
@@ -827,8 +826,6 @@ RLpmHHG1JOVdOA==
 	}
 }
 
-func durPtr(d time.Duration) *time.Duration { return &d }
-
 func TestAttemptCosts(t *testing.T) {
 	buildStart := time.Date(2024, 5, 8, 15, 0, 0, 0, time.UTC)
 	buildEnd := buildStart.Add(23 * time.Minute)
@@ -855,7 +852,7 @@ func TestAttemptCosts(t *testing.T) {
 		},
 		{
 			name:     "InferAndJumboHint",
-			verdict:  &schema.Verdict{Target: target, Timings: rebuild.Timings{Infer: durPtr(4 * time.Second)}},
+			verdict:  &schema.Verdict{Target: target, Timings: rebuild.Timings{Infer: new(4 * time.Second)}},
 			info:     rebuild.BuildInfo{BuildStart: buildStart, BuildEnd: buildEnd},
 			sizeHint: schema.JumboSize,
 			want:     &schema.AttemptCosts{InferenceSeconds: 4, BuilderSeconds: 1380, BuilderPool: schema.JumboSize},
@@ -869,7 +866,7 @@ func TestAttemptCosts(t *testing.T) {
 		},
 		{
 			name:    "InferWithoutBuilderWindow",
-			verdict: &schema.Verdict{Target: target, Timings: rebuild.Timings{Infer: durPtr(7 * time.Second)}},
+			verdict: &schema.Verdict{Target: target, Timings: rebuild.Timings{Infer: new(7 * time.Second)}},
 			info:    rebuild.BuildInfo{},
 			want:    &schema.AttemptCosts{InferenceSeconds: 7},
 		},

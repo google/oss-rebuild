@@ -32,8 +32,7 @@ var (
 	// copyBufs is a pool of 32KiB []byte slices, used to compute hashes.
 	copyBufs = sync.Pool{
 		New: func() any {
-			buf := make([]byte, 32*1024)
-			return &buf
+			return new(make([]byte, 32*1024))
 		},
 	}
 )

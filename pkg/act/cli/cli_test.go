@@ -48,13 +48,12 @@ func TestSkipArgs(t *testing.T) {
 }
 
 func TestRunE(t *testing.T) {
-	cfg := TestConfig{Name: "World"}
 
 	// Create a cobra command with our RunE
 	cmd := &cobra.Command{
 		Use: "test",
 		RunE: RunE(
-			&cfg,
+			&TestConfig{Name: "World"},
 			SkipArgs[TestConfig],
 			testInitDeps,
 			testAction,

@@ -61,8 +61,6 @@ func testOptions() build.Options {
 	}
 }
 
-func durPtr(d time.Duration) *time.Duration { return &d }
-
 func testExecutorConfig(f *fakeStubs) ExecutorConfig {
 	return ExecutorConfig{
 		ScratchID:    "s1",
@@ -151,8 +149,7 @@ func awaitBuild(t *testing.T, e build.Executor, opts build.Options) build.Result
 
 func TestPhaseOutcome(t *testing.T) {
 	isInfra := func(err error) bool {
-		var exitErr *ExitError
-		return err != nil && !errors.As(err, &exitErr) && !errors.Is(err, context.DeadlineExceeded)
+		return err != nil && !errors.As(err, new(*ExitError)) && !errors.Is(err, context.DeadlineExceeded)
 	}
 	for _, tt := range []struct {
 		name  string

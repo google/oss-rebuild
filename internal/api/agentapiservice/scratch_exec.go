@@ -171,8 +171,7 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 		if ferr != nil {
 			return nil, api.AsStatus(codes.Internal, errors.Wrapf(ferr, "scratch %q exec %q", req.ScratchID, opID))
 		}
-		op := ProjectScratchExec(exec)
-		return &op, nil
+		return new(ProjectScratchExec(exec)), nil
 	}
 
 	// Bump LastUsed so a future reaper doesn't pick up a freshly-dispatched
@@ -185,8 +184,7 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 		exec = optimisticWait(ctx, deps.Syncer, exec, scratch, time.Duration(req.WaitSeconds)*time.Second)
 	}
 
-	op := ProjectScratchExec(exec)
-	return &op, nil
+	return new(ProjectScratchExec(exec)), nil
 }
 
 // Bounds for the optimistic wait in ScratchExecCreate. The wait exists to
@@ -246,8 +244,7 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "execs get"))
 	}
 	if exec.State != schema.ScratchExecPending || deps.Syncer == nil || exec.ScratchID == "" {
-		op := ProjectScratchExec(exec)
-		return &op, nil
+		return new(ProjectScratchExec(exec)), nil
 	}
 
 	scratch, err := deps.Scratches.Get(ctx, exec.ScratchID)
@@ -260,8 +257,7 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 		if ferr != nil {
 			return nil, api.AsStatus(codes.Internal, errors.Wrapf(ferr, "exec %q", exec.ID))
 		}
-		op := ProjectScratchExec(exec)
-		return &op, nil
+		return new(ProjectScratchExec(exec)), nil
 	}
 	if scratch.State != schema.ScratchReady {
 		log.Printf("exec %q: scratch %q not ready (state=%s)", exec.ID, exec.ScratchID, scratch.State)
@@ -272,8 +268,7 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 		if ferr != nil {
 			return nil, api.AsStatus(codes.Internal, errors.Wrapf(ferr, "exec %q", exec.ID))
 		}
-		op := ProjectScratchExec(exec)
-		return &op, nil
+		return new(ProjectScratchExec(exec)), nil
 	}
 
 	synced, err := deps.Syncer.Sync(ctx, exec, scratch)
@@ -286,8 +281,7 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 		if ferr != nil {
 			return nil, api.AsStatus(codes.Internal, errors.Wrapf(ferr, "exec %q", exec.ID))
 		}
-		op := ProjectScratchExec(exec)
-		return &op, nil
+		return new(ProjectScratchExec(exec)), nil
 	}
 	// Bump LastUsed when this poll observed the Pending→terminal transition:
 	// a long exec finishes with LastUsed still at dispatch time, and without
@@ -299,8 +293,7 @@ func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *S
 			log.Printf("exec %q: update last_used: %v", exec.ID, err)
 		}
 	}
-	op := ProjectScratchExec(synced)
-	return &op, nil
+	return new(ProjectScratchExec(synced)), nil
 }
 
 // SyncStep is one bucket in a SyncSchedule. Until is the upper bound on

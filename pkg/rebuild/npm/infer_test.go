@@ -434,12 +434,6 @@ func TestInferStrategy_NPM(t *testing.T) {
 				Version:   tc.version,
 			}
 			target.Artifact = ArtifactName(target)
-			rcfg := rebuild.RepoConfig{
-				Repo:   gitx.Repo{Repository: repo.Repository},
-				URI:    "https://github.com/test-org/test-package",
-				Dir:    "",
-				RefMap: map[string]string{"1.0.0": repo.Commits["version-bump"].String()},
-			}
 			client := httpxtest.MockClient{
 				Calls: []httpxtest.Call{
 					{
@@ -462,7 +456,12 @@ func TestInferStrategy_NPM(t *testing.T) {
 				})
 			}
 			mux := rebuild.RegistryMux{NPM: &reg.HTTPRegistry{Client: &client}}
-			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, tc.locationHint)
+			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rebuild.RepoConfig{
+				Repo:   gitx.Repo{Repository: repo.Repository},
+				URI:    "https://github.com/test-org/test-package",
+				Dir:    "",
+				RefMap: map[string]string{"1.0.0": repo.Commits["version-bump"].String()},
+			}, tc.locationHint)
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)

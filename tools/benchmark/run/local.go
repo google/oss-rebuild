@@ -154,8 +154,7 @@ func (s *localExecutionService) Infer(ctx context.Context, req schema.InferenceR
 	if err != nil {
 		return nil, err
 	}
-	strat := schema.NewStrategyOneOf(strategy)
-	return &strat, nil
+	return new(schema.NewStrategyOneOf(strategy)), nil
 }
 
 type buildOpts struct {

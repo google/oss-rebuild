@@ -397,8 +397,7 @@ func (a RebuildAttempt) Target() rebuild.Target {
 func (a RebuildAttempt) Timings() rebuild.Timings {
 	t := rebuild.Timings{Build: a.BuildTimings}
 	if a.Costs != nil && a.Costs.InferenceSeconds > 0 {
-		d := time.Duration(a.Costs.InferenceSeconds * float64(time.Second))
-		t.Infer = &d
+		t.Infer = new(time.Duration(a.Costs.InferenceSeconds * float64(time.Second)))
 	}
 	return t
 }

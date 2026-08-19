@@ -401,7 +401,7 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 				var config *genai.GenerateContentConfig
 				{
 					config = &genai.GenerateContentConfig{
-						Temperature:     genai.Ptr(float32(0.1)),
+						Temperature:     new(float32(0.1)),
 						MaxOutputTokens: int32(16000),
 					}
 					systemPrompt := []*genai.Part{
@@ -540,7 +540,7 @@ func NewRebuildGroupCmds(app *tview.Application, executor build.Executor, prebui
 				var config *genai.GenerateContentConfig
 				{
 					config = &genai.GenerateContentConfig{
-						Temperature:     genai.Ptr(float32(0.1)),
+						Temperature:     new(float32(0.1)),
 						MaxOutputTokens: int32(16000),
 					}
 					systemPrompt := []*genai.Part{
@@ -753,9 +753,8 @@ func NewBenchmarkCmds(app *tview.Application, executor build.Executor, prebuildC
 				}
 				onSelect := func(rebuild rundex.Rebuild) {
 					log.Println("Loading history for", rebuild.ID())
-					t := rebuild.Target()
 					rebuildsOfTarget, err := dex.FetchRebuilds(context.Background(), &rundex.FetchRebuildRequest{
-						Target: &t,
+						Target: new(rebuild.Target()),
 						Opts:   rundex.FetchRebuildOpts{},
 					})
 					if err != nil {

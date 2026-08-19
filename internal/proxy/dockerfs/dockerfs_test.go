@@ -57,13 +57,12 @@ func TestOpen(t *testing.T) {
 	wantContents := "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.16.0\n"
 	wantStat := FileInfo{name: "release", mode: fs.ModePerm, size: int64(len(wantContents)), modTime: someTime}
 	osTarBytes := makeOpen(t, wantStat, wantContents, "")
-	c := httpxtest.MockClient{
+	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
 			{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
-	}
-	f := Filesystem{Client: &c, Container: "abc"}
+	}, Container: "abc"}
 	got := must(f.Open("/etc/release"))
 	if string(got.Contents) != wantContents {
 		t.Fatalf("Unexpected Open contents: want=%s got=%s", wantContents, string(got.Contents))
@@ -82,13 +81,12 @@ func TestOpen(t *testing.T) {
 
 func TestStat(t *testing.T) {
 	want := FileInfo{name: "release", mode: fs.ModePerm, size: 12, modTime: someTime}
-	c := httpxtest.MockClient{
+	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
 			{Method: "HEAD", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, want))}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
-	}
-	f := Filesystem{Client: &c, Container: "abc"}
+	}, Container: "abc"}
 	got := must(f.Stat("/etc/release"))
 	if *got != want {
 		t.Fatalf("Unexpected Stat result: want=%v got=%v", want, *got)
@@ -104,13 +102,12 @@ func TestStatHeaderNonURLSafe(t *testing.T) {
 	if !strings.ContainsAny(encoded, "+/") {
 		t.Fatalf("Test payload must exercise std-only base64 chars: %s", encoded)
 	}
-	c := httpxtest.MockClient{
+	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
 			{Method: "HEAD", URL: "/containers/abc/archive?path=/tmp/cache~", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, encoded)}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
-	}
-	f := Filesystem{Client: &c, Container: "abc"}
+	}, Container: "abc"}
 	got := must(f.Stat("/tmp/cache~"))
 	if *got != want {
 		t.Fatalf("Unexpected Stat result: want=%v got=%v", want, *got)
@@ -122,15 +119,14 @@ func TestOpenAndResolve(t *testing.T) {
 	wantContents := "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.16.0\n"
 	wantStat := FileInfo{name: "os-release", mode: fs.ModePerm, size: int64(len(wantContents)), modTime: someTime}
 	osTarBytes := makeOpen(t, wantStat, wantContents, "")
-	c := httpxtest.MockClient{
+	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
 			{Method: "HEAD", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, symStat))}},
 			{Method: "HEAD", URL: "/containers/abc/archive?path=/os-release", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, wantStat))}},
 			{Method: "GET", URL: "/containers/abc/archive?path=/os-release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
-	}
-	f := Filesystem{Client: &c, Container: "abc"}
+	}, Container: "abc"}
 	got := must(f.OpenAndResolve("/etc/release"))
 	if string(got.Contents) != wantContents {
 		t.Fatalf("Unexpected OpenAndResolve contents: want=%s got=%s", wantContents, string(got.Contents))
@@ -153,14 +149,13 @@ func TestResolve(t *testing.T) {
 	wantContents := "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.16.0\n"
 	wantStat := FileInfo{name: "os-release", mode: fs.ModePerm, size: int64(len(wantContents)), modTime: someTime}
 	osTarBytes := makeOpen(t, wantStat, wantContents, "")
-	c := httpxtest.MockClient{
+	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
 			{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(symTarBytes))}},
 			{Method: "GET", URL: "/containers/abc/archive?path=/os-release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
-	}
-	f := Filesystem{Client: &c, Container: "abc"}
+	}, Container: "abc"}
 	got := must(f.Open("/etc/release"))
 	if got.Metadata.FileInfo().Mode() != symStat.Mode() {
 		t.Fatalf("Unexpected Open symlink Mode: want=%v got=%v", symStat.Mode(), got.Metadata.FileInfo().Mode())
@@ -185,14 +180,13 @@ func TestWriteFile(t *testing.T) {
 	wantContents := "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.16.0\n"
 	wantStat := FileInfo{name: "release", mode: fs.ModePerm, size: int64(len(wantContents)), modTime: someTime}
 	osTarBytes := makeOpen(t, wantStat, wantContents, "")
-	c := httpxtest.MockClient{
+	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
 			{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 			{Method: "PUT", URL: "/containers/abc/archive?path=/etc", Response: &http.Response{StatusCode: http.StatusOK}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
-	}
-	f := Filesystem{Client: &c, Container: "abc"}
+	}, Container: "abc"}
 	got := must(f.Open("/etc/release"))
 	if string(got.Contents) != wantContents {
 		t.Fatalf("Unexpected Open contents: want=%s got=%s", wantContents, string(got.Contents))

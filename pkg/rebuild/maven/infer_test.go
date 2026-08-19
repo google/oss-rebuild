@@ -471,8 +471,7 @@ func TestGitIndexScan(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
 
-			var buf bytes.Buffer
-			zw := zip.NewWriter(&buf)
+			zw := zip.NewWriter(new(bytes.Buffer))
 			for _, entry := range tc.zipEntries {
 				if err := entry.WriteTo(zw); err != nil {
 					t.Fatalf("WriteTo() error: %v", err)

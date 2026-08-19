@@ -220,7 +220,7 @@ func TestTimingsFromWorkerStamps(t *testing.T) {
 	if result.Error != nil {
 		t.Fatalf("Result.Error = %v, want success", result.Error)
 	}
-	want := &rebuild.BuildTimings{Setup: durPtr(time.Second), Source: durPtr(2 * time.Second), Deps: durPtr(3 * time.Second), Build: durPtr(4 * time.Second)}
+	want := &rebuild.BuildTimings{Setup: new(time.Second), Source: new(2 * time.Second), Deps: new(3 * time.Second), Build: new(4 * time.Second)}
 	if diff := cmp.Diff(want, result.Timings); diff != "" {
 		t.Errorf("Timings mismatch (-want +got):\n%s", diff)
 	}
@@ -262,7 +262,7 @@ func TestTimingsPartialOnPhaseFailure(t *testing.T) {
 	if !errors.As(result.Error, &exitErr) || exitErr.Phase != "deps" {
 		t.Fatalf("Result.Error = %v, want ExitError in deps", result.Error)
 	}
-	want := &rebuild.BuildTimings{Setup: durPtr(time.Second), Source: durPtr(2 * time.Second), Deps: durPtr(3 * time.Second), FailedIn: rebuild.PhaseDeps}
+	want := &rebuild.BuildTimings{Setup: new(time.Second), Source: new(2 * time.Second), Deps: new(3 * time.Second), FailedIn: rebuild.PhaseDeps}
 	if diff := cmp.Diff(want, result.Timings); diff != "" {
 		t.Errorf("Timings mismatch (-want +got):\n%s", diff)
 	}
@@ -290,7 +290,7 @@ func TestTimingsPartialOnUnstampedFailure(t *testing.T) {
 	if result.Error == nil {
 		t.Fatal("Expected error, got success")
 	}
-	want := &rebuild.BuildTimings{Setup: durPtr(time.Second), Source: durPtr(2 * time.Second), FailedIn: rebuild.PhaseDeps}
+	want := &rebuild.BuildTimings{Setup: new(time.Second), Source: new(2 * time.Second), FailedIn: rebuild.PhaseDeps}
 	if diff := cmp.Diff(want, result.Timings); diff != "" {
 		t.Errorf("Timings mismatch (-want +got):\n%s", diff)
 	}

@@ -859,12 +859,6 @@ version = 3
 			}
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repo, nil))
 			target := rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"}
-			rcfg := rebuild.RepoConfig{
-				Repo:   gitx.Repo{Repository: repo.Repository},
-				URI:    "https://github.com/serde-rs/serde",
-				Dir:    "",
-				RefMap: map[string]string{"1.0.150": repo.Commits["version-bump"].String()},
-			}
 			files := tc.files
 			if tc.filesFn != nil {
 				files = tc.filesFn(repo)
@@ -873,7 +867,7 @@ version = 3
 			if tc.hintFn != nil {
 				hint = tc.hintFn(repo)
 			}
-			client := httpxtest.MockClient{
+			mux := rebuild.RegistryMux{CratesIO: cratesio.HTTPRegistry{Client: &httpxtest.MockClient{
 				Calls: []httpxtest.Call{
 					{
 						URL: "https://crates.io/api/v1/crates/serde/1.0.150",
@@ -898,9 +892,13 @@ version = 3
 					},
 				},
 				URLValidator: httpxtest.NewURLValidator(t),
-			}
-			mux := rebuild.RegistryMux{CratesIO: cratesio.HTTPRegistry{Client: &client}}
-			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, hint)
+			}}}
+			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rebuild.RepoConfig{
+				Repo:   gitx.Repo{Repository: repo.Repository},
+				URI:    "https://github.com/serde-rs/serde",
+				Dir:    "",
+				RefMap: map[string]string{"1.0.150": repo.Commits["version-bump"].String()},
+			}, hint)
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)

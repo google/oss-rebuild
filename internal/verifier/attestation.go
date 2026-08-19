@@ -135,8 +135,7 @@ func CreateAttestations(ctx context.Context, t rebuild.Target, defn *schema.Buil
 			return nil, nil, errors.Wrap(err, "marshalling build definition")
 		}
 		deps.BuildFix = &slsa1.ResourceDescriptor{Name: attestation.DependencyBuildFix, Content: rawDefinition}
-		src := attestation.SourceLocationFromLocation(buildDefLoc)
-		externalParams.BuildConfigSource = &src
+		externalParams.BuildConfigSource = new(attestation.SourceLocationFromLocation(buildDefLoc))
 	}
 	stmt, err := (&attestation.RebuildAttestation{
 		StatementHeader: in_toto.StatementHeader{

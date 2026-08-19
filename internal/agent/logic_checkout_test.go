@@ -53,11 +53,10 @@ func TestInitializeFromIterationRejectsInvalidRef(t *testing.T) {
 	server := httptest.NewServer(http.FileServer(http.Dir(filepath.Dir(repoDir))))
 	defer server.Close()
 
-	strategy := schema.NewStrategyOneOf(&rebuild.ManualStrategy{Location: rebuild.Location{
+	iteration := &schema.AgentIteration{Strategy: new(schema.NewStrategyOneOf(&rebuild.ManualStrategy{Location: rebuild.Location{
 		Repo: server.URL + "/repo.git",
 		Ref:  strings.Repeat("f", 40),
-	}})
-	iteration := &schema.AgentIteration{Strategy: &strategy}
+	}}))}
 	agent := NewDefaultAgent(rebuild.Target{Package: "fixture"}, nil)
 
 	err = agent.InitializeFromIteration(context.Background(), iteration)
