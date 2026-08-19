@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ type fakeAPI struct {
 }
 
 func newTestDispatcher(cfg dispatchConfig, f *fakeAPI) *dispatcher {
+	var mu sync.Mutex // launches run on workers
 	return &dispatcher{
 		io:        cli.IO{Out: io.Discard, Err: io.Discard},
 		campaigns: db.NewMemoryCampaigns(),
@@ -38,6 +40,8 @@ func newTestDispatcher(cfg dispatchConfig, f *fakeAPI) *dispatcher {
 		attempts:  db.NewMemoryAttempts(),
 		sessions:  db.NewMemorySessions(),
 		create: func(ctx context.Context, r schema.RebuildPackageRequest) (*longrunning.Operation[schema.Verdict], error) {
+			mu.Lock()
+			defer mu.Unlock()
 			f.creates = append(f.creates, r)
 			if f.createErr != nil {
 				return nil, f.createErr
@@ -45,6 +49,8 @@ func newTestDispatcher(cfg dispatchConfig, f *fakeAPI) *dispatcher {
 			return &longrunning.Operation[schema.Verdict]{ID: r.ID}, nil
 		},
 		agent: func(ctx context.Context, r schema.AgentCreateRequest) (*schema.AgentCreateResponse, error) {
+			mu.Lock()
+			defer mu.Unlock()
 			f.agents = append(f.agents, r)
 			return &schema.AgentCreateResponse{SessionID: "session-1"}, nil
 		},
@@ -83,7 +89,7 @@ func claimed(c scheduler.Campaign, session string) scheduler.Campaign {
 
 func TestPass(t *testing.T) {
 	ctx := context.Background()
-	cfg := dispatchConfig{Batch: 10, MaxAgent: 1, MaxRetries: 3, InflightTimeout: time.Hour}
+	cfg := dispatchConfig{Batch: 10, MaxAgent: 1, MaxRetries: 3, InflightTimeout: time.Hour, Workers: 4}
 	target := queued("p", scheduler.StageInfer).Target()
 	for _, tc := range []struct {
 		name     string
@@ -98,7 +104,7 @@ func TestPass(t *testing.T) {
 			name:     "QueuedInferIsClaimedThenCreated",
 			campaign: queued("p", scheduler.StageInfer),
 			want:     claimed(queued("p", scheduler.StageInfer), ""),
-			wantSum:  passSummary{Dispatched: 1},
+			wantSum:  passSummary{QueuedInfer: 1, InflightBuilds: 1, Approved: 1, Dispatched: 1},
 		},
 		{
 			// A failure escalates, and the escalated campaign is eligible in
@@ -109,13 +115,14 @@ func TestPass(t *testing.T) {
 			want: claimed(with(inflight("p", scheduler.StageInfer, time.Minute), func(c *scheduler.Campaign) {
 				c.Stage = scheduler.StageAgent
 			}), "session-1"),
-			wantSum: passSummary{Observed: 1, Dispatched: 1, AgentDispatched: 1},
+			wantSum: passSummary{InflightSessions: 1, Observed: 1, Approved: 1, Dispatched: 1, AgentDispatched: 1},
 		},
 		{
 			name:     "PendingAttemptWaits",
 			campaign: inflight("p", scheduler.StageInfer, time.Minute),
 			attempt:  &schema.RebuildAttempt{RunID: "run-0", Status: schema.RebuildStatusRunning},
 			want:     inflight("p", scheduler.StageInfer, time.Minute),
+			wantSum:  passSummary{InflightBuilds: 1},
 		},
 		{
 			// A dispatch that never reported back counts as transient once it
@@ -125,7 +132,7 @@ func TestPass(t *testing.T) {
 			want: claimed(with(inflight("p", scheduler.StageInfer, 2*time.Hour), func(c *scheduler.Campaign) {
 				c.Retries = 1
 			}), ""),
-			wantSum: passSummary{Observed: 1, Dispatched: 1},
+			wantSum: passSummary{InflightBuilds: 1, Observed: 1, Approved: 1, Dispatched: 1},
 		},
 		{
 			name:     "CompletedSessionFinishes",
@@ -143,6 +150,7 @@ func TestPass(t *testing.T) {
 			campaign: queued("p", scheduler.StageInfer),
 			api:      fakeAPI{createErr: errors.New("api down")},
 			want:     queued("p", scheduler.StageInfer),
+			wantSum:  passSummary{QueuedInfer: 1, Approved: 1},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -193,7 +201,7 @@ func TestPass(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if diff := cmp.Diff(passSummary{Dispatched: 1, AgentDispatched: 1}, d.pass(ctx, active, new(scheduler.Budget))); diff != "" {
+		if diff := cmp.Diff(passSummary{QueuedAgent: 2, InflightSessions: 1, Approved: 1, Dispatched: 1, AgentDispatched: 1}, d.pass(ctx, active, new(scheduler.Budget))); diff != "" {
 			t.Errorf("pass summary mismatch (-want +got):\n%s", diff)
 		}
 		if len(f.agents) != 1 {
