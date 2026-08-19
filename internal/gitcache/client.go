@@ -127,7 +127,8 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 	}
 	defer gr.Close()
 	tr := tar.NewReader(gr)
-	if err := archive.ExtractTar(tr, extractFS, archive.ExtractOptions{SubDir: git.GitDirName}); err != nil {
+	// The .git dir contents are at its root, matching the root of extractFS.
+	if err := archive.ExtractTar(tr, extractFS, archive.ExtractOptions{}); err != nil {
 		return nil, errors.Wrap(err, "tar extract error")
 	}
 	// Copy staged data into the target storer if needed.
