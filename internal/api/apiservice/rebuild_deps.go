@@ -109,7 +109,6 @@ func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) 
 		Ref:  cfg.BuildDefRef,
 		Dir:  cfg.BuildDefDir,
 	}
-	d.PublishForLocalServiceRepo = false // Should probably be configurable
 	d.AttestationStore, err = rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, ""), "gs://"+cfg.AttestationBucket)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating attestation uploader")
