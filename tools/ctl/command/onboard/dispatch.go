@@ -32,6 +32,7 @@ type dispatchConfig struct {
 	Batch               int
 	MaxAgent            int
 	AgentIterations     int
+	AgentModel          string
 	BuildTimeCap        time.Duration
 	SessionTimeCap      time.Duration
 	Period              time.Duration
@@ -337,6 +338,7 @@ func (d *dispatcher) start(ctx context.Context, c scheduler.Campaign) (string, e
 			Target:        c.Target(),
 			RunID:         c.LastRunID,
 			MaxIterations: d.cfg.AgentIterations,
+			Model:         d.cfg.AgentModel,
 		})
 		if err != nil {
 			return "", err
@@ -432,6 +434,7 @@ func dispatchCommand() *cobra.Command {
 	set.IntVar(&cfg.Batch, "batch", 50, "max dispatches this pass; 0 = unbounded")
 	set.IntVar(&cfg.MaxAgent, "max-agent", 5, "max agent-stage dispatches this pass; 0 = unbounded")
 	set.IntVar(&cfg.AgentIterations, "agent-iterations", 5, "max agent iterations per session")
+	set.StringVar(&cfg.AgentModel, "agent-model", "", "Gemini model id for agent sessions; empty uses the agent's default")
 	set.DurationVar(&cfg.BuildTimeCap, "build-time-cap", 0, "build execution time cap per period; 0 = uncapped")
 	set.DurationVar(&cfg.SessionTimeCap, "session-time-cap", 0, "agent session time cap per period; 0 = uncapped")
 	set.DurationVar(&cfg.Period, "period", 24*time.Hour, "budget period length")
