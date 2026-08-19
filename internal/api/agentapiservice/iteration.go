@@ -79,6 +79,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 			Strategy:    req.Strategy,
 			ObliviousID: obliviousID,
 			Status:      schema.AgentIterationStatusPending,
+			Usage:       req.Usage, // preserved across the status updates below
 			Created:     iterTime,
 			Updated:     iterTime,
 		}

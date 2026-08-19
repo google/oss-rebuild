@@ -41,6 +41,7 @@ type ProposeOpts struct {
 type Agent interface {
 	Propose(context.Context, *ProposeOpts) (*schema.StrategyOneOf, error)
 	RecordIteration(*schema.AgentIteration)
+	Usage() schema.TokenUsage // agent's cumulative LLM token consumption
 }
 
 type RunSessionReq struct {
@@ -73,10 +74,14 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 			Path:   path.Join(sessionID, "messages", fmt.Sprintf("%d", iterNum)),
 		}
 	}
+	// Snapshot the agent's cumulative token usage around Propose so this
+	// iteration is charged only the tokens it consumed.
+	beforeUsage := agent.Usage()
 	s, err := agent.Propose(ctx, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "generating strategy")
 	}
+	iterUsage := agent.Usage().Sub(beforeUsage).OrNil()
 	// Scratch-mode attempts run locally on the session's scratch VM and are
 	// not recorded server-side (the scratch exec ledger is their trail).
 	// Only a locally-verified success proceeds to the standard iteration
@@ -87,12 +92,16 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 		status, result := deps.ScratchRunner.Run(ctx, fmt.Sprintf("iter-%d", iterNum), s)
 		if status != schema.AgentIterationStatusSuccess {
 			now := time.Now().UTC()
+			// This local-only record is never persisted. The session total
+			// accounts for its tokens and the usage stamp is only for local
+			// visibility.
 			return &schema.AgentIteration{
 				SessionID: sessionID,
 				Number:    iterNum,
 				Strategy:  s,
 				Status:    status,
 				Result:    result,
+				Usage:     iterUsage,
 				Created:   now,
 				Updated:   now,
 			}, nil
@@ -109,6 +118,7 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 		SessionID:       sessionID,
 		IterationNumber: iterNum,
 		Strategy:        s,
+		Usage:           iterUsage,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "executing build")
@@ -144,6 +154,12 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		RegistryClient: deps.RegistryClient,
 		ScratchRunner:  deps.ScratchRunner,
 	})
+	// Stamp the session's LLM token spend onto whatever completion we return.
+	defer func() {
+		if completeReq != nil {
+			completeReq.Usage = a.Usage().OrNil()
+		}
+	}()
 	var err error
 	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, llm.GeminiPro, config, &llm.ChatOpts{Tools: a.getTools(), Retrier: deps.Retrier})
 	if err != nil {
@@ -162,12 +178,6 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		}
 		iterNum = 1
 	}
-	// Stamp the session's LLM token spend onto whatever completion we return.
-	defer func() {
-		if completeReq != nil {
-			completeReq.TotalTokens = a.TotalTokens()
-		}
-	}()
 	var transientErrs, buildAttempts int // tracks whether model made real progress or was throttled
 	for {
 		iterNum++

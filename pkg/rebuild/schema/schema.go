@@ -541,6 +541,7 @@ type AgentCreateIterationRequest struct {
 	SessionID       string         `form:",required"`
 	IterationNumber int            `form:",required"`
 	Strategy        *StrategyOneOf `form:",required"`
+	Usage           *TokenUsage    `form:""` // LLM tokens consumed producing this iteration
 }
 
 var _ api.Input = AgentCreateIterationRequest{}
@@ -570,11 +571,11 @@ const (
 
 // AgentCompleteRequest finalizes session with results
 type AgentCompleteRequest struct {
-	SessionID          string `form:",required"`
-	StopReason         string `form:",required"`
-	SuccessIterationID string `form:""`
-	Summary            string `form:""`
-	TotalTokens        int64  `form:""` // total tokens used in the session
+	SessionID          string      `form:",required"`
+	StopReason         string      `form:",required"`
+	SuccessIterationID string      `form:""`
+	Summary            string      `form:""`
+	Usage              *TokenUsage `form:""` // total LLM tokens consumed across the session
 }
 
 var _ api.Input = AgentCompleteRequest{}
@@ -598,12 +599,12 @@ type AgentSession struct {
 	ExecutionName    string             `firestore:"execution_name,omitempty"`
 	ExecutionMode    AgentExecutionMode `firestore:"execution_mode,omitempty"` // Empty means GCB (sessions predating scratch support)
 	ScratchID        string             `firestore:"scratch_id,omitempty"`     // Scratch VM bound to the session (scratch execution mode only)
+	Usage            *TokenUsage        `firestore:"usage,omitempty"`          // total LLM tokens, reported at completion
 	Created          time.Time          `firestore:"created,omitempty"`
 	Updated          time.Time          `firestore:"updated,omitempty"`
 	StopReason       string             `firestore:"stop_reason,omitempty"`
 	SuccessIteration string             `firestore:"success_iteration,omitempty"`
 	Summary          string             `firestore:"summary,omitempty"`
-	TotalTokens      int64              `firestore:"total_tokens,omitempty"` // LLM token spend over the session
 }
 
 // AgentIteration stores iteration metadata in Firestore
@@ -615,6 +616,7 @@ type AgentIteration struct {
 	ObliviousID string            `firestore:"build_id,omitempty"`
 	Status      string            `firestore:"status,omitempty"`
 	Result      *AgentBuildResult `firestore:"result,omitempty"`
+	Usage       *TokenUsage       `firestore:"usage,omitempty"` // LLM tokens attributed to this iteration
 	Created     time.Time         `firestore:"created,omitempty"`
 	Updated     time.Time         `firestore:"updated,omitempty"`
 }
