@@ -176,7 +176,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 				aiClient, err = genai.NewClient(ctx, &genai.ClientConfig{
 					Backend:  genai.BackendVertexAI,
 					Project:  aiProject,
-					Location: "us-central1",
+					Location: "global",
 				})
 				if err != nil {
 					return nil, errors.Wrap(err, "failed to create a genai client")

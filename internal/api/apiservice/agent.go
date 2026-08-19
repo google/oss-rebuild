@@ -31,6 +31,7 @@ type AgentCreateDeps struct {
 	RunService          *run.Service
 	Project             string
 	Location            string
+	AILocation          string // Vertex AI location for agent model calls, distinct as Gemini 3.x only serves from global
 	AgentJobName        string
 	AgentAPIURL         string
 	AgentTimeoutSeconds int
@@ -144,7 +145,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 	if !req.ExternalAgent {
 		args := []string{
 			"--project=" + deps.Project,
-			"--location=" + deps.Location,
+			"--location=" + deps.AILocation,
 			"--session-id=" + sessionID,
 			"--agent-api-url=" + deps.AgentAPIURL,
 			"--sessions-bucket=" + deps.SessionsBucket,

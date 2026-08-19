@@ -14,8 +14,8 @@ import (
 var (
 	// Model names supported by VertexAI.
 
-	GeminiPro   = "gemini-2.5-pro"
-	GeminiFlash = "gemini-2.5-flash"
+	GeminiPro   = "gemini-3.1-pro-preview"
+	GeminiFlash = "gemini-3.7-flash"
 
 	// Roles used for demarcating speakers.
 
