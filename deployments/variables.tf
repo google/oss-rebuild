@@ -75,6 +75,11 @@ variable "prebuild_commit" {
   }
   // TODO: Validate that this commit exists in repo.
 }
+variable "firestore_location" {
+  type        = string
+  description = "Location of the default Firestore database."
+  default     = "nam5"
+}
 variable "public" {
   type        = bool
   description = "Whether to enable public access to certain resources like attestations and prebuild resources."
