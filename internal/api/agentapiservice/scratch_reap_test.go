@@ -19,8 +19,47 @@ func reapDeps(t *testing.T, scratches db.Scratch, execs db.ScratchExecs, gce GCE
 		Scratches:     scratches,
 		Execs:         execs,
 		GCE:           gce,
+		Sessions:      db.NewMemorySessions(),
 		Zones:         []string{"us-central1-a", "us-central1-b"},
 		IdleThreshold: 30 * time.Minute,
+	}
+}
+
+// staleSessions lists a snapshot taken before a session completed, standing
+// in for a completion that races the reaper's listing.
+type staleSessions struct {
+	db.Sessions
+	listed []schema.AgentSession
+}
+
+func (s staleSessions) ListNonTerminal(context.Context) ([]schema.AgentSession, error) {
+	return s.listed, nil
+}
+
+func TestScratchReap_SessionCompletedSinceListingKeepsItsStopReason(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	done := schema.AgentSession{
+		ID: "done", Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonSuccess,
+		TimeoutSeconds: 3600, Updated: now.Add(-2 * time.Hour),
+	}
+	store := db.NewMemorySessions()
+	if err := store.Insert(ctx, done); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	listed := done
+	listed.Status = schema.AgentSessionStatusRunning
+	deps := reapDeps(t, db.NewMemoryScratch(), db.NewMemoryScratchExecs(), NewMemoryGCE())
+	deps.Sessions = staleSessions{store, []schema.AgentSession{listed}}
+	resp, err := ScratchReap(ctx, ScratchReapRequest{}, deps)
+	if err != nil {
+		t.Fatalf("ScratchReap: %v", err)
+	}
+	if resp.SessionsFinalized != 0 {
+		t.Errorf("SessionsFinalized = %d; want 0", resp.SessionsFinalized)
+	}
+	if got, _ := store.Get(ctx, "done"); got.StopReason != schema.AgentCompleteReasonSuccess {
+		t.Errorf("stop reason = %q; want the session's own %q", got.StopReason, schema.AgentCompleteReasonSuccess)
 	}
 }
 
@@ -620,5 +659,60 @@ func TestScratchReap_FailedInstanceDeleteHoldsDeleting(t *testing.T) {
 	}
 	if !gce.InstanceExists(zone, stuck.VMName) {
 		t.Errorf("VM deleted despite failure injection")
+	}
+}
+
+func TestScratchReap_DeadSessionFinalizedAndVMReclaimed(t *testing.T) {
+	ctx := context.Background()
+	scratches := db.NewMemoryScratch()
+	gce := NewMemoryGCE()
+	now := time.Now().UTC()
+	zone := "us-central1-a"
+
+	// A session whose VM is fresh (so the idle sweep leaves it) but whose
+	// execution died: no heartbeat for longer than its whole timeout.
+	held := schema.Scratch{ID: "held", State: schema.ScratchReady, Zone: zone, VMName: "scratch-held", LastUsed: now}
+	if err := scratches.Insert(ctx, held); err != nil {
+		t.Fatalf("seed scratch: %v", err)
+	}
+	if _, err := gce.InsertInstanceFromTemplate(ctx, zone, held.VMName, "tpl", nil); err != nil {
+		t.Fatalf("seed instance: %v", err)
+	}
+	dead := schema.AgentSession{
+		ID: "dead-sess", Status: schema.AgentSessionStatusRunning, ScratchID: "held",
+		TimeoutSeconds: 3600, Updated: now.Add(-2 * time.Hour),
+	}
+	live := schema.AgentSession{
+		ID: "live-sess", Status: schema.AgentSessionStatusRunning,
+		TimeoutSeconds: 3600, Updated: now.Add(-1 * time.Minute),
+	}
+	sessions := db.NewMemorySessions()
+	for _, s := range []schema.AgentSession{dead, live} {
+		if err := sessions.Insert(ctx, s); err != nil {
+			t.Fatalf("seed session: %v", err)
+		}
+	}
+
+	deps := reapDeps(t, scratches, db.NewMemoryScratchExecs(), gce)
+	deps.Sessions = sessions
+	resp, err := ScratchReap(ctx, ScratchReapRequest{}, deps)
+	if err != nil {
+		t.Fatalf("ScratchReap: %v", err)
+	}
+	if resp.SessionsFinalized != 1 {
+		t.Errorf("SessionsFinalized = %d; want 1 (only the dead session)", resp.SessionsFinalized)
+	}
+	if got, _ := sessions.Get(ctx, "dead-sess"); got.StopReason != schema.AgentCompleteReasonError {
+		t.Errorf("dead session stop reason = %q; want %q", got.StopReason, schema.AgentCompleteReasonError)
+	}
+	nonterminal, _ := sessions.ListNonTerminal(ctx)
+	if len(nonterminal) != 1 || nonterminal[0].ID != "live-sess" {
+		t.Errorf("non-terminal sessions = %v; want only live-sess", nonterminal)
+	}
+	if gce.InstanceExists(zone, held.VMName) {
+		t.Errorf("dead session's VM not reclaimed")
+	}
+	if got, _ := scratches.Get(ctx, "held"); got.State != schema.ScratchDeleted {
+		t.Errorf("held scratch state = %q; want deleted", got.State)
 	}
 }
