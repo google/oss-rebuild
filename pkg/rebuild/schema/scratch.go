@@ -12,12 +12,13 @@ import (
 //
 //	starting  record written, VM being provisioned
 //	ready     VM healthy, execs may be dispatched
-//	deleting  VM delete in progress
-//	deleted   VM delete attempted, record kept for audit
+//	deleting  VM delete requested but not yet confirmed
+//	deleted   VM confirmed gone, record kept for audit
 //
-// The agent-api owns every transition. The reaper takes ready records
-// idle past a threshold and starting or deleting records with no write
-// for as long.
+// A record advances to deleted only once its VM is confirmed gone, so a
+// failed delete leaves it deleting and the reaper retries. The reaper
+// also takes ready records idle past a threshold and starting or deleting
+// records with no write for as long.
 type ScratchState string
 
 const (

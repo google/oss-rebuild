@@ -307,6 +307,7 @@ func ScratchReapInit(ctx context.Context) (*agentapiservice.ScratchReapDeps, err
 		Execs:         execs,
 		GCE:           gce,
 		Syncer:        agentapiservice.NewGCSSyncer(gcs, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
+		Zones:         parseScratchZones(),
 		IdleThreshold: *scratchIdleThreshold,
 	}, nil
 }
