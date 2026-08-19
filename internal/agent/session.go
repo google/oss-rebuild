@@ -13,6 +13,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -58,6 +59,7 @@ type RunSessionDeps struct {
 	SessionsBucket string
 	MetadataBucket string
 	LogsBucket     string
+	Retrier        ratex.Retrier     // Paces and retries model calls. Zero value calls the model once.
 	RegistryClient httpx.BasicClient // Upstream registry requests via the session's identified egress path.
 	ScratchRunner  *ScratchRunner    // When set, each iteration builds on the scratch VM. Only verified successes reach the iteration API, as GCB confirmations.
 }
@@ -143,7 +145,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		ScratchRunner:  deps.ScratchRunner,
 	})
 	var err error
-	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, llm.GeminiPro, config, &llm.ChatOpts{Tools: a.getTools()})
+	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, llm.GeminiPro, config, &llm.ChatOpts{Tools: a.getTools(), Retrier: deps.Retrier})
 	if err != nil {
 		return &schema.AgentCompleteRequest{
 			StopReason: schema.AgentCompleteReasonError,
@@ -160,20 +162,35 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		}
 		iterNum = 1
 	}
+	var transientErrs, buildAttempts int // tracks whether model made real progress or was throttled
 	for {
 		iterNum++
 		if iterNum > req.MaxIterations {
-			return &schema.AgentCompleteRequest{
-				StopReason: schema.AgentCompleteReasonFailed,
-				Summary:    fmt.Sprintf("Maximum iterations (%d) reached", req.MaxIterations),
+			reason, summary := schema.AgentCompleteReasonFailed, fmt.Sprintf("Maximum iterations (%d) reached", req.MaxIterations)
+			if buildAttempts == 0 && transientErrs > 0 {
+				// No progress was made on the package.
+				reason = schema.AgentCompleteReasonThrottled
+				summary = fmt.Sprintf("Session throttled: %d transient LLM failures with no completed build attempts", transientErrs)
 			}
+			return &schema.AgentCompleteRequest{StopReason: reason, Summary: summary}
 		}
 		log.Printf("Session %s Iteration %d", req.SessionID, iterNum)
 		iteration, err := doIteration(ctx, req.SessionID, iterNum, a, deps)
 		if err != nil {
 			log.Printf("Doing iteration: %v", err)
+			// A dead context fails every subsequent iteration the same way.
+			if ctx.Err() != nil {
+				return &schema.AgentCompleteRequest{
+					StopReason: schema.AgentCompleteReasonError,
+					Summary:    fmt.Sprintf("Session context ended: %v", ctx.Err()),
+				}
+			}
+			if llm.IsTransient(err) {
+				transientErrs++
+			}
 			continue
 		}
+		buildAttempts++
 		log.Printf("%#v", iteration)
 		if iteration != nil && iteration.Result != nil && !iteration.Result.BuildSuccess {
 			log.Printf("Build failed: %s", iteration.Result.ErrorMessage)

@@ -44,7 +44,7 @@ func TestAttestWorkerPreservesResultReturnedWithError(t *testing.T) {
 	w := attestWorker{workerConfig: workerConfig{
 		execService: resultWithErrorService{},
 		limiters: map[string]*ratex.BackoffLimiter{
-			"cratesio": ratex.NewBackoffLimiter(time.Nanosecond),
+			"cratesio": ratex.NewBackoffLimiter(time.Nanosecond, time.Millisecond),
 		},
 	}}
 	out := make(chan schema.Verdict, 1)

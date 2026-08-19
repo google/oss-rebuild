@@ -136,6 +136,7 @@ func main() {
 		MetadataBucket: *metadataBucket,
 		LogsBucket:     *logsBucket,
 		RegistryClient: regclient,
+		Retrier:        agent.NewRetrier(),
 	}
 	if mode == schema.AgentExecutionModeScratch {
 		stubs := scratch.Stubs{
