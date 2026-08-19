@@ -389,6 +389,11 @@ resource "google_storage_bucket_iam_member" "agent-reads-metadata" {
   ])
   member = each.key
 }
+resource "google_storage_bucket_iam_member" "orchestrator-writes-agent-metadata" {
+  bucket = google_storage_bucket.agent-metadata.name
+  role   = "roles/storage.objectCreator"
+  member = google_service_account.orchestrator.member
+}
 resource "google_storage_bucket_iam_member" "builder-agent-views-buckets" {
   bucket = google_storage_bucket.agent-logs.name
   role   = google_project_iam_custom_role.bucket-viewer-role.name
