@@ -60,7 +60,7 @@ var distInfoFieldPat = re.MustCompile(`[-_.]+`)
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	project, err := mux.PyPI.Project(ctx, t.Package)
 	if err != nil {
-		return "", nil
+		return "", errors.Wrap(err, "fetching pypi metadata")
 	}
 	var linksNamedSource []string
 	for _, commonName := range commonRepoLinks {
