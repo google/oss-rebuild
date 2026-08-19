@@ -19,6 +19,7 @@ func reapDeps(t *testing.T, scratches db.Scratch, execs db.ScratchExecs, gce GCE
 		Scratches:     scratches,
 		Execs:         execs,
 		GCE:           gce,
+		Zones:         []string{"us-central1-a", "us-central1-b"},
 		IdleThreshold: 30 * time.Minute,
 	}
 }
@@ -557,5 +558,67 @@ func TestScratchReap_StuckStartingAndDeletingReaped(t *testing.T) {
 	}
 	if !gce.InstanceExists(zone, liveStart.VMName) {
 		t.Errorf("live-start VM deleted; want preserved")
+	}
+}
+
+func TestScratchReap_StuckStartingUnknownZoneSweepsAllZones(t *testing.T) {
+	// A create that died before persisting placement leaves Zone empty. The
+	// teardown must find the VM in whichever configured zone it landed.
+	ctx := context.Background()
+	scratches := db.NewMemoryScratch()
+	gce := NewMemoryGCE()
+	now := time.Now().UTC()
+	stuck := schema.Scratch{ID: "zoneless", State: schema.ScratchStarting, VMName: "scratch-zoneless", Updated: now.Add(-time.Hour)}
+	if err := scratches.Insert(ctx, stuck); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := gce.InsertInstanceFromTemplate(ctx, "us-central1-b", stuck.VMName, "tpl", nil); err != nil {
+		t.Fatalf("seed instance: %v", err)
+	}
+
+	resp, err := ScratchReap(ctx, ScratchReapRequest{}, reapDeps(t, scratches, db.NewMemoryScratchExecs(), gce))
+	if err != nil {
+		t.Fatalf("ScratchReap: %v", err)
+	}
+	if resp.ScratchesReaped != 1 {
+		t.Errorf("ScratchesReaped = %d; want 1", resp.ScratchesReaped)
+	}
+	if gce.InstanceExists("us-central1-b", stuck.VMName) {
+		t.Errorf("VM in fallthrough zone not deleted")
+	}
+	if got, _ := scratches.Get(ctx, "zoneless"); got.State != schema.ScratchDeleted {
+		t.Errorf("state = %q; want deleted", got.State)
+	}
+}
+
+func TestScratchReap_FailedInstanceDeleteHoldsDeleting(t *testing.T) {
+	// A non-404 delete failure must leave the record in Deleting so a later
+	// pass retries, rather than advancing to Deleted with the VM live.
+	ctx := context.Background()
+	scratches := db.NewMemoryScratch()
+	gce := NewMemoryGCE()
+	now := time.Now().UTC()
+	zone := "us-central1-a"
+	stuck := schema.Scratch{ID: "stuck", State: schema.ScratchDeleting, Zone: zone, VMName: "scratch-stuck", Updated: now.Add(-time.Hour)}
+	if err := scratches.Insert(ctx, stuck); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := gce.InsertInstanceFromTemplate(ctx, zone, stuck.VMName, "tpl", nil); err != nil {
+		t.Fatalf("seed instance: %v", err)
+	}
+	gce.FailNext("DeleteInstance", errors.New("quota exceeded"))
+
+	resp, err := ScratchReap(ctx, ScratchReapRequest{}, reapDeps(t, scratches, db.NewMemoryScratchExecs(), gce))
+	if err != nil {
+		t.Fatalf("ScratchReap: %v", err)
+	}
+	if resp.ScratchesReaped != 0 {
+		t.Errorf("ScratchesReaped = %d; want 0", resp.ScratchesReaped)
+	}
+	if got, _ := scratches.Get(ctx, "stuck"); got.State != schema.ScratchDeleting {
+		t.Errorf("state = %q; want deleting (held for retry)", got.State)
+	}
+	if !gce.InstanceExists(zone, stuck.VMName) {
+		t.Errorf("VM deleted despite failure injection")
 	}
 }

@@ -470,6 +470,32 @@ func TestScratchDelete_HappyPath(t *testing.T) {
 	}
 }
 
+func TestScratchDelete_GCEFailureStaysDeleting(t *testing.T) {
+	gce := NewMemoryGCE()
+	scratches := db.NewMemoryScratch()
+	zone := "us-central1-a"
+	_, _ = gce.InsertInstanceFromTemplate(context.Background(), zone, "scratch-s1", "tmpl", nil)
+	if err := scratches.Insert(context.Background(), schema.Scratch{
+		ID: "s1", State: schema.ScratchReady, Zone: zone, VMName: "scratch-s1",
+	}); err != nil {
+		t.Fatalf("seed scratch: %v", err)
+	}
+	gce.FailNext("DeleteInstance", errors.New("gce unavailable"))
+
+	_, err := ScratchDelete(context.Background(), schema.ScratchDeleteRequest{ScratchID: "s1"},
+		&ScratchDeleteDeps{Scratches: scratches, GCE: gce})
+	if status.Code(err) != codes.Internal {
+		t.Errorf("code = %s; want Internal. err=%v", status.Code(err), err)
+	}
+	rec, _ := scratches.Get(context.Background(), "s1")
+	if rec.State != schema.ScratchDeleting {
+		t.Errorf("State = %q; want deleting (held for the reaper)", rec.State)
+	}
+	if !gce.InstanceExists(zone, "scratch-s1") {
+		t.Errorf("instance gone despite failed delete")
+	}
+}
+
 func TestScratchDelete_NotFound(t *testing.T) {
 	_, err := ScratchDelete(context.Background(), schema.ScratchDeleteRequest{ScratchID: "missing"},
 		&ScratchDeleteDeps{Scratches: db.NewMemoryScratch(), GCE: NewMemoryGCE()})
@@ -675,10 +701,6 @@ func (m *MemoryGCE) DeleteInstance(_ context.Context, zone, name string) error {
 	if err := m.checkFail("DeleteInstance"); err != nil {
 		return err
 	}
-	key := zone + "/" + name
-	if _, ok := m.instances[key]; !ok {
-		return errors.New("instance not found")
-	}
-	delete(m.instances, key)
+	delete(m.instances, zone+"/"+name) // missing is success, as in the real client
 	return nil
 }
