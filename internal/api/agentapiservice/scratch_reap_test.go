@@ -630,6 +630,83 @@ func TestScratchReap_StuckStartingUnknownZoneSweepsAllZones(t *testing.T) {
 	}
 }
 
+func TestScratchReap_TeardownCapDefersExcess(t *testing.T) {
+	ctx := context.Background()
+	scratches := db.NewMemoryScratch()
+	gce := NewMemoryGCE()
+	now := time.Now().UTC()
+	zone := "us-central1-a"
+	for _, id := range []string{"s1", "s2", "s3"} {
+		if err := scratches.Insert(ctx, schema.Scratch{ID: id, State: schema.ScratchReady, Zone: zone, VMName: "scratch-" + id, LastUsed: now.Add(-time.Hour)}); err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+	deps := reapDeps(t, scratches, db.NewMemoryScratchExecs(), gce)
+	deps.TeardownCap = 2
+
+	resp, err := ScratchReap(ctx, ScratchReapRequest{}, deps)
+	if err != nil {
+		t.Fatalf("ScratchReap: %v", err)
+	}
+	if resp.ScratchesReaped != 2 {
+		t.Errorf("ScratchesReaped = %d; want 2 (capped)", resp.ScratchesReaped)
+	}
+	var ready int
+	for _, id := range []string{"s1", "s2", "s3"} {
+		if got, _ := scratches.Get(ctx, id); got.State == schema.ScratchReady {
+			ready++
+		}
+	}
+	if ready != 1 {
+		t.Errorf("ready survivors = %d; want 1 deferred to next pass", ready)
+	}
+}
+
+func TestScratchReap_TeardownCapCoversDeadSessions(t *testing.T) {
+	// One cap serves the idle sweep and the dead-session pass. With it spent
+	// on an idle scratch, a dead session waits for the next pass together
+	// with its VM instead of being finalized while the VM stays up.
+	ctx := context.Background()
+	scratches := db.NewMemoryScratch()
+	gce := NewMemoryGCE()
+	now := time.Now().UTC()
+	zone := "us-central1-a"
+	idle := schema.Scratch{ID: "idle", State: schema.ScratchReady, Zone: zone, VMName: "scratch-idle", LastUsed: now.Add(-time.Hour)}
+	held := schema.Scratch{ID: "held", State: schema.ScratchReady, Zone: zone, VMName: "scratch-held", LastUsed: now}
+	for _, s := range []schema.Scratch{idle, held} {
+		if err := scratches.Insert(ctx, s); err != nil {
+			t.Fatalf("seed %s: %v", s.ID, err)
+		}
+		if _, err := gce.InsertInstanceFromTemplate(ctx, zone, s.VMName, "tpl", nil); err != nil {
+			t.Fatalf("seed instance %s: %v", s.VMName, err)
+		}
+	}
+	sessions := db.NewMemorySessions()
+	dead := schema.AgentSession{ID: "dead", Status: schema.AgentSessionStatusRunning, ScratchID: "held", TimeoutSeconds: 3600, Updated: now.Add(-2 * time.Hour)}
+	if err := sessions.Insert(ctx, dead); err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	deps := reapDeps(t, scratches, db.NewMemoryScratchExecs(), gce)
+	deps.Sessions = sessions
+	deps.TeardownCap = 1
+	resp, err := ScratchReap(ctx, ScratchReapRequest{}, deps)
+	if err != nil {
+		t.Fatalf("ScratchReap: %v", err)
+	}
+	if resp.ScratchesReaped != 1 || resp.SessionsFinalized != 0 {
+		t.Errorf("first pass reaped %d and finalized %d; want 1 and 0", resp.ScratchesReaped, resp.SessionsFinalized)
+	}
+	if !gce.InstanceExists(zone, held.VMName) {
+		t.Errorf("held VM torn down past the cap")
+	}
+	if resp, err = ScratchReap(ctx, ScratchReapRequest{}, deps); err != nil {
+		t.Fatalf("second ScratchReap: %v", err)
+	}
+	if resp.SessionsFinalized != 1 || gce.InstanceExists(zone, held.VMName) {
+		t.Errorf("second pass finalized %d with held VM present %v; want 1 and false", resp.SessionsFinalized, gce.InstanceExists(zone, held.VMName))
+	}
+}
+
 func TestScratchReap_FailedInstanceDeleteHoldsDeleting(t *testing.T) {
 	// A non-404 delete failure must leave the record in Deleting so a later
 	// pass retries, rather than advancing to Deleted with the VM live.

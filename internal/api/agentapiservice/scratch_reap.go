@@ -52,6 +52,9 @@ type ScratchReapDeps struct {
 	// IdleThreshold is how long a scratch may go without a write before
 	// the reaper takes it (see db.ScratchIdleSince).
 	IdleThreshold time.Duration // default: 30m
+	// TeardownCap bounds the VM deletes one pass attempts, across idle/dead
+	// session sweeps, while the other candidates wait for the next pass.
+	TeardownCap int // default: 25
 }
 
 func (d *ScratchReapDeps) idleThreshold() time.Duration {
@@ -59,6 +62,27 @@ func (d *ScratchReapDeps) idleThreshold() time.Duration {
 		return d.IdleThreshold
 	}
 	return 30 * time.Minute
+}
+
+func (d *ScratchReapDeps) teardownCap() int {
+	if d.TeardownCap > 0 {
+		return d.TeardownCap
+	}
+	return 25
+}
+
+// teardownBudget counts a pass's remaining teardowns and the candidates it
+// turned away.
+type teardownBudget struct{ left, deferred int }
+
+// wait reports whether the cap is spent, counting the candidate as deferred
+// when it is.
+func (b *teardownBudget) wait() bool {
+	if b.left > 0 {
+		return false
+	}
+	b.deferred++
+	return true
 }
 
 // deadlineFor returns the op's hard deadline: its worker-enforced timeout
@@ -82,7 +106,8 @@ func deadlineFor(exec schema.ScratchExec) time.Time {
 //
 // A pending exec inside its deadline keeps its scratch up, so a longer
 // execution needs a longer exec timeout rather than a longer idle
-// threshold. Idle and stuck scratches come from one listing.
+// threshold. Idle and stuck scratches come from one listing, and their
+// teardowns share TeardownCap with dead sessions.
 func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDeps) (*ScratchReapResponse, error) {
 	now := time.Now().UTC()
 	idleCutoff := now.Add(-deps.idleThreshold())
@@ -112,9 +137,13 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, pkgerrors.Wrap(err, "list idle scratches"))
 	}
+	budget := &teardownBudget{left: deps.teardownCap()}
 	var scratchesReaped int
 	for _, scratch := range idle {
 		if busy[scratch.ID] {
+			continue
+		}
+		if budget.wait() {
 			continue
 		}
 		if deps.Syncer != nil {
@@ -130,6 +159,7 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		if !db.ScratchIdleSince(cur, idleCutoff) {
 			continue
 		}
+		budget.left--
 		if err := deleteScratch(ctx, deps.Scratches, deps.GCE, cur, deps.Zones); err != nil {
 			log.Printf("reap teardown scratch %s: %v", scratch.ID, err)
 			continue
@@ -159,7 +189,10 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		}
 		opsFinalized++
 	}
-	sessionsFinalized := finalizeDeadSessions(ctx, deps, now)
+	sessionsFinalized := finalizeDeadSessions(ctx, deps, now, budget)
+	if budget.deferred > 0 {
+		log.Printf("reap: teardown cap %d spent, %d candidates wait for the next pass", deps.teardownCap(), budget.deferred)
+	}
 	return &ScratchReapResponse{
 		ScratchesReaped:   scratchesReaped,
 		OpsFinalized:      opsFinalized,
@@ -170,7 +203,7 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 // finalizeDeadSessions closes sessions whose execution can no longer be
 // running and tears down the VM each still holds, VM first so a failed
 // close cannot strand it.
-func finalizeDeadSessions(ctx context.Context, deps *ScratchReapDeps, now time.Time) int {
+func finalizeDeadSessions(ctx context.Context, deps *ScratchReapDeps, now time.Time, budget *teardownBudget) int {
 	sessions, err := deps.Sessions.ListNonTerminal(ctx)
 	if err != nil {
 		log.Printf("reap list non-terminal sessions: %v", err)
@@ -189,6 +222,12 @@ func finalizeDeadSessions(ctx context.Context, deps *ScratchReapDeps, now time.T
 			if err != nil {
 				log.Printf("reap finalize session %s: get scratch %s: %v", s.ID, s.ScratchID, err)
 			} else if sc.State != schema.ScratchDeleting && sc.State != schema.ScratchDeleted {
+				// Past the cap the session waits with its VM rather than
+				// handing the VM to the idle sweep.
+				if budget.wait() {
+					continue
+				}
+				budget.left--
 				if err := deleteScratch(ctx, deps.Scratches, deps.GCE, sc, deps.Zones); err != nil {
 					log.Printf("reap finalize session %s: teardown scratch %s: %v", s.ID, s.ScratchID, err)
 				}
