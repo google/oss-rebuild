@@ -23,8 +23,9 @@ func (ScratchReapRequest) Validate() error { return nil }
 
 // ScratchReapResponse reports the counts from a single reap cycle.
 type ScratchReapResponse struct {
-	ScratchesReaped int `json:"scratches_reaped"`
-	OpsFinalized    int `json:"ops_finalized"`
+	ScratchesReaped   int `json:"scratches_reaped"`
+	OpsFinalized      int `json:"ops_finalized"`
+	SessionsFinalized int `json:"sessions_finalized"`
 }
 
 // opDeadlineGrace pads each op's worker-enforced timeout to allow for
@@ -32,11 +33,17 @@ type ScratchReapResponse struct {
 // the op as expired.
 const opDeadlineGrace = 10 * time.Minute
 
+// sessionDeadlineGrace pads a session's own timeout before the reaper declares
+// it dead: a session cannot outlive its execution's timeout, so no heartbeat
+// for longer than that plus this slack means the execution is gone.
+const sessionDeadlineGrace = 15 * time.Minute
+
 // ScratchReapDeps wires the reaper.
 type ScratchReapDeps struct {
 	Scratches db.Scratch
 	Execs     db.ScratchExecs
 	GCE       GCE
+	Sessions  db.Sessions
 	// Syncer (optional) pulls a pending op's final status from its worker
 	// before the scratch is torn down or the op declared expired. nil
 	// finalizes such ops blind.
@@ -71,6 +78,7 @@ func deadlineFor(exec schema.ScratchExec) time.Time {
 //	idle scratch   ready, LastUsed past IdleThreshold           VM and record deleted
 //	stuck scratch  starting or deleting, no write for as long   VM and record deleted
 //	pending exec   past its deadline, or its scratch gone       TimedOut or Lost
+//	dead session   RUNNING, no write for timeout plus grace     VM deleted, COMPLETED/ERROR
 //
 // A pending exec inside its deadline keeps its scratch up, so a longer
 // execution needs a longer exec timeout rather than a longer idle
@@ -151,7 +159,63 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		}
 		opsFinalized++
 	}
-	return &ScratchReapResponse{ScratchesReaped: scratchesReaped, OpsFinalized: opsFinalized}, nil
+	sessionsFinalized := finalizeDeadSessions(ctx, deps, now)
+	return &ScratchReapResponse{
+		ScratchesReaped:   scratchesReaped,
+		OpsFinalized:      opsFinalized,
+		SessionsFinalized: sessionsFinalized,
+	}, nil
+}
+
+// finalizeDeadSessions closes sessions whose execution can no longer be
+// running and tears down the VM each still holds, VM first so a failed
+// close cannot strand it.
+func finalizeDeadSessions(ctx context.Context, deps *ScratchReapDeps, now time.Time) int {
+	sessions, err := deps.Sessions.ListNonTerminal(ctx)
+	if err != nil {
+		log.Printf("reap list non-terminal sessions: %v", err)
+		return 0
+	}
+	var n int
+	for _, s := range sessions {
+		if s.TimeoutSeconds <= 0 {
+			continue // no bound to declare it dead against
+		}
+		if now.Before(s.Updated.Add(time.Duration(s.TimeoutSeconds)*time.Second + sessionDeadlineGrace)) {
+			continue
+		}
+		if s.ScratchID != "" {
+			sc, err := deps.Scratches.Get(ctx, s.ScratchID)
+			if err != nil {
+				log.Printf("reap finalize session %s: get scratch %s: %v", s.ID, s.ScratchID, err)
+			} else if sc.State != schema.ScratchDeleting && sc.State != schema.ScratchDeleted {
+				if err := deleteScratch(ctx, deps.Scratches, deps.GCE, sc, deps.Zones); err != nil {
+					log.Printf("reap finalize session %s: teardown scratch %s: %v", s.ID, s.ScratchID, err)
+				}
+			}
+		}
+		var finalized bool
+		err := deps.Sessions.Mutate(ctx, s.ID, func(cur *schema.AgentSession) (bool, error) {
+			// A completion that raced the listing keeps its own stop reason.
+			finalized = cur.Status == schema.AgentSessionStatusInitializing || cur.Status == schema.AgentSessionStatusRunning
+			if !finalized {
+				return false, nil
+			}
+			cur.Status = schema.AgentSessionStatusCompleted
+			cur.StopReason = schema.AgentCompleteReasonError
+			cur.Summary = "reaper: session exceeded its timeout without reporting completion"
+			cur.Updated = now
+			return true, nil
+		})
+		if err != nil {
+			log.Printf("reap finalize session %s: %v", s.ID, err)
+			continue
+		}
+		if finalized {
+			n++
+		}
+	}
+	return n
 }
 
 // syncPendingFor invokes Syncer for each pending op on scratch. Each op
