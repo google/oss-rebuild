@@ -4,7 +4,6 @@
 package gitcache
 
 import (
-	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -41,35 +40,40 @@ commits:
 
 // setupCloneTestServer creates a test HTTP server that mimics the gitcache
 // protocol (302 redirect to tarball URL) and returns a configured Client.
+// The tarball is produced by the server's populateCache so its layout (git
+// dir contents at the archive root) matches production.
 func setupCloneTestServer(t *testing.T, yamlSpec string) Client {
 	t.Helper()
-	// Create a repo on disk with git metadata in a .git subdirectory.
-	// Client.Clone uses ExtractTar with SubDir=".git", so the tarball
-	// entries must be prefixed with ".git/".
-	repoDir := t.TempDir()
-	gitDir := filepath.Join(repoDir, git.GitDirName)
-	if err := os.MkdirAll(gitDir, 0o755); err != nil {
-		t.Fatalf("failed to create .git dir: %v", err)
+	// Stand in for the network clone: build the repo from YAML directly into
+	// the storer populateCache provides.
+	cloneFunc := func(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
+		repo, err := gitxtest.CreateRepoFromYAML(yamlSpec, &gitxtest.RepositoryOptions{
+			Storer:   s,
+			Worktree: memfs.New(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Repack loose objects into a packfile to match production tarballs
+		// (cached repos are packed, and only packed objects are read lazily).
+		if err := repo.RepackObjects(&git.RepackConfig{}); err != nil {
+			return nil, err
+		}
+		// Remove the index to match production behavior (bare clone has no index).
+		if sf, ok := s.(*filesystem.Storage); ok {
+			sf.Filesystem().Remove("index")
+		}
+		return repo.Repository, nil
 	}
-	repo, err := gitxtest.CreateRepoFromYAML(yamlSpec, &gitxtest.RepositoryOptions{
-		Storer:   filesystem.NewStorage(osfs.New(gitDir), cache.NewObjectLRUDefault()),
-		Worktree: osfs.New(repoDir),
-	})
+	cacheDir := t.TempDir()
+	srv := &Server{backend: &localBackend{baseDir: cacheDir}, cloneFunc: cloneFunc}
+	if err := srv.populateCache(context.Background(), "github.com/org/repo", "", "repo.tgz"); err != nil {
+		t.Fatalf("failed to populate cache: %v", err)
+	}
+	tarballBytes, err := os.ReadFile(filepath.Join(cacheDir, "repo.tgz"))
 	if err != nil {
-		t.Fatalf("failed to create test repo: %v", err)
+		t.Fatalf("failed to read cached tarball: %v", err)
 	}
-	// Repack loose objects into a packfile to match production tarballs
-	// (cached repos are packed, and only packed objects are read lazily).
-	if err := repo.RepackObjects(&git.RepackConfig{}); err != nil {
-		t.Fatalf("failed to repack test repo: %v", err)
-	}
-	// Remove the index to match production behavior (bare clone has no index).
-	os.Remove(filepath.Join(gitDir, "index"))
-	var tarball bytes.Buffer
-	if err := createTarball(repoDir, &tarball); err != nil {
-		t.Fatalf("failed to create tarball: %v", err)
-	}
-	tarballBytes := tarball.Bytes()
 	// Set up a server that implements the two-step gitcache protocol:
 	//   /get → 302 redirect to /tarball (absolute URL)
 	//   /tarball → serve the .tgz content
