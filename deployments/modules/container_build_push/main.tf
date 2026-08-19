@@ -53,7 +53,7 @@ resource "terraform_data" "image" {
         echo Found $path
       else
         echo Building $path
-        docker build --quiet ${local.build_args_str} -f ${var.dockerfile_path} -t $path ${local.repo_docker_context} && \
+        docker build --quiet --platform linux/amd64 ${local.build_args_str} -f ${var.dockerfile_path} -t $path ${local.repo_docker_context} && \
           docker push --quiet $path
       fi
     EOT
