@@ -193,3 +193,22 @@ func (cm *Chat) History() []*genai.Content {
 func (cm *Chat) Usage() []*genai.GenerateContentResponseUsageMetadata {
 	return cm.usage
 }
+
+// TotalTokens returns the total tokens billed across every turn of this chat.
+// Each turn's count includes the (re-sent) prompt history, matching how the
+// provider bills, so the sum is the chat's true token spend.
+func (cm *Chat) TotalTokens() int64 {
+	return SumTokens(cm.usage)
+}
+
+// SumTokens totals the TotalTokenCount across a slice of usage metadata,
+// tolerating nil entries.
+func SumTokens(usage []*genai.GenerateContentResponseUsageMetadata) int64 {
+	var total int64
+	for _, u := range usage {
+		if u != nil {
+			total += int64(u.TotalTokenCount)
+		}
+	}
+	return total
+}

@@ -41,3 +41,17 @@ func TestIsTransient(t *testing.T) {
 		})
 	}
 }
+
+func TestSumTokens(t *testing.T) {
+	usage := []*genai.GenerateContentResponseUsageMetadata{
+		{TotalTokenCount: 100},
+		nil,
+		{TotalTokenCount: 250},
+	}
+	if got := SumTokens(usage); got != 350 {
+		t.Errorf("SumTokens = %d, want 350", got)
+	}
+	if got := SumTokens(nil); got != 0 {
+		t.Errorf("SumTokens(nil) = %d, want 0", got)
+	}
+}

@@ -60,11 +60,24 @@ type ScriptResponse struct {
 }
 
 func GenerateTextContent(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, prompt ...*genai.Part) (string, error) {
+	text, _, err := GenerateTextContentWithUsage(ctx, client, model, config, prompt...)
+	return text, err
+}
+
+// GenerateTextContentWithUsage generates text content and returns the incurred usage.
+// Transient provider failures are retried with backoff.
+func GenerateTextContentWithUsage(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, prompt ...*genai.Part) (string, *genai.GenerateContentResponseUsageMetadata, error) {
 	contents := []*genai.Content{{Parts: prompt, Role: "user"}}
 	resp, err := client.Models.GenerateContent(ctx, model, contents, config)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to generate content")
+		return "", nil, errors.Wrap(err, "failed to generate content")
 	}
+	usage := resp.UsageMetadata
+	text, err := textFromResponse(resp)
+	return text, usage, err
+}
+
+func textFromResponse(resp *genai.GenerateContentResponse) (string, error) {
 	if len(resp.Candidates) == 0 {
 		return "", errors.New("no candidates returned")
 	}

@@ -11,6 +11,7 @@ import "time"
 type AttemptCosts struct {
 	// Inference.
 	InferenceSeconds float64 `json:"inference_seconds,omitempty" firestore:"inference_seconds,omitempty"`
+	Tokens           int64   `json:"tokens,omitempty" firestore:"tokens,omitempty"` // total tokens used, if an agentic attempt
 	// Build execution, end to end.
 	BuilderSeconds float64  `json:"builder_seconds,omitempty" firestore:"builder_seconds,omitempty"`
 	BuilderPool    SizeHint `json:"builder_pool,omitempty" firestore:"builder_pool,omitempty"` // effective pool derives downstream

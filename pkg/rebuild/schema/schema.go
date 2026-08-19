@@ -574,6 +574,7 @@ type AgentCompleteRequest struct {
 	StopReason         string `form:",required"`
 	SuccessIterationID string `form:""`
 	Summary            string `form:""`
+	TotalTokens        int64  `form:""` // total tokens used in the session
 }
 
 var _ api.Input = AgentCompleteRequest{}
@@ -602,6 +603,7 @@ type AgentSession struct {
 	StopReason       string             `firestore:"stop_reason,omitempty"`
 	SuccessIteration string             `firestore:"success_iteration,omitempty"`
 	Summary          string             `firestore:"summary,omitempty"`
+	TotalTokens      int64              `firestore:"total_tokens,omitempty"` // LLM token spend over the session
 }
 
 // AgentIteration stores iteration metadata in Firestore

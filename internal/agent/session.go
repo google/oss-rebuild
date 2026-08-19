@@ -118,7 +118,7 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 	return resp.Iteration, nil
 }
 
-func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *schema.AgentCompleteRequest {
+func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (completeReq *schema.AgentCompleteRequest) {
 	if req.MaxIterations <= 0 {
 		return &schema.AgentCompleteRequest{
 			StopReason: schema.AgentCompleteReasonError,
@@ -162,6 +162,12 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) *sch
 		}
 		iterNum = 1
 	}
+	// Stamp the session's LLM token spend onto whatever completion we return.
+	defer func() {
+		if completeReq != nil {
+			completeReq.TotalTokens = a.TotalTokens()
+		}
+	}()
 	var transientErrs, buildAttempts int // tracks whether model made real progress or was throttled
 	for {
 		iterNum++
