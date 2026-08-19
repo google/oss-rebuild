@@ -149,15 +149,13 @@ resource "google_storage_bucket" "scratch-output" {
 resource "google_project_service" "compute" {
   service = "compute.googleapis.com"
 }
-resource "google_project_service" "gae" {
-  service = "appengine.googleapis.com"
-}
-# NOTE: Side-effect of app creation is creation of Firestore DB.
-resource "google_app_engine_application" "dummy_app" {
-  project       = var.project
-  location_id   = "us-central"
-  database_type = "CLOUD_FIRESTORE"
-  depends_on    = [google_project_service.gae]
+resource "google_firestore_database" "default" {
+  project         = var.project
+  name            = "(default)"
+  location_id     = var.firestore_location
+  type            = "FIRESTORE_NATIVE"
+  deletion_policy = "ABANDON"
+  depends_on      = [google_project_service.firestore]
 }
 
 # Composite index used by the reaper's ListIdleSince query
@@ -176,7 +174,7 @@ resource "google_firestore_index" "scratch-state-last-used" {
     field_path = "__name__"
     order      = "ASCENDING"
   }
-  depends_on = [google_app_engine_application.dummy_app]
+  depends_on = [google_firestore_database.default]
 }
 
 # Composite indexes for querying attempts
@@ -201,7 +199,7 @@ resource "google_firestore_index" "attempts-ecosystem-package-created" {
     field_path = "__name__"
     order      = "DESCENDING"
   }
-  depends_on = [google_app_engine_application.dummy_app]
+  depends_on = [google_firestore_database.default]
 }
 
 # Used by rundex.FetchRebuilds when filtering just by package
@@ -220,7 +218,7 @@ resource "google_firestore_index" "attempts-package-created" {
     field_path = "__name__"
     order      = "DESCENDING"
   }
-  depends_on = [google_app_engine_application.dummy_app]
+  depends_on = [google_firestore_database.default]
 }
 
 # Used by rundex.FetchRebuilds when filtering by artifact
@@ -239,7 +237,7 @@ resource "google_firestore_index" "attempts-artifact-created" {
     field_path = "__name__"
     order      = "DESCENDING"
   }
-  depends_on = [google_app_engine_application.dummy_app]
+  depends_on = [google_firestore_database.default]
 }
 
 # Used by rundex.FetchRebuilds when filtering by run_id
@@ -254,7 +252,7 @@ resource "google_firestore_index" "attempts-run-id" {
     field_path = "__name__"
     order      = "DESCENDING"
   }
-  depends_on = [google_app_engine_application.dummy_app]
+  depends_on = [google_firestore_database.default]
 }
 
 # Used by rundex.LatestTrackedPackages and rundex.FetchRebuilds (with executors/runs filters)
@@ -273,7 +271,7 @@ resource "google_firestore_index" "attempts-ecosystem-package" {
     field_path = "__name__"
     order      = "ASCENDING"
   }
-  depends_on = [google_app_engine_application.dummy_app]
+  depends_on = [google_firestore_database.default]
 }
 ## PubSub
 
