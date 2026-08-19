@@ -431,7 +431,7 @@ resource "google_cloud_run_v2_service" "agent-api" {
         egress = "ALL_TRAFFIC"
       }
     }
-    scaling { max_instance_count = 10 }
+    scaling { max_instance_count = var.agent_api_max_instances }
   }
   depends_on = [google_project_service.run]
 }
