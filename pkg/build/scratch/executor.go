@@ -102,7 +102,7 @@ type executor struct {
 	gcsClient        *gcs.Client
 	workDir          string
 	maxParallel      int
-	semaphore        chan struct{}
+	semaphore        chan struct{} // one entry per in-flight build, maxParallel wide.
 	outputBufferSize int
 	pollInterval     time.Duration
 	defaultTimeout   time.Duration
