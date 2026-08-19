@@ -82,27 +82,50 @@ func (f *firestoreScratch) UpdateLastUsed(ctx context.Context, scratchID string,
 }
 
 func (f *firestoreScratch) ListIdleSince(ctx context.Context, t time.Time) ([]schema.Scratch, error) {
-	q := f.client.Collection(scratchCollection).
+	var out []schema.Scratch
+
+	qReady := f.client.Collection(scratchCollection).
 		Where("state", "==", string(schema.ScratchReady)).
 		Where("last_used", "<", t.UTC())
+	if err := f.appendQuery(ctx, qReady, &out); err != nil {
+		return nil, err
+	}
+
+	qStarting := f.client.Collection(scratchCollection).
+		Where("state", "==", string(schema.ScratchStarting)).
+		Where("updated", "<", t.UTC())
+	if err := f.appendQuery(ctx, qStarting, &out); err != nil {
+		return nil, err
+	}
+
+	qDeleting := f.client.Collection(scratchCollection).
+		Where("state", "==", string(schema.ScratchDeleting)).
+		Where("updated", "<", t.UTC())
+	if err := f.appendQuery(ctx, qDeleting, &out); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func (f *firestoreScratch) appendQuery(ctx context.Context, q firestore.Query, out *[]schema.Scratch) error {
 	iter := q.Documents(ctx)
 	defer iter.Stop()
-	var out []schema.Scratch
 	for {
 		snap, err := iter.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 		var e schema.Scratch
 		if err := snap.DataTo(&e); err != nil {
-			return nil, err
+			return err
 		}
-		out = append(out, e)
+		*out = append(*out, e)
 	}
-	return out, nil
+	return nil
 }
 
 func (f *firestoreScratch) Delete(ctx context.Context, scratchID string) error {
@@ -168,6 +191,10 @@ func (m *memoryScratch) ListIdleSince(ctx context.Context, t time.Time) ([]schem
 	var out []schema.Scratch
 	for _, e := range m.data {
 		if e.State == schema.ScratchReady && e.LastUsed.Before(t) {
+			out = append(out, e)
+		} else if e.State == schema.ScratchStarting && (e.Updated.Before(t) || e.Created.Before(t)) {
+			out = append(out, e)
+		} else if e.State == schema.ScratchDeleting && e.Updated.Before(t) {
 			out = append(out, e)
 		}
 	}

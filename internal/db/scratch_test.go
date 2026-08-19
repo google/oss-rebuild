@@ -113,7 +113,7 @@ func TestMemoryScratch_ListIdleSince(t *testing.T) {
 		ids = append(ids, e.ID)
 	}
 	sort.Strings(ids)
-	want := []string{"ready-old", "ready-old-2"}
+	want := []string{"deleting-old", "ready-old", "ready-old-2", "starting-old"}
 	if diff := cmp.Diff(want, ids); diff != "" {
 		t.Errorf("ListIdleSince ids mismatch (-want +got):\n%s", diff)
 	}
