@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -32,6 +33,7 @@ type AgentDeps struct {
 	GenaiClient    *genai.Client
 	RegistryClient httpx.BasicClient // Upstream registry requests (e.g. adapt-mode registry refresh) via the session's identified egress path.
 	ScratchRunner  *ScratchRunner    // When set, iteration builds run on a scratch VM with build logs read from exec output.
+	Model          string            // Gemini model id for auxiliary calls. Empty selects llm.GeminiPro.
 }
 
 type ProposeOpts struct {
@@ -63,6 +65,7 @@ type RunSessionDeps struct {
 	Retrier        ratex.Retrier     // Paces and retries model calls. Zero value calls the model once.
 	RegistryClient httpx.BasicClient // Upstream registry requests via the session's identified egress path.
 	ScratchRunner  *ScratchRunner    // When set, each iteration builds on the scratch VM. Only verified successes reach the iteration API, as GCB confirmations.
+	Model          string            // Gemini model id for the session's calls. Empty selects llm.GeminiPro.
 }
 
 func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
@@ -153,6 +156,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		GenaiClient:    deps.Client,
 		RegistryClient: deps.RegistryClient,
 		ScratchRunner:  deps.ScratchRunner,
+		Model:          deps.Model,
 	})
 	// Stamp the session's LLM token spend onto whatever completion we return.
 	defer func() {
@@ -161,7 +165,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		}
 	}()
 	var err error
-	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, llm.GeminiPro, config, &llm.ChatOpts{Tools: a.getTools(), Retrier: deps.Retrier})
+	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), config, &llm.ChatOpts{Tools: a.getTools(), Retrier: deps.Retrier})
 	if err != nil {
 		return &schema.AgentCompleteRequest{
 			StopReason: schema.AgentCompleteReasonError,

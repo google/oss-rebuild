@@ -96,6 +96,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		Context:        req.Context,
 		Status:         schema.AgentSessionStatusInitializing,
 		ExecutionMode:  executionMode,
+		Model:          req.Model,
 		Created:        sessionTime,
 		Updated:        sessionTime,
 	}
@@ -159,6 +160,9 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		}
 		if deps.Host != "" {
 			args = append(args, "--host="+deps.Host)
+		}
+		if req.Model != "" {
+			args = append(args, "--model="+req.Model)
 		}
 		if executionMode == schema.AgentExecutionModeScratch {
 			args = append(args,

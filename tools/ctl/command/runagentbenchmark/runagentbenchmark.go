@@ -40,6 +40,7 @@ type Config struct {
 	AgentIterations int
 	BenchmarkFile   string
 	ExecutionMode   string
+	AgentModel      string
 }
 
 // Validate ensures the configuration is valid.
@@ -149,6 +150,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 				},
 				MaxIterations: cfg.AgentIterations,
 				ExecutionMode: schema.AgentExecutionMode(cfg.ExecutionMode),
+				Model:         cfg.AgentModel,
 			}
 			if len(in.Artifacts) > 0 {
 				req.Target.Artifact = in.Artifacts[i]
@@ -235,5 +237,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.IntVar(&cfg.MaxConcurrency, "max-concurrency", 90, "maximum number of inflight requests")
 	set.IntVar(&cfg.AgentIterations, "agent-iterations", 3, "maximum number of agent iterations before giving up")
 	set.StringVar(&cfg.ExecutionMode, "execution-mode", "", "where iteration builds execute: gcb (default) or scratch")
+	set.StringVar(&cfg.AgentModel, "agent-model", "", "Gemini model id for agent sessions (empty selects the deployment default)")
 	return set
 }
