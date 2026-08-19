@@ -266,6 +266,7 @@ func ScratchReapInit(ctx context.Context) (*agentapiservice.ScratchReapDeps, err
 		Scratches:     db.NewFirestoreScratch(firestoreClient),
 		Execs:         execs,
 		GCE:           gce,
+		Sessions:      db.NewFirestoreSessions(firestoreClient),
 		Syncer:        agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
 		Zones:         parseScratchZones(),
 		IdleThreshold: *scratchIdleThreshold,
