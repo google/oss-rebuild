@@ -40,6 +40,7 @@ import (
 var (
 	project               = flag.String("project", "", "GCP Project ID for storage and build resources")
 	location              = flag.String("location", "", "GCP location for resources")
+	aiLocation            = flag.String("ai-location", "global", "Vertex AI location for agent model calls (Gemini 3.x models only serve from 'global')")
 	buildRemoteIdentity   = flag.String("build-remote-identity", "", "Identity from which to run remote rebuilds")
 	inferenceURL          = flag.String("inference-url", "", "URL of the inference service")
 	signingKeyVersion     = flag.String("signing-key-version", "", "Resource name of the signing CryptoKeyVersion")
@@ -303,6 +304,7 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 	}
 	d.Project = *project
 	d.Location = *location
+	d.AILocation = *aiLocation
 	d.AgentJobName = *agentJobName
 	d.AgentAPIURL = *agentAPIURL
 	d.AgentTimeoutSeconds = *agentTimeoutSeconds
