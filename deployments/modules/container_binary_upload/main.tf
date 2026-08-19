@@ -17,7 +17,8 @@ resource "terraform_data" "extract" {
   }
 
   provisioner "local-exec" {
-    command = <<-EOT
+    interpreter = ["/bin/bash", "-c"] # needed for PIPESTATUS and pipefail
+    command     = <<-EOT
       path=${var.gcs_destination}
       cmd="gcloud storage objects describe $path"
       # Suppress stdout, show first line of stderr, return cmd's status.
