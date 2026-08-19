@@ -1106,3 +1106,363 @@ func TestRemoveEnvVars(t *testing.T) {
 		}
 	}
 }
+
+func TestContainerInfoHasMountFor(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		info       containerInfo
+		targetPath string
+		want       bool
+	}{
+		{
+			name: "Mount exact match",
+			info: containerInfo{
+				Mounts: []struct {
+					Destination string `json:"Destination"`
+					Type        string `json:"Type"`
+				}{
+					{Destination: "/var/cache/proxy.crt", Type: "bind"},
+				},
+			},
+			targetPath: "/var/cache/proxy.crt",
+			want:       true,
+		},
+		{
+			name: "Mount parent directory match",
+			info: containerInfo{
+				Mounts: []struct {
+					Destination string `json:"Destination"`
+					Type        string `json:"Type"`
+				}{
+					{Destination: "/var/cache", Type: "volume"},
+				},
+			},
+			targetPath: "/var/cache/proxy.crt",
+			want:       true,
+		},
+		{
+			name: "Mount root match",
+			info: containerInfo{
+				Mounts: []struct {
+					Destination string `json:"Destination"`
+					Type        string `json:"Type"`
+				}{
+					{Destination: "/var", Type: "volume"},
+				},
+			},
+			targetPath: "/var/cache/proxy.crt",
+			want:       true,
+		},
+		{
+			name: "Mount prefix substring non-match",
+			info: containerInfo{
+				Mounts: []struct {
+					Destination string `json:"Destination"`
+					Type        string `json:"Type"`
+				}{
+					{Destination: "/var/cache2", Type: "volume"},
+				},
+			},
+			targetPath: "/var/cache/proxy.crt",
+			want:       false,
+		},
+		{
+			name: "HostConfig.Binds exact match",
+			info: containerInfo{
+				HostConfig: struct {
+					Binds []string `json:"Binds"`
+				}{
+					Binds: []string{"proxy-vol:/var/cache/proxy.crt:rw"},
+				},
+			},
+			targetPath: "/var/cache/proxy.crt",
+			want:       true,
+		},
+		{
+			name: "HostConfig.Binds parent directory match",
+			info: containerInfo{
+				HostConfig: struct {
+					Binds []string `json:"Binds"`
+				}{
+					Binds: []string{"/tmp/host-cache:/var/cache:ro"},
+				},
+			},
+			targetPath: "/var/cache/proxy.crt",
+			want:       true,
+		},
+		{
+			name: "HostConfig.Binds no match",
+			info: containerInfo{
+				HostConfig: struct {
+					Binds []string `json:"Binds"`
+				}{
+					Binds: []string{"/etc/hosts:/etc/hosts:ro"},
+				},
+			},
+			targetPath: "/var/cache/proxy.crt",
+			want:       false,
+		},
+		{
+			name: "HostConfig.Binds malformed",
+			info: containerInfo{
+				HostConfig: struct {
+					Binds []string `json:"Binds"`
+				}{
+					Binds: []string{"invalid-bind-entry"},
+				},
+			},
+			targetPath: "/var/cache/proxy.crt",
+			want:       false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.info.HasMountFor(tc.targetPath)
+			if got != tc.want {
+				t.Errorf("HasMountFor(%q) = %v, want %v", tc.targetPath, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGetImageName(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		imageSpec []byte
+		want      string
+	}{
+		{
+			name:      "Valid image specified",
+			imageSpec: []byte(`{"Image": "ubuntu:22.04"}`),
+			want:      "ubuntu:22.04",
+		},
+		{
+			name:      "Custom tagged image",
+			imageSpec: []byte(`{"Image": "ghcr.io/org/repo:v1.2.3"}`),
+			want:      "ghcr.io/org/repo:v1.2.3",
+		},
+		{
+			name:      "No image field",
+			imageSpec: []byte(`{"Entrypoint": ["/bin/sh"]}`),
+			want:      "",
+		},
+		{
+			name:      "Invalid json",
+			imageSpec: []byte(`{invalid-json`),
+			want:      "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := getImageName(tc.imageSpec)
+			if got != tc.want {
+				t.Errorf("getImageName() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestProxyPrePopulatesVolumeOnCreate(t *testing.T) {
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{})
+	sock := tempSocketName(t)
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wants := []httpCall{
+		// Ping daemon.
+		{"/_ping", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		// Client creates container (returns 201 Created).
+		{"/containers/create?name=my-app", http.Response{StatusCode: http.StatusCreated, Body: asBody([]byte(`{"Id": "app-id"}`))}},
+		// Pre-population creates helper container.
+		{"/containers/create", http.Response{StatusCode: http.StatusCreated, Body: asBody([]byte(`{"Id": "helper-id"}`))}},
+		// Pre-population starts helper container.
+		{"/containers/helper-id/start", http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}},
+		// Pre-population checks and writes proxy cert into helper container.
+		{"/containers/helper-id/archive?path=/var/cache/proxy.crt", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/helper-id/archive?path=/var/cache", http.Response{StatusCode: http.StatusOK}},
+		// Pre-population stops helper container.
+		{"/containers/helper-id/stop", http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}},
+		// Helper container cleanup (defer DELETE).
+		{"/containers/helper-id?v=1&force=1", http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}},
+	}
+	outcome := make(chan error, 1)
+	go fakeHTTPCalls(l, wants, outcome)
+	// Ping daemon.
+	clientIn := setupProxy(t, sock, ctp)
+	req, err := http.NewRequest(http.MethodHead, "/_ping", http.NoBody)
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // HEAD /_ping
+	resp, err := http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+	// Create container.
+	clientIn = setupProxy(t, sock, ctp)
+	req, err = http.NewRequest(http.MethodPost, "/containers/create?name=my-app", asBody([]byte(`{"Image": "golang:1.22", "HostConfig": {}}`)))
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		r, err := http.ReadResponse(bufio.NewReader(clientIn), req)
+		if err == nil && r.Body != nil {
+			io.ReadAll(r.Body)
+			r.Body.Close()
+		}
+		respCh <- r
+		errCh <- err
+	}()
+	orFail(t, <-outcome) // POST /containers/create?name=my-app
+	orFail(t, <-outcome) // POST /containers/create (helper)
+	orFail(t, <-outcome) // POST /containers/helper-id/start
+	orFail(t, <-outcome) // HEAD /containers/helper-id/archive?path=/var/cache/proxy.crt
+	orFail(t, <-outcome) // PUT /containers/helper-id/archive?path=/var/cache
+	orFail(t, <-outcome) // POST /containers/helper-id/stop
+	orFail(t, <-outcome) // DELETE /containers/helper-id?v=1&force=1
+	orFail(t, <-errCh)
+	resp = <-respCh
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusCreated, resp.StatusCode)
+	}
+}
+
+func TestProxyPrePopulatesVolumeWithJavaTruststore(t *testing.T) {
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{JavaTruststoreEnvVar: true})
+	sock := tempSocketName(t)
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wants := []httpCall{
+		// Ping daemon.
+		{"/_ping", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		// Client creates container (returns 201 Created).
+		{"/containers/create?name=java-app", http.Response{StatusCode: http.StatusCreated, Body: asBody([]byte(`{"Id": "app-id"}`))}},
+		// Pre-population creates helper container.
+		{"/containers/create", http.Response{StatusCode: http.StatusCreated, Body: asBody([]byte(`{"Id": "helper-id"}`))}},
+		// Pre-population starts helper container.
+		{"/containers/helper-id/start", http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}},
+		// Pre-population checks and writes proxy cert into helper container.
+		{"/containers/helper-id/archive?path=/var/cache/proxy.crt", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/helper-id/archive?path=/var/cache", http.Response{StatusCode: http.StatusOK}},
+		// Pre-population checks and writes JKS cert into helper container.
+		{"/containers/helper-id/archive?path=/var/cache/proxy.crt.jks", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/helper-id/archive?path=/var/cache", http.Response{StatusCode: http.StatusOK}},
+		// Pre-population stops helper container.
+		{"/containers/helper-id/stop", http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}},
+		// Helper container cleanup (defer DELETE).
+		{"/containers/helper-id?v=1&force=1", http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody}},
+	}
+	outcome := make(chan error, 1)
+	go fakeHTTPCalls(l, wants, outcome)
+	// Ping daemon.
+	clientIn := setupProxy(t, sock, ctp)
+	req, err := http.NewRequest(http.MethodHead, "/_ping", http.NoBody)
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // HEAD /_ping
+	resp, err := http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+	// Create container.
+	clientIn = setupProxy(t, sock, ctp)
+	req, err = http.NewRequest(http.MethodPost, "/containers/create?name=java-app", asBody([]byte(`{"Image": "maven:3.8", "HostConfig": {}}`)))
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		r, err := http.ReadResponse(bufio.NewReader(clientIn), req)
+		if err == nil && r.Body != nil {
+			io.ReadAll(r.Body)
+			r.Body.Close()
+		}
+		respCh <- r
+		errCh <- err
+	}()
+	orFail(t, <-outcome) // POST /containers/create?name=java-app
+	orFail(t, <-outcome) // POST /containers/create (helper)
+	orFail(t, <-outcome) // POST /containers/helper-id/start
+	orFail(t, <-outcome) // HEAD /containers/helper-id/archive?path=/var/cache/proxy.crt
+	orFail(t, <-outcome) // PUT /containers/helper-id/archive?path=/var/cache
+	orFail(t, <-outcome) // HEAD /containers/helper-id/archive?path=/var/cache/proxy.crt.jks
+	orFail(t, <-outcome) // PUT /containers/helper-id/archive?path=/var/cache
+	orFail(t, <-outcome) // POST /containers/helper-id/stop
+	orFail(t, <-outcome) // DELETE /containers/helper-id?v=1&force=1
+	orFail(t, <-errCh)
+	resp = <-respCh
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusCreated, resp.StatusCode)
+	}
+}
+
+func TestPatchOnStartSkipsPrePopulatedVolume(t *testing.T) {
+	ctp, _ := NewContainerTruststorePatcher(CERT, ContainerTruststorePatcherOpts{})
+	sock := tempSocketName(t)
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	osHeader, osTar := statAndOpen(t, "os-release", "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.16.0\n", "")
+	certHeader, certTar := statAndOpen(t, "cert.pem", "", "")
+	wants := []httpCall{
+		// Ping daemon.
+		{"/_ping", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		// Create container.
+		{"/containers/create?name=abc", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		// Start container: /containers/abc/json returns Mounts containing /var/cache.
+		{"/containers/abc/json", http.Response{StatusCode: http.StatusOK, Body: asBody([]byte(`{"Id": "def", "Mounts": [{"Destination": "/var/cache", "Type": "volume"}]}`))}},
+		// Notice: HEAD/PUT /var/cache/proxy.crt is NOT called!
+		{"/containers/def/archive?path=/kaniko", http.Response{StatusCode: http.StatusNotFound}},
+		{"/containers/def/archive?path=/etc/os-release", http.Response{StatusCode: http.StatusOK, Header: osHeader}},
+		{"/containers/def/archive?path=/etc/os-release", http.Response{StatusCode: http.StatusOK, Body: osTar}},
+		{"/containers/def/archive?path=/etc/ssl/cert.pem", http.Response{StatusCode: http.StatusOK, Header: certHeader}},
+		{"/containers/def/archive?path=/etc/ssl/cert.pem", http.Response{StatusCode: http.StatusOK, Body: certTar}},
+		{"/containers/def/archive?path=/etc/ssl", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+		{"/containers/abc/start", http.Response{StatusCode: http.StatusOK, Body: http.NoBody}},
+	}
+	outcome := make(chan error, 1)
+	go fakeHTTPCalls(l, wants, outcome)
+	// Ping daemon.
+	clientIn := setupProxy(t, sock, ctp)
+	req, err := http.NewRequest(http.MethodHead, "/_ping", http.NoBody)
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // HEAD /_ping
+	resp, err := http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+	// Create container.
+	clientIn = setupProxy(t, sock, ctp)
+	req, err = http.NewRequest(http.MethodPost, "/containers/create?name=abc", asBody([]byte(`{"HostConfig": {}}`)))
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // POST /containers/create?name=abc
+	resp, err = http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+	// Start container.
+	clientIn = setupProxy(t, sock, ctp)
+	req, err = http.NewRequest(http.MethodPost, "/containers/abc/start", http.NoBody)
+	orFail(t, err)
+	orFail(t, req.Write(clientIn))
+	orFail(t, <-outcome) // GET /containers/abc/json
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/etc/os-release
+	orFail(t, <-outcome) // GET /containers/def/archive?path=/etc/os-release
+	orFail(t, <-outcome) // HEAD /containers/def/archive?path=/etc/ssl/cert.pem
+	orFail(t, <-outcome) // GET /containers/def/archive?path=/etc/ssl/cert.pem
+	orFail(t, <-outcome) // PUT /containers/def/archive?path=/etc/ssl
+	orFail(t, <-outcome) // POST /containers/abc/start
+	resp, err = http.ReadResponse(bufio.NewReader(clientIn), req)
+	orFail(t, err)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Unexpected return code: want=%d got=%d", http.StatusOK, resp.StatusCode)
+	}
+}

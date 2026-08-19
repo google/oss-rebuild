@@ -94,26 +94,66 @@ func (e containerNotFoundError) Error() string {
 	return "No such container: " + e.string
 }
 
-func resolveContainerID(c *UDSHTTPClient, id string) (string, error) {
-	log.Printf("Resolving container ID: %s", id)
+type containerInfo struct {
+	ID     string
+	Mounts []struct {
+		Destination string `json:"Destination"`
+		Type        string `json:"Type"`
+	} `json:"Mounts"`
+	HostConfig struct {
+		Binds []string `json:"Binds"`
+	} `json:"HostConfig"`
+}
+
+func (info *containerInfo) HasMountFor(targetPath string) bool {
+	cleanTarget := filepath.Clean(targetPath)
+	for _, m := range info.Mounts {
+		dest := filepath.Clean(m.Destination)
+		if dest == cleanTarget || strings.HasPrefix(cleanTarget, dest+string(filepath.Separator)) {
+			return true
+		}
+	}
+	for _, b := range info.HostConfig.Binds {
+		parts := strings.Split(b, ":")
+		if len(parts) >= 2 {
+			dest := filepath.Clean(parts[1])
+			if dest == cleanTarget || strings.HasPrefix(cleanTarget, dest+string(filepath.Separator)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func inspectContainer(c *UDSHTTPClient, id string) (*containerInfo, error) {
+	log.Printf("Inspecting container ID: %s", id)
 	resp, err := c.Get("/containers/" + id + "/json")
+	if err != nil {
+		return nil, err
+	}
 	switch resp.StatusCode {
 	case http.StatusNotFound:
-		return "", containerNotFoundError{id}
+		return nil, containerNotFoundError{id}
 	case http.StatusInternalServerError:
 		log.Printf("Failed to resolve ID for %s: %s", id, err)
-		return "", errors.New("Internal server error")
+		return nil, errors.New("Internal server error")
 	default:
 		defer resp.Body.Close()
-		container := struct {
-			ID string `json:"Id"`
-		}{}
+		info := containerInfo{}
 		d := json.NewDecoder(resp.Body)
-		if err := d.Decode(&container); err != nil {
-			return "", errors.New("Failed to parse container")
+		if err := d.Decode(&info); err != nil {
+			return nil, errors.New("Failed to parse container")
 		}
-		return container.ID, nil
+		return &info, nil
 	}
+}
+
+func resolveContainerID(c *UDSHTTPClient, id string) (string, error) {
+	info, err := inspectContainer(c, id)
+	if err != nil {
+		return "", err
+	}
+	return info.ID, nil
 }
 
 func truststoreCertPatch(fs dockerfs.Filesystem, cert []byte) (*patch, error) {
@@ -138,6 +178,83 @@ func createFile(fs dockerfs.Filesystem, content []byte, path string) error {
 	}
 	f := dockerfs.File{Path: path, Metadata: *hdr, Contents: content}
 	return fs.WriteFile(&f)
+}
+
+func getImageName(imageSpec []byte) string {
+	img := make(map[string]any)
+	if err := json.Unmarshal(imageSpec, &img); err != nil {
+		return ""
+	}
+	if name, ok := img["Image"].(string); ok {
+		return name
+	}
+	return ""
+}
+
+func (d *ContainerTruststorePatcher) populateProxyVolume(serverClient *UDSHTTPClient, volName, imageName string, certBytes, jksBytes []byte) error {
+	log.Printf("Pre-populating proxy volume %s using image %s", volName, imageName)
+	if imageName == "" {
+		imageName = "alpine:latest"
+	}
+	createReq := map[string]any{
+		"Image":      imageName,
+		"Entrypoint": []string{"/bin/sh", "-c", "sleep 10"},
+		"HostConfig": map[string]any{
+			"Binds": []string{fmt.Sprintf("%s:/var/cache:rw", volName)},
+		},
+	}
+	bodyBytes, err := json.Marshal(createReq)
+	if err != nil {
+		return err
+	}
+	resp, err := serverClient.Post("/containers/create", "application/json", bytes.NewReader(bodyBytes))
+	if err != nil {
+		log.Printf("Failed to create helper container for volume %s: %v", volName, err)
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		log.Printf("Helper container creation returned HTTP %d for volume %s", resp.StatusCode, volName)
+		return errors.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var created struct {
+		ID string `json:"Id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil || created.ID == "" {
+		log.Printf("Failed to decode helper container ID for volume %s: %v", volName, err)
+		return err
+	}
+	helperID := created.ID
+	defer func() {
+		req, _ := http.NewRequest("DELETE", fmt.Sprintf("/containers/%s?v=1&force=1", helperID), nil)
+		delResp, err := serverClient.Do(req)
+		if err == nil && delResp != nil {
+			delResp.Body.Close()
+		}
+	}()
+
+	startResp, err := serverClient.Post(fmt.Sprintf("/containers/%s/start", helperID), "application/json", nil)
+	if err != nil {
+		log.Printf("Failed to start helper container %s: %v", helperID, err)
+		return err
+	}
+	startResp.Body.Close()
+
+	dfs := dockerfs.Filesystem{Client: serverClient, Container: helperID}
+	if err := createFile(dfs, certBytes, ProxyCertPath); err != nil {
+		log.Printf("Error pre-populating proxy cert in volume %s: %v", volName, err)
+	} else {
+		log.Printf("Successfully pre-populated proxy cert in volume %s", volName)
+	}
+	if len(jksBytes) > 0 {
+		_ = createFile(dfs, jksBytes, ProxyCertJKSPath)
+	}
+
+	stopResp, err := serverClient.Post(fmt.Sprintf("/containers/%s/stop", helperID), "application/json", nil)
+	if err == nil && stopResp != nil {
+		stopResp.Body.Close()
+	}
+	return nil
 }
 
 func addBinding(imageSpec []byte, from, to, mode string) (newSpec []byte, err error) {
@@ -562,6 +679,7 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 	log.Printf("Proxying request: %s %s", req.Method, req.URL.RequestURI())
 	serverClient := NewUDSHTTPClient(serverConn.RemoteAddr().String())
 	action, id := getActionType(req)
+	var createdVolName, createdImageName string
 	switch action {
 	case patchEnvVarsDuring:
 		body, err := io.ReadAll(req.Body)
@@ -574,6 +692,8 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		// and commit operations on the container won't pick up any new files or
 		// directories written to the dir during its execution.
 		volName := fmt.Sprintf("proxy-vol%d", d.created.Add(1))
+		createdVolName = volName
+		createdImageName = getImageName(body)
 		newBody, err = addBinding(newBody, volName, filepath.Dir(ProxyCertPath), "rw")
 		if err != nil {
 			log.Fatalf("Failed to add volume for request %s: %s", req.URL.Path, err)
@@ -626,9 +746,9 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 		req.ContentLength = int64(len(newBody))
 		req.Body = io.NopCloser(bytes.NewReader(newBody))
 	case patchTruststoreBefore:
-		id, err = resolveContainerID(serverClient, id)
+		info, err := inspectContainer(serverClient, id)
 		if err != nil {
-			log.Printf("Unable to resolve container ID: %s", err)
+			log.Printf("Unable to inspect container: %s", err)
 			switch err.(type) {
 			case containerNotFoundError:
 				clientConn.Write(httpNotFoundResponse)
@@ -637,23 +757,28 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 			}
 			return
 		}
+		id = info.ID
 		dfs := dockerfs.Filesystem{Client: serverClient, Container: id}
 		certBytes := cert.ToPEM(&d.cert)
 		// NOTE: This doesn't need to be cleaned up due to the enclosing volume
 		// binding made at creation time.
-		if err := createFile(dfs, certBytes, ProxyCertPath); err != nil {
-			log.Printf("Creating proxy cert: %v", err)
-			break
-		}
-		if d.javaTruststoreEnvVar {
-			jks, err := cert.ToJKS(&d.cert)
-			if err != nil {
-				log.Printf("Generating java proxy cert: %v", err)
+		if info.HasMountFor(ProxyCertPath) {
+			log.Printf("Target path %s is inside a volume or bind mount, pre-populated at creation time", ProxyCertPath)
+		} else {
+			if err := createFile(dfs, certBytes, ProxyCertPath); err != nil {
+				log.Printf("Creating pre-start proxy cert: %v", err)
 				break
 			}
-			if err := createFile(dfs, jks, ProxyCertJKSPath); err != nil {
-				log.Printf("Creating java proxy cert: %v", err)
-				break
+			if d.javaTruststoreEnvVar {
+				jks, err := cert.ToJKS(&d.cert)
+				if err != nil {
+					log.Printf("Generating java proxy cert: %v", err)
+					break
+				}
+				if err := createFile(dfs, jks, ProxyCertJKSPath); err != nil {
+					log.Printf("Creating java proxy cert: %v", err)
+					break
+				}
 			}
 		}
 		if d.bazelTruststore {
@@ -897,6 +1022,16 @@ func (d *ContainerTruststorePatcher) proxyRequest(clientConn, serverConn net.Con
 	if err := resp.Write(clientConn); err != nil {
 		log.Printf("Failed to write server response: %s", err)
 		return
+	}
+	if createdVolName != "" && resp.StatusCode == http.StatusCreated {
+		certBytes := cert.ToPEM(&d.cert)
+		var jksBytes []byte
+		if d.javaTruststoreEnvVar {
+			jksBytes, _ = cert.ToJKS(&d.cert)
+		}
+		if err := d.populateProxyVolume(serverClient, createdVolName, createdImageName, certBytes, jksBytes); err != nil {
+			log.Printf("Failed pre-populating proxy volume %s: %v", createdVolName, err)
+		}
 	}
 	if req.Header.Get("Upgrade") != "" && resp.StatusCode == http.StatusSwitchingProtocols {
 		log.Printf("Upgraded protocol to %s", req.Header.Get("Upgrade"))
