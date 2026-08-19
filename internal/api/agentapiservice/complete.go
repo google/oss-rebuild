@@ -57,7 +57,7 @@ func AgentComplete(ctx context.Context, req schema.AgentCompleteRequest, deps *A
 		if scratch, err := deps.Scratches.Get(ctx, session.ScratchID); err != nil {
 			log.Printf("session %s: fetching scratch %s for teardown: %v", req.SessionID, session.ScratchID, err)
 		} else if scratch.State != schema.ScratchDeleting && scratch.State != schema.ScratchDeleted {
-			if err := deleteScratch(ctx, deps.Scratches, deps.GCE, scratch); err != nil {
+			if err := deleteScratch(ctx, deps.Scratches, deps.GCE, scratch, nil); err != nil {
 				log.Printf("session %s: releasing scratch %s: %v", req.SessionID, session.ScratchID, err)
 			}
 		}
