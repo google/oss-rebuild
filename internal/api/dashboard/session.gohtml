@@ -48,7 +48,7 @@
         {{end}}
         {{range .Events}}
         <div class="traj-event kind-{{.Kind}}">
-            <div><span class="traj-kind">{{.Title}}</span>{{if not .At.IsZero}}<span class="traj-time">{{.At.Format "15:04:05"}}</span>{{end}}</div>
+            <div><span class="traj-kind">{{.Title}}</span>{{if not .At.IsZero}}<span class="traj-time">{{.At.Format "15:04:05"}}</span>{{end}}{{if .Href}} <a href="{{.Href}}"><small>{{.HrefText}}</small></a>{{end}}</div>
             {{if .Command}}<pre>{{.Command}}</pre>{{end}}
             {{if .Body}}
                 {{if .Open}}
@@ -68,10 +68,11 @@
     <h3>Scratch execs</h3>
     {{if .Execs}}
     <table>
-        <thead><tr><th>Queued</th><th>State</th><th>Exit</th><th>Duration</th><th>Command</th><th>Output</th></tr></thead>
+        <thead><tr><th>Iter</th><th>Queued</th><th>State</th><th>Exit</th><th>Duration</th><th>Command</th><th>Output</th></tr></thead>
         <tbody>
             {{range .Execs}}
             <tr>
+                <td>{{if .Iter}}{{.Iter}}{{end}}</td>
                 <td>{{.Queued}}</td>
                 <td><span class="{{.StateClass}}">{{.State}}</span></td>
                 <td>{{.ExitCode}}</td>
