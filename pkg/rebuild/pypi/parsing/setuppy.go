@@ -6,6 +6,7 @@ package parsing
 import (
 	"context"
 	"log"
+	"maps"
 	"math"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,10 @@ import (
 // common case by resolving the arguments that are literals, or module-level
 // names bound to literals, and leave everything computed (file reads, calls,
 // os.environ) unresolved.
+//
+// Arguments assembled into a dict and splatted, setup(**kwargs), are followed
+// too. A dict mutated after it is bound, kwargs["name"] = ..., is not: that
+// needs the assignments replayed in order, which is interpretation.
 
 type pyKind int
 
@@ -30,13 +35,15 @@ const (
 	pyUnresolved pyKind = iota
 	pyString
 	pyStringList
+	pyDict
 )
 
 // pyValue is a setup() argument resolved from the AST.
 type pyValue struct {
 	kind pyKind
-	str  string   // set for pyString
-	list []string // set for pyStringList (non-string elements are dropped)
+	str  string             // set for pyString
+	list []string           // set for pyStringList (non-string elements are dropped)
+	dict map[string]pyValue // set for pyDict (non-string keys are dropped)
 }
 
 // pythonParsers pools parsers across calls. A bonsai parser is not
@@ -107,13 +114,26 @@ func (a *analyzer) keywordArgs(args *bonsai.Node) map[string]pyValue {
 	if args == nil {
 		return kwargs
 	}
+	// Source order, so that a later argument wins. Python rejects a key given
+	// both ways outright, so the two cannot legitimately disagree.
 	for _, arg := range args.Children {
-		if arg.Kind != py.KindKeywordArgument {
-			continue
-		}
-		name, value := arg.ChildByField(py.FieldName), arg.ChildByField(py.FieldValue)
-		if name != nil && value != nil {
-			kwargs[a.text(name)] = a.resolve(value)
+		switch arg.Kind {
+		case py.KindKeywordArgument:
+			name, value := arg.ChildByField(py.FieldName), arg.ChildByField(py.FieldValue)
+			if name != nil && value != nil {
+				kwargs[a.text(name)] = a.resolve(value)
+			}
+		case py.KindDictionarySplat:
+			// setup(**kwargs), where the metadata was assembled into a dict
+			// first. Common enough to be worth following.
+			for _, c := range arg.Children {
+				if !c.Named {
+					continue
+				}
+				if v := a.resolve(c); v.kind == pyDict {
+					maps.Copy(kwargs, v.dict)
+				}
+			}
 		}
 	}
 	return kwargs
@@ -149,6 +169,14 @@ func (a *analyzer) resolve(n *bonsai.Node) pyValue {
 			}
 		}
 		return pyValue{kind: pyStringList, list: list}
+	case py.KindDictionary:
+		return a.dictValue(n, py.KindPair)
+	case py.KindCall:
+		// Only dict(...), which is the other half of the setup(**kwargs)
+		// idiom. Every other call needs the interpreter.
+		if fn := n.ChildByField(py.FieldFunction); fn != nil && fn.Kind == py.KindIdentifier && a.text(fn) == "dict" {
+			return a.dictValue(n.ChildByField(py.FieldArguments), py.KindKeywordArgument)
+		}
 	case py.KindParenthesizedExpression:
 		for _, inner := range n.Children {
 			if inner.Named {
@@ -159,6 +187,44 @@ func (a *analyzer) resolve(n *bonsai.Node) pyValue {
 		return a.vars[a.text(n)]
 	}
 	return pyValue{}
+}
+
+// dictValue collects the entries of a dict literal or a dict() call. Both spell
+// an entry as a keyed child, only the child kind and how the key is written
+// differ. Entries whose key is not a plain string are dropped, since a setup()
+// argument name is always one.
+func (a *analyzer) dictValue(n *bonsai.Node, entry string) pyValue {
+	out := map[string]pyValue{}
+	if n == nil {
+		return pyValue{kind: pyDict, dict: out}
+	}
+	for _, c := range n.Children {
+		if c.Kind != entry {
+			continue
+		}
+		key, value := c.ChildByField(py.FieldKey), c.ChildByField(py.FieldValue)
+		if key == nil {
+			key = c.ChildByField(py.FieldName) // dict(name=...) spells the key as an identifier
+		}
+		if key == nil || value == nil {
+			continue
+		}
+		var name string
+		switch key.Kind {
+		case py.KindIdentifier:
+			name = a.text(key)
+		case py.KindString:
+			s, ok := a.stringLiteral(key)
+			if !ok {
+				continue
+			}
+			name = s
+		default:
+			continue
+		}
+		out[name] = a.resolve(value)
+	}
+	return pyValue{kind: pyDict, dict: out}
 }
 
 // stringLiteral returns the contents of a string literal. Escape sequences are
