@@ -18,6 +18,8 @@ const (
 	ProxyTool            ToolType = "proxy"
 	GSUtilTool           ToolType = "gsutil_writeonly"
 	TetragonSysgraphTool ToolType = "tetragon_sysgraph"
+	DiffrTool            ToolType = "diffr"
+	StabilizeTool        ToolType = "stabilize"
 )
 
 // Executor manages build execution for a specific backend

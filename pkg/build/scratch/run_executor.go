@@ -36,6 +36,11 @@ type DockerRunExecutor struct {
 
 var _ build.Executor = (*DockerRunExecutor)(nil)
 
+// ArtifactPath is where a docker run build leaves its artifact on the VM.
+func ArtifactPath(workDir, buildID string) string {
+	return path.Join(BuildDir(workDir, buildID), "out", path.Base(local.DockerRunOutputPath))
+}
+
 // NewDockerRunExecutor creates a scratch docker run executor from config.
 func NewDockerRunExecutor(config DockerRunExecutorConfig) (*DockerRunExecutor, error) {
 	core, err := newExecutor(config.ExecutorConfig)
@@ -71,7 +76,7 @@ func (e *DockerRunExecutor) Start(ctx context.Context, input rebuild.Input, opts
 // directory is always retained for post-mortem inspection. Timings may be
 // partial and accompany a build error or a failed artifact retrieval.
 func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle, plan *local.DockerRunPlan, t rebuild.Target, opts build.Options, timeout time.Duration) (*rebuild.BuildTimings, error) {
-	dir := path.Join(e.workDir, buildsSubdir, handle.id)
+	dir := BuildDir(e.workDir, handle.id)
 	container := "rb-" + handle.id
 	if err := e.prepareBuild(ctx, dir); err != nil {
 		return nil, err

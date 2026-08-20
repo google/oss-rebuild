@@ -80,7 +80,7 @@ func (e *DockerBuildExecutor) Start(ctx context.Context, input rebuild.Input, op
 // image and container are removed after observation unless retained. The
 // staging directory is always retained for post-mortem inspection.
 func (e *DockerBuildExecutor) runBuild(ctx context.Context, handle *scratchHandle, plan *local.DockerBuildPlan, t rebuild.Target, opts build.Options, timeout time.Duration) (*rebuild.BuildTimings, error) {
-	dir := path.Join(e.workDir, buildsSubdir, handle.id)
+	dir := BuildDir(e.workDir, handle.id)
 	container := "rb-" + handle.id
 	// Image references must be lowercase, unlike container names.
 	imageTag := "rb-" + strings.ToLower(handle.id)
