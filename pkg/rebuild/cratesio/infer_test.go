@@ -76,6 +76,47 @@ edition = "2021"
 	}
 }
 
+func TestInferRefAndDirTriesAllMatchingTags(t *testing.T) {
+	// Both tags have the same rank, so lexical order puts the unrelated tag first.
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: unrelated-tag
+    tag: 1.0.150
+    files:
+      Cargo.toml: |
+        [package]
+        name = "other"
+        version = "1.0.150"
+  - id: matching-tag
+    parent: unrelated-tag
+    tag: v1.0.150
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`, nil))
+	crate := must(archivetest.TgzFile([]archive.TarEntry{
+		{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}},
+	}))
+	crateBytes := must(io.ReadAll(crate))
+
+	ref, dir, err := inferRefAndDir(
+		rebuild.Target{Package: "serde", Version: "1.0.150"},
+		&cratesio.CrateVersion{Version: cratesio.Version{Version: "1.0.150"}},
+		crateBytes,
+		&rebuild.RepoConfig{Repository: repo.Repository},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := repo.Commits["matching-tag"].String(); ref != want {
+		t.Errorf("inferRefAndDir() ref = %q, want %q", ref, want)
+	}
+	if dir != "" {
+		t.Errorf("inferRefAndDir() dir = %q, want empty", dir)
+	}
+}
+
 func TestInferStrategy(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
