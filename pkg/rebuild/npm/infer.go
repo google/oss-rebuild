@@ -293,6 +293,8 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			}
 			if v, _ := semver.New(npmv); v.Major <= 6 { // NOTE: PickNPMVersion guarantees a valid semver
 				b.KeepRoot = true
+			} else if v.Major > 10 {
+				b.ReplaceRegistryHost = true
 			}
 			return b, nil
 		}
