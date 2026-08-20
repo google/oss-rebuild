@@ -55,7 +55,7 @@ func NewRemoteExecutionService(client *http.Client, baseURL *url.URL) ExecutionS
 
 func (s *remoteExecutionService) RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest) (*schema.Verdict, error) {
 	if req.Artifact == "" {
-		mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+		mux := meta.NewRegistryMux(httpx.NewCachedClient(&httpx.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: rebuild.UserAgent("localbuild")}, &cache.CoalescingMemoryCache{}))
 		t := rebuild.Target{Ecosystem: req.Ecosystem, Package: req.Package, Version: req.Version, Artifact: req.Artifact}
 		a, err := meta.GuessArtifact(ctx, t, mux)
 		if err != nil {
