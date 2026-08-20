@@ -30,7 +30,7 @@ type AgentDeps struct {
 	MetadataBucket string
 	LogsBucket     string
 	GCSClient      *gcs.Client
-	MaxTurns       int
+	MaxTurns       int // Bounds each model exchange's tool uses (ChatOpts.MaxToolIterations)
 	GenaiClient    *genai.Client
 	RegistryClient httpx.BasicClient // Upstream registry requests (e.g. adapt-mode registry refresh) via the session's identified egress path.
 	ScratchRunner  *ScratchRunner    // When set, iteration builds run on a scratch VM with build logs read from exec output.
@@ -155,7 +155,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		MetadataBucket: deps.MetadataBucket,
 		LogsBucket:     deps.LogsBucket,
 		GCSClient:      deps.GCSClient,
-		MaxTurns:       10,
+		MaxTurns:       250, // ~20m @5s/fn
 		GenaiClient:    deps.Client,
 		RegistryClient: deps.RegistryClient,
 		ScratchRunner:  deps.ScratchRunner,
@@ -169,7 +169,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		}
 	}()
 	var err error
-	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), config, &llm.ChatOpts{Tools: a.getTools(), Retrier: deps.Retrier})
+	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), config, &llm.ChatOpts{Tools: a.getTools(), MaxToolIterations: a.deps.MaxTurns, Retrier: deps.Retrier})
 	if err != nil {
 		return &schema.AgentCompleteRequest{
 			StopReason: schema.AgentCompleteReasonError,

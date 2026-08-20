@@ -16,6 +16,9 @@ import (
 
 const defaultMaxToolIterations = 10
 
+// finalTurnNudge is appended to the final budegeted tool response delivered.
+const finalTurnNudge = "Tool budget exhausted: this is the final turn. Do not call more tools. Respond now with your conclusion from the information already gathered."
+
 // ChatOpts provides configuration options for creating a new Chat instance.
 type ChatOpts struct {
 	// Tools defines the set of function definitions (declaration + implementation)
@@ -123,7 +126,7 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 			return
 		}
 		currentParts := slices.Clone(parts)
-		for range cm.maxIter {
+		for i := range cm.maxIter {
 			if !yield(&genai.Content{Parts: currentParts, Role: UserRole}, nil) {
 				return
 			}
@@ -170,6 +173,10 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 					funcResponse := implFunc(call.Args)
 					responsePart := genai.Part{FunctionResponse: &funcResponse}
 					currentParts = append(currentParts, &responsePart)
+				}
+				if i == cm.maxIter-2 {
+					// The next iteration is the last the budget allows so force a response.
+					currentParts = append(currentParts, genai.NewPartFromText(finalTurnNudge))
 				}
 				continue
 			} else if candidate.FinishReason == genai.FinishReasonStop {
