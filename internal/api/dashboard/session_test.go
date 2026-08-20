@@ -43,6 +43,7 @@ func TestSessionHandler(t *testing.T) {
 	ctx := context.Background()
 	created := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	execs := db.NewMemoryScratchExecs()
+	// A host exec with no matching call renders as a plain exec event.
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID:         "op-1",
 		ScratchID:  "scr-1",
@@ -54,6 +55,27 @@ func TestSessionHandler(t *testing.T) {
 		FinishedAt: created.Add(2 * time.Minute),
 	}); err != nil {
 		t.Fatalf("Insert: %v", err)
+	}
+	// The chat-less first build. Its iter-1 label materializes iteration 1.
+	for i, e := range []schema.ScratchExec{{
+		Cmd:      []string{"/bin/sh", "-c", "set -eu\nmkdir -p \"/home/builder/builds/iter-1/out\"\ndocker ps -aq --filter name=^rb- | xargs -r docker rm -f"},
+		State:    schema.ScratchExecCompleted,
+		ExitCode: 0,
+	}, {
+		Cmd:      []string{"docker", "run", "--detach", "--name", "rb-iter-1", "img", "sleep", "infinity"},
+		State:    schema.ScratchExecCompleted,
+		ExitCode: 0,
+	}, {
+		Cmd:      []string{"docker", "exec", "rb-iter-1", "/bin/sh", "-c", "set -eux\nnpm install"},
+		State:    schema.ScratchExecCompleted,
+		ExitCode: 7,
+	}} {
+		e.ID = fmt.Sprintf("mach-%d", i)
+		e.ScratchID = "scr-1"
+		e.CreatedAt = created.Add(time.Duration(i) * time.Second)
+		if err := execs.Insert(ctx, e); err != nil {
+			t.Fatalf("Insert: %v", err)
+		}
 	}
 	deps := &Deps{
 		Sessions: &sessionFixtureReader{
@@ -92,19 +114,28 @@ func TestSessionHandler(t *testing.T) {
 	for _, want := range []string{
 		"sess-1",
 		"lodash",
+		"Iteration 1",
 		"Iteration 3",
 		"build ok",
 		"docker build .",
 		"/session/sess-1/exec/op-1/out",
 		"1K in (40% cached) / 250 out",
 		"exec · completed · exit 0", // trajectory event in iteration 3
+		// One attempt under iteration 1, named by its failing phase.
+		"build iter-1 · phase exit 7",
+		"npm install",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered page missing %q", want)
 		}
 	}
-	if got.Execs[0].Iter != 3 {
-		t.Errorf("exec attributed to iteration %d; want 3", got.Execs[0].Iter)
+	var iters []int
+	for _, e := range got.Execs {
+		iters = append(iters, e.Iter)
+	}
+	// ListByScratch orders by creation, so the build's execs come first.
+	if want := []int{1, 1, 1, 3}; !slices.Equal(iters, want) {
+		t.Errorf("exec iterations = %v; want %v", iters, want)
 	}
 }
 
@@ -300,5 +331,173 @@ func TestLoadTranscriptOrder(t *testing.T) {
 	}
 	if maxInflight < 2 {
 		t.Errorf("max reads in flight = %d; want concurrent reads", maxInflight)
+	}
+}
+
+// TestClassifyExec pins the argv shape of each emitter execClass tracks.
+func TestClassifyExec(t *testing.T) {
+	const dir = "/home/builder/builds/iter-2"
+	prepare := "set -eu\nmkdir -p \"" + dir + "/out\"\ndocker ps -aq --filter name=^rb- | xargs -r docker rm -f"
+	artifact := "set -eu\n[ -f \"" + dir + "/out/lodash-4.17.21.tgz\" ] || exit 44\n[ \"$(wc -c < \"" + dir + "/out/lodash-4.17.21.tgz\")\" -le 536870912 ] || exit 45\nbase64 \"" + dir + "/out/lodash-4.17.21.tgz\""
+	// The stabilize URL's builds/ precedes the build's own paths.
+	diff := strings.Join([]string{
+		"set -eu",
+		`die() { echo "$*"; exit 3; }`,
+		`fetch() { [ -e "$1" ] || { wget -q -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }`,
+		"mkdir -p /home/builder/tools /home/builder/upstream",
+		"fetch /home/builder/tools/stabilize https://storage.googleapis.com/prebuild/builds/v1/stabilize",
+		"fetch /home/builder/upstream/lodash-4.17.21.tgz https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz",
+		"stab /home/builder/builds/iter-2/out/lodash-4.17.21.tgz /home/builder/builds/iter-2/out/lodash-4.17.21.tgz.stabilized",
+		"exec /home/builder/tools/diffr --summary --label rebuild --label upstream /home/builder/builds/iter-2/out/lodash-4.17.21.tgz.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized",
+		"",
+	}, "\n")
+	container := `c=$(docker ps -aq --filter name=^rb- | head -1); [ -n "$c" ] || { echo 'no build container found; run a build first' >&2; exit 125; }; docker start "$c" >/dev/null; exec docker exec "$c" /bin/sh -c 'npm ls'`
+	for _, tc := range []struct {
+		name string
+		cmd  []string
+		want classifiedExec
+	}{{
+		name: "keepalive",
+		cmd:  []string{"/bin/true"},
+		want: classifiedExec{class: execKeepAlive},
+	}, {
+		name: "prepare",
+		cmd:  []string{"/bin/sh", "-c", prepare},
+		want: classifiedExec{class: execBuildMachinery, label: "prepare", buildID: "iter-2", script: prepare},
+	}, {
+		name: "start",
+		cmd:  []string{"docker", "run", "--detach", "--rm", "--name", "rb-iter-2", "-v", dir + "/out:/out", "--ulimit", "core=0", "node:18", "sleep", "infinity"},
+		want: classifiedExec{class: execBuildMachinery, label: "start", buildID: "iter-2", script: "docker run --detach --rm --name rb-iter-2 -v " + dir + "/out:/out --ulimit core=0 node:18 sleep infinity"},
+	}, {
+		name: "phase",
+		cmd:  []string{"docker", "exec", "rb-iter-2", "/bin/sh", "-c", "set -eux\nnpm ci"},
+		want: classifiedExec{class: execBuildMachinery, label: "phase", buildID: "iter-2", script: "set -eux\nnpm ci"},
+	}, {
+		name: "stop",
+		cmd:  []string{"docker", "stop", "-t", "0", "rb-iter-2"},
+		want: classifiedExec{class: execBuildMachinery, label: "stop", buildID: "iter-2", script: "docker stop -t 0 rb-iter-2"},
+	}, {
+		name: "artifact",
+		cmd:  []string{"/bin/sh", "-c", artifact},
+		want: classifiedExec{class: execBuildMachinery, label: "artifact", buildID: "iter-2", script: artifact},
+	}, {
+		name: "diff",
+		cmd:  []string{"/bin/sh", "-c", diff},
+		want: classifiedExec{class: execBuildMachinery, label: "diff", buildID: "iter-2", script: diff},
+	}, {
+		name: "run_in_container",
+		cmd:  []string{"/bin/sh", "-c", container},
+		want: classifiedExec{class: execToolContainer, script: container},
+	}, {
+		name: "run_on_host",
+		cmd:  []string{"/bin/sh", "-c", "cat " + dir + "/build.sh"},
+		want: classifiedExec{class: execToolHost, script: "cat " + dir + "/build.sh"},
+	}, {
+		name: "bare sh -c",
+		cmd:  []string{"sh", "-c", "docker images"},
+		want: classifiedExec{class: execToolHost, script: "docker images"},
+	}, {
+		name: "plain argv",
+		cmd:  []string{"ls", "-la"},
+		want: classifiedExec{class: execOther, script: "ls -la"},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifyExec(tc.cmd); got != tc.want {
+				t.Errorf("classifyExec(%q)\n got %+v\nwant %+v", tc.cmd, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestComposeTrajectory(t *testing.T) {
+	start := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) time.Time { return start.Add(d) }
+	groups := map[int]*IterationGroup{
+		1: {Number: 1, Events: []TranscriptEvent{{Kind: "proposal", Title: "inference proposal"}}},
+		3: {Number: 3, Events: []TranscriptEvent{
+			{Kind: "prompt", Title: "prompt", At: at(10 * time.Minute)},
+			{Kind: "call", Title: "run_on_host", Command: "ls builds", At: at(11 * time.Minute)},
+		}},
+	}
+	groupFor := func(n int) *IterationGroup {
+		if _, ok := groups[n]; !ok {
+			groups[n] = &IterationGroup{Number: n}
+		}
+		return groups[n]
+	}
+	sh := func(script string) []string { return []string{"/bin/sh", "-c", script} }
+	data := &SessionData{}
+	for _, e := range []schema.ScratchExec{
+		// iter-1 ran clean but its artifact differed from upstream.
+		{ID: "1-prepare", Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-1/out\""), CreatedAt: at(0)},
+		{ID: "1-start", Cmd: []string{"docker", "run", "--name", "rb-iter-1", "img", "sleep", "infinity"}, CreatedAt: at(time.Second)},
+		{ID: "1-phase", Cmd: []string{"docker", "exec", "rb-iter-1", "/bin/sh", "-c", "set -eux\nnpm ci"}, CreatedAt: at(2 * time.Second)},
+		{ID: "1-stop", Cmd: []string{"docker", "stop", "-t", "0", "rb-iter-1"}, CreatedAt: at(3 * time.Second)},
+		{ID: "1-artifact", Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-1/out/x.tgz\" ] || exit 44"), CreatedAt: at(4 * time.Second)},
+		{ID: "1-diff", Cmd: sh("set -eu\ndie() { exit 3; }\nexec diffr --summary /home/builder/builds/iter-1/out/x.tgz.stabilized up"), ExitCode: 1, CreatedAt: at(5 * time.Second)},
+		// Predates every window: ledger only.
+		{ID: "keepalive", Cmd: []string{"/bin/true"}, CreatedAt: at(6 * time.Second)},
+		// Only the host exec without a call renders.
+		{ID: "3-host", Cmd: sh("ls builds"), CreatedAt: at(11 * time.Minute)},
+		{ID: "3-container", Cmd: sh("c=$(docker ps -aq --filter name=^rb- | head -1); exec docker exec \"$c\" /bin/sh -c 'ls'"), CreatedAt: at(12 * time.Minute)},
+		{ID: "3-stray", Cmd: sh("cat notes"), CreatedAt: at(13 * time.Minute)},
+		{ID: "3-prepare", Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-3/out\""), CreatedAt: at(20 * time.Minute)},
+		{ID: "3-artifact", Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-3/out/x.tgz\" ] || exit 44"), CreatedAt: at(21 * time.Minute)},
+	} {
+		e.State = schema.ScratchExecCompleted
+		data.Execs = append(data.Execs, newExecView("sess-1", e))
+	}
+	composeTrajectory(data, groups, groupFor)
+	var iters []int
+	for _, v := range data.Execs {
+		iters = append(iters, v.Iter)
+	}
+	if want := []int{1, 1, 1, 1, 1, 1, 0, 3, 3, 3, 3, 3}; !slices.Equal(iters, want) {
+		t.Errorf("exec iterations = %v; want %v", iters, want)
+	}
+	titles := map[int][]string{}
+	for n, g := range groups {
+		sortEvents(g.Events)
+		for _, e := range g.Events {
+			titles[n] = append(titles[n], e.Title)
+		}
+	}
+	want := map[int][]string{
+		1: {"inference proposal", "build iter-1 · mismatch"},
+		3: {"prompt", "run_on_host", "exec · completed · exit 0 · N/A", "build iter-3 · succeeded"},
+	}
+	if diff := cmp.Diff(want, titles); diff != "" {
+		t.Errorf("event titles (-want +got):\n%s", diff)
+	}
+	var labels []string
+	for _, s := range groups[1].Events[1].Build.Steps {
+		labels = append(labels, s.Label)
+	}
+	if want := []string{"prepare", "start", "phase", "stop", "artifact", "diff"}; !slices.Equal(labels, want) {
+		t.Errorf("iter-1 steps = %v; want %v", labels, want)
+	}
+}
+
+func TestBuildOutcome(t *testing.T) {
+	ok := func(label string) BuildStep { return BuildStep{Label: label, State: schema.ScratchExecCompleted} }
+	clean := []BuildStep{ok("prepare"), ok("start"), ok("phase"), ok("stop")}
+	for _, tc := range []struct {
+		name  string
+		steps []BuildStep
+		want  string
+	}{
+		{"failing phase", []BuildStep{ok("prepare"), ok("start"), {Label: "phase", State: schema.ScratchExecCompleted, ExitCode: 7}}, "phase exit 7"},
+		{"pending", []BuildStep{ok("prepare"), {Label: "start", State: schema.ScratchExecPending}}, "running"},
+		{"timed out", []BuildStep{ok("prepare"), ok("start"), {Label: "phase", State: schema.ScratchExecTimedOut}}, "phase timed_out"},
+		{"no artifact step", clean, "completed"},
+		{"artifact", append(slices.Clone(clean), ok("artifact")), "succeeded"},
+		{"missing artifact", append(slices.Clone(clean), BuildStep{Label: "artifact", State: schema.ScratchExecCompleted, ExitCode: 44}), "artifact exit 44"},
+		{"diff found differences", append(slices.Clone(clean), ok("artifact"), BuildStep{Label: "diff", State: schema.ScratchExecCompleted, ExitCode: 1}), "mismatch"},
+		{"diff found none", append(slices.Clone(clean), ok("artifact"), ok("diff")), "mismatch"},
+		{"diff setup failed", append(slices.Clone(clean), ok("artifact"), BuildStep{Label: "diff", State: schema.ScratchExecCompleted, ExitCode: 3}), "diff exit 3"},
+	} {
+		if got := buildOutcome(tc.steps); got != tc.want {
+			t.Errorf("%s: buildOutcome = %q; want %q", tc.name, got, tc.want)
+		}
 	}
 }
