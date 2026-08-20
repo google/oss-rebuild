@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -415,12 +414,12 @@ func (d *dispatcher) transition(ctx context.Context, c scheduler.Campaign, fromS
 }
 
 func dispatchHandler(ctx context.Context, cfg dispatchConfig, deps *Deps) (*act.NoOutput, error) {
-	fire, err := firestore.NewClient(ctx, cfg.Project)
+	fire, err := deps.Firestore(ctx, cfg.Project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
 	defer fire.Close()
-	client, apiURL, err := apiClient(ctx, cfg.API)
+	client, apiURL, err := deps.APIClient(ctx, cfg.API)
 	if err != nil {
 		return nil, err
 	}

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/billyx"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/signals"
@@ -88,7 +87,7 @@ func (c enqueueConfig) pool(sdb *sqlite3.Conn) ([]string, error) {
 }
 
 func enqueueHandler(ctx context.Context, cfg enqueueConfig, deps *Deps) (*act.NoOutput, error) {
-	fire, err := firestore.NewClient(ctx, cfg.Project)
+	fire, err := deps.Firestore(ctx, cfg.Project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
@@ -251,7 +250,7 @@ func (c statusConfig) Validate() error {
 }
 
 func statusHandler(ctx context.Context, cfg statusConfig, deps *Deps) (*act.NoOutput, error) {
-	fire, err := firestore.NewClient(ctx, cfg.Project)
+	fire, err := deps.Firestore(ctx, cfg.Project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}

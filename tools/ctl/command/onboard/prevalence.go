@@ -8,14 +8,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"maps"
 	"slices"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/google/oss-rebuild/internal/billyx"
-	"github.com/google/oss-rebuild/internal/jsonl"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
@@ -64,27 +63,22 @@ func (c prevalenceConfig) ecosystems() []string {
 }
 
 func prevalenceHandler(ctx context.Context, cfg prevalenceConfig, deps *Deps) (*act.NoOutput, error) {
-	client, err := bigquery.NewClient(ctx, cfg.Project, option.WithQuotaProject(cfg.Project))
-	if err != nil {
-		return nil, errors.Wrap(err, "creating bigquery client")
-	}
-	defer client.Close()
-	ds, err := workDataset(ctx, client)
+	client, err := deps.BigQuery(ctx, cfg.Project)
 	if err != nil {
 		return nil, err
 	}
-	snap, err := latestSnapshot(ctx, client, ds)
+	snap, err := latestSnapshot(ctx, client)
 	if err != nil {
 		return nil, err
 	}
 	fmt.Fprintf(deps.IO.Err, "deps.dev snapshot %s\n", snap.Format(time.RFC3339))
 	var recs []signals.PrevalenceRecord
 	for _, name := range cfg.ecosystems() {
-		pkgs, err := packagePrevalence(ctx, client, ds, name, snap, cfg.Top)
+		pkgs, err := packagePrevalence(ctx, client, name, snap, cfg.Top)
 		if err != nil {
 			return nil, errors.Wrapf(err, "querying %s package prevalence", name)
 		}
-		vers, err := versionPrevalence(ctx, client, ds, name, snap, cfg.TopVersions)
+		vers, err := versionPrevalence(ctx, client, name, snap, cfg.TopVersions)
 		if err != nil {
 			return nil, errors.Wrapf(err, "querying %s version prevalence", name)
 		}
@@ -93,20 +87,12 @@ func prevalenceHandler(ctx context.Context, cfg prevalenceConfig, deps *Deps) (*
 		recs = append(recs, vers...)
 	}
 	scored := scoreByEcosystem(recs)
-	outFS, out, err := billyx.NewResolver().FS(ctx, cfg.Out)
+	outFS, out, err := deps.FSFor(ctx, cfg.Out)
 	if err != nil {
 		return nil, errors.Wrapf(err, "resolving %s", cfg.Out)
 	}
-	w, err := outFS.Create(out)
-	if err != nil {
-		return nil, errors.Wrapf(err, "opening %s", cfg.Out)
-	}
-	if err := jsonl.Encode(w, scored); err != nil {
-		w.Close()
-		return nil, errors.Wrap(err, "writing export")
-	}
-	if err := w.Close(); err != nil {
-		return nil, errors.Wrapf(err, "finalizing %s", cfg.Out)
+	if err := writeJSONL(outFS, out, scored); err != nil {
+		return nil, err
 	}
 	fmt.Fprintf(deps.IO.Out, "wrote %d prevalence record(s) to %s\n", len(scored), cfg.Out)
 	return &act.NoOutput{}, nil
@@ -170,10 +156,92 @@ func byDependents(recs []signals.PrevalenceRecord) []signals.PrevalenceRecord {
 	return recs
 }
 
+// queryClient runs BigQuery queries. Tests substitute a fake to run the
+// handler without a project.
+type queryClient interface {
+	Query(ctx context.Context, sql string, params []bigquery.QueryParameter) (rowIterator, error)
+}
+
+// rowIterator yields query rows into dst, ending with iterator.Done.
+type rowIterator interface {
+	Next(dst any) error
+}
+
+// newBigQuery is the production queryClient constructor, billed to project.
+func newBigQuery(ctx context.Context, project string) (queryClient, error) {
+	client, err := bigquery.NewClient(ctx, project, option.WithQuotaProject(project))
+	if err != nil {
+		return nil, errors.Wrap(err, "creating bigquery client")
+	}
+	ds, err := workDataset(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	return bqClient{client, ds}, nil
+}
+
+// workDataset returns the dataset that holds query results, creating it if
+// missing. Without an explicit destination BigQuery materializes results
+// into a hidden per-user dataset whose ACL names the querying user, which
+// domain-restricted organizations reject at creation; a dataset granted
+// only the project's special groups never names a user, so it is allowed.
+func workDataset(ctx context.Context, client *bigquery.Client) (*bigquery.Dataset, error) {
+	ds := client.Dataset("onboard_prevalence")
+	if _, err := ds.Metadata(ctx); err == nil {
+		return ds, nil
+	}
+	err := ds.Create(ctx, &bigquery.DatasetMetadata{
+		Description:            "Query results for ctl onboard priority prevalence.",
+		DefaultTableExpiration: 24 * time.Hour,
+		Access: []*bigquery.AccessEntry{
+			{Role: bigquery.OwnerRole, EntityType: bigquery.SpecialGroupEntity, Entity: "projectOwners"},
+			{Role: bigquery.WriterRole, EntityType: bigquery.SpecialGroupEntity, Entity: "projectWriters"},
+			{Role: bigquery.ReaderRole, EntityType: bigquery.SpecialGroupEntity, Entity: "projectReaders"},
+		},
+	})
+	return ds, errors.Wrap(err, "creating work dataset")
+}
+
+type bqClient struct {
+	client  *bigquery.Client
+	results *bigquery.Dataset
+}
+
+func (c bqClient) Query(ctx context.Context, sql string, params []bigquery.QueryParameter) (rowIterator, error) {
+	q := c.client.Query(sql)
+	q.Parameters = params
+	// Queries in one handler run and drain sequentially, so a per-query
+	// name only has to be stable, not unique across time.
+	q.Dst = c.results.Table(fmt.Sprintf("q_%x", fnv32(sql+fmt.Sprint(params))))
+	q.WriteDisposition = bigquery.WriteTruncate
+	job, err := q.Run(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "running query")
+	}
+	status, err := job.Wait(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "waiting for query")
+	}
+	if err := status.Err(); err != nil {
+		return nil, errors.Wrap(err, "query failed")
+	}
+	it, err := job.Read(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading results")
+	}
+	return it, nil
+}
+
+func fnv32(s string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return h.Sum32()
+}
+
 // latestSnapshot reads the most recent deps.dev snapshot time. Pinning queries
 // to it as a TIMESTAMP parameter lets BigQuery prune to a single partition.
-func latestSnapshot(ctx context.Context, client *bigquery.Client, ds *bigquery.Dataset) (time.Time, error) {
-	it, err := runQuery(ctx, client.Query("SELECT MAX(Time) AS Time FROM `bigquery-public-data.deps_dev_v1.Snapshots`"), ds.Table("latest_snapshot"))
+func latestSnapshot(ctx context.Context, client queryClient) (time.Time, error) {
+	it, err := client.Query(ctx, "SELECT MAX(Time) AS Time FROM `bigquery-public-data.deps_dev_v1.Snapshots`", nil)
 	if err != nil {
 		return time.Time{}, errors.Wrap(err, "reading deps.dev snapshots")
 	}
@@ -206,25 +274,24 @@ func depsDevSystem(ecosystem string) (string, error) {
 // "react-scripts>0.5.1>babel-preset-react-app>regjsgen". Consumers receive
 // those copies through the parent artifact, not the registry, so they are not
 // rebuild targets and would otherwise inflate the population several-fold.
-func packagePrevalence(ctx context.Context, client *bigquery.Client, ds *bigquery.Dataset, ecosystem string, snap time.Time, top int) ([]signals.PrevalenceRecord, error) {
+func packagePrevalence(ctx context.Context, client queryClient, ecosystem string, snap time.Time, top int) ([]signals.PrevalenceRecord, error) {
 	system, err := depsDevSystem(ecosystem)
 	if err != nil {
 		return nil, err
 	}
-	q := client.Query("SELECT T.`To`.Name AS Package, COUNT(DISTINCT T.Name) AS Dependents\n" +
+	sql := "SELECT T.`To`.Name AS Package, COUNT(DISTINCT T.Name) AS Dependents\n" +
 		"FROM `bigquery-public-data.deps_dev_v1.DependencyGraphEdges` T\n" +
 		"WHERE T.System = @system AND T.SnapshotAt = @snap\n" +
 		"  AND T.Name != T.`To`.Name\n" +
 		"  AND T.`To`.Name NOT LIKE '%>%'\n" +
 		"GROUP BY Package\n" +
 		"ORDER BY Dependents DESC, Package\n" +
-		"LIMIT @top")
-	q.Parameters = []bigquery.QueryParameter{
+		"LIMIT @top"
+	it, err := client.Query(ctx, sql, []bigquery.QueryParameter{
 		{Name: "system", Value: system},
 		{Name: "snap", Value: snap},
 		{Name: "top", Value: top},
-	}
-	it, err := runQuery(ctx, q, ds.Table("pkg_prevalence_"+ecosystem))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +317,7 @@ func packagePrevalence(ctx context.Context, client *bigquery.Client, ds *bigquer
 // and exclusions as packagePrevalence, grouped one column finer. Each row
 // also carries the version's publish time and, for PyPI, its pure wheel's
 // filename when one exists.
-func versionPrevalence(ctx context.Context, client *bigquery.Client, ds *bigquery.Dataset, ecosystem string, snap time.Time, top int) ([]signals.PrevalenceRecord, error) {
+func versionPrevalence(ctx context.Context, client queryClient, ecosystem string, snap time.Time, top int) ([]signals.PrevalenceRecord, error) {
 	system, err := depsDevSystem(ecosystem)
 	if err != nil {
 		return nil, err
@@ -296,13 +363,11 @@ func versionPrevalence(ctx context.Context, client *bigquery.Client, ds *bigquer
 		sql += "LEFT JOIN files f ON f.Package = c.Package AND f.VersionKey = " + versionKey("c.Version") + "\n"
 	}
 	sql += "ORDER BY c.Dependents DESC, c.Package, c.Version"
-	q := client.Query(sql)
-	q.Parameters = []bigquery.QueryParameter{
+	it, err := client.Query(ctx, sql, []bigquery.QueryParameter{
 		{Name: "system", Value: system},
 		{Name: "snap", Value: snap},
 		{Name: "top", Value: top},
-	}
-	it, err := runQuery(ctx, q, ds.Table("ver_prevalence_"+ecosystem))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -331,46 +396,6 @@ func versionPrevalence(ctx context.Context, client *bigquery.Client, ds *bigquer
 			return nil, errors.Wrap(err, "iterating results")
 		}
 	}
-}
-
-// workDataset returns the dataset that holds query results, creating it if
-// missing. Without an explicit destination BigQuery materializes results
-// into a hidden per-user dataset whose ACL names the querying user, which
-// domain-restricted organizations reject at creation; a dataset granted
-// only the project's special groups never names a user, so it is allowed.
-func workDataset(ctx context.Context, client *bigquery.Client) (*bigquery.Dataset, error) {
-	ds := client.Dataset("onboard_prevalence")
-	if _, err := ds.Metadata(ctx); err == nil {
-		return ds, nil
-	}
-	err := ds.Create(ctx, &bigquery.DatasetMetadata{
-		Description:            "Query results for ctl onboard priority prevalence.",
-		DefaultTableExpiration: 24 * time.Hour,
-		Access: []*bigquery.AccessEntry{
-			{Role: bigquery.OwnerRole, EntityType: bigquery.SpecialGroupEntity, Entity: "projectOwners"},
-			{Role: bigquery.WriterRole, EntityType: bigquery.SpecialGroupEntity, Entity: "projectWriters"},
-			{Role: bigquery.ReaderRole, EntityType: bigquery.SpecialGroupEntity, Entity: "projectReaders"},
-		},
-	})
-	return ds, errors.Wrap(err, "creating work dataset")
-}
-
-func runQuery(ctx context.Context, q *bigquery.Query, dst *bigquery.Table) (*bigquery.RowIterator, error) {
-	q.Dst = dst
-	q.WriteDisposition = bigquery.WriteTruncate
-	job, err := q.Run(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "running query")
-	}
-	status, err := job.Wait(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "waiting for query")
-	}
-	if err := status.Err(); err != nil {
-		return nil, errors.Wrap(err, "query failed")
-	}
-	it, err := job.Read(ctx)
-	return it, errors.Wrap(err, "reading results")
 }
 
 func prevalenceCommand() *cobra.Command {
