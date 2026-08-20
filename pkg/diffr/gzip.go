@@ -49,8 +49,9 @@ func compareGzip(ctx compareContext, node *DiffNode, file1, file2 File) (bool, e
 		childName2 = strings.TrimSuffix(childName2, ".gz")
 	}
 	childNode := DiffNode{
-		Source1: childName1,
-		Source2: childName2,
+		Source1:   childName1,
+		Source2:   childName2,
+		Unwrapped: true,
 	}
 	// Compare the decompressed content
 	childFile1 := File{
