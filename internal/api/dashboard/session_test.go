@@ -97,10 +97,14 @@ func TestSessionHandler(t *testing.T) {
 		"docker build .",
 		"/session/sess-1/exec/op-1/out",
 		"1K in (40% cached) / 250 out",
+		"exec · completed · exit 0", // trajectory event in iteration 3
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered page missing %q", want)
 		}
+	}
+	if got.Execs[0].Iter != 3 {
+		t.Errorf("exec attributed to iteration %d; want 3", got.Execs[0].Iter)
 	}
 }
 

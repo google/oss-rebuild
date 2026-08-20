@@ -36,16 +36,18 @@ type SessionRequest struct {
 func (SessionRequest) Validate() error { return nil }
 
 // TranscriptEvent is one rendered entry of the session's trajectory: a
-// prompt, model prose or thought, a tool call, a tool response, or the
-// first-iteration inference proposal.
+// prompt, model prose or thought, a tool call, a tool response, the
+// first-iteration inference proposal, or a scratch exec woven in by time.
 type TranscriptEvent struct {
-	Kind    string // prompt | model | thought | call | response | proposal
-	Title   string
-	At      time.Time // zero for the proposal, which anchors its iteration
-	Command string    // call only: the command argument, shown verbatim
-	Body    string
-	Note    string // summary line when the body renders collapsed
-	Open    bool   // render the body expanded rather than behind a toggle
+	Kind     string // prompt | model | thought | call | response | proposal | exec
+	Title    string
+	At       time.Time // zero for the proposal, which anchors its iteration
+	Command  string    // call only: the command argument, shown verbatim
+	Body     string
+	Note     string // summary line when the body renders collapsed
+	Open     bool   // render the body expanded rather than behind a toggle
+	Href     string // optional link rendered after the title
+	HrefText string
 }
 
 // IterationGroup is one iteration's slice of the trajectory: the transcript
@@ -63,6 +65,7 @@ type IterationGroup struct {
 // ExecView pairs a scratch exec with its pre-formatted display fields.
 type ExecView struct {
 	schema.ScratchExec
+	Iter       int // iteration attributed by time window, or 0 when unattributed
 	CmdLine    string
 	Queued     string
 	Duration   string
@@ -149,11 +152,100 @@ func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData,
 	for _, e := range execs {
 		data.Execs = append(data.Execs, newExecView(s.ID, e))
 	}
+	attributeExecs(data.Execs, groups)
 	for _, g := range groups {
+		sortEvents(g.Events)
 		data.Trajectory = append(data.Trajectory, *g)
 	}
 	sort.Slice(data.Trajectory, func(i, j int) bool { return data.Trajectory[i].Number < data.Trajectory[j].Number })
 	return data, nil
+}
+
+// attributeExecs assigns each exec to the iteration whose time window covers
+// its creation and places them into that group's events. A window opens at the
+// group's earliest timestamped moment (transcript event, or the iteration
+// record's creation as fallback) and closes when the next one opens. Execs
+// predating every window fall to the initial group, run before any chat,
+// anchored only by its untimestamped proposal.
+func attributeExecs(execs []ExecView, groups map[int]*IterationGroup) {
+	type window struct {
+		num   int
+		start time.Time
+	}
+	var windows []window
+	lowest := 0
+	for n, g := range groups {
+		if lowest == 0 || n < lowest {
+			lowest = n
+		}
+		var start time.Time
+		if g.Record != nil && !g.Record.Created.IsZero() {
+			start = g.Record.Created
+		}
+		for _, e := range g.Events {
+			if !e.At.IsZero() && (start.IsZero() || e.At.Before(start)) {
+				start = e.At
+			}
+		}
+		if !start.IsZero() {
+			windows = append(windows, window{num: n, start: start})
+		}
+	}
+	if len(windows) == 0 {
+		return
+	}
+	sort.Slice(windows, func(i, j int) bool { return windows[i].start.Before(windows[j].start) })
+	for i := range execs {
+		e := &execs[i]
+		iter := lowest
+		for _, w := range windows {
+			if e.CreatedAt.Before(w.start) {
+				break
+			}
+			iter = w.num
+		}
+		e.Iter = iter
+		groups[iter].Events = append(groups[iter].Events, execEvent(*e))
+	}
+}
+
+// execEvent renders one ledger row: the exec's state, exit code, duration
+// on the worker's clock, full argv, and a link to its raw output.
+func execEvent(v ExecView) TranscriptEvent {
+	title := fmt.Sprintf("exec · %s", v.State)
+	switch v.State {
+	case schema.ScratchExecCompleted, schema.ScratchExecTimedOut:
+		title = fmt.Sprintf("exec · %s · exit %d · %s", v.State, v.ExitCode, v.Duration)
+	}
+	note := v.CmdLine
+	if len(note) > 100 {
+		note = note[:100] + "..."
+	}
+	body := v.CmdLine
+	if v.ErrorMsg != "" {
+		body += "\n\n# error: " + v.ErrorMsg
+	}
+	return TranscriptEvent{
+		Kind:     "exec",
+		Title:    title,
+		At:       v.CreatedAt,
+		Note:     note,
+		Body:     body,
+		Href:     v.OutPath,
+		HrefText: "raw output",
+	}
+}
+
+// sortEvents orders a group's events chronologically, keeping untimestamped
+// entries (e.g. the inference proposal) first.
+func sortEvents(events []TranscriptEvent) {
+	sort.SliceStable(events, func(i, j int) bool {
+		a, b := events[i].At, events[j].At
+		if a.IsZero() != b.IsZero() {
+			return a.IsZero()
+		}
+		return a.Before(b)
+	})
 }
 
 func usageString(u *schema.TokenUsage) string {
