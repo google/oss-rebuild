@@ -709,9 +709,33 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 	// For the first iteration, use our regular inference logic.
 	// This allows the agent to benefit from the rest of our infrence improvements.
 	if len(a.iterHistory) == 0 {
-		return a.proposeNormalInference(ctx)
-	} else {
-		return a.proposeAgentInference(ctx, opts)
+		s, err := a.proposeNormalInference(ctx)
+		if err == nil {
+			// Add first iteration inference content to transcript.
+			a.uploadProposalRecord(ctx, opts, s)
+		}
+		return s, err
+	}
+	return a.proposeAgentInference(ctx, opts)
+}
+
+// uploadProposalRecord persists a first-iteration inference strategy to the
+// session transcript path. That iteration has no chat, so without this an
+// inference-only session leaves no transcript at all.
+// NOTE: Best effort: a failed upload must not fail the proposal.
+func (a *defaultAgent) uploadProposalRecord(ctx context.Context, opts *ProposeOpts, s *schema.StrategyOneOf) {
+	if opts == nil || opts.ChatUploadURL == nil || opts.ChatUploadURL.Scheme != "gs" || a.deps.GCSClient == nil {
+		return
+	}
+	obj := path.Join(opts.ChatUploadURL.Path, "0-inference-proposal.json")
+	w := a.deps.GCSClient.Bucket(opts.ChatUploadURL.Host).Object(obj).NewWriter(ctx)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(s); err != nil {
+		log.Printf("session transcript: writing inference proposal: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		log.Printf("session transcript: closing inference proposal: %v", err)
 	}
 }
 
