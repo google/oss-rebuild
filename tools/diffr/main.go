@@ -19,11 +19,12 @@ import (
 
 // Config holds all configuration for the diffr command.
 type Config struct {
-	File1      string
-	File2      string
-	MaxDepth   int
-	JSONOutput bool
-	Labels     labelList
+	File1         string
+	File2         string
+	MaxDepth      int
+	JSONOutput    bool
+	SummaryOutput bool
+	Labels        labelList
 }
 
 // labelList collects label values, first input then second, as GNU diff does.
@@ -46,6 +47,9 @@ func (c Config) Validate() error {
 	}
 	if len(c.Labels) > 2 {
 		return errors.New("at most two --label values")
+	}
+	if c.JSONOutput && c.SummaryOutput {
+		return errors.New("--json and --summary are mutually exclusive")
 	}
 	return nil
 }
@@ -80,9 +84,12 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	defer f2.Close()
 	// Setup diff options
 	opts := diffr.Options{MaxDepth: cfg.MaxDepth}
-	if cfg.JSONOutput {
+	switch {
+	case cfg.JSONOutput:
 		opts.OutputJSON = deps.IO.Out
-	} else {
+	case cfg.SummaryOutput:
+		opts.OutputSummary = deps.IO.Out
+	default:
 		opts.Output = deps.IO.Out
 	}
 	// A label is the input's name throughout the report, including the names
@@ -126,7 +133,8 @@ func Command() *cobra.Command {
 
 diffr is a tool for comparing two files, with support for recursively
 descending into archives (zip, tar, gzip) to identify differences at
-any depth. It can output differences as human-readable text or JSON.
+any depth. It can output differences as a text tree, as JSON, or as a
+file-level summary.
 
 Examples:
   # Compare two zip files
@@ -134,6 +142,9 @@ Examples:
 
   # Compare with JSON output
   diffr --json file1.tar.gz file2.tar.gz
+
+  # Show only a file-level summary (which entries differ, no content hunks)
+  diffr --summary file1.whl file2.whl
 
   # Name the inputs in the report
   diffr --label rebuild --label upstream out/pkg.whl pkg-1.0-py3-none-any.whl
@@ -160,6 +171,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.IntVar(&cfg.MaxDepth, "max-depth", 0, "maximum archive nesting depth to recurse into (0 = unlimited)")
 	set.Var(&cfg.Labels, "label", "name for an input in the report instead of its path (repeat for the second input)")
 	set.BoolVar(&cfg.JSONOutput, "json", false, "output diff in JSON format instead of text")
+	set.BoolVar(&cfg.SummaryOutput, "summary", false, "output only a compact file-level summary (path + status) instead of content hunks")
 	return set
 }
 
