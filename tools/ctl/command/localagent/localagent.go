@@ -6,6 +6,7 @@ package localagent
 import (
 	"context"
 	"flag"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -15,12 +16,15 @@ import (
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/act/cli"
+	"github.com/google/oss-rebuild/pkg/build/scratch"
+	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/genai"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -39,6 +43,14 @@ type Config struct {
 	Artifact       string
 	RetrySession   string
 	AgentIteration int
+	// Scratch execution. When ScratchID is set, iteration builds run on the
+	// named pre-provisioned scratch VM instead of GCB. The VM is managed
+	// separately (ctl scratch start/stop).
+	ScratchID      string
+	PrebuildBucket string
+	PrebuildDir    string
+	PrebuildAuth   bool
+	BuildTimeout   time.Duration
 }
 
 // Validate ensures the configuration is valid.
@@ -177,6 +189,57 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		LogsBucket:     cfg.LogsBucket,
 		Retrier:        agent.NewRetrier(),
 	}
+	// Optional scratch execution against a pre-provisioned VM. When ScratchID
+	// is empty, iteration builds stay on GCB (unchanged behavior).
+	if cfg.ScratchID != "" {
+		stubs := scratch.Stubs{
+			ExecCreate: api.Stub[schema.ScratchExecRequest, longrunning.Operation[schema.ScratchExecResult]](client, baseURL.JoinPath("scratch/exec/op/create")),
+			ExecGet:    api.Stub[schema.GetOperationRequest, longrunning.Operation[schema.ScratchExecResult]](client, baseURL.JoinPath("scratch/exec/op/get")),
+		}
+		// Ship a read-only storage token with the plan so the scratch worker stays credential-free.
+		var authHeader func(context.Context) (string, error)
+		if cfg.PrebuildAuth {
+			ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/devstorage.read_only")
+			if err != nil {
+				return nil, errors.Wrap(err, "creating prebuild token source")
+			}
+			authHeader = func(context.Context) (string, error) {
+				t, err := ts.Token()
+				if err != nil {
+					return "", errors.Wrap(err, "minting prebuild token")
+				}
+				return "Authorization: Bearer " + t.AccessToken, nil
+			}
+		}
+		executor, err := scratch.NewDockerRunExecutor(scratch.DockerRunExecutorConfig{
+			ExecutorConfig: scratch.ExecutorConfig{
+				ScratchID:      cfg.ScratchID,
+				Stubs:          stubs,
+				GCSClient:      gcsClient,
+				DefaultTimeout: cfg.BuildTimeout,
+				AuthHeader:     authHeader,
+				// The scratch VM is dedicated to this session, so privileged
+				// plans are acceptable there.
+				AllowPrivileged: true,
+				// Retain the most recent build container so run_in_container can
+				// exec into the build environment, matching the deployed agent.
+				RetainContainer: true,
+			},
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "creating scratch executor")
+		}
+		runDeps.ScratchRunner = &agent.ScratchRunner{
+			Target:         t,
+			Executor:       executor,
+			ScratchID:      cfg.ScratchID,
+			Stubs:          stubs,
+			GCSClient:      gcsClient,
+			RegistryClient: http.DefaultClient,
+			PrebuildConfig: rebuild.PrebuildConfig{Bucket: cfg.PrebuildBucket, Dir: cfg.PrebuildDir, Auth: cfg.PrebuildAuth},
+			BuildTimeout:   cfg.BuildTimeout,
+		}
+	}
 	req := agent.RunSessionReq{
 		SessionID:        sessionID,
 		Target:           t,
@@ -192,7 +255,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>] [--agent-iterations <max iterations>]",
+		Use:   "local-agent --project <project> --agent-api <URI> --metadata-bucket <bucket> --ecosystem <ecosystem> --package <name> --version <version> --artifact <name> --logs-bucket <bucket> [--retry-session <session-id>] [--agent-iterations <max iterations>] [--scratch-id <vm> [--prebuild-bucket <bucket>]]",
 		Short: "Run agent code locally",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -220,5 +283,10 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Artifact, "artifact", "", "the artifact name")
 	set.StringVar(&cfg.RetrySession, "retry-session", "", "the session to retry")
 	set.IntVar(&cfg.AgentIteration, "agent-iterations", 3, "maximum number of agent iterations before giving up")
+	set.StringVar(&cfg.ScratchID, "scratch-id", "", "if provided, run iteration builds on this pre-provisioned scratch VM instead of GCB")
+	set.StringVar(&cfg.PrebuildBucket, "prebuild-bucket", "", "gcs bucket from which prebuilt build tools (e.g. timewarp) are fetched (scratch mode)")
+	set.StringVar(&cfg.PrebuildDir, "prebuild-dir", "", "prefix within the prebuild bucket under which tools are stored (scratch mode)")
+	set.BoolVar(&cfg.PrebuildAuth, "prebuild-auth", false, "whether to authenticate requests to the prebuild tools bucket (scratch mode)")
+	set.DurationVar(&cfg.BuildTimeout, "build-timeout", time.Hour, "per-iteration build timeout for scratch execution")
 	return set
 }
