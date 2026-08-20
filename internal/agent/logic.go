@@ -436,7 +436,7 @@ func (a *defaultAgent) diagnoseOnly() []string {
 	prompt := []string{
 		"Please explain what went wrong with the rebuild, and what might need to be changed to resolve the build.",
 		"You can include in-line code snippets, but the overall description should only be two or three sentences.",
-		"To debug the build, you might want to use the read_build_logs tool to view the build errors to understand what's going wrong.",
+		"To debug the build, you might want to use the read_logs_end tool to view the build errors to understand what's going wrong.",
 		"You might also want to inspect the contents of the source repo using the read_repo_file or list_repo_files tools.",
 	}
 	if a.deps.ScratchRunner != nil {
@@ -457,7 +457,7 @@ func (a *defaultAgent) outputOnlyScript(outputPath string) []string {
 		"DO NOT include markdown backtics, or ANY formatting besides the raw content of the bash script.",
 		"You SHOULD NOT change the repo in the location. Even if you do, that will be overwritten when we attempt to execute the build again.",
 		"You SHOULD NOT change the ref in the location.",
-		"To debug the build, you might want to use the read_build_logs tool to view the build errors to understand what's going wrong.",
+		"To debug the build, you might want to use the read_logs_end tool to view the build errors to understand what's going wrong.",
 		"You might also want to inspect the contents of the source repo using the read_repo_file or list_repo_files tools.",
 		fmt.Sprintf("Make sure artifact eventually ends up in %s, which is the path from which it will be exported.", outputPath),
 		"DO NOT create or modify the /out directory. That will be done for you after the build script finishes.",
