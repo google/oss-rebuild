@@ -91,6 +91,7 @@ resource "google_storage_bucket_iam_member" "cachers-read-git-cache" {
   for_each = toset([
     google_service_account.crates-registry.member,
     google_service_account.inference.member,
+    google_service_account.agent-job.member,
   ])
   member = each.key
 }
@@ -253,6 +254,7 @@ resource "google_cloud_run_v2_service_iam_member" "cachers-call-git-cache" {
   for_each = toset([
     google_service_account.crates-registry.member,
     google_service_account.inference.member,
+    google_service_account.agent-job.member,
   ])
   member = each.key
 }

@@ -308,7 +308,7 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 		req,
 		&inferenceservice.InferDeps{
 			HTTPClient: http.DefaultClient,
-			GitCache:   nil,
+			GitCache:   a.deps.GitCache,
 			RepoOptF: func() *gitx.RepositoryOptions {
 				return &gitx.RepositoryOptions{
 					Worktree: wt,
@@ -333,7 +333,7 @@ func (a *defaultAgent) proposeNormalInference(ctx context.Context) (*schema.Stra
 		},
 		&inferenceservice.InferDeps{
 			HTTPClient: http.DefaultClient,
-			GitCache:   nil,
+			GitCache:   a.deps.GitCache,
 			RepoOptF: func() *gitx.RepositoryOptions {
 				return &gitx.RepositoryOptions{
 					Worktree: wt,
