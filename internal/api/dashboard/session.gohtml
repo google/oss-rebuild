@@ -49,6 +49,23 @@
         {{range .Events}}
         <div class="traj-event kind-{{.Kind}}">
             <div><span class="traj-kind">{{.Title}}</span>{{if not .At.IsZero}}<span class="traj-time">{{.At.Format "15:04:05"}}</span>{{end}}{{if .Href}} <a href="{{.Href}}"><small>{{.HrefText}}</small></a>{{end}}</div>
+            {{if .Build}}
+            <table>
+                <thead><tr><th>Step</th><th>State</th><th>Exit</th><th>Duration</th><th>Script</th><th>Output</th></tr></thead>
+                <tbody>
+                    {{range .Build.Steps}}
+                    <tr>
+                        <td>{{.Label}}</td>
+                        <td>{{.State}}</td>
+                        <td>{{.ExitCode}}</td>
+                        <td>{{.Duration}}</td>
+                        <td><details class="traj-body"><summary><code>{{printf "%.60s" .Script}}</code></summary><pre>{{.Script}}</pre></details></td>
+                        <td>{{if .OutPath}}<a href="{{.OutPath}}">raw</a>{{else}}n/a{{end}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+            {{end}}
             {{if .Command}}<pre>{{.Command}}</pre>{{end}}
             {{if .Body}}
                 {{if .Open}}
