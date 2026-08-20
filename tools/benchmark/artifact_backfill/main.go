@@ -71,12 +71,12 @@ func backfillArtifacts(dataPath string) error {
 	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
 	// Create rate limiters per ecosystem (matching benchmark defaults)
 	limiters := map[rebuild.Ecosystem]*ratex.BackoffLimiter{
-		rebuild.Debian:   ratex.NewBackoffLimiter(1000 * time.Millisecond),
-		rebuild.PyPI:     ratex.NewBackoffLimiter(200 * time.Millisecond),
-		rebuild.NPM:      ratex.NewBackoffLimiter(200 * time.Millisecond),
-		rebuild.Maven:    ratex.NewBackoffLimiter(700 * time.Millisecond),
-		rebuild.CratesIO: ratex.NewBackoffLimiter(1500 * time.Millisecond),
-		rebuild.OCI:      ratex.NewBackoffLimiter(1000 * time.Millisecond),
+		rebuild.Debian:   ratex.NewBackoffLimiter(1000*time.Millisecond, time.Minute),
+		rebuild.PyPI:     ratex.NewBackoffLimiter(200*time.Millisecond, time.Minute),
+		rebuild.NPM:      ratex.NewBackoffLimiter(200*time.Millisecond, time.Minute),
+		rebuild.Maven:    ratex.NewBackoffLimiter(700*time.Millisecond, time.Minute),
+		rebuild.CratesIO: ratex.NewBackoffLimiter(1500*time.Millisecond, time.Minute),
+		rebuild.OCI:      ratex.NewBackoffLimiter(1000*time.Millisecond, time.Minute),
 	}
 	// Count total work needed
 	totalWork := 0

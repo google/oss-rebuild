@@ -7,6 +7,11 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/api/scratchworkerservice"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"google.golang.org/grpc/codes"
 )
 
 // schedule mirroring DefaultSyncSchedule's shape, but with named
@@ -157,6 +162,108 @@ func TestSyncer_ShouldCompose(t *testing.T) {
 			if got := s.shouldCompose(tc.now, started, tc.lastModified, tc.done); got != tc.want {
 				t.Errorf("shouldCompose(now+%v, lastMod=%v, done=%v) = %v, want %v",
 					tc.now.Sub(started), tc.lastModified.Sub(started), tc.done, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSyncer_FinalFromStatus(t *testing.T) {
+	created := time.Unix(1_700_000_000, 0).UTC()
+	workerStart := created.Add(2 * time.Second)
+	workerFinish := workerStart.Add(30 * time.Second)
+	brokerNow := created.Add(45 * time.Second)
+	base := schema.ScratchExec{
+		ID:        "op1",
+		ScratchID: "s1",
+		State:     schema.ScratchExecPending,
+		CreatedAt: created,
+	}
+	tests := []struct {
+		name   string
+		status scratchworkerservice.ExecStatus
+		want   schema.ScratchExec
+	}{
+		{
+			name: "WorkerClocksAdopted",
+			status: scratchworkerservice.ExecStatus{
+				Done:       true,
+				ExitCode:   3,
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+			},
+			want: schema.ScratchExec{
+				ID:         "op1",
+				ScratchID:  "s1",
+				State:      schema.ScratchExecCompleted,
+				ExitCode:   3,
+				CreatedAt:  created,
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+			},
+		},
+		{
+			// A worker that never observed a start leaves StartedAt zero.
+			// Only FinishedAt falls back to the broker clock.
+			name:   "MissingWorkerClocksFallBack",
+			status: scratchworkerservice.ExecStatus{Done: true},
+			want: schema.ScratchExec{
+				ID:         "op1",
+				ScratchID:  "s1",
+				State:      schema.ScratchExecCompleted,
+				CreatedAt:  created,
+				FinishedAt: brokerNow,
+			},
+		},
+		{
+			name: "TimedOut",
+			status: scratchworkerservice.ExecStatus{
+				Done:       true,
+				ExitCode:   124,
+				TimedOut:   true,
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+			},
+			want: schema.ScratchExec{
+				ID:         "op1",
+				ScratchID:  "s1",
+				State:      schema.ScratchExecTimedOut,
+				ExitCode:   124,
+				CreatedAt:  created,
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+				Error: &schema.Status{
+					Code:    int(codes.DeadlineExceeded),
+					Message: "command exceeded TimeoutSeconds",
+				},
+			},
+		},
+		{
+			name: "InfraErrorIsLost",
+			status: scratchworkerservice.ExecStatus{
+				Done:       true,
+				ErrMsg:     "spawn failed",
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+			},
+			want: schema.ScratchExec{
+				ID:         "op1",
+				ScratchID:  "s1",
+				State:      schema.ScratchExecLost,
+				CreatedAt:  created,
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+				Error: &schema.Status{
+					Code:    int(codes.Internal),
+					Message: "spawn failed",
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := finalFromStatus(base, &tc.status, brokerNow)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("finalFromStatus mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

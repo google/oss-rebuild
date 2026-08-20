@@ -38,9 +38,8 @@ type Handle interface {
 // Result represents the completed build result
 type Result struct {
 	// Error represents a build-time failure (i.e. after build setup)
-	Error error
-	// Timings describes execution duration of various aspects of the build
-	Timings rebuild.Timings
+	Error   error
+	Timings *rebuild.BuildTimings // nil when no phase was measured, and may be partial otherwise
 }
 
 // ExecutorStatus represents the overall executor status

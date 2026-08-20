@@ -5,18 +5,18 @@ package rebuild
 
 import (
 	"context"
-	stderrors "errors"
 	"io"
 	"io/fs"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
+	"time"
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/pkg/errors"
 	"google.golang.org/api/option"
 )
@@ -64,7 +64,9 @@ var (
 	// ErrNoUploadPath is an error indicating that no upload path was provided and a DebugStorer couldn't be constructed.
 	ErrNoUploadPath = errors.New("no artifact upload path provided")
 	// ErrAssetNotFound indicates the asset requested to be read could not be found.
-	ErrAssetNotFound = errors.New("asset not found")
+	//
+	// Deprecated: Match fs.ErrNotExist instead.
+	ErrAssetNotFound = fs.ErrNotExist
 	// AssetTypeNotSupported indicates that the asset store does not support assets of that type.
 	ErrAssetTypeNotSupported = errors.New("asset type not found")
 )
@@ -107,6 +109,19 @@ type LocatableAssetStore interface {
 	// TODO: Should URL() return an error?
 	// Not many places actually check the return value, but they just delay inevitible failure.
 	URL(a Asset) *url.URL
+}
+
+// AssetInfo describes a stored asset without reading its content.
+type AssetInfo struct {
+	Bytes   int64
+	Created time.Time // mtime on filesystem stores, which never rewrite assets
+}
+
+// StatAssetStore is an asset store that can describe stored assets without
+// reading them.
+type StatAssetStore interface {
+	AssetStore
+	Stat(ctx context.Context, a Asset) (AssetInfo, error)
 }
 
 // AssetCopy copies an asset from one store to another.
@@ -165,7 +180,11 @@ type GCSStore struct {
 
 func NewGCSStoreFromClient(ctx context.Context, client *gcs.Client, uploadPrefix string) (*GCSStore, error) {
 	s := &GCSStore{gcsClient: client}
-	s.bucket, s.prefix, _ = strings.Cut(strings.TrimPrefix(uploadPrefix, "gs://"), "/")
+	var err error
+	s.bucket, s.prefix, err = gcsx.ParseURL(uploadPrefix)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing upload prefix")
+	}
 	{
 		var ok bool
 		s.runID, ok = ctx.Value(RunID).(string)
@@ -204,21 +223,35 @@ func (s *GCSStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
 	r, err := obj.NewReader(ctx)
 	if err != nil {
 		if err == gcs.ErrObjectNotExist {
-			err = stderrors.Join(err, ErrAssetNotFound)
+			err = fs.ErrNotExist
 		}
 		return nil, errors.Wrapf(err, "creating GCS reader for %s", path)
 	}
 	return r, nil
 }
 
-// Writer returns a writer for the given asset.
+// Writer returns a writer for the given asset. Copying a gcsx.ObjectReader
+// to it runs server-side without streaming the content through this process.
 func (s *GCSStore) Writer(ctx context.Context, a Asset) (io.WriteCloser, error) {
 	objectPath := s.resourcePath(a)
 	obj := s.gcsClient.Bucket(s.bucket).Object(objectPath)
-	w := obj.NewWriter(ctx)
-	return w, nil
+	return gcsx.NewObjectWriter(ctx, obj), nil
 }
 
+// Stat describes the stored asset without reading its content.
+func (s *GCSStore) Stat(ctx context.Context, a Asset) (AssetInfo, error) {
+	path := s.resourcePath(a)
+	attrs, err := s.gcsClient.Bucket(s.bucket).Object(path).Attrs(ctx)
+	if err != nil {
+		if err == gcs.ErrObjectNotExist {
+			err = fs.ErrNotExist
+		}
+		return AssetInfo{}, errors.Wrapf(err, "statting %s", path)
+	}
+	return AssetInfo{Bytes: attrs.Size, Created: attrs.Created}, nil
+}
+
+var _ StatAssetStore = &GCSStore{}
 var _ LocatableAssetStore = &GCSStore{}
 
 // FilesystemAssetStore will store assets in a billy.Filesystem
@@ -240,9 +273,6 @@ func (s *FilesystemAssetStore) Reader(ctx context.Context, a Asset) (io.ReadClos
 	path := s.resourcePath(a)
 	f, err := s.fs.Open(path)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			err = stderrors.Join(err, ErrAssetNotFound)
-		}
 		return nil, errors.Wrapf(err, "creating reader for %v", a)
 	}
 	return f, nil
@@ -258,6 +288,17 @@ func (s *FilesystemAssetStore) Writer(ctx context.Context, a Asset) (io.WriteClo
 	return f, nil
 }
 
+// Stat describes the stored asset without reading its content.
+func (s *FilesystemAssetStore) Stat(ctx context.Context, a Asset) (AssetInfo, error) {
+	path := s.resourcePath(a)
+	fi, err := s.fs.Stat(path)
+	if err != nil {
+		return AssetInfo{}, errors.Wrapf(err, "statting %s", path)
+	}
+	return AssetInfo{Bytes: fi.Size(), Created: fi.ModTime()}, nil
+}
+
+var _ StatAssetStore = &FilesystemAssetStore{}
 var _ LocatableAssetStore = &FilesystemAssetStore{}
 
 // NewFilesystemAssetStoreWithRunID creates a new FilesystemAssetStore.
@@ -304,9 +345,9 @@ func (cr *cachedReader) Close() error {
 	return readErr
 }
 
-// Reader reads from the frontline, unless the frontline returns ErrAssetNotFound
+// Reader reads from the frontline, unless the frontline returns fs.ErrNotExist
 func (s *CachedAssetStore) Reader(ctx context.Context, a Asset) (io.ReadCloser, error) {
-	if r, err := s.frontline.Reader(ctx, a); !errors.Is(err, ErrAssetNotFound) {
+	if r, err := s.frontline.Reader(ctx, a); !errors.Is(err, fs.ErrNotExist) {
 		return r, err
 	}
 	// Cache miss, fetch from the backline

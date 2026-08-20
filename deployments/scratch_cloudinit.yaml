@@ -1,0 +1,58 @@
+#cloud-config
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+#
+# COS scratch VMs init: Write and starts a systemd unit that runs the fetched
+# worker binary. Reruns every boot as /etc on COS is stateless.
+# NOTE: "#cloud-config" must remain the first line.
+#
+# Template parameters:
+#   cli_image: Digest-pinned upstream image ref
+#   caller_sa: Service account email permitted to contact the worker
+
+write_files:
+  - path: /etc/systemd/system/scratch-worker.service
+    permissions: "0644"
+    owner: root
+    content: |
+      [Unit]
+      Description=Scratch worker
+      Wants=docker.service
+      After=docker.service
+      # Start attempts will fail until the startup script finishes. Otherwise,
+      # systemd's default rate limit would give up after a few failures.
+      StartLimitIntervalSec=0
+
+      [Service]
+      # Block until the startup script has fetched the worker binary. Starting
+      # earlier would make docker create the missing bind source below as an
+      # empty directory. /run is wiped at boot, so subsequent boots will wait
+      # for their respective fetch.
+      ExecStartPre=/bin/sh -c 'test -e /run/scratch-worker-ready'
+      # Ensure a previous attempt didn't leave our container name claimed.
+      ExecStartPre=-/usr/bin/docker rm -f scratch-worker
+      # The worker stages builds under /home/builder and passes those paths
+      # to the host daemon as -v sources for build containers. The daemon
+      # resolves them on the host, so the worker must see /home/builder at
+      # the same path the host does.
+      # NOTE: With host networking $(hostname) resolves to the instance name.
+      ExecStart=/usr/bin/docker run --rm --name=scratch-worker \
+          --network=host \
+          -v /home/builder:/home/builder \
+          -v /var/lib/toolbox/scratch-worker:/scratch-worker:ro \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          ${cli_image} \
+          /bin/sh -c 'exec /scratch-worker --caller-sa=${caller_sa} --audience="https://builder/$(hostname)" --docker-socket=/var/run/docker.sock --disk-paths=/home/builder --listen=:8080'
+      ExecStop=/usr/bin/docker stop scratch-worker
+      Restart=always
+      # Retry cadence for the marker wait above and for worker crashes.
+      RestartSec=5
+
+runcmd:
+  # NOTE: COS's host firewall drops inbound traffic by default. Open only the
+  # worker's listener reflecting the scratch-worker-ingress VPC rule.
+  - iptables -w -A INPUT -p tcp --dport 8080 -j ACCEPT
+  # Fire and forget: a plain start would report failure whenever the
+  # startup script has not finished yet; systemd retries regardless.
+  - systemctl daemon-reload
+  - systemctl start --no-block scratch-worker.service

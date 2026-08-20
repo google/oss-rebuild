@@ -33,7 +33,6 @@ func (mc *MockClient) CancelOperation(op *cloudbuild.Operation) error {
 type MockLogsClient struct {
 	ReadBuildLogsFunc func(ctx context.Context, buildID string) (io.ReadCloser, error)
 	ReadStepLogsFunc  func(ctx context.Context, buildID string, stepIndex int) (io.ReadCloser, error)
-	ListStepLogsFunc  func(ctx context.Context, buildID string) (int, error)
 }
 
 func (mlc *MockLogsClient) ReadBuildLogs(ctx context.Context, buildID string) (io.ReadCloser, error) {
@@ -42,8 +41,4 @@ func (mlc *MockLogsClient) ReadBuildLogs(ctx context.Context, buildID string) (i
 
 func (mlc *MockLogsClient) ReadStepLogs(ctx context.Context, buildID string, stepIndex int) (io.ReadCloser, error) {
 	return mlc.ReadStepLogsFunc(ctx, buildID, stepIndex)
-}
-
-func (mlc *MockLogsClient) ListStepLogs(ctx context.Context, buildID string) (int, error) {
-	return mlc.ListStepLogsFunc(ctx, buildID)
 }

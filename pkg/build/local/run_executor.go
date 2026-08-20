@@ -12,12 +12,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/bufiox"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -34,7 +34,6 @@ type DockerRunExecutor struct {
 	activeBuilds     syncx.Map[string, *localHandle]
 	outputBufferSize int
 	retainContainer  bool
-	keepalive        bool
 	tempDirBase      string
 	authCallback     AuthCallback
 	allowPrivileged  bool
@@ -78,7 +77,6 @@ func NewDockerRunExecutor(config DockerRunExecutorConfig) (*DockerRunExecutor, e
 		activeBuilds:     syncx.Map[string, *localHandle]{},
 		outputBufferSize: outputBufferSize,
 		retainContainer:  config.RetainContainer,
-		keepalive:        config.KeepAlive,
 		tempDirBase:      tempBase,
 		authCallback:     config.AuthCallback,
 		allowPrivileged:  config.AllowPrivileged,
@@ -95,8 +93,7 @@ type DockerRunExecutorConfig struct {
 	CommandExecutor  CommandExecutor
 	MaxParallel      int          // Max number of simultaneous builds
 	OutputBufferSize int          // Buffer size for output pipe, defaults to 512KB
-	RetainContainer  bool         // If true, don't use --rm flag to retain containers
-	KeepAlive        bool         // Keep containers running. Caller is responsible for cleanup
+	RetainContainer  bool         // If true, retain containers stopped instead of removing them
 	TempDirBase      string       // Base directory for temp files, if empty uses os.TempDir()
 	AuthCallback     AuthCallback // Optional callback to generate auth headers when needed
 	AllowPrivileged  bool         // If true, allow privileged builds
@@ -169,7 +166,8 @@ func (e *DockerRunExecutor) Close(ctx context.Context) error {
 	}
 }
 
-// executeBuild runs the actual Docker run process
+// executeBuild starts the build container idle and drives the plan's phases
+// through it sequentially
 func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandle, plan *DockerRunPlan, t rebuild.Target, opts build.Options) {
 	// TODO: Add support for SaveContainerImage in DockerRunExecutor.
 	if opts.SaveContainerImage {
@@ -208,27 +206,16 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 		}
 	}()
 	// Compose command args
-	runArgs := []string{"run"}
-	if !e.retainContainer && !opts.SavePostBuildContainer {
-		runArgs = append(runArgs, "--rm")
+	argOpts := RunArgsOpts{
+		ContainerName:   handle.id, // Use BuildID as container name
+		OutputMountSrc:  hostOutputPath,
+		Remove:          !e.retainContainer,
+		AllowPrivileged: e.allowPrivileged,
+		MemoryLimit:     e.memoryLimit,
 	}
-	runArgs = append(runArgs, "--name", handle.id) // Use BuildID as container name
-	runArgs = append(runArgs, "-v", fmt.Sprintf("%s:%s", hostOutputPath, path.Dir(plan.OutputPath)))
-	if plan.WorkingDir != "" {
-		runArgs = append(runArgs, "-w", plan.WorkingDir)
+	if plan.Privileged && !e.allowPrivileged {
+		log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
 	}
-	if plan.Privileged {
-		if e.allowPrivileged {
-			runArgs = append(runArgs, "--privileged")
-			runArgs = append(runArgs, "-v", "/var/run/docker.sock:/var/run/docker.sock")
-		} else {
-			log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
-		}
-	}
-	if e.memoryLimit != "" {
-		runArgs = append(runArgs, "--memory", e.memoryLimit)
-	}
-
 	// Add AUTH_HEADER environment variable if auth is required and callback is available
 	if plan.RequiresAuth && e.authCallback != nil {
 		authHeader, err := e.authCallback()
@@ -239,34 +226,44 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 			})
 			return
 		}
-		runArgs = append(runArgs, "-e", fmt.Sprintf("AUTH_HEADER=%s", authHeader))
+		argOpts.AuthMode, argOpts.AuthValue = AuthInline, authHeader
 	}
-
-	// Disable core dumps
-	runArgs = append(runArgs, "--ulimit", "core=0")
-
-	runArgs = append(runArgs, plan.Image)
-	if e.keepalive {
-		// To keep the container alive, we need to execute the build script in the background and keep an infinte process in the forground.
-		// Write the script to a file then execute it in the background
-		if strings.Contains(plan.Script, "EOF") {
-			handle.updateStatus(build.BuildStateCompleted)
-			handle.setResult(build.Result{
-				Error: errors.New("build script contains unexpected 'EOF' literal"),
-			})
-		}
-		wrappedScript := fmt.Sprintf("cat << 'EOF' > /build.sh\n%s\nEOF\n/bin/sh /build.sh &\ntail -f /dev/null\n", plan.Script)
-		runArgs = append(runArgs, "/bin/sh", "-c", wrappedScript)
-	} else {
-		runArgs = append(runArgs, "/bin/sh", "-c", plan.Script)
-	}
-	// Execute the Docker run command with streaming output
 	handle.updateStatus(build.BuildStateRunning)
 	outbuf := &bytes.Buffer{}
 	runWriter := io.MultiWriter(handle, outbuf)
-	buildErr := e.cmdExecutor.Execute(ctx, CommandOptions{
-		Output: runWriter,
-	}, e.dockerCmd, runArgs...)
+	// Start the container idling, then execute each phase in it. The start
+	// output is the container ID, not build output: keep it out of the logs.
+	idBuf := &bytes.Buffer{}
+	// Setup's span opens before the container start so it absorbs the image
+	// pull and container create, mirroring the build executor's buildx clock.
+	phaseStart := time.Now()
+	buildErr := e.cmdExecutor.Execute(ctx, CommandOptions{Output: idBuf}, e.dockerCmd, ComposeDockerStartArgs(plan, argOpts)...)
+	elapsed := rebuild.BuildTimings{}
+	if buildErr != nil {
+		buildErr = errors.Wrap(buildErr, "starting build container")
+	} else {
+		slots := map[rebuild.BuildPhase]**time.Duration{rebuild.PhaseSetup: &elapsed.Setup, rebuild.PhaseSource: &elapsed.Source, rebuild.PhaseDeps: &elapsed.Deps, rebuild.PhaseBuild: &elapsed.Build}
+		for _, ph := range plan.Phases() {
+			err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: runWriter}, e.dockerCmd, ComposeDockerExecArgs(handle.id, ph)...)
+			now := time.Now()
+			d := now.Sub(phaseStart)
+			phaseStart = now
+			// The failing phase's span runs until its termination.
+			*slots[ph.Name] = &d
+			if err != nil {
+				buildErr = errors.Wrapf(err, "executing %s phase", ph.Name)
+				elapsed.FailedIn = ph.Name
+				break
+			}
+		}
+		// A present zero Deps means the plan had no deps phase, stamped only
+		// once the build provably progressed past the deps slot.
+		if plan.Deps == "" && (elapsed.FailedIn == "" || elapsed.FailedIn == rebuild.PhaseBuild) {
+			elapsed.Deps = new(time.Duration)
+		}
+	}
+	// A failure leaves undispatched phases unmeasured.
+	timings := timing.Validated(elapsed)
 	// Export post-build container if requested.
 	if opts.SavePostBuildContainer {
 		postBuildPath := filepath.Join(hostOutputPath, string(rebuild.PostBuildContainerAsset))
@@ -294,16 +291,18 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 			}
 		}
 	}
-	// Clean up post-build container if it was retained for export.
-	if opts.SavePostBuildContainer && !e.retainContainer {
-		if rmErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "rm", handle.id); rmErr != nil {
-			log.Printf("Failed to remove container %s: %v", handle.id, rmErr)
-		}
+	// Tear down the container: the idle entrypoint never exits on its own.
+	// RetainContainer keeps it around stopped (docker start revives it for
+	// interactive use). Teardown must survive build cancellation.
+	teardown := []string{"rm", "-f", handle.id}
+	if e.retainContainer {
+		teardown = []string{"stop", handle.id}
+	}
+	if err := e.cmdExecutor.Execute(context.WithoutCancel(ctx), CommandOptions{}, e.dockerCmd, teardown...); err != nil {
+		log.Printf("Failed to clean up container %s: %v", handle.id, err)
 	}
 	handle.updateStatus(build.BuildStateCompleted)
-	handle.setResult(build.Result{
-		Error: errors.Wrap(buildErr, "docker run failed"),
-	})
+	handle.setResult(build.Result{Error: buildErr, Timings: timings})
 }
 
 // uploadFile uploads a local file to the asset store

@@ -12,8 +12,12 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -23,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/oauth"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	benchrun "github.com/google/oss-rebuild/tools/benchmark/run"
 	"github.com/google/oss-rebuild/tools/ctl/localfiles"
 	"github.com/pkg/errors"
@@ -87,6 +92,12 @@ func (c Config) Validate() error {
 	}
 	if c.UseRepoDefinition && c.Local {
 		return errors.New("--use-repo-definition is not supported in local mode")
+	}
+	if c.Local && c.UseNetworkProxy {
+		return errors.New("--use-network-proxy is not supported in local mode")
+	}
+	if c.Local && c.UseSyscallMonitor {
+		return errors.New("--use-syscall-monitor is not supported in local mode")
 	}
 	if c.UseRepoDefinition && mode != schema.AttestMode {
 		return errors.New("--use-repo-definition is only supported in attest mode")
@@ -173,7 +184,7 @@ func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder,
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create temp directory")
 	}
-	prebuildURL := fmt.Sprintf("https://%s.storage.googleapis.com/%s", cfg.BootstrapBucket, cfg.BootstrapVersion)
+	prebuildURL := gcsx.VirtualHostedURL(cfg.BootstrapBucket, cfg.BootstrapVersion)
 	localCfg := benchrun.LocalExecutionServiceConfig{
 		PrebuildURL: prebuildURL,
 		Store:       store,
@@ -200,6 +211,25 @@ func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder,
 			apiClient = http.DefaultClient
 		}
 		localCfg.GitCache = &gitcache.Client{IDClient: idClient, APIClient: apiClient, URL: u}
+	}
+	if rebuild.Ecosystem(cfg.Ecosystem) == rebuild.CratesIO {
+		mgrInit := sync.OnceValues(func() (*index.IndexManager, error) {
+			if err := os.MkdirAll("/tmp/crates-registry-cache", 0o755); err != nil {
+				return nil, errors.Wrap(err, "initializing crates registry cache")
+			}
+			return index.NewIndexManagerFromFS(index.IndexManagerConfig{
+				Filesystem:            osfs.New("/tmp/crates-registry-cache"),
+				CurrentUpdateInterval: 6 * time.Hour,
+				MaxSnapshots:          3,
+			})
+		})
+		localCfg.CratesRegistryStub = func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
+			mgr, err := mgrInit()
+			if err != nil {
+				return nil, errors.Wrap(err, "creating crates index manager")
+			}
+			return cratesregistryservice.FindRegistryCommit(ctx, req, &cratesregistryservice.FindRegistryCommitDeps{IndexManager: mgr})
+		}
 	}
 	executor := benchrun.NewLocalExecutionService(localCfg)
 	t := rebuild.Target{
@@ -321,7 +351,11 @@ func handleRemote(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder
 				return nil, errors.Wrap(err, "encoding result")
 			}
 		}
-		return nil, op.Error
+		// NOTE: A direct return of op.Error would wrap the nil
+		// *OperationError in a non-nil error interface.
+		if op.Error != nil {
+			return nil, op.Error
+		}
 	default:
 		return nil, errors.Errorf("unknown mode: %s", mode)
 	}

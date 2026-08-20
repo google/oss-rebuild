@@ -5,10 +5,8 @@ package gitcache
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,6 +14,7 @@ import (
 	"log"
 
 	"cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/pkg/errors"
 )
 
@@ -64,15 +63,7 @@ func (g *gcsBackend) serve(rw http.ResponseWriter, req *http.Request, path strin
 		http.Error(rw, "Internal Error", 500)
 		return
 	}
-	rawPath := fmt.Sprintf("download/storage/v1/b/%s/o/%s", g.bucket, url.QueryEscape(path))
-	redirect := url.URL{
-		Scheme:   "https",
-		Host:     "storage.googleapis.com",
-		Path:     rawPath,
-		RawPath:  rawPath,
-		RawQuery: fmt.Sprintf("generation=%d&alt=media", a.Generation),
-	}
-	http.Redirect(rw, req, redirect.String(), http.StatusFound)
+	http.Redirect(rw, req, gcsx.MediaURL(g.bucket, path, a.Generation), http.StatusFound)
 }
 
 func (g *gcsBackend) delete(ctx context.Context, path string) error {

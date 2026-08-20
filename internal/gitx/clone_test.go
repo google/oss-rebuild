@@ -143,6 +143,24 @@ commits:
 				return &struct{ *memory.Storage }{memory.NewStorage()}
 			},
 		},
+		// gitx.Storer wrappers should be unwrapped to reach the direct-clone
+		// (osfs) and byte-copy staging (memfs) paths.
+		{
+			name: "gitx_storer_filesystem_osfs",
+			storer: func(t *testing.T) storage.Storer {
+				return NewStorer(func() storage.Storer {
+					return filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault())
+				})
+			},
+		},
+		{
+			name: "gitx_storer_filesystem_memfs",
+			storer: func(t *testing.T) storage.Storer {
+				return NewStorer(func() storage.Storer {
+					return filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
+				})
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -195,6 +213,86 @@ commits:
 				t.Error("origin remote not found in config")
 			}
 		})
+	}
+}
+
+func TestNativeClone_ReftableDefaultHost(t *testing.T) {
+	if !NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	// Hosts may default new repos to the reftable format which go-git cannot
+	// read. NativeClone must override it for the cloned repo to be usable.
+	t.Setenv("GIT_DEFAULT_REF_FORMAT", "reftable")
+	ctx := context.Background()
+	upstreamURL := setupLocalRepo(t, `
+commits:
+  - id: initial
+    branch: master
+    message: "Initial commit"
+    files:
+      README.md: "Test content"
+`)
+	storer := filesystem.NewStorage(osfs.New(t.TempDir()), cache.NewObjectLRUDefault())
+	repo, err := NativeClone(ctx, storer, nil, &git.CloneOptions{
+		URL:        upstreamURL,
+		NoCheckout: true,
+	})
+	if err != nil {
+		t.Fatalf("NativeClone failed: %v", err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatalf("failed to get HEAD: %v", err)
+	}
+	if _, err := repo.CommitObject(head.Hash()); err != nil {
+		t.Fatalf("failed to get commit: %v", err)
+	}
+}
+
+func TestNativeClone_MemoryStorageLargeObject(t *testing.T) {
+	if !NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	ctx := context.Background()
+	// A blob above go-git's 16KiB small-object threshold is read lazily from
+	// the packfile rather than materialized, so reading it after NativeClone
+	// returns catches the staged objects not outliving the temp clone dir.
+	bigContent := strings.Repeat("x", 64*1024)
+	yamlRepo := `
+commits:
+  - id: initial
+    branch: master
+    message: "Initial commit"
+    files:
+      README.md: "hello"
+      big.bin: "` + bigContent + `"
+`
+	upstreamURL := setupLocalRepo(t, yamlRepo)
+	repo, err := NativeClone(ctx, memory.NewStorage(), nil, &git.CloneOptions{
+		URL:        upstreamURL,
+		NoCheckout: true,
+	})
+	if err != nil {
+		t.Fatalf("NativeClone failed: %v", err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		t.Fatalf("failed to get HEAD: %v", err)
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		t.Fatalf("failed to get commit: %v", err)
+	}
+	f, err := commit.File("big.bin")
+	if err != nil {
+		t.Fatalf("failed to get big.bin: %v", err)
+	}
+	contents, err := f.Contents()
+	if err != nil {
+		t.Fatalf("failed to read big.bin: %v", err)
+	}
+	if len(contents) != len(bigContent) {
+		t.Errorf("big.bin length = %d, want %d", len(contents), len(bigContent))
 	}
 }
 

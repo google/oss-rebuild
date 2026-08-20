@@ -115,19 +115,23 @@ var errNoMatches = errors.New("no packages found at publish time")
 
 func findCommitWithVersions(repo *git.Repository, packages []internalPackage, published time.Time, cfg *FindConfig) (*searchResult, error) {
 	blobHashes := make(map[string]plumbing.Hash)
-	present := make(map[string]bool)
+	present := make(map[string]map[string]bool)
+	packagesByPath := make(map[string][]internalPackage)
+	for _, pkg := range packages {
+		packagesByPath[pkg.Path] = append(packagesByPath[pkg.Path], pkg)
+	}
 	matchesFor := func(commit *object.Commit) int {
 		tree, err := commit.Tree()
 		if err != nil {
 			return 0
 		}
 		var found int
-		for _, pkg := range packages {
-			entry, err := tree.FindEntry(pkg.Path)
+		for path, pathPackages := range packagesByPath {
+			entry, err := tree.FindEntry(path)
 			if err != nil {
 				continue
 			}
-			if entry.Hash != blobHashes[pkg.Path] {
+			if entry.Hash != blobHashes[path] {
 				blob, err := repo.BlobObject(entry.Hash)
 				if err != nil {
 					continue
@@ -141,11 +145,16 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 				if err != nil {
 					continue
 				}
-				blobHashes[pkg.Path] = entry.Hash
-				present[pkg.Path] = bytes.Contains(content, []byte(`"vers":"`+pkg.Version+`"`))
+				blobHashes[path] = entry.Hash
+				present[path] = make(map[string]bool, len(pathPackages))
+				for _, pkg := range pathPackages {
+					present[path][pkg.Version] = bytes.Contains(content, []byte(`"vers":"`+pkg.Version+`"`))
+				}
 			}
-			if present[pkg.Path] {
-				found++
+			for _, pkg := range pathPackages {
+				if present[path][pkg.Version] {
+					found++
+				}
 			}
 		}
 		if cfg != nil && cfg.VerboseLogging {
@@ -177,11 +186,13 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 	// until we find a drop in the number of matches.
 	day := 24 * time.Hour
 	nextCheckTime := firstCommit.Committer.When.Add(-day)
+	oldestCommit := firstCommit
 	foundDrop := false
 	for c, err := range iterx.ToSeq2(commitIter, io.EOF) {
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over daily commits")
 		}
+		oldestCommit = c
 		if c.Committer.When.Before(nextCheckTime) {
 			if matchesFor(c) < maxFound {
 				foundDrop = true
@@ -191,9 +202,11 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 			nextCheckTime = c.Committer.When.Add(-day)
 		}
 	}
-	if !foundDrop {
+	// The coarse scan leaves up to a day of commits above the root unexamined;
+	// probing the root directly settles the all-matches case without a rescan.
+	if !foundDrop && matchesFor(oldestCommit) == maxFound {
 		return &searchResult{
-			ResolutionCommit: upperBoundCommit,
+			ResolutionCommit: oldestCommit,
 			ResolvableCrates: maxFound,
 			PriorCommit:      nil,
 		}, nil

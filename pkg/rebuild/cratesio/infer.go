@@ -46,7 +46,22 @@ func getCargoTOML(tree *object.Tree, path string) (ct reg.CargoTOML, err error) 
 	if err != nil {
 		return ct, err
 	}
+	// Cargo tolerates a UTF-8 byte order mark in manifests; go-toml does not.
+	p = strings.TrimPrefix(p, "\uFEFF")
 	return ct, toml.Unmarshal([]byte(p), &ct)
+}
+
+// lockfileRustVersionFloor returns the earliest Cargo release that preserves
+// an explicit lockfile format version. Cargo writes v1 and v2 without a header.
+func lockfileRustVersionFloor(formatVersion int) string {
+	switch formatVersion {
+	case 3:
+		return "1.47.0"
+	case 4:
+		return "1.78.0"
+	default:
+		return ""
+	}
 }
 
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
@@ -59,7 +74,7 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, ropt *gitx.RepositoryOptions) (r rebuild.RepoConfig, err error) {
 	r.URI = repoURI
-	r.Repository, err = rebuild.LoadRepo(ctx, t.Package, ropt.Storer, ropt.Worktree, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth, NoCheckout: true})
+	r.Repository, err = rebuild.LoadRepo(ctx, t.Package, ropt.Storer, ropt.Worktree, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.NoRecurseSubmodules, NoCheckout: true})
 	switch err {
 	case nil:
 	case transport.ErrAuthenticationRequired:
@@ -68,8 +83,14 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
 	}
 	// Do Cargo.toml search.
-	head, _ := r.Repository.Head()
-	c, _ := r.Repository.CommitObject(head.Hash())
+	head, err := r.Repository.Head()
+	if err != nil {
+		return r, errors.Wrapf(err, "resolving HEAD [repo=%s]", r.URI)
+	}
+	c, err := r.Repository.CommitObject(head.Hash())
+	if err != nil {
+		return r, errors.Wrapf(err, "resolving HEAD commit [repo=%s]", r.URI)
+	}
 	_, pkgPath, err := findCargoTOML(r.Repository, c, t.Package)
 	if err != nil {
 		log.Printf("Cargo.toml path heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
@@ -108,13 +129,17 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 		cargoVCSGuess = info.GitInfo.SHA1
 	}
 	dir = rcfg.Dir
+	vcsDir := dir
+	if info.Dir != nil {
+		vcsDir = *info.Dir
+	}
 	var c *object.Commit
 	switch {
 	// Ensure the package config has the expected name and version.
 	case cargoVCSGuess != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(cargoVCSGuess))
 		if err == nil {
-			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, dir); err != nil {
+			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
 				log.Printf("registry ref invalid: %v", err)
 			} else {
 				log.Printf("using registry ref: %s", cargoVCSGuess[:9])
@@ -132,7 +157,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 	case tagGuess != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagGuess))
 		if err == nil {
-			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, dir); err != nil {
+			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
 				log.Printf("registry heuristic tag invalid: %v", err)
 			} else {
 				log.Printf("using tag heuristic ref: %s", tagGuess[:9])
@@ -150,7 +175,7 @@ func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte
 	case cargoTOMLGuess != "":
 		c, err = rcfg.Repository.CommitObject(plumbing.NewHash(cargoTOMLGuess))
 		if err == nil {
-			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, dir); err != nil {
+			if newPath, err := findAndValidateCargoTOML(rcfg.Repository, c, t.Package, t.Version, vcsDir); err != nil {
 				log.Printf("registry heuristic git log invalid: %v", err)
 			} else {
 				log.Printf("using git log heuristic ref: %s", cargoTOMLGuess[:9])
@@ -210,7 +235,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, err
 	}
-	tree, _ := c.Tree()
+	tree, err := c.Tree()
+	if err != nil {
+		return nil, errors.Wrap(err, "[INTERNAL] fetching commit tree")
+	}
 	ct, err := getCargoTOML(tree, path.Join(dir, "Cargo.toml"))
 	if err == object.ErrFileNotFound {
 		return nil, errors.Errorf("Cargo.toml file not found [heuristic=%s]", rcfg.Dir)
@@ -220,18 +248,27 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if ct.Name != name {
 		return nil, errors.Errorf("mismatched name [expected=%s,actual=%s,heuristic=%s]", name, ct.Name, rcfg.Dir)
 	}
-	if ct.Version() != version && ct.Version() != reg.WorkspaceVersion {
-		return nil, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, ct.Version())
+	actualVersion, err := cargoPackageVersion(tree, path.Join(dir, "Cargo.toml"), &ct)
+	if err != nil {
+		return nil, errors.Wrap(err, "resolving Cargo.toml version")
 	}
-	rustVersion := vmeta.RustVersion
-	if rustVersion == "" {
-		// NOTE: Give a week's margin to allow for toolchain upgrades. Maybe raise.
-		rustVersion, err = reg.RustVersionAt(vmeta.Updated.Add(-7 * 24 * time.Hour))
-		if err != nil {
-			return nil, errors.New("rust version heuristic failed")
+	if actualVersion != version {
+		return nil, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, actualVersion)
+	}
+	// NOTE: Give a week's margin to allow for toolchain upgrades. Maybe raise.
+	rustVersion, err := reg.RustVersionAt(vmeta.Created.Add(-7 * 24 * time.Hour))
+	if err != nil {
+		return nil, errors.New("rust version heuristic failed")
+	}
+	// rust_version is the crate's minimum supported Rust version, not
+	// necessarily the toolchain used to publish it.
+	if declared := vmeta.RustVersion; declared != "" {
+		if strings.Count(declared, ".") == 1 {
+			declared += ".0"
 		}
-	} else if strings.Count(rustVersion, ".") == 1 {
-		rustVersion += ".0"
+		if semver.Cmp(rustVersion, declared) < 0 {
+			rustVersion = declared
+		}
 	}
 	// Apply structural hints to ensure minimum Rust version requirements are met
 	// In the presence of options, (arbitrarily) prefer the latest Rust version in the range
@@ -260,34 +297,35 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			return nil, errors.Wrap(err, "[INTERNAL] failed to parse Cargo.lock")
 		}
 		// Use lock file format version to refine the Rust version lower bound.
-		// v1 (no header) predates meaningful cargo package normalization changes.
-		// v2 was introduced in cargo 1.57; v3 in cargo 1.78 (auto-inclusion in packages stabilized in 1.79); v4 in cargo 1.82.
-		lockfileLo := map[int]string{2: "1.57.0", 3: "1.79.0", 4: "1.82.0"}[lf.FormatVersion]
+		lockfileLo := lockfileRustVersionFloor(lf.FormatVersion)
 		if lockfileLo != "" && semver.Cmp(rustVersion, lockfileLo) < 0 {
 			rustVersion = lockfileLo
 		}
-		// Registry search is only usable in builds that support the local or sparse registry protocols.
-		// Sparse support: http://releases.rs/docs/1.68.0/#cargo
-		// Local support: http://releases.rs/docs/1.34.0/#cargo
-		stub, err := getRegistryStub(ctx)
-		if err != nil {
-			return nil, errors.Wrapf(err, "[INTERNAL] Failed to access registry query stub")
+		registryPackages := cargolock.CratesIOPackages(lf.Packages)
+		if len(registryPackages) > 0 {
+			// Registry search is only usable in builds that support the local or sparse registry protocols.
+			// Sparse support: http://releases.rs/docs/1.68.0/#cargo
+			// Local support: http://releases.rs/docs/1.34.0/#cargo
+			stub, err := getRegistryStub(ctx)
+			if err != nil {
+				return nil, errors.Wrapf(err, "[INTERNAL] Failed to access registry query stub")
+			}
+			resp, err := stub(ctx, cratesregistryservice.FindRegistryCommitRequest{
+				LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
+				PublishedTime:  vmeta.Created.Format(time.RFC3339),
+			})
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to call registry service")
+			}
+			if resp.CommitHash == "" {
+				return nil, errors.New("no suitable registry commit found")
+			}
+			indexCommit = resp.CommitHash
 		}
-		resp, err := stub(ctx, cratesregistryservice.FindRegistryCommitRequest{
-			LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
-			PublishedTime:  vmeta.Updated.Format(time.RFC3339),
-		})
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to call registry service")
-		}
-		if resp.CommitHash == "" {
-			return nil, errors.New("no suitable registry commit found")
-		}
-		indexCommit = resp.CommitHash
 		// TODO: If we want to default to sparse registry, we can predicate this on `if semver.Cmp(rustVersion, "1.68.0") < 0`
-		// If only local registry supported, parse package names from Cargo.lock.
+		// If only local registry is supported, collect crates.io package names from Cargo.lock.
 		packageSet := make(map[string]bool)
-		for _, pkg := range lf.Packages {
+		for _, pkg := range registryPackages {
 			packageSet[pkg.Name] = true
 		}
 		for pkgName := range packageSet {
@@ -303,6 +341,8 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if !hasMUSLBuild {
 		return nil, errors.New("rust version unsupported in MUSL builds")
 	}
+	// --exclude-lockfile was added in Cargo 1.87.
+	excludeLockfile := lockContent == nil && semver.Cmp(rustVersion, "1.87.0") >= 0
 
 	return &CratesIOCargoPackage{
 		Location: rebuild.Location{
@@ -310,9 +350,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			Ref:  ref,
 			Dir:  dir,
 		},
-		RustVersion:    rustVersion,
-		RegistryCommit: indexCommit,
-		PackageNames:   packageNames,
+		RustVersion:     rustVersion,
+		ExcludeLockfile: excludeLockfile,
+		RegistryCommit:  indexCommit,
+		PackageNames:    packageNames,
 	}, nil
 }
 
@@ -337,14 +378,63 @@ func getFileFromCrate(crate io.Reader, path string) ([]byte, error) {
 	return nil, fs.ErrNotExist
 }
 
+// cargoPackageVersion resolves package.version, including workspace inheritance.
+func cargoPackageVersion(tree *object.Tree, manifestPath string, cargoTOML *reg.CargoTOML) (string, error) {
+	version := cargoTOML.Version()
+	if version != reg.WorkspaceVersion {
+		return version, nil
+	}
+
+	if workspacePath := cargoTOML.WorkspacePath(); workspacePath != "" {
+		rootPath := path.Join(path.Dir(manifestPath), workspacePath, "Cargo.toml")
+		root, err := getCargoTOML(tree, rootPath)
+		if err != nil {
+			return "", errors.Wrapf(err, "reading workspace manifest [path=%s]", rootPath)
+		}
+		if root.Workspace == nil || root.Workspace.Package.Version == "" {
+			return "", errors.Errorf("workspace package version not found [path=%s]", rootPath)
+		}
+		return root.Workspace.Package.Version, nil
+	}
+
+	for dir := path.Dir(manifestPath); ; dir = path.Dir(dir) {
+		rootPath := path.Join(dir, "Cargo.toml")
+		root := cargoTOML
+		if rootPath != manifestPath {
+			candidate, err := getCargoTOML(tree, rootPath)
+			if err != nil && err != object.ErrFileNotFound {
+				return "", errors.Wrapf(err, "reading workspace manifest [path=%s]", rootPath)
+			}
+			if err == nil {
+				root = &candidate
+			} else {
+				root = nil
+			}
+		}
+		if root != nil && root.Workspace != nil {
+			if root.Workspace.Package.Version == "" {
+				return "", errors.Errorf("workspace package version not found [path=%s]", rootPath)
+			}
+			return root.Workspace.Package.Version, nil
+		}
+		if dir == "." {
+			break
+		}
+	}
+	return "", errors.Errorf("workspace manifest not found [path=%s]", manifestPath)
+}
+
 // findAndValidateCargoTOML ensures the package config has the expected name and version, or finds a new version if necessary.
 func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, version, guess string) (string, error) {
-	t, _ := c.Tree()
+	t, err := c.Tree()
+	if err != nil {
+		return "", errors.Wrap(err, "fetching commit tree")
+	}
 	path := path.Join(guess, "Cargo.toml")
 	orig, err := getCargoTOML(t, path)
 	cargoTOML := &orig
-	// TODO: Validate workspace version.
-	if err != nil || cargoTOML.Name != name || (cargoTOML.Version() != version && cargoTOML.Version() != reg.WorkspaceVersion) {
+	actualVersion, versionErr := cargoPackageVersion(t, path, cargoTOML)
+	if err != nil || cargoTOML.Name != name || versionErr != nil || actualVersion != version {
 		cargoTOML, path, err = findCargoTOML(repo, c, name)
 	}
 	if err == object.ErrFileNotFound {
@@ -355,14 +445,21 @@ func findAndValidateCargoTOML(repo *git.Repository, c *object.Commit, name, vers
 		return path, errors.Wrapf(err, "unknown Cargo.toml error")
 	} else if cargoTOML.Name != name {
 		return path, errors.Errorf("mismatched name [expected=%s,actual=%s,path=%s]", name, cargoTOML.Name, guess)
-	} else if cargoTOML.Version() != version && cargoTOML.Version() != reg.WorkspaceVersion {
-		return path, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, cargoTOML.Version())
+	}
+	actualVersion, err = cargoPackageVersion(t, path, cargoTOML)
+	if err != nil {
+		return path, errors.Wrap(err, "resolving Cargo.toml version")
+	} else if actualVersion != version {
+		return path, errors.Errorf("mismatched version [expected=%s,actual=%s]", version, actualVersion)
 	}
 	return path, nil
 }
 
 func findCargoTOML(repo *git.Repository, c *object.Commit, pkg string) (*reg.CargoTOML, string, error) {
-	t, _ := c.Tree()
+	t, err := c.Tree()
+	if err != nil {
+		return nil, "", errors.Wrap(err, "fetching commit tree")
+	}
 	path := "Cargo.toml"
 	ct, err := getCargoTOML(t, path)
 	if err == object.ErrFileNotFound {

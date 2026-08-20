@@ -30,8 +30,7 @@ import (
 func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) (*RebuildPackageDeps, error) {
 	var d RebuildPackageDeps
 	var err error
-	// Use default http config for now, or we could add it to RebuildDepsConfig
-	d.HTTPClient, err = httpegress.MakeClient(ctx, httpegress.Config{})
+	d.HTTPClient, err = httpegress.MakeClient(ctx, httpegress.Config{Host: cfg.Host})
 	if err != nil {
 		return nil, errors.Wrap(err, "making http client")
 	}
@@ -110,7 +109,6 @@ func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) 
 		Ref:  cfg.BuildDefRef,
 		Dir:  cfg.BuildDefDir,
 	}
-	d.PublishForLocalServiceRepo = false // Should probably be configurable
 	d.AttestationStore, err = rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, ""), "gs://"+cfg.AttestationBucket)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating attestation uploader")
@@ -129,11 +127,11 @@ func MakeRebuildPackageDeps(ctx context.Context, cfg *schema.RebuildDepsConfig) 
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing inference URL")
 	}
-	u = u.JoinPath("infer")
 	runclient, err := idtoken.NewClient(ctx, cfg.InferenceURL)
 	if err != nil {
 		return nil, errors.Wrap(err, "initializing inference client")
 	}
-	d.InferStub = api.StubFromHandler(runclient, u, inferenceservice.Infer)
+	d.InferStub = api.StubFromHandler(runclient, u.JoinPath("infer"), inferenceservice.Infer)
+	d.InferVersionStub = api.StubFromHandler(runclient, u.JoinPath("version"), inferenceservice.Version)
 	return &d, nil
 }

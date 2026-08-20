@@ -57,6 +57,7 @@ type RebuildPackageDeps struct {
 	RemoteMetadataStoreBuilder func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error)
 	OverwriteAttestations      bool // TODO: Remove in favor of req.OverwriteMode
 	InferStub                  api.StubFn[schema.InferenceRequest, schema.StrategyOneOf]
+	InferVersionStub           api.StubFn[schema.VersionRequest, schema.VersionResponse] // resolves inference /version for provenance
 }
 
 type repoEntry struct {
@@ -66,10 +67,34 @@ type repoEntry struct {
 	BuildDefLoc rebuild.Location
 }
 
+// resolution is getStrategy's result.
+type resolution struct {
+	Strategy  rebuild.Strategy
+	Entry     *repoEntry           // consulted build def entry, nil when no repo was used
+	Inference *schema.InferenceRun // set iff inference ran
+	InferTime time.Duration        // duration of the inference call, zero when inference didn't run
+}
+
+// Provenance derives the strategy provenance from the resolution's inputs.
+// - Definition when the entry contributed a strategy or hint
+// - Inference when inference ran.
+func (r *resolution) Provenance() *schema.StrategyProvenance {
+	p := &schema.StrategyProvenance{Inference: r.Inference}
+	if r.Entry != nil && r.Entry.BuildDefinition.StrategyOneOf != nil {
+		p.Definition = &schema.SourceLocation{
+			Repository: r.Entry.BuildDefLoc.Repo,
+			Ref:        r.Entry.BuildDefLoc.Ref,
+			Path:       r.Entry.BuildDefLoc.Dir,
+		}
+	}
+	return p
+}
+
 // getStrategy determines which strategy we should execute. If a build def repo was used, that data will be included as repoEntry.
-func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target, fromRepo bool) (rebuild.Strategy, *repoEntry, error) {
+func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target, fromRepo bool) (*resolution, error) {
 	var strategy rebuild.Strategy
 	var entry *repoEntry
+	var inference *schema.InferenceRun
 	ireq := schema.InferenceRequest{
 		Ecosystem: t.Ecosystem,
 		Package:   t.Package,
@@ -90,7 +115,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		if gitx.IsSSMURL(cloneOpts.URL) {
 			auth, err := gitx.GCPBasicAuth(ctx)
 			if err != nil {
-				return nil, nil, errors.Wrap(err, "getting GCP auth for SSM repo")
+				return nil, errors.Wrap(err, "getting GCP auth for SSM repo")
 			}
 			cloneOpts.Auth = auth
 		}
@@ -101,7 +126,7 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 			SparseCheckoutDirs: sparseDirs,
 		})
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "creating build definition repo reader")
+			return nil, errors.Wrap(err, "creating build definition repo reader")
 		}
 		pth, _ := defs.Path(ctx, t)
 		entry = &repoEntry{
@@ -113,12 +138,12 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		}
 		entry.BuildDefinition, err = defs.Get(ctx, t)
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "accessing build definition")
+			return nil, errors.Wrap(err, "accessing build definition")
 		}
 		if entry.BuildDefinition.StrategyOneOf != nil {
 			defnStrategy, err := entry.BuildDefinition.Strategy()
 			if err != nil {
-				return nil, nil, errors.Wrap(err, "accessing strategy")
+				return nil, errors.Wrap(err, "accessing strategy")
 			}
 			if hint, ok := defnStrategy.(*rebuild.LocationHint); ok && hint != nil {
 				ireq.StrategyHint = &schema.StrategyOneOf{LocationHint: hint}
@@ -127,38 +152,49 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 			}
 		}
 	}
+	var inferTime time.Duration
 	if strategy == nil {
+		// Resolve the inference service's version out-of-band before the call.
+		// A rollout landing between the two calls can misattribute the
+		// version. Rollouts are rare and the window is narrow.
+		vr, err := deps.InferVersionStub(ctx, schema.VersionRequest{})
+		if err != nil {
+			return nil, errors.Wrap(err, "fetching inference version")
+		}
+		inferStart := time.Now()
 		s, err := deps.InferStub(ctx, ireq)
 		if err != nil {
 			// TODO: Surface better error than Internal.
-			return nil, nil, errors.Wrap(err, "fetching inference")
+			return nil, errors.Wrap(err, "fetching inference")
 		}
+		inferTime = time.Since(inferStart)
 		strategy, err = s.Strategy()
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "reading strategy")
+			return nil, errors.Wrap(err, "reading strategy")
 		}
+		inference = &schema.InferenceRun{Version: vr.Version}
 	}
-	return strategy, entry, nil
+	return &resolution{Strategy: strategy, Entry: entry, Inference: inference, InferTime: inferTime}, nil
 }
 
-func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, sizeHint schema.SizeHint, useProxy bool, useSyscallMonitor bool, timeout time.Duration, mode schema.OverwriteMode) (err error) {
+func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, sizeHint schema.SizeHint, useProxy bool, useSyscallMonitor bool, timeout time.Duration, mode schema.OverwriteMode) (timings *rebuild.BuildTimings, err error) {
 	debugStore, err := deps.DebugStoreBuilder(ctx)
 	if err != nil {
-		return errors.Wrap(err, "creating debug store")
+		return timings, errors.Wrap(err, "creating debug store")
 	}
 	obID := uuid.New().String()
 	remoteMetadata, err := deps.RemoteMetadataStoreBuilder(ctx, obID)
 	if err != nil {
-		return errors.Wrap(err, "creating rebuild store")
+		return timings, errors.Wrap(err, "creating rebuild store")
 	}
 	stabilizers, err := stability.StabilizersForTarget(t)
 	if err != nil {
-		return errors.Wrap(err, "getting stabilizers for target")
+		return timings, errors.Wrap(err, "getting stabilizers for target")
 	}
 	if entry != nil && len(entry.BuildDefinition.CustomStabilizers) > 0 {
 		customStabilizers, err := stabilize.CreateCustomStabilizers(entry.BuildDefinition.CustomStabilizers, t.ArchiveType())
 		if err != nil {
-			return errors.Wrap(err, "creating stabilizers")
+			return timings, errors.Wrap(err, "creating stabilizers")
 		}
 		stabilizers = append(stabilizers, customStabilizers...)
 	}
@@ -170,7 +206,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	}
 	rebuilder, ok := meta.AllRebuilders[t.Ecosystem]
 	if !ok {
-		return api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
+		return timings, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
 	toolURLs := map[build.ToolType]string{
 		build.TimewarpTool:         "gs://" + path.Join(deps.PrebuildConfig.Bucket, deps.PrebuildConfig.Dir, "timewarp"),
@@ -190,7 +226,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		rebuild.ProxyNetlogAsset:        remoteMetadata,
 		rebuild.DockerfileAsset:         deps.LocalMetadataStore,
 		rebuild.BuildInfoAsset:          deps.LocalMetadataStore,
-		// NOTE: Omit rebuild.DebugLogsAsset for now since we're not using it.
+		rebuild.DebugLogsAsset:          remoteMetadata,
 	})
 	in := rebuild.Input{
 		Target:   t,
@@ -204,6 +240,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		UseNetworkProxy:    useProxy,
 		UseSyscallMonitor:  useSyscallMonitor,
 		SaveContainerImage: true,
+		RecordTimings:      true,
 		Resources: build.Resources{
 			AssetStore:       buildStore,
 			ToolURLs:         toolURLs,
@@ -212,7 +249,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		},
 	})
 	if err != nil {
-		return api.AsStatus(codes.Internal, errors.Wrap(err, "starting build"))
+		return timings, api.AsStatus(codes.Internal, errors.Wrap(err, "starting build"))
 	}
 	// Even if we fail, try to copy theses assets to the debug store.
 	defer func() {
@@ -222,37 +259,40 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 	}()
 	result, err := h.Wait(ctx)
 	if err != nil {
-		return errors.Wrap(err, "waiting for build")
-	} else if result.Error != nil {
-		return errors.Wrap(result.Error, "executing rebuild")
+		return timings, errors.Wrap(err, "waiting for build")
+	}
+	// Failed builds still carry whatever phase timings were extracted.
+	timings = result.Timings
+	if result.Error != nil {
+		return timings, errors.Wrap(result.Error, "executing rebuild")
 	}
 	upstreamURI, err := rebuilder.UpstreamURL(ctx, t, mux)
 	if err != nil {
-		return errors.Wrap(err, "getting upstream url")
+		return timings, errors.Wrap(err, "getting upstream url")
 	}
 	hashes := []crypto.Hash{crypto.SHA256}
 	rb, up, err := verifier.SummarizeArtifacts(ctx, remoteMetadata, t, upstreamURI, hashes, stabilizers)
 	if err != nil {
-		return errors.Wrap(err, "comparing artifacts")
+		return timings, errors.Wrap(err, "comparing artifacts")
 	}
 	exactMatch := bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
 	stabilizedMatch := bytes.Equal(rb.StabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil))
 	if !exactMatch && !stabilizedMatch {
-		return api.AsStatus(codes.FailedPrecondition, errors.New("rebuild content mismatch"))
+		return timings, api.AsStatus(codes.FailedPrecondition, errors.New("rebuild content mismatch"))
 	}
 	if u, err := url.Parse(deps.ServiceRepo.Repo); err != nil {
-		return errors.Wrap(err, "bad ServiceRepo URL")
+		return timings, errors.Wrap(err, "bad ServiceRepo URL")
 	} else if (u.Scheme == "file" || u.Scheme == "") && !deps.PublishForLocalServiceRepo {
-		return errors.New("disallowed file:// ServiceRepo URL")
+		return timings, errors.New("disallowed file:// ServiceRepo URL")
 	}
 	eqStmt, buildStmt, err := verifier.CreateAttestations(ctx, t, buildDef, strategy, obID, rb, up, deps.LocalMetadataStore, deps.ServiceRepo, deps.PrebuildRepo, buildDefRepo, deps.PrebuildConfig, mode)
 	if err != nil {
-		return errors.Wrap(err, "creating attestations")
+		return timings, errors.Wrap(err, "creating attestations")
 	}
 	if err := a.PublishBundle(ctx, t, eqStmt, buildStmt); err != nil {
-		return errors.Wrap(err, "publishing bundle")
+		return timings, errors.Wrap(err, "publishing bundle")
 	}
-	return nil
+	return timings, nil
 }
 
 func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps *RebuildPackageDeps) (*schema.Verdict, error) {
@@ -326,24 +366,28 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 			// Allow overwrite but empty out the value to omit from the attestation.
 			req.OverwriteMode = schema.OverwriteMode("")
 		case schema.OverwriteServiceUpdate:
-			v.Message = api.AsStatus(codes.FailedPrecondition, errors.Wrap(err, "overwrite denied: no attestation to overwrite")).Error()
+			v.Message = api.AsStatus(codes.FailedPrecondition, errors.New("overwrite denied: no attestation to overwrite")).Error()
 			return &v, nil
 		}
 		// NOTE: This ensures racing rebuilds won't result in multiple attestations being written.
 		a.AllowOverwrite = false
 	}
-	strategy, entry, err := getStrategy(ctx, deps, t, req.UseRepoDefinition)
+	res, err := getStrategy(ctx, deps, t, req.UseRepoDefinition)
 	if err != nil {
 		v.Message = errors.Wrap(err, "getting strategy").Error()
 		return &v, nil
 	}
-	if strategy != nil {
-		v.StrategyOneof = schema.NewStrategyOneOf(strategy)
+	v.Provenance = res.Provenance()
+	if res.Strategy != nil {
+		v.StrategyOneof = schema.NewStrategyOneOf(res.Strategy)
 	}
-	err = buildAndAttest(ctx, deps, mux, a, t, strategy, entry, req.SizeHint, req.UseNetworkProxy, req.UseSyscallMonitor, req.BuildTimeout, req.OverwriteMode)
+	timings, err := buildAndAttest(ctx, deps, mux, a, t, res.Strategy, res.Entry, req.SizeHint, req.UseNetworkProxy, req.UseSyscallMonitor, req.BuildTimeout, req.OverwriteMode)
+	v.Timings = rebuild.Timings{Build: timings}
+	if res.Inference != nil {
+		v.Timings.Infer = &res.InferTime
+	}
 	if err != nil {
 		v.Message = errors.Wrap(err, "executing rebuild").Error()
-		return &v, nil
 	}
 	return &v, nil
 }
@@ -380,6 +424,10 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	}
 
 	v, err := rebuildPackage(ctx, req, deps)
+	if v != nil {
+		// Attempts that exited before strategy resolution keep nil provenance.
+		attempt.Provenance = v.Provenance
+	}
 	if err != nil {
 		attempt.Message = errors.Wrap(err, "executing rebuild").Error()
 		finish(schema.RebuildStatusError)
@@ -406,10 +454,11 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	attempt.Success = v.Message == ""
 	attempt.Message = v.Message
 	attempt.Strategy = v.StrategyOneof
-	attempt.Timings = v.Timings
+	attempt.BuildTimings = v.Timings.Build
 	attempt.Dockerfile = dockerfile
 	attempt.BuildID = bi.BuildID
 	attempt.ObliviousID = bi.ObliviousID
+	attempt.Costs = attemptCosts(ctx, deps, v, bi, req.SizeHint)
 
 	status := schema.RebuildStatusSuccess
 	if !attempt.Success {
@@ -424,4 +473,45 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	finish(status)
 
 	return v, nil
+}
+
+// attemptCosts assembles a summary of resource costs associated with the rebuild.
+// When no costs are incurred (e.g. build never ran), returns nil. Asset sizes
+// are computed best-effort: absent/inaccessible assets leave the byte fields
+// unset.
+func attemptCosts(ctx context.Context, deps *RebuildPackageDeps, v *schema.Verdict, bi rebuild.BuildInfo, sizeHint schema.SizeHint) *schema.AttemptCosts {
+	var costs schema.AttemptCosts
+	if v.Timings.Infer != nil {
+		costs.InferenceSeconds = v.Timings.Infer.Seconds()
+	}
+	if !bi.BuildStart.IsZero() && !bi.BuildEnd.IsZero() {
+		costs.BuilderSeconds = bi.BuildEnd.Sub(bi.BuildStart).Seconds()
+	}
+	if bi.ObliviousID != "" {
+		if store, err := deps.RemoteMetadataStoreBuilder(ctx, bi.ObliviousID); err != nil {
+			log.Printf("building store for asset sizes: %v", err)
+		} else if ss, ok := store.(rebuild.StatAssetStore); ok {
+			costs.ArtifactBytes = assetBytes(ctx, ss, rebuild.RebuildAsset.For(v.Target))
+			costs.ContainerBytes = assetBytes(ctx, ss, rebuild.ContainerImageAsset.For(v.Target)) +
+				assetBytes(ctx, ss, rebuild.PostBuildContainerAsset.For(v.Target))
+			costs.LogsBytes = assetBytes(ctx, ss, rebuild.DebugLogsAsset.For(v.Target))
+		}
+	}
+	if costs == (schema.AttemptCosts{}) {
+		return nil
+	}
+	costs.BuilderPool = sizeHint
+	return &costs
+}
+
+// assetBytes reports a stored asset's size, zero when absent or unmeasurable.
+func assetBytes(ctx context.Context, s rebuild.StatAssetStore, a rebuild.Asset) int64 {
+	info, err := s.Stat(ctx, a)
+	if err != nil {
+		if !errors.Is(err, rebuild.ErrAssetNotFound) {
+			log.Printf("statting %s: %v", a.Type, err)
+		}
+		return 0
+	}
+	return info.Bytes
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"github.com/google/oss-rebuild/analyzer/example/analyzerservice"
+	"github.com/google/oss-rebuild/internal/buildinfo"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -26,14 +27,6 @@ var (
 	taskQueuePath  = flag.String("task-queue", "", "the Cloud Tasks queue resource path to use")
 	taskQueueEmail = flag.String("task-queue-email", "", "the service account email used as the identity for Cloud Tasks-initiated calls")
 	port           = flag.Int("port", 8080, "port on which to serve")
-)
-
-// Link-time configured service identity
-var (
-	// Repo from which the service was built
-	BuildRepo string
-	// Golang version identifier of the service container builds
-	BuildVersion string
 )
 
 func EnqueueInit(ctx context.Context) (*analyzerservice.EnqueueDeps, error) {
@@ -55,8 +48,8 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 		return nil, errors.Wrap(err, "creating findings asset store")
 	}
 	return &analyzerservice.AnalyzerDeps{
-		BuildRepo:    urlx.MustParse(BuildRepo),
-		BuildVersion: BuildVersion,
+		BuildRepo:    urlx.MustParse(buildinfo.Repo),
+		BuildVersion: buildinfo.Version,
 		Findings:     findings,
 	}, nil
 }

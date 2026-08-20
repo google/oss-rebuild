@@ -148,6 +148,31 @@ func TestFindRegistryResolution(t *testing.T) {
 			wantCommit:     "initial-commit",
 		},
 		{
+			name: "distinguish versions sharing an index path across repos",
+			repoYAMLs: []string{
+				`commits:
+  - id: current-commit
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.0","deps":[],"cksum":"abc123","features":{},"yanked":false}
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"new123","features":{},"yanked":false}
+`,
+				`commits:
+  - id: snapshot-commit
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.0","deps":[],"cksum":"abc123","features":{},"yanked":false}
+`,
+			},
+			packages: []cargolock.Package{
+				{Name: "serde", Version: "1.0.0"},
+				{Name: "serde", Version: "1.0.193"},
+			},
+			cratePublished: time.Now(),
+			wantRepoIndex:  0,
+			wantCommit:     "current-commit",
+		},
+		{
 			name: "find in second repo when first not found",
 			repoYAMLs: []string{
 				// Current repo without the packages
@@ -179,6 +204,27 @@ func TestFindRegistryResolution(t *testing.T) {
 			cratePublished: time.Now(),
 			wantRepoIndex:  1,
 			wantCommit:     "snapshot-commit",
+		},
+		{
+			name: "refine tail when coarse scan finds no drop",
+			repoYAMLs: []string{
+				`commits:
+  - id: initial-commit
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"abc123","features":{},"yanked":false}
+  - id: second-commit
+    parent: initial-commit
+  - id: third-commit
+    parent: second-commit
+`,
+			},
+			packages: []cargolock.Package{
+				{Name: "serde", Version: "1.0.193"},
+			},
+			cratePublished: time.Now(),
+			wantRepoIndex:  0,
+			wantCommit:     "initial-commit",
 		},
 		{
 			name: "empty packages is an error",
@@ -236,4 +282,74 @@ func TestFindRegistryResolution(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFindRegistryResolutionExcludesPathPackage(t *testing.T) {
+	current := mustCreateRepo(t, `commits:
+  - id: current
+    files:
+      pr/iv/private: |
+        {"name":"private","vers":"2.0.0","deps":[],"cksum":"path","features":{},"yanked":false}
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"dependency","features":{},"yanked":false}
+`)
+	snapshot := mustCreateRepo(t, `commits:
+  - id: snapshot
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"dependency","features":{},"yanked":false}
+`)
+	lockfile, err := cargolock.ParseLockfile(`version = 3
+
+[[package]]
+name = "example"
+version = "1.0.0"
+
+[[package]]
+name = "private"
+version = "2.0.0"
+
+[[package]]
+name = "serde"
+version = "1.0.193"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`)
+	if err != nil {
+		t.Fatalf("ParseLockfile() error = %v", err)
+	}
+
+	unfiltered, err := FindRegistryResolution(
+		[]*git.Repository{current.Repository, snapshot.Repository},
+		lockfile.Packages,
+		time.Now(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("FindRegistryResolution() with all packages error = %v", err)
+	}
+	if unfiltered.CommitHash != current.Commits["current"] {
+		t.Fatalf("unfiltered resolution = %v, want current index", unfiltered.CommitHash)
+	}
+
+	filtered, err := FindRegistryResolution(
+		[]*git.Repository{current.Repository, snapshot.Repository},
+		cargolock.CratesIOPackages(lockfile.Packages),
+		time.Now(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("FindRegistryResolution() with crates.io packages error = %v", err)
+	}
+	if filtered.CommitHash != snapshot.Commits["snapshot"] {
+		t.Errorf("filtered resolution = %v, want snapshot index", filtered.CommitHash)
+	}
+}
+
+func mustCreateRepo(t *testing.T, history string) *gitxtest.Repository {
+	t.Helper()
+	repo, err := gitxtest.CreateRepoFromYAML(history, nil)
+	if err != nil {
+		t.Fatalf("CreateRepoFromYAML() error = %v", err)
+	}
+	return repo
 }

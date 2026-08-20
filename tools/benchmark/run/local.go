@@ -12,7 +12,6 @@ import (
 	"net/http"
 
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/gitcache"
@@ -77,7 +76,11 @@ func (s *localExecutionService) RebuildPackage(ctx context.Context, req schema.R
 		return verdict, nil
 	}
 	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
-	if err := executeBuild(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}, s.dockerConfig); err != nil {
+	// In-process inference ran. There is no service version to report.
+	verdict.Provenance = &schema.StrategyProvenance{Inference: &schema.InferenceRun{}}
+	timings, err := executeBuild(ctx, t, strategy, s.store, buildOpts{PrebuildURL: s.prebuildURL, LogSink: s.logsink}, s.dockerConfig)
+	verdict.Timings = rebuild.Timings{Build: timings}
+	if err != nil {
 		verdict.Message = err.Error()
 	} else if err := compare(ctx, t, s.store, mux); err != nil {
 		verdict.Message = err.Error()
@@ -102,7 +105,9 @@ func RebuildWithStrategy(ctx context.Context, executor ExecutionService, t rebui
 	}
 	verdict := &schema.Verdict{Target: t}
 	verdict.StrategyOneof = schema.NewStrategyOneOf(strategy)
-	if err := executeBuild(ctx, t, strategy, local.store, buildOpts{PrebuildURL: local.prebuildURL, LogSink: local.logsink}, local.dockerConfig); err != nil {
+	timings, err := executeBuild(ctx, t, strategy, local.store, buildOpts{PrebuildURL: local.prebuildURL, LogSink: local.logsink}, local.dockerConfig)
+	verdict.Timings = rebuild.Timings{Build: timings}
+	if err != nil {
 		verdict.Message = err.Error()
 	} else if err := compare(ctx, t, local.store, mux); err != nil {
 		verdict.Message = err.Error()
@@ -125,7 +130,7 @@ func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux
 	if err != nil {
 		return nil, err
 	}
-	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, &gitx.RepositoryOptions{Worktree: memfs.New(), Storer: memory.NewStorage()})
+	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, &gitx.RepositoryOptions{Worktree: memfs.New(), Storer: gitx.NewInMemoryStorer()})
 	if err != nil {
 		return nil, err
 	}
@@ -158,10 +163,10 @@ type buildOpts struct {
 	LogSink     io.Writer
 }
 
-func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts, config local.DockerRunExecutorConfig) error {
+func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strategy, out rebuild.LocatableAssetStore, opts buildOpts, config local.DockerRunExecutorConfig) (*rebuild.BuildTimings, error) {
 	executor, err := local.NewDockerRunExecutor(config)
 	if err != nil {
-		return errors.Wrap(err, "failed to create executor")
+		return nil, errors.Wrap(err, "failed to create executor")
 	}
 	defer executor.Close(ctx)
 	input := rebuild.Input{
@@ -176,23 +181,24 @@ func executeBuild(ctx context.Context, t rebuild.Target, strategy rebuild.Strate
 			},
 			BaseImageConfig: build.DefaultBaseImageConfig(),
 		},
-		UseTimewarp: meta.AllRebuilders[t.Ecosystem].UsesTimewarp(input),
+		UseTimewarp:   meta.AllRebuilders[t.Ecosystem].UsesTimewarp(input),
+		RecordTimings: true,
 	}
 	handle, err := executor.Start(ctx, input, buildOpts)
 	if err != nil {
-		return errors.Wrap(err, "failed to start build")
+		return nil, errors.Wrap(err, "failed to start build")
 	}
 	if opts.LogSink != nil {
 		go io.Copy(opts.LogSink, handle.OutputStream())
 	}
 	result, err := handle.Wait(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if result.Error != nil {
-		return errors.Wrap(result.Error, "build failed")
+		return result.Timings, errors.Wrap(result.Error, "build failed")
 	}
-	return nil
+	return result.Timings, nil
 }
 
 func compare(ctx context.Context, t rebuild.Target, store rebuild.LocatableAssetStore, mux rebuild.RegistryMux) error {

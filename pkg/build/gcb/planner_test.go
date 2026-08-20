@@ -6,6 +6,7 @@ package gcb
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"google.golang.org/api/cloudbuild/v1"
@@ -68,6 +70,10 @@ RUN sed 's/^ //' <<'EOF' | sh
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -179,6 +185,10 @@ EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  mkdir /src && cd /src
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -260,11 +270,15 @@ RUN sed 's/^ //' <<'EOF' | sh
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -312,11 +326,15 @@ RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -364,11 +382,15 @@ RUN sed 's/^ //' <<'EOF' | sh
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -417,11 +439,15 @@ RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- ./timewarp -port 8080 &
- while ! nc -z localhost 8080;do sleep 1;done
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+EOF
+RUN sed 's/^ //' <<'EOF' | sh
+ set -eux
+ ./timewarp -port 8080 &
+ while ! nc -z localhost 8080;do sleep 1;done
+ cd /src
  make deps ...
 EOF
 RUN sed 's/^ //' <<'EOF' >/build
@@ -987,4 +1013,141 @@ chmod +x gsutil_writeonly
 	if diff := cmp.Diff(wantSteps, plan.Steps[1:]); diff != "" {
 		t.Errorf("Steps[1:] mismatch (-want +got):\n%s", diff)
 	}
+}
+
+// countAppended counts the rendered Dockerfile's post-FROM instructions.
+// Heredoc bodies are indented by the templates, so instruction keywords at
+// column zero are unambiguous.
+func countAppended(dockerfile string) int {
+	count := 0
+	for _, line := range strings.Split(dockerfile, "\n") {
+		tok, _, _ := strings.Cut(line, " ")
+		switch tok {
+		case "RUN", "WORKDIR", "ENTRYPOINT", "COPY", "ENV", "CMD":
+			count++
+		}
+	}
+	return count
+}
+
+func TestGCBPlannerLayers(t *testing.T) {
+	ctx := context.Background()
+	planner := NewPlanner(PlannerConfig{ServiceAccount: "test@test.iam.gserviceaccount.com"})
+	input := rebuild.Input{
+		Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-package", Version: "1.0.0", Artifact: "test-package-1.0.0.tgz"},
+		Strategy: &rebuild.ManualStrategy{
+			Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Deps:       "npm install",
+			Build:      "npm run build",
+			OutputPath: "dist/test-package-1.0.0.tgz",
+		},
+	}
+	baseOpts := build.PlanOptions{
+		Resources: build.Resources{
+			BaseImageConfig: build.BaseImageConfig{Default: "docker.io/library/alpine:3.19"},
+			ToolURLs: map[build.ToolType]string{
+				build.TimewarpTool: "https://example.com/timewarp",
+				build.ProxyTool:    "https://example.com/proxy",
+			},
+		},
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*build.PlanOptions)
+	}{
+		{name: "Standard", mutate: func(o *build.PlanOptions) {}},
+		{name: "Monitored", mutate: func(o *build.PlanOptions) { o.UseSyscallMonitor = true }},
+		{name: "Proxy", mutate: func(o *build.PlanOptions) { o.UseNetworkProxy = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := baseOpts
+			tc.mutate(&opts)
+			opts.RecordTimings = true
+			plan, err := planner.GeneratePlan(ctx, input, opts)
+			if err != nil {
+				t.Fatalf("GeneratePlan failed: %v", err)
+			}
+			l := plan.Layers
+			if want := countAppended(plan.Dockerfile); l.Appended != want {
+				t.Errorf("Appended = %d, want post-FROM instruction count %d", l.Appended, want)
+			}
+			if l.Setup != 0 || l.Source != 1 || l.Deps != 2 {
+				t.Errorf("offsets = (%d, %d, %d), want (0, 1, 2)", l.Setup, l.Source, l.Deps)
+			}
+			if want := fmt.Sprintf("--name=container img || exit %d", runFailureExitCode); !strings.Contains(plan.Steps[0].Script, want) {
+				t.Errorf("main script missing run sentinel %q", want)
+			}
+			if got := plan.Steps[0].AllowExitCodes; len(got) != 1 || got[0] != runFailureExitCode {
+				t.Errorf("main step AllowExitCodes = %v, want [%d]", got, runFailureExitCode)
+			}
+		})
+	}
+	t.Run("EmptyDeps", func(t *testing.T) {
+		in := input
+		in.Strategy = &rebuild.WorkflowStrategy{
+			Source:     []flow.Step{{Runs: "echo source"}},
+			OutputPath: "dist/test-package-1.0.0.tgz",
+		}
+		opts := baseOpts
+		opts.RecordTimings = true
+		plan, err := planner.GeneratePlan(ctx, in, opts)
+		if err != nil {
+			t.Fatalf("GeneratePlan failed: %v", err)
+		}
+		if plan.Layers.Deps >= 0 {
+			t.Errorf("Deps = %d, want negative without a deps layer", plan.Layers.Deps)
+		}
+		if want := countAppended(plan.Dockerfile); plan.Layers.Appended != want {
+			t.Errorf("Appended = %d, want post-FROM instruction count %d", plan.Layers.Appended, want)
+		}
+	})
+	t.Run("TimingStep", func(t *testing.T) {
+		opts := baseOpts
+		opts.RecordTimings = true
+		plan, err := planner.GeneratePlan(ctx, input, opts)
+		if err != nil {
+			t.Fatalf("GeneratePlan failed: %v", err)
+		}
+		if plan.timingStep() < 0 {
+			t.Fatal("timingStep() < 0, want appended step")
+		}
+		script := plan.Steps[plan.timingStep()].Script
+		for _, cmd := range []string{"set -ux", "docker inspect container", "docker history --human=false"} {
+			if !strings.Contains(script, cmd) {
+				t.Errorf("timing step missing %q:\n%s", cmd, script)
+			}
+		}
+		if strings.Contains(script, "set -e") {
+			t.Error("timing step must not exit on error")
+		}
+		extract := slices.IndexFunc(plan.Steps, func(s *cloudbuild.BuildStep) bool {
+			return len(s.Args) > 0 && s.Args[0] == "cp"
+		})
+		if extract < 0 || extract < plan.timingStep() {
+			t.Errorf("extract step at %d, timing step at %d, want timing before extract so a sentinel-failed run is observed", extract, plan.timingStep())
+		}
+	})
+	t.Run("NoTimingStepByDefault", func(t *testing.T) {
+		plan, err := planner.GeneratePlan(ctx, input, baseOpts)
+		if err != nil {
+			t.Fatalf("GeneratePlan failed: %v", err)
+		}
+		if idx := plan.timingStep(); idx >= 0 {
+			t.Errorf("timingStep() = %d, want absent", idx)
+		}
+		if plan.Layers != (timing.Layers{}) {
+			t.Errorf("Layers = %+v, want zero without RecordTimings", plan.Layers)
+		}
+		for _, step := range plan.Steps {
+			if strings.Contains(step.Script, "docker history") {
+				t.Error("timing step present without RecordTimings")
+			}
+			if step.AllowExitCodes != nil {
+				t.Errorf("AllowExitCodes = %v without RecordTimings, want none", step.AllowExitCodes)
+			}
+		}
+		if strings.Contains(plan.Steps[0].Script, "|| exit") {
+			t.Error("run sentinel present without RecordTimings")
+		}
+	})
 }

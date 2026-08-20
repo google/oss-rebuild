@@ -14,6 +14,7 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/analyzer/system/analyzerservice"
+	"github.com/google/oss-rebuild/internal/buildinfo"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -40,12 +41,6 @@ var (
 	gcbPrivatePoolName    = flag.String("gcb-private-pool-name", "", "Resource name of GCB private pool to use, if configured")
 	gcbPrivatePoolRegion  = flag.String("gcb-private-pool-region", "", "GCP location to use for GCB private pool builds, if configured. Note: This should generally be the same as the region where the private pool is located.")
 	port                  = flag.Int("port", 8080, "port on which to serve")
-)
-
-// Link-time configured service identity
-var (
-	BuildRepo    string
-	BuildVersion string
 )
 
 var httpcfg = httpegress.Config{}
@@ -142,7 +137,7 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 	remoteMetadataStoreBuilder := func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error) {
 		return rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, uuid), "gs://"+*metadataBucket)
 	}
-	serviceLoc, err := serviceid.ParseLocation(BuildRepo, BuildVersion)
+	serviceLoc, err := serviceid.ParseLocation(buildinfo.Repo, buildinfo.Version)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing service location")
 	}

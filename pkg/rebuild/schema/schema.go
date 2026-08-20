@@ -213,7 +213,8 @@ type Verdict struct {
 	Target        rebuild.Target
 	Message       string
 	StrategyOneof StrategyOneOf
-	Timings       rebuild.Timings
+	Provenance    *StrategyProvenance // strategy inputs, nil when unresolved or unrecorded by the producer
+	Timings       rebuild.Timings     // members are individually nullable
 }
 
 // SmoketestResponse is the result of a rebuild smoketest.
@@ -361,23 +362,25 @@ const (
 
 // RebuildAttempt stores rebuild and execution metadata on a single smoketest run.
 type RebuildAttempt struct {
-	Ecosystem       string          `firestore:"ecosystem,omitempty"`
-	Package         string          `firestore:"package,omitempty"`
-	Version         string          `firestore:"version,omitempty"`
-	Artifact        string          `firestore:"artifact,omitempty"`
-	Status          RebuildStatus   `firestore:"status,omitempty"`
-	Success         bool            `firestore:"success,omitempty"`
-	Message         string          `firestore:"message,omitempty"`
-	Strategy        StrategyOneOf   `firestore:"strategyoneof,omitempty"`
-	Dockerfile      string          `firestore:"dockerfile,omitempty"`
-	Timings         rebuild.Timings `firestore:"timings,omitempty"`
-	ExecutorVersion string          `firestore:"executor_version,omitempty"`
-	RunID           string          `firestore:"run_id,omitempty"`
-	BuildID         string          `firestore:"build_id,omitempty"`
-	ObliviousID     string          `firestore:"oblivious_id,omitempty"`
-	Started         time.Time       `firestore:"started,omitempty"`  // The time rebuild started
-	Finished        time.Time       `firestore:"finished,omitempty"` // The time rebuild finished
-	Created         time.Time       `firestore:"created,omitempty"`  // The time this record was created
+	Ecosystem       string                `firestore:"ecosystem,omitempty"`
+	Package         string                `firestore:"package,omitempty"`
+	Version         string                `firestore:"version,omitempty"`
+	Artifact        string                `firestore:"artifact,omitempty"`
+	Status          RebuildStatus         `firestore:"status,omitempty"`
+	Success         bool                  `firestore:"success,omitempty"`
+	Message         string                `firestore:"message,omitempty"`
+	Strategy        StrategyOneOf         `firestore:"strategyoneof,omitempty"`
+	Dockerfile      string                `firestore:"dockerfile,omitempty"`
+	BuildTimings    *rebuild.BuildTimings `firestore:"timings,omitempty"` // stored under the legacy "timings" key
+	ExecutorVersion string                `firestore:"executor_version,omitempty"`
+	RunID           string                `firestore:"run_id,omitempty"`
+	BuildID         string                `firestore:"build_id,omitempty"`
+	ObliviousID     string                `firestore:"oblivious_id,omitempty"`
+	Provenance      *StrategyProvenance   `firestore:"provenance,omitempty"` // strategy inputs, nil for legacy records or pre-resolution failures
+	Costs           *AttemptCosts         `firestore:"costs,omitempty"`      // measured resource costs
+	Started         time.Time             `firestore:"started,omitempty"`    // The time rebuild started
+	Finished        time.Time             `firestore:"finished,omitempty"`   // The time rebuild finished
+	Created         time.Time             `firestore:"created,omitempty"`    // The time this record was created
 }
 
 func (a RebuildAttempt) Target() rebuild.Target {
@@ -387,6 +390,16 @@ func (a RebuildAttempt) Target() rebuild.Target {
 		Version:   a.Version,
 		Artifact:  a.Artifact,
 	}
+}
+
+// Timings reassembles the rebuild's aggregate durations from the stored parts.
+func (a RebuildAttempt) Timings() rebuild.Timings {
+	t := rebuild.Timings{Build: a.BuildTimings}
+	if a.Costs != nil && a.Costs.InferenceSeconds > 0 {
+		d := time.Duration(a.Costs.InferenceSeconds * float64(time.Second))
+		t.Infer = &d
+	}
+	return t
 }
 
 // Run stores metadata on an execution grouping.
@@ -459,6 +472,23 @@ const (
 	AgentSessionStatusCompleted    = "COMPLETED"
 )
 
+// AgentExecutionMode selects where an agent session's iteration builds execute.
+type AgentExecutionMode string
+
+const (
+	// AgentExecutionModeGCB executes each iteration's build on Cloud Build
+	// inside the agent API's iteration handler (the default).
+	AgentExecutionModeGCB AgentExecutionMode = "gcb"
+	// AgentExecutionModeScratch iterates builds on a per-session scratch
+	// VM, driven by the agent through the scratch exec API. The scratch is
+	// allocated by the session creator and handed to the agent. Iterative
+	// attempts are executed on scratch while final verification attempts are
+	// still routed to GCB.
+	// NOTE: Since only verification attempts go through the API-mediated GCB
+	// execution, only these will appear in the Session's Iterations.
+	AgentExecutionModeScratch AgentExecutionMode = "scratch"
+)
+
 // Agent iteration status constants
 const (
 	AgentIterationStatusPending  = "PENDING"
@@ -470,10 +500,12 @@ const (
 
 // AgentCreateRequest creates a new agent session
 type AgentCreateRequest struct {
-	Target        rebuild.Target `form:",required"`
-	RunID         string         `form:""`
-	MaxIterations int            `form:""`
-	Context       *AgentContext  `form:""`
+	Target        rebuild.Target     `form:",required"`
+	RunID         string             `form:""`
+	MaxIterations int                `form:""`
+	Context       *AgentContext      `form:""`
+	ExecutionMode AgentExecutionMode `form:""` // Empty means AgentExecutionModeGCB
+	ExternalAgent bool               `form:""` // Skip the hosted agent job launch: the caller runs the agent binary
 }
 
 var _ api.Input = AgentCreateRequest{}
@@ -481,6 +513,11 @@ var _ api.Input = AgentCreateRequest{}
 func (r AgentCreateRequest) Validate() error {
 	if r.Target.Ecosystem == "" || r.Target.Package == "" || r.Target.Version == "" || r.Target.Artifact == "" {
 		return errors.New("target must be fully specified")
+	}
+	switch r.ExecutionMode {
+	case "", AgentExecutionModeGCB, AgentExecutionModeScratch:
+	default:
+		return errors.Errorf("invalid execution_mode %q", r.ExecutionMode)
 	}
 	return nil
 }
@@ -494,13 +531,17 @@ type AgentContext struct {
 type AgentCreateResponse struct {
 	SessionID     string `json:"session_id"`
 	ExeuctionName string `json:"execution_name"`
+	ScratchID     string `json:"scratch_id,omitempty"` // Scratch-mode VM handle, passed by external-agent callers as --scratch-id
 }
 
-// AgentCreateIterationRequest records iteration and triggers build
+// AgentCreateIterationRequest records an iteration and triggers its GCB
+// build. Scratch-mode sessions submit only their confirmation builds here.
+// Local attempts are tracked by the scratch exec ledger alone.
 type AgentCreateIterationRequest struct {
 	SessionID       string         `form:",required"`
 	IterationNumber int            `form:",required"`
 	Strategy        *StrategyOneOf `form:",required"`
+	Usage           *TokenUsage    `form:""` // LLM tokens consumed producing this iteration
 }
 
 var _ api.Input = AgentCreateIterationRequest{}
@@ -522,17 +563,19 @@ type AgentBuildResult struct {
 
 // Agent session complete reasons
 const (
-	AgentCompleteReasonSuccess = "SUCCESS"
-	AgentCompleteReasonFailed  = "FAILED"
-	AgentCompleteReasonError   = "ERROR"
+	AgentCompleteReasonSuccess   = "SUCCESS"
+	AgentCompleteReasonFailed    = "FAILED"
+	AgentCompleteReasonError     = "ERROR"
+	AgentCompleteReasonThrottled = "THROTTLED"
 )
 
 // AgentCompleteRequest finalizes session with results
 type AgentCompleteRequest struct {
-	SessionID          string `form:",required"`
-	StopReason         string `form:",required"`
-	SuccessIterationID string `form:""`
-	Summary            string `form:""`
+	SessionID          string      `form:",required"`
+	StopReason         string      `form:",required"`
+	SuccessIterationID string      `form:""`
+	Summary            string      `form:""`
+	Usage              *TokenUsage `form:""` // total LLM tokens consumed across the session
 }
 
 var _ api.Input = AgentCompleteRequest{}
@@ -546,19 +589,22 @@ type AgentCompleteResponse struct {
 
 // AgentSession stores agent session metadata in Firestore
 type AgentSession struct {
-	ID               string         `firestore:"id,omitempty"`
-	RunID            string         `firestore:"run_id,omitempty"`
-	Target           rebuild.Target `firestore:"target,omitempty"`
-	MaxIterations    int            `firestore:"max_iterations,omitempty"`
-	TimeoutSeconds   int            `firestore:"timeout_seconds,omitempty"`
-	Context          *AgentContext  `firestore:"context,omitempty"`
-	Status           string         `firestore:"status,omitempty"`
-	ExecutionName    string         `firestore:"execution_name,omitempty"`
-	Created          time.Time      `firestore:"created,omitempty"`
-	Updated          time.Time      `firestore:"updated,omitempty"`
-	StopReason       string         `firestore:"stop_reason,omitempty"`
-	SuccessIteration string         `firestore:"success_iteration,omitempty"`
-	Summary          string         `firestore:"summary,omitempty"`
+	ID               string             `firestore:"id,omitempty"`
+	RunID            string             `firestore:"run_id,omitempty"`
+	Target           rebuild.Target     `firestore:"target,omitempty"`
+	MaxIterations    int                `firestore:"max_iterations,omitempty"`
+	TimeoutSeconds   int                `firestore:"timeout_seconds,omitempty"`
+	Context          *AgentContext      `firestore:"context,omitempty"`
+	Status           string             `firestore:"status,omitempty"`
+	ExecutionName    string             `firestore:"execution_name,omitempty"`
+	ExecutionMode    AgentExecutionMode `firestore:"execution_mode,omitempty"` // Empty means GCB (sessions predating scratch support)
+	ScratchID        string             `firestore:"scratch_id,omitempty"`     // Scratch VM bound to the session (scratch execution mode only)
+	Usage            *TokenUsage        `firestore:"usage,omitempty"`          // total LLM tokens, reported at completion
+	Created          time.Time          `firestore:"created,omitempty"`
+	Updated          time.Time          `firestore:"updated,omitempty"`
+	StopReason       string             `firestore:"stop_reason,omitempty"`
+	SuccessIteration string             `firestore:"success_iteration,omitempty"`
+	Summary          string             `firestore:"summary,omitempty"`
 }
 
 // AgentIteration stores iteration metadata in Firestore
@@ -570,6 +616,7 @@ type AgentIteration struct {
 	ObliviousID string            `firestore:"build_id,omitempty"`
 	Status      string            `firestore:"status,omitempty"`
 	Result      *AgentBuildResult `firestore:"result,omitempty"`
+	Usage       *TokenUsage       `firestore:"usage,omitempty"` // LLM tokens attributed to this iteration
 	Created     time.Time         `firestore:"created,omitempty"`
 	Updated     time.Time         `firestore:"updated,omitempty"`
 }

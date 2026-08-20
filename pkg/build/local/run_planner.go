@@ -18,38 +18,58 @@ import (
 type DockerRunPlanner struct {
 }
 
-// dockerRunScriptArgs holds template arguments for the run script
+// dockerRunScriptArgs holds template arguments for the phase scripts
 type dockerRunScriptArgs struct {
 	Inst           rebuild.Instructions
+	OS             build.OS
 	PackageManager build.PackageManagerCommands
 	UseTimewarp    bool
 	TimewarpURL    string
 	TimewarpAuth   bool
 }
 
-// dockerRunScriptTpl is the template for the script executed in the container
-var dockerRunScriptTpl = template.Must(
-	template.New("docker run script").Funcs(template.FuncMap{
-		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
-		"join":   func(sep string, s []string) string { return strings.Join(s, sep) },
-		"list":   func(items ...string) []string { return items },
+// dockerRunPhaseTpls generate the per-phase scripts. Phase boundaries match
+// the docker build variants' layers. Scripts are cwd-independent (absolute
+// timewarp path, each phase re-enters /src) so they compose into a single
+// shell via CombinedScript without semantic drift.
+var dockerRunPhaseTpls = template.Must(
+	template.New("docker run phases").Funcs(template.FuncMap{
+		"list": func(items ...string) []string { return items },
 	}).Parse(
 		textwrap.Dedent(`
-			set -eux
-			{{.PackageManager.UpdateCmd}}
+			{{- define "setup" -}}
 			{{- if .UseTimewarp}}
+			{{- if eq .OS "alpine"}}
+			{{.PackageManager.InstallCommand (list "curl")}}
+			{{- else}}
+			{{.PackageManager.UpdateCmd}}
 			{{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
-			curl {{if .TimewarpAuth}}-H "$AUTH_HEADER" {{end}} {{.TimewarpURL}} > timewarp
-			chmod +x timewarp
-			./timewarp -port 8081 &
+			{{- end}}
+			curl {{if .TimewarpAuth}}-H "$AUTH_HEADER" {{end}}{{.TimewarpURL}} > /timewarp
+			chmod +x /timewarp
+			{{- end}}
+			{{.PackageManager.UpdateCmd}}
+			{{.PackageManager.InstallCommand .Inst.Requires.SystemDeps}}
+			{{- end}}
+			{{- define "source" -}}
+			mkdir -p /src && cd /src
+			{{.Inst.Source}}
+			{{- end}}
+			{{- define "deps" -}}
+			{{- if .UseTimewarp}}
+			/timewarp -port 8081 &
 			while ! nc -z localhost 8081;do sleep 1;done
 			{{- end}}
-			mkdir /src && cd /src
-			{{.PackageManager.InstallCommand .Inst.Requires.SystemDeps}}
-			{{.Inst.Source}}
+			cd /src
 			{{.Inst.Deps}}
+			{{- end}}
+			{{- define "build" -}}
+			cd /src
 			{{.Inst.Build}}
-			cp /src/{{.Inst.OutputPath}} /out/rebuild`)[1:],
+			chmod 444 /src/{{.Inst.OutputPath}}
+			cp /src/{{.Inst.OutputPath}} /out/rebuild
+			{{- end -}}
+			`),
 	),
 )
 
@@ -72,45 +92,51 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 		return nil, errors.Wrap(err, "failed to generate rebuild instructions")
 	}
 	image := opts.Resources.BaseImageConfig.SelectFor(input)
-	script, err := p.generateScript(instructions, input, opts)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to generate command")
-	}
-	// Check if any auth is required for this plan
-	requiresAuth := len(opts.Resources.ToolAuthRequired) > 0
-
-	return &DockerRunPlan{
-		Image:        image,
-		Script:       script,
-		WorkingDir:   "/workspace",
-		OutputPath:   "/out/rebuild",
-		RequiresAuth: requiresAuth,
-		Privileged:   instructions.Requires.Privileged,
-	}, nil
-}
-
-func (p *DockerRunPlanner) generateScript(instructions rebuild.Instructions, input rebuild.Input, opts build.PlanOptions) (string, error) {
-	// Select base image and detect OS for package management
-	baseImage := opts.Resources.BaseImageConfig.SelectFor(input)
-	os := build.DetectOS(baseImage)
-	pkgMgr := build.GetPackageManagerCommands(os)
-	// Extract tool URLs and auth requirements
+	os := build.DetectOS(image)
 	timewarpURL, timewarpAuth, err := p.getToolURL(build.TimewarpTool, opts)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to get timewarp URL")
+		return nil, errors.Wrap(err, "failed to get timewarp URL")
 	}
-	// Execute template to generate script
-	var buf strings.Builder
-	if err := dockerRunScriptTpl.Execute(&buf, dockerRunScriptArgs{
+	args := dockerRunScriptArgs{
 		Inst:           instructions,
-		PackageManager: pkgMgr,
+		OS:             os,
+		PackageManager: build.GetPackageManagerCommands(os),
 		UseTimewarp:    opts.UseTimewarp,
 		TimewarpURL:    timewarpURL,
 		TimewarpAuth:   timewarpAuth,
-	}); err != nil {
-		return "", errors.Wrap(err, "executing run script template")
 	}
-	return buf.String(), nil
+	phase := func(name rebuild.BuildPhase) (string, error) {
+		var buf strings.Builder
+		if err := dockerRunPhaseTpls.ExecuteTemplate(&buf, string(name), args); err != nil {
+			return "", errors.Wrapf(err, "executing %s phase template", name)
+		}
+		// Conditional first lines leave a leading newline in the render.
+		return strings.TrimSpace(buf.String()), nil
+	}
+	plan := &DockerRunPlan{
+		Image:        image,
+		WorkingDir:   "/workspace",
+		OutputPath:   "/out/rebuild",
+		RequiresAuth: len(opts.Resources.ToolAuthRequired) > 0,
+		Privileged:   instructions.Requires.Privileged,
+	}
+	if plan.Setup, err = phase(rebuild.PhaseSetup); err != nil {
+		return nil, err
+	}
+	if plan.Source, err = phase(rebuild.PhaseSource); err != nil {
+		return nil, err
+	}
+	// No deps instructions means no deps phase. Timewarp then never starts,
+	// matching the docker build variants' conditional deps layer.
+	if instructions.Deps != "" {
+		if plan.Deps, err = phase(rebuild.PhaseDeps); err != nil {
+			return nil, err
+		}
+	}
+	if plan.Build, err = phase(rebuild.PhaseBuild); err != nil {
+		return nil, err
+	}
+	return plan, nil
 }
 
 func (p *DockerRunPlanner) getToolURL(toolType build.ToolType, opts build.PlanOptions) (toolURL string, needsAuth bool, err error) {

@@ -89,7 +89,7 @@ func TestScratchReap_OpOnDeadScratchFinalizesLost(t *testing.T) {
 	}
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-1", ScratchID: "s-1", State: schema.ScratchExecPending,
-		StartedAt: now.Add(-5 * time.Minute),
+		CreatedAt: now.Add(-5 * time.Minute),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestScratchReap_UnboundedOpExemptsScratch(t *testing.T) {
 	}
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-old", ScratchID: "s-h", State: schema.ScratchExecPending,
-		StartedAt: now.Add(-3 * time.Hour),
+		CreatedAt: now.Add(-3 * time.Hour),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestScratchReap_PendingOpOnHealthyScratchStaysPending(t *testing.T) {
 	}
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-fresh", ScratchID: "s-h", State: schema.ScratchExecPending,
-		StartedAt: now.Add(-5 * time.Minute),
+		CreatedAt: now.Add(-5 * time.Minute),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestScratchReap_OrphanedOpScratchMissingEntirely(t *testing.T) {
 	now := time.Now().UTC()
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-orphan", ScratchID: "vanished", State: schema.ScratchExecPending,
-		StartedAt: now.Add(-5 * time.Minute),
+		CreatedAt: now.Add(-5 * time.Minute),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestScratchReap_PreTeardownSyncerInvokedPerPendingOp(t *testing.T) {
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-1", ScratchID: "s-1", State: schema.ScratchExecPending,
 		TimeoutSeconds: 3600,
-		StartedAt:      now.Add(-3 * time.Hour),
+		CreatedAt:      now.Add(-3 * time.Hour),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestScratchReap_IdleButBusyScratchSkipped(t *testing.T) {
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-long", ScratchID: "busy-s", State: schema.ScratchExecPending,
 		TimeoutSeconds: 4 * 60 * 60,
-		StartedAt:      now.Add(-time.Hour),
+		CreatedAt:      now.Add(-time.Hour),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}
@@ -316,7 +316,7 @@ func TestScratchReap_StampedTimeoutExpiryFinalizesTimedOut(t *testing.T) {
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-short", ScratchID: "s-h", State: schema.ScratchExecPending,
 		TimeoutSeconds: 60,
-		StartedAt:      now.Add(-20 * time.Minute),
+		CreatedAt:      now.Add(-20 * time.Minute),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestScratchReap_PullThroughSyncFinalizes(t *testing.T) {
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-exp", ScratchID: "s-live", State: schema.ScratchExecPending,
 		TimeoutSeconds: 60,
-		StartedAt:      now.Add(-20 * time.Minute),
+		CreatedAt:      now.Add(-20 * time.Minute),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}
@@ -406,7 +406,7 @@ func TestScratchReap_PullThroughSyncErrorFallsBackTimedOut(t *testing.T) {
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-exp", ScratchID: "s-live", State: schema.ScratchExecPending,
 		TimeoutSeconds: 60,
-		StartedAt:      now.Add(-20 * time.Minute),
+		CreatedAt:      now.Add(-20 * time.Minute),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}
@@ -444,7 +444,7 @@ func TestScratchReap_SweepDoesNotClobberPreTeardownSync(t *testing.T) {
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-1", ScratchID: "s-1", State: schema.ScratchExecPending,
 		TimeoutSeconds: 3600,
-		StartedAt:      now.Add(-3 * time.Hour),
+		CreatedAt:      now.Add(-3 * time.Hour),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestScratchReap_TeardownRecheckSparesRevivedScratch(t *testing.T) {
 	if err := execs.Insert(ctx, schema.ScratchExec{
 		ID: "op-1", ScratchID: "s-1", State: schema.ScratchExecPending,
 		TimeoutSeconds: 3600,
-		StartedAt:      now.Add(-3 * time.Hour),
+		CreatedAt:      now.Add(-3 * time.Hour),
 	}); err != nil {
 		t.Fatalf("seed exec: %v", err)
 	}

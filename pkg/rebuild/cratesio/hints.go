@@ -5,6 +5,9 @@ package cratesio
 
 import (
 	"regexp"
+
+	"github.com/google/oss-rebuild/internal/semver"
+	"github.com/pelletier/go-toml/v2"
 )
 
 // Compiled regex patterns for detecting Rust version requirements
@@ -12,17 +15,64 @@ import (
 var (
 	// debugDenormalizedRegex detects debug = bool (Rust 1.71+ normalized boolean debug to integer)
 	debugDenormalizedRegex = regexp.MustCompile(`(?m)^\s*debug\s*=\s*(true|false)\s*$`)
-	// resolverTwoPattern detects resolver = "2" (became default and was removed in Rust 1.64+)
-	resolverTwoPattern = regexp.MustCompile(`(?m)^\s*resolver\s*=\s*["\']?2["\']?\s*$`)
 	// prettyArrayPattern detects pretty-printed arrays (Rust 1.60+)
 	prettyArrayPattern = regexp.MustCompile(`(?s)\[\s*\n\s+.*\n\s*\]`)
-	// cuddledArrayPattern detects cuddled/single-line arrays (Rust < 1.60)
-	cuddledArrayPattern = regexp.MustCompile(`(?m)^\s*\w+\s*=\s*\[[^\n\[\]]*\]`)
+	// inlineArrayLine matches array values that Cargo kept on one line.
+	inlineArrayLine = regexp.MustCompile(`(?m)^\s*[\w-]+\s*=\s*(\[[^\n\[\]]*\])\s*$`)
 	// modernHeaderPattern detects a change in the Cargo.toml header (Rust 1.55+)
 	modernHeaderPattern = regexp.MustCompile(`#.*to registry \(e\.g\., crates\.io\) dependencies\.`)
 	// docExamplesRegex detects the addition of the scrape indicator (Rust 1.67+)
 	docExamplesRegex = regexp.MustCompile(`(?m)^\s*doc-scrape-examples\s*=\s*(true|false)\s*$`)
 )
+
+func packageEditionFloor(cargoTomlText string) string {
+	var manifest struct {
+		Package struct {
+			Edition string `toml:"edition"`
+		} `toml:"package"`
+	}
+	if toml.Unmarshal([]byte(cargoTomlText), &manifest) != nil {
+		return ""
+	}
+	switch manifest.Package.Edition {
+	case "2015", "2018":
+		return "1.30.0"
+	case "2021":
+		return "1.56.0"
+	case "2024":
+		return "1.85.0"
+	default:
+		return ""
+	}
+}
+
+// hasInlineMultiElementArray reports whether Cargo.toml contains an inline
+// array with at least two top-level elements.
+func hasInlineMultiElementArray(cargoTomlText string) bool {
+	for _, m := range inlineArrayLine.FindAllStringSubmatch(cargoTomlText, -1) {
+		var value struct {
+			Array []any `toml:"array"`
+		}
+		if err := toml.Unmarshal([]byte("array = "+m[1]), &value); err == nil && len(value.Array) >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
+// hasResolverTwo reports whether resolver 2 is set in a supported manifest section.
+func hasResolverTwo(cargoTomlText string) bool {
+	var manifest struct {
+		Package struct {
+			Resolver string `toml:"resolver"`
+		} `toml:"package"`
+		Workspace struct {
+			Resolver string `toml:"resolver"`
+		} `toml:"workspace"`
+	}
+	return toml.Unmarshal([]byte(cargoTomlText), &manifest) == nil &&
+		(manifest.Package.Resolver == "2" || manifest.Workspace.Resolver == "2")
+}
 
 // detectRustVersionBounds analyzes Cargo.toml for structural patterns that indicate
 // minimum Rust version requirements based on tooling behavior changes.
@@ -37,29 +87,25 @@ func detectRustVersionBounds(cargoTomlText string) (lo, hi string) {
 	}
 	if prettyArrayPattern.MatchString(cargoTomlText) {
 		lo = max("1.60.0", lo) // Before which arrays were cuddled
-	} else if cuddledArrayPattern.MatchString(cargoTomlText) {
-		hi = min("1.59.0", hi) // After which arrays were pretty-printed
+	} else if hasInlineMultiElementArray(cargoTomlText) {
+		hi = min("1.59.0", hi) // After which multi-element arrays were pretty-printed
 	}
 	if modernHeaderPattern.MatchString(cargoTomlText) {
 		lo = max("1.55.0", lo)
 	} else {
 		hi = min("1.54.0", hi)
 	}
-	if resolverTwoPattern.MatchString(cargoTomlText) {
-		hi = min("1.63.0", hi) // After which resolver 2 became default and was omitted
+	if hasResolverTwo(cargoTomlText) {
 		lo = max("1.51.0", lo)
-	} else {
-		// If resolver pattern not found, we know the version lies outside the above range
-		if lo > "1.51.0" {
-			if hi >= "1.64.0" { // only raise lo if hi is in range
-				lo = max("1.64.0", lo)
-			}
-		} else if hi < "1.63.0" {
-			hi = min("1.50.0", hi)
-		}
 	}
 	if hi == "999" {
 		hi = ""
+	}
+	if editionLo := packageEditionFloor(cargoTomlText); editionLo != "" {
+		lo = max(editionLo, lo)
+		if hi != "" && semver.Cmp(hi, lo) < 0 {
+			hi = ""
+		}
 	}
 	return
 }

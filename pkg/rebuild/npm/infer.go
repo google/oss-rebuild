@@ -46,7 +46,7 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, ropt *gitx.RepositoryOptions) (r rebuild.RepoConfig, err error) {
 	r.URI = repoURI
-	r.Repository, err = rebuild.LoadRepo(ctx, t.Package, ropt.Storer, ropt.Worktree, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth, NoCheckout: true})
+	r.Repository, err = rebuild.LoadRepo(ctx, t.Package, ropt.Storer, ropt.Worktree, git.CloneOptions{URL: r.URI, RecurseSubmodules: git.NoRecurseSubmodules, NoCheckout: true})
 	switch err {
 	case nil:
 	case transport.ErrAuthenticationRequired:
@@ -55,8 +55,14 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 		return r, errors.Wrapf(err, "clone failed [repo=%s]", r.URI)
 	}
 	// Do package.json search.
-	head, _ := r.Repository.Head()
-	c, _ := r.Repository.CommitObject(head.Hash())
+	head, err := r.Repository.Head()
+	if err != nil {
+		return r, errors.Wrapf(err, "resolving HEAD [repo=%s]", r.URI)
+	}
+	c, err := r.Repository.CommitObject(head.Hash())
+	if err != nil {
+		return r, errors.Wrapf(err, "resolving HEAD commit [repo=%s]", r.URI)
+	}
 	_, pkgPath, err := findPackageJSON(r.Repository, c, t.Package)
 	if err != nil {
 		log.Printf("package.json path heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
@@ -210,7 +216,6 @@ func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.Rep
 	default:
 		if badVersionRef != "" {
 			log.Printf("using version override recovery: %s", badVersionRef[:9])
-			c, _ = rcfg.Repository.CommitObject(plumbing.NewHash(badVersionRef))
 			loc.Ref = badVersionRef
 			versionOverride = t.Version
 			return loc, versionOverride, nil
@@ -251,7 +256,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, err
 	}
-	tree, _ := c.Tree()
+	tree, err := c.Tree()
+	if err != nil {
+		return nil, errors.Wrap(err, "[INTERNAL] fetching commit tree")
+	}
 	// If the package.json contains a build script, run that script with its
 	// required dependencies prior to `npm pack`.
 	pkgJSON, err := getPackageJSON(tree, path.Join(loc.Dir, "package.json"))
@@ -309,7 +317,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 // findAndValidatePackageJSON ensures the package config has the expected name and version,
 // or finds a new version if necessary.
 func findAndValidatePackageJSON(repo *git.Repository, c *object.Commit, name, version, guess string) (string, error) {
-	t, _ := c.Tree()
+	t, err := c.Tree()
+	if err != nil {
+		return "", errors.Wrap(err, "fetching commit tree")
+	}
 	path := path.Join(guess, "package.json")
 	orig, err := getPackageJSON(t, path)
 	pkgJSON := &orig
@@ -331,7 +342,10 @@ func findAndValidatePackageJSON(repo *git.Repository, c *object.Commit, name, ve
 }
 
 func findPackageJSON(repo *git.Repository, c *object.Commit, pkg string) (*npmreg.PackageJSON, string, error) {
-	t, _ := c.Tree()
+	t, err := c.Tree()
+	if err != nil {
+		return nil, "", errors.Wrap(err, "fetching commit tree")
+	}
 	wellKnownPaths := []string{
 		"package.json",
 		path.Join("packages", pkg[strings.IndexRune(pkg, '/')+1:], "package.json"),

@@ -91,10 +91,13 @@ func isGradleWrapperPresent(commit *object.Commit) (bool, error) {
 }
 
 func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
-	commitTree, _ := commit.Tree()
+	commitTree, err := commit.Tree()
+	if err != nil {
+		return "", errors.Wrap(err, "fetching commit tree")
+	}
 	var candidateDirs []string
 	minDepth := math.MaxInt
-	err := commitTree.Files().ForEach(func(f *object.File) error {
+	err = commitTree.Files().ForEach(func(f *object.File) error {
 		// Skip files in gradle/, src/, or any subdirectory containing src/.
 		// gradle directory often contains wrapper scripts and other configuration files.
 		// https://docs.gradle.org/current/userguide/gradle_directories.html

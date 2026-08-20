@@ -44,7 +44,8 @@ resource "terraform_data" "image" {
   }
 
   provisioner "local-exec" {
-    command = <<-EOT
+    interpreter = ["/bin/bash", "-c"] # needed for PIPESTATUS and pipefail
+    command     = <<-EOT
       path=${local.full_image_url}
       cmd="gcloud artifacts docker images describe $path"
       # Suppress stdout, show first line of stderr, return cmd's status.
@@ -52,7 +53,7 @@ resource "terraform_data" "image" {
         echo Found $path
       else
         echo Building $path
-        docker build --quiet ${local.build_args_str} -f ${var.dockerfile_path} -t $path ${local.repo_docker_context} && \
+        docker build --quiet --platform linux/amd64 ${local.build_args_str} -f ${var.dockerfile_path} -t $path ${local.repo_docker_context} && \
           docker push --quiet $path
       fi
     EOT

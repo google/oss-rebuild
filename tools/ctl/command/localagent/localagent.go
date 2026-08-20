@@ -91,7 +91,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	aiClient, err := genai.NewClient(ctx, &genai.ClientConfig{
 		Backend:  genai.BackendVertexAI,
 		Project:  cfg.Project,
-		Location: "us-central1",
+		Location: "global",
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "making aiClient")
@@ -174,6 +174,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		SessionsBucket: "", // TODO: Add this once it's being used.
 		MetadataBucket: cfg.MetadataBucket,
 		LogsBucket:     cfg.LogsBucket,
+		Retrier:        agent.NewRetrier(),
 	}
 	req := agent.RunSessionReq{
 		SessionID:        sessionID,

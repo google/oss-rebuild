@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api/apiservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/buildinfo"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
@@ -39,6 +40,7 @@ import (
 var (
 	project               = flag.String("project", "", "GCP Project ID for storage and build resources")
 	location              = flag.String("location", "", "GCP location for resources")
+	aiLocation            = flag.String("ai-location", "global", "Vertex AI location for agent model calls (Gemini 3.x models only serve from 'global')")
 	buildRemoteIdentity   = flag.String("build-remote-identity", "", "Identity from which to run remote rebuilds")
 	inferenceURL          = flag.String("inference-url", "", "URL of the inference service")
 	signingKeyVersion     = flag.String("signing-key-version", "", "Resource name of the signing CryptoKeyVersion")
@@ -63,14 +65,6 @@ var (
 	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
 	rebuildJobName        = flag.String("rebuild-job-name", "", "Name of the pre-created Cloud Run Job for rebuilds")
 	port                  = flag.Int("port", 8080, "port on which to serve")
-)
-
-// Link-time configured service identity
-var (
-	// Repo from which the service was built
-	BuildRepo string
-	// Golang version identifier of the service container builds
-	BuildVersion string
 )
 
 var httpcfg = httpegress.Config{}
@@ -151,13 +145,13 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "creating GCB executor")
 	}
-	d.ServiceRepo, err = serviceid.ParseLocation(BuildRepo, BuildVersion)
+	d.ServiceRepo, err = serviceid.ParseLocation(buildinfo.Repo, buildinfo.Version)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing service location")
 	}
 	d.PublishForLocalServiceRepo = !*blockLocalRepoPublish
 	// TODO: Should we require/support a separate repo here?
-	d.PrebuildRepo, err = serviceid.ParseLocation(BuildRepo, *prebuildVersion)
+	d.PrebuildRepo, err = serviceid.ParseLocation(buildinfo.Repo, *prebuildVersion)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing prebuild location")
 	}
@@ -197,12 +191,12 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing inference URL")
 	}
-	u = u.JoinPath("infer")
 	runclient, err := idtoken.NewClient(ctx, *inferenceURL)
 	if err != nil {
 		return nil, errors.Wrap(err, "initializing inference client")
 	}
-	d.InferStub = api.StubFromHandler(runclient, u, inferenceservice.Infer)
+	d.InferStub = api.StubFromHandler(runclient, u.JoinPath("infer"), inferenceservice.Infer)
+	d.InferVersionStub = api.StubFromHandler(runclient, u.JoinPath("version"), inferenceservice.Version)
 	return &d, nil
 }
 
@@ -225,6 +219,7 @@ func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, 
 		return runService.Projects.Locations.Jobs.Run(name, req).Context(ctx).Do()
 	}
 	d.DepsConfig = schema.RebuildDepsConfig{
+		Host:                       httpcfg.Host,
 		AssetBucket:                *metadataBucket,
 		BuildProject:               *project,
 		FirestoreProject:           *project,
@@ -235,7 +230,7 @@ func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, 
 		AttestationBucket:          *attestationBucket,
 		DebugStorage:               *debugStorage,
 		LogsBucket:                 *logsBucket,
-		PrebuildRepo:               BuildRepo,
+		PrebuildRepo:               buildinfo.Repo,
 		PrebuildRef:                *prebuildVersion,
 		PrebuildAuth:               *prebuildAuth,
 		PrebuildBucket:             *prebuildBucket,
@@ -251,7 +246,7 @@ func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, 
 		if err != nil {
 			return nil, err
 		}
-		deps.ServiceRepo, err = serviceid.ParseLocation(BuildRepo, BuildVersion)
+		deps.ServiceRepo, err = serviceid.ParseLocation(buildinfo.Repo, buildinfo.Version)
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing service location")
 		}
@@ -309,12 +304,39 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 	}
 	d.Project = *project
 	d.Location = *location
+	d.AILocation = *aiLocation
 	d.AgentJobName = *agentJobName
 	d.AgentAPIURL = *agentAPIURL
 	d.AgentTimeoutSeconds = *agentTimeoutSeconds
 	d.SessionsBucket = *agentSessionsBucket
 	d.MetadataBucket = *agentMetadataBucket
 	d.LogsBucket = *agentLogsBucket
+	if *agentAPIURL != "" {
+		// Scratch-mode sessions allocate their scratch VM up front and hand
+		// the agent its handle. Availability is ultimately governed by the
+		// agent API's --scratch-enabled.
+		u, err := url.Parse(*agentAPIURL)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing agent API URL")
+		}
+		agentAPIClient, err := idtoken.NewClient(ctx, *agentAPIURL)
+		if err != nil {
+			return nil, errors.Wrap(err, "initializing agent API client")
+		}
+		d.ScratchCreateStub = api.Stub[schema.ScratchCreateRequest, schema.Scratch](agentAPIClient, u.JoinPath("scratch/create"))
+		d.ScratchDeleteStub = api.Stub[schema.ScratchDeleteRequest, schema.ScratchDeleteResponse](agentAPIClient, u.JoinPath("scratch/delete"))
+	}
+	if *prebuildVersion != "" {
+		prebuildRepo, err := serviceid.ParseLocation(buildinfo.Repo, *prebuildVersion)
+		if err != nil {
+			return nil, errors.Wrap(err, "parsing prebuild location")
+		}
+		// NOTE: The subdir matches the version identifier used for the service version.
+		d.PrebuildConfig.Dir = prebuildRepo.Ref
+	}
+	d.PrebuildConfig.Bucket = *prebuildBucket
+	d.PrebuildConfig.Auth = *prebuildAuth
+	d.Host = httpcfg.Host
 	return &d, nil
 }
 

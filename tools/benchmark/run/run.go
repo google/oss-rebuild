@@ -74,7 +74,12 @@ func (s *remoteExecutionService) RebuildPackage(ctx context.Context, req schema.
 			return nil, errors.Wrap(err, "getting rebuild operation")
 		}
 	}
-	return op.Result, op.Error
+	// NOTE: A direct return of op.Error would wrap the nil *OperationError
+	// in a non-nil error interface.
+	if op.Error != nil {
+		return op.Result, op.Error
+	}
+	return op.Result, nil
 }
 
 func (s *remoteExecutionService) Infer(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
@@ -192,6 +197,11 @@ func (w *attestWorker) ProcessOne(ctx context.Context, p benchmark.Package, out 
 			w.limiters[p.Ecosystem].Success()
 		}
 		if err != nil {
+			if verdict != nil {
+				verdict.Message = err.Error()
+				out <- *verdict
+				continue
+			}
 			out <- schema.Verdict{
 				Target: rebuild.Target{
 					Ecosystem: rebuild.Ecosystem(p.Ecosystem),
@@ -271,7 +281,9 @@ func (w *inferenceWorker) ProcessOne(ctx context.Context, p benchmark.Package, o
 					Artifact:  artifact,
 				},
 				StrategyOneof: *strat,
-				Message:       "inference success",
+				// Remote inference ran. Its version is not resolved here.
+				Provenance: &schema.StrategyProvenance{Inference: &schema.InferenceRun{}},
+				Message:    "inference success",
 			}
 		}
 	}
@@ -279,15 +291,15 @@ func (w *inferenceWorker) ProcessOne(ctx context.Context, p benchmark.Package, o
 
 func defaultLimiters() map[string]*ratex.BackoffLimiter {
 	return map[string]*ratex.BackoffLimiter{
-		"debian": ratex.NewBackoffLimiter(time.Second),
-		"pypi":   ratex.NewBackoffLimiter(time.Second),
-		"npm":    ratex.NewBackoffLimiter(2 * time.Second),
-		"maven":  ratex.NewBackoffLimiter(2 * time.Second),
+		"debian": ratex.NewBackoffLimiter(time.Second, time.Minute),
+		"pypi":   ratex.NewBackoffLimiter(time.Second, time.Minute),
+		"npm":    ratex.NewBackoffLimiter(2*time.Second, time.Minute),
+		"maven":  ratex.NewBackoffLimiter(2*time.Second, time.Minute),
 		// NOTE: cratesio needs to be especially slow given our registry API
 		// constraint of 1QPS. At minimum, we expect to make 4 calls per test.
-		"cratesio": ratex.NewBackoffLimiter(8 * time.Second),
-		"rubygems": ratex.NewBackoffLimiter(time.Second),
-		"oci":      ratex.NewBackoffLimiter(time.Second),
+		"cratesio": ratex.NewBackoffLimiter(8*time.Second, time.Minute),
+		"rubygems": ratex.NewBackoffLimiter(time.Second, time.Minute),
+		"oci":      ratex.NewBackoffLimiter(time.Second, time.Minute),
 	}
 }
 
@@ -359,6 +371,11 @@ func RunBenchAsync(ctx context.Context, set benchmark.PackageSet, opts RunBenchO
 				Version:           v,
 				ID:                opts.RunID,
 				UseRepoDefinition: opts.UseRepoDefinition,
+				UseSyscallMonitor: opts.UseSyscallMonitor,
+				UseNetworkProxy:   opts.UseNetworkProxy,
+				OverwriteMode:     opts.OverwriteMode,
+				ExecutionHint:     p.Execution,
+				SizeHint:          p.Size,
 			}
 			if len(p.Artifacts) > 0 {
 				req.Artifact = p.Artifacts[i]

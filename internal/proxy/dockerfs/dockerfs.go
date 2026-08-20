@@ -102,7 +102,8 @@ func (c Filesystem) Stat(path string) (*FileInfo, error) {
 	if encoded == "" {
 		return nil, errors.New("empty stat header")
 	}
-	b64r := base64.NewDecoder(base64.URLEncoding, strings.NewReader(encoded))
+	// NOTE: The daemon encodes this header with StdEncoding.
+	b64r := base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded))
 	jr := json.NewDecoder(b64r)
 	var ds dockerStat
 	if err := jr.Decode(&ds); err != nil {

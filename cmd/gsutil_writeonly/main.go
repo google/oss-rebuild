@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/pkg/errors"
 )
 
@@ -20,13 +21,8 @@ func isGCSPath(pth string) bool {
 }
 
 func gcsParts(pth string) (bucket, object string) {
-	pth = strings.TrimPrefix(pth, "gs://")
-	pth = strings.TrimLeft(pth, "/")
-	delim := strings.IndexRune(pth, '/')
-	if delim == -1 {
-		return pth, ""
-	}
-	return pth[:delim], pth[delim+1:]
+	bucket, object, _ = gcsx.ParseURL(pth)
+	return bucket, object
 }
 
 func copyFile(ctx context.Context, c *storage.Client, src, dest string) error {

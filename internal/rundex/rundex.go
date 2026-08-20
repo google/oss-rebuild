@@ -33,7 +33,7 @@ func NewRebuildFromVerdict(v schema.Verdict, executor string, runID string, crea
 			Success:         v.Message == "",
 			Message:         v.Message,
 			Strategy:        v.StrategyOneof,
-			Timings:         v.Timings,
+			BuildTimings:    v.Timings.Build,
 			ExecutorVersion: executor,
 			RunID:           runID,
 			Created:         created,
@@ -100,6 +100,7 @@ type FetchSessionsReq struct {
 	Since         time.Time
 	Until         time.Time
 	StopReason    string
+	Limit         int
 }
 
 type FetchIterationsReq struct {

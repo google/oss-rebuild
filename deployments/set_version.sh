@@ -29,7 +29,7 @@ function set_or_update() {
   key=$1
   val=$2
   echo Setting $key to $val 1>&2
-  tee >(grep -q "$key\s*=" || printf "$key = \"$val\"\n") | sed -E "s/($key\s*=\s*).*/\1\"$val\"/g"
+  tee >(grep -q "$key[[:space:]]*=" || printf "$key = \"$val\"\n") | sed -E "s/($key[[:space:]]*=[[:space:]]*).*/\1\"$val\"/g"
 }
 function vcs_version() {
   rev=$1

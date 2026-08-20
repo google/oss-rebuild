@@ -456,3 +456,51 @@ func TestInferenceRequest_LocationHint(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentCreateRequest_Validate(t *testing.T) {
+	target := rebuild.Target{
+		Ecosystem: rebuild.NPM,
+		Package:   "lodash",
+		Version:   "4.17.21",
+		Artifact:  "lodash-4.17.21.tgz",
+	}
+	tests := []struct {
+		name    string
+		req     AgentCreateRequest
+		wantErr bool
+	}{
+		{
+			name: "default execution mode",
+			req:  AgentCreateRequest{Target: target},
+		},
+		{
+			name: "explicit gcb mode",
+			req:  AgentCreateRequest{Target: target, ExecutionMode: AgentExecutionModeGCB},
+		},
+		{
+			name: "scratch mode",
+			req:  AgentCreateRequest{Target: target, ExecutionMode: AgentExecutionModeScratch},
+		},
+		{
+			name: "external agent scratch mode",
+			req:  AgentCreateRequest{Target: target, ExecutionMode: AgentExecutionModeScratch, ExternalAgent: true},
+		},
+		{
+			name:    "invalid execution mode",
+			req:     AgentCreateRequest{Target: target, ExecutionMode: "warp"},
+			wantErr: true,
+		},
+		{
+			name:    "incomplete target",
+			req:     AgentCreateRequest{Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "lodash"}},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.req.Validate(); (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr = %t", err, tt.wantErr)
+			}
+		})
+	}
+}

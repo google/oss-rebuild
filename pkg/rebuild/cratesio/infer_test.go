@@ -7,8 +7,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
+	"path"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -27,6 +30,52 @@ const (
 	pre150CargoTOML  = `# to registry (e.g., crates.io) dependencies`
 )
 
+func TestPackageEditionFloor(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		manifest string
+		want     string
+	}{
+		{
+			name: "package edition",
+			manifest: `[package]
+edition = "2024" # supported since Cargo 1.85
+`,
+			want: "1.85.0",
+		},
+		{
+			name: "metadata is not package edition",
+			manifest: `[package]
+name = "example"
+
+[package.metadata.example]
+edition = "2024"
+`,
+		},
+		{
+			name: "multiline string is not package edition",
+			manifest: `[package]
+description = """
+edition = "2024"
+"""
+`,
+		},
+		{
+			name: "older package edition",
+			manifest: `[package]
+edition = "2021"
+`,
+			want: "1.56.0",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := packageEditionFloor(tc.manifest); got != tc.want {
+				t.Errorf("packageEditionFloor() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestInferStrategy(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
@@ -34,9 +83,11 @@ func TestInferStrategy(t *testing.T) {
 		metadata         string
 		files            []archive.TarEntry
 		filesFn          func(*gitxtest.Repository) []archive.TarEntry
+		hintFn           func(*gitxtest.Repository) rebuild.Strategy
 		wantFn           func(*gitxtest.Repository) rebuild.Strategy
 		wantErr          bool
 		registryResponse *cratesregistryservice.FindRegistryCommitResponse
+		wantPublishTime  string
 	}{
 		{
 			name: "ref from cargo_vcs_info",
@@ -55,7 +106,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -74,7 +125,39 @@ func TestInferStrategy(t *testing.T) {
 			},
 		},
 		{
-			name: "rust_version from updated_at",
+			name: "path from cargo_vcs_info",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      published/Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-01-01T00:00:00Z","rust_version": "1.35.0"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":"published"}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "published",
+					},
+					RustVersion: "1.57.0",
+				}
+			},
+		},
+		{
+			name: "rust_version from created_at",
 			repo: `commits:
   - id: initial-commit
     files:
@@ -90,7 +173,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","updated_at":"2022-12-12T00:25:28.357Z"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-12-12T00:25:28.357Z","updated_at":"2024-06-01T00:00:00Z"}}`,
 			files: []archive.TarEntry{
 				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
 			},
@@ -102,6 +185,102 @@ func TestInferStrategy(t *testing.T) {
 						Dir:  "",
 					},
 					RustVersion: "1.65.0",
+				}
+			},
+		},
+		{
+			name: "exclude lockfile when selected cargo supports it",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2025-05-22T00:00:00Z"}}`,
+			files: []archive.TarEntry{
+				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "",
+					},
+					RustVersion:     "1.87.0",
+					ExcludeLockfile: true,
+				}
+			},
+		},
+		{
+			name: "declared rust_version is a lower bound",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-12-12T00:25:28.357Z","rust_version":"1.35.0"}}`,
+			files: []archive.TarEntry{
+				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "",
+					},
+					RustVersion: "1.65.0",
+				}
+			},
+		},
+		{
+			name: "edition 2024 raises rust_version floor",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+        edition = "2024"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2025-02-26T00:00:00Z","updated_at":"2025-02-26T00:00:00Z"}}`,
+			files: []archive.TarEntry{
+				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML + `
+[package]
+name = "serde"
+version = "1.0.150"
+edition = "2024"
+`)},
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "",
+					},
+					RustVersion: "1.85.0",
 				}
 			},
 		},
@@ -123,7 +302,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			files: []archive.TarEntry{
 				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
 			},
@@ -156,7 +335,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35"}}`,
 			files: []archive.TarEntry{
 				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
 			},
@@ -188,7 +367,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			files: []archive.TarEntry{
 				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
 			},
@@ -223,7 +402,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -263,7 +442,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -280,6 +459,36 @@ func TestInferStrategy(t *testing.T) {
 					RustVersion: "1.35.0",
 				}
 			},
+		},
+		{
+			name: "location hint rejects mismatched workspace version",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [workspace]
+        members = ["serde"]
+
+        [workspace.package]
+        version = "1.0.149"
+      serde/Cargo.toml: |
+        [package]
+        name = "serde"
+        version.workspace = true
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			files: []archive.TarEntry{
+				{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)},
+			},
+			hintFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &rebuild.LocationHint{
+					Location: rebuild.Location{
+						Ref: repo.Commits["version-bump"].String(),
+						Dir: "serde",
+					},
+				}
+			},
+			wantErr: true,
 		},
 		{
 			name: "unreadable Cargo.toml",
@@ -363,7 +572,7 @@ func TestInferStrategy(t *testing.T) {
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.68.0", "updated_at":"2023-01-01T00:00:00Z"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.68.0", "created_at":"2023-01-01T00:00:00Z","updated_at":"2024-06-01T00:00:00Z"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -375,6 +584,70 @@ version = 3
 [[package]]
 name = "serde"
 version = "1.0.150"
+
+[[package]]
+name = "syn"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "tracing"
+version = "0.1.40"
+source = "git+https://github.com/example/tracing#0123456789abcdef"
+`)},
+				}
+			},
+			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
+				CommitHash: "abcd1234567890abcdef1234567890abcdef1234",
+			},
+			wantPublishTime: "2023-01-01T00:00:00Z",
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "",
+					},
+					RustVersion:    "1.68.0",
+					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
+					PackageNames:   []string{"syn"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
+				}
+			},
+		},
+		{
+			name: "cargo.lock v4 format floors the rust version at 1.78",
+			repo: `commits:
+  - id: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.0"
+  - id: version-bump
+    parent: initial-commit
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.68.0", "created_at":"2023-01-01T00:00:00Z", "updated_at":"2023-01-01T00:00:00Z"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.lock"}, Body: []byte(`# This file is automatically @generated by Cargo.
+# It is not intended for manual editing.
+version = 4
+
+[[package]]
+name = "serde"
+version = "1.0.150"
+
+[[package]]
+name = "syn"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 `)},
 				}
 			},
@@ -388,9 +661,9 @@ version = "1.0.150"
 						Ref:  repo.Commits["version-bump"].String(),
 						Dir:  "",
 					},
-					RustVersion:    "1.79.0",
+					RustVersion:    "1.78.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
-					PackageNames:   []string{"serde"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
+					PackageNames:   []string{"syn"}, // NOTE: This will be emptied if/when cargosparse timewarp mode is used
 				}
 			},
 		},
@@ -422,6 +695,11 @@ version = 3
 [[package]]
 name = "serde"
 version = "1.0.150"
+
+[[package]]
+name = "syn"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 `)},
 				}
 			},
@@ -447,7 +725,7 @@ version = "1.0.150"
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.68.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.68.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -482,7 +760,7 @@ version = "1.0.150"
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.35.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
 			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
 				CommitHash: "abcd1234567890abcdef1234567890abcdef1234",
 			},
@@ -496,10 +774,12 @@ version = "1.0.150"
 [[package]]
 name = "clap"
 version = "4.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "criterion"
 version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "serde"
@@ -508,6 +788,7 @@ version = "1.0.150"
 [[package]]
 name = "tokio"
 version = "1.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 `)},
 				}
 			},
@@ -520,7 +801,7 @@ version = "1.21.2"
 					},
 					RustVersion:    "1.35.0",
 					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
-					PackageNames:   []string{"clap", "criterion", "serde", "tokio"},
+					PackageNames:   []string{"clap", "criterion", "tokio"},
 				}
 			},
 		},
@@ -541,7 +822,7 @@ version = "1.21.2"
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","rust_version": "1.67.0"}}`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2019-06-01T00:00:00Z","rust_version": "1.67.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
 					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
@@ -552,9 +833,6 @@ version = 3
 `)},
 				}
 			},
-			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
-				CommitHash: "abcd1234567890abcdef1234567890abcdef1234",
-			},
 			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
 				return &CratesIOCargoPackage{
 					Location: rebuild.Location{
@@ -562,8 +840,7 @@ version = 3
 						Ref:  repo.Commits["version-bump"].String(),
 						Dir:  "",
 					},
-					RustVersion:    "1.79.0",
-					RegistryCommit: "abcd1234567890abcdef1234567890abcdef1234",
+					RustVersion: "1.67.0",
 				}
 			},
 		},
@@ -572,6 +849,9 @@ version = 3
 			ctx := context.Background()
 			if tc.registryResponse != nil {
 				mockStub := func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
+					if tc.wantPublishTime != "" && req.PublishedTime != tc.wantPublishTime {
+						t.Errorf("PublishedTime = %q, want %q", req.PublishedTime, tc.wantPublishTime)
+					}
 					return tc.registryResponse, nil
 				}
 				ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](mockStub))
@@ -587,6 +867,10 @@ version = 3
 			files := tc.files
 			if tc.filesFn != nil {
 				files = tc.filesFn(repo)
+			}
+			var hint rebuild.Strategy
+			if tc.hintFn != nil {
+				hint = tc.hintFn(repo)
 			}
 			client := httpxtest.MockClient{
 				Calls: []httpxtest.Call{
@@ -615,7 +899,7 @@ version = 3
 				URLValidator: httpxtest.NewURLValidator(t),
 			}
 			mux := rebuild.RegistryMux{CratesIO: cratesio.HTTPRegistry{Client: &client}}
-			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, nil)
+			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, hint)
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)
@@ -629,6 +913,214 @@ version = 3
 				}
 			}
 		})
+	}
+}
+
+func TestInferRefAndDirUsesVCSPathForFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		tag    string
+		refMap bool
+	}{
+		{name: "tag", tag: "v1.0.150"},
+		{name: "Cargo.toml history", refMap: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(fmt.Sprintf(`commits:
+  - id: release
+    tag: %s
+    files:
+      current/Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+      published/Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`, tc.tag), nil))
+			refMap := map[string]string{}
+			if tc.refMap {
+				refMap["1.0.150"] = repo.Commits["release"].String()
+			}
+			crate := must(archivetest.TgzFile([]archive.TarEntry{
+				{
+					Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"},
+					Body:   []byte(`{"git":{"sha1":"0000000000000000000000000000000000000000"},"path_in_vcs":"published"}`),
+				},
+			}))
+			ref, dir, err := inferRefAndDir(
+				rebuild.Target{Package: "serde", Version: "1.0.150"},
+				&cratesio.CrateVersion{Version: cratesio.Version{Version: "1.0.150"}},
+				crate.Bytes(),
+				&rebuild.RepoConfig{Repository: repo.Repository, Dir: "current", RefMap: refMap},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := repo.Commits["release"].String(); ref != want {
+				t.Errorf("ref = %q, want %q", ref, want)
+			}
+			if want := "published"; dir != want {
+				t.Errorf("dir = %q, want %q", dir, want)
+			}
+		})
+	}
+}
+
+func TestGetCargoTOMLAllowsMultilineInlineTables(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: target
+    files:
+      Cargo.toml: |
+        [package]
+        name = "example"
+        version = "1.0.0"
+
+        [dependencies]
+        serde = {
+          version = "1",
+          features = ["derive"],
+        }
+`, nil))
+	commit := must(repo.CommitObject(repo.Commits["target"]))
+	tree := must(commit.Tree())
+	ct, err := getCargoTOML(tree, "Cargo.toml")
+	if err != nil {
+		t.Fatalf("getCargoTOML: %v", err)
+	}
+	if want := "example"; ct.Name != want {
+		t.Errorf("CargoTOML.Name = %q, want %q", ct.Name, want)
+	}
+}
+
+func TestLockfileRustVersionFloor(t *testing.T) {
+	for _, tc := range []struct {
+		formatVersion int
+		want          string
+	}{
+		{formatVersion: 0, want: ""},
+		{formatVersion: 2, want: ""},
+		{formatVersion: 3, want: "1.47.0"},
+		{formatVersion: 4, want: "1.78.0"},
+	} {
+		if got := lockfileRustVersionFloor(tc.formatVersion); got != tc.want {
+			t.Errorf("lockfileRustVersionFloor(%d) = %q, want %q", tc.formatVersion, got, tc.want)
+		}
+	}
+}
+
+func TestFindAndValidateCargoTOMLWorkspaceVersion(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: target
+    files:
+      Cargo.toml: |
+        [package]
+        name = "root-example"
+        version.workspace = true
+
+        [workspace]
+        members = ["crates/example", "nested/explicit"]
+
+        [workspace.package]
+        version = "1.2.3"
+      crates/example/Cargo.toml: |
+        [package]
+        name = "example"
+        version.workspace = true
+      nested/explicit/Cargo.toml: |
+        [package]
+        name = "explicit"
+        version.workspace = true
+        workspace = "../.."
+      incomplete/Cargo.toml: |
+        [package]
+        name = "incomplete"
+        version.workspace = true
+
+        [workspace]
+`, nil))
+	commit := must(repo.CommitObject(repo.Commits["target"]))
+	for _, tc := range []struct {
+		name    string
+		pkg     string
+		guess   string
+		version string
+		wantErr string
+	}{
+		{
+			name:    "matching inherited version",
+			pkg:     "example",
+			guess:   "crates/example",
+			version: "1.2.3",
+		},
+		{
+			name:    "mismatched inherited version",
+			pkg:     "example",
+			guess:   "crates/example",
+			version: "1.2.2",
+			wantErr: "mismatched version",
+		},
+		{
+			name:    "mismatched version with explicit workspace path",
+			pkg:     "explicit",
+			guess:   "nested/explicit",
+			version: "1.2.2",
+			wantErr: "mismatched version",
+		},
+		{
+			name:    "matching version with explicit workspace path",
+			pkg:     "explicit",
+			guess:   "nested/explicit",
+			version: "1.2.3",
+		},
+		{
+			name:    "package at workspace root",
+			pkg:     "root-example",
+			version: "1.2.3",
+		},
+		{
+			name:    "missing workspace package version",
+			pkg:     "incomplete",
+			guess:   "incomplete",
+			version: "1.2.3",
+			wantErr: "workspace package version not found",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := findAndValidateCargoTOML(repo.Repository, commit, tc.pkg, tc.version, tc.guess)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Errorf("findAndValidateCargoTOML(%q) = %q, want error", tc.version, got)
+				} else if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("findAndValidateCargoTOML(%q) error = %q, want substring %q", tc.version, err, tc.wantErr)
+				}
+			} else if err != nil {
+				t.Fatalf("findAndValidateCargoTOML(%q): %v", tc.version, err)
+			} else if want := path.Join(tc.guess, "Cargo.toml"); got != want {
+				t.Errorf("findAndValidateCargoTOML(%q) = %q, want %q", tc.version, got, want)
+			}
+		})
+	}
+}
+
+func TestFindAndValidateCargoTOMLStripsManifestBOM(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: target
+    files:
+      Cargo.toml: "\uFEFF[workspace]\nmembers = [\"member\"]\n\n[workspace.package]\nversion = \"1.2.3\"\n"
+      member/Cargo.toml: |
+        [package]
+        name = "member"
+        version.workspace = true
+`, nil))
+	commit := must(repo.CommitObject(repo.Commits["target"]))
+	got, err := findAndValidateCargoTOML(repo.Repository, commit, "member", "1.2.3", "member")
+	if err != nil {
+		t.Fatalf("findAndValidateCargoTOML with BOM workspace root: %v", err)
+	}
+	if want := "member/Cargo.toml"; got != want {
+		t.Errorf("findAndValidateCargoTOML = %q, want %q", got, want)
 	}
 }
 

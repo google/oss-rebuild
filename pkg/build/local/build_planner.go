@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -28,6 +29,7 @@ type dockerBuildContainerArgs struct {
 }
 
 // dockerBuildDockerfileTpl generates Dockerfiles for local Docker builds
+// NOTE: Layer mappings must be kept in sync with dockerfileLayers.
 var dockerBuildDockerfileTpl = template.Must(
 	template.New("docker build dockerfile").Funcs(template.FuncMap{
 		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
@@ -54,14 +56,20 @@ var dockerBuildDockerfileTpl = template.Must(
 			EOF
 			RUN sed 's/^ //' <<'EOF' | sh
 			 set -eux
+			 mkdir -p /src && cd /src
+			 {{.Instructions.Source| indent}}
+			EOF
+			{{- if .Instructions.Deps}}
+			RUN sed 's/^ //' <<'EOF' | sh
+			 set -eux
 			{{- if .UseTimewarp}}
 			 ./timewarp -port 8080 &
 			 while ! nc -z localhost 8080;do sleep 1;done
 			{{- end}}
-			 mkdir -p /src && cd /src
-			 {{.Instructions.Source| indent}}
+			 cd /src
 			 {{.Instructions.Deps | indent}}
 			EOF
+			{{- end}}
 			RUN sed 's/^ //' <<'EOF' >/build
 			 set -eux
 			 {{.Instructions.Build | indent}}
@@ -72,6 +80,16 @@ var dockerBuildDockerfileTpl = template.Must(
 			ENTRYPOINT ["/bin/sh","/build"]
 			`)[1:], // remove leading newline
 	))
+
+// dockerfileLayers declares dockerBuildDockerfileTpl's instruction shape.
+// NOTE: Template conditionals vary only script contents, never the sequence.
+func dockerfileLayers(hasDeps bool) timing.Layers {
+	l := timing.Layers{Appended: 5, Setup: 0, Source: 1, Deps: -1}
+	if hasDeps {
+		l.Appended, l.Deps = 6, 2
+	}
+	return l
+}
 
 // DockerBuildPlanner generates Docker build execution plans
 type DockerBuildPlanner struct{}
@@ -95,11 +113,17 @@ func (p *DockerBuildPlanner) GeneratePlan(ctx context.Context, input rebuild.Inp
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate Dockerfile")
 	}
-	return &DockerBuildPlan{
-		Dockerfile: dockerfile,
-		OutputPath: path.Join("/out", path.Base(instructions.OutputPath)),
-		Privileged: instructions.Requires.Privileged,
-	}, nil
+	plan := &DockerBuildPlan{
+		Dockerfile:   dockerfile,
+		OutputPath:   path.Join("/out", path.Base(instructions.OutputPath)),
+		RequiresAuth: len(opts.Resources.ToolAuthRequired) > 0,
+		Privileged:   instructions.Requires.Privileged,
+	}
+	// The declared layers gate the executor's post-build observation.
+	if opts.RecordTimings {
+		plan.Layers = dockerfileLayers(instructions.Deps != "")
+	}
+	return plan, nil
 }
 
 // generateDockerfile creates a Dockerfile from rebuild instructions and options using templates

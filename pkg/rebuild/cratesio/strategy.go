@@ -22,6 +22,7 @@ type CratesIOCargoPackage struct {
 	rebuild.Location
 	RustVersion      string            `json:"rust_version" yaml:"rust_version,omitempty"`
 	ExplicitLockfile *ExplicitLockfile `json:"explicit_lockfile" yaml:"explicit_lockfile,omitempty"`
+	ExcludeLockfile  bool              `json:"exclude_lockfile,omitempty" yaml:"exclude_lockfile,omitempty"`
 	RegistryCommit   string            `json:"registry_commit,omitempty" yaml:"registry_commit,omitempty"`
 	PackageNames     []string          `json:"package_names,omitempty" yaml:"package_names,omitempty"`
 }
@@ -57,16 +58,18 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 					"registryCommit": b.RegistryCommit,
 					"packageNames":   strings.Join(b.PackageNames, ","),
 					"useGitIndex":    fmt.Sprintf("%t", len(b.PackageNames) > 0),
+					"rustVersion":    b.RustVersion,
 				},
 			},
 		},
 		Build: []flow.Step{{
 			Uses: "cargo/build/package",
 			With: map[string]string{
-				"dir":            b.Location.Dir,
-				"rustVersion":    b.RustVersion,
-				"registryCommit": b.RegistryCommit,
-				"useGitIndex":    fmt.Sprintf("%t", len(b.PackageNames) > 0),
+				"dir":             b.Location.Dir,
+				"rustVersion":     b.RustVersion,
+				"excludeLockfile": fmt.Sprintf("%t", b.ExcludeLockfile),
+				"registryCommit":  b.RegistryCommit,
+				"useGitIndex":     fmt.Sprintf("%t", len(b.PackageNames) > 0),
 			},
 		}},
 		OutputDir: "target/package",
@@ -107,14 +110,15 @@ var toolkit = []*flow.Tool{
 		Name: "cargo/setup-registry",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				{{if and (eq .With.useGitIndex "true") (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
+				{{- $cfg := "config"}}{{if ge (cmpSemver .With.rustVersion "1.39.0") 0}}{{$cfg = "config.toml"}}{{end}}
+				{{- if and (eq .With.useGitIndex "true") (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
 				mkdir -p /cargo-index
 				wget -O - --header "X-Package-Names: {{.With.packageNames}}" "{{.BuildEnv.TimewarpURLFromString "cargogitarchive" .With.registryCommit}}index.git.tar" | tar -xf - -C /cargo-index
 				mkdir -p /.cargo
-				printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/config.toml
+				printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/{{$cfg}}
 				{{- else if and (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
 				mkdir -p /.cargo
-				printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"\n' > /.cargo/config.toml
+				printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"\n' > /.cargo/{{$cfg}}
 				{{- else -}}
 				# NOTE: Using current crates.io registry
 				{{- end -}}`)[1:],
@@ -124,8 +128,9 @@ var toolkit = []*flow.Tool{
 		Name: "cargo/build/package",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				export CARGO_TARGET_DIR="$PWD/target"
 				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
-				/root/.cargo/bin/cargo package --no-verify
+				/root/.cargo/bin/cargo package --no-verify{{if eq .With.excludeLockfile "true"}} --exclude-lockfile{{end}}
 				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`)[1:],
 			Needs: []string{"rustup"},
 		}},

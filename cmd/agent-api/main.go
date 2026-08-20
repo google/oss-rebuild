@@ -17,7 +17,9 @@ import (
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api/agentapiservice"
+	"github.com/google/oss-rebuild/internal/buildinfo"
 	"github.com/google/oss-rebuild/internal/db"
+	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -52,6 +54,8 @@ var (
 	scratchOpDeadline    = flag.Duration("scratch-op-deadline", 2*time.Hour, "default and maximum exec duration, stamped on each exec; bounds how long a pending exec exempts its scratch from idle reaping")
 )
 
+var httpcfg = httpegress.Config{}
+
 // parseScratchZones splits --scratch-zones on commas, trimming whitespace
 // and dropping empty entries.
 func parseScratchZones() []string {
@@ -68,12 +72,6 @@ func parseScratchZones() []string {
 // Binary-wide singleton: ScratchCreateInit runs per request, so a
 // Deps-owned cooldown would be discarded each call.
 var scratchCooldown = agentapiservice.NewZoneCooldown(0)
-
-// Link-time configured service identity
-var (
-	BuildRepo    string
-	BuildVersion string
-)
 
 func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreateIterationDeps, error) {
 	var d agentapiservice.AgentCreateIterationDeps
@@ -127,7 +125,7 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 	d.BuildServiceAccount = *buildRemoteIdentity
 	d.MetadataBucket = *metadataBucket
 	if *prebuildVersion != "" {
-		prebuildRepo, err := serviceid.ParseLocation(BuildRepo, *prebuildVersion)
+		prebuildRepo, err := serviceid.ParseLocation(buildinfo.Repo, *prebuildVersion)
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing prebuild location")
 		}
@@ -136,6 +134,7 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 	}
 	d.PrebuildConfig.Bucket = *prebuildBucket
 	d.PrebuildConfig.Auth = *prebuildAuth
+	d.Host = httpcfg.Host
 
 	return &d, nil
 }
@@ -146,6 +145,14 @@ func AgentCompleteInit(ctx context.Context) (*agentapiservice.AgentCompleteDeps,
 	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
+	}
+	if *scratchEnabled {
+		// Enable eager teardown of scratch-mode sessions' VMs.
+		d.Scratches = db.NewFirestoreScratch(d.FirestoreClient)
+		d.GCE, err = agentapiservice.NewComputeGCE(ctx, *project)
+		if err != nil {
+			return nil, errors.Wrap(err, "compute client")
+		}
 	}
 	return &d, nil
 }
@@ -304,6 +311,7 @@ func ScratchReapInit(ctx context.Context) (*agentapiservice.ScratchReapDeps, err
 }
 
 func main() {
+	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agent/session/iteration", api.Handler(AgentCreateIterationInit, agentapiservice.AgentCreateIteration))

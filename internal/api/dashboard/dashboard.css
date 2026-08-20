@@ -1,0 +1,189 @@
+/*
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+*/
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Public Sans', system-ui, -apple-system, sans-serif;
+    margin: 0 auto;
+    padding: 24px;
+    max-width: 1100px;
+    background-color: var(--bg);
+    color: var(--body);
+    line-height: 1.5;
+}
+
+h1, h2, h3 {
+    font-family: 'Merriweather', Georgia, serif;
+    color: var(--heading);
+}
+
+h1 { font-size: 1.6rem; margin: 0 0 24px; }
+h2 { font-size: 1.15rem; margin: 28px 0 12px; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+nav { margin-bottom: 12px; }
+nav a { margin-right: 15px; font-weight: 600; }
+
+/* Tables (index recent rebuilds, package & attempt views) */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+th { background: var(--fill); color: var(--heading); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+
+.status-success { color: var(--accent); font-weight: 600; }
+.status-fail { color: var(--mismatch); font-weight: 600; }
+
+/* Preformatted blocks (package & attempt views) */
+pre {
+    background: var(--fill);
+    color: var(--body);
+    padding: 15px;
+    overflow: auto;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    max-height: 500px;
+}
+
+/* Benchmark coverage grid (index view): one tile per tracked package. */
+.benchmark-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+}
+.benchmark-item {
+    padding: 10px;
+    text-align: center;
+    font-weight: 600;
+    border-radius: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-decoration: none;
+    display: block;
+}
+.bg-green { background-color: var(--accent); color: #fff; }
+.bg-red { background-color: var(--mismatch); color: #fff; }
+.bg-gray { background-color: var(--fill); color: var(--muted); }
+
+/* Sessions and running status */
+.hint { color: var(--muted); font-size: 0.85rem; margin: 4px 0 0; }
+.status-running { color: var(--failure); font-weight: 600; }
+.session { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; background: #fff; }
+.session-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.session-id { font-family: ui-monospace, monospace; font-size: 0.85rem; color: var(--secondary); }
+.session-meta { color: var(--muted); font-size: 0.85rem; }
+.session-summary { margin: 6px 0; color: var(--body); }
+.session table { margin-top: 8px; }
+
+/* Summary cards. */
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 8px;
+}
+.card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+}
+.card-value { font-family: 'Merriweather', serif; font-size: 2rem; color: var(--heading); }
+.card-label { color: var(--secondary); font-size: 0.9rem; margin-top: 4px; }
+
+/* Version status strip. */
+
+/* Per-version status colors, shared by strip cells and legend swatches. */
+.state-verified { background: var(--accent); }
+.state-failed   { background: var(--mismatch); }
+.state-running  { background: var(--failure); }
+.state-untried  { background: var(--fill); }
+
+.strip-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 18px 0 6px;
+    color: var(--secondary);
+    font-size: 0.9rem;
+}
+.strip-nav a { margin-left: 12px; }
+/* The strip is a fixed-column grid; cells fill each column (1fr) so a row always
+   fits the width without a scrollbar. Collapsed, the server renders one row's
+   worth of cells. Expanded, several rows. Keep the column count in sync with
+   stripCols in package.go. */
+.strip {
+    display: grid;
+    grid-template-columns: repeat(50, 1fr);
+    gap: 3px;
+    margin-bottom: 10px;
+}
+.strip .cell {
+    aspect-ratio: 1;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.10);
+}
+.strip .state-untried { border-style: dashed; }
+.state-regressed { box-shadow: inset 0 0 0 2px var(--failure), 0 0 0 1px var(--failure); }
+.strip .cell:hover { outline: 2px solid var(--heading); outline-offset: 1px; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; font-size: 0.85rem; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+/* Tabs (pure CSS via hidden radios). */
+.tabbed { margin-top: 20px; }
+.tab-radio { position: absolute; opacity: 0; width: 0; height: 0; }
+.tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+}
+.tab {
+    padding: 8px 16px;
+    cursor: pointer;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    font-weight: 600;
+}
+.tab:hover { color: var(--secondary); }
+.tab-panel { display: none; }
+#tab-events:checked ~ #panel-events { display: block; }
+#tab-rebuilds:checked ~ #panel-rebuilds { display: block; }
+#tab-sessions:checked ~ #panel-sessions { display: block; }
+#tab-versions:checked ~ #panel-versions { display: block; }
+#tab-events:checked ~ .tabs label[for="tab-events"],
+#tab-rebuilds:checked ~ .tabs label[for="tab-rebuilds"],
+#tab-sessions:checked ~ .tabs label[for="tab-sessions"],
+#tab-versions:checked ~ .tabs label[for="tab-versions"] {
+    color: var(--heading);
+    border-bottom-color: var(--accent);
+}
+
+/* Status badges in the by-version table. */
+.badge {
+    display: inline-block;
+    padding: 1px 9px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #fff;
+}
+.badge.state-untried { color: var(--secondary); border: 1px solid var(--border); }
+.badge.state-regressed { background: transparent; color: var(--failure); border: 1px solid var(--failure); box-shadow: none; }

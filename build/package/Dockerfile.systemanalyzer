@@ -5,7 +5,7 @@ ARG BUILD_VERSION
 WORKDIR /src
 COPY . .
 RUN CGO_ENABLED=0 go build \
-    -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w') -X main.BuildRepo=${BUILD_REPO} -X main.BuildVersion=${BUILD_VERSION}" \
+    -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w') -X github.com/google/oss-rebuild/internal/buildinfo.Repo=${BUILD_REPO} -X github.com/google/oss-rebuild/internal/buildinfo.Version=${BUILD_VERSION}" \
     -gcflags="-l=4" \
     -o bin/ \
     ./analyzer/system/analyzer

@@ -3,22 +3,102 @@
  SPDX-License-Identifier: Apache-2.0
 -->
 
-    <h2>History for {{.Ecosystem}}: {{.PackageName}}</h2>
+    <h2>{{.Ecosystem}}: {{.PackageName}}</h2>
+
+    <div class="cards">
+        <div class="card">
+            <div class="card-value">{{.Summary.VerifiedPct}}%</div>
+            <div class="card-label">verified{{if .Summary.Supported}} of {{.Summary.TotalVersions}} versions{{else}} of {{.Summary.Attempted}} attempted{{end}}</div>
+        </div>
+        <div class="card">
+            <div class="card-value">{{.Summary.Verified}}</div>
+            <div class="card-label">verified</div>
+        </div>
+        <div class="card">
+            <div class="card-value">{{.Summary.Failed}}</div>
+            <div class="card-label">failed</div>
+        </div>
+        <div class="card">
+            <div class="card-value">{{.Summary.Running}}</div>
+            <div class="card-label">running</div>
+        </div>
+        <div class="card">
+            <div class="card-value">{{.Summary.NeedsAttention}}</div>
+            <div class="card-label">regressions</div>
+        </div>
+        <div class="card">
+            <div class="card-value">{{.Summary.AgentRuns}}</div>
+            <div class="card-label">agent runs</div>
+        </div>
+    </div>
+
+    {{if .Versions}}
+    <div class="strip-head">
+        <span>Versions ({{if .Summary.Supported}}newest to oldest{{else}}most recently active first{{end}}) &middot; {{.WindowFrom}}-{{.WindowTo}} of {{if .Summary.Supported}}{{.Summary.TotalVersions}}{{else}}{{.Summary.Attempted}}{{end}}</span>
+        <span class="strip-nav">
+            {{/* TODO: Move these client-side */}}
+            {{if .Expanded}}<a href="?offset={{.Offset}}">Collapse</a>{{else}}<a href="?offset={{.Offset}}&expanded=1">Expand</a>{{end}}
+            {{if .HasPrev}}<a href="?offset={{.PrevOffset}}{{if .Expanded}}&expanded=1{{end}}">newer</a>{{end}}
+            {{if .HasNext}}<a href="?offset={{.NextOffset}}{{if .Expanded}}&expanded=1{{end}}">older</a>{{end}}
+        </span>
+    </div>
+    <div class="strip{{if .Expanded}} expanded{{end}}">
+        {{range .Versions}}
+        <a class="cell state-{{.State}}{{if .Regressed}} state-regressed{{end}}"
+           href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}"
+           title="{{.Version}} &middot; {{.State}}{{if .Regressed}} (regressed){{end}}{{if .Agent}} &middot; agent {{.Agent}}{{end}}"></a>
+        {{end}}
+    </div>
+    <div class="legend">
+        <span class="legend-item"><span class="legend-swatch state-verified"></span>verified</span>
+        <span class="legend-item"><span class="legend-swatch state-failed"></span>failed</span>
+        <span class="legend-item"><span class="legend-swatch state-running"></span>running</span>
+        <span class="legend-item"><span class="legend-swatch state-untried"></span>untried</span>
+        <span class="legend-item"><span class="legend-swatch state-regressed"></span>regression</span>
+    </div>
+    {{if .Warning}}<p class="hint">{{.Warning}}</p>
+    {{else if not .Summary.Supported}}<p class="hint">Version enumeration isn't available for this ecosystem, showing attempted versions only.</p>{{end}}
+    {{end}}
+{{define "eventTable"}}
+    {{if .}}
     <table>
         <thead>
             <tr>
+                <th>Type</th>
                 <th>Version</th>
                 <th>Artifact</th>
                 <th>Status</th>
                 <th>Message</th>
-                <th>RunID</th>
-                <th>Attempt</th>
+                <th>Reference</th>
                 <th>Completed</th>
             </tr>
         </thead>
         <tbody>
-            {{range .PackageRebuilds}}
+            {{range .}}
+            {{if .Session}}
+            {{with .Session}}
             <tr>
+                <td>Agent</td>
+                <td>{{.Target.Version}}</td>
+                <td>{{.Target.Artifact}}</td>
+                <td>
+                    {{if eq .StopReason "SUCCESS"}}
+                        <span class="status-success">Success</span>
+                    {{else if .StopReason}}
+                        <span class="status-fail">{{.StopReason}}</span>
+                    {{else}}
+                        {{.Status}}
+                    {{end}}
+                </td>
+                <td><small>{{.Summary}}</small></td>
+                <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}">{{.ID}}</a></td>
+                <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
+            </tr>
+            {{end}}
+            {{else}}
+            {{with .Rebuild}}
+            <tr>
+                <td>Rebuild</td>
                 <td>{{.Version}}</td>
                 <td>{{.Artifact}}</td>
                 <td>
@@ -29,12 +109,60 @@
                     {{end}}
                 </td>
                 <td><small>{{.Message}}</small></td>
-                <td>{{.RunID}}</td>
-                <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">view</a></td>
+                <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">{{.RunID}}</a></td>
                 <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
             </tr>
             {{end}}
+            {{end}}
+            {{end}}
         </tbody>
     </table>
+    {{else}}
+    <p class="hint">Nothing recorded yet.</p>
+    {{end}}
+{{end}}
+
+    <section class="tabbed">
+        <input type="radio" id="tab-events" name="pkgtab" class="tab-radio" checked>
+        <input type="radio" id="tab-rebuilds" name="pkgtab" class="tab-radio">
+        <input type="radio" id="tab-sessions" name="pkgtab" class="tab-radio">
+        <input type="radio" id="tab-versions" name="pkgtab" class="tab-radio">
+        <div class="tabs">
+            <label for="tab-events" class="tab">Recent events</label>
+            <label for="tab-rebuilds" class="tab">Rebuilds</label>
+            <label for="tab-sessions" class="tab">Agent sessions</label>
+            <label for="tab-versions" class="tab">By version</label>
+        </div>
+
+        <div id="panel-events" class="tab-panel">{{template "eventTable" .Events}}</div>
+        <div id="panel-rebuilds" class="tab-panel">{{template "eventTable" .RebuildEvents}}</div>
+        <div id="panel-sessions" class="tab-panel">{{template "eventTable" .SessionEvents}}</div>
+
+
+        <div id="panel-versions" class="tab-panel">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Version</th>
+                        <th>Status</th>
+                        <th>Agent</th>
+                        <th>Attempts</th>
+                        <th>Sessions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Versions}}
+                    <tr>
+                        <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}">{{.Version}}</a></td>
+                        <td><span class="badge state-{{.State}}">{{.State}}</span>{{if .Regressed}} <span class="badge state-regressed">regressed</span>{{end}}</td>
+                        <td>{{if .Agent}}{{.Agent}}{{else}}-{{end}}</td>
+                        <td>{{.Attempts}}</td>
+                        <td>{{.Sessions}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </section>
 </body>
 </html>

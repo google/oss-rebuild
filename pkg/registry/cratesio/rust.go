@@ -45,8 +45,20 @@ func HasMUSLBuild(version string) (bool, error) {
 }
 
 // List generated with the following script:
-// curl -L https://github.com/rust-lang/rust/raw/3ca41e2/RELEASES.md | rg --replace '$1 $2' -o 'Version (\S+) \(([^)]+)\)' | xargs -n 2 sh -c 'printf "newRelease(\"%s\", \"%s\", %s),\\n" "$0" "$1" $(curl -sILfo /dev/null https://static.rust-lang.org/dist/$1/rust-$0-x86_64-unknown-linux-musl.tar.gz && echo true || echo false)'
+// curl -L https://github.com/rust-lang/rust/raw/9fa33b19f76b5b3173280b7a8e306bf8f6241344/RELEASES.md | rg --replace '$1 $2' -o 'Version (\S+) \(([^)]+)\)' | xargs -n 2 sh -c 'printf "newRelease(\"%s\", \"%s\", %s),\\n" "$0" "$1" $(curl -sILfo /dev/null https://static.rust-lang.org/dist/$1/rust-$0-x86_64-unknown-linux-musl.tar.gz && echo true || echo false)'
 var releases []release = []release{
+	newRelease("1.97.0", "2026-07-09", true),
+	newRelease("1.96.1", "2026-06-30", true),
+	newRelease("1.96.0", "2026-05-28", true),
+	newRelease("1.95.0", "2026-04-16", true),
+	newRelease("1.94.1", "2026-03-26", true),
+	newRelease("1.94.0", "2026-03-05", true),
+	newRelease("1.93.1", "2026-02-12", true),
+	newRelease("1.93.0", "2026-01-22", true),
+	newRelease("1.92.0", "2025-12-11", true),
+	newRelease("1.91.1", "2025-11-10", true),
+	newRelease("1.91.0", "2025-10-30", true),
+	newRelease("1.90.0", "2025-09-18", true),
 	newRelease("1.89.0", "2025-08-07", true),
 	newRelease("1.88.0", "2025-06-26", true),
 	newRelease("1.87.0", "2025-05-15", true),

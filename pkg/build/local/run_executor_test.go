@@ -57,7 +57,10 @@ func TestDockerRunExecutor(t *testing.T) {
 			name: "successful execution",
 			plan: &DockerRunPlan{
 				Image:      "alpine:3.19",
-				Script:     "echo hello",
+				Setup:      "echo setup",
+				Source:     "echo source",
+				Deps:       "npm install",
+				Build:      "echo hello",
 				OutputPath: "/out/result.txt",
 				WorkingDir: "/workspace",
 			},
@@ -86,7 +89,27 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "--name", "test-build-123", "-v", "/tmp/oss-rebuild-test-build-123:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "/bin/sh", "-c", "echo hello"},
+					Args: []string{"run", "--detach", "--rm", "--name", "test-build-123", "-v", "/tmp/oss-rebuild-test-build-123:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "sleep", "infinity"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"exec", "test-build-123", "/bin/sh", "-c", "set -eux\necho setup"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"exec", "test-build-123", "/bin/sh", "-c", "set -eux\necho source"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"exec", "test-build-123", "/bin/sh", "-c", "set -eux\nnpm install"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"exec", "test-build-123", "/bin/sh", "-c", "set -eux\necho hello"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rm", "-f", "test-build-123"},
 				},
 			},
 			expectSuccess: true,
@@ -95,7 +118,7 @@ func TestDockerRunExecutor(t *testing.T) {
 			name: "docker command not found",
 			plan: &DockerRunPlan{
 				Image:      "alpine:3.19",
-				Script:     "echo hello",
+				Build:      "echo hello",
 				OutputPath: "/out/result.txt",
 			},
 			input: rebuild.Input{
@@ -118,7 +141,9 @@ func TestDockerRunExecutor(t *testing.T) {
 			name: "docker execution failure",
 			plan: &DockerRunPlan{
 				Image:      "alpine:3.19",
-				Script:     "false",
+				Setup:      "false",
+				Source:     "true",
+				Build:      "true",
 				OutputPath: "/out/result.txt",
 			},
 			input: rebuild.Input{
@@ -138,7 +163,12 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name:  "docker",
-					Args:  []string{"run", "--rm", "--name", "test-build-789", "-v", "/tmp/oss-rebuild-test-build-789:/out", "--ulimit", "core=0", "alpine:3.19", "/bin/sh", "-c", "false"},
+					Args:  []string{"run", "--detach", "--rm", "--name", "test-build-789", "-v", "/tmp/oss-rebuild-test-build-789:/out", "--ulimit", "core=0", "alpine:3.19", "sleep", "infinity"},
+					Error: errors.New("exit status 1"),
+				},
+				{
+					Name:  "docker",
+					Args:  []string{"rm", "-f", "test-build-789"},
 					Error: errors.New("exit status 1"),
 				},
 			},
@@ -164,7 +194,9 @@ func TestDockerRunExecutor(t *testing.T) {
 			name: "timeout handling",
 			plan: &DockerRunPlan{
 				Image:      "alpine:3.19",
-				Script:     "sleep 10",
+				Setup:      "true",
+				Source:     "true",
+				Build:      "sleep 10",
 				OutputPath: "/out/result.txt",
 			},
 			input: rebuild.Input{
@@ -193,7 +225,9 @@ func TestDockerRunExecutor(t *testing.T) {
 			name: "with custom working directory",
 			plan: &DockerRunPlan{
 				Image:      "ubuntu:20.04",
-				Script:     "pwd",
+				Setup:      "true",
+				Source:     "true",
+				Build:      "pwd",
 				OutputPath: "/out/result.txt",
 				WorkingDir: "/custom/workdir",
 			},
@@ -217,7 +251,23 @@ func TestDockerRunExecutor(t *testing.T) {
 			expectedCommands: []MockCommand{
 				{
 					Name: "docker",
-					Args: []string{"run", "--rm", "--name", "test-build-workdir", "-v", "/tmp/oss-rebuild-test-build-workdir:/out", "-w", "/custom/workdir", "--ulimit", "core=0", "ubuntu:20.04", "/bin/sh", "-c", "pwd"},
+					Args: []string{"run", "--detach", "--rm", "--name", "test-build-workdir", "-v", "/tmp/oss-rebuild-test-build-workdir:/out", "-w", "/custom/workdir", "--ulimit", "core=0", "ubuntu:20.04", "sleep", "infinity"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"exec", "test-build-workdir", "/bin/sh", "-c", "set -eux\ntrue"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"exec", "test-build-workdir", "/bin/sh", "-c", "set -eux\ntrue"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"exec", "test-build-workdir", "/bin/sh", "-c", "set -eux\npwd"},
+				},
+				{
+					Name: "docker",
+					Args: []string{"rm", "-f", "test-build-workdir"},
 				},
 			},
 			expectSuccess: true,
@@ -337,7 +387,9 @@ func TestDockerRunExecutorConcurrency(t *testing.T) {
 		Planner: &mockPlanner{
 			plan: &DockerRunPlan{
 				Image:      "alpine:3.19",
-				Script:     "echo test",
+				Setup:      "true",
+				Source:     "true",
+				Build:      "echo test",
 				OutputPath: "/out/result.txt",
 			},
 		},
@@ -363,7 +415,6 @@ func TestDockerRunExecutorConcurrency(t *testing.T) {
 		options := build.Options{
 			BuildID: fmt.Sprintf("build-%d", i),
 		}
-
 		handle, err := executor.Start(ctx, input, options)
 		if err != nil {
 			t.Fatalf("Failed to start build %d: %v", i, err)
@@ -402,7 +453,9 @@ func TestDockerRunExecutorSavePostBuildContainer(t *testing.T) {
 		Planner: &mockPlanner{
 			plan: &DockerRunPlan{
 				Image:      "alpine:3.19",
-				Script:     "echo hello",
+				Setup:      "echo setup",
+				Source:     "echo source",
+				Build:      "echo hello",
 				OutputPath: "/out/result.txt",
 				WorkingDir: "/workspace",
 			},
@@ -440,7 +493,19 @@ func TestDockerRunExecutorSavePostBuildContainer(t *testing.T) {
 	expectedCommands := []MockCommand{
 		{
 			Name: "docker",
-			Args: []string{"run", "--name", "test-postbuild", "-v", "/tmp/oss-rebuild-test-postbuild:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "/bin/sh", "-c", "echo hello"},
+			Args: []string{"run", "--detach", "--rm", "--name", "test-postbuild", "-v", "/tmp/oss-rebuild-test-postbuild:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "sleep", "infinity"},
+		},
+		{
+			Name: "docker",
+			Args: []string{"exec", "test-postbuild", "/bin/sh", "-c", "set -eux\necho setup"},
+		},
+		{
+			Name: "docker",
+			Args: []string{"exec", "test-postbuild", "/bin/sh", "-c", "set -eux\necho source"},
+		},
+		{
+			Name: "docker",
+			Args: []string{"exec", "test-postbuild", "/bin/sh", "-c", "set -eux\necho hello"},
 		},
 		{
 			Name: "docker",
@@ -456,7 +521,7 @@ func TestDockerRunExecutorSavePostBuildContainer(t *testing.T) {
 		},
 		{
 			Name: "docker",
-			Args: []string{"rm", "test-postbuild"},
+			Args: []string{"rm", "-f", "test-postbuild"},
 		},
 	}
 	if diff := cmp.Diff(expectedCommands, commands, cmp.Comparer(func(e1 error, e2 error) bool {
@@ -466,6 +531,161 @@ func TestDockerRunExecutorSavePostBuildContainer(t *testing.T) {
 		return e1.Error() == e2.Error()
 	})); diff != "" {
 		t.Errorf("Command mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestDockerRunExecutorTimings(t *testing.T) {
+	cmdExecutor := NewMockCommandExecutor()
+	// Nonzero spans require observable time between clock reads.
+	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+		time.Sleep(time.Millisecond)
+		return nil
+	})
+	executor, err := NewDockerRunExecutor(DockerRunExecutorConfig{
+		Planner: &mockPlanner{
+			plan: &DockerRunPlan{
+				Image:      "alpine:3.19",
+				Setup:      "echo setup",
+				Source:     "echo source",
+				Build:      "echo build",
+				OutputPath: "/out/rebuild",
+			},
+		},
+		CommandExecutor: cmdExecutor,
+		MaxParallel:     1,
+		TempDirBase:     "/tmp",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create executor: %v", err)
+	}
+	ctx := context.Background()
+	handle, err := executor.Start(ctx, rebuild.Input{
+		Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-pkg", Version: "1.0.0"},
+	}, build.Options{BuildID: "test-timings"})
+	if err != nil {
+		t.Fatalf("Unexpected error from Start: %v", err)
+	}
+	result, _ := handle.Wait(ctx)
+	if result.Error != nil {
+		t.Fatalf("Expected success, got error: %v", result.Error)
+	}
+	if result.Timings == nil {
+		t.Fatal("Expected timings, got nil")
+	}
+	if result.Timings.Setup == nil || *result.Timings.Setup <= 0 ||
+		result.Timings.Source == nil || *result.Timings.Source <= 0 ||
+		result.Timings.Build == nil || *result.Timings.Build <= 0 {
+		t.Errorf("Expected positive measured phases, got %+v", result.Timings)
+	}
+	if result.Timings.Deps == nil || *result.Timings.Deps != 0 {
+		t.Errorf("Expected present zero deps for depsless plan, got %v", result.Timings.Deps)
+	}
+	if result.Timings.FailedIn != "" {
+		t.Errorf("FailedIn = %q, want empty", result.Timings.FailedIn)
+	}
+}
+
+func TestDockerRunExecutorTimingsOnFailure(t *testing.T) {
+	type presence struct{ setup, source, deps, build bool }
+	for _, tc := range []struct {
+		name       string
+		source     string
+		build      string
+		failStart  bool
+		wantNil    bool
+		wantFailed rebuild.BuildPhase
+		want       presence
+	}{
+		{
+			// The failing phase's span is captured. Later phases stay
+			// unmeasured and the depsless zero is not stamped before the
+			// deps slot is provably passed.
+			name:       "FailAtSource",
+			source:     "false",
+			build:      "echo build",
+			wantFailed: rebuild.PhaseSource,
+			want:       presence{setup: true, source: true},
+		},
+		{
+			// A build-phase failure proves the depsless plan passed the deps
+			// slot, so the present zero is stamped.
+			name:       "FailAtBuild",
+			source:     "echo source",
+			build:      "false",
+			wantFailed: rebuild.PhaseBuild,
+			want:       presence{setup: true, source: true, deps: true, build: true},
+		},
+		{
+			name:      "ContainerStartFailure",
+			source:    "echo source",
+			build:     "echo build",
+			failStart: true,
+			wantNil:   true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmdExecutor := NewMockCommandExecutor()
+			// Nonzero spans require observable time between clock reads.
+			cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+				time.Sleep(time.Millisecond)
+				if tc.failStart && len(args) > 0 && args[0] == "run" {
+					return errors.New("start failed")
+				}
+				if len(args) > 0 && args[0] == "exec" && strings.Contains(args[len(args)-1], "false") {
+					return errors.New("exit status 1")
+				}
+				return nil
+			})
+			executor, err := NewDockerRunExecutor(DockerRunExecutorConfig{
+				Planner: &mockPlanner{
+					plan: &DockerRunPlan{
+						Image:      "alpine:3.19",
+						Setup:      "echo setup",
+						Source:     tc.source,
+						Build:      tc.build,
+						OutputPath: "/out/rebuild",
+					},
+				},
+				CommandExecutor: cmdExecutor,
+				MaxParallel:     1,
+				TempDirBase:     "/tmp",
+			})
+			if err != nil {
+				t.Fatalf("Failed to create executor: %v", err)
+			}
+			ctx := context.Background()
+			handle, err := executor.Start(ctx, rebuild.Input{
+				Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-pkg", Version: "1.0.0"},
+			}, build.Options{BuildID: "test-timings-fail"})
+			if err != nil {
+				t.Fatalf("Unexpected error from Start: %v", err)
+			}
+			result, _ := handle.Wait(ctx)
+			if result.Error == nil {
+				t.Fatal("Expected error, got success")
+			}
+			if tc.wantNil {
+				if result.Timings != nil {
+					t.Errorf("Expected nil timings, got %+v", result.Timings)
+				}
+				return
+			}
+			if result.Timings == nil {
+				t.Fatal("Expected partial timings, got nil")
+			}
+			if result.Timings.FailedIn != tc.wantFailed {
+				t.Errorf("FailedIn = %q, want %q", result.Timings.FailedIn, tc.wantFailed)
+			}
+			got := presence{
+				setup:  result.Timings.Setup != nil,
+				source: result.Timings.Source != nil,
+				deps:   result.Timings.Deps != nil,
+				build:  result.Timings.Build != nil,
+			}
+			if got != tc.want {
+				t.Errorf("Phase presence = %+v, want %+v (record %+v)", got, tc.want, result.Timings)
+			}
+		})
 	}
 }
 

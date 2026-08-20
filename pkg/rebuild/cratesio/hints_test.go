@@ -18,28 +18,66 @@ func TestDetectRustVersionBounds(t *testing.T) {
 			name:      "Empty TOML",
 			cargoToml: ``,
 			wantLo:    "",
-			wantHi:    "1.50.0", // No modern header, no resolver=2
+			wantHi:    "1.54.0", // No modern header; resolver absence is not evidence
 		},
 		{
-			name: "Modern Header Only",
+			name: "Edition 2021 Without Resolver",
 			cargoToml: `# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 #
 # Note that this is the newer format, specifying edition explicitly.
 # Before Rust 1.55, crates.io would automatically add this header to registry (e.g., crates.io) dependencies.
 [package]
+edition = "2021"
 name = "my-crate"
 `,
-			wantLo: "1.64.0", // modernHeader sets lo=1.55, no resolver=2 bumps to 1.64
-			wantHi: "",       // hi remains "999" and gets cleared
+			wantLo: "1.56.0",
+			wantHi: "", // hi remains "999" and gets cleared
 		},
 		{
-			name: "Old Header Only",
+			name: "Old Header Without Resolver",
 			cargoToml: `# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [package]
+edition = "2018"
 name = "my-crate"
 `,
-			wantLo: "",
-			wantHi: "1.50.0", // No modern header sets hi=1.54, no resolver=2 bumps to 1.50
+			wantLo: "1.30.0",
+			wantHi: "1.54.0", // Cargo 1.51-1.54 can emit this shape without a resolver
+		},
+		{
+			name: "Edition 2015 floor",
+			cargoToml: `[package]
+name = "my-crate"
+edition = "2015"
+`,
+			wantLo: "1.30.0",
+			wantHi: "1.54.0",
+		},
+		{
+			name: "Edition 2018 floor",
+			cargoToml: `[package]
+name = "my-crate"
+edition = "2018"
+`,
+			wantLo: "1.30.0",
+			wantHi: "1.54.0",
+		},
+		{
+			name: "Edition 2021 overrides older upper bounds",
+			cargoToml: `[package]
+name = "my-crate"
+edition = "2021"
+`,
+			wantLo: "1.56.0",
+			wantHi: "",
+		},
+		{
+			name: "Edition 2024 overrides older upper bounds",
+			cargoToml: `[package]
+name = "my-crate"
+edition = "2024"
+`,
+			wantLo: "1.85.0",
+			wantHi: "",
 		},
 		{
 			name: "Resolver Two (Old Header)",
@@ -51,7 +89,7 @@ name = "my-crate"
 resolver = "2"
 `,
 			wantLo: "1.51.0", // resolver=2 sets lo=1.51
-			wantHi: "1.54.0", // No modern header sets hi=1.54, resolver=2 sets hi=1.63. min(1.54, 1.63) = 1.54
+			wantHi: "1.54.0", // No modern header sets hi=1.54
 		},
 		{
 			name: "Resolver Two (Modern Header)",
@@ -63,8 +101,54 @@ name = "my-crate"
 [workspace]
 resolver = '2'
 `,
-			wantLo: "1.55.0", // modernHeader sets lo=1.55, resolver=2 sets lo=1.51. max(1.55, 1.51) = 1.55
-			wantHi: "1.63.0", // resolver=2 sets hi=1.63
+			wantLo: "1.55.0", // modernHeader=1.55, resolver=2=1.51. Max is 1.55
+			wantHi: "",
+		},
+		{
+			name: "Package Resolver Two Has No Upper Bound",
+			cargoToml: `
+# Before Rust 1.55, crates.io would automatically add this header to registry (e.g., crates.io) dependencies.
+[package]
+name = "my-crate"
+resolver = "2"
+`,
+			wantLo: "1.55.0", // modernHeader=1.55, resolver=2=1.51. Max is 1.55
+			wantHi: "",       // resolver=2 is still retained after Cargo 1.63
+		},
+		{
+			name: "Package Resolver Two With Trailing Comment",
+			cargoToml: `
+# Before Rust 1.55, crates.io would automatically add this header to registry (e.g., crates.io) dependencies.
+[package]
+name = "my-crate"
+resolver = "2" # Explicitly retain resolver 2.
+`,
+			wantLo: "1.55.0",
+			wantHi: "",
+		},
+		{
+			name: "Resolver in Metadata Is Not Evidence",
+			cargoToml: `
+[package]
+name = "my-crate"
+
+[package.metadata.commands]
+resolver = "2"
+`,
+			wantLo: "",
+			wantHi: "1.54.0", // No modern header sets hi=1.54
+		},
+		{
+			name: "Resolver in Multiline String Is Not Evidence",
+			cargoToml: `
+[package]
+name = "my-crate"
+description = """
+resolver = "2"
+"""
+`,
+			wantLo: "",
+			wantHi: "1.54.0", // No modern header sets hi=1.54
 		},
 		{
 			name: "Pretty Array (Modern Header)",
@@ -77,7 +161,7 @@ features = [
     "feature-b",
 ]
 `,
-			wantLo: "1.64.0", // prettyArray sets lo=1.60, modernHeader sets lo=1.55. max(1.60, 1.55) = 1.60. no resolver=2 bumps to 1.64
+			wantLo: "1.60.0", // prettyArray=1.60, modernHeader=1.55. Max is 1.60
 			wantHi: "",
 		},
 		{
@@ -88,7 +172,7 @@ features = [
 name = "my-crate"
 doc-scrape-examples = true
 `,
-			wantLo: "1.67.0", // docExamples sets lo=1.67. modernHeader sets lo=1.55. max(1.67, 1.55) = 1.67. no resolver=2 bumps to max(1.64, 1.67) = 1.67
+			wantLo: "1.67.0", // docExamples=1.67, modernHeader=1.55. Max is 1.67
 			wantHi: "",
 		},
 		{
@@ -98,7 +182,7 @@ doc-scrape-examples = true
 [profile.release]
 debug = true
 `,
-			wantLo: "1.64.0", // modernHeader sets lo=1.55. no resolver=2 bumps to 1.64
+			wantLo: "1.55.0", // modernHeader sets lo=1.55
 			wantHi: "1.70.0", // debugDenormalized sets hi=1.70.0
 		},
 		{
@@ -112,7 +196,7 @@ features = [
     "feature-a",
 ]
 `,
-			wantLo: "1.67.0", // docExamples=1.67, prettyArray=1.60, modernHeader=1.55. Max is 1.67. no resolver=2 bumps to max(1.64, 1.67) = 1.67
+			wantLo: "1.67.0", // docExamples=1.67, prettyArray=1.60, modernHeader=1.55. Max is 1.67
 			wantHi: "",
 		},
 		{
@@ -128,7 +212,7 @@ resolver = "2"
 debug = false
 `,
 			wantLo: "1.51.0", // resolver=2 sets lo=1.51
-			wantHi: "1.54.0", // debugDenormalized=1.70, no modernHeader=1.54, resolver=2=1.63. Min is 1.54
+			wantHi: "1.54.0", // No modern header sets hi=1.54
 		},
 		{
 			name: "All Hi Bounds (Modern Header)",
@@ -144,7 +228,7 @@ resolver = "2"
 debug = false
 `,
 			wantLo: "1.55.0", // modernHeader=1.55, resolver=2=1.51. Max is 1.55
-			wantHi: "1.63.0", // debugDenormalized=1.70, resolver=2=1.63. Min is 1.63
+			wantHi: "1.70.0", // debugDenormalized=1.70
 		},
 		{
 			name: "All Bounds (Modern Header)",
@@ -164,7 +248,7 @@ resolver = "2"
 debug = false
 `,
 			wantLo: "1.67.0", // docExamples=1.67, prettyArray=1.60, modernHeader=1.55, resolver=2=1.51. Max is 1.67
-			wantHi: "1.63.0", // debugDenormalized=1.70, resolver=2=1.63. Min is 1.63
+			wantHi: "1.70.0", // debugDenormalized=1.70
 		},
 		{
 			name: "aho-corasick 1.0.4 (debug = 2, pretty arrays)",
@@ -184,7 +268,7 @@ categories = ["text-processing"]
 [profile.release]
 debug = 2
 `,
-			wantLo: "1.64.0", // prettyArray=1.60, modernHeader=1.55, no resolver=max(1.64,1.60)=1.64
+			wantLo: "1.60.0", // prettyArray=1.60, modernHeader=1.55. Max is 1.60
 			wantHi: "",
 		},
 		{
@@ -208,11 +292,11 @@ categories = [
 [lib]
 doc-scrape-examples = false
 `,
-			wantLo: "1.67.0", // docExamples=1.67, prettyArray=1.60, modernHeader=1.55. no resolver=max(1.64,1.67)=1.67
+			wantLo: "1.67.0", // docExamples=1.67, prettyArray=1.60, modernHeader=1.55. Max is 1.67
 			wantHi: "",
 		},
 		{
-			name: "async-native-tls 0.4.0 (cuddled categories)",
+			name: "async-native-tls 0.4.0 (inline categories)",
 			cargoToml: `
 # Before Rust 1.55, crates.io would automatically add this header to registry (e.g., crates.io) dependencies.
 [package]
@@ -221,8 +305,19 @@ name = "async-native-tls"
 version = "0.4.0"
 categories = ["asynchronous", "cryptography", "network-programming"]
 `,
-			wantLo: "1.55.0", // modernHeader=1.55, cuddledArray (hi=1.59) prevents bump to 1.64
-			wantHi: "1.59.0", // cuddledArray=1.59
+			wantLo: "1.55.0", // modernHeader=1.55, inline multi-element array (hi=1.59) prevents bump to 1.64
+			wantHi: "1.59.0", // inline multi-element array=1.59
+		},
+		{
+			name: "Single-element inline array (Modern Header)",
+			cargoToml: `
+# Before Rust 1.55, crates.io would automatically add this header to registry (e.g., crates.io) dependencies.
+[package]
+name = "my-crate"
+keywords = ["one"]
+`,
+			wantLo: "1.55.0", // modernHeader sets lo=1.55; resolver absence is not evidence
+			wantHi: "",
 		},
 	}
 
@@ -234,6 +329,29 @@ categories = ["asynchronous", "cryptography", "network-programming"]
 			}
 			if gotHi != tt.wantHi {
 				t.Errorf("detectRustVersionBounds() gotHi = %v, want %v", gotHi, tt.wantHi)
+			}
+		})
+	}
+}
+
+func TestHasInlineMultiElementArray(t *testing.T) {
+	tests := []struct {
+		name      string
+		cargoToml string
+		want      bool
+	}{
+		{name: "Empty", cargoToml: `keywords = []`, want: false},
+		{name: "Single element", cargoToml: `keywords = ["one"]`, want: false},
+		{name: "Comma in string", cargoToml: `authors = ["Example, Inc"]`, want: false},
+		{name: "Inline table", cargoToml: `assets = [{ source = "README.md", dest = "share/doc" }]`, want: false},
+		{name: "Multiple elements", cargoToml: `keywords = ["one", "two"]`, want: true},
+		{name: "Hyphenated key", cargoToml: `crate-type = ["cdylib", "rlib"]`, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasInlineMultiElementArray(tt.cargoToml); got != tt.want {
+				t.Errorf("hasInlineMultiElementArray() = %v, want %v", got, tt.want)
 			}
 		})
 	}

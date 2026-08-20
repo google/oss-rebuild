@@ -18,9 +18,9 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -187,7 +187,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			RepoOptF: func() *gitx.RepositoryOptions {
 				return &gitx.RepositoryOptions{
 					Worktree: memfs.New(),
-					Storer:   memory.NewStorage(),
+					Storer:   gitx.NewInMemoryStorer(),
 				}
 			},
 			CratesRegistryStub: regstub,
@@ -243,8 +243,8 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	}, Strategy: s}
 	resources := build.Resources{
 		ToolURLs: map[build.ToolType]string{
-			// Ex: https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20250428204534-b35098b3c7b7/timewarp
-			build.TimewarpTool: fmt.Sprintf("https://storage.googleapis.com/%s/%s/timewarp", cfg.BootstrapBucket, cfg.BootstrapVersion),
+			// Ex: https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20251211001310-499b5fb97512/timewarp
+			build.TimewarpTool: gcsx.HTTPURL(cfg.BootstrapBucket, cfg.BootstrapVersion+"/timewarp"),
 		},
 		BaseImageConfig: build.DefaultBaseImageConfig(),
 	}
@@ -267,7 +267,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err != nil {
 			return nil, errors.Wrap(err, "generating plan")
 		}
-		buildScript = plan.Script
+		buildScript = plan.CombinedScript()
 	}
 	switch cfg.Format {
 	case "", "strategy", "strategy-or-status":

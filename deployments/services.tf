@@ -52,13 +52,13 @@ data "google_compute_zones" "scratch" {
 }
 
 # Instance template for scratch VMs. The startup script fetches and runs the
-# scratch-worker binary; agent-api drives the worker over private-IP HTTP with
-# an ID token. Conditionally attach a service account for private instances to
-# access (the bootstrap-tools bucket is public-readable).
+# scratch-worker binary as a systemd service. agent-api drives the worker over
+# private-IP HTTP with an ID token. Conditionally attach a service account for
+# private instances to access bootstrap tools.
 resource "google_compute_instance_template" "scratch-standard" {
   count        = var.enable_scratch ? 1 : 0
   name_prefix  = "${var.host}-scratch-standard-"
-  machine_type = "n2-standard-8"
+  machine_type = "e2-standard-8"
   region       = "us-central1"
 
   # NOTE: This block needs to be conditionally omitted to ensure an empty
@@ -72,17 +72,11 @@ resource "google_compute_instance_template" "scratch-standard" {
   }
 
   disk {
-    source_image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
+    source_image = "cos-cloud/cos-stable"
     auto_delete  = true
     boot         = true
-    disk_size_gb = 50
-  }
-  disk {
-    type         = "SCRATCH"
-    disk_type    = "local-ssd"
-    auto_delete  = true
-    interface    = "NVME"
-    disk_size_gb = 375 # local SSD partitions are fixed at 375 GB on n2; add more disk blocks for more capacity.
+    disk_size_gb = 400
+    disk_type    = "pd-ssd"
   }
 
   network_interface {
@@ -94,10 +88,13 @@ resource "google_compute_instance_template" "scratch-standard" {
   labels = { purpose = "scratch" }
 
   metadata = {
+    user-data = templatefile("${path.module}/scratch_cloudinit.yaml", {
+      // NOTE: The official docker distribution is alpine-based.
+      cli_image = "docker:29.5-cli@sha256:11e1133c30f3ceb73c6bdc7dfb78b3f9ed8e8e0d1d0400e91c5ec2eb240bf2ff"
+      caller_sa = google_service_account.orchestrator.email
+    })
     startup-script = templatefile("${path.module}/scratch_startup.sh", {
       worker_binary_uri = "gs://${google_storage_bucket.bootstrap-tools.name}/${module.prebuild_images["scratch-worker"].image_version}/scratch-worker"
-      caller_sa         = google_service_account.orchestrator.email
-      audience          = "https://builder/$${HOSTNAME}"
     })
   }
 
@@ -161,8 +158,9 @@ resource "google_cloud_run_v2_service" "inference" {
     containers {
       image = data.google_artifact_registry_docker_image.inference.self_link
       args = [
+        "--project=${var.project}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
-        "--user-agent=oss-rebuild+${var.host}/0.0.0",
+        "--host=${var.host}",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
         "--crates-registry-service-url=${google_cloud_run_v2_service.crates-registry.uri}",
       ]
@@ -237,7 +235,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--logs-bucket=${google_storage_bucket.logs.name}",
         "--debug-storage=gs://${google_storage_bucket.debug.name}",
         "--gateway-url=${google_cloud_run_v2_service.gateway.uri}",
-        "--user-agent=oss-rebuild+${var.host}/0.0.0",
+        "--host=${var.host}",
         "--build-def-repo=${var.build_def_repo}",
         "--build-def-repo-dir=${var.build_def_repo_dir}",
         "--block-local-repo-publish=${var.public}",
@@ -247,7 +245,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--agent-sessions-bucket=${google_storage_bucket.agent-sessions.name}",
         "--agent-metadata-bucket=${google_storage_bucket.agent-metadata.name}",
         "--agent-logs-bucket=${google_storage_bucket.agent-logs.name}",
-        "--rebuild-job-name=${google_cloud_run_v2_job.rebuild-job.id}",
+        "--rebuild-job-name=${google_cloud_run_v2_job.rebuild-job.name}",
         ], var.enable_private_build_pool ? [
         "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
         "--gcb-private-pool-region=us-central1",
@@ -276,6 +274,7 @@ resource "google_cloud_run_v2_service" "network-analyzer" {
         "--project=${var.project}",
         "--analysis-bucket=${google_storage_bucket.network-analyzer-attestations[0].name}",
         "--build-remote-identity=${google_service_account.network-analyzer-build[0].name}",
+        "--host=${var.host}",
         "--logs-bucket=${google_storage_bucket.logs.name}",
         "--metadata-bucket=${google_storage_bucket.metadata.name}",
         "--attestation-bucket=${google_storage_bucket.attestations.name}",
@@ -336,6 +335,7 @@ resource "google_cloud_run_v2_service" "system-analyzer" {
         "--project=${var.project}",
         "--analysis-bucket=${google_storage_bucket.system-analyzer-attestations[0].name}",
         "--build-remote-identity=${google_service_account.system-analyzer-build[0].name}",
+        "--host=${var.host}",
         "--logs-bucket=${google_storage_bucket.logs.name}",
         "--metadata-bucket=${google_storage_bucket.metadata.name}",
         "--attestation-bucket=${google_storage_bucket.attestations.name}",
@@ -399,6 +399,7 @@ resource "google_cloud_run_v2_service" "agent-api" {
         "--prebuild-bucket=${google_storage_bucket.bootstrap-tools.name}",
         "--prebuild-version=${var.prebuild_version}",
         "--prebuild-auth=${var.public ? "false" : "true"}",
+        "--host=${var.host}",
         ], var.enable_private_build_pool ? [
         "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
         "--gcb-private-pool-region=us-central1",

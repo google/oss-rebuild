@@ -20,11 +20,9 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/billyx"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/pkg/errors"
@@ -37,18 +35,11 @@ type CloneFunc func(context.Context, storage.Storer, billy.Filesystem, *git.Clon
 // otherwise falling back to go-git.
 func Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
 	if NativeGitAvailable() && opt.Auth == nil {
-		switch s.(type) {
-		case *filesystem.Storage:
-			log.Println("Found git binary. Cloning using git")
-			return NativeClone(ctx, s, fs, opt)
-		case *memory.Storage:
-			// NOTE: While supported, this can range from 2x to 5x slower with great penalties for larger repos.
-			log.Println("Found git binary but using memory.Storage. Cloning using go-git")
-			return git.CloneContext(ctx, s, fs, opt)
-		default:
-			log.Printf("Found git binary but using unknown Storer %T. Cloning using go-git", s)
-			return git.CloneContext(ctx, s, fs, opt)
-		}
+		// NOTE: Native git remains several times faster than go-git even for
+		// non-OS-backed storers, where NativeClone stages the clone on disk
+		// and copies it over.
+		log.Println("Found git binary. Cloning using git")
+		return NativeClone(ctx, s, fs, opt)
 	}
 	if NativeGitAvailable() && opt.Auth != nil {
 		log.Println("Found git binary but Auth is set. Cloning using go-git")
@@ -212,10 +203,15 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 	if len(opt.CABundle) > 0 {
 		return nil, errors.New("unsupported clone option for native git: CABundle")
 	}
+	// Unwrap gitx.Storer so underlying filesystem storers can use fastpath.
+	target := s
+	if ws, ok := s.(*Storer); ok {
+		target = ws.Storer
+	}
 	// Determine storage type and whether staging is needed
 	var targetDir string
 	var needsStaging bool
-	if sf, ok := s.(*filesystem.Storage); ok && isOSFilesystem(sf.Filesystem()) {
+	if sf, ok := target.(*filesystem.Storage); ok && isOSFilesystem(sf.Filesystem()) {
 		// We can clone directly into the target dir for osfs-based fs storers.
 		targetDir = sf.Filesystem().Root()
 	} else {
@@ -260,6 +256,10 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 	args = append(args, opt.URL, targetDir)
 	// Execute the git command
 	cmd := exec.CommandContext(ctx, "git", args...)
+	// NOTE: go-git cannot read the reftable refstorage format so force "files".
+	// See https://github.com/go-git/go-git/issues/1827
+	// Unlike --ref-format, this var is a no-op on git versions predating reftable.
+	cmd.Env = append(os.Environ(), "GIT_DEFAULT_REF_FORMAT=files")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, classifyCloneError(output, err)
@@ -267,13 +267,19 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 	// Copy staging to target storage if needed
 	if needsStaging {
 		stagingFS := osfs.New(targetDir)
-		stagingStorer := filesystem.NewStorage(stagingFS, cache.NewObjectLRUDefault())
-		if sf, ok := s.(*filesystem.Storage); ok {
+		if sf, ok := target.(*filesystem.Storage); ok {
 			if err := billyx.CopyFS(sf.Filesystem(), stagingFS); err != nil {
 				return nil, errors.Wrap(err, "copying from staging to storage filesystem")
 			}
 		} else {
-			if err := CopyStorer(s, stagingStorer); err != nil {
+			// CopyStorer populates the target storer with lazily-read objects
+			// still backed by the staged packfile, so first move the staged
+			// bytes into an in-memory storer that can outlive targetDir.
+			retained := NewInMemoryStorer()
+			if err := billyx.CopyFS(retained.Filesystem(), stagingFS); err != nil {
+				return nil, errors.Wrap(err, "copying staging to retained storer")
+			}
+			if err := CopyStorer(target, retained); err != nil {
 				return nil, errors.Wrap(err, "copying from staging to memory storage")
 			}
 		}

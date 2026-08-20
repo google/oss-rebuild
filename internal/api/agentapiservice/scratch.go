@@ -211,7 +211,7 @@ func ScratchDelete(ctx context.Context, req schema.ScratchDeleteRequest, deps *S
 func waitHealthy(ctx context.Context, deps *ScratchCreateDeps, ip string) error {
 	timeout := deps.HealthTimeout
 	if timeout <= 0 {
-		timeout = 90 * time.Second
+		timeout = 3 * time.Minute
 	}
 	interval := deps.HealthInterval
 	if interval <= 0 {

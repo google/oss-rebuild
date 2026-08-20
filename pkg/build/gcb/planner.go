@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/build"
+	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
@@ -240,6 +241,7 @@ type gcbContainerArgs struct {
 }
 
 // gcbDockerfileTpl generates Dockerfiles for use in GCB
+// NOTE: Layer mappings must be kept in sync with dockerfileLayers.
 var gcbDockerfileTpl = template.Must(
 	template.New("gcb dockerfile").Funcs(template.FuncMap{
 		"indent": func(s string) string { return strings.ReplaceAll(s, "\n", "\n ") },
@@ -269,18 +271,22 @@ var gcbDockerfileTpl = template.Must(
 			EOF
 			RUN sed 's/^ //' <<'EOF' | sh
 			 set -eux
-			{{- if .UseTimewarp}}
-			 ./timewarp -port 8080 &
-			 while ! nc -z localhost 8080;do sleep 1;done
-			{{- end}}
 			 mkdir /src && cd /src
 			 {{- if .Instructions.Source}}
 			 {{.Instructions.Source | indent}}
 			 {{- end}}
-			 {{- if .Instructions.Deps}}
-			 {{.Instructions.Deps | indent}}
-			 {{- end}}
 			EOF
+			{{- if .Instructions.Deps}}
+			RUN sed 's/^ //' <<'EOF' | sh
+			 set -eux
+			{{- if .UseTimewarp}}
+			 ./timewarp -port 8080 &
+			 while ! nc -z localhost 8080;do sleep 1;done
+			{{- end}}
+			 cd /src
+			 {{.Instructions.Deps | indent}}
+			EOF
+			{{- end}}
 			RUN sed 's/^ //' <<'EOF' >/build
 			 set -eux
 			 {{.Instructions.Build | indent}}
@@ -290,6 +296,16 @@ var gcbDockerfileTpl = template.Must(
 			ENTRYPOINT ["/bin/sh","/build"]
 			`)[1:], // remove leading newline
 	))
+
+// dockerfileLayers declares gcbDockerfileTpl's instruction shape.
+// NOTE: Template conditionals vary only script contents, never the sequence.
+func dockerfileLayers(hasDeps bool) timing.Layers {
+	l := timing.Layers{Appended: 5, Setup: 0, Source: 1, Deps: -1}
+	if hasDeps {
+		l.Appended, l.Deps = 6, 2
+	}
+	return l
+}
 
 // gcbStandardBuildTpl generates standard build scripts for Cloud Build steps
 var gcbStandardBuildTpl = template.Must(
@@ -333,7 +349,7 @@ var gcbStandardBuildTpl = template.Must(
 			cat <<'EOS' | docker buildx build {{if .TimewarpAuth}}--secret id=auth_header,src=/tmp/auth_header {{end}}--tag=img -
 			{{.Dockerfile}}
 			EOS
-			docker run {{if .Privileged}}--privileged -v=/var/run/docker.sock:/var/run/docker.sock {{end}}--name=container img
+			docker run {{if .Privileged}}--privileged -v=/var/run/docker.sock:/var/run/docker.sock {{end}}--name=container img{{if .RunExitCode}} || exit {{.RunExitCode}}{{end}}
 			{{- if .UseSyscallMonitor}}
 			echo '=== Build finished, signaling sysgraph to drain ==='
 			{{- if .TetragonSysgraphURL}}
@@ -470,7 +486,7 @@ var gcbProxyBuildTpl = template.Must(
 				export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt{{if .TimewarpAuth}} HEADER{{end}}
 				docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
 				cat /Dockerfile | docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT {{if .TimewarpAuth}}--secret id=auth_header,env=HEADER {{end}}--load --tag=img -
-				docker run {{if .Privileged}}--privileged -e DOCKER_HOST {{end}}--name=container img
+				docker run {{if .Privileged}}--privileged -e DOCKER_HOST {{end}}--name=container img{{if .RunExitCode}} || exit {{.RunExitCode}}{{end}}
 			'
 			{{- if .UseSyscallMonitor}}
 			echo '=== Build finished, signaling sysgraph to drain ==='
@@ -534,10 +550,15 @@ func (p *Planner) GeneratePlan(ctx context.Context, input rebuild.Input, opts bu
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate Cloud Build steps")
 	}
-	return &Plan{
+	plan := &Plan{
 		Steps:      steps,
 		Dockerfile: dockerfile,
-	}, nil
+	}
+	// Layers only serve the timing step's extraction.
+	if opts.RecordTimings {
+		plan.Layers = dockerfileLayers(instructions.Deps != "")
+	}
+	return plan, nil
 }
 
 // generateDockerfile creates a Dockerfile from rebuild instructions and options using templates
@@ -590,6 +611,15 @@ func (p *Planner) getToolURL(toolType build.ToolType, opts build.PlanOptions) (t
 	return convertedURL, needsAuth, nil
 }
 
+// runExitSentinel returns the allowed run-failure exit code, zero when
+// timings are not recorded so those plans keep today's abort-on-failure step.
+func runExitSentinel(opts build.PlanOptions) int {
+	if opts.RecordTimings {
+		return runFailureExitCode
+	}
+	return 0
+}
+
 // generateSteps creates the Cloud Build steps using remote rebuild patterns
 func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, reqs rebuild.RequiredEnv, opts build.PlanOptions) ([]*cloudbuild.BuildStep, error) {
 	var steps []*cloudbuild.BuildStep
@@ -602,7 +632,32 @@ func (p *Planner) generateSteps(target rebuild.Target, dockerfile string, reqs r
 		Name:   "gcr.io/cloud-builders/docker",
 		Script: buildScript,
 	}
+	if sentinel := runExitSentinel(opts); sentinel != 0 {
+		buildStep.AllowExitCodes = []int64{int64(sentinel)}
+	}
 	steps = append(steps, buildStep)
+	// Timing observation step: reads clocks the build's log stream cannot
+	// affect. Placed before extract so it also observes builds whose docker
+	// run exited with the allowed sentinel: the image and exited container
+	// hold complete clocks. The executor reports the sentinel as a failure even
+	// if extract succeeds on a file left by the failed run. Any other main-step
+	// exit still aborts the build here, leaving no record.
+	// NOTE: No -e and || true throughout so a flaking inspect cannot fail a
+	// successful rebuild.
+	// NOTE: The proxied daemon forwards to the step-shared docker socket, so
+	// the inspected container and image are visible here in proxy mode too.
+	if opts.RecordTimings {
+		steps = append(steps, &cloudbuild.BuildStep{
+			Id:   timingStepID,
+			Name: "gcr.io/cloud-builders/docker",
+			Script: strings.Join([]string{
+				"set -ux",
+				`docker inspect container -f '{{.State.StartedAt}} {{.State.FinishedAt}}' || true`,
+				`docker inspect container -f 'exit={{.State.ExitCode}}' || true`,
+				`docker history --human=false --format '{{json .}}' img || true`,
+			}, "\n"),
+		})
+	}
 	// Extract artifacts from container
 	extractStep := &cloudbuild.BuildStep{
 		Name: "gcr.io/cloud-builders/docker",
@@ -676,6 +731,7 @@ func (p *Planner) generateStandardBuildScript(target rebuild.Target, dockerfile 
 		"ServiceAccountEmail":  serviceAccountEmail,
 		"TetragonSysgraphURL":  tetragonSysgraphURL,
 		"TetragonSysgraphAuth": tetragonSysgraphAuth,
+		"RunExitCode":          runExitSentinel(opts),
 	}); err != nil {
 		return "", errors.Wrap(err, "failed to execute standard build template")
 	}
@@ -724,6 +780,7 @@ func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile str
 		"CertEnvVars":          []string{"PIP_CERT", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE", "NIX_SSL_CERT_FILE"},
 		"TetragonSysgraphURL":  tetragonSysgraphURL,
 		"TetragonSysgraphAuth": tetragonSysgraphAuth,
+		"RunExitCode":          runExitSentinel(opts),
 	}); err != nil {
 		return "", errors.Wrap(err, "failed to execute proxy build template")
 	}

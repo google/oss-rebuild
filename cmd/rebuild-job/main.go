@@ -10,16 +10,9 @@ import (
 	"os"
 
 	"github.com/google/oss-rebuild/internal/api/apiservice"
+	"github.com/google/oss-rebuild/internal/buildinfo"
 	"github.com/google/oss-rebuild/internal/serviceid"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-)
-
-// Link-time configured service identity
-var (
-	// Repo from which the service was built
-	BuildRepo string
-	// Golang version identifier of the service container builds
-	BuildVersion string
 )
 
 func main() {
@@ -52,7 +45,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to make rebuild package deps: %v", err)
 	}
-	deps.ServiceRepo, err = serviceid.ParseLocation(BuildRepo, BuildVersion)
+	deps.ServiceRepo, err = serviceid.ParseLocation(buildinfo.Repo, buildinfo.Version)
 	if err != nil {
 		log.Fatalf("parsing service location: %v", err)
 	}
