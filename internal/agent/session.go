@@ -75,7 +75,9 @@ type RunSessionDeps struct {
 	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 }
 
-func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
+// transcriptOpts names iteration iterNum's transcript directory, or nothing
+// without a sessions bucket.
+func transcriptOpts(deps RunSessionDeps, sessionID string, iterNum int) *ProposeOpts {
 	opts := &ProposeOpts{}
 	if deps.SessionsBucket != "" {
 		opts.ChatUploadURL = &url.URL{
@@ -84,6 +86,11 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 			Path:   path.Join(sessionID, "messages", fmt.Sprintf("%d", iterNum)),
 		}
 	}
+	return opts
+}
+
+func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
+	opts := transcriptOpts(deps, sessionID, iterNum)
 	// Snapshot the agent's cumulative token usage around Propose so this
 	// iteration is charged only the tokens it consumed.
 	beforeUsage := agent.Usage()
@@ -190,6 +197,10 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 			}
 		}
 		iterNum = 1
+		if req.InitialIteration.Strategy != nil {
+			// The seed skips Propose, so record its build here.
+			a.uploadProposalRecord(ctx, transcriptOpts(deps, req.SessionID, iterNum), "0-proposal.json", req.InitialIteration.Strategy)
+		}
 	}
 	return runIterations(ctx, req, iterNum, a, deps)
 }
