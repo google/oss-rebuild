@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 )
@@ -162,4 +163,46 @@ func testZipReader(t *testing.T, files []string) *zip.Reader {
 		t.Fatalf("NewReader(): %v", err)
 	}
 	return zr
+}
+
+func TestMergeRequirements(t *testing.T) {
+	tests := []struct {
+		name      string
+		reqs      []string
+		buildReqs []string
+		want      []string
+	}{
+		{
+			name:      "appends new packages",
+			reqs:      []string{"wheel==0.36.2"},
+			buildReqs: []string{"setuptools_scm"},
+			want:      []string{"wheel==0.36.2", "setuptools_scm"},
+		},
+		{
+			name:      "existing pin wins over build spec",
+			reqs:      []string{"setuptools==57.5.0"},
+			buildReqs: []string{"setuptools>=40"},
+			want:      []string{"setuptools==57.5.0"},
+		},
+		{
+			name:      "repeats within buildReqs collapse",
+			reqs:      []string{},
+			buildReqs: []string{"setuptools_scm", "setuptools_scm"},
+			want:      []string{"setuptools_scm"},
+		},
+		{
+			name:      "empty requirement ignored",
+			reqs:      []string{"wheel"},
+			buildReqs: []string{"", "  "},
+			want:      []string{"wheel"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergeRequirements(tc.reqs, tc.buildReqs)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("mergeRequirements() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
