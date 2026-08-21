@@ -280,6 +280,13 @@ func normalizePipInstalls(script string) string {
 	for _, ln := range lines {
 		prefix, args, ok := splitPipInstall(ln)
 		if !ok {
+			// An export must not split a pip install run: emitted above the
+			// collapsed block, old (export-first) and new (build-first)
+			// scripts annotate identically.
+			if blockPrefix != "" && strings.HasPrefix(strings.TrimSpace(ln), "export ") {
+				out = append(out, ln)
+				continue
+			}
 			flushBlock()
 			out = append(out, ln)
 			continue
