@@ -42,6 +42,7 @@ type remoteExecutionService struct {
 	createOpStub api.StubFn[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]]
 	getOpStub    api.StubFn[schema.GetOperationRequest, longrunning.Operation[schema.Verdict]]
 	versionStub  api.StubFn[schema.VersionRequest, schema.VersionResponse]
+	inferStub    api.StubFn[schema.InferenceRequest, schema.StrategyOneOf]
 }
 
 // NewRemoteExecutionService creates a new service for remote API execution.
@@ -50,6 +51,7 @@ func NewRemoteExecutionService(client *http.Client, baseURL *url.URL) ExecutionS
 		createOpStub: api.Stub[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]](client, baseURL.JoinPath("rebuild", "op", "create")),
 		getOpStub:    api.Stub[schema.GetOperationRequest, longrunning.Operation[schema.Verdict]](client, baseURL.JoinPath("rebuild", "op", "get")),
 		versionStub:  api.Stub[schema.VersionRequest, schema.VersionResponse](client, baseURL.JoinPath("version")),
+		inferStub:    api.Stub[schema.InferenceRequest, schema.StrategyOneOf](client, baseURL.JoinPath("infer")),
 	}
 }
 
@@ -83,7 +85,7 @@ func (s *remoteExecutionService) RebuildPackage(ctx context.Context, req schema.
 }
 
 func (s *remoteExecutionService) Infer(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
-	return nil, errors.New("not implemented")
+	return s.inferStub(ctx, req)
 }
 
 func (s *remoteExecutionService) Warmup(ctx context.Context) {
