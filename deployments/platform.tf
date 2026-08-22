@@ -161,6 +161,17 @@ resource "google_storage_bucket" "analytics" {
       type = "Delete"
     }
   }
+  # Delta segments are superseded once a newer daily rollup incorporates them.
+  lifecycle_rule {
+    condition {
+      age            = 14
+      matches_prefix = ["deltas-"] # matches deltas-v<N>/ format
+    }
+    action {
+      type = "Delete"
+    }
+  }
+  # NOTE: Previous schema versions of rebuild-v<N>.db must be cleaned up manually.
 }
 
 ## Firestore
@@ -529,8 +540,47 @@ resource "google_compute_firewall" "scratch-worker-ingress" {
 }
 
 resource "google_project_service" "cloudscheduler" {
-  count   = var.enable_scratch ? 1 : 0
   service = "cloudscheduler.googleapis.com"
+}
+
+# Writes one delta segment of recent Firestore writes to the analytics
+# destination. The snapshot cache picks segments up on its poll loop.
+resource "google_cloud_scheduler_job" "snapshot-delta" {
+  name     = "${var.host}-snapshot-delta"
+  schedule = "*/5 * * * *" # every 5 minutes
+  region   = "us-central1"
+  http_target {
+    uri         = "${google_cloud_run_v2_service.orchestrator.uri}/snapshot/delta"
+    http_method = "POST"
+    headers = {
+      "Content-Type" = "application/x-www-form-urlencoded"
+    }
+    oidc_token {
+      service_account_email = google_service_account.cron.email
+      audience              = google_cloud_run_v2_service.orchestrator.uri
+    }
+  }
+  depends_on = [google_project_service.cloudscheduler]
+}
+
+# Rebuilds the snapshot database from a full Firestore scan, correcting any
+# drift the delta stream cannot see (out-of-band edits, migrations).
+resource "google_cloud_scheduler_job" "snapshot-rollup" {
+  name     = "${var.host}-snapshot-rollup"
+  schedule = "0 9 * * *" # daily at 09:00 UTC
+  region   = "us-central1"
+  http_target {
+    uri         = "${google_cloud_run_v2_service.orchestrator.uri}/snapshot/rollup"
+    http_method = "POST"
+    headers = {
+      "Content-Type" = "application/x-www-form-urlencoded"
+    }
+    oidc_token {
+      service_account_email = google_service_account.cron.email
+      audience              = google_cloud_run_v2_service.orchestrator.uri
+    }
+  }
+  depends_on = [google_project_service.cloudscheduler]
 }
 
 resource "google_cloud_scheduler_job" "scratch-reap" {
@@ -545,7 +595,7 @@ resource "google_cloud_scheduler_job" "scratch-reap" {
       "Content-Type" = "application/x-www-form-urlencoded"
     }
     oidc_token {
-      service_account_email = google_service_account.orchestrator.email
+      service_account_email = google_service_account.cron.email
       audience              = google_cloud_run_v2_service.agent-api.uri
     }
   }

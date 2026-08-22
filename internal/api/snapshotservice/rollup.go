@@ -1,10 +1,10 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-// Package snapshotservice exposes the internal/snapshot rollup engine.
-// Each invocation performs one idempotent snapshot that replaces the published
-// object wholesale, so the endpoint is safe to invoke manually, repeatedly,
-// and from a scheduler.
+// Package snapshotservice exposes the internal/snapshot pipelines.
+// /snapshot/rollup rebuilds the published database while recurring updates are
+// handled by /snapshot/delta. These are idempotent and, thus, safe to invoke
+// via a naive scheduler.
 package snapshotservice
 
 import (
