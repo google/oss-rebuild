@@ -26,11 +26,11 @@ type Resolver struct {
 // NewResolver returns a Resolver with nothing dialed.
 func NewResolver() *Resolver { return &Resolver{} }
 
-// ForURI returns the filesystem owning uri and uri's path within it.
+// FS returns the filesystem owning uri and uri's path within it.
 // For GCS, ctx governs GCS initialization and every subsequent operation on
 // the filesystem. file:// URIs and bare paths are local while relative paths
 // resolve against the working directory.
-func (r *Resolver) ForURI(ctx context.Context, uri string) (billy.Filesystem, string, error) {
+func (r *Resolver) FS(ctx context.Context, uri string) (billy.Filesystem, string, error) {
 	if strings.HasPrefix(uri, "gs://") {
 		bucket, object, err := gcsx.ParseURL(uri)
 		if err != nil {
@@ -52,4 +52,15 @@ func (r *Resolver) ForURI(ctx context.Context, uri string) (billy.Filesystem, st
 		return nil, "", err
 	}
 	return osfs.New("/"), path, nil
+}
+
+// DirFS returns the filesystem rooted at uri, for callers addressing a
+// destination rather than a file within one.
+func (r *Resolver) DirFS(ctx context.Context, uri string) (billy.Filesystem, error) {
+	fs, path, err := r.FS(ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := fs.Chroot(path)
+	return dir, errors.Wrapf(err, "resolving %s", uri)
 }
