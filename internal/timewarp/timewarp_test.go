@@ -620,6 +620,58 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			},
 		},
 		{
+			name:      "cargogitarchive missing package",
+			url:       "http://localhost:8081/index.git.tar",
+			basicAuth: "cargogitarchive:abc1234",
+			headers: map[string]string{
+				"X-Package-Names": "serde",
+			},
+			client: &httpxtest.MockClient{
+				URLValidator: httpxtest.NewURLValidator(t),
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://raw.githubusercontent.com/rust-lang/crates.io-index/abc1234/se/rd/serde",
+						Response: &http.Response{
+							StatusCode: http.StatusNotFound,
+							Body:       http.NoBody,
+						},
+					},
+				},
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/x-tar"},
+				},
+			},
+		},
+		{
+			name:      "cargogitarchive upstream server error",
+			url:       "http://localhost:8081/index.git.tar",
+			basicAuth: "cargogitarchive:abc1234",
+			headers: map[string]string{
+				"X-Package-Names": "serde",
+			},
+			client: &httpxtest.MockClient{
+				URLValidator: httpxtest.NewURLValidator(t),
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://raw.githubusercontent.com/rust-lang/crates.io-index/abc1234/se/rd/serde",
+						Response: &http.Response{
+							StatusCode: http.StatusInternalServerError,
+							Body:       http.NoBody,
+						},
+					},
+				},
+			},
+			want: &http.Response{
+				StatusCode: http.StatusInternalServerError,
+				Body:       io.NopCloser(bytes.NewBufferString("Internal Server Error\n")),
+			},
+		},
+		{
 			name:      "cargogitarchive invalid path",
 			url:       "http://localhost:8081/wrong-path",
 			basicAuth: "cargogitarchive:abc1234",
