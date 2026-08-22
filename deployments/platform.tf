@@ -144,6 +144,25 @@ resource "google_storage_bucket" "scratch-output" {
   # TODO: Consider an age-based lifecycle rule once we have a feel for realistic retention needs.
 }
 
+resource "google_storage_bucket" "analytics" {
+  name                        = "${var.host}-rebuild-analytics"
+  location                    = "us-central1"
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  depends_on                  = [google_project_service.storage]
+  versioning {
+    enabled = true # Ensures snapshot reads work across swaps
+  }
+  lifecycle_rule {
+    condition {
+      days_since_noncurrent_time = 180
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
 ## Firestore
 
 resource "google_project_service" "compute" {
