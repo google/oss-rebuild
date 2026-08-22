@@ -147,6 +147,7 @@ func main() {
 	http.HandleFunc("/resources", api.Translate(func(r *http.Request) (dashboard.ResourcesRequest, error) {
 		return dashboard.ResourcesRequest{Eco: r.URL.Query().Get("eco")}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.ResourcesPage), dashboard.ResourcesTmpl)))
+	http.HandleFunc("/coverage", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.CoveragePage), dashboard.CoverageTmpl))
 	http.HandleFunc("/package/{ecosystem}/{package}", api.Translate(func(r *http.Request) (dashboard.PackageRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), "", "").Decode()
 		// TODO: Make this param and field name more precise.
