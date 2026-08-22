@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/snapshot"
@@ -20,17 +21,21 @@ type fakeSource struct {
 	attempts []schema.RebuildAttempt
 }
 
-func (f *fakeSource) Attempts(context.Context) ([]schema.RebuildAttempt, error) {
+func (f *fakeSource) Attempts(context.Context, time.Time) ([]schema.RebuildAttempt, error) {
 	return f.attempts, nil
 }
-func (f *fakeSource) Runs(context.Context) ([]schema.Run, error)              { return nil, nil }
-func (f *fakeSource) Sessions(context.Context) ([]schema.AgentSession, error) { return nil, nil }
-func (f *fakeSource) Iterations(context.Context) ([]schema.AgentIteration, error) {
+func (f *fakeSource) Runs(context.Context, time.Time) ([]schema.Run, error) { return nil, nil }
+func (f *fakeSource) Sessions(context.Context, time.Time) ([]schema.AgentSession, error) {
 	return nil, nil
 }
-func (f *fakeSource) Scratches(context.Context) ([]schema.Scratch, error)       { return nil, nil }
-func (f *fakeSource) Execs(context.Context) ([]schema.ScratchExec, error)       { return nil, nil }
-func (f *fakeSource) RepoMetrics(context.Context) ([]schema.RepoMetrics, error) { return nil, nil }
+func (f *fakeSource) Iterations(context.Context, time.Time) ([]schema.AgentIteration, error) {
+	return nil, nil
+}
+func (f *fakeSource) Scratches(context.Context, time.Time) ([]schema.Scratch, error) { return nil, nil }
+func (f *fakeSource) Execs(context.Context, time.Time) ([]schema.ScratchExec, error) { return nil, nil }
+func (f *fakeSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error) {
+	return nil, nil
+}
 
 func TestRollupUnconfigured(t *testing.T) {
 	_, err := Rollup(context.Background(), RollupRequest{}, &RollupDeps{})

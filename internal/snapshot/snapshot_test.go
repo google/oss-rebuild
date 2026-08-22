@@ -19,8 +19,9 @@ import (
 )
 
 // fakeSource serves fixed fixtures, isolating the snapshot writer/derivation
-// pipeline from Firestore.
+// pipeline from Firestore. It records the watermark of each attempts scan.
 type fakeSource struct {
+	since       []time.Time
 	attempts    []schema.RebuildAttempt
 	runs        []schema.Run
 	sessions    []schema.AgentSession
@@ -30,17 +31,24 @@ type fakeSource struct {
 	repoMetrics []schema.RepoMetrics
 }
 
-func (f *fakeSource) Attempts(context.Context) ([]schema.RebuildAttempt, error) {
+func (f *fakeSource) Attempts(_ context.Context, since time.Time) ([]schema.RebuildAttempt, error) {
+	f.since = append(f.since, since)
 	return f.attempts, nil
 }
-func (f *fakeSource) Runs(context.Context) ([]schema.Run, error)              { return f.runs, nil }
-func (f *fakeSource) Sessions(context.Context) ([]schema.AgentSession, error) { return f.sessions, nil }
-func (f *fakeSource) Iterations(context.Context) ([]schema.AgentIteration, error) {
+func (f *fakeSource) Runs(context.Context, time.Time) ([]schema.Run, error) { return f.runs, nil }
+func (f *fakeSource) Sessions(context.Context, time.Time) ([]schema.AgentSession, error) {
+	return f.sessions, nil
+}
+func (f *fakeSource) Iterations(context.Context, time.Time) ([]schema.AgentIteration, error) {
 	return f.iterations, nil
 }
-func (f *fakeSource) Scratches(context.Context) ([]schema.Scratch, error) { return f.scratches, nil }
-func (f *fakeSource) Execs(context.Context) ([]schema.ScratchExec, error) { return f.execs, nil }
-func (f *fakeSource) RepoMetrics(context.Context) ([]schema.RepoMetrics, error) {
+func (f *fakeSource) Scratches(context.Context, time.Time) ([]schema.Scratch, error) {
+	return f.scratches, nil
+}
+func (f *fakeSource) Execs(context.Context, time.Time) ([]schema.ScratchExec, error) {
+	return f.execs, nil
+}
+func (f *fakeSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error) {
 	return f.repoMetrics, nil
 }
 
@@ -98,6 +106,10 @@ func TestSnapshotFileRoundTrip(t *testing.T) {
 	res, err := Rollup(ctx, src, dest, Options{Project: "proj-x", ToolVersion: "v-test", Now: now})
 	if err != nil {
 		t.Fatalf("Rollup: %v", err)
+	}
+	// The rollup reads everything: one attempts scan, from the zero watermark.
+	if len(src.since) != 1 || !src.since[0].IsZero() {
+		t.Errorf("rollup attempts scans = %v, want one FullScan", src.since)
 	}
 	// Result row counts.
 	if got := res.RowCounts[TableAttempts]; got != 2 {
