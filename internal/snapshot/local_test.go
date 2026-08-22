@@ -5,6 +5,7 @@ package snapshot
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -71,6 +72,23 @@ func TestLocalDB(t *testing.T) {
 	}
 	assertCount(t, ldb.Conn, "SELECT count(*) FROM attempts", "2")
 	assertCount(t, ldb.Conn, "SELECT count(*) FROM attempts WHERE success", "2")
+	// The read-only file reader sees the same rows and never creates a
+	// database at a missing path.
+	f, err := rundex.OpenSQLiteFile(path, SchemaVersion)
+	if err != nil {
+		t.Fatalf("OpenSQLiteFile: %v", err)
+	}
+	defer f.Close()
+	if rebuilds, err := f.FetchRebuilds(ctx, &rundex.FetchRebuildRequest{}); err != nil || len(rebuilds) != 2 {
+		t.Errorf("FetchRebuilds via file reader = %d rebuilds, %v, want 2", len(rebuilds), err)
+	}
+	missing := filepath.Join(t.TempDir(), "absent.db")
+	if _, err := rundex.OpenSQLiteFile(missing, SchemaVersion); err == nil {
+		t.Error("OpenSQLiteFile created a missing database")
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Errorf("missing path exists after open attempt: %v", err)
+	}
 }
 
 func TestOpenLocalRefusesOtherEra(t *testing.T) {
