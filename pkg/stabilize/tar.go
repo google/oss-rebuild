@@ -56,7 +56,7 @@ func (TarEntryContextFn) Constraints() Constraints {
 var StableTarFileOrder = Stabilizer{
 	Name: "tar-file-order",
 }.WithFn(TarArchiveFn(func(f *archive.TarArchive) {
-	slices.SortFunc(f.Files, func(a, b *archive.TarEntry) int {
+	slices.SortStableFunc(f.Files, func(a, b *archive.TarEntry) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 }))
