@@ -35,6 +35,9 @@ const (
 	TablePackageSignals   = "package_signals"
 	TableCostObservations = "cost_observations"
 	TableEcosystemDaily   = "ecosystem_daily"
+	TableVersionStats     = "version_stats"
+	TableCoverageWeekly   = "coverage_weekly"
+	TableTopGaps          = "top_gaps"
 )
 
 // Observation source discriminators for cost_observations rows.
@@ -117,6 +120,141 @@ LEFT JOIN days d ON d.ecosystem = k.ecosystem AND d.day = k.day
 LEFT JOIN first_days f ON f.ecosystem = k.ecosystem AND f.day = k.day
 LEFT JOIN tokens t ON t.ecosystem = k.ecosystem AND t.day = k.day
 LEFT JOIN vm v ON v.ecosystem = k.ecosystem AND v.day = k.day
+ORDER BY 1, 2`
+
+// Gap reasons, derived from recorded statuses rather than message parsing.
+const (
+	GapReasonStale    = "stale"    // earlier version built but latest has not
+	GapReasonMismatch = "mismatch" // latest version completed without matching upstream
+	GapReasonError    = "error"    // latest version's build failed
+)
+
+// topGapsPerEcosystem caps the top_gaps table per ecosystem.
+const topGapsPerEcosystem = "100"
+
+// versionStatsQuery folds completed attempts into one row per (ecosystem,
+// package, version). Attempts are recorded per artifact: a version is
+// current when every attempted artifact has succeeded, and flaky when any
+// one artifact has both succeeded and failed. published_at is NULL until a
+// source of registry publish times exists.
+const versionStatsQuery = `
+WITH completed AS (SELECT * FROM attempts WHERE status != 'RUNNING'),
+by_artifact AS (
+	SELECT ecosystem, package, version, artifact,
+		max(success) AS succeeded, max(success = 0) AS failed
+	FROM completed GROUP BY 1, 2, 3, 4),
+per_version AS (
+	SELECT ecosystem, package, version, count(*) AS attempts, min(created) AS first_attempted_at
+	FROM completed GROUP BY 1, 2, 3),
+artifacts AS (
+	SELECT ecosystem, package, version, count(*) AS artifacts_attempted,
+		sum(succeeded) AS artifacts_succeeded, max(succeeded AND failed) AS any_flaky
+	FROM by_artifact GROUP BY 1, 2, 3),
+first_success AS (
+	SELECT *, row_number() OVER (PARTITION BY ecosystem, package, version ORDER BY created ASC, run_id ASC) AS rn
+	FROM completed WHERE success),
+last_attempt AS (
+	SELECT *, row_number() OVER (PARTITION BY ecosystem, package, version ORDER BY created DESC, run_id DESC) AS rn
+	FROM completed)
+SELECT g.ecosystem, g.package, g.version,
+	NULL AS published_at,
+	g.first_attempted_at, fs.created AS first_succeeded_at,
+	la.created AS last_attempted_at, la.status AS last_status,
+	g.attempts, a.artifacts_attempted, a.artifacts_succeeded,
+	a.artifacts_attempted > 0 AND a.artifacts_succeeded = a.artifacts_attempted AS current,
+	fs.mechanism AS first_success_mechanism, fs.executor_version AS first_success_executor,
+	la.executor_version AS last_executor,
+	a.any_flaky AS flaky
+FROM per_version g
+JOIN artifacts a ON a.ecosystem = g.ecosystem AND a.package = g.package AND a.version = g.version
+LEFT JOIN first_success fs ON fs.ecosystem = g.ecosystem AND fs.package = g.package AND fs.version = g.version AND fs.rn = 1
+LEFT JOIN last_attempt la ON la.ecosystem = g.ecosystem AND la.package = g.package AND la.version = g.version AND la.rn = 1
+ORDER BY 1, 2, 3`
+
+// topGapsQuery lists packages whose latest version is not current, capped
+// at topGapsPerEcosystem rows per ecosystem. Latest is chosen by ordering
+// versions with the version_approx_compare collation, not the attempt order, so a
+// backfilled old version is never taken as newest. score, score_percentile,
+// and dependents are zero until signals are ingested, so rows order by
+// attempt count for now.
+const topGapsQuery = `
+WITH ranked AS (
+	SELECT *, row_number() OVER (PARTITION BY ecosystem, package ORDER BY version COLLATE version_approx_compare DESC) AS vrank
+	FROM version_stats),
+built_besides AS (
+	SELECT ecosystem, package, max(artifacts_succeeded > 0) AS any
+	FROM ranked WHERE vrank > 1 GROUP BY 1, 2),
+gaps AS (
+	SELECT l.ecosystem, l.package, l.version AS latest_version,
+		CASE WHEN coalesce(b.any, 0) OR l.artifacts_succeeded > 0 THEN '` + GapReasonStale + `'
+			WHEN l.last_status = 'FAILURE' THEN '` + GapReasonMismatch + `'
+			ELSE '` + GapReasonError + `' END AS reason,
+		l.last_status, l.last_attempted_at, l.attempts,
+		0.0 AS score, 0.0 AS score_percentile, 0 AS dependents
+	FROM ranked l LEFT JOIN built_besides b ON b.ecosystem = l.ecosystem AND b.package = l.package
+	WHERE l.vrank = 1 AND NOT l.current)
+SELECT ecosystem, package, latest_version, reason, last_status, last_attempted_at,
+	attempts, score, score_percentile, dependents
+FROM (SELECT *, row_number() OVER (PARTITION BY ecosystem ORDER BY score DESC, attempts DESC, package) AS n FROM gaps)
+WHERE n <= ` + topGapsPerEcosystem + `
+ORDER BY ecosystem, score DESC, attempts DESC, package`
+
+// coverageWeeklyQuery aggregates version_stats into one row per
+// (ecosystem, week): cumulative package counts as of the end of each week,
+// considering only versions first attempted by then and taking each
+// package's latest such version by the version_approx_compare collation. Weeks start
+// Monday and run from each ecosystem's first attempt to its last.
+// weighted_coverage and the freshness columns are zero until usage signals
+// and published_at are available.
+const coverageWeeklyQuery = `
+WITH bounds AS (
+	SELECT ecosystem, min(first_attempted_at) AS lo, max(last_attempted_at) AS hi
+	FROM version_stats WHERE first_attempted_at IS NOT NULL GROUP BY 1),
+weeks(ecosystem, week, hi) AS (
+	SELECT ecosystem, date(lo, '-' || ((strftime('%w', lo) + 6) % 7) || ' days'), hi FROM bounds
+	UNION ALL
+	SELECT ecosystem, date(week, '+7 days'), hi FROM weeks WHERE date(week, '+7 days') <= date(hi)),
+vis AS (
+	SELECT w.week, v.*,
+		row_number() OVER (PARTITION BY w.week, v.package ORDER BY v.version COLLATE version_approx_compare DESC) AS vrank
+	FROM weeks w JOIN version_stats v ON v.ecosystem = w.ecosystem
+	WHERE v.first_attempted_at < date(w.week, '+7 days')),
+pkgs AS (
+	SELECT ecosystem, week, package,
+		max(artifacts_succeeded > 0 AND first_succeeded_at < date(week, '+7 days')) AS ever_built
+	FROM vis GROUP BY 1, 2, 3),
+latest AS (SELECT * FROM vis WHERE vrank = 1),
+prev AS (SELECT * FROM vis WHERE vrank = 2),
+funnel AS (
+	SELECT p.ecosystem, p.week,
+		count(*) AS packages_attempted,
+		sum(p.ever_built) AS packages_ever_built,
+		sum(l.current AND l.first_succeeded_at < date(p.week, '+7 days')) AS packages_current,
+		sum(p.ever_built AND NOT (l.current AND l.first_succeeded_at < date(p.week, '+7 days'))) AS packages_stale,
+		sum(l.first_attempted_at >= p.week AND l.first_attempted_at < date(p.week, '+7 days')
+			AND l.artifacts_succeeded = 0 AND coalesce(pr.artifacts_succeeded, 0) > 0) AS newly_broken,
+		sum(l.first_succeeded_at >= p.week AND l.first_succeeded_at < date(p.week, '+7 days')
+			AND l.current AND pr.package IS NOT NULL AND NOT coalesce(pr.current, 0)) AS newly_fixed
+	FROM pkgs p
+	JOIN latest l ON l.ecosystem = p.ecosystem AND l.week = p.week AND l.package = p.package
+	LEFT JOIN prev pr ON pr.ecosystem = p.ecosystem AND pr.week = p.week AND pr.package = p.package
+	GROUP BY 1, 2),
+weekly AS (
+	SELECT v.ecosystem, w.week,
+		count(*) AS versions_attempted, sum(v.flaky) AS flaky_versions
+	FROM weeks w JOIN version_stats v ON v.ecosystem = w.ecosystem
+	WHERE v.first_attempted_at >= w.week AND v.first_attempted_at < date(w.week, '+7 days')
+	GROUP BY 1, 2)
+SELECT f.ecosystem, f.week,
+	f.packages_attempted, f.packages_ever_built, f.packages_current, f.packages_stale,
+	CASE WHEN f.packages_attempted > 0 THEN 1.0 * f.packages_current / f.packages_attempted ELSE 0 END AS coverage,
+	0.0 AS weighted_coverage,
+	f.newly_broken, f.newly_fixed,
+	coalesce(wk.versions_attempted, 0) AS versions_attempted,
+	coalesce(wk.flaky_versions, 0) AS flaky_versions,
+	0 AS versions_published, 0.0 AS fresh_p50_hours, 0.0 AS fresh_p95_hours, 0.0 AS fresh_72h_pct
+FROM funnel f
+LEFT JOIN weekly wk ON wk.ecosystem = f.ecosystem AND wk.week = f.week
 ORDER BY 1, 2`
 
 // Tables is the registry of snapshot tables and the single declaration of
@@ -327,5 +465,8 @@ func Tables() []docdb.TableDef {
 		},
 		{Name: TableCostObservations, Query: costObservationsQuery, Indexes: [][]string{{"ecosystem", "package"}, {"source"}, {"timestamp"}}},
 		{Name: TableEcosystemDaily, Query: ecosystemDailyQuery, Indexes: [][]string{{"ecosystem", "day"}}},
+		{Name: TableVersionStats, Query: versionStatsQuery, Indexes: [][]string{{"ecosystem", "package", "version"}, {"last_attempted_at"}}},
+		{Name: TableCoverageWeekly, Query: coverageWeeklyQuery, Indexes: [][]string{{"ecosystem", "week"}}},
+		{Name: TableTopGaps, Query: topGapsQuery, Indexes: [][]string{{"ecosystem"}}},
 	}
 }
