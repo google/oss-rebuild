@@ -144,6 +144,7 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 		State:          schema.ScratchExecPending,
 		OutURI:         outURIFor(deps.OutputBucket, scratch.ObliviousID, opID),
 		CreatedAt:      time.Now().UTC(),
+		Updated:        time.Now().UTC(),
 	}
 	if err := deps.Execs.Insert(ctx, exec); err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "execs insert"))
@@ -453,6 +454,7 @@ func finalFromStatus(exec schema.ScratchExec, status *scratchworkerservice.ExecS
 	final := exec
 	final.ExitCode = status.ExitCode
 	final.StartedAt = status.StartedAt
+	final.Updated = now
 	if !status.FinishedAt.IsZero() {
 		final.FinishedAt = status.FinishedAt
 	} else {
@@ -493,6 +495,7 @@ func finalize(ctx context.Context, execs db.ScratchExecs, exec schema.ScratchExe
 	exec.State = schema.ScratchExecLost
 	exec.Error = st
 	exec.FinishedAt = time.Now().UTC()
+	exec.Updated = exec.FinishedAt
 	if err := execs.Update(ctx, exec); err != nil {
 		return exec, errors.Wrap(err, "finalize update")
 	}

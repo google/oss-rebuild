@@ -408,6 +408,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		RunID:           req.ID,
 		Started:         started,
 		Created:         time.Now().UTC(),
+		Updated:         time.Now().UTC(),
 	}
 	if err := deps.Attempts.Upsert(ctx, attempt); err != nil {
 		return nil, errors.Wrap(err, "initial write to db")
@@ -416,6 +417,7 @@ func RebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 	finish := func(status schema.RebuildStatus) {
 		attempt.Status = status
 		attempt.Finished = time.Now().UTC()
+		attempt.Updated = time.Now().UTC()
 		// We use a background context for the terminal write to ensure it completes
 		// even if the request context is cancelled.
 		if err := deps.Attempts.Update(context.Background(), attempt); err != nil {

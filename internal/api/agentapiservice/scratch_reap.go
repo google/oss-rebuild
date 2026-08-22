@@ -142,6 +142,7 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		exec.State = next
 		exec.Error = errStatus
 		exec.FinishedAt = now
+		exec.Updated = now
 		if err := deps.Execs.Update(ctx, exec); err != nil {
 			log.Printf("reap finalize op %s: %v", exec.ID, err)
 			continue

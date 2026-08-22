@@ -29,6 +29,8 @@ var (
 	ErrAlreadyExists = errors.New("already exists")
 )
 
+// TODO: Fold Updated stamping into the resource layer for every mutable resource.
+
 // Type aliases for the resources currently defined.
 type (
 	Runs     = Resource[schema.Run, string]

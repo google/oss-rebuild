@@ -155,14 +155,17 @@ type ScratchExec struct {
 	// broker at create (request value, or the configured default when the
 	// request omits it). The reaper derives each op's hard deadline from it.
 	// Zero means unbounded: the reaper warns and leaves the scratch up.
-	TimeoutSeconds int              `json:"timeout_seconds,omitempty" firestore:"timeout_seconds,omitempty"`
-	OutURI         string           `json:"out_uri,omitempty" firestore:"out_uri,omitempty"`
-	CreatedAt      time.Time        `json:"created_at,omitzero" firestore:"created_at,omitempty"`
-	StartedAt      time.Time        `json:"started_at,omitzero" firestore:"started_at,omitempty"`
-	FinishedAt     time.Time        `json:"finished_at,omitzero" firestore:"finished_at,omitempty"`
-	State          ScratchExecState `json:"state" firestore:"state"`
-	ExitCode       int              `json:"exit_code,omitempty" firestore:"exit_code,omitempty"`
-	Error          *Status          `json:"error,omitempty" firestore:"error,omitempty"`
+	TimeoutSeconds int       `json:"timeout_seconds,omitempty" firestore:"timeout_seconds,omitempty"`
+	OutURI         string    `json:"out_uri,omitempty" firestore:"out_uri,omitempty"`
+	CreatedAt      time.Time `json:"created_at,omitzero" firestore:"created_at,omitempty"`
+	StartedAt      time.Time `json:"started_at,omitzero" firestore:"started_at,omitempty"`
+	FinishedAt     time.Time `json:"finished_at,omitzero" firestore:"finished_at,omitempty"`
+	// Updated is the last broker write observed on the *server*, not the worker.
+	// This is in contrast with the *At times above.
+	Updated  time.Time        `json:"updated,omitzero" firestore:"updated,omitempty"`
+	State    ScratchExecState `json:"state" firestore:"state"`
+	ExitCode int              `json:"exit_code,omitempty" firestore:"exit_code,omitempty"`
+	Error    *Status          `json:"error,omitempty" firestore:"error,omitempty"`
 }
 
 // ScratchExecResult is the API payload inside derived from ScratchExec.

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/longrunning"
@@ -126,6 +127,7 @@ func CreateRebuildOp(
 			Artifact:  req.Artifact,
 			RunID:     req.ID,
 			Status:    schema.RebuildStatusRunning,
+			Updated:   time.Now().UTC(),
 		}
 
 		if err := deps.Attempts.Insert(ctx, attempt); err != nil {
@@ -136,6 +138,7 @@ func CreateRebuildOp(
 			// Best-effort mark the attempt as failed.
 			attempt.Status = schema.RebuildStatusError
 			attempt.Message = "failed to launch rebuild job: " + err.Error()
+			attempt.Updated = time.Now().UTC()
 			_ = deps.Attempts.Update(ctx, attempt)
 			return nil, err
 		}

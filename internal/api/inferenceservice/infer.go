@@ -6,6 +6,7 @@ package inferenceservice
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/db"
@@ -83,6 +84,7 @@ func recordRepoMetrics(ctx context.Context, store db.RepoMetrics, rcfg rebuild.R
 		Commits:    commits,
 		Head:       ref.Hash().String(),
 		MeasuredAt: rcfg.FetchedAt,
+		Updated:    time.Now().UTC(),
 	}
 	return errors.Wrap(store.Upsert(ctx, m), "upserting")
 }
