@@ -1,0 +1,135 @@
+<!--
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+<style>
+    .asof { color: var(--muted); }
+    .tabs a.active { color: var(--heading); border-bottom-color: var(--accent); }
+    .cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 12px; }
+    .info { display: inline-block; position: relative; margin-left: 5px; width: 1.15em; height: 1.15em; line-height: 1.15em; border-radius: 50%; border: 1px solid var(--border); background: var(--fill); color: var(--muted); font-size: 0.72rem; font-weight: 600; text-align: center; vertical-align: middle; cursor: help; }
+    .info::after { content: attr(data-tip); position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); width: max-content; max-width: 22em; padding: 6px 10px; border-radius: 4px; background: var(--heading); color: var(--bg); font-size: 0.8rem; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; visibility: hidden; z-index: 1; }
+    .info:hover::after, .info:focus-visible::after { visibility: visible; }
+    .info:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    th.group { text-align: center; color: var(--muted); font-weight: 400; }
+    .barcell { width: 25%; min-width: 120px; }
+    .bar { background-color: var(--accent); height: 12px; border-radius: 2px; min-width: 1px; }
+</style>
+
+{{define "def"}}<span class="info" tabindex="0" data-tip="{{.}}">?</span>{{end}}
+<h2>Coverage</h2>
+{{if not .Loaded}}
+<p>No analytics snapshot loaded. Start the dashboard with
+<code>-rundex=&lt;gs://…|file://…&gt;</code>.</p>
+{{else}}
+<p class="asof">Snapshot as of {{.AsOf}}</p>
+<div class="tabs">
+    <a class="tab{{if not .Eco}} active{{end}}" href="/coverage">All</a>
+    {{$sel := .Eco}}
+    {{range .Ecos}}<a class="tab{{if eq .Ecosystem $sel}} active{{end}}" href="/coverage?eco={{.Ecosystem}}">{{.Ecosystem}}</a>
+    {{end}}
+</div>
+{{if not .Detail}}
+{{if not .Ecos}}
+<p>No attempts, signals, or campaigns in the snapshot.</p>
+{{else}}
+<table>
+    <tr>
+        <th></th>
+        <th class="group" colspan="5">Packages</th>
+        <th class="group" colspan="4">Campaigns{{template "def" "One campaign per package version."}}</th>
+    </tr>
+    <tr>
+        <th>Ecosystem</th>
+        <th>In scope{{template "def" "Packages the published signals rank, the onboarding goal."}}</th>
+        <th>Started{{template "def" "In scope, with a campaign or an attempt."}}</th>
+        <th>Reproduced{{template "def" "Started, and attested at the latest version attempted."}}</th>
+        <th>Coverage{{template "def" "Reproduced over in scope."}}</th>
+        <th>Weighted{{template "def" "Coverage, weighting each package by its score."}}</th>
+        <th>Queued{{template "def" "Campaigns waiting for dispatch at their next stage."}}</th>
+        <th>In flight{{template "def" "Campaigns dispatched and awaiting an outcome."}}</th>
+        <th>Needs triage{{template "def" "Campaigns whose automated stages are exhausted, awaiting a person."}}</th>
+        <th>Done{{template "def" "Campaigns attested."}}</th>
+    </tr>
+    {{range .Ecos}}
+    <tr>
+        <td><a href="/coverage?eco={{.Ecosystem}}">{{.Ecosystem}}</a></td>
+        {{if .HasScope}}
+        <td>{{.InScope}}</td>
+        <td>{{.Started}}</td>
+        <td>{{.Reproduced}}</td>
+        <td>{{.CoveragePct}}%</td>
+        <td>{{.WeightedPct}}%</td>
+        {{else}}
+        <td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>
+        {{end}}
+        {{if .HasQueue}}
+        <td>{{.Queued}}</td>
+        <td>{{.InFlight}}</td>
+        <td>{{.NeedsTriage}}</td>
+        <td>{{.Done}}</td>
+        {{else}}
+        <td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>
+        {{end}}
+    </tr>
+    {{end}}
+</table>
+{{end}}
+{{else}}
+{{with .Detail}}
+<h3>Packages</h3>
+{{if .HasScope}}
+<div class="cards">
+    <div class="card"><div class="card-value">{{.InScope}}</div><div class="card-label">in scope{{template "def" "Packages the published signals rank, the onboarding goal."}}</div></div>
+    <div class="card"><div class="card-value">{{.Started}}</div><div class="card-label">started{{template "def" "In scope, with a campaign or an attempt."}}</div></div>
+    <div class="card"><div class="card-value">{{.Reproduced}}</div><div class="card-label">reproduced{{template "def" "Started, and attested at the latest version attempted."}}</div></div>
+    <div class="card"><div class="card-value">{{.CoveragePct}}%</div><div class="card-label">coverage{{template "def" "Reproduced over in scope."}}</div></div>
+    <div class="card"><div class="card-value">{{.WeightedPct}}%</div><div class="card-label">weighted by score{{template "def" "Coverage, weighting each package by its score."}}</div></div>
+</div>
+{{else}}
+<p>No published signals for {{.Ecosystem}}, so there is no scope to measure against.</p>
+{{end}}
+<h3>Campaigns{{template "def" "One campaign per package version. Done campaigns are listed under the stage that attested them."}}</h3>
+{{if .HasQueue}}
+<div class="cards">
+    <div class="card"><div class="card-value">{{.Queued}}</div><div class="card-label">queued{{template "def" "Campaigns waiting for dispatch at their next stage."}}</div></div>
+    <div class="card"><div class="card-value">{{.InFlight}}</div><div class="card-label">in flight{{template "def" "Campaigns dispatched and awaiting an outcome."}}</div></div>
+    <div class="card"><div class="card-value">{{.NeedsTriage}}</div><div class="card-label">needs triage{{template "def" "Campaigns whose automated stages are exhausted, awaiting a person."}}</div></div>
+    {{range .DoneByStage}}<div class="card"><div class="card-value">{{.Done}}</div><div class="card-label">done at {{.Stage}}</div></div>
+    {{end}}
+</div>
+{{else}}
+<p>No campaigns for {{.Ecosystem}}.</p>
+{{end}}
+{{if .Weeks}}
+<h3>Weekly{{template "def" "Cumulative through each week over the packages attempted by then."}}</h3>
+<table>
+    <tr>
+        <th>Week</th>
+        <th>Attempted{{template "def" "Packages with an attempt by the end of the week."}}</th>
+        <th>Reproduced{{template "def" "Attested at the latest version attempted by then."}}</th>
+        <th>Behind{{template "def" "An earlier version is attested but not the latest."}}</th>
+        <th>Share{{template "def" "Reproduced over attempted, so it moves as the queue reaches harder packages."}}</th>
+        <th class="barcell"></th>
+        <th>Weighted{{template "def" "Share, weighting each package by its score."}}</th>
+        <th>Newly broken{{template "def" "Latest version failed that week where the previous one had built."}}</th>
+    </tr>
+    {{range .Weeks}}
+    <tr>
+        <td>{{.Week}}</td>
+        <td>{{.Attempted}}</td>
+        <td>{{.Reproduced}}</td>
+        <td>{{.Behind}}</td>
+        <td>{{.SharePct}}%</td>
+        <td class="barcell"><div class="bar" style="width: {{.SharePct}}%"></div></td>
+        <td>{{if .HasWeighted}}{{.WeightedPct}}%{{else}}&mdash;{{end}}</td>
+        <td>{{.NewlyBroken}}</td>
+    </tr>
+    {{end}}
+</table>
+{{end}}
+{{end}}
+{{end}}
+{{end}}
+</body>
+</html>

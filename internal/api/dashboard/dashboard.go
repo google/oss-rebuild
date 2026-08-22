@@ -34,6 +34,8 @@ var (
 	packagesHTML string
 	//go:embed resources.gohtml
 	resourcesHTML string
+	//go:embed coverage.gohtml
+	coverageHTML string
 	//go:embed dashboard.css
 	css string
 	//go:embed theme.css
@@ -64,6 +66,7 @@ var (
 	LogsTmpl      *template.Template
 	PackagesTmpl  *template.Template
 	ResourcesTmpl *template.Template
+	CoverageTmpl  *template.Template
 )
 
 func init() {
@@ -74,6 +77,7 @@ func init() {
 	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
 	PackagesTmpl = template.Must(template.New("packages").Parse(headerHTML + packagesHTML))
 	ResourcesTmpl = template.Must(template.New("resources").Parse(headerHTML + resourcesHTML))
+	CoverageTmpl = template.Must(template.New("coverage").Parse(headerHTML + coverageHTML))
 }
 
 var packagePathEncoding = rebuild.FilesystemTargetEncoding
