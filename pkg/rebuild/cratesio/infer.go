@@ -262,10 +262,12 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 	// rust_version is the crate's minimum supported Rust version, not
 	// necessarily the toolchain used to publish it.
-	if declared := vmeta.RustVersion; declared != "" {
+	declaredRustVersion := vmeta.RustVersion
+	if declared := declaredRustVersion; declared != "" {
 		if strings.Count(declared, ".") == 1 {
 			declared += ".0"
 		}
+		declaredRustVersion = declared
 		if semver.Cmp(rustVersion, declared) < 0 {
 			rustVersion = declared
 		}
@@ -290,6 +292,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 	// Extract package names from Cargo.lock for git-based index support
 	var indexCommit string
+	var lockfileLo string
 	var packageNames []string
 	if lockContent != nil && semver.Cmp(rustVersion, "1.34.0") >= 0 {
 		lf, err := cargolock.ParseLockfile(string(lockContent))
@@ -297,7 +300,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			return nil, errors.Wrap(err, "[INTERNAL] failed to parse Cargo.lock")
 		}
 		// Use lock file format version to refine the Rust version lower bound.
-		lockfileLo := lockfileRustVersionFloor(lf.FormatVersion)
+		lockfileLo = lockfileRustVersionFloor(lf.FormatVersion)
 		if lockfileLo != "" && semver.Cmp(rustVersion, lockfileLo) < 0 {
 			rustVersion = lockfileLo
 		}
@@ -333,6 +336,25 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		}
 		slices.Sort(packageNames)
 	}
+	toolchainResolved := false
+	if sourceVersion, found, err := findPinnedStableToolchain(tree, dir); err != nil {
+		return nil, errors.Wrap(err, "reading repository toolchain")
+	} else if found {
+		latestAtPublish, err := reg.RustVersionAt(vmeta.Created)
+		if err != nil {
+			return nil, errors.Wrap(err, "resolving repository toolchain")
+		}
+		hasMUSLBuild, releaseErr := reg.HasMUSLBuild(sourceVersion)
+		if releaseErr == nil && hasMUSLBuild &&
+			semver.Cmp(sourceVersion, latestAtPublish) <= 0 &&
+			(declaredRustVersion == "" || semver.Cmp(sourceVersion, declaredRustVersion) >= 0) &&
+			(minVer == "" || semver.Cmp(sourceVersion, minVer) >= 0) &&
+			(maxVer == "" || semver.Cmp(sourceVersion, maxVer) <= 0) &&
+			(lockfileLo == "" || semver.Cmp(sourceVersion, lockfileLo) >= 0) {
+			rustVersion = sourceVersion
+			toolchainResolved = true
+		}
+	}
 	// TODO: This should be moved to build-time since strategies are intended to be, at least notionally, distro-independent.
 	hasMUSLBuild, err := reg.HasMUSLBuild(rustVersion)
 	if err != nil {
@@ -350,10 +372,11 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			Ref:  ref,
 			Dir:  dir,
 		},
-		RustVersion:     rustVersion,
-		ExcludeLockfile: excludeLockfile,
-		RegistryCommit:  indexCommit,
-		PackageNames:    packageNames,
+		RustVersion:       rustVersion,
+		ToolchainResolved: toolchainResolved,
+		ExcludeLockfile:   excludeLockfile,
+		RegistryCommit:    indexCommit,
+		PackageNames:      packageNames,
 	}, nil
 }
 
