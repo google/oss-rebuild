@@ -45,8 +45,10 @@ jobs:
             | tar -xz -C "${HUGO_DIR}"
           echo "${HUGO_DIR}" >> "${GITHUB_PATH}"
       - name: Build the site
+        env:
+          PAGES_BASE_URL: ${{ steps.pages.outputs.base_url }}
         run: |
-          hugo --gc --minify
+          hugo --gc --minify --baseURL "${PAGES_BASE_URL}/"
       - name: Upload artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
