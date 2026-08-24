@@ -8,10 +8,7 @@ on:
     branches: ["main"]
     paths: ["docs/**", ".github/workflows/gh-pages.yml"]
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: {} # granted per-job
 
 # Allow one run at a time. Skip queued runs. Let existing run finish.
 concurrency:
@@ -27,6 +24,9 @@ jobs:
   build:
     if: github.repository == 'google/oss-rebuild' # Only run in the upstream repo
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # actions/checkout
+      pages: read # actions/configure-pages
     env:
       HUGO_VERSION: 0.152.2
     steps:
@@ -60,6 +60,9 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    permissions:
+      pages: write # actions/deploy-pages
+      id-token: write # actions/deploy-pages OIDC token
     needs: build
     steps:
       - name: Deploy to GitHub Pages
