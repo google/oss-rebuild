@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -188,8 +189,8 @@ func TestInferStrategy(t *testing.T) {
 			}
 			target.Artifact = ArtifactName(target)
 			rcfg := rebuild.RepoConfig{
-				Repository: repo.Repository,
-				URI:        "https://github.com/test-org/test-gem",
+				Repo: gitx.Repo{Repository: repo.Repository},
+				URI:  "https://github.com/test-org/test-gem",
 			}
 			// Mock the registry: Artifact call (for gem spec) and Version call.
 			client := httpxtest.MockClient{

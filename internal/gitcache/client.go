@@ -87,7 +87,7 @@ func (c Client) GetLinkWithRef(repo string, contains time.Time, ref string) (uri
 }
 
 // Clone provides an interface to clone a git repo using the GitCache.
-func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
+func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*gitx.Repo, error) {
 	if opt.Auth != nil || opt.RemoteName != "" || opt.Depth != 0 || opt.RecurseSubmodules != 0 || opt.Tags != git.InvalidTagMode || opt.InsecureSkipTLS || len(opt.CABundle) > 0 {
 		// No support for non-trivial opts aside from NoCheckout, ReferenceName, and SingleBranch.
 		return nil, errors.New("Unsupported opt")
@@ -121,6 +121,8 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.Wrap(errors.New(resp.Status), "fetching cached repo")
 	}
+	// NOTE: The repo's FetchedAt reflects the served cache entry's fetch time.
+	fetchedAt, _ := http.ParseTime(resp.Header.Get("Last-Modified"))
 	gr, err := gzip.NewReader(resp.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "gzip read error")
@@ -150,7 +152,7 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 			return nil, errors.Wrap(err, "checkout error")
 		}
 	}
-	return repo, nil
+	return &gitx.Repo{Repository: repo, FetchedAt: fetchedAt}, nil
 }
 
 var _ gitx.CloneFunc = Client{}.Clone

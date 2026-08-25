@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -21,12 +22,17 @@ import (
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 )
 
 // bigContent exceeds go-git's 16KiB small-object threshold, so packfile reads
 // will access it lazily via the backed storer.
 var bigContent = strings.Repeat("x", 64*1024)
+
+// entryFetchTime is the Last-Modified the fixture cache serves its tarball
+// with, standing in for the entry's upstream fetch time.
+var entryFetchTime = time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 
 var testRepoYAML = `
 commits:
@@ -46,7 +52,7 @@ func setupCloneTestServer(t *testing.T, yamlSpec string) Client {
 	t.Helper()
 	// Stand in for the network clone: build the repo from YAML directly into
 	// the storer populateCache provides.
-	cloneFunc := func(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
+	cloneFunc := func(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*gitx.Repo, error) {
 		repo, err := gitxtest.CreateRepoFromYAML(yamlSpec, &gitxtest.RepositoryOptions{
 			Storer:   s,
 			Worktree: memfs.New(),
@@ -63,7 +69,7 @@ func setupCloneTestServer(t *testing.T, yamlSpec string) Client {
 		if sf, ok := s.(*filesystem.Storage); ok {
 			sf.Filesystem().Remove("index")
 		}
-		return repo.Repository, nil
+		return &gitx.Repo{Repository: repo.Repository}, nil
 	}
 	cacheDir := t.TempDir()
 	srv := &Server{backend: &localBackend{baseDir: cacheDir}, cloneFunc: cloneFunc}
@@ -86,6 +92,7 @@ func setupCloneTestServer(t *testing.T, yamlSpec string) Client {
 	})
 	mux.HandleFunc("/tarball", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/gzip")
+		w.Header().Set("Last-Modified", entryFetchTime.Format(http.TimeFormat))
 		w.Write(tarballBytes)
 	})
 	u, err := url.Parse(ts.URL)
@@ -139,6 +146,9 @@ func TestClientClone(t *testing.T) {
 			})
 			if err != nil {
 				t.Fatalf("Clone() error = %v", err)
+			}
+			if !repo.FetchedAt.Equal(entryFetchTime) {
+				t.Errorf("FetchedAt = %v, want %v", repo.FetchedAt, entryFetchTime)
 			}
 			// Verify HEAD is resolvable.
 			head, err := repo.Head()

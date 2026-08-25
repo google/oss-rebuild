@@ -6,6 +6,7 @@ package inferenceservice
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/db"
@@ -48,7 +49,8 @@ func TestRecordRepoMetrics(t *testing.T) {
 	}
 	store := db.NewMemoryRepoMetrics()
 	// The non-canonical ssh alias exercises canonicalization on write.
-	rcfg := rebuild.RepoConfig{Repository: repo.Repository, URI: "git@github.com:Org/Repo.git"}
+	fetched := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	rcfg := rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, FetchedAt: fetched}, URI: "git@github.com:Org/Repo.git"}
 	if err := recordRepoMetrics(context.Background(), store, rcfg); err != nil {
 		t.Fatalf("recordRepoMetrics: %v", err)
 	}
@@ -68,15 +70,15 @@ func TestRecordRepoMetrics(t *testing.T) {
 	if got.Bytes <= 0 {
 		t.Errorf("Bytes = %d; want > 0", got.Bytes)
 	}
-	if got.MeasuredAt.IsZero() {
-		t.Error("MeasuredAt is zero; want a timestamp")
+	if !got.MeasuredAt.Equal(fetched) {
+		t.Errorf("MeasuredAt = %v; want the config's FetchedAt %v", got.MeasuredAt, fetched)
 	}
 }
 
 func TestRecordRepoMetricsBadURI(t *testing.T) {
 	repo := newTestRepo(t)
 	store := db.NewMemoryRepoMetrics()
-	if err := recordRepoMetrics(context.Background(), store, rebuild.RepoConfig{Repository: repo.Repository, URI: ""}); err == nil {
+	if err := recordRepoMetrics(context.Background(), store, rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, URI: ""}); err == nil {
 		t.Error("recordRepoMetrics(empty URI) = nil error; want error")
 	}
 }

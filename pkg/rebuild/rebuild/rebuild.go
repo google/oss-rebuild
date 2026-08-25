@@ -7,16 +7,15 @@ import (
 	"context"
 	"io"
 
-	"github.com/go-git/go-git/v5"
 	"github.com/google/oss-rebuild/internal/gitx"
 )
 
 // RepoConfig describes the repo currently being used.
 type RepoConfig struct {
-	*git.Repository
-	URI    string
-	Dir    string
-	RefMap map[string]string
+	gitx.Repo // NOTE: by value so Repository access on a zero RepoConfig is nil and not panic
+	URI       string
+	Dir       string
+	RefMap    map[string]string
 }
 
 // Rebuilder defines the operations used to rebuild an ecosystem's packages.

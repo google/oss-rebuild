@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
@@ -28,12 +29,18 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Repo is a cloned repository and its clone-time provenance.
+type Repo struct {
+	*git.Repository
+	FetchedAt time.Time // when the contents were fetched from the remote. Zero when unrecorded (reused local repo)
+}
+
 // CloneFunc defines an interface for cloning a git repo.
-type CloneFunc func(context.Context, storage.Storer, billy.Filesystem, *git.CloneOptions) (*git.Repository, error)
+type CloneFunc func(context.Context, storage.Storer, billy.Filesystem, *git.CloneOptions) (*Repo, error)
 
 // Clone performs a clone operation, using native git if available,
 // otherwise falling back to go-git.
-func Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
+func Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*Repo, error) {
 	if NativeGitAvailable() && opt.Auth == nil {
 		// NOTE: Native git remains several times faster than go-git even for
 		// non-OS-backed storers, where NativeClone stages the clone on disk
@@ -46,7 +53,11 @@ func Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.
 	} else {
 		log.Println("No git binary found. Cloning using go-git")
 	}
-	return git.CloneContext(ctx, s, fs, opt)
+	repo, err := git.CloneContext(ctx, s, fs, opt)
+	if err != nil {
+		return nil, err
+	}
+	return &Repo{Repository: repo, FetchedAt: time.Now().UTC()}, nil
 }
 
 var _ CloneFunc = Clone
@@ -91,7 +102,7 @@ func classifyCloneError(output []byte, execErr error) error {
 }
 
 // Reuse reuses the existing git repo in Storer and Filesystem.
-func Reuse(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
+func Reuse(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*Repo, error) {
 	if opt.Auth != nil || opt.RemoteName != "" || opt.ReferenceName != "" || opt.SingleBranch || opt.Depth != 0 || opt.Tags != git.InvalidTagMode || opt.InsecureSkipTLS || len(opt.CABundle) > 0 {
 		// No support for non-trivial opts aside from NoCheckout.
 		return nil, errors.New("Unsupported opt")
@@ -150,7 +161,7 @@ func Reuse(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "Failed to checkout")
 	}
-	return repo, nil
+	return &Repo{Repository: repo}, nil
 }
 
 var _ CloneFunc = Reuse
@@ -187,7 +198,7 @@ func isOSFilesystem(bfs billy.Filesystem) bool {
 // NativeClone clones a git repository using the native `git` command.
 // If the target storage is not OS-backed, the results are first staged on disk.
 // Supports both filesystem.Storage and memory.Storage.
-func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*git.Repository, error) {
+func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt *git.CloneOptions) (*Repo, error) {
 	if opt.Auth != nil {
 		return nil, errors.New("unsupported clone option for native git: Auth")
 	}
@@ -303,7 +314,7 @@ func NativeClone(ctx context.Context, s storage.Storer, fs billy.Filesystem, opt
 			return nil, errors.Wrap(err, "checking out worktree")
 		}
 	}
-	return repo, nil
+	return &Repo{Repository: repo, FetchedAt: time.Now().UTC()}, nil
 }
 
 var _ CloneFunc = NativeClone
