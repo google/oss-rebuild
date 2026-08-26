@@ -18,6 +18,7 @@ import (
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/scheduler"
+	"github.com/ncruces/go-sqlite3"
 )
 
 var testCfg = enqueueConfig{Ecosystem: "npm", MaxVersions: 10,
@@ -29,6 +30,69 @@ func versionsOf(cs []scheduler.Campaign) []string {
 		out = append(out, c.Version)
 	}
 	return out
+}
+
+func TestValidateSelectors(t *testing.T) {
+	base := enqueueConfig{Project: "p", Ecosystem: "npm", SignalsDB: "file:///signals"}
+	for _, tc := range []struct {
+		name string
+		set  func(*enqueueConfig)
+		ok   bool
+	}{
+		{"NamedPackages", func(c *enqueueConfig) { c.FromPackages = "lodash, express" }, true},
+		{"HeadWithCap", func(c *enqueueConfig) { c.MaxPackages = 200 }, true},
+		{"BoundedHead", func(c *enqueueConfig) { c.FromTop = 1000 }, true},
+		{"NoPoolNoCap", func(*enqueueConfig) {}, false},
+		{"TwoPools", func(c *enqueueConfig) { c.FromPackages = "lodash"; c.FromTop = 1000 }, false},
+		{"NoDatabase", func(c *enqueueConfig) { c.SignalsDB = ""; c.MaxPackages = 200 }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := base
+			tc.set(&cfg)
+			if err := cfg.Validate(); (err == nil) != tc.ok {
+				t.Errorf("Validate() = %v, want ok=%v", err, tc.ok)
+			}
+		})
+	}
+}
+
+func TestPool(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "signals.db")
+	if _, err := signals.Build(path, []signals.PrevalenceRecord{
+		{Ecosystem: "npm", Package: "b", Prevalence: 0.5},
+		{Ecosystem: "npm", Package: "a", Prevalence: 0.9},
+		{Ecosystem: "npm", Package: "c", Prevalence: 0.2},
+		{Ecosystem: "pypi", Package: "d", Prevalence: 0.8},
+	}, signals.Meta{}); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	sdb, err := sqlite3.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sdb.Close()
+	for _, tc := range []struct {
+		name string
+		cfg  enqueueConfig
+		want []string
+	}{
+		// Named packages pass through as given, ranked or not.
+		{"Named", enqueueConfig{Ecosystem: "npm", FromPackages: "b,zzz"}, []string{"b", "zzz"}},
+		// The head comes in score order, bounded by --from-top when set and
+		// whole otherwise.
+		{"BoundedHead", enqueueConfig{Ecosystem: "npm", FromTop: 2}, []string{"a", "b"}},
+		{"WholeHead", enqueueConfig{Ecosystem: "npm", MaxPackages: 5}, []string{"a", "b", "c"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.cfg.pool(sdb)
+			if err != nil {
+				t.Fatalf("pool: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("pool mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 func TestOpenSignalDB(t *testing.T) {
