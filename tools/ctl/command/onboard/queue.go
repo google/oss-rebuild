@@ -35,6 +35,8 @@ type enqueueConfig struct {
 	Ecosystem         string
 	SignalsDB         string
 	FromPackages      string
+	FromTop           int
+	MaxPackages       int
 	MaxVersions       int
 	FreshnessK        float64
 	FreshnessTauHours float64
@@ -50,8 +52,12 @@ func (c enqueueConfig) Validate() error {
 	if c.SignalsDB == "" {
 		return errors.New("signals-db is required")
 	}
-	if len(c.packages()) == 0 {
-		return errors.New("from-packages is required")
+	named := len(c.packages()) > 0
+	if named && c.FromTop > 0 {
+		return errors.New("from-packages and from-top are mutually exclusive")
+	}
+	if !named && c.FromTop <= 0 && c.MaxPackages <= 0 {
+		return errors.New("one of from-packages, from-top, or max-packages is required")
 	}
 	return nil
 }
@@ -67,6 +73,24 @@ func (c enqueueConfig) packages() []string {
 	return out
 }
 
+// pool lists the packages a pass considers, in the order it tries them: the
+// named packages as given, or the ranked head in score order, bounded by
+// --from-top when set.
+func (c enqueueConfig) pool(sdb *sqlite3.Conn) ([]string, error) {
+	if pkgs := c.packages(); len(pkgs) > 0 {
+		return pkgs, nil
+	}
+	head, err := signals.TopPackages(sdb, c.Ecosystem, c.FromTop)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(head))
+	for _, s := range head {
+		out = append(out, s.Package)
+	}
+	return out, nil
+}
+
 func enqueueHandler(ctx context.Context, cfg enqueueConfig, deps *Deps) (*act.NoOutput, error) {
 	fire, err := firestore.NewClient(ctx, cfg.Project)
 	if err != nil {
@@ -80,9 +104,16 @@ func enqueueHandler(ctx context.Context, cfg enqueueConfig, deps *Deps) (*act.No
 		return nil, errors.Wrap(err, "opening signal database")
 	}
 	defer cleanup()
+	pool, err := cfg.pool(sdb)
+	if err != nil {
+		return nil, errors.Wrap(err, "listing the pool")
+	}
 	now := time.Now().UTC()
 	var newPkgs, newVersions, tracked int
-	for _, pkg := range cfg.packages() {
+	for _, pkg := range pool {
+		if cfg.MaxPackages > 0 && newPkgs >= cfg.MaxPackages {
+			break
+		}
 		rows, err := signals.VersionSignals(sdb, cfg.Ecosystem, pkg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "reading versions of %s", pkg)
@@ -99,6 +130,11 @@ func enqueueHandler(ctx context.Context, cfg enqueueConfig, deps *Deps) (*act.No
 		tracked += skipped
 	}
 	fmt.Fprintf(deps.IO.Out, "enqueued %d version(s) of %d package(s) (%s); %d already tracked\n", newVersions, newPkgs, cfg.Ecosystem, tracked)
+	// The head is only as deep as the export's --top. Say so when a pass
+	// drawing from it ran out before its bounds were met.
+	if len(cfg.packages()) == 0 && ((cfg.FromTop > 0 && len(pool) < cfg.FromTop) || (cfg.MaxPackages > 0 && newPkgs < cfg.MaxPackages)) {
+		fmt.Fprintf(deps.IO.Err, "the signal database ranks only %d %s package(s): raise --top on the prevalence export and republish to expand past them\n", len(pool), cfg.Ecosystem)
+	}
 	return &act.NoOutput{}, nil
 }
 
@@ -190,8 +226,8 @@ func admit(eco rebuild.Ecosystem, pkg string, rows []signals.VersionSignal, cfg 
 func enqueueCommand() *cobra.Command {
 	cfg := enqueueConfig{}
 	cmd := &cobra.Command{
-		Use:   "enqueue --project <project> --ecosystem <eco> --signals-db <uri> --from-packages <names> [--max-versions N]",
-		Short: "Enqueue packages' ranked versions at the infer stage",
+		Use:   "enqueue --project <project> --ecosystem <eco> --signals-db <uri> (--from-packages <names> | [--from-top N] --max-packages N) [--max-versions N]",
+		Short: "Enqueue ranked versions of named packages or of the ranked head",
 		Args:  cobra.NoArgs,
 		RunE:  cli.RunE(&cfg, cli.SkipArgs[enqueueConfig], InitDeps, enqueueHandler),
 	}
@@ -199,7 +235,9 @@ func enqueueCommand() *cobra.Command {
 	set.StringVar(&cfg.Project, "project", "", "GCP project holding the onboarding Firestore data")
 	set.StringVar(&cfg.Ecosystem, "ecosystem", "", "the ecosystem (npm, pypi, cratesio, rubygems)")
 	set.StringVar(&cfg.SignalsDB, "signals-db", "", "URI the signal database publishes under, the source of versions and scores")
-	set.StringVar(&cfg.FromPackages, "from-packages", "", "comma-separated names of the packages to enqueue")
+	set.StringVar(&cfg.FromPackages, "from-packages", "", "comma-separated names of the packages to enqueue; exclusive with --from-top")
+	set.IntVar(&cfg.FromTop, "from-top", 0, "draw the pool from the N highest-scored packages; 0 = the whole ranked head")
+	set.IntVar(&cfg.MaxPackages, "max-packages", 0, "stop after this many newly covered packages; 0 = no cap")
 	set.IntVar(&cfg.MaxVersions, "max-versions", 10, "cap the versions enqueued per package, highest dispatch order first; 0 = all")
 	set.Float64Var(&cfg.FreshnessK, "freshness-k", scheduler.DefaultFreshnessK, "freshness boost coefficient k in 1+k*exp(-age/tau)")
 	set.Float64Var(&cfg.FreshnessTauHours, "freshness-tau-hours", scheduler.DefaultFreshnessTauHours, "freshness decay constant tau in hours")

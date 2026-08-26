@@ -163,3 +163,35 @@ func TestVersionSignals(t *testing.T) {
 		t.Errorf("VersionSignals(pkgB) = (%v, %v), want none: only its package row is ranked", none, err)
 	}
 }
+
+func TestTopPackages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), Object)
+	prevs := []PrevalenceRecord{
+		{Ecosystem: "pypi", Package: "pkgA", Dependents: 100, Prevalence: 0.8},
+		{Ecosystem: "pypi", Package: "pkgC", Dependents: 2, Prevalence: 0.2},
+		{Ecosystem: "npm", Package: "pkgB", Dependents: 10, Prevalence: 0.4},
+	}
+	if _, err := Build(path, prevs, Meta{}); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	db, err := sqlite3.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	head, err := TopPackages(db, "pypi", 10)
+	if err != nil {
+		t.Fatalf("TopPackages: %v", err)
+	}
+	// pkgA scores 0.8, pkgC 0.2. The npm row never appears and a short head
+	// returns what exists.
+	if len(head) != 2 || head[0].Package != "pkgA" || head[1].Package != "pkgC" {
+		t.Errorf("head = %+v, want [pkgA pkgC]", head)
+	}
+	if one, err := TopPackages(db, "pypi", 1); err != nil || len(one) != 1 || one[0].Package != "pkgA" {
+		t.Errorf("TopPackages(1) = (%+v, %v), want just pkgA", one, err)
+	}
+	if all, err := TopPackages(db, "pypi", 0); err != nil || len(all) != 2 {
+		t.Errorf("TopPackages(0) = (%+v, %v), want the whole head", all, err)
+	}
+}
