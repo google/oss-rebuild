@@ -53,8 +53,8 @@ func (s *snapshotSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoM
 func (s *snapshotSource) Campaigns(context.Context, time.Time) ([]scheduler.Campaign, error) {
 	return nil, nil
 }
-func (s *snapshotSource) Signals(context.Context) ([]signals.PackageSignal, error) {
-	return nil, nil
+func (s *snapshotSource) Signals(context.Context) ([]signals.PackageSignal, time.Time, error) {
+	return nil, time.Time{}, nil
 }
 
 func ts(min int) time.Time {

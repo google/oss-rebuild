@@ -34,6 +34,8 @@ const (
 	TableRepoMetrics      = "repo_metrics"
 	TableCampaigns        = "campaigns"
 	TablePackageSignals   = "package_signals"
+	TableSignalUniverse   = "signal_universe"
+	TableSignalCoverage   = "signal_coverage"
 	TableCostObservations = "cost_observations"
 	TableEcosystemDaily   = "ecosystem_daily"
 	TableVersionStats     = "version_stats"
@@ -209,6 +211,35 @@ SELECT ecosystem, package, latest_version, reason, last_status, last_attempted_a
 FROM (SELECT *, row_number() OVER (PARTITION BY ecosystem ORDER BY score DESC, attempts DESC, package) AS n FROM gaps)
 WHERE n <= ` + topGapsPerEcosystem + `
 ORDER BY ecosystem, score DESC, attempts DESC, package`
+
+// signalCoverageQuery compares each ecosystem's tracked and currently
+// rebuilding packages against signal_universe, by package count and by summed
+// score. signal_universe counts the whole export, so dropping packages from
+// tracking cannot raise covered_mass_share. A tracked package with no attempts
+// yet counts toward tracked_mass but not current_mass.
+const signalCoverageQuery = `
+WITH ranked AS (
+	SELECT *, row_number() OVER (PARTITION BY ecosystem, package ORDER BY version COLLATE version_approx_compare DESC) AS vrank
+	FROM version_stats),
+latest AS (SELECT * FROM ranked WHERE vrank = 1),
+tracked AS (
+	SELECT s.ecosystem, count(*) AS tracked_packages, sum(s.score) AS tracked_mass,
+		sum(coalesce(l.current, 0)) AS current_packages,
+		sum(CASE WHEN l.current THEN s.score ELSE 0 END) AS current_mass
+	FROM package_signals s
+	LEFT JOIN latest l ON l.ecosystem = s.ecosystem AND l.package = s.package
+	GROUP BY 1)
+SELECT u.ecosystem,
+	u.packages AS universe_packages, u.score_mass AS universe_mass,
+	coalesce(t.tracked_packages, 0) AS tracked_packages,
+	coalesce(t.tracked_mass, 0.0) AS tracked_mass,
+	coalesce(t.current_packages, 0) AS current_packages,
+	coalesce(t.current_mass, 0.0) AS current_mass,
+	CASE WHEN u.score_mass > 0 THEN coalesce(t.current_mass, 0.0) / u.score_mass ELSE 0.0 END AS covered_mass_share,
+	u.sidecar_built_at
+FROM signal_universe u
+LEFT JOIN tracked t ON t.ecosystem = u.ecosystem
+ORDER BY 1`
 
 // coverageWeeklyQuery aggregates version_stats into one row per
 // (ecosystem, week): cumulative package counts as of the end of each week,
@@ -564,11 +595,24 @@ func Tables() []docdb.TableDef {
 				{Name: "score", Type: "REAL", Expr: docdb.Raw("$.Score"), Stored: true},
 			},
 		},
+		{
+			Name: TableSignalUniverse,
+			Cols: []docdb.Col{
+				{Name: "ecosystem", Type: "TEXT", Expr: docdb.Doc("$.Ecosystem")},
+			},
+			PK: []string{"ecosystem"},
+			GenCols: []docdb.GenCol{
+				{Name: "packages", Type: "INTEGER", Expr: docdb.Raw("$.Packages")},
+				{Name: "score_mass", Type: "REAL", Expr: docdb.Raw("$.ScoreMass")},
+				{Name: "sidecar_built_at", Type: "TEXT", Expr: docdb.RawTime("$.SidecarBuiltAt")},
+			},
+		},
 		{Name: TableCostObservations, Query: costObservationsQuery, Indexes: [][]string{{"ecosystem", "package"}, {"source"}, {"timestamp"}}},
 		{Name: TableEcosystemDaily, Query: ecosystemDailyQuery, Indexes: [][]string{{"ecosystem", "day"}}},
 		{Name: TableVersionStats, Query: versionStatsQuery, Indexes: [][]string{{"ecosystem", "package", "version"}, {"last_attempted_at"}}},
 		{Name: TableCoverageWeekly, Query: coverageWeeklyQuery, Indexes: [][]string{{"ecosystem", "week"}}},
 		{Name: TableTopGaps, Query: topGapsQuery, Indexes: [][]string{{"ecosystem"}}},
+		{Name: TableSignalCoverage, Query: signalCoverageQuery},
 		{Name: TablePackageStats, Query: packageStatsQuery, Indexes: [][]string{{"ecosystem", "package"}}},
 	}
 }

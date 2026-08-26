@@ -34,7 +34,7 @@ type Source interface {
 	Execs(context.Context, time.Time) ([]schema.ScratchExec, error)
 	RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error)
 	Campaigns(context.Context, time.Time) ([]scheduler.Campaign, error)
-	Signals(context.Context) ([]signals.PackageSignal, error)
+	Signals(context.Context) ([]signals.PackageSignal, time.Time, error)
 }
 
 // FullScan is the zero watermark: a scan given it reads every record.
@@ -154,29 +154,35 @@ func (s *FirestoreSource) Campaigns(ctx context.Context, since time.Time) ([]sch
 }
 
 // Signals reads the priority signals from the published signal database.
-func (s *FirestoreSource) Signals(context.Context) ([]signals.PackageSignal, error) {
+func (s *FirestoreSource) Signals(context.Context) ([]signals.PackageSignal, time.Time, error) {
 	return readSignals(s.SignalsDB)
 }
 
 // readSignals fetches the published signal database and reads its package
-// rows. A nil filesystem yields no rows.
-func readSignals(dest billy.Filesystem) ([]signals.PackageSignal, error) {
+// rows plus the publish time its meta records. A nil filesystem yields no
+// rows.
+func readSignals(dest billy.Filesystem) ([]signals.PackageSignal, time.Time, error) {
 	if dest == nil {
-		return nil, nil
+		return nil, time.Time{}, nil
 	}
 	dir, err := os.MkdirTemp("", "signals-fetch-")
 	if err != nil {
-		return nil, errors.Wrap(err, "creating fetch directory")
+		return nil, time.Time{}, errors.Wrap(err, "creating fetch directory")
 	}
 	defer os.RemoveAll(dir)
 	path, err := signals.Fetch(dest, dir)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching signal database")
+		return nil, time.Time{}, errors.Wrap(err, "fetching signal database")
 	}
 	db, err := sqlite3.Open(path)
 	if err != nil {
-		return nil, errors.Wrap(err, "opening signal database")
+		return nil, time.Time{}, errors.Wrap(err, "opening signal database")
 	}
 	defer db.Close()
-	return signals.PackageSignals(db)
+	meta, err := signals.ReadMeta(db)
+	if err != nil {
+		return nil, time.Time{}, errors.Wrap(err, "reading signal meta")
+	}
+	rows, err := signals.PackageSignals(db)
+	return rows, meta.BuiltAt, err
 }

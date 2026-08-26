@@ -96,6 +96,7 @@ func fill(t *testing.T, src *fakeSource) (*sqlite3.Conn, map[string]int) {
 		TableRepoMetrics:     docsOf(src.repoMetrics),
 		TableCampaigns:       docsOf(src.campaigns),
 		TablePackageSignals:  docsOf(src.signals),
+		TableSignalUniverse:  docsOf(src.universe),
 	}, Meta{BuiltAt: at(time.Hour)})
 	if err != nil {
 		t.Fatalf("fillSnapshotDB: %v", err)
@@ -365,4 +366,30 @@ func TestPackageStats(t *testing.T) {
 		AND last_succeeded_run_id='r2' AND last_succeeded_version='1.0'`, "1")
 	assertCount(t, db, `SELECT count(*) FROM package_stats WHERE package='pkgB' AND ever_built=0
 		AND attempt_count=2 AND consecutive_failures=2 AND last_succeeded_time IS NULL`, "1")
+}
+
+func TestSignalCoverage(t *testing.T) {
+	db, _ := fill(t, &fakeSource{
+		attempts: []schema.RebuildAttempt{
+			attempt("pypi", "pkgA", "1.0", "r1", true, schema.RebuildStatusSuccess, at(0)),
+			attempt("pypi", "pkgB", "1.0", "r2", false, schema.RebuildStatusFailure, at(0)),
+		},
+		// pkgC is enqueued but never attempted: tracked mass, not current.
+		campaigns: []scheduler.Campaign{{Ecosystem: "pypi", Package: "pkgC", Version: "1.0", Artifact: "1.0.whl", Updated: at(0)}},
+		signals: []signals.PackageSignal{
+			{Ecosystem: "pypi", Package: "pkgA", Score: 0.5},
+			{Ecosystem: "pypi", Package: "pkgB", Score: 0.25},
+			{Ecosystem: "pypi", Package: "pkgC", Score: 0.25},
+		},
+		universe: []SignalUniverse{{Ecosystem: "pypi", Packages: 100, ScoreMass: 10.0, SidecarBuiltAt: at(0)}},
+	})
+	// The share divides by the pre-pruning universe mass: covering 3 of 100
+	// ranked packages with one current reads as 5% of the mass, not as the
+	// flattering 50% of the tracked slice.
+	assertCount(t, db, `SELECT count(*) FROM signal_coverage WHERE ecosystem='pypi'
+		AND universe_packages=100 AND universe_mass=10.0
+		AND tracked_packages=3 AND tracked_mass=1.0
+		AND current_packages=1 AND current_mass=0.5
+		AND covered_mass_share=0.05
+		AND sidecar_built_at='2026-07-01T12:00:00.000Z'`, "1")
 }
