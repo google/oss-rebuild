@@ -71,6 +71,24 @@
     "updated": "TEXT",
     "version": "TEXT pk=3"
   },
+  "campaigns": {
+    "artifact": "TEXT pk=4",
+    "attempts": "INTEGER",
+    "dispatched_at": "TEXT",
+    "ecosystem": "TEXT pk=1",
+    "last_run_id": "TEXT",
+    "last_session": "TEXT",
+    "outcome": "TEXT",
+    "package": "TEXT pk=2",
+    "published": "TEXT",
+    "raw": "TEXT",
+    "retries": "INTEGER",
+    "score": "REAL",
+    "stage": "TEXT",
+    "state": "TEXT",
+    "updated": "TEXT",
+    "version": "TEXT pk=3"
+  },
   "cost_observations": {
     "artifact": "TEXT",
     "artifact_bytes": "INT",
