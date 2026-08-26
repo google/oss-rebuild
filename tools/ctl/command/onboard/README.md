@@ -51,11 +51,17 @@ last, and every version starts at infer (heuristic inference plus a build).
 ```sh
 ctl onboard enqueue --project ssci-demos --ecosystem npm --from-packages lodash,express \
     --signals-db gs://my-analytics/priority
+ctl onboard enqueue --project ssci-demos --ecosystem pypi --max-packages 200 \
+    --signals-db gs://my-analytics/priority
 ctl onboard status --project ssci-demos
 ```
 
 Candidates are derived from the signals export which contains both the package
 and version ranking in addition to the registry metadata necessary to enqueue.
+Without `--from-packages`, `enqueue` walks the database's packages in score
+order, at most `--from-top` of them, and stops once `--max-packages` packages
+have gained campaigns. The database holds only what the prevalence export kept,
+so raise `--top` and `--top-versions` there and republish to reach further.
 
 Since a package can have hundreds of ranked versions, we use `--max-versions`
 to keep only the top few. It admits versions by the same ordering the queue is
