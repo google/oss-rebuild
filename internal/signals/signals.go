@@ -191,6 +191,31 @@ type VersionSignal struct {
 	Artifact   string
 }
 
+// VersionSignals reads a package's ranked versions, empty when none is
+// ranked. Published is zero and Artifact empty where the export carried
+// none.
+func VersionSignals(db *sqlite3.Conn, ecosystem, pkg string) ([]VersionSignal, error) {
+	stmt, _, err := db.Prepare(`SELECT version, prevalence, published, artifact FROM version_signals
+		WHERE ecosystem = ? AND package = ? ORDER BY version`)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	stmt.BindText(1, ecosystem)
+	stmt.BindText(2, pkg)
+	var out []VersionSignal
+	for stmt.Step() {
+		v := VersionSignal{Version: stmt.ColumnText(0), Prevalence: stmt.ColumnFloat(1), Artifact: stmt.ColumnText(3)}
+		if stmt.ColumnType(2) != sqlite3.NULL {
+			if v.Published, err = time.Parse(sqlitex.TimeFormat, stmt.ColumnText(2)); err != nil {
+				return nil, errors.Wrapf(err, "parsing published for %s@%s", pkg, v.Version)
+			}
+		}
+		out = append(out, v)
+	}
+	return out, stmt.Err()
+}
+
 // Fetch downloads the signal database published under dest into dir and
 // returns its local path, refusing a database from a different schema era.
 func Fetch(dest billy.Basic, dir string) (string, error) {
