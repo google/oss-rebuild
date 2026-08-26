@@ -38,6 +38,7 @@ const (
 	TableVersionStats     = "version_stats"
 	TableCoverageWeekly   = "coverage_weekly"
 	TableTopGaps          = "top_gaps"
+	TablePackageStats     = "package_stats"
 )
 
 // Observation source discriminators for cost_observations rows.
@@ -257,6 +258,38 @@ FROM funnel f
 LEFT JOIN weekly wk ON wk.ecosystem = f.ecosystem AND wk.week = f.week
 ORDER BY 1, 2`
 
+// packageStatsQuery folds completed attempts into one row per (ecosystem,
+// package). consecutive_failures counts the completed attempts recorded
+// after the last success on any version, or every completed attempt when
+// the package never succeeded. Ties on created break by run_id, newest
+// first.
+const packageStatsQuery = `
+WITH completed AS (SELECT * FROM attempts WHERE status != 'RUNNING'),
+grouped AS (
+	SELECT ecosystem, package, count(*) AS attempt_count,
+		count(DISTINCT nullif(version, '')) AS versions_attempted,
+		count(DISTINCT CASE WHEN success THEN nullif(version, '') END) AS versions_succeeded,
+		max(success) AS ever_built
+	FROM completed GROUP BY 1, 2),
+ranked AS (
+	SELECT *, row_number() OVER (PARTITION BY ecosystem, package ORDER BY created DESC, run_id DESC) AS rn
+	FROM completed),
+ranked_ok AS (
+	SELECT *, row_number() OVER (PARTITION BY ecosystem, package ORDER BY created DESC, run_id DESC) AS rn
+	FROM completed WHERE success)
+SELECT g.ecosystem, g.package, g.ever_built,
+	CASE WHEN ls.created IS NULL THEN g.attempt_count
+		ELSE (SELECT count(*) FROM completed c WHERE c.ecosystem = g.ecosystem AND c.package = g.package AND c.created > ls.created)
+	END AS consecutive_failures,
+	g.attempt_count, g.versions_attempted, g.versions_succeeded,
+	la.created AS last_attempted_time, la.run_id AS last_attempted_run_id,
+	la.version AS last_attempted_version, la.status AS last_attempted_status,
+	ls.created AS last_succeeded_time, ls.run_id AS last_succeeded_run_id, ls.version AS last_succeeded_version
+FROM grouped g
+LEFT JOIN ranked la ON la.ecosystem = g.ecosystem AND la.package = g.package AND la.rn = 1
+LEFT JOIN ranked_ok ls ON ls.ecosystem = g.ecosystem AND ls.package = g.package AND ls.rn = 1
+ORDER BY 1, 2`
+
 // Tables is the registry of snapshot tables and the single declaration of
 // the snapshot schema, in build order: doc tables first, then the derived
 // tables that query them. Nothing about an entity exists outside its raw
@@ -468,5 +501,6 @@ func Tables() []docdb.TableDef {
 		{Name: TableVersionStats, Query: versionStatsQuery, Indexes: [][]string{{"ecosystem", "package", "version"}, {"last_attempted_at"}}},
 		{Name: TableCoverageWeekly, Query: coverageWeeklyQuery, Indexes: [][]string{{"ecosystem", "week"}}},
 		{Name: TableTopGaps, Query: topGapsQuery, Indexes: [][]string{{"ecosystem"}}},
+		{Name: TablePackageStats, Query: packageStatsQuery, Indexes: [][]string{{"ecosystem", "package"}}},
 	}
 }
