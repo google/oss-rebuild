@@ -6,14 +6,16 @@ package onboard
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/db"
-	"github.com/google/oss-rebuild/internal/jsonl"
 	"github.com/google/oss-rebuild/internal/signals"
+	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/scheduler"
 )
@@ -29,26 +31,38 @@ func versionsOf(cs []scheduler.Campaign) []string {
 	return out
 }
 
-func TestRankedVersions(t *testing.T) {
+func TestOpenSignalDB(t *testing.T) {
 	published := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)
-	var buf bytes.Buffer
-	if err := jsonl.Encode(&buf, []signals.PrevalenceRecord{
-		{Ecosystem: "npm", Package: "lodash", Prevalence: 0.9},
-		{Ecosystem: "npm", Package: "lodash", Version: "4.17.21", Prevalence: 1.0, Published: published},
-		{Ecosystem: "npm", Package: "other", Version: "1.0.0", Prevalence: 0.5},
-		{Ecosystem: "pypi", Package: "lodash", Version: "4.17.21", Prevalence: 0.4, Artifact: "lodash-4.17.21-py3-none-any.whl"},
-	}); err != nil {
-		t.Fatalf("Encode: %v", err)
+	built := filepath.Join(t.TempDir(), "signals.db")
+	if _, err := signals.Build(built,
+		[]signals.PrevalenceRecord{
+			{Ecosystem: "npm", Package: "lodash", Prevalence: 0.9},
+			{Ecosystem: "npm", Package: "lodash", Version: "4.17.21", Prevalence: 1.0, Published: published},
+			{Ecosystem: "npm", Package: "other", Version: "1.0.0", Prevalence: 0.5},
+		},
+		signals.Meta{}); err != nil {
+		t.Fatalf("Build: %v", err)
 	}
-	got, err := rankedVersions(jsonl.Decode[signals.PrevalenceRecord](&buf), "npm", []string{"lodash", "missing"})
+	pub := t.TempDir()
+	if err := sqlitex.Publish(osfs.New(pub), signals.Object, built); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	sdb, cleanup, err := openSignalDB(context.Background(), "file://"+pub)
 	if err != nil {
-		t.Fatalf("rankedVersions: %v", err)
+		t.Fatalf("openSignalDB: %v", err)
 	}
-	// Package rows, other packages, and other ecosystems are left out, and a
-	// package the export ranks no version of has no entry.
-	want := map[string][]signals.VersionSignal{"lodash": {{Version: "4.17.21", Prevalence: 1.0, Published: published}}}
+	defer cleanup()
+	got, err := signals.VersionSignals(sdb, "npm", "lodash")
+	if err != nil {
+		t.Fatalf("VersionSignals: %v", err)
+	}
+	want := []signals.VersionSignal{{Version: "4.17.21", Prevalence: 1.0, Published: published}}
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("rankedVersions mismatch (-want +got):\n%s", diff)
+		t.Errorf("VersionSignals mismatch (-want +got):\n%s", diff)
+	}
+	// A package the export ranks no version of has no rows.
+	if rows, err := signals.VersionSignals(sdb, "npm", "unranked"); err != nil || len(rows) != 0 {
+		t.Errorf("VersionSignals(unranked) = (%v, %v), want none", rows, err)
 	}
 }
 
