@@ -125,6 +125,7 @@ func TestSaturatedDocumentFillsEveryColumn(t *testing.T) {
 		"repo_metrics":     saturated[schema.RepoMetrics](),
 		"campaigns":        saturated[scheduler.Campaign](),
 		"package_signals":  saturated[signals.PackageSignal](),
+		"signal_universe":  saturated[SignalUniverse](),
 	}
 	db, err := sqlite3.Open(":memory:")
 	if err != nil {
@@ -198,6 +199,7 @@ func TestSkeletonDocumentsKeepGuardedColumnsDefined(t *testing.T) {
 		"repo_metrics":     `{"uri":"u"}`,
 		"campaigns":        `{"Ecosystem":"pypi","Package":"p","Version":"1","Artifact":"a.whl"}`,
 		"package_signals":  `{"Ecosystem":"pypi","Package":"p"}`,
+		"signal_universe":  `{"Ecosystem":"pypi"}`,
 	}
 	db, err := sqlite3.Open(":memory:")
 	if err != nil {
