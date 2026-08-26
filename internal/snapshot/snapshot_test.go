@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/ncruces/go-sqlite3"
 )
 
@@ -30,6 +31,7 @@ type fakeSource struct {
 	scratches   []schema.Scratch
 	execs       []schema.ScratchExec
 	repoMetrics []schema.RepoMetrics
+	campaigns   []scheduler.Campaign
 	signals     []signals.PackageSignal
 }
 
@@ -52,6 +54,9 @@ func (f *fakeSource) Execs(context.Context, time.Time) ([]schema.ScratchExec, er
 }
 func (f *fakeSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error) {
 	return f.repoMetrics, nil
+}
+func (f *fakeSource) Campaigns(context.Context, time.Time) ([]scheduler.Campaign, error) {
+	return f.campaigns, nil
 }
 func (f *fakeSource) Signals(context.Context) ([]signals.PackageSignal, error) {
 	return f.signals, nil
@@ -207,8 +212,12 @@ func TestRollupPrunesSignalsToTrackedPackages(t *testing.T) {
 		attempts: []schema.RebuildAttempt{
 			attempt("pypi", "pkgA", "1.0", "r1", true, schema.RebuildStatusSuccess, at(0)),
 		},
+		campaigns: []scheduler.Campaign{
+			{Ecosystem: "npm", Package: "pkgQ", Version: "1.0", Artifact: "a.tgz", Updated: at(0)},
+		},
 		signals: []signals.PackageSignal{
 			{Ecosystem: "pypi", Package: "pkgA", Score: 0.9},   // attempted
+			{Ecosystem: "npm", Package: "pkgQ", Score: 0.8},    // only enqueued
 			{Ecosystem: "pypi", Package: "famous", Score: 1.0}, // untracked
 		},
 	}
@@ -217,11 +226,11 @@ func TestRollupPrunesSignalsToTrackedPackages(t *testing.T) {
 		t.Fatalf("Rollup: %v", err)
 	}
 	// The exports cover the registry universe. Only the packages this
-	// database carries keep their signals.
-	if got := res.RowCounts[TablePackageSignals]; got != 1 {
-		t.Errorf("package_signals count = %d, want 1", got)
+	// database carries (an attempt or a campaign) keep their signals.
+	if got := res.RowCounts[TablePackageSignals]; got != 2 {
+		t.Errorf("package_signals count = %d, want 2", got)
 	}
 	db := openPublished(t, dest)
 	assertCount(t, db, "SELECT count(*) FROM package_signals WHERE package='famous'", "0")
-	assertCount(t, db, "SELECT count(*) FROM package_signals WHERE package='pkgA' AND score=0.9", "1")
+	assertCount(t, db, "SELECT count(*) FROM package_signals WHERE package='pkgQ' AND score=0.8", "1")
 }
