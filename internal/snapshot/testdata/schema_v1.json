@@ -213,6 +213,24 @@
     "vm_seconds": "REAL",
     "zone": "TEXT"
   },
+  "signal_coverage": {
+    "covered_mass_share": "",
+    "current_mass": "",
+    "current_packages": "",
+    "ecosystem": "TEXT",
+    "sidecar_built_at": "TEXT",
+    "tracked_mass": "",
+    "tracked_packages": "",
+    "universe_mass": "REAL",
+    "universe_packages": "INT"
+  },
+  "signal_universe": {
+    "ecosystem": "TEXT pk=1",
+    "packages": "INTEGER",
+    "raw": "TEXT",
+    "score_mass": "REAL",
+    "sidecar_built_at": "TEXT"
+  },
   "top_gaps": {
     "attempts": "",
     "dependents": "",

@@ -120,10 +120,14 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning campaigns")
 	}
-	sigs, err := src.Signals(ctx)
+	sigs, signalsBuiltAt, err := src.Signals(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "reading priority signals")
 	}
+	// Compute the universe before pruneSignals drops untracked packages.
+	// Coverage shares divide by it, so it has to count every package in the
+	// export, not just the ones we track.
+	universe := signalUniverse(sigs, signalsBuiltAt)
 	sigs = pruneSignals(sigs, attempts, campaigns)
 	docTables := map[string][]json.RawMessage{
 		TableAttempts:        docsOf(attempts),
@@ -135,6 +139,7 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 		TableRepoMetrics:     docsOf(repoMetrics),
 		TableCampaigns:       docsOf(campaigns),
 		TablePackageSignals:  docsOf(sigs),
+		TableSignalUniverse:  docsOf(universe),
 	}
 	meta := Meta{
 		BuiltAt:       now,
@@ -158,11 +163,38 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 	return &RollupResult{Meta: meta, RowCounts: counts}, nil
 }
 
+// SignalUniverse is one ecosystem's package count and summed score across the
+// whole signals export (the top --top packages by dependents). Coverage shares
+// divide by it. It changes only when a larger export is published.
+type SignalUniverse struct {
+	Ecosystem      string
+	Packages       int
+	ScoreMass      float64
+	SidecarBuiltAt time.Time
+}
+
+// signalUniverse folds the unpruned signal read into one row per ecosystem.
+func signalUniverse(sigs []signals.PackageSignal, builtAt time.Time) []SignalUniverse {
+	idx := make(map[string]int)
+	var out []SignalUniverse
+	for _, s := range sigs {
+		i, ok := idx[s.Ecosystem]
+		if !ok {
+			i = len(out)
+			idx[s.Ecosystem] = i
+			out = append(out, SignalUniverse{Ecosystem: s.Ecosystem, SidecarBuiltAt: builtAt})
+		}
+		out[i].Packages++
+		out[i].ScoreMass += s.Score
+	}
+	return out
+}
+
 // pruneSignals keeps only signals for packages the snapshot itself carries:
-// those with an attempt or a campaign. The signal exports cover the registry
-// universe, so without this package_signals would scale with the registry
-// rather than with coverage. Presence in this database is the rollup's only
-// notion of a tracked package.
+// those with an attempt or a campaign. The signal export holds every ranked
+// package, tracked or not, so without this package_signals would scale with
+// the export rather than with coverage. Presence in this database is the
+// rollup's only notion of a tracked package.
 // TODO: Reconcile with the campaign and enqueue machinery once a single
 // tracked-set authority exists.
 func pruneSignals(sigs []signals.PackageSignal, attempts []schema.RebuildAttempt, campaigns []scheduler.Campaign) []signals.PackageSignal {
