@@ -50,7 +50,7 @@ last, and every version starts at infer (heuristic inference plus a build).
 
 ```sh
 ctl onboard enqueue --project ssci-demos --ecosystem npm --from-packages lodash,express \
-    --prevalence gs://my-analytics/priority/prevalence.jsonl
+    --signals-db gs://my-analytics/priority
 ctl onboard status --project ssci-demos
 ```
 
