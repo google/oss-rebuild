@@ -14,18 +14,18 @@ import (
 	"github.com/pkg/errors"
 )
 
-type projectMetadata struct {
+type ProjectMetadata struct {
 	Name    string `toml:"name"`
 	Version string `toml:"version"`
 }
 
-type toolMetadata struct {
-	Poetry projectMetadata `toml:"poetry"`
+type ToolMetadata struct {
+	Poetry ProjectMetadata `toml:"poetry"`
 }
 
-type pyProjectProject struct {
-	Metadata projectMetadata `toml:"project"`
-	Tool     toolMetadata    `toml:"tool"`
+type PyProjectProject struct {
+	Metadata ProjectMetadata `toml:"project"`
+	Tool     ToolMetadata    `toml:"tool"`
 }
 
 func verifyPyProjectFile(ctx context.Context, f *object.File, name, version string) (fileVerification, error) {
@@ -36,7 +36,7 @@ func verifyPyProjectFile(ctx context.Context, f *object.File, name, version stri
 	if err != nil {
 		return verificationResult, errors.Wrap(err, "Failed to read pyproject.toml")
 	}
-	var pyProject pyProjectProject
+	var pyProject PyProjectProject
 	if err := toml.Unmarshal([]byte(pyprojContents), &pyProject); err != nil {
 		return verificationResult, errors.Wrap(err, "Failed to decode pyproject.toml")
 	}
