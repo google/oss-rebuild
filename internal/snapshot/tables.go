@@ -32,6 +32,7 @@ const (
 	TableScratchVMs       = "scratch_vms"
 	TableScratchExecs     = "scratch_execs"
 	TableRepoMetrics      = "repo_metrics"
+	TableCampaigns        = "campaigns"
 	TablePackageSignals   = "package_signals"
 	TableCostObservations = "cost_observations"
 	TableEcosystemDaily   = "ecosystem_daily"
@@ -136,10 +137,14 @@ const topGapsPerEcosystem = "100"
 // versionStatsQuery folds completed attempts into one row per (ecosystem,
 // package, version). Attempts are recorded per artifact: a version is
 // current when every attempted artifact has succeeded, and flaky when any
-// one artifact has both succeeded and failed. published_at is NULL until a
-// source of registry publish times exists.
+// one artifact has both succeeded and failed. published_at is the earliest
+// publish time recorded on the version's campaigns, NULL when it was never
+// enqueued.
 const versionStatsQuery = `
 WITH completed AS (SELECT * FROM attempts WHERE status != 'RUNNING'),
+camp AS (
+	SELECT ecosystem, package, version, min(published) AS published_at
+	FROM campaigns WHERE published IS NOT NULL GROUP BY 1, 2, 3),
 by_artifact AS (
 	SELECT ecosystem, package, version, artifact,
 		max(success) AS succeeded, max(success = 0) AS failed
@@ -158,7 +163,7 @@ last_attempt AS (
 	SELECT *, row_number() OVER (PARTITION BY ecosystem, package, version ORDER BY created DESC, run_id DESC) AS rn
 	FROM completed)
 SELECT g.ecosystem, g.package, g.version,
-	NULL AS published_at,
+	c.published_at,
 	g.first_attempted_at, fs.created AS first_succeeded_at,
 	la.created AS last_attempted_at, la.status AS last_status,
 	g.attempts, a.artifacts_attempted, a.artifacts_succeeded,
@@ -170,14 +175,18 @@ FROM per_version g
 JOIN artifacts a ON a.ecosystem = g.ecosystem AND a.package = g.package AND a.version = g.version
 LEFT JOIN first_success fs ON fs.ecosystem = g.ecosystem AND fs.package = g.package AND fs.version = g.version AND fs.rn = 1
 LEFT JOIN last_attempt la ON la.ecosystem = g.ecosystem AND la.package = g.package AND la.version = g.version AND la.rn = 1
+LEFT JOIN camp c ON c.ecosystem = g.ecosystem AND c.package = g.package AND c.version = g.version
 ORDER BY 1, 2, 3`
 
 // topGapsQuery lists packages whose latest version is not current, capped
-// at topGapsPerEcosystem rows per ecosystem. Latest is chosen by ordering
-// versions with the version_approx_compare collation, not the attempt order, so a
-// backfilled old version is never taken as newest. score, score_percentile,
-// and dependents are zero until signals are ingested, so rows order by
-// attempt count for now.
+// at topGapsPerEcosystem rows per ecosystem. Latest is chosen by the
+// version_approx_compare collation, not attempt order, so a backfilled old
+// version is never taken as newest. score and dependents come from
+// package_signals. Unsignaled packages read zero and order by attempt
+// count. score_percentile stays zero: it and a banded coverage report both
+// need the package's registry rank, which the export does not carry.
+// TODO: Emit rank and population columns from the export and derive both
+// from them.
 const topGapsQuery = `
 WITH ranked AS (
 	SELECT *, row_number() OVER (PARTITION BY ecosystem, package ORDER BY version COLLATE version_approx_compare DESC) AS vrank
@@ -191,8 +200,9 @@ gaps AS (
 			WHEN l.last_status = 'FAILURE' THEN '` + GapReasonMismatch + `'
 			ELSE '` + GapReasonError + `' END AS reason,
 		l.last_status, l.last_attempted_at, l.attempts,
-		0.0 AS score, 0.0 AS score_percentile, 0 AS dependents
+		coalesce(s.score, 0.0) AS score, 0.0 AS score_percentile, coalesce(s.dependents, 0) AS dependents
 	FROM ranked l LEFT JOIN built_besides b ON b.ecosystem = l.ecosystem AND b.package = l.package
+	LEFT JOIN package_signals s ON s.ecosystem = l.ecosystem AND s.package = l.package
 	WHERE l.vrank = 1 AND NOT l.current)
 SELECT ecosystem, package, latest_version, reason, last_status, last_attempted_at,
 	attempts, score, score_percentile, dependents
@@ -203,10 +213,13 @@ ORDER BY ecosystem, score DESC, attempts DESC, package`
 // coverageWeeklyQuery aggregates version_stats into one row per
 // (ecosystem, week): cumulative package counts as of the end of each week,
 // considering only versions first attempted by then and taking each
-// package's latest such version by the version_approx_compare collation. Weeks start
-// Monday and run from each ecosystem's first attempt to its last.
-// weighted_coverage and the freshness columns are zero until usage signals
-// and published_at are available.
+// package's latest such version by the version_approx_compare collation.
+// Weeks start Monday and run from each ecosystem's first attempt to its
+// last. weighted_coverage weights each package by its package_signals
+// score, so unsignaled packages contribute nothing. The freshness columns
+// cohort enqueued versions by publish week, attempted or not. Weeks span
+// the ecosystem's attempts, so a version published outside that span is in
+// no cohort.
 const coverageWeeklyQuery = `
 WITH bounds AS (
 	SELECT ecosystem, min(first_attempted_at) AS lo, max(last_attempted_at) AS hi
@@ -235,27 +248,58 @@ funnel AS (
 		sum(l.first_attempted_at >= p.week AND l.first_attempted_at < date(p.week, '+7 days')
 			AND l.artifacts_succeeded = 0 AND coalesce(pr.artifacts_succeeded, 0) > 0) AS newly_broken,
 		sum(l.first_succeeded_at >= p.week AND l.first_succeeded_at < date(p.week, '+7 days')
-			AND l.current AND pr.package IS NOT NULL AND NOT coalesce(pr.current, 0)) AS newly_fixed
+			AND l.current AND pr.package IS NOT NULL AND NOT coalesce(pr.current, 0)) AS newly_fixed,
+		sum(coalesce(s.score, 0)) AS weight,
+		sum(coalesce(s.score, 0) * (l.current AND l.first_succeeded_at < date(p.week, '+7 days'))) AS weight_current
 	FROM pkgs p
 	JOIN latest l ON l.ecosystem = p.ecosystem AND l.week = p.week AND l.package = p.package
 	LEFT JOIN prev pr ON pr.ecosystem = p.ecosystem AND pr.week = p.week AND pr.package = p.package
+	LEFT JOIN package_signals s ON s.ecosystem = p.ecosystem AND s.package = p.package
 	GROUP BY 1, 2),
 weekly AS (
 	SELECT v.ecosystem, w.week,
 		count(*) AS versions_attempted, sum(v.flaky) AS flaky_versions
 	FROM weeks w JOIN version_stats v ON v.ecosystem = w.ecosystem
 	WHERE v.first_attempted_at >= w.week AND v.first_attempted_at < date(w.week, '+7 days')
+	GROUP BY 1, 2),
+enqueued AS (
+	SELECT ecosystem, package, version, min(published) AS published_at
+	FROM campaigns WHERE published IS NOT NULL GROUP BY 1, 2, 3),
+pub AS (
+	SELECT e.ecosystem, w.week,
+		CASE WHEN v.first_succeeded_at IS NOT NULL
+			THEN (julianday(v.first_succeeded_at) - julianday(e.published_at)) * 24.0 END AS hours
+	FROM weeks w JOIN enqueued e ON e.ecosystem = w.ecosystem
+	LEFT JOIN version_stats v ON v.ecosystem = e.ecosystem AND v.package = e.package AND v.version = e.version
+	WHERE e.published_at >= w.week AND e.published_at < date(w.week, '+7 days')),
+fresh AS (
+	SELECT ecosystem, week, count(*) AS versions_published,
+		sum(coalesce(hours <= 72.0, 0)) AS within_72h
+	FROM pub GROUP BY 1, 2),
+pct AS (
+	SELECT ecosystem, week,
+		min(CASE WHEN cd >= 0.5 THEN hours END) AS p50,
+		min(CASE WHEN cd >= 0.95 THEN hours END) AS p95
+	FROM (SELECT ecosystem, week, hours,
+			cume_dist() OVER (PARTITION BY ecosystem, week ORDER BY hours) AS cd
+		FROM pub WHERE hours IS NOT NULL)
 	GROUP BY 1, 2)
 SELECT f.ecosystem, f.week,
 	f.packages_attempted, f.packages_ever_built, f.packages_current, f.packages_stale,
 	CASE WHEN f.packages_attempted > 0 THEN 1.0 * f.packages_current / f.packages_attempted ELSE 0 END AS coverage,
-	0.0 AS weighted_coverage,
+	CASE WHEN f.weight > 0 THEN f.weight_current / f.weight ELSE 0.0 END AS weighted_coverage,
 	f.newly_broken, f.newly_fixed,
 	coalesce(wk.versions_attempted, 0) AS versions_attempted,
 	coalesce(wk.flaky_versions, 0) AS flaky_versions,
-	0 AS versions_published, 0.0 AS fresh_p50_hours, 0.0 AS fresh_p95_hours, 0.0 AS fresh_72h_pct
+	coalesce(fr.versions_published, 0) AS versions_published,
+	coalesce(pc.p50, 0.0) AS fresh_p50_hours,
+	coalesce(pc.p95, 0.0) AS fresh_p95_hours,
+	CASE WHEN coalesce(fr.versions_published, 0) > 0
+		THEN 1.0 * fr.within_72h / fr.versions_published ELSE 0.0 END AS fresh_72h_pct
 FROM funnel f
 LEFT JOIN weekly wk ON wk.ecosystem = f.ecosystem AND wk.week = f.week
+LEFT JOIN fresh fr ON fr.ecosystem = f.ecosystem AND fr.week = f.week
+LEFT JOIN pct pc ON pc.ecosystem = f.ecosystem AND pc.week = f.week
 ORDER BY 1, 2`
 
 // packageStatsQuery folds completed attempts into one row per (ecosystem,
@@ -482,6 +526,30 @@ func Tables() []docdb.TableDef {
 				{Name: "commits", Type: "INTEGER", Expr: docdb.Raw("$.commits")},
 				{Name: "head", Type: "TEXT", Expr: docdb.Raw("$.head")},
 			},
+		},
+		{
+			Name: TableCampaigns,
+			Cols: []docdb.Col{
+				{Name: "ecosystem", Type: "TEXT", Expr: docdb.Doc("$.Ecosystem")},
+				{Name: "package", Type: "TEXT", Expr: docdb.Doc("$.Package")},
+				{Name: "version", Type: "TEXT", Expr: docdb.Doc("$.Version")},
+				{Name: "artifact", Type: "TEXT", Expr: docdb.Doc("$.Artifact")},
+				{Name: "updated", Type: "TEXT", Expr: docdb.DocTime("$.Updated")},
+			},
+			PK: []string{"ecosystem", "package", "version", "artifact"},
+			GenCols: []docdb.GenCol{
+				{Name: "stage", Type: "TEXT", Expr: docdb.Raw("$.Stage")},
+				{Name: "state", Type: "TEXT", Expr: docdb.Raw("$.State")},
+				{Name: "outcome", Type: "TEXT", Expr: docdb.Raw("$.Outcome")},
+				{Name: "attempts", Type: "INTEGER", Expr: docdb.Raw("$.Attempts")},
+				{Name: "retries", Type: "INTEGER", Expr: docdb.Raw("$.Retries")},
+				{Name: "last_run_id", Type: "TEXT", Expr: docdb.Raw("$.LastRunID")},
+				{Name: "last_session", Type: "TEXT", Expr: docdb.Raw("$.LastSession")},
+				{Name: "score", Type: "REAL", Expr: docdb.Raw("$.Score")},
+				{Name: "published", Type: "TEXT", Expr: docdb.RawTime("$.Published"), Stored: true},
+				{Name: "dispatched_at", Type: "TEXT", Expr: docdb.RawTime("$.DispatchedAt")},
+			},
+			Indexes: [][]string{{"state"}},
 		},
 		{
 			Name: TablePackageSignals,
