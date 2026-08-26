@@ -26,8 +26,7 @@ import (
 //   - Note: '@' is allowed in Firestore document IDs, so it's kept as-is
 //
 // Filesystem/GCS Encoding:
-//   - TODO: Breaks backward compatibility
-//   - Will use same encoding as Firestore when implemented
+//   - Uses the same encoding as firestore
 
 // firestoreEncoder encodes NPM package identifiers for Firestore document IDs.
 // Replaces forward slash with exclamation mark since it's forbidden in Firestore.
@@ -37,6 +36,13 @@ var firestoreEncoder = &rebuild.TargetEncoder{
 	Artifact: rebuild.IdentityTransform,
 }
 
+var filesystemEncoder = &rebuild.TargetEncoder{
+	Package:  rebuild.MapTransform(map[rune]rune{'/': '!'}),
+	Version:  rebuild.IdentityTransform,
+	Artifact: rebuild.IdentityTransform,
+}
+
 func init() {
 	rebuild.RegisterEncoder(rebuild.NPM, rebuild.FirestoreTargetEncoding, firestoreEncoder)
+	rebuild.RegisterEncoder(rebuild.NPM, rebuild.FilesystemTargetEncoding, filesystemEncoder)
 }
