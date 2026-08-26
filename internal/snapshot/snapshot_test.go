@@ -115,6 +115,9 @@ func TestSnapshotFileRoundTrip(t *testing.T) {
 	if got := res.RowCounts[TableAttempts]; got != 2 {
 		t.Errorf("attempts count = %d, want 2", got)
 	}
+	if got := res.RowCounts[TableCostObservations]; got != 4 {
+		t.Errorf("cost_observations count = %d, want 4 (2 attempts + session + scratch)", got)
+	}
 	if got := res.RowCounts[TableRuns]; got != 1 {
 		t.Errorf("runs count = %d, want 1", got)
 	}

@@ -25,14 +25,98 @@ const SchemaVersion = 1
 
 // Table names in the snapshot database.
 const (
-	TableAttempts        = "attempts"
-	TableRuns            = "runs"
-	TableAgentSessions   = "agent_sessions"
-	TableAgentIterations = "agent_iterations"
-	TableScratchVMs      = "scratch_vms"
-	TableScratchExecs    = "scratch_execs"
-	TableRepoMetrics     = "repo_metrics"
+	TableAttempts         = "attempts"
+	TableRuns             = "runs"
+	TableAgentSessions    = "agent_sessions"
+	TableAgentIterations  = "agent_iterations"
+	TableScratchVMs       = "scratch_vms"
+	TableScratchExecs     = "scratch_execs"
+	TableRepoMetrics      = "repo_metrics"
+	TableCostObservations = "cost_observations"
+	TableEcosystemDaily   = "ecosystem_daily"
 )
+
+// Observation source discriminators for cost_observations rows.
+const (
+	ObservationSourceAttempt = "attempt"
+	ObservationSourceSession = "agent_session"
+	ObservationSourceScratch = "scratch_vm"
+)
+
+// costObservationsQuery normalizes measured resource usage into one row per
+// completed attempt (timings and costs), per agent session with usage
+// (tokens), and per deleted scratch VM (vm_seconds), the latter attributed
+// to a target through its linked session. Measures a source does not carry
+// read NULL.
+const costObservationsQuery = `
+SELECT ecosystem, package, version, artifact,
+	'` + ObservationSourceAttempt + `' AS source, run_id, NULL AS session_id, NULL AS scratch_id,
+	setup_seconds, source_seconds, deps_seconds, build_seconds, failed_in,
+	cost_inference_seconds AS inference_seconds, cost_builder_seconds AS builder_seconds,
+	cost_builder_pool AS builder_pool, cost_logs_bytes AS logs_bytes,
+	cost_container_bytes AS container_bytes, cost_artifact_bytes AS artifact_bytes,
+	NULL AS input_tokens, NULL AS cached_input_tokens, NULL AS output_tokens, NULL AS model,
+	NULL AS vm_seconds, NULL AS machine_class, created AS timestamp
+FROM attempts WHERE status != 'RUNNING'
+UNION ALL
+SELECT ecosystem, package, version, artifact,
+	'` + ObservationSourceSession + `', NULL, session_id, NULL,
+	NULL, NULL, NULL, NULL, NULL,
+	NULL, NULL, NULL, NULL, NULL, NULL,
+	input_tokens, cached_input_tokens, output_tokens, model,
+	NULL, NULL, created
+FROM agent_sessions WHERE json_extract(raw, '$.Usage') IS NOT NULL
+UNION ALL
+SELECT s.ecosystem, s.package, s.version, s.artifact,
+	'` + ObservationSourceScratch + `', NULL, s.session_id, sc.scratch_id,
+	NULL, NULL, NULL, NULL, NULL,
+	NULL, NULL, NULL, NULL, NULL, NULL,
+	NULL, NULL, NULL, NULL,
+	sc.vm_seconds, sc.machine_class, sc.created
+FROM scratch_vms sc LEFT JOIN agent_sessions s ON s.scratch_id = sc.scratch_id
+WHERE sc.vm_seconds > 0`
+
+// ecosystemDailyQuery aggregates completed attempts, agent-session tokens,
+// and scratch VM-seconds into one row per (ecosystem, day). A row exists for
+// any day any measure contributes. Documents without a created stamp
+// aggregate under an empty day rather than vanishing on NULL join keys.
+// first_time_successes counts packages whose earliest success fell on that
+// day. Scratch VM-seconds attribute to a target's ecosystem through the
+// linked session. Unlinked scratches are omitted (no ecosystem).
+const ecosystemDailyQuery = `
+WITH completed AS (SELECT * FROM attempts WHERE status != 'RUNNING'),
+days AS (
+	SELECT ecosystem, coalesce(substr(created, 1, 10), '') AS day, count(*) AS attempts,
+		sum(success) AS successes, sum(status = 'ERROR') AS errors,
+		count(DISTINCT nullif(package, '')) AS distinct_pkgs,
+		sum(coalesce(cost_builder_seconds, 0)) AS builder_seconds
+	FROM completed GROUP BY 1, 2),
+firsts AS (
+	SELECT ecosystem, coalesce(substr(min(created), 1, 10), '') AS day
+	FROM completed WHERE success GROUP BY ecosystem, package),
+first_days AS (SELECT ecosystem, day, count(*) AS n FROM firsts GROUP BY 1, 2),
+tokens AS (
+	SELECT ecosystem, coalesce(substr(created, 1, 10), '') AS day,
+		sum(coalesce(input_tokens, 0) + coalesce(output_tokens, 0)) AS n
+	FROM agent_sessions WHERE json_extract(raw, '$.Usage') IS NOT NULL GROUP BY 1, 2),
+vm AS (
+	SELECT s.ecosystem, coalesce(substr(sc.created, 1, 10), '') AS day, sum(sc.vm_seconds) AS n
+	FROM scratch_vms sc JOIN agent_sessions s ON s.scratch_id = sc.scratch_id
+	WHERE sc.vm_seconds > 0 GROUP BY 1, 2),
+keys AS (
+	SELECT ecosystem, day FROM days UNION SELECT ecosystem, day FROM first_days
+	UNION SELECT ecosystem, day FROM tokens UNION SELECT ecosystem, day FROM vm)
+SELECT k.ecosystem, k.day,
+	coalesce(d.attempts, 0) AS attempts, coalesce(d.successes, 0) AS successes,
+	coalesce(d.errors, 0) AS errors, coalesce(d.distinct_pkgs, 0) AS distinct_pkgs_attempted,
+	coalesce(f.n, 0) AS first_time_successes, coalesce(t.n, 0) AS tokens,
+	coalesce(d.builder_seconds, 0.0) AS builder_seconds, coalesce(v.n, 0.0) AS scratch_vm_seconds
+FROM keys k
+LEFT JOIN days d ON d.ecosystem = k.ecosystem AND d.day = k.day
+LEFT JOIN first_days f ON f.ecosystem = k.ecosystem AND f.day = k.day
+LEFT JOIN tokens t ON t.ecosystem = k.ecosystem AND t.day = k.day
+LEFT JOIN vm v ON v.ecosystem = k.ecosystem AND v.day = k.day
+ORDER BY 1, 2`
 
 // Tables is the registry of snapshot tables and the single declaration of
 // the snapshot schema, in build order: doc tables first, then the derived
@@ -227,5 +311,7 @@ func Tables() []docdb.TableDef {
 				{Name: "head", Type: "TEXT", Expr: docdb.Raw("$.head")},
 			},
 		},
+		{Name: TableCostObservations, Query: costObservationsQuery, Indexes: [][]string{{"ecosystem", "package"}, {"source"}, {"timestamp"}}},
+		{Name: TableEcosystemDaily, Query: ecosystemDailyQuery, Indexes: [][]string{{"ecosystem", "day"}}},
 	}
 }
