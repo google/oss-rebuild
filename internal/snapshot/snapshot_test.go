@@ -33,6 +33,8 @@ type fakeSource struct {
 	repoMetrics []schema.RepoMetrics
 	campaigns   []scheduler.Campaign
 	signals     []signals.PackageSignal
+	signalsAt   time.Time
+	universe    []SignalUniverse
 }
 
 func (f *fakeSource) Attempts(_ context.Context, since time.Time) ([]schema.RebuildAttempt, error) {
@@ -58,8 +60,8 @@ func (f *fakeSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetri
 func (f *fakeSource) Campaigns(context.Context, time.Time) ([]scheduler.Campaign, error) {
 	return f.campaigns, nil
 }
-func (f *fakeSource) Signals(context.Context) ([]signals.PackageSignal, error) {
-	return f.signals, nil
+func (f *fakeSource) Signals(context.Context) ([]signals.PackageSignal, time.Time, error) {
+	return f.signals, f.signalsAt, nil
 }
 
 // openPublished fetches the snapshot database dest holds and opens it.

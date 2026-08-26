@@ -41,7 +41,9 @@ func (f *fakeSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetri
 func (f *fakeSource) Campaigns(context.Context, time.Time) ([]scheduler.Campaign, error) {
 	return nil, nil
 }
-func (f *fakeSource) Signals(context.Context) ([]signals.PackageSignal, error) { return nil, nil }
+func (f *fakeSource) Signals(context.Context) ([]signals.PackageSignal, time.Time, error) {
+	return nil, time.Time{}, nil
+}
 
 func TestRollupUnconfigured(t *testing.T) {
 	_, err := Rollup(context.Background(), RollupRequest{}, &RollupDeps{})
