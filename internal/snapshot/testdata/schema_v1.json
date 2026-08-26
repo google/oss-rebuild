@@ -137,6 +137,22 @@
     "raw": "TEXT",
     "score": "REAL"
   },
+  "package_stats": {
+    "attempt_count": "",
+    "consecutive_failures": "",
+    "ecosystem": "TEXT",
+    "ever_built": "",
+    "last_attempted_run_id": "TEXT",
+    "last_attempted_status": "TEXT",
+    "last_attempted_time": "TEXT",
+    "last_attempted_version": "TEXT",
+    "last_succeeded_run_id": "TEXT",
+    "last_succeeded_time": "TEXT",
+    "last_succeeded_version": "TEXT",
+    "package": "TEXT",
+    "versions_attempted": "",
+    "versions_succeeded": ""
+  },
   "repo_metrics": {
     "bytes": "INTEGER",
     "commits": "INTEGER",
