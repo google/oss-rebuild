@@ -136,3 +136,30 @@ func TestFetchRefusesOtherEra(t *testing.T) {
 		t.Error("Fetch accepted a database from a different schema era")
 	}
 }
+
+func TestVersionSignals(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "signals.db")
+	if _, err := Build(path, testPrevs, Meta{}); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	db, err := sqlite3.Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	got, err := VersionSignals(db, "pypi", "pkgA")
+	if err != nil {
+		t.Fatalf("VersionSignals: %v", err)
+	}
+	// NULL metadata reads back as zero values.
+	want := []VersionSignal{
+		{Version: "1.0", Prevalence: 0.75, Published: time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC), Artifact: "pkgA-1.0.tar.gz"},
+		{Version: "2.0", Prevalence: 0.6},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("version rows mismatch (-want +got):\n%s", diff)
+	}
+	if none, err := VersionSignals(db, "npm", "pkgB"); err != nil || len(none) != 0 {
+		t.Errorf("VersionSignals(pkgB) = (%v, %v), want none: only its package row is ranked", none, err)
+	}
+}

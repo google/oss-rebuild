@@ -8,20 +8,20 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"iter"
+	"os"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/billyx"
 	"github.com/google/oss-rebuild/internal/db"
-	"github.com/google/oss-rebuild/internal/jsonl"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/scheduler"
+	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +33,7 @@ import (
 type enqueueConfig struct {
 	Project           string
 	Ecosystem         string
-	Prevalence        string
+	SignalsDB         string
 	FromPackages      string
 	MaxVersions       int
 	FreshnessK        float64
@@ -47,8 +47,8 @@ func (c enqueueConfig) Validate() error {
 	if c.Ecosystem == "" {
 		return errors.New("ecosystem is required")
 	}
-	if c.Prevalence == "" {
-		return errors.New("prevalence is required")
+	if c.SignalsDB == "" {
+		return errors.New("signals-db is required")
 	}
 	if len(c.packages()) == 0 {
 		return errors.New("from-packages is required")
@@ -74,32 +74,24 @@ func enqueueHandler(ctx context.Context, cfg enqueueConfig, deps *Deps) (*act.No
 	}
 	defer fire.Close()
 	campaigns := db.NewFirestoreCampaigns(fire)
-	// The export is the only source of candidates: each is a ranked version
-	// carrying its publish time and, for PyPI, its wheel, so admission never
-	// consults a registry. A version the export does not rank waits for an
-	// export that does.
-	prevFS, prev, err := billyx.NewResolver().FS(ctx, cfg.Prevalence)
+	// Use the signal database to source candidates, avoiding consulting the registry.
+	sdb, cleanup, err := openSignalDB(ctx, cfg.SignalsDB)
 	if err != nil {
-		return nil, errors.Wrap(err, "resolving prevalence export")
+		return nil, errors.Wrap(err, "opening signal database")
 	}
-	r, err := prevFS.Open(prev)
-	if err != nil {
-		return nil, errors.Wrap(err, "opening prevalence export")
-	}
-	defer r.Close()
-	pkgs := cfg.packages()
-	ranked, err := rankedVersions(jsonl.Decode[signals.PrevalenceRecord](r), cfg.Ecosystem, pkgs)
-	if err != nil {
-		return nil, errors.Wrap(err, "reading prevalence export")
-	}
+	defer cleanup()
 	now := time.Now().UTC()
 	var newPkgs, newVersions, tracked int
-	for _, pkg := range pkgs {
-		if len(ranked[pkg]) == 0 {
-			fmt.Fprintf(deps.IO.Err, "skip %s: the export ranks no version of it\n", pkg)
+	for _, pkg := range cfg.packages() {
+		rows, err := signals.VersionSignals(sdb, cfg.Ecosystem, pkg)
+		if err != nil {
+			return nil, errors.Wrapf(err, "reading versions of %s", pkg)
+		}
+		if len(rows) == 0 {
+			fmt.Fprintf(deps.IO.Err, "skip %s: the signal database ranks no version of it\n", pkg)
 			continue
 		}
-		enqueued, skipped := enqueuePackage(ctx, campaigns, deps.IO.Err, cfg, pkg, ranked[pkg], now)
+		enqueued, skipped := enqueuePackage(ctx, campaigns, deps.IO.Err, cfg, pkg, rows, now)
 		if enqueued > 0 {
 			newPkgs++
 		}
@@ -110,27 +102,30 @@ func enqueueHandler(ctx context.Context, cfg enqueueConfig, deps *Deps) (*act.No
 	return &act.NoOutput{}, nil
 }
 
-// rankedVersions collects the named packages' version rows from the export
-// in one pass, keyed by package. A package the export ranks no version of
-// has no entry.
-func rankedVersions(recs iter.Seq2[signals.PrevalenceRecord, error], ecosystem string, pkgs []string) (map[string][]signals.VersionSignal, error) {
-	want := make(map[string]bool, len(pkgs))
-	for _, pkg := range pkgs {
-		want[pkg] = true
+// openSignalDB fetches the published signal database and opens it,
+// returning a cleanup that cleans up the connection and the local copy. Each
+// invocation will fetch its own temporary copy.
+// TODO: Use a shared generation-keyed cache once callers run at job cadence.
+func openSignalDB(ctx context.Context, destURI string) (*sqlite3.Conn, func(), error) {
+	dest, err := billyx.NewResolver().DirFS(ctx, destURI)
+	if err != nil {
+		return nil, nil, err
 	}
-	out := map[string][]signals.VersionSignal{}
-	for r, err := range recs {
-		if err != nil {
-			return nil, err
-		}
-		if r.Ecosystem != ecosystem || r.Version == "" || !want[r.Package] {
-			continue
-		}
-		out[r.Package] = append(out[r.Package], signals.VersionSignal{
-			Version: r.Version, Prevalence: r.Prevalence, Published: r.Published, Artifact: r.Artifact,
-		})
+	dir, err := os.MkdirTemp("", "signals-")
+	if err != nil {
+		return nil, nil, err
 	}
-	return out, nil
+	path, err := signals.Fetch(dest, dir)
+	if err != nil {
+		os.RemoveAll(dir)
+		return nil, nil, err
+	}
+	sdb, err := sqlite3.Open(path)
+	if err != nil {
+		os.RemoveAll(dir)
+		return nil, nil, err
+	}
+	return sdb, func() { sdb.Close(); os.RemoveAll(dir) }, nil
 }
 
 // enqueuePackage inserts campaigns for a package's ranked versions and
@@ -195,7 +190,7 @@ func admit(eco rebuild.Ecosystem, pkg string, rows []signals.VersionSignal, cfg 
 func enqueueCommand() *cobra.Command {
 	cfg := enqueueConfig{}
 	cmd := &cobra.Command{
-		Use:   "enqueue --project <project> --ecosystem <eco> --prevalence <uri> --from-packages <names> [--max-versions N]",
+		Use:   "enqueue --project <project> --ecosystem <eco> --signals-db <uri> --from-packages <names> [--max-versions N]",
 		Short: "Enqueue packages' ranked versions at the infer stage",
 		Args:  cobra.NoArgs,
 		RunE:  cli.RunE(&cfg, cli.SkipArgs[enqueueConfig], InitDeps, enqueueHandler),
@@ -203,7 +198,7 @@ func enqueueCommand() *cobra.Command {
 	set := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
 	set.StringVar(&cfg.Project, "project", "", "GCP project holding the onboarding Firestore data")
 	set.StringVar(&cfg.Ecosystem, "ecosystem", "", "the ecosystem (npm, pypi, cratesio, rubygems)")
-	set.StringVar(&cfg.Prevalence, "prevalence", "", "prevalence JSONL export path or gs:// URI, the source of versions and scores")
+	set.StringVar(&cfg.SignalsDB, "signals-db", "", "URI the signal database publishes under, the source of versions and scores")
 	set.StringVar(&cfg.FromPackages, "from-packages", "", "comma-separated names of the packages to enqueue")
 	set.IntVar(&cfg.MaxVersions, "max-versions", 10, "cap the versions enqueued per package, highest dispatch order first; 0 = all")
 	set.Float64Var(&cfg.FreshnessK, "freshness-k", scheduler.DefaultFreshnessK, "freshness boost coefficient k in 1+k*exp(-age/tau)")
