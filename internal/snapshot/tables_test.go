@@ -293,3 +293,23 @@ func TestCoverageWeekly(t *testing.T) {
 	// The series ends at the week containing the last attempt.
 	assertCount(t, db, "SELECT count(*) FROM coverage_weekly WHERE week > '2026-07-06'", "0")
 }
+
+func TestPackageStats(t *testing.T) {
+	db, _ := fill(t, &fakeSource{attempts: []schema.RebuildAttempt{
+		// pkgA: fail, success (v1), then two failures on v2, so the last success is v1.
+		attempt("pypi", "pkgA", "1.0", "r1", false, schema.RebuildStatusFailure, at(0)),
+		attempt("pypi", "pkgA", "1.0", "r2", true, schema.RebuildStatusSuccess, at(1*time.Hour)),
+		attempt("pypi", "pkgA", "2.0", "r3", false, schema.RebuildStatusFailure, at(2*time.Hour)),
+		attempt("pypi", "pkgA", "2.0", "r4", false, schema.RebuildStatusError, at(3*time.Hour)),
+		// pkgB: never succeeded. Its running attempt is ignored entirely.
+		attempt("pypi", "pkgB", "1.0", "r5", false, schema.RebuildStatusFailure, at(0)),
+		attempt("pypi", "pkgB", "1.0", "r6", false, schema.RebuildStatusError, at(1*time.Hour)),
+		attempt("pypi", "pkgB", "2.0", "r7", false, schema.RebuildStatusRunning, at(4*time.Hour)),
+	}})
+	assertCount(t, db, `SELECT count(*) FROM package_stats WHERE package='pkgA' AND ever_built=1
+		AND consecutive_failures=2 AND attempt_count=4 AND versions_attempted=2 AND versions_succeeded=1
+		AND last_attempted_run_id='r4' AND last_attempted_status='ERROR'
+		AND last_succeeded_run_id='r2' AND last_succeeded_version='1.0'`, "1")
+	assertCount(t, db, `SELECT count(*) FROM package_stats WHERE package='pkgB' AND ever_built=0
+		AND attempt_count=2 AND consecutive_failures=2 AND last_succeeded_time IS NULL`, "1")
+}
