@@ -70,6 +70,7 @@ var (
 	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
 	rebuildJobName        = flag.String("rebuild-job-name", "", "Name of the pre-created Cloud Run Job for rebuilds")
 	analyticsURI          = flag.String("analytics-uri", "", "URI for snapshots (supported schemes: gs, file). Empty disables the /snapshot endpoints")
+	signalsDBURI          = flag.String("signals-db-uri", "", "URI the signal database publishes under, ingested at rollup (supported schemes: gs, file). Empty skips signal ingest")
 	port                  = flag.Int("port", 8080, "port on which to serve")
 )
 
@@ -368,6 +369,11 @@ func SnapshotRollupInit(ctx context.Context) (*snapshotservice.RollupDeps, error
 	src, err := snapshot.NewFirestoreSource(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating snapshot source")
+	}
+	if *signalsDBURI != "" {
+		if src.SignalsDB, err = billyx.NewResolver().DirFS(ctx, *signalsDBURI); err != nil {
+			return nil, err
+		}
 	}
 	dest, err := analyticsDest(ctx)
 	if err != nil {

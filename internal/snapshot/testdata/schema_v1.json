@@ -111,6 +111,14 @@
     "successes": "",
     "tokens": ""
   },
+  "package_signals": {
+    "dependents": "INTEGER",
+    "ecosystem": "TEXT pk=1",
+    "package": "TEXT pk=2",
+    "prevalence": "REAL",
+    "raw": "TEXT",
+    "score": "REAL"
+  },
   "repo_metrics": {
     "bytes": "INTEGER",
     "commits": "INTEGER",

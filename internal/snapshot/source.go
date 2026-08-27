@@ -5,11 +5,15 @@ package snapshot
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/internal/iterx"
+	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
 )
@@ -17,7 +21,9 @@ import (
 // Source is the read side of the snapshot pipelines: each scan yields the
 // records written at or after the given watermark, and FullScan yields
 // every record. Scanning is isolated behind this interface so the
-// derivations can be tested with in-memory fixtures.
+// derivations can be tested with in-memory fixtures. Signals takes no
+// watermark: the priority exports are rewritten whole at job cadence, so
+// they are rollup-only and have no delta path.
 type Source interface {
 	Attempts(context.Context, time.Time) ([]schema.RebuildAttempt, error)
 	Runs(context.Context, time.Time) ([]schema.Run, error)
@@ -26,6 +32,7 @@ type Source interface {
 	Scratches(context.Context, time.Time) ([]schema.Scratch, error)
 	Execs(context.Context, time.Time) ([]schema.ScratchExec, error)
 	RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error)
+	Signals(context.Context) ([]signals.PackageSignal, error)
 }
 
 // FullScan is the zero watermark: a scan given it reads every record.
@@ -38,6 +45,10 @@ var FullScan time.Time
 // potentially via BigQuery.
 type FirestoreSource struct {
 	client *firestore.Client
+	// SignalsDB is the filesystem the signal database publishes under.
+	// Optional: nil yields no signal rows, so a rollup stays runnable
+	// before the first publish.
+	SignalsDB billy.Filesystem
 }
 
 var _ Source = (*FirestoreSource)(nil)
@@ -134,4 +145,32 @@ func (s *FirestoreSource) Execs(ctx context.Context, since time.Time) ([]schema.
 
 func (s *FirestoreSource) RepoMetrics(ctx context.Context, since time.Time) ([]schema.RepoMetrics, error) {
 	return scanQuery[schema.RepoMetrics](ctx, sinceQuery(s.client.Collection("repo_metrics").Query, "updated", since))
+}
+
+// Signals reads the priority signals from the published signal database.
+func (s *FirestoreSource) Signals(context.Context) ([]signals.PackageSignal, error) {
+	return readSignals(s.SignalsDB)
+}
+
+// readSignals fetches the published signal database and reads its package
+// rows. A nil filesystem yields no rows.
+func readSignals(dest billy.Filesystem) ([]signals.PackageSignal, error) {
+	if dest == nil {
+		return nil, nil
+	}
+	dir, err := os.MkdirTemp("", "signals-fetch-")
+	if err != nil {
+		return nil, errors.Wrap(err, "creating fetch directory")
+	}
+	defer os.RemoveAll(dir)
+	path, err := signals.Fetch(dest, dir)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching signal database")
+	}
+	db, err := sqlite3.Open(path)
+	if err != nil {
+		return nil, errors.Wrap(err, "opening signal database")
+	}
+	defer db.Close()
+	return signals.PackageSignals(db)
 }
