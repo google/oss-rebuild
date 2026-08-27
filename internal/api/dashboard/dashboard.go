@@ -11,6 +11,7 @@ import (
 	"regexp"
 
 	"cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -18,8 +19,8 @@ import (
 )
 
 var (
-	//go:embed header.gohtml
-	headerHTML string
+	//go:embed layout.gohtml
+	layoutHTML string
 	//go:embed index.gohtml
 	indexHTML string
 	//go:embed package.gohtml
@@ -28,6 +29,8 @@ var (
 	versionHTML string
 	//go:embed attempt.gohtml
 	attemptHTML string
+	//go:embed session.gohtml
+	sessionHTML string
 	//go:embed logs.gohtml
 	logsHTML string
 	//go:embed packages.gohtml
@@ -48,7 +51,8 @@ const (
 	CSSPath      = "/dashboard.css"
 )
 
-// RegisterAssets serves the dashboard's stylesheets at the paths above.
+// RegisterAssets serves the dashboard's stylesheets, and under the webfonts
+// build tag the embedded font files.
 func RegisterAssets(mux *http.ServeMux) {
 	for path, content := range map[string]string{ThemeCSSPath: themeCSS, CSSPath: css} {
 		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +60,7 @@ func RegisterAssets(mux *http.ServeMux) {
 			_, _ = io.WriteString(w, content)
 		})
 	}
+	registerFonts(mux)
 }
 
 var (
@@ -63,6 +68,7 @@ var (
 	PackageTmpl   *template.Template
 	VersionTmpl   *template.Template
 	AttemptTmpl   *template.Template
+	SessionTmpl   *template.Template
 	LogsTmpl      *template.Template
 	PackagesTmpl  *template.Template
 	ResourcesTmpl *template.Template
@@ -70,15 +76,26 @@ var (
 )
 
 func init() {
-	IndexTmpl = template.Must(template.New("index").Parse(headerHTML + indexHTML))
-	PackageTmpl = template.Must(template.New("package").Parse(headerHTML + packageHTML))
-	VersionTmpl = template.Must(template.New("version").Parse(headerHTML + versionHTML))
-	AttemptTmpl = template.Must(template.New("attempt").Parse(headerHTML + attemptHTML))
+	base := template.Must(template.New("page").Parse(layoutHTML))
+	// The webfonts build tag defines the template with preload links and a
+	// font stylesheet; without it the definition is empty and pages render
+	// with system fonts.
+	template.Must(base.Parse(webfontsTmpl))
+	page := func(src string) *template.Template {
+		return template.Must(template.Must(base.Clone()).Parse(src))
+	}
+	IndexTmpl = page(indexHTML)
+	PackageTmpl = page(packageHTML)
+	VersionTmpl = page(versionHTML)
+	AttemptTmpl = page(attemptHTML)
+	SessionTmpl = page(sessionHTML)
 	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
-	PackagesTmpl = template.Must(template.New("packages").Parse(headerHTML + packagesHTML))
-	ResourcesTmpl = template.Must(template.New("resources").Parse(headerHTML + resourcesHTML))
-	CoverageTmpl = template.Must(template.New("coverage").Parse(headerHTML + coverageHTML))
+	PackagesTmpl = page(packagesHTML)
+	ResourcesTmpl = page(resourcesHTML)
+	CoverageTmpl = page(coverageHTML)
 }
+
+//go:generate go run fonts/fetch_fonts.go
 
 var packagePathEncoding = rebuild.FilesystemTargetEncoding
 
@@ -92,6 +109,9 @@ type Deps struct {
 	SuccessRegex  *regexp.Regexp
 	Analytics     Analytics           // serves the snapshot-derived trend views
 	Registry      rebuild.RegistryMux // enumerates published versions for status
+
+	SessionsBucket string          // agent chat transcripts, read by the session page
+	Execs          db.ScratchExecs // the session page's exec ledger
 }
 
 type RebuildView struct {

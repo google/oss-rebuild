@@ -1,3 +1,4 @@
+{{define "content"}}
 <!--
  Copyright 2026 Google LLC
  SPDX-License-Identifier: Apache-2.0
@@ -59,69 +60,6 @@
     {{if .Warning}}<p class="hint">{{.Warning}}</p>
     {{else if not .Summary.Supported}}<p class="hint">Version enumeration isn't available for this ecosystem, showing attempted versions only.</p>{{end}}
     {{end}}
-{{define "eventTable"}}
-    {{if .}}
-    <table>
-        <thead>
-            <tr>
-                <th>Type</th>
-                <th>Version</th>
-                <th>Artifact</th>
-                <th>Status</th>
-                <th>Message</th>
-                <th>Reference</th>
-                <th>Completed</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{range .}}
-            {{if .Session}}
-            {{with .Session}}
-            <tr>
-                <td>Agent</td>
-                <td>{{.Target.Version}}</td>
-                <td>{{.Target.Artifact}}</td>
-                <td>
-                    {{if eq .StopReason "SUCCESS"}}
-                        <span class="status-success">Success</span>
-                    {{else if .StopReason}}
-                        <span class="status-fail">{{.StopReason}}</span>
-                    {{else}}
-                        {{.Status}}
-                    {{end}}
-                </td>
-                <td><small>{{.Summary}}</small></td>
-                <td><a href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}">{{.ID}}</a></td>
-                <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
-            </tr>
-            {{end}}
-            {{else}}
-            {{with .Rebuild}}
-            <tr>
-                <td>Rebuild</td>
-                <td>{{.Version}}</td>
-                <td>{{.Artifact}}</td>
-                <td>
-                    {{if .Success}}
-                        <span class="status-success">Success</span>
-                    {{else}}
-                        <span class="status-fail">Failed</span>
-                    {{end}}
-                </td>
-                <td><small>{{.Message}}</small></td>
-                <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">{{.RunID}}</a></td>
-                <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
-            </tr>
-            {{end}}
-            {{end}}
-            {{end}}
-        </tbody>
-    </table>
-    {{else}}
-    <p class="hint">Nothing recorded yet.</p>
-    {{end}}
-{{end}}
-
     <section class="tabbed">
         <input type="radio" id="tab-events" name="pkgtab" class="tab-radio" checked>
         <input type="radio" id="tab-rebuilds" name="pkgtab" class="tab-radio">
@@ -164,5 +102,67 @@
             </table>
         </div>
     </section>
-</body>
-</html>
+{{end}}
+
+{{define "eventTable"}}
+    {{if .}}
+    <table>
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Version</th>
+                <th>Artifact</th>
+                <th>Status</th>
+                <th>Message</th>
+                <th>Reference</th>
+                <th>Completed</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .}}
+            {{if .Session}}
+            {{with .Session}}
+            <tr>
+                <td>Agent</td>
+                <td>{{.Target.Version}}</td>
+                <td>{{.Target.Artifact}}</td>
+                <td>
+                    {{if eq .StopReason "SUCCESS"}}
+                        <span class="status-success">Success</span>
+                    {{else if .StopReason}}
+                        <span class="status-fail">{{.StopReason}}</span>
+                    {{else}}
+                        {{.Status}}
+                    {{end}}
+                </td>
+                <td><small>{{.Summary}}</small></td>
+                <td><a href="/session/{{.ID}}">{{.ID}}</a></td>
+                <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
+            </tr>
+            {{end}}
+            {{else}}
+            {{with .Rebuild}}
+            <tr>
+                <td>Rebuild</td>
+                <td>{{.Version}}</td>
+                <td>{{.Artifact}}</td>
+                <td>
+                    {{if .Success}}
+                        <span class="status-success">Success</span>
+                    {{else}}
+                        <span class="status-fail">Failed</span>
+                    {{end}}
+                </td>
+                <td><small>{{.Message}}</small></td>
+                <td><a href="/attempt/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/{{.Encoded.Version}}/{{.Encoded.Artifact}}/{{.RunID}}">{{.RunID}}</a></td>
+                <td>{{.Created.Format "2006-01-02 15:04:05"}}</td>
+            </tr>
+            {{end}}
+            {{end}}
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="hint">Nothing recorded yet.</p>
+    {{end}}
+{{end}}
