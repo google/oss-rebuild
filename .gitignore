@@ -37,3 +37,6 @@ node_modules/
 docs/public/
 docs/resources/
 docs/.hugo_build.lock
+
+# Dashboard fonts, fetched by `go generate ./internal/api/dashboard`
+internal/api/dashboard/fonts/*.woff2
