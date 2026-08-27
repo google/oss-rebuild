@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/google/oss-rebuild/pkg/feed"
@@ -46,6 +47,9 @@ func (s *snapshotSource) Execs(context.Context, time.Time) ([]schema.ScratchExec
 	return nil, nil
 }
 func (s *snapshotSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error) {
+	return nil, nil
+}
+func (s *snapshotSource) Signals(context.Context) ([]signals.PackageSignal, error) {
 	return nil, nil
 }
 

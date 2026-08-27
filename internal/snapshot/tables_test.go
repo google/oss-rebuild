@@ -89,6 +89,7 @@ func fill(t *testing.T, src *fakeSource) (*sqlite3.Conn, map[string]int) {
 		TableScratchVMs:      docsOf(src.scratches),
 		TableScratchExecs:    docsOf(src.execs),
 		TableRepoMetrics:     docsOf(src.repoMetrics),
+		TablePackageSignals:  docsOf(src.signals),
 	}, Meta{BuiltAt: at(time.Hour)})
 	if err != nil {
 		t.Fatalf("fillSnapshotDB: %v", err)

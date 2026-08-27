@@ -32,6 +32,7 @@ const (
 	TableScratchVMs       = "scratch_vms"
 	TableScratchExecs     = "scratch_execs"
 	TableRepoMetrics      = "repo_metrics"
+	TablePackageSignals   = "package_signals"
 	TableCostObservations = "cost_observations"
 	TableEcosystemDaily   = "ecosystem_daily"
 )
@@ -309,6 +310,19 @@ func Tables() []docdb.TableDef {
 				{Name: "bytes", Type: "INTEGER", Expr: docdb.Raw("$.bytes")},
 				{Name: "commits", Type: "INTEGER", Expr: docdb.Raw("$.commits")},
 				{Name: "head", Type: "TEXT", Expr: docdb.Raw("$.head")},
+			},
+		},
+		{
+			Name: TablePackageSignals,
+			Cols: []docdb.Col{
+				{Name: "ecosystem", Type: "TEXT", Expr: docdb.Doc("$.Ecosystem")},
+				{Name: "package", Type: "TEXT", Expr: docdb.Doc("$.Package")},
+			},
+			PK: []string{"ecosystem", "package"},
+			GenCols: []docdb.GenCol{
+				{Name: "dependents", Type: "INTEGER", Expr: docdb.Raw("$.Dependents")},
+				{Name: "prevalence", Type: "REAL", Expr: docdb.Raw("$.Prevalence")},
+				{Name: "score", Type: "REAL", Expr: docdb.Raw("$.Score"), Stored: true},
 			},
 		},
 		{Name: TableCostObservations, Query: costObservationsQuery, Indexes: [][]string{{"ecosystem", "package"}, {"source"}, {"timestamp"}}},
