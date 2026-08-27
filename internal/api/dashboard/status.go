@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/internal/versionx"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
@@ -119,7 +120,8 @@ func computeVersionStatuses(eco rebuild.Ecosystem, pkg string, axis []string, su
 		for v := range byVer {
 			order = append(order, v)
 		}
-		sort.Slice(order, func(i, j int) bool { return byVer[order[i]].last.After(byVer[order[j]].last) })
+		// Newest first, matching the published-axis ordering.
+		sort.Slice(order, func(i, j int) bool { return versionx.ApproxCompare(order[i], order[j]) > 0 })
 	}
 
 	out := make([]VersionStatus, 0, len(order))
