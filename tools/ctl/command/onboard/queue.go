@@ -117,7 +117,12 @@ func enqueueHandler(ctx context.Context, cfg enqueueConfig, deps *Deps) (*act.No
 			fmt.Fprintf(deps.IO.Err, "skip %s: the signal database ranks no version of it\n", pkg)
 			continue
 		}
-		enqueued, skipped := enqueuePackage(ctx, campaigns, deps.IO.Err, cfg, pkg, rows, now)
+		// A package outside the ranked head gets 0 prominence.
+		sig, _, err := signals.PackageSignalAt(sdb, cfg.Ecosystem, pkg)
+		if err != nil {
+			return nil, errors.Wrapf(err, "reading signals of %s", pkg)
+		}
+		enqueued, skipped := enqueuePackage(ctx, campaigns, deps.IO.Err, cfg, pkg, sig.Prominence, rows, now)
 		if enqueued > 0 {
 			newPkgs++
 		}
@@ -163,7 +168,7 @@ func openSignalDB(ctx context.Context, destURI string) (*sqlite3.Conn, func(), e
 // returns how many were enqueued and how many already existed. PyPI versions
 // the export names no pure wheel for are skipped. Other ecosystems derive the
 // artifact from the version.
-func enqueuePackage(ctx context.Context, campaigns db.Campaigns, errw io.Writer, cfg enqueueConfig, pkg string, rows []signals.VersionSignal, now time.Time) (enqueued, skipped int) {
+func enqueuePackage(ctx context.Context, campaigns db.Campaigns, errw io.Writer, cfg enqueueConfig, pkg string, prominence float64, rows []signals.VersionSignal, now time.Time) (enqueued, skipped int) {
 	eco := rebuild.Ecosystem(cfg.Ecosystem)
 	named := make([]signals.VersionSignal, 0, len(rows))
 	for _, r := range rows {
@@ -181,7 +186,7 @@ func enqueuePackage(ctx context.Context, campaigns db.Campaigns, errw io.Writer,
 		}
 		named = append(named, r)
 	}
-	for _, c := range admit(eco, pkg, named, cfg, now) {
+	for _, c := range admit(eco, pkg, prominence, named, cfg, now) {
 		switch err := campaigns.Insert(ctx, c); err {
 		case nil:
 			enqueued++
@@ -197,14 +202,14 @@ func enqueuePackage(ctx context.Context, campaigns db.Campaigns, errw io.Writer,
 // admit turns a package's ranked versions into queue documents, ordered by
 // DispatchOrder and cut to --max-versions, so a version that would never
 // reach the front of the queue never enters.
-func admit(eco rebuild.Ecosystem, pkg string, rows []signals.VersionSignal, cfg enqueueConfig, now time.Time) []scheduler.Campaign {
+func admit(eco rebuild.Ecosystem, pkg string, prominence float64, rows []signals.VersionSignal, cfg enqueueConfig, now time.Time) []scheduler.Campaign {
 	out := make([]scheduler.Campaign, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, scheduler.Campaign{
 			Ecosystem: string(eco), Package: pkg, Version: r.Version, Artifact: r.Artifact,
 			Stage:     scheduler.StageInfer,
 			State:     scheduler.StateQueued,
-			Score:     r.Prevalence,
+			Score:     signals.Score(r.Prevalence, prominence),
 			Published: r.Published,
 			Updated:   now,
 		})

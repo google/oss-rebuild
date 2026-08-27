@@ -4,21 +4,21 @@
 package signals
 
 // PackageSignal is the read-time join of the priority exports for one
-// package: each signal's raw measure and normalized score, plus the
-// combined Score.
+// package. A package missing from one export carries zeros for it.
 type PackageSignal struct {
 	Ecosystem  string
 	Package    string
 	Dependents int64   // distinct packages depending on this one, directly or transitively
 	Prevalence float64 // Dependents on a log scale against the ecosystem's top package, in (0,1]
+	Model      string
+	Rating     float64 // Model's prominence answer, scaled to [0,1]
+	Prominence float64 // Rating's per-ecosystem rank quantile, in [0,1]
 	Score      float64 // combined priority across the signals present
 }
 
-// JoinSignals folds the package-level rows of the priority exports into
-// one PackageSignal per (ecosystem, package). Version-level prevalence
-// rows are skipped: the join is the per-package view, and version
-// specialization happens where a version is in hand.
-func JoinSignals(prevs []PrevalenceRecord) []PackageSignal {
+// JoinSignals merges the package-level prevalence rows with the prominence
+// rows into one PackageSignal per (ecosystem, package).
+func JoinSignals(prevs []PrevalenceRecord, proms []ProminenceRecord) []PackageSignal {
 	type key struct{ eco, pkg string }
 	idx := make(map[key]int)
 	var out []PackageSignal
@@ -38,9 +38,12 @@ func JoinSignals(prevs []PrevalenceRecord) []PackageSignal {
 		i := at(r.Ecosystem, r.Package)
 		out[i].Dependents, out[i].Prevalence = r.Dependents, r.Prevalence
 	}
+	for _, r := range proms {
+		i := at(r.Ecosystem, r.Package)
+		out[i].Model, out[i].Rating, out[i].Prominence = r.Model, r.Rating, r.Prominence
+	}
 	for i := range out {
-		// Prevalence is the only signal so far, so it is the score.
-		out[i].Score = out[i].Prevalence
+		out[i].Score = Score(out[i].Prevalence, out[i].Prominence)
 	}
 	return out
 }

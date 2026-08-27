@@ -27,6 +27,10 @@ func TestReadSignals(t *testing.T) {
 			// Version rows publish but only package rows reach the snapshot.
 			{Ecosystem: "pypi", Package: "pkgA", Version: "1.0", Dependents: 60, Prevalence: 0.75},
 		},
+		[]signals.ProminenceRecord{
+			{Ecosystem: "pypi", Package: "pkgA", Rating: 0.9, Prominence: 0.6},
+			{Ecosystem: "pypi", Package: "pkgC", Rating: 0.5, Prominence: 0.2},
+		},
 		signals.Meta{BuiltAt: published}); err != nil {
 		t.Fatalf("building signal database: %v", err)
 	}
@@ -43,7 +47,8 @@ func TestReadSignals(t *testing.T) {
 		t.Fatalf("draining signals: %v", err)
 	}
 	want := []signals.PackageSignal{
-		{Ecosystem: "pypi", Package: "pkgA", Dependents: 100, Prevalence: 0.8, Score: 0.8},
+		{Ecosystem: "pypi", Package: "pkgA", Dependents: 100, Prevalence: 0.8, Rating: 0.9, Prominence: 0.6, Score: 0.7},
+		{Ecosystem: "pypi", Package: "pkgC", Rating: 0.5, Prominence: 0.2, Score: 0.1},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("signals mismatch (-want +got):\n%s", diff)

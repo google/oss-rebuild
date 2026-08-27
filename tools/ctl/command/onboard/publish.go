@@ -24,6 +24,7 @@ import (
 
 type publishConfig struct {
 	Prevalence string
+	Prominence string
 	Dest       string
 }
 
@@ -46,13 +47,20 @@ func publishHandler(ctx context.Context, cfg publishConfig, deps *Deps) (*act.No
 	if err != nil {
 		return nil, errors.Wrap(err, "reading prevalence export")
 	}
+	// Prominence is optional. Without it every package scores on prevalence.
+	var proms []signals.ProminenceRecord
+	if cfg.Prominence != "" {
+		if proms, err = readExport[signals.ProminenceRecord](ctx, resolve, cfg.Prominence); err != nil {
+			return nil, errors.Wrap(err, "reading prominence export")
+		}
+	}
 	dir, err := os.MkdirTemp("", "signals-publish-")
 	if err != nil {
 		return nil, errors.Wrap(err, "creating build directory")
 	}
 	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "signals.db")
-	counts, err := signals.Build(path, prevs, signals.Meta{BuiltAt: time.Now().UTC(), ToolVersion: buildinfo.Version})
+	counts, err := signals.Build(path, prevs, proms, signals.Meta{BuiltAt: time.Now().UTC(), ToolVersion: buildinfo.Version})
 	if err != nil {
 		return nil, errors.Wrap(err, "building signal database")
 	}
@@ -87,13 +95,14 @@ func readExport[T any](ctx context.Context, resolve *billyx.Resolver, uri string
 func publishCommand() *cobra.Command {
 	cfg := publishConfig{}
 	cmd := &cobra.Command{
-		Use:   "publish --prevalence <uri> --dest <gs://...|file://...>",
+		Use:   "publish --prevalence <uri> [--prominence <uri>] --dest <gs://...|file://...>",
 		Short: "Assemble and publish the signal database from the ranked exports",
 		Args:  cobra.NoArgs,
 		RunE:  cli.RunE(&cfg, cli.SkipArgs[publishConfig], InitDeps, publishHandler),
 	}
 	set := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
 	set.StringVar(&cfg.Prevalence, "prevalence", "", "prevalence JSONL export (gs:// URI or local path)")
+	set.StringVar(&cfg.Prominence, "prominence", "", "prominence JSONL export (gs:// URI or local path); optional")
 	set.StringVar(&cfg.Dest, "dest", "", "destination URI the signal database publishes under")
 	cmd.Flags().AddGoFlagSet(set)
 	return cmd
