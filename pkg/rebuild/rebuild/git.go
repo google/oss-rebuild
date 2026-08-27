@@ -99,8 +99,7 @@ func allTags(repo *git.Repository) (tags []string, err error) {
 //
 // If rebuild.RepoCacheClientID is present, a Git cache service will be used
 // instead of the remote defined in CloneOptions.URL.
-func LoadRepo(ctx context.Context, pkg string, s storage.Storer, fs billy.Filesystem, opt git.CloneOptions) (*git.Repository, error) {
-	var r *git.Repository
+func LoadRepo(ctx context.Context, pkg string, s storage.Storer, fs billy.Filesystem, opt git.CloneOptions) (*gitx.Repo, error) {
 	r, err := gitx.Reuse(ctx, s, fs, &opt)
 	switch err {
 	case nil:

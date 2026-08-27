@@ -77,10 +77,11 @@ func (a *defaultAgent) InitializeFromIteration(ctx context.Context, initialItera
 	if err != nil {
 		return errors.Wrap(err, "parsing previous iteration")
 	}
-	a.repo, err = rebuild.LoadRepo(ctx, a.t.Package, memory.NewStorage(), memfs.New(), git.CloneOptions{URL: loc.Repo, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
+	repo, err := rebuild.LoadRepo(ctx, a.t.Package, memory.NewStorage(), memfs.New(), git.CloneOptions{URL: loc.Repo, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
 	if err != nil {
 		return errors.Wrap(err, "loading repo")
 	}
+	a.repo = repo.Repository
 	w, err := a.repo.Worktree()
 	if err != nil {
 		return errors.Wrap(err, "getting worktree")

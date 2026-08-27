@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -859,10 +860,10 @@ version = 3
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repo, nil))
 			target := rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150", Artifact: "serde-1.0.150.crate"}
 			rcfg := rebuild.RepoConfig{
-				Repository: repo.Repository,
-				URI:        "https://github.com/serde-rs/serde",
-				Dir:        "",
-				RefMap:     map[string]string{"1.0.150": repo.Commits["version-bump"].String()},
+				Repo:   gitx.Repo{Repository: repo.Repository},
+				URI:    "https://github.com/serde-rs/serde",
+				Dir:    "",
+				RefMap: map[string]string{"1.0.150": repo.Commits["version-bump"].String()},
 			}
 			files := tc.files
 			if tc.filesFn != nil {
@@ -953,7 +954,7 @@ func TestInferRefAndDirUsesVCSPathForFallback(t *testing.T) {
 				rebuild.Target{Package: "serde", Version: "1.0.150"},
 				&cratesio.CrateVersion{Version: cratesio.Version{Version: "1.0.150"}},
 				crate.Bytes(),
-				&rebuild.RepoConfig{Repository: repo.Repository, Dir: "current", RefMap: refMap},
+				&rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, Dir: "current", RefMap: refMap},
 			)
 			if err != nil {
 				t.Fatal(err)

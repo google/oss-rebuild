@@ -301,7 +301,7 @@ func setupLocalRepo(t *testing.T, yamlSpec string) string {
 // localCloneFunc returns a CloneFunc that rewrites the URL to localURL
 // before delegating to gitx.Clone.
 func localCloneFunc(localURL string) gitx.CloneFunc {
-	return func(ctx context.Context, s storage.Storer, fs billy.Filesystem, opts *git.CloneOptions) (*git.Repository, error) {
+	return func(ctx context.Context, s storage.Storer, fs billy.Filesystem, opts *git.CloneOptions) (*gitx.Repo, error) {
 		opts.URL = localURL
 		return gitx.Clone(ctx, s, fs, opts)
 	}
