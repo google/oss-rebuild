@@ -81,4 +81,5 @@ type RepoMetrics struct {
 	Commits    int64     `json:"commits,omitempty" firestore:"commits,omitempty"`        // commit objects in the clone
 	Head       string    `json:"head,omitempty" firestore:"head,omitempty"`              // head commit hash at measurement
 	MeasuredAt time.Time `json:"measured_at,omitzero" firestore:"measured_at,omitempty"` // if calculable, when the repo was fetched from the remote (diverges from current time for e.g. git-cache)
+	Updated    time.Time `json:"updated,omitzero" firestore:"updated,omitempty"`         // when this record was last written
 }

@@ -73,6 +73,9 @@ func TestRecordRepoMetrics(t *testing.T) {
 	if !got.MeasuredAt.Equal(fetched) {
 		t.Errorf("MeasuredAt = %v; want the config's FetchedAt %v", got.MeasuredAt, fetched)
 	}
+	if got.Updated.IsZero() {
+		t.Error("Updated is zero; want a timestamp")
+	}
 }
 
 func TestRecordRepoMetricsBadURI(t *testing.T) {

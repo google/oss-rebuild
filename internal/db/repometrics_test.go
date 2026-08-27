@@ -21,11 +21,11 @@ func TestMemoryRepoMetrics_RoundTrip(t *testing.T) {
 		t.Fatalf("canonicalize: %v", err)
 	}
 	want := schema.RepoMetrics{
-		URI:        canonical,
-		Bytes:      4096,
-		Commits:    12,
-		Head:       "deadbeef",
-		MeasuredAt: time.Unix(1700000000, 0).UTC(),
+		URI:     canonical,
+		Bytes:   4096,
+		Commits: 12,
+		Head:    "deadbeef",
+		Updated: time.Unix(1700000000, 0).UTC(),
 	}
 	if err := s.Upsert(ctx, want); err != nil {
 		t.Fatalf("Upsert: %v", err)

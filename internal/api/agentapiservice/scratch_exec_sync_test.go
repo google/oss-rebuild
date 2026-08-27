@@ -199,6 +199,7 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 				CreatedAt:  created,
 				StartedAt:  workerStart,
 				FinishedAt: workerFinish,
+				Updated:    brokerNow,
 			},
 		},
 		{
@@ -212,6 +213,7 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 				State:      schema.ScratchExecCompleted,
 				CreatedAt:  created,
 				FinishedAt: brokerNow,
+				Updated:    brokerNow,
 			},
 		},
 		{
@@ -231,6 +233,7 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 				CreatedAt:  created,
 				StartedAt:  workerStart,
 				FinishedAt: workerFinish,
+				Updated:    brokerNow,
 				Error: &schema.Status{
 					Code:    int(codes.DeadlineExceeded),
 					Message: "command exceeded TimeoutSeconds",
@@ -252,6 +255,7 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 				CreatedAt:  created,
 				StartedAt:  workerStart,
 				FinishedAt: workerFinish,
+				Updated:    brokerNow,
 				Error: &schema.Status{
 					Code:    int(codes.Internal),
 					Message: "spawn failed",

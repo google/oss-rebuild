@@ -381,6 +381,7 @@ type RebuildAttempt struct {
 	Started         time.Time             `firestore:"started,omitempty"`    // The time rebuild started
 	Finished        time.Time             `firestore:"finished,omitempty"`   // The time rebuild finished
 	Created         time.Time             `firestore:"created,omitempty"`    // The time this record was created
+	Updated         time.Time             `firestore:"updated,omitempty"`    // The time this record was last written
 }
 
 func (a RebuildAttempt) Target() rebuild.Target {
