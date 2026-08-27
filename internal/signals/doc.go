@@ -10,7 +10,12 @@
 // ecosystem. We define it as "how many other packages depend on this one,
 // directly or transitively," measured both per package and per version.
 //
-// This package holds the record types, the scoring, and the exports' storage.
-// The jobs that produce and consume the exports live in
-// tools/ctl/command/onboard.
+// The exports are also assembled into a published SQLite database, read by
+// enqueue and by the snapshot. Unlike the snapshot's doc tables, its rows are
+// plain columns with no raw document: the exports are the raw record and the
+// database is regenerable from them, so per-row JSON would only triple the
+// file (measured 183 vs 55 bytes per row at 10^6-package scale).
+//
+// This package holds the record types, the scoring, and that database. The
+// jobs that produce and consume the exports live in tools/ctl/command/onboard.
 package signals
