@@ -7,6 +7,7 @@ package dashboard
 
 import (
 	_ "embed"
+	"io"
 	"net/http"
 )
 
@@ -20,15 +21,17 @@ var (
 	merriweatherWoff2 []byte
 )
 
-// fontsHTML fills the header's webfonts marker so every page preloads the
-// embedded faces.
-const fontsHTML = `    <link rel="preload" href="/fonts/public-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+// webfontsTmpl fills the layout's webfonts slot: preload the embedded
+// faces and pull in their stylesheet.
+const webfontsTmpl = `{{define "webfonts"}}    <link rel="preload" href="/fonts/public-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/fonts/merriweather-700-latin.woff2" as="font" type="font/woff2" crossorigin>
-`
+    <link rel="stylesheet" href="/fonts.css">
+{{end}}`
 
-// fontsCSS declares the embedded latin subsets. font-display: fallback
-// gives a ~100ms block period, which a same-origin preloaded font beats, so
-// pages paint with the face in place instead of swapping it in.
+// fontsCSS is served as /fonts.css and declares the embedded latin
+// subsets. font-display: fallback gives a ~100ms block period, which a
+// same-origin preloaded font beats, so pages paint with the face in place
+// instead of swapping it in.
 const fontsCSS = `@font-face {
     font-family: 'Public Sans';
     font-style: normal;
@@ -51,6 +54,10 @@ const fontsCSS = `@font-face {
 // registerFonts serves the embedded faces. Fonts are immutable: a face
 // change ships under a new path.
 func registerFonts(mux *http.ServeMux) {
+	mux.HandleFunc("/fonts.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		_, _ = io.WriteString(w, fontsCSS)
+	})
 	for path, content := range map[string][]byte{
 		"/fonts/public-sans-latin.woff2":      publicSansWoff2,
 		"/fonts/merriweather-700-latin.woff2": merriweatherWoff2,

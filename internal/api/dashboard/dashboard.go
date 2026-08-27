@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"strings"
 
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/db"
@@ -20,8 +19,8 @@ import (
 )
 
 var (
-	//go:embed header.gohtml
-	headerHTML string
+	//go:embed layout.gohtml
+	layoutHTML string
 	//go:embed index.gohtml
 	indexHTML string
 	//go:embed package.gohtml
@@ -77,22 +76,23 @@ var (
 )
 
 func init() {
-	// The webfonts build tag supplies the preload links and font faces;
-	// without it both are empty and pages render with system fonts.
-	// TODO: Compose pages with html/template (a base layout with named
-	// blocks) instead of string concatenation, and make this a template
-	// the tag overrides.
-	headerHTML = strings.Replace(headerHTML, "    <!-- webfonts -->\n", fontsHTML, 1)
-	css = fontsCSS + css
-	IndexTmpl = template.Must(template.New("index").Parse(headerHTML + indexHTML))
-	PackageTmpl = template.Must(template.New("package").Parse(headerHTML + packageHTML))
-	VersionTmpl = template.Must(template.New("version").Parse(headerHTML + versionHTML))
-	AttemptTmpl = template.Must(template.New("attempt").Parse(headerHTML + attemptHTML))
-	SessionTmpl = template.Must(template.New("session").Parse(headerHTML + sessionHTML))
+	base := template.Must(template.New("page").Parse(layoutHTML))
+	// The webfonts build tag defines the template with preload links and a
+	// font stylesheet; without it the definition is empty and pages render
+	// with system fonts.
+	template.Must(base.Parse(webfontsTmpl))
+	page := func(src string) *template.Template {
+		return template.Must(template.Must(base.Clone()).Parse(src))
+	}
+	IndexTmpl = page(indexHTML)
+	PackageTmpl = page(packageHTML)
+	VersionTmpl = page(versionHTML)
+	AttemptTmpl = page(attemptHTML)
+	SessionTmpl = page(sessionHTML)
 	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
-	PackagesTmpl = template.Must(template.New("packages").Parse(headerHTML + packagesHTML))
-	ResourcesTmpl = template.Must(template.New("resources").Parse(headerHTML + resourcesHTML))
-	CoverageTmpl = template.Must(template.New("coverage").Parse(headerHTML + coverageHTML))
+	PackagesTmpl = page(packagesHTML)
+	ResourcesTmpl = page(resourcesHTML)
+	CoverageTmpl = page(coverageHTML)
 }
 
 //go:generate go run fonts/fetch_fonts.go

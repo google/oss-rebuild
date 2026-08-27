@@ -1,3 +1,5 @@
+{{define "def"}}<span class="info" tabindex="0" data-tip="{{.}}">?</span>{{end}}
+{{define "content"}}
 <!--
  Copyright 2026 Google LLC
  SPDX-License-Identifier: Apache-2.0
@@ -15,7 +17,6 @@
     .muted { color: var(--muted); }
     .streak { color: var(--mismatch); font-weight: 600; }
 </style>
-{{define "def"}}<span class="info" tabindex="0" data-tip="{{.}}">?</span>{{end}}
 <h2>Packages</h2>
 {{if not .Loaded}}
 <p>No analytics snapshot loaded. Start the dashboard with
@@ -64,5 +65,4 @@
 </table>
 {{end}}
 {{end}}
-</body>
-</html>
+{{end}}
