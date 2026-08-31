@@ -507,6 +507,7 @@ type AgentCreateRequest struct {
 	Context       *AgentContext      `form:""`
 	ExecutionMode AgentExecutionMode `form:""` // Empty means AgentExecutionModeGCB
 	ExternalAgent bool               `form:""` // Skip the hosted agent job launch: the caller runs the agent binary
+	Model         string             `form:""` // Gemini model id for the session. Empty selects the agent's default.
 }
 
 var _ api.Input = AgentCreateRequest{}
@@ -599,6 +600,7 @@ type AgentSession struct {
 	Status           string             `firestore:"status,omitempty"`
 	ExecutionName    string             `firestore:"execution_name,omitempty"`
 	ExecutionMode    AgentExecutionMode `firestore:"execution_mode,omitempty"` // Empty means GCB (sessions predating scratch support)
+	Model            string             `firestore:"model,omitempty"`          // Gemini model id driving the session
 	ScratchID        string             `firestore:"scratch_id,omitempty"`     // Scratch VM bound to the session (scratch execution mode only)
 	Usage            *TokenUsage        `firestore:"usage,omitempty"`          // total LLM tokens, reported at completion
 	Created          time.Time          `firestore:"created,omitempty"`

@@ -27,6 +27,7 @@ import (
 var (
 	project         = flag.String("project", "", "GCP Project ID for resource usage")
 	location        = flag.String("location", "global", "GCP location for resource usage")
+	model           = flag.String("model", "", "Gemini model id for the session, if overriding defaults")
 	sessionID       = flag.String("session-id", "", "Session ID for this agent run")
 	agentAPIURL     = flag.String("agent-api-url", "", "URL of the agent API service")
 	sessionsBucket  = flag.String("sessions-bucket", "", "GCS bucket for session data")
@@ -137,6 +138,7 @@ func main() {
 		LogsBucket:     *logsBucket,
 		RegistryClient: regclient,
 		Retrier:        agent.NewRetrier(),
+		Model:          *model,
 	}
 	if mode == schema.AgentExecutionModeScratch {
 		stubs := scratch.Stubs{
