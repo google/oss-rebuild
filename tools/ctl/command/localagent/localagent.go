@@ -32,6 +32,7 @@ type Config struct {
 	AgentAPI       string
 	MetadataBucket string
 	LogsBucket     string
+	SessionsBucket string
 	Ecosystem      string
 	Package        string
 	Version        string
@@ -171,7 +172,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		IterationStub:  iterationStub,
 		CompleteStub:   completeStub,
 		GCSClient:      gcsClient,
-		SessionsBucket: "", // TODO: Add this once it's being used.
+		SessionsBucket: cfg.SessionsBucket,
 		MetadataBucket: cfg.MetadataBucket,
 		LogsBucket:     cfg.LogsBucket,
 		Retrier:        agent.NewRetrier(),
@@ -212,6 +213,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.AgentAPI, "agent-api", "", "Agent API endpoint URI")
 	set.StringVar(&cfg.MetadataBucket, "metadata-bucket", "", "the gcs bucket where rebuild output is stored")
 	set.StringVar(&cfg.LogsBucket, "logs-bucket", "", "the gcs bucket where gcb logs are stored")
+	set.StringVar(&cfg.SessionsBucket, "sessions-bucket", "", "the gcs bucket where session transcripts are uploaded")
 	set.StringVar(&cfg.Ecosystem, "ecosystem", "", "the ecosystem")
 	set.StringVar(&cfg.Package, "package", "", "the package name")
 	set.StringVar(&cfg.Version, "version", "", "the version of the package")
