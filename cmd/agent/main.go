@@ -12,6 +12,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/agent"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
@@ -21,6 +22,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/idtoken"
+	gapihttp "google.golang.org/api/transport/http"
 	"google.golang.org/genai"
 )
 
@@ -30,6 +32,7 @@ var (
 	model           = flag.String("model", "", "Gemini model id for the session, if overriding defaults")
 	sessionID       = flag.String("session-id", "", "Session ID for this agent run")
 	agentAPIURL     = flag.String("agent-api-url", "", "URL of the agent API service")
+	gitCacheURL     = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
 	sessionsBucket  = flag.String("sessions-bucket", "", "GCS bucket for session data")
 	metadataBucket  = flag.String("metadata-bucket", "", "GCS bucket for build metadata")
 	logsBucket      = flag.String("logs-bucket", "", "GCS bucket for build logs")
@@ -127,6 +130,22 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to create egress client: ", err)
 	}
+	var gitCache *gitcache.Client
+	if *gitCacheURL != "" {
+		idc, err := idtoken.NewClient(ctx, *gitCacheURL)
+		if err != nil {
+			log.Fatal("Failed to create git cache id client: ", err)
+		}
+		apic, _, err := gapihttp.NewClient(ctx)
+		if err != nil {
+			log.Fatal("Failed to create git cache API client: ", err)
+		}
+		u, err := url.Parse(*gitCacheURL)
+		if err != nil {
+			log.Fatal("Failed to parse git cache URL: ", err)
+		}
+		gitCache = &gitcache.Client{IDClient: idc, APIClient: apic, URL: u}
+	}
 	target := rebuild.Target{Ecosystem: rebuild.Ecosystem(*targetEcosystem), Package: *targetPackage, Version: *targetVersion, Artifact: *targetArtifact}
 	deps := agent.RunSessionDeps{
 		Client:         aiClient,
@@ -139,6 +158,7 @@ func main() {
 		RegistryClient: regclient,
 		Retrier:        agent.NewRetrier(),
 		Model:          *model,
+		GitCache:       gitCache,
 	}
 	if mode == schema.AgentExecutionModeScratch {
 		stubs := scratch.Stubs{

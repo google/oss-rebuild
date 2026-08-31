@@ -241,6 +241,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--block-local-repo-publish=${var.public}",
         "--agent-job-name=${google_cloud_run_v2_job.agent.id}",
         "--agent-api-url=${google_cloud_run_v2_service.agent-api.uri}",
+        "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
         "--agent-timeout-seconds=3600", // 1 hour
         "--agent-sessions-bucket=${google_storage_bucket.agent-sessions.name}",
         "--agent-metadata-bucket=${google_storage_bucket.agent-metadata.name}",

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gcs "cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -34,6 +35,7 @@ type AgentDeps struct {
 	RegistryClient httpx.BasicClient // Upstream registry requests (e.g. adapt-mode registry refresh) via the session's identified egress path.
 	ScratchRunner  *ScratchRunner    // When set, iteration builds run on a scratch VM with build logs read from exec output.
 	Model          string            // Gemini model id for auxiliary calls. Empty selects llm.GeminiPro.
+	GitCache       *gitcache.Client  // When set, inference repo clones go through the git-cache.
 }
 
 type ProposeOpts struct {
@@ -66,6 +68,7 @@ type RunSessionDeps struct {
 	RegistryClient httpx.BasicClient // Upstream registry requests via the session's identified egress path.
 	ScratchRunner  *ScratchRunner    // When set, each iteration builds on the scratch VM. Only verified successes reach the iteration API, as GCB confirmations.
 	Model          string            // Gemini model id for the session's calls. Empty selects llm.GeminiPro.
+	GitCache       *gitcache.Client  // When set, iteration inference repo clones go through the git-cache.
 }
 
 func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
@@ -157,6 +160,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		RegistryClient: deps.RegistryClient,
 		ScratchRunner:  deps.ScratchRunner,
 		Model:          deps.Model,
+		GitCache:       deps.GitCache,
 	})
 	// Stamp the session's LLM token spend onto whatever completion we return.
 	defer func() {

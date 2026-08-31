@@ -34,6 +34,7 @@ type AgentCreateDeps struct {
 	AILocation          string // Vertex AI location for agent model calls, distinct as Gemini 3.x only serves from global
 	AgentJobName        string
 	AgentAPIURL         string
+	GitCacheURL         string
 	AgentTimeoutSeconds int
 	SessionsBucket      string
 	MetadataBucket      string
@@ -160,6 +161,9 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		}
 		if deps.Host != "" {
 			args = append(args, "--host="+deps.Host)
+		}
+		if deps.GitCacheURL != "" {
+			args = append(args, "--git-cache-url="+deps.GitCacheURL)
 		}
 		if req.Model != "" {
 			args = append(args, "--model="+req.Model)
