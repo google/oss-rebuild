@@ -126,7 +126,7 @@ func (a *defaultAgent) logs(ctx context.Context, obliviousID string) (io.ReadClo
 func (a *defaultAgent) getTools() []*llm.FunctionDefinition {
 	tools := append(a.gitTools, a.readLogsTool())
 	if a.deps.ScratchRunner != nil {
-		tools = append(tools, a.runCommandTool())
+		tools = append(tools, a.runOnHostTool(), a.runInContainerTool())
 	}
 	return tools
 }
@@ -206,66 +206,128 @@ func (a *defaultAgent) readPreviousBuildLogs(ctx context.Context) (string, error
 
 const runCommandTimeoutMax = 900
 
-func (a *defaultAgent) runCommandTool() *llm.FunctionDefinition {
+func (a *defaultAgent) runOnHostTool() *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
-			Name:        "run_command",
-			Description: "Run a shell command on the build VM where the rebuild containers execute. Useful for inspecting docker images, examining files left by previous build attempts under ./builds/<build-id>/ (each contains the attempt's build.sh and out/ directory), and testing package availability. The command runs on the VM host, not inside the build container (containers are removed after each attempt). Returns the merged stdout/stderr (truncated to the tail if large) and the exit code.",
-			Parameters: &genai.Schema{
-				Type: genai.TypeObject,
-				Properties: map[string]*genai.Schema{
-					"command":         {Type: genai.TypeString, Description: "The shell command to run (interpreted by /bin/sh -c)"},
-					"timeout_seconds": {Type: genai.TypeInteger, Description: fmt.Sprintf("Optional command timeout in seconds (default 300, max %d)", runCommandTimeoutMax)},
-				},
-				Required: []string{"command"},
-			},
-			Response: &genai.Schema{
-				Type: genai.TypeObject,
-				Properties: map[string]*genai.Schema{
-					"output":    {Type: genai.TypeString, Description: "The merged stdout/stderr of the command"},
-					"exit_code": {Type: genai.TypeInteger, Description: "The command's exit code"},
-					"error":     {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
-				},
-			},
+			Name:        "run_on_host",
+			Description: "Run a shell command on the build VM host (interpreted by /bin/sh -c). The host is minimal: docker and coreutils only, with no language runtimes or fetch tools. Use run_in_container for anything needing the build environment. Use the host to inspect docker images and containers and to retain or analyze files from previous build attempts e.g. ./builds/<build-id>/ containing the attempt's build.sh and out/ directory. The most recent build's container is retained as rb-<build-id> and can be identified with `docker ps -a --filter name=rb-` but all prior build containers are removed once the next build is triggered. Returns the merged stdout/stderr (truncated to the tail if large) and the exit code.",
+			Parameters:  shellCommandParams(),
+			Response:    shellCommandResponse(),
 		},
 		Function: func(args map[string]any) genai.FunctionResponse {
-			command, _ := args["command"].(string)
-			if command == "" {
-				return genai.FunctionResponse{
-					Name:     "run_command", // Name must match the FunctionDeclaration
-					Response: map[string]any{"output": "", "exit_code": 0, "error": "command is required"},
-				}
-			}
-			var timeout int
-			switch v := args["timeout_seconds"].(type) {
-			case nil:
-			case float64:
-				timeout = int(v)
-			case int:
-				timeout = v
-			default:
-				return genai.FunctionResponse{
-					Name:     "run_command", // Name must match the FunctionDeclaration
-					Response: map[string]any{"output": "", "exit_code": 0, "error": fmt.Sprintf("timeout_seconds must be a number, got %T", v)},
-				}
-			}
-			if timeout > runCommandTimeoutMax {
-				timeout = runCommandTimeoutMax
-			}
-			exitCode, output, err := a.deps.ScratchRunner.RunCommand(context.Background(), command, timeout)
-			if len(output) > uploadBytesLimit {
-				output = "...(truncated)..." + output[len(output)-uploadBytesLimit:]
-			}
-			resp := map[string]any{"output": output, "exit_code": exitCode, "error": ""}
-			if err != nil {
-				resp["error"] = err.Error()
-			}
-			return genai.FunctionResponse{
-				Name:     "run_command", // Name must match the FunctionDeclaration
-				Response: resp,
-			}
+			return a.runShell("run_on_host", args, nil)
 		},
 	}
+}
+
+func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
+	return &llm.FunctionDefinition{
+		FunctionDeclaration: genai.FunctionDeclaration{
+			Name:        "run_in_container",
+			Description: "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' so working directory and shell environment will carry across calls while filesystem changes will not. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (truncated to the tail if large) and the exit code.",
+			Parameters:  shellCommandParams(),
+			Response:    shellCommandResponse(),
+		},
+		Function: func(args map[string]any) genai.FunctionResponse {
+			return a.runShell("run_in_container", args, dockerExecInContainerScript)
+		},
+	}
+}
+
+// runShell dispatches a shell command to the scratch VM for tool `name`. When
+// wrap is non-nil the raw command is transformed before dispatch (e.g. to exec
+// it inside the build container). It normalizes the timeout, truncates large
+// output to its tail, and shapes the response the LLM expects.
+func (a *defaultAgent) runShell(name string, args map[string]any, wrap func(string) string) genai.FunctionResponse {
+	command, _ := args["command"].(string)
+	if command == "" {
+		return shellResponse(name, "", 0, "command is required")
+	}
+	timeout, terr := shellTimeout(args)
+	if terr != "" {
+		return shellResponse(name, "", 0, terr)
+	}
+	script := command
+	if wrap != nil {
+		script = wrap(command)
+	}
+	exitCode, output, err := a.deps.ScratchRunner.RunCommand(context.Background(), script, timeout)
+	if len(output) > uploadBytesLimit {
+		output = "...(truncated)..." + output[len(output)-uploadBytesLimit:]
+	}
+	errStr := ""
+	if err != nil {
+		errStr = err.Error()
+	}
+	return shellResponse(name, output, exitCode, errStr)
+}
+
+// shellTimeout reads the optional timeout_seconds arg, clamping to
+// runCommandTimeoutMax. It returns a non-empty error string for a non-numeric
+// value.
+func shellTimeout(args map[string]any) (int, string) {
+	var timeout int
+	switch v := args["timeout_seconds"].(type) {
+	case nil:
+	case float64:
+		timeout = int(v)
+	case int:
+		timeout = v
+	default:
+		return 0, fmt.Sprintf("timeout_seconds must be a number, got %T", v)
+	}
+	if timeout > runCommandTimeoutMax {
+		timeout = runCommandTimeoutMax
+	}
+	return timeout, ""
+}
+
+// shellResponse shapes a run_on_host / run_in_container FunctionResponse. Name
+// must match the FunctionDeclaration.
+func shellResponse(name, output string, exitCode int, errStr string) genai.FunctionResponse {
+	return genai.FunctionResponse{
+		Name:     name,
+		Response: map[string]any{"output": output, "exit_code": exitCode, "error": errStr},
+	}
+}
+
+func shellCommandParams() *genai.Schema {
+	return &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"command":         {Type: genai.TypeString, Description: "The shell command to run (interpreted by /bin/sh -c)"},
+			"timeout_seconds": {Type: genai.TypeInteger, Description: fmt.Sprintf("Optional command timeout in seconds (default 300, max %d)", runCommandTimeoutMax)},
+		},
+		Required: []string{"command"},
+	}
+}
+
+func shellCommandResponse() *genai.Schema {
+	return &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"output":    {Type: genai.TypeString, Description: "The merged stdout/stderr of the command"},
+			"exit_code": {Type: genai.TypeInteger, Description: "The command's exit code"},
+			"error":     {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
+		},
+	}
+}
+
+// dockerExecInContainerScript wraps command to run inside the retained build
+// container. prepareBuild leaves exactly one rb-* container between builds
+// which is used here by starting (if stopped) and exec'ing the command there
+// so the in-container exit code propagates. Exits 125 when no build has run.
+func dockerExecInContainerScript(command string) string {
+	return `c=$(docker ps -aq --filter name=^rb- | head -1); ` +
+		`[ -n "$c" ] || { echo 'no build container found; run a build first' >&2; exit 125; }; ` +
+		`docker start "$c" >/dev/null; ` +
+		`exec docker exec "$c" /bin/sh -c ` + posixSingleQuote(command)
+}
+
+// posixSingleQuote renders s as a single-quoted POSIX sh word, escaping any
+// embedded single quotes.
+func posixSingleQuote(s string) string {
+	return `'` + strings.ReplaceAll(s, `'`, `'\''`) + `'`
 }
 
 func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initialErr error, wt billy.Filesystem, str *memory.Storage) (*schema.StrategyOneOf, error) {
@@ -379,7 +441,7 @@ func (a *defaultAgent) diagnoseOnly() []string {
 	}
 	if a.deps.ScratchRunner != nil {
 		prompt = append(prompt,
-			"You can also use the run_command tool to run diagnostic shell commands on the build VM (e.g. inspect docker images, check tool versions, or examine files left by previous build attempts).",
+			"You can also use the run_on_host tool to run diagnostic shell commands on the build VM host (e.g. inspect docker images or examine files left by previous build attempts), and the run_in_container tool to run commands inside the retained build container with the build's own toolchain.",
 		)
 	}
 	return append(prompt,

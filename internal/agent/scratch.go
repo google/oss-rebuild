@@ -48,8 +48,8 @@ type ScratchRunner struct {
 	Target rebuild.Target
 	// Executor runs iteration builds (a scratch.DockerRunExecutor in production).
 	Executor build.Executor
-	// ScratchID, Stubs, and GCSClient power the run_command LLM tool's
-	// direct exec access to the VM.
+	// ScratchID, Stubs, and GCSClient power the run_on_host and
+	// run_in_container LLM tools' direct exec access to the VM.
 	ScratchID string
 	Stubs     scratch.Stubs
 	GCSClient *gcs.Client
