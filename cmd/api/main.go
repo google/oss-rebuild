@@ -15,14 +15,18 @@ import (
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
 	"cloud.google.com/go/storage"
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/api/apiservice"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
+	"github.com/google/oss-rebuild/internal/api/snapshotservice"
+	"github.com/google/oss-rebuild/internal/billyx"
 	"github.com/google/oss-rebuild/internal/buildinfo"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/serviceid"
+	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
@@ -65,6 +69,7 @@ var (
 	agentLogsBucket       = flag.String("agent-logs-bucket", "", "GCS bucket for agent build logs")
 	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
 	rebuildJobName        = flag.String("rebuild-job-name", "", "Name of the pre-created Cloud Run Job for rebuilds")
+	analyticsURI          = flag.String("analytics-uri", "", "URI for snapshots (supported schemes: gs, file). Empty disables /snapshot/rollup")
 	port                  = flag.Int("port", 8080, "port on which to serve")
 )
 
@@ -356,6 +361,30 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 	return &d, nil
 }
 
+func SnapshotRollupInit(ctx context.Context) (*snapshotservice.RollupDeps, error) {
+	if *analyticsURI == "" {
+		return &snapshotservice.RollupDeps{}, nil
+	}
+	src, err := snapshot.NewFirestoreSource(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating snapshot source")
+	}
+	dest, err := analyticsDest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &snapshotservice.RollupDeps{
+		Source: src,
+		Dest:   dest,
+		Opts:   snapshot.Options{Project: *project, ToolVersion: buildinfo.Version},
+	}, nil
+}
+
+// analyticsDest resolves the analytics URI to the filesystem rooted at it.
+func analyticsDest(ctx context.Context) (billy.Filesystem, error) {
+	return billyx.NewResolver().DirFS(ctx, *analyticsURI)
+}
+
 func main() {
 	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
@@ -366,6 +395,7 @@ func main() {
 	http.HandleFunc("/infer", api.Handler(InferInit, apiservice.Infer))
 	http.HandleFunc("/runs", api.Handler(CreateRunInit, apiservice.CreateRun))
 	http.HandleFunc("/agent", api.Handler(AgentCreateInit, apiservice.AgentCreate))
+	http.HandleFunc("/snapshot/rollup", api.Handler(SnapshotRollupInit, snapshotservice.Rollup))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}
