@@ -65,6 +65,10 @@ resource "google_service_account" "scratch-worker" {
   account_id  = "scratch-worker"
   description = "Bootstrap identity for scratch worker VMs, used by the startup script to fetch the worker binary from the bootstrap-tools bucket on private deployments."
 }
+resource "google_service_account" "cron" {
+  account_id  = "cron-invoker" # NOTE: ID must be >=6 chars
+  description = "Identity for Cloud Scheduler jobs triggering maintenance endpoints. Holds run.invoker only."
+}
 data "google_storage_project_service_account" "attestation-pubsub-publisher" {
 }
 
@@ -169,6 +173,12 @@ resource "google_storage_bucket_iam_member" "orchestrator-manages-attestations" 
   role   = "roles/storage.objectAdmin"
   member = google_service_account.orchestrator.member
 }
+# NOTE: objectAdmin since replacing the published snapshot requires delete.
+resource "google_storage_bucket_iam_member" "orchestrator-manages-analytics" {
+  bucket = google_storage_bucket.analytics.name
+  role   = "roles/storage.objectAdmin"
+  member = google_service_account.orchestrator.member
+}
 resource "google_project_iam_member" "orchestrator-uses-datastore" {
   project = var.project
   role    = "roles/datastore.user"
@@ -211,6 +221,13 @@ resource "google_project_iam_member" "orchestrators-run-gcb-builds" {
     var.enable_system_analyzer ? [google_service_account.system-analyzer[0].member] : []
   ))
   member = each.key
+}
+resource "google_cloud_run_v2_service_iam_member" "cron-calls-orchestrator" {
+  location = google_cloud_run_v2_service.orchestrator.location
+  project  = google_cloud_run_v2_service.orchestrator.project
+  name     = google_cloud_run_v2_service.orchestrator.name
+  role     = "roles/run.invoker"
+  member   = google_service_account.cron.member
 }
 resource "google_cloud_run_v2_service_iam_member" "orchestrator-calls-inference" {
   location = google_cloud_run_v2_service.inference.location
@@ -452,6 +469,14 @@ resource "google_cloud_run_v2_service_iam_member" "orchestrator-calls-agent-api"
   name     = google_cloud_run_v2_service.agent-api.name
   role     = "roles/run.invoker"
   member   = google_service_account.orchestrator.member
+}
+resource "google_cloud_run_v2_service_iam_member" "cron-calls-agent-api" {
+  count    = var.enable_scratch ? 1 : 0
+  location = google_cloud_run_v2_service.agent-api.location
+  project  = google_cloud_run_v2_service.agent-api.project
+  name     = google_cloud_run_v2_service.agent-api.name
+  role     = "roles/run.invoker"
+  member   = google_service_account.cron.member
 }
 resource "google_storage_bucket_iam_member" "builder-agent-writes-metadata" {
   bucket = google_storage_bucket.agent-metadata.name

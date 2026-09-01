@@ -247,6 +247,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--agent-metadata-bucket=${google_storage_bucket.agent-metadata.name}",
         "--agent-logs-bucket=${google_storage_bucket.agent-logs.name}",
         "--rebuild-job-name=${google_cloud_run_v2_job.rebuild-job.name}",
+        "--analytics-uri=gs://${google_storage_bucket.analytics.name}",
         ], var.enable_private_build_pool ? [
         "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
         "--gcb-private-pool-region=us-central1",
