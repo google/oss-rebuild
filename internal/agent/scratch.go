@@ -161,9 +161,8 @@ func (r *ScratchRunner) run(ctx context.Context, runID string, oneof *schema.Str
 		// NOTE: ERROR attempts are neither recorded nor shown to the LLM, so
 		// a deterministic error (e.g. an artifact too large to retrieve)
 		// recurs identically each iteration until the budget is exhausted.
-		var exitErr *scratch.ExitError
 		switch {
-		case errors.As(result.Error, &exitErr),
+		case errors.As(result.Error, new(*scratch.ExitError)),
 			errors.Is(result.Error, context.DeadlineExceeded),
 			errors.Is(result.Error, scratch.ErrNoArtifact):
 			return failedResult(result.Error.Error())

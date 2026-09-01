@@ -143,8 +143,7 @@ func CreateRebuildOp(
 			return nil, err
 		}
 
-		op := ProjectRebuildAttempt(attempt)
-		return &op, nil
+		return new(ProjectRebuildAttempt(attempt)), nil
 
 	case schema.FastExecution, schema.UnspecifiedExecution:
 		rebuildDeps, err := deps.DepsFunc(ctx, &deps.DepsConfig)
@@ -159,8 +158,7 @@ func CreateRebuildOp(
 		if err != nil {
 			return nil, errors.Wrap(err, "fetching finished attempt")
 		}
-		op := ProjectRebuildAttempt(attempt)
-		return &op, nil
+		return new(ProjectRebuildAttempt(attempt)), nil
 
 	default:
 		return nil, errors.Errorf("unhandled execution hint: %s", req.ExecutionHint)

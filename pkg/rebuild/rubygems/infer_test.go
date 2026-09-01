@@ -188,12 +188,8 @@ func TestInferStrategy(t *testing.T) {
 				Version:   tc.version,
 			}
 			target.Artifact = ArtifactName(target)
-			rcfg := rebuild.RepoConfig{
-				Repo: gitx.Repo{Repository: repo.Repository},
-				URI:  "https://github.com/test-org/test-gem",
-			}
 			// Mock the registry: Artifact call (for gem spec) and Version call.
-			client := httpxtest.MockClient{
+			mux := rebuild.RegistryMux{RubyGems: reg.HTTPRegistry{Client: &httpxtest.MockClient{
 				Calls: []httpxtest.Call{
 					{
 						URL: fmt.Sprintf("https://rubygems.org/gems/%s-%s.gem", tc.pkg, tc.version),
@@ -211,13 +207,15 @@ func TestInferStrategy(t *testing.T) {
 					},
 				},
 				URLValidator: httpxtest.NewURLValidator(t),
-			}
-			mux := rebuild.RegistryMux{RubyGems: reg.HTTPRegistry{Client: &client}}
+			}}}
 			var hint rebuild.Strategy
 			if tc.hintFn != nil {
 				hint = tc.hintFn(repo.Commits[tc.wantCommitID].String())
 			}
-			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rcfg, hint)
+			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rebuild.RepoConfig{
+				Repo: gitx.Repo{Repository: repo.Repository},
+				URI:  "https://github.com/test-org/test-gem",
+			}, hint)
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)

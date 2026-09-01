@@ -11,10 +11,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func durPtr(d time.Duration) *time.Duration { return &d }
-
 func TestBuildTimingsPartialRoundTrip(t *testing.T) {
-	in := BuildTimings{Setup: durPtr(30 * time.Second), Source: durPtr(45 * time.Second), FailedIn: PhaseSource}
+	in := BuildTimings{Setup: new(30 * time.Second), Source: new(45 * time.Second), FailedIn: PhaseSource}
 	b, err := json.Marshal(in)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)

@@ -218,8 +218,7 @@ func TestPackageHandlerNilSessions(t *testing.T) {
 	if len(got.Events) != 1 || got.Events[0].Rebuild == nil {
 		t.Errorf("expected a single rebuild event, got %+v", got.Events)
 	}
-	var buf strings.Builder
-	if err := PackageTmpl.Execute(&buf, got); err != nil {
+	if err := PackageTmpl.Execute(new(strings.Builder), got); err != nil {
 		t.Fatalf("rendering package template: %v", err)
 	}
 }

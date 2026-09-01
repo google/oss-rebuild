@@ -286,8 +286,7 @@ func TestCreateRebuildOpFast(t *testing.T) {
 	}))
 	d.ServiceRepo = rebuild.Location{Repo: "https://github.internal/foo/repo", Ref: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Dir: "."}
 	d.InferStub = func(context.Context, schema.InferenceRequest) (*schema.StrategyOneOf, error) {
-		oneof := schema.NewStrategyOneOf(strategy)
-		return &oneof, nil
+		return new(schema.NewStrategyOneOf(strategy)), nil
 	}
 	d.InferVersionStub = func(context.Context, schema.VersionRequest) (*schema.VersionResponse, error) {
 		return &schema.VersionResponse{Version: "test-infer-v1"}, nil

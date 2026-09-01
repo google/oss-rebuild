@@ -49,8 +49,7 @@ var defaultCompression = gzip.DefaultCompression
 // construction. As a result, a raw writer must be provided and a gzip.Writer
 // returned to ensure a configurable compression level.
 func NewStabilizedGzipWriter(gr *gzip.Reader, w io.Writer, ctx *StabilizationContext) (*gzip.Writer, error) {
-	header := gr.Header
-	mh := archive.MutableGzipHeader{Header: &header, Compression: defaultCompression}
+	mh := archive.MutableGzipHeader{Header: new(gr.Header), Compression: defaultCompression}
 	for _, s := range ctx.Stabilizers {
 		if fn, ok := s.FnFor(ctx).(GzipFn); ok {
 			fn(&mh)

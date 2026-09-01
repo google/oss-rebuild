@@ -170,9 +170,7 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 						yield(nil, errors.Errorf("tool implementation not found for function call '%s'", call.Name))
 						return
 					}
-					funcResponse := implFunc(call.Args)
-					responsePart := genai.Part{FunctionResponse: &funcResponse}
-					currentParts = append(currentParts, &responsePart)
+					currentParts = append(currentParts, &genai.Part{FunctionResponse: new(implFunc(call.Args))})
 				}
 				if i == cm.maxIter-2 {
 					// The next iteration is the last the budget allows so force a response.

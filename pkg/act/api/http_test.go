@@ -173,7 +173,7 @@ func TestAsStatus(t *testing.T) {
 			expectCode:      codes.Unavailable,
 			expectMessage:   "service unavailable",
 			expectDetails:   1,
-			expectRetryInfo: timePtr(30 * time.Second),
+			expectRetryInfo: new(30 * time.Second),
 		},
 		{
 			name: "error with multiple details",
@@ -186,7 +186,7 @@ func TestAsStatus(t *testing.T) {
 			expectCode:      codes.InvalidArgument,
 			expectMessage:   "bad request",
 			expectDetails:   2,
-			expectRetryInfo: timePtr(60 * time.Second),
+			expectRetryInfo: new(60 * time.Second),
 		},
 		{
 			name:            "zero duration retry info",
@@ -196,7 +196,7 @@ func TestAsStatus(t *testing.T) {
 			expectCode:      codes.Unavailable,
 			expectMessage:   "unavailable",
 			expectDetails:   1,
-			expectRetryInfo: timePtr(0),
+			expectRetryInfo: new(time.Duration(0)),
 		},
 		{
 			name:            "large duration retry info",
@@ -206,7 +206,7 @@ func TestAsStatus(t *testing.T) {
 			expectCode:      codes.Unavailable,
 			expectMessage:   "unavailable",
 			expectDetails:   1,
-			expectRetryInfo: timePtr(24 * time.Hour),
+			expectRetryInfo: new(24 * time.Hour),
 		},
 	}
 	for _, tc := range tests {
@@ -337,11 +337,6 @@ func must[T any](t T, err error) T {
 	return t
 }
 
-// timePtr returns a pointer to a time.Duration
-func timePtr(d time.Duration) *time.Duration {
-	return &d
-}
-
 // TestRetryAfter tests the RetryAfter helper function
 func TestRetryAfter(t *testing.T) {
 	tests := []struct {
@@ -389,7 +384,7 @@ func TestStub_RetryAfter(t *testing.T) {
 			name:              "503 with valid retry-after",
 			httpStatus:        http.StatusServiceUnavailable,
 			retryAfterHeader:  "30",
-			expectedRetryInfo: timePtr(30 * time.Second),
+			expectedRetryInfo: new(30 * time.Second),
 			expectedGRPCCode:  codes.Unavailable,
 		},
 		{
@@ -520,7 +515,7 @@ func TestHandler_Errors(t *testing.T) {
 			expectedRetryAfterHeader: "45",
 			expectedCode:             codes.Unavailable,
 			expectedMessage:          "service unavailable",
-			expectedRetryInfo:        timePtr(45 * time.Second),
+			expectedRetryInfo:        new(45 * time.Second),
 		},
 		{
 			name:                     "unavailable without retry info",
@@ -539,7 +534,7 @@ func TestHandler_Errors(t *testing.T) {
 			expectedRetryAfterHeader: "", // zero duration should not set header
 			expectedCode:             codes.Unavailable,
 			expectedMessage:          "unavailable",
-			expectedRetryInfo:        timePtr(0),
+			expectedRetryInfo:        new(time.Duration(0)),
 		},
 		{
 			name: "multiple details with retry info",
@@ -551,7 +546,7 @@ func TestHandler_Errors(t *testing.T) {
 			expectedRetryAfterHeader: "120",
 			expectedCode:             codes.ResourceExhausted,
 			expectedMessage:          "resource exhausted",
-			expectedRetryInfo:        timePtr(120 * time.Second),
+			expectedRetryInfo:        new(120 * time.Second),
 			expectedErrorInfoReason:  "QUOTA_ERROR",
 		},
 	}
@@ -636,7 +631,7 @@ func TestStubHandlerRoundTrip_RetryAfter(t *testing.T) {
 			handlerError: AsStatus(codes.Unavailable,
 				errors.New("service unavailable"),
 				RetryAfter(30*time.Second)),
-			expectedRetryDuration: timePtr(30 * time.Second),
+			expectedRetryDuration: new(30 * time.Second),
 			expectedGRPCCode:      codes.Unavailable,
 		},
 		{
@@ -644,7 +639,7 @@ func TestStubHandlerRoundTrip_RetryAfter(t *testing.T) {
 			handlerError: AsStatus(codes.Unavailable,
 				errors.New("temporarily unavailable"),
 				RetryAfter(5*time.Minute)),
-			expectedRetryDuration: timePtr(5 * time.Minute),
+			expectedRetryDuration: new(5 * time.Minute),
 			expectedGRPCCode:      codes.Unavailable,
 		},
 		{
@@ -655,7 +650,7 @@ func TestStubHandlerRoundTrip_RetryAfter(t *testing.T) {
 			// The Retry-After header is still suppressed for zero durations
 			// (handler-side, HTTP semantic), but the protojson Status body
 			// carries the attached RetryInfo detail through losslessly.
-			expectedRetryDuration: timePtr(0),
+			expectedRetryDuration: new(time.Duration(0)),
 			expectedGRPCCode:      codes.Unavailable,
 		},
 		{

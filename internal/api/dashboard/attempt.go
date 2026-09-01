@@ -63,9 +63,8 @@ func Attempt(ctx context.Context, req AttemptRequest, deps *Deps) (*AttemptData,
 		durationStr = finished.Sub(attempt.Started).Round(time.Second).String()
 	}
 
-	view := NewRebuildView(attempt)
 	return &AttemptData{
-		Attempt:         &view,
+		Attempt:         new(NewRebuildView(attempt)),
 		AttemptStrategy: string(strategyBytes),
 		AttemptDuration: durationStr,
 	}, nil

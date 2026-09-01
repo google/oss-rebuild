@@ -139,13 +139,11 @@ func Package(ctx context.Context, req PackageRequest, deps *Deps) (*PackageData,
 	// keeping per-kind timelines for the filtered tabs.
 	rebuildEvents := make([]PackageEvent, 0, len(rebuilds))
 	for _, rb := range rebuilds {
-		view := NewRebuildView(rb)
-		rebuildEvents = append(rebuildEvents, PackageEvent{Created: rb.Created, Rebuild: &view})
+		rebuildEvents = append(rebuildEvents, PackageEvent{Created: rb.Created, Rebuild: new(NewRebuildView(rb))})
 	}
 	sessionEvents := make([]PackageEvent, 0, len(sessions))
 	for _, s := range sessions {
-		view := NewSessionView(s)
-		sessionEvents = append(sessionEvents, PackageEvent{Created: s.Created, Session: &view})
+		sessionEvents = append(sessionEvents, PackageEvent{Created: s.Created, Session: new(NewSessionView(s))})
 	}
 	events := slices.Concat(rebuildEvents, sessionEvents)
 	byNewest := func(a, b PackageEvent) int { return b.Created.Compare(a.Created) }

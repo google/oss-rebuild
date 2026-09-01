@@ -26,7 +26,7 @@ var testTarget = rebuild.Target{
 }
 
 func testStrategy() *schema.StrategyOneOf {
-	oneof := schema.NewStrategyOneOf(&rebuild.ManualStrategy{
+	return new(schema.NewStrategyOneOf(&rebuild.ManualStrategy{
 		Location: rebuild.Location{
 			Repo: "https://github.com/lodash/lodash",
 			Ref:  "aa1d7d870d9cf84842ee23ff485fd24abf0ed3d1",
@@ -35,8 +35,7 @@ func testStrategy() *schema.StrategyOneOf {
 		Deps:       "npm install",
 		Build:      "npm pack",
 		OutputPath: "lodash-4.17.21.tgz",
-	})
-	return &oneof
+	}))
 }
 
 type fakeHandle struct {

@@ -41,6 +41,5 @@ func (v *View[T, K, R]) Get(ctx context.Context, id string) (*Operation[R], erro
 		}
 		return nil, err
 	}
-	op := v.Projector(t)
-	return &op, nil
+	return new(v.Projector(t)), nil
 }

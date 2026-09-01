@@ -120,8 +120,7 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 		// failing phase is usually measured. Blind finalization leaves them
 		// zero and the phase unmeasured.
 		if op != nil && op.Result != nil && !op.Result.StartedAt.IsZero() && !op.Result.FinishedAt.IsZero() {
-			d := op.Result.FinishedAt.Sub(op.Result.StartedAt)
-			*slots[ph.Name] = &d
+			*slots[ph.Name] = new(op.Result.FinishedAt.Sub(op.Result.StartedAt))
 		}
 		if buildErr = phaseOutcome(string(ph.Name), op, err); buildErr != nil {
 			elapsed.FailedIn = ph.Name
