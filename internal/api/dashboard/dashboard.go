@@ -30,6 +30,8 @@ var (
 	attemptHTML string
 	//go:embed logs.gohtml
 	logsHTML string
+	//go:embed resources.gohtml
+	resourcesHTML string
 	//go:embed dashboard.css
 	css string
 	//go:embed theme.css
@@ -53,11 +55,12 @@ func RegisterAssets(mux *http.ServeMux) {
 }
 
 var (
-	IndexTmpl   *template.Template
-	PackageTmpl *template.Template
-	VersionTmpl *template.Template
-	AttemptTmpl *template.Template
-	LogsTmpl    *template.Template
+	IndexTmpl     *template.Template
+	PackageTmpl   *template.Template
+	VersionTmpl   *template.Template
+	AttemptTmpl   *template.Template
+	LogsTmpl      *template.Template
+	ResourcesTmpl *template.Template
 )
 
 func init() {
@@ -66,6 +69,7 @@ func init() {
 	VersionTmpl = template.Must(template.New("version").Parse(headerHTML + versionHTML))
 	AttemptTmpl = template.Must(template.New("attempt").Parse(headerHTML + attemptHTML))
 	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
+	ResourcesTmpl = template.Must(template.New("resources").Parse(headerHTML + resourcesHTML))
 }
 
 var packagePathEncoding = rebuild.FilesystemTargetEncoding
@@ -78,6 +82,7 @@ type Deps struct {
 	Tracked       feed.TrackedPackageIndex
 	BenchmarkName string
 	SuccessRegex  *regexp.Regexp
+	Analytics     Analytics           // serves the snapshot-derived trend views
 	Registry      rebuild.RegistryMux // enumerates published versions for status
 }
 

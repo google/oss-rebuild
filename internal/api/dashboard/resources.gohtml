@@ -1,0 +1,135 @@
+<!--
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+<style>
+    .asof {
+        color: #9e9e9e;
+    }
+    .tiles {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+    .tile {
+        background-color: #1e1e1e;
+        border-radius: 4px;
+        padding: 15px 25px;
+        text-align: center;
+    }
+    .tile-num {
+        font-size: 1.8em;
+        font-weight: bold;
+        color: #ffffff;
+    }
+    .tile-label {
+        color: #9e9e9e;
+    }
+    .tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 10px;
+    }
+    .tabs a {
+        padding: 4px 14px;
+        border-radius: 4px 4px 0 0;
+        background-color: #1e1e1e;
+        color: #9e9e9e;
+        text-decoration: none;
+    }
+    .tabs a.active {
+        background-color: #333333;
+        color: #ffffff;
+    }
+    .barcell {
+        width: 30%;
+        min-width: 150px;
+    }
+    .bar {
+        background-color: #64b5f6;
+        height: 12px;
+        border-radius: 2px;
+        min-width: 1px;
+    }
+</style>
+
+<h2>Resources</h2>
+{{if not .Loaded}}
+<p>No analytics snapshot loaded. Start the dashboard with
+<code>--analytics=&lt;gs://…|file://…&gt;</code> pointing at a
+<code>ctl stats dump</code> destination.</p>
+{{else}}
+<p class="asof">Snapshot as of {{.AsOf}} &middot; last {{.WindowDays}} days</p>
+
+<div class="tiles">
+    <div class="tile"><div class="tile-num">{{.TotalAttempts}}</div><div class="tile-label">attempts</div></div>
+    <div class="tile"><div class="tile-num">{{.TotalSuccesses}}</div><div class="tile-label">successes</div></div>
+    <div class="tile"><div class="tile-num">{{.TotalTokens}}</div><div class="tile-label">LLM tokens</div></div>
+    <div class="tile"><div class="tile-num">{{printf "%.1f" .TotalBuilderHours}}</div><div class="tile-label">builder hours</div></div>
+    <div class="tile"><div class="tile-num">{{printf "%.1f" .TotalVMHours}}</div><div class="tile-label">scratch VM hours</div></div>
+</div>
+
+<h3>Daily activity</h3>
+<div class="tabs">
+    <a {{if not .Eco}}class="active" {{end}}href="/resources">All</a>
+    {{$sel := .Eco}}
+    {{range .Ecosystems}}<a {{if eq . $sel}}class="active" {{end}}href="/resources?eco={{.}}">{{.}}</a>
+    {{end}}
+</div>
+{{if not .Days}}
+<p>No attempts recorded in the window.</p>
+{{else}}
+<table>
+    <tr>
+        <th>Day</th>
+        <th>Attempts</th>
+        <th class="barcell"></th>
+        <th>Successes</th>
+        <th>Success %</th>
+        <th>Builder min</th>
+        <th>Tokens</th>
+        <th>VM min</th>
+    </tr>
+    {{range .Days}}
+    <tr>
+        <td>{{.Day}}</td>
+        <td>{{.Attempts}}</td>
+        <td class="barcell"><div class="bar" style="width: {{.AttemptsBarPct}}%"></div></td>
+        <td>{{.Successes}}</td>
+        <td>{{.SuccessPct}}%</td>
+        <td>{{printf "%.1f" .BuilderMinutes}}</td>
+        <td>{{.Tokens}}</td>
+        <td>{{printf "%.1f" .VMMinutes}}</td>
+    </tr>
+    {{end}}
+</table>
+{{end}}
+
+<h3>Most expensive packages</h3>
+{{if not .TopPackages}}
+<p>No builder-time measurements in the window.</p>
+{{else}}
+<table>
+    <tr>
+        <th>Ecosystem</th>
+        <th>Package</th>
+        <th>Attempts</th>
+        <th>Builder min</th>
+        <th class="barcell"></th>
+    </tr>
+    {{range .TopPackages}}
+    <tr>
+        <td>{{.Ecosystem}}</td>
+        <td>{{.Package}}</td>
+        <td>{{.Attempts}}</td>
+        <td>{{printf "%.1f" .BuilderMinutes}}</td>
+        <td class="barcell"><div class="bar" style="width: {{.BarPct}}%"></div></td>
+    </tr>
+    {{end}}
+</table>
+{{end}}
+{{end}}
+</body>
+</html>

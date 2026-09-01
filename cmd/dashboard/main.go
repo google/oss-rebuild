@@ -46,6 +46,7 @@ var (
 	benchName  string
 	registry   rebuild.RegistryMux // built once at startup
 	snapReader *rundex.SQLite      // process-level snapshot reader when -rundex is set
+	snapCache  dashboard.Analytics // the snapshot cache, backing the trend views
 )
 
 func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
@@ -59,6 +60,7 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 	if snapReader != nil {
 		deps.Rundex = snapReader
 		deps.Sessions = snapReader
+		deps.Analytics = snapCache
 	} else {
 		rundexClient, err := rundex.NewFirestore(ctx, *project)
 		if err != nil {
@@ -94,6 +96,7 @@ func main() {
 			log.Fatalf("Failed to open snapshot %s: %v", *rundexURI, err)
 		}
 		defer cache.Close()
+		snapCache = cache
 		snapReader = rundex.NewSQLite(cache)
 		log.Printf("Serving rundex reads from %s (fresh through %s)", *rundexURI, cache.Freshness().Format(time.RFC3339))
 	}
@@ -141,6 +144,9 @@ func main() {
 
 	dashboard.RegisterAssets(http.DefaultServeMux)
 	http.HandleFunc("/", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Index), dashboard.IndexTmpl))
+	http.HandleFunc("/resources", api.Translate(func(r *http.Request) (dashboard.ResourcesRequest, error) {
+		return dashboard.ResourcesRequest{Eco: r.URL.Query().Get("eco")}, nil
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.ResourcesPage), dashboard.ResourcesTmpl)))
 	http.HandleFunc("/package/{ecosystem}/{package}", api.Translate(func(r *http.Request) (dashboard.PackageRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), "", "").Decode()
 		// TODO: Make this param and field name more precise.
