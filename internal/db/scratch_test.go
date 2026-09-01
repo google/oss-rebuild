@@ -94,9 +94,9 @@ func TestMemoryScratch_ListIdleSince(t *testing.T) {
 	for _, e := range []schema.Scratch{
 		sampleScratch("ready-old", schema.ScratchReady, old),                   // ✓ included
 		sampleScratch("ready-fresh", schema.ScratchReady, fresh),               // ✗ too fresh
-		sampleScratch("starting-old", schema.ScratchStarting, old),             // ✗ wrong state
-		sampleScratch("deleting-old", schema.ScratchDeleting, old),             // ✗ wrong state
-		sampleScratch("deleted-old", schema.ScratchDeleted, old),               // ✗ wrong state
+		sampleScratch("starting-old", schema.ScratchStarting, old),             // ✓ stuck create
+		sampleScratch("deleting-old", schema.ScratchDeleting, old),             // ✓ failed teardown
+		sampleScratch("deleted-old", schema.ScratchDeleted, old),               // ✗ already gone
 		sampleScratch("ready-old-2", schema.ScratchReady, old.Add(-time.Hour)), // ✓ included
 	} {
 		if err := s.Insert(ctx, e); err != nil {
@@ -113,7 +113,7 @@ func TestMemoryScratch_ListIdleSince(t *testing.T) {
 		ids = append(ids, e.ID)
 	}
 	sort.Strings(ids)
-	want := []string{"ready-old", "ready-old-2"}
+	want := []string{"deleting-old", "ready-old", "ready-old-2", "starting-old"}
 	if diff := cmp.Diff(want, ids); diff != "" {
 		t.Errorf("ListIdleSince ids mismatch (-want +got):\n%s", diff)
 	}
