@@ -119,19 +119,21 @@ func TestComputeVersionStatuses_Regression(t *testing.T) {
 	}
 }
 
-func TestComputeVersionStatuses_RecencyOrder(t *testing.T) {
+func TestComputeVersionStatuses_VersionOrder(t *testing.T) {
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	// supported=false ignores the axis and orders attempted versions by recency.
+	// supported=false ignores the axis and orders attempted versions newest
+	// first. 0.10 was attempted before 0.9 and sorts below it as a string,
+	// so neither recency nor lexicographic order would rank it first.
 	rebuilds := []rundex.Rebuild{
-		vsRebuild("1.0", schema.RebuildStatusSuccess, true, t0),
-		vsRebuild("2.0", schema.RebuildStatusSuccess, true, t0.Add(time.Hour)),
+		vsRebuild("0.10", schema.RebuildStatusSuccess, true, t0),
+		vsRebuild("0.9", schema.RebuildStatusSuccess, true, t0.Add(time.Hour)),
 	}
 	got := computeVersionStatuses("debian", "p", []string{"ignored"}, false, rebuilds, nil)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 attempted versions, got %d", len(got))
 	}
-	if got[0].Version != "2.0" { // most recent activity first
-		t.Errorf("expected most-recent version first, got %q", got[0].Version)
+	if got[0].Version != "0.10" {
+		t.Errorf("expected newest version first, got %q", got[0].Version)
 	}
 	for _, v := range got {
 		if v.Regressed {
