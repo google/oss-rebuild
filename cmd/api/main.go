@@ -201,6 +201,20 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 	return &d, nil
 }
 
+func InferInit(ctx context.Context) (*apiservice.InferDeps, error) {
+	var d apiservice.InferDeps
+	u, err := url.Parse(*inferenceURL)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing inference URL")
+	}
+	runclient, err := idtoken.NewClient(ctx, *inferenceURL)
+	if err != nil {
+		return nil, errors.Wrap(err, "initializing inference client")
+	}
+	d.InferStub = api.StubFromHandler(runclient, u.JoinPath("infer"), inferenceservice.Infer)
+	return &d, nil
+}
+
 func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, error) {
 	var d apiservice.CreateRebuildOpDeps
 	var err error
@@ -349,6 +363,7 @@ func main() {
 	http.HandleFunc("/rebuild/op/create", api.Handler(CreateRebuildOpInit, apiservice.CreateRebuildOp))
 	http.HandleFunc("/rebuild/op/get", api.Handler(GetRebuildOpInit, apiservice.GetRebuildOp))
 	http.HandleFunc("/version", api.Handler(VersionInit, apiservice.Version))
+	http.HandleFunc("/infer", api.Handler(InferInit, apiservice.Infer))
 	http.HandleFunc("/runs", api.Handler(CreateRunInit, apiservice.CreateRun))
 	http.HandleFunc("/agent", api.Handler(AgentCreateInit, apiservice.AgentCreate))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
