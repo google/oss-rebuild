@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -28,6 +29,7 @@ import (
 // Config holds all configuration for the get-results command.
 type Config struct {
 	Project          string
+	DB               string
 	Run              string
 	Bench            string
 	BenchmarkName    string
@@ -44,6 +46,9 @@ type Config struct {
 
 // Validate ensures the configuration is valid.
 func (c Config) Validate() error {
+	if c.Project != "" && c.DB != "" {
+		return errors.New("only one of --project and --db may be provided")
+	}
 	if c.Run != "" && c.BenchmarkName != "" {
 		return errors.New("only one of --run and --bench-name may be provided")
 	}
@@ -129,7 +134,14 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		return nil, err
 	}
 	var dex rundex.Reader
-	if cfg.Project == "" {
+	if cfg.DB != "" {
+		f, err := rundex.OpenSQLiteFile(cfg.DB, snapshot.SchemaVersion)
+		if err != nil {
+			return nil, errors.Wrap(err, "opening rundex database")
+		}
+		defer f.Close()
+		dex = f
+	} else if cfg.Project == "" {
 		dex = rundex.NewFilesystemClient(localfiles.Rundex())
 	} else {
 		dex, err = rundex.NewFirestore(ctx, cfg.Project)
@@ -263,7 +275,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "get-results --project <ID> [--run <ID> | --bench-name <name>] [--since <duration>] [--bench <benchmark.json>] [--prefix <prefix>] [--pattern <regex>] [--sample N] [--format=summary|bench|csv|jsonl] [--fields <field1,field2,...>] [--success-only]",
+		Use:   "get-results [--project <ID> | --db <PATH>] [--run <ID> | --bench-name <name>] [--since <duration>] [--bench <benchmark.json>] [--prefix <prefix>] [--pattern <regex>] [--sample N] [--format=summary|bench|csv|jsonl] [--fields <field1,field2,...>] [--success-only]",
 		Short: "Analyze rebuild results",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -281,6 +293,7 @@ func Command() *cobra.Command {
 func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.StringVar(&cfg.Project, "project", "", "the project from which to fetch the Firestore data")
+	set.StringVar(&cfg.DB, "db", "", "snapshot database file to read results from")
 	set.StringVar(&cfg.Run, "run", "", "the run(s) from which to fetch results")
 	set.StringVar(&cfg.BenchmarkName, "bench-name", "", "the name of the benchmark to filter by")
 	set.DurationVar(&cfg.Since, "since", 0, "only fetch results from runs created within this duration (e.g. 24h)")

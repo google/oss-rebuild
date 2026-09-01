@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -24,6 +25,7 @@ import (
 // Config holds all configuration for the list-runs command.
 type Config struct {
 	Project       string
+	DB            string
 	BenchmarkPath string
 	BenchmarkName string
 	Since         time.Duration
@@ -31,8 +33,8 @@ type Config struct {
 
 // Validate ensures the configuration is valid.
 func (c Config) Validate() error {
-	if c.Project == "" {
-		return errors.New("project is required")
+	if (c.Project == "") == (c.DB == "") {
+		return errors.New("exactly one of --project and --db is required")
 	}
 	return nil
 }
@@ -63,9 +65,20 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		log.Printf("Loaded benchmark of %d artifacts...\n", set.Count)
 		opts.BenchmarkHash = hex.EncodeToString(set.Hash(sha256.New()))
 	}
-	client, err := rundex.NewFirestore(ctx, cfg.Project)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating firestore client")
+	var client rundex.Reader
+	if cfg.DB != "" {
+		f, err := rundex.OpenSQLiteFile(cfg.DB, snapshot.SchemaVersion)
+		if err != nil {
+			return nil, errors.Wrap(err, "opening rundex database")
+		}
+		defer f.Close()
+		client = f
+	} else {
+		var err error
+		client, err = rundex.NewFirestore(ctx, cfg.Project)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating firestore client")
+		}
 	}
 	runs, err := client.FetchRuns(ctx, opts)
 	if err != nil {
@@ -94,7 +107,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "list-runs --project <ID> [--bench <benchmark.json>] [--bench-name <name>] [--since <duration>]",
+		Use:   "list-runs [--project <ID> | --db <PATH>] [--bench <benchmark.json>] [--bench-name <name>] [--since <duration>]",
 		Short: "List runs",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -112,6 +125,7 @@ func Command() *cobra.Command {
 func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.StringVar(&cfg.Project, "project", "", "the project from which to fetch the Firestore data")
+	set.StringVar(&cfg.DB, "db", "", "snapshot database file to read runs from")
 	set.StringVar(&cfg.BenchmarkPath, "bench", "", "a path to a benchmark file for filtering")
 	set.StringVar(&cfg.BenchmarkName, "bench-name", "", "the name of the benchmark to filter by")
 	set.DurationVar(&cfg.Since, "since", 0, "only list runs created within this duration (e.g. 24h)")

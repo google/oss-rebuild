@@ -53,6 +53,34 @@ var _ SessionReader = &SQLite{}
 // NewSQLite creates a Reader/SessionReader over a snapshot database.
 func NewSQLite(q Querier) *SQLite { return &SQLite{q: q} }
 
+// SQLiteFile is a SQLite reader that owns its database connection.
+type SQLiteFile struct {
+	SQLite
+	conn *sqlite3.Conn
+}
+
+// OpenSQLiteFile opens a snapshot database file for reading, refusing one
+// from any schema era but schema. The open is read-only, so a missing path
+// is an error rather than a fresh database, and waits out a concurrent
+// writer's transactions rather than failing on them.
+func OpenSQLiteFile(path string, schema int) (*SQLiteFile, error) {
+	conn, err := sqlite3.OpenFlags(path, sqlite3.OPEN_READONLY)
+	if err != nil {
+		return nil, errors.Wrapf(err, "opening database %s", path)
+	}
+	if err := conn.Exec("PRAGMA busy_timeout = 10000"); err != nil {
+		conn.Close()
+		return nil, errors.Wrap(err, "setting busy timeout")
+	}
+	if err := sqlitex.CheckVersion(conn, schema); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return &SQLiteFile{SQLite: SQLite{q: NewSingleConn(conn)}, conn: conn}, nil
+}
+
+func (f *SQLiteFile) Close() error { return f.conn.Close() }
+
 // cond accumulates a WHERE clause and its bind arguments.
 type cond struct {
 	exprs []string

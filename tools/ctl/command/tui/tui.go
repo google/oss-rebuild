@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
@@ -36,6 +37,7 @@ const vertexAIService = "aiplatform.googleapis.com"
 // Config holds all configuration for the tui command.
 type Config struct {
 	Project          string
+	DB               string
 	DebugStorage     string
 	LogsBucket       string
 	MetadataBucket   string
@@ -84,7 +86,15 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	var dex rundex.Reader
 	var watcher rundex.Watcher
 	{
-		if cfg.RundexGCSPath != "" {
+		if cfg.DB != "" {
+			f, err := rundex.OpenSQLiteFile(cfg.DB, snapshot.SchemaVersion)
+			if err != nil {
+				return nil, errors.Wrap(err, "opening rundex database")
+			}
+			defer f.Close()
+			dex = f
+			// Like GCS and Firestore, no watcher is available.
+		} else if cfg.RundexGCSPath != "" {
 			u, err := url.Parse(cfg.RundexGCSPath)
 			if err != nil {
 				return nil, errors.Wrap(err, "parsing --rundex-gcs-path")
@@ -199,7 +209,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "tui [--project <ID>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>] [--merged-asset-store <path>] [-bootstrap-bucket <BUCKET> -bootstrap-version <VERSION>]",
+		Use:   "tui [--project <ID> | --db <PATH>] [--debug-storage <bucket>] [--benchmark-dir <dir>] [--clean] [--llm-project] [--rundex-gcs-path <path>] [--merged-asset-store <path>] [-bootstrap-bucket <BUCKET> -bootstrap-version <VERSION>]",
 		Short: "A terminal UI for the OSS-Rebuild debugging tools",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -217,6 +227,7 @@ func Command() *cobra.Command {
 func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.StringVar(&cfg.Project, "project", "", "the project from which to fetch the Firestore data")
+	set.StringVar(&cfg.DB, "db", "", "snapshot database file to browse instead of Firestore or the local rundex")
 	set.StringVar(&cfg.DebugStorage, "debug-storage", "", "the gcs bucket to find debug logs and artifacts")
 	set.StringVar(&cfg.LogsBucket, "logs-bucket", "", "the gcs bucket where gcb logs are stored")
 	set.StringVar(&cfg.MetadataBucket, "metadata-bucket", "", "the gcs bucket where rebuild output is stored")
