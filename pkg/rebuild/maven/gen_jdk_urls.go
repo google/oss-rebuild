@@ -35,7 +35,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/google/oss-rebuild/internal/semver"
+	"github.com/google/oss-rebuild/internal/versionx"
 )
 
 // Configuration constants
@@ -167,7 +167,7 @@ func addMajorVersionAliases(urlMap map[string]string) {
 		}
 		// Sort to find the latest
 		sort.Slice(versions, func(i, j int) bool {
-			return compareVersions(versions[i], versions[j])
+			return versionx.ApproxCompare(versions[i], versions[j]) < 0
 		})
 		latest := versions[len(versions)-1]
 		urlMap[major] = urlMap[latest]
@@ -393,44 +393,10 @@ func generateCode(w io.Writer, urlMap map[string]string) {
 		keys = append(keys, k)
 	}
 	sort.Slice(keys, func(i, j int) bool {
-		return compareVersions(keys[i], keys[j])
+		return versionx.ApproxCompare(keys[i], keys[j]) < 0
 	})
 	for _, k := range keys {
 		fmt.Fprintf(w, "\t%q: %q,\n", k, urlMap[k])
 	}
 	fmt.Fprintln(w, "}")
-}
-
-// compareVersions compares two version strings for sorting.
-// Handles both legacy (8u212) and modern (11.0.1) formats.
-// Returns true if v1 < v2.
-func compareVersions(v1, v2 string) bool {
-	// Convert to semver-compatible format for comparison
-	s1 := toSemverString(v1)
-	s2 := toSemverString(v2)
-	return semver.Cmp(s1, s2) < 0
-}
-
-// toSemverString converts a JDK version string to semver format.
-// "8u212" -> "8.0.212"
-// "11.0.1" -> "11.0.1"
-// "17" -> "17.0.0"
-func toSemverString(v string) string {
-	// Handle legacy format: 8u212 -> 8.0.212
-	if strings.Contains(v, "u") {
-		parts := strings.Split(v, "u")
-		if len(parts) == 2 {
-			return fmt.Sprintf("%s.0.%s", parts[0], parts[1])
-		}
-	}
-	// Handle major-only versions: 17 -> 17.0.0
-	if !strings.Contains(v, ".") {
-		return v + ".0.0"
-	}
-	// Handle semver with only major.minor: 11.0 -> 11.0.0
-	parts := strings.Split(v, ".")
-	if len(parts) == 2 {
-		return v + ".0"
-	}
-	return v
 }
