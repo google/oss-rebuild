@@ -17,10 +17,12 @@ var (
 	githubRE    = re.MustCompile(`(?i)\bgithub(?:\.com[:/]|:)([\w-]+/[\w-\.]+)`)
 	gitlabRE    = re.MustCompile(`(?i)\bgitlab(?:\.com[:/]|:)([\w-]+(?:/[\w.-]+)+)`)
 	bitbucketRE = re.MustCompile(`(?i)\bbitbucket(?:\.org[:/]|:)([\w-]+/[\w-\.]+)`)
+	codebergRE  = re.MustCompile(`(?i)\bcodeberg(?:\.org[:/]|:)([\w-]+/[\w-\.]+)`)
 	commonRepos = []*re.Regexp{
 		githubRE,
 		gitlabRE,
 		bitbucketRE,
+		codebergRE,
 	}
 	// Project routes that directly follow the project path. GitLab has served
 	// these under the /-/ prefix since 12.0 but older links omit it.
@@ -64,6 +66,8 @@ func CanonicalizeRepoURI(uri string) (string, error) {
 		repo = "//gitlab.com/" + strings.TrimSuffix(strings.ToLower(repo[strings.IndexAny(repo, ":/")+1:]), ".git")
 	} else if repo = bitbucketRE.FindString(uri); repo != "" {
 		repo = "//bitbucket.org/" + strings.TrimSuffix(strings.ToLower(repo[strings.IndexAny(repo, ":/")+1:]), ".git")
+	} else if repo = codebergRE.FindString(uri); repo != "" {
+		repo = "//codeberg.org/" + strings.TrimSuffix(strings.ToLower(repo[strings.IndexAny(repo, ":/")+1:]), ".git")
 	} else {
 		// Try to parse it as a URL and see what happens.
 		repo = uri

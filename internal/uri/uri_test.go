@@ -65,6 +65,9 @@ func TestFindARepo(t *testing.T) {
 			"https://gitlab.com/group/blob/repo",
 			"gitlab.com/group/blob/repo",
 		},
+		{"https://codeberg.org/tlocke/scramp", "codeberg.org/tlocke/scramp"}, // Codeberg
+		{"codeberg:user/repo", "codeberg:user/repo"},                         // Codeberg, alt format
+		{"https://img.shields.io/codeberg/stars/user/repo", ""},              // Codeberg, badge non-match
 	}
 	for _, test := range tests {
 		actual := FindCommonRepo(test.input)
@@ -137,6 +140,9 @@ func TestCanonicalizeRepoURI(t *testing.T) {
 			"https://gitlab.com/group/repo",
 			false,
 		},
+		{"https://codeberg.org/tlocke/scramp", "https://codeberg.org/tlocke/scramp", false}, // Codeberg
+		{"Codeberg.org/User/Repo.git", "https://codeberg.org/user/repo", false},             // Codeberg, case insensitive, with .git
+		{"codeberg:user/repo", "https://codeberg.org/user/repo", false},                     // Codeberg, alt format
 	}
 
 	for _, test := range tests {
