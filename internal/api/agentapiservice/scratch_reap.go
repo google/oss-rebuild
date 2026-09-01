@@ -112,10 +112,19 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		// Re-check before the destructive step: an exec dispatched after
 		// the idle snapshot bumps LastUsed, and tearing down its scratch
 		// would orphan it.
-		if cur, err := deps.Scratches.Get(ctx, scratch.ID); err != nil {
+		cur, err := deps.Scratches.Get(ctx, scratch.ID)
+		if err != nil {
 			log.Printf("reap re-check scratch %s: %v", scratch.ID, err)
 			continue
-		} else if cur.State != schema.ScratchReady || !cur.LastUsed.Before(idleCutoff) {
+		}
+		isIdle := false
+		switch cur.State {
+		case schema.ScratchReady:
+			isIdle = cur.LastUsed.Before(idleCutoff)
+		case schema.ScratchStarting, schema.ScratchDeleting:
+			isIdle = cur.Updated.Before(idleCutoff)
+		}
+		if !isIdle {
 			continue
 		}
 		if err := teardownScratch(ctx, deps, scratch); err != nil {
@@ -219,8 +228,10 @@ func terminalStateFor(ctx context.Context, deps *ScratchReapDeps, exec schema.Sc
 // teardownScratch mirrors ScratchDelete's GCE + state flow. Records
 // persist with state=Deleted for audit.
 func teardownScratch(ctx context.Context, deps *ScratchReapDeps, scratch schema.Scratch) error {
-	if err := deps.Scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleting); err != nil {
-		return pkgerrors.Wrap(err, "scratches update state deleting")
+	if scratch.State != schema.ScratchDeleting {
+		if err := deps.Scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleting); err != nil {
+			return pkgerrors.Wrap(err, "scratches update state deleting")
+		}
 	}
 	if scratch.VMName != "" {
 		if err := deps.GCE.DeleteInstance(ctx, scratch.Zone, scratch.VMName); err != nil {

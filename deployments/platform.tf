@@ -158,7 +158,7 @@ resource "google_firestore_database" "default" {
   depends_on      = [google_project_service.firestore]
 }
 
-# Composite index used by the reaper's ListIdleSince query
+# Composite indexes used by the reaper's ListIdleSince query
 resource "google_firestore_index" "scratch-state-last-used" {
   count      = var.enable_scratch ? 1 : 0
   collection = "scratch"
@@ -175,6 +175,24 @@ resource "google_firestore_index" "scratch-state-last-used" {
     order      = "ASCENDING"
   }
   depends_on = [google_firestore_database.default]
+}
+
+resource "google_firestore_index" "scratch-state-updated" {
+  count      = var.enable_scratch ? 1 : 0
+  collection = "scratch"
+  fields {
+    field_path = "state"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "updated"
+    order      = "ASCENDING"
+  }
+  fields {
+    field_path = "__name__"
+    order      = "ASCENDING"
+  }
+  depends_on = [google_app_engine_application.dummy_app]
 }
 
 # Composite indexes for querying attempts

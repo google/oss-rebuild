@@ -30,8 +30,9 @@ type Scratch interface {
 	// UpdateLastUsed sets the last_used field (and bumps `updated`).
 	UpdateLastUsed(ctx context.Context, scratchID string, t time.Time) error
 	// ListIdleSince returns scratches in state Ready whose LastUsed is
-	// strictly before t. Backed by a (state, last_used) composite index in
-	// Firestore.
+	// strictly before t, and scratches in state Starting or Deleting whose
+	// Updated is strictly before t. Backed by (state, last_used) and
+	// (state, updated) composite indexes in Firestore.
 	ListIdleSince(ctx context.Context, t time.Time) ([]schema.Scratch, error)
 	Delete(ctx context.Context, scratchID string) error
 }
@@ -82,27 +83,43 @@ func (f *firestoreScratch) UpdateLastUsed(ctx context.Context, scratchID string,
 }
 
 func (f *firestoreScratch) ListIdleSince(ctx context.Context, t time.Time) ([]schema.Scratch, error) {
-	q := f.client.Collection(scratchCollection).
+	var out []schema.Scratch
+
+	qReady := f.client.Collection(scratchCollection).
 		Where("state", "==", string(schema.ScratchReady)).
 		Where("last_used", "<", t.UTC())
+	if err := f.appendQuery(ctx, qReady, &out); err != nil {
+		return nil, err
+	}
+
+	qStartingDeleting := f.client.Collection(scratchCollection).
+		Where("state", "in", []string{string(schema.ScratchStarting), string(schema.ScratchDeleting)}).
+		Where("updated", "<", t.UTC())
+	if err := f.appendQuery(ctx, qStartingDeleting, &out); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func (f *firestoreScratch) appendQuery(ctx context.Context, q firestore.Query, out *[]schema.Scratch) error {
 	iter := q.Documents(ctx)
 	defer iter.Stop()
-	var out []schema.Scratch
 	for {
 		snap, err := iter.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 		var e schema.Scratch
 		if err := snap.DataTo(&e); err != nil {
-			return nil, err
+			return err
 		}
-		out = append(out, e)
+		*out = append(*out, e)
 	}
-	return out, nil
+	return nil
 }
 
 func (f *firestoreScratch) Delete(ctx context.Context, scratchID string) error {
@@ -168,6 +185,8 @@ func (m *memoryScratch) ListIdleSince(ctx context.Context, t time.Time) ([]schem
 	var out []schema.Scratch
 	for _, e := range m.data {
 		if e.State == schema.ScratchReady && e.LastUsed.Before(t) {
+			out = append(out, e)
+		} else if (e.State == schema.ScratchStarting || e.State == schema.ScratchDeleting) && e.Updated.Before(t) {
 			out = append(out, e)
 		}
 	}

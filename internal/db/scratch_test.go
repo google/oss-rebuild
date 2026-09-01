@@ -28,6 +28,7 @@ func sampleScratch(id string, state schema.ScratchState, lastUsed time.Time) sch
 		Zone:         "us-central1-a",
 		State:        state,
 		LastUsed:     lastUsed,
+		Updated:      lastUsed,
 	}
 }
 
@@ -94,8 +95,10 @@ func TestMemoryScratch_ListIdleSince(t *testing.T) {
 	for _, e := range []schema.Scratch{
 		sampleScratch("ready-old", schema.ScratchReady, old),                   // ✓ included
 		sampleScratch("ready-fresh", schema.ScratchReady, fresh),               // ✗ too fresh
-		sampleScratch("starting-old", schema.ScratchStarting, old),             // ✗ wrong state
-		sampleScratch("deleting-old", schema.ScratchDeleting, old),             // ✗ wrong state
+		sampleScratch("starting-old", schema.ScratchStarting, old),             // ✓ included
+		sampleScratch("starting-fresh", schema.ScratchStarting, fresh),         // ✗ too fresh
+		sampleScratch("deleting-old", schema.ScratchDeleting, old),             // ✓ included
+		sampleScratch("deleting-fresh", schema.ScratchDeleting, fresh),         // ✗ too fresh
 		sampleScratch("deleted-old", schema.ScratchDeleted, old),               // ✗ wrong state
 		sampleScratch("ready-old-2", schema.ScratchReady, old.Add(-time.Hour)), // ✓ included
 	} {
@@ -113,7 +116,7 @@ func TestMemoryScratch_ListIdleSince(t *testing.T) {
 		ids = append(ids, e.ID)
 	}
 	sort.Strings(ids)
-	want := []string{"ready-old", "ready-old-2"}
+	want := []string{"deleting-old", "ready-old", "ready-old-2", "starting-old"}
 	if diff := cmp.Diff(want, ids); diff != "" {
 		t.Errorf("ListIdleSince ids mismatch (-want +got):\n%s", diff)
 	}
