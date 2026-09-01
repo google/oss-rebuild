@@ -4,26 +4,19 @@
 package parsing
 
 import (
-	"path/filepath"
 	re "regexp"
 	"sort"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/pkg/errors"
 )
-
-var supportedFileTypes = map[string]bool{
-	"pyproject.toml": true,
-	"setup.cfg":      true,
-	"setup.py":       true,
-}
 
 type fileVerification struct {
 	foundF       *object.File
 	main         bool
 	nameMatch    bool
 	versionMatch bool
+	foundVersion string // the version the file declares, empty when none is found
 	levDistance  int
 }
 
@@ -101,19 +94,4 @@ func normalizeName(name string) string {
 	// Normalizes a package name according to PEP 503.
 	normalized := re.MustCompile(`[-_.]+`).ReplaceAllString(name, "-")
 	return strings.ToLower(normalized)
-}
-
-// Recursively check for build files. Doesn't recurse if hintDir isn't empty.
-func findRecursively(fileType string, tree *object.Tree, hintDir string) ([]*object.File, error) {
-	if !supportedFileTypes[fileType] {
-		return nil, errors.New("unsupported file type")
-	}
-	var foundFiles []*object.File
-	tree.Files().ForEach(func(f *object.File) error {
-		if filepath.Base(f.Name) == fileType && (hintDir == "" || filepath.Dir(f.Name) == hintDir) {
-			foundFiles = append(foundFiles, f)
-		}
-		return nil
-	})
-	return foundFiles, nil
 }
