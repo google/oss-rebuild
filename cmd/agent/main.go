@@ -189,6 +189,9 @@ func main() {
 				// NOTE: The scratch VM is dedicated to this session's builds, so
 				// privileged plans are acceptable there.
 				AllowPrivileged: true,
+				// Keep the most recent build's container (stopped, not --rm'd) so
+				// run_command can docker exec/cp into the build environment.
+				RetainContainer: true,
 			},
 		})
 		if err != nil {
