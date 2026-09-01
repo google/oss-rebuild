@@ -24,6 +24,7 @@ type fileVerification struct {
 	main         bool
 	nameMatch    bool
 	versionMatch bool
+	foundVersion string // the version the file declares, empty when none is found
 	levDistance  int
 }
 
@@ -103,14 +104,24 @@ func normalizeName(name string) string {
 	return strings.ToLower(normalized)
 }
 
-// Recursively check for build files. Doesn't recurse if hintDir isn't empty.
+// findRecursively returns the build files named fileType: the one at hintDir
+// when given, else every one in the tree.
 func findRecursively(fileType string, tree *object.Tree, hintDir string) ([]*object.File, error) {
 	if !supportedFileTypes[fileType] {
 		return nil, errors.New("unsupported file type")
 	}
+	if hintDir != "" {
+		f, err := tree.File(filepath.Join(hintDir, fileType))
+		if err == object.ErrFileNotFound {
+			return nil, nil
+		} else if err != nil {
+			return nil, err
+		}
+		return []*object.File{f}, nil
+	}
 	var foundFiles []*object.File
 	tree.Files().ForEach(func(f *object.File) error {
-		if filepath.Base(f.Name) == fileType && (hintDir == "" || filepath.Dir(f.Name) == hintDir) {
+		if filepath.Base(f.Name) == fileType {
 			foundFiles = append(foundFiles, f)
 		}
 		return nil

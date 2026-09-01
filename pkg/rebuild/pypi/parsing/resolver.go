@@ -46,17 +46,19 @@ func ExtractRequirements(ctx context.Context, tree *object.Tree, searchDir strin
 
 // DiscoverBuildDir searches for the best directory for requirement extraction.
 // Returns the directory path relative to the tree root, with "" representing root.
+// buildFileVerifiers pairs each build file with its per-format verifier.
+var buildFileVerifiers = []struct {
+	filename string
+	verify   func(context.Context, *object.File, string, string) (fileVerification, error)
+}{
+	{"pyproject.toml", verifyPyProjectFile},
+	{"setup.cfg", verifySetupCfgFile},
+	{"setup.py", verifySetupPyFile},
+}
+
 func DiscoverBuildDir(ctx context.Context, tree *object.Tree, name, version, hintDir string) (string, error) {
 	var verifiedFiles []fileVerification
-	configTypes := []struct {
-		filename string
-		verify   func(context.Context, *object.File, string, string) (fileVerification, error)
-	}{
-		{"pyproject.toml", verifyPyProjectFile},
-		{"setup.cfg", verifySetupCfgFile},
-		{"setup.py", verifySetupPyFile},
-	}
-	for _, h := range configTypes {
+	for _, h := range buildFileVerifiers {
 		files, err := findRecursively(h.filename, tree, hintDir)
 		if err != nil {
 			return "", errors.Wrapf(err, "finding %s files", h.filename)

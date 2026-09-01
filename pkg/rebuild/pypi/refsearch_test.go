@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -47,6 +48,10 @@ func wheelHashes(t *testing.T, entries []archive.ZipEntry) []plumbing.Hash {
 	return hashes
 }
 
+func pyprojectTOML(name, version string) string {
+	return fmt.Sprintf("[project]\nname = \"%s\"\nversion = \"%s\"\n", name, version)
+}
+
 func TestMatchArchiveBlobs(t *testing.T) {
 	const (
 		coreV1 = "def core():\n    return 'core version one implementation body original'\n"
@@ -75,12 +80,46 @@ func TestMatchArchiveBlobs(t *testing.T) {
 		t.Errorf("matchArchiveBlobs(2.0.0) = %q, want v2 %q", ref, got)
 	}
 
-	// A commit differing only by a file the wheel does not carry ties with its
-	// parent, which is ambiguous.
-	tied := append(commits, gitxtest.Commit{ID: "v3", Parent: "v2", Files: gitxtest.FileContent{"README.md": "docs only\n"}})
-	trepo := must(gitxtest.CreateRepo(tied, nil))
-	if _, err := matchArchiveBlobs(context.Background(), hashes, "acme", "2.0.0", trepo.Repository); err == nil {
-		t.Errorf("matchArchiveBlobs(tied trees) = nil error, want a rejection")
+	// Wheels carry no build files, so commits differing only in the declared
+	// version tie on blobs; the build file at each candidate breaks the tie.
+	verTie := []gitxtest.Commit{
+		{ID: "r1", Files: gitxtest.FileContent{"pyproject.toml": pyprojectTOML("acme", "1.0.0"), "acme/core.py": coreV2, "acme/util.py": util}},
+		{ID: "r2", Parent: "r1", Files: gitxtest.FileContent{"pyproject.toml": pyprojectTOML("acme", "2.0.0")}},
+	}
+	vrepo := must(gitxtest.CreateRepo(verTie, nil))
+	ref, err = matchArchiveBlobs(context.Background(), hashes, "acme", "2.0.0", vrepo.Repository)
+	if err != nil {
+		t.Fatalf("matchArchiveBlobs(version tie, 2.0.0): %v", err)
+	}
+	if got := vrepo.Commits["r2"].String(); ref != got {
+		t.Errorf("matchArchiveBlobs(version tie, 2.0.0) = %q, want r2 %q", ref, got)
+	}
+	ref, err = matchArchiveBlobs(context.Background(), hashes, "acme", "1.0.0", vrepo.Repository)
+	if err != nil {
+		t.Fatalf("matchArchiveBlobs(version tie, 1.0.0): %v", err)
+	}
+	if got := vrepo.Commits["r1"].String(); ref != got {
+		t.Errorf("matchArchiveBlobs(version tie, 1.0.0) = %q, want r1 %q", ref, got)
+	}
+
+	// A version no tied commit declares yields no match rather than a wrong one.
+	if _, err := matchArchiveBlobs(context.Background(), hashes, "acme", "3.0.0", vrepo.Repository); err == nil {
+		t.Errorf("matchArchiveBlobs(version tie, 3.0.0) = nil error, want a rejection")
+	}
+
+	// Ties among version-silent candidates resolve to the earliest, where the
+	// artifact's content was introduced.
+	silent := []gitxtest.Commit{
+		{ID: "s1", Files: gitxtest.FileContent{"pyproject.toml": "[project]\nname = \"acme\"\ndynamic = [\"version\"]\n", "acme/core.py": coreV2, "acme/util.py": util}},
+		{ID: "s2", Parent: "s1", Files: gitxtest.FileContent{"README.md": "doc change\n"}},
+	}
+	srepo := must(gitxtest.CreateRepo(silent, nil))
+	ref, err = matchArchiveBlobs(context.Background(), hashes, "acme", "2.0.0", srepo.Repository)
+	if err != nil {
+		t.Fatalf("matchArchiveBlobs(silent tie): %v", err)
+	}
+	if s1, s2 := srepo.Commits["s1"].String(), srepo.Commits["s2"].String(); ref != s1 && ref != s2 {
+		t.Errorf("matchArchiveBlobs(silent tie) = %q, want s1 %q (or s2 %q on equal timestamps)", ref, s1, s2)
 	}
 
 	// A blob set absent from the repo entirely is rejected by the scan.
