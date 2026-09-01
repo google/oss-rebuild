@@ -29,6 +29,21 @@ var (
 	DeltaPrefix = fmt.Sprintf("deltas-v%d", SchemaVersion)
 )
 
+// OpenCache serves a cached local copy of the snapshot database published
+// under dest, refreshed in the background every interval until closed. It
+// binds the docdb cache to this schema era: the versioned object and delta
+// names, the table registry, the highest version this binary understands,
+// and the meta row that carries the base watermark.
+func OpenCache(ctx context.Context, dest billy.Filesystem, interval time.Duration) (*docdb.Cache, error) {
+	watermark := func(db *sqlite3.Conn) (time.Time, error) {
+		m, err := ReadMeta(db)
+		return m.Watermark, err
+	}
+	return docdb.OpenCache(ctx, docdb.Upstream{
+		FS: dest, Object: Object, Deltas: DeltaPrefix, Defs: Tables(), Schema: SchemaVersion, Watermark: watermark,
+	}, interval)
+}
+
 // Options configures a snapshot run.
 type Options struct {
 	Project     string    // recorded in the database meta as the source project

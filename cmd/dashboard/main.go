@@ -17,8 +17,10 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api/dashboard"
+	"github.com/google/oss-rebuild/internal/billyx"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
@@ -33,6 +35,7 @@ var (
 	port            = flag.Int("port", 8080, "port on which to serve")
 	successRegex    = flag.String("success-regex", "", "Regex to determine if a rebuild is successful based on its message")
 	logsBucket      = flag.String("logs-bucket", "", "GCS bucket containing build logs")
+	rundexURI       = flag.String("rundex", "", "Snapshot database URI to serve rundex reads from (supported schemes: gs, file). If empty, reads Firestore directly")
 )
 
 var egressCfg httpegress.Config
@@ -42,37 +45,57 @@ var (
 	tracked    feed.TrackedPackageIndex
 	benchName  string
 	registry   rebuild.RegistryMux // built once at startup
+	snapReader *rundex.SQLite      // process-level snapshot reader when -rundex is set
 )
 
 func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
-	rundexClient, err := rundex.NewFirestore(ctx, *project)
-	if err != nil {
-		return nil, err
-	}
-	var storageClient *storage.Client
-	if *logsBucket != "" {
-		storageClient, err = storage.NewClient(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &dashboard.Deps{
-		Rundex:        rundexClient,
-		Sessions:      rundexClient,
-		GCSClient:     storageClient,
+	deps := &dashboard.Deps{
 		LogsBucket:    *logsBucket,
 		Tracked:       tracked,
 		BenchmarkName: benchName,
 		SuccessRegex:  successPat,
 		Registry:      registry,
-	}, nil
+	}
+	if snapReader != nil {
+		deps.Rundex = snapReader
+		deps.Sessions = snapReader
+	} else {
+		rundexClient, err := rundex.NewFirestore(ctx, *project)
+		if err != nil {
+			return nil, err
+		}
+		deps.Rundex = rundexClient
+		deps.Sessions = rundexClient
+	}
+	if *logsBucket != "" {
+		storageClient, err := storage.NewClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+		deps.GCSClient = storageClient
+	}
+	return deps, nil
 }
 
 func main() {
 	egressCfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
-	if *project == "" {
-		log.Fatal("Must provide -project")
+	if *project == "" && *rundexURI == "" {
+		log.Fatal("Must provide -project (or -rundex to serve from a snapshot)")
+	}
+	if *rundexURI != "" {
+		ctx := context.Background()
+		dest, err := billyx.NewResolver().DirFS(ctx, *rundexURI)
+		if err != nil {
+			log.Fatalf("Failed to resolve snapshot %s: %v", *rundexURI, err)
+		}
+		cache, err := snapshot.OpenCache(ctx, dest, 30*time.Second)
+		if err != nil {
+			log.Fatalf("Failed to open snapshot %s: %v", *rundexURI, err)
+		}
+		defer cache.Close()
+		snapReader = rundex.NewSQLite(cache)
+		log.Printf("Serving rundex reads from %s (fresh through %s)", *rundexURI, cache.Freshness().Format(time.RFC3339))
 	}
 	if *logsBucket == "" {
 		log.Printf("Warning: -logs-bucket not provided, log viewing will be unavailable")
