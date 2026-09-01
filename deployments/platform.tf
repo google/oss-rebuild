@@ -310,6 +310,46 @@ resource "google_firestore_index" "attempts-ecosystem-package" {
   }
   depends_on = [google_firestore_database.default]
 }
+
+resource "google_firestore_field" "attempts-updated" {
+  collection = "attempts"
+  field      = "updated"
+  index_config {
+    indexes {
+      order       = "ASCENDING"
+      query_scope = "COLLECTION_GROUP"
+    }
+    indexes {
+      order       = "ASCENDING"
+      query_scope = "COLLECTION"
+    }
+    indexes {
+      order       = "DESCENDING"
+      query_scope = "COLLECTION"
+    }
+  }
+  depends_on = [google_firestore_database.default]
+}
+
+resource "google_firestore_field" "agent-iterations-updated" {
+  collection = "agent_iterations"
+  field      = "updated"
+  index_config {
+    indexes {
+      order       = "ASCENDING"
+      query_scope = "COLLECTION_GROUP"
+    }
+    indexes {
+      order       = "ASCENDING"
+      query_scope = "COLLECTION"
+    }
+    indexes {
+      order       = "DESCENDING"
+      query_scope = "COLLECTION"
+    }
+  }
+  depends_on = [google_firestore_database.default]
+}
 ## PubSub
 
 resource "google_pubsub_topic" "attestation-topic" {

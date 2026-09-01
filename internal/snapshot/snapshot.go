@@ -19,12 +19,15 @@ import (
 )
 
 // Object is the destination object name of the snapshot database, stored
-// gzip-compressed as its name says. It carries the schema version, so each
-// version bump requires an artifact cutover. Within an era, the name is
-// stable with each rollup replaces the object wholesale with the object
-// store's versioning (e.g. GCS generations) responsible for providing
-// historical entries.
-var Object = fmt.Sprintf("rebuild-v%d.db.gz", SchemaVersion)
+// gzip-compressed as its name says, and DeltaPrefix the prefix of its
+// incremental segments. Both carry the schema version, so each version bump
+// requires an artifact cutover. Within an era, the object name is stable
+// with each rollup replacing it wholesale and the object store's versioning
+// (e.g. GCS generations) responsible for providing historical entries.
+var (
+	Object      = fmt.Sprintf("rebuild-v%d.db.gz", SchemaVersion)
+	DeltaPrefix = fmt.Sprintf("deltas-v%d", SchemaVersion)
+)
 
 // Options configures a snapshot run.
 type Options struct {
@@ -65,31 +68,31 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 		now = time.Now()
 	}
 	now = now.UTC()
-	attempts, err := src.Attempts(ctx)
+	attempts, err := src.Attempts(ctx, FullScan)
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning attempts")
 	}
-	runs, err := src.Runs(ctx)
+	runs, err := src.Runs(ctx, FullScan)
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning runs")
 	}
-	sessions, err := src.Sessions(ctx)
+	sessions, err := src.Sessions(ctx, FullScan)
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning agent sessions")
 	}
-	iterations, err := src.Iterations(ctx)
+	iterations, err := src.Iterations(ctx, FullScan)
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning agent iterations")
 	}
-	scratches, err := src.Scratches(ctx)
+	scratches, err := src.Scratches(ctx, FullScan)
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning scratch VMs")
 	}
-	execs, err := src.Execs(ctx)
+	execs, err := src.Execs(ctx, FullScan)
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning scratch execs")
 	}
-	repoMetrics, err := src.RepoMetrics(ctx)
+	repoMetrics, err := src.RepoMetrics(ctx, FullScan)
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning repo metrics")
 	}

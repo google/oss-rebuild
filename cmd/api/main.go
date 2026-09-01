@@ -69,7 +69,7 @@ var (
 	agentLogsBucket       = flag.String("agent-logs-bucket", "", "GCS bucket for agent build logs")
 	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
 	rebuildJobName        = flag.String("rebuild-job-name", "", "Name of the pre-created Cloud Run Job for rebuilds")
-	analyticsURI          = flag.String("analytics-uri", "", "URI for snapshots (supported schemes: gs, file). Empty disables /snapshot/rollup")
+	analyticsURI          = flag.String("analytics-uri", "", "URI for snapshots (supported schemes: gs, file). Empty disables the /snapshot endpoints")
 	port                  = flag.Int("port", 8080, "port on which to serve")
 )
 
@@ -385,6 +385,21 @@ func analyticsDest(ctx context.Context) (billy.Filesystem, error) {
 	return billyx.NewResolver().DirFS(ctx, *analyticsURI)
 }
 
+func SnapshotDeltaInit(ctx context.Context) (*snapshotservice.DeltaDeps, error) {
+	if *analyticsURI == "" {
+		return &snapshotservice.DeltaDeps{}, nil
+	}
+	src, err := snapshot.NewFirestoreSource(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating snapshot source")
+	}
+	dest, err := analyticsDest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &snapshotservice.DeltaDeps{Source: src, Dest: dest}, nil
+}
+
 func main() {
 	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
@@ -396,6 +411,7 @@ func main() {
 	http.HandleFunc("/runs", api.Handler(CreateRunInit, apiservice.CreateRun))
 	http.HandleFunc("/agent", api.Handler(AgentCreateInit, apiservice.AgentCreate))
 	http.HandleFunc("/snapshot/rollup", api.Handler(SnapshotRollupInit, snapshotservice.Rollup))
+	http.HandleFunc("/snapshot/delta", api.Handler(SnapshotDeltaInit, snapshotservice.Delta))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}
