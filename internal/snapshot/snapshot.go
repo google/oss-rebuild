@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -165,11 +166,6 @@ func fillSnapshotDB(db *sqlite3.Conn, docTables map[string][]json.RawMessage, me
 	docTableCount := 0
 	for _, td := range Tables() {
 		if td.Query != "" {
-			n, err := docdb.StoreQuery(db, td)
-			if err != nil {
-				return nil, errors.Wrapf(err, "materializing %s", td.Name)
-			}
-			counts[td.Name] = n
 			continue
 		}
 		docTableCount++
@@ -185,8 +181,35 @@ func fillSnapshotDB(db *sqlite3.Conn, docTables map[string][]json.RawMessage, me
 	if docTableCount != len(docTables) {
 		return nil, errors.Errorf("built documents for %d tables, registry declares %d doc tables", len(docTables), docTableCount)
 	}
+	derived, err := refreshDerived(db)
+	if err != nil {
+		return nil, err
+	}
+	maps.Copy(counts, derived)
 	if err := sqlitex.SetVersion(db, SchemaVersion); err != nil {
 		return nil, err
 	}
 	return counts, WriteMeta(db, meta)
+}
+
+// refreshDerived drops and rematerializes every derived table from the doc
+// rows currently in db, in registry order so a derived table may build on
+// an earlier one. Idempotent, so it serves both the one-shot snapshot build
+// and in-place refresh of a locally written database.
+func refreshDerived(db *sqlite3.Conn) (map[string]int, error) {
+	counts := make(map[string]int)
+	for _, td := range Tables() {
+		if td.Query == "" {
+			continue
+		}
+		if err := db.Exec("DROP TABLE IF EXISTS " + td.Name); err != nil {
+			return nil, errors.Wrapf(err, "dropping %s", td.Name)
+		}
+		n, err := docdb.StoreQuery(db, td)
+		if err != nil {
+			return nil, errors.Wrapf(err, "materializing %s", td.Name)
+		}
+		counts[td.Name] = n
+	}
+	return counts, nil
 }

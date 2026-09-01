@@ -211,6 +211,48 @@ func StoreDocs(db *sqlite3.Conn, td TableDef, docs []json.RawMessage) error {
 	return nil
 }
 
+// EnsureDocTables creates the doc tables among defs (and their indexes)
+// that db does not already have, making an empty or partial database
+// writable in place. Derived tables are skipped: they materialize from
+// queries, not writes.
+// NOTE: Existing tables are not reconciled with defs. Columns added to the
+// registry appear only on the next full rebuild, since SQLite cannot ALTER
+// in a STORED generated column.
+func EnsureDocTables(db *sqlite3.Conn, defs []TableDef) error {
+	stmt, _, err := db.Prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?")
+	if err != nil {
+		return errors.Wrap(err, "preparing table lookup")
+	}
+	defer stmt.Close()
+	for _, td := range defs {
+		if len(td.Cols) == 0 {
+			continue
+		}
+		if err := validateTable(td); err != nil {
+			return err
+		}
+		if err := stmt.BindText(1, td.Name); err != nil {
+			return errors.Wrap(err, "binding table name")
+		}
+		exists := stmt.Step()
+		if err := stmt.Reset(); err != nil {
+			return errors.Wrapf(err, "checking table %s", td.Name)
+		}
+		if exists {
+			continue
+		}
+		if err := db.Exec(createTableSQL(td)); err != nil {
+			return errors.Wrapf(err, "creating table %s", td.Name)
+		}
+		for _, idx := range td.Indexes {
+			if err := db.Exec(createIndexSQL(td.Name, idx)); err != nil {
+				return errors.Wrapf(err, "creating index on %s", td.Name)
+			}
+		}
+	}
+	return nil
+}
+
 // ApplyDocs upserts documents into td's existing doc table.
 func ApplyDocs(db *sqlite3.Conn, td TableDef, docs []json.RawMessage) (err error) {
 	stmt, _, err := db.Prepare(docUpsertSQL(td))

@@ -27,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -65,6 +66,7 @@ type Config struct {
 	OverwriteMode     string
 	MaxConcurrency    int
 	RunID             string
+	DB                string
 }
 
 // Validate ensures the configuration is valid.
@@ -83,6 +85,9 @@ func (c Config) Validate() error {
 	}
 	if !c.Local && c.GitCacheURL != "" {
 		return errors.New("git-cache-url is only supported in local mode")
+	}
+	if !c.Local && c.DB != "" {
+		return errors.New("db is only supported in local mode")
 	}
 	if c.OverwriteMode != "" && c.OverwriteMode != string(schema.OverwriteServiceUpdate) && c.OverwriteMode != string(schema.OverwriteForce) {
 		return errors.Errorf("invalid overwrite-mode: %s. Expected one of 'SERVICE_UPDATE' or 'FORCE'", c.OverwriteMode)
@@ -196,7 +201,24 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			return cratesregistryservice.FindRegistryCommit(ctx, req, &cratesregistryservice.FindRegistryCommitDeps{IndexManager: mgr})
 		}
 		executor = benchrun.NewLocalExecutionService(localCfg)
-		dex = rundex.NewFilesystemClient(localfiles.Rundex())
+		if cfg.DB != "" {
+			ldb, err := snapshot.OpenLocal(cfg.DB)
+			if err != nil {
+				return nil, errors.Wrap(err, "opening rundex database")
+			}
+			defer func() {
+				if _, err := ldb.Refresh(); err != nil {
+					log.Println(errors.Wrap(err, "refreshing rundex database"))
+				}
+				ldb.Close()
+			}()
+			dex, err = rundex.NewSQLiteWriter(rundex.NewSingleConn(ldb.Conn), snapshot.Tables())
+			if err != nil {
+				return nil, errors.Wrap(err, "creating rundex writer")
+			}
+		} else {
+			dex = rundex.NewFilesystemClient(localfiles.Rundex())
+		}
 		if err := dex.WriteRun(ctx, rundex.FromRun(schema.Run{
 			ID:            runID,
 			BenchmarkName: filepath.Base(cfg.BenchmarkPath),
@@ -340,7 +362,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "run-bench attest -api <URI>  [-local -bootstrap-bucket <BUCKET> -bootstrap-version <VERSION>] [-format=summary|csv] <benchmark.json>",
+		Use:   "run-bench attest -api <URI>  [-local -bootstrap-bucket <BUCKET> -bootstrap-version <VERSION> -db <PATH>] [-format=summary|csv] <benchmark.json>",
 		Short: "Run benchmark",
 		Args:  cobra.ExactArgs(2),
 		RunE: cli.RunE(
@@ -374,5 +396,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.OverwriteMode, "overwrite-mode", "", "reason to overwrite existing attestation (SERVICE_UPDATE or FORCE)")
 	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos (local mode only)")
 	set.StringVar(&cfg.RunID, "run-id", "", "explicit run ID to use")
+	set.StringVar(&cfg.DB, "db", "", "snapshot database file to record results into, created if missing (local mode only)")
 	return set
 }

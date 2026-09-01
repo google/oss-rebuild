@@ -10,7 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/google/oss-rebuild/internal/docdb"
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -278,6 +280,60 @@ func (s *SQLite) FetchSessions(ctx context.Context, req *FetchSessionsReq) ([]sc
 		return a.Created.Compare(b.Created)
 	})
 	return sessions, nil
+}
+
+// SQLiteWriter writes rebuilds and runs into a snapshot database's doc
+// tables through the same guarded upserts the rollup uses, so local writes,
+// re-runs, and replayed upstream deltas all compose safely.
+type SQLiteWriter struct {
+	q        Querier
+	attempts docdb.TableDef
+	runs     docdb.TableDef
+}
+
+var _ Writer = &SQLiteWriter{}
+
+// NewSQLiteWriter creates a Writer over a snapshot database. defs is the
+// owning schema's table registry (e.g. snapshot.Tables()).
+func NewSQLiteWriter(q Querier, defs []docdb.TableDef) (*SQLiteWriter, error) {
+	w := &SQLiteWriter{q: q}
+	for _, td := range defs {
+		switch td.Name {
+		case "attempts":
+			w.attempts = td
+		case "runs":
+			w.runs = td
+		}
+	}
+	if w.attempts.Name == "" || w.runs.Name == "" {
+		return nil, errors.New("registry does not define attempts and runs tables")
+	}
+	return w, nil
+}
+
+func (w *SQLiteWriter) writeDoc(td docdb.TableDef, v any) error {
+	doc, err := json.Marshal(v)
+	if err != nil {
+		return errors.Wrap(err, "encoding document")
+	}
+	return w.q.Query(func(db *sqlite3.Conn) error {
+		return docdb.ApplyDocs(db, td, []json.RawMessage{doc})
+	})
+}
+
+// WriteRebuild records a rebuild attempt, stamping Updated (as the API
+// service does on its writes) so the upsert guard orders it against other
+// writes of the same attempt.
+func (w *SQLiteWriter) WriteRebuild(ctx context.Context, r Rebuild) error {
+	if r.Updated.IsZero() {
+		r.Updated = time.Now().UTC()
+	}
+	return w.writeDoc(w.attempts, r.RebuildAttempt)
+}
+
+// WriteRun records a run.
+func (w *SQLiteWriter) WriteRun(ctx context.Context, r Run) error {
+	return w.writeDoc(w.runs, r.Run)
 }
 
 func (s *SQLite) FetchIterations(ctx context.Context, req *FetchIterationsReq) ([]schema.AgentIteration, error) {

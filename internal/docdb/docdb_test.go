@@ -153,6 +153,18 @@ func TestQueryTable(t *testing.T) {
 	}
 }
 
+func TestEnsureDocTables(t *testing.T) {
+	db := newDB(t)
+	defs := []TableDef{probeTable, {Name: "message_counts", Query: "SELECT message, count(*) AS n FROM gen_probe GROUP BY message"}}
+	must1(EnsureDocTables(db, defs))
+	must1(ApplyDocs(db, probeTable, []json.RawMessage{probe("k1", "hello", dt(0))}))
+	// A second pass leaves the existing table (and its rows) alone, and the
+	// derived table is never created by it.
+	must1(EnsureDocTables(db, defs))
+	assertCount(t, db, "SELECT count(*) FROM gen_probe", "1")
+	assertCount(t, db, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='message_counts'", "0")
+}
+
 func TestValidateTable(t *testing.T) {
 	docCols := []Col{{"key", "TEXT", Doc("$.Key")}}
 	for name, td := range map[string]TableDef{
