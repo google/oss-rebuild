@@ -143,6 +143,26 @@ func TestCachedAssetStore_URL(t *testing.T) {
 	}
 }
 
+func TestGCSStore_URL(t *testing.T) {
+	s := &GCSStore{bucket: "my-bucket", prefix: "assets", runID: "run1"}
+	// PEP 440 epoch. gs:// object names are literal, so the "%21" that
+	// url.URL emits for "!" without RawPath would name a different object.
+	asset := Asset{Type: "test", Target: Target{Ecosystem: PyPI, Package: "foo", Version: "1!2.0", Artifact: "foo-1!2.0.tar.gz"}}
+	want := "gs://my-bucket/assets/pypi/foo/1!2.0/foo-1!2.0.tar.gz/run1/test"
+	if got := s.URL(asset).String(); got != want {
+		t.Errorf("GCSStore.URL().String() got = %q, want %q", got, want)
+	}
+}
+
+func TestFilesystemAssetStore_URL(t *testing.T) {
+	s := NewFilesystemAssetStore(memfs.New())
+	asset := Asset{Type: "test", Target: Target{Ecosystem: PyPI, Package: "foo", Version: "1!2.0", Artifact: "foo-1!2.0.tar.gz"}}
+	want := "file:///pypi/foo/1!2.0/foo-1!2.0.tar.gz/test"
+	if got := s.URL(asset).String(); got != want {
+		t.Errorf("FilesystemAssetStore.URL().String() got = %q, want %q", got, want)
+	}
+}
+
 func TestCachedReader_Close(t *testing.T) {
 	var writeClosed, readClosed bool
 	cr := &cachedReader{
