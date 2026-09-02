@@ -114,28 +114,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	}
 	sessionID := sessionUUID.String()
 	sessionTime := time.Unix(sessionUUID.Time().UnixTime())
-	session := schema.AgentSession{
-		ID:             sessionID,
-		Target:         t,
-		MaxIterations:  cfg.AgentIteration,
-		TimeoutSeconds: 60 * 60, // 1 hr
-		Context:        &schema.AgentContext{},
-		// Because we're going to start running the session locally immediately, we can mark it as Running from the start.
-		// This avoids needing to update the session record immediately after creation.
-		Status: schema.AgentSessionStatusRunning,
-		// There is no execution name, because we're going to run the agent in-process.
-		ExecutionName: "",
-		Created:       sessionTime,
-		Updated:       sessionTime,
-	}
-	sessions := db.NewFirestoreSessions(fire)
-	err = sessions.Insert(ctx, session)
-	if err != nil {
-		if errors.Is(err, db.ErrAlreadyExists) {
-			return nil, errors.Errorf("agent session %s already exists", sessionID)
-		}
-		return nil, errors.Wrap(err, "creating agent session")
-	}
+	// A retried session is seeded with the original session's first iteration.
 	var retryInitialIter *schema.AgentIteration
 	if cfg.RetrySession != "" {
 		sessionDoc := fire.Collection("agent_sessions").Doc(cfg.RetrySession)
@@ -155,6 +134,34 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		// the new session's subcollection and must attribute there.
 		retryInitialIter.SessionID = sessionID
 		retryInitialIter.Updated = time.Now().UTC()
+	}
+	session := schema.AgentSession{
+		ID:             sessionID,
+		Target:         t,
+		MaxIterations:  cfg.AgentIteration,
+		TimeoutSeconds: 60 * 60, // 1 hr
+		Context:        &schema.AgentContext{},
+		// Because we're going to start running the session locally immediately, we can mark it as Running from the start.
+		// This avoids needing to update the session record immediately after creation.
+		Status: schema.AgentSessionStatusRunning,
+		// There is no execution name, because we're going to run the agent in-process.
+		ExecutionName: "",
+		Created:       sessionTime,
+		Updated:       sessionTime,
+	}
+	if retryInitialIter != nil {
+		// The seeded iteration counts toward the session's numbering and limit.
+		session.IterationCount = retryInitialIter.Number
+	}
+	sessions := db.NewFirestoreSessions(fire)
+	err = sessions.Insert(ctx, session)
+	if err != nil {
+		if errors.Is(err, db.ErrAlreadyExists) {
+			return nil, errors.Errorf("agent session %s already exists", sessionID)
+		}
+		return nil, errors.Wrap(err, "creating agent session")
+	}
+	if retryInitialIter != nil {
 		if err := db.NewFirestoreIterations(fire).Insert(ctx, *retryInitialIter); err != nil {
 			return nil, errors.Wrap(err, "creating initial iteration")
 		}
