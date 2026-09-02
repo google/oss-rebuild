@@ -247,7 +247,9 @@ func packagePrevalence(ctx context.Context, client *bigquery.Client, ds *bigquer
 
 // versionPrevalence counts, for each exact version, the distinct packages
 // whose resolved dependency graph contains that version. Same table, snapshot
-// and exclusions as packagePrevalence, grouped one column finer.
+// and exclusions as packagePrevalence, grouped one column finer. Each row
+// also carries the version's publish time and, for PyPI, its pure wheel's
+// filename when one exists.
 func versionPrevalence(ctx context.Context, client *bigquery.Client, ds *bigquery.Dataset, ecosystem string, snap time.Time, top int) ([]signals.PrevalenceRecord, error) {
 	system, err := depsDevSystem(ecosystem)
 	if err != nil {
@@ -263,7 +265,7 @@ func versionPrevalence(ctx context.Context, client *bigquery.Client, ds *bigquer
 		"  GROUP BY Package, Version\n" +
 		"  ORDER BY Dependents DESC, Package, Version\n" +
 		"  LIMIT @top)\n"
-	version := "c.Version"
+	version, published, artifact := "c.Version", "v.UpstreamPublishedAt", "CAST(NULL AS STRING) AS Artifact"
 	// versionKey strips trailing zero segments from a version's release part,
 	// so "3.19.0", "3.19" and "1.0.0rc1" key as "3.19", "3.19" and "1rc1".
 	versionKey := func(col string) string {
@@ -275,15 +277,21 @@ func versionPrevalence(ctx context.Context, client *bigquery.Client, ds *bigquer
 		// to three components ("3.19" becomes "3.19.0"), so both sides join
 		// on the normalized name and versionKey. The row carries PyPI's own
 		// version string, the one the registry and the rebuilder understand.
+		// The earliest upload takes precedence over deps.dev's publish time,
+		// which some rows lack. The artifact is the pure wheel.
 		sql += ", files AS (\n" +
 			"  SELECT LOWER(REGEXP_REPLACE(name, r'[-_.]+', '-')) AS Package, " + versionKey("version") + " AS VersionKey,\n" +
-			"    ANY_VALUE(version) AS Version\n" +
+			"    ANY_VALUE(version) AS Version, MIN(upload_time) AS FirstUpload,\n" +
+			"    ARRAY_AGG(IF(packagetype = 'bdist_wheel' AND ENDS_WITH(filename, 'none-any.whl'), filename, NULL) IGNORE NULLS\n" +
+			"      ORDER BY ENDS_WITH(filename, 'py3-none-any.whl') DESC, filename LIMIT 1)[SAFE_OFFSET(0)] AS Artifact\n" +
 			"  FROM `bigquery-public-data.pypi.distribution_metadata`\n" +
 			"  GROUP BY Package, VersionKey)\n"
-		version = "IFNULL(f.Version, c.Version)"
+		version, published, artifact = "IFNULL(f.Version, c.Version)", "IFNULL(f.FirstUpload, v.UpstreamPublishedAt)", "f.Artifact"
 	}
-	sql += "SELECT c.Package, " + version + " AS Version, c.Dependents\n" +
-		"FROM counted c\n"
+	sql += "SELECT c.Package, " + version + " AS Version, c.Dependents, " + published + " AS Published, " + artifact + "\n" +
+		"FROM counted c\n" +
+		"LEFT JOIN `bigquery-public-data.deps_dev_v1.PackageVersions` v\n" +
+		"  ON v.System = @system AND v.SnapshotAt = @snap AND v.Name = c.Package AND v.Version = c.Version\n"
 	if ecosystem == string(rebuild.PyPI) {
 		sql += "LEFT JOIN files f ON f.Package = c.Package AND f.VersionKey = " + versionKey("c.Version") + "\n"
 	}
@@ -304,10 +312,19 @@ func versionPrevalence(ctx context.Context, client *bigquery.Client, ds *bigquer
 			Package    string
 			Version    string
 			Dependents int64
+			Published  bigquery.NullTimestamp
+			Artifact   bigquery.NullString
 		}
 		switch err := it.Next(&row); err {
 		case nil:
-			out = append(out, signals.PrevalenceRecord{Ecosystem: ecosystem, Package: row.Package, Version: row.Version, Dependents: row.Dependents})
+			rec := signals.PrevalenceRecord{Ecosystem: ecosystem, Package: row.Package, Version: row.Version, Dependents: row.Dependents}
+			if row.Published.Valid {
+				rec.Published = row.Published.Timestamp.UTC()
+			}
+			if row.Artifact.Valid {
+				rec.Artifact = row.Artifact.StringVal
+			}
+			out = append(out, rec)
 		case iterator.Done:
 			return out, nil
 		default:
