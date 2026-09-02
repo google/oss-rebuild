@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/internal/docdb"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/pkg/errors"
 )
 
@@ -66,35 +67,35 @@ func Delta(ctx context.Context, src Source, dest billy.Filesystem, opts DeltaOpt
 		}
 		since = t.Add(-slack)
 	}
-	attempts, err := src.Attempts(ctx, since)
+	attempts, err := iterx.Collect(src.Attempts(ctx, since))
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning attempts")
 	}
-	runs, err := src.Runs(ctx, since)
+	runs, err := iterx.Collect(src.Runs(ctx, since))
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning runs")
 	}
-	sessions, err := src.Sessions(ctx, since)
+	sessions, err := iterx.Collect(src.Sessions(ctx, since))
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning agent sessions")
 	}
-	iterations, err := src.Iterations(ctx, since)
+	iterations, err := iterx.Collect(src.Iterations(ctx, since))
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning agent iterations")
 	}
-	scratches, err := src.Scratches(ctx, since)
+	scratches, err := iterx.Collect(src.Scratches(ctx, since))
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning scratch VMs")
 	}
-	execs, err := src.Execs(ctx, since)
+	execs, err := iterx.Collect(src.Execs(ctx, since))
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning scratch execs")
 	}
-	repoMetrics, err := src.RepoMetrics(ctx, since)
+	repoMetrics, err := iterx.Collect(src.RepoMetrics(ctx, since))
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning repo metrics")
 	}
-	campaigns, err := src.Campaigns(ctx, since)
+	campaigns, err := iterx.Collect(src.Campaigns(ctx, since))
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning campaigns")
 	}

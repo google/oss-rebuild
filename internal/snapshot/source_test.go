@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/internal/sqlitex"
 )
@@ -30,9 +31,13 @@ func TestReadSignals(t *testing.T) {
 	if err := sqlitex.Publish(pub, signals.Object, built); err != nil {
 		t.Fatalf("publishing signal database: %v", err)
 	}
-	got, builtAt, err := readSignals(pub)
+	rows, builtAt, err := readSignals(pub)
 	if err != nil {
 		t.Fatalf("readSignals: %v", err)
+	}
+	got, err := iterx.Collect(rows)
+	if err != nil {
+		t.Fatalf("draining signals: %v", err)
 	}
 	want := []signals.PackageSignal{
 		{Ecosystem: "pypi", Package: "pkgA", Dependents: 100, Prevalence: 0.8, Score: 0.8},
@@ -45,7 +50,9 @@ func TestReadSignals(t *testing.T) {
 	}
 	// No published database configured reads as no signals, so a rollup
 	// stays runnable before the first publish.
-	if got, _, err := readSignals(nil); err != nil || got != nil {
-		t.Errorf("readSignals(nil) = (%v, %v), want no rows", got, err)
+	if rows, _, err := readSignals(nil); err != nil {
+		t.Errorf("readSignals(nil) = %v, want no error", err)
+	} else if got, err := iterx.Collect(rows); err != nil || got != nil {
+		t.Errorf("readSignals(nil) rows = (%v, %v), want none", got, err)
 	}
 }

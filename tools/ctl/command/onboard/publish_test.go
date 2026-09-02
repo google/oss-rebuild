@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/jsonl"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/act/cli"
@@ -59,7 +60,7 @@ func TestPublish(t *testing.T) {
 		t.Fatalf("opening published database: %v", err)
 	}
 	defer db.Close()
-	rows, err := signals.PackageSignals(db)
+	rows, err := iterx.Collect(signals.PackageSignals(db))
 	if err != nil {
 		t.Fatalf("PackageSignals: %v", err)
 	}

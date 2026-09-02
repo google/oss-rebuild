@@ -5,6 +5,7 @@ package snapshot
 
 import (
 	"context"
+	"iter"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -37,31 +39,33 @@ type fakeSource struct {
 	universe    []SignalUniverse
 }
 
-func (f *fakeSource) Attempts(_ context.Context, since time.Time) ([]schema.RebuildAttempt, error) {
+func (f *fakeSource) Attempts(_ context.Context, since time.Time) iter.Seq2[schema.RebuildAttempt, error] {
 	f.since = append(f.since, since)
-	return f.attempts, nil
+	return iterx.FromSlice(f.attempts)
 }
-func (f *fakeSource) Runs(context.Context, time.Time) ([]schema.Run, error) { return f.runs, nil }
-func (f *fakeSource) Sessions(context.Context, time.Time) ([]schema.AgentSession, error) {
-	return f.sessions, nil
+func (f *fakeSource) Runs(context.Context, time.Time) iter.Seq2[schema.Run, error] {
+	return iterx.FromSlice(f.runs)
 }
-func (f *fakeSource) Iterations(context.Context, time.Time) ([]schema.AgentIteration, error) {
-	return f.iterations, nil
+func (f *fakeSource) Sessions(context.Context, time.Time) iter.Seq2[schema.AgentSession, error] {
+	return iterx.FromSlice(f.sessions)
 }
-func (f *fakeSource) Scratches(context.Context, time.Time) ([]schema.Scratch, error) {
-	return f.scratches, nil
+func (f *fakeSource) Iterations(context.Context, time.Time) iter.Seq2[schema.AgentIteration, error] {
+	return iterx.FromSlice(f.iterations)
 }
-func (f *fakeSource) Execs(context.Context, time.Time) ([]schema.ScratchExec, error) {
-	return f.execs, nil
+func (f *fakeSource) Scratches(context.Context, time.Time) iter.Seq2[schema.Scratch, error] {
+	return iterx.FromSlice(f.scratches)
 }
-func (f *fakeSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error) {
-	return f.repoMetrics, nil
+func (f *fakeSource) Execs(context.Context, time.Time) iter.Seq2[schema.ScratchExec, error] {
+	return iterx.FromSlice(f.execs)
 }
-func (f *fakeSource) Campaigns(context.Context, time.Time) ([]scheduler.Campaign, error) {
-	return f.campaigns, nil
+func (f *fakeSource) RepoMetrics(context.Context, time.Time) iter.Seq2[schema.RepoMetrics, error] {
+	return iterx.FromSlice(f.repoMetrics)
 }
-func (f *fakeSource) Signals(context.Context) ([]signals.PackageSignal, time.Time, error) {
-	return f.signals, f.signalsAt, nil
+func (f *fakeSource) Campaigns(context.Context, time.Time) iter.Seq2[scheduler.Campaign, error] {
+	return iterx.FromSlice(f.campaigns)
+}
+func (f *fakeSource) Signals(context.Context) (iter.Seq2[signals.PackageSignal, error], time.Time, error) {
+	return iterx.FromSlice(f.signals), f.signalsAt, nil
 }
 
 // openPublished fetches the snapshot database dest holds and opens it.

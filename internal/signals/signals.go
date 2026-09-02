@@ -5,6 +5,7 @@ package signals
 
 import (
 	"fmt"
+	"iter"
 	"path/filepath"
 	"time"
 
@@ -162,25 +163,33 @@ func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, er
 	return map[string]int{TablePackageSignals: len(pkgs), TableVersionSignals: versions}, nil
 }
 
-// PackageSignals reads every package row from an opened signal database.
-func PackageSignals(db *sqlite3.Conn) ([]PackageSignal, error) {
-	stmt, _, err := db.Prepare(`SELECT ecosystem, package, dependents, prevalence, score
-		FROM package_signals ORDER BY ecosystem, package`)
-	if err != nil {
-		return nil, err
+// PackageSignals streams every package row from an opened signal
+// database in (ecosystem, package) order, one row in hand at a time.
+func PackageSignals(db *sqlite3.Conn) iter.Seq2[PackageSignal, error] {
+	return func(yield func(PackageSignal, error) bool) {
+		stmt, _, err := db.Prepare(`SELECT ecosystem, package, dependents, prevalence, score
+			FROM package_signals ORDER BY ecosystem, package`)
+		if err != nil {
+			yield(PackageSignal{}, err)
+			return
+		}
+		defer stmt.Close()
+		for stmt.Step() {
+			s := PackageSignal{
+				Ecosystem:  stmt.ColumnText(0),
+				Package:    stmt.ColumnText(1),
+				Dependents: stmt.ColumnInt64(2),
+				Prevalence: stmt.ColumnFloat(3),
+				Score:      stmt.ColumnFloat(4),
+			}
+			if !yield(s, nil) {
+				return
+			}
+		}
+		if err := stmt.Err(); err != nil {
+			yield(PackageSignal{}, err)
+		}
 	}
-	defer stmt.Close()
-	var out []PackageSignal
-	for stmt.Step() {
-		out = append(out, PackageSignal{
-			Ecosystem:  stmt.ColumnText(0),
-			Package:    stmt.ColumnText(1),
-			Dependents: stmt.ColumnInt64(2),
-			Prevalence: stmt.ColumnFloat(3),
-			Score:      stmt.ColumnFloat(4),
-		})
-	}
-	return out, stmt.Err()
 }
 
 // VersionSignal is one ranked version of a package.

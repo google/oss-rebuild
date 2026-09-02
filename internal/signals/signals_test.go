@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/ncruces/go-sqlite3"
 )
@@ -76,7 +77,7 @@ func TestBuildAndReadBack(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	defer db.Close()
-	got, err := PackageSignals(db)
+	got, err := iterx.Collect(PackageSignals(db))
 	if err != nil {
 		t.Fatalf("PackageSignals: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestFetchRoundTrip(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	defer db.Close()
-	got, err := PackageSignals(db)
+	got, err := iterx.Collect(PackageSignals(db))
 	if err != nil {
 		t.Fatalf("PackageSignals: %v", err)
 	}

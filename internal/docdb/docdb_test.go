@@ -15,8 +15,10 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/ncruces/go-sqlite3"
+	"github.com/pkg/errors"
 )
 
 // must and must1 crash the test on plumbing errors, reserving explicit
@@ -349,5 +351,41 @@ func TestCache(t *testing.T) {
 		if _, err := OpenCache(ctx, other, time.Hour); err == nil {
 			t.Errorf("OpenCache accepted a v%d base for a v%d reader", era, up.Schema)
 		}
+	}
+}
+
+func TestStoreDocSeqRollsBackOnFailure(t *testing.T) {
+	db, err := sqlite3.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	td := TableDef{
+		Name: "things",
+		Cols: []Col{{Name: "id", Type: "TEXT", Expr: Doc("$.id")}},
+		PK:   []string{"id"},
+	}
+	boom := errors.New("source failed")
+	docs := func(yield func(json.RawMessage, error) bool) {
+		if !yield(json.RawMessage(`{"id":"a"}`), nil) {
+			return
+		}
+		yield(nil, boom)
+	}
+	if _, err := StoreDocSeq(db, td, docs); !errors.Is(err, boom) {
+		t.Fatalf("StoreDocSeq err = %v, want the source error", err)
+	}
+	// The table exists, since creation precedes the fill, but the row that
+	// arrived before the failure was rolled back with the transaction.
+	stmt, _, err := db.Prepare("SELECT count(*) FROM things")
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	defer stmt.Close()
+	if !stmt.Step() || stmt.ColumnInt(0) != 0 {
+		t.Errorf("things has %d row(s) after a failed fill, want 0", stmt.ColumnInt(0))
+	}
+	if n, err := StoreDocSeq(db, TableDef{Name: "ok", Cols: td.Cols, PK: td.PK}, iterx.FromSlice([]json.RawMessage{json.RawMessage(`{"id":"a"}`), json.RawMessage(`{"id":"b"}`)})); err != nil || n != 2 {
+		t.Errorf("StoreDocSeq = (%d, %v), want 2 rows", n, err)
 	}
 }
