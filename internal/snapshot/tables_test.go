@@ -5,11 +5,13 @@ package snapshot
 
 import (
 	"encoding/json"
+	"iter"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -75,6 +77,11 @@ func assertCount(t *testing.T, db *sqlite3.Conn, sql string, want string) {
 	}
 }
 
+// fixture serves records already in hand as a doc table producer.
+func fixture[T any](xs []T) func() iter.Seq2[json.RawMessage, error] {
+	return func() iter.Seq2[json.RawMessage, error] { return docSeq(iterx.FromSlice(xs)) }
+}
+
 // fill builds an in-memory snapshot database from source fixtures.
 func fill(t *testing.T, src *fakeSource) (*sqlite3.Conn, map[string]int) {
 	t.Helper()
@@ -86,17 +93,17 @@ func fill(t *testing.T, src *fakeSource) (*sqlite3.Conn, map[string]int) {
 	if err := registerCollations(db); err != nil {
 		t.Fatalf("registerCollations: %v", err)
 	}
-	counts, err := fillSnapshotDB(db, map[string][]json.RawMessage{
-		TableAttempts:        docsOf(src.attempts),
-		TableRuns:            docsOf(src.runs),
-		TableAgentSessions:   docsOf(src.sessions),
-		TableAgentIterations: docsOf(src.iterations),
-		TableScratchVMs:      docsOf(src.scratches),
-		TableScratchExecs:    docsOf(src.execs),
-		TableRepoMetrics:     docsOf(src.repoMetrics),
-		TableCampaigns:       docsOf(src.campaigns),
-		TablePackageSignals:  docsOf(src.signals),
-		TableSignalUniverse:  docsOf(src.universe),
+	counts, err := fillSnapshotDB(db, docProducers{
+		TableAttempts:        fixture(src.attempts),
+		TableRuns:            fixture(src.runs),
+		TableAgentSessions:   fixture(src.sessions),
+		TableAgentIterations: fixture(src.iterations),
+		TableScratchVMs:      fixture(src.scratches),
+		TableScratchExecs:    fixture(src.execs),
+		TableRepoMetrics:     fixture(src.repoMetrics),
+		TableCampaigns:       fixture(src.campaigns),
+		TablePackageSignals:  fixture(src.signals),
+		TableSignalUniverse:  fixture(src.universe),
 	}, Meta{BuiltAt: at(time.Hour)})
 	if err != nil {
 		t.Fatalf("fillSnapshotDB: %v", err)
