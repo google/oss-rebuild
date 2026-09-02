@@ -5,6 +5,7 @@ package npm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -325,4 +326,15 @@ func must[T any](t T, err error) T {
 		panic(err)
 	}
 	return t
+}
+
+func TestScriptsTolerateNonStringValues(t *testing.T) {
+	var pkg NPMVersion
+	doc := `{"name":"x","version":"1.0.0","scripts":{"build":"tsc","blanket":{"pattern":"src"},"n":3}}`
+	if err := json.Unmarshal([]byte(doc), &pkg); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if pkg.Scripts["build"] != "tsc" || pkg.Scripts["blanket"] != `{"pattern":"src"}` || pkg.Scripts["n"] != "3" {
+		t.Errorf("scripts = %v, want build kept and non-strings as their JSON text", pkg.Scripts)
+	}
 }
