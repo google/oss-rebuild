@@ -253,15 +253,44 @@ func versionPrevalence(ctx context.Context, client *bigquery.Client, ds *bigquer
 	if err != nil {
 		return nil, err
 	}
-	q := client.Query("SELECT T.`To`.Name AS Package, T.`To`.Version AS Version, COUNT(DISTINCT T.Name) AS Dependents\n" +
-		"FROM `bigquery-public-data.deps_dev_v1.DependencyGraphEdges` T\n" +
-		"WHERE T.System = @system AND T.SnapshotAt = @snap\n" +
-		"  AND T.Name != T.`To`.Name\n" +
-		"  AND T.`To`.Name NOT LIKE '%>%'\n" +
-		"  AND T.`To`.Version != ''\n" +
-		"GROUP BY Package, Version\n" +
-		"ORDER BY Dependents DESC, Package, Version\n" +
-		"LIMIT @top")
+	sql := "WITH counted AS (\n" +
+		"  SELECT T.`To`.Name AS Package, T.`To`.Version AS Version, COUNT(DISTINCT T.Name) AS Dependents\n" +
+		"  FROM `bigquery-public-data.deps_dev_v1.DependencyGraphEdges` T\n" +
+		"  WHERE T.System = @system AND T.SnapshotAt = @snap\n" +
+		"    AND T.Name != T.`To`.Name\n" +
+		"    AND T.`To`.Name NOT LIKE '%>%'\n" +
+		"    AND T.`To`.Version != ''\n" +
+		"  GROUP BY Package, Version\n" +
+		"  ORDER BY Dependents DESC, Package, Version\n" +
+		"  LIMIT @top)\n"
+	version := "c.Version"
+	// versionKey strips trailing zero segments from a version's release part,
+	// so "3.19.0", "3.19" and "1.0.0rc1" key as "3.19", "3.19" and "1rc1".
+	versionKey := func(col string) string {
+		return "REGEXP_REPLACE(" + col + ", r'^([0-9]+(?:\\.[0-9]+)*?)(?:\\.0)+((?:[^0-9.].*)?)$', r'\\1\\2')"
+	}
+	if ecosystem == string(rebuild.PyPI) {
+		// PyPI's listing keys files by the name and version as uploaded, while
+		// deps.dev normalizes the name (PEP 503) and pads the version's
+		// release segment to three components ("3.19" becomes "3.19.0"), so
+		// both sides join on the normalized name and a version key with
+		// trailing zero segments stripped from the release part. The row then
+		// carries PyPI's own version string, the one the registry and the
+		// rebuilder understand.
+		sql += ", files AS (\n" +
+			"  SELECT LOWER(REGEXP_REPLACE(name, r'[-_.]+', '-')) AS Package, " + versionKey("version") + " AS VersionKey,\n" +
+			"    ANY_VALUE(version) AS Version\n" +
+			"  FROM `bigquery-public-data.pypi.distribution_metadata`\n" +
+			"  GROUP BY Package, VersionKey)\n"
+		version = "IFNULL(f.Version, c.Version)"
+	}
+	sql += "SELECT c.Package, " + version + " AS Version, c.Dependents\n" +
+		"FROM counted c\n"
+	if ecosystem == string(rebuild.PyPI) {
+		sql += "LEFT JOIN files f ON f.Package = c.Package AND f.VersionKey = " + versionKey("c.Version") + "\n"
+	}
+	sql += "ORDER BY c.Dependents DESC, c.Package, c.Version"
+	q := client.Query(sql)
 	q.Parameters = []bigquery.QueryParameter{
 		{Name: "system", Value: system},
 		{Name: "snap", Value: snap},
