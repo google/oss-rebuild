@@ -7,10 +7,8 @@ import (
 	"bytes"
 	"context"
 	"crypto"
-	"io/fs"
 	"time"
 
-	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/verifier"
@@ -23,13 +21,11 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type AgentCreateIterationDeps struct {
-	FirestoreClient     *firestore.Client
+	Sessions            db.Sessions
 	Iterations          db.Iterations
 	GCBExecutor         *gcb.Executor
 	BuildProject        string
@@ -39,69 +35,74 @@ type AgentCreateIterationDeps struct {
 	Host                string
 }
 
+// Session states that refuse a new iteration.
+var (
+	errSessionNotRunning = errors.New("session is not running")
+	errIterationLimit    = errors.New("session reached its iteration limit")
+)
+
+// reserveIteration claims the session's next iteration number: the session
+// must be RUNNING and below MaxIterations. The returned session carries the
+// claimed number as IterationCount. The agent is not trusted to number or
+// bound its own iterations.
+func reserveIteration(ctx context.Context, sessions db.Sessions, sessionID string, now time.Time) (schema.AgentSession, error) {
+	var session schema.AgentSession
+	err := sessions.Mutate(ctx, sessionID, func(s *schema.AgentSession) (bool, error) {
+		if s.Status != schema.AgentSessionStatusRunning {
+			return false, errSessionNotRunning
+		}
+		if s.IterationCount >= s.MaxIterations {
+			return false, errIterationLimit
+		}
+		s.IterationCount++
+		s.Updated = now
+		session = *s
+		return true, nil
+	})
+	switch {
+	case err == nil:
+		return session, nil
+	case errors.Is(err, db.ErrNotFound):
+		return session, api.AsStatus(codes.NotFound, errors.New("session not found"))
+	case errors.Is(err, errSessionNotRunning), errors.Is(err, errIterationLimit):
+		return session, api.AsStatus(codes.FailedPrecondition, errors.Wrap(err, sessionID))
+	default:
+		return session, api.AsStatus(codes.Internal, errors.Wrap(err, "reserving iteration"))
+	}
+}
+
 func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRequest, deps *AgentCreateIterationDeps) (*schema.AgentCreateIterationResponse, error) {
 	if req.SessionID == "" {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("session_id required"))
 	}
-	obliviousID := uuid.New().String()
-	iterTime := time.Now().UTC()
-	iterationID := iterTime.Format(time.RFC3339Nano)
-	var iteration schema.AgentIteration
-	var session schema.AgentSession
-	// TODO: Remove bespoke transaction. The in-transaction query emulates a
-	// uniqueness constraint on (session_id, number) that the timestamp doc key
-	// cannot express, and the session status check must be atomic with create.
-	sessionDoc := deps.FirestoreClient.Collection("agent_sessions").Doc(req.SessionID)
-	iterDoc := sessionDoc.Collection("agent_iterations").Doc(iterationID)
-	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
-		// Fetch session to get Target and validate it exists
-		sessionSnap, err := t.Get(sessionDoc)
-		if err != nil {
-			return errors.Wrap(err, "fetching session")
-		}
-		if err := sessionSnap.DataTo(&session); err != nil {
-			return errors.Wrap(err, "decoding session")
-		}
-		if session.Status != schema.AgentSessionStatusRunning {
-			return errors.Errorf("session %s is not running", req.SessionID)
-		}
-		// Get the highest iteration number for this session to increment it
-		iterQuery := sessionDoc.Collection("agent_iterations").
-			Where("session_id", "==", req.SessionID).
-			Where("number", "==", req.IterationNumber).
-			Limit(1)
-		if _, err := t.Documents(iterQuery).Next(); err != nil && !errors.Is(err, iterator.Done) {
-			return errors.Wrap(err, "checking for existing iteration")
-		} else if err == nil {
-			return errors.Wrap(fs.ErrExist, "checking for existing iteration")
-		}
-		// Create iteration record
-		iteration = schema.AgentIteration{
-			ID:          iterationID,
-			SessionID:   req.SessionID,
-			Number:      req.IterationNumber,
-			Strategy:    req.Strategy,
-			ObliviousID: obliviousID,
-			Status:      schema.AgentIterationStatusPending,
-			Usage:       req.Usage, // preserved across the status updates below
-			Created:     iterTime,
-			Updated:     iterTime,
-		}
-		return t.Create(iterDoc, iteration)
-	})
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return nil, api.AsStatus(codes.NotFound, errors.New("session not found"))
-		}
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating iteration record"))
-	}
-	// Extract strategy and use GCB executor to plan and execute build
 	if req.Strategy == nil {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("strategy is required"))
 	}
 	strategy, err := req.Strategy.Strategy()
 	if err != nil {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "invalid strategy"))
+	}
+	obliviousID := uuid.New().String()
+	iterTime := time.Now().UTC()
+	iterationID := iterTime.Format(time.RFC3339Nano)
+	session, err := reserveIteration(ctx, deps.Sessions, req.SessionID, iterTime)
+	if err != nil {
+		return nil, err
+	}
+	iteration := schema.AgentIteration{
+		ID:          iterationID,
+		SessionID:   req.SessionID,
+		Number:      session.IterationCount,
+		Strategy:    req.Strategy,
+		ObliviousID: obliviousID,
+		Status:      schema.AgentIterationStatusPending,
+		Usage:       req.Usage, // preserved across the status updates below
+		Created:     iterTime,
+		Updated:     iterTime,
+	}
+	// A failed insert leaves the reserved number unused.
+	if err := deps.Iterations.Insert(ctx, iteration); err != nil {
+		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating iteration record"))
 	}
 	// Use GCB executor to plan and execute the build using Target from session
 	store, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, obliviousID), "gs://"+deps.MetadataBucket)

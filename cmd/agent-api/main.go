@@ -75,12 +75,12 @@ var scratchCooldown = agentapiservice.NewZoneCooldown(0)
 
 func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreateIterationDeps, error) {
 	var d agentapiservice.AgentCreateIterationDeps
-	var err error
-	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
+	fs, err := firestore.NewClient(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
-	d.Iterations = db.NewFirestoreIterations(d.FirestoreClient)
+	d.Sessions = db.NewFirestoreSessions(fs)
+	d.Iterations = db.NewFirestoreIterations(fs)
 	gcsClient, err := storage.NewClient(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating GCS client")

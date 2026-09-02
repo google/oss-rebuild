@@ -536,13 +536,13 @@ type AgentCreateResponse struct {
 }
 
 // AgentCreateIterationRequest records an iteration and triggers its GCB
-// build. Scratch-mode sessions submit only their confirmation builds here.
+// build. The server numbers the iteration from the session's IterationCount.
+// Scratch-mode sessions submit only their confirmation builds here.
 // Local attempts are tracked by the scratch exec ledger alone.
 type AgentCreateIterationRequest struct {
-	SessionID       string         `form:",required"`
-	IterationNumber int            `form:",required"`
-	Strategy        *StrategyOneOf `form:",required"`
-	Usage           *TokenUsage    `form:""` // LLM tokens consumed producing this iteration
+	SessionID string         `form:",required"`
+	Strategy  *StrategyOneOf `form:",required"`
+	Usage     *TokenUsage    `form:""` // LLM tokens consumed producing this iteration
 }
 
 var _ api.Input = AgentCreateIterationRequest{}
@@ -594,6 +594,7 @@ type AgentSession struct {
 	RunID            string             `firestore:"run_id,omitempty"`
 	Target           rebuild.Target     `firestore:"target,omitempty"`
 	MaxIterations    int                `firestore:"max_iterations,omitempty"`
+	IterationCount   int                `firestore:"iteration_count,omitempty"` // Iterations recorded so far. New iterations are numbered from it.
 	TimeoutSeconds   int                `firestore:"timeout_seconds,omitempty"`
 	Context          *AgentContext      `firestore:"context,omitempty"`
 	Status           string             `firestore:"status,omitempty"`
