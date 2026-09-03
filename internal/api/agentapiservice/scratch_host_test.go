@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/api/scratchhostservice"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -380,5 +381,48 @@ func TestRetire_LosesToAConcurrentLabelWrite(t *testing.T) {
 	// Retiring an already-retired host is a no-op, so a fresh read is free.
 	if err := retire(context.Background(), gce, after, now); err != nil {
 		t.Errorf("retire of an already-retired host = %v; want a no-op", err)
+	}
+}
+
+func TestScratchCreate_FallsThroughToAColdHost(t *testing.T) {
+	gce := NewMemoryGCE()
+	hosts := newFakeHosts()
+	now := time.Now().UTC()
+	// Full, past its cutoff, retired: the create pays for a fresh host.
+	gce.SeedRunning("us-central1-a", "h-full", hostLabels(schema.MachineClassStandard), "10.0.0.1", now)
+	hosts.AddHost("h-full", 0)
+	gce.SeedRunning("us-central1-a", "h-old", hostLabels(schema.MachineClassStandard), "10.0.0.2", now.Add(-24*time.Hour))
+	hosts.AddHost("h-old", 6)
+	retired := hostLabels(schema.MachineClassStandard)
+	retired[hostLabelRetiredKey] = "1"
+	gce.SeedRunning("us-central1-a", "h-retired", retired, "10.0.0.3", now)
+	hosts.AddHost("h-retired", 6)
+	hosts.AutoProvision(6)
+	got, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, newCreateDeps(gce, hosts, db.NewMemoryScratch(), func() string { return "sC" }))
+	if err != nil {
+		t.Fatalf("ScratchCreate: %v", err)
+	}
+	if !strings.HasPrefix(got.Host, "scratch-host-") {
+		t.Errorf("Host = %q; want a freshly created host", got.Host)
+	}
+	// Only the full host was even tried.
+	log := strings.Join(hosts.Log(), " ")
+	if !strings.Contains(log, "Admit(h-full,sC)") {
+		t.Errorf("host log = %v; want the full host to have been tried", hosts.Log())
+	}
+	for _, skipped := range []string{"Admit(h-old,", "Admit(h-retired,"} {
+		if strings.Contains(log, skipped) {
+			t.Errorf("host log = %v; want %q never tried", hosts.Log(), skipped)
+		}
+	}
+	// The new host carries the labels that make it findable next time.
+	inst, err := gce.GetInstance(context.Background(), got.Zone, got.Host)
+	if err != nil {
+		t.Fatalf("GetInstance: %v", err)
+	}
+	if inst.Labels[hostLabelPurposeKey] != hostLabelPurposeVal || inst.Labels[hostLabelClassKey] != "standard" {
+		t.Errorf("new host labels = %v; want purpose and class stamped", inst.Labels)
 	}
 }

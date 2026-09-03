@@ -17,15 +17,16 @@ import (
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api/agentapiservice"
+	"github.com/google/oss-rebuild/internal/api/scratchhostservice"
 	"github.com/google/oss-rebuild/internal/buildinfo"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/serviceid"
+	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/gcb"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/idtoken"
@@ -45,13 +46,13 @@ var (
 
 	// Scratch flags. Gated by --scratch-enabled.
 	scratchEnabled       = flag.Bool("scratch-enabled", false, "register the scratch routes")
-	scratchZones         = flag.String("scratch-zones", "", "comma-separated, ordered list of GCE zones to try for scratch VMs (required when scratch enabled); first listed is preferred, later zones used only on stockout fallthrough")
-	scratchWorkerPort    = flag.Int("scratch-worker-port", 8080, "port the worker listens on")
-	scratchStandardTmpl  = flag.String("scratch-instance-standard-template", "", "GCE instance template URL for the standard machine class (required when scratch enabled)")
-	scratchJumboTmpl     = flag.String("scratch-instance-jumbo-template", "", "GCE instance template URL for the jumbo machine class (optional)")
+	scratchZones         = flag.String("scratch-zones", "", "comma-separated, ordered list of GCE zones to try for scratch hosts (required when scratch enabled); first listed is preferred, later zones used only on stockout fallthrough")
+	scratchStandardTmpl  = flag.String("scratch-host-standard-template", "", "GCE instance template URL for hosts serving the standard machine class (required when scratch enabled)")
+	scratchJumboTmpl     = flag.String("scratch-host-jumbo-template", "", "GCE instance template URL for hosts serving the jumbo machine class (optional)")
 	scratchOutputBucket  = flag.String("scratch-output-bucket", "", "GCS bucket the broker writes exec output into (required when --scratch-enabled)")
 	scratchIdleThreshold = flag.Duration("scratch-idle-threshold", 30*time.Minute, "scratches whose LastUsed is older than this and that have no in-deadline pending exec are reaped. Also bounds how long a scratch may sit in starting or deleting with no writes before the reaper tears it down")
 	scratchOpDeadline    = flag.Duration("scratch-op-deadline", 2*time.Hour, "default and maximum exec duration, stamped on each exec; bounds how long a pending exec exempts its scratch from idle reaping")
+	scratchHostPort      = flag.Int("scratch-host-port", 8080, "port the scratch host brokers listen on")
 )
 
 var httpcfg = httpegress.Config{}
@@ -143,28 +144,33 @@ func AgentCompleteInit(ctx context.Context) (*agentapiservice.AgentCompleteDeps,
 	var d agentapiservice.AgentCompleteDeps
 	d.Sessions = db.NewFirestoreSessions(firestoreClient)
 	if *scratchEnabled {
-		// Enable eager teardown of scratch-mode sessions' VMs.
+		// Enable eager teardown of scratch-mode sessions' guests.
 		d.Scratches = db.NewFirestoreScratch(firestoreClient)
+		d.Hosts = scratchHosts(ctx)
 		var err error
-		d.GCE, err = agentapiservice.NewComputeGCE(ctx, *project)
-		if err != nil {
+		if d.GCE, err = agentapiservice.NewComputeGCE(ctx, *project); err != nil {
 			return nil, errors.Wrap(err, "compute client")
 		}
 	}
 	return &d, nil
 }
 
-// scratchWorkerDialer mints an ID-token-bearing HTTP client per
-// scratch with audience "https://builder/<vm-name>", the audience each
-// worker is configured to verify.
-func scratchWorkerDialer(ctx context.Context, workerPort int) agentapiservice.WorkerDialer {
-	return func(s schema.Scratch) (httpx.BasicClient, *url.URL, error) {
-		audience := fmt.Sprintf("https://builder/%s", s.VMName)
-		c, err := idtoken.NewClient(ctx, audience)
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "idtoken client")
+// scratchHostClients caches one ID-token client per scratch host.
+var scratchHostClients syncx.Map[string, httpx.BasicClient]
+
+// scratchHostDialer dials a scratch host's broker with an ID-token client
+// under the host's audience.
+func scratchHostDialer(ctx context.Context, hostPort int) agentapiservice.HostDialer {
+	return func(host agentapiservice.Instance) (httpx.BasicClient, *url.URL, error) {
+		c, ok := scratchHostClients.Load(host.Name)
+		if !ok {
+			fresh, err := idtoken.NewClient(ctx, scratchhostservice.HostAudience(host.Name))
+			if err != nil {
+				return nil, nil, errors.Wrap(err, "idtoken client")
+			}
+			c, _ = scratchHostClients.LoadOrStore(host.Name, fresh)
 		}
-		u, err := url.Parse(fmt.Sprintf("http://%s:%d", s.InternalIP, workerPort))
+		u, err := url.Parse(fmt.Sprintf("http://%s:%d", host.InternalIP, hostPort))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -172,26 +178,18 @@ func scratchWorkerDialer(ctx context.Context, workerPort int) agentapiservice.Wo
 	}
 }
 
-// scratchHealthProbe pings http://<ip>:<workerPort>/healthz. Worker
-// /healthz is unauthenticated by design.
-func scratchHealthProbe(workerPort int) agentapiservice.HealthProbe {
-	client := &http.Client{Timeout: 2 * time.Second}
-	return func(ctx context.Context, ip string) error {
-		u := fmt.Sprintf("http://%s:%d/healthz", ip, workerPort)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		if err != nil {
-			return err
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return errors.Errorf("healthz status %d", resp.StatusCode)
-		}
+// scratchHosts returns the host-broker client.
+func scratchHosts(ctx context.Context) *agentapiservice.HostClient {
+	return &agentapiservice.HostClient{Dial: scratchHostDialer(ctx, *scratchHostPort)}
+}
+
+// scratchJumbo returns the jumbo host class, or nil when the deployment
+// does not configure one.
+func scratchJumbo() *agentapiservice.ClassConfig {
+	if *scratchJumboTmpl == "" {
 		return nil
 	}
+	return &agentapiservice.ClassConfig{InstanceTemplate: *scratchJumboTmpl}
 }
 
 func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps, error) {
@@ -203,23 +201,19 @@ func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps,
 	if len(zones) == 0 {
 		return nil, errors.New("--scratch-zones is required when --scratch-enabled")
 	}
+	if *scratchStandardTmpl == "" {
+		return nil, errors.New("--scratch-host-standard-template is required when --scratch-enabled")
+	}
 	return &agentapiservice.ScratchCreateDeps{
 		Scratches: db.NewFirestoreScratch(firestoreClient),
 		GCE:       gce,
 		Standard: agentapiservice.ClassConfig{
 			InstanceTemplate: *scratchStandardTmpl,
 		},
-		Jumbo: func() *agentapiservice.ClassConfig {
-			if *scratchJumboTmpl == "" {
-				return nil
-			}
-			return &agentapiservice.ClassConfig{
-				InstanceTemplate: *scratchJumboTmpl,
-			}
-		}(),
-		Zones:       zones,
-		Cooldown:    scratchCooldown,
-		HealthProbe: scratchHealthProbe(*scratchWorkerPort),
+		Jumbo:    scratchJumbo(),
+		Hosts:    scratchHosts(ctx),
+		Zones:    zones,
+		Cooldown: scratchCooldown,
 	}, nil
 }
 
@@ -232,7 +226,7 @@ func ScratchDeleteInit(ctx context.Context) (*agentapiservice.ScratchDeleteDeps,
 	if err != nil {
 		return nil, errors.Wrap(err, "compute client")
 	}
-	return &agentapiservice.ScratchDeleteDeps{Scratches: db.NewFirestoreScratch(firestoreClient), GCE: gce}, nil
+	return &agentapiservice.ScratchDeleteDeps{Scratches: db.NewFirestoreScratch(firestoreClient), Hosts: scratchHosts(ctx), GCE: gce}, nil
 }
 
 func ScratchExecCreateInit(ctx context.Context) (*agentapiservice.ScratchExecCreateDeps, error) {
@@ -240,10 +234,10 @@ func ScratchExecCreateInit(ctx context.Context) (*agentapiservice.ScratchExecCre
 	return &agentapiservice.ScratchExecCreateDeps{
 		Scratches:    db.NewFirestoreScratch(firestoreClient),
 		Execs:        execs,
-		WorkerDialer: scratchWorkerDialer(ctx, *scratchWorkerPort),
+		Dialer:       scratchHostDialer(ctx, *scratchHostPort),
 		OutputBucket: *scratchOutputBucket,
 		OpTimeout:    *scratchOpDeadline,
-		Syncer:       agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
+		Syncer:       agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchHostDialer(ctx, *scratchHostPort)),
 	}, nil
 }
 
@@ -252,7 +246,7 @@ func ScratchExecGetInit(ctx context.Context) (*agentapiservice.ScratchExecGetDep
 	return &agentapiservice.ScratchExecGetDeps{
 		Scratches: db.NewFirestoreScratch(firestoreClient),
 		Execs:     execs,
-		Syncer:    agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
+		Syncer:    agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchHostDialer(ctx, *scratchHostPort)),
 	}, nil
 }
 
@@ -267,9 +261,10 @@ func ScratchReapInit(ctx context.Context) (*agentapiservice.ScratchReapDeps, err
 		Execs:         execs,
 		GCE:           gce,
 		Sessions:      db.NewFirestoreSessions(firestoreClient),
-		Syncer:        agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
-		Zones:         parseScratchZones(),
+		Syncer:        agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchHostDialer(ctx, *scratchHostPort)),
 		IdleThreshold: *scratchIdleThreshold,
+		Hosts:         scratchHosts(ctx),
+		Zones:         parseScratchZones(),
 	}, nil
 }
 
