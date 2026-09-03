@@ -11,15 +11,16 @@ import (
 //
 // OCI images names can contain slashes (e.g. "docker.io/library/debian").
 //
-// Filesystem/GCS Encoding:
+// Filesystem/GCS/Firestore Encoding:
 //   - Replaces '/' with '!' (exclamation mark)
 
-var filesystemEncoder = &rebuild.TargetEncoder{
+var encoder = &rebuild.TargetEncoder{
 	Package:  rebuild.MapTransform(map[rune]rune{'/': '!'}),
 	Version:  rebuild.IdentityTransform,
 	Artifact: rebuild.IdentityTransform,
 }
 
 func init() {
-	rebuild.RegisterEncoder(rebuild.OCI, rebuild.FilesystemTargetEncoding, filesystemEncoder)
+	rebuild.RegisterEncoder(rebuild.OCI, rebuild.FilesystemTargetEncoding, encoder)
+	rebuild.RegisterEncoder(rebuild.OCI, rebuild.FirestoreTargetEncoding, encoder)
 }
