@@ -14,7 +14,9 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/oss-rebuild/internal/docdb"
+	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/internal/sqlitex"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 )
@@ -112,6 +114,11 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning repo metrics")
 	}
+	sigs, err := src.Signals(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "reading priority signals")
+	}
+	sigs = pruneSignals(sigs, attempts)
 	docTables := map[string][]json.RawMessage{
 		TableAttempts:        docsOf(attempts),
 		TableRuns:            docsOf(runs),
@@ -120,6 +127,7 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 		TableScratchVMs:      docsOf(scratches),
 		TableScratchExecs:    docsOf(execs),
 		TableRepoMetrics:     docsOf(repoMetrics),
+		TablePackageSignals:  docsOf(sigs),
 	}
 	meta := Meta{
 		BuiltAt:       now,
@@ -141,6 +149,26 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 		return nil, errors.Wrap(err, "uploading snapshot")
 	}
 	return &RollupResult{Meta: meta, RowCounts: counts}, nil
+}
+
+// pruneSignals keeps only signals for packages the snapshot itself carries:
+// those with an attempt. The signal exports cover the registry universe, so
+// without this package_signals would scale with the registry rather than
+// with coverage. Presence in this database is the rollup's only notion of a
+// tracked package.
+func pruneSignals(sigs []signals.PackageSignal, attempts []schema.RebuildAttempt) []signals.PackageSignal {
+	type key struct{ eco, pkg string }
+	tracked := make(map[key]bool)
+	for _, a := range attempts {
+		tracked[key{a.Ecosystem, a.Package}] = true
+	}
+	var kept []signals.PackageSignal
+	for _, s := range sigs {
+		if tracked[key{s.Ecosystem, s.Package}] {
+			kept = append(kept, s)
+		}
+	}
+	return kept
 }
 
 // buildSnapshotDB writes every registry table plus the database meta to a
