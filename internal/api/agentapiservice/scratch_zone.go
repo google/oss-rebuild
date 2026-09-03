@@ -87,6 +87,7 @@ func insertWithFallthrough(
 	zones []string,
 	cooldown *ZoneCooldown,
 	name, templateURL string,
+	labels map[string]string,
 ) (inst Instance, zone string, err error) {
 	if len(zones) == 0 {
 		return Instance{}, "", errors.New("no zones configured")
@@ -98,7 +99,7 @@ func insertWithFallthrough(
 	}
 	var lastErr error
 	for _, z := range candidates {
-		inst, err := gce.InsertInstanceFromTemplate(ctx, z, name, templateURL, nil)
+		inst, err := gce.InsertInstanceFromTemplate(ctx, z, name, templateURL, labels)
 		if err == nil {
 			return inst, z, nil
 		}

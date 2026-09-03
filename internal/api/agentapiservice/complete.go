@@ -16,12 +16,10 @@ import (
 )
 
 type AgentCompleteDeps struct {
-	Sessions db.Sessions
-	// Scratches and GCE enable best-effort teardown of a scratch-mode
-	// session's VM at completion. Optional: when either is nil the scratch
-	// is left to the idle reaper.
-	Scratches db.Scratch
-	GCE       GCE
+	Sessions  db.Sessions
+	Scratches db.Scratch  // with Hosts, tears down guests
+	Hosts     *HostClient // nil leaves teardown to the reaper
+	GCE       GCE         // per-VM-era records. May be nil
 }
 
 func AgentComplete(ctx context.Context, req schema.AgentCompleteRequest, deps *AgentCompleteDeps) (*schema.AgentCompleteResponse, error) {
@@ -51,13 +49,12 @@ func AgentComplete(ctx context.Context, req schema.AgentCompleteRequest, deps *A
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "updating session completion"))
 	}
-	// Release the session's VM now rather than at the next reap. Best
-	// effort: the reaper is the backstop.
-	if session.ScratchID != "" && deps.Scratches != nil && deps.GCE != nil {
+	// Release the guest now. The reaper is the backstop.
+	if session.ScratchID != "" && deps.Scratches != nil && deps.Hosts != nil {
 		if scratch, err := deps.Scratches.Get(ctx, session.ScratchID); err != nil {
 			log.Printf("session %s: fetching scratch %s for teardown: %v", req.SessionID, session.ScratchID, err)
 		} else if scratch.State != schema.ScratchDeleting && scratch.State != schema.ScratchDeleted {
-			if err := deleteScratch(ctx, deps.Scratches, deps.GCE, scratch, nil); err != nil {
+			if err := deleteScratch(ctx, deps.Scratches, deps.GCE, deps.Hosts, scratch, nil); err != nil {
 				log.Printf("session %s: releasing scratch %s: %v", req.SessionID, session.ScratchID, err)
 			}
 		}

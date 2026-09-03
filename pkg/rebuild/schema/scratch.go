@@ -28,7 +28,7 @@ const (
 	ScratchDeleted  ScratchState = "deleted"
 )
 
-// MachineClass selects the VM size for a scratch.
+// MachineClass selects the host shape for a scratch.
 type MachineClass string
 
 const (
@@ -36,16 +36,16 @@ const (
 	MachineClassJumbo    MachineClass = "jumbo"
 )
 
-// Scratch is a per-build agent scratch environment. It binds a VM to an
-// agent for maintaining build-local state (Docker daemon storage, working
-// directory, build caches) on the VM's local SSD.
+// Scratch is a per-build agent scratch environment. It binds a microVM
+// guest to an agent for maintaining build-local state (Docker daemon
+// storage, working directory, build caches).
 type Scratch struct {
 	ID           string       `json:"id,omitempty" firestore:"id,omitempty"`
 	BuildID      string       `json:"build_id,omitempty" firestore:"build_id,omitempty"`
 	ObliviousID  string       `json:"oblivious_id,omitempty" firestore:"oblivious_id,omitempty"`
 	MachineClass MachineClass `json:"machine_class,omitempty" firestore:"machine_class,omitempty"`
-	VMName       string       `json:"vm_name,omitempty" firestore:"vm_name,omitempty"`
-	Host         string       `json:"host,omitempty" firestore:"host,omitempty"` // scratch host serving the session; empty until admission
+	VMName       string       `json:"vm_name,omitempty" firestore:"vm_name,omitempty"` // per-VM era only
+	Host         string       `json:"host,omitempty" firestore:"host,omitempty"`       // set before admit
 	InternalIP   string       `json:"internal_ip,omitempty" firestore:"internal_ip,omitempty"`
 	Zone         string       `json:"zone,omitempty" firestore:"zone,omitempty"`
 	State        ScratchState `json:"state,omitempty" firestore:"state,omitempty"`
