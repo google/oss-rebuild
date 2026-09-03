@@ -238,6 +238,28 @@ func TestNPMStrategies(t *testing.T) {
 				OutputPath: "the_artifact",
 			},
 		},
+		{
+			"CustomBuildReplaceRegistryHost",
+			&NPMCustomBuild{
+				Location:            defaultLocation,
+				NPMVersion:          "11.0.0",
+				NodeVersion:         "blue",
+				Command:             "yellow",
+				RegistryTime:        time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+				ReplaceRegistryHost: true,
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
+				Source: "git checkout --force 'the_ref'",
+				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+/usr/local/bin/npx --package=npm@11.0.0 -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit --replace-registry-host=true'`,
+				Build:      `/usr/local/bin/npx --package=npm@11.0.0 -c 'cd the_dir && npm run yellow && npm pack'`,
+				OutputPath: "the_dir/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -353,6 +353,37 @@ func TestInferStrategy_NPM(t *testing.T) {
 			},
 		},
 		{
+			name:    "NPMCustomBuild - replace-registry-host for npm 11+",
+			pkg:     "test-package",
+			version: "1.0.0",
+			repoYAML: `commits:
+  - id: initial-commit
+  - id: version-bump
+    parent: initial-commit
+    files:
+      package.json: |
+        {"name": "test-package", "version": "1.0.0", "scripts": {"build": "tsc"}}
+`,
+			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"11.0.0","_nodeVersion": "22.0.0", "dist":{"tarball":"url4b"},"gitHead":"INSERT_COMMIT_ID"}`,
+			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2025-02-10T10:00:00.000Z"}}`,
+			wantCommitID:    "version-bump",
+			wantStrategyFn: func(commitID string) rebuild.Strategy {
+				return &NPMCustomBuild{
+					Location: rebuild.Location{
+						Repo: "https://github.com/test-org/test-package",
+						Ref:  commitID,
+						Dir:  "",
+					},
+					NPMVersion:          "11.0.0",
+					NodeVersion:         "22.0.0",
+					Command:             "build",
+					RegistryTime:        must(time.Parse(time.RFC3339, "2025-02-10T10:00:00.000Z")),
+					PrepackRemoveDeps:   true,
+					ReplaceRegistryHost: true,
+				}
+			},
+		},
+		{
 			name:    "Error - unreadable package.json in commit",
 			pkg:     "test-package",
 			version: "1.0.0",
