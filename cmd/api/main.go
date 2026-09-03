@@ -314,11 +314,11 @@ func CreateRunInit(ctx context.Context) (*apiservice.CreateRunDeps, error) {
 
 func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 	var d apiservice.AgentCreateDeps
-	var err error
-	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
+	fs, err := firestore.NewClient(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
+	d.Sessions = db.NewFirestoreSessions(fs)
 	d.RunService, err = run.NewService(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating Cloud Run service")

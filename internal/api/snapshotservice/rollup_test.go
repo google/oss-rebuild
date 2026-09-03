@@ -64,6 +64,9 @@ func TestRollupWritesSnapshot(t *testing.T) {
 	if resp.RowCounts[snapshot.TableAttempts] != 1 {
 		t.Errorf("attempts count = %d, want 1", resp.RowCounts[snapshot.TableAttempts])
 	}
+	if resp.RowCounts[snapshot.TablePackageStats] != 1 {
+		t.Errorf("package_stats count = %d, want 1", resp.RowCounts[snapshot.TablePackageStats])
+	}
 	if resp.SchemaVersion != snapshot.SchemaVersion {
 		t.Errorf("schema version = %d, want %d", resp.SchemaVersion, snapshot.SchemaVersion)
 	}
