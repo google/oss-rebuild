@@ -133,11 +133,10 @@ locals {
       build_args = ["DEBUG=${terraform_data.debug.output}"]
     }
     }, var.enable_scratch ? {
-    # scratch-worker is downloaded onto scratch VMs at startup via the
-    # cloud-init script in services.tf. Treated as a bootstrap binary
-    # like gsutil_writeonly et al.
-    scratch-worker = {
-      dockerfile = "build/package/Dockerfile.scratch-worker"
+    # Docker-run on COS scratch hosts (see scratch_host_cos_cloudinit.yaml),
+    # and extractable like the other prebuilds.
+    scratch-host = {
+      dockerfile = "build/package/Dockerfile.scratch-host"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
     }
   } : {})

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/google/oss-rebuild/internal/api/scratchworkerservice"
+	"github.com/google/oss-rebuild/internal/api/scratchhostservice"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/act"
@@ -25,16 +25,11 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-// WorkerDialer returns the HTTP client and base URL for the worker on a
-// given scratch. Constructed once per request so the broker can mint
-// an ID-token client scoped to the per-VM audience.
-type WorkerDialer func(scratch schema.Scratch) (httpx.BasicClient, *url.URL, error)
-
 // ScratchExecCreateDeps wires ScratchExecCreate.
 type ScratchExecCreateDeps struct {
 	Scratches    db.Scratch
 	Execs        db.ScratchExecs
-	WorkerDialer WorkerDialer
+	Dialer       HostDialer
 	OutputBucket string
 	IDGen        func() string // For op IDs. If nil, defaults to uuid.New()
 	OpTimeout    time.Duration // Default and max exec timeout. Zero refuses all
@@ -50,8 +45,8 @@ type ScratchExecGetDeps struct {
 
 // Syncer abstracts the broker-side fetch-and-persist loop. The
 // production impl pulls /exec/op/status and /exec/op/output from the
-// worker, overwrites the op's GCS object with the full buffer (when
-// new bytes are available), and updates Firestore on the Done
+// host broker, overwrites the op's GCS object with the full buffer
+// (when new bytes are available), and updates Firestore on the Done
 // transition.
 type Syncer interface {
 	Sync(ctx context.Context, exec schema.ScratchExec, scratch schema.Scratch) (schema.ScratchExec, error)
@@ -86,8 +81,8 @@ func ProjectScratchExec(e schema.ScratchExec) longrunning.Operation[schema.Scrat
 
 // ScratchExecCreate starts an exec on the requested scratch. It mints an opaque
 // opID, persists a Pending ScratchExec pre-populated with the immutable parts of
-// the eventual Result, dispatches the work to the worker, and returns the projected
-// operation.
+// the eventual Result, dispatches the work to the host broker, and returns the
+// projected operation.
 //
 // When the request sets WaitSeconds and a Syncer is configured, the call holds
 // open up to that long (capped at maxOptimisticWait) polling for completion, so
@@ -114,7 +109,7 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 	if scratch.ObliviousID == "" {
 		return nil, api.AsStatus(codes.Internal, errors.Errorf("scratch %q missing ObliviousID", req.ScratchID))
 	}
-	// Every exec gets a worker-enforced bound, defaulting to and capped at
+	// Every exec gets a host-enforced bound, defaulting to and capped at
 	// OpTimeout. The reaper derives deadlines from it, so an unbounded exec is
 	// refused.
 	maxTimeout := int(deps.OpTimeout.Seconds())
@@ -129,11 +124,11 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("timeout_seconds is required: the broker has no default exec deadline configured"))
 	}
 
-	// Prepare the worker client before Insert so a dialer failure (auth setup,
+	// Prepare the host client before Insert so a dialer failure (auth setup,
 	// URL parse) is a request-time error rather than a dangling Pending record.
-	client, baseURL, err := deps.WorkerDialer(scratch)
+	client, baseURL, err := deps.Dialer(hostOf(scratch))
 	if err != nil {
-		return nil, api.AsStatus(codes.Unavailable, errors.Wrap(err, "worker dialer"))
+		return nil, api.AsStatus(codes.Unavailable, errors.Wrap(err, "host dialer"))
 	}
 
 	opID := mintID(deps.IDGen)
@@ -155,8 +150,8 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 	// Past this point the operation has identity. Any failure becomes terminal
 	// Operation state, not an API error.
 
-	startStub := api.Stub[scratchworkerservice.StartRequest, act.NoOutput](client, baseURL.JoinPath("exec/start"))
-	if _, err := startStub(ctx, scratchworkerservice.StartRequest{
+	startStub := api.Stub[scratchhostservice.StartRequest, act.NoOutput](client, baseURL.JoinPath("exec/start"))
+	if _, err := startStub(ctx, scratchhostservice.StartRequest{
 		OpID:           opID,
 		ScratchID:      req.ScratchID,
 		Cmd:            req.Cmd,
@@ -165,10 +160,10 @@ func ScratchExecCreate(ctx context.Context, req schema.ScratchExecRequest, deps 
 		StdinB64:       req.StdinB64,
 		TimeoutSeconds: timeoutSeconds,
 	}); err != nil {
-		log.Printf("scratch %q exec %q: worker dispatch: %v", req.ScratchID, opID, err)
+		log.Printf("scratch %q exec %q: host dispatch: %v", req.ScratchID, opID, err)
 		exec, ferr := finalize(ctx, deps.Execs, exec, &schema.Status{
 			Code:    int(codes.Unavailable),
-			Message: errors.Wrap(err, "worker dispatch").Error(),
+			Message: errors.Wrap(err, "host dispatch").Error(),
 		})
 		if ferr != nil {
 			return nil, api.AsStatus(codes.Internal, errors.Wrapf(ferr, "scratch %q exec %q", req.ScratchID, opID))
@@ -227,15 +222,15 @@ func optimisticWait(ctx context.Context, syncer Syncer, exec schema.ScratchExec,
 
 // ScratchExecGet returns the current state of an exec op. If the op is
 // pending and a Syncer is configured, ScratchExecGet triggers a sync:
-// pulling the worker's latest status + any new output bytes, rolling
+// pulling the host broker's latest status + any new output bytes, rolling
 // those bytes into the op's GCS object, and (on the Done transition)
 // finalizing Firestore and bumping the scratch's LastUsed so the agent
 // has a fresh idle window to act on the result.
 //
 // Sync errors follow the last-error-is-final policy: any failure to reach the
-// worker, read its state, or persist the output transitions the exec to Failed
+// host, read its state, or persist the output transitions the exec to Failed
 // immediately. We deliberately do not retry transient errors. For in-VPC
-// broker→worker traffic the blip rate is low enough that an occasional false
+// broker-to-host traffic the blip rate is low enough that an occasional false
 // Failed is the right cost vs. an exec that lingers in Pending indefinitely.
 func ScratchExecGet(ctx context.Context, req schema.GetOperationRequest, deps *ScratchExecGetDeps) (*longrunning.Operation[schema.ScratchExecResult], error) {
 	exec, err := deps.Execs.Get(ctx, req.ID)
@@ -324,15 +319,15 @@ var DefaultSyncSchedule = []SyncStep{
 	{Until: math.MaxInt64, Interval: 30 * time.Second},
 }
 
-// gcsSyncer appends new worker output to the op's GCS object on each
+// gcsSyncer appends new host-side output to the op's GCS object on each
 // poll. Append is implemented as Compose (see pullOutput); the schedule
 // keeps main's lifetime component count under GCS's 1024 cap.
 type gcsSyncer struct {
-	gcs          *storage.Client
-	bucket       string
-	execs        db.ScratchExecs
-	workerDialer WorkerDialer
-	schedule     []SyncStep
+	gcs      *storage.Client
+	bucket   string
+	execs    db.ScratchExecs
+	dial     HostDialer
+	schedule []SyncStep
 }
 
 // SyncerOption configures a gcsSyncer.
@@ -347,17 +342,17 @@ func WithSyncSchedule(steps []SyncStep) SyncerOption {
 	}
 }
 
-// NewGCSSyncer returns a Syncer that appends new worker output to GCS
+// NewGCSSyncer returns a Syncer that appends new host-side output to GCS
 // and finalizes Firestore on the Done transition. Tests that need clock
 // control should use [testing/synctest.Run]. The syncer uses
 // [time.Now] directly with no injection hook.
-func NewGCSSyncer(gcs *storage.Client, bucket string, execs db.ScratchExecs, wd WorkerDialer, opts ...SyncerOption) Syncer {
+func NewGCSSyncer(gcs *storage.Client, bucket string, execs db.ScratchExecs, dial HostDialer, opts ...SyncerOption) Syncer {
 	s := &gcsSyncer{
-		gcs:          gcs,
-		bucket:       bucket,
-		execs:        execs,
-		workerDialer: wd,
-		schedule:     DefaultSyncSchedule,
+		gcs:      gcs,
+		bucket:   bucket,
+		execs:    execs,
+		dial:     dial,
+		schedule: DefaultSyncSchedule,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -390,18 +385,18 @@ func (s *gcsSyncer) shouldCompose(now, createdAt, lastModified time.Time, done b
 }
 
 func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch schema.Scratch) (schema.ScratchExec, error) {
-	client, baseURL, err := s.workerDialer(scratch)
+	client, baseURL, err := s.dial(hostOf(scratch))
 	if err != nil {
-		return exec, errors.Wrap(err, "worker client")
+		return exec, errors.Wrap(err, "host client")
 	}
 
-	statusStub := api.Stub[scratchworkerservice.StatusRequest, scratchworkerservice.ExecStatus](client, baseURL.JoinPath("exec/op/status"))
-	status, err := statusStub(ctx, scratchworkerservice.StatusRequest{ID: exec.ID})
+	statusStub := api.Stub[scratchhostservice.OpRequest, scratchhostservice.ExecStatus](client, baseURL.JoinPath("exec/op/status"))
+	status, err := statusStub(ctx, scratchhostservice.OpRequest{ID: exec.ID})
 	if err != nil {
-		return exec, errors.Wrap(err, "worker status")
+		return exec, errors.Wrap(err, "host status")
 	}
 
-	// Only round-trip the tail if the worker has more bytes than GCS
+	// Only round-trip the tail if the host has more bytes than GCS
 	// does. The status call's TotalBytes is cheap.
 	out := s.gcs.Bucket(s.bucket).Object(outObjectFor(scratch.ObliviousID, exec.ID))
 	var (
@@ -448,13 +443,11 @@ func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch s
 	return final, nil
 }
 
-// finalFromStatus projects a terminal worker status onto the stored exec
-// record. Worker clocks are authoritative for the execution span: the worker
-// stamps both ends with the same VM clock, so their difference is free of
-// dispatch latency and cross-clock skew. StartedAt stays zero when the worker
-// never observed a start, and FinishedAt falls back to the broker clock (now)
-// so terminal records always carry an end time.
-func finalFromStatus(exec schema.ScratchExec, status *scratchworkerservice.ExecStatus, now time.Time) schema.ScratchExec {
+// finalFromStatus projects a terminal host status onto the exec record.
+// Execution times are the ledger's, one clock for both ends. StartedAt
+// stays zero when the ledger saw no start, and FinishedAt falls back to
+// now.
+func finalFromStatus(exec schema.ScratchExec, status *scratchhostservice.ExecStatus, now time.Time) schema.ScratchExec {
 	final := exec
 	final.ExitCode = status.ExitCode
 	final.StartedAt = status.StartedAt
@@ -474,7 +467,7 @@ func finalFromStatus(exec schema.ScratchExec, status *scratchworkerservice.ExecS
 			Message: errors.Errorf("output exceeded %d bytes", status.TotalBytes).Error(),
 		}
 	case status.TimedOut:
-		// Worker-enforced timeout: command was killed at its deadline.
+		// Host-enforced timeout: command was killed at its deadline.
 		// We observed the kill exit (typically 124) and partial output
 		// remains in OutURI.
 		final.State = schema.ScratchExecTimedOut
@@ -483,7 +476,7 @@ func finalFromStatus(exec schema.ScratchExec, status *scratchworkerservice.ExecS
 			Message: "command exceeded TimeoutSeconds",
 		}
 	case status.ErrMsg != "":
-		// Worker reported an infra failure (spawn failed, stdin decode, ...).
+		// Host reported an infra failure (spawn failed, stdin decode, ...).
 		// We do not have a known exit, so treat as Lost.
 		final.State = schema.ScratchExecLost
 		final.Error = &schema.Status{
@@ -529,7 +522,7 @@ func outURIFor(bucket, obliviousID, opID string) string {
 	return "gs://" + bucket + "/" + outObjectFor(obliviousID, opID)
 }
 
-// pullOutput streams the worker's tail past currentSize into a part
+// pullOutput streams the host's tail past currentSize into a part
 // object and composes it onto main. Race-safety:
 //
 //  1. Part write uses DoesNotExist. Same-offset collisions return 412
@@ -545,12 +538,12 @@ func outURIFor(bucket, obliviousID, opID string) string {
 // It returns the number of bytes it appended, zero when it lost a race or
 // had nothing to add.
 func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, baseURL *url.URL, obliviousID, opID string, currentSize, currentGen int64) (int64, error) {
-	output := api.StreamStub[scratchworkerservice.OutputRequest, scratchworkerservice.OutputFrame](client, baseURL.JoinPath("exec/op/output"))
+	output := api.StreamStub[scratchhostservice.OutputRequest, scratchhostservice.OutputFrame](client, baseURL.JoinPath("exec/op/output"))
 
 	mainName := outObjectFor(obliviousID, opID)
 	// Part name keys on start offset only: concurrent same-offset pulls
 	// collide on DoesNotExist and dedup. End offset isn't stable (the
-	// worker may Stat more bytes than we saw in /status).
+	// host may Stat more bytes than we saw in /status).
 	partName := partObjectFor(obliviousID, opID, currentSize)
 	main := s.gcs.Bucket(s.bucket).Object(mainName)
 	part := s.gcs.Bucket(s.bucket).Object(partName)
@@ -560,7 +553,7 @@ func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, ba
 	w := part.If(storage.Conditions{DoesNotExist: true}).NewWriter(wctx)
 
 	var wrote int64
-	for frame, err := range output(ctx, scratchworkerservice.OutputRequest{ID: opID, Offset: currentSize}) {
+	for frame, err := range output(ctx, scratchhostservice.OutputRequest{ID: opID, Offset: currentSize}) {
 		if err != nil {
 			cancel()
 			_ = w.Close()
@@ -585,7 +578,7 @@ func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, ba
 		return 0, errors.Wrap(err, "gcs close part")
 	}
 	if wrote == 0 {
-		// The worker had no bytes past currentSize (its snapshot
+		// The host had no bytes past currentSize (its snapshot
 		// disagreed with the earlier /status). Drop the empty part.
 		_ = part.Delete(context.Background())
 		return 0, nil
