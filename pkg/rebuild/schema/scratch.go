@@ -45,6 +45,7 @@ type Scratch struct {
 	ObliviousID  string       `json:"oblivious_id,omitempty" firestore:"oblivious_id,omitempty"`
 	MachineClass MachineClass `json:"machine_class,omitempty" firestore:"machine_class,omitempty"`
 	VMName       string       `json:"vm_name,omitempty" firestore:"vm_name,omitempty"`
+	Host         string       `json:"host,omitempty" firestore:"host,omitempty"` // scratch host serving the session; empty until admission
 	InternalIP   string       `json:"internal_ip,omitempty" firestore:"internal_ip,omitempty"`
 	Zone         string       `json:"zone,omitempty" firestore:"zone,omitempty"`
 	State        ScratchState `json:"state,omitempty" firestore:"state,omitempty"`
