@@ -232,6 +232,18 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			return nil, err
 		}
 	}
+	loc := rebuild.Location{Repo: rcfg.URI, Ref: ref, Dir: dir}
+	s, err := inferBuild(ctx, t, mux, rcfg, vmeta, b, loc)
+	if err != nil {
+		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc, Published: vmeta.Created}, Err: err}
+	}
+	return s, nil
+}
+
+// inferBuild chooses the cargo package build for a resolved location.
+func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, vmeta *reg.CrateVersion, b []byte, loc rebuild.Location) (rebuild.Strategy, error) {
+	name, version := t.Package, t.Version
+	ref, dir := loc.Ref, loc.Dir
 	c, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref))
 	if err != nil {
 		return nil, err

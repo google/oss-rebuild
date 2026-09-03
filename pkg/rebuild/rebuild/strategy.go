@@ -99,4 +99,25 @@ func (s *LocationHint) GenerateFor(t Target, be BuildEnv) (Instructions, error) 
 	return Instructions{}, errors.New("LocationHint must be expanded using inference")
 }
 
+// InferenceError is a strategy inference failure that came after the source
+// location was resolved, so the source can still be checked out on its own.
+type InferenceError struct {
+	Detail InferenceErrorDetail
+	Err    error
+}
+
+func (e *InferenceError) Error() string { return e.Err.Error() }
+func (e *InferenceError) Unwrap() error { return e.Err }
+
+// InferenceErrorDetail is what an InferenceError knew about the source when
+// the build inference behind it failed. It crosses the wire as an api.Detail,
+// so its fields are the wire format.
+type InferenceErrorDetail struct {
+	Location  Location  `form:"location"`
+	Published time.Time `form:"published"` // publish time of the version, for a timewarp registry pin
+}
+
+// Reason implements api.Detail.
+func (InferenceErrorDetail) Reason() string { return "BUILD_NOT_INFERRED" }
+
 var _ Strategy = &LocationHint{}

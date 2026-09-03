@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"path"
 	"testing"
@@ -267,8 +268,10 @@ func TestMavenInfer(t *testing.T) {
 		target         rebuild.Target
 		repo           string
 		zipEntries     map[string][]*archive.ZipEntry
+		jarError       error // every registry file fetch fails with this
 		expectedCommit string
 		wantErr        bool
+		wantLocated    bool // the error carries the resolved location
 	}{
 		{
 			name: "git log heuristic (with pkg and version match)",
@@ -532,6 +535,31 @@ func TestMavenInfer(t *testing.T) {
 			// throw no valid git ref as tag matches but then package does not match
 			wantErr: true,
 		},
+		{
+			name: "located error when the jar is unavailable",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: initial-commit
+                tags: ["v1.0.0"]
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>bar</artifactId>
+                        <version>1.0.0</version>
+                    </project>`,
+			jarError:       errors.New("registry unavailable"),
+			expectedCommit: "initial-commit",
+			// tag and pom resolve the location before the JDK lookup fails
+			wantErr:     true,
+			wantLocated: true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -543,6 +571,7 @@ func TestMavenInfer(t *testing.T) {
 			repoConfig.Repository = repo.Repository
 			mockRegistry := &mockMavenRegistry{
 				artifactCoordinates: make(map[artifactCoordinates][]byte),
+				releaseFileError:    tc.jarError,
 			}
 			addArtifacts(mockRegistry, tc.zipEntries, tc.target)
 			mockMux := rebuild.RegistryMux{
@@ -552,6 +581,12 @@ func TestMavenInfer(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("MavenInfer() = %v, want error", got)
+				}
+				var located *rebuild.InferenceError
+				if errors.As(err, &located) != tc.wantLocated {
+					t.Errorf("located error = %v, want %v: %v", !tc.wantLocated, tc.wantLocated, err)
+				} else if tc.wantLocated && located.Detail.Location.Ref != repo.Commits[tc.expectedCommit].String() {
+					t.Errorf("located ref = %q, want %q", located.Detail.Location.Ref, tc.expectedCommit)
 				}
 			} else {
 				if err != nil {

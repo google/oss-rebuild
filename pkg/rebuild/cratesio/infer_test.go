@@ -7,6 +7,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -87,6 +88,7 @@ func TestInferStrategy(t *testing.T) {
 		hintFn           func(*gitxtest.Repository) rebuild.Strategy
 		wantFn           func(*gitxtest.Repository) rebuild.Strategy
 		wantErr          bool
+		wantLocated      bool // the error carries the resolved location
 		registryResponse *cratesregistryservice.FindRegistryCommitResponse
 		wantPublishTime  string
 	}{
@@ -489,7 +491,8 @@ edition = "2024"
 					},
 				}
 			},
-			wantErr: true,
+			wantErr:     true,
+			wantLocated: true,
 		},
 		{
 			name: "unreadable Cargo.toml",
@@ -552,9 +555,10 @@ edition = "2024"
         name = "serde"
         version = "1.0.150"
 `,
-			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","updated_at":"2014-12-12T00:25:28.357Z"}}`,
-			files:    []archive.TarEntry{},
-			wantErr:  true,
+			metadata:    `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","updated_at":"2014-12-12T00:25:28.357Z"}}`,
+			files:       []archive.TarEntry{},
+			wantErr:     true,
+			wantLocated: true,
 		},
 		{
 			name: "cargo.lock with registry resolution for rust >= 1.68",
@@ -707,7 +711,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 			registryResponse: &cratesregistryservice.FindRegistryCommitResponse{
 				CommitHash: "", // Empty commit hash simulates no resolution found
 			},
-			wantErr: true,
+			wantErr:     true,
+			wantLocated: true,
 		},
 		{
 			name: "no cargo.lock file for rust >= 1.68",
@@ -902,6 +907,12 @@ version = 3
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)
+				}
+				var located *rebuild.InferenceError
+				if errors.As(err, &located) != tc.wantLocated {
+					t.Errorf("located error = %v, want %v: %v", !tc.wantLocated, tc.wantLocated, err)
+				} else if tc.wantLocated && located.Detail.Location.Ref != repo.Commits["version-bump"].String() {
+					t.Errorf("located ref = %q, want version-bump", located.Detail.Location.Ref)
 				}
 			} else if err != nil {
 				t.Fatal(err)
