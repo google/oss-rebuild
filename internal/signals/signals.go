@@ -38,6 +38,7 @@ CREATE TABLE package_signals(
 CREATE TABLE version_signals(
 	ecosystem TEXT NOT NULL, package TEXT NOT NULL, version TEXT NOT NULL,
 	dependents INTEGER NOT NULL, prevalence REAL NOT NULL,
+	published TEXT, artifact TEXT,
 	PRIMARY KEY(ecosystem, package, version)) WITHOUT ROWID;
 CREATE INDEX package_signals_score ON package_signals(ecosystem, score);
 CREATE TABLE signal_meta(built_at TEXT, tool_version TEXT);
@@ -76,8 +77,9 @@ func ReadMeta(db *sqlite3.Conn) (Meta, error) {
 
 // Build writes a signal database at path from the priority exports:
 // package rows joined per package via JoinSignals and one
-// version_signals row per version-level prevalence record. Returns
-// per-table row counts.
+// version_signals row per version-level prevalence record, carrying its
+// publication date and artifact name when the export provides them.
+// Returns per-table row counts.
 func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, error) {
 	db, err := sqlite3.Open(path)
 	if err != nil {
@@ -109,7 +111,7 @@ func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, er
 			return nil, errors.Wrap(err, "inserting package signal")
 		}
 	}
-	vstmt, _, err := db.Prepare("INSERT INTO version_signals VALUES(?,?,?,?,?)")
+	vstmt, _, err := db.Prepare("INSERT INTO version_signals VALUES(?,?,?,?,?,?,?)")
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +127,17 @@ func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, er
 		vstmt.BindText(3, r.Version)
 		vstmt.BindInt64(4, r.Dependents)
 		vstmt.BindFloat(5, r.Prevalence)
+		// Absent metadata is NULL, not a zero time or empty string.
+		if r.Published.IsZero() {
+			vstmt.BindNull(6)
+		} else {
+			vstmt.BindText(6, sqlitex.TimeColumn(r.Published))
+		}
+		if r.Artifact == "" {
+			vstmt.BindNull(7)
+		} else {
+			vstmt.BindText(7, r.Artifact)
+		}
 		if err := vstmt.Exec(); err != nil {
 			return nil, errors.Wrap(err, "inserting version signal")
 		}
