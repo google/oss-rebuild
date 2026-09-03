@@ -145,9 +145,8 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/install-deps",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				{{.With.locator}}pip install build
-				{{- range $req := .With.requirements | fromJSON}}
-				{{$.With.locator}}pip install '{{regexReplace $req "'" "'\\''"}}'{{end}}`)[1:],
+				{{range $i, $req := .With.requirements | fromJSON}}{{if $i}}
+				{{end}}{{$.With.locator}}pip install '{{regexReplace $req "'" "'\\''"}}'{{end}}`)[1:],
 		}},
 	},
 
@@ -162,6 +161,12 @@ var toolkit = []*flow.Tool{
 					"path":          "{{.With.venv}}",
 					"pythonVersion": "{{.With.pythonVersion}}",
 				},
+			},
+			{
+				// Fetch the PEP 517 frontend from the real index, before timewarp.
+				// The frontend doesn't impact the output and contemporary
+				// versions lacked CLI flags and features we use.
+				Runs: "{{.With.venv}}/bin/pip install build",
 			},
 			{
 				Uses: "pypi/setup-registry",
