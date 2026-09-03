@@ -118,8 +118,8 @@ func TestDockerRunPlanner(t *testing.T) {
 			git clone https://github.com/example/test-package .
 			git checkout --force 'v1.0.0'`[1:]),
 				Deps: textwrap.Dedent(`
-			/timewarp -port 8081 &
-			while ! nc -z localhost 8081;do sleep 1;done
+			/timewarp -port 8080 &
+			while ! nc -z localhost 8080;do sleep 1;done
 			cd /src
 			npm install`[1:]),
 				Build: textwrap.Dedent(`
