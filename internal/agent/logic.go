@@ -517,10 +517,7 @@ func (a *defaultAgent) execDetails(ctx context.Context, iteration *schema.AgentI
 	{ // Instructions - generated from strategy
 		// NOTE: These instructions might differ slightly from the ones in the dockerfile that was used for the build.
 		// We do this because GenerateFor is the most straightforward way of separating the source, deps, and build steps.
-		inst, err := s.GenerateFor(a.t, rebuild.BuildEnv{
-			TimewarpHost: "localhost:8080",
-			HasRepo:      false,
-		})
+		inst, err := s.GenerateFor(a.t, a.buildEnv())
 		if err != nil {
 			log.Println(errors.Wrap(err, "generating instructions"))
 		} else {
@@ -534,6 +531,13 @@ func (a *defaultAgent) execDetails(ctx context.Context, iteration *schema.AgentI
 		}
 	}
 	return d
+}
+
+// buildEnv is the env the previous attempt's strategy is rendered for. The
+// next proposal inherits the rendered Deps verbatim and runs them on the
+// scratch VM and then on GCB, so timewarp must be configured the same.
+func (a *defaultAgent) buildEnv() rebuild.BuildEnv {
+	return rebuild.BuildEnv{TimewarpHost: "localhost:8080", HasRepo: false}
 }
 
 func (a *defaultAgent) historyContext(prev *executionDetails) []string {
