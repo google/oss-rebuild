@@ -78,45 +78,86 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	return r, nil
 }
 
-func PickNodeVersion(meta *npmreg.NPMVersion) (string, error) {
-	version := meta.NodeVersion
-	if version == "" {
-		// TODO: Consider selecting based on release date.
-		return "10.17.0", nil
+// PickNodeRelease selects the node release to build with: the one the
+// publisher ran, which lerna records in its user agent, or else the newest
+// release of an LTS line at the publish time.
+func PickNodeRelease(meta *npmreg.NPMVersion, published time.Time) (npmreg.NodeRelease, error) {
+	nodev := meta.NodeVersion
+	if m := lernaNPMVersionRE.FindStringSubmatch(meta.NPMVersion); m != nil {
+		nodev = m[1]
 	}
+	if nodev == "" {
+		return nodeReleaseAt(published), nil
+	}
+	return nearestNodeRelease(nodev)
+}
+
+// nearestNodeRelease returns the release for version or else the next release
+// above it. A version newer than the table gets the newest npm in the table.
+func nearestNodeRelease(version string) (npmreg.NodeRelease, error) {
 	nv, err := semver.New(version)
 	if err != nil {
-		return "", errors.Errorf("invalid node version: %s", version)
+		return npmreg.NodeRelease{}, errors.Errorf("invalid node version: %s", version)
 	}
-	if nv.Compare(npmreg.UnofficialNodeReleases[0].Version) > 0 {
+	if newest := npmreg.UnofficialNodeReleases[0]; nv.Compare(newest.Version) > 0 {
 		// Trust the future
-		return nv.String(), nil
+		return npmreg.NodeRelease{Version: nv, NPM: newest.NPM}, nil
 	}
 	var best npmreg.NodeRelease
 	for _, r := range npmreg.UnofficialNodeReleases {
 		if cmp := r.Version.Compare(nv); cmp == 0 {
-			return r.Version.String(), nil
+			return r, nil
 		} else if cmp < 0 {
-			return best.Version.String(), nil
+			return best, nil
 		}
 		// Skip update if major.minor match but patch version is lower
 		if !(best.Version.Major == r.Version.Major && best.Version.Minor == r.Version.Minor) {
 			best = r
 		}
 	}
-	return best.Version.String(), nil
+	return best, nil
 }
 
-func PickNPMVersion(meta *npmreg.NPMVersion) (string, error) {
-	npmv := meta.NPMVersion
-	if npmv == "" {
-		// TODO: Guess based on upload date.
-		return "", errors.New("No NPM version")
+// nodeReleaseAt returns the newest release of an LTS line (even major) out by
+// t. The table starts in 2019, when node 10 was the LTS line, so its oldest
+// node 10 release stands in for earlier times.
+func nodeReleaseAt(t time.Time) npmreg.NodeRelease {
+	var oldest npmreg.NodeRelease
+	for _, r := range npmreg.UnofficialNodeReleases {
+		if r.Version.Major%2 != 0 || r.Version.Major < 10 {
+			continue
+		}
+		if !r.Date.After(t) {
+			return r
+		}
+		oldest = r
 	}
-	s, err := semver.New(npmv)
-	if err != nil || s.Prerelease != "" || s.Build != "" {
-		return "", errors.Errorf("Unsupported NPM version '%s'", npmv)
+	return oldest
+}
+
+// lernaNPMVersionRE matches the user agent lerna records in place of the npm
+// version: lerna/<lerna version>/node@<process.version>+<arch> (<platform>).
+var lernaNPMVersionRE = regexp.MustCompile(`^lerna/[^/]+/node@(v?\d+\.\d+\.\d+)`)
+
+// PickNPMVersion selects the npm version used to pack the artifact. A missing
+// _npmVersion, or one that is not a version such as lerna's user agent, gets
+// the npm bundled with the node release PickNodeRelease selects.
+func PickNPMVersion(meta *npmreg.NPMVersion, published time.Time) (string, error) {
+	s, err := semver.New(meta.NPMVersion)
+	if err != nil {
+		// TODO: Lerna packages need their own strategy that installs and builds
+		// from the repo root and mirrors lerna's pack.
+		r, err := PickNodeRelease(meta, published)
+		if err != nil {
+			return "", err
+		}
+		s = r.NPM
 	}
+	if s.Build != "" {
+		return "", errors.Errorf("Unsupported NPM version '%s'", meta.NPMVersion)
+	}
+	// NOTE: npm prereleases are superseded by their release within days.
+	s.Prerelease = ""
 	if s.Major < 5 {
 		// NOTE: Upgrade all previous versions to 5.0.4 to fix incompatibilities.
 		return "5.0.4", nil
@@ -125,8 +166,11 @@ func PickNPMVersion(meta *npmreg.NPMVersion) (string, error) {
 		// Fix: https://github.com/npm/npm/commit/c851bb503a756b7cd48d12ef0e12f39e6f30c577
 		// Release: https://github.com/npm/npm/releases/tag/v5.6.0
 		return "5.6.0", nil
+	} else if s.Major == 6 && s.Minor == 9 && s.Patch == 1 {
+		// NOTE: npm 6.9.1 was unpublished from the registry.
+		return "6.9.2", nil
 	}
-	return npmv, nil
+	return s.String(), nil
 }
 
 func InferLocation(t rebuild.Target, vmeta *npmreg.NPMVersion, rcfg *rebuild.RepoConfig) (loc rebuild.Location, versionOverride string, err error) {
@@ -240,10 +284,6 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if !ok {
 		return nil, errors.Errorf("[INTERNAL] upload time not found")
 	}
-	npmv, err := PickNPMVersion(vmeta)
-	if err != nil {
-		return nil, err
-	}
 	var versionOverride string
 	loc := rebuild.Location{Repo: rcfg.URI, Dir: rcfg.Dir}
 	lh, ok := hint.(*rebuild.LocationHint)
@@ -269,7 +309,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			loc.Submodules = rebuild.MergeSubmodules(loc.Submodules, rebuild.Submodules(tree, loc.Repo))
 		}
 	}
-	s, err := inferBuild(rcfg, vmeta, loc, npmv, versionOverride, ut)
+	s, err := inferBuild(rcfg, vmeta, loc, versionOverride, ut)
 	if err != nil {
 		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc, Published: ut}, Err: err}
 	}
@@ -277,7 +317,11 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 }
 
 // inferBuild chooses the pack or custom build for a resolved location.
-func inferBuild(rcfg *rebuild.RepoConfig, vmeta *npmreg.NPMVersion, loc rebuild.Location, npmv, versionOverride string, ut time.Time) (rebuild.Strategy, error) {
+func inferBuild(rcfg *rebuild.RepoConfig, vmeta *npmreg.NPMVersion, loc rebuild.Location, versionOverride string, ut time.Time) (rebuild.Strategy, error) {
+	npmv, err := PickNPMVersion(vmeta, ut)
+	if err != nil {
+		return nil, err
+	}
 	c, err := rcfg.Repository.CommitObject(plumbing.NewHash(loc.Ref))
 	if err != nil {
 		return nil, err
@@ -298,7 +342,7 @@ func inferBuild(rcfg *rebuild.RepoConfig, vmeta *npmreg.NPMVersion, loc rebuild.
 		_, hasBuild := pkgJSON.Scripts["build"]
 		if hasPrepack || hasPrepare || hasBuild {
 			// TODO: Consider limiting this case to only packages with a 'dist/' dir.
-			nodeVersion, err := PickNodeVersion(vmeta)
+			node, err := PickNodeRelease(vmeta, ut)
 			if err != nil {
 				return nil, errors.Wrap(err, "[INTERNAL] picking node version")
 			}
@@ -306,7 +350,7 @@ func inferBuild(rcfg *rebuild.RepoConfig, vmeta *npmreg.NPMVersion, loc rebuild.
 			// TODO: detect and install yarn
 			b := &NPMCustomBuild{
 				NPMVersion:      npmv,
-				NodeVersion:     nodeVersion,
+				NodeVersion:     node.Version.String(),
 				VersionOverride: versionOverride,
 				RegistryTime:    ut,
 				Location:        loc,
