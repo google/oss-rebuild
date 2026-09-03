@@ -19,6 +19,7 @@ import (
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/httpegress"
+	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
 	"github.com/google/oss-rebuild/pkg/longrunning"
@@ -198,6 +199,7 @@ func main() {
 		stubs := scratch.Stubs{
 			ExecCreate: api.Stub[schema.ScratchExecRequest, longrunning.Operation[schema.ScratchExecResult]](client, baseURL.JoinPath("scratch/exec/op/create")),
 			ExecGet:    api.Stub[schema.GetOperationRequest, longrunning.Operation[schema.ScratchExecResult]](client, baseURL.JoinPath("scratch/exec/op/get")),
+			ExecKill:   api.Stub[schema.ScratchExecKillRequest, act.NoOutput](client, baseURL.JoinPath("scratch/exec/op/kill")),
 		}
 		var authHeader func(context.Context) (string, error)
 		if *prebuildAuth {
