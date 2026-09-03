@@ -209,7 +209,8 @@ func NewGCSStore(ctx context.Context, uploadPrefix string) (*GCSStore, error) {
 }
 
 func (s *GCSStore) URL(a Asset) *url.URL {
-	return &url.URL{Scheme: "gs", Path: filepath.Join(s.bucket, s.resourcePath(a))}
+	p := filepath.Join(s.bucket, s.resourcePath(a))
+	return &url.URL{Scheme: "gs", Path: p, RawPath: p}
 }
 
 func (s *GCSStore) resourcePath(a Asset) string {
@@ -265,7 +266,8 @@ func (s *FilesystemAssetStore) resourcePath(a Asset) string {
 }
 
 func (s *FilesystemAssetStore) URL(a Asset) *url.URL {
-	return &url.URL{Scheme: "file", Path: filepath.Join(s.fs.Root(), s.resourcePath(a))}
+	p := filepath.Join(s.fs.Root(), s.resourcePath(a))
+	return &url.URL{Scheme: "file", Path: p, RawPath: p}
 }
 
 // Reader returns a reader for the given asset.
