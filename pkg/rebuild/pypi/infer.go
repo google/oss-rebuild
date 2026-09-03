@@ -13,15 +13,15 @@ import (
 	"log"
 	"path"
 	re "regexp"
-	"slices"
-	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
+	"github.com/google/oss-rebuild/internal/versionx"
 	pypiresolver "github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
@@ -126,26 +126,35 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	}
 }
 
-func findGitRef(pkg string, version string, rcfg *rebuild.RepoConfig) (string, error) {
+// findGitRef resolves the commit a release was built from: a tag naming the
+// version when one exists, else the commit whose tree matches the pure wheel
+// file blobs. A fallback that errors internally is logged and skipped, never
+// aborting the chain.
+func findGitRef(ctx context.Context, mux rebuild.RegistryMux, pkg, version string, release *pypireg.Release, rcfg *rebuild.RepoConfig) (string, error) {
 	tagHeuristic, err := rebuild.FindTagMatch(pkg, version, rcfg.Repository)
-	log.Printf("Version: %s, tag hash: \"%s\"", version, tagHeuristic)
 	if err != nil {
 		return "", errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
-	// TODO: Look for the project.toml and check for version number.
-	if tagHeuristic == "" {
-		return "", errors.New("no git ref")
-	}
-	_, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagHeuristic))
-	if err != nil {
-		switch err {
-		case plumbing.ErrObjectNotFound:
-			return "", errors.Errorf("[INTERNAL] Commit ref from tag heuristic not found in repo [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
-		default:
-			return "", errors.Wrapf(err, "Checkout failed [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
+	log.Printf("Version: %s, tag hash: \"%s\"", version, tagHeuristic)
+	if tagHeuristic != "" {
+		_, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagHeuristic))
+		if err != nil {
+			switch err {
+			case plumbing.ErrObjectNotFound:
+				return "", errors.Errorf("[INTERNAL] Commit ref from tag heuristic not found in repo [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
+			default:
+				return "", errors.Wrapf(err, "Checkout failed [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
+			}
 		}
+		return tagHeuristic, nil
 	}
-	return tagHeuristic, nil
+	if ref, err := archiveContentRef(ctx, mux, pkg, version, release, rcfg.Repository); err != nil {
+		log.Printf("archive-content search failed [pkg=%s,ver=%s]: %v", pkg, version, err)
+	} else if ref != "" {
+		log.Printf("using archive-content ref: %s", shortHash(ref))
+		return ref, nil
+	}
+	return "", errors.New("no git ref")
 }
 
 // FindPureWheel returns the pure wheel artifact from the given version's releases.
@@ -178,32 +187,14 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", wheelPath)
 	}
-	reqs, err := getGenerator(wheel)
-	if err != nil {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to get upstream generator")
-	}
-	// Determine setuptools version.
-	if slices.ContainsFunc(reqs, func(s string) bool { return strings.HasPrefix(s, "setuptools==") }) {
-		// setuptools already set.
-		return reqs, nil
-	}
 	metadataPath := path.Join(distInfoDir, "METADATA")
 	metadata, err := getFile(metadataPath, zr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", metadataPath)
 	}
-	// NOTE: These version ceilings pin with <= rather than == as timewarp will
-	// fail to resolve equality constraints where registry_time is configured
-	// before that version's release (which has been observed).
-	switch {
-	case !bytes.Contains(metadata, []byte("License-File")):
-		// License-File was introduced in later versions, bounding this above.
-		reqs = append(reqs, "setuptools<=56.2.0")
-	case bytes.Contains(metadata, []byte("Platform: UNKNOWN")):
-		// Later versions omit the unknown platform, so this is an older setuptools.
-		reqs = append(reqs, "setuptools<=57.5.0")
-	default:
-		reqs = append(reqs, "setuptools<=67.7.2")
+	reqs, err := getGenerator(wheel, metadata)
+	if err != nil {
+		return nil, errors.Wrapf(err, "[INTERNAL] Failed to get upstream generator")
 	}
 	return reqs, nil
 }
@@ -268,9 +259,10 @@ func hasZipDir(dir string, zr *zip.Reader) bool {
 }
 
 // requirementName extracts the distribution name from a PEP 508 requirement,
-// dropping any version specifier, so "setuptools<=67.7.2" yields "setuptools".
+// dropping extras, version specifiers and markers, so "setuptools[core]<=67.7.2"
+// yields "setuptools".
 func requirementName(req string) string {
-	fields := strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~! \t", r) })
+	fields := strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~!;[ \t", r) })
 	if len(fields) == 0 {
 		return ""
 	}
@@ -316,7 +308,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			dir = rcfg.Dir
 		}
 	} else {
-		ref, err = findGitRef(release.Name, version, rcfg)
+		ref, err = findGitRef(ctx, mux, release.Name, version, release, rcfg)
 		if err != nil {
 			return cfg, err
 		}
@@ -387,7 +379,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 				Dir:  dir,
 				Ref:  ref,
 			},
-			PythonVersion: inferPythonVersion(reqs),
+			PythonVersion: inferPythonVersion(reqs, a.UploadTime),
 			Requirements:  reqs,
 			RegistryTime:  a.UploadTime,
 		}, nil
@@ -398,40 +390,42 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 				Dir:  dir,
 				Ref:  ref,
 			},
-			PythonVersion: inferPythonVersion(reqs),
+			PythonVersion: inferPythonVersion(reqs, a.UploadTime),
 			Requirements:  reqs,
 			RegistryTime:  a.UploadTime,
 		}, nil
 	}
 }
 
-func inferPythonVersion(reqs []string) string {
-	constraintPat := re.MustCompile(`([<>=!~]+)\s*(\d+)`)
+var (
+	// setuptools 66.1.0 (released 2023-01-20) was the first release whose
+	// pkg_resources stopped referencing pkgutil.ImpImporter, which Python 3.12
+	// removed. Older setuptools fails to import on 3.12.
+	setuptoolsImpImporterFixVersion = "66.1.0"
+	setuptoolsImpImporterFixDate    = time.Date(2023, time.January, 20, 0, 0, 0, 0, time.UTC)
+	// Upper bounds within a PEP 440 version specifier.
+	versionCeilingPat = re.MustCompile(`(<=?|==)\s*([\d.]+)`)
+)
+
+// inferPythonVersion pins Python 3.11 when the build may import a setuptools
+// older than the ImpImporter fix: any upload predating it, since pip or the
+// backend then resolve a contemporary setuptools whatever the backend, and a
+// later upload only under a setuptools ceiling below the fix.
+func inferPythonVersion(reqs []string, registryTime time.Time) string {
+	if registryTime.Before(setuptoolsImpImporterFixDate) {
+		return "3.11"
+	}
 	for _, req := range reqs {
-		parts := strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~! \t[", r) })
-		if len(parts) == 0 || strings.ToLower(parts[0]) != "setuptools" {
+		if !strings.EqualFold(requirementName(req), "setuptools") {
 			continue
 		}
-		allConstraints := constraintPat.FindAllStringSubmatch(req, -1)
-		for _, matches := range allConstraints {
-			op := matches[1]
-			ver, err := strconv.Atoi(matches[2])
-			if err != nil {
-				continue
-			}
-			switch op {
-			case "<":
-				if ver <= 60 {
-					return "3.11"
-				}
-			case "<=", "==":
-				if ver < 60 {
-					return "3.11"
-				}
+		for _, m := range versionCeilingPat.FindAllStringSubmatch(req, -1) {
+			if c := versionx.ApproxCompare(m[2], setuptoolsImpImporterFixVersion); c < 0 || c == 0 && m[1] == "<" {
+				return "3.11"
 			}
 		}
 	}
-	return "" // unconstrained
+	return ""
 }
 
 var bdistWheelPat = re.MustCompile(`^Generator: bdist_wheel \(([\d\.]+)\)`)
@@ -443,7 +437,10 @@ var hatchlingPat = re.MustCompile(`^Generator: hatchling ([\d\.]+)`)
 var poetryPat = re.MustCompile(`^Generator: poetry ([\d\.]+)`)
 var poetryCorePat = re.MustCompile(`^Generator: poetry-core ([\d\.]+)`)
 
-func getGenerator(wheel []byte) (reqs []string, err error) {
+// getGenerator returns the pins identifying the wheel's build backend from its
+// Generator line. bdist_wheel names the wheel packaging tool, not setuptools,
+// whose version is instead bounded by the metadata era.
+func getGenerator(wheel, metadata []byte) (reqs []string, err error) {
 	var eol int
 	for i := 0; i < len(wheel); i = eol + 1 {
 		eol = bytes.IndexRune(wheel[i:], '\n')
@@ -456,7 +453,7 @@ func getGenerator(wheel []byte) (reqs []string, err error) {
 		key, value := line[:sep], bytes.TrimSpace(line[sep+1:])
 		if bytes.Equal(key, []byte("Generator")) {
 			if matches := bdistWheelPat.FindSubmatch(line); matches != nil {
-				return []string{"wheel==" + string(matches[1])}, nil
+				return []string{"wheel==" + string(matches[1]), setuptoolsCeiling(metadata)}, nil
 			} else if matches := setuptoolsPat.FindSubmatch(line); matches != nil {
 				return []string{"setuptools==" + string(matches[1])}, nil
 			} else if matches := flitPat.FindSubmatch(line); matches != nil {
@@ -473,6 +470,23 @@ func getGenerator(wheel []byte) (reqs []string, err error) {
 		}
 	}
 	return nil, errors.New("no generator found")
+}
+
+// setuptoolsCeiling bounds a bdist_wheel build's setuptools by its metadata era.
+// NOTE: These version ceilings pin with <= rather than == as timewarp will
+// fail to resolve equality constraints where registry_time is configured
+// before that version's release (which has been observed).
+func setuptoolsCeiling(metadata []byte) string {
+	switch {
+	case !bytes.Contains(metadata, []byte("License-File")):
+		// License-File was introduced in later versions, bounding this above.
+		return "setuptools<=56.2.0"
+	case bytes.Contains(metadata, []byte("Platform: UNKNOWN")):
+		// Later versions omit the unknown platform, so this is an older setuptools.
+		return "setuptools<=57.5.0"
+	default:
+		return "setuptools<=67.7.2"
+	}
 }
 
 func getFile(fname string, zr *zip.Reader) ([]byte, error) {
