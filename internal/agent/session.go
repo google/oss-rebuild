@@ -121,10 +121,9 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 	}
 	// TODO: Should CreateIteration just return the Iteration object?
 	resp, err := deps.IterationStub(ctx, schema.AgentCreateIterationRequest{
-		SessionID:       sessionID,
-		IterationNumber: iterNum,
-		Strategy:        s,
-		Usage:           iterUsage,
+		SessionID: sessionID,
+		Strategy:  s,
+		Usage:     iterUsage,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "executing build")
