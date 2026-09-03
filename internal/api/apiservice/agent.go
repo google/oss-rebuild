@@ -10,7 +10,7 @@ import (
 	"log"
 	"time"
 
-	"cloud.google.com/go/firestore"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -18,7 +18,6 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/api/run/v2"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 const (
@@ -27,7 +26,7 @@ const (
 )
 
 type AgentCreateDeps struct {
-	FirestoreClient     *firestore.Client
+	Sessions            db.Sessions
 	RunService          *run.Service
 	Project             string
 	Location            string
@@ -101,13 +100,8 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		Created:        sessionTime,
 		Updated:        sessionTime,
 	}
-	// Create session in Firestore
-	err = deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
-		// NOTE: This would fail if the session already exists.
-		return t.Create(deps.FirestoreClient.Collection("agent_sessions").Doc(sessionID), session)
-	})
-	if err != nil {
-		if status.Code(err) == codes.AlreadyExists {
+	if err := deps.Sessions.Insert(ctx, session); err != nil {
+		if errors.Is(err, db.ErrAlreadyExists) {
 			return nil, api.AsStatus(codes.AlreadyExists, errors.Errorf("agent session %s already exists", sessionID))
 		}
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating agent session"))
@@ -127,7 +121,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 			session.StopReason = schema.AgentCompleteReasonError
 			session.Summary = fmt.Sprintf("Allocating scratch: %v", err)
 			session.Updated = time.Now().UTC()
-			if _, serr := deps.FirestoreClient.Collection("agent_sessions").Doc(sessionID).Set(ctx, session); serr != nil {
+			if serr := deps.Sessions.Update(ctx, session); serr != nil {
 				log.Printf("terminating session %s after scratch allocation failure: %v", sessionID, serr)
 			}
 			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "allocating scratch"))
@@ -203,7 +197,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 	// execution: the caller runs the agent binary externally.
 	session.Status = schema.AgentSessionStatusRunning
 	session.Updated = time.Now().UTC()
-	_, err = deps.FirestoreClient.Collection("agent_sessions").Doc(sessionID).Set(ctx, session)
+	err = deps.Sessions.Update(ctx, session)
 	if err != nil {
 		if req.ExternalAgent {
 			// No agent will ever use the scratch. Release it eagerly.
