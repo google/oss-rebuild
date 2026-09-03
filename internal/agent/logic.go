@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"path"
 	"reflect"
 	"strings"
@@ -378,7 +377,7 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 		ctx,
 		req,
 		&inferenceservice.InferDeps{
-			HTTPClient: http.DefaultClient,
+			HTTPClient: a.deps.RegistryClient,
 			GitCache:   a.deps.GitCache,
 			RepoOptF: func() *gitx.RepositoryOptions {
 				return &gitx.RepositoryOptions{
@@ -450,7 +449,7 @@ func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.S
 			Artifact:  a.t.Artifact,
 		},
 		&inferenceservice.InferDeps{
-			HTTPClient: http.DefaultClient,
+			HTTPClient: a.deps.RegistryClient,
 			GitCache:   a.deps.GitCache,
 			RepoOptF: func() *gitx.RepositoryOptions {
 				return &gitx.RepositoryOptions{
