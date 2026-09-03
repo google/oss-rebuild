@@ -103,4 +103,10 @@ variables. The parameters are the flags above with underscores (`max_agent`,
 count switches that cap off. Builds launch at `build_rate` per minute (default
 40, under GCB's 60 creates per minute) so a large `batch` reaches the pool as
 a stream, and `window` stops a pass launching before the next one fires. What
-it leaves stays queued.
+it leaves stays queued. With `refill` set, a scheduled run keeps re-observing
+and launching every `refill` until `window` closes, so a slot freed mid-window
+is reused within a tick rather than at the next cadence. Cloud Scheduler
+skips a fire while the previous attempt is still running, and a pass can run
+past the window by its observe and launch time, so keep `window` a pass
+short of the cadence: `refill=30s` with `window=3m30s` under a five-minute
+schedule is the shape.

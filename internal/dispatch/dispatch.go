@@ -32,6 +32,7 @@ type Config struct {
 	Workers             int
 	BuildRate           int           // build launches per minute, or 0 for as fast as the workers allow
 	Window              time.Duration // stop launching this long after the pass starts, or 0 to launch everything approved
+	Refill              time.Duration // re-observe and refill this often until Window closes, or 0 for one pass
 	BuildTimeCap        time.Duration
 	SessionTimeCap      time.Duration
 	Period              time.Duration
@@ -76,6 +77,7 @@ type Request struct {
 	Workers             int     `form:"workers"`
 	BuildRate           int     `form:"build_rate"`
 	Window              string  `form:"window"`
+	Refill              string  `form:"refill"`
 	BuildTimeCap        string  `form:"build_time_cap"`
 	SessionTimeCap      string  `form:"session_time_cap"`
 	Period              string  `form:"period"`
@@ -125,6 +127,7 @@ func (r Request) Config() (Config, error) {
 		dst  *time.Duration
 	}{
 		{"window", r.Window, &c.Window},
+		{"refill", r.Refill, &c.Refill},
 		{"build_time_cap", r.BuildTimeCap, &c.BuildTimeCap},
 		{"session_time_cap", r.SessionTimeCap, &c.SessionTimeCap},
 		{"period", r.Period, &c.Period},
@@ -173,25 +176,112 @@ type Report struct {
 
 // String renders the one-line pass report.
 func (r Report) String() string {
-	return fmt.Sprintf("pass: queued infer=%d agent=%d | inflight builds=%d sessions=%d | observed %d | dispatched %d (%d agent; approved %d, windowed %d) | spend %s build, %s session, %d tokens",
-		r.QueuedInfer, r.QueuedAgent, r.InflightBuilds, r.InflightSessions, r.Observed, r.Dispatched, r.AgentDispatched, r.Approved, r.Windowed,
+	return fmt.Sprintf("pass: queued infer=%d agent=%d | inflight builds=%d sessions=%d | observed %d | dispatched %d (%d agent; approved %d, windowed %d, passes %d) | spend %s build, %s session, %d tokens",
+		r.QueuedInfer, r.QueuedAgent, r.InflightBuilds, r.InflightSessions, r.Observed, r.Dispatched, r.AgentDispatched, r.Approved, r.Windowed, r.Passes,
 		time.Duration(r.Spend.BuildSeconds)*time.Second, time.Duration(r.Spend.SessionSeconds)*time.Second, r.Spend.Tokens)
 }
 
 // Once runs one pass over the campaigns list returns and reports it with the
 // period's spend.
 func (d *Dispatcher) Once(ctx context.Context, list func(context.Context) ([]scheduler.Campaign, error)) (*Report, error) {
+	active, err := list(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "listing campaigns")
+	}
+	return d.pass(ctx, active)
+}
+
+// pass rolls the ledger over and runs one pass over active.
+func (d *Dispatcher) pass(ctx context.Context, active []scheduler.Campaign) (*Report, error) {
 	d.Now = time.Now().UTC()
 	budget, err := d.rolledOverBudget(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "loading budget")
 	}
+	sum := d.Pass(ctx, active, &budget)
+	sum.Passes = 1
+	return &Report{Summary: sum, Spend: budget}, nil
+}
+
+// Run drives passes over list until Window closes. Each pass launches for at
+// most Refill and the next re-observes, so a slot freed mid-window is
+// refilled within a tick. A pass is not started with less of the window left
+// than the last one took, so the run ends before Window rather than past it.
+// A zero Refill or Window runs one pass. list is read once and inflight
+// before each refill.
+func (d *Dispatcher) Run(ctx context.Context, list, inflight func(context.Context) ([]scheduler.Campaign, error)) (*Report, error) {
+	if d.Config.Refill <= 0 || d.Config.Window <= 0 {
+		return d.Once(ctx, list)
+	}
+	window := d.Config.Window
+	defer func() { d.Config.Window = window }()
+	end := time.Now().Add(window)
 	active, err := list(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "listing campaigns")
 	}
-	sum := d.Pass(ctx, active, &budget)
-	return &Report{Summary: sum, Spend: budget}, nil
+	var total Report
+	var took time.Duration
+	for {
+		start := time.Now()
+		remaining := end.Sub(start)
+		if remaining <= 0 || (total.Passes > 0 && remaining < took) {
+			return &total, nil
+		}
+		if total.Passes > 0 {
+			// Only this run's launches leave the queued set, and the
+			// in-flight read shows them, so a refill skips re-reading the
+			// queue.
+			fresh, err := inflight(ctx)
+			if err != nil {
+				return nil, errors.Wrap(err, "listing in-flight campaigns")
+			}
+			active = refresh(active, fresh)
+		}
+		d.Config.Window = min(d.Config.Refill, remaining)
+		report, err := d.pass(ctx, active)
+		if err != nil {
+			return nil, err
+		}
+		took = time.Since(start)
+		total = accumulate(total, *report)
+		next := start.Add(d.Config.Refill)
+		if !next.Before(end) {
+			return &total, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Until(next)):
+		}
+	}
+}
+
+// refresh keeps active's queued entries that fresh does not show as launched
+// and replaces its in-flight view with fresh.
+func refresh(active, fresh []scheduler.Campaign) []scheduler.Campaign {
+	launched := make(map[string]bool, len(fresh))
+	for _, c := range fresh {
+		launched[scheduler.TargetID(c.Target())] = true
+	}
+	out := make([]scheduler.Campaign, 0, len(active)+len(fresh))
+	for _, c := range active {
+		if c.State == scheduler.StateQueued && !launched[scheduler.TargetID(c.Target())] {
+			out = append(out, c)
+		}
+	}
+	return append(out, fresh...)
+}
+
+// accumulate folds one pass's report into the run's. Activity counts add up,
+// and the queue, in-flight, and spend figures are the latest pass's.
+func accumulate(total, pass Report) Report {
+	pass.Observed += total.Observed
+	pass.Approved += total.Approved
+	pass.Dispatched += total.Dispatched
+	pass.AgentDispatched += total.AgentDispatched
+	pass.Passes += total.Passes
+	return pass
 }
 
 // errConflict marks a transition that found the campaign no longer in the
@@ -206,6 +296,7 @@ type Summary struct {
 	Observed                              int
 	Approved, Dispatched, AgentDispatched int
 	Windowed                              int // approved launches left for the next pass when the window closed
+	Passes                                int // passes behind these counts
 }
 
 // Pass observes every in-flight campaign, then dispatches the queued ones
