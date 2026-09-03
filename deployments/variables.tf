@@ -144,6 +144,16 @@ variable "enable_internal_ingress" {
   description = "Whether to restrict Cloud Run services to internal ingress, routing calls between them through the VPC."
   default     = false
 }
+variable "onboard_dispatch_schedule" {
+  type        = string
+  description = "Cron schedule on which the API runs an onboarding dispatch pass. Empty leaves dispatch to ctl."
+  default     = ""
+}
+variable "onboard_dispatch_params" {
+  type        = map(string)
+  description = "Form parameters of the scheduled dispatch pass (batch, max_agent, agent_model, period, ...); omitted ones take the API's defaults."
+  default     = {}
+}
 variable "build_def_repo" {
   type        = string
   description = "Repository URI containing rebuild build definitions"

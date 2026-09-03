@@ -364,6 +364,22 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 	return &d, nil
 }
 
+func DispatchInit(ctx context.Context) (*apiservice.DispatchDeps, error) {
+	fire, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating firestore client")
+	}
+	rebuildDeps, err := CreateRebuildOpInit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	agentDeps, err := AgentCreateInit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &apiservice.DispatchDeps{Firestore: fire, Rebuild: rebuildDeps, Agent: agentDeps}, nil
+}
+
 func SnapshotRollupInit(ctx context.Context) (*snapshotservice.RollupDeps, error) {
 	if *analyticsURI == "" {
 		return &snapshotservice.RollupDeps{}, nil
@@ -418,6 +434,7 @@ func main() {
 	http.HandleFunc("/infer", api.Handler(InferInit, apiservice.Infer))
 	http.HandleFunc("/runs", api.Handler(CreateRunInit, apiservice.CreateRun))
 	http.HandleFunc("/agent", api.Handler(AgentCreateInit, apiservice.AgentCreate))
+	http.HandleFunc("/onboard/dispatch", api.Handler(DispatchInit, apiservice.Dispatch))
 	http.HandleFunc("/snapshot/rollup", api.Handler(SnapshotRollupInit, snapshotservice.Rollup))
 	http.HandleFunc("/snapshot/delta", api.Handler(SnapshotDeltaInit, snapshotservice.Delta))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {

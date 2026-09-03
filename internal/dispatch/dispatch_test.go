@@ -1,19 +1,17 @@
 // Copyright 2026 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package onboard
+package dispatch
 
 import (
 	"context"
 	"errors"
-	"io"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/db"
-	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/scheduler"
@@ -31,15 +29,14 @@ type fakeAPI struct {
 	createErr error
 }
 
-func newTestDispatcher(cfg dispatchConfig, f *fakeAPI) *dispatcher {
+func newTestDispatcher(cfg Config, f *fakeAPI) *Dispatcher {
 	var mu sync.Mutex // launches run on workers
-	return &dispatcher{
-		io:        cli.IO{Out: io.Discard, Err: io.Discard},
-		campaigns: db.NewMemoryCampaigns(),
-		budgets:   db.NewMemoryBudgets(),
-		attempts:  db.NewMemoryAttempts(),
-		sessions:  db.NewMemorySessions(),
-		create: func(ctx context.Context, r schema.RebuildPackageRequest) (*longrunning.Operation[schema.Verdict], error) {
+	return &Dispatcher{
+		Campaigns: db.NewMemoryCampaigns(),
+		Budgets:   db.NewMemoryBudgets(),
+		Attempts:  db.NewMemoryAttempts(),
+		Sessions:  db.NewMemorySessions(),
+		Create: func(ctx context.Context, r schema.RebuildPackageRequest) (*longrunning.Operation[schema.Verdict], error) {
 			mu.Lock()
 			defer mu.Unlock()
 			f.creates = append(f.creates, r)
@@ -48,14 +45,14 @@ func newTestDispatcher(cfg dispatchConfig, f *fakeAPI) *dispatcher {
 			}
 			return &longrunning.Operation[schema.Verdict]{ID: r.ID}, nil
 		},
-		agent: func(ctx context.Context, r schema.AgentCreateRequest) (*schema.AgentCreateResponse, error) {
+		Agent: func(ctx context.Context, r schema.AgentCreateRequest) (*schema.AgentCreateResponse, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			f.agents = append(f.agents, r)
 			return &schema.AgentCreateResponse{SessionID: "session-1"}, nil
 		},
-		cfg: cfg,
-		now: testNow,
+		Config: cfg,
+		Now:    testNow,
 	}
 }
 
@@ -89,7 +86,7 @@ func claimed(c scheduler.Campaign, session string) scheduler.Campaign {
 
 func TestPass(t *testing.T) {
 	ctx := context.Background()
-	cfg := dispatchConfig{Batch: 10, MaxAgent: 1, MaxRetries: 3, InflightTimeout: time.Hour, Workers: 4}
+	cfg := Config{Batch: 10, MaxAgent: 1, MaxRetries: 3, InflightTimeout: time.Hour, Workers: 4}
 	target := queued("p", scheduler.StageInfer).Target()
 	for _, tc := range []struct {
 		name     string
@@ -98,13 +95,13 @@ func TestPass(t *testing.T) {
 		session  *schema.AgentSession
 		api      fakeAPI
 		want     scheduler.Campaign
-		wantSum  passSummary
+		wantSum  Summary
 	}{
 		{
 			name:     "QueuedInferIsClaimedThenCreated",
 			campaign: queued("p", scheduler.StageInfer),
 			want:     claimed(queued("p", scheduler.StageInfer), ""),
-			wantSum:  passSummary{QueuedInfer: 1, InflightBuilds: 1, Approved: 1, Dispatched: 1},
+			wantSum:  Summary{QueuedInfer: 1, InflightBuilds: 1, Approved: 1, Dispatched: 1},
 		},
 		{
 			// A failure escalates, and the escalated campaign is eligible in
@@ -115,14 +112,14 @@ func TestPass(t *testing.T) {
 			want: claimed(with(inflight("p", scheduler.StageInfer, time.Minute), func(c *scheduler.Campaign) {
 				c.Stage = scheduler.StageAgent
 			}), "session-1"),
-			wantSum: passSummary{InflightSessions: 1, Observed: 1, Approved: 1, Dispatched: 1, AgentDispatched: 1},
+			wantSum: Summary{InflightSessions: 1, Observed: 1, Approved: 1, Dispatched: 1, AgentDispatched: 1},
 		},
 		{
 			name:     "PendingAttemptWaits",
 			campaign: inflight("p", scheduler.StageInfer, time.Minute),
 			attempt:  &schema.RebuildAttempt{RunID: "run-0", Status: schema.RebuildStatusRunning},
 			want:     inflight("p", scheduler.StageInfer, time.Minute),
-			wantSum:  passSummary{InflightBuilds: 1},
+			wantSum:  Summary{InflightBuilds: 1},
 		},
 		{
 			// A dispatch that never reported back counts as transient once it
@@ -132,7 +129,7 @@ func TestPass(t *testing.T) {
 			want: claimed(with(inflight("p", scheduler.StageInfer, 2*time.Hour), func(c *scheduler.Campaign) {
 				c.Retries = 1
 			}), ""),
-			wantSum: passSummary{InflightBuilds: 1, Observed: 1, Approved: 1, Dispatched: 1},
+			wantSum: Summary{InflightBuilds: 1, Observed: 1, Approved: 1, Dispatched: 1},
 		},
 		{
 			name:     "CompletedSessionFinishes",
@@ -141,7 +138,7 @@ func TestPass(t *testing.T) {
 			want: with(inflight("p", scheduler.StageAgent, time.Minute), func(c *scheduler.Campaign) {
 				c.State, c.Outcome, c.Updated = scheduler.StateDone, scheduler.OutcomeAttested, testNow
 			}),
-			wantSum: passSummary{Observed: 1},
+			wantSum: Summary{Observed: 1},
 		},
 		{
 			// A launch the API refused must not leave a phantom dispatch to
@@ -150,30 +147,30 @@ func TestPass(t *testing.T) {
 			campaign: queued("p", scheduler.StageInfer),
 			api:      fakeAPI{createErr: errors.New("api down")},
 			want:     queued("p", scheduler.StageInfer),
-			wantSum:  passSummary{QueuedInfer: 1, Approved: 1},
+			wantSum:  Summary{QueuedInfer: 1, Approved: 1},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newTestDispatcher(cfg, &tc.api)
-			if err := d.campaigns.Upsert(ctx, tc.campaign); err != nil {
+			if err := d.Campaigns.Upsert(ctx, tc.campaign); err != nil {
 				t.Fatal(err)
 			}
 			if tc.attempt != nil {
 				a := *tc.attempt
 				a.Ecosystem, a.Package, a.Version, a.Artifact = "npm", "p", "1.0.0", "p-1.0.0.tgz"
-				if err := d.attempts.Upsert(ctx, a); err != nil {
+				if err := d.Attempts.Upsert(ctx, a); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if tc.session != nil {
-				if err := d.sessions.Upsert(ctx, *tc.session); err != nil {
+				if err := d.Sessions.Upsert(ctx, *tc.session); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if diff := cmp.Diff(tc.wantSum, d.pass(ctx, []scheduler.Campaign{tc.campaign}, new(scheduler.Budget))); diff != "" {
+			if diff := cmp.Diff(tc.wantSum, d.Pass(ctx, []scheduler.Campaign{tc.campaign}, new(scheduler.Budget))); diff != "" {
 				t.Errorf("pass summary mismatch (-want +got):\n%s", diff)
 			}
-			got, err := d.campaigns.Get(ctx, target)
+			got, err := d.Campaigns.Get(ctx, target)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -197,11 +194,11 @@ func TestPass(t *testing.T) {
 		d := newTestDispatcher(cfg, &f)
 		active := []scheduler.Campaign{queued("a", scheduler.StageAgent), queued("b", scheduler.StageAgent)}
 		for _, c := range active {
-			if err := d.campaigns.Upsert(ctx, c); err != nil {
+			if err := d.Campaigns.Upsert(ctx, c); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if diff := cmp.Diff(passSummary{QueuedAgent: 2, InflightSessions: 1, Approved: 1, Dispatched: 1, AgentDispatched: 1}, d.pass(ctx, active, new(scheduler.Budget))); diff != "" {
+		if diff := cmp.Diff(Summary{QueuedAgent: 2, InflightSessions: 1, Approved: 1, Dispatched: 1, AgentDispatched: 1}, d.Pass(ctx, active, new(scheduler.Budget))); diff != "" {
 			t.Errorf("pass summary mismatch (-want +got):\n%s", diff)
 		}
 		if len(f.agents) != 1 {
@@ -212,17 +209,17 @@ func TestPass(t *testing.T) {
 		var f fakeAPI
 		d := newTestDispatcher(cfg, &f)
 		c := inflight("p", scheduler.StageInfer, time.Minute)
-		if err := d.campaigns.Upsert(ctx, c); err != nil {
+		if err := d.Campaigns.Upsert(ctx, c); err != nil {
 			t.Fatal(err)
 		}
 		a := schema.RebuildAttempt{Ecosystem: "npm", Package: "p", Version: "1.0.0", Artifact: "p-1.0.0.tgz", RunID: "run-0",
 			Status: schema.RebuildStatusSuccess, Costs: &schema.AttemptCosts{BuilderSeconds: 90}}
-		if err := d.attempts.Upsert(ctx, a); err != nil {
+		if err := d.Attempts.Upsert(ctx, a); err != nil {
 			t.Fatal(err)
 		}
 		var budget scheduler.Budget
-		d.pass(ctx, []scheduler.Campaign{c}, &budget)
-		ledger, err := d.budgets.Get(ctx, scheduler.BudgetScopeGlobal)
+		d.Pass(ctx, []scheduler.Campaign{c}, &budget)
+		ledger, err := d.Budgets.Get(ctx, scheduler.BudgetScopeGlobal)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -237,20 +234,20 @@ func TestPass(t *testing.T) {
 func TestCaps(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
-		cfg              dispatchConfig
+		cfg              Config
 		budget           scheduler.Budget
 		builds, sessions int
 		want             scheduler.Caps
 	}{
 		{name: "Unbounded"},
-		{name: "PerPass", cfg: dispatchConfig{Batch: 10, MaxAgent: 2}, want: scheduler.Caps{Batch: 10, Agent: 2}},
-		{name: "InflightRoom", cfg: dispatchConfig{MaxInflightBuilds: 5, MaxInflightSessions: 3}, builds: 2, sessions: 1, want: scheduler.Caps{Build: 3, Agent: 2}},
-		{name: "InflightFull", cfg: dispatchConfig{MaxInflightBuilds: 5, MaxInflightSessions: 3}, builds: 5, sessions: 4, want: scheduler.Caps{Build: scheduler.CapNone, Agent: scheduler.CapNone}},
-		{name: "TighterAgentCapWins", cfg: dispatchConfig{MaxAgent: 5, MaxInflightSessions: 3}, sessions: 1, want: scheduler.Caps{Agent: 2}},
-		{name: "SpentTimeCap", cfg: dispatchConfig{Batch: 10, BuildTimeCap: time.Hour, SessionTimeCap: time.Hour}, budget: scheduler.Budget{BuildSeconds: 3600, SessionSeconds: 1800}, want: scheduler.Caps{Batch: 10, Build: scheduler.CapNone}},
+		{name: "PerPass", cfg: Config{Batch: 10, MaxAgent: 2}, want: scheduler.Caps{Batch: 10, Agent: 2}},
+		{name: "InflightRoom", cfg: Config{MaxInflightBuilds: 5, MaxInflightSessions: 3}, builds: 2, sessions: 1, want: scheduler.Caps{Build: 3, Agent: 2}},
+		{name: "InflightFull", cfg: Config{MaxInflightBuilds: 5, MaxInflightSessions: 3}, builds: 5, sessions: 4, want: scheduler.Caps{Build: scheduler.CapNone, Agent: scheduler.CapNone}},
+		{name: "TighterAgentCapWins", cfg: Config{MaxAgent: 5, MaxInflightSessions: 3}, sessions: 1, want: scheduler.Caps{Agent: 2}},
+		{name: "SpentTimeCap", cfg: Config{Batch: 10, BuildTimeCap: time.Hour, SessionTimeCap: time.Hour}, budget: scheduler.Budget{BuildSeconds: 3600, SessionSeconds: 1800}, want: scheduler.Caps{Batch: 10, Build: scheduler.CapNone}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			d := &dispatcher{cfg: tc.cfg}
+			d := &Dispatcher{Config: tc.cfg}
 			if diff := cmp.Diff(tc.want, d.caps(tc.budget, tc.builds, tc.sessions)); diff != "" {
 				t.Errorf("caps mismatch (-want +got):\n%s", diff)
 			}
@@ -264,7 +261,7 @@ func TestCaps(t *testing.T) {
 func TestCharge(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	d := &dispatcher{cfg: dispatchConfig{Period: 24 * time.Hour}, now: now, budgets: db.NewMemoryBudgets()}
+	d := &Dispatcher{Config: Config{Period: 24 * time.Hour}, Now: now, Budgets: db.NewMemoryBudgets()}
 	var local scheduler.Budget
 	d.charge(ctx, &local, scheduler.Spend{BuildSeconds: 100})
 	d.charge(ctx, &local, scheduler.Spend{SessionSeconds: 50, Tokens: 7})
@@ -272,7 +269,7 @@ func TestCharge(t *testing.T) {
 	if local.BuildSeconds != 100 || local.SessionSeconds != 50 {
 		t.Errorf("local copy = %+v, want 100 build / 50 session", local)
 	}
-	b, err := d.budgets.Get(ctx, scheduler.BudgetScopeGlobal)
+	b, err := d.Budgets.Get(ctx, scheduler.BudgetScopeGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,13 +277,13 @@ func TestCharge(t *testing.T) {
 		t.Errorf("ledger = %+v, want the global scope with 100 build / 50 session / 7 tokens", b)
 	}
 	t.Run("ElapsedPeriodResetsBeforeCharging", func(t *testing.T) {
-		d.now = now.Add(25 * time.Hour)
+		d.Now = now.Add(25 * time.Hour)
 		d.charge(ctx, new(scheduler.Budget), scheduler.Spend{BuildSeconds: 5})
-		b, err := d.budgets.Get(ctx, scheduler.BudgetScopeGlobal)
+		b, err := d.Budgets.Get(ctx, scheduler.BudgetScopeGlobal)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if b.BuildSeconds != 5 || !b.PeriodStart.Equal(d.now) {
+		if b.BuildSeconds != 5 || !b.PeriodStart.Equal(d.Now) {
 			t.Errorf("rolled-over ledger = %+v, want only the fresh 5 build seconds", b)
 		}
 	})
@@ -297,9 +294,9 @@ func TestCharge(t *testing.T) {
 // run id no longer matches what this pass read.
 func TestTransitionConflict(t *testing.T) {
 	ctx := context.Background()
-	d := newTestDispatcher(dispatchConfig{}, &fakeAPI{})
+	d := newTestDispatcher(Config{}, &fakeAPI{})
 	c := with(queued("p", scheduler.StageInfer), func(c *scheduler.Campaign) { c.LastRunID = "run-1" })
-	if err := d.campaigns.Upsert(ctx, c); err != nil {
+	if err := d.Campaigns.Upsert(ctx, c); err != nil {
 		t.Fatal(err)
 	}
 	noop := func(*scheduler.Campaign) {}
@@ -327,4 +324,25 @@ func TestTransitionConflict(t *testing.T) {
 			t.Errorf("replayed transition = %v, want errConflict", err)
 		}
 	})
+}
+
+// TestRequestConfig covers the HTTP form of the config: empty fields take
+// Defaults, negatives switch a cap off, durations are Go strings.
+func TestRequestConfig(t *testing.T) {
+	got, err := Request{MaxAgent: -1, Batch: 200, Period: "1h", AgentModel: "gemini-3.7-flash"}.Config()
+	if err != nil {
+		t.Fatalf("Config: %v", err)
+	}
+	want := Defaults
+	want.MaxAgent, want.Batch, want.Period, want.AgentModel = 0, 200, time.Hour, "gemini-3.7-flash"
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("config mismatch (-want +got):\n%s", diff)
+	}
+	for name, r := range map[string]Request{
+		"bad duration": {Period: "soon"},
+	} {
+		if err := r.Validate(); err == nil {
+			t.Errorf("%s: Validate() = nil, want error", name)
+		}
+	}
 }

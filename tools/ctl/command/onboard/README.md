@@ -93,3 +93,11 @@ because agent sessions occupy scratch compute for their duration. A dispatch
 whose build is lost is requeued after `--inflight-timeout` (default 24h). A
 shorter value recovers faster from outages at the cost of duplicate builds
 for anything that legitimately runs longer.
+
+The same pass runs inside the API at `POST /onboard/dispatch`, bound to the
+API's own rebuild and agent handlers, so a deployment drains its queue on a
+Cloud Scheduler cadence without any route to the API from a workstation. Set
+`onboard_dispatch_schedule` and `onboard_dispatch_params` in the deployment
+variables. The parameters are the flags above with underscores (`max_agent`,
+`agent_model`, `period=24h`). Omitted ones take the defaults, and a negative
+count switches that cap off.
