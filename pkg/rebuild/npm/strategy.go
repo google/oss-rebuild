@@ -48,14 +48,13 @@ func (b *NPMPackBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebui
 // NPMCustomBuild implements a user-specified build script.
 type NPMCustomBuild struct {
 	rebuild.Location
-	NPMVersion          string    `json:"npm_version" yaml:"npm_version"`
-	NodeVersion         string    `json:"node_version" yaml:"node_version"`
-	VersionOverride     string    `json:"version_override,omitempty" yaml:"version_override,omitempty"`
-	Command             string    `json:"command" yaml:"command,omitempty"`
-	RegistryTime        time.Time `json:"registry_time" yaml:"registry_time"`
-	PrepackRemoveDeps   bool      `json:"prepack_remove_deps,omitempty" yaml:"prepack_remove_deps,omitempty"`
-	KeepRoot            bool      `json:"keep_root,omitempty" yaml:"keep_root,omitempty"`
-	ReplaceRegistryHost bool      `json:"replace_registry_host,omitempty" yaml:"replace_registry_host,omitempty"`
+	NPMVersion        string    `json:"npm_version" yaml:"npm_version"`
+	NodeVersion       string    `json:"node_version" yaml:"node_version"`
+	VersionOverride   string    `json:"version_override,omitempty" yaml:"version_override,omitempty"`
+	Command           string    `json:"command" yaml:"command,omitempty"`
+	RegistryTime      time.Time `json:"registry_time" yaml:"registry_time"`
+	PrepackRemoveDeps bool      `json:"prepack_remove_deps,omitempty" yaml:"prepack_remove_deps,omitempty"`
+	KeepRoot          bool      `json:"keep_root,omitempty" yaml:"keep_root,omitempty"`
 }
 
 var _ rebuild.Strategy = &NPMCustomBuild{}
@@ -73,10 +72,9 @@ func (b *NPMCustomBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Deps: []flow.Step{{
 			Uses: "npm/deps/custom",
 			With: map[string]string{
-				"registryTime":        registryTime,
-				"nodeVersion":         b.NodeVersion,
-				"npmVersion":          b.NPMVersion,
-				"replaceRegistryHost": fmt.Sprintf("%t", b.ReplaceRegistryHost),
+				"registryTime": registryTime,
+				"nodeVersion":  b.NodeVersion,
+				"npmVersion":   b.NPMVersion,
 			},
 		}},
 		Build: []flow.Step{{
@@ -152,7 +150,9 @@ var toolkit = []*flow.Tool{
 				With: map[string]string{
 					"command": `
 						{{- if ne .With.registryTime ""}}npm_config_registry={{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}} {{end -}}
-						npm install --force --no-audit{{if eq .With.replaceRegistryHost "true"}} --replace-registry-host=true{{end}}`,
+						npm install --force --no-audit
+						{{- /* NOTE: npm 11.3+ drops the registry URL credentials when it rewrites tarball URLs onto the registry host, which timewarp rejects. Fetching tarballs from their original host needs allow-remote as of npm 12. */ -}}
+						{{- if ge (cmpSemver .With.npmVersion "11.3.0") 0}} --replace-registry-host=never --allow-remote=all{{end}}`,
 					"npmVersion": "{{.With.npmVersion}}",
 					"dir":        "{{.Location.Dir}}",
 					"locator":    "{{.With.locator}}",
@@ -174,10 +174,9 @@ var toolkit = []*flow.Tool{
 			{
 				Uses: "npm/install",
 				With: map[string]string{
-					"npmVersion":          "{{.With.npmVersion}}",
-					"registryTime":        "{{.With.registryTime}}",
-					"replaceRegistryHost": "{{.With.replaceRegistryHost}}",
-					"locator":             "/usr/local/bin/",
+					"npmVersion":   "{{.With.npmVersion}}",
+					"registryTime": "{{.With.registryTime}}",
+					"locator":      "/usr/local/bin/",
 				},
 			},
 		},

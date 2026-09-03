@@ -239,14 +239,13 @@ func TestNPMStrategies(t *testing.T) {
 			},
 		},
 		{
-			"CustomBuildReplaceRegistryHost",
+			"CustomBuildNPM11",
 			&NPMCustomBuild{
-				Location:            defaultLocation,
-				NPMVersion:          "11.0.0",
-				NodeVersion:         "blue",
-				Command:             "yellow",
-				RegistryTime:        time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
-				ReplaceRegistryHost: true,
+				Location:     defaultLocation,
+				NPMVersion:   "11.3.0",
+				NodeVersion:  "blue",
+				Command:      "yellow",
+				RegistryTime: time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
@@ -255,8 +254,29 @@ func TestNPMStrategies(t *testing.T) {
 				},
 				Source: "git checkout --force 'the_ref'",
 				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
-/usr/local/bin/npx --package=npm@11.0.0 -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit --replace-registry-host=true'`,
-				Build:      `/usr/local/bin/npx --package=npm@11.0.0 -c 'cd the_dir && npm run yellow && npm pack'`,
+/usr/local/bin/npx --package=npm@11.3.0 -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit --replace-registry-host=never --allow-remote=all'`,
+				Build:      `/usr/local/bin/npx --package=npm@11.3.0 -c 'cd the_dir && npm run yellow && npm pack'`,
+				OutputPath: "the_dir/the_artifact",
+			},
+		},
+		{
+			"CustomBuildNPM11Pre",
+			&NPMCustomBuild{
+				Location:     defaultLocation,
+				NPMVersion:   "11.2.0",
+				NodeVersion:  "blue",
+				Command:      "yellow",
+				RegistryTime: time.Date(2006, time.January, 2, 3, 4, 5, 0, time.UTC),
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "npm"},
+				},
+				Source: "git checkout --force 'the_ref'",
+				Deps: `wget -O - https://unofficial-builds.nodejs.org/download/release/vblue/node-vblue-linux-x64-musl.tar.gz | tar xzf - --strip-components=1 -C /usr/local/
+/usr/local/bin/npx --package=npm@11.2.0 -c 'cd the_dir && npm_config_registry=http://npm:2006-01-02T03:04:05Z@orange npm install --force --no-audit'`,
+				Build:      `/usr/local/bin/npx --package=npm@11.2.0 -c 'cd the_dir && npm run yellow && npm pack'`,
 				OutputPath: "the_dir/the_artifact",
 			},
 		},
