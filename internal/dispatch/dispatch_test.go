@@ -205,6 +205,38 @@ func TestPass(t *testing.T) {
 			t.Errorf("agent launches = %d, want 1", len(f.agents))
 		}
 	})
+	t.Run("PacedBuildsSpaceOut", func(t *testing.T) {
+		var f fakeAPI
+		d := newTestDispatcher(func() Config { c := cfg; c.BuildRate = 1200; return c }(), &f) // one launch per 50ms
+		active := []scheduler.Campaign{queued("a", scheduler.StageInfer), queued("b", scheduler.StageInfer), queued("c", scheduler.StageInfer)}
+		for _, c := range active {
+			if err := d.Campaigns.Upsert(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		start := time.Now()
+		sum := d.Pass(ctx, active, new(scheduler.Budget))
+		if sum.Dispatched != 3 || sum.Windowed != 0 {
+			t.Errorf("summary = %+v, want 3 dispatched, none windowed", sum)
+		}
+		if elapsed := time.Since(start); elapsed < 150*time.Millisecond {
+			t.Errorf("3 launches at 1200/min took %s, want at least 150ms", elapsed)
+		}
+	})
+	t.Run("WindowLeavesTheRestQueued", func(t *testing.T) {
+		var f fakeAPI
+		d := newTestDispatcher(func() Config { c := cfg; c.Window = time.Nanosecond; return c }(), &f)
+		active := []scheduler.Campaign{queued("a", scheduler.StageInfer), queued("b", scheduler.StageInfer)}
+		for _, c := range active {
+			if err := d.Campaigns.Upsert(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+		}
+		sum := d.Pass(ctx, active, new(scheduler.Budget))
+		if sum.Dispatched != 0 || sum.Windowed != 2 || len(f.creates) != 0 {
+			t.Errorf("summary = %+v with %d creates, want nothing launched and 2 windowed", sum, len(f.creates))
+		}
+	})
 	t.Run("CompletionChargesBudget", func(t *testing.T) {
 		var f fakeAPI
 		d := newTestDispatcher(cfg, &f)
@@ -329,12 +361,12 @@ func TestTransitionConflict(t *testing.T) {
 // TestRequestConfig covers the HTTP form of the config: empty fields take
 // Defaults, negatives switch a cap off, durations are Go strings.
 func TestRequestConfig(t *testing.T) {
-	got, err := Request{MaxAgent: -1, Batch: 200, Period: "1h", AgentModel: "gemini-3.7-flash"}.Config()
+	got, err := Request{MaxAgent: -1, Batch: 200, Period: "1h", Window: "4m", AgentModel: "gemini-3.7-flash"}.Config()
 	if err != nil {
 		t.Fatalf("Config: %v", err)
 	}
 	want := Defaults
-	want.MaxAgent, want.Batch, want.Period, want.AgentModel = 0, 200, time.Hour, "gemini-3.7-flash"
+	want.MaxAgent, want.Batch, want.Period, want.Window, want.AgentModel = 0, 200, time.Hour, 4*time.Minute, "gemini-3.7-flash"
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("config mismatch (-want +got):\n%s", diff)
 	}

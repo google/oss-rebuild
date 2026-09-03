@@ -100,4 +100,7 @@ Cloud Scheduler cadence without any route to the API from a workstation. Set
 `onboard_dispatch_schedule` and `onboard_dispatch_params` in the deployment
 variables. The parameters are the flags above with underscores (`max_agent`,
 `agent_model`, `period=24h`). Omitted ones take the defaults, and a negative
-count switches that cap off.
+count switches that cap off. Builds launch at `build_rate` per minute (default
+40, under GCB's 60 creates per minute) so a large `batch` reaches the pool as
+a stream, and `window` stops a pass launching before the next one fires. What
+it leaves stays queued.

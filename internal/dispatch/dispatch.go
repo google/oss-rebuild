@@ -30,6 +30,8 @@ type Config struct {
 	AgentIterations     int
 	AgentModel          string
 	Workers             int
+	BuildRate           int           // build launches per minute, or 0 for as fast as the workers allow
+	Window              time.Duration // stop launching this long after the pass starts, or 0 to launch everything approved
 	BuildTimeCap        time.Duration
 	SessionTimeCap      time.Duration
 	Period              time.Duration
@@ -47,6 +49,7 @@ var Defaults = Config{
 	MaxAgent:          5,
 	AgentIterations:   5,
 	Workers:           12,
+	BuildRate:         40, // under GCB's 60 build creates per minute, with room for the retries behind them
 	Period:            24 * time.Hour,
 	InflightTimeout:   24 * time.Hour,
 	MaxRetries:        5,
@@ -71,6 +74,8 @@ type Request struct {
 	AgentIterations     int     `form:"agent_iterations"`
 	AgentModel          string  `form:"agent_model"`
 	Workers             int     `form:"workers"`
+	BuildRate           int     `form:"build_rate"`
+	Window              string  `form:"window"`
 	BuildTimeCap        string  `form:"build_time_cap"`
 	SessionTimeCap      string  `form:"session_time_cap"`
 	Period              string  `form:"period"`
@@ -103,6 +108,7 @@ func (r Request) Config() (Config, error) {
 	num(&c.MaxAgent, r.MaxAgent)
 	num(&c.AgentIterations, r.AgentIterations)
 	num(&c.Workers, r.Workers)
+	num(&c.BuildRate, r.BuildRate)
 	num(&c.MaxInflightBuilds, r.MaxInflightBuilds)
 	num(&c.MaxInflightSessions, r.MaxInflightSessions)
 	num(&c.MaxRetries, r.MaxRetries)
@@ -118,6 +124,7 @@ func (r Request) Config() (Config, error) {
 		src  string
 		dst  *time.Duration
 	}{
+		{"window", r.Window, &c.Window},
 		{"build_time_cap", r.BuildTimeCap, &c.BuildTimeCap},
 		{"session_time_cap", r.SessionTimeCap, &c.SessionTimeCap},
 		{"period", r.Period, &c.Period},
@@ -166,8 +173,8 @@ type Report struct {
 
 // String renders the one-line pass report.
 func (r Report) String() string {
-	return fmt.Sprintf("pass: queued infer=%d agent=%d | inflight builds=%d sessions=%d | observed %d | dispatched %d (%d agent; approved %d) | spend %s build, %s session, %d tokens",
-		r.QueuedInfer, r.QueuedAgent, r.InflightBuilds, r.InflightSessions, r.Observed, r.Dispatched, r.AgentDispatched, r.Approved,
+	return fmt.Sprintf("pass: queued infer=%d agent=%d | inflight builds=%d sessions=%d | observed %d | dispatched %d (%d agent; approved %d, windowed %d) | spend %s build, %s session, %d tokens",
+		r.QueuedInfer, r.QueuedAgent, r.InflightBuilds, r.InflightSessions, r.Observed, r.Dispatched, r.AgentDispatched, r.Approved, r.Windowed,
 		time.Duration(r.Spend.BuildSeconds)*time.Second, time.Duration(r.Spend.SessionSeconds)*time.Second, r.Spend.Tokens)
 }
 
@@ -198,6 +205,7 @@ type Summary struct {
 	InflightBuilds, InflightSessions      int // including the pass's own dispatches
 	Observed                              int
 	Approved, Dispatched, AgentDispatched int
+	Windowed                              int // approved launches left for the next pass when the window closed
 }
 
 // Pass observes every in-flight campaign, then dispatches the queued ones
@@ -251,9 +259,35 @@ func (d *Dispatcher) Pass(ctx context.Context, active []scheduler.Campaign, budg
 	caps := d.caps(*budget, inflightBuilds, inflightSessions)
 	selected := scheduler.Select(queued, caps, d.Now, d.Config.FreshnessK, d.Config.FreshnessTauHours)
 	sum.Approved = len(selected)
+	// A window keeps scheduled passes from overlapping. Launches it cuts off
+	// stay queued for the next pass.
+	var pace <-chan time.Time
+	if d.Config.BuildRate > 0 {
+		t := time.NewTicker(time.Minute / time.Duration(d.Config.BuildRate))
+		defer t.Stop()
+		pace = t.C
+	}
+	var deadline time.Time
+	if d.Config.Window > 0 {
+		deadline = time.Now().Add(d.Config.Window)
+	}
 	g, gctx = errgroup.WithContext(ctx)
 	g.SetLimit(max(d.Config.Workers, 1))
-	for _, c := range selected {
+launch:
+	for i, c := range selected {
+		if !deadline.IsZero() && time.Now().After(deadline) {
+			sum.Windowed = len(selected) - i
+			break
+		}
+		if c.Stage == scheduler.StageAgent {
+		} else if pace != nil {
+			select {
+			case <-pace:
+			case <-ctx.Done():
+				sum.Windowed = len(selected) - i
+				break launch
+			}
+		}
 		g.Go(func() error {
 			if err := d.launch(gctx, c); err != nil {
 				if !errors.Is(err, errConflict) {
