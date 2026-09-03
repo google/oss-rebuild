@@ -99,6 +99,24 @@
     "version": "TEXT",
     "vm_seconds": "REAL"
   },
+  "coverage_weekly": {
+    "coverage": "",
+    "ecosystem": "TEXT",
+    "flaky_versions": "",
+    "fresh_72h_pct": "",
+    "fresh_p50_hours": "",
+    "fresh_p95_hours": "",
+    "newly_broken": "",
+    "newly_fixed": "",
+    "packages_attempted": "",
+    "packages_current": "",
+    "packages_ever_built": "",
+    "packages_stale": "",
+    "versions_attempted": "",
+    "versions_published": "",
+    "week": "",
+    "weighted_coverage": ""
+  },
   "ecosystem_daily": {
     "attempts": "",
     "builder_seconds": "",
@@ -118,6 +136,22 @@
     "prevalence": "REAL",
     "raw": "TEXT",
     "score": "REAL"
+  },
+  "package_stats": {
+    "attempt_count": "",
+    "consecutive_failures": "",
+    "ecosystem": "TEXT",
+    "ever_built": "",
+    "last_attempted_run_id": "TEXT",
+    "last_attempted_status": "TEXT",
+    "last_attempted_time": "TEXT",
+    "last_attempted_version": "TEXT",
+    "last_succeeded_run_id": "TEXT",
+    "last_succeeded_time": "TEXT",
+    "last_succeeded_version": "TEXT",
+    "package": "TEXT",
+    "versions_attempted": "",
+    "versions_succeeded": ""
   },
   "repo_metrics": {
     "bytes": "INTEGER",
@@ -160,5 +194,35 @@
     "updated": "TEXT",
     "vm_seconds": "REAL",
     "zone": "TEXT"
+  },
+  "top_gaps": {
+    "attempts": "",
+    "dependents": "",
+    "ecosystem": "TEXT",
+    "last_attempted_at": "TEXT",
+    "last_status": "TEXT",
+    "latest_version": "TEXT",
+    "package": "TEXT",
+    "reason": "",
+    "score": "",
+    "score_percentile": ""
+  },
+  "version_stats": {
+    "artifacts_attempted": "",
+    "artifacts_succeeded": "",
+    "attempts": "",
+    "current": "",
+    "ecosystem": "TEXT",
+    "first_attempted_at": "",
+    "first_succeeded_at": "TEXT",
+    "first_success_executor": "TEXT",
+    "first_success_mechanism": "TEXT",
+    "flaky": "",
+    "last_attempted_at": "TEXT",
+    "last_executor": "TEXT",
+    "last_status": "TEXT",
+    "package": "TEXT",
+    "published_at": "",
+    "version": "TEXT"
   }
 }
