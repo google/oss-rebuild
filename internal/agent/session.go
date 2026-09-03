@@ -187,6 +187,11 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		}
 		iterNum = 1
 	}
+	return runIterations(ctx, req, iterNum, a, deps)
+}
+
+// runIterations drives the propose/build loop from iterNum until a verdict.
+func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent, deps RunSessionDeps) *schema.AgentCompleteRequest {
 	var transientErrs, buildAttempts int // tracks whether model made real progress or was throttled
 	for {
 		iterNum++
@@ -212,6 +217,15 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 			}
 			if llm.IsTransient(err) {
 				transientErrs++
+				continue
+			}
+			// Without a seed iteration or a build to learn from, the proposal
+			// came from the deterministic inference so another attempt would also fail.
+			if req.InitialIteration == nil && buildAttempts == 0 {
+				return &schema.AgentCompleteRequest{
+					StopReason: schema.AgentCompleteReasonFailed,
+					Summary:    fmt.Sprintf("Inference failed: %v", err),
+				}
 			}
 			continue
 		}
