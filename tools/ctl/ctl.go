@@ -19,6 +19,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/command/listruns"
 	"github.com/google/oss-rebuild/tools/ctl/command/localagent"
 	"github.com/google/oss-rebuild/tools/ctl/command/migrate"
+	"github.com/google/oss-rebuild/tools/ctl/command/onboard"
 	"github.com/google/oss-rebuild/tools/ctl/command/runagent"
 	"github.com/google/oss-rebuild/tools/ctl/command/runagentbenchmark"
 	"github.com/google/oss-rebuild/tools/ctl/command/runbenchmark"
@@ -48,6 +49,7 @@ func init() {
 	rootCmd.AddCommand(localagent.Command())
 	rootCmd.AddCommand(runagentbenchmark.Command())
 	rootCmd.AddCommand(scratch.Command())
+	rootCmd.AddCommand(onboard.Command())
 	// Reading data
 	rootCmd.AddCommand(tui.Command())
 	rootCmd.AddCommand(getresults.Command())
