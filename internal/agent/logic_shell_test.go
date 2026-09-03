@@ -103,3 +103,24 @@ func TestDetachOutput(t *testing.T) {
 		t.Errorf("call took %v, want a return when the shell exits, not when its child does", took)
 	}
 }
+
+// TestTruncateEnds pins the shape of a cut result: nothing changes until the
+// output exceeds head+tail, then the middle is replaced by a marker that
+// counts what it hides.
+func TestTruncateEnds(t *testing.T) {
+	for _, tc := range []struct {
+		name, in, want string
+		wantOmitted    int
+	}{
+		{"fits", "abcd", "abcd", 0},
+		{"at the limit", "abcde", "abcde", 0},
+		{"cut", "abMIDDLEcde", "ab\n...[6 bytes omitted, narrow the output with head, tail, or grep]...\ncde", 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, omitted := truncateEnds(tc.in, 2, 3)
+			if got != tc.want || omitted != tc.wantOmitted {
+				t.Errorf("truncateEnds(%q, 2, 3) = %q, %d; want %q, %d", tc.in, got, omitted, tc.want, tc.wantOmitted)
+			}
+		})
+	}
+}

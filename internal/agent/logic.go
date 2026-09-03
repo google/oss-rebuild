@@ -33,6 +33,15 @@ import (
 
 const uploadBytesLimit = 100_000
 
+// Tool output shown to the model. A shell result keeps its first and last
+// bytes so one verbose command cannot crowd the exchange: at ~4 bytes per
+// token, a 40-call budget of 16KB results is ~160k tokens.
+const (
+	toolOutputHead = 4_000
+	toolOutputTail = 12_000
+	logsTailLimit  = 32_000 // read_logs_end keeps the tail alone, its value is the end of the log
+)
+
 func locationFromStrategyOneOf(oneof *schema.StrategyOneOf) (*rebuild.Location, error) {
 	s, err := oneof.Strategy()
 	if err != nil {
@@ -135,7 +144,7 @@ func (a *defaultAgent) readLogsTool() *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
 			Name:        "read_logs_end",
-			Description: "Read tail of the logs from the previous build. If the logs are large, they may be truncated providing only the tail.",
+			Description: fmt.Sprintf("Read the tail of the previous build's log: the last %dKB, with a marker for what was cut before it.", logsTailLimit/1000),
 			Parameters: &genai.Schema{
 				Type:       genai.TypeObject,
 				Properties: map[string]*genai.Schema{},
@@ -160,8 +169,8 @@ func (a *defaultAgent) readLogsTool() *llm.FunctionDefinition {
 					},
 				}
 			}
-			if len(logs) > uploadBytesLimit {
-				logs = "...(truncated)..." + logs[len(logs)-uploadBytesLimit:]
+			if len(logs) > logsTailLimit {
+				logs = fmt.Sprintf("...[%d earlier bytes omitted]...\n", len(logs)-logsTailLimit) + logs[len(logs)-logsTailLimit:]
 			}
 			return genai.FunctionResponse{
 				Name: "read_logs_end", // Name must match the FunctionDeclaration
@@ -210,7 +219,7 @@ func (a *defaultAgent) runOnHostTool() *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
 			Name:        "run_on_host",
-			Description: "Run a shell command on the build VM host (interpreted by /bin/sh -c). The host is minimal: docker and coreutils only, with no language runtimes or fetch tools. Use run_in_container for anything needing the build environment. Use the host to inspect docker images and containers and to retain or analyze files from previous build attempts e.g. ./builds/<build-id>/ containing the attempt's build.sh and out/ directory. The most recent build's container is retained as rb-<build-id> and can be identified with `docker ps -a --filter name=rb-` but all prior build containers are removed once the next build is triggered. Returns the merged stdout/stderr (truncated to the tail if large) and the exit code.",
+			Description: "Run a shell command on the build VM host (interpreted by /bin/sh -c). The host is minimal: docker and coreutils only, with no language runtimes or fetch tools. Use run_in_container for anything needing the build environment. Use the host to inspect docker images and containers and to retain or analyze files from previous build attempts e.g. ./builds/<build-id>/ containing the attempt's build.sh and out/ directory. The most recent build's container is retained as rb-<build-id> and can be identified with `docker ps -a --filter name=rb-` but all prior build containers are removed once the next build is triggered. Returns the merged stdout/stderr (a large output keeps only its head and tail, omitted_bytes counts the cut) and the exit code.",
 			Parameters:  shellCommandParams(),
 			Response:    shellCommandResponse(),
 		},
@@ -224,7 +233,7 @@ func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
 			Name:        "run_in_container",
-			Description: "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' starting in /src: the working directory and shell environment reset between calls, filesystem changes persist. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (truncated to the tail if large) and the exit code.",
+			Description: "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' starting in /src: the working directory and shell environment reset between calls, filesystem changes persist. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (a large output keeps only its head and tail, omitted_bytes counts the cut) and the exit code.",
 			Parameters:  shellCommandParams(),
 			Response:    shellCommandResponse(),
 		},
@@ -236,30 +245,40 @@ func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
 
 // runShell dispatches a shell command to the scratch VM for tool `name`. When
 // wrap is non-nil the raw command is transformed before dispatch (e.g. to exec
-// it inside the build container). It normalizes the timeout, truncates large
-// output to its tail, and shapes the response the LLM expects.
+// it inside the build container). It normalizes the timeout, cuts large
+// output to its ends, and shapes the response the LLM expects.
+// NOTE: The runner fetches the last uploadBytesLimit bytes, so the head of a
+// still larger output is the head of that window.
 func (a *defaultAgent) runShell(name string, args map[string]any, wrap func(string) string) genai.FunctionResponse {
 	command, _ := args["command"].(string)
 	if command == "" {
-		return shellResponse(name, "", 0, "command is required")
+		return shellResponse(name, "", 0, "command is required", 0)
 	}
 	timeout, terr := shellTimeout(args)
 	if terr != "" {
-		return shellResponse(name, "", 0, terr)
+		return shellResponse(name, "", 0, terr, 0)
 	}
 	script := detachOutput(command)
 	if wrap != nil {
 		script = wrap(script)
 	}
 	exitCode, output, err := a.deps.ScratchRunner.RunCommand(context.Background(), script, timeout)
-	if len(output) > uploadBytesLimit {
-		output = "...(truncated)..." + output[len(output)-uploadBytesLimit:]
-	}
+	output, omitted := truncateEnds(output, toolOutputHead, toolOutputTail)
 	errStr := ""
 	if err != nil {
 		errStr = err.Error()
 	}
-	return shellResponse(name, output, exitCode, errStr)
+	return shellResponse(name, output, exitCode, errStr, omitted)
+}
+
+// truncateEnds keeps the first head and last tail bytes of s with a marker
+// for the cut between them, returning how many bytes it omitted.
+func truncateEnds(s string, head, tail int) (string, int) {
+	if len(s) <= head+tail {
+		return s, 0
+	}
+	omitted := len(s) - head - tail
+	return s[:head] + fmt.Sprintf("\n...[%d bytes omitted, narrow the output with head, tail, or grep]...\n", omitted) + s[len(s)-tail:], omitted
 }
 
 // shellTimeout reads the optional timeout_seconds arg, clamping to
@@ -284,10 +303,10 @@ func shellTimeout(args map[string]any) (int, string) {
 
 // shellResponse shapes a run_on_host / run_in_container FunctionResponse. Name
 // must match the FunctionDeclaration.
-func shellResponse(name, output string, exitCode int, errStr string) genai.FunctionResponse {
+func shellResponse(name, output string, exitCode int, errStr string, omitted int) genai.FunctionResponse {
 	return genai.FunctionResponse{
 		Name:     name,
-		Response: map[string]any{"output": output, "exit_code": exitCode, "error": errStr},
+		Response: map[string]any{"output": output, "exit_code": exitCode, "error": errStr, "omitted_bytes": omitted},
 	}
 }
 
@@ -306,9 +325,10 @@ func shellCommandResponse() *genai.Schema {
 	return &genai.Schema{
 		Type: genai.TypeObject,
 		Properties: map[string]*genai.Schema{
-			"output":    {Type: genai.TypeString, Description: "The merged stdout/stderr of the command"},
-			"exit_code": {Type: genai.TypeInteger, Description: "The command's exit code"},
-			"error":     {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
+			"output":        {Type: genai.TypeString, Description: "The merged stdout/stderr of the command"},
+			"exit_code":     {Type: genai.TypeInteger, Description: "The command's exit code"},
+			"error":         {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
+			"omitted_bytes": {Type: genai.TypeInteger, Description: "Bytes cut from the middle of a large output, 0 when the output is complete"},
 		},
 	}
 }
@@ -450,7 +470,7 @@ func (a *defaultAgent) diagnoseOnly() []string {
 		prompt = append(prompt,
 			"You can also use the run_on_host tool to run diagnostic shell commands on the build VM host (e.g. inspect docker images or examine files left by previous build attempts), and the run_in_container tool to run commands inside the retained build container with the build's own toolchain.",
 			"Where things are: the source checkout is at /src inside the retained container, where each call starts. The previous attempt's build script and output are under ./builds/<build-id>/ on the host. After a content mismatch the error message names where the upstream artifact and diffr sit on the host.",
-			"Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees, and aim to reach a diagnosis in under 20 tool calls.",
+			fmt.Sprintf("Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees (a result keeps only its first %dKB and last %dKB), and aim to reach a diagnosis in under 20 tool calls.", toolOutputHead/1000, toolOutputTail/1000),
 		)
 	}
 	return append(prompt,
