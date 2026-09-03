@@ -156,7 +156,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		MetadataBucket: deps.MetadataBucket,
 		LogsBucket:     deps.LogsBucket,
 		GCSClient:      deps.GCSClient,
-		MaxTurns:       250, // ~20m @5s/fn
+		MaxTurns:       maxToolTurns,
 		GenaiClient:    deps.Client,
 		RegistryClient: deps.RegistryClient,
 		ScratchRunner:  deps.ScratchRunner,

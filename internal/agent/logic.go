@@ -40,6 +40,7 @@ const (
 	toolOutputHead = 4_000
 	toolOutputTail = 12_000
 	logsTailLimit  = 32_000 // read_logs_end keeps the tail alone, its value is the end of the log
+	maxToolTurns   = 100    //  bounds the tool calls in one iteration, after which model is told to answer directly
 )
 
 func locationFromStrategyOneOf(oneof *schema.StrategyOneOf) (*rebuild.Location, error) {
@@ -470,7 +471,7 @@ func (a *defaultAgent) diagnoseOnly() []string {
 		prompt = append(prompt,
 			"You can also use the run_on_host tool to run diagnostic shell commands on the build VM host (e.g. inspect docker images or examine files left by previous build attempts), and the run_in_container tool to run commands inside the retained build container with the build's own toolchain.",
 			"Where things are: the source checkout is at /src inside the retained container, where each call starts. The previous attempt's build script and output are under ./builds/<build-id>/ on the host. After a content mismatch the error message names where the upstream artifact and diffr sit on the host.",
-			fmt.Sprintf("Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees (a result keeps only its first %dKB and last %dKB), and aim to reach a diagnosis in under 20 tool calls.", toolOutputHead/1000, toolOutputTail/1000),
+			fmt.Sprintf("Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees (a result keeps only its first %dKB and last %dKB), and aim to reach a diagnosis in under 20 tool calls. The exchange ends after %d.", toolOutputHead/1000, toolOutputTail/1000, maxToolTurns),
 		)
 	}
 	return append(prompt,
