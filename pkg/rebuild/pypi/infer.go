@@ -267,6 +267,33 @@ func hasZipDir(dir string, zr *zip.Reader) bool {
 	return false
 }
 
+// requirementName extracts the distribution name from a PEP 508 requirement,
+// dropping any version specifier, so "setuptools<=67.7.2" yields "setuptools".
+func requirementName(req string) string {
+	fields := strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~! \t", r) })
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+}
+
+// mergeRequirements appends the buildReqs entries whose package does not
+// already appear in reqs, also collapsing repeats within buildReqs itself.
+func mergeRequirements(reqs, buildReqs []string) []string {
+	existing := make(map[string]bool)
+	for _, req := range reqs {
+		existing[requirementName(req)] = true
+	}
+	for _, newReq := range buildReqs {
+		// Mark as we add so duplicates within buildReqs collapse too.
+		if pkg := requirementName(newReq); pkg != "" && !existing[pkg] {
+			reqs = append(reqs, newReq)
+			existing[pkg] = true
+		}
+	}
+	return reqs
+}
+
 func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, hint rebuild.Strategy) (rebuild.Strategy, error) {
 	name, version := t.Package, t.Version
 	release, err := mux.PyPI.Release(ctx, name, version)
@@ -350,18 +377,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if buildReqs, err := pypiresolver.ExtractRequirements(ctx, tree, dir); err != nil {
 			log.Println(errors.Wrap(err, "Failed to extract reqs from build files."))
 		} else {
-			existing := make(map[string]bool)
-			pkgname := func(req string) string {
-				return strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~! \t", r) })[0]
-			}
-			for _, req := range reqs {
-				existing[pkgname(req)] = true
-			}
-			for _, newReq := range buildReqs {
-				if pkg := pkgname(newReq); !existing[pkg] {
-					reqs = append(reqs, newReq)
-				}
-			}
+			reqs = mergeRequirements(reqs, buildReqs)
 		}
 	}
 	if strings.HasSuffix(a.Filename, ".tar.gz") {
