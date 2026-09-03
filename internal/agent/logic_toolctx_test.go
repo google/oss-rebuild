@@ -26,7 +26,7 @@ func TestRunShellUnwindsOnCancellation(t *testing.T) {
 	}
 	a := NewDefaultAgent(
 		rebuild.Target{Ecosystem: rebuild.NPM, Package: "pkg", Version: "1.0.0", Artifact: "pkg-1.0.0.tgz"},
-		&AgentDeps{ScratchRunner: &ScratchRunner{Stubs: scratch.Stubs{ExecCreate: pending, ExecGet: polled}}},
+		&AgentDeps{Shell: &ScratchRunner{Stubs: scratch.Stubs{ExecCreate: pending, ExecGet: polled}}},
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -176,11 +176,11 @@ func toolNames(defs []*llm.FunctionDefinition) map[string]bool {
 }
 
 func TestGetToolsWithdrawsHostShellInSingleEnv(t *testing.T) {
-	two := NewDefaultAgent(testTarget, &AgentDeps{ScratchRunner: &ScratchRunner{}})
+	two := NewDefaultAgent(testTarget, &AgentDeps{Shell: &ScratchRunner{}})
 	if n := toolNames(two.getTools()); !n["run_on_host"] || !n["run_in_container"] {
 		t.Errorf("two-environment tools = %v, want both shell tools", n)
 	}
-	one := NewDefaultAgent(testTarget, &AgentDeps{ScratchRunner: &ScratchRunner{SingleEnv: true}})
+	one := NewDefaultAgent(testTarget, &AgentDeps{Shell: &ScratchRunner{}, SingleEnv: true})
 	n := toolNames(one.getTools())
 	if n["run_on_host"] {
 		t.Error("single-environment tools include run_on_host")
