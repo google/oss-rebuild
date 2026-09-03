@@ -34,7 +34,7 @@ type Release struct {
 	Dist          `json:"dist"`
 	RawRepository json.RawMessage `json:"repository"`
 	Repository
-	Scripts map[string]string `json:"scripts"`
+	Scripts Scripts `json:"scripts"`
 }
 type Repository struct {
 	Type      string `json:"type"`
@@ -57,13 +57,35 @@ type NPMVersion struct {
 	Dist          `json:"dist"`
 	RawRepository json.RawMessage `json:"repository"`
 	Repository
-	Scripts map[string]string `json:"scripts"`
+	Scripts Scripts `json:"scripts"`
+}
+
+// Scripts is a package.json scripts map. The registry stores whatever a
+// publisher wrote, so a value is occasionally an object or number rather
+// than a command. Those are kept as JSON text instead of failing the parse.
+type Scripts map[string]string
+
+func (s *Scripts) UnmarshalJSON(b []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	out := make(Scripts, len(raw))
+	for k, v := range raw {
+		var str string
+		if err := json.Unmarshal(v, &str); err != nil {
+			str = string(v)
+		}
+		out[k] = str
+	}
+	*s = out
+	return nil
 }
 
 type PackageJSON struct {
-	Name    string            `json:"name"`
-	Version string            `json:"version"`
-	Scripts map[string]string `json:"scripts"`
+	Name    string  `json:"name"`
+	Version string  `json:"version"`
+	Scripts Scripts `json:"scripts"`
 }
 
 var registryURL = urlx.MustParse("https://registry.npmjs.org")
