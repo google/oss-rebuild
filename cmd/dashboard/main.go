@@ -143,7 +143,10 @@ func main() {
 	encoding := rebuild.FilesystemTargetEncoding
 
 	dashboard.RegisterAssets(http.DefaultServeMux)
-	http.HandleFunc("/", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Index), dashboard.IndexTmpl))
+	http.HandleFunc("/favicon.ico", func(rw http.ResponseWriter, _ *http.Request) {
+		rw.WriteHeader(http.StatusNoContent)
+	})
+	http.HandleFunc("/{$}", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Index), dashboard.IndexTmpl))
 	http.HandleFunc("/resources", api.Translate(func(r *http.Request) (dashboard.ResourcesRequest, error) {
 		return dashboard.ResourcesRequest{Eco: r.URL.Query().Get("eco")}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.ResourcesPage), dashboard.ResourcesTmpl)))
