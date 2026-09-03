@@ -338,13 +338,18 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 		"Use the tools you have at your disposal to find the URL.",
 		"Finally, if you don't find the URL, just return an empty string.",
 	}
-	repoURL, usage, err := llm.GenerateTextContentWithUsage(ctx, a.deps.GenaiClient, cmp.Or(a.deps.Model, llm.GeminiPro), &genai.GenerateContentConfig{
-		Temperature: new(float32(0.0)),
-		Tools: []*genai.Tool{
-			{GoogleSearch: &genai.GoogleSearch{}},
-		},
-	}, genai.NewPartFromText(strings.Join(prompt, "\n")))
-	a.addSideUsage(usage)
+	var repoURL string
+	err := a.deps.Retrier.Do(ctx, func() error {
+		url, usage, err := llm.GenerateTextContentWithUsage(ctx, a.deps.GenaiClient, cmp.Or(a.deps.Model, llm.GeminiPro), &genai.GenerateContentConfig{
+			Temperature: new(float32(0.0)),
+			Tools: []*genai.Tool{
+				{GoogleSearch: &genai.GoogleSearch{}},
+			},
+		}, genai.NewPartFromText(strings.Join(prompt, "\n")))
+		a.addSideUsage(usage)
+		repoURL = url
+		return err
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "getting AI repo hint")
 	}
