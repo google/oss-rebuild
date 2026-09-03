@@ -94,6 +94,12 @@ func Delta(ctx context.Context, src Source, dest billy.Filesystem, opts DeltaOpt
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning repo metrics")
 	}
+	campaigns, err := src.Campaigns(ctx, since)
+	if err != nil {
+		return nil, errors.Wrap(err, "scanning campaigns")
+	}
+	// package_signals is absent: the exports are rewritten whole at job
+	// cadence and refresh at the next rollup.
 	tables := map[string][]json.RawMessage{
 		TableAttempts:        docsOf(attempts),
 		TableRuns:            docsOf(runs),
@@ -102,6 +108,7 @@ func Delta(ctx context.Context, src Source, dest billy.Filesystem, opts DeltaOpt
 		TableScratchVMs:      docsOf(scratches),
 		TableScratchExecs:    docsOf(execs),
 		TableRepoMetrics:     docsOf(repoMetrics),
+		TableCampaigns:       docsOf(campaigns),
 	}
 	res := &DeltaResult{Since: since, RowCounts: make(map[string]int, len(tables))}
 	for name, docs := range tables {

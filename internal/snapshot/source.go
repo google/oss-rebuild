@@ -13,6 +13,7 @@ import (
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -32,6 +33,7 @@ type Source interface {
 	Scratches(context.Context, time.Time) ([]schema.Scratch, error)
 	Execs(context.Context, time.Time) ([]schema.ScratchExec, error)
 	RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error)
+	Campaigns(context.Context, time.Time) ([]scheduler.Campaign, error)
 	Signals(context.Context) ([]signals.PackageSignal, error)
 }
 
@@ -145,6 +147,10 @@ func (s *FirestoreSource) Execs(ctx context.Context, since time.Time) ([]schema.
 
 func (s *FirestoreSource) RepoMetrics(ctx context.Context, since time.Time) ([]schema.RepoMetrics, error) {
 	return scanQuery[schema.RepoMetrics](ctx, sinceQuery(s.client.Collection("repo_metrics").Query, "updated", since))
+}
+
+func (s *FirestoreSource) Campaigns(ctx context.Context, since time.Time) ([]scheduler.Campaign, error) {
+	return scanQuery[scheduler.Campaign](ctx, sinceQuery(s.client.Collection("scheduler_campaigns").Query, "updated", since))
 }
 
 // Signals reads the priority signals from the published signal database.

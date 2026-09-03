@@ -36,6 +36,11 @@ func OpenLocal(path string) (*LocalDB, error) {
 	if err := db.Exec("PRAGMA busy_timeout = 10000"); err != nil {
 		return fail(errors.Wrap(err, "setting busy timeout"))
 	}
+	// Local connections materialize derived tables via Refresh, so they
+	// need the collations the derived queries use, unlike pure readers.
+	if err := registerCollations(db); err != nil {
+		return fail(err)
+	}
 	if err := docdb.EnsureDocTables(db, Tables()); err != nil {
 		return fail(err)
 	}
