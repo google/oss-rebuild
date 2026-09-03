@@ -192,19 +192,18 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream %s", metadataPath)
 	}
+	// NOTE: These version ceilings pin with <= rather than == as timewarp will
+	// fail to resolve equality constraints where registry_time is configured
+	// before that version's release (which has been observed).
 	switch {
 	case !bytes.Contains(metadata, []byte("License-File")):
-		// The License-File value was introduced in later versions so this is the
-		// most recent version it could be.
-		reqs = append(reqs, "setuptools==56.2.0")
+		// License-File was introduced in later versions, bounding this above.
+		reqs = append(reqs, "setuptools<=56.2.0")
 	case bytes.Contains(metadata, []byte("Platform: UNKNOWN")):
-		// In later versions, unknown platform is omitted. If we see this pattern, it's an older version
-		// of setup tools.
-		// TODO: There's probably a more specific version where this behavior changed. I just chose the
-		// first version I found that worked.
-		reqs = append(reqs, "setuptools==57.5.0")
+		// Later versions omit the unknown platform, so this is an older setuptools.
+		reqs = append(reqs, "setuptools<=57.5.0")
 	default:
-		reqs = append(reqs, "setuptools==67.7.2")
+		reqs = append(reqs, "setuptools<=67.7.2")
 	}
 	return reqs, nil
 }
