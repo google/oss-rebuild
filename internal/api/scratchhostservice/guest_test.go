@@ -40,7 +40,8 @@ func TestGuestNetFor(t *testing.T) {
 }
 
 // TestQEMUArgv pins the invocation. The mvm_* parameters are the boot
-// units' contract, and the drive order makes the scratch disk /dev/vdb.
+// units' contract, the drive order makes the scratch disk /dev/vdb, and the
+// only credential on the line is the broker's public key.
 func TestQEMUArgv(t *testing.T) {
 	guestNet, err := GuestNetFor(netip.MustParsePrefix("10.200.0.0/24"))
 	if err != nil {
@@ -67,7 +68,7 @@ func TestQEMUArgv(t *testing.T) {
 		"-display", "none",
 		"-kernel", "/golden/vmlinuz",
 		"-initrd", "/golden/initrd.img",
-		"-append", "root=/dev/vda rw rootfstype=ext4 console=ttyS0 reboot=t panic=-1 random.trust_cpu=on 8250.nr_uarts=1 i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd net.ifnames=0 mvm_ip=10.200.0.2 mvm_gw=10.200.0.1 mvm_prefix=24 mvm_mtu=1460 mvm_dns=169.254.169.254 mvm_name=guest",
+		"-append", "root=/dev/vda rw rootfstype=ext4 console=ttyS0 reboot=t panic=-1 random.trust_cpu=on 8250.nr_uarts=1 i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd net.ifnames=0 mvm_ip=10.200.0.2 mvm_gw=10.200.0.1 mvm_prefix=24 mvm_mtu=1460 mvm_dns=169.254.169.254 mvm_name=guest mvm_ssh_authorized_key=c3NoLWVkMjU1MTkgQUFBQQ",
 		"-drive", "id=root,file=/var/lib/scratch-host/guest/root.qcow2,format=qcow2,if=none,cache=none,aio=native",
 		"-device", "virtio-blk-device,drive=root",
 		"-drive", "id=scratch,file=/var/lib/scratch-host/guest/scratch.qcow2,format=qcow2,if=none,cache=none,aio=native",
@@ -77,7 +78,7 @@ func TestQEMUArgv(t *testing.T) {
 		"-device", "virtio-rng-device",
 		"-serial", "file:/var/lib/scratch-host/guest/console.log",
 	}
-	if diff := cmp.Diff(want, qemuArgv("qemu-system-x86_64", cfg, l, guestNet)); diff != "" {
+	if diff := cmp.Diff(want, qemuArgv("qemu-system-x86_64", cfg, l, guestNet, "c3NoLWVkMjU1MTkgQUFBQQ")); diff != "" {
 		t.Errorf("qemuArgv mismatch (-want +got):\n%s", diff)
 	}
 }

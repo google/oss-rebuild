@@ -78,8 +78,9 @@ func (l Layout) scratch() string { return path.Join(l.GuestDir, "scratch.qcow2")
 func (l Layout) console() string { return path.Join(l.GuestDir, "console.log") }
 
 // kernelCmdline builds the guest's kernel command line. Per-guest settings
-// travel there because the shared rootfs is read-only.
-func kernelCmdline(cfg GuestConfig, n GuestNet) string {
+// travel there because the shared rootfs is read-only. The ssh key in it is
+// the broker's public key, safe in the guest's world-readable /proc/cmdline.
+func kernelCmdline(cfg GuestConfig, n GuestNet, credential string) string {
 	return strings.Join([]string{
 		// See https://docs.kernel.org/admin-guide/kernel-parameters.html.
 		"root=/dev/vda rw rootfstype=ext4",
@@ -94,6 +95,7 @@ func kernelCmdline(cfg GuestConfig, n GuestNet) string {
 		"net.ifnames=0",
 		fmt.Sprintf("mvm_ip=%s mvm_gw=%s mvm_prefix=%d", n.IP, n.Gateway, n.Prefix.Bits()),
 		fmt.Sprintf("mvm_mtu=%d mvm_dns=%s mvm_name=%s", cfg.MTU, cfg.DNS, guestName),
+		"mvm_ssh_authorized_key=" + credential,
 	}, " ")
 }
 
@@ -107,7 +109,7 @@ var avx512Flags = []string{
 
 // qemuArgv builds the QEMU invocation. QEMU stays in the foreground: the
 // broker reads guest liveness from its child process.
-func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet) []string {
+func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet, credential string) []string {
 	return []string{
 		bin,
 		"-M", "microvm,acpi=on,rtc=on",
@@ -124,7 +126,7 @@ func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet) []string {
 		"-display", "none",
 		"-kernel", l.Kernel,
 		"-initrd", l.Initrd,
-		"-append", kernelCmdline(cfg, n),
+		"-append", kernelCmdline(cfg, n, credential),
 		"-drive", "id=root,file=" + l.overlay() + ",format=qcow2,if=none,cache=none,aio=native",
 		"-device", "virtio-blk-device,drive=root",
 		"-drive", "id=scratch,file=" + l.scratch() + ",format=qcow2,if=none,cache=none,aio=native",
