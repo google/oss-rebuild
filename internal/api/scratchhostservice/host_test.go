@@ -5,12 +5,14 @@ package scratchhostservice
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -33,8 +35,9 @@ var (
 
 // testDeps returns GuestDeps over a mock executor. The mock records
 // commands, runs the guest until stopped, answers ip(8) tap queries and
-// creates the overlays qemu-img would. Tests that read the clock run in a
-// synctest bubble.
+// creates the overlays qemu-img would. Each guest comes up on a guestNet
+// while its QEMU runs and echoes its commands' argv. Tests that read the
+// clock run in a synctest bubble.
 func testDeps(t *testing.T) (*GuestDeps, *execx.MockCommandExecutor) {
 	t.Helper()
 	root := t.TempDir()
@@ -83,6 +86,7 @@ func testDeps(t *testing.T) (*GuestDeps, *execx.MockCommandExecutor) {
 		},
 		Exec: mock,
 	}
+	guestsOn(t, deps)
 	t.Cleanup(func() {
 		deps.Host.mu.Lock()
 		p, stop := deps.Host.proc, deps.Host.stop
@@ -95,11 +99,16 @@ func testDeps(t *testing.T) (*GuestDeps, *execx.MockCommandExecutor) {
 	return deps, mock
 }
 
-// commands renders the recorded commands as lines, for exact comparison.
+// keyParam matches the ssh keys on a kernel command line, which differ per
+// run.
+var keyParam = regexp.MustCompile(`(mvm_ssh_[a-z_]+_key)=\S+`)
+
+// commands renders the recorded commands as lines, for exact comparison, with
+// the ssh keys masked.
 func commands(mock *execx.MockCommandExecutor) []string {
 	var out []string
 	for _, c := range mock.GetCommands() {
-		out = append(out, strings.Join(append([]string{c.Name}, c.Args...), " "))
+		out = append(out, keyParam.ReplaceAllString(strings.Join(append([]string{c.Name}, c.Args...), " "), "$1=*"))
 	}
 	return out
 }
@@ -116,7 +125,7 @@ func bootCommands(deps *GuestDeps) []string {
 		"ip link set mvmtap0 mtu 1460",
 		"ip link set mvmtap0 master mvmbr0",
 		"ip link set mvmtap0 up",
-		strings.Join(qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net), " "),
+		strings.Join(qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net, "*"), " "),
 	}
 }
 
@@ -146,6 +155,38 @@ func running(h execx.Handle) bool {
 	default:
 		return true
 	}
+}
+
+// guestsOn puts deps' guests on a fresh guestNet for the test to script. A
+// guest is up while the QEMU last started for its address runs, with the keys
+// from that QEMU's kernel command line.
+func guestsOn(t *testing.T, deps *GuestDeps) *guestNet {
+	t.Helper()
+	mock := deps.Exec.(*execx.MockCommandExecutor)
+	n := newGuestNet(t)
+	n.boots = func(addr string) (string, <-chan struct{}, bool) {
+		cmds := mock.GetCommands()
+		for i := len(cmds) - 1; i >= 0; i-- {
+			c := cmds[i]
+			at := slices.Index(c.Args, "-append")
+			if c.Name != deps.Config.QEMUBin || c.Handle == nil || at < 0 || at+1 == len(c.Args) {
+				continue
+			}
+			cmdline := c.Args[at+1]
+			if !slices.Contains(strings.Fields(cmdline), "mvm_ip="+addr) {
+				continue
+			}
+			select {
+			case <-c.Handle.Done():
+				return "", nil, false
+			default:
+				return cmdline, c.Handle.Done(), true
+			}
+		}
+		return "", nil, false
+	}
+	deps.ChannelCache = NewChannelCache(testDialer(t, n))
+	return n
 }
 
 // killGuest ends the guest as a crashed QEMU would, without telling the
@@ -315,6 +356,57 @@ func TestGuestDelete_ReleasesEverythingAndIsIdempotent(t *testing.T) {
 	}
 	if _, err := GuestDelete(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); status.Code(err) != codes.NotFound {
 		t.Errorf("second Delete = %v; want NotFound, which the caller reads as success", err)
+	}
+}
+
+func TestGuestDelete_LeavesNoChannelForTheNextGuest(t *testing.T) {
+	deps, _ := testDeps(t)
+	n := guestsOn(t, deps)
+	ctx := context.Background()
+	admit(t, deps, "scratch-a")
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); err != nil {
+		t.Fatalf("GuestHealth: %v", err)
+	}
+	if _, err := GuestDelete(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); err != nil {
+		t.Fatalf("GuestDelete: %v", err)
+	}
+	// The next guest boots at the same address. Its first probe must not
+	// land on the dead guest's connection.
+	admit(t, deps, "scratch-b")
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-b"}, deps); err != nil {
+		t.Errorf("first GuestHealth of the next guest = %v; want ready", err)
+	}
+	if dials := n.dialCount(); dials != 2 {
+		t.Errorf("%d dials; want one per guest", dials)
+	}
+}
+
+func TestGuestHealth_ProbesOverTheChannel(t *testing.T) {
+	deps, _ := testDeps(t)
+	n := guestsOn(t, deps)
+	ctx := context.Background()
+	admit(t, deps, "scratch-a")
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); err != nil {
+		t.Errorf("GuestHealth of an answering guest = %v; want ready", err)
+	}
+	if got := n.ran(); len(got) != 1 || !slices.Equal(got[0].Argv, []string{"true"}) {
+		t.Errorf("guest ran %+v; want the probe to run true in the guest", got)
+	}
+	// The probe fails until the guest's sshd is up.
+	n.setRefuse(true)
+	deps.ChannelCache.close("10.200.0.2")
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); status.Code(err) != codes.Unavailable {
+		t.Errorf("GuestHealth with an unreachable guest = %v; want Unavailable", err)
+	}
+	// A guest that answers but cannot run the probe is not ready either.
+	n.setRefuse(false)
+	n.setRun(func(context.Context, Command, io.Writer, io.Writer) guestExit { return guestExit{status: 127} })
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); status.Code(err) != codes.Unavailable {
+		t.Errorf("GuestHealth with a failing probe = %v; want Unavailable", err)
+	}
+	// And neither is a session this host never admitted.
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-zzz"}, deps); status.Code(err) != codes.Unavailable {
+		t.Errorf("GuestHealth of an unknown session = %v; want Unavailable", err)
 	}
 }
 
