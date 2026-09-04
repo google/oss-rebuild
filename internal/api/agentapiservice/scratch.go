@@ -143,6 +143,9 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 	scratch.Zone = cleanupZone
 	if err != nil {
 		cleanup()
+		if errors.Is(err, errCapacity) {
+			return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrap(err, "insert instance"))
+		}
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "insert instance"))
 	}
 
