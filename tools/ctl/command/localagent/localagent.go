@@ -13,6 +13,7 @@ import (
 	"cloud.google.com/go/firestore"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/agent"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/act/cli"
@@ -26,8 +27,6 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/genai"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // Config holds all configuration for the local-agent command.
@@ -129,13 +128,10 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		Created:       sessionTime,
 		Updated:       sessionTime,
 	}
-	// Create session in Firestore
-	err = fire.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
-		// NOTE: This would fail if the session record already exists.
-		return t.Create(fire.Collection("agent_sessions").Doc(sessionID), session)
-	})
+	sessions := db.NewFirestoreSessions(fire)
+	err = sessions.Insert(ctx, session)
 	if err != nil {
-		if status.Code(err) == codes.AlreadyExists {
+		if errors.Is(err, db.ErrAlreadyExists) {
 			return nil, errors.Errorf("agent session %s already exists", sessionID)
 		}
 		return nil, errors.Wrap(err, "creating agent session")
@@ -155,11 +151,11 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err := d.DataTo(retryInitialIter); err != nil {
 			return nil, errors.Wrap(err, "deserializing iteration data")
 		}
-		_, err = fire.Collection("agent_sessions").Doc(sessionID).
-			Collection("agent_iterations").
-			Doc(retryInitialIter.ID).
-			Create(ctx, *retryInitialIter)
-		if err != nil {
+		// Rekey the copied iteration to its new session: the record lives in
+		// the new session's subcollection and must attribute there.
+		retryInitialIter.SessionID = sessionID
+		retryInitialIter.Updated = time.Now().UTC()
+		if err := db.NewFirestoreIterations(fire).Insert(ctx, *retryInitialIter); err != nil {
 			return nil, errors.Wrap(err, "creating initial iteration")
 		}
 	}
