@@ -287,8 +287,11 @@ func verifySetupPyFile(ctx context.Context, f *object.File, name, version string
 		closest = editDist
 		verificationResult.levDistance = editDist
 		verificationResult.nameMatch = editDist == 0
-		foundVersion, ok := args["version"]
-		verificationResult.versionMatch = ok && foundVersion.kind == pyString && foundVersion.str == version
+		verificationResult.foundVersion = ""
+		if v, ok := args["version"]; ok && v.kind == pyString {
+			verificationResult.foundVersion = v.str
+		}
+		verificationResult.versionMatch = verificationResult.foundVersion != "" && verificationResult.foundVersion == version
 	}
 	return verificationResult, nil
 }
