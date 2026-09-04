@@ -243,6 +243,13 @@ resource "google_cloud_run_v2_service_iam_member" "inference-calls-crates-regist
   role     = "roles/run.invoker"
   member   = google_service_account.inference.member
 }
+resource "google_cloud_run_v2_service_iam_member" "agent-calls-crates-registry" {
+  location = google_cloud_run_v2_service.crates-registry.location
+  project  = google_cloud_run_v2_service.crates-registry.project
+  name     = google_cloud_run_v2_service.crates-registry.name
+  role     = "roles/run.invoker"
+  member   = google_service_account.agent-job.member
+}
 resource "google_kms_crypto_key_iam_member" "attestors-read-signing-key" {
   crypto_key_id = google_kms_crypto_key.signing-key.id
   role          = "roles/cloudkms.viewer"

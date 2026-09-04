@@ -35,6 +35,7 @@ type AgentCreateDeps struct {
 	AgentJobName        string
 	AgentAPIURL         string
 	GitCacheURL         string
+	CratesRegistryURL   string // Forwarded to agent jobs so inference can resolve crates.io index commits.
 	AgentTimeoutSeconds int
 	SessionsBucket      string
 	MetadataBucket      string
@@ -164,6 +165,9 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		}
 		if deps.GitCacheURL != "" {
 			args = append(args, "--git-cache-url="+deps.GitCacheURL)
+		}
+		if deps.CratesRegistryURL != "" {
+			args = append(args, "--crates-registry-service-url="+deps.CratesRegistryURL)
 		}
 		if req.Model != "" {
 			args = append(args, "--model="+req.Model)
