@@ -125,6 +125,11 @@ variable "scratch_machine_type" {
   description = "Machine type for agent scratch VMs. Smaller types fit more concurrent sessions under the regional CPU quota. Heavy builds may need a larger type."
   default     = "e2-standard-4"
 }
+variable "scratch_jumbo_machine_type" {
+  type        = string
+  description = "Machine type for the jumbo scratch class. Empty leaves the class unavailable. A type from another family draws on that family's CPU quota, which keeps evals off the standard pool."
+  default     = ""
+}
 variable "scratch_disk_gb" {
   type        = number
   description = "Boot/pd-ssd disk size for scratch VMs. Sized to hold build containers and clones which is small enough that concurrency is CPU-bound, not SSD-quota-bound."
