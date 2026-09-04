@@ -140,6 +140,13 @@ func (l *Ledger) Kill(opID string) error {
 	return nil
 }
 
+func (l *Ledger) has(opID string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_, ok := l.entries[opID]
+	return ok
+}
+
 // Status returns the op's state, or false if the op is unknown.
 func (l *Ledger) Status(opID string) (ExecStatus, bool) {
 	l.mu.Lock()
