@@ -7,7 +7,9 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"maps"
 	"slices"
+	"strings"
 
 	"github.com/google/oss-rebuild/internal/ratex"
 	"github.com/pkg/errors"
@@ -174,9 +176,12 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 				}
 				for _, call := range calls {
 					implFunc, found := cm.toolImpls[call.Name]
-					if !found {
-						yield(nil, errors.Errorf("tool implementation not found for function call '%s'", call.Name))
-						return
+					if !found { // unknown tool name
+						currentParts = append(currentParts, &genai.Part{FunctionResponse: &genai.FunctionResponse{
+							Name:     call.Name,
+							Response: map[string]any{"error": fmt.Sprintf("unknown tool %q, the tools are %s", call.Name, strings.Join(slices.Sorted(maps.Keys(cm.toolImpls)), ", "))},
+						}})
+						continue
 					}
 					currentParts = append(currentParts, &genai.Part{FunctionResponse: new(implFunc(call.Args))})
 				}
