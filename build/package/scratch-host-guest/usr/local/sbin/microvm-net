@@ -1,0 +1,48 @@
+#!/bin/sh
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+
+# Configures eth0 from mvm_* kernel command line parameters.
+#
+# Per-guest network config arrives on the kernel command line because the
+# rootfs is a single read-only backing file shared by every guest and cannot
+# carry per-guest state. Reading /proc/cmdline is deterministic in a way that
+# the kernel's own ip= autoconfig is not: virtio_net is loaded from the
+# initramfs, so ip_auto_config can run before the NIC exists.
+
+set -eu
+
+param() {
+    tr ' ' '\n' < /proc/cmdline | sed -n "s/^$1=//p" | tail -1
+}
+
+IP="$(param mvm_ip)"
+GW="$(param mvm_gw)"
+MTU="$(param mvm_mtu)"
+PREFIX="$(param mvm_prefix)"
+DNS="$(param mvm_dns)"
+NAME="$(param mvm_name)"
+
+[ -n "$MTU" ] || MTU=1460
+[ -n "$PREFIX" ] || PREFIX=24
+
+if [ -n "$NAME" ]; then
+    hostname "$NAME"
+    printf '%s\n' "$NAME" > /etc/hostname
+    printf '127.0.0.1 localhost\n127.0.1.1 %s\n' "$NAME" > /etc/hosts
+fi
+
+ip link set dev eth0 mtu "$MTU"
+ip link set dev eth0 up
+if [ -n "$IP" ]; then
+    ip addr add "$IP/$PREFIX" dev eth0
+fi
+if [ -n "$GW" ]; then
+    ip route add default via "$GW"
+fi
+if [ -n "$DNS" ]; then
+    printf 'nameserver %s\n' "$DNS" > /etc/resolv.conf
+fi
+
+# Boot readiness marker. The host can tail the serial console log for this.
+echo MICROVM_NET_UP > /dev/console

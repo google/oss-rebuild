@@ -1,0 +1,14 @@
+[Unit]
+Description=microvm guest network from kernel cmdline
+DefaultDependencies=no
+After=systemd-sysctl.service
+Before=network.target network-online.target ssh.service
+Wants=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/microvm-net
+
+[Install]
+WantedBy=sysinit.target
