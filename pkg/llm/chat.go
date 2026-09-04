@@ -163,7 +163,9 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 				}
 			}
 			if len(calls) > 0 {
-				currentParts = currentParts[:0]
+				// NOTE: genai's Chat stores this slice as the turn's history
+				// entry, so reusing the array rewrites earlier turns.
+				currentParts = make([]*genai.Part, 0, len(calls)+1)
 				for _, call := range calls {
 					implFunc, found := cm.toolImpls[call.Name]
 					if !found {
