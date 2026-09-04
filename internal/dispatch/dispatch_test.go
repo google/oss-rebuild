@@ -15,6 +15,8 @@ import (
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/scheduler"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -27,6 +29,7 @@ type fakeAPI struct {
 	creates   []schema.RebuildPackageRequest
 	agents    []schema.AgentCreateRequest
 	createErr error
+	agentErr  error
 }
 
 func newTestDispatcher(cfg Config, f *fakeAPI) *Dispatcher {
@@ -49,6 +52,9 @@ func newTestDispatcher(cfg Config, f *fakeAPI) *Dispatcher {
 			mu.Lock()
 			defer mu.Unlock()
 			f.agents = append(f.agents, r)
+			if f.agentErr != nil {
+				return nil, f.agentErr
+			}
 			return &schema.AgentCreateResponse{SessionID: "session-1"}, nil
 		},
 		Config: cfg,
@@ -435,5 +441,73 @@ func TestRunRefillsUntilTheWindowCloses(t *testing.T) {
 				t.Errorf("window left at %s, want %s restored", d.Config.Window, tc.cfg.Window)
 			}
 		})
+	}
+}
+
+// TestPassHoldsAgentLaunchesAfterCapacityFailure: once a session cannot get
+// a VM, the run stops trying, and builds still launch.
+func TestPassHoldsAgentLaunchesAfterCapacityFailure(t *testing.T) {
+	ctx := context.Background()
+	f := &fakeAPI{agentErr: status.Error(codes.ResourceExhausted, "allocating scratch: insert instance: all zones exhausted")}
+	// One launch at a time, so the failure lands before the next is scheduled.
+	d := newTestDispatcher(Config{Batch: 10, MaxAgent: 5, MaxRetries: 3, InflightTimeout: time.Hour, Workers: 1}, f)
+	var active []scheduler.Campaign
+	for _, name := range []string{"a1", "a2", "a3"} {
+		c := queued(name, scheduler.StageAgent)
+		d.Campaigns.Upsert(ctx, c)
+		active = append(active, c)
+	}
+	b := queued("b", scheduler.StageInfer)
+	d.Campaigns.Upsert(ctx, b)
+	active = append(active, b)
+	budget := scheduler.Budget{}
+	sum := d.Pass(ctx, active, &budget)
+	if len(f.agents) != 1 || sum.Held != 2 || sum.AgentDispatched != 0 {
+		t.Errorf("agent launches attempted %d, held %d, dispatched %d; want 1, 2, 0", len(f.agents), sum.Held, sum.AgentDispatched)
+	}
+	if len(f.creates) != 1 || sum.Dispatched != 1 {
+		t.Errorf("builds launched %d (dispatched %d); want 1", len(f.creates), sum.Dispatched)
+	}
+	before := len(f.agents)
+	sum = d.Pass(ctx, active, &budget)
+	if len(f.agents) != before || sum.Held != 3 {
+		t.Errorf("a later pass in the run attempted %d agent launches, held %d; want 0 and 3", len(f.agents)-before, sum.Held)
+	}
+	d.agentHeld = false // a new run
+	sum = d.Pass(ctx, active, &budget)
+	if len(f.agents) != before+1 {
+		t.Errorf("a new run attempted %d agent launches; want 1", len(f.agents)-before)
+	}
+}
+
+func TestPassHoldsBuildLaunchesAfterCapacityRejection(t *testing.T) {
+	ctx := context.Background()
+	f := &fakeAPI{}
+	d := newTestDispatcher(Config{Batch: 10, MaxRetries: 3, InflightTimeout: time.Hour, Workers: 1}, f)
+	// A build whose inference was turned away by Cloud Run comes back this pass.
+	rejected := inflight("r", scheduler.StageInfer, time.Minute)
+	d.Campaigns.Upsert(ctx, rejected)
+	d.Attempts.Upsert(ctx, schema.RebuildAttempt{Ecosystem: rejected.Ecosystem, Package: rejected.Package, Version: rejected.Version, Artifact: rejected.Artifact,
+		RunID: "run-0", Status: schema.RebuildStatusError,
+		Message: "getting strategy: fetching inference version: rpc error: code = ResourceExhausted desc = resource exhausted"})
+	active := []scheduler.Campaign{rejected}
+	for _, name := range []string{"b1", "b2"} {
+		c := queued(name, scheduler.StageInfer)
+		d.Campaigns.Upsert(ctx, c)
+		active = append(active, c)
+	}
+	budget := scheduler.Budget{}
+	sum := d.Pass(ctx, active, &budget)
+	got, _ := d.Campaigns.Get(ctx, rejected.Target())
+	if got.Stage != scheduler.StageInfer || got.State != scheduler.StateQueued || got.Retries != 1 {
+		t.Errorf("rejected campaign = stage %s state %s retries %d; want infer QUEUED 1", got.Stage, got.State, got.Retries)
+	}
+	if len(f.creates) != 0 || sum.Held != 3 || sum.Dispatched != 0 {
+		t.Errorf("builds launched %d, held %d, dispatched %d; want 0, 3, 0", len(f.creates), sum.Held, sum.Dispatched)
+	}
+	d.buildHeld = false // a new run
+	sum = d.Pass(ctx, active, &budget)
+	if len(f.creates) != 3 || sum.Held != 0 {
+		t.Errorf("a new run launched %d builds, held %d; want 3, 0", len(f.creates), sum.Held)
 	}
 }

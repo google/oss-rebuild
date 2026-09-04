@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -158,7 +160,9 @@ type Dispatcher struct {
 	Config    Config
 	Now       time.Time
 
-	mu sync.Mutex // guards state the pass's workers share
+	mu        sync.Mutex // guards state the pass's workers share
+	agentHeld bool       // an agent launch failed for capacity this run, and every later one would repeat its zone sweep
+	buildHeld bool       // an observed build was turned away for capacity this run. Rejected builds free their slots at once, so the caps alone would not slow launches.
 }
 
 func (d *Dispatcher) errw() io.Writer {
@@ -176,8 +180,8 @@ type Report struct {
 
 // String renders the one-line pass report.
 func (r Report) String() string {
-	return fmt.Sprintf("pass: queued infer=%d agent=%d | inflight builds=%d sessions=%d | observed %d | dispatched %d (%d agent; approved %d, windowed %d, passes %d) | spend %s build, %s session, %d tokens",
-		r.QueuedInfer, r.QueuedAgent, r.InflightBuilds, r.InflightSessions, r.Observed, r.Dispatched, r.AgentDispatched, r.Approved, r.Windowed, r.Passes,
+	return fmt.Sprintf("pass: queued infer=%d agent=%d | inflight builds=%d sessions=%d | observed %d | dispatched %d (%d agent; approved %d, windowed %d, held %d, passes %d) | spend %s build, %s session, %d tokens",
+		r.QueuedInfer, r.QueuedAgent, r.InflightBuilds, r.InflightSessions, r.Observed, r.Dispatched, r.AgentDispatched, r.Approved, r.Windowed, r.Held, r.Passes,
 		time.Duration(r.Spend.BuildSeconds)*time.Second, time.Duration(r.Spend.SessionSeconds)*time.Second, r.Spend.Tokens)
 }
 
@@ -215,6 +219,7 @@ func (d *Dispatcher) Run(ctx context.Context, list, inflight func(context.Contex
 	}
 	window := d.Config.Window
 	defer func() { d.Config.Window = window }()
+	d.agentHeld, d.buildHeld = false, false
 	end := time.Now().Add(window)
 	active, err := list(ctx)
 	if err != nil {
@@ -280,6 +285,7 @@ func accumulate(total, pass Report) Report {
 	pass.Approved += total.Approved
 	pass.Dispatched += total.Dispatched
 	pass.AgentDispatched += total.AgentDispatched
+	pass.Held += total.Held
 	pass.Passes += total.Passes
 	return pass
 }
@@ -296,6 +302,7 @@ type Summary struct {
 	Observed                              int
 	Approved, Dispatched, AgentDispatched int
 	Windowed                              int // approved launches left for the next pass when the window closed
+	Held                                  int // launches skipped after one was turned away for capacity
 	Passes                                int // passes behind these counts
 }
 
@@ -362,15 +369,33 @@ func (d *Dispatcher) Pass(ctx context.Context, active []scheduler.Campaign, budg
 	if d.Config.Window > 0 {
 		deadline = time.Now().Add(d.Config.Window)
 	}
+	// Agent launches get their own workers so a scratch VM allocation, which
+	// sweeps every zone before failing, does not hold up builds.
 	g, gctx = errgroup.WithContext(ctx)
 	g.SetLimit(max(d.Config.Workers, 1))
+	ga, gactx := errgroup.WithContext(ctx)
+	ga.SetLimit(max(d.Config.Workers, 1))
 launch:
 	for i, c := range selected {
 		if !deadline.IsZero() && time.Now().After(deadline) {
 			sum.Windowed = len(selected) - i
 			break
 		}
+		d.mu.Lock()
+		held := d.buildHeld
 		if c.Stage == scheduler.StageAgent {
+			held = d.agentHeld
+		}
+		if held {
+			sum.Held++
+		}
+		d.mu.Unlock()
+		if held {
+			continue
+		}
+		pool, lctx := g, gctx
+		if c.Stage == scheduler.StageAgent {
+			pool, lctx = ga, gactx
 		} else if pace != nil {
 			select {
 			case <-pace:
@@ -379,10 +404,27 @@ launch:
 				break launch
 			}
 		}
-		g.Go(func() error {
-			if err := d.launch(gctx, c); err != nil {
+		pool.Go(func() error {
+			if c.Stage == scheduler.StageAgent {
+				// Scheduled while an earlier launch was still sweeping zones.
+				d.mu.Lock()
+				held := d.agentHeld
+				if held {
+					sum.Held++
+				}
+				d.mu.Unlock()
+				if held {
+					return nil
+				}
+			}
+			if err := d.launch(lctx, c); err != nil {
 				if !errors.Is(err, errConflict) {
 					fmt.Fprintf(d.errw(), "dispatch %s (%s): %v\n", scheduler.TargetID(c.Target()), c.Stage, err)
+				}
+				if c.Stage == scheduler.StageAgent && status.Code(err) == codes.ResourceExhausted {
+					d.mu.Lock()
+					d.agentHeld = true
+					d.mu.Unlock()
 				}
 				return nil
 			}
@@ -395,6 +437,7 @@ launch:
 			return nil
 		})
 	}
+	ga.Wait()
 	g.Wait()
 	sum.InflightBuilds = inflightBuilds + sum.Dispatched - sum.AgentDispatched
 	sum.InflightSessions = inflightSessions + sum.AgentDispatched
@@ -454,7 +497,12 @@ func spent(cap time.Duration, seconds int64) bool {
 // charge it. A dispatch with no result past the in-flight timeout counts as
 // transient, since a lost job looks like a slow one.
 func (d *Dispatcher) observe(ctx context.Context, c scheduler.Campaign, budget *scheduler.Budget) (scheduler.Campaign, bool) {
-	outcome, spend, ok := d.outcome(ctx, c)
+	outcome, spend, capacity, ok := d.outcome(ctx, c)
+	if capacity && c.Stage != scheduler.StageAgent {
+		d.mu.Lock()
+		d.buildHeld = true
+		d.mu.Unlock()
+	}
 	if !ok {
 		if d.Config.InflightTimeout <= 0 || c.DispatchedAt.IsZero() || d.Now.Sub(c.DispatchedAt) <= d.Config.InflightTimeout {
 			return c, false
@@ -472,21 +520,22 @@ func (d *Dispatcher) observe(ctx context.Context, c scheduler.Campaign, budget *
 }
 
 // outcome reads the terminal result of the campaign's last dispatch and the
-// spend it incurred. The last return is false while there is none.
-func (d *Dispatcher) outcome(ctx context.Context, c scheduler.Campaign) (scheduler.Outcome, scheduler.Spend, bool) {
+// spend it incurred. capacity is set when a build attempt was turned away by
+// a service with no room. The last return is false while there is no result.
+func (d *Dispatcher) outcome(ctx context.Context, c scheduler.Campaign) (outcome scheduler.Outcome, spend scheduler.Spend, capacity, ok bool) {
 	if c.Stage == scheduler.StageAgent {
 		s, err := d.Sessions.Get(ctx, c.LastSession)
 		if err != nil || s.Status != schema.AgentSessionStatusCompleted {
-			return "", scheduler.Spend{}, false
+			return "", scheduler.Spend{}, false, false
 		}
 		spend := scheduler.Spend{SessionSeconds: spanSeconds(s.Created, s.Updated), Tokens: sessionTokens(s.Usage)}
-		return scheduler.ClassifySession(s.StopReason), spend, true
+		return scheduler.ClassifySession(s.StopReason), spend, false, true
 	}
 	a, err := d.Attempts.Get(ctx, db.AttemptKey{Target: c.Target(), RunID: c.LastRunID})
 	if err != nil || !scheduler.IsTerminal(a.Status) {
-		return "", scheduler.Spend{}, false
+		return "", scheduler.Spend{}, false, false
 	}
-	return scheduler.ClassifyRebuild(a.Status, a.Message), scheduler.Spend{BuildSeconds: attemptBuildSeconds(a)}, true
+	return scheduler.ClassifyRebuild(a.Status, a.Message), scheduler.Spend{BuildSeconds: attemptBuildSeconds(a)}, scheduler.IsCapacityRejection(a.Message), true
 }
 
 // attemptBuildSeconds is the builder time GCB reported for the attempt. An
