@@ -5,6 +5,7 @@ package scratchhostservice
 
 import (
 	"context"
+	"io"
 	"log"
 	"os"
 	"sync"
@@ -92,9 +93,10 @@ func (h *Host) liveGuest(now time.Time, scratchID string) (Guest, error) {
 
 // GuestDeps wires the guest lifecycle handlers.
 type GuestDeps struct {
-	Host   *Host
-	Config Config
-	Exec   execx.CommandExecutor // runs the guest, qemu-img and ip(8)
+	Host         *Host
+	Config       Config
+	Exec         execx.CommandExecutor // runs the guest, qemu-img and ip(8)
+	ChannelCache *ChannelCache         // guest exec paths and boot key
 }
 
 // GuestAdmit boots the session's guest. Idempotent on scratch id.
@@ -119,7 +121,7 @@ func GuestAdmit(ctx context.Context, req AdmitRequest, deps *GuestDeps) (*Guest,
 	guestCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 	proc, err := boot(ctx, guestCtx, deps)
 	if err != nil {
-		teardown(context.Background(), deps, proc, stop)
+		teardown(context.Background(), deps, proc, stop, g.IP)
 		return nil, api.AsStatus(codes.Internal, errors.Wrapf(err, "booting guest for %s", req.ScratchID))
 	}
 	h.guest, h.proc, h.stop = &g, proc, stop
@@ -138,7 +140,7 @@ func GuestDelete(ctx context.Context, req GuestRequest, deps *GuestDeps) (*act.N
 		return nil, api.AsStatus(codes.NotFound, errors.Wrapf(ErrNoGuest, "%s", req.ScratchID))
 	}
 	// Dead guests are torn down too: their disks and tap remain.
-	err := teardown(ctx, deps, h.proc, h.stop)
+	err := teardown(ctx, deps, h.proc, h.stop, h.guest.IP)
 	h.guest, h.proc, h.stop = nil, nil, nil
 	h.lastServed = time.Now().UTC()
 	if err != nil {
@@ -161,13 +163,20 @@ func Guests(_ context.Context, _ ListRequest, deps *GuestDeps) (*GuestList, erro
 	return out, nil
 }
 
-// GuestHealth reports whether the session's guest process is alive, else
-// Unavailable. The caller polls it as a readiness gate.
-//
-// TODO: Probe readiness inside the guest once there is a channel into it.
-func GuestHealth(_ context.Context, req GuestRequest, deps *GuestDeps) (*act.NoOutput, error) {
-	if _, err := deps.Host.liveGuest(time.Now().UTC(), req.ScratchID); err != nil {
+// GuestHealth runs a command in the session's guest, so it fails until the
+// guest's sshd is up. Failures are Unavailable, so the caller polls until
+// the guest is ready.
+func GuestHealth(ctx context.Context, req GuestRequest, deps *GuestDeps) (*act.NoOutput, error) {
+	g, err := deps.Host.liveGuest(time.Now().UTC(), req.ScratchID)
+	if err != nil {
 		return nil, api.AsStatus(codes.Unavailable, err)
+	}
+	code, err := deps.ChannelCache.run(ctx, g.IP, Command{Argv: []string{"true"}}, io.Discard)
+	if err != nil {
+		return nil, api.AsStatus(codes.Unavailable, errors.Wrapf(err, "guest %s exec probe", req.ScratchID))
+	}
+	if code != 0 {
+		return nil, api.AsStatus(codes.Unavailable, errors.Errorf("guest %s exec probe exited %d", req.ScratchID, code))
 	}
 	return &act.NoOutput{}, nil
 }
@@ -196,7 +205,7 @@ func boot(ctx, guestCtx context.Context, deps *GuestDeps) (execx.Handle, error) 
 		return nil, errors.Wrap(err, "guest tap")
 	}
 	// QEMU's stderr is the only record of a boot that never reached the console log.
-	argv := qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net)
+	argv := qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net, deps.ChannelCache.GuestCredential())
 	proc, err := deps.Exec.Start(guestCtx, execx.CommandOptions{Output: os.Stderr, StopGrace: stopGrace}, argv[0], argv[1:]...)
 	if err != nil {
 		return nil, errors.Wrap(err, "starting guest")
@@ -204,9 +213,10 @@ func boot(ctx, guestCtx context.Context, deps *GuestDeps) (execx.Handle, error) 
 	return proc, nil
 }
 
-// teardown stops the guest and removes its tap and disks. Every step runs
-// even if an earlier one fails. proc is nil when the guest never started.
-func teardown(ctx context.Context, deps *GuestDeps, proc execx.Handle, stop context.CancelFunc) error {
+// teardown closes the guest's channel, stops it, and removes its tap and
+// disks. Every step runs even if an earlier one fails. proc is nil when
+// the guest never started.
+func teardown(ctx context.Context, deps *GuestDeps, proc execx.Handle, stop context.CancelFunc, ip string) error {
 	var firstErr error
 	fail := func(err error, what string) {
 		log.Printf("teardown: %s: %v", what, err)
@@ -214,6 +224,7 @@ func teardown(ctx context.Context, deps *GuestDeps, proc execx.Handle, stop cont
 			firstErr = errors.Wrap(err, what)
 		}
 	}
+	deps.ChannelCache.close(ip)
 	stop()
 	if proc != nil {
 		<-proc.Done()
