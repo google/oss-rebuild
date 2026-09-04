@@ -145,7 +145,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 	var iterNum int
 	config := &genai.GenerateContentConfig{
 		Temperature:     genai.Ptr[float32](.1),
-		MaxOutputTokens: 16000,
+		MaxOutputTokens: 65536, // max supported
 		ToolConfig: &genai.ToolConfig{
 			FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: "AUTO"},
 		},
