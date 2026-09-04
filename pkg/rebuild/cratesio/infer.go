@@ -278,7 +278,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream Cargo.toml")
 	}
-	minVer, maxVer := detectRustVersionBounds(string(cargoTomlText))
+	// Cargo.toml.orig is the manifest as the author wrote it. Old crates have none.
+	origText, _ := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.toml.orig")
+	minVer, maxVer := detectRustVersionBounds(string(cargoTomlText), string(origText))
 	if minVer != "" && semver.Cmp(rustVersion, minVer) < 0 {
 		rustVersion = minVer
 	}
