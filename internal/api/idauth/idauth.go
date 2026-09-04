@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package idauth provides HTTP middleware that requires a Google-signed
-// ID token on inbound requests. Used on the scratch worker to
-// gate /exec/start and /stat to the broker's service account.
+// ID token on inbound requests.
 package idauth
 
 import (
