@@ -12,6 +12,7 @@ import (
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/agent"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -27,20 +28,21 @@ import (
 )
 
 var (
-	project         = flag.String("project", "", "GCP Project ID for resource usage")
-	location        = flag.String("location", "global", "GCP location for resource usage")
-	model           = flag.String("model", "", "Gemini model id for the session, if overriding defaults")
-	sessionID       = flag.String("session-id", "", "Session ID for this agent run")
-	agentAPIURL     = flag.String("agent-api-url", "", "URL of the agent API service")
-	gitCacheURL     = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
-	sessionsBucket  = flag.String("sessions-bucket", "", "GCS bucket for session data")
-	metadataBucket  = flag.String("metadata-bucket", "", "GCS bucket for build metadata")
-	logsBucket      = flag.String("logs-bucket", "", "GCS bucket for build logs")
-	maxIterations   = flag.Int("max-iterations", 20, "Maximum number of iterations")
-	targetEcosystem = flag.String("target-ecosystem", "", "Target package ecosystem")
-	targetPackage   = flag.String("target-package", "", "Target package name")
-	targetVersion   = flag.String("target-version", "", "Target package version")
-	targetArtifact  = flag.String("target-artifact", "", "Target package artifact")
+	project           = flag.String("project", "", "GCP Project ID for resource usage")
+	location          = flag.String("location", "global", "GCP location for resource usage")
+	model             = flag.String("model", "", "Gemini model id for the session, if overriding defaults")
+	sessionID         = flag.String("session-id", "", "Session ID for this agent run")
+	agentAPIURL       = flag.String("agent-api-url", "", "URL of the agent API service")
+	gitCacheURL       = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
+	cratesRegistryURL = flag.String("crates-registry-service-url", "", "if provided, the crates registry service that resolves crate index commits for inference")
+	sessionsBucket    = flag.String("sessions-bucket", "", "GCS bucket for session data")
+	metadataBucket    = flag.String("metadata-bucket", "", "GCS bucket for build metadata")
+	logsBucket        = flag.String("logs-bucket", "", "GCS bucket for build logs")
+	maxIterations     = flag.Int("max-iterations", 20, "Maximum number of iterations")
+	targetEcosystem   = flag.String("target-ecosystem", "", "Target package ecosystem")
+	targetPackage     = flag.String("target-package", "", "Target package name")
+	targetVersion     = flag.String("target-version", "", "Target package version")
+	targetArtifact    = flag.String("target-artifact", "", "Target package artifact")
 	// Scratch execution mode flags. The scratch VM is allocated by the
 	// session creator. The agent only receives its handle.
 	executionMode  = flag.String("execution-mode", string(schema.AgentExecutionModeGCB), "Where iteration builds execute: gcb or scratch")
@@ -146,19 +148,32 @@ func main() {
 		}
 		gitCache = &gitcache.Client{IDClient: idc, APIClient: apic, URL: u}
 	}
+	var cratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	if *cratesRegistryURL != "" {
+		u, err := url.Parse(*cratesRegistryURL)
+		if err != nil {
+			log.Fatal("Failed to parse crates registry URL: ", err)
+		}
+		c, err := idtoken.NewClient(ctx, *cratesRegistryURL)
+		if err != nil {
+			log.Fatal("Failed to create crates registry id client: ", err)
+		}
+		cratesRegistryStub = api.Stub[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](c, u.JoinPath("resolve"))
+	}
 	target := rebuild.Target{Ecosystem: rebuild.Ecosystem(*targetEcosystem), Package: *targetPackage, Version: *targetVersion, Artifact: *targetArtifact}
 	deps := agent.RunSessionDeps{
-		Client:         aiClient,
-		IterationStub:  iterationStub,
-		CompleteStub:   completeStub,
-		GCSClient:      gcsClient,
-		SessionsBucket: *sessionsBucket,
-		MetadataBucket: *metadataBucket,
-		LogsBucket:     *logsBucket,
-		RegistryClient: regclient,
-		Retrier:        agent.NewRetrier(),
-		Model:          *model,
-		GitCache:       gitCache,
+		Client:             aiClient,
+		IterationStub:      iterationStub,
+		CompleteStub:       completeStub,
+		GCSClient:          gcsClient,
+		SessionsBucket:     *sessionsBucket,
+		MetadataBucket:     *metadataBucket,
+		LogsBucket:         *logsBucket,
+		RegistryClient:     regclient,
+		Retrier:            agent.NewRetrier(),
+		Model:              *model,
+		GitCache:           gitCache,
+		CratesRegistryStub: cratesRegistryStub,
 	}
 	if mode == schema.AgentExecutionModeScratch {
 		stubs := scratch.Stubs{

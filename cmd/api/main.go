@@ -64,6 +64,7 @@ var (
 	agentJobName          = flag.String("agent-job-name", "", "Name of the pre-created Cloud Run Job for AI agent")
 	agentAPIURL           = flag.String("agent-api-url", "", "URL of the agent API service")
 	gitCacheURL           = flag.String("git-cache-url", "", "URL of the git-cache service, forwarded to agent jobs so inference routes clones through it")
+	cratesRegistryURL     = flag.String("crates-registry-service-url", "", "URL of the crates registry service, forwarded to agent jobs so inference can resolve crate index commits")
 	agentSessionsBucket   = flag.String("agent-sessions-bucket", "", "GCS bucket for agent session data")
 	agentMetadataBucket   = flag.String("agent-metadata-bucket", "", "GCS bucket for agent build metadata")
 	agentLogsBucket       = flag.String("agent-logs-bucket", "", "GCS bucket for agent build logs")
@@ -329,6 +330,7 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 	d.AgentJobName = *agentJobName
 	d.AgentAPIURL = *agentAPIURL
 	d.GitCacheURL = *gitCacheURL
+	d.CratesRegistryURL = *cratesRegistryURL
 	d.AgentTimeoutSeconds = *agentTimeoutSeconds
 	d.SessionsBucket = *agentSessionsBucket
 	d.MetadataBucket = *agentMetadataBucket
