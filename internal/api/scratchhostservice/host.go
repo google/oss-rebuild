@@ -35,9 +35,10 @@ type Config struct {
 	QEMUImgBin string // resolved through PATH
 }
 
-// Host is the broker's state: its one guest slot. Lifecycle handlers hold
-// the mutex across their steps. The guest's process is the authority on the
-// slot, so a guest that dies on its own frees it.
+// Host is the broker's state: its one guest slot and every session's exec
+// ledger. Lifecycle handlers hold the mutex across their steps. The guest's
+// process is the authority on the slot, so a guest that dies on its own
+// frees it.
 type Host struct {
 	mu         sync.Mutex
 	closed     bool
@@ -45,10 +46,15 @@ type Host struct {
 	guest      *Guest             // nil when the slot is free
 	proc       execx.Handle       // the guest's QEMU process
 	stop       context.CancelFunc // the only way to end the guest
+
+	ledgerMu sync.Mutex         // op reads never wait on a boot
+	ledgers  map[string]*Ledger // by scratch id, until deletion
 }
 
 // NewHost returns an empty Host that reads as last served at start.
-func NewHost(start time.Time) *Host { return &Host{lastServed: start.UTC()} }
+func NewHost(start time.Time) *Host {
+	return &Host{lastServed: start.UTC(), ledgers: map[string]*Ledger{}}
+}
 
 // Close refuses further admission and stops the guest, giving QEMU its
 // TERM. The tap and disks stay, and the next boot clears or reuses them.
@@ -91,6 +97,53 @@ func (h *Host) liveGuest(now time.Time, scratchID string) (Guest, error) {
 	return Guest{}, errors.Wrapf(ErrNoGuest, "%s", scratchID)
 }
 
+// ledger returns the session's exec ledger.
+func (h *Host) ledger(scratchID string) (*Ledger, bool) {
+	h.ledgerMu.Lock()
+	defer h.ledgerMu.Unlock()
+	l, ok := h.ledgers[scratchID]
+	return l, ok
+}
+
+// ledgerFor returns the ledger holding opID. Op ids are unique across
+// sessions.
+func (h *Host) ledgerFor(opID string) (*Ledger, bool) {
+	h.ledgerMu.Lock()
+	defer h.ledgerMu.Unlock()
+	for _, l := range h.ledgers {
+		if l.has(opID) {
+			return l, true
+		}
+	}
+	return nil, false
+}
+
+// openLedger replaces the session's ledger with an empty one at dir.
+func (h *Host) openLedger(scratchID, dir string, maxOutput int64) error {
+	h.discardLedger(scratchID)
+	l, err := NewLedger(dir, maxOutput)
+	if err != nil {
+		return err
+	}
+	h.ledgerMu.Lock()
+	defer h.ledgerMu.Unlock()
+	h.ledgers[scratchID] = l
+	return nil
+}
+
+// discardLedger drops the session's ledger and its files, reporting
+// whether there was one.
+func (h *Host) discardLedger(scratchID string) bool {
+	h.ledgerMu.Lock()
+	l, ok := h.ledgers[scratchID]
+	delete(h.ledgers, scratchID)
+	h.ledgerMu.Unlock()
+	if ok {
+		l.Discard()
+	}
+	return ok
+}
+
 // GuestDeps wires the guest lifecycle handlers.
 type GuestDeps struct {
 	Host         *Host
@@ -99,9 +152,9 @@ type GuestDeps struct {
 	ChannelCache *ChannelCache         // guest exec paths and boot key
 }
 
-// GuestAdmit boots the session's guest. Idempotent on scratch id.
-// ResourceExhausted means the host is busy and Unavailable that it is
-// closing. Either way the caller tries another host.
+// GuestAdmit boots the session's guest and opens its exec ledger.
+// Idempotent on scratch id. ResourceExhausted means the host is busy and
+// Unavailable that it is closing. Either way the caller tries another host.
 func GuestAdmit(ctx context.Context, req AdmitRequest, deps *GuestDeps) (*Guest, error) {
 	h := deps.Host
 	h.mu.Lock()
@@ -124,25 +177,40 @@ func GuestAdmit(ctx context.Context, req AdmitRequest, deps *GuestDeps) (*Guest,
 		teardown(context.Background(), deps, proc, stop, g.IP)
 		return nil, api.AsStatus(codes.Internal, errors.Wrapf(err, "booting guest for %s", req.ScratchID))
 	}
+	if err := h.openLedger(req.ScratchID, deps.Config.Layout.execDir(req.ScratchID), deps.Config.Guest.MaxOutputBytes); err != nil {
+		teardown(context.Background(), deps, proc, stop, g.IP)
+		return nil, api.AsStatus(codes.Internal, errors.Wrapf(err, "exec ledger for %s", req.ScratchID))
+	}
 	h.guest, h.proc, h.stop = &g, proc, stop
 	h.lastServed = g.Since
 	out := g
 	return &out, nil
 }
 
-// GuestDelete tears down the session's guest. NotFound when there is none,
+// GuestDelete tears down the session's guest and exec records, which the
+// caller must sync first. NotFound when there is nothing to tear down,
 // which callers treat as success.
 func GuestDelete(ctx context.Context, req GuestRequest, deps *GuestDeps) (*act.NoOutput, error) {
 	h := deps.Host
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.guest == nil || h.guest.ScratchID != req.ScratchID {
+	var (
+		found bool
+		err   error
+	)
+	// Dead guests are torn down too: their disks and tap remain.
+	if h.guest != nil && h.guest.ScratchID == req.ScratchID {
+		found = true
+		err = teardown(ctx, deps, h.proc, h.stop, h.guest.IP)
+		h.guest, h.proc, h.stop = nil, nil, nil
+		h.lastServed = time.Now().UTC()
+	}
+	if h.discardLedger(req.ScratchID) {
+		found = true
+	}
+	if !found {
 		return nil, api.AsStatus(codes.NotFound, errors.Wrapf(ErrNoGuest, "%s", req.ScratchID))
 	}
-	// Dead guests are torn down too: their disks and tap remain.
-	err := teardown(ctx, deps, h.proc, h.stop, h.guest.IP)
-	h.guest, h.proc, h.stop = nil, nil, nil
-	h.lastServed = time.Now().UTC()
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrapf(err, "tearing down guest for %s", req.ScratchID))
 	}

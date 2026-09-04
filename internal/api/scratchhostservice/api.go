@@ -12,6 +12,12 @@ const (
 	RouteList        = "/guests"
 	RouteGuestHealth = "/guest/healthz"
 	RouteHealthz     = "/healthz"
+
+	// Exec routes are unscoped: an op id names its session.
+	RouteExecStart  = "/exec/start"
+	RouteExecStatus = "/exec/op/status"
+	RouteExecOutput = "/exec/op/output"
+	RouteExecKill   = "/exec/op/kill"
 )
 
 // AdmitRequest boots a guest for a session. Idempotent on ScratchID.

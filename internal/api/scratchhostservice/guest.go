@@ -58,15 +58,18 @@ func GuestNetFor(subnet netip.Prefix) (GuestNet, error) {
 
 // GuestConfig is the guest shape.
 type GuestConfig struct {
-	VCPU  int
-	MemMB int
-	DNS   string // resolver written into the guest
-	MTU   int    // NOTE: above the host NIC's, big packets blackhole
+	VCPU           int
+	MemMB          int
+	DNS            string // resolver written into the guest
+	MTU            int    // NOTE: above the host NIC's, big packets blackhole
+	Workdir        string // default cwd for execs
+	MaxOutputBytes int64  // kills execs past it. Zero: no cap
 }
 
 // Layout locates the golden images and the guest's state on the host.
 type Layout struct {
 	GuestDir string // overlays and console log
+	ExecsDir string // per-session exec ledgers
 	Kernel   string
 	Initrd   string
 	Rootfs   string // read-only image
@@ -76,6 +79,8 @@ type Layout struct {
 func (l Layout) overlay() string { return path.Join(l.GuestDir, "root.qcow2") }
 func (l Layout) scratch() string { return path.Join(l.GuestDir, "scratch.qcow2") }
 func (l Layout) console() string { return path.Join(l.GuestDir, "console.log") }
+
+func (l Layout) execDir(scratchID string) string { return path.Join(l.ExecsDir, scratchID) }
 
 // kernelCmdline builds the guest's kernel command line. Per-guest settings
 // travel there because the shared rootfs is read-only. The ssh key in it is

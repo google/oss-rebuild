@@ -73,12 +73,13 @@ func testDeps(t *testing.T) (*GuestDeps, *execx.MockCommandExecutor) {
 		Config: Config{
 			Layout: Layout{
 				GuestDir: filepath.Join(root, "guest"),
+				ExecsDir: filepath.Join(root, "execs"),
 				Kernel:   "/golden/vmlinuz",
 				Initrd:   "/golden/initrd.img",
 				Rootfs:   "/golden/rootfs.raw",
 				Scratch:  "/golden/scratch.raw",
 			},
-			Guest:      GuestConfig{VCPU: 4, MemMB: 8192, DNS: "169.254.169.254", MTU: 1460},
+			Guest:      GuestConfig{VCPU: 4, MemMB: 8192, DNS: "169.254.169.254", MTU: 1460, Workdir: "/home/builder"},
 			Net:        guestNet,
 			Bridge:     "mvmbr0",
 			QEMUBin:    "qemu-system-x86_64",
@@ -324,9 +325,9 @@ func TestGuestAdmit_ReclaimsADeadGuestsSlot(t *testing.T) {
 	if diff := cmp.Diff([]Guest{b}, list.Guests); diff != "" {
 		t.Errorf("guests mismatch (-want +got):\n%s", diff)
 	}
-	// Deleting the dead session is NotFound and must not touch the live one.
-	if _, err := GuestDelete(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); status.Code(err) != codes.NotFound {
-		t.Errorf("Delete(scratch-a) after its guest died = %v; want NotFound", err)
+	// Deleting the dead session discards only its ledger.
+	if _, err := GuestDelete(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); err != nil {
+		t.Errorf("Delete(scratch-a) after its guest died = %v; want its records reclaimed", err)
 	}
 	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-b"}, deps); err != nil {
 		t.Errorf("GuestHealth(scratch-b) = %v; want the live guest untouched", err)
