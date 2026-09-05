@@ -436,6 +436,7 @@ var hatchlingPat = re.MustCompile(`^Generator: hatchling ([\d\.]+)`)
 // poetry-core is a subset of poetry. We can treat them as different builders.
 var poetryPat = re.MustCompile(`^Generator: poetry ([\d\.]+)`)
 var poetryCorePat = re.MustCompile(`^Generator: poetry-core ([\d\.]+)`)
+var pdmBackendPat = re.MustCompile(`^Generator: pdm-backend \(([\d\.]+)\)`)
 
 // getGenerator returns the pins identifying the wheel's build backend from its
 // Generator line. bdist_wheel names the wheel packaging tool, not setuptools,
@@ -464,6 +465,8 @@ func getGenerator(wheel, metadata []byte) (reqs []string, err error) {
 				return []string{"poetry==" + string(matches[1])}, nil
 			} else if matches := poetryCorePat.FindSubmatch(line); matches != nil {
 				return []string{"poetry-core==" + string(matches[1])}, nil
+			} else if matches := pdmBackendPat.FindSubmatch(line); matches != nil {
+				return []string{"pdm-backend==" + string(matches[1])}, nil
 			} else {
 				return nil, errors.Errorf("unsupported generator: %s", value)
 			}

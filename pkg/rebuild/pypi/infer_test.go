@@ -68,6 +68,7 @@ func TestInferRequirements(t *testing.T) {
 		{"bdist_wheel with modern metadata", bdist, modern, []string{"wheel==0.40.0", "setuptools<=67.7.2"}},
 		{"setuptools generator pins exactly", "Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\n", modern, []string{"setuptools==70.0.0"}},
 		{"flit generator takes no setuptools", "Wheel-Version: 1.0\nGenerator: flit 3.9.0\n", "Metadata-Version: 2.1\nName: x\n", []string{"flit_core==3.9.0", "flit==3.9.0"}},
+		{"pdm-backend generator pins pdm-backend", "Wheel-Version: 1.0\nGenerator: pdm-backend (2.4.4)\n", modern, []string{"pdm-backend==2.4.4"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
