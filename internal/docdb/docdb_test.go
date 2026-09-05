@@ -389,3 +389,32 @@ func TestStoreDocSeqRollsBackOnFailure(t *testing.T) {
 		t.Errorf("StoreDocSeq = (%d, %v), want 2 rows", n, err)
 	}
 }
+
+func TestCacheReplaysSegmentsInOrder(t *testing.T) {
+	ctx := context.Background()
+	dest := testDest(t)
+	up := Upstream{FS: dest, Object: "probe.db.gz", Deltas: "deltas", Defs: []TableDef{probeTable}, Schema: 1, Watermark: probeWatermark}
+	now := dt(0)
+	buildBase(t, dest, up.Object, []json.RawMessage{probe("k1", "v0", now)}, now, 1)
+	// Each segment rewrites k1, so its final value shows the apply order.
+	const n = 3 * fetchParallelism
+	for i := 1; i <= n; i++ {
+		at := now.Add(time.Duration(i) * time.Minute)
+		must(WriteSegment(dest, up.Deltas, at, up.Defs, map[string][]json.RawMessage{
+			probeTable.Name: {probe("k1", fmt.Sprintf("v%d", i), at)},
+		}))
+	}
+	c := must(OpenCache(ctx, up, time.Hour))
+	defer c.Close()
+	var got string
+	must1(c.Query(func(db *sqlite3.Conn) error {
+		got = queryText(t, db, "SELECT json_extract(raw, '$.Message') FROM gen_probe WHERE key = 'k1'")
+		return nil
+	}))
+	if want := fmt.Sprintf("v%d", n); got != want {
+		t.Errorf("k1 after replay = %q, want %q", got, want)
+	}
+	if !c.Freshness().Equal(now.Add(n * time.Minute)) {
+		t.Errorf("freshness = %v, want the last segment", c.Freshness())
+	}
+}

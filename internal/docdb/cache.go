@@ -15,6 +15,7 @@ import (
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
+	"golang.org/x/sync/errgroup"
 )
 
 // cacheSlack starts segment replay this far before the base watermark.
@@ -22,6 +23,9 @@ import (
 // base built in between misses it and only a segment named before the
 // watermark carries it.
 const cacheSlack = 2 * time.Minute
+
+// fetchParallelism bounds concurrent segment reads during a sync.
+const fetchParallelism = 16
 
 // Upstream names the published database a Cache follows: the filesystem
 // holding it, its gzip base object, the prefix its delta segments land
@@ -195,6 +199,12 @@ func (c *Cache) hydrate(tag string) (err error) {
 	if err != nil {
 		return errors.Wrap(err, "opening database")
 	}
+	// The copy is a temp file rebuilt from the base on any fault, so skip
+	// fsync, which would dominate segment replay.
+	if err := db.Exec("PRAGMA synchronous=OFF; PRAGMA journal_mode=MEMORY"); err != nil {
+		db.Close()
+		return errors.Wrap(err, "configuring local copy")
+	}
 	if err := sqlitex.CheckVersion(db, c.up.Schema); err != nil {
 		db.Close()
 		c.mu.Lock()
@@ -249,17 +259,27 @@ func fetchNewSegments(src billy.Filesystem, prefix, after string, watermark time
 	if err != nil {
 		return nil, errors.Wrap(err, "listing segments")
 	}
-	var segs []segment
-	for _, name := range names {
-		if name == after {
-			// The listing is inclusive of the resume point.
-			continue
-		}
-		recs, err := fetchSegment(src, name)
-		if err != nil {
-			return nil, errors.Wrapf(err, "fetching %s", name)
-		}
-		segs = append(segs, segment{name: name, recs: recs})
+	if len(names) > 0 && names[0] == after {
+		// The listing is inclusive of the resume point.
+		names = names[1:]
+	}
+	// A segment costs one read's latency, not its size, so fetch in parallel
+	// and apply in order.
+	segs := make([]segment, len(names))
+	g := new(errgroup.Group)
+	g.SetLimit(fetchParallelism)
+	for i, name := range names {
+		g.Go(func() error {
+			recs, err := fetchSegment(src, name)
+			if err != nil {
+				return errors.Wrapf(err, "fetching %s", name)
+			}
+			segs[i] = segment{name: name, recs: recs}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 	return segs, nil
 }
