@@ -13,6 +13,8 @@ import (
 // Callers distinguish build failures from infrastructure failures with
 // errors.As.
 type ExitError struct {
+	// Code is the exit status, when known. Zero means the executor could
+	// not observe it (Cloud Build's run sentinel replaces the container's).
 	Code int
 	// Phase is the build phase that exited: a DockerRunPlan phase name
 	// ("setup", "source", "deps", "build") or a docker build stage
@@ -24,7 +26,10 @@ type ExitError struct {
 }
 
 func (e *ExitError) Error() string {
-	msg := fmt.Sprintf("build failed in %s phase with exit code %d", e.Phase, e.Code)
+	msg := fmt.Sprintf("build failed in %s phase", e.Phase)
+	if e.Code != 0 {
+		msg += fmt.Sprintf(" with exit code %d", e.Code)
+	}
 	if e.Command != "" {
 		msg += fmt.Sprintf("; the failing command was `%s`", e.Command)
 	}
