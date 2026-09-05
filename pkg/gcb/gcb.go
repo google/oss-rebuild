@@ -13,6 +13,7 @@ import (
 	"log"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -240,22 +241,26 @@ func DoBuild(ctx context.Context, client Client, project string, build *cloudbui
 	return bm.Build, nil
 }
 
+// ToError reports a finished build's failure.
 func ToError(build *cloudbuild.Build) error {
+	var detail string
+	if build.FailureInfo != nil {
+		detail = strings.TrimSpace(build.FailureInfo.Type + ": " + build.FailureInfo.Detail)
+	}
 	switch build.Status {
 	case "SUCCESS":
 		return nil
 	case "FAILURE":
-		return errors.Errorf("GCB build failed: %s", build.StatusDetail)
+		return errors.Errorf("GCB build failed: %s", detail)
 	case "TIMEOUT":
-		return errors.Errorf("GCB build timeout: %s", build.StatusDetail)
+		return errors.Errorf("GCB build timeout: %s", detail)
 	case "CANCELLED":
-		return errors.Errorf("GCB build cancelled: %s", build.StatusDetail)
+		return errors.Errorf("GCB build cancelled: %s", detail)
 	case "INTERNAL_ERROR", "EXPIRED":
-		return errors.Errorf("GCB build internal error: %s", build.StatusDetail)
+		return errors.Errorf("GCB build internal error: %s", detail)
 	default:
 		return errors.Errorf("Unexpected build status: %s", build.Status)
 	}
-
 }
 
 func MergedLogFile(buildID string) string {
