@@ -15,6 +15,7 @@ import (
 type PureWheelBuild struct {
 	rebuild.Location
 	PythonVersion string    `json:"python_version" yaml:"python_version"`
+	PythonTag     string    `json:"python_tag,omitempty" yaml:"python_tag,omitempty"`
 	Requirements  []string  `json:"requirements" yaml:"requirements"`
 	RegistryTime  time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
 }
@@ -46,6 +47,7 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 				"dir":        b.Location.Dir,
 				"locator":    "/deps/bin/",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
+				"pythonTag":  b.PythonTag,
 			},
 		}},
 		OutputDir: func() string {
@@ -198,6 +200,9 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				{{- if .With.pythonTag -}}
+				printf '[bdist_wheel]\npython-tag = {{.With.pythonTag}}\n' >~/.pydistutils.cfg
+				{{end -}}
 				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
 		}},
 	},

@@ -277,9 +277,9 @@ func requirementName(req string) string {
 	return fields[0]
 }
 
-// hasRequirement reports whether reqs name the package under any specifier.
-func hasRequirement(reqs []string, name string) bool {
-	return slices.ContainsFunc(reqs, func(r string) bool { return requirementName(r) == name })
+// hasRequirement reports whether reqs name any of the packages under any specifier.
+func hasRequirement(reqs []string, names ...string) bool {
+	return slices.ContainsFunc(reqs, func(r string) bool { return slices.Contains(names, requirementName(r)) })
 }
 
 // mergeRequirements appends the buildReqs entries whose package does not
@@ -406,6 +406,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			PythonVersion: inferPythonVersion(reqs, a.UploadTime),
 			Requirements:  reqs,
 			RegistryTime:  a.UploadTime,
+			PythonTag:     pythonTag(a.Filename, reqs),
 		}, nil
 	}
 }
@@ -437,6 +438,17 @@ func inferPythonVersion(reqs []string, registryTime time.Time) string {
 				return "3.11"
 			}
 		}
+	}
+	return ""
+}
+
+// py2WheelPat captures a wheel's python tag when it names a non-py3 language.
+var py2WheelPat = re.MustCompile(`-(py2(?:\.py3)?)-[^-]+-[^-]+\.whl$`)
+
+// pythonTag returns the tag setuptools has to be told to give the wheel, if any.
+func pythonTag(filename string, reqs []string) string {
+	if m := py2WheelPat.FindStringSubmatch(filename); m != nil && hasRequirement(reqs, "setuptools", "wheel") {
+		return m[1]
 	}
 	return ""
 }
