@@ -4,6 +4,7 @@
 package gcb
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -292,8 +293,19 @@ func (e *Executor) executeBuild(ctx context.Context, handle *gcbHandle, cloudBui
 			buildErr = errors.Wrap(err, "uploading build info")
 		}
 		if buildInfo.BuildID != "" {
-			if err := e.copyBuildLogs(ctx, opts.Resources.AssetStore, rebuild.DebugLogsAsset.For(t), buildInfo.BuildID); err != nil {
+			trace, err := e.copyBuildLogs(ctx, opts.Resources.AssetStore, rebuild.DebugLogsAsset.For(t), buildInfo.BuildID)
+			if err != nil {
 				buildErr = errors.Wrap(err, "uploading build logs")
+			} else if runFailed || stepFailed(buildResult, 0) {
+				ee := &build.ExitError{Phase: "image build", Code: int(stepExitCode(buildResult, 0)), Command: trace}
+				switch {
+				case runFailed:
+					ee.Phase, ee.Code = "container run", 0
+				case !plan.runSentinel():
+					// A failed docker run fails the main step just as a failed image build does.
+					ee.Phase = "image build or container run"
+				}
+				buildErr = ee
 			}
 		}
 	}
@@ -363,6 +375,12 @@ func stepExitCode(b *cloudbuild.Build, i int) int64 {
 		return 0
 	}
 	return b.Steps[i].ExitCode
+}
+
+// stepFailed reports whether step i itself failed, which the build status
+// cannot tell apart from a later step's failure.
+func stepFailed(b *cloudbuild.Build, i int) bool {
+	return b != nil && i < len(b.Steps) && b.Steps[i] != nil && b.Steps[i].Status == "FAILURE"
 }
 
 // doBuild executes a build on Cloud Build, waits for completion and returns the resulting Build resource.
@@ -446,24 +464,69 @@ func (e *Executor) uploadContent(ctx context.Context, store rebuild.AssetStore, 
 	return errors.Wrap(writer.Close(), "committing asset")
 }
 
-// copyBuildLogs copies build logs using the logs client to the asset store.
-// If the asset type is not supported by the store, the copy is skipped.
-func (e *Executor) copyBuildLogs(ctx context.Context, store rebuild.AssetStore, asset rebuild.Asset, buildID string) error {
+// copyBuildLogs copies the merged build log to the asset store, skipping
+// stores without the asset type, and returns the main step's last traced
+// command read off the same stream.
+func (e *Executor) copyBuildLogs(ctx context.Context, store rebuild.AssetStore, asset rebuild.Asset, buildID string) (trace string, err error) {
 	writer, err := store.Writer(ctx, asset)
 	if err != nil {
 		if errors.Is(err, rebuild.ErrAssetTypeNotSupported) {
-			return nil
+			return "", nil
 		}
-		return errors.Wrap(err, "creating asset writer")
+		return "", errors.Wrap(err, "creating asset writer")
 	}
 	defer writer.Close()
 	reader, err := e.logsClient.ReadBuildLogs(ctx, buildID)
 	if err != nil {
-		return errors.Wrap(err, "reading build logs")
+		return "", errors.Wrap(err, "reading build logs")
 	}
 	defer reader.Close()
-	if _, err := io.Copy(writer, reader); err != nil {
-		return errors.Wrap(err, "copying to asset")
+	scan := &traceScanner{step: 0}
+	// NOTE: The tee hides gcsx.ObjectReader.WriteTo, so the log streams
+	// through this process instead of being copied server-side.
+	if _, err := io.Copy(writer, io.TeeReader(reader, scan)); err != nil {
+		return "", errors.Wrap(err, "copying to asset")
 	}
-	return errors.Wrap(writer.Close(), "committing asset")
+	return scan.last, errors.Wrap(writer.Close(), "committing asset")
+}
+
+// traceScanner watches a merged build log for one step's set -x traces, the
+// wrapper's own and the RUN layers' behind buildkit's prefix, and keeps the
+// last command echoed. It holds at most one partial line, capped so a
+// pathological line cannot grow it.
+type traceScanner struct {
+	step    int
+	last    string
+	partial []byte
+}
+
+const traceLineCap = 64 << 10
+
+// buildkitLogPat matches the vertex and elapsed-seconds prefix buildkit's
+// plain progress puts on a RUN layer's output lines ("#9 0.327 + apk add").
+var buildkitLogPat = regexp.MustCompile(`^#\d+ \d+(?:\.\d+)? `)
+
+func (t *traceScanner) Write(p []byte) (int, error) {
+	n := len(p)
+	for len(p) > 0 {
+		nl := bytes.IndexByte(p, '\n')
+		if nl < 0 {
+			if len(t.partial) < traceLineCap {
+				t.partial = append(t.partial, p[:min(len(p), traceLineCap-len(t.partial))]...)
+			}
+			break
+		}
+		t.partial = append(t.partial, p[:nl]...)
+		if step, text, ok := gcb.StepLine(string(t.partial)); ok && step == t.step {
+			if m := buildkitLogPat.FindStringIndex(text); m != nil {
+				text = text[m[1]:]
+			}
+			if cmd := build.TracedCommand(text); cmd != "" {
+				t.last = cmd
+			}
+		}
+		t.partial = t.partial[:0]
+		p = p[nl+1:]
+	}
+	return n, nil
 }

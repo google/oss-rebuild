@@ -489,100 +489,115 @@ func must[T any](t T, err error) T {
 
 func TestGCBExecutorFailedBuild(t *testing.T) {
 	ctx := context.Background()
-	// Create mock client
-	mockClient := &gcbtest.MockClient{}
-	// Setup mock responses
-	buildResult := &cloudbuild.Build{
-		Id:         "test-build-gcb-123",
-		Status:     "FAILURE",
-		StartTime:  time.Now().Format(time.RFC3339),
-		FinishTime: time.Now().Format(time.RFC3339),
-	}
-	// Create operation metadata
-	createMetadataBytes, _ := json.Marshal(cloudbuild.BuildOperationMetadata{})
-	operation := &cloudbuild.Operation{
-		Name:     "projects/test-project/operations/test-build-123",
-		Metadata: googleapi.RawMessage(createMetadataBytes),
-	}
-	doneMetadata := &cloudbuild.BuildOperationMetadata{
-		Build: buildResult,
-	}
-	doneMetadataBytes, _ := json.Marshal(doneMetadata)
-	doneOperation := &cloudbuild.Operation{
-		Name:     "projects/test-project/operations/test-build-123",
-		Done:     true,
-		Metadata: googleapi.RawMessage(doneMetadataBytes),
-	}
-	createChan := make(chan struct{})
-	defer close(createChan)
-	mockClient.CreateBuildFunc = func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
-		<-createChan
-		return operation, nil
-	}
-	mockClient.WaitForOperationFunc = func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
-		return doneOperation, nil
-	}
-	// Create executor
-	config := ExecutorConfig{
-		Client:           mockClient,
-		Project:          "test-project",
-		ServiceAccount:   "test@test.iam.gserviceaccount.com",
-		LogsBucket:       "test-bucket",
-		LogsClientFunc:   mockLogsClientFunc,
-		OutputBufferSize: 1024,
-	}
-	executor, err := NewExecutor(config)
-	if err != nil {
-		t.Fatalf("NewGCBExecutor failed: %v", err)
-	}
-	// Create test input
-	input := rebuild.Input{
-		Target: rebuild.Target{
-			Ecosystem: rebuild.NPM,
-			Package:   "test-package",
-			Version:   "1.0.0",
-			Artifact:  "test-package-1.0.0.tgz",
+	// The merged log carries the main step's set -x trace among other steps' lines.
+	mergedLog := "Step #0: + cat /tmp/token\nStep #0: + docker buildx build --tag=img -\nStep #0: #9 0.327 + apk add curl\nStep #0: #11 8.557 + pip install cffi\nStep #0: #11 8.965 ERROR: Exception:\nStep #0: 8.965 InvalidMarker: Expected end of marker expression\nStep #1 - \"timing\": + docker history img\n"
+	for _, tc := range []struct {
+		name          string
+		recordTimings bool
+		steps         []*cloudbuild.BuildStep
+		want          string
+	}{
+		{
+			name:          "ImageBuild",
+			recordTimings: true,
+			steps:         []*cloudbuild.BuildStep{{Name: "gcr.io/cloud-builders/docker", Status: "FAILURE", ExitCode: 1}},
+			want:          "build failed in image build phase with exit code 1; the failing command was `pip install cffi`",
 		},
-		Strategy: &rebuild.ManualStrategy{
-			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
-			Requires: rebuild.RequiredEnv{
-				SystemDeps: []string{"git", "node", "npm"},
+		{
+			// Without the run sentinel a failed docker run also fails the main step.
+			name:  "MainStepWithoutSentinel",
+			steps: []*cloudbuild.BuildStep{{Name: "gcr.io/cloud-builders/docker", Status: "FAILURE", ExitCode: 1}},
+			want:  "build failed in image build or container run phase with exit code 1; the failing command was `pip install cffi`",
+		},
+		{
+			// A later step's failure keeps Cloud Build's own account of it.
+			name: "LaterStep",
+			steps: []*cloudbuild.BuildStep{
+				{Name: "gcr.io/cloud-builders/docker", Status: "SUCCESS"},
+				{Name: "gcr.io/cloud-builders/docker", Status: "FAILURE"},
 			},
-			Deps:       "npm install",
-			Build:      "npm run build",
-			OutputPath: "dist/test-package-1.0.0.tgz",
+			want: "GCB build failed: USER_BUILD_STEP: step 1 failed",
 		},
-	}
-	baseImageConfig := build.BaseImageConfig{
-		Default: "docker.io/library/alpine:3.19",
-	}
-	opts := build.Options{
-		BuildID:         "test-build-123",
-		UseTimewarp:     false,
-		UseNetworkProxy: false,
-		Resources: build.Resources{
-			BaseImageConfig: baseImageConfig,
-		},
-	}
-	// Test Start method
-	handle, err := executor.Start(ctx, input, opts)
-	if err != nil {
-		t.Fatalf("Start failed: %v", err)
-	}
-	if handle == nil {
-		t.Fatal("Handle should not be nil")
-	}
-	createChan <- struct{}{} // let create complete
-	result, err := handle.Wait(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Error == nil {
-		t.Fatal("Expected a non-nil error for a failed build")
-	}
-	// Clean up
-	if err := executor.Close(ctx); err != nil {
-		t.Errorf("Close failed: %v", err)
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buildResult := &cloudbuild.Build{
+				Id:          "test-build-gcb-123",
+				Status:      "FAILURE",
+				StartTime:   time.Now().Format(time.RFC3339),
+				FinishTime:  time.Now().Format(time.RFC3339),
+				Steps:       tc.steps,
+				FailureInfo: &cloudbuild.FailureInfo{Type: "USER_BUILD_STEP", Detail: "step 1 failed"},
+			}
+			metadataBytes, _ := json.Marshal(&cloudbuild.BuildOperationMetadata{Build: buildResult})
+			operation := &cloudbuild.Operation{
+				Name:     "projects/test-project/operations/test-build-123",
+				Metadata: googleapi.RawMessage(metadataBytes),
+			}
+			doneOperation := &cloudbuild.Operation{
+				Name:     operation.Name,
+				Done:     true,
+				Metadata: googleapi.RawMessage(metadataBytes),
+			}
+			mockClient := &gcbtest.MockClient{
+				CreateBuildFunc: func(ctx context.Context, project string, build *cloudbuild.Build) (*cloudbuild.Operation, error) {
+					return operation, nil
+				},
+				WaitForOperationFunc: func(ctx context.Context, op *cloudbuild.Operation) (*cloudbuild.Operation, error) {
+					return doneOperation, nil
+				},
+			}
+			executor, err := NewExecutor(ExecutorConfig{
+				Client:         mockClient,
+				Project:        "test-project",
+				ServiceAccount: "test@test.iam.gserviceaccount.com",
+				LogsBucket:     "test-bucket",
+				LogsClientFunc: func(bucket string) gcb.LogsClient {
+					return &gcbtest.MockLogsClient{
+						ReadBuildLogsFunc: func(ctx context.Context, buildID string) (io.ReadCloser, error) {
+							return io.NopCloser(strings.NewReader(mergedLog)), nil
+						},
+					}
+				},
+				OutputBufferSize: 1024,
+			})
+			if err != nil {
+				t.Fatalf("NewExecutor failed: %v", err)
+			}
+			input := rebuild.Input{
+				Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-package", Version: "1.0.0", Artifact: "test-package-1.0.0.tgz"},
+				Strategy: &rebuild.ManualStrategy{
+					Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Requires:   rebuild.RequiredEnv{SystemDeps: []string{"git", "node", "npm"}},
+					Deps:       "npm install",
+					Build:      "npm run build",
+					OutputPath: "dist/test-package-1.0.0.tgz",
+				},
+			}
+			handle, err := executor.Start(ctx, input, build.Options{
+				BuildID:       "test-build-123",
+				RecordTimings: tc.recordTimings,
+				Resources: build.Resources{
+					AssetStore:      rebuild.NewFilesystemAssetStore(memfs.New()),
+					BaseImageConfig: build.BaseImageConfig{Default: "docker.io/library/alpine:3.19"},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Start failed: %v", err)
+			}
+			result, err := handle.Wait(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Error == nil {
+				t.Fatal("Expected a non-nil error for a failed build")
+			}
+			if got := result.Error.Error(); got != tc.want {
+				t.Errorf("result.Error = %q, want %q", got, tc.want)
+			}
+			if err := executor.Close(ctx); err != nil {
+				t.Errorf("Close failed: %v", err)
+			}
+		})
 	}
 }
 
@@ -743,6 +758,31 @@ func TestExecutorTimings(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want, result.Timings); diff != "" {
 				t.Errorf("Timings diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestTraceScanner(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		log  string
+		want string
+	}{
+		{name: "NoTrace", log: "Step #0: hello\n", want: ""},
+		{name: "WrapperOnly", log: "Step #0: + apt-get install -y jq\nStep #0: E: Unable to fetch\n", want: "apt-get install -y jq"},
+		{name: "LayerBehindBuildkitPrefix", log: "Step #0: + docker buildx build --tag=img -\nStep #0: #11 [4/6] RUN sed 's/^ //' <<'EOF' | sh\nStep #0: #11 8.557 + pip install cffi\nStep #0: #11 8.965 ERROR: Exception:\nStep #0: #11 ERROR: executor failed running\nStep #0: 8.965 InvalidMarker\n", want: "pip install cffi"},
+		{name: "ContainerRunScript", log: "Step #0: + docker run --name=container img\nStep #0: + cd /tmp/build\nStep #0: + npm pack\nStep #0: npm ERR! boom\n", want: "npm pack"},
+		{name: "OtherStepIgnored", log: "Step #0: + cat /tmp/token\nStep #1 - \"timing\": + docker history img\n", want: "cat /tmp/token"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &traceScanner{}
+			// Short writes split lines across calls.
+			for i := 0; i < len(tc.log); i += 7 {
+				s.Write([]byte(tc.log[i:min(i+7, len(tc.log))]))
+			}
+			if s.last != tc.want {
+				t.Errorf("last = %q, want %q", s.last, tc.want)
 			}
 		})
 	}
