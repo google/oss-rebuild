@@ -32,6 +32,8 @@ func TestClassifyRebuild(t *testing.T) {
 		{"GCBInternal", schema.RebuildStatusError, "executing rebuild: GCB build internal error: ", OutcomeTransient},
 		{"GatewayUnavailable", schema.RebuildStatusError, "fetching pypi metadata: requesting gateway: 503 Service Unavailable", OutcomeTransient},
 		{"RateLimited", schema.RebuildStatusError, "making cache request: 429 Too Many Requests", OutcomeTransient},
+		// A saturated inference service rejects the call before it looks at the package.
+		{"InferenceCapacity", schema.RebuildStatusError, "getting strategy: fetching inference version: rpc error: code = ResourceExhausted desc = resource exhausted", OutcomeTransient},
 		{"Cancelled", schema.RebuildStatusCancelled, "context canceled", OutcomeTransient},
 		{"GenericError", schema.RebuildStatusError, "no such package", OutcomeFailure},
 		// Inference failures carry an Internal status code but describe the package.

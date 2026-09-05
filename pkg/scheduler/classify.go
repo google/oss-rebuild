@@ -17,7 +17,7 @@ import (
 // 400 separately, so any other "requesting gateway:" status is serving
 // infrastructure. The inference call's 504 is excluded: it recurs for repos
 // whose inference exceeds the deadline.
-var transientBuildSignatures = []string{
+var transientBuildSignatures = append([]string{
 	"connection reset by peer",
 	"connection to gateway failed",
 	"crates.io connection failed",
@@ -27,7 +27,12 @@ var transientBuildSignatures = []string{
 	"requesting gateway:",
 	"too many requests",
 	"try again",
-}
+}, capacitySignatures...)
+
+// capacitySignatures mark an attempt a service turned away for lack of room:
+// Cloud Run's abort when no instance is available, and the ResourceExhausted
+// status the client sees.
+var capacitySignatures = []string{"no available instance", "resource exhausted"}
 
 // cachedSignatures mark an attempt that found an attestation already published.
 var cachedSignatures = []string{"alreadyexists", "already exists"}
