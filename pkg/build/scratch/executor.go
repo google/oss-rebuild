@@ -52,27 +52,9 @@ const (
 // successfully but leaves no artifact at the plan's output path.
 var ErrNoArtifact = errors.New("build produced no artifact at the output path")
 
-// ExitError is returned via build.Result.Error when a build phase exits
-// nonzero. Callers distinguish build failures from infrastructure failures
-// with errors.As.
-type ExitError struct {
-	Code int
-	// Phase is the build phase that exited: a DockerRunPlan phase name
-	// ("setup", "source", "deps", "build") or a docker build stage
-	// ("image build", "container run").
-	Phase string
-	// Command is the last command the phase's set -x trace echoed, set
-	// best-effort by the run executor. Empty when unknown.
-	Command string
-}
-
-func (e *ExitError) Error() string {
-	msg := fmt.Sprintf("build failed in %s phase with exit code %d", e.Phase, e.Code)
-	if e.Command != "" {
-		msg += fmt.Sprintf("; the failing command was `%s`", e.Command)
-	}
-	return msg
-}
+// ExitError is build.ExitError, kept under this name for the executor's
+// callers.
+type ExitError = build.ExitError
 
 // traceTailBytes bounds the output tail scanned for the failing command. A
 // command that emits more than this before exiting goes unnamed.
@@ -92,23 +74,7 @@ func (e *executor) failingCommand(ctx context.Context, op *longrunning.Operation
 			out = out[i+1:]
 		}
 	}
-	return lastTracedCommand(out)
-}
-
-// lastTracedCommand returns the command of out's last set -x trace line
-// (PS4 "+", repeated per subshell depth in bash), or "" if none.
-func lastTracedCommand(out []byte) string {
-	var last string
-	for line := range bytes.Lines(out) {
-		trimmed := bytes.TrimLeft(line, "+")
-		if len(trimmed) == len(line) {
-			continue
-		}
-		if cmd := strings.TrimSpace(string(trimmed)); cmd != "" {
-			last = cmd
-		}
-	}
-	return last
+	return build.LastTracedCommand(out)
 }
 
 // buildIDPattern constrains build IDs to docker-name- and path-safe strings
