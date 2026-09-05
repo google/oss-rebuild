@@ -69,6 +69,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				Build: textwrap.Dedent(`
 			cd /src
 			npm pack
+			[ -e /src/test-package-1.0.0.tgz ] || ls -la "$(dirname /src/test-package-1.0.0.tgz)"
 			chmod 444 /src/test-package-1.0.0.tgz
 			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
 			},
@@ -125,6 +126,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				Build: textwrap.Dedent(`
 			cd /src
 			npm pack
+			[ -e /src/test-package-1.0.0.tgz ] || ls -la "$(dirname /src/test-package-1.0.0.tgz)"
 			chmod 444 /src/test-package-1.0.0.tgz
 			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
 			},
@@ -173,6 +175,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				Build: textwrap.Dedent(`
 			cd /src
 			npm pack
+			[ -e /src/test-package-1.0.0.tgz ] || ls -la "$(dirname /src/test-package-1.0.0.tgz)"
 			chmod 444 /src/test-package-1.0.0.tgz
 			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
 			},
