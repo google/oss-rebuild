@@ -1074,7 +1074,7 @@ func TestGCBPlannerLayers(t *testing.T) {
 			if l.Setup != 0 || l.Source != 1 || l.Deps != 2 {
 				t.Errorf("offsets = (%d, %d, %d), want (0, 1, 2)", l.Setup, l.Source, l.Deps)
 			}
-			if want := fmt.Sprintf("--name=container img || exit %d", runFailureExitCode); !strings.Contains(plan.Steps[0].Script, want) {
+			if want := fmt.Sprintf("--name=container img || { exit %d; } 2>/dev/null", runFailureExitCode); !strings.Contains(plan.Steps[0].Script, want) {
 				t.Errorf("main script missing run sentinel %q", want)
 			}
 			if got := plan.Steps[0].AllowExitCodes; len(got) != 1 || got[0] != runFailureExitCode {

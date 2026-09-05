@@ -91,15 +91,25 @@ func (c *gcsLogsClient) ReadStepLogs(ctx context.Context, buildID string, stepIn
 // with or without a step id ('Step #0: ' or 'Step #2 - "timing": ').
 var stepLogPat = regexp.MustCompile(`^Step #(\d+)(?: - "[^"]*")?: `)
 
+// StepLine splits a merged-log line into the step it belongs to and the
+// step's own text. ok is false for lines that carry no step prefix.
+func StepLine(line string) (step int, text string, ok bool) {
+	m := stepLogPat.FindStringSubmatch(line)
+	if m == nil {
+		return 0, "", false
+	}
+	step, _ = strconv.Atoi(m[1])
+	return step, line[len(m[0]):], true
+}
+
 // stepSection extracts one step's prefix-stripped lines from the merged log.
 func stepSection(r io.Reader, stepIndex int) ([]byte, error) {
 	var section bytes.Buffer
-	idx := strconv.Itoa(stepIndex)
 	br := bufio.NewReader(r)
 	for {
 		line, err := br.ReadString('\n')
-		if m := stepLogPat.FindStringSubmatch(line); m != nil && m[1] == idx {
-			section.WriteString(line[len(m[0]):])
+		if step, text, ok := StepLine(line); ok && step == stepIndex {
+			section.WriteString(text)
 		}
 		if err == io.EOF {
 			return section.Bytes(), nil
