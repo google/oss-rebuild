@@ -22,8 +22,10 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/semver"
 	"github.com/google/oss-rebuild/internal/urlx"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/google/oss-rebuild/pkg/registry/debian/control"
@@ -68,7 +70,7 @@ const (
 var cratesioTop2000 = RebuildBenchmark{
 	Filename: "cratesio_top_2000.json",
 	Generator: func(ctx context.Context) (ps benchmark.PackageSet) {
-		client := http.DefaultClient
+		client := &httpx.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: rebuild.UserAgent("localbuild")}
 		now := time.Now()
 		ageThreshold := now.Add(-1 * maxAge)
 		crates := make(chan cratesio.Metadata, 100)
@@ -103,7 +105,7 @@ var cratesioTop2000 = RebuildBenchmark{
 			if len(ps.Packages) >= maxPackages {
 				break
 			}
-			pmeta, err := cratesio.HTTPRegistry{Client: http.DefaultClient}.Crate(ctx, m.Name)
+			pmeta, err := cratesio.HTTPRegistry{Client: client}.Crate(ctx, m.Name)
 			if err != nil {
 				log.Fatalf("error fetching package metadata for %s: %v", m.Name, err)
 			}
@@ -1338,7 +1340,7 @@ LIMIT 5000
 			close(pkgs)
 		}()
 		// Select packages with versions that satisfy our criteria.
-		reg := rubygems.HTTPRegistry{Client: http.DefaultClient}
+		reg := rubygems.HTTPRegistry{Client: &httpx.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: rebuild.UserAgent("localbuild")}}
 		for p := range pkgs {
 			if len(ps.Packages) >= 1000 {
 				break
