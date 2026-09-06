@@ -284,6 +284,91 @@ func TestFindRegistryResolution(t *testing.T) {
 	}
 }
 
+func TestFindRegistryResolutionAtPackage(t *testing.T) {
+	repo := mustCreateRepo(t, `commits:
+  - id: initial
+    files:
+      de/pe/dependency: |
+        {"name":"dependency","vers":"1.0.0"}
+  - id: target
+    parent: initial
+    files:
+      de/pe/dependency: |
+        {"name":"dependency","vers":"1.0.0"}
+        {"name":"dependency","vers":"2.0.0"}
+  - id: later
+    parent: target
+    files:
+      de/pe/dependency: |
+        {"name":"dependency","vers":"1.0.0"}
+        {"name":"dependency","vers":"2.0.0"}
+        {"name":"dependency","vers":"3.0.0"}
+`)
+	target := cargolock.Package{Name: "dependency", Version: "2.0.0"}
+
+	if _, err := FindRegistryResolution(
+		[]*git.Repository{repo.Repository},
+		[]cargolock.Package{target},
+		time.Time{}.Add(-time.Second),
+		nil,
+	); err == nil {
+		t.Fatal("FindRegistryResolution() succeeded before the target was indexed")
+	}
+
+	resolution, err := FindRegistryResolutionAtPackage(
+		[]*git.Repository{repo.Repository},
+		[]cargolock.Package{target},
+		target,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolution.CommitHash != repo.Commits["target"] {
+		t.Fatalf("FindRegistryResolutionAtPackage() = %s, want %s", resolution.CommitHash, repo.Commits["target"])
+	}
+
+	targetCommit, err := repo.CommitObject(repo.Commits["target"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	laterCommit, err := repo.CommitObject(repo.Commits["later"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !targetCommit.Committer.When.Equal(laterCommit.Committer.When) {
+		t.Fatal("fixture commits must share a timestamp")
+	}
+	if _, err := FindRegistryResolutionAtPackage(
+		[]*git.Repository{repo.Repository},
+		[]cargolock.Package{{Name: "dependency", Version: "3.0.0"}},
+		target,
+		nil,
+	); err == nil {
+		t.Fatal("FindRegistryResolutionAtPackage() included a later commit with the same timestamp")
+	}
+	if _, err := FindRegistryResolutionAtPackage(
+		[]*git.Repository{repo.Repository},
+		[]cargolock.Package{
+			{Name: "dependency", Version: "1.0.0"},
+			{Name: "dependency", Version: "3.0.0"},
+		},
+		target,
+		nil,
+	); err == nil {
+		t.Fatal("FindRegistryResolutionAtPackage() accepted an incomplete upper bound")
+	}
+
+	if _, err := FindRegistryResolutionAtPackage(
+		[]*git.Repository{repo.Repository},
+		[]cargolock.Package{target},
+		cargolock.Package{Name: "dependency", Version: "4.0.0"},
+		nil,
+	); err != ErrTargetPackageNotFound {
+		t.Fatalf("FindRegistryResolutionAtPackage() error = %v, want %v", err, ErrTargetPackageNotFound)
+	}
+}
+
 func TestFindRegistryResolutionExcludesPathPackage(t *testing.T) {
 	current := mustCreateRepo(t, `commits:
   - id: current
@@ -318,17 +403,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 		t.Fatalf("ParseLockfile() error = %v", err)
 	}
 
-	unfiltered, err := FindRegistryResolution(
+	if _, err := FindRegistryResolution(
 		[]*git.Repository{current.Repository, snapshot.Repository},
 		lockfile.Packages,
 		time.Now(),
 		nil,
-	)
-	if err != nil {
-		t.Fatalf("FindRegistryResolution() with all packages error = %v", err)
-	}
-	if unfiltered.CommitHash != current.Commits["current"] {
-		t.Fatalf("unfiltered resolution = %v, want current index", unfiltered.CommitHash)
+	); err == nil {
+		t.Fatal("FindRegistryResolution() with all packages succeeded")
 	}
 
 	filtered, err := FindRegistryResolution(
