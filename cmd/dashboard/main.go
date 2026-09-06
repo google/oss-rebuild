@@ -28,6 +28,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -47,9 +48,10 @@ var (
 	successPat *regexp.Regexp
 	tracked    feed.TrackedPackageIndex
 	benchName  string
-	registry   rebuild.RegistryMux // built once at startup
-	snapReader *rundex.SQLite      // process-level snapshot reader when -rundex is set
-	snapCache  dashboard.Analytics // the snapshot cache, backing the trend views
+	registry   rebuild.RegistryMux   // built once at startup
+	snapReader *rundex.SQLite        // process-level snapshot reader when -rundex is set
+	snapCache  dashboard.Analytics   // the snapshot cache, backing the trend views
+	snapReady  = make(chan struct{}) // closed once snapReader and snapCache are set
 )
 
 func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
@@ -61,7 +63,12 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 		SuccessRegex:   successPat,
 		Registry:       registry,
 	}
-	if snapReader != nil {
+	if *rundexURI != "" {
+		select {
+		case <-snapReady:
+		case <-ctx.Done():
+			return nil, errors.Wrap(ctx.Err(), "awaiting snapshot hydration")
+		}
 		deps.Rundex = snapReader
 		deps.Sessions = snapReader
 		deps.Analytics = snapCache
@@ -95,19 +102,24 @@ func main() {
 		log.Fatal("Must provide -project (or -rundex to serve from a snapshot)")
 	}
 	if *rundexURI != "" {
-		ctx := context.Background()
-		dest, err := billyx.NewResolver().DirFS(ctx, *rundexURI)
-		if err != nil {
-			log.Fatalf("Failed to resolve snapshot %s: %v", *rundexURI, err)
-		}
-		cache, err := snapshot.OpenCache(ctx, dest, 30*time.Second)
-		if err != nil {
-			log.Fatalf("Failed to open snapshot %s: %v", *rundexURI, err)
-		}
-		defer cache.Close()
-		snapCache = cache
-		snapReader = rundex.NewSQLite(cache)
-		log.Printf("Serving rundex reads from %s (fresh through %s)", *rundexURI, cache.Freshness().Format(time.RFC3339))
+		// Hydration downloads the full snapshot base, so it runs behind the
+		// listener: Cloud Run's startup probe needs the port bound promptly.
+		// Requests gate on snapReady until the cache is served.
+		go func() {
+			ctx := context.Background()
+			dest, err := billyx.NewResolver().DirFS(ctx, *rundexURI)
+			if err != nil {
+				log.Fatalf("Failed to resolve snapshot %s: %v", *rundexURI, err)
+			}
+			cache, err := snapshot.OpenCache(ctx, dest, 30*time.Second)
+			if err != nil {
+				log.Fatalf("Failed to open snapshot %s: %v", *rundexURI, err)
+			}
+			snapCache = cache
+			snapReader = rundex.NewSQLite(cache)
+			close(snapReady)
+			log.Printf("Serving rundex reads from %s (fresh through %s)", *rundexURI, cache.Freshness().Format(time.RFC3339))
+		}()
 	}
 	if *logsBucket == "" {
 		log.Printf("Warning: -logs-bucket not provided, log viewing will be unavailable")
