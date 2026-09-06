@@ -112,11 +112,13 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 	}
 	// Generate the execution plan
 	planOpts := build.PlanOptions{
-		UseTimewarp:       opts.UseTimewarp,
-		UseNetworkProxy:   opts.UseNetworkProxy,
-		UseSyscallMonitor: opts.UseSyscallMonitor,
-		Resources:         opts.Resources,
-		RecordTimings:     opts.RecordTimings,
+		UseTimewarp:            opts.UseTimewarp,
+		UseNetworkProxy:        opts.UseNetworkProxy,
+		UseSyscallMonitor:      opts.UseSyscallMonitor,
+		Resources:              opts.Resources,
+		SaveContainerImage:     opts.SaveContainerImage,
+		SavePostBuildContainer: opts.SavePostBuildContainer,
+		RecordTimings:          opts.RecordTimings,
 	}
 	plan, err := e.planner.GeneratePlan(ctx, input, planOpts)
 	if err != nil {
