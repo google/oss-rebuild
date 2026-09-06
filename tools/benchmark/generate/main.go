@@ -72,29 +72,47 @@ var cratesioTop2000 = RebuildBenchmark{
 		now := time.Now()
 		ageThreshold := now.Add(-1 * maxAge)
 		crates := make(chan cratesio.Metadata, 100)
+		producerCtx, cancelProducer := context.WithCancel(ctx)
+		producerDone := make(chan struct{})
+		defer func() {
+			cancelProducer()
+			<-producerDone
+		}()
 		// Get download-ordered crates from crates.io.
 		go func() {
-			for page := 1; len(ps.Packages) < maxPackages; page++ {
+			defer close(producerDone)
+			defer close(crates)
+			for page := 1; ; page++ {
 				url := fmt.Sprintf("https://crates.io/api/v1/crates?page=%d&per_page=100&sort=downloads", page)
-				req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+				req, err := http.NewRequestWithContext(producerCtx, http.MethodGet, url, nil)
 				if err != nil {
 					log.Fatalf("error creating request for download-ordered page %d: %v", page, err)
 				}
 				resp, err := client.Do(req)
 				if err != nil {
+					if producerCtx.Err() != nil {
+						return
+					}
 					log.Fatalf("error fetching download-ordered page %d: %v", page, err)
 				}
 				if resp.StatusCode != 200 {
+					resp.Body.Close()
 					log.Fatalf("error from registry fetching download-ordered page %d: %s", page, resp.Status)
 				}
 				var ms struct {
 					Metadata []cratesio.Metadata `json:"crates"`
 				}
-				if derr := json.NewDecoder(resp.Body).Decode(&ms); derr != nil {
-					log.Fatalf("decoding error on download-ordered page %d: %v", page, err)
+				derr := json.NewDecoder(resp.Body).Decode(&ms)
+				resp.Body.Close()
+				if derr != nil {
+					log.Fatalf("decoding error on download-ordered page %d: %v", page, derr)
 				}
 				for _, m := range ms.Metadata {
-					crates <- m
+					select {
+					case crates <- m:
+					case <-producerCtx.Done():
+						return
+					}
 				}
 			}
 		}()
