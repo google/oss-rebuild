@@ -20,7 +20,7 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v5/storage"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -82,7 +82,7 @@ func (a *defaultAgent) InitializeFromIteration(ctx context.Context, initialItera
 	if err != nil {
 		return errors.Wrap(err, "parsing previous iteration")
 	}
-	repo, err := rebuild.LoadRepo(ctx, a.t.Package, memory.NewStorage(), memfs.New(), git.CloneOptions{URL: loc.Repo, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
+	repo, err := rebuild.LoadRepo(ctx, a.t.Package, gitx.NewInMemoryStorer(), memfs.New(), git.CloneOptions{URL: loc.Repo, RecurseSubmodules: git.DefaultSubmoduleRecursionDepth})
 	if err != nil {
 		return errors.Wrap(err, "loading repo")
 	}
@@ -334,7 +334,7 @@ func posixSingleQuote(s string) string {
 	return `'` + strings.ReplaceAll(s, `'`, `'\''`) + `'`
 }
 
-func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initialErr error, wt billy.Filesystem, str *memory.Storage) (*schema.StrategyOneOf, error) {
+func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initialErr error, wt billy.Filesystem, str storage.Storer) (*schema.StrategyOneOf, error) {
 	prompt := []string{
 		fmt.Sprintf("Based on the following inference failure error \"%v\" for package '%s', find the correct source code repository URL.", initialErr, a.t.Package),
 		"Just return the URL WITHOUT any additional text or formatting.",
@@ -440,7 +440,7 @@ func (a *defaultAgent) toolchainFallback(err error) (*schema.StrategyOneOf, erro
 
 func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.StrategyOneOf, error) {
 	wt := memfs.New()
-	str := memory.NewStorage()
+	str := gitx.NewInMemoryStorer()
 	s, err := inferenceservice.Infer(
 		ctx,
 		schema.InferenceRequest{
@@ -463,7 +463,7 @@ func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.S
 	// A failure that resolved the source has its repository, so a model
 	// repository hint cannot help it.
 	if _, located := api.DetailOf[rebuild.InferenceErrorDetail](err); err != nil && !located {
-		wt, str = memfs.New(), memory.NewStorage()
+		wt, str = memfs.New(), gitx.NewInMemoryStorer()
 		if s, err = a.proposeInferenceWithAIAssist(ctx, err, wt, str); err == nil {
 			log.Println("AI-assisted inference succeeded.")
 		}
