@@ -226,6 +226,32 @@ func TestDockerRunPlanner(t *testing.T) {
 	}
 }
 
+func TestDockerRunPlannerHidesTimewarpAuthFromShellTrace(t *testing.T) {
+	plan, err := NewDockerRunPlanner().GeneratePlan(context.Background(), rebuild.Input{
+		Target: rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "example", Version: "1.0.0"},
+		Strategy: &rebuild.ManualStrategy{
+			Location:   rebuild.Location{Repo: "https://example.com/repo", Ref: "v1.0.0"},
+			Deps:       "true",
+			Build:      "true",
+			OutputPath: "example-1.0.0.crate",
+		},
+	}, build.PlanOptions{
+		UseTimewarp: true,
+		Resources: build.Resources{
+			BaseImageConfig:  build.BaseImageConfig{Default: "alpine:3.19"},
+			ToolURLs:         map[build.ToolType]string{build.TimewarpTool: "https://example.com/timewarp"},
+			ToolAuthRequired: []string{"https://example.com/"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("GeneratePlan() error: %v", err)
+	}
+	want := "set +x\ncurl -H \"$AUTH_HEADER\" https://example.com/timewarp > /timewarp\nset -x"
+	if !strings.Contains(plan.Setup, want) {
+		t.Fatalf("authenticated timewarp setup = %q, want trace disabled around header", plan.Setup)
+	}
+}
+
 func TestDockerRunPlanPhases(t *testing.T) {
 	plan := &DockerRunPlan{Setup: "s1", Source: "s2", Deps: "s3", Build: "s4"}
 	want := []Phase{{"setup", "s1"}, {"source", "s2"}, {"deps", "s3"}, {"build", "s4"}}
