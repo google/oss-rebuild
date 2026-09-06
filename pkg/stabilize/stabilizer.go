@@ -167,7 +167,6 @@ func stabilizeWithCtx(dst io.Writer, src io.Reader, f archive.Format, ctx *Stabi
 			return errors.Wrap(err, "initializing zip reader")
 		}
 		zw := zip.NewWriter(dst)
-		defer zw.Close()
 		err = StabilizeZip(zr, zw, ctx)
 		if err != nil {
 			return errors.Wrap(err, "stabilizing zip")
@@ -182,10 +181,17 @@ func stabilizeWithCtx(dst io.Writer, src io.Reader, f archive.Format, ctx *Stabi
 		if err != nil {
 			return errors.Wrap(err, "initializing gzip writer")
 		}
-		defer gzw.Close()
 		err = StabilizeTar(tar.NewReader(gzr), tar.NewWriter(gzw), ctx)
 		if err != nil {
+			_ = gzw.Close()
 			return errors.Wrap(err, "stabilizing tar.gz")
+		}
+		if _, err := io.Copy(io.Discard, gzr); err != nil {
+			_ = gzw.Close()
+			return errors.Wrap(err, "validating gzip stream")
+		}
+		if err := gzw.Close(); err != nil {
+			return errors.Wrap(err, "finalizing tar.gz")
 		}
 	case archive.GzipFormat:
 		gzr, err := gzip.NewReader(src)
@@ -197,7 +203,6 @@ func stabilizeWithCtx(dst io.Writer, src io.Reader, f archive.Format, ctx *Stabi
 		if err != nil {
 			return errors.Wrap(err, "stabilizing gzip")
 		}
-		defer gzw.Close()
 		// NOTE: Memory-intensive. Buffers the full decompressed payload so GzipContentFn stabilizers can operate on it as a whole.
 		content, err := io.ReadAll(gzr)
 		if err != nil {
@@ -209,7 +214,11 @@ func stabilizeWithCtx(dst io.Writer, src io.Reader, f archive.Format, ctx *Stabi
 			}
 		}
 		if _, err := gzw.Write(content); err != nil {
+			_ = gzw.Close()
 			return errors.Wrap(err, "writing gzip content")
+		}
+		if err := gzw.Close(); err != nil {
+			return errors.Wrap(err, "finalizing gzip")
 		}
 	case archive.TarFormat:
 		err := StabilizeTar(tar.NewReader(src), tar.NewWriter(dst), ctx)
