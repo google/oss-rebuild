@@ -804,7 +804,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
 					grep -q "Listening for events..." <(docker logs --follow $TID 2>&1) || (docker logs $TID && exit 1)
 					TETRAGON_PID=$(docker inspect -f '{{.State.Pid}}' tetragon)
-					apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test@test.iam.gserviceaccount.com/token | jq .access_token > /tmp/token
+					apt install -y jq && curl -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/test@test.iam.gserviceaccount.com/token | jq -r .access_token > /tmp/token
 					(printf "Authorization: Bearer "; cat /tmp/token) > /tmp/auth_header
 					curl -H @/tmp/auth_header https://storage.googleapis.com/bucket/tetragon_sysgraph > tetragon_sysgraph
 					chmod +x tetragon_sysgraph
