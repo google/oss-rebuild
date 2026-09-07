@@ -8,6 +8,9 @@ import (
 	"flag"
 	"log"
 	"net/url"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	gcs "cloud.google.com/go/storage"
@@ -103,7 +106,10 @@ func main() {
 	if *maxIterations <= 0 {
 		log.Fatal("max-iterations flag must be positive")
 	}
-	ctx := context.Background()
+	// A platform stop (the job timeout, a scale-down) sends SIGTERM and kills
+	// the process ten seconds later.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
 	// Create HTTP client for the agent API
 	client, err := idtoken.NewClient(ctx, *agentAPIURL)
 	if err != nil {
