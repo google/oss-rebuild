@@ -316,11 +316,11 @@ func (e *DockerRunExecutor) uploadFile(ctx context.Context, store rebuild.AssetS
 	if err != nil {
 		return errors.Wrap(err, "failed to get asset store writer")
 	}
-	defer writer.Close()
 	if _, err := io.Copy(writer, file); err != nil {
+		writer.Close()
 		return errors.Wrap(err, "failed to upload file to asset store")
 	}
-	return nil
+	return errors.Wrap(writer.Close(), "committing asset")
 }
 
 // uploadContent uploads content directly to the asset store
@@ -329,11 +329,11 @@ func (e *DockerRunExecutor) uploadContent(ctx context.Context, store rebuild.Ass
 	if err != nil {
 		return errors.Wrap(err, "failed to get asset store writer")
 	}
-	defer writer.Close()
 	if _, err := writer.Write(content); err != nil {
+		writer.Close()
 		return errors.Wrap(err, "failed to write content to asset store")
 	}
-	return nil
+	return errors.Wrap(writer.Close(), "committing asset")
 }
 
 // exportContainer commits the container state to an image, saves it as a gzipped tarball, then removes the committed image.
