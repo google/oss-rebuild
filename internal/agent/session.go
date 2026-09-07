@@ -223,7 +223,7 @@ func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent,
 			if ctx.Err() != nil {
 				return &schema.AgentCompleteRequest{
 					StopReason: schema.AgentCompleteReasonError,
-					Summary:    fmt.Sprintf("Session context ended: %v", ctx.Err()),
+					Summary:    fmt.Sprintf("Session context ended: %v", context.Cause(ctx)),
 				}
 			}
 			if llm.IsTransient(err) {
@@ -273,7 +273,9 @@ func RunSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) {
 		log.Printf("Session error: %s", completeReq.Summary)
 	}
 	completeReq.SessionID = req.SessionID
-	_, err := deps.CompleteStub(ctx, *completeReq)
+	// A session ended by cancellation must still report, or it holds its VM
+	// until the reaper finds it.
+	_, err := deps.CompleteStub(context.WithoutCancel(ctx), *completeReq)
 	if err != nil {
 		log.Printf("Failed to complete agent session: %v", err)
 	} else {

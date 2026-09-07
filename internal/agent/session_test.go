@@ -227,3 +227,21 @@ func TestRunIterationsProposalFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestRunSessionReportsAfterCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var got *schema.AgentCompleteRequest
+	deps := RunSessionDeps{CompleteStub: func(ctx context.Context, req schema.AgentCompleteRequest) (*schema.AgentCompleteResponse, error) {
+		if ctx.Err() != nil {
+			t.Errorf("completion context is done: %v", ctx.Err())
+		}
+		got = &req
+		return &schema.AgentCompleteResponse{}, nil
+	}}
+	// MaxIterations 0 ends the session before any inference runs.
+	RunSession(ctx, RunSessionReq{SessionID: "sess"}, deps)
+	if got == nil || got.SessionID != "sess" {
+		t.Fatalf("completion = %+v, want a report for sess", got)
+	}
+}
