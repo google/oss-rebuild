@@ -176,6 +176,30 @@ func TestStep_Resolve(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "empty step resolves to nothing",
+			step: Step{},
+			data: Data{},
+			want: Fragment{},
+		},
+		{
+			name: "empty step keeps its needs",
+			step: Step{Needs: []string{"git"}},
+			data: Data{},
+			want: Fragment{Needs: []string{"git"}},
+		},
+		{
+			name:    "runs and uses together",
+			step:    Step{Runs: "true", Uses: "basic-tool"},
+			data:    Data{},
+			wantErr: true,
+		},
+		{
+			name:    "with without uses",
+			step:    Step{With: map[string]string{"message": "hello"}},
+			data:    Data{},
+			wantErr: true,
+		},
+		{
 			name: "basic tool usage",
 			step: Step{
 				Uses: "basic-tool",
