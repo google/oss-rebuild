@@ -41,9 +41,17 @@ type CoverageWeek struct {
 
 // StageDone counts the campaigns one stage attested.
 type StageDone struct {
-	Stage scheduler.Stage
-	Done  int64
+	Stage   scheduler.Stage
+	Done    int64
+	LLMDone int64 // agent wins at iteration 2 or later
 }
+
+// InferenceDone is the part of Done won at the agent's iteration 1.
+func (d StageDone) InferenceDone() int64 { return d.Done - d.LLMDone }
+
+// SplitsWins reports whether the stage distinguishes inference-rescue from
+// LLM-diagnose wins. Only the agent stage runs both.
+func (d StageDone) SplitsWins() bool { return d.Stage == scheduler.StageAgent }
 
 // CoverageEco is one ecosystem's standing against the packages in scope and
 // the state of its onboarding queue. A package is in scope when the
@@ -149,7 +157,15 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 		return nil, errors.Wrap(err, "querying signal coverage")
 	}
 	doneByStage := map[string]map[scheduler.Stage]int64{}
-	err = forEachRow(deps.Analytics, `SELECT ecosystem, state, stage, count(*) FROM campaigns GROUP BY 1, 2, 3`,
+	llmDoneByStage := map[string]map[scheduler.Stage]int64{}
+	// agent_win_kind splits a stage's done count into inference-rescue and
+	// llm-diagnose. session_id is unique, so the LEFT JOIN keeps count(*).
+	err = forEachRow(deps.Analytics, `
+		SELECT c.ecosystem, c.state, c.stage, count(*),
+			sum(CASE WHEN s.agent_win_kind = 'llm-diagnose' THEN 1 ELSE 0 END)
+		FROM campaigns c
+		LEFT JOIN agent_sessions s ON s.session_id = c.last_session
+		GROUP BY 1, 2, 3`,
 		func(stmt *sqlite3.Stmt) error {
 			e := eco(stmt.ColumnText(0))
 			e.HasQueue = true
@@ -164,10 +180,13 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 			case scheduler.StateDone:
 				// A done campaign's stage is the one that attested it.
 				e.Done += n
+				st := scheduler.Stage(stmt.ColumnText(2))
 				if doneByStage[e.Ecosystem] == nil {
 					doneByStage[e.Ecosystem] = map[scheduler.Stage]int64{}
+					llmDoneByStage[e.Ecosystem] = map[scheduler.Stage]int64{}
 				}
-				doneByStage[e.Ecosystem][scheduler.Stage(stmt.ColumnText(2))] += n
+				doneByStage[e.Ecosystem][st] += n
+				llmDoneByStage[e.Ecosystem][st] += stmt.ColumnInt64(4)
 			}
 			return nil
 		})
@@ -179,7 +198,7 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 			continue
 		}
 		for _, s := range ladder() {
-			e.DoneByStage = append(e.DoneByStage, StageDone{Stage: s, Done: doneByStage[name][s]})
+			e.DoneByStage = append(e.DoneByStage, StageDone{Stage: s, Done: doneByStage[name][s], LLMDone: llmDoneByStage[name][s]})
 		}
 	}
 	// An unknown tab (stale link) falls back to the comparison view. The

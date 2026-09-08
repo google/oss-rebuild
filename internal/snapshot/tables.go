@@ -488,6 +488,14 @@ func Tables() []docdb.TableDef {
 				{Name: "scratch_id", Type: "TEXT", Expr: docdb.Raw("$.ScratchID")},
 				{Name: "max_iterations", Type: "INTEGER", Expr: docdb.Raw("$.MaxIterations")},
 				{Name: "success_iteration", Type: "TEXT", Expr: docdb.Raw("$.SuccessIteration")},
+				{Name: "iteration_count", Type: "INTEGER", Expr: docdb.Raw("$.IterationCount")},
+				// IterationCount is the winning iteration of an attested
+				// session: 1 is the inference seed (inference-rescue), later
+				// ones LLM proposals (llm-diagnose). NULL if not attested.
+				{Name: "agent_win_kind", Type: "TEXT",
+					Expr: "CASE WHEN nullif(" + docdb.Raw("$.SuccessIteration") + ", '') IS NULL THEN NULL" +
+						" WHEN " + docdb.Raw("$.IterationCount") + " >= 2 THEN 'llm-diagnose'" +
+						" ELSE 'inference-rescue' END"},
 				{Name: "input_tokens", Type: "INTEGER", Expr: docdb.Raw("$.Usage.input")},
 				{Name: "cached_input_tokens", Type: "INTEGER", Expr: docdb.Raw("$.Usage.cached_input")},
 				{Name: "output_tokens", Type: "INTEGER", Expr: docdb.Raw("$.Usage.output")},

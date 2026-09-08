@@ -19,8 +19,10 @@ func coverageFixture(t *testing.T) memAnalytics {
 		`INSERT INTO coverage_weekly VALUES ('npm', '2026-08-24', 10, 6, 2, 0.6, 0.75, 1), ('npm', '2026-08-31', 12, 9, 1, 0.75, 0.9, 0), ('maven', '2026-08-31', 4, 4, 0, 1.0, NULL, 0)`,
 		`CREATE TABLE signal_coverage (ecosystem TEXT, universe_packages INT, universe_mass REAL, tracked_packages INT, tracked_mass REAL, current_packages INT, current_mass REAL, covered_mass_share REAL, sidecar_built_at TEXT)`,
 		`INSERT INTO signal_coverage VALUES ('npm', 300, 100.0, 12, 3.0, 9, 2.5, 0.025, ''), ('pypi', 4000, 100.0, 0, 0.0, 0, 0.0, 0.0, '')`,
-		`CREATE TABLE campaigns (ecosystem TEXT, package TEXT, version TEXT, artifact TEXT, state TEXT, stage TEXT)`,
-		`INSERT INTO campaigns VALUES ('npm', 'a', '1', 'a.tgz', 'DONE', 'replay'), ('npm', 'b', '1', 'b.tgz', 'DONE', 'agent'), ('npm', 'c', '1', 'c.tgz', 'QUEUED', 'infer'), ('npm', 'd', '1', 'd.tgz', 'NEEDS_TRIAGE', 'agent'), ('npm', 'e', '1', 'e.tgz', 'INFLIGHT', 'replay')`,
+		`CREATE TABLE campaigns (ecosystem TEXT, package TEXT, version TEXT, artifact TEXT, state TEXT, stage TEXT, last_session TEXT)`,
+		`INSERT INTO campaigns VALUES ('npm', 'a', '1', 'a.tgz', 'DONE', 'replay', ''), ('npm', 'b', '1', 'b.tgz', 'DONE', 'agent', 's-llm'), ('npm', 'c', '1', 'c.tgz', 'QUEUED', 'infer', ''), ('npm', 'd', '1', 'd.tgz', 'NEEDS_TRIAGE', 'agent', ''), ('npm', 'e', '1', 'e.tgz', 'INFLIGHT', 'replay', ''), ('npm', 'f', '1', 'f.tgz', 'DONE', 'agent', 's-inf')`,
+		`CREATE TABLE agent_sessions (session_id TEXT, agent_win_kind TEXT)`,
+		`INSERT INTO agent_sessions VALUES ('s-llm', 'llm-diagnose'), ('s-inf', 'inference-rescue')`,
 		`CREATE TABLE package_stats (ecosystem TEXT, package TEXT, ever_built INT)`,
 		`INSERT INTO package_stats VALUES ('npm', 'a', 1), ('npm', 'b', 0), ('npm', 'c', 1)`,
 		// a's later version does not move its first reproduction.
@@ -50,8 +52,8 @@ var coverageOverview = &Overview{
 func TestCoveragePage(t *testing.T) {
 	npm := CoverageEco{
 		Ecosystem: "npm", HasScope: true, InScope: 300, Started: 12, Reproduced: 9, CoveragePct: 3, WeightedPct: 2,
-		HasQueue: true, Queued: 1, InFlight: 1, Done: 2, NeedsTriage: 1,
-		DoneByStage: []StageDone{{scheduler.StageReplay, 1}, {scheduler.StageInfer, 0}, {scheduler.StageAgent, 1}},
+		HasQueue: true, Queued: 1, InFlight: 1, Done: 3, NeedsTriage: 1,
+		DoneByStage: []StageDone{{Stage: scheduler.StageReplay, Done: 1}, {Stage: scheduler.StageInfer}, {Stage: scheduler.StageAgent, Done: 2, LLMDone: 1}},
 	}
 	npmWeeks := []CoverageWeek{
 		{Week: "2026-08-31", Attempted: 12, Reproduced: 9, Behind: 1, SharePct: 75, WeightedPct: 90, HasWeighted: true},

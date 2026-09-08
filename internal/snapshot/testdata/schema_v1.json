@@ -15,12 +15,14 @@
     "updated": "TEXT"
   },
   "agent_sessions": {
+    "agent_win_kind": "TEXT",
     "artifact": "TEXT",
     "cached_input_tokens": "INTEGER",
     "created": "TEXT",
     "ecosystem": "TEXT",
     "execution_mode": "TEXT",
     "input_tokens": "INTEGER",
+    "iteration_count": "INTEGER",
     "max_iterations": "INTEGER",
     "model": "TEXT",
     "output_tokens": "INTEGER",
