@@ -145,11 +145,11 @@ func (f *gcsFileInfo) Info() (fs.FileInfo, error) {
 }
 
 func parseGCSPath(fpath string) (bucket, object string, err error) {
-	bucket, object, err = gcsx.ParseURL(fpath)
-	if err != nil || object == "" {
+	ref, err := gcsx.ParseURL(fpath)
+	if err != nil || ref.Object == "" {
 		return "", "", fmt.Errorf("invalid GCS path: %s", fpath)
 	}
-	return bucket, object, nil
+	return ref.Bucket, ref.Object, nil
 }
 
 func readFromGCS(ctx context.Context, fpath string) (*BufferedReadCloser, error) {

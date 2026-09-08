@@ -87,7 +87,7 @@ func NewServer(ctx context.Context, cacheStr string) (*Server, error) {
 // newBackend creates a cacheBackend from the given cache location string.
 func newBackend(ctx context.Context, cacheStr string) (cacheBackend, error) {
 	if strings.HasPrefix(cacheStr, "gs://") {
-		bucketName, _, _ := gcsx.ParseURL(cacheStr)
+		bucketName := gcsx.MustParseURL(cacheStr).Bucket
 		client, err := storage.NewClient(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating GCS client")

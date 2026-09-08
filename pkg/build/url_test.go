@@ -7,48 +7,6 @@ import (
 	"testing"
 )
 
-func TestGSToHTTP(t *testing.T) {
-	tests := []struct {
-		name     string
-		gsURL    string
-		wantHTTP string
-		wantErr  bool
-	}{
-		{
-			name:     "basic gs URL",
-			gsURL:    "gs://bucket/object",
-			wantHTTP: "https://storage.googleapis.com/bucket/object",
-			wantErr:  false,
-		},
-		{
-			name:    "non-gs URL",
-			gsURL:   "http://example.com/file",
-			wantErr: true,
-		},
-		{
-			name:     "invalid URL",
-			gsURL:    "gs://",
-			wantHTTP: "https://storage.googleapis.com//",
-			wantErr:  false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			httpURL, err := gsToHTTP(tt.gsURL)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GSToHTTP() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if err != nil {
-				return
-			}
-			if httpURL != tt.wantHTTP {
-				t.Errorf("GSToHTTP() httpURL = %v, want %v", httpURL, tt.wantHTTP)
-			}
-		})
-	}
-}
-
 func TestNeedsAuth(t *testing.T) {
 	authPrefixes := []string{"gs://", "https://private.example.com/"}
 
@@ -110,6 +68,12 @@ func TestConvertURLForRuntime(t *testing.T) {
 			name:        "https URL unchanged",
 			originalURL: "https://example.com/file",
 			wantURL:     "https://example.com/file",
+			wantErr:     false,
+		},
+		{
+			name:        "degenerate gs URL",
+			originalURL: "gs://",
+			wantURL:     "https://storage.googleapis.com//",
 			wantErr:     false,
 		},
 	}

@@ -184,7 +184,7 @@ func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder,
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create temp directory")
 	}
-	prebuildURL := gcsx.VirtualHostedURL(cfg.BootstrapBucket, cfg.BootstrapVersion)
+	prebuildURL := gcsx.Bucket(cfg.BootstrapBucket).Object(cfg.BootstrapVersion).VirtualHostedURL()
 	localCfg := benchrun.LocalExecutionServiceConfig{
 		PrebuildURL: prebuildURL,
 		Store:       store,
