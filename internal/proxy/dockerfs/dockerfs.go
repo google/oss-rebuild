@@ -34,6 +34,31 @@ type Filesystem struct {
 	Container string
 }
 
+// daemonError maps the Docker daemon's documented error statuses to fs
+// sentinel errors, annotated with the message from the response body, if any.
+// NOTE: The message is opaque context for logging and should not be branched on.
+func daemonError(resp *http.Response) error {
+	err := errors.Errorf("unexpected HTTP response: %s", resp.Status)
+	switch resp.StatusCode {
+	case http.StatusBadRequest:
+		err = fs.ErrInvalid
+	case http.StatusForbidden:
+		err = fs.ErrPermission
+	case http.StatusNotFound:
+		err = fs.ErrNotExist
+	}
+	var body struct {
+		Message string `json:"message"`
+	}
+	if resp.Body != nil {
+		json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&body)
+	}
+	if body.Message != "" {
+		return errors.Wrap(err, body.Message)
+	}
+	return err
+}
+
 // Open returns a File from a Docker container.
 func (c Filesystem) Open(path string) (*File, error) {
 	log.Printf("Open for path: %s", path)
@@ -48,14 +73,8 @@ func (c Filesystem) Open(path string) (*File, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "making request")
 	}
-	switch resp.StatusCode {
-	case http.StatusOK:
-	case http.StatusNotFound:
-		return nil, fs.ErrNotExist
-	case http.StatusBadRequest:
-		return nil, fs.ErrNotExist
-	default:
-		return nil, errors.Wrap(errors.New(resp.Status), "response error: Unexpected HTTP response")
+	if resp.StatusCode != http.StatusOK {
+		return nil, daemonError(resp)
 	}
 	tr := tar.NewReader(resp.Body)
 	hdr, err := tr.Next()
@@ -89,14 +108,8 @@ func (c Filesystem) Stat(path string) (*FileInfo, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "making request")
 	}
-	switch resp.StatusCode {
-	case http.StatusOK:
-	case http.StatusNotFound:
-		return nil, fs.ErrNotExist
-	case http.StatusBadRequest:
-		return nil, errors.New("request error: bad parameter")
-	default:
-		return nil, errors.Wrap(errors.New(resp.Status), "response error: Unexpected HTTP response")
+	if resp.StatusCode != http.StatusOK {
+		return nil, daemonError(resp)
 	}
 	encoded := resp.Header.Get(statHeader)
 	if encoded == "" {
@@ -226,17 +239,10 @@ func (c Filesystem) WriteFile(f *File) error {
 	if err != nil {
 		return errors.Wrap(err, "making request")
 	}
-	switch resp.StatusCode {
-	case http.StatusOK:
-		return nil
-	case http.StatusNotFound:
-		return fs.ErrNotExist
-	case http.StatusBadRequest:
-		// TODO: Confirm the conditions under which this occurs.
-		return fs.ErrNotExist
-	default:
-		return errors.Wrap(errors.New(resp.Status), "unexpected HTTP response")
+	if resp.StatusCode != http.StatusOK {
+		return daemonError(resp)
 	}
+	return nil
 }
 
 // File represents a file in a Docker container.
