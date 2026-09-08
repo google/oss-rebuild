@@ -200,8 +200,9 @@ func (r *ScratchRunner) run(ctx context.Context, runID string, oneof *schema.Str
 }
 
 // mismatchMessage is the content-mismatch error shown to the LLM: the
-// file-level summary when one was produced, and how to see content-level
-// differences on the VM.
+// file-level summary when one was produced, how to see content-level
+// differences on the VM, and where the container's source tree is on the
+// host so anything built there can be compared the same way.
 func (r *ScratchRunner) mismatchMessage(runID, diffSummary string) string {
 	msg := "rebuild content mismatch"
 	if diffSummary == "" {
@@ -209,8 +210,8 @@ func (r *ScratchRunner) mismatchMessage(runID, diffSummary string) string {
 	}
 	p := r.vmPaths(runID)
 	return msg + "\n\n" + verifier.DiffSummaryPreamble + "\n" + diffSummary +
-		fmt.Sprintf("\nBoth artifacts remain on the VM, stabilized beside the originals. For content-level differences run diffr on the host with run_on_host:\n%s %s.stabilized %s.stabilized\n(--json for machine-readable output). To compare an artifact you build yourself, stabilize it first:\n%s --ecosystem %s --artifact %s --infile <file> --outfile <file>.stabilized",
-			p.diffr, p.rebuild, p.upstream, p.stabilize, r.Target.Ecosystem, r.Target.Artifact)
+		fmt.Sprintf("\nBoth artifacts remain on the VM, stabilized beside the originals. For content-level differences run diffr on the host with run_on_host:\n%s %s.stabilized %s.stabilized\n(--json for machine-readable output). The retained container's /src is the host directory %s, so an artifact you build in the container can be compared the same way at that path once stabilized:\n%s --ecosystem %s --artifact %s --infile <file> --outfile <file>.stabilized\nHost tools cannot read other container paths.",
+			p.diffr, p.rebuild, p.upstream, p.src, p.stabilize, r.Target.Ecosystem, r.Target.Artifact)
 }
 
 // verify compares the rebuilt artifact (in store) against upstream,
@@ -250,13 +251,14 @@ func (r *ScratchRunner) verify(ctx context.Context, runID string, rebuilder rebu
 // directory, fetched once per session. Each artifact's stabilized form is
 // written beside it.
 type vmPaths struct {
-	rebuild, upstream, diffr, stabilize string
+	rebuild, src, upstream, diffr, stabilize string
 }
 
 func (r *ScratchRunner) vmPaths(runID string) vmPaths {
 	workDir := cmp.Or(r.WorkDir, scratch.DefaultWorkDir)
 	return vmPaths{
 		rebuild:   scratch.ArtifactPath(workDir, runID),
+		src:       scratch.SourcePath(workDir, runID),
 		upstream:  path.Join(workDir, "upstream", path.Base(r.Target.Artifact)),
 		diffr:     path.Join(workDir, "tools", string(build.DiffrTool)),
 		stabilize: path.Join(workDir, "tools", string(build.StabilizeTool)),
