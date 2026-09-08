@@ -166,6 +166,12 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 				// NOTE: genai's Chat stores this slice as the turn's history
 				// entry, so reusing the array rewrites earlier turns.
 				currentParts = make([]*genai.Part, 0, len(calls)+1)
+				if i == cm.maxIter-2 {
+					// The next iteration is the last the budget allows so force a response.
+					// NOTE: Current models require the nudge go ahead of the function response.
+					// ("Requests ending with a model turn are not supported").
+					currentParts = append(currentParts, genai.NewPartFromText(finalTurnNudge))
+				}
 				for _, call := range calls {
 					implFunc, found := cm.toolImpls[call.Name]
 					if !found {
@@ -173,10 +179,6 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 						return
 					}
 					currentParts = append(currentParts, &genai.Part{FunctionResponse: new(implFunc(call.Args))})
-				}
-				if i == cm.maxIter-2 {
-					// The next iteration is the last the budget allows so force a response.
-					currentParts = append(currentParts, genai.NewPartFromText(finalTurnNudge))
 				}
 				continue
 			} else if candidate.FinishReason == genai.FinishReasonStop {
