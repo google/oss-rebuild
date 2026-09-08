@@ -380,3 +380,41 @@ func TestRetainContainerSkipsRm(t *testing.T) {
 		t.Errorf("start cmd carries --rm, want retained container: %v", start.Cmd)
 	}
 }
+
+func TestSingleEnvMountsAndPrep(t *testing.T) {
+	f := &fakeStubs{creates: runCreates(0, 0, 0, 0)}
+	e, err := NewDockerRunExecutor(DockerRunExecutorConfig{ExecutorConfig: func() ExecutorConfig {
+		c := testExecutorConfig(f)
+		c.SingleEnv = true
+		return c
+	}()})
+	if err != nil {
+		t.Fatalf("NewDockerRunExecutor: %v", err)
+	}
+	_ = awaitBuild(t, e, testOptions())
+	prepare, start := f.createReqs[0], f.createReqs[1]
+	prepareScript := prepare.Cmd[len(prepare.Cmd)-1]
+	if want := `mkdir -p "/home/builder/tools" "/home/builder/upstream"`; !strings.Contains(prepareScript, want) {
+		t.Errorf("prepare script missing %q:\n%s", want, prepareScript)
+	}
+	for _, want := range []string{
+		"/home/builder/tools:/tools:ro",
+		"/home/builder/upstream:/upstream:ro",
+		"/home/builder/builds:/builds:ro",
+	} {
+		if !slices.Contains(start.Cmd, want) {
+			t.Errorf("start cmd missing mount %q: %v", want, start.Cmd)
+		}
+	}
+}
+
+func TestSingleEnvOffByDefault(t *testing.T) {
+	f := &fakeStubs{creates: runCreates(0, 0, 0, 0)}
+	_ = awaitBuild(t, testRunExecutor(t, f), testOptions())
+	start := f.createReqs[1]
+	for _, unwanted := range []string{"/home/builder/tools:/tools:ro", "/home/builder/builds:/builds:ro"} {
+		if slices.Contains(start.Cmd, unwanted) {
+			t.Errorf("default build should not mount %q: %v", unwanted, start.Cmd)
+		}
+	}
+}

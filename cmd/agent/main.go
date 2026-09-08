@@ -58,6 +58,7 @@ var (
 	prebuildDir    = flag.String("prebuild-dir", "", "Prefix within the prebuild bucket under which tools are stored")
 	prebuildAuth   = flag.Bool("prebuild-auth", false, "Whether to authenticate requests to the prebuild tools bucket")
 	freeForm       = flag.Bool("freeform", false, "The model works in the retained container until the artifact matches, then the job formalizes the commands into a build (scratch execution mode only)")
+	singleEnv      = flag.Bool("single-env", false, "Run the agent entirely in the build container: mount the tools, upstream artifact, and prior attempts in the container and withdraw the host shell tool")
 )
 
 var httpcfg = httpegress.Config{}
@@ -227,6 +228,7 @@ func main() {
 				// Keep the most recent build's container (stopped, not --rm'd) so
 				// run_command can docker exec/cp into the build environment.
 				RetainContainer: true,
+				SingleEnv:       *singleEnv,
 			},
 		})
 		if err != nil {
@@ -242,6 +244,7 @@ func main() {
 			PrebuildConfig: rebuild.PrebuildConfig{Bucket: *prebuildBucket, Dir: *prebuildDir, Auth: *prebuildAuth},
 			AuthHeader:     authHeader,
 			BuildTimeout:   *buildTimeout,
+			SingleEnv:      *singleEnv,
 		}
 		deps.FreeForm = *freeForm
 	}

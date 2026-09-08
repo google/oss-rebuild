@@ -105,6 +105,7 @@ type ExecutorConfig struct {
 	AuthHeader       func(context.Context) (string, error) // Supplies AUTH_HEADER for plans that fetch auth-required tools
 	AllowPrivileged  bool                                  // If true, allow privileged builds
 	RetainContainer  bool                                  // If true, retain build containers stopped and don't remove them
+	SingleEnv        bool                                  // If true, mount the diagnosis inputs
 	MaxArtifactBytes int64                                 // Caps artifact retrieval, defaults to 256MiB
 }
 
@@ -130,6 +131,7 @@ type executor struct {
 	authHeader       func(context.Context) (string, error)
 	allowPrivileged  bool
 	retainContainer  bool
+	singleEnv        bool
 	maxArtifactBytes int64
 	activeBuilds     syncx.Map[string, *scratchHandle]
 }
@@ -163,6 +165,7 @@ func newExecutor(config ExecutorConfig) (*executor, error) {
 		authHeader:       config.AuthHeader,
 		allowPrivileged:  config.AllowPrivileged,
 		retainContainer:  config.RetainContainer,
+		singleEnv:        config.SingleEnv,
 		maxArtifactBytes: cmp.Or(config.MaxArtifactBytes, defaultMaxArtifactBytes),
 		activeBuilds:     syncx.Map[string, *scratchHandle]{},
 	}, nil

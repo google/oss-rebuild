@@ -27,6 +27,7 @@ import (
 	"github.com/google/oss-rebuild/internal/buildpolicy"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/pkg/act/api"
+	"github.com/google/oss-rebuild/pkg/build/scratch"
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
@@ -173,10 +174,19 @@ func (a *defaultAgent) logs(ctx context.Context, obliviousID string) (io.ReadClo
 	return obj.NewReader(ctx)
 }
 
+// singleEnv reports whether the session runs entirely in the build container,
+// with no host shell tool.
+func (a *defaultAgent) singleEnv() bool {
+	return a.deps.ScratchRunner != nil && a.deps.ScratchRunner.SingleEnv
+}
+
 func (a *defaultAgent) getTools() []*llm.FunctionDefinition {
 	tools := append(a.gitTools, a.readLogsTool(), a.setSourceRefTool())
 	if a.deps.ScratchRunner != nil {
-		tools = append(tools, a.runOnHostTool(), a.runInContainerTool())
+		if !a.singleEnv() {
+			tools = append(tools, a.runOnHostTool())
+		}
+		tools = append(tools, a.runInContainerTool())
 	}
 	return tools
 }
@@ -270,11 +280,21 @@ func (a *defaultAgent) runOnHostTool() *llm.FunctionDefinition {
 	}
 }
 
+// runInContainerDescription names the container's mounts in single-env mode,
+// where there is no host shell.
+func (a *defaultAgent) runInContainerDescription() string {
+	desc := "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' starting in /src (the host directory ./builds/<build-id>/src): the working directory and shell environment reset between calls, filesystem changes persist. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (a large output keeps only its head and tail; omitted_bytes counts the cut) and the exit code."
+	if a.singleEnv() {
+		desc = "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Everything you need is here: the rebuild at /out/rebuild, diffr at " + scratch.ContainerDiffrPath() + ", the upstream artifact under " + scratch.ContainerUpstreamDir + ", and every attempt's build.sh, out/, and src/ under " + scratch.ContainerBuildsDir + " (all read-only except the working tree). Use it to inspect the build environment or test a fix before proposing a new build. Each call is an independent 'bin/sh -c' starting in /src: the working directory and shell environment reset between calls, filesystem changes persist. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (a large output keeps only its head and tail; omitted_bytes counts the cut) and the exit code."
+	}
+	return desc
+}
+
 func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
 			Name:        "run_in_container",
-			Description: "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' starting in /src (the host directory ./builds/<build-id>/src): the working directory and shell environment reset between calls, filesystem changes persist. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (a large output keeps only its head and tail, omitted_bytes counts the cut) and the exit code.",
+			Description: a.runInContainerDescription(),
 			Parameters:  shellCommandParams(),
 			Response:    shellCommandResponse(),
 		},
@@ -600,7 +620,13 @@ func (a *defaultAgent) diagnoseOnly() []string {
 		"To debug the build, you might want to use the read_logs_end tool to view the build errors to understand what's going wrong.",
 		"You might also want to inspect the contents of the source repo using the read_repo_file or list_repo_files tools.",
 	}
-	if a.deps.ScratchRunner != nil {
+	if a.singleEnv() {
+		prompt = append(prompt,
+			"You can use the run_in_container tool to run commands inside the retained build container with the build's own toolchain. Everything is in the container.",
+			"Where things are, all in the container: the source checkout is at /src, where each call starts; your rebuild is at /out/rebuild; diffr is at "+scratch.ContainerDiffrPath()+" and the upstream artifact is under "+scratch.ContainerUpstreamDir+"; and "+scratch.ContainerBuildsDir+" holds this and every earlier attempt's build.sh, out/, and src/.",
+			fmt.Sprintf("Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees (a result keeps only its first %dKB and last %dKB), and aim to reach a diagnosis in under 20 tool calls; the exchange ends after %d.", toolOutputHead/1000, toolOutputTail/1000, maxToolTurns),
+		)
+	} else if a.deps.ScratchRunner != nil {
 		prompt = append(prompt,
 			"You can also use the run_on_host tool to run diagnostic shell commands on the build VM host (e.g. inspect docker images or examine files left by previous build attempts), and the run_in_container tool to run commands inside the retained build container with the build's own toolchain.",
 			"Where things are: the source checkout is at /src inside the retained container, where each call starts, and that same tree is the host directory ./builds/<build-id>/src, so a file you produce in the container is readable by host tools like diffr at that path. Host tools cannot read other container paths. The previous attempt's build script and output are under ./builds/<build-id>/ on the host. After a content mismatch the error message names where the upstream artifact and diffr sit on the host.",

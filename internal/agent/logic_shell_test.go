@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/oss-rebuild/pkg/llm"
 	"google.golang.org/genai"
 )
 
@@ -163,5 +164,28 @@ func TestTextOf(t *testing.T) {
 				t.Errorf("textOf = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func toolNames(defs []*llm.FunctionDefinition) map[string]bool {
+	m := map[string]bool{}
+	for _, d := range defs {
+		m[d.Name] = true
+	}
+	return m
+}
+
+func TestGetToolsWithdrawsHostShellInSingleEnv(t *testing.T) {
+	two := NewDefaultAgent(testTarget, &AgentDeps{ScratchRunner: &ScratchRunner{}})
+	if n := toolNames(two.getTools()); !n["run_on_host"] || !n["run_in_container"] {
+		t.Errorf("two-environment tools = %v, want both shell tools", n)
+	}
+	one := NewDefaultAgent(testTarget, &AgentDeps{ScratchRunner: &ScratchRunner{SingleEnv: true}})
+	n := toolNames(one.getTools())
+	if n["run_on_host"] {
+		t.Error("single-environment tools include run_on_host")
+	}
+	if !n["run_in_container"] {
+		t.Error("single-environment tools drop run_in_container")
 	}
 }

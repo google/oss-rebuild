@@ -23,6 +23,12 @@ const (
 	AuthEnvPassthrough
 )
 
+// Mount is a read-only docker bind mount of HostPath at ContainerPath.
+type Mount struct {
+	HostPath      string
+	ContainerPath string
+}
+
 // RunArgsOpts parameterizes the docker argv compositions.
 type RunArgsOpts struct {
 	// ContainerName is the container's --name.
@@ -34,6 +40,7 @@ type RunArgsOpts struct {
 	// source tree (DockerRunSourcePath), so what the build leaves there is
 	// readable from the host and outlives the container.
 	SourceMountSrc string
+	ReadOnlyMounts []Mount // extra read-only bind mounts
 	// Remove adds --rm: the daemon removes the container once it exits. In
 	// the start/exec composition the container only exits when its idle init
 	// stops.
@@ -57,6 +64,9 @@ func composeContainerArgs(plan *DockerRunPlan, opts RunArgsOpts) []string {
 	args = append(args, "-v", fmt.Sprintf("%s:%s", opts.OutputMountSrc, path.Dir(plan.OutputPath)))
 	if opts.SourceMountSrc != "" {
 		args = append(args, "-v", fmt.Sprintf("%s:%s", opts.SourceMountSrc, DockerRunSourcePath))
+	}
+	for _, m := range opts.ReadOnlyMounts {
+		args = append(args, "-v", fmt.Sprintf("%s:%s:ro", m.HostPath, m.ContainerPath))
 	}
 	if plan.WorkingDir != "" {
 		args = append(args, "-w", plan.WorkingDir)
