@@ -136,9 +136,12 @@ func (h Handler) addPackageToIndex(fs billy.Filesystem, indexCommit, packageName
 		return errors.Wrap(err, "fetching index file")
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		log.Printf("Package %s not found in index at commit %s", packageName, indexCommit)
+		return nil
+	}
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Package %s not found in index at commit %s (status %d)", packageName, indexCommit, resp.StatusCode)
-		return nil // skip missing file
+		return errors.Errorf("fetching index file: unexpected HTTP status %d", resp.StatusCode)
 	}
 	// Ensure directory exists
 	if err := fs.MkdirAll(path.Dir(indexPath), 0755); err != nil {
