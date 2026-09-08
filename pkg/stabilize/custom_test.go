@@ -190,6 +190,30 @@ func TestExcludePath_Validate(t *testing.T) {
 			wantErr: true,
 			errMsg:  "no path provided",
 		},
+		{
+			name: "two globstars",
+			ep: ExcludePath{
+				Paths: []string{"**/tests/**"},
+			},
+			wantErr: true,
+			errMsg:  "bad path pattern: invalid pattern: only one '**' is permitted",
+		},
+		{
+			name: "unterminated class",
+			ep: ExcludePath{
+				Paths: []string{"pkg/te[st.py"},
+			},
+			wantErr: true,
+			errMsg:  "bad path pattern: syntax error in pattern",
+		},
+		{
+			name: "globstar not slash delimited",
+			ep: ExcludePath{
+				Paths: []string{"**tests"},
+			},
+			wantErr: true,
+			errMsg:  "bad path pattern: invalid pattern: '**' must be surrounded by slashes or be at start/end of pattern",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -318,6 +342,31 @@ func TestExcludePath_Stabilizer(t *testing.T) {
 				t.Errorf("Stabilizer() impl type = %T, want %T", fn, tt.wantFunc)
 			}
 		})
+	}
+}
+
+func TestExcludePath_MalformedPatternKeepsEntries(t *testing.T) {
+	var zipFile bytes.Buffer
+	{
+		zw := zip.NewWriter(&zipFile)
+		for _, name := range []string{"pkg/index.js", "pkg/tests/a.js"} {
+			orDie((&archive.ZipEntry{FileHeader: &zip.FileHeader{Name: name}, Body: []byte(name)}).WriteTo(zw))
+		}
+		orDie(zw.Close())
+	}
+	// Bypass Validate so a slipped-through malformed glob still cannot empty the archive.
+	stab := (&ExcludePath{Paths: []string{"**/tests/**"}}).Stabilizer("test")
+	zr := must(zip.NewReader(bytes.NewReader(zipFile.Bytes()), int64(zipFile.Len())))
+	var output bytes.Buffer
+	zw := zip.NewWriter(&output)
+	orDie(StabilizeZip(zr, zw, NewContext(archive.ZipFormat).WithStabilizers([]Stabilizer{stab})))
+	got := must(zip.NewReader(bytes.NewReader(output.Bytes()), int64(output.Len())))
+	var names []string
+	for _, f := range got.File {
+		names = append(names, f.Name)
+	}
+	if diff := cmp.Diff([]string{"pkg/index.js", "pkg/tests/a.js"}, names); diff != "" {
+		t.Errorf("entries (-want +got):\n%s", diff)
 	}
 }
 
