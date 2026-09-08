@@ -857,6 +857,86 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 	return s, err
 }
 
+// Canonicalize rewrites a build that already reproduces upstream toward the
+// form inference produces, with registry access confined to the deps phase.
+// The GCB confirmation runs the phases in isolation, so a registry call in
+// the build phase fails there though the combined-shell scratch build
+// tolerates it.
+func (a *defaultAgent) Canonicalize(ctx context.Context, opts *ProposeOpts, working *schema.StrategyOneOf) (out *schema.StrategyOneOf, changed bool, err error) {
+	s, err := working.Strategy()
+	if err != nil {
+		return working, false, errors.Wrap(err, "reading working strategy")
+	}
+	ms, ok := s.(*rebuild.ManualStrategy)
+	if !ok {
+		return working, false, nil // already a typed, inference-shaped strategy
+	}
+	// Registry access goes through the timewarp host.
+	marker := a.buildEnv().TimewarpHost
+	if marker == "" || !strings.Contains(ms.Build, marker) {
+		return working, false, nil // no registry access in the build phase
+	}
+	// A fresh chat, as each proposal gets: fold the diagnose chat's tokens
+	// into the side total first so they are not lost when it is replaced.
+	if a.deps.ChatFn != nil {
+		if a.deps.Chat != nil {
+			a.sideUsage = a.sideUsage.Add(sumTokenUsage(a.deps.Chat.Usage(), a.deps.Chat.Model()))
+		}
+		chat, err := a.deps.ChatFn(ctx)
+		if err != nil {
+			return working, false, errors.Wrap(err, "starting canonicalize chat")
+		}
+		a.deps.Chat = chat
+	}
+	prompt := []string{
+		"You are refining a build definition that already reproduces the upstream artifact byte-for-byte.",
+		"It runs as two sequential phases. The deps phase has registry and network access. The build phase does not: it only compiles what deps fetched.",
+		"Rewrite the two phases so that every registry or network access happens in the deps phase and none remains in the build phase. Do not change what is built or the produced artifact. It must still reproduce upstream.",
+		"Preserve execution order. The phases run in sequence, deps then build, as one command sequence, and the order of installs and setup steps is often load-bearing. A command you move into the deps phase must keep its position relative to the others: append it after the existing deps commands, never before them, and never reorder one install ahead of another.",
+		"Current deps phase:", ms.Deps,
+		"Current build phase:", ms.Build,
+		"Output the new deps phase, then a line containing only ===BUILD===, then the new build phase. Emit only the two scripts: no markdown fences, no commentary.",
+	}
+	raw, err := a.generate(ctx, prompt, opts)
+	if err != nil {
+		return working, false, errors.Wrap(err, "canonicalize generate")
+	}
+	deps, build, ok := splitCanonical(raw)
+	if !ok {
+		return working, false, errors.New("canonicalize output missing ===BUILD=== separator")
+	}
+	return new(schema.NewStrategyOneOf(&rebuild.ManualStrategy{
+		Location:   ms.Location,
+		Requires:   ms.Requires,
+		Deps:       deps,
+		Build:      build,
+		OutputPath: ms.OutputPath,
+	})), true, nil
+}
+
+// splitCanonical parses Canonicalize's two-script output on the ===BUILD===
+// separator, stripping any code fences the model added around each script.
+func splitCanonical(out string) (deps, build string, ok bool) {
+	const sep = "===BUILD==="
+	i := strings.Index(out, sep)
+	if i < 0 {
+		return "", "", false
+	}
+	return stripFences(out[:i]), stripFences(out[i+len(sep):]), true
+}
+
+func stripFences(s string) string {
+	s = strings.TrimSpace(s)
+	for _, p := range []string{"```bash", "```shell", "```sh", "```"} {
+		if strings.HasPrefix(s, p) {
+			s = strings.TrimPrefix(s, p)
+			break
+		}
+	}
+	s = strings.TrimSuffix(strings.TrimSpace(s), "```")
+	return strings.TrimSpace(s)
+}
+
 // uploadProposalRecord records an iteration's proposed strategy in its
 // transcript directory. Best effort: a failed upload doesn't fail the proposal.
 func (a *defaultAgent) uploadProposalRecord(ctx context.Context, opts *ProposeOpts, obj string, s *schema.StrategyOneOf) {

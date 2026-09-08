@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
@@ -31,6 +32,8 @@ type fakeAgent struct {
 	proposeErr error
 	proposeOK  int
 	proposes   int
+	recorded   []*schema.AgentIteration // every iteration handed to RecordIteration
+	canonical  *schema.StrategyOneOf    // when set, what Canonicalize returns with changed=true
 }
 
 func (a *fakeAgent) Propose(context.Context, *ProposeOpts) (*schema.StrategyOneOf, error) {
@@ -42,7 +45,14 @@ func (a *fakeAgent) Propose(context.Context, *ProposeOpts) (*schema.StrategyOneO
 	return a.strategy, nil
 }
 
-func (a *fakeAgent) RecordIteration(*schema.AgentIteration) {}
+func (a *fakeAgent) Canonicalize(_ context.Context, _ *ProposeOpts, working *schema.StrategyOneOf) (*schema.StrategyOneOf, bool, error) {
+	if a.canonical != nil {
+		return a.canonical, true, nil
+	}
+	return working, false, nil
+}
+
+func (a *fakeAgent) RecordIteration(i *schema.AgentIteration) { a.recorded = append(a.recorded, i) }
 
 func (a *fakeAgent) Usage() schema.TokenUsage { return a.usage }
 
@@ -243,5 +253,77 @@ func TestRunSessionReportsAfterCancel(t *testing.T) {
 	RunSession(ctx, RunSessionReq{SessionID: "sess"}, deps)
 	if got == nil || got.SessionID != "sess" {
 		t.Fatalf("completion = %+v, want a report for sess", got)
+	}
+}
+
+// canonicalStrategy is a distinct ManualStrategy standing in for a
+// canonicalized rewrite of testStrategy.
+func canonicalStrategy() *schema.StrategyOneOf {
+	return new(schema.NewStrategyOneOf(&rebuild.ManualStrategy{
+		Location:   rebuild.Location{Repo: "https://github.com/lodash/lodash", Ref: "aa1d7d870d9cf84842ee23ff485fd24abf0ed3d1", Dir: "."},
+		Deps:       "npm install -g yarn --registry $REG\nyarn install",
+		Build:      "yarn pack",
+		OutputPath: "lodash-4.17.21.tgz",
+	}))
+}
+
+// nthFailExecutor delegates to inner but returns a failing build on the
+// failOn-th Start call, so a test can fail just the canonical re-verify.
+type nthFailExecutor struct {
+	inner  build.Executor
+	failOn int
+	n      int
+}
+
+func (e *nthFailExecutor) Start(ctx context.Context, input rebuild.Input, opts build.Options) (build.Handle, error) {
+	e.n++
+	if e.n == e.failOn {
+		return &fakeHandle{result: build.Result{Error: &scratch.ExitError{Code: 1}}}, nil
+	}
+	return e.inner.Start(ctx, input, opts)
+}
+func (e *nthFailExecutor) Status() build.ExecutorStatus    { return e.inner.Status() }
+func (e *nthFailExecutor) Close(ctx context.Context) error { return e.inner.Close(ctx) }
+
+func TestDoIterationConfirmsCanonicalizedBuild(t *testing.T) {
+	artifact := testTarball(t)
+	runner := testRunner(&fakeExecutor{artifact: artifact})
+	runner.RegistryClient = &fakeRegistry{artifact: artifact}
+	original, canonical := testStrategy(), canonicalStrategy()
+	var confirmed *schema.AgentCreateIterationRequest
+	deps := RunSessionDeps{
+		ScratchRunner: runner,
+		IterationStub: func(_ context.Context, req schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
+			confirmed = &req
+			return &schema.AgentCreateIterationResponse{Iteration: &schema.AgentIteration{ID: "c1", Status: schema.AgentIterationStatusSuccess}}, nil
+		},
+	}
+	if _, err := doIteration(context.Background(), "sess", 2, &fakeAgent{strategy: original, canonical: canonical}, deps); err != nil {
+		t.Fatalf("doIteration: %v", err)
+	}
+	if confirmed == nil || confirmed.Strategy != canonical {
+		t.Errorf("confirmed strategy = %v, want the canonical rewrite", confirmed)
+	}
+}
+
+func TestDoIterationConfirmsOriginalWhenCanonicalFails(t *testing.T) {
+	artifact := testTarball(t)
+	// The first Start (original) succeeds, the second (canonical re-verify) fails.
+	runner := testRunner(&nthFailExecutor{inner: &fakeExecutor{artifact: artifact}, failOn: 2})
+	runner.RegistryClient = &fakeRegistry{artifact: artifact}
+	original, canonical := testStrategy(), canonicalStrategy()
+	var confirmed *schema.AgentCreateIterationRequest
+	deps := RunSessionDeps{
+		ScratchRunner: runner,
+		IterationStub: func(_ context.Context, req schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
+			confirmed = &req
+			return &schema.AgentCreateIterationResponse{Iteration: &schema.AgentIteration{ID: "c1", Status: schema.AgentIterationStatusSuccess}}, nil
+		},
+	}
+	if _, err := doIteration(context.Background(), "sess", 2, &fakeAgent{strategy: original, canonical: canonical}, deps); err != nil {
+		t.Fatalf("doIteration: %v", err)
+	}
+	if confirmed == nil || confirmed.Strategy != original {
+		t.Errorf("confirmed strategy = %v, want the original verified build", confirmed)
 	}
 }
