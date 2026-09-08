@@ -241,7 +241,7 @@ func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
 			Name:        "run_in_container",
-			Description: "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' starting in /src: the working directory and shell environment reset between calls, filesystem changes persist. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (a large output keeps only its head and tail, omitted_bytes counts the cut) and the exit code.",
+			Description: "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' starting in /src (the host directory ./builds/<build-id>/src): the working directory and shell environment reset between calls, filesystem changes persist. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (a large output keeps only its head and tail, omitted_bytes counts the cut) and the exit code.",
 			Parameters:  shellCommandParams(),
 			Response:    shellCommandResponse(),
 		},
@@ -535,7 +535,7 @@ func (a *defaultAgent) diagnoseOnly() []string {
 	if a.deps.ScratchRunner != nil {
 		prompt = append(prompt,
 			"You can also use the run_on_host tool to run diagnostic shell commands on the build VM host (e.g. inspect docker images or examine files left by previous build attempts), and the run_in_container tool to run commands inside the retained build container with the build's own toolchain.",
-			"Where things are: the source checkout is at /src inside the retained container, where each call starts. The previous attempt's build script and output are under ./builds/<build-id>/ on the host. After a content mismatch the error message names where the upstream artifact and diffr sit on the host.",
+			"Where things are: the source checkout is at /src inside the retained container, where each call starts, and that same tree is the host directory ./builds/<build-id>/src, so a file you produce in the container is readable by host tools like diffr at that path. Host tools cannot read other container paths. The previous attempt's build script and output are under ./builds/<build-id>/ on the host. After a content mismatch the error message names where the upstream artifact and diffr sit on the host.",
 			fmt.Sprintf("Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees (a result keeps only its first %dKB and last %dKB), and aim to reach a diagnosis in under 20 tool calls. The exchange ends after %d.", toolOutputHead/1000, toolOutputTail/1000, maxToolTurns),
 		)
 	}
