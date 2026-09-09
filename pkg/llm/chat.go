@@ -51,6 +51,7 @@ type Chat struct {
 	maxIter   int
 	retrier   ratex.Retrier
 	usage     []*genai.GenerateContentResponseUsageMetadata
+	forbidden bool // the session forbids tools, as the last budgeted turn left it
 }
 
 // NewChat creates and initializes a new Chat instance for managing a conversation.
@@ -127,6 +128,13 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 			yield(nil, errors.New("message parts cannot be empty"))
 			return
 		}
+		if cm.forbidden {
+			if err := cm.setConfig(ctx, cm.config); err != nil {
+				yield(nil, errors.Wrap(err, "restoring tools"))
+				return
+			}
+			cm.forbidden = false
+		}
 		currentParts := slices.Clone(parts)
 		for i := range cm.maxIter {
 			if !yield(&genai.Content{Parts: currentParts, Role: UserRole}, nil) {
@@ -169,9 +177,14 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 				// entry, so reusing the array rewrites earlier turns.
 				currentParts = make([]*genai.Part, 0, len(calls)+1)
 				if i == cm.maxIter-2 {
-					// The next iteration is the last the budget allows so force a response.
-					// NOTE: Current models require the nudge go ahead of the function response.
+					// The next iteration is the last, and a call there would end the
+					// exchange unanswered. The nudge tells the model why tools are gone.
+					// NOTE: The nudge must precede the function responses.
 					// ("Requests ending with a model turn are not supported").
+					if err := cm.forbidTools(ctx); err != nil {
+						yield(nil, errors.Wrap(err, "closing the tool budget"))
+						return
+					}
 					currentParts = append(currentParts, genai.NewPartFromText(finalTurnNudge))
 				}
 				for _, call := range calls {
@@ -196,6 +209,28 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 		yield(nil, errors.Errorf("maximum tool iterations (%d) exceeded", cm.maxIter))
 		return
 	}
+}
+
+// forbidTools forbids function calls until the next message.
+func (cm *Chat) forbidTools(ctx context.Context) error {
+	config := *cm.config
+	config.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: genai.FunctionCallingConfigModeNone}}
+	if err := cm.setConfig(ctx, &config); err != nil {
+		return err
+	}
+	cm.forbidden = true
+	return nil
+}
+
+// setConfig moves the history to a new session under config. genai binds a
+// chat's config at creation.
+func (cm *Chat) setConfig(ctx context.Context, config *genai.GenerateContentConfig) error {
+	session, err := cm.client.Chats.Create(ctx, cm.model, config, cm.session.History(false))
+	if err != nil {
+		return err
+	}
+	cm.session = session
+	return nil
 }
 
 // History returns a copy of the conversation history accumulated so far.

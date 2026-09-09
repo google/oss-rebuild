@@ -159,3 +159,52 @@ func TestUnknownToolIsAnsweredInBand(t *testing.T) {
 		t.Errorf("correction turn did not name the unknown tool and the real ones:\n%s", last)
 	}
 }
+
+func TestFinalTurnForbidsToolCalls(t *testing.T) {
+	ctx := context.Background()
+	tr := &scriptedTransport{responses: []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"probe","args":{"n":1}}}]},"finishReason":"STOP"}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"probe","args":{"n":2}}}]},"finishReason":"STOP"}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]},"finishReason":"STOP"}]}`,
+	}}
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: "test", Backend: genai.BackendGeminiAPI, HTTPClient: &http.Client{Transport: tr}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := &FunctionDefinition{
+		FunctionDeclaration: genai.FunctionDeclaration{Name: "probe", Parameters: &genai.Schema{Type: genai.TypeObject, Properties: map[string]*genai.Schema{"n": {Type: genai.TypeInteger}}}},
+		Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
+			return genai.FunctionResponse{Name: "probe", Response: map[string]any{"echo": args["n"]}}
+		},
+	}
+	chat, err := NewChat(ctx, client, "m", nil, &ChatOpts{Tools: []*FunctionDefinition{probe}, MaxToolIterations: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chat.SendMessage(ctx, genai.NewPartFromText("the task")); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	// The next message gets its tools back.
+	tr.responses = append(tr.responses, `{"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`)
+	if _, err := chat.SendMessage(ctx, genai.NewPartFromText("a follow-up")); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	mode := func(body []byte) string {
+		var req struct {
+			ToolConfig struct {
+				FunctionCallingConfig struct{ Mode string }
+			}
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatal(err)
+		}
+		return req.ToolConfig.FunctionCallingConfig.Mode
+	}
+	if got := []string{mode(tr.requests[0]), mode(tr.requests[1]), mode(tr.requests[2]), mode(tr.requests[3])}; got[0] != "" || got[1] != "" || got[2] != "NONE" || got[3] != "" {
+		t.Errorf("function calling modes by send = %q, want NONE on the budget's last send only", got)
+	}
+	// Each session swap must carry the whole history.
+	if h := chat.History(); len(h) != 8 || h[0].Parts[0].Text != "the task" {
+		t.Errorf("history has %d contents starting %+v, want 8 opening with the prompt", len(h), h[0].Parts[0])
+	}
+}
