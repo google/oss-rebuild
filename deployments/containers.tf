@@ -59,6 +59,14 @@ locals {
         "BUILD_VERSION=${terraform_data.service_version.output}"
       ]
     }
+    snapshot-rollup = {
+      dockerfile = "build/package/Dockerfile.snapshot-rollup"
+      build_args = [
+        "DEBUG=${terraform_data.debug.output}",
+        "BUILD_REPO=${var.repo}",
+        "BUILD_VERSION=${terraform_data.service_version.output}"
+      ]
+    }
     agent-api = {
       dockerfile = "build/package/Dockerfile.agent-api"
       build_args = [
@@ -215,6 +223,13 @@ data "google_artifact_registry_docker_image" "rebuild-job" {
   repository_id = google_artifact_registry_repository.registry.repository_id
   image_name    = "rebuild-job:${module.service_images["rebuild-job"].image_version}"
   depends_on    = [module.service_images["rebuild-job"]]
+}
+
+data "google_artifact_registry_docker_image" "snapshot-rollup" {
+  location      = google_artifact_registry_repository.registry.location
+  repository_id = google_artifact_registry_repository.registry.repository_id
+  image_name    = "snapshot-rollup:${module.service_images["snapshot-rollup"].image_version}"
+  depends_on    = [module.service_images["snapshot-rollup"]]
 }
 
 data "google_artifact_registry_docker_image" "agent-api" {

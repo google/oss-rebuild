@@ -627,19 +627,15 @@ resource "google_cloud_scheduler_job" "snapshot-delta" {
 # Rebuilds the snapshot database from a full Firestore scan, correcting any
 # drift the delta stream cannot see (out-of-band edits, migrations).
 resource "google_cloud_scheduler_job" "snapshot-rollup" {
-  name             = "${var.host}-snapshot-rollup"
-  schedule         = "0 9 * * *" # daily at 09:00 UTC
-  region           = "us-central1"
-  attempt_deadline = "1800s" # 30m
+  name     = "${var.host}-snapshot-rollup"
+  schedule = "0 9 * * *" # daily at 09:00 UTC
+  region   = "us-central1"
   http_target {
-    uri         = "${google_cloud_run_v2_service.orchestrator.uri}/snapshot/rollup"
+    uri         = "https://run.googleapis.com/v2/${google_cloud_run_v2_job.snapshot-rollup.id}:run"
     http_method = "POST"
-    headers = {
-      "Content-Type" = "application/x-www-form-urlencoded"
-    }
-    oidc_token {
+    oauth_token {
       service_account_email = google_service_account.cron.email
-      audience              = google_cloud_run_v2_service.orchestrator.uri
+      scope                 = "https://www.googleapis.com/auth/cloud-platform"
     }
   }
   depends_on = [google_project_service.cloudscheduler]
