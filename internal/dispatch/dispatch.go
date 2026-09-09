@@ -28,38 +28,40 @@ import (
 
 // Config bounds and shapes one pass. Zero caps are unbounded.
 type Config struct {
-	Batch               int
-	MaxAgent            int
-	AgentIterations     int
-	AgentModel          string
-	EvalModels          string // comma-separated, overrides AgentModel. Launches rotate through it, so repeat a model to weight it
-	Workers             int
-	BuildRate           int           // build launches per minute, or 0 for as fast as the workers allow
-	Window              time.Duration // stop launching this long after the pass starts, or 0 to launch everything approved
-	Refill              time.Duration // re-observe and refill this often until Window closes, or 0 for one pass
-	BuildTimeCap        time.Duration
-	SessionTimeCap      time.Duration
-	Period              time.Duration
-	MaxInflightBuilds   int
-	MaxInflightSessions int
-	InflightTimeout     time.Duration
-	MaxRetries          int
-	FreshnessK          float64
-	FreshnessTauHours   float64
+	Batch                int
+	MaxAgent             int
+	AgentIterations      int
+	AgentIterationBudget time.Duration // iteration start cutoff, 0 for none
+	AgentModel           string
+	EvalModels           string // comma-separated, overrides AgentModel. Launches rotate through it, so repeat a model to weight it
+	Workers              int
+	BuildRate            int           // build launches per minute, or 0 for as fast as the workers allow
+	Window               time.Duration // stop launching this long after the pass starts, or 0 to launch everything approved
+	Refill               time.Duration // re-observe and refill this often until Window closes, or 0 for one pass
+	BuildTimeCap         time.Duration
+	SessionTimeCap       time.Duration
+	Period               time.Duration
+	MaxInflightBuilds    int
+	MaxInflightSessions  int
+	InflightTimeout      time.Duration
+	MaxRetries           int
+	FreshnessK           float64
+	FreshnessTauHours    float64
 }
 
 // Defaults is the configuration a pass runs with when nothing is specified.
 var Defaults = Config{
-	Batch:             50,
-	MaxAgent:          5,
-	AgentIterations:   5,
-	Workers:           12,
-	BuildRate:         40, // under GCB's 60 build creates per minute, with room for the retries behind them
-	Period:            24 * time.Hour,
-	InflightTimeout:   24 * time.Hour,
-	MaxRetries:        5,
-	FreshnessK:        scheduler.DefaultFreshnessK,
-	FreshnessTauHours: scheduler.DefaultFreshnessTauHours,
+	Batch:                50,
+	MaxAgent:             5,
+	AgentIterations:      5,
+	AgentIterationBudget: 30 * time.Minute, // later starts rarely win for their cost
+	Workers:              12,
+	BuildRate:            40, // under GCB's 60 build creates per minute, with room for the retries behind them
+	Period:               24 * time.Hour,
+	InflightTimeout:      24 * time.Hour,
+	MaxRetries:           5,
+	FreshnessK:           scheduler.DefaultFreshnessK,
+	FreshnessTauHours:    scheduler.DefaultFreshnessTauHours,
 }
 
 // Validate implements act.Input.
@@ -74,24 +76,25 @@ func (c Config) Validate() error {
 // fields take Defaults and a negative value switches a cap off. Durations are
 // Go duration strings ("24h").
 type Request struct {
-	Batch               int     `form:"batch"`
-	MaxAgent            int     `form:"max_agent"`
-	AgentIterations     int     `form:"agent_iterations"`
-	AgentModel          string  `form:"agent_model"`
-	EvalModels          string  `form:"eval_models"`
-	Workers             int     `form:"workers"`
-	BuildRate           int     `form:"build_rate"`
-	Window              string  `form:"window"`
-	Refill              string  `form:"refill"`
-	BuildTimeCap        string  `form:"build_time_cap"`
-	SessionTimeCap      string  `form:"session_time_cap"`
-	Period              string  `form:"period"`
-	MaxInflightBuilds   int     `form:"max_inflight_builds"`
-	MaxInflightSessions int     `form:"max_inflight_sessions"`
-	InflightTimeout     string  `form:"inflight_timeout"`
-	MaxRetries          int     `form:"max_retries"`
-	FreshnessK          float64 `form:"freshness_k"`
-	FreshnessTauHours   float64 `form:"freshness_tau_hours"`
+	Batch                int     `form:"batch"`
+	MaxAgent             int     `form:"max_agent"`
+	AgentIterations      int     `form:"agent_iterations"`
+	AgentIterationBudget string  `form:"agent_iteration_budget"`
+	AgentModel           string  `form:"agent_model"`
+	EvalModels           string  `form:"eval_models"`
+	Workers              int     `form:"workers"`
+	BuildRate            int     `form:"build_rate"`
+	Window               string  `form:"window"`
+	Refill               string  `form:"refill"`
+	BuildTimeCap         string  `form:"build_time_cap"`
+	SessionTimeCap       string  `form:"session_time_cap"`
+	Period               string  `form:"period"`
+	MaxInflightBuilds    int     `form:"max_inflight_builds"`
+	MaxInflightSessions  int     `form:"max_inflight_sessions"`
+	InflightTimeout      string  `form:"inflight_timeout"`
+	MaxRetries           int     `form:"max_retries"`
+	FreshnessK           float64 `form:"freshness_k"`
+	FreshnessTauHours    float64 `form:"freshness_tau_hours"`
 }
 
 // Validate implements act.Input.
@@ -138,6 +141,7 @@ func (r Request) Config() (Config, error) {
 		{"session_time_cap", r.SessionTimeCap, &c.SessionTimeCap},
 		{"period", r.Period, &c.Period},
 		{"inflight_timeout", r.InflightTimeout, &c.InflightTimeout},
+		{"agent_iteration_budget", r.AgentIterationBudget, &c.AgentIterationBudget},
 	} {
 		if f.src == "" {
 			continue
@@ -705,10 +709,11 @@ func (d *Dispatcher) start(ctx context.Context, c scheduler.Campaign, model stri
 		return "", err
 	case scheduler.StageAgent:
 		resp, err := d.Agent(ctx, schema.AgentCreateRequest{
-			Target:        c.Target(),
-			RunID:         c.LastRunID,
-			MaxIterations: d.Config.AgentIterations,
-			Model:         model,
+			Target:                 c.Target(),
+			RunID:                  c.LastRunID,
+			MaxIterations:          d.Config.AgentIterations,
+			IterationBudgetSeconds: int(d.Config.AgentIterationBudget.Seconds()),
+			Model:                  model,
 		})
 		if err != nil {
 			return "", err

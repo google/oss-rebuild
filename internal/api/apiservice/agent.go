@@ -96,17 +96,18 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		maxIterations = DefaultMaxIterations
 	}
 	session := schema.AgentSession{
-		ID:             sessionID,
-		RunID:          req.RunID,
-		Target:         req.Target,
-		MaxIterations:  maxIterations,
-		TimeoutSeconds: deps.AgentTimeoutSeconds,
-		Context:        req.Context,
-		Status:         schema.AgentSessionStatusInitializing,
-		ExecutionMode:  executionMode,
-		Model:          req.Model,
-		Created:        sessionTime,
-		Updated:        sessionTime,
+		ID:                     sessionID,
+		RunID:                  req.RunID,
+		Target:                 req.Target,
+		MaxIterations:          maxIterations,
+		TimeoutSeconds:         deps.AgentTimeoutSeconds,
+		IterationBudgetSeconds: req.IterationBudgetSeconds,
+		Context:                req.Context,
+		Status:                 schema.AgentSessionStatusInitializing,
+		ExecutionMode:          executionMode,
+		Model:                  req.Model,
+		Created:                sessionTime,
+		Updated:                sessionTime,
 	}
 	if err := deps.Sessions.Insert(ctx, session); err != nil {
 		if errors.Is(err, db.ErrAlreadyExists) {
@@ -178,6 +179,9 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		}
 		if req.Model != "" {
 			args = append(args, "--model="+req.Model)
+		}
+		if req.IterationBudgetSeconds > 0 {
+			args = append(args, fmt.Sprintf("--iteration-budget=%ds", req.IterationBudgetSeconds))
 		}
 		if executionMode == schema.AgentExecutionModeScratch {
 			args = append(args,
