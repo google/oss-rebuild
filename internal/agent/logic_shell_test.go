@@ -4,9 +4,14 @@
 package agent
 
 import (
+	"context"
+	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestPosixSingleQuote round-trips tricky commands through a real /bin/sh: the
@@ -77,5 +82,45 @@ func TestShellTimeout(t *testing.T) {
 				t.Errorf("shellTimeout() = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestDetachOutput runs the wrapper through a real /bin/sh: the call returns
+// when the command's own shell exits even though the child is backgrounded and
+// still holds the output, and the output and exit code intact. A wrapper
+// killed before its replay, as on a timeout, leaves the output for
+// readbackScript.
+// NOTE: The child outlives the call, so the test remains fast.
+func TestDetachOutput(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	file := filepath.Join(t.TempDir(), "out")
+	start := time.Now()
+	out, err := exec.CommandContext(ctx, "/bin/sh", "-c", detachOutput("echo out; echo err >&2; sleep 1 & exit 3", file)).CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 3 {
+		t.Fatalf("err = %v, want exit code 3", err)
+	}
+	if got := string(out); got != "out\nerr\n" {
+		t.Errorf("output = %q, want the command's stdout and stderr in order", got)
+	}
+	if took := time.Since(start); took > 500*time.Millisecond {
+		t.Errorf("call took %v, want a return when the shell exits, not when its child does", took)
+	}
+	wrapper := exec.CommandContext(ctx, "/bin/sh", "-c", detachOutput("echo partial; sleep 2", file))
+	if err := wrapper.Start(); err != nil {
+		t.Fatal(err)
+	}
+	for b, _ := os.ReadFile(file); len(b) == 0 && ctx.Err() == nil; b, _ = os.ReadFile(file) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	_ = wrapper.Process.Kill()
+	_ = wrapper.Wait()
+	out, err = exec.CommandContext(ctx, "/bin/sh", "-c", readbackScript(file)).CombinedOutput()
+	if err != nil || string(out) != "partial\n" {
+		t.Errorf("readback = %q, %v, want the output so far", out, err)
+	}
+	if _, err := os.Stat(file); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("output file after the readback: %v, want it removed", err)
 	}
 }

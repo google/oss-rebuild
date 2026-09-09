@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"path"
 	"reflect"
 	"strings"
@@ -250,11 +251,22 @@ func (a *defaultAgent) runShell(name string, args map[string]any, wrap func(stri
 	if terr != "" {
 		return shellResponse(name, "", 0, terr)
 	}
-	script := command
-	if wrap != nil {
-		script = wrap(command)
+	run := func(script string, timeout int) (int, string, error) {
+		if wrap != nil {
+			script = wrap(script)
+		}
+		return a.deps.ScratchRunner.RunCommand(context.Background(), script, timeout)
 	}
-	exitCode, output, err := a.deps.ScratchRunner.RunCommand(context.Background(), script, timeout)
+	out := fmt.Sprintf("/tmp/.rb-tool-%016x", rand.Uint64())
+	exitCode, output, err := run(detachOutput(command, out), timeout)
+	if errors.As(err, new(commandTimeout)) {
+		// A timeout can kill the shell before its replay.
+		_, back, rerr := run(readbackScript(out), readbackTimeout)
+		if rerr != nil {
+			log.Printf("%s: reading back a timed-out call's output: %v", name, rerr)
+		}
+		output = cmp.Or(back, output)
+	}
 	if len(output) > uploadBytesLimit {
 		output = "...(truncated)..." + output[len(output)-uploadBytesLimit:]
 	}
@@ -314,6 +326,29 @@ func shellCommandResponse() *genai.Schema {
 			"error":     {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
 		},
 	}
+}
+
+// commandTimeout is the error of a command that timed out.
+type commandTimeout int
+
+func (s commandTimeout) Error() string { return fmt.Sprintf("command timed out after %ds", int(s)) }
+
+// readbackTimeout bounds the exec that reads back a timed-out call's output.
+const readbackTimeout = 30
+
+// detachOutput sends the command's output to the file out and replays it once
+// the command's own shell exits, so a process left in the background (e.g.
+// timewarp) won't hold the call's pipe open. The file is removed before the
+// replay, so only a call killed earlier leaves it for readbackScript.
+func detachOutput(command, out string) string {
+	return "( " + command + "\n) >" + out + " 2>&1; rc=$?; { rm -f " + out + "; cat; } <" + out + "; exit $rc"
+}
+
+// readbackScript replays and removes a timed-out call's output file. It first
+// kills whatever still writes to the file, which a timeout misses inside a
+// container.
+func readbackScript(out string) string {
+	return "for p in /proc/[0-9]*; do { [ $p/fd/1 -ef " + out + " ] || [ $p/fd/2 -ef " + out + " ]; } && kill -9 ${p#/proc/}; done 2>/dev/null; cat " + out + " 2>/dev/null; rm -f " + out
 }
 
 // dockerExecInContainerScript wraps command to run inside the retained build
