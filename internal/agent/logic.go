@@ -247,9 +247,9 @@ func (a *defaultAgent) runShell(name string, args map[string]any, wrap func(stri
 	if terr != "" {
 		return shellResponse(name, "", 0, terr)
 	}
-	script := command
+	script := detachOutput(command)
 	if wrap != nil {
-		script = wrap(command)
+		script = wrap(script)
 	}
 	exitCode, output, err := a.deps.ScratchRunner.RunCommand(context.Background(), script, timeout)
 	if len(output) > uploadBytesLimit {
@@ -311,6 +311,13 @@ func shellCommandResponse() *genai.Schema {
 			"error":     {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
 		},
 	}
+}
+
+// detachOutput sends the command's output to a file and replays it once the
+// command's own shell exits. Notably, this means a process left in the
+// background (e.g. timewarp) won't hold the call's pipe open indefinitely.
+func detachOutput(command string) string {
+	return "out=$(mktemp); ( " + command + "\n) >\"$out\" 2>&1; rc=$?; cat \"$out\"; rm -f \"$out\"; exit $rc"
 }
 
 // dockerExecInContainerScript wraps command to run inside the retained build
