@@ -5,6 +5,7 @@ package agent
 
 import (
 	"cmp"
+	"context"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/llm"
@@ -31,7 +32,7 @@ func giveUpTool(record func(reason string)) *llm.FunctionDefinition {
 			},
 			Response: &genai.Schema{Type: genai.TypeObject, Properties: map[string]*genai.Schema{"result": {Type: genai.TypeString}}},
 		},
-		Function: func(args map[string]any) genai.FunctionResponse {
+		Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
 			reason, _ := args["reason"].(string)
 			record(cmp.Or(strings.TrimSpace(reason), "no reason given"))
 			return genai.FunctionResponse{Name: "give_up", Response: map[string]any{"result": "Recorded. End the turn now."}}

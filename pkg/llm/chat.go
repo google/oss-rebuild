@@ -183,7 +183,7 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 						}})
 						continue
 					}
-					currentParts = append(currentParts, &genai.Part{FunctionResponse: new(implFunc(call.Args))})
+					currentParts = append(currentParts, &genai.Part{FunctionResponse: new(implFunc(ctx, call.Args))})
 				}
 				continue
 			} else if candidate.FinishReason == genai.FinishReasonStop {

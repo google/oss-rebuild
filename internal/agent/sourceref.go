@@ -54,7 +54,7 @@ func (a *defaultAgent) setSourceRefTool() *llm.FunctionDefinition {
 				},
 			},
 		},
-		Function: func(args map[string]any) genai.FunctionResponse {
+		Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
 			ref, _ := args["ref"].(string)
 			reason, _ := args["reason"].(string)
 			resp := map[string]any{"sha": "", "error": "", "result": ""}

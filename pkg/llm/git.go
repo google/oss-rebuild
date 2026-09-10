@@ -4,6 +4,7 @@
 package llm
 
 import (
+	"context"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -41,7 +42,7 @@ func GitTools(rp RepoProvider) []*FunctionDefinition {
 					},
 				},
 			},
-			Function: func(args map[string]any) genai.FunctionResponse {
+			Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
 				repo, ref := rp()
 				path := args["path"].(string)
 				var content, errStr string
@@ -81,7 +82,7 @@ func GitTools(rp RepoProvider) []*FunctionDefinition {
 					},
 				},
 			},
-			Function: func(args map[string]any) genai.FunctionResponse {
+			Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
 				repo, ref := rp()
 				var path string
 				if patharg, ok := args["path"]; ok {

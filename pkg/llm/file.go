@@ -4,6 +4,7 @@
 package llm
 
 import (
+	"context"
 	"io"
 
 	"github.com/go-git/go-billy/v5"
@@ -34,7 +35,7 @@ func FileTools(fs billy.Filesystem) []*FunctionDefinition {
 					},
 				},
 			},
-			Function: func(args map[string]any) genai.FunctionResponse {
+			Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
 				var path, content, errStr string
 				if patharg, ok := args["path"]; ok {
 					if p, ok := patharg.(string); ok && p != "" {
@@ -80,7 +81,7 @@ func FileTools(fs billy.Filesystem) []*FunctionDefinition {
 					},
 				},
 			},
-			Function: func(args map[string]any) genai.FunctionResponse {
+			Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
 				var path string
 				if patharg, ok := args["path"]; ok {
 					if p, ok := patharg.(string); ok {
