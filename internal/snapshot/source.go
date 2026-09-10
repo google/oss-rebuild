@@ -33,7 +33,6 @@ type Source interface {
 	Sessions(context.Context, time.Time) iter.Seq2[schema.AgentSession, error]
 	Iterations(context.Context, time.Time) iter.Seq2[schema.AgentIteration, error]
 	Scratches(context.Context, time.Time) iter.Seq2[schema.Scratch, error]
-	Execs(context.Context, time.Time) iter.Seq2[schema.ScratchExec, error]
 	RepoMetrics(context.Context, time.Time) iter.Seq2[schema.RepoMetrics, error]
 	Campaigns(context.Context, time.Time) iter.Seq2[scheduler.Campaign, error]
 	Signals(context.Context) (iter.Seq2[signals.PackageSignal, error], time.Time, error)
@@ -198,10 +197,6 @@ func (s *FirestoreSource) Iterations(ctx context.Context, since time.Time) iter.
 
 func (s *FirestoreSource) Scratches(ctx context.Context, since time.Time) iter.Seq2[schema.Scratch, error] {
 	return scanQuery[schema.Scratch](ctx, sinceQuery(s.client.Collection("scratch").Query, "updated", since))
-}
-
-func (s *FirestoreSource) Execs(ctx context.Context, since time.Time) iter.Seq2[schema.ScratchExec, error] {
-	return scanQuery[schema.ScratchExec](ctx, sinceQuery(s.client.Collection("scratch-execs").Query, "updated", since))
 }
 
 func (s *FirestoreSource) RepoMetrics(ctx context.Context, since time.Time) iter.Seq2[schema.RepoMetrics, error] {

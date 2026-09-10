@@ -87,10 +87,6 @@ func Delta(ctx context.Context, src Source, dest billy.Filesystem, opts DeltaOpt
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning scratch VMs")
 	}
-	execs, err := iterx.Collect(src.Execs(ctx, since))
-	if err != nil {
-		return nil, errors.Wrap(err, "scanning scratch execs")
-	}
 	repoMetrics, err := iterx.Collect(src.RepoMetrics(ctx, since))
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning repo metrics")
@@ -100,14 +96,14 @@ func Delta(ctx context.Context, src Source, dest billy.Filesystem, opts DeltaOpt
 		return nil, errors.Wrap(err, "scanning campaigns")
 	}
 	// package_signals is absent: the exports are rewritten whole at job
-	// cadence and refresh at the next rollup.
+	// cadence and refresh at the next rollup. scratch_execs is absent for
+	// the reason given in Rollup.
 	tables := map[string][]json.RawMessage{
 		TableAttempts:        docsOf(attempts),
 		TableRuns:            docsOf(runs),
 		TableAgentSessions:   docsOf(sessions),
 		TableAgentIterations: docsOf(iterations),
 		TableScratchVMs:      docsOf(scratches),
-		TableScratchExecs:    docsOf(execs),
 		TableRepoMetrics:     docsOf(repoMetrics),
 		TableCampaigns:       docsOf(campaigns),
 	}

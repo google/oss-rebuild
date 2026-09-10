@@ -127,8 +127,10 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 		TableAgentSessions:   func() iter.Seq2[json.RawMessage, error] { return docSeq(src.Sessions(ctx, FullScan)) },
 		TableAgentIterations: func() iter.Seq2[json.RawMessage, error] { return docSeq(src.Iterations(ctx, FullScan)) },
 		TableScratchVMs:      func() iter.Seq2[json.RawMessage, error] { return docSeq(src.Scratches(ctx, FullScan)) },
-		TableScratchExecs:    func() iter.Seq2[json.RawMessage, error] { return docSeq(src.Execs(ctx, FullScan)) },
-		TableRepoMetrics:     func() iter.Seq2[json.RawMessage, error] { return docSeq(src.RepoMetrics(ctx, FullScan)) },
+		// scratch_execs stays empty. Execs are per-command session detail
+		// that nothing reads from the snapshot, and Firestore is their record.
+		TableScratchExecs: func() iter.Seq2[json.RawMessage, error] { return iterx.FromSlice[json.RawMessage](nil) },
+		TableRepoMetrics:  func() iter.Seq2[json.RawMessage, error] { return docSeq(src.RepoMetrics(ctx, FullScan)) },
 		TableCampaigns: func() iter.Seq2[json.RawMessage, error] {
 			return docSeq(fold.tapCampaigns(src.Campaigns(ctx, FullScan)))
 		},

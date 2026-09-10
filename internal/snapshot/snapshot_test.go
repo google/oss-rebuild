@@ -31,7 +31,6 @@ type fakeSource struct {
 	sessions    []schema.AgentSession
 	iterations  []schema.AgentIteration
 	scratches   []schema.Scratch
-	execs       []schema.ScratchExec
 	repoMetrics []schema.RepoMetrics
 	campaigns   []scheduler.Campaign
 	signals     []signals.PackageSignal
@@ -54,9 +53,6 @@ func (f *fakeSource) Iterations(context.Context, time.Time) iter.Seq2[schema.Age
 }
 func (f *fakeSource) Scratches(context.Context, time.Time) iter.Seq2[schema.Scratch, error] {
 	return iterx.FromSlice(f.scratches)
-}
-func (f *fakeSource) Execs(context.Context, time.Time) iter.Seq2[schema.ScratchExec, error] {
-	return iterx.FromSlice(f.execs)
 }
 func (f *fakeSource) RepoMetrics(context.Context, time.Time) iter.Seq2[schema.RepoMetrics, error] {
 	return iterx.FromSlice(f.repoMetrics)
@@ -109,10 +105,6 @@ func TestSnapshotFileRoundTrip(t *testing.T) {
 		},
 		scratches: []schema.Scratch{
 			{ID: "sc1", MachineClass: schema.MachineClassStandard, State: schema.ScratchDeleted, Created: at(0), Updated: at(10 * time.Minute)},
-		},
-		execs: []schema.ScratchExec{
-			{ID: "e1", ScratchID: "sc1", Cmd: []string{"go", "build"}, State: schema.ScratchExecCompleted,
-				CreatedAt: at(0), StartedAt: at(time.Minute), FinishedAt: at(2 * time.Minute), Updated: at(2 * time.Minute)},
 		},
 		repoMetrics: []schema.RepoMetrics{
 			{URI: "https://github.com/example/pkgA", Bytes: 4096, Commits: 12},
