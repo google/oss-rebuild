@@ -14,7 +14,6 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/command/getgradlegav"
 	"github.com/google/oss-rebuild/tools/ctl/command/getresults"
 	"github.com/google/oss-rebuild/tools/ctl/command/getsessions"
-	"github.com/google/oss-rebuild/tools/ctl/command/gettrackedpackages"
 	"github.com/google/oss-rebuild/tools/ctl/command/infer"
 	"github.com/google/oss-rebuild/tools/ctl/command/listruns"
 	"github.com/google/oss-rebuild/tools/ctl/command/localagent"
@@ -25,7 +24,6 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/command/runbenchmark"
 	"github.com/google/oss-rebuild/tools/ctl/command/runone"
 	"github.com/google/oss-rebuild/tools/ctl/command/scratch"
-	"github.com/google/oss-rebuild/tools/ctl/command/settrackedpackages"
 	"github.com/google/oss-rebuild/tools/ctl/command/snapshot"
 	"github.com/google/oss-rebuild/tools/ctl/command/sysgraph"
 	"github.com/google/oss-rebuild/tools/ctl/command/tui"
@@ -65,8 +63,6 @@ func init() {
 	rootCmd.AddCommand(getgradlegav.Command())
 	// Infra tools
 	rootCmd.AddCommand(migrate.Command())
-	rootCmd.AddCommand(settrackedpackages.Command())
-	rootCmd.AddCommand(gettrackedpackages.Command())
 	// Rollup snapshots
 	rootCmd.AddCommand(snapshot.Command())
 	// Sysgraph tools
