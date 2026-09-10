@@ -32,6 +32,7 @@ import (
 	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/kmsdsse"
+	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
@@ -72,7 +73,7 @@ var (
 	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
 	rebuildJobName        = flag.String("rebuild-job-name", "", "Name of the pre-created Cloud Run Job for rebuilds")
 	analyticsURI          = flag.String("analytics-uri", "", "URI for snapshots (supported schemes: gs, file). Empty disables the /snapshot endpoints")
-	signalsDBURI          = flag.String("signals-db-uri", "", "URI the signal database publishes under, ingested at rollup (supported schemes: gs, file). Empty skips signal ingest")
+	signalsDBURI          = flag.String("signals-db-uri", "", "URI the signal database publishes under, ingested at rollup and consulted by feed admission (supported schemes: gs, file). Empty skips signal ingest and refuses feed admission")
 	port                  = flag.Int("port", 8080, "port on which to serve")
 )
 
@@ -382,6 +383,25 @@ func DispatchInit(ctx context.Context) (*apiservice.DispatchDeps, error) {
 	return &apiservice.DispatchDeps{Firestore: fire, Rebuild: rebuildDeps, Agent: agentDeps}, nil
 }
 
+func FeedInit(ctx context.Context) (*apiservice.FeedDeps, error) {
+	if *signalsDBURI == "" {
+		return nil, errors.New("feed admission requires signals-db-uri")
+	}
+	dest, err := billyx.NewResolver().DirFS(ctx, *signalsDBURI)
+	if err != nil {
+		return nil, errors.Wrap(err, "resolving the signal database")
+	}
+	fire, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating firestore client")
+	}
+	client, err := httpegress.MakeClient(ctx, httpcfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "making http client")
+	}
+	return &apiservice.FeedDeps{Firestore: fire, Signals: dest, Registry: meta.NewRegistryMux(client)}, nil
+}
+
 func SnapshotRollupInit(ctx context.Context) (*snapshotservice.RollupDeps, error) {
 	if *analyticsURI == "" {
 		return &snapshotservice.RollupDeps{}, nil
@@ -437,6 +457,7 @@ func main() {
 	http.HandleFunc("/runs", api.Handler(CreateRunInit, apiservice.CreateRun))
 	http.HandleFunc("/agent", api.Handler(AgentCreateInit, apiservice.AgentCreate))
 	http.HandleFunc("/onboard/dispatch", api.Handler(DispatchInit, apiservice.Dispatch))
+	http.HandleFunc("/onboard/feed", api.Handler(FeedInit, apiservice.Feed))
 	http.HandleFunc("/snapshot/rollup", api.Handler(SnapshotRollupInit, snapshotservice.Rollup))
 	http.HandleFunc("/snapshot/delta", api.Handler(SnapshotDeltaInit, snapshotservice.Delta))
 	http.Handle("/readyz", httpegress.ReadyHandler(http.DefaultClient))
