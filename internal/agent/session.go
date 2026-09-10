@@ -29,8 +29,20 @@ import (
 // Shell runs the model's diagnostic commands where the previous attempt's
 // container and files are, and serves that attempt's build log.
 type Shell interface {
-	RunCommand(ctx context.Context, command string, timeoutSeconds int) (exitCode int, output string, err error)
+	RunCommand(ctx context.Context, command string, timeoutSeconds int) (CommandResult, error)
 	LastBuildLogs(ctx context.Context) ([]byte, error)
+}
+
+// CommandResult is one diagnostic command's outcome. Output is only what the
+// runner read back. OutURI and TotalBytes locate and size the whole output.
+type CommandResult struct {
+	ExitCode   int
+	Output     string
+	ExecID     string
+	OutURI     string
+	TotalBytes int64
+	StartedAt  time.Time
+	FinishedAt time.Time
 }
 
 type AgentDeps struct {
@@ -57,6 +69,16 @@ type AgentDeps struct {
 
 type ProposeOpts struct {
 	ChatUploadURL *url.URL // The path to which llm.Chat messages should be stored.
+	Session       string   // The transcript's session, for tool-call records.
+	Iteration     int      // The transcript's messages/<n> folder.
+}
+
+// upload is the transcript folder opts names, nil when nothing is stored.
+func (o *ProposeOpts) upload() *url.URL {
+	if o == nil {
+		return nil
+	}
+	return o.ChatUploadURL
 }
 
 type Agent interface {
@@ -102,7 +124,7 @@ type RunSessionDeps struct {
 // transcriptOpts names iteration iterNum's transcript directory, or nothing
 // without a sessions bucket.
 func transcriptOpts(deps RunSessionDeps, sessionID string, iterNum int) *ProposeOpts {
-	opts := &ProposeOpts{}
+	opts := &ProposeOpts{Session: sessionID, Iteration: iterNum}
 	if deps.SessionsBucket != "" {
 		opts.ChatUploadURL = &url.URL{
 			Scheme: "gs",
@@ -111,6 +133,12 @@ func transcriptOpts(deps RunSessionDeps, sessionID string, iterNum int) *Propose
 		}
 	}
 	return opts
+}
+
+// toolCallPath is a tool-call record's object name in the sessions bucket.
+// Seq is zero-padded so a listing returns calls in order.
+func toolCallPath(sessionID string, iteration, seq int, tool string) string {
+	return fmt.Sprintf("%s/tools/%d/%04d-%s.json", sessionID, iteration, seq, tool)
 }
 
 func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
