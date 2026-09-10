@@ -79,12 +79,17 @@ type Campaign struct {
 	LastSession  string `firestore:"last_session,omitempty"`
 	TriageReason string `firestore:"triage_reason,omitempty"`
 
-	Score     float64   `firestore:"score,omitempty"`     // the version's priority, copied at enqueue
-	Published time.Time `firestore:"published,omitempty"` // DispatchOrder derives recency from this at read time, so the boost decays while the campaign waits
+	Score     float64   `firestore:"score,omitempty"`      // the version's priority, copied at enqueue
+	Published time.Time `firestore:"published,omitempty"`  // DispatchOrder derives recency from this at read time, so the boost decays while the campaign waits
+	Origin    string    `firestore:"origin,omitempty"`     // which admission enqueued it: OriginFeed, or empty for the ranked export
+	NotBefore time.Time `firestore:"not_before,omitempty"` // skip ingestion and first attempt until this time
 
 	DispatchedAt time.Time `firestore:"dispatched_at,omitempty"`
 	Updated      time.Time `firestore:"updated,omitempty"`
 }
+
+// OriginFeed marks a campaign admitted from a release feed.
+const OriginFeed = "feed"
 
 // DispatchOrder is the queue position of a campaign as of now, highest first.
 // Importance and recency multiply rather than add so that a stale version of a

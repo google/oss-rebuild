@@ -40,13 +40,17 @@ func Order(cs []Campaign, now time.Time, k, tauHours float64) []Campaign {
 
 // Select returns the queued campaigns one pass dispatches: the ordered prefix
 // that fits under caps. A campaign over its stage's cap is passed over rather
-// than ending the pass, so the other stage's campaigns behind it still run.
+// than ending the pass, so the other stage's campaigns behind it still run. A
+// campaign whose NotBefore is still ahead is passed over the same way.
 func Select(queued []Campaign, caps Caps, now time.Time, k, tauHours float64) []Campaign {
 	var out []Campaign
 	var builds, agents int
 	for _, c := range Order(queued, now, k, tauHours) {
 		if caps.Batch > 0 && len(out) >= caps.Batch {
 			break
+		}
+		if now.Before(c.NotBefore) {
+			continue
 		}
 		if c.Stage == StageAgent {
 			if full(caps.Agent, agents) {
