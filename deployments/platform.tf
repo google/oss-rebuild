@@ -141,6 +141,11 @@ resource "google_storage_bucket" "scratch-output" {
       type = "Delete"
     }
   }
+  # Each sync deletes a part and replaces the output, and soft delete would
+  # bill every one of those for a week. Nothing here is worth restoring.
+  soft_delete_policy {
+    retention_duration_seconds = 0
+  }
 }
 
 resource "google_storage_bucket" "analytics" {
