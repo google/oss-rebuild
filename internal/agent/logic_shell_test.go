@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"google.golang.org/genai"
 )
 
 // TestPosixSingleQuote round-trips tricky commands through a real /bin/sh: the
@@ -141,6 +143,24 @@ func TestTruncateEnds(t *testing.T) {
 			got, omitted := truncateEnds(tc.in, 2, 3)
 			if got != tc.want || omitted != tc.wantOmitted {
 				t.Errorf("truncateEnds(%q, 2, 3) = %q, %d; want %q, %d", tc.in, got, omitted, tc.want, tc.wantOmitted)
+			}
+		})
+	}
+}
+
+func TestTextOf(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		parts []*genai.Part
+		want  string
+	}{
+		{"JoinsASplitScript", []*genai.Part{{Text: "node -e 'const"}, {Text: " x = 1'\n"}}, "node -e 'const x = 1'\n"},
+		{"SkipsThoughtsAndNil", []*genai.Part{{Text: "hidden", Thought: true}, {Text: "ls"}, nil}, "ls"},
+		{"OnlyThoughts", []*genai.Part{{Text: "hidden", Thought: true}}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := textOf(tc.parts); got != tc.want {
+				t.Errorf("textOf = %q, want %q", got, tc.want)
 			}
 		})
 	}

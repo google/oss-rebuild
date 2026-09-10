@@ -6,6 +6,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
@@ -82,20 +83,24 @@ func GenerateTextContentWithUsage(ctx context.Context, client *genai.Client, mod
 		return "", usage, errors.Errorf("generating content: %s", candidate.FinishMessage)
 	}
 	// A search-grounded candidate can finish with STOP and carry no Content.
-	if candidate.Content == nil {
+	if candidate.Content == nil || len(candidate.Content.Parts) == 0 {
 		return "", usage, errors.New("empty response content")
 	}
-	switch len(candidate.Content.Parts) {
-	case 0:
-		return "", usage, errors.New("empty response content")
-	case 1:
-		if candidate.Content.Parts[0].Text != "" {
-			return candidate.Content.Parts[0].Text, usage, nil
+	// The answer is the turn's text parts joined, skipping thought parts.
+	var b strings.Builder
+	for _, p := range candidate.Content.Parts {
+		if p == nil || p.Thought {
+			continue
 		}
-		return "", usage, errors.New("part is not text")
-	default:
-		return "", usage, errors.New("multiple response parts")
+		if p.Text == "" {
+			return "", usage, errors.New("part is not text")
+		}
+		b.WriteString(p.Text)
 	}
+	if b.Len() == 0 {
+		return "", usage, errors.New("empty response content")
+	}
+	return b.String(), usage, nil
 }
 
 // GenerateTypedContent extracts JSON data from text according to the provided schema.
