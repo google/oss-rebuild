@@ -13,6 +13,7 @@ import (
 	"math/rand/v2"
 	"path"
 	"reflect"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -941,7 +942,7 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 		}
 		ch := make(chan proposal, 1) // buffered so an abandoned call's send never blocks
 		go func() {
-			s, err := a.proposeHeuristicInference(ictx)
+			s, err := withPanicRecovered(ictx, a.proposeHeuristicInference)
 			ch <- proposal{s, err}
 		}()
 		select {
@@ -1185,4 +1186,16 @@ func (a *defaultAgent) Usage() schema.TokenUsage {
 		u = u.Add(sumTokenUsage(a.deps.Chat.Usage(), a.deps.Chat.Model()))
 	}
 	return u
+}
+
+// withPanicRecovered returns a panic in infer as an error. The stack goes to
+// the log, not the error text, which llm.IsTransient matches by substring.
+func withPanicRecovered(ctx context.Context, infer func(context.Context) (*schema.StrategyOneOf, error)) (s *schema.StrategyOneOf, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Inference panicked: %v\n%s", r, debug.Stack())
+			s, err = nil, errors.Errorf("inference panicked: %v", r)
+		}
+	}()
+	return infer(ctx)
 }

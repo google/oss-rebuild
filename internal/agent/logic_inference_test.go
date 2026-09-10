@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 )
 
@@ -78,5 +80,23 @@ func TestProposeAbandonsHungInference(t *testing.T) {
 	cancel(cause)
 	if _, err := a.Propose(ctx, nil); !errors.Is(err, cause) {
 		t.Fatalf("err = %v, want the cancellation cause", err)
+	}
+}
+
+func TestWithPanicRecovered(t *testing.T) {
+	// A nil pointer dereference, not an explicit panic call.
+	crash := func(context.Context) (*schema.StrategyOneOf, error) {
+		type candidate struct{ Parts []string }
+		var c *candidate
+		_ = len(c.Parts)
+		return nil, nil
+	}
+	_, err := withPanicRecovered(context.Background(), crash)
+	if err == nil || !strings.Contains(err.Error(), "inference panicked") {
+		t.Fatalf("err = %v; want the panic reported", err)
+	}
+	// A panic is a defect in the session, not a provider condition.
+	if llm.IsTransient(err) {
+		t.Error("panic error reads as transient")
 	}
 }
