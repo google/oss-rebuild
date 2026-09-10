@@ -96,6 +96,21 @@ version of a critical package above both.
 
 State lives in Firestore so a run is resumable and mutable.
 
+## Keeping coverage current
+
+A tracked package's new releases enter the queue through `feed`, which takes
+a batch of published releases and admits the newest stable one per package.
+A package is tracked while the signal database ranks it, and the release
+scores as its package does, so admission needs no registry listing. Each
+campaign is held out of dispatch for `--settle` (default 15m) after
+publication so a registry that has not finished propagating the release does
+not fail the first attempt.
+
+```sh
+# One JSON feed.Event (internal/feed/feed.go) per line.
+ctl onboard feed --project my-project --signals-db gs://my-analytics/priority --events releases.jsonl
+```
+
 ## Dispatch
 
 `dispatch` drains the queue in passes:
