@@ -121,8 +121,12 @@ func TestErrors(t *testing.T) {
 		call    func() error
 		wantErr error // nil accepts any error
 	}{
+		{"marshal nil pointer", func() error { _, err := Marshal((*wide)(nil)); return err }, ErrInvalidType},
 		{"marshal non-struct", func() error { _, err := Marshal("x"); return err }, ErrInvalidType},
 		{"marshal embedded field", func() error { _, err := Marshal(embedded{}); return err }, ErrUnsupportedField},
+		{"unmarshal nil", func() error { return Unmarshal(nil, nil) }, ErrInvalidType},
+		{"unmarshal nil pointer", func() error { return Unmarshal(nil, (*wide)(nil)) }, ErrInvalidType},
+		{"unmarshal non-pointer", func() error { return Unmarshal(nil, wide{}) }, ErrInvalidType},
 		{"unmarshal non-struct", func() error { return Unmarshal(nil, new(string)) }, ErrInvalidType},
 		{"unmarshal embedded field", func() error { return Unmarshal(nil, &embedded{}) }, ErrUnsupportedField},
 		{"missing required", func() error { return Unmarshal(nil, &wide{}) }, ErrMissingRequired},
