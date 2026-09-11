@@ -73,6 +73,11 @@ func TestRoundTrip(t *testing.T) {
 			in:   wide{Ecosystem: "npm"},
 			wire: url.Values{"ecosystem": {"npm"}},
 		},
+		{
+			name: "empty slice element",
+			in:   wide{Ecosystem: "npm", Names: []string{"", "a"}},
+			wire: url.Values{"ecosystem": {"npm"}, "names": {"", "a"}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -102,12 +107,13 @@ func TestUnmarshalPresence(t *testing.T) {
 		"ecosystem": {"pypi"},
 		"count":     {""},
 		"flag":      {"false"},
+		"names":     {""},
 	}, &got)
 	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	want := full
-	want.Ecosystem, want.Flag = "pypi", false
+	want.Ecosystem, want.Flag, want.Names = "pypi", false, []string{""}
 	if diff := cmp.Diff(want, got, cmp.AllowUnexported(wide{})); diff != "" {
 		t.Errorf("Unmarshal() mismatch (-want +got):\n%s", diff)
 	}

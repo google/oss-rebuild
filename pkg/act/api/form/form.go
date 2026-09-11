@@ -92,8 +92,9 @@ func Unmarshal(v url.Values, out any) error {
 			return ErrUnsupportedField
 		}
 		opt := options(field)
-		urlval := v.Get(opt.name)
-		if urlval == "" {
+		vals := v[opt.name]
+		// Scalars treat an empty value as absent since Marshal never emits their zero value.
+		if len(vals) == 0 || (field.Type != stringSliceType && vals[0] == "") {
 			if opt.required {
 				return errors.Wrapf(ErrMissingRequired, "field '%s'", field.Name)
 			}
@@ -101,15 +102,15 @@ func Unmarshal(v url.Values, out any) error {
 		}
 		switch field.Type.Kind() {
 		case reflect.String:
-			value.SetString(urlval)
+			value.SetString(vals[0])
 		case reflect.Slice:
 			if field.Type == stringSliceType {
-				value.Set(reflect.ValueOf(v[opt.name]))
+				value.Set(reflect.ValueOf(vals))
 				continue
 			}
 			fallthrough
 		default:
-			err := json.Unmarshal([]byte(urlval), value.Addr().Interface())
+			err := json.Unmarshal([]byte(vals[0]), value.Addr().Interface())
 			if err != nil {
 				return err
 			}
