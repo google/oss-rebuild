@@ -22,27 +22,29 @@ type target struct {
 
 // wide holds one field of each kind the schema request types send.
 type wide struct {
-	Ecosystem ecosystem         `form:",required"`
-	Names     []string          `form:"names"`
-	Count     int               `form:""`
-	Flag      bool              `form:""`
-	Timeout   time.Duration     `form:""`
-	Env       map[string]string `form:"env"`
-	Target    target            `form:""`
-	Hint      *target           `form:""`
-	hidden    string
+	Ecosystem  ecosystem         `form:",required"`
+	Ecosystems []ecosystem       `form:"ecosystems"`
+	Names      []string          `form:"names"`
+	Count      int               `form:""`
+	Flag       bool              `form:""`
+	Timeout    time.Duration     `form:""`
+	Env        map[string]string `form:"env"`
+	Target     target            `form:""`
+	Hint       *target           `form:""`
+	hidden     string
 }
 
 // full sets every exported field of wide.
 var full = wide{
-	Ecosystem: "npm",
-	Names:     []string{"a", "b"},
-	Count:     3,
-	Flag:      true,
-	Timeout:   time.Hour,
-	Env:       map[string]string{"K": "V"},
-	Target:    target{"pypi", "x"},
-	Hint:      &target{"cratesio", "y"},
+	Ecosystem:  "npm",
+	Ecosystems: []ecosystem{"npm", "pypi"},
+	Names:      []string{"a", "b"},
+	Count:      3,
+	Flag:       true,
+	Timeout:    time.Hour,
+	Env:        map[string]string{"K": "V"},
+	Target:     target{"pypi", "x"},
+	Hint:       &target{"cratesio", "y"},
 }
 
 func TestRoundTrip(t *testing.T) {
@@ -55,14 +57,15 @@ func TestRoundTrip(t *testing.T) {
 			name: "every kind",
 			in:   full,
 			wire: url.Values{
-				"ecosystem": {"npm"},
-				"names":     {"a", "b"},
-				"count":     {"3"},
-				"flag":      {"true"},
-				"timeout":   {"3600000000000"},
-				"env":       {`{"K":"V"}`},
-				"target":    {`{"ecosystem":"pypi","package":"x"}`},
-				"hint":      {`{"ecosystem":"cratesio","package":"y"}`},
+				"ecosystem":  {"npm"},
+				"ecosystems": {`["npm","pypi"]`},
+				"names":      {"a", "b"},
+				"count":      {"3"},
+				"flag":       {"true"},
+				"timeout":    {"3600000000000"},
+				"env":        {`{"K":"V"}`},
+				"target":     {`{"ecosystem":"pypi","package":"x"}`},
+				"hint":       {`{"ecosystem":"cratesio","package":"y"}`},
 			},
 		},
 		{

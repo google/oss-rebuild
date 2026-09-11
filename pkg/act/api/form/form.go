@@ -18,6 +18,8 @@ var (
 	ErrMissingRequired  = errors.New("missing required field")
 )
 
+var stringSliceType = reflect.TypeFor[[]string]()
+
 type fieldOptions struct {
 	name     string
 	required bool
@@ -63,7 +65,7 @@ func Marshal(in any) (url.Values, error) {
 		case reflect.String:
 			v.Set(opt.name, value.String())
 		case reflect.Slice:
-			if field.Type.Elem().Kind() == reflect.String {
+			if field.Type == stringSliceType {
 				v[opt.name] = value.Interface().([]string)
 				continue
 			}
@@ -104,7 +106,7 @@ func Unmarshal(v url.Values, out any) error {
 		case reflect.String:
 			value.SetString(urlval)
 		case reflect.Slice:
-			if field.Type.Elem().Kind() == reflect.String {
+			if field.Type == stringSliceType {
 				value.Set(reflect.ValueOf(v[opt.name]))
 				continue
 			}
