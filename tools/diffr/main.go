@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
@@ -22,6 +23,17 @@ type Config struct {
 	File2      string
 	MaxDepth   int
 	JSONOutput bool
+	Labels     labelList
+}
+
+// labelList collects label values, first input then second, as GNU diff does.
+type labelList []string
+
+func (l *labelList) String() string { return strings.Join(*l, ",") }
+
+func (l *labelList) Set(s string) error {
+	*l = append(*l, s)
+	return nil
 }
 
 // Validate ensures the configuration is valid.
@@ -31,6 +43,9 @@ func (c Config) Validate() error {
 	}
 	if c.File2 == "" {
 		return errors.New("file2 is required")
+	}
+	if len(c.Labels) > 2 {
+		return errors.New("at most two --label values")
 	}
 	return nil
 }
@@ -70,12 +85,16 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	} else {
 		opts.Output = deps.IO.Out
 	}
+	// A label is the input's name throughout the report, including the names
+	// derived from it such as file names for unnested archives e.g. tgz.
+	names := [2]string{cfg.File1, cfg.File2}
+	copy(names[:], cfg.Labels)
 	// Run the diff
 	err = diffr.Diff(ctx, diffr.File{
-		Name:   cfg.File1,
+		Name:   names[0],
 		Reader: f1,
 	}, diffr.File{
-		Name:   cfg.File2,
+		Name:   names[1],
 		Reader: f2,
 	}, opts)
 	if errors.Is(err, diffr.ErrNoDiff) {
@@ -116,6 +135,9 @@ Examples:
   # Compare with JSON output
   diffr --json file1.tar.gz file2.tar.gz
 
+  # Name the inputs in the report
+  diffr --label rebuild --label upstream out/pkg.whl pkg-1.0-py3-none-any.whl
+
   # Limit archive recursion depth
   diffr --max-depth 2 file1.zip file2.zip`,
 		Args: cobra.ExactArgs(2),
@@ -136,6 +158,7 @@ Examples:
 func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.IntVar(&cfg.MaxDepth, "max-depth", 0, "maximum archive nesting depth to recurse into (0 = unlimited)")
+	set.Var(&cfg.Labels, "label", "name for an input in the report instead of its path (repeat for the second input)")
 	set.BoolVar(&cfg.JSONOutput, "json", false, "output diff in JSON format instead of text")
 	return set
 }
