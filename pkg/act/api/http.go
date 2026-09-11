@@ -331,7 +331,11 @@ func Translate[O act.Input](t Translator[O], h http.HandlerFunc) http.HandlerFun
 		r.PostForm = nil
 		r.Form = nil
 		r.URL.RawQuery = values.Encode()
-		r.ParseForm()
+		if err := r.ParseForm(); err != nil {
+			log.Println(errors.Wrap(err, "parsing translated request"))
+			http.Error(rw, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
 		h(rw, r)
 	}
 }
