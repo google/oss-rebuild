@@ -51,7 +51,7 @@ func Marshal(in any) (url.Values, error) {
 		if !field.IsExported() {
 			continue
 		} else if field.Anonymous {
-			return nil, ErrUnsupportedField
+			return nil, errors.Wrapf(ErrUnsupportedField, "field '%s'", field.Name)
 		}
 		opt := options(field)
 		if value.IsZero() {
@@ -69,7 +69,7 @@ func Marshal(in any) (url.Values, error) {
 		default:
 			jsonv, err := json.Marshal(value.Interface())
 			if err != nil {
-				return nil, err
+				return nil, errors.Wrapf(err, "field '%s'", opt.name)
 			}
 			v.Set(opt.name, string(jsonv))
 		}
@@ -89,14 +89,14 @@ func Unmarshal(v url.Values, out any) error {
 		if !field.IsExported() {
 			continue
 		} else if field.Anonymous {
-			return ErrUnsupportedField
+			return errors.Wrapf(ErrUnsupportedField, "field '%s'", field.Name)
 		}
 		opt := options(field)
 		vals := v[opt.name]
 		// Scalars treat an empty value as absent since Marshal never emits their zero value.
 		if len(vals) == 0 || (field.Type != stringSliceType && vals[0] == "") {
 			if opt.required {
-				return errors.Wrapf(ErrMissingRequired, "field '%s'", field.Name)
+				return errors.Wrapf(ErrMissingRequired, "field '%s'", opt.name)
 			}
 			continue
 		}
@@ -110,9 +110,8 @@ func Unmarshal(v url.Values, out any) error {
 			}
 			fallthrough
 		default:
-			err := json.Unmarshal([]byte(vals[0]), value.Addr().Interface())
-			if err != nil {
-				return err
+			if err := json.Unmarshal([]byte(vals[0]), value.Addr().Interface()); err != nil {
+				return errors.Wrapf(err, "field '%s'", opt.name)
 			}
 		}
 	}
