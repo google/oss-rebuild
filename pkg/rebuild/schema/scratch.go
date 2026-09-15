@@ -9,6 +9,15 @@ import (
 )
 
 // ScratchState is the lifecycle state of a scratch build environment.
+//
+//	starting  record written, VM being provisioned
+//	ready     VM healthy, execs may be dispatched
+//	deleting  VM delete in progress
+//	deleted   VM delete attempted, record kept for audit
+//
+// The agent-api owns every transition. The reaper takes ready records
+// idle past a threshold and starting or deleting records with no write
+// for as long.
 type ScratchState string
 
 const (
