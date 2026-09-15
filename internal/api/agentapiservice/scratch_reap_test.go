@@ -521,14 +521,19 @@ func TestScratchReap_StuckStartingAndDeletingReaped(t *testing.T) {
 	now := time.Now().UTC()
 	zone := "us-central1-a"
 
-	for _, s := range []schema.Scratch{
-		{ID: "stuck-starting", State: schema.ScratchStarting, Zone: zone, VMName: "vm-start", Updated: now.Add(-time.Hour)},
-		{ID: "fresh-starting", State: schema.ScratchStarting, Zone: zone, VMName: "vm-start-fresh", Updated: now.Add(-5 * time.Minute)},
-		{ID: "stuck-deleting", State: schema.ScratchDeleting, Zone: zone, VMName: "vm-del", Updated: now.Add(-time.Hour)},
-		{ID: "fresh-deleting", State: schema.ScratchDeleting, Zone: zone, VMName: "vm-del-fresh", Updated: now.Add(-5 * time.Minute)},
-	} {
+	// A create that died mid-provision, a delete whose VM is already gone,
+	// and a create still making progress.
+	stuckStart := schema.Scratch{ID: "stuck-start", State: schema.ScratchStarting, Zone: zone, VMName: "scratch-stuck-start", Updated: now.Add(-time.Hour)}
+	stuckDel := schema.Scratch{ID: "stuck-del", State: schema.ScratchDeleting, Zone: zone, VMName: "scratch-stuck-del", Updated: now.Add(-time.Hour)}
+	liveStart := schema.Scratch{ID: "live-start", State: schema.ScratchStarting, Zone: zone, VMName: "scratch-live-start", Updated: now.Add(-time.Minute)}
+	for _, s := range []schema.Scratch{stuckStart, stuckDel, liveStart} {
 		if err := scratches.Insert(ctx, s); err != nil {
 			t.Fatalf("seed %s: %v", s.ID, err)
+		}
+	}
+	for _, name := range []string{stuckStart.VMName, liveStart.VMName} {
+		if _, err := gce.InsertInstanceFromTemplate(ctx, zone, name, "tpl", nil); err != nil {
+			t.Fatalf("seed instance %s: %v", name, err)
 		}
 	}
 
@@ -537,18 +542,20 @@ func TestScratchReap_StuckStartingAndDeletingReaped(t *testing.T) {
 		t.Fatalf("ScratchReap: %v", err)
 	}
 	if resp.ScratchesReaped != 2 {
-		t.Errorf("ScratchesReaped = %d; want 2 (stuck-starting and stuck-deleting)", resp.ScratchesReaped)
+		t.Errorf("ScratchesReaped = %d; want 2", resp.ScratchesReaped)
 	}
-	for _, id := range []string{"stuck-starting", "stuck-deleting"} {
-		got, _ := scratches.Get(ctx, id)
-		if got.State != schema.ScratchDeleted {
-			t.Errorf("%s.State = %q; want deleted", id, got.State)
+	for _, id := range []string{"stuck-start", "stuck-del"} {
+		if got, _ := scratches.Get(ctx, id); got.State != schema.ScratchDeleted {
+			t.Errorf("%s state = %q; want deleted", id, got.State)
 		}
 	}
-	for _, id := range []string{"fresh-starting", "fresh-deleting"} {
-		got, _ := scratches.Get(ctx, id)
-		if got.State == schema.ScratchDeleted {
-			t.Errorf("%s.State = deleted; want preserved", id)
-		}
+	if gce.InstanceExists(zone, stuckStart.VMName) {
+		t.Errorf("stuck-start VM not deleted")
+	}
+	if got, _ := scratches.Get(ctx, "live-start"); got.State != schema.ScratchStarting {
+		t.Errorf("live-start state = %q; want starting (untouched)", got.State)
+	}
+	if !gce.InstanceExists(zone, liveStart.VMName) {
+		t.Errorf("live-start VM deleted; want preserved")
 	}
 }
