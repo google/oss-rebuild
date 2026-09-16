@@ -1,0 +1,68 @@
+<!--
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+<style>
+    .asof { color: var(--muted); }
+    .tabs a.active { color: var(--heading); border-bottom-color: var(--accent); }
+    .cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 12px; }
+    .info { display: inline-block; position: relative; margin-left: 5px; width: 1.15em; height: 1.15em; line-height: 1.15em; border-radius: 50%; border: 1px solid var(--border); background: var(--fill); color: var(--muted); font-size: 0.72rem; font-weight: 600; text-align: center; vertical-align: middle; cursor: help; }
+    .info::after { content: attr(data-tip); position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); width: max-content; max-width: 22em; padding: 6px 10px; border-radius: 4px; background: var(--heading); color: var(--bg); font-size: 0.8rem; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; visibility: hidden; z-index: 1; }
+    .info:hover::after, .info:focus-visible::after { visibility: visible; }
+    .info:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .showing { color: var(--muted); font-size: 0.9rem; margin: 0 0 8px; }
+    .muted { color: var(--muted); }
+    .streak { color: var(--mismatch); font-weight: 600; }
+</style>
+{{define "def"}}<span class="info" tabindex="0" data-tip="{{.}}">?</span>{{end}}
+<h2>Packages</h2>
+{{if not .Loaded}}
+<p>No analytics snapshot loaded. Start the dashboard with
+<code>-rundex=&lt;gs://…|file://…&gt;</code>.</p>
+{{else}}
+<p class="asof">Snapshot as of {{.AsOf}}</p>
+<div class="tabs">
+    <a class="tab{{if not .Eco}} active{{end}}" href="/packages">All</a>
+    {{$sel := .Eco}}
+    {{range .Ecosystems}}<a class="tab{{if eq . $sel}} active{{end}}" href="/packages?eco={{.}}">{{.}}</a>
+    {{end}}
+</div>
+<div class="cards">
+    <div class="card"><div class="card-value">{{.Total}}</div><div class="card-label">packages{{template "def" "Packages with at least one completed attempt."}}</div></div>
+    <div class="card"><div class="card-value">{{.EverBuilt}}</div><div class="card-label">ever built{{template "def" "Reproduced at least one version."}}</div></div>
+    <div class="card"><div class="card-value">{{.NeverBuilt}}</div><div class="card-label">never built</div></div>
+    <div class="card"><div class="card-value">{{.Failing}}</div><div class="card-label">failing{{template "def" "Every attempt since the last success failed, or no attempt ever succeeded."}}</div></div>
+</div>
+{{if not .Packages}}
+<p>No packages recorded in the snapshot.</p>
+{{else}}
+<p class="showing">Showing {{.Listed}} of {{.Total}}, longest failing streak first.</p>
+<table>
+    <tr>
+        {{if not .Eco}}<th>Ecosystem</th>{{end}}
+        <th>Package</th>
+        <th>Built{{template "def" "Reproduced at least one version."}}</th>
+        <th>Versions built{{template "def" "Versions reproduced over versions attempted."}}</th>
+        <th>Attempts</th>
+        <th>Failing streak{{template "def" "Completed attempts since the last success, on any version."}}</th>
+        <th>Last success</th>
+        <th>Last attempt</th>
+    </tr>
+    {{range .Packages}}
+    <tr>
+        {{if not $.Eco}}<td>{{.Ecosystem}}</td>{{end}}
+        <td><a href="/package/{{.EncodedEcosystem}}/{{.EncodedPackage}}">{{.Package}}</a></td>
+        <td>{{if .EverBuilt}}<span class="status-success">yes</span>{{else}}<span class="muted">no</span>{{end}}</td>
+        <td>{{.VersionsSucceeded}} / {{.VersionsAttempted}}</td>
+        <td>{{.Attempts}}</td>
+        <td>{{if .FailingStreak}}<span class="streak">{{.FailingStreak}}</span>{{else}}<span class="muted">0</span>{{end}}</td>
+        <td>{{if .LastSucceededAt}}{{.LastSucceededAt}} <span class="muted">{{.LastSucceededVersion}}</span>{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+        <td>{{.LastAttemptedAt}} <span class="muted">{{.LastAttemptedVersion}} {{.LastAttemptedStatus}}</span></td>
+    </tr>
+    {{end}}
+</table>
+{{end}}
+{{end}}
+</body>
+</html>

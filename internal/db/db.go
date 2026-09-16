@@ -22,6 +22,11 @@ type Resource[T, K any] interface {
 	Insert(ctx context.Context, v T) error
 	Update(ctx context.Context, v T) error
 	Upsert(ctx context.Context, v T) error
+	// Mutate atomically applies fn to the stored value at key: read, edit
+	// in place, write back. Returning false skips the write, leaving the
+	// call a read-only no-op. NOTE: fn may run more than once under
+	// contention, so it must be a pure state transition on its argument.
+	Mutate(ctx context.Context, key K, fn func(*T) (write bool, err error)) error
 }
 
 var (
@@ -33,8 +38,10 @@ var (
 
 // Type aliases for the resources currently defined.
 type (
-	Runs     = Resource[schema.Run, string]
-	Attempts = Resource[schema.RebuildAttempt, AttemptKey]
+	Runs       = Resource[schema.Run, string]
+	Attempts   = Resource[schema.RebuildAttempt, AttemptKey]
+	Sessions   = Resource[schema.AgentSession, string]
+	Iterations = Resource[schema.AgentIteration, IterationKey]
 )
 
 // firestoreResource is an internal generic implementation of Resource using Firestore.
@@ -94,6 +101,28 @@ func (r *firestoreResource[T, K]) Upsert(ctx context.Context, v T) error {
 	return err
 }
 
+func (r *firestoreResource[T, K]) Mutate(ctx context.Context, k K, fn func(*T) (bool, error)) error {
+	err := r.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		dr := r.doc(r.pathForKey(k))
+		snap, err := tx.Get(dr)
+		if err != nil {
+			return err
+		}
+		var v T
+		if err := snap.DataTo(&v); err != nil {
+			return err
+		}
+		if write, err := fn(&v); err != nil || !write {
+			return err
+		}
+		return tx.Set(dr, v)
+	})
+	if status.Code(err) == codes.NotFound {
+		return ErrNotFound
+	}
+	return err
+}
+
 // memoryResource is an internal generic implementation of Resource using an in-memory map.
 type memoryResource[T, K any] struct {
 	mu         sync.Mutex
@@ -139,6 +168,21 @@ func (r *memoryResource[T, K]) Upsert(ctx context.Context, v T) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p := path.Join(r.pathFor(v)...)
+	r.data[p] = v
+	return nil
+}
+
+func (r *memoryResource[T, K]) Mutate(ctx context.Context, k K, fn func(*T) (bool, error)) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p := path.Join(r.pathForKey(k)...)
+	v, ok := r.data[p]
+	if !ok {
+		return ErrNotFound
+	}
+	if write, err := fn(&v); err != nil || !write {
+		return err
+	}
 	r.data[p] = v
 	return nil
 }

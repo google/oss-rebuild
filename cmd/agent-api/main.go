@@ -75,11 +75,12 @@ var scratchCooldown = agentapiservice.NewZoneCooldown(0)
 
 func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreateIterationDeps, error) {
 	var d agentapiservice.AgentCreateIterationDeps
-	var err error
-	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
+	fs, err := firestore.NewClient(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
+	d.Sessions = db.NewFirestoreSessions(fs)
+	d.Iterations = db.NewFirestoreIterations(fs)
 	gcsClient, err := storage.NewClient(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating GCS client")
@@ -141,14 +142,14 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 
 func AgentCompleteInit(ctx context.Context) (*agentapiservice.AgentCompleteDeps, error) {
 	var d agentapiservice.AgentCompleteDeps
-	var err error
-	d.FirestoreClient, err = firestore.NewClient(ctx, *project)
+	fs, err := firestore.NewClient(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating firestore client")
 	}
+	d.Sessions = db.NewFirestoreSessions(fs)
 	if *scratchEnabled {
 		// Enable eager teardown of scratch-mode sessions' VMs.
-		d.Scratches = db.NewFirestoreScratch(d.FirestoreClient)
+		d.Scratches = db.NewFirestoreScratch(fs)
 		d.GCE, err = agentapiservice.NewComputeGCE(ctx, *project)
 		if err != nil {
 			return nil, errors.Wrap(err, "compute client")
