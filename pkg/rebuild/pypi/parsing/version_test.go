@@ -72,6 +72,20 @@ commits:
 			want: "4.5.6",
 		},
 		{
+			name: "setup.cfg attr directive is not a version",
+			pkg:  "cfgpkg",
+			repoYAML: `
+commits:
+  - id: c1
+    files:
+      setup.cfg: |
+        [metadata]
+        name = cfgpkg
+        version = attr: cfgpkg.__version__
+`,
+			want: "",
+		},
+		{
 			name: "setup.py static version",
 			pkg:  "pypkg",
 			repoYAML: `
