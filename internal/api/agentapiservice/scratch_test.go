@@ -261,6 +261,9 @@ func TestScratchCreate_AllZonesExhausted(t *testing.T) {
 	if !strings.Contains(err.Error(), "all zones exhausted") {
 		t.Errorf("error = %q; want it to mention all zones exhausted", err.Error())
 	}
+	if status.Code(err) != codes.ResourceExhausted {
+		t.Errorf("code = %v; want ResourceExhausted", status.Code(err))
+	}
 	rec, _ := scratches.Get(context.Background(), "sX")
 	if rec.State != schema.ScratchDeleted {
 		t.Errorf("State = %q; want deleted", rec.State)
