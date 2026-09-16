@@ -415,18 +415,27 @@ func (s *gcsSyncer) Sync(ctx context.Context, exec schema.ScratchExec, scratch s
 		return exec, errors.Wrap(err, "stat out")
 	}
 
+	known := currentSize // bytes out is known to hold
 	// Compose throttling: skip the upload if we composed recently enough
 	// for our current age bucket. A terminal sync (status.Done) is never
 	// skipped so the final tail always lands in GCS. A first sync
 	// (lastModified zero) is also never skipped because sinceLastCompose
 	// is enormous.
 	if status.TotalBytes > currentSize && s.shouldCompose(time.Now().UTC(), exec.CreatedAt, lastModified, status.Done) {
-		if err := s.pullOutput(ctx, client, baseURL, scratch.ObliviousID, exec.ID, currentSize, currentGen); err != nil {
+		n, err := s.pullOutput(ctx, client, baseURL, scratch.ObliviousID, exec.ID, currentSize, currentGen)
+		if err != nil {
 			return exec, errors.Wrap(err, "pull output")
 		}
+		known += n
 	}
 
 	if !status.Done {
+		return exec, nil
+	}
+	if known < status.TotalBytes {
+		// The pull lost a race and the winner's compose may not have
+		// landed. A terminal record is never synced again, so stay Pending.
+		log.Printf("exec %q: output holds %d of %d bytes, deferring finalization", exec.ID, known, status.TotalBytes)
 		return exec, nil
 	}
 
@@ -517,7 +526,10 @@ func outURIFor(bucket, obliviousID, opID string) string {
 // The part is deleted on success, failure, and precondition loss. Broker
 // crashes between part write and compose leave orphans; a parts/
 // lifecycle rule is the deploy-side backstop.
-func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, baseURL *url.URL, obliviousID, opID string, currentSize, currentGen int64) error {
+//
+// It returns the number of bytes it appended, zero when it lost a race or
+// had nothing to add.
+func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, baseURL *url.URL, obliviousID, opID string, currentSize, currentGen int64) (int64, error) {
 	output := api.StreamStub[scratchworkerservice.OutputRequest, scratchworkerservice.OutputFrame](client, baseURL.JoinPath("exec/op/output"))
 
 	mainName := outObjectFor(obliviousID, opID)
@@ -538,14 +550,14 @@ func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, ba
 			cancel()
 			_ = w.Close()
 			_ = part.Delete(context.Background())
-			return err
+			return 0, err
 		}
 		n, werr := w.Write(frame.Content)
 		if werr != nil {
 			cancel()
 			_ = w.Close()
 			_ = part.Delete(context.Background())
-			return errors.Wrap(werr, "gcs write part")
+			return 0, errors.Wrap(werr, "gcs write part")
 		}
 		wrote += int64(n)
 	}
@@ -553,15 +565,15 @@ func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, ba
 		if isPreconditionFailed(err) {
 			// Another sync claimed this offset. Nothing was finalized;
 			// next poll re-stats and continues from the new size.
-			return nil
+			return 0, nil
 		}
-		return errors.Wrap(err, "gcs close part")
+		return 0, errors.Wrap(err, "gcs close part")
 	}
 	if wrote == 0 {
 		// The worker had no bytes past currentSize (its snapshot
 		// disagreed with the earlier /status). Drop the empty part.
 		_ = part.Delete(context.Background())
-		return nil
+		return 0, nil
 	}
 
 	// Compose. First sync: main doesn't exist, copy part → main via a
@@ -578,12 +590,12 @@ func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, ba
 		if isPreconditionFailed(err) {
 			// Another sync extended main first. Bail cleanly; next poll
 			// re-stats and continues from the new size.
-			return nil
+			return 0, nil
 		}
-		return errors.Wrap(err, "gcs compose")
+		return 0, errors.Wrap(err, "gcs compose")
 	}
 	_ = part.Delete(context.Background())
-	return nil
+	return wrote, nil
 }
 
 // isPreconditionFailed reports whether err is an HTTP 412 from GCS,

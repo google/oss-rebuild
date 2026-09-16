@@ -4,13 +4,25 @@
 package agentapiservice
 
 import (
+	"context"
+	"fmt"
+	"iter"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/api/scratchworkerservice"
+	"github.com/google/oss-rebuild/internal/db"
+	"github.com/google/oss-rebuild/internal/httpx"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 )
 
@@ -308,5 +320,66 @@ func TestSyncer_DefaultScheduleBudget(t *testing.T) {
 	}
 	if cumulative >= 1024 {
 		t.Errorf("schedule consumes full 1024-component budget by 6h (got %d); leave headroom for races + the rewrite backstop", cumulative)
+	}
+}
+
+func TestSyncer_TerminalSyncDefersUntilOutputComplete(t *testing.T) {
+	ctx := context.Background()
+	const total = 22
+	// The output object is absent until size is set, and every write fails
+	// its precondition, as when a concurrent sync owns the tail.
+	var size atomic.Int64
+	size.Store(-1)
+	gcs := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch n := size.Load(); {
+		case r.Method == http.MethodGet && n >= 0:
+			fmt.Fprintf(rw, `{"name":"out","bucket":"b","size":"%d","generation":"1"}`, n)
+		case r.Method == http.MethodGet:
+			http.NotFound(rw, r)
+		case r.Method == http.MethodPost:
+			http.Error(rw, `{"error":{"code":412}}`, http.StatusPreconditionFailed)
+		}
+	}))
+	defer gcs.Close()
+	client, err := storage.NewClient(ctx, option.WithoutAuthentication(), option.WithEndpoint(gcs.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The worker is done. Its stream can be empty since no pull lands.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/exec/op/status", api.Handler(api.NoDepsInit, func(context.Context, scratchworkerservice.StatusRequest, *api.NoDeps) (*scratchworkerservice.ExecStatus, error) {
+		return &scratchworkerservice.ExecStatus{Done: true, TotalBytes: total}, nil
+	}))
+	mux.HandleFunc("/exec/op/output", api.StreamHandler(api.NoDepsInit, func(context.Context, scratchworkerservice.OutputRequest, *api.NoDeps) iter.Seq2[*scratchworkerservice.OutputFrame, error] {
+		return func(func(*scratchworkerservice.OutputFrame, error) bool) {}
+	}))
+	worker := httptest.NewServer(mux)
+	defer worker.Close()
+	dial := func(schema.Scratch) (httpx.BasicClient, *url.URL, error) {
+		u, err := url.Parse(worker.URL)
+		return worker.Client(), u, err
+	}
+	execs := db.NewMemoryScratchExecs()
+	exec := schema.ScratchExec{ID: "op-1", ScratchID: "s-1", State: schema.ScratchExecPending}
+	if err := execs.Insert(ctx, exec); err != nil {
+		t.Fatal(err)
+	}
+	syncer := NewGCSSyncer(client, "b", execs, dial)
+	scratch := schema.Scratch{ID: "s-1", ObliviousID: "obl"}
+
+	// The pull loses its race and the winner's compose has not landed.
+	if _, err := syncer.Sync(ctx, exec, scratch); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := execs.Get(ctx, "op-1"); got.State != schema.ScratchExecPending {
+		t.Fatalf("state with output short = %q, want pending", got.State)
+	}
+	// The winner's compose lands.
+	size.Store(total)
+	if _, err := syncer.Sync(ctx, exec, scratch); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := execs.Get(ctx, "op-1"); got.State != schema.ScratchExecCompleted {
+		t.Errorf("state with output complete = %q, want completed", got.State)
 	}
 }
