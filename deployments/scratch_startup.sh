@@ -35,7 +35,9 @@ if curl -fsS -H "Metadata-Flavor: Google" \
   CURL_AUTH=(-H "@/tmp/sa_auth_header")
 fi
 mkdir -p /var/lib/toolbox
-curl -fsSL "$${CURL_AUTH[@]}" -o /var/lib/toolbox/scratch-worker "$WORKER_BINARY_URL"
+# Startup check should fail fast and retry to meet 90s health check bound
+# instead of waiting for curl's default 2m connect timeout.
+curl -fsSL --connect-timeout 10 --retry 5 --retry-all-errors "$${CURL_AUTH[@]}" -o /var/lib/toolbox/scratch-worker "$WORKER_BINARY_URL"
 chmod +x /var/lib/toolbox/scratch-worker
 rm -f /tmp/sa_token /tmp/sa_auth_header
 
