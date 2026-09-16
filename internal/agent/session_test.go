@@ -177,8 +177,8 @@ func TestDoIterationScratchSuccessConfirms(t *testing.T) {
 	if confirmed == nil {
 		t.Fatal("IterationStub not called for locally-verified success")
 	}
-	if confirmed.Strategy != strategy || confirmed.IterationNumber != 2 {
-		t.Errorf("confirmation request = %+v, want proposed strategy and iteration number 2", confirmed)
+	if confirmed.Strategy != strategy || confirmed.SessionID != "sess" {
+		t.Errorf("confirmation request = %+v, want proposed strategy for session sess", confirmed)
 	}
 	if iter.ID != "confirm-1" || iter.Status != schema.AgentIterationStatusSuccess {
 		t.Errorf("returned iteration = %+v, want the confirmation iteration", iter)

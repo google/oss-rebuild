@@ -13,6 +13,7 @@ import (
 	"cloud.google.com/go/firestore"
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/agent"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/act/cli"
@@ -26,8 +27,6 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/genai"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // Config holds all configuration for the local-agent command.
@@ -115,31 +114,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	}
 	sessionID := sessionUUID.String()
 	sessionTime := time.Unix(sessionUUID.Time().UnixTime())
-	session := schema.AgentSession{
-		ID:             sessionID,
-		Target:         t,
-		MaxIterations:  cfg.AgentIteration,
-		TimeoutSeconds: 60 * 60, // 1 hr
-		Context:        &schema.AgentContext{},
-		// Because we're going to start running the session locally immediately, we can mark it as Running from the start.
-		// This avoids needing to update the session record immediately after creation.
-		Status: schema.AgentSessionStatusRunning,
-		// There is no execution name, because we're going to run the agent in-process.
-		ExecutionName: "",
-		Created:       sessionTime,
-		Updated:       sessionTime,
-	}
-	// Create session in Firestore
-	err = fire.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
-		// NOTE: This would fail if the session record already exists.
-		return t.Create(fire.Collection("agent_sessions").Doc(sessionID), session)
-	})
-	if err != nil {
-		if status.Code(err) == codes.AlreadyExists {
-			return nil, errors.Errorf("agent session %s already exists", sessionID)
-		}
-		return nil, errors.Wrap(err, "creating agent session")
-	}
+	// A retried session is seeded with the original session's first iteration.
 	var retryInitialIter *schema.AgentIteration
 	if cfg.RetrySession != "" {
 		sessionDoc := fire.Collection("agent_sessions").Doc(cfg.RetrySession)
@@ -155,11 +130,39 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		if err := d.DataTo(retryInitialIter); err != nil {
 			return nil, errors.Wrap(err, "deserializing iteration data")
 		}
-		_, err = fire.Collection("agent_sessions").Doc(sessionID).
-			Collection("agent_iterations").
-			Doc(retryInitialIter.ID).
-			Create(ctx, *retryInitialIter)
-		if err != nil {
+		// Rekey the copied iteration to its new session: the record lives in
+		// the new session's subcollection and must attribute there.
+		retryInitialIter.SessionID = sessionID
+		retryInitialIter.Updated = time.Now().UTC()
+	}
+	session := schema.AgentSession{
+		ID:             sessionID,
+		Target:         t,
+		MaxIterations:  cfg.AgentIteration,
+		TimeoutSeconds: 60 * 60, // 1 hr
+		Context:        &schema.AgentContext{},
+		// Because we're going to start running the session locally immediately, we can mark it as Running from the start.
+		// This avoids needing to update the session record immediately after creation.
+		Status: schema.AgentSessionStatusRunning,
+		// There is no execution name, because we're going to run the agent in-process.
+		ExecutionName: "",
+		Created:       sessionTime,
+		Updated:       sessionTime,
+	}
+	if retryInitialIter != nil {
+		// The seeded iteration counts toward the session's numbering and limit.
+		session.IterationCount = retryInitialIter.Number
+	}
+	sessions := db.NewFirestoreSessions(fire)
+	err = sessions.Insert(ctx, session)
+	if err != nil {
+		if errors.Is(err, db.ErrAlreadyExists) {
+			return nil, errors.Errorf("agent session %s already exists", sessionID)
+		}
+		return nil, errors.Wrap(err, "creating agent session")
+	}
+	if retryInitialIter != nil {
+		if err := db.NewFirestoreIterations(fire).Insert(ctx, *retryInitialIter); err != nil {
 			return nil, errors.Wrap(err, "creating initial iteration")
 		}
 	}
