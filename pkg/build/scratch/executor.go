@@ -474,14 +474,19 @@ func (e *executor) outputReader(ctx context.Context, op *longrunning.Operation[s
 	return rd, nil
 }
 
-// uploadStream copies content into the asset store.
+// uploadStream copies content into the asset store. A failed copy abandons
+// the upload rather than committing the partial object: the GCS writer
+// finalizes on Close, so the error path cancels its context first.
 // TODO: Copy GCS-to-GCS uploads server-side.
 func (e *executor) uploadStream(ctx context.Context, store rebuild.AssetStore, asset rebuild.Asset, r io.Reader) error {
-	w, err := store.Writer(ctx, asset)
+	wctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	w, err := store.Writer(wctx, asset)
 	if err != nil {
 		return errors.Wrap(err, "creating asset writer")
 	}
 	if _, err := io.Copy(w, r); err != nil {
+		cancel()
 		w.Close()
 		return errors.Wrap(err, "writing asset")
 	}
