@@ -1,7 +1,9 @@
 // Copyright 2025 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package local
+// Package execx runs external commands behind an interface a test can
+// stand in for.
+package execx
 
 import (
 	"context"
