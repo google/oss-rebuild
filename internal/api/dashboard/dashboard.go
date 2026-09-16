@@ -30,6 +30,8 @@ var (
 	attemptHTML string
 	//go:embed logs.gohtml
 	logsHTML string
+	//go:embed packages.gohtml
+	packagesHTML string
 	//go:embed resources.gohtml
 	resourcesHTML string
 	//go:embed dashboard.css
@@ -60,6 +62,7 @@ var (
 	VersionTmpl   *template.Template
 	AttemptTmpl   *template.Template
 	LogsTmpl      *template.Template
+	PackagesTmpl  *template.Template
 	ResourcesTmpl *template.Template
 )
 
@@ -69,6 +72,7 @@ func init() {
 	VersionTmpl = template.Must(template.New("version").Parse(headerHTML + versionHTML))
 	AttemptTmpl = template.Must(template.New("attempt").Parse(headerHTML + attemptHTML))
 	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
+	PackagesTmpl = template.Must(template.New("packages").Parse(headerHTML + packagesHTML))
 	ResourcesTmpl = template.Must(template.New("resources").Parse(headerHTML + resourcesHTML))
 }
 
