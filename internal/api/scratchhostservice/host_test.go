@@ -419,8 +419,47 @@ func TestGuests_DerivedFromTheProcess(t *testing.T) {
 	if list, _ := Guests(ctx, ListRequest{}, deps); len(list.Guests) != 0 {
 		t.Errorf("guests = %+v; want a dead guest not counted", list.Guests)
 	}
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("GuestHealth of a dead guest = %v; want FailedPrecondition", err)
+	}
+}
+
+func TestGuestHealth_ReportsAnExitedGuest(t *testing.T) {
+	deps, _ := testDeps(t)
+	ctx := context.Background()
+	admit(t, deps, "scratch-a")
+	killGuest(t, deps)
+	// The exit is terminal and names the cause. An unknown session is merely
+	// not ready.
+	_, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-a"}, deps)
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "signal: killed") {
+		t.Errorf("GuestHealth of an exited guest = %v; want FailedPrecondition carrying the exit", err)
+	}
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-b"}, deps); status.Code(err) != codes.Unavailable {
+		t.Errorf("GuestHealth of an unknown session = %v; want Unavailable", err)
+	}
+	// The exit survives the next admission, for the exited session's caller,
+	// and goes with its delete.
+	admit(t, deps, "scratch-b")
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("GuestHealth of an exited guest after another admission = %v; want FailedPrecondition", err)
+	}
+	if _, err := GuestDelete(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); err != nil {
+		t.Fatalf("GuestDelete: %v", err)
+	}
 	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); status.Code(err) != codes.Unavailable {
-		t.Errorf("GuestHealth of a dead guest = %v; want Unavailable", err)
+		t.Errorf("GuestHealth of a deleted session = %v; want Unavailable", err)
+	}
+}
+
+func TestGuestAdmit_ReadmissionClearsTheExit(t *testing.T) {
+	deps, _ := testDeps(t)
+	ctx := context.Background()
+	admit(t, deps, "scratch-a")
+	killGuest(t, deps)
+	admit(t, deps, "scratch-a")
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); err != nil {
+		t.Errorf("GuestHealth after re-admission = %v; want the fresh guest ready", err)
 	}
 }
 

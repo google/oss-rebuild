@@ -124,6 +124,9 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 		return deps.Hosts.GuestHealthz(ctx, host, scratchID)
 	}); err != nil {
 		cleanup()
+		if errors.Is(err, ErrGuestExited) {
+			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "guest healthz"))
+		}
 		return nil, api.AsStatus(codes.DeadlineExceeded, errors.Wrap(err, "guest healthz"))
 	}
 	if err := deps.Scratches.UpdateState(ctx, scratchID, schema.ScratchReady); err != nil {
@@ -230,8 +233,8 @@ func pollHealthy(ctx context.Context, timeout, interval time.Duration, probe fun
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
-		if err := try(); err == nil {
-			return nil
+		if err := try(); err == nil || errors.Is(err, ErrGuestExited) {
+			return err
 		}
 		select {
 		case <-probeCtx.Done():
