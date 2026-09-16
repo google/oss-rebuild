@@ -568,6 +568,39 @@ resource "google_cloud_run_v2_service" "agent-api" {
   depends_on = [google_project_service.run]
 }
 
+# The dashboard reads the analytics snapshot the orchestrator publishes. Its
+# ingress is load-balancer-only whatever enable_internal_ingress says.
+resource "google_cloud_run_v2_service" "dashboard" {
+  count               = var.enable_dashboard ? 1 : 0
+  name                = "dashboard"
+  location            = "us-central1"
+  ingress             = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  deletion_protection = true # Serves viewers, unlike the backends
+  template {
+    service_account = google_service_account.dashboard[0].email
+    timeout         = "${5 * 60}s" // 5 minutes, for cold-start hydration
+    containers {
+      image = data.google_artifact_registry_docker_image.dashboard[0].self_link
+      args = [
+        "--project=${var.project}",
+        "--host=${var.host}",
+        "--rundex=gs://${google_storage_bucket.analytics.name}",
+        "--logs-bucket=${google_storage_bucket.logs.name}",
+        "--sessions-bucket=${google_storage_bucket.agent-sessions.name}",
+      ]
+      resources {
+        limits = {
+          cpu    = "2000m"
+          memory = "4G" // holds the snapshot base in memory
+        }
+        startup_cpu_boost = true
+      }
+    }
+    // Every instance hydrates its own copy of the snapshot.
+    scaling { max_instance_count = 1 }
+  }
+  depends_on = [google_project_service.run]
+}
 resource "google_cloud_run_v2_job" "agent" {
   name                = "agent"
   location            = "us-central1"
