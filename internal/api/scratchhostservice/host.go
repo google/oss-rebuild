@@ -20,9 +20,10 @@ import (
 
 // Errors the handlers map to status codes.
 var (
-	ErrFull    = errors.New("host full")     // no slot is free
-	ErrClosed  = errors.New("host closed")   // shutting down
-	ErrNoGuest = errors.New("no such guest") // nothing served for that scratch
+	ErrFull        = errors.New("host full")     // no slot is free
+	ErrClosed      = errors.New("host closed")   // shutting down
+	ErrNoGuest     = errors.New("no such guest") // nothing served for that scratch
+	ErrGuestExited = errors.New("guest exited")  // process ended without a delete
 )
 
 // Config is the host's static configuration.
@@ -46,9 +47,17 @@ type Host struct {
 	guest      *Guest             // nil when the slot is free
 	proc       execx.Handle       // the guest's QEMU process
 	stop       context.CancelFunc // the only way to end the guest
+	exited     *exit              // until deleted or readmitted
 
 	ledgerMu sync.Mutex         // op reads never wait on a boot
 	ledgers  map[string]*Ledger // by scratch id, until deletion
+}
+
+// exit records a guest that ended without a delete, so the readiness probe
+// reports the death instead of timing out.
+type exit struct {
+	scratchID string
+	reason    string // the process's exit error
 }
 
 // NewHost returns an empty Host that reads as last served at start.
@@ -77,7 +86,12 @@ func (h *Host) live(now time.Time) *Guest {
 	}
 	select {
 	case <-h.proc.Done():
-		log.Printf("guest for %s exited on its own: %v", h.guest.ScratchID, h.proc.Wait())
+		reason := "exit status 0"
+		if err := h.proc.Wait(); err != nil {
+			reason = err.Error()
+		}
+		log.Printf("guest for %s exited on its own: %s", h.guest.ScratchID, reason)
+		h.exited = &exit{scratchID: h.guest.ScratchID, reason: reason}
 		h.stop() // release the dead guest's context
 		h.guest, h.proc, h.stop = nil, nil, nil
 		h.lastServed = now
@@ -93,6 +107,9 @@ func (h *Host) liveGuest(now time.Time, scratchID string) (Guest, error) {
 	defer h.mu.Unlock()
 	if g := h.live(now); g != nil && g.ScratchID == scratchID {
 		return *g, nil
+	}
+	if h.exited != nil && h.exited.scratchID == scratchID {
+		return Guest{}, errors.Wrapf(ErrGuestExited, "%s: %s", scratchID, h.exited.reason)
 	}
 	return Guest{}, errors.Wrapf(ErrNoGuest, "%s", scratchID)
 }
@@ -169,6 +186,9 @@ func GuestAdmit(ctx context.Context, req AdmitRequest, deps *GuestDeps) (*Guest,
 		}
 		return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrapf(ErrFull, "serving %s", g.ScratchID))
 	}
+	if h.exited != nil && h.exited.scratchID == req.ScratchID {
+		h.exited = nil
+	}
 	g := Guest{ScratchID: req.ScratchID, IP: deps.Config.Net.IP.String(), Since: time.Now().UTC()}
 	// The guest outlives this request.
 	guestCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
@@ -208,6 +228,9 @@ func GuestDelete(ctx context.Context, req GuestRequest, deps *GuestDeps) (*act.N
 	if h.discardLedger(req.ScratchID) {
 		found = true
 	}
+	if h.exited != nil && h.exited.scratchID == req.ScratchID {
+		h.exited = nil
+	}
 	if !found {
 		return nil, api.AsStatus(codes.NotFound, errors.Wrapf(ErrNoGuest, "%s", req.ScratchID))
 	}
@@ -233,9 +256,13 @@ func Guests(_ context.Context, _ ListRequest, deps *GuestDeps) (*GuestList, erro
 
 // GuestHealth runs a command in the session's guest, so it fails until the
 // guest's sshd is up. Failures are Unavailable, so the caller polls until
-// the guest is ready.
+// the guest is ready. A guest that has exited fails with FailedPrecondition
+// instead, which ends the polling.
 func GuestHealth(ctx context.Context, req GuestRequest, deps *GuestDeps) (*act.NoOutput, error) {
 	g, err := deps.Host.liveGuest(time.Now().UTC(), req.ScratchID)
+	if errors.Is(err, ErrGuestExited) {
+		return nil, api.AsStatus(codes.FailedPrecondition, err)
+	}
 	if err != nil {
 		return nil, api.AsStatus(codes.Unavailable, err)
 	}

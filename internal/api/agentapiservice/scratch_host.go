@@ -44,6 +44,10 @@ func hostLabels(class schema.MachineClass) map[string]string {
 // loaded fleet rotates onto a new host image.
 const hostMaxAge = 24 * time.Hour
 
+// ErrGuestExited means the session's guest has ended, so no later readiness
+// probe can succeed.
+var ErrGuestExited = errors.New("guest exited")
+
 // HostDialer returns the HTTP client and base URL for a host's broker,
 // under the host's audience. Every request to a host goes through it.
 type HostDialer func(host Instance) (httpx.BasicClient, *url.URL, error)
@@ -118,7 +122,8 @@ func (h *HostClient) Healthz(ctx context.Context, host Instance) error {
 	return nil
 }
 
-// GuestHealthz fails until the session's guest answers on its exec channel.
+// GuestHealthz fails until the session's guest answers on its exec channel,
+// and returns ErrGuestExited once the guest has ended.
 func (h *HostClient) GuestHealthz(ctx context.Context, host Instance, scratchID string) error {
 	client, base, err := h.Dial(host)
 	if err != nil {
@@ -126,6 +131,9 @@ func (h *HostClient) GuestHealthz(ctx context.Context, host Instance, scratchID 
 	}
 	probe := api.Stub[scratchhostservice.GuestRequest, act.NoOutput](client, base.JoinPath(scratchhostservice.RouteGuestHealth))
 	if _, err := probe(ctx, scratchhostservice.GuestRequest{ScratchID: scratchID}); err != nil {
+		if status.Code(err) == codes.FailedPrecondition {
+			return errors.Wrap(ErrGuestExited, err.Error())
+		}
 		return errors.Wrapf(err, "guest %s healthz on %s", scratchID, host.Name)
 	}
 	return nil
