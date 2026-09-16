@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/db"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
@@ -243,6 +244,36 @@ func TestScratchCreate_GuestHealthzTimeoutTriggersTeardown(t *testing.T) {
 			t.Errorf("State = %q; want deleted", rec.State)
 		}
 	})
+}
+
+func TestScratchCreate_GuestExitEndsThePollEarly(t *testing.T) {
+	gce := NewMemoryGCE()
+	hosts := newFakeHosts()
+	seedHost(gce, hosts, "us-central1-a", "h1", "10.0.0.1", 6)
+	hosts.FailGuestHealthz("h1", api.AsStatus(codes.FailedPrecondition, errors.New("exit status 1")))
+	scratches := db.NewMemoryScratch()
+	deps := newCreateDeps(gce, hosts, scratches, func() string { return "sX" })
+
+	_, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, deps)
+	if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "exit status 1") {
+		t.Errorf("ScratchCreate with an exited guest = %v; want Internal carrying the exit", err)
+	}
+	// The exit ends the poll at the first probe.
+	if probes := countLog(hosts.Log(), "GuestHealthz("); probes != 1 {
+		t.Errorf("guest probes = %d; want 1", probes)
+	}
+	if names := hosts.GuestNames("h1"); len(names) != 0 {
+		t.Errorf("guests = %v; want the session's guest torn down", names)
+	}
+	rec, err := scratches.Get(context.Background(), "sX")
+	if err != nil {
+		t.Fatalf("Get after teardown: %v", err)
+	}
+	if rec.State != schema.ScratchDeleted {
+		t.Errorf("State = %q; want deleted", rec.State)
+	}
 }
 
 func TestScratchCreate_FallsThroughOnStockout(t *testing.T) {

@@ -289,7 +289,10 @@ func TestHostClient(t *testing.T) {
 	mux.Handle(scratchhostservice.RouteList, api.Handler(api.NoDepsInit, func(context.Context, scratchhostservice.ListRequest, *api.NoDeps) (*scratchhostservice.GuestList, error) {
 		return &scratchhostservice.GuestList{Guests: []scratchhostservice.Guest{{ScratchID: "s1"}}}, nil
 	}))
-	mux.Handle(scratchhostservice.RouteGuestHealth, api.Handler(api.NoDepsInit, func(context.Context, scratchhostservice.GuestRequest, *api.NoDeps) (*act.NoOutput, error) {
+	mux.Handle(scratchhostservice.RouteGuestHealth, api.Handler(api.NoDepsInit, func(_ context.Context, req scratchhostservice.GuestRequest, _ *api.NoDeps) (*act.NoOutput, error) {
+		if req.ScratchID == "exited" {
+			return nil, api.AsStatus(codes.FailedPrecondition, errors.New("exited: exit status 1"))
+		}
 		return &act.NoOutput{}, nil
 	}))
 	mux.HandleFunc(scratchhostservice.RouteHealthz, func(rw http.ResponseWriter, _ *http.Request) { rw.WriteHeader(http.StatusOK) })
@@ -330,6 +333,10 @@ func TestHostClient(t *testing.T) {
 	}
 	if err := hosts.GuestHealthz(ctx, host, "s1"); err != nil {
 		t.Errorf("GuestHealthz: %v", err)
+	}
+	// An exited guest is the probe's one terminal answer.
+	if err := hosts.GuestHealthz(ctx, host, "exited"); !errors.Is(err, ErrGuestExited) || !strings.Contains(err.Error(), "exit status 1") {
+		t.Errorf("GuestHealthz of an exited guest = %v; want ErrGuestExited carrying the exit", err)
 	}
 	joined := strings.Join(gotPaths, " ")
 	for _, want := range []string{"POST /guest/admit", "POST /guest/delete", "POST /guests", "GET /healthz", "POST /guest/healthz"} {
