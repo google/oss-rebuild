@@ -528,6 +528,24 @@ resource "google_project_iam_member" "dashboard-views-datastore" {
   role    = "roles/datastore.viewer"
   member  = google_service_account.dashboard[0].member
 }
+# IAP calls the service as its service agent, which needs run.invoker.
+# The agent exists once the backend enables IAP.
+resource "google_cloud_run_v2_service_iam_member" "iap-calls-dashboard" {
+  count      = var.enable_dashboard ? 1 : 0
+  location   = google_cloud_run_v2_service.dashboard[0].location
+  project    = google_cloud_run_v2_service.dashboard[0].project
+  name       = google_cloud_run_v2_service.dashboard[0].name
+  role       = "roles/run.invoker"
+  member     = "serviceAccount:service-${local.project_num}@gcp-sa-iap.iam.gserviceaccount.com"
+  depends_on = [google_compute_backend_service.dashboard]
+}
+resource "google_iap_web_backend_service_iam_member" "dashboard-viewers" {
+  for_each            = toset(var.enable_dashboard ? var.dashboard_viewers : [])
+  project             = var.project
+  web_backend_service = google_compute_backend_service.dashboard[0].name
+  role                = "roles/iap.httpsResourceAccessor"
+  member              = each.key
+}
 
 ## Public resources
 
