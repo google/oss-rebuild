@@ -51,6 +51,10 @@ func verifySetupCfgFile(ctx context.Context, f *object.File, name, version strin
 
 	foundName, fn := cfg.GetValue("metadata", "name")
 	foundVersion, fv := cfg.GetValue("metadata", "version")
+	// 'attr:' and 'file:' directives are dynamically resolved so provide no version here.
+	if fv && (strings.HasPrefix(foundVersion, "attr:") || strings.HasPrefix(foundVersion, "file:")) {
+		foundVersion, fv = "", false
+	}
 
 	if filepath.Dir(f.Name) == "." {
 		verificationResult.main = true
