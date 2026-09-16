@@ -73,7 +73,7 @@ func (e *DockerRunExecutor) Start(ctx context.Context, input rebuild.Input, opts
 func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle, plan *local.DockerRunPlan, t rebuild.Target, opts build.Options, timeout time.Duration) (*rebuild.BuildTimings, error) {
 	dir := path.Join(e.workDir, buildsSubdir, handle.id)
 	container := "rb-" + handle.id
-	if err := e.prepareBuild(ctx, dir); err != nil {
+	if err := e.prepareBuild(ctx, dir, "build.sh", []byte(plan.CombinedScript())); err != nil {
 		return nil, err
 	}
 	argOpts := local.RunArgsOpts{
