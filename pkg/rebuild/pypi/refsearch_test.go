@@ -136,6 +136,17 @@ func TestMatchArchiveBlobs(t *testing.T) {
 			want:    "r2",
 		},
 		{
+			// PyPI publishes 2.0.0-beta.1 as 2.0.0b1, and the build file's
+			// spelling still confirms.
+			name: "version tie, confirming under PEP 440 spelling",
+			commits: []gitxtest.Commit{
+				{ID: "r1", Time: day(1), Files: gitxtest.FileContent{"pyproject.toml": pyprojectTOML("acme", "1.0.0"), "acme/core.py": coreV2, "acme/util.py": util}},
+				{ID: "r2", Time: day(2), Parent: "r1", Files: gitxtest.FileContent{"pyproject.toml": pyprojectTOML("acme", "2.0.0-beta.1")}},
+			},
+			version: "2.0.0b1",
+			want:    "r2",
+		},
+		{
 			// Ties among version-silent candidates resolve to the earliest,
 			// where the artifact's content was introduced.
 			name: "silent tie, earliest",

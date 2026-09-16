@@ -15,7 +15,6 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/google/oss-rebuild/internal/versionx"
 	pypiresolver "github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
@@ -104,7 +103,7 @@ func pickByDeclaredVersion(ctx context.Context, candidates []*object.Commit, pkg
 		switch {
 		case declared == "":
 			neutral = append(neutral, c)
-		case versionx.ApproxCompare(declared, version) == 0:
+		case pypiresolver.SameVersion(declared, version):
 			confirming = append(confirming, c)
 		}
 	}

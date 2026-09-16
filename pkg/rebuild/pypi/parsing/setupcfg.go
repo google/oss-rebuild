@@ -71,7 +71,7 @@ func verifySetupCfgFile(ctx context.Context, f *object.File, name, version strin
 		if fv {
 			verificationResult.foundVersion = foundVersion
 		}
-		if fv && version == foundVersion {
+		if fv && SameVersion(foundVersion, version) {
 			verificationResult.versionMatch = true
 		}
 	}
