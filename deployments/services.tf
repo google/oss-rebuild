@@ -51,14 +51,22 @@ data "google_compute_zones" "scratch" {
   project = var.project
 }
 
-# Instance template for scratch VMs. The startup script fetches and runs the
+# Per-class instance templates for scratch VMs.
+locals {
+  scratch_classes = merge(
+    { standard = var.scratch_machine_type },
+    var.scratch_jumbo_machine_type != "" ? { jumbo = var.scratch_jumbo_machine_type } : {},
+  )
+}
+
+# Instance templates for scratch VMs. The startup script fetches and runs the
 # scratch-worker binary as a systemd service. agent-api drives the worker over
 # private-IP HTTP with an ID token. Conditionally attach a service account for
 # private instances to access bootstrap tools.
-resource "google_compute_instance_template" "scratch-standard" {
-  count        = var.enable_scratch ? 1 : 0
-  name_prefix  = "${var.host}-scratch-standard-"
-  machine_type = "e2-standard-8"
+resource "google_compute_instance_template" "scratch" {
+  for_each     = var.enable_scratch ? local.scratch_classes : {}
+  name_prefix  = "${var.host}-scratch-${each.key}-"
+  machine_type = each.value
   region       = "us-central1"
 
   # NOTE: This block needs to be conditionally omitted to ensure an empty
@@ -75,7 +83,7 @@ resource "google_compute_instance_template" "scratch-standard" {
     source_image = "cos-cloud/cos-stable"
     auto_delete  = true
     boot         = true
-    disk_size_gb = 400
+    disk_size_gb = var.scratch_disk_gb
     disk_type    = "pd-ssd"
   }
 
@@ -409,8 +417,10 @@ resource "google_cloud_run_v2_service" "agent-api" {
         "--scratch-enabled=true",
         "--scratch-zones=${join(",", data.google_compute_zones.scratch[0].names)}",
         "--scratch-worker-port=8080",
-        "--scratch-instance-standard-template=${google_compute_instance_template.scratch-standard[0].self_link}",
+        "--scratch-instance-standard-template=${google_compute_instance_template.scratch["standard"].self_link}",
         "--scratch-output-bucket=${google_storage_bucket.scratch-output[0].name}",
+        ] : [], var.enable_scratch && var.scratch_jumbo_machine_type != "" ? [
+        "--scratch-instance-jumbo-template=${google_compute_instance_template.scratch["jumbo"].self_link}",
       ] : [])
       resources {
         limits = {
@@ -431,7 +441,7 @@ resource "google_cloud_run_v2_service" "agent-api" {
         egress = "ALL_TRAFFIC"
       }
     }
-    scaling { max_instance_count = 10 }
+    scaling { max_instance_count = var.agent_api_max_instances }
   }
   depends_on = [google_project_service.run]
 }
