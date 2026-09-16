@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/act/api"
@@ -29,6 +30,7 @@ import (
 
 type AgentCreateIterationDeps struct {
 	FirestoreClient     *firestore.Client
+	Iterations          db.Iterations
 	GCBExecutor         *gcb.Executor
 	BuildProject        string
 	BuildServiceAccount string
@@ -46,7 +48,9 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	iterationID := iterTime.Format(time.RFC3339Nano)
 	var iteration schema.AgentIteration
 	var session schema.AgentSession
-	// Create iteration record and fetch session in a transaction
+	// TODO: Remove bespoke transaction. The in-transaction query emulates a
+	// uniqueness constraint on (session_id, number) that the timestamp doc key
+	// cannot express, and the session status check must be atomic with create.
 	sessionDoc := deps.FirestoreClient.Collection("agent_sessions").Doc(req.SessionID)
 	iterDoc := sessionDoc.Collection("agent_iterations").Doc(iterationID)
 	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
@@ -135,7 +139,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	// Update iteration with build details
 	iteration.Status = schema.AgentIterationStatusBuilding
 	iteration.Updated = time.Now().UTC()
-	_, err = iterDoc.Set(ctx, iteration)
+	err = deps.Iterations.Update(ctx, iteration)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "updating iteration status"))
 	}
@@ -199,8 +203,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 			ErrorMessage: "",
 		}
 	}
-	_, err = iterDoc.Set(ctx, iteration)
-	if err != nil {
+	if err := deps.Iterations.Update(ctx, iteration); err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "updating iteration with result"))
 	}
 	return &schema.AgentCreateIterationResponse{

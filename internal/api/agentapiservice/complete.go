@@ -8,7 +8,6 @@ import (
 	"log"
 	"time"
 
-	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -17,7 +16,7 @@ import (
 )
 
 type AgentCompleteDeps struct {
-	FirestoreClient *firestore.Client
+	Sessions db.Sessions
 	// Scratches and GCE enable best-effort teardown of a scratch-mode
 	// session's VM at completion. Optional: when either is nil the scratch
 	// is left to the idle reaper.
@@ -30,34 +29,24 @@ func AgentComplete(ctx context.Context, req schema.AgentCompleteRequest, deps *A
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("session_id required"))
 	}
 	var session schema.AgentSession
-	// Fetch and update session in a transaction
-	err := deps.FirestoreClient.RunTransaction(ctx, func(ctx context.Context, t *firestore.Transaction) error {
-		sessionDoc := deps.FirestoreClient.Collection("agent_sessions").Doc(req.SessionID)
-		docSnap, err := t.Get(sessionDoc)
-		if err != nil {
-			return errors.Wrap(err, "fetching session")
+	err := deps.Sessions.Mutate(ctx, req.SessionID, func(s *schema.AgentSession) (bool, error) {
+		defer func() { session = *s }()
+		if s.Status == schema.AgentSessionStatusCompleted {
+			return false, nil // Already completed, no-op
 		}
-		if err := docSnap.DataTo(&session); err != nil {
-			return errors.Wrap(err, "parsing session data")
-		}
-		// Check if already completed
-		if session.Status == schema.AgentSessionStatusCompleted {
-			return nil // Already completed, no-op
-		}
-		// Update session with completion details
-		session.Status = schema.AgentSessionStatusCompleted
-		session.StopReason = req.StopReason
-		session.Updated = time.Now().UTC()
+		s.Status = schema.AgentSessionStatusCompleted
+		s.StopReason = req.StopReason
+		s.Updated = time.Now().UTC()
 		if req.SuccessIterationID != "" {
-			session.SuccessIteration = req.SuccessIterationID
+			s.SuccessIteration = req.SuccessIterationID
 		}
 		if req.Summary != "" {
-			session.Summary = req.Summary
+			s.Summary = req.Summary
 		}
 		if req.Usage != nil {
-			session.Usage = req.Usage // token consumption, as tallied by the agent
+			s.Usage = req.Usage // token consumption, as tallied by the agent
 		}
-		return t.Set(sessionDoc, session)
+		return true, nil
 	})
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "updating session completion"))
