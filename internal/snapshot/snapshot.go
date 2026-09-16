@@ -16,6 +16,7 @@ import (
 	"github.com/google/oss-rebuild/internal/docdb"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/internal/sqlitex"
+	"github.com/google/oss-rebuild/internal/versionx"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
@@ -181,12 +182,26 @@ func buildSnapshotDB(path string, docTables map[string][]json.RawMessage, meta M
 	if err != nil {
 		return nil, errors.Wrap(err, "creating database")
 	}
+	if err := registerCollations(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	counts, err := fillSnapshotDB(db, docTables, meta)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
 	return counts, errors.Wrap(db.Close(), "closing database")
+}
+
+// registerCollations registers the version_approx_compare collation the
+// derived queries use to order version strings. Only build connections need
+// it: derived tables are materialized, so readers never re-run the queries.
+func registerCollations(db *sqlite3.Conn) error {
+	err := db.CreateCollation("version_approx_compare", func(a, b []byte) int {
+		return versionx.ApproxCompare(string(a), string(b))
+	})
+	return errors.Wrap(err, "registering version_approx_compare collation")
 }
 
 func fillSnapshotDB(db *sqlite3.Conn, docTables map[string][]json.RawMessage, meta Meta) (map[string]int, error) {
