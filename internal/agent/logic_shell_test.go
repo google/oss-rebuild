@@ -4,9 +4,12 @@
 package agent
 
 import (
+	"context"
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestPosixSingleQuote round-trips tricky commands through a real /bin/sh: the
@@ -75,6 +78,48 @@ func TestShellTimeout(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("shellTimeout() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDetachOutput runs the wrapper through a real /bin/sh: the call returns
+// when the command's own shell exits even though the child is backgrounded and
+// still holds the output, and the output and exit code intact.
+// NOTE: The child outlives the call, so the test remains fast.
+func TestDetachOutput(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	out, err := exec.CommandContext(ctx, "/bin/sh", "-c", detachOutput("echo out; echo err >&2; sleep 1 & exit 3")).CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 3 {
+		t.Fatalf("err = %v, want exit code 3", err)
+	}
+	if got := string(out); got != "out\nerr\n" {
+		t.Errorf("output = %q, want the command's stdout and stderr in order", got)
+	}
+	if took := time.Since(start); took > 500*time.Millisecond {
+		t.Errorf("call took %v, want a return when the shell exits, not when its child does", took)
+	}
+}
+
+// TestTruncateEnds pins the shape of a cut result: nothing changes until the
+// output exceeds head+tail, then the middle is replaced by a marker that
+// counts what it hides.
+func TestTruncateEnds(t *testing.T) {
+	for _, tc := range []struct {
+		name, in, want string
+		wantOmitted    int
+	}{
+		{"fits", "abcd", "abcd", 0},
+		{"at the limit", "abcde", "abcde", 0},
+		{"cut", "abMIDDLEcde", "ab\n...[6 bytes omitted, narrow the output with head, tail, or grep]...\ncde", 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, omitted := truncateEnds(tc.in, 2, 3)
+			if got != tc.want || omitted != tc.wantOmitted {
+				t.Errorf("truncateEnds(%q, 2, 3) = %q, %d; want %q, %d", tc.in, got, omitted, tc.want, tc.wantOmitted)
 			}
 		})
 	}
