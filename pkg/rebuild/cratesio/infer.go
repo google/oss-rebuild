@@ -340,7 +340,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		return nil, errors.Wrap(err, "rust version compatibility check failed")
 	}
 	if !hasMUSLBuild {
-		return nil, errors.New("rust version unsupported in MUSL builds")
+		// The build image is MUSL-based so pick the first toolchain build that has one.
+		log.Printf("Rust %s has no MUSL build, using %s", rustVersion, reg.EarliestMUSLBuild())
+		rustVersion = reg.EarliestMUSLBuild()
 	}
 	// --exclude-lockfile was added in Cargo 1.87.
 	excludeLockfile := lockContent == nil && semver.Cmp(rustVersion, "1.87.0") >= 0
