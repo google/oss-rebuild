@@ -40,7 +40,6 @@ var (
 type (
 	Runs       = Resource[schema.Run, string]
 	Attempts   = Resource[schema.RebuildAttempt, AttemptKey]
-	Sessions   = Resource[schema.AgentSession, string]
 	Iterations = Resource[schema.AgentIteration, IterationKey]
 )
 

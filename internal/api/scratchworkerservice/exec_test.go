@@ -4,11 +4,12 @@
 package scratchworkerservice
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"os"
-	"strconv"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -305,23 +306,35 @@ func TestOutput_OffsetAtOrPastEnd(t *testing.T) {
 }
 
 func TestOutput_MultiChunk(t *testing.T) {
-	// Produce enough output to span multiple stream chunks.
 	deps, store := newTestDeps(t)
 	const opID = "op-stream-multi"
-	// outputChunkSize * 2.5 bytes of "x" via printf %0Nd (faster than yes/dd in tests).
-	const total = outputChunkSize * 5 / 2
-	cmd := []string{"sh", "-c", "head -c " + strconv.Itoa(total) + " /dev/zero | tr '\\0' x"}
-	if _, err := ExecStart(context.Background(), stdReq(opID, "env-1", cmd...), deps); err != nil {
+	// Bytes a text-oriented channel would mangle (NUL, high bytes, CR/LF, an
+	// invalid UTF-8 sequence), repeated past two chunks so frame boundaries
+	// land mid-sequence.
+	var want []byte
+	for len(want) < outputChunkSize*5/2 {
+		for i := range 256 {
+			want = append(want, byte(i))
+		}
+		want = append(want, "\r\n\r\n\xc3\x28\x00"...)
+	}
+	src := filepath.Join(t.TempDir(), "artifact.bin")
+	if err := os.WriteFile(src, want, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := ExecStart(context.Background(), stdReq(opID, "env-1", "cat", src), deps); err != nil {
 		t.Fatalf("ExecStart: %v", err)
 	}
-	waitForDone(t, store, opID, 5*time.Second)
+	if st := waitForDone(t, store, opID, 5*time.Second); st.ExitCode != 0 || st.TotalBytes != int64(len(want)) {
+		t.Fatalf("status = %+v; want clean exit of %d bytes", st, len(want))
+	}
 
 	got, offsets, err := collectOutput(t, store, opID, 0)
 	if err != nil {
 		t.Fatalf("stream: %v", err)
 	}
-	if len(got) != total {
-		t.Errorf("len(content) = %d, want %d", len(got), total)
+	if !bytes.Equal(got, want) {
+		t.Errorf("content is %d bytes, want the %d-byte payload verbatim", len(got), len(want))
 	}
 	if len(offsets) < 3 {
 		t.Errorf("got %d frames, want >=3 (chunk size = %d)", len(offsets), outputChunkSize)

@@ -39,8 +39,8 @@ const (
 	// utilityTimeout bounds the non-build exec steps (staging, artifact
 	// retrieval).
 	utilityTimeout = 10 * time.Minute
-	// defaultMaxArtifactBytes caps artifact retrieval, which round-trips
-	// base64 over the exec output channel.
+	// defaultMaxArtifactBytes caps artifact retrieval, which round-trips the
+	// artifact through the exec output object.
 	defaultMaxArtifactBytes = 256 << 20
 	// Sentinel exit codes for the artifact retrieval script.
 	exitNoArtifact     = 44
@@ -240,14 +240,23 @@ func (e *executor) executeBuild(ctx context.Context, handle *scratchHandle, time
 
 // prepareBuild creates the build's staging directory and sweeps residue that
 // earlier builds failed to reclaim (crashed executors, missed stops), plus
-// any variant-specific sweeps.
-func (e *executor) prepareBuild(ctx context.Context, dir string, sweeps ...string) error {
-	script := append([]string{
+// any variant-specific sweeps. record is staged under recordName via stdin,
+// keeping it out of the persisted exec argv, and ahead of the build so even
+// a build that dies leaves it for post-mortems.
+func (e *executor) prepareBuild(ctx context.Context, dir, recordName string, record []byte, sweeps ...string) error {
+	script := []string{
 		"set -eu",
 		fmt.Sprintf("mkdir -p %q", dir+"/out"),
 		"docker ps -aq --filter name=^rb- | xargs -r docker rm -f",
-	}, sweeps...)
-	return e.utilityExec(ctx, []string{"/bin/sh", "-c", strings.Join(script, "\n")}, nil, "preparing build")
+	}
+	if recordName != "" {
+		script = append(script, fmt.Sprintf("cat > %q", path.Join(dir, recordName)))
+	} else {
+		record = nil
+	}
+	script = append(script, sweeps...)
+	_, err := e.utilityOp(ctx, []string{"/bin/sh", "-c", strings.Join(script, "\n")}, nil, record, "preparing build")
+	return err
 }
 
 // phaseExec dispatches one build-phase exec carrying the phase's share of
@@ -272,17 +281,22 @@ func (e *executor) phaseExec(ctx context.Context, handle *scratchHandle, req sch
 // utilityExec runs one short exec op, folding all failure channels into a
 // single error wrapped with what.
 func (e *executor) utilityExec(ctx context.Context, cmd []string, env map[string]string, what string) error {
-	_, err := e.utilityOp(ctx, cmd, env, what)
+	_, err := e.utilityOp(ctx, cmd, env, nil, what)
 	return err
 }
 
 // utilityOp dispatches one short exec op to a terminal state, folding all
 // failure channels into a single error wrapped with what.
-func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]string, what string) (*longrunning.Operation[schema.ScratchExecResult], error) {
+func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]string, stdin []byte, what string) (*longrunning.Operation[schema.ScratchExecResult], error) {
+	var stdinB64 string
+	if stdin != nil {
+		stdinB64 = base64.StdEncoding.EncodeToString(stdin)
+	}
 	op, err := Exec(ctx, e.stubs, schema.ScratchExecRequest{
 		ScratchID:      e.scratchID,
 		Cmd:            cmd,
 		Env:            env,
+		StdinB64:       stdinB64,
 		TimeoutSeconds: int(utilityTimeout.Seconds()),
 	}, e.pollInterval)
 	if err != nil {
@@ -299,7 +313,7 @@ func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]s
 
 // utilityExecOutput runs one short exec op and returns its merged output.
 func (e *executor) utilityExecOutput(ctx context.Context, cmd []string, what string) ([]byte, error) {
-	op, err := e.utilityOp(ctx, cmd, nil, what)
+	op, err := e.utilityOp(ctx, cmd, nil, nil, what)
 	if err != nil {
 		return nil, err
 	}
@@ -383,18 +397,20 @@ func (e *executor) copyNewOutput(ctx context.Context, op *longrunning.Operation[
 	return n
 }
 
-// fetchAndUploadArtifact retrieves the built artifact from the VM by base64
-// over the exec output channel and streams it into the asset store.
+// fetchAndUploadArtifact retrieves the built artifact from the VM over the
+// exec output channel and streams it into the asset store.
 func (e *executor) fetchAndUploadArtifact(ctx context.Context, dir, outputPath string, t rebuild.Target, store rebuild.AssetStore) error {
 	// The build ctx may be spent. Retrieval gets its own bounded context.
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), utilityTimeout)
 	defer cancel()
 	artifactPath := path.Join(dir, "out", path.Base(outputPath))
+	// On exit 0 the merged output holds the file bytes alone: the guards
+	// print nothing and a failed copy exits nonzero.
 	script := strings.Join([]string{
 		"set -eu",
 		fmt.Sprintf("[ -f %q ] || exit %d", artifactPath, exitNoArtifact),
 		fmt.Sprintf(`[ "$(wc -c < %q)" -le %d ] || exit %d`, artifactPath, e.maxArtifactBytes, exitArtifactTooBig),
-		fmt.Sprintf("base64 %q", artifactPath),
+		fmt.Sprintf("cat %q", artifactPath),
 	}, "\n")
 	op, err := Exec(fctx, e.stubs, schema.ScratchExecRequest{
 		ScratchID:      e.scratchID,
@@ -416,15 +432,14 @@ func (e *executor) fetchAndUploadArtifact(ctx context.Context, dir, outputPath s
 	default:
 		return errors.Errorf("artifact retrieval failed with exit code %d", op.Result.ExitCode)
 	}
-	// An absent output object means base64 produced no bytes: an empty
+	// An absent output object means the copy produced no bytes: an empty
 	// artifact.
 	rd, err := e.outputReader(fctx, op)
 	if err != nil {
 		return errors.Wrap(err, "resolving artifact output")
 	}
 	defer rd.Close()
-	dec := base64.NewDecoder(base64.StdEncoding, newlineFilteringReader{r: rd})
-	return errors.Wrap(e.uploadStream(fctx, store, rebuild.RebuildAsset.For(t), dec), "uploading artifact")
+	return errors.Wrap(e.uploadStream(fctx, store, rebuild.RebuildAsset.For(t), rd), "uploading artifact")
 }
 
 // outputReader opens the op's merged output object, yielding an empty reader
@@ -446,40 +461,21 @@ func (e *executor) outputReader(ctx context.Context, op *longrunning.Operation[s
 	return rd, nil
 }
 
-// uploadStream copies content into the asset store.
+// uploadStream copies content into the asset store. A failed copy abandons
+// the upload rather than committing the partial object: the GCS writer
+// finalizes on Close, so the error path cancels its context first.
 // TODO: Copy GCS-to-GCS uploads server-side.
 func (e *executor) uploadStream(ctx context.Context, store rebuild.AssetStore, asset rebuild.Asset, r io.Reader) error {
-	w, err := store.Writer(ctx, asset)
+	wctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	w, err := store.Writer(wctx, asset)
 	if err != nil {
 		return errors.Wrap(err, "creating asset writer")
 	}
 	if _, err := io.Copy(w, r); err != nil {
+		cancel()
 		w.Close()
 		return errors.Wrap(err, "writing asset")
 	}
 	return errors.Wrap(w.Close(), "finalizing asset")
-}
-
-// newlineFilteringReader strips CR/LF from a base64 stream: base64(1) wraps
-// lines and encoding/base64 does not tolerate newlines.
-type newlineFilteringReader struct {
-	r io.Reader
-}
-
-func (f newlineFilteringReader) Read(p []byte) (int, error) {
-	n, err := f.r.Read(p)
-	kept := 0
-	for i := range n {
-		if p[i] == '\n' || p[i] == '\r' {
-			continue
-		}
-		p[kept] = p[i]
-		kept++
-	}
-	// Report progress even when a chunk was all newlines, unless the
-	// underlying reader is exhausted.
-	if kept == 0 && n > 0 && err == nil {
-		return f.Read(p)
-	}
-	return kept, err
 }
