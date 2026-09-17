@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/execx"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
@@ -44,9 +45,9 @@ type testCase struct {
 	options          build.Options
 	maxParallel      int
 	dockerCmd        string
-	executeFunc      func(ctx context.Context, opts CommandOptions, name string, args ...string) error
+	executeFunc      func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error
 	lookPathFunc     func(file string) (string, error)
-	expectedCommands []MockCommand
+	expectedCommands []execx.MockCommand
 	expectedError    string
 	expectSuccess    bool
 }
@@ -80,13 +81,13 @@ func TestDockerRunExecutor(t *testing.T) {
 			},
 			maxParallel: 2,
 			dockerCmd:   "docker",
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			executeFunc: func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				if opts.Output != nil {
 					opts.Output.Write([]byte("Build successful\n"))
 				}
 				return nil
 			},
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name: "docker",
 					Args: []string{"run", "--detach", "--rm", "--name", "test-build-123", "-v", "/tmp/oss-rebuild-test-build-123:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "sleep", "infinity"},
@@ -157,10 +158,10 @@ func TestDockerRunExecutor(t *testing.T) {
 				BuildID: "test-build-789",
 			},
 			maxParallel: 1,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			executeFunc: func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				return errors.New("exit status 1")
 			},
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name:  "docker",
 					Args:  []string{"run", "--detach", "--rm", "--name", "test-build-789", "-v", "/tmp/oss-rebuild-test-build-789:/out", "--ulimit", "core=0", "alpine:3.19", "sleep", "infinity"},
@@ -211,7 +212,7 @@ func TestDockerRunExecutor(t *testing.T) {
 				Timeout: 50 * time.Millisecond,
 			},
 			maxParallel: 1,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			executeFunc: func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				select {
 				case <-time.After(100 * time.Millisecond):
 					return nil
@@ -242,13 +243,13 @@ func TestDockerRunExecutor(t *testing.T) {
 				BuildID: "test-build-workdir",
 			},
 			maxParallel: 1,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			executeFunc: func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				if opts.Output != nil {
 					opts.Output.Write([]byte("/custom/workdir\n"))
 				}
 				return nil
 			},
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name: "docker",
 					Args: []string{"run", "--detach", "--rm", "--name", "test-build-workdir", "-v", "/tmp/oss-rebuild-test-build-workdir:/out", "-w", "/custom/workdir", "--ulimit", "core=0", "ubuntu:20.04", "sleep", "infinity"},
@@ -276,7 +277,7 @@ func TestDockerRunExecutor(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup mock command executor
-			cmdExecutor := NewMockCommandExecutor()
+			cmdExecutor := execx.NewMockCommandExecutor()
 			if tc.executeFunc != nil {
 				cmdExecutor.SetExecuteFunc(tc.executeFunc)
 			}
@@ -361,12 +362,12 @@ func TestDockerRunExecutor(t *testing.T) {
 
 func TestDockerRunExecutorConcurrency(t *testing.T) {
 	maxParallel := 2
-	cmdExecutor := NewMockCommandExecutor()
+	cmdExecutor := execx.NewMockCommandExecutor()
 	// Setup slow execution to test concurrency
 	var activeBuilds int32
 	var maxActiveBuilds int32
 	var mu sync.Mutex
-	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 		mu.Lock()
 		activeBuilds++
 		if activeBuilds > maxActiveBuilds {
@@ -442,8 +443,8 @@ func TestDockerRunExecutorConcurrency(t *testing.T) {
 }
 
 func TestDockerRunExecutorSavePostBuildContainer(t *testing.T) {
-	cmdExecutor := NewMockCommandExecutor()
-	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+	cmdExecutor := execx.NewMockCommandExecutor()
+	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 		if opts.Output != nil {
 			opts.Output.Write([]byte("Build successful\n"))
 		}
@@ -490,7 +491,7 @@ func TestDockerRunExecutorSavePostBuildContainer(t *testing.T) {
 		t.Fatalf("Expected success, got error: %v", result.Error)
 	}
 	commands := cmdExecutor.GetCommands()
-	expectedCommands := []MockCommand{
+	expectedCommands := []execx.MockCommand{
 		{
 			Name: "docker",
 			Args: []string{"run", "--detach", "--rm", "--name", "test-postbuild", "-v", "/tmp/oss-rebuild-test-postbuild:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "sleep", "infinity"},
@@ -535,9 +536,9 @@ func TestDockerRunExecutorSavePostBuildContainer(t *testing.T) {
 }
 
 func TestDockerRunExecutorTimings(t *testing.T) {
-	cmdExecutor := NewMockCommandExecutor()
+	cmdExecutor := execx.NewMockCommandExecutor()
 	// Nonzero spans require observable time between clock reads.
-	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 		time.Sleep(time.Millisecond)
 		return nil
 	})
@@ -624,9 +625,9 @@ func TestDockerRunExecutorTimingsOnFailure(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cmdExecutor := NewMockCommandExecutor()
+			cmdExecutor := execx.NewMockCommandExecutor()
 			// Nonzero spans require observable time between clock reads.
-			cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				time.Sleep(time.Millisecond)
 				if tc.failStart && len(args) > 0 && args[0] == "run" {
 					return errors.New("start failed")
@@ -692,7 +693,7 @@ func TestDockerRunExecutorTimingsOnFailure(t *testing.T) {
 func TestDockerRunExecutorConfig(t *testing.T) {
 	executor, err := NewDockerRunExecutor(DockerRunExecutorConfig{
 		MaxParallel:     3,
-		CommandExecutor: NewMockCommandExecutor(),
+		CommandExecutor: execx.NewMockCommandExecutor(),
 	})
 	if err != nil {
 		t.Fatalf("Failed to create executor with config: %v", err)

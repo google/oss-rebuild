@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/google/oss-rebuild/pkg/build/local"
+	"github.com/google/oss-rebuild/internal/execx"
 	"github.com/pkg/errors"
 )
 
@@ -57,7 +57,7 @@ type GradleProject struct {
 
 // RunPrintCoordinates runs the gradle script which print all possible GAV coordinates of a Gradle project and its submodules.
 // We run the script without a daemon as this is a one-off task and we do not want to keep a background process around.
-func RunPrintCoordinates(ctx context.Context, sourceRepo git.Repository, gradleCmdExecutor local.CommandExecutor) (*GradleProject, error) {
+func RunPrintCoordinates(ctx context.Context, sourceRepo git.Repository, gradleCmdExecutor execx.CommandExecutor) (*GradleProject, error) {
 	wt, err := sourceRepo.Worktree()
 	if err != nil {
 		return nil, errors.Wrap(err, "getting worktree of Gradle project")
@@ -71,7 +71,7 @@ func RunPrintCoordinates(ctx context.Context, sourceRepo git.Repository, gradleC
 	}
 	gradleScriptFile.Close()
 	// TODO: make command options a parameter to this function in order to allow user to control the output destination - stdout or file
-	err = gradleCmdExecutor.Execute(ctx, local.CommandOptions{Dir: wt.Filesystem.Root(), Output: os.Stdout}, "./gradlew", "printCoordinates", "--init-script", "printCoordinates.gradle", "--no-daemon")
+	err = gradleCmdExecutor.Execute(ctx, execx.CommandOptions{Dir: wt.Filesystem.Root(), Output: os.Stdout}, "./gradlew", "printCoordinates", "--init-script", "printCoordinates.gradle", "--no-daemon")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to run Gradle command")
 	}

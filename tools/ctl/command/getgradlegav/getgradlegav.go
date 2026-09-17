@@ -11,9 +11,9 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/google/oss-rebuild/internal/execx"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
-	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/tools/ctl/gradle"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -66,7 +66,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	if err := wt.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(cfg.Ref)}); err != nil {
 		return nil, errors.Wrap(err, "failed to checkout commit")
 	}
-	gradleProject, err := gradle.RunPrintCoordinates(ctx, *repo, local.NewRealCommandExecutor())
+	gradleProject, err := gradle.RunPrintCoordinates(ctx, *repo, execx.NewRealCommandExecutor())
 	if err != nil {
 		return nil, errors.Wrap(err, "running printCoordinates")
 	}
