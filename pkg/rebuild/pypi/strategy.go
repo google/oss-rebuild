@@ -137,6 +137,7 @@ type PlatformWheelBuild struct {
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
 
+// BaseImage selects the docker image matching the wheel's platform tag
 func (b *PlatformWheelBuild) BaseImage() string {
 	return platform.SelectBaseImage(b.PlatformTag)
 }
@@ -155,7 +156,7 @@ func (b *PlatformWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Requires: rebuild.RequiredEnv{
-			BaseImage: platform.SelectBaseImage(b.PlatformTag),
+			BaseImage: b.BaseImage(),
 		},
 		Source: []flow.Step{{
 			Uses: "git-checkout",

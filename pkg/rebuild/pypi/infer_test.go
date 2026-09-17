@@ -332,3 +332,119 @@ func TestPythonTag(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractPlatformTag(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		want     string
+	}{
+		{
+			name:     "standard 5-part wheel",
+			filename: "foo-1.0.0-cp310-cp310-manylinux_2_17_x86_64.whl",
+			want:     "manylinux_2_17_x86_64",
+		},
+		{
+			name:     "6-part wheel with build tag",
+			filename: "foo-1.0.0-1-cp310-cp310-manylinux_2_17_x86_64.whl",
+			want:     "manylinux_2_17_x86_64",
+		},
+		{
+			name:     "pure wheel",
+			filename: "foo-1.0.0-py3-none-any.whl",
+			want:     "any",
+		},
+		{
+			name:     "compressed platform tags",
+			filename: "foo-2.4.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+			want:     "manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+		},
+		{
+			name:     "non-wheel",
+			filename: "foo-1.0.0.tar.gz",
+			want:     "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractPlatformTag(tt.filename); got != tt.want {
+				t.Errorf("extractPlatformTag(%q) = %q, want %q", tt.filename, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFindPlatformWheel(t *testing.T) {
+	artifacts := []pypireg.Artifact{
+		{Filename: "foo-1.0.0.tar.gz"},
+		{Filename: "foo-1.0.0-py3-none-any.whl"},
+		{Filename: "foo-1.0.0-cp310-cp310-win_amd64.whl"},
+		{Filename: "foo-1.0.0-cp310-cp310-macosx_11_0_arm64.whl"},
+		{Filename: "foo-1.0.0-cp310-cp310-manylinux2014_x86_64.whl"},
+	}
+	art, err := FindPlatformWheel(artifacts)
+	if err != nil {
+		t.Fatalf("FindPlatformWheel() error = %v", err)
+	}
+	if art.Filename != "foo-1.0.0-cp310-cp310-manylinux2014_x86_64.whl" {
+		t.Errorf("FindPlatformWheel() = %v, want foo-1.0.0-cp310-cp310-manylinux2014_x86_64.whl", art.Filename)
+	}
+}
+
+func TestExtractWheelTags(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		want     WheelTags
+	}{
+		{
+			name:     "standard 5-part wheel",
+			filename: "foo-1.0.0-cp310-cp310-manylinux_2_17_x86_64.whl",
+			want: WheelTags{
+				Python:   "cp310",
+				ABI:      "cp310",
+				Platform: "manylinux_2_17_x86_64",
+			},
+		},
+		{
+			name:     "abi3 wheel",
+			filename: "cryptography-41.0.0-cp37-abi3-manylinux_2_28_x86_64.whl",
+			want: WheelTags{
+				Python:   "cp37",
+				ABI:      "abi3",
+				Platform: "manylinux_2_28_x86_64",
+			},
+		},
+		{
+			name:     "6-part wheel with build tag",
+			filename: "foo-1.0.0-1-cp310-cp310-manylinux_2_17_x86_64.whl",
+			want: WheelTags{
+				Python:   "cp310",
+				ABI:      "cp310",
+				Platform: "manylinux_2_17_x86_64",
+			},
+		},
+		{
+			name:     "compressed platform tag set",
+			filename: "foo-2.4.3-cp310-cp310-manylinux1_x86_64.manylinux_2_28_x86_64.whl",
+			want: WheelTags{
+				Python:   "cp310",
+				ABI:      "cp310",
+				Platform: "manylinux1_x86_64.manylinux_2_28_x86_64",
+			},
+		},
+		{
+			name:     "non-wheel",
+			filename: "foo-1.0.0.tar.gz",
+			want:     WheelTags{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractWheelTags(tt.filename)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("extractWheelTags(%q) diff (-want +got):\n%s", tt.filename, diff)
+			}
+		})
+	}
+}
