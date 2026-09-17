@@ -25,7 +25,8 @@ import (
 )
 
 type AgentDeps struct {
-	Chat *llm.Chat
+	Chat   *llm.Chat
+	ChatFn func(context.Context) (*llm.Chat, error) // starts the chat an iteration diagnoses in, one per iteration
 	// Bucket for logs and rebuild artifact
 	MetadataBucket string
 	LogsBucket     string
@@ -143,7 +144,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 	var iterNum int
 	config := &genai.GenerateContentConfig{
 		Temperature:     genai.Ptr[float32](.1),
-		MaxOutputTokens: 16000,
+		MaxOutputTokens: 65536, // max supported
 		ToolConfig: &genai.ToolConfig{
 			FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: "AUTO"},
 		},
@@ -154,7 +155,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		MetadataBucket: deps.MetadataBucket,
 		LogsBucket:     deps.LogsBucket,
 		GCSClient:      deps.GCSClient,
-		MaxTurns:       250, // ~20m @5s/fn
+		MaxTurns:       maxToolTurns,
 		GenaiClient:    deps.Client,
 		RegistryClient: deps.RegistryClient,
 		ScratchRunner:  deps.ScratchRunner,
@@ -167,13 +168,8 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 			completeReq.Usage = a.Usage().OrNil()
 		}
 	}()
-	var err error
-	a.deps.Chat, err = llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), config, &llm.ChatOpts{Tools: a.getTools(), MaxToolIterations: a.deps.MaxTurns, Retrier: deps.Retrier})
-	if err != nil {
-		return &schema.AgentCompleteRequest{
-			StopReason: schema.AgentCompleteReasonError,
-			Summary:    fmt.Sprintf("Initializing agent: %v", err),
-		}
+	a.deps.ChatFn = func(ctx context.Context) (*llm.Chat, error) {
+		return llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), config, &llm.ChatOpts{Tools: a.getTools(), MaxToolIterations: a.deps.MaxTurns, Retrier: deps.Retrier})
 	}
 	if req.InitialIteration != nil {
 		err := a.InitializeFromIteration(ctx, req.InitialIteration)
