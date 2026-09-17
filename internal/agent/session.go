@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gcs "cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/internal/ratex"
@@ -27,15 +28,16 @@ import (
 type AgentDeps struct {
 	Chat *llm.Chat
 	// Bucket for logs and rebuild artifact
-	MetadataBucket string
-	LogsBucket     string
-	GCSClient      *gcs.Client
-	MaxTurns       int // Bounds each model exchange's tool uses (ChatOpts.MaxToolIterations)
-	GenaiClient    *genai.Client
-	RegistryClient httpx.BasicClient // Upstream registry requests (e.g. adapt-mode registry refresh) via the session's identified egress path.
-	ScratchRunner  *ScratchRunner    // When set, iteration builds run on a scratch VM with build logs read from exec output.
-	Model          string            // Gemini model id for auxiliary calls. Empty selects llm.GeminiPro.
-	GitCache       *gitcache.Client  // When set, inference repo clones go through the git-cache.
+	MetadataBucket     string
+	LogsBucket         string
+	GCSClient          *gcs.Client
+	MaxTurns           int // Bounds each model exchange's tool uses (ChatOpts.MaxToolIterations)
+	GenaiClient        *genai.Client
+	RegistryClient     httpx.BasicClient // Upstream registry requests (e.g. adapt-mode registry refresh) via the session's identified egress path.
+	ScratchRunner      *ScratchRunner    // When set, iteration builds run on a scratch VM with build logs read from exec output.
+	Model              string            // Gemini model id for auxiliary calls. Empty selects llm.GeminiPro.
+	GitCache           *gitcache.Client  // When set, inference repo clones go through the git-cache.
+	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 }
 
 type ProposeOpts struct {
@@ -61,14 +63,15 @@ type RunSessionDeps struct {
 	IterationStub api.StubFn[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse]
 	CompleteStub  api.StubFn[schema.AgentCompleteRequest, schema.AgentCompleteResponse]
 	// TODO: Should these be asset stores?
-	SessionsBucket string
-	MetadataBucket string
-	LogsBucket     string
-	Retrier        ratex.Retrier     // Paces and retries model calls. Zero value calls the model once.
-	RegistryClient httpx.BasicClient // Upstream registry requests via the session's identified egress path.
-	ScratchRunner  *ScratchRunner    // When set, each iteration builds on the scratch VM. Only verified successes reach the iteration API, as GCB confirmations.
-	Model          string            // Gemini model id for the session's calls. Empty selects llm.GeminiPro.
-	GitCache       *gitcache.Client  // When set, iteration inference repo clones go through the git-cache.
+	SessionsBucket     string
+	MetadataBucket     string
+	LogsBucket         string
+	Retrier            ratex.Retrier     // Paces and retries model calls. Zero value calls the model once.
+	RegistryClient     httpx.BasicClient // Upstream registry requests via the session's identified egress path.
+	ScratchRunner      *ScratchRunner    // When set, each iteration builds on the scratch VM. Only verified successes reach the iteration API, as GCB confirmations.
+	Model              string            // Gemini model id for the session's calls. Empty selects llm.GeminiPro.
+	GitCache           *gitcache.Client  // When set, iteration inference repo clones go through the git-cache.
+	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 }
 
 func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
@@ -150,16 +153,17 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 	}
 	config = llm.WithSystemPrompt(config, genai.NewPartFromText("You are an expert at debugging rebuild failures"))
 	a := NewDefaultAgent(req.Target, &AgentDeps{
-		Chat:           nil,
-		MetadataBucket: deps.MetadataBucket,
-		LogsBucket:     deps.LogsBucket,
-		GCSClient:      deps.GCSClient,
-		MaxTurns:       250, // ~20m @5s/fn
-		GenaiClient:    deps.Client,
-		RegistryClient: deps.RegistryClient,
-		ScratchRunner:  deps.ScratchRunner,
-		Model:          deps.Model,
-		GitCache:       deps.GitCache,
+		Chat:               nil,
+		MetadataBucket:     deps.MetadataBucket,
+		LogsBucket:         deps.LogsBucket,
+		GCSClient:          deps.GCSClient,
+		MaxTurns:           250, // ~20m @5s/fn
+		GenaiClient:        deps.Client,
+		RegistryClient:     deps.RegistryClient,
+		ScratchRunner:      deps.ScratchRunner,
+		Model:              deps.Model,
+		GitCache:           deps.GitCache,
+		CratesRegistryStub: deps.CratesRegistryStub,
 	})
 	// Stamp the session's LLM token spend onto whatever completion we return.
 	defer func() {
