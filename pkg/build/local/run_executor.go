@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/bufiox"
+	"github.com/google/oss-rebuild/internal/execx"
 	"github.com/google/oss-rebuild/internal/syncx"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/timing"
@@ -30,7 +31,7 @@ type DockerRunExecutor struct {
 	maxParallel      int
 	semaphore        chan struct{} // one entry per in-flight build, maxParallel wide.
 	dockerCmd        string
-	cmdExecutor      CommandExecutor
+	cmdExecutor      execx.CommandExecutor
 	activeBuilds     syncx.Map[string, *localHandle]
 	outputBufferSize int
 	retainContainer  bool
@@ -49,7 +50,7 @@ func NewDockerRunExecutor(config DockerRunExecutorConfig) (*DockerRunExecutor, e
 	}
 	cmdExecutor := config.CommandExecutor
 	if cmdExecutor == nil {
-		cmdExecutor = NewRealCommandExecutor()
+		cmdExecutor = execx.NewRealCommandExecutor()
 	}
 	maxParallel := config.MaxParallel
 	if maxParallel <= 0 {
@@ -90,7 +91,7 @@ type AuthCallback func() (string, error)
 // DockerRunExecutorConfig contains configuration for creating a Docker run executor
 type DockerRunExecutorConfig struct {
 	Planner          build.Planner[*DockerRunPlan]
-	CommandExecutor  CommandExecutor
+	CommandExecutor  execx.CommandExecutor
 	MaxParallel      int          // Max number of simultaneous builds
 	OutputBufferSize int          // Buffer size for output pipe, defaults to 512KB
 	RetainContainer  bool         // If true, retain containers stopped instead of removing them
@@ -237,14 +238,14 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	// Setup's span opens before the container start so it absorbs the image
 	// pull and container create, mirroring the build executor's buildx clock.
 	phaseStart := time.Now()
-	buildErr := e.cmdExecutor.Execute(ctx, CommandOptions{Output: idBuf}, e.dockerCmd, ComposeDockerStartArgs(plan, argOpts)...)
+	buildErr := e.cmdExecutor.Execute(ctx, execx.CommandOptions{Output: idBuf}, e.dockerCmd, ComposeDockerStartArgs(plan, argOpts)...)
 	elapsed := rebuild.BuildTimings{}
 	if buildErr != nil {
 		buildErr = errors.Wrap(buildErr, "starting build container")
 	} else {
 		slots := map[rebuild.BuildPhase]**time.Duration{rebuild.PhaseSetup: &elapsed.Setup, rebuild.PhaseSource: &elapsed.Source, rebuild.PhaseDeps: &elapsed.Deps, rebuild.PhaseBuild: &elapsed.Build}
 		for _, ph := range plan.Phases() {
-			err := e.cmdExecutor.Execute(ctx, CommandOptions{Output: runWriter}, e.dockerCmd, ComposeDockerExecArgs(handle.id, ph)...)
+			err := e.cmdExecutor.Execute(ctx, execx.CommandOptions{Output: runWriter}, e.dockerCmd, ComposeDockerExecArgs(handle.id, ph)...)
 			now := time.Now()
 			d := now.Sub(phaseStart)
 			phaseStart = now
@@ -298,7 +299,7 @@ func (e *DockerRunExecutor) executeBuild(ctx context.Context, handle *localHandl
 	if e.retainContainer {
 		teardown = []string{"stop", handle.id}
 	}
-	if err := e.cmdExecutor.Execute(context.WithoutCancel(ctx), CommandOptions{}, e.dockerCmd, teardown...); err != nil {
+	if err := e.cmdExecutor.Execute(context.WithoutCancel(ctx), execx.CommandOptions{}, e.dockerCmd, teardown...); err != nil {
 		log.Printf("Failed to clean up container %s: %v", handle.id, err)
 	}
 	handle.updateStatus(build.BuildStateCompleted)
@@ -339,12 +340,12 @@ func (e *DockerRunExecutor) uploadContent(ctx context.Context, store rebuild.Ass
 // exportContainer commits the container state to an image, saves it as a gzipped tarball, then removes the committed image.
 func (e *DockerRunExecutor) exportContainer(ctx context.Context, containerName, outputPath string) error {
 	committedImage := containerName + "-postbuild"
-	if err := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "commit", containerName, committedImage); err != nil {
+	if err := e.cmdExecutor.Execute(ctx, execx.CommandOptions{}, e.dockerCmd, "commit", containerName, committedImage); err != nil {
 		return errors.Wrap(err, "docker commit failed")
 	}
-	saveErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, "sh", "-c",
+	saveErr := e.cmdExecutor.Execute(ctx, execx.CommandOptions{}, "sh", "-c",
 		fmt.Sprintf("%s save %s | gzip > %s", e.dockerCmd, committedImage, outputPath))
-	if rmErr := e.cmdExecutor.Execute(ctx, CommandOptions{}, e.dockerCmd, "rmi", committedImage); rmErr != nil {
+	if rmErr := e.cmdExecutor.Execute(ctx, execx.CommandOptions{}, e.dockerCmd, "rmi", committedImage); rmErr != nil {
 		log.Printf("Failed to remove committed image %s: %v", committedImage, rmErr)
 	}
 	return saveErr
