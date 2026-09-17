@@ -50,7 +50,7 @@ var (
 	scratchStandardTmpl  = flag.String("scratch-instance-standard-template", "", "GCE instance template URL for the standard machine class (required when scratch enabled)")
 	scratchJumboTmpl     = flag.String("scratch-instance-jumbo-template", "", "GCE instance template URL for the jumbo machine class (optional)")
 	scratchOutputBucket  = flag.String("scratch-output-bucket", "", "GCS bucket the broker writes exec output into (required when --scratch-enabled)")
-	scratchIdleThreshold = flag.Duration("scratch-idle-threshold", 30*time.Minute, "scratches whose LastUsed is older than this and that have no in-deadline pending exec are reaped")
+	scratchIdleThreshold = flag.Duration("scratch-idle-threshold", 30*time.Minute, "scratches whose LastUsed is older than this and that have no in-deadline pending exec are reaped. Also bounds how long a scratch may sit in starting or deleting with no writes before the reaper tears it down")
 	scratchOpDeadline    = flag.Duration("scratch-op-deadline", 2*time.Hour, "default and maximum exec duration, stamped on each exec; bounds how long a pending exec exempts its scratch from idle reaping")
 )
 
