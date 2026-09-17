@@ -36,6 +36,7 @@ type AgentDeps struct {
 	ScratchRunner  *ScratchRunner    // When set, iteration builds run on a scratch VM with build logs read from exec output.
 	Model          string            // Gemini model id for auxiliary calls. Empty selects llm.GeminiPro.
 	GitCache       *gitcache.Client  // When set, inference repo clones go through the git-cache.
+	Retrier        ratex.Retrier     // Paces and retries the auxiliary model calls. Zero value calls once.
 }
 
 type ProposeOpts struct {
@@ -160,6 +161,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		ScratchRunner:  deps.ScratchRunner,
 		Model:          deps.Model,
 		GitCache:       deps.GitCache,
+		Retrier:        deps.Retrier,
 	})
 	// Stamp the session's LLM token spend onto whatever completion we return.
 	defer func() {
