@@ -18,6 +18,8 @@ var (
 	ErrMissingRequired  = errors.New("missing required field")
 )
 
+var stringSliceType = reflect.TypeFor[[]string]()
+
 type fieldOptions struct {
 	name     string
 	required bool
@@ -38,15 +40,11 @@ func options(field reflect.StructField) fieldOptions {
 }
 
 func Marshal(in any) (url.Values, error) {
-	tvalue := reflect.ValueOf(in)
-	ttype := tvalue.Type()
-	if ttype.Kind() == reflect.Pointer {
-		tvalue = reflect.Indirect(tvalue)
-		ttype = tvalue.Type()
-	}
-	if ttype.Kind() != reflect.Struct {
+	tvalue := reflect.Indirect(reflect.ValueOf(in))
+	if tvalue.Kind() != reflect.Struct {
 		return nil, ErrInvalidType
 	}
+	ttype := tvalue.Type()
 	v := url.Values{}
 	for i := range ttype.NumField() {
 		field, value := ttype.Field(i), tvalue.Field(i)
@@ -63,7 +61,7 @@ func Marshal(in any) (url.Values, error) {
 		case reflect.String:
 			v.Set(opt.name, value.String())
 		case reflect.Slice:
-			if field.Type.Elem().Kind() == reflect.String {
+			if field.Type == stringSliceType {
 				v[opt.name] = value.Interface().([]string)
 				continue
 			}
@@ -80,11 +78,12 @@ func Marshal(in any) (url.Values, error) {
 }
 
 func Unmarshal(v url.Values, out any) error {
-	tvalue := reflect.ValueOf(out).Elem()
-	ttype := tvalue.Type()
-	if ttype.Kind() != reflect.Struct {
+	ptr := reflect.ValueOf(out)
+	if ptr.Kind() != reflect.Pointer || ptr.IsNil() || ptr.Elem().Kind() != reflect.Struct {
 		return ErrInvalidType
 	}
+	tvalue := ptr.Elem()
+	ttype := tvalue.Type()
 	for i := range ttype.NumField() {
 		field, value := ttype.Field(i), tvalue.Field(i)
 		if !field.IsExported() {
@@ -104,7 +103,7 @@ func Unmarshal(v url.Values, out any) error {
 		case reflect.String:
 			value.SetString(urlval)
 		case reflect.Slice:
-			if field.Type.Elem().Kind() == reflect.String {
+			if field.Type == stringSliceType {
 				value.Set(reflect.ValueOf(v[opt.name]))
 				continue
 			}
