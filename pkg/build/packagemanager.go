@@ -68,13 +68,13 @@ func GetPackageManagerCommands(os OS) PackageManagerCommands {
 // DetectOS detects the OS from a base image name
 func DetectOS(baseImage string) OS {
 	switch {
-	case strings.Contains(baseImage, "alpine"), strings.Contains(baseImage, "library/docker"):
+	case strings.Contains(baseImage, "alpine"), strings.Contains(baseImage, "musllinux"), strings.Contains(baseImage, "library/docker"):
 		return Alpine
 	case strings.Contains(baseImage, "debian"):
 		return Debian
 	case strings.Contains(baseImage, "ubuntu"):
 		return Ubuntu
-	case strings.Contains(baseImage, "centos"), strings.Contains(baseImage, "rhel"):
+	case strings.Contains(baseImage, "centos"), strings.Contains(baseImage, "rhel"), strings.Contains(baseImage, "manylinux"), strings.Contains(baseImage, "almalinux"):
 		return CentOS
 	default:
 		return Alpine // safe default
