@@ -37,8 +37,8 @@ func TestPickNodeVersion(t *testing.T) {
 		},
 		{
 			name:        "trust the future",
-			nodeVersion: "24.6.1",
-			want:        "24.6.1",
+			nodeVersion: "99.0.0",
+			want:        "99.0.0",
 		},
 		{
 			name:        "node 8 upgrades to default",
