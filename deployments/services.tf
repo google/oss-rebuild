@@ -58,7 +58,7 @@ data "google_compute_zones" "scratch" {
 resource "google_compute_instance_template" "scratch-standard" {
   count        = var.enable_scratch ? 1 : 0
   name_prefix  = "${var.host}-scratch-standard-"
-  machine_type = "e2-standard-8"
+  machine_type = var.scratch_machine_type
   region       = "us-central1"
 
   # NOTE: This block needs to be conditionally omitted to ensure an empty
@@ -75,7 +75,7 @@ resource "google_compute_instance_template" "scratch-standard" {
     source_image = "cos-cloud/cos-stable"
     auto_delete  = true
     boot         = true
-    disk_size_gb = 400
+    disk_size_gb = var.scratch_disk_gb
     disk_type    = "pd-ssd"
   }
 
@@ -431,7 +431,7 @@ resource "google_cloud_run_v2_service" "agent-api" {
         egress = "ALL_TRAFFIC"
       }
     }
-    scaling { max_instance_count = 10 }
+    scaling { max_instance_count = var.agent_api_max_instances }
   }
   depends_on = [google_project_service.run]
 }
