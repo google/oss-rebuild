@@ -247,9 +247,9 @@ func (a *defaultAgent) runShell(name string, args map[string]any, wrap func(stri
 	if terr != "" {
 		return shellResponse(name, "", 0, terr)
 	}
-	script := command
+	script := detachOutput(command)
 	if wrap != nil {
-		script = wrap(command)
+		script = wrap(script)
 	}
 	exitCode, output, err := a.deps.ScratchRunner.RunCommand(context.Background(), script, timeout)
 	if len(output) > uploadBytesLimit {
@@ -311,6 +311,13 @@ func shellCommandResponse() *genai.Schema {
 			"error":     {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
 		},
 	}
+}
+
+// detachOutput sends the command's output to a file and replays it once the
+// command's own shell exits. Notably, this means a process left in the
+// background (e.g. timewarp) won't hold the call's pipe open indefinitely.
+func detachOutput(command string) string {
+	return "out=$(mktemp); ( " + command + "\n) >\"$out\" 2>&1; rc=$?; cat \"$out\"; rm -f \"$out\"; exit $rc"
 }
 
 // dockerExecInContainerScript wraps command to run inside the retained build
@@ -634,6 +641,19 @@ type thoughtData struct {
 func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {
 	if len(a.iterHistory) == 0 {
 		return nil, errors.New("proposeAgentInferece needs an previous iteration to work off of")
+	}
+	// Use a fresh chat per iteration. The history carries prior thoughts but
+	// the content of tool calls and results across iterations accumulates too
+	// fast and overflows the model's input.
+	if a.deps.ChatFn != nil {
+		if a.deps.Chat != nil {
+			a.sideUsage = a.sideUsage.Add(sumTokenUsage(a.deps.Chat.Usage(), a.deps.Chat.Model()))
+		}
+		chat, err := a.deps.ChatFn(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "starting chat")
+		}
+		a.deps.Chat = chat
 	}
 	prev := a.execDetails(ctx, a.iterHistory[len(a.iterHistory)-1])
 	thought := thoughtData{
