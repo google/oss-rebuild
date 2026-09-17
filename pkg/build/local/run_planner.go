@@ -57,8 +57,8 @@ var dockerRunPhaseTpls = template.Must(
 			{{- end}}
 			{{- define "deps" -}}
 			{{- if .UseTimewarp}}
-			/timewarp -port 8081 &
-			while ! nc -z localhost 8081;do sleep 1;done
+			/timewarp -port 8080 &
+			while ! nc -z localhost 8080;do sleep 1;done
 			{{- end}}
 			cd /src
 			{{.Inst.Deps}}
@@ -78,16 +78,17 @@ func NewDockerRunPlanner() *DockerRunPlanner {
 	return &DockerRunPlanner{}
 }
 
+// dockerRunBuildEnv is the env docker run plans for which strategies render.
+func dockerRunBuildEnv() rebuild.BuildEnv {
+	return rebuild.BuildEnv{TimewarpHost: "localhost:8080", HasRepo: false}
+}
+
 // GeneratePlan implements Planner[*DockerRunPlan]
 func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input, opts build.PlanOptions) (*DockerRunPlan, error) {
 	if opts.UseSyscallMonitor {
 		return nil, errors.New("syscall monitor support not implemented")
 	}
-	buildEnv := rebuild.BuildEnv{
-		TimewarpHost: "localhost:8081",
-		HasRepo:      false,
-	}
-	instructions, err := input.Strategy.GenerateFor(input.Target, buildEnv)
+	instructions, err := input.Strategy.GenerateFor(input.Target, dockerRunBuildEnv())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate rebuild instructions")
 	}
