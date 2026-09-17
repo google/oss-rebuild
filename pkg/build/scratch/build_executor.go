@@ -89,7 +89,7 @@ func (e *DockerBuildExecutor) runBuild(ctx context.Context, handle *scratchHandl
 	// observed so its state clocks survive for inspection.
 	recordTimings := plan.Layers.Appended > 0
 	autoRemove := !e.retainContainer && !recordTimings
-	if err := e.prepareBuild(ctx, dir, "docker images -q --filter 'reference=rb-*' | xargs -r docker rmi -f"); err != nil {
+	if err := e.prepareBuild(ctx, dir, "Dockerfile", []byte(plan.Dockerfile), "docker images -q --filter 'reference=rb-*' | xargs -r docker rmi -f"); err != nil {
 		return nil, err
 	}
 	if plan.Privileged && !e.allowPrivileged {
