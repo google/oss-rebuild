@@ -44,36 +44,56 @@ func ExtractRequirements(ctx context.Context, tree *object.Tree, searchDir strin
 	return reqs, nil
 }
 
-// DiscoverBuildDir searches for the best directory for requirement extraction.
-// Returns the directory path relative to the tree root, with "" representing root.
-func DiscoverBuildDir(ctx context.Context, tree *object.Tree, name, version, hintDir string) (string, error) {
-	var verifiedFiles []fileVerification
-	configTypes := []struct {
-		filename string
-		verify   func(context.Context, *object.File, string, string) (fileVerification, error)
-	}{
-		{"pyproject.toml", verifyPyProjectFile},
-		{"setup.cfg", verifySetupCfgFile},
-		{"setup.py", verifySetupPyFile},
-	}
-	for _, h := range configTypes {
-		files, err := findRecursively(h.filename, tree, hintDir)
-		if err != nil {
-			return "", errors.Wrapf(err, "finding %s files", h.filename)
+// buildFileVerifiers pairs each build file with its per-format verifier.
+var buildFileVerifiers = []struct {
+	filename string
+	verify   func(context.Context, *object.File, string, string) (fileVerification, error)
+}{
+	{"pyproject.toml", verifyPyProjectFile},
+	{"setup.cfg", verifySetupCfgFile},
+	{"setup.py", verifySetupPyFile},
+}
+
+// verifyBuildFiles verifies the build files in dir, or every build file in the
+// tree when dir is "", against name and version. Files that fail to parse are
+// logged and skipped.
+func verifyBuildFiles(ctx context.Context, tree *object.Tree, dir, name, version string) ([]fileVerification, error) {
+	var verified []fileVerification
+	for _, h := range buildFileVerifiers {
+		var files []*object.File
+		if dir == "" {
+			tree.Files().ForEach(func(f *object.File) error {
+				if filepath.Base(f.Name) == h.filename {
+					files = append(files, f)
+				}
+				return nil
+			})
+		} else if f, err := tree.File(filepath.Join(dir, h.filename)); err == nil {
+			files = []*object.File{f}
+		} else if err != object.ErrFileNotFound {
+			return nil, errors.Wrapf(err, "finding %s file", h.filename)
 		}
 		for _, f := range files {
-			verification, err := h.verify(ctx, f, name, version)
+			v, err := h.verify(ctx, f, name, version)
 			if err != nil {
 				log.Printf("Failed to verify %s file: %v", h.filename, err)
 				continue
 			}
-			verifiedFiles = append(verifiedFiles, verification)
+			verified = append(verified, v)
 		}
 	}
-	if len(verifiedFiles) == 0 {
+	return verified, nil
+}
+
+// DiscoverBuildDir searches for the best directory for requirement extraction.
+// Returns the directory path relative to the tree root, with "" representing root.
+func DiscoverBuildDir(ctx context.Context, tree *object.Tree, name, version, hintDir string) (string, error) {
+	verified, err := verifyBuildFiles(ctx, tree, hintDir, name, version)
+	if err != nil {
+		return "", err
+	}
+	if len(verified) == 0 {
 		return "", errors.New("no verified build files found for requirement extraction")
 	}
-	sortedVerification := sortVerifications(verifiedFiles)
-	bestFile := sortedVerification[0]
-	return rebuild.DirOf(bestFile.foundF.Name), nil
+	return rebuild.DirOf(sortVerifications(verified)[0].foundF.Name), nil
 }

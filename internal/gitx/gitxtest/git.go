@@ -8,6 +8,7 @@ import (
 	"io"
 	"path"
 	"slices"
+	"time"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -38,6 +39,7 @@ type Commit struct {
 	Branch  string      `yaml:"branch,omitempty"`
 	Tag     string      `yaml:"tag,omitempty"`
 	Tags    []string    `yaml:"tags,omitempty"`
+	Time    time.Time   `yaml:"time,omitempty"`
 	Files   FileContent `yaml:"files"`
 }
 
@@ -112,7 +114,7 @@ func CreateRepo(commits []Commit, opts *RepositoryOptions) (*Repository, error) 
 			author = c.Author
 		}
 		commitHash, err := w.Commit(c.Message, &git.CommitOptions{
-			Author:            &object.Signature{Name: author},
+			Author:            &object.Signature{Name: author, When: c.Time},
 			AllowEmptyCommits: true,
 			Parents:           parents,
 		})
