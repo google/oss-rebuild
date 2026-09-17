@@ -278,7 +278,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream Cargo.toml")
 	}
-	minVer, maxVer := detectRustVersionBounds(string(cargoTomlText))
+	// Cargo.toml.orig is the manifest as the author wrote it. Old crates have none.
+	origText, _ := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.toml.orig")
+	minVer, maxVer := detectRustVersionBounds(string(cargoTomlText), string(origText))
 	if minVer != "" && semver.Cmp(rustVersion, minVer) < 0 {
 		rustVersion = minVer
 	}
@@ -340,7 +342,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		return nil, errors.Wrap(err, "rust version compatibility check failed")
 	}
 	if !hasMUSLBuild {
-		return nil, errors.New("rust version unsupported in MUSL builds")
+		// The build image is MUSL-based so pick the first toolchain build that has one.
+		log.Printf("Rust %s has no MUSL build, using %s", rustVersion, reg.EarliestMUSLBuild())
+		rustVersion = reg.EarliestMUSLBuild()
 	}
 	// --exclude-lockfile was added in Cargo 1.87.
 	excludeLockfile := lockContent == nil && semver.Cmp(rustVersion, "1.87.0") >= 0
