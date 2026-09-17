@@ -449,7 +449,19 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			Requirements:  reqs,
 			RegistryTime:  a.UploadTime,
 		}, nil
-	} else if strings.HasSuffix(a.Filename, ".whl") && !strings.HasSuffix(a.Filename, "none-any.whl") {
+	} else if strings.HasSuffix(a.Filename, ".whl") {
+		if strings.HasSuffix(a.Filename, "none-any.whl") {
+			return &PureWheelBuild{
+				Location: rebuild.Location{
+					Repo: rcfg.URI,
+					Dir:  dir,
+					Ref:  ref,
+				},
+				PythonVersion: inferPythonVersion(reqs, a.UploadTime),
+				Requirements:  reqs,
+				RegistryTime:  a.UploadTime,
+			}, nil
+		}
 		tags := extractWheelTags(a.Filename)
 		if _, err := platform.ParsePlatformTags(tags.Platform); err != nil {
 			return nil, errors.Wrapf(err, "unsupported platform tag in wheel filename %s", a.Filename)
