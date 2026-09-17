@@ -224,7 +224,7 @@ func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
 			Name:        "run_in_container",
-			Description: "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' so working directory and shell environment will carry across calls while filesystem changes will not. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (truncated to the tail if large) and the exit code.",
+			Description: "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' starting in /src: the working directory and shell environment reset between calls, filesystem changes persist. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (truncated to the tail if large) and the exit code.",
 			Parameters:  shellCommandParams(),
 			Response:    shellCommandResponse(),
 		},
@@ -247,9 +247,9 @@ func (a *defaultAgent) runShell(name string, args map[string]any, wrap func(stri
 	if terr != "" {
 		return shellResponse(name, "", 0, terr)
 	}
-	script := command
+	script := detachOutput(command)
 	if wrap != nil {
-		script = wrap(command)
+		script = wrap(script)
 	}
 	exitCode, output, err := a.deps.ScratchRunner.RunCommand(context.Background(), script, timeout)
 	if len(output) > uploadBytesLimit {
@@ -311,6 +311,13 @@ func shellCommandResponse() *genai.Schema {
 			"error":     {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
 		},
 	}
+}
+
+// detachOutput sends the command's output to a file and replays it once the
+// command's own shell exits. Notably, this means a process left in the
+// background (e.g. timewarp) won't hold the call's pipe open indefinitely.
+func detachOutput(command string) string {
+	return "out=$(mktemp); ( " + command + "\n) >\"$out\" 2>&1; rc=$?; cat \"$out\"; rm -f \"$out\"; exit $rc"
 }
 
 // dockerExecInContainerScript wraps command to run inside the retained build
@@ -442,6 +449,8 @@ func (a *defaultAgent) diagnoseOnly() []string {
 	if a.deps.ScratchRunner != nil {
 		prompt = append(prompt,
 			"You can also use the run_on_host tool to run diagnostic shell commands on the build VM host (e.g. inspect docker images or examine files left by previous build attempts), and the run_in_container tool to run commands inside the retained build container with the build's own toolchain.",
+			"Where things are: the source checkout is at /src inside the retained container, where each call starts. The previous attempt's build script and output are under ./builds/<build-id>/ on the host. After a content mismatch the error message names where the upstream artifact and diffr sit on the host.",
+			"Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees, and aim to reach a diagnosis in under 20 tool calls.",
 		)
 	}
 	return append(prompt,
@@ -634,6 +643,19 @@ type thoughtData struct {
 func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {
 	if len(a.iterHistory) == 0 {
 		return nil, errors.New("proposeAgentInferece needs an previous iteration to work off of")
+	}
+	// Use a fresh chat per iteration. The history carries prior thoughts but
+	// the content of tool calls and results across iterations accumulates too
+	// fast and overflows the model's input.
+	if a.deps.ChatFn != nil {
+		if a.deps.Chat != nil {
+			a.sideUsage = a.sideUsage.Add(sumTokenUsage(a.deps.Chat.Usage(), a.deps.Chat.Model()))
+		}
+		chat, err := a.deps.ChatFn(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "starting chat")
+		}
+		a.deps.Chat = chat
 	}
 	prev := a.execDetails(ctx, a.iterHistory[len(a.iterHistory)-1])
 	thought := thoughtData{
