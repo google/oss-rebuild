@@ -313,3 +313,22 @@ func TestInferRepoPrefersReleaseLinks(t *testing.T) {
 		})
 	}
 }
+
+func TestPythonTag(t *testing.T) {
+	setuptools := []string{"wheel==0.36.2", "setuptools<=56.2.0"}
+	for _, tc := range []struct {
+		filename string
+		reqs     []string
+		want     string
+	}{
+		{"asn1crypto-1.5.1-py2.py3-none-any.whl", setuptools, "py2.py3"},
+		{"google_pasta-0.2.0-py2-none-any.whl", setuptools, "py2"},
+		{"dacite-1.9.2-py3-none-any.whl", setuptools, ""},
+		{"six-1.16.0-py2.py3-none-any.whl", []string{"flit_core==3.9.0"}, ""},
+		{"pkg-1.0.tar.gz", setuptools, ""},
+	} {
+		if got := pythonTag(tc.filename, tc.reqs); got != tc.want {
+			t.Errorf("pythonTag(%q, %v) = %q, want %q", tc.filename, tc.reqs, got, tc.want)
+		}
+	}
+}

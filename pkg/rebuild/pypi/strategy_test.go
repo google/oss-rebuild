@@ -43,6 +43,27 @@ func TestPureWheelBuild(t *testing.T) {
 			},
 		},
 		{
+			"WithPythonTag",
+			&PureWheelBuild{
+				Location:     defaultLocation,
+				Requirements: []string{"setuptools<=56.2.0"},
+				PythonTag:    "py2.py3",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/python3 -m venv /deps
+/deps/bin/pip install build
+/deps/bin/pip install 'setuptools<=56.2.0'`,
+				Build: `printf '[bdist_wheel]\npython-tag = py2.py3\n' >~/.pydistutils.cfg
+/deps/bin/python3 -m build --wheel -n the_dir`,
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "python3", "uv"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
 			"WithUVBackend",
 			&PureWheelBuild{
 				Location:     defaultLocation,
