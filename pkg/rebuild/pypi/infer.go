@@ -126,26 +126,35 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 	}
 }
 
-func findGitRef(pkg string, version string, rcfg *rebuild.RepoConfig) (string, error) {
+// findGitRef resolves the commit a release was built from: a tag naming the
+// version when one exists, else the commit whose tree matches the pure wheel
+// file blobs. A fallback that errors internally is logged and skipped, never
+// aborting the chain.
+func findGitRef(ctx context.Context, mux rebuild.RegistryMux, pkg, version string, release *pypireg.Release, rcfg *rebuild.RepoConfig) (string, error) {
 	tagHeuristic, err := rebuild.FindTagMatch(pkg, version, rcfg.Repository)
-	log.Printf("Version: %s, tag hash: \"%s\"", version, tagHeuristic)
 	if err != nil {
 		return "", errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 	}
-	// TODO: Look for the project.toml and check for version number.
-	if tagHeuristic == "" {
-		return "", errors.New("no git ref")
-	}
-	_, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagHeuristic))
-	if err != nil {
-		switch err {
-		case plumbing.ErrObjectNotFound:
-			return "", errors.Errorf("[INTERNAL] Commit ref from tag heuristic not found in repo [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
-		default:
-			return "", errors.Wrapf(err, "Checkout failed [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
+	log.Printf("Version: %s, tag hash: \"%s\"", version, tagHeuristic)
+	if tagHeuristic != "" {
+		_, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagHeuristic))
+		if err != nil {
+			switch err {
+			case plumbing.ErrObjectNotFound:
+				return "", errors.Errorf("[INTERNAL] Commit ref from tag heuristic not found in repo [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
+			default:
+				return "", errors.Wrapf(err, "Checkout failed [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
+			}
 		}
+		return tagHeuristic, nil
 	}
-	return tagHeuristic, nil
+	if ref, err := archiveContentRef(ctx, mux, pkg, version, release, rcfg.Repository); err != nil {
+		log.Printf("archive-content search failed [pkg=%s,ver=%s]: %v", pkg, version, err)
+	} else if ref != "" {
+		log.Printf("using archive-content ref: %s", shortHash(ref))
+		return ref, nil
+	}
+	return "", errors.New("no git ref")
 }
 
 // FindPureWheel returns the pure wheel artifact from the given version's releases.
@@ -316,7 +325,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			dir = rcfg.Dir
 		}
 	} else {
-		ref, err = findGitRef(release.Name, version, rcfg)
+		ref, err = findGitRef(ctx, mux, release.Name, version, release, rcfg)
 		if err != nil {
 			return cfg, err
 		}
