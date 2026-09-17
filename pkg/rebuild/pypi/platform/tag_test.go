@@ -174,6 +174,9 @@ func TestLowestBaselineTag(t *testing.T) {
 			if lowest.LibcVersion.Minor != tt.wantMinor {
 				t.Errorf("got lowest version minor = %d, want %d", lowest.LibcVersion.Minor, tt.wantMinor)
 			}
+			if gotStr := LowestLibcTagString(tt.raw); gotStr != tt.wantRaw {
+				t.Errorf("LowestBaselineTagString(%q) = %q, want %q", tt.raw, gotStr, tt.wantRaw)
+			}
 		})
 	}
 }
