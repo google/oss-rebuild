@@ -11,6 +11,7 @@ func TestDetectRustVersionBounds(t *testing.T) {
 	tests := []struct {
 		name      string
 		cargoToml string
+		orig      string
 		wantLo    string
 		wantHi    string
 	}{
@@ -19,6 +20,97 @@ func TestDetectRustVersionBounds(t *testing.T) {
 			cargoToml: ``,
 			wantLo:    "",
 			wantHi:    "1.54.0", // No modern header; resolver absence is not evidence
+		},
+		{
+			name: "Explicit Targets Form",
+			cargoToml: `# to registry (e.g., crates.io) dependencies.
+[package]
+edition = "2021"
+name = "windows_x86_64_gnu"
+build = "build.rs"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+name = "windows_x86_64_gnu"
+path = "src/lib.rs"
+`,
+			orig: `[package]
+edition = "2021"
+name = "windows_x86_64_gnu"
+build = "build.rs"
+`,
+			wantLo: "1.80.0", // Cargo 1.80 began inlining discovered targets
+			wantHi: "",
+		},
+		{
+			name: "Explicit Targets Form With Autolib",
+			cargoToml: `# to registry (e.g., crates.io) dependencies.
+[package]
+edition = "2021"
+name = "cc"
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+doc-scrape-examples = false
+`,
+			orig: `[package]
+edition = "2021"
+name = "cc"
+doc-scrape-examples = false
+`,
+			wantLo: "1.83.0", // autolib arrived in 1.83. The older scrape hint must not lower it
+			wantHi: "",
+		},
+		{
+			name: "Hand-Written Target Switch",
+			cargoToml: `# to registry (e.g., crates.io) dependencies.
+[package]
+edition = "2021"
+name = "regex"
+autobins = false
+`,
+			orig: `[package]
+edition = "2021"
+name = "regex"
+autobins = false
+`,
+			wantLo: "1.56.0", // The author wrote the switch, so it does not date cargo
+			wantHi: "",
+		},
+		{
+			name: "Hand-Written Switch Beside Cargo's",
+			cargoToml: `# to registry (e.g., crates.io) dependencies.
+[package]
+edition = "2021"
+name = "regex"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+`,
+			orig: `[package]
+edition = "2021"
+name = "regex"
+autotests = false
+`,
+			wantLo: "1.80.0", // autobins is cargo's even though autotests is the author's
+			wantHi: "",
+		},
+		{
+			name: "Target Switches Without An Original",
+			cargoToml: `# to registry (e.g., crates.io) dependencies.
+[package]
+edition = "2021"
+name = "regex"
+autobins = false
+`,
+			wantLo: "1.56.0", // Nothing to attribute the switch to
+			wantHi: "",
 		},
 		{
 			name: "Edition 2021 Without Resolver",
@@ -323,7 +415,7 @@ keywords = ["one"]
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotLo, gotHi := detectRustVersionBounds(tt.cargoToml)
+			gotLo, gotHi := detectRustVersionBounds(tt.cargoToml, tt.orig)
 			if gotLo != tt.wantLo {
 				t.Errorf("detectRustVersionBounds() gotLo = %v, want %v", gotLo, tt.wantLo)
 			}
