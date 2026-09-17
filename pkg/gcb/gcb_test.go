@@ -134,3 +134,15 @@ func TestDoBuildTimeoutNoTerminate(t *testing.T) {
 		t.Error("DoBuild did not return the updated build object")
 	}
 }
+
+func TestToErrorReadsFailureInfo(t *testing.T) {
+	b := &cloudbuild.Build{Status: "FAILURE", FailureInfo: &cloudbuild.FailureInfo{Type: "USER_BUILD_STEP", Detail: "step exited with non-zero status: 1"}}
+	if got, want := ToError(b).Error(), "GCB build failed: USER_BUILD_STEP: step exited with non-zero status: 1"; got != want {
+		t.Errorf("ToError() = %q, want %q", got, want)
+	}
+	// StatusDetail is not consulted.
+	b = &cloudbuild.Build{Status: "TIMEOUT", StatusDetail: "ignored"}
+	if got, want := ToError(b).Error(), "GCB build timeout: "; got != want {
+		t.Errorf("ToError() = %q, want %q", got, want)
+	}
+}
