@@ -71,7 +71,11 @@ the dashboard to the listed viewers after sign-in. Leave `dashboard_domain`
 unset to serve on an sslip.io name derived from the address, which needs no
 DNS record.
 
-IAP uses a Google-managed OAuth client, so viewers must belong to the
-project's organization. The service scales to zero and rehydrates the
-analytics snapshot on its next request, so the first page after an idle period
-takes about a minute.
+By default IAP uses a Google-managed OAuth client, which admits only viewers
+inside the project's organization. To admit other Google identities, create an
+OAuth client in the console under Google Auth Platform with an External
+audience and a Web application client, set `dashboard_oauth_client_id` and
+`dashboard_oauth_client_secret`, apply, then add the client's redirect URI
+`https://iap.googleapis.com/v1/oauth/clientIds/<client id>:handleRedirect`.
+The service scales to zero and rehydrates the analytics snapshot on its next
+request, so the first page after an idle period takes about a minute.
