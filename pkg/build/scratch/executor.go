@@ -240,14 +240,23 @@ func (e *executor) executeBuild(ctx context.Context, handle *scratchHandle, time
 
 // prepareBuild creates the build's staging directory and sweeps residue that
 // earlier builds failed to reclaim (crashed executors, missed stops), plus
-// any variant-specific sweeps.
-func (e *executor) prepareBuild(ctx context.Context, dir string, sweeps ...string) error {
-	script := append([]string{
+// any variant-specific sweeps. record is staged under recordName via stdin,
+// keeping it out of the persisted exec argv, and ahead of the build so even
+// a build that dies leaves it for post-mortems.
+func (e *executor) prepareBuild(ctx context.Context, dir, recordName string, record []byte, sweeps ...string) error {
+	script := []string{
 		"set -eu",
 		fmt.Sprintf("mkdir -p %q", dir+"/out"),
 		"docker ps -aq --filter name=^rb- | xargs -r docker rm -f",
-	}, sweeps...)
-	return e.utilityExec(ctx, []string{"/bin/sh", "-c", strings.Join(script, "\n")}, nil, "preparing build")
+	}
+	if recordName != "" {
+		script = append(script, fmt.Sprintf("cat > %q", path.Join(dir, recordName)))
+	} else {
+		record = nil
+	}
+	script = append(script, sweeps...)
+	_, err := e.utilityOp(ctx, []string{"/bin/sh", "-c", strings.Join(script, "\n")}, nil, record, "preparing build")
+	return err
 }
 
 // phaseExec dispatches one build-phase exec carrying the phase's share of
@@ -272,17 +281,22 @@ func (e *executor) phaseExec(ctx context.Context, handle *scratchHandle, req sch
 // utilityExec runs one short exec op, folding all failure channels into a
 // single error wrapped with what.
 func (e *executor) utilityExec(ctx context.Context, cmd []string, env map[string]string, what string) error {
-	_, err := e.utilityOp(ctx, cmd, env, what)
+	_, err := e.utilityOp(ctx, cmd, env, nil, what)
 	return err
 }
 
 // utilityOp dispatches one short exec op to a terminal state, folding all
 // failure channels into a single error wrapped with what.
-func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]string, what string) (*longrunning.Operation[schema.ScratchExecResult], error) {
+func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]string, stdin []byte, what string) (*longrunning.Operation[schema.ScratchExecResult], error) {
+	var stdinB64 string
+	if stdin != nil {
+		stdinB64 = base64.StdEncoding.EncodeToString(stdin)
+	}
 	op, err := Exec(ctx, e.stubs, schema.ScratchExecRequest{
 		ScratchID:      e.scratchID,
 		Cmd:            cmd,
 		Env:            env,
+		StdinB64:       stdinB64,
 		TimeoutSeconds: int(utilityTimeout.Seconds()),
 	}, e.pollInterval)
 	if err != nil {
@@ -299,7 +313,7 @@ func (e *executor) utilityOp(ctx context.Context, cmd []string, env map[string]s
 
 // utilityExecOutput runs one short exec op and returns its merged output.
 func (e *executor) utilityExecOutput(ctx context.Context, cmd []string, what string) ([]byte, error) {
-	op, err := e.utilityOp(ctx, cmd, nil, what)
+	op, err := e.utilityOp(ctx, cmd, nil, nil, what)
 	if err != nil {
 		return nil, err
 	}
