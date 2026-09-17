@@ -43,8 +43,9 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "pypi/build/wheel",
 			With: map[string]string{
-				"dir":     b.Location.Dir,
-				"locator": "/deps/bin/",
+				"dir":        b.Location.Dir,
+				"locator":    "/deps/bin/",
+				"venvOnPath": needsVenvOnPath(b.Requirements),
 			},
 		}},
 		OutputDir: func() string {
@@ -59,6 +60,15 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 // GenerateFor generates the instructions for a PureWheelBuild.
 func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
 	return b.ToWorkflow().GenerateFor(t, be)
+}
+
+// needsVenvOnPath flags backends that find their binary on PATH rather than
+// beside the interpreter, as uv_build does via shutil.which.
+func needsVenvOnPath(reqs []string) string {
+	if hasRequirement(reqs, "uv-build") {
+		return "1"
+	}
+	return ""
 }
 
 // SdistBuild includes elements for building an sdist.
@@ -93,8 +103,9 @@ func (b *SdistBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "pypi/build/sdist",
 			With: map[string]string{
-				"dir":     b.Location.Dir,
-				"locator": "/deps/bin/",
+				"dir":        b.Location.Dir,
+				"locator":    "/deps/bin/",
+				"venvOnPath": needsVenvOnPath(b.Requirements),
 			},
 		}},
 		OutputDir: func() string {
@@ -187,7 +198,7 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
+				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
 		}},
 	},
 	{
@@ -195,7 +206,7 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{
 			{
 				Runs: textwrap.Dedent(`
-				{{.With.locator}}python3 -m build --sdist -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
+				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --sdist -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
 			}},
 	},
 }

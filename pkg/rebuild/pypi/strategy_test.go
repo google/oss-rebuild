@@ -43,6 +43,25 @@ func TestPureWheelBuild(t *testing.T) {
 			},
 		},
 		{
+			"WithUVBackend",
+			&PureWheelBuild{
+				Location:     defaultLocation,
+				Requirements: []string{"uv-build==0.10.0"},
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `/usr/bin/python3 -m venv /deps
+/deps/bin/pip install build
+/deps/bin/pip install 'uv-build==0.10.0'`,
+				Build: "PATH=/deps/bin/:$PATH /deps/bin/python3 -m build --wheel -n the_dir",
+				Requires: rebuild.RequiredEnv{
+					SystemDeps: []string{"git", "python3", "uv"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
 			"DepsEscaping",
 			&PureWheelBuild{
 				Location:     defaultLocation,

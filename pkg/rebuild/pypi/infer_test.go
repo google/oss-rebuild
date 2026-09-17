@@ -69,6 +69,7 @@ func TestInferRequirements(t *testing.T) {
 		{"setuptools generator pins exactly", "Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\n", modern, []string{"setuptools==70.0.0"}},
 		{"flit generator takes no setuptools", "Wheel-Version: 1.0\nGenerator: flit 3.9.0\n", "Metadata-Version: 2.1\nName: x\n", []string{"flit_core==3.9.0", "flit==3.9.0"}},
 		{"pdm-backend generator pins pdm-backend", "Wheel-Version: 1.0\nGenerator: pdm-backend (2.4.4)\n", modern, []string{"pdm-backend==2.4.4"}},
+		{"uv generator pins uv-build", "Wheel-Version: 1.0\nGenerator: uv 0.10.0\n", modern, []string{"uv-build==0.10.0"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
