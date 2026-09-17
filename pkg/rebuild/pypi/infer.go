@@ -38,79 +38,86 @@ var commonRepoLinks = []string{
 	"repository",
 	"project",
 	"github",
+	"code",
 }
 
 var distInfoFieldPat = re.MustCompile(`[-_.]+`)
 
-// There are two places to find the repo:
-// 1. In the ProjectURLs (project links)
-// 2. Embedded in the description
+// InferRepo reads the repository from the links the release was published
+// with, falling back to the project's current links, which follow its newest
+// release. A link named as a source at either level beats a repository scraped
+// from a description. The first hit wins:
 //
-// For 1, there are some ProjectURLs that are very common to use for a repo
-// (commonRepoLinks above), so we can break up the ProjectURLs
-
-// Preference:
-// where               | known repo host
-// -------------------------------------
-// project source link | yes
-// project source link | no
-// "Homepage" link     | yes
-// description         | yes
-// other project links | yes
-
+//	source links, release then project:
+//	  - the home page, on a known repo host
+//	  - a link named in commonRepoLinks, on a known repo host
+//	  - a link named in commonRepoLinks, on any host
+//	other mentions, release then project:
+//	  - the first repository cited in the description
+//	  - a link under any other name, on a known repo host, sponsors excluded
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
+	var infos []pypireg.Info
+	if release, err := mux.PyPI.Release(ctx, t.Package, t.Version); err != nil {
+		log.Printf("Release metadata unavailable [pkg=%s,ver=%s]: %v", t.Package, t.Version, err)
+	} else {
+		infos = append(infos, release.Info)
+	}
 	project, err := mux.PyPI.Project(ctx, t.Package)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching pypi metadata")
 	}
-	var linksNamedSource []string
-	for _, commonName := range commonRepoLinks {
-		for name, url := range project.ProjectURLs {
-			if strings.ReplaceAll(strings.ToLower(name), " ", "") == commonName {
-				linksNamedSource = append(linksNamedSource, url)
-				break
-			}
-		}
-	}
-	// Four priority levels:
-	// 1. link name is common source link name and it points to a known repo host
-	// 1.a prefer "Homepage" if it's a common repo host.
-	if repo := uri.FindCommonRepo(project.Homepage); repo != "" {
-		return uri.CanonicalizeRepoURI(repo)
-	}
-	for name, url := range project.ProjectURLs {
-		if strings.ReplaceAll(strings.ToLower(name), " ", "") == "homepage" {
-			if repo := uri.FindCommonRepo(url); repo != "" {
+	infos = append(infos, project.Info)
+	for _, pick := range []func(pypireg.Info) string{repoFromSourceLinks, repoFromOtherLinks} {
+		for _, info := range infos {
+			if repo := pick(info); repo != "" {
 				return uri.CanonicalizeRepoURI(repo)
 			}
 		}
 	}
-	// 1.b use other source links.
-	for _, url := range linksNamedSource {
-		if repo := uri.FindCommonRepo(url); repo != "" {
-			return uri.CanonicalizeRepoURI(repo)
+	return "", errors.New("no git repo")
+}
+
+// repoFromSourceLinks picks the repository out of the links named as a source:
+// the home page or a source link on a known repo host, else any source link.
+func repoFromSourceLinks(info pypireg.Info) string {
+	byName := make(map[string]string, len(info.ProjectURLs))
+	for name, url := range info.ProjectURLs {
+		byName[strings.ReplaceAll(strings.ToLower(name), " ", "")] = url
+	}
+	var sources []string
+	for _, name := range commonRepoLinks {
+		if url, ok := byName[name]; ok {
+			sources = append(sources, url)
 		}
 	}
-	// 2. link name is common source link name but it doesn't point to a known repo host
-	if len(linksNamedSource) != 0 {
-		return uri.CanonicalizeRepoURI(linksNamedSource[0])
+	for _, url := range append([]string{info.Homepage, byName["homepage"]}, sources...) {
+		if repo := uri.FindCommonRepo(url); repo != "" {
+			return repo
+		}
 	}
-	// 3. first known repo host link found in the description
-	r := uri.FindCommonRepo(project.Description)
+	if len(sources) != 0 {
+		return sources[0]
+	}
+	return ""
+}
+
+// repoFromOtherLinks picks the first known repo host cited in the description,
+// else one linked under any other name.
+func repoFromOtherLinks(info pypireg.Info) string {
+	r := uri.FindCommonRepo(info.Description)
 	// TODO: Maybe revisit this sponsors logic?
 	if r != "" && !strings.Contains(r, "sponsors") {
-		return uri.CanonicalizeRepoURI(r)
+		return r
 	}
-	// 4. link name is not a common source link name, but points to known repo repo host
-	for _, url := range project.ProjectURLs {
+	for _, url := range info.ProjectURLs {
 		if strings.Contains(url, "sponsors") {
 			continue
 		}
 		if repo := uri.FindCommonRepo(url); repo != "" {
-			return uri.CanonicalizeRepoURI(repo)
+			return repo
 		}
 	}
-	return "", errors.New("no git repo")
+	return ""
 }
 
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, ropt *gitx.RepositoryOptions) (r rebuild.RepoConfig, err error) {

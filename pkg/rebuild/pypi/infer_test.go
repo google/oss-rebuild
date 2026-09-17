@@ -6,12 +6,17 @@ package pypi
 import (
 	"archive/zip"
 	"bytes"
+	"context"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 )
 
 func TestInferPythonVersion(t *testing.T) {
@@ -262,4 +267,49 @@ func wheelZipReader(t *testing.T, pkg, version, wheel, metadata string) *zip.Rea
 		t.Fatalf("NewReader(): %v", err)
 	}
 	return zr
+}
+
+func TestInferRepoPrefersReleaseLinks(t *testing.T) {
+	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "charset-normalizer", Version: "2.0.12", Artifact: "charset_normalizer-2.0.12-py3-none-any.whl"}
+	for _, tc := range []struct {
+		name  string
+		calls []httpxtest.Call
+		want  string
+	}{
+		{
+			name: "release links win over the project's",
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/charset-normalizer/2.0.12/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","version":"2.0.12","home_page":"https://github.com/ousret/charset_normalizer"}}`)}},
+				{URL: "https://pypi.org/pypi/charset-normalizer/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","project_urls":{"Code":"https://github.com/jawah/charset_normalizer"}}}`)}},
+			},
+			want: "https://github.com/ousret/charset_normalizer",
+		},
+		{
+			name: "a project source link beats a repository cited in the release description",
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/charset-normalizer/2.0.12/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","version":"2.0.12","description":"builds on https://github.com/psf/requests","project_urls":{"Issue Tracker":"https://github.com/ousret/charset_normalizer/issues"}}}`)}},
+				{URL: "https://pypi.org/pypi/charset-normalizer/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","project_urls":{"Source":"https://github.com/jawah/charset_normalizer"}}}`)}},
+			},
+			want: "https://github.com/jawah/charset_normalizer",
+		},
+		{
+			name: "a release without links falls back to the project",
+			calls: []httpxtest.Call{
+				{URL: "https://pypi.org/pypi/charset-normalizer/2.0.12/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","version":"2.0.12"}}`)}},
+				{URL: "https://pypi.org/pypi/charset-normalizer/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(`{"info":{"name":"charset-normalizer","project_urls":{"Code":"https://github.com/jawah/charset_normalizer"}}}`)}},
+			},
+			want: "https://github.com/jawah/charset_normalizer",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{Calls: tc.calls, URLValidator: httpxtest.NewURLValidator(t)}}}
+			got, err := Rebuilder{}.InferRepo(context.Background(), target, mux)
+			if err != nil {
+				t.Fatalf("InferRepo() error = %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("InferRepo() = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
