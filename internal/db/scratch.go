@@ -29,15 +29,27 @@ type Scratch interface {
 	UpdateState(ctx context.Context, scratchID string, s schema.ScratchState) error
 	// UpdateLastUsed sets the last_used field (and bumps `updated`).
 	UpdateLastUsed(ctx context.Context, scratchID string, t time.Time) error
-	// ListIdleSince returns scratches in state Ready whose LastUsed is
-	// strictly before t, and scratches in state Starting or Deleting whose
-	// Updated is strictly before t. Backed by (state, last_used) and
-	// (state, updated) composite indexes in Firestore.
+	// ListIdleSince returns every scratch for which ScratchIdleSince(s, t)
+	// holds. Backed by (state, last_used) and (state, updated) composite
+	// indexes in Firestore.
 	ListIdleSince(ctx context.Context, t time.Time) ([]schema.Scratch, error)
 	Delete(ctx context.Context, scratchID string) error
 }
 
 const scratchCollection = "scratch"
+
+// ScratchIdleSince reports whether s has seen no write since t that would
+// keep it alive: LastUsed for a ready scratch, Updated for one still
+// starting or deleting. A deleted record is never idle.
+func ScratchIdleSince(s schema.Scratch, t time.Time) bool {
+	switch s.State {
+	case schema.ScratchReady:
+		return s.LastUsed.Before(t)
+	case schema.ScratchStarting, schema.ScratchDeleting:
+		return s.Updated.Before(t)
+	}
+	return false
+}
 
 func scratchPath(s schema.Scratch) []string { return []string{scratchCollection, s.ID} }
 func scratchKey(id string) []string         { return []string{scratchCollection, id} }
@@ -184,9 +196,7 @@ func (m *memoryScratch) ListIdleSince(ctx context.Context, t time.Time) ([]schem
 	defer m.mu.Unlock()
 	var out []schema.Scratch
 	for _, e := range m.data {
-		if e.State == schema.ScratchReady && e.LastUsed.Before(t) {
-			out = append(out, e)
-		} else if (e.State == schema.ScratchStarting || e.State == schema.ScratchDeleting) && e.Updated.Before(t) {
+		if ScratchIdleSince(e, t) {
 			out = append(out, e)
 		}
 	}

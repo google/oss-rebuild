@@ -1,0 +1,13 @@
+[Unit]
+Description=Install per-guest ssh session key from kernel cmdline
+DefaultDependencies=no
+Before=ssh.service
+After=systemd-tmpfiles-setup.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/microvm-authkey
+
+[Install]
+WantedBy=sysinit.target
