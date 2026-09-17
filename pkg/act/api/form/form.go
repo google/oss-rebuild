@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -18,103 +19,87 @@ var (
 	ErrMissingRequired  = errors.New("missing required field")
 )
 
+var stringSliceType = reflect.TypeFor[[]string]()
+
 type fieldOptions struct {
 	name     string
 	required bool
 }
 
 func options(field reflect.StructField) fieldOptions {
-	var opt fieldOptions
-	parts := strings.Split(field.Tag.Get("form"), ",")
-	if opt.name = parts[0]; opt.name == "" {
-		opt.name = strings.ToLower(field.Name)
+	name, rest, _ := strings.Cut(field.Tag.Get("form"), ",")
+	if name == "" {
+		name = strings.ToLower(field.Name)
 	}
-	for _, val := range parts[1:] {
-		if val == "required" {
-			opt.required = true
-		}
-	}
-	return opt
+	return fieldOptions{name: name, required: slices.Contains(strings.Split(rest, ","), "required")}
 }
 
-func Marshal(in any) (url.Values, error) {
-	tvalue := reflect.ValueOf(in)
-	ttype := tvalue.Type()
-	if ttype.Kind() == reflect.Pointer {
-		tvalue = reflect.Indirect(tvalue)
-		ttype = tvalue.Type()
-	}
-	if ttype.Kind() != reflect.Struct {
-		return nil, ErrInvalidType
-	}
-	v := url.Values{}
-	for i := range ttype.NumField() {
-		field, value := ttype.Field(i), tvalue.Field(i)
+// walk applies fn to each exported field of the struct s.
+func walk(s reflect.Value, fn func(fieldOptions, reflect.Value) error) error {
+	t := s.Type()
+	for i := range t.NumField() {
+		field := t.Field(i)
 		if !field.IsExported() {
 			continue
 		} else if field.Anonymous {
-			return nil, ErrUnsupportedField
+			return errors.Wrapf(ErrUnsupportedField, "field '%s'", field.Name)
 		}
-		opt := options(field)
-		if value.IsZero() {
-			continue
+		if err := fn(options(field), s.Field(i)); err != nil {
+			return err
 		}
-		switch field.Type.Kind() {
-		case reflect.String:
+	}
+	return nil
+}
+
+func Marshal(in any) (url.Values, error) {
+	s := reflect.Indirect(reflect.ValueOf(in))
+	if s.Kind() != reflect.Struct {
+		return nil, ErrInvalidType
+	}
+	v := url.Values{}
+	err := walk(s, func(opt fieldOptions, value reflect.Value) error {
+		switch {
+		case value.IsZero():
+		case value.Kind() == reflect.String:
 			v.Set(opt.name, value.String())
-		case reflect.Slice:
-			if field.Type.Elem().Kind() == reflect.String {
-				v[opt.name] = value.Interface().([]string)
-				continue
-			}
-			fallthrough
+		case value.Type() == stringSliceType:
+			v[opt.name] = value.Interface().([]string)
 		default:
-			jsonv, err := json.Marshal(value.Interface())
+			b, err := json.Marshal(value.Interface())
 			if err != nil {
-				return nil, err
+				return errors.Wrapf(err, "field '%s'", opt.name)
 			}
-			v.Set(opt.name, string(jsonv))
+			v.Set(opt.name, string(b))
 		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return v, nil
 }
 
 func Unmarshal(v url.Values, out any) error {
-	tvalue := reflect.ValueOf(out).Elem()
-	ttype := tvalue.Type()
-	if ttype.Kind() != reflect.Struct {
+	ptr := reflect.ValueOf(out)
+	if ptr.Kind() != reflect.Pointer || ptr.IsNil() || ptr.Elem().Kind() != reflect.Struct {
 		return ErrInvalidType
 	}
-	for i := range ttype.NumField() {
-		field, value := ttype.Field(i), tvalue.Field(i)
-		if !field.IsExported() {
-			continue
-		} else if field.Anonymous {
-			return ErrUnsupportedField
-		}
-		opt := options(field)
-		urlval := v.Get(opt.name)
-		if urlval == "" {
+	return walk(ptr.Elem(), func(opt fieldOptions, value reflect.Value) error {
+		vals := v[opt.name]
+		switch {
+		case len(vals) == 0 || (value.Type() != stringSliceType && vals[0] == ""):
 			if opt.required {
-				return errors.Wrapf(ErrMissingRequired, "field '%s'", field.Name)
+				return errors.Wrapf(ErrMissingRequired, "field '%s'", opt.name)
 			}
-			continue
-		}
-		switch field.Type.Kind() {
-		case reflect.String:
-			value.SetString(urlval)
-		case reflect.Slice:
-			if field.Type.Elem().Kind() == reflect.String {
-				value.Set(reflect.ValueOf(v[opt.name]))
-				continue
-			}
-			fallthrough
+		case value.Kind() == reflect.String:
+			value.SetString(vals[0])
+		case value.Type() == stringSliceType:
+			value.Set(reflect.ValueOf(vals))
 		default:
-			err := json.Unmarshal([]byte(urlval), value.Addr().Interface())
-			if err != nil {
-				return err
+			if err := json.Unmarshal([]byte(vals[0]), value.Addr().Interface()); err != nil {
+				return errors.Wrapf(err, "field '%s'", opt.name)
 			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
