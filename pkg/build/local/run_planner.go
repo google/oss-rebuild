@@ -91,7 +91,7 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate rebuild instructions")
 	}
-	image := opts.Resources.BaseImageConfig.SelectFor(input)
+	image := opts.Resources.BaseImageConfig.SelectFor(input, instructions.Requires)
 	os := build.DetectOS(image)
 	timewarpURL, timewarpAuth, err := p.getToolURL(build.TimewarpTool, opts)
 	if err != nil {
