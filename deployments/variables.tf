@@ -154,6 +154,11 @@ variable "onboard_dispatch_params" {
   description = "Form parameters of the scheduled dispatch pass (batch, max_agent, agent_model, period, ...); omitted ones take the API's defaults."
   default     = {}
 }
+variable "signals_db_uri" {
+  type        = string
+  description = "URI the onboarding signal database publishes under (gs://bucket/prefix), read at each snapshot rollup. Empty skips signal ingest."
+  default     = ""
+}
 variable "build_def_repo" {
   type        = string
   description = "Repository URI containing rebuild build definitions"

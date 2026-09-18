@@ -320,6 +320,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--agent-logs-bucket=${google_storage_bucket.agent-logs.name}",
         "--rebuild-job-name=${google_cloud_run_v2_job.rebuild-job.name}",
         "--analytics-uri=gs://${google_storage_bucket.analytics.name}",
+        "--signals-db-uri=${var.signals_db_uri}",
         ], var.enable_private_build_pool ? [
         "--gcb-private-pool-name=${google_cloudbuild_worker_pool.private-pool[0].id}",
         "--gcb-private-pool-region=us-central1",
