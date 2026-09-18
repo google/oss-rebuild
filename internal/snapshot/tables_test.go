@@ -405,6 +405,8 @@ func TestCoverageWeekly(t *testing.T) {
 			attempt("pypi", "pkgA", "1.0", "r1", true, schema.RebuildStatusSuccess, base),
 			attempt("pypi", "pkgB", "1.0", "r2", false, schema.RebuildStatusFailure, base),
 			attempt("pypi", "pkgA", "2.0", "r3", false, schema.RebuildStatusError, week2),
+			// A package name shared with another ecosystem: both are counted.
+			attempt("npm", "pkgA", "3.0", "r4", true, schema.RebuildStatusSuccess, base),
 		},
 		campaigns: []scheduler.Campaign{
 			{Ecosystem: "pypi", Package: "pkgA", Version: "1.0", Artifact: "1.0.whl",
@@ -419,9 +421,11 @@ func TestCoverageWeekly(t *testing.T) {
 			{Ecosystem: "pypi", Package: "pkgB", Score: 0.25},
 		},
 	})
-	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE week='2026-06-29'
+	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE ecosystem='pypi' AND week='2026-06-29'
 		AND packages_attempted=2 AND packages_current=1 AND packages_stale=0
 		AND coverage=0.5 AND newly_broken=0 AND versions_attempted=2`, "1")
+	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE ecosystem='npm' AND week='2026-06-29'
+		AND packages_attempted=1 AND packages_current=1`, "1")
 	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE week='2026-07-06'
 		AND packages_attempted=2 AND packages_current=0 AND packages_stale=1
 		AND packages_ever_built=1 AND newly_broken=1 AND versions_attempted=1`, "1")

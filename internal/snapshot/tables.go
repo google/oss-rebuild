@@ -282,7 +282,7 @@ weeks(ecosystem, week, hi) AS (
 	SELECT ecosystem, date(week, '+7 days'), hi FROM weeks WHERE date(week, '+7 days') <= date(hi)),
 vis AS (
 	SELECT w.week, v.*,
-		row_number() OVER (PARTITION BY w.week, v.package ORDER BY v.version COLLATE version_approx_compare DESC) AS vrank
+		row_number() OVER (PARTITION BY w.week, v.ecosystem, v.package ORDER BY v.version COLLATE version_approx_compare DESC) AS vrank
 	FROM weeks w JOIN version_stats v ON v.ecosystem = w.ecosystem
 	WHERE v.first_attempted_at < date(w.week, '+7 days')),
 pkgs AS (
