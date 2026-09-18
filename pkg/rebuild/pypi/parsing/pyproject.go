@@ -92,7 +92,7 @@ func extractPyProjectRequirements(ctx context.Context, f *object.File) ([]string
 		// TODO: Some of these requirements are probably already in rbcfg.Requirements, should we skip
 		// them? To even know which package we're looking at would require parsing the dependency spec.
 		// https://packaging.python.org/en/latest/specifications/dependency-specifiers/#dependency-specifiers
-		reqs = append(reqs, strings.ReplaceAll(r, " ", ""))
+		reqs = append(reqs, strings.TrimSpace(r))
 	}
 	log.Println("Added these reqs from pyproject.toml: " + strings.Join(reqs, ", "))
 	return reqs, nil
