@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -15,7 +16,6 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
-	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
 	"github.com/google/oss-rebuild/pkg/rebuild/target"
 	"github.com/google/oss-rebuild/pkg/stabilize"
@@ -45,6 +45,7 @@ type Config struct {
 	EnablePasses  []string
 	DisablePasses []string
 	Ecosystem     string
+	Artifact      string
 }
 
 // Validate checks the input parameters.
@@ -75,10 +76,16 @@ func InitDeps(ctx context.Context) (*Deps, error) {
 
 // StabilizeFile is the action to stabilize a file.
 func StabilizeFile(ctx context.Context, cfg Config, d *Deps) (*act.NoOutput, error) {
-	candidates, err := eligiblePasses(cfg.Infile)
+	name := cmp.Or(cfg.Artifact, filepath.Base(cfg.Infile))
+	ecosystems := candidateEcosystems(name)
+	if cfg.Ecosystem != "" {
+		ecosystems = []target.Ecosystem{target.Ecosystem(cfg.Ecosystem)}
+	}
+	candidates, err := eligiblePasses(ecosystems, name)
 	if err != nil {
 		return nil, err
 	}
+	format := target.Target{Ecosystem: ecosystems[0], Artifact: name}.ArchiveType()
 
 	stabilizers := NewStabilizerRegistry(stabilize.AllStabilizers...)
 	toRun, err := determinePasses(stabilizers, cfg.EnablePasses, cfg.DisablePasses, candidates)
@@ -104,31 +111,12 @@ func StabilizeFile(ctx context.Context, cfg Config, d *Deps) (*act.NoOutput, err
 	}
 	fmt.Fprintf(d.IO.Err, "Applying stablizers: {%s}\n", strings.Join(names, ", "))
 
-	err = stabilize.StabilizeWithOpts(out, in, filetype(cfg.Infile), stabilize.StabilizeOpts{Stabilizers: toRun})
+	err = stabilize.StabilizeWithOpts(out, in, format, stabilize.StabilizeOpts{Stabilizers: toRun})
 	if err != nil {
 		return nil, errors.Wrap(err, "stabilizing file")
 	}
 
 	return &act.NoOutput{}, nil
-}
-
-func filetype(path string) archive.Format {
-	ext := filepath.Ext(path)
-	switch ext {
-	case ".tar", ".gem":
-		return archive.TarFormat
-	case ".tgz", ".crate":
-		return archive.TarGzFormat
-	case ".gz", ".Z":
-		if filepath.Ext(strings.TrimSuffix(path, ext)) == ".tar" {
-			return archive.TarGzFormat
-		}
-		return archive.UnknownFormat
-	case ".zip", ".whl", ".egg", ".jar":
-		return archive.ZipFormat
-	default:
-		return archive.RawFormat
-	}
 }
 
 // stabilizerRegistry facilitates looking up stabilizers by name.
@@ -243,14 +231,15 @@ func candidateEcosystems(filename string) []target.Ecosystem {
 
 var ErrAmbiguousEcosystem = errors.New("ambiguous ecosystem detection for file")
 
-func eligiblePasses(filename string) ([]stabilize.Stabilizer, error) {
-	candidates := candidateEcosystems(filename)
+// eligiblePasses returns the stabilizers verification applies to name under
+// the candidate ecosystems, which must agree on them.
+func eligiblePasses(candidates []target.Ecosystem, name string) ([]stabilize.Stabilizer, error) {
 	if len(candidates) == 0 {
 		return nil, errors.New("no eligible ecosystems for file")
 	}
 	var result []stabilize.Stabilizer
 	for i, e := range candidates {
-		stabs, err := stability.StabilizersForTarget(target.Target{Ecosystem: e, Artifact: filename})
+		stabs, err := stability.StabilizersForTarget(target.Target{Ecosystem: e, Artifact: name})
 		if err != nil {
 			return nil, errors.Wrapf(err, "getting stabilizers for %s candidate ecosystem", e)
 		}
@@ -300,6 +289,7 @@ func FlagSet(name string, cfg *Config) *flag.FlagSet {
 	cfg.EnablePasses = []string{"all"} // default
 	set.Var((*stringSlice)(&cfg.DisablePasses), "disable-passes", "Disable only the comma-separated set of stabilizers or 'none'.")
 	cfg.DisablePasses = []string{"none"} // default
-	set.StringVar(&cfg.Ecosystem, "ecosystem", "", "The package ecosystem of the artifact. Required when ambiguous from the file extension.")
+	set.StringVar(&cfg.Ecosystem, "ecosystem", "", "The package ecosystem of the artifact. Inferred from the file name when omitted.")
+	set.StringVar(&cfg.Artifact, "artifact", "", "The artifact file name, when the input path does not carry it. With the ecosystem it selects the archive format and stabilizers.")
 	return set
 }
