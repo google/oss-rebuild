@@ -16,8 +16,8 @@ import (
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/cli"
 	"github.com/google/oss-rebuild/pkg/archive"
-	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	"github.com/google/oss-rebuild/pkg/rebuild/target"
 	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -211,31 +211,31 @@ func determinePasses(reg stabilizerRegistry, enableSpec, disableSpec []string, e
 	return toRun, nil
 }
 
-func candidateEcosystems(filename string) []rebuild.Ecosystem {
+func candidateEcosystems(filename string) []target.Ecosystem {
 	ext := filepath.Ext(filename)
 	switch ext {
 	case ".jar":
-		return []rebuild.Ecosystem{rebuild.Maven}
+		return []target.Ecosystem{target.Maven}
 	case ".pom":
-		return []rebuild.Ecosystem{rebuild.Maven}
+		return []target.Ecosystem{target.Maven}
 	case ".whl", ".egg":
-		return []rebuild.Ecosystem{rebuild.PyPI}
+		return []target.Ecosystem{target.PyPI}
 	case ".crate":
-		return []rebuild.Ecosystem{rebuild.CratesIO}
+		return []target.Ecosystem{target.CratesIO}
 	case ".tgz":
-		return []rebuild.Ecosystem{rebuild.NPM, rebuild.PyPI}
+		return []target.Ecosystem{target.NPM, target.PyPI}
 	case ".gz":
 		if strings.HasSuffix(filename, ".tar.gz") {
-			return []rebuild.Ecosystem{rebuild.NPM, rebuild.PyPI}
+			return []target.Ecosystem{target.NPM, target.PyPI}
 		} else {
-			return []rebuild.Ecosystem{rebuild.PyPI}
+			return []target.Ecosystem{target.PyPI}
 		}
 	case ".tar":
-		return []rebuild.Ecosystem{rebuild.PyPI}
+		return []target.Ecosystem{target.PyPI}
 	case ".gem":
-		return []rebuild.Ecosystem{rebuild.RubyGems}
+		return []target.Ecosystem{target.RubyGems}
 	case ".zip":
-		return []rebuild.Ecosystem{rebuild.PyPI}
+		return []target.Ecosystem{target.PyPI}
 	default:
 		return nil
 	}
@@ -250,7 +250,7 @@ func eligiblePasses(filename string) ([]stabilize.Stabilizer, error) {
 	}
 	var result []stabilize.Stabilizer
 	for i, e := range candidates {
-		stabs, err := stability.StabilizersForTarget(rebuild.Target{Ecosystem: e, Artifact: filename})
+		stabs, err := stability.StabilizersForTarget(target.Target{Ecosystem: e, Artifact: filename})
 		if err != nil {
 			return nil, errors.Wrapf(err, "getting stabilizers for %s candidate ecosystem", e)
 		}

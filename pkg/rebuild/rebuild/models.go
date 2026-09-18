@@ -4,78 +4,28 @@
 package rebuild
 
 import (
-	"strings"
 	"time"
 
-	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/google/oss-rebuild/pkg/rebuild/target"
 )
 
-// Ecosystem represents a package ecosystem.
-type Ecosystem string
+// Ecosystem and Target live in the target package, a leaf, so that tools
+// which only need to name an artifact do not depend on this package.
+type Ecosystem = target.Ecosystem
 
 // Ecosystem constants. These are used to select an ecosystem, and used as prefixes in storage.
 const (
-	NPM      Ecosystem = "npm"
-	PyPI     Ecosystem = "pypi"
-	CratesIO Ecosystem = "cratesio"
-	Maven    Ecosystem = "maven"
-	Debian   Ecosystem = "debian"
-	RubyGems Ecosystem = "rubygems"
-	OCI      Ecosystem = "oci"
+	NPM      = target.NPM
+	PyPI     = target.PyPI
+	CratesIO = target.CratesIO
+	Maven    = target.Maven
+	Debian   = target.Debian
+	RubyGems = target.RubyGems
+	OCI      = target.OCI
 )
 
 // Target is a single target we might attempt to rebuild.
-type Target struct {
-	Ecosystem Ecosystem
-	Package   string
-	Version   string
-	Artifact  string
-}
-
-// ArchiveType provide the Target's archive.Format.
-func (t Target) ArchiveType() archive.Format {
-	switch t.Ecosystem {
-	case Debian:
-		return archive.RawFormat
-	case CratesIO, NPM:
-		return archive.TarGzFormat
-	case PyPI:
-		switch {
-		case strings.HasSuffix(t.Artifact, ".whl"), strings.HasSuffix(t.Artifact, ".zip"):
-			return archive.ZipFormat
-		case strings.HasSuffix(t.Artifact, ".tar.gz"):
-			return archive.TarGzFormat
-		// Deprecated in https://peps.python.org/pep-0715/
-		case strings.HasSuffix(t.Artifact, ".egg"):
-			return archive.ZipFormat
-		// Deprecated in https://peps.python.org/pep-0527/
-		case strings.HasSuffix(t.Artifact, ".tgz"), strings.HasSuffix(t.Artifact, ".tar.Z"):
-			return archive.TarGzFormat
-		case strings.HasSuffix(t.Artifact, ".tar"):
-			return archive.TarFormat
-		case strings.HasSuffix(t.Artifact, ".tar.bz2"), strings.HasSuffix(t.Artifact, ".tbz"):
-			return archive.UnknownFormat // bzip2
-		case strings.HasSuffix(t.Artifact, ".tar.xz"):
-			return archive.UnknownFormat // xz
-		default:
-			return archive.UnknownFormat
-		}
-	case Maven:
-		if strings.HasSuffix(t.Artifact, ".jar") {
-			return archive.ZipFormat
-		} else if strings.HasSuffix(t.Artifact, ".pom") {
-			return archive.RawFormat
-		}
-		return archive.UnknownFormat
-	case RubyGems:
-		// Gem files are tar archives containing data.tar.gz, metadata.gz, and checksums.yaml.gz
-		return archive.TarFormat
-	case OCI:
-		return archive.TarFormat
-	default:
-		return archive.UnknownFormat
-	}
-}
+type Target = target.Target
 
 // Input is a request to rebuild a single target.
 type Input struct {
