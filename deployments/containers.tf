@@ -119,6 +119,10 @@ locals {
       dockerfile = "build/package/Dockerfile.tetragon_sysgraph"
       build_args = ["DEBUG=${terraform_data.debug.output}"]
     }
+    diffr = {
+      dockerfile = "build/package/Dockerfile.diffr"
+      build_args = ["DEBUG=${terraform_data.debug.output}"]
+    }
     }, var.enable_scratch ? {
     # scratch-worker is downloaded onto scratch VMs at startup via the
     # cloud-init script in services.tf. Treated as a bootstrap binary
