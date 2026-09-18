@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"log"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/db"
@@ -148,6 +149,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 	result, buildErr := h.Wait(ctx)
 
 	var exactMatch, stabilizedMatch bool
+	var diffSummary string
 	if buildErr == nil && result.Error == nil {
 		hashes := []crypto.Hash{crypto.SHA256}
 		stabilizers, err := stability.StabilizersForTarget(session.Target)
@@ -175,6 +177,15 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		}
 		exactMatch = bytes.Equal(rb.Hash.Sum(nil), up.Hash.Sum(nil))
 		stabilizedMatch = bytes.Equal(rb.StabilizedHash.Sum(nil), up.StabilizedHash.Sum(nil))
+		if !exactMatch && !stabilizedMatch {
+			// A diff-summary failure is non-fatal: the mismatch itself is
+			// still reported below.
+			if s, derr := verifier.DiffSummary(ctx, store, session.Target, upstreamURI); derr != nil {
+				log.Printf("summarizing artifact diff: %v", derr)
+			} else {
+				diffSummary = s
+			}
+		}
 	}
 
 	// Update iteration with result
@@ -192,10 +203,14 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 			ErrorMessage: result.Error.Error(),
 		}
 	} else if !exactMatch && !stabilizedMatch {
+		msg := "rebuild content mismatch"
+		if diffSummary != "" {
+			msg += "\n\n" + verifier.DiffSummaryPreamble + "\n" + diffSummary
+		}
 		iteration.Status = schema.AgentIterationStatusFailed
 		iteration.Result = &schema.AgentBuildResult{
 			BuildSuccess: false,
-			ErrorMessage: "rebuild content mismatch",
+			ErrorMessage: msg,
 		}
 	} else {
 		iteration.Status = schema.AgentIterationStatusSuccess
