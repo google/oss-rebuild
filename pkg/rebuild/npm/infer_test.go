@@ -5,6 +5,7 @@ package npm
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -181,6 +182,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 		wantCommitID    string
 		wantStrategyFn  func(commitID string) rebuild.Strategy
 		wantErr         bool
+		wantLocated     bool // the error carries the resolved location
 	}{
 		{
 			name:    "NPMPackBuild - ref from gitHead",
@@ -198,6 +200,7 @@ func TestInferStrategy_NPM(t *testing.T) {
         {"name": "test-package", "version": "1.0.0"}
 `,
 			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"8.1.2","dist":{"tarball":"url1"},"gitHead":"INSERT_COMMIT_ID"}`,
+			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-01-01T12:00:00.000Z"}}`,
 			wantCommitID:    "version-bump",
 			wantStrategyFn: func(commitID string) rebuild.Strategy {
 				return &NPMPackBuild{
@@ -419,6 +422,24 @@ func TestInferStrategy_NPM(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:    "located error when the node version is unusable",
+			pkg:     "test-package",
+			version: "1.0.0",
+			repoYAML: `commits:
+  - id: initial-commit
+  - id: version-bump
+    parent: initial-commit
+    files:
+      package.json: |
+        {"name": "test-package", "version": "1.0.0", "scripts": {"build": "tsc"}}
+`,
+			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"8.2.0","_nodeVersion":"bogus","dist":{"tarball":"url6"},"gitHead":"INSERT_COMMIT_ID"}`,
+			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-01-01T12:00:00.000Z"}}`,
+			wantCommitID:    "version-bump",
+			wantErr:         true,
+			wantLocated:     true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -465,6 +486,12 @@ func TestInferStrategy_NPM(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)
+				}
+				var located *rebuild.InferenceError
+				if errors.As(err, &located) != tc.wantLocated {
+					t.Errorf("located error = %v, want %v: %v", !tc.wantLocated, tc.wantLocated, err)
+				} else if tc.wantLocated && located.Detail.Location.Ref != targetCommitID {
+					t.Errorf("located ref = %q, want %q", located.Detail.Location.Ref, targetCommitID)
 				}
 			} else if err != nil {
 				t.Fatalf("InferStrategy failed: %v", err)

@@ -36,6 +36,7 @@ type AgentDeps struct {
 	ScratchRunner  *ScratchRunner    // When set, iteration builds run on a scratch VM with build logs read from exec output.
 	Model          string            // Gemini model id for auxiliary calls. Empty selects llm.GeminiPro.
 	GitCache       *gitcache.Client  // When set, inference repo clones go through the git-cache.
+	Retrier        ratex.Retrier     // Paces and retries the auxiliary model calls. Zero value calls once.
 }
 
 type ProposeOpts struct {
@@ -71,7 +72,9 @@ type RunSessionDeps struct {
 	GitCache       *gitcache.Client  // When set, iteration inference repo clones go through the git-cache.
 }
 
-func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
+// transcriptOpts names iteration iterNum's transcript directory, or nothing
+// without a sessions bucket.
+func transcriptOpts(deps RunSessionDeps, sessionID string, iterNum int) *ProposeOpts {
 	opts := &ProposeOpts{}
 	if deps.SessionsBucket != "" {
 		opts.ChatUploadURL = &url.URL{
@@ -80,6 +83,11 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 			Path:   path.Join(sessionID, "messages", fmt.Sprintf("%d", iterNum)),
 		}
 	}
+	return opts
+}
+
+func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent, deps RunSessionDeps) (*schema.AgentIteration, error) {
+	opts := transcriptOpts(deps, sessionID, iterNum)
 	// Snapshot the agent's cumulative token usage around Propose so this
 	// iteration is charged only the tokens it consumed.
 	beforeUsage := agent.Usage()
@@ -160,6 +168,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		ScratchRunner:  deps.ScratchRunner,
 		Model:          deps.Model,
 		GitCache:       deps.GitCache,
+		Retrier:        deps.Retrier,
 	})
 	// Stamp the session's LLM token spend onto whatever completion we return.
 	defer func() {
@@ -184,7 +193,16 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 			}
 		}
 		iterNum = 1
+		if req.InitialIteration.Strategy != nil {
+			// The seed skips Propose, so record its build here.
+			a.uploadProposalRecord(ctx, transcriptOpts(deps, req.SessionID, iterNum), "0-proposal.json", req.InitialIteration.Strategy)
+		}
 	}
+	return runIterations(ctx, req, iterNum, a, deps)
+}
+
+// runIterations drives the propose/build loop from iterNum until a verdict.
+func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent, deps RunSessionDeps) *schema.AgentCompleteRequest {
 	var transientErrs, buildAttempts int // tracks whether model made real progress or was throttled
 	for {
 		iterNum++
@@ -210,6 +228,15 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 			}
 			if llm.IsTransient(err) {
 				transientErrs++
+				continue
+			}
+			// Without a seed iteration or a build to learn from, the proposal
+			// came from the deterministic inference so another attempt would also fail.
+			if req.InitialIteration == nil && buildAttempts == 0 {
+				return &schema.AgentCompleteRequest{
+					StopReason: schema.AgentCompleteReasonFailed,
+					Summary:    fmt.Sprintf("Inference failed: %v", err),
+				}
 			}
 			continue
 		}

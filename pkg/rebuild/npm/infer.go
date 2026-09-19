@@ -11,6 +11,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -234,6 +235,14 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, err
 	}
+	pmeta, err := mux.NPM.Package(ctx, name)
+	if err != nil {
+		return nil, errors.Wrap(err, "[INTERNAL] fetching package metadata")
+	}
+	ut, ok := pmeta.UploadTimes[version]
+	if !ok {
+		return nil, errors.Errorf("[INTERNAL] upload time not found")
+	}
 	npmv, err := PickNPMVersion(vmeta)
 	if err != nil {
 		return nil, err
@@ -253,6 +262,15 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			return nil, err
 		}
 	}
+	s, err := inferBuild(rcfg, vmeta, loc, npmv, versionOverride, ut)
+	if err != nil {
+		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc, Published: ut}, Err: err}
+	}
+	return s, nil
+}
+
+// inferBuild chooses the pack or custom build for a resolved location.
+func inferBuild(rcfg *rebuild.RepoConfig, vmeta *npmreg.NPMVersion, loc rebuild.Location, npmv, versionOverride string, ut time.Time) (rebuild.Strategy, error) {
 	c, err := rcfg.Repository.CommitObject(plumbing.NewHash(loc.Ref))
 	if err != nil {
 		return nil, err
@@ -273,14 +291,6 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		_, hasBuild := pkgJSON.Scripts["build"]
 		if hasPrepack || hasPrepare || hasBuild {
 			// TODO: Consider limiting this case to only packages with a 'dist/' dir.
-			pmeta, err := mux.NPM.Package(ctx, name)
-			if err != nil {
-				return nil, errors.Wrap(err, "[INTERNAL] fetching package metadata")
-			}
-			ut, ok := pmeta.UploadTimes[version]
-			if !ok {
-				return nil, errors.Errorf("[INTERNAL] upload time not found")
-			}
 			nodeVersion, err := PickNodeVersion(vmeta)
 			if err != nil {
 				return nil, errors.Wrap(err, "[INTERNAL] picking node version")
