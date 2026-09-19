@@ -38,26 +38,32 @@ The proxy can enforce network access policies when running with `-policy_mode=en
 - Allow or deny specific request patterns
 - Limit the scope of external network access during builds
 
-Example policy file:
+Policies are default-deny: a request is allowed only if it satisfies the rules,
+and an empty policy blocks everything. `anyOf` allows a request that matches any
+listed rule; `allOf` requires a request to match every listed rule. Each rule
+names a registered rule type (`URLMatchRule` is built in) and its parameters.
+
+Example policy file (allow only the npm registry):
 
 ```json
 {
-  "rules": [
-    {
-      "type": "URLMatchRule",
-      "name": "Allow npm registry",
-      "pattern": "https://registry.npmjs.org/*",
-      "action": "allow"
-    },
-    {
-      "type": "URLMatchRule",
-      "name": "Default deny",
-      "pattern": "*",
-      "action": "deny"
-    }
-  ]
+  "Policy": {
+    "anyOf": [
+      {
+        "ruleType": "URLMatchRule",
+        "host": "registry.npmjs.org",
+        "matchHostBy": "full",
+        "path": "/",
+        "matchPathBy": "prefix"
+      }
+    ]
+  }
 }
 ```
+
+`matchHostBy` is `full` or `suffix` (a suffix match is by domain part, so
+`registry.npmjs.org` matches `npmjs.org` but `notnpmjs.org` does not; an empty
+host with `suffix` matches any host). `matchPathBy` is `full` or `prefix`.
 
 ## Integration with OSS Rebuild
 
@@ -68,3 +74,11 @@ Within OSS Rebuild, this proxy is configurable to run in the remote rebuild exec
 - IPv6 is not currently supported
 - Proxy chaining is not supported (this proxy cannot be used behind another proxy)
 - Some applications may not honor proxy environment variables or system certificate settings
+- TLS/HTTP interception, and the request-level detail in the activity log, apply
+  to CONNECT targets on ports 80 and 443. Connections to other ports are handled
+  at the CONNECT (host:port) level: in `enforce` mode they are checked against
+  the policy by host and rejected if not permitted, and they are recorded in the
+  activity log as `CONNECT` entries — but because such a tunnel is forwarded as
+  raw bytes, per-request path enforcement and per-request logging are not
+  available for it. Route only ports 80/443 to the proxy, or account for this
+  host-level granularity, when relying on it for non-standard ports.

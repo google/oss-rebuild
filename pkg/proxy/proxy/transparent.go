@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"regexp"
 	"sync"
+	"time"
 
 	"github.com/elazarl/goproxy"
 	"github.com/google/oss-rebuild/internal/proxy/handshake"
@@ -99,6 +100,7 @@ type TransparentProxyService struct {
 
 	mx            *sync.Mutex
 	networkLog    *netlog.NetworkActivityLog
+	logNetwork    bool
 	shutdownFuncs []func(context.Context) error
 }
 
@@ -128,6 +130,7 @@ func NewTransparentProxyService(p *goproxy.ProxyHttpServer, ca *tls.Certificate,
 		Policy:     opts.Policy,
 		mx:         m,
 		networkLog: networkLog,
+		logNetwork: !opts.SkipLogging,
 	}
 }
 
@@ -314,6 +317,59 @@ func (proxy TransparentProxyService) ApplyNetworkPolicy(req *http.Request, ctx *
 		return req, nil
 	}
 	return proxy.Policy.Apply(req, ctx)
+}
+
+// HandleUninterceptedConnect enforces the network policy and records network
+// activity for CONNECT targets that are NOT TLS/HTTP-intercepted — i.e. every
+// port other than 80/443. NewTransparentProxyServer only installs MITM handlers
+// for those two ports; a CONNECT to any other port falls through to goproxy's
+// default ConnectAccept action, which forwards raw bytes without producing an
+// OnRequest event. Because both the policy check (ApplyNetworkPolicy) and the
+// activity log (netlog.CaptureActivityLog) are attached to OnRequest, neither
+// runs for such a connection: the policy is silently not enforced and the
+// connection is absent from the NetworkRebuild network log.
+//
+// Register this after the 80/443 MITM matchers so intercepted traffic keeps its
+// existing handling and only otherwise-raw tunnels reach it:
+//
+//	svc.Proxy.OnRequest().HandleConnect(goproxy.FuncHttpsHandler(
+//		func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+//			return svc.HandleUninterceptedConnect(host, ctx)
+//		}))
+//
+// A raw tunnel exposes no HTTP path, so the policy is evaluated at host
+// granularity via policy.Policy.AllowsHost; path-scoped rules remain in force
+// for intercepted HTTP(S) traffic. In enforce mode a target the policy does not
+// permit is rejected rather than tunneled.
+func (proxy TransparentProxyService) HandleUninterceptedConnect(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+	proxy.recordConnect(host, ctx)
+	if proxy.Mode != DisabledMode && proxy.Policy != nil && !proxy.Policy.AllowsHost(host) {
+		log.Printf("CONNECT to %s blocked by network policy", host)
+		return goproxy.RejectConnect, host
+	}
+	return goproxy.OkConnect, host
+}
+
+// recordConnect appends a raw CONNECT tunnel to the network activity log so the
+// log reflects every outbound connection, not only the HTTP(S) requests seen on
+// intercepted (80/443) ports. The full "host:port" is retained because the port
+// is the salient detail for these connections.
+func (proxy TransparentProxyService) recordConnect(host string, ctx *goproxy.ProxyCtx) {
+	if !proxy.logNetwork || proxy.networkLog == nil {
+		return
+	}
+	var peerPort string
+	if ctx != nil && ctx.Req != nil {
+		_, peerPort, _ = net.SplitHostPort(ctx.Req.RemoteAddr)
+	}
+	proxy.mx.Lock()
+	defer proxy.mx.Unlock()
+	proxy.networkLog.HTTPRequests = append(proxy.networkLog.HTTPRequests, netlog.HTTPRequestLog{
+		Method:   http.MethodConnect,
+		Host:     host,
+		PeerPort: peerPort,
+		Time:     time.Now(),
+	})
 }
 
 // eatConnectResponseWriter drops the goproxy response to the HTTP CONNECT tunnel creation.
