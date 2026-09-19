@@ -239,6 +239,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			GCSClient:      gcsClient,
 			RegistryClient: http.DefaultClient,
 			PrebuildConfig: rebuild.PrebuildConfig{Bucket: cfg.PrebuildBucket, Dir: cfg.PrebuildDir, Auth: cfg.PrebuildAuth},
+			AuthHeader:     authHeader,
 			BuildTimeout:   cfg.BuildTimeout,
 		}
 	}

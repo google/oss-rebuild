@@ -205,6 +205,7 @@ func main() {
 			GCSClient:      gcsClient,
 			RegistryClient: regclient,
 			PrebuildConfig: rebuild.PrebuildConfig{Bucket: *prebuildBucket, Dir: *prebuildDir, Auth: *prebuildAuth},
+			AuthHeader:     authHeader,
 			BuildTimeout:   *buildTimeout,
 		}
 	}
