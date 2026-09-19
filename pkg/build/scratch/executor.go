@@ -4,6 +4,7 @@
 package scratch
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/base64"
@@ -51,19 +52,29 @@ const (
 // successfully but leaves no artifact at the plan's output path.
 var ErrNoArtifact = errors.New("build produced no artifact at the output path")
 
-// ExitError is returned via build.Result.Error when a build phase exits
-// nonzero. Callers distinguish build failures from infrastructure failures
-// with errors.As.
-type ExitError struct {
-	Code int
-	// Phase is the build phase that exited: a DockerRunPlan phase name
-	// ("setup", "source", "deps", "build") or a docker build stage
-	// ("image build", "container run").
-	Phase string
-}
+// ExitError is build.ExitError, kept under this name for the executor's
+// callers.
+type ExitError = build.ExitError
 
-func (e *ExitError) Error() string {
-	return fmt.Sprintf("build failed in %s phase with exit code %d", e.Phase, e.Code)
+// traceTailBytes bounds the output tail scanned for the failing command. A
+// command that emits more than this before exiting goes unnamed.
+const traceTailBytes = 1 << 20 // 1 MiB
+
+// failingCommand returns the failed phase's last traced command from its
+// output tail, or "" on any read failure.
+func (e *executor) failingCommand(ctx context.Context, op *longrunning.Operation[schema.ScratchExecResult]) string {
+	out, err := ReadOutput(ctx, e.gcsClient, op, traceTailBytes)
+	if err != nil {
+		log.Printf("exec %s: reading output tail: %v", op.ID, err)
+		return ""
+	}
+	// A full window starts mid-line: drop the partial first line.
+	if int64(len(out)) == traceTailBytes {
+		if i := bytes.IndexByte(out, '\n'); i >= 0 {
+			out = out[i+1:]
+		}
+	}
+	return build.LastTracedCommand(out)
 }
 
 // buildIDPattern constrains build IDs to docker-name- and path-safe strings
