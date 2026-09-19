@@ -349,7 +349,7 @@ var gcbStandardBuildTpl = template.Must(
 			cat <<'EOS' | docker buildx build {{if .TimewarpAuth}}--secret id=auth_header,src=/tmp/auth_header {{end}}--tag=img -
 			{{.Dockerfile}}
 			EOS
-			docker run {{if .Privileged}}--privileged -v=/var/run/docker.sock:/var/run/docker.sock {{end}}--name=container img{{if .RunExitCode}} || exit {{.RunExitCode}}{{end}}
+			docker run {{if .Privileged}}--privileged -v=/var/run/docker.sock:/var/run/docker.sock {{end}}--name=container img{{if .RunExitCode}} || { exit {{.RunExitCode}}; } 2>/dev/null{{end}}
 			{{- if .UseSyscallMonitor}}
 			echo '=== Build finished, signaling sysgraph to drain ==='
 			{{- if .TetragonSysgraphURL}}
@@ -486,7 +486,7 @@ var gcbProxyBuildTpl = template.Must(
 				export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt{{if .TimewarpAuth}} HEADER{{end}}
 				docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
 				cat /Dockerfile | docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT {{if .TimewarpAuth}}--secret id=auth_header,env=HEADER {{end}}--load --tag=img -
-				docker run {{if .Privileged}}--privileged -e DOCKER_HOST {{end}}--name=container img{{if .RunExitCode}} || exit {{.RunExitCode}}{{end}}
+				docker run {{if .Privileged}}--privileged -e DOCKER_HOST {{end}}--name=container img{{if .RunExitCode}} || { exit {{.RunExitCode}}; } 2>/dev/null{{end}}
 			'
 			{{- if .UseSyscallMonitor}}
 			echo '=== Build finished, signaling sysgraph to drain ==='
@@ -613,6 +613,8 @@ func (p *Planner) getToolURL(toolType build.ToolType, opts build.PlanOptions) (t
 
 // runExitSentinel returns the allowed run-failure exit code, zero when
 // timings are not recorded so those plans keep today's abort-on-failure step.
+// The sentinel exits with stderr closed so its own trace does not follow the
+// container's last traced command in the log.
 func runExitSentinel(opts build.PlanOptions) int {
 	if opts.RecordTimings {
 		return runFailureExitCode
