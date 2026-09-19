@@ -13,6 +13,7 @@ import (
 	"log"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -90,15 +91,25 @@ func (c *gcsLogsClient) ReadStepLogs(ctx context.Context, buildID string, stepIn
 // with or without a step id ('Step #0: ' or 'Step #2 - "timing": ').
 var stepLogPat = regexp.MustCompile(`^Step #(\d+)(?: - "[^"]*")?: `)
 
+// StepLine splits a merged-log line into the step it belongs to and the
+// step's own text. ok is false for lines that carry no step prefix.
+func StepLine(line string) (step int, text string, ok bool) {
+	m := stepLogPat.FindStringSubmatch(line)
+	if m == nil {
+		return 0, "", false
+	}
+	step, _ = strconv.Atoi(m[1])
+	return step, line[len(m[0]):], true
+}
+
 // stepSection extracts one step's prefix-stripped lines from the merged log.
 func stepSection(r io.Reader, stepIndex int) ([]byte, error) {
 	var section bytes.Buffer
-	idx := strconv.Itoa(stepIndex)
 	br := bufio.NewReader(r)
 	for {
 		line, err := br.ReadString('\n')
-		if m := stepLogPat.FindStringSubmatch(line); m != nil && m[1] == idx {
-			section.WriteString(line[len(m[0]):])
+		if step, text, ok := StepLine(line); ok && step == stepIndex {
+			section.WriteString(text)
 		}
 		if err == io.EOF {
 			return section.Bytes(), nil
@@ -240,22 +251,26 @@ func DoBuild(ctx context.Context, client Client, project string, build *cloudbui
 	return bm.Build, nil
 }
 
+// ToError reports a finished build's failure.
 func ToError(build *cloudbuild.Build) error {
+	var detail string
+	if build.FailureInfo != nil {
+		detail = strings.TrimSpace(build.FailureInfo.Type + ": " + build.FailureInfo.Detail)
+	}
 	switch build.Status {
 	case "SUCCESS":
 		return nil
 	case "FAILURE":
-		return errors.Errorf("GCB build failed: %s", build.StatusDetail)
+		return errors.Errorf("GCB build failed: %s", detail)
 	case "TIMEOUT":
-		return errors.Errorf("GCB build timeout: %s", build.StatusDetail)
+		return errors.Errorf("GCB build timeout: %s", detail)
 	case "CANCELLED":
-		return errors.Errorf("GCB build cancelled: %s", build.StatusDetail)
+		return errors.Errorf("GCB build cancelled: %s", detail)
 	case "INTERNAL_ERROR", "EXPIRED":
-		return errors.Errorf("GCB build internal error: %s", build.StatusDetail)
+		return errors.Errorf("GCB build internal error: %s", detail)
 	default:
 		return errors.Errorf("Unexpected build status: %s", build.Status)
 	}
-
 }
 
 func MergedLogFile(buildID string) string {

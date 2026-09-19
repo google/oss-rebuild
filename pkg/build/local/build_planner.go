@@ -73,6 +73,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			RUN sed 's/^ //' <<'EOF' >/build
 			 set -eux
 			 {{.Instructions.Build | indent}}
+			 [ -e /src/{{.Instructions.OutputPath}} ] || ls -la "$(dirname /src/{{.Instructions.OutputPath}})"
 			 chmod 444 /src/{{.Instructions.OutputPath}}
 			 mkdir -p /out && cp /src/{{.Instructions.OutputPath}} /out/
 			EOF

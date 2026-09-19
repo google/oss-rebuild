@@ -69,6 +69,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				Build: textwrap.Dedent(`
 			cd /src
 			npm pack
+			[ -e /src/test-package-1.0.0.tgz ] || ls -la "$(dirname /src/test-package-1.0.0.tgz)"
 			chmod 444 /src/test-package-1.0.0.tgz
 			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
 			},
@@ -125,6 +126,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				Build: textwrap.Dedent(`
 			cd /src
 			npm pack
+			[ -e /src/test-package-1.0.0.tgz ] || ls -la "$(dirname /src/test-package-1.0.0.tgz)"
 			chmod 444 /src/test-package-1.0.0.tgz
 			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
 			},
@@ -164,6 +166,58 @@ func TestDockerRunPlanner(t *testing.T) {
 				Setup: textwrap.Dedent(`
 			apk add curl
 			curl https://example.com/timewarp > /timewarp
+			chmod +x /timewarp
+			apk update
+			apk add`[1:]),
+				Source: textwrap.Dedent(`
+			mkdir -p /src && cd /src
+			echo source`[1:]),
+				Build: textwrap.Dedent(`
+			cd /src
+			npm pack
+			[ -e /src/test-package-1.0.0.tgz ] || ls -la "$(dirname /src/test-package-1.0.0.tgz)"
+			chmod 444 /src/test-package-1.0.0.tgz
+			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
+			},
+		},
+		{
+			// set -x prints argv, not heredoc bodies: the token stays off argv.
+			name: "timewarp with auth",
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.NPM,
+					Package:   "test-package",
+					Version:   "1.0.0",
+					Artifact:  "test-package-1.0.0.tgz",
+				},
+				Strategy: &rebuild.WorkflowStrategy{
+					Source:     []flow.Step{{Runs: "echo source"}},
+					Build:      []flow.Step{{Runs: "npm pack"}},
+					OutputPath: "test-package-1.0.0.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				UseTimewarp: true,
+				Resources: build.Resources{
+					BaseImageConfig: build.BaseImageConfig{
+						Default: "alpine:3.19",
+					},
+					ToolURLs: map[build.ToolType]string{
+						build.TimewarpTool: "https://example.com/timewarp",
+					},
+					ToolAuthRequired: []string{"https://example.com/"},
+				},
+			},
+			expected: &DockerRunPlan{
+				Image:        "alpine:3.19",
+				WorkingDir:   "/workspace",
+				OutputPath:   "/out/rebuild",
+				RequiresAuth: true,
+				Setup: textwrap.Dedent(`
+			apk add curl
+			curl -K - https://example.com/timewarp > /timewarp <<EOF
+			header = "$AUTH_HEADER"
+			EOF
 			chmod +x /timewarp
 			apk update
 			apk add`[1:]),

@@ -145,7 +145,7 @@ func cleanVerdict(m string) string {
 	// Generic
 	case strings.Contains(m, "code = AlreadyExists desc = conflict with existing attestati"):
 		m = "Success! (cached)"
-	case strings.Contains(m, "executing rebuild: GCB build failed:"):
+	case strings.Contains(m, "executing rebuild: GCB build failed:"), strings.Contains(m, "build failed in "):
 		m = "build: failed"
 	case strings.Contains(m, "executing rebuild: GCB build internal error:"):
 		m = "build: internal error"

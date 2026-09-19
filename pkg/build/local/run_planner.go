@@ -31,7 +31,8 @@ type dockerRunScriptArgs struct {
 // dockerRunPhaseTpls generate the per-phase scripts. Phase boundaries match
 // the docker build variants' layers. Scripts are cwd-independent (absolute
 // timewarp path, each phase re-enters /src) so they compose into a single
-// shell via CombinedScript without semantic drift.
+// shell via CombinedScript without semantic drift. curl reads the auth
+// header from a config heredoc: set -x prints argv, not heredoc bodies.
 var dockerRunPhaseTpls = template.Must(
 	template.New("docker run phases").Funcs(template.FuncMap{
 		"list": func(items ...string) []string { return items },
@@ -45,7 +46,13 @@ var dockerRunPhaseTpls = template.Must(
 			{{.PackageManager.UpdateCmd}}
 			{{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
 			{{- end}}
-			curl {{if .TimewarpAuth}}-H "$AUTH_HEADER" {{end}}{{.TimewarpURL}} > /timewarp
+			{{- if .TimewarpAuth}}
+			curl -K - {{.TimewarpURL}} > /timewarp <<EOF
+			header = "$AUTH_HEADER"
+			EOF
+			{{- else}}
+			curl {{.TimewarpURL}} > /timewarp
+			{{- end}}
 			chmod +x /timewarp
 			{{- end}}
 			{{.PackageManager.UpdateCmd}}
@@ -66,6 +73,7 @@ var dockerRunPhaseTpls = template.Must(
 			{{- define "build" -}}
 			cd /src
 			{{.Inst.Build}}
+			[ -e /src/{{.Inst.OutputPath}} ] || ls -la "$(dirname /src/{{.Inst.OutputPath}})"
 			chmod 444 /src/{{.Inst.OutputPath}}
 			cp /src/{{.Inst.OutputPath}} /out/rebuild
 			{{- end -}}
