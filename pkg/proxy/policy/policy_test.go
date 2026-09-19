@@ -308,3 +308,83 @@ func TestApplyOnURLMatchRule(t *testing.T) {
 		})
 	}
 }
+
+func TestAllowsHost(t *testing.T) {
+	tests := []struct {
+		name   string
+		policy Policy
+		target string
+		want   bool
+	}{
+		{
+			name:   "empty policy blocks everything",
+			policy: Policy{},
+			target: "example.com:9443",
+			want:   false,
+		},
+		{
+			name: "anyOf full match allows host on non-standard port",
+			policy: Policy{AnyOf: []Rule{
+				URLMatchRule{Host: "example.com", HostMatch: FullMatch, Path: "/", PathMatch: PrefixMatch},
+			}},
+			target: "example.com:9443",
+			want:   true,
+		},
+		{
+			name: "anyOf full match blocks other host",
+			policy: Policy{AnyOf: []Rule{
+				URLMatchRule{Host: "example.com", HostMatch: FullMatch, Path: "/", PathMatch: PrefixMatch},
+			}},
+			target: "evil.test:9443",
+			want:   false,
+		},
+		{
+			name: "path constraint is ignored for host-level match",
+			policy: Policy{AnyOf: []Rule{
+				URLMatchRule{Host: "example.com", HostMatch: FullMatch, Path: "/only/this", PathMatch: FullMatch},
+			}},
+			target: "example.com:9443",
+			want:   true,
+		},
+		{
+			name: "suffix match honors domain parts",
+			policy: Policy{AnyOf: []Rule{
+				URLMatchRule{Host: "example.com", HostMatch: SuffixMatch, Path: "/", PathMatch: PrefixMatch},
+			}},
+			target: "api.example.com:8443",
+			want:   true,
+		},
+		{
+			name: "suffix match rejects partial domain",
+			policy: Policy{AnyOf: []Rule{
+				URLMatchRule{Host: "example.com", HostMatch: SuffixMatch, Path: "/", PathMatch: PrefixMatch},
+			}},
+			target: "notexample.com:8443",
+			want:   false,
+		},
+		{
+			name: "target without port is accepted",
+			policy: Policy{AnyOf: []Rule{
+				URLMatchRule{Host: "example.com", HostMatch: FullMatch, Path: "/", PathMatch: PrefixMatch},
+			}},
+			target: "example.com",
+			want:   true,
+		},
+		{
+			name: "allOf requires every rule to match host",
+			policy: Policy{AllOf: []Rule{
+				URLMatchRule{Host: "example.com", HostMatch: SuffixMatch, Path: "/", PathMatch: PrefixMatch},
+				URLMatchRule{Host: "other.test", HostMatch: FullMatch, Path: "/", PathMatch: PrefixMatch},
+			}},
+			target: "example.com:9443",
+			want:   false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.policy.AllowsHost(tc.target); got != tc.want {
+				t.Errorf("AllowsHost(%q) = %v, want %v", tc.target, got, tc.want)
+			}
+		})
+	}
+}
