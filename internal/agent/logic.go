@@ -23,12 +23,15 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/llm"
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
+	"google.golang.org/grpc/status"
 )
 
 const uploadBytesLimit = 100_000
@@ -54,15 +57,16 @@ func locationFromStrategyOneOf(oneof *schema.StrategyOneOf) (*rebuild.Location, 
 }
 
 type defaultAgent struct {
-	t           rebuild.Target
-	deps        *AgentDeps
-	repo        *git.Repository
-	loc         rebuild.Location
-	iterHistory []*schema.AgentIteration
-	thoughts    []thoughtData
-	assets      rebuild.AssetStore
-	gitTools    []*llm.FunctionDefinition
-	sideUsage   schema.TokenUsage // accumulates LLM token consumption from calls made outside the main chat
+	t                rebuild.Target
+	deps             *AgentDeps
+	repo             *git.Repository
+	loc              rebuild.Location
+	iterHistory      []*schema.AgentIteration
+	thoughts         []thoughtData
+	assets           rebuild.AssetStore
+	gitTools         []*llm.FunctionDefinition
+	sideUsage        schema.TokenUsage // accumulates LLM token consumption from calls made outside the main chat
+	inferenceFailure string            // inference failure a toolchain-only first attempt stood in for, shown to the model
 }
 
 func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
@@ -338,13 +342,18 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 		"Use the tools you have at your disposal to find the URL.",
 		"Finally, if you don't find the URL, just return an empty string.",
 	}
-	repoURL, usage, err := llm.GenerateTextContentWithUsage(ctx, a.deps.GenaiClient, cmp.Or(a.deps.Model, llm.GeminiPro), &genai.GenerateContentConfig{
-		Temperature: new(float32(0.0)),
-		Tools: []*genai.Tool{
-			{GoogleSearch: &genai.GoogleSearch{}},
-		},
-	}, genai.NewPartFromText(strings.Join(prompt, "\n")))
-	a.addSideUsage(usage)
+	var repoURL string
+	err := a.deps.Retrier.Do(ctx, func() error {
+		url, usage, err := llm.GenerateTextContentWithUsage(ctx, a.deps.GenaiClient, cmp.Or(a.deps.Model, llm.GeminiPro), &genai.GenerateContentConfig{
+			Temperature: new(float32(0.0)),
+			Tools: []*genai.Tool{
+				{GoogleSearch: &genai.GoogleSearch{}},
+			},
+		}, genai.NewPartFromText(strings.Join(prompt, "\n")))
+		a.addSideUsage(usage)
+		repoURL = url
+		return err
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "getting AI repo hint")
 	}
@@ -382,7 +391,54 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 	return s, errors.Wrap(err, "AI-assisted inference failed")
 }
 
-func (a *defaultAgent) proposeNormalInference(ctx context.Context) (*schema.StrategyOneOf, error) {
+// toolchainSteps install an ecosystem's toolchain for a first attempt that
+// only checks out the source. Later proposals inherit the deps unchanged and
+// change versions from the build script.
+var toolchainSteps = map[rebuild.Ecosystem][]flow.Step{
+	rebuild.NPM:      {{Uses: "npm/install-node", With: map[string]string{"nodeVersion": "24.20.0"}}},
+	rebuild.PyPI:     {{Uses: "pypi/setup-venv", With: map[string]string{"locator": "/usr/bin/", "path": "/deps", "pythonVersion": ""}}},
+	rebuild.CratesIO: {{Uses: "cargo/deps/toolchain", With: map[string]string{"rustVersion": "1.97.0"}}},
+}
+
+// registrySteps pin the package manager to the timewarp registry at the
+// publish time. The pin opens the build script, which the model edits rather
+// than replaces, so it carries into later proposals. Cargo pins a registry
+// index commit instead, which inference resolves from a lockfile.
+var registrySteps = map[rebuild.Ecosystem]string{
+	rebuild.NPM:  "npm/setup-registry",
+	rebuild.PyPI: "pypi/setup-registry",
+}
+
+// toolchainStrategy checks out loc and installs the ecosystem toolchain. The
+// build script holds only the registry pin, so the attempt fails at the
+// artifact and leaves the source and toolchain in the retained container.
+func toolchainStrategy(eco rebuild.Ecosystem, loc rebuild.Location, published time.Time) rebuild.Strategy {
+	s := &rebuild.WorkflowStrategy{
+		Location:  loc,
+		Source:    []flow.Step{{Uses: "git-checkout"}},
+		Deps:      toolchainSteps[eco],
+		OutputDir: loc.Dir,
+	}
+	if step, ok := registrySteps[eco]; ok && !published.IsZero() {
+		s.Build = []flow.Step{{Uses: step, With: map[string]string{"registryTime": published.Format(time.RFC3339)}}}
+	}
+	return s
+}
+
+// toolchainFallback turns an inference failure that resolved the source into
+// a toolchain-only first attempt, which leaves a container and logs for the
+// model to diagnose. Any other failure is returned as is.
+func (a *defaultAgent) toolchainFallback(err error) (*schema.StrategyOneOf, error) {
+	detail, ok := api.DetailOf[rebuild.InferenceErrorDetail](err)
+	if !ok {
+		return nil, err
+	}
+	log.Printf("Inference stopped short of a build: %v", err)
+	a.inferenceFailure = status.Convert(err).Message() // without the "rpc error" framing
+	return new(schema.NewStrategyOneOf(toolchainStrategy(a.t.Ecosystem, detail.Location, detail.Published))), nil
+}
+
+func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.StrategyOneOf, error) {
 	wt := memfs.New()
 	str := memory.NewStorage()
 	s, err := inferenceservice.Infer(
@@ -404,14 +460,18 @@ func (a *defaultAgent) proposeNormalInference(ctx context.Context) (*schema.Stra
 			},
 		},
 	)
+	// A failure that resolved the source has its repository, so a model
+	// repository hint cannot help it.
+	if _, located := api.DetailOf[rebuild.InferenceErrorDetail](err); err != nil && !located {
+		wt, str = memfs.New(), memory.NewStorage()
+		if s, err = a.proposeInferenceWithAIAssist(ctx, err, wt, str); err == nil {
+			log.Println("AI-assisted inference succeeded.")
+		}
+	}
 	if err != nil {
-		wt = memfs.New()
-		str = memory.NewStorage()
-		s, err = a.proposeInferenceWithAIAssist(ctx, err, wt, str)
-		if err != nil {
+		if s, err = a.toolchainFallback(err); err != nil {
 			return nil, errors.Wrap(err, "AI-assisted inference failed")
 		}
-		log.Println("AI-assisted inference succeeded.")
 	}
 	a.repo, err = git.Open(str, wt)
 	if err != nil {
@@ -570,6 +630,16 @@ func (a *defaultAgent) historyContext(prev *executionDetails) []string {
 			)
 		}
 	}
+	if a.inferenceFailure != "" {
+		prompt = append(prompt,
+			"",
+			"## Inference",
+			"Heuristic inference resolved the source but could not produce a build, so the first attempt only checked out the source and installed the toolchain. The inference failure was:",
+			"```",
+			a.inferenceFailure,
+			"```",
+		)
+	}
 	if len(a.thoughts) > 0 {
 		prompt = append(prompt,
 			"",
@@ -707,7 +777,7 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 	// For the first iteration, use our regular inference logic.
 	// This allows the agent to benefit from the rest of our infrence improvements.
 	if len(a.iterHistory) == 0 {
-		s, err := a.proposeNormalInference(ctx)
+		s, err := a.proposeHeuristicInference(ctx)
 		if err == nil {
 			// Add first iteration inference content to transcript.
 			a.uploadProposalRecord(ctx, opts, s)

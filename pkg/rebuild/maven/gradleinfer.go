@@ -52,14 +52,23 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find build.gradle directory [repo=%s,ref=%s]", repoConfig.URI, ref)
 	}
-	// Infer JDK for Gradle
+	loc := rebuild.Location{Repo: repoConfig.URI, Dir: buildGradleDir, Ref: ref}
+	s, err := inferGradleBuild(ctx, t, mux, commitObject, loc)
+	if err != nil {
+		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc}, Err: err}
+	}
+	return s, nil
+}
+
+// inferGradleBuild chooses the JDK and gradle launcher for a resolved location.
+func inferGradleBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, commit *object.Commit, loc rebuild.Location) (rebuild.Strategy, error) {
 	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching JDK")
 	}
 	// Check if gradlew is present in the commit
 	var systemGradle string
-	hasGradleWrapper, err := isGradleWrapperPresent(commitObject)
+	hasGradleWrapper, err := isGradleWrapperPresent(commit)
 	if err != nil {
 		return nil, errors.Wrap(err, "checking for gradle wrapper")
 	}
@@ -67,15 +76,7 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 		systemGradle = gradleVersion
 		log.Printf("Gradle wrapper (gradlew) not found in the repository. Will use system-installed Gradle.")
 	}
-	return &GradleBuild{
-		Location: rebuild.Location{
-			Repo: repoConfig.URI,
-			Dir:  buildGradleDir,
-			Ref:  ref,
-		},
-		JDKVersion:   jdk,
-		SystemGradle: systemGradle,
-	}, nil
+	return &GradleBuild{Location: loc, JDKVersion: jdk, SystemGradle: systemGradle}, nil
 }
 
 func isGradleWrapperPresent(commit *object.Commit) (bool, error) {

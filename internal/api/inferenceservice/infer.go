@@ -131,7 +131,13 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	}
 	if err != nil {
 		log.Printf("No inference for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, err)
-		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "failed to infer strategy"))
+		err = errors.Wrap(err, "failed to infer strategy")
+		var located *rebuild.InferenceError
+		if errors.As(err, &located) {
+			// The caller can still check out the source the inference reached.
+			return nil, api.AsStatus(codes.Internal, err, api.AsDetail(located.Detail))
+		}
+		return nil, api.AsStatus(codes.Internal, err)
 	}
 	return new(schema.NewStrategyOneOf(s)), nil
 }

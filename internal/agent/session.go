@@ -36,6 +36,7 @@ type AgentDeps struct {
 	ScratchRunner  *ScratchRunner    // When set, iteration builds run on a scratch VM with build logs read from exec output.
 	Model          string            // Gemini model id for auxiliary calls. Empty selects llm.GeminiPro.
 	GitCache       *gitcache.Client  // When set, inference repo clones go through the git-cache.
+	Retrier        ratex.Retrier     // Paces and retries the auxiliary model calls. Zero value calls once.
 }
 
 type ProposeOpts struct {
@@ -160,6 +161,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		ScratchRunner:  deps.ScratchRunner,
 		Model:          deps.Model,
 		GitCache:       deps.GitCache,
+		Retrier:        deps.Retrier,
 	})
 	// Stamp the session's LLM token spend onto whatever completion we return.
 	defer func() {
@@ -185,6 +187,11 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		}
 		iterNum = 1
 	}
+	return runIterations(ctx, req, iterNum, a, deps)
+}
+
+// runIterations drives the propose/build loop from iterNum until a verdict.
+func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent, deps RunSessionDeps) *schema.AgentCompleteRequest {
 	var transientErrs, buildAttempts int // tracks whether model made real progress or was throttled
 	for {
 		iterNum++
@@ -210,6 +217,15 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 			}
 			if llm.IsTransient(err) {
 				transientErrs++
+				continue
+			}
+			// Without a seed iteration or a build to learn from, the proposal
+			// came from the deterministic inference so another attempt would also fail.
+			if req.InitialIteration == nil && buildAttempts == 0 {
+				return &schema.AgentCompleteRequest{
+					StopReason: schema.AgentCompleteReasonFailed,
+					Summary:    fmt.Sprintf("Inference failed: %v", err),
+				}
 			}
 			continue
 		}
