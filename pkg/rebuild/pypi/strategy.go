@@ -4,6 +4,8 @@
 package pypi
 
 import (
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -167,6 +169,11 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	if b.Location.Dir != "" {
 		distDir = b.Location.Dir + "/dist"
 	}
+	var nonCanonicalName string
+	// wheel tags sorts compressed platform tags lexicographically.
+	if !slices.IsSorted(strings.Split(b.PlatformTag, ".")) {
+		nonCanonicalName = "1"
+	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Requires: rebuild.RequiredEnv{
@@ -199,6 +206,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				// tag set, and the highest tag matches the build container policy.
 				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
 				"targetPlatformTag":  b.PlatformTag,
+				"nonCanonicalName":   nonCanonicalName,
 			},
 		}},
 		OutputDir: distDir,
@@ -375,6 +383,9 @@ var toolkit = []*flow.Tool{
 				{{end -}}
 				{{if .With.targetPlatformTag -}}
 				PYTHONPATH={{.With.wheelCli}} {{.With.locator}}python3 -m wheel tags --remove --platform-tag {{.With.targetPlatformTag}} {{.With.distDir}}/*.whl
+				{{- end -}}
+				{{- if .With.nonCanonicalName}}
+				mv {{.With.distDir}}/*.whl {{.With.distDir}}/{{.Target.Artifact}}
 				{{- end -}}`)[1:],
 		}},
 	},
