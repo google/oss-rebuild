@@ -102,8 +102,9 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			if u.Scheme != "gs" {
 				return nil, errors.New("--rundex-gcs-path must be a gs:// URL")
 			}
-			ctxWithOpts := context.WithValue(ctx, rebuild.GCSClientOptionsID, []option.ClientOption{option.WithoutAuthentication()})
-			gcsClient, err := gcs.NewClient(ctxWithOpts)
+			gcsOpts := []option.ClientOption{option.WithoutAuthentication()}
+			ctxWithOpts := context.WithValue(ctx, rebuild.GCSClientOptionsID, gcsOpts)
+			gcsClient, err := gcs.NewClient(ctxWithOpts, gcsOpts...)
 			if err != nil {
 				return nil, errors.Wrap(err, "creating GCS client")
 			}
