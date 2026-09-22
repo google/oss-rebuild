@@ -12,6 +12,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/google/oss-rebuild/internal/rundex"
+	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -32,7 +33,7 @@ type TuiApp struct {
 	statusBox *tview.TextView
 	logs      *tview.TextView
 	benches   benchmark.Repository
-	executor  *local.DockerRunExecutor
+	executor  build.Executor
 }
 
 // NewTuiApp creates a new tuiApp object.
@@ -48,16 +49,18 @@ func NewTuiApp(dex rundex.Reader, watcher rundex.Watcher, rundexOpts rundex.Fetc
 		log.Default().SetFlags(0)
 		logs.SetBorder(true).SetTitle("Logs")
 		logs.ScrollToEnd()
-		executor, err := local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
+		var executor build.Executor
+		if exec, err := local.NewDockerRunExecutor(local.DockerRunExecutorConfig{
 			// We will manage container cleanup outside the executor.
 			// Specifically, we will always re-use the same name for the
 			// container, removing any existing containers with that name before
 			// starting the next run. This effectively keeps the "most recent"
 			// container available for interactive exploration
 			RetainContainer: true,
-		})
-		if err != nil {
-			log.Fatal(err)
+		}); err != nil {
+			log.Printf("Warning: docker not available (%v); local rebuild commands disabled", err)
+		} else {
+			executor = exec
 		}
 		t = &TuiApp{
 			app: app,
