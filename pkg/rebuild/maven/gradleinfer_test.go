@@ -5,6 +5,7 @@ package maven
 
 import (
 	"archive/zip"
+	"errors"
 	"testing"
 
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
@@ -120,8 +121,10 @@ func TestGradleInfer(t *testing.T) {
 		target         rebuild.Target
 		repo           string
 		zipEntries     map[string][]*archive.ZipEntry
+		jarError       error // every registry file fetch fails with this
 		expectedCommit string
 		wantErr        bool
+		wantLocated    bool // the error carries the resolved location
 	}{
 		{
 			name: "infer using tag heuristic",
@@ -234,6 +237,28 @@ func TestGradleInfer(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "located error when the jar is unavailable",
+			target: rebuild.Target{
+				Package:   "com.example:myapp",
+				Version:   "1.0.0",
+				Ecosystem: rebuild.Maven,
+			},
+			repo: `
+            commits:
+            - id: initial-commit
+              tags: ['v1.0.0']
+              files:
+                build.gradle: |
+                  repositories {
+                    mavenCentral()
+                  }`,
+			jarError:       errors.New("registry unavailable"),
+			expectedCommit: "initial-commit",
+			// tag and build.gradle resolve the location before the JDK lookup fails
+			wantErr:     true,
+			wantLocated: true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -245,6 +270,7 @@ func TestGradleInfer(t *testing.T) {
 			repoConfig.Repository = repo.Repository
 			mockRegistry := &mockMavenRegistry{
 				artifactCoordinates: make(map[artifactCoordinates][]byte),
+				releaseFileError:    tc.jarError,
 			}
 			addArtifacts(mockRegistry, tc.zipEntries, tc.target)
 			mockMux := rebuild.RegistryMux{
@@ -254,6 +280,12 @@ func TestGradleInfer(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("GradleInfer() = %v, want error", got)
+				}
+				var located *rebuild.InferenceError
+				if errors.As(err, &located) != tc.wantLocated {
+					t.Errorf("located error = %v, want %v: %v", !tc.wantLocated, tc.wantLocated, err)
+				} else if tc.wantLocated && located.Detail.Location.Ref != repo.Commits[tc.expectedCommit].String() {
+					t.Errorf("located ref = %q, want %q", located.Detail.Location.Ref, tc.expectedCommit)
 				}
 			} else {
 				if err != nil {
