@@ -124,6 +124,11 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 		}
 		if buildErr = phaseOutcome(string(ph.Name), op, err); buildErr != nil {
 			elapsed.FailedIn = ph.Name
+			// Best effort: name the failing command in the agent-facing error.
+			var ee *ExitError
+			if errors.As(buildErr, &ee) {
+				ee.Command = e.failingCommand(ctx, op)
+			}
 			break
 		}
 	}

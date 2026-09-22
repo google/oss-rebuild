@@ -4,6 +4,7 @@
 package scratch
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/base64"
@@ -60,10 +61,54 @@ type ExitError struct {
 	// ("setup", "source", "deps", "build") or a docker build stage
 	// ("image build", "container run").
 	Phase string
+	// Command is the last command the phase's set -x trace echoed, set
+	// best-effort by the run executor. Empty when unknown.
+	Command string
 }
 
 func (e *ExitError) Error() string {
-	return fmt.Sprintf("build failed in %s phase with exit code %d", e.Phase, e.Code)
+	msg := fmt.Sprintf("build failed in %s phase with exit code %d", e.Phase, e.Code)
+	if e.Command != "" {
+		msg += fmt.Sprintf("; the failing command was `%s`", e.Command)
+	}
+	return msg
+}
+
+// traceTailBytes bounds the output tail scanned for the failing command. A
+// command that emits more than this before exiting goes unnamed.
+const traceTailBytes = 1 << 20 // 1 MiB
+
+// failingCommand returns the failed phase's last traced command from its
+// output tail, or "" on any read failure.
+func (e *executor) failingCommand(ctx context.Context, op *longrunning.Operation[schema.ScratchExecResult]) string {
+	out, err := ReadOutput(ctx, e.gcsClient, op, traceTailBytes)
+	if err != nil {
+		log.Printf("exec %s: reading output tail: %v", op.ID, err)
+		return ""
+	}
+	// A full window starts mid-line: drop the partial first line.
+	if int64(len(out)) == traceTailBytes {
+		if i := bytes.IndexByte(out, '\n'); i >= 0 {
+			out = out[i+1:]
+		}
+	}
+	return lastTracedCommand(out)
+}
+
+// lastTracedCommand returns the command of out's last set -x trace line
+// (PS4 "+", repeated per subshell depth in bash), or "" if none.
+func lastTracedCommand(out []byte) string {
+	var last string
+	for line := range bytes.Lines(out) {
+		trimmed := bytes.TrimLeft(line, "+")
+		if len(trimmed) == len(line) {
+			continue
+		}
+		if cmd := strings.TrimSpace(string(trimmed)); cmd != "" {
+			last = cmd
+		}
+	}
+	return last
 }
 
 // buildIDPattern constrains build IDs to docker-name- and path-safe strings
