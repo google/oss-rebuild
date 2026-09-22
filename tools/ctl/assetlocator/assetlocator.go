@@ -14,6 +14,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
+	"google.golang.org/api/option"
 )
 
 type MetaAssetStore struct {
@@ -84,7 +85,11 @@ func (m *assetStore) Reader(ctx context.Context, a rebuild.Asset) (io.ReadCloser
 		if bi.BuildID == "" {
 			return nil, errors.New("BuildID is empty, cannot read gcb logs")
 		}
-		client, err := gcs.NewClient(ctx)
+		var gcsOpts []option.ClientOption
+		if opts, ok := ctx.Value(rebuild.GCSClientOptionsID).([]option.ClientOption); ok {
+			gcsOpts = append(gcsOpts, opts...)
+		}
+		client, err := gcs.NewClient(ctx, gcsOpts...)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating gcs client")
 		}
