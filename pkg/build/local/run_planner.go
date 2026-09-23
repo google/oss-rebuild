@@ -41,6 +41,9 @@ var dockerRunPhaseTpls = template.Must(
 			{{- if .UseTimewarp}}
 			{{- if eq .OS "alpine"}}
 			{{.PackageManager.InstallCommand (list "curl")}}
+			{{- else if eq .OS "centos"}}
+			{{.PackageManager.UpdateCmd}}
+			{{.PackageManager.InstallCommand (list "curl" "nmap-ncat")}}
 			{{- else}}
 			{{.PackageManager.UpdateCmd}}
 			{{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
@@ -91,7 +94,7 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to generate rebuild instructions")
 	}
-	image := opts.Resources.BaseImageConfig.SelectFor(input)
+	image := opts.Resources.BaseImageConfig.SelectFor(input, instructions.Requires)
 	os := build.DetectOS(image)
 	timewarpURL, timewarpAuth, err := p.getToolURL(build.TimewarpTool, opts)
 	if err != nil {

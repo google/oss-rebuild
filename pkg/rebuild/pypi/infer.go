@@ -24,6 +24,7 @@ import (
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/internal/versionx"
 	pypiresolver "github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
+	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
@@ -182,6 +183,47 @@ func FindSourceDist(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
 		}
 	}
 	return nil, fs.ErrNotExist
+}
+
+// FindPlatformWheel returns the first platform-specific wheel artifact from the given version's releases.
+func FindPlatformWheel(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
+	for _, r := range artifacts {
+		if strings.HasSuffix(r.Filename, ".whl") && !strings.HasSuffix(r.Filename, "none-any.whl") {
+			if _, err := platform.ParsePlatformTags(extractPlatformTag(r.Filename)); err == nil {
+				return &r, nil
+			}
+		}
+	}
+	return nil, fs.ErrNotExist
+}
+
+// WheelTags contains parsed PEP 427 wheel tags.
+type WheelTags struct {
+	Python   string
+	ABI      string
+	Platform string
+}
+
+// extractWheelTags extracts python tag, abi tag, and platform tag from a wheel filename (PEP 427).
+func extractWheelTags(filename string) WheelTags {
+	if !strings.HasSuffix(filename, ".whl") {
+		return WheelTags{}
+	}
+	stem := strings.TrimSuffix(filename, ".whl")
+	parts := strings.Split(stem, "-")
+	if len(parts) >= 5 {
+		return WheelTags{
+			Python:   parts[len(parts)-3],
+			ABI:      parts[len(parts)-2],
+			Platform: parts[len(parts)-1],
+		}
+	}
+	return WheelTags{}
+}
+
+// extractPlatformTag extracts the platform tag from a wheel filename.
+func extractPlatformTag(filename string) string {
+	return extractWheelTags(filename).Platform
 }
 
 func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
@@ -395,6 +437,35 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			PythonVersion: inferPythonVersion(reqs, a.UploadTime),
 			Requirements:  reqs,
 			RegistryTime:  a.UploadTime,
+		}, nil
+	} else if strings.HasSuffix(a.Filename, ".whl") {
+		if strings.HasSuffix(a.Filename, "none-any.whl") {
+			return &PureWheelBuild{
+				Location: rebuild.Location{
+					Repo: rcfg.URI,
+					Dir:  dir,
+					Ref:  ref,
+				},
+				PythonVersion: inferPythonVersion(reqs, a.UploadTime),
+				Requirements:  reqs,
+				RegistryTime:  a.UploadTime,
+			}, nil
+		}
+		tags := extractWheelTags(a.Filename)
+		if _, err := platform.ParsePlatformTags(tags.Platform); err != nil {
+			return cfg, errors.Wrapf(err, "unsupported platform tag in wheel filename %s", a.Filename)
+		}
+		return &PlatformWheelBuild{
+			Location: rebuild.Location{
+				Repo: rcfg.URI,
+				Dir:  dir,
+				Ref:  ref,
+			},
+			PythonTag:    tags.Python,
+			ABITag:       tags.ABI,
+			PlatformTag:  tags.Platform,
+			Requirements: reqs,
+			RegistryTime: a.UploadTime,
 		}, nil
 	} else {
 		return &PureWheelBuild{
