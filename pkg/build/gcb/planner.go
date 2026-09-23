@@ -256,6 +256,9 @@ var gcbDockerfileTpl = template.Must(
 			{{- if .UseTimewarp}}
 			 {{- if eq .OS "alpine"}}
 			 {{.PackageManager.InstallCommand (list "curl")}}
+			 {{- else if eq .OS "centos"}}
+			 {{.PackageManager.UpdateCmd}}
+			 {{.PackageManager.InstallCommand (list "curl" "nmap-ncat")}}
 			 {{- else}}
 			 {{.PackageManager.UpdateCmd}}
 			 {{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
@@ -564,7 +567,7 @@ func (p *Planner) GeneratePlan(ctx context.Context, input rebuild.Input, opts bu
 // generateDockerfile creates a Dockerfile from rebuild instructions and options using templates
 func (p *Planner) generateDockerfile(instructions rebuild.Instructions, input rebuild.Input, opts build.PlanOptions) (string, error) {
 	// Select base image using the configured selection logic
-	baseImage := opts.Resources.BaseImageConfig.SelectFor(input)
+	baseImage := opts.Resources.BaseImageConfig.SelectFor(input, instructions.Requires)
 	// Detect OS and get package manager commands
 	os := build.DetectOS(baseImage)
 	pkgMgr := build.GetPackageManagerCommands(os)
