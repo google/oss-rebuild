@@ -47,21 +47,28 @@ func (d Diffoscope) Diff(ctx context.Context, rebuildPath, upstreamPath string, 
 		return nil, errors.Wrap(err, "stabilizing upstream")
 	}
 	var script string
-	args := fmt.Sprintf(" --no-progress --text-color=always %s %s 2>&1 | less -R", stabilizedRebuild, stabilizedUpstream)
+	args := fmt.Sprintf(" --no-progress --text-color=always %q %q", stabilizedRebuild, stabilizedUpstream)
 	if _, err := exec.LookPath("diffoscope"); err == nil {
 		script = "diffoscope" + args
 	} else if _, err := exec.LookPath("uvx"); err == nil {
 		script = "uvx diffoscope" + args
 	} else if _, err := exec.LookPath("docker"); err == nil {
 		dir := filepath.Dir(stabilizedUpstream)
-		script = fmt.Sprintf("docker run --rm -t --user $(id -u):$(id -g) -v %s:%s:ro registry.salsa.debian.org/reproducible-builds/diffoscope", dir, dir) + args
+		script = fmt.Sprintf("docker run --rm --user $(id -u):$(id -g) -v %q:%q:ro registry.salsa.debian.org/reproducible-builds/diffoscope", dir, dir) + args
 	} else {
 		log.Println("No execution option found for diffoscope. Attempted {diffoscope,uvx,docker}")
 		return nil, errors.New("failed to find diffoscope")
 	}
-	cmd := exec.Command("bash", "-c", script)
+	cmd := exec.CommandContext(ctx, "bash", "-c", script)
 	contents, err := cmd.Output()
 	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return contents, nil
+		}
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+			return nil, errors.Wrapf(err, "running diffoscope: %s", string(exitErr.Stderr))
+		}
 		return nil, errors.Wrap(err, "running diffoscope")
 	}
 	return contents, nil
