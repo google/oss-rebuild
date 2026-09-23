@@ -115,6 +115,16 @@ variable "enable_scratch" {
   description = "Whether to deploy scratch VMs for agent-driven iterative builds."
   default     = false
 }
+variable "scratch_machine_type" {
+  type        = string
+  description = "Machine type for agent scratch VMs. Smaller types fit more concurrent sessions under the regional CPU quota. Heavy builds may need a larger type."
+  default     = "e2-standard-4"
+}
+variable "scratch_disk_gb" {
+  type        = number
+  description = "Boot/pd-ssd disk size for scratch VMs. Sized to hold build containers and clones which is small enough that concurrency is CPU-bound, not SSD-quota-bound."
+  default     = 100
+}
 variable "build_def_repo" {
   type        = string
   description = "Repository URI containing rebuild build definitions"
