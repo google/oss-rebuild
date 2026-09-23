@@ -61,6 +61,9 @@ func removeContainer(ctx context.Context, name string) error {
 }
 
 func runLocal(ctx context.Context, executor build.Executor, prebuildConfig rebuild.PrebuildConfig, dex rundex.Reader, inp rebuild.Input) error {
+	if executor == nil {
+		return errors.New("local execution unavailable: docker not available")
+	}
 	// Clean up any previous container. We don't check for errors, because a missing container is fine
 	removeContainer(ctx, containerName)
 	assets := rebuild.NewFilesystemAssetStore(memfs.New())
@@ -117,6 +120,10 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 		{
 			Short: "run local",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
+				if executor == nil {
+					log.Println("Local execution unavailable: docker not available")
+					return
+				}
 				s, err := inferLocal(ctx, example.Target())
 				if err != nil {
 					log.Println(err)
@@ -131,6 +138,10 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 		{
 			Short: "edit and run local",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
+				if executor == nil {
+					log.Println("Local execution unavailable: docker not available")
+					return
+				}
 				buildDefAsset := rebuild.BuildDef.For(example.Target())
 				var currentStrat schema.StrategyOneOf
 				{
@@ -678,6 +689,10 @@ func NewGlobalCmds(app *tview.Application, executor build.Executor, prebuildConf
 			Short:  "attach",
 			Hotkey: 'a',
 			Func: func(ctx context.Context) {
+				if executor == nil {
+					log.Println("Attach unavailable: docker not available")
+					return
+				}
 				if err := tmux.Start(fmt.Sprintf("docker exec -it %s sh", containerName)); err != nil {
 					log.Println(err)
 					return
