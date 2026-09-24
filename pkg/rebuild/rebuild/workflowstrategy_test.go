@@ -160,8 +160,19 @@ func TestWorkflowStrategy_GenerateFor(t *testing.T) {
 				Requires: RequiredEnv{
 					SystemDeps: []string{"git", "npm"},
 				},
-				Source: "git clone https://github.com/test/repo .\ngit checkout --force 'abc123'",
-				Build:  "npm pack",
+				Source: `git clone https://github.com/test/repo .
+git checkout --force 'abc123'
+if [ -f .gitmodules ]; then
+  git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+  git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+  git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+  git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+  git config --global url."https://".insteadOf "git://" || true
+  git submodule sync --recursive || true
+  GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+  GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+fi`,
+				Build: "npm pack",
 			},
 		},
 	}
@@ -301,7 +312,18 @@ func TestBuiltinCommand_GitCheckout(t *testing.T) {
 				Ref:  "deadbeef",
 			},
 			buildEnv: BuildEnv{HasRepo: false},
-			want:     "git clone https://github.com/test/repo .\ngit checkout --force 'deadbeef'",
+			want: `git clone https://github.com/test/repo .
+git checkout --force 'deadbeef'
+if [ -f .gitmodules ]; then
+  git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+  git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+  git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+  git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+  git config --global url."https://".insteadOf "git://" || true
+  git submodule sync --recursive || true
+  GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+  GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+fi`,
 		},
 		{
 			name: "existing_repo",
@@ -310,7 +332,17 @@ func TestBuiltinCommand_GitCheckout(t *testing.T) {
 				Ref:  "0000",
 			},
 			buildEnv: BuildEnv{HasRepo: true},
-			want:     "git checkout --force '0000'",
+			want: `git checkout --force '0000'
+if [ -f .gitmodules ]; then
+  git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+  git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+  git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+  git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+  git config --global url."https://".insteadOf "git://" || true
+  git submodule sync --recursive || true
+  GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+  GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+fi`,
 		},
 		{
 			name: "fresh_checkout_crlf",
@@ -320,7 +352,18 @@ func TestBuiltinCommand_GitCheckout(t *testing.T) {
 			},
 			buildEnv: BuildEnv{HasRepo: false},
 			with:     map[string]string{"crlf": "true"},
-			want:     "git clone -c core.autocrlf=true https://github.com/test/repo .\ngit checkout --force 'deadbeef'",
+			want: `git clone -c core.autocrlf=true https://github.com/test/repo .
+git checkout --force 'deadbeef'
+if [ -f .gitmodules ]; then
+  git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+  git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+  git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+  git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+  git config --global url."https://".insteadOf "git://" || true
+  git submodule sync --recursive || true
+  GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+  GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+fi`,
 		},
 	}
 
