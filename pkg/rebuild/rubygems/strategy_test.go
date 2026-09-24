@@ -17,6 +17,18 @@ func TestGemBuildStrategies(t *testing.T) {
 		Ref:  "the_ref",
 		Repo: "the_repo",
 	}
+	defaultSource := `git clone the_repo .
+git checkout --force 'the_ref'
+if [ -f .gitmodules ]; then
+  git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+  git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+  git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+  git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+  git config --global url."https://".insteadOf "git://" || true
+  git submodule sync --recursive || true
+  GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+  GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+fi`
 	tests := []struct {
 		name     string
 		strategy rebuild.Strategy
@@ -41,7 +53,7 @@ func TestGemBuildStrategies(t *testing.T) {
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git"},
 				},
-				Source: "git clone the_repo .\ngit checkout --force 'the_ref'",
+				Source: defaultSource,
 				Deps: `apt-get update && apt-get install -y --no-install-recommends build-essential wget ca-certificates libyaml-dev
 wget -q -O /tmp/ruby.tar.gz "https://github.com/ruby/ruby-builder/releases/download/ruby-3.3.6/ruby-3.3.6-ubuntu-24.04-x64.tar.gz"
 mkdir -p /opt/hostedtoolcache/Ruby/3.3.6/x64
@@ -70,7 +82,7 @@ rm -f /tmp/ruby.tar.gz`,
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git"},
 				},
-				Source: "git clone the_repo .\ngit checkout --force 'the_ref'",
+				Source: defaultSource,
 				Deps: `apt-get update && apt-get install -y --no-install-recommends build-essential wget ca-certificates libyaml-dev
 wget -q -O /tmp/ruby.tar.gz "https://github.com/ruby/ruby-builder/releases/download/ruby-3.3.6/ruby-3.3.6-ubuntu-24.04-x64.tar.gz"
 mkdir -p /opt/hostedtoolcache/Ruby/3.3.6/x64
@@ -107,7 +119,7 @@ gem update --system 3.5.23`,
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git"},
 				},
-				Source: "git clone the_repo .\ngit checkout --force 'the_ref'",
+				Source: defaultSource,
 				Deps: `apt-get update && apt-get install -y --no-install-recommends build-essential wget ca-certificates libyaml-dev
 wget -q -O /tmp/ruby.tar.gz "https://github.com/ruby/ruby-builder/releases/download/ruby-3.4.0/ruby-3.4.0-ubuntu-24.04-x64.tar.gz"
 mkdir -p /opt/hostedtoolcache/Ruby/3.4.0/x64
@@ -137,7 +149,7 @@ rm -f /tmp/ruby.tar.gz`,
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git"},
 				},
-				Source: "git clone the_repo .\ngit checkout --force 'the_ref'",
+				Source: defaultSource,
 				Deps: `apt-get update && apt-get install -y --no-install-recommends build-essential wget ca-certificates libyaml-dev
 wget -q -O /tmp/ruby.tar.gz "https://github.com/ruby/ruby-builder/releases/download/ruby-3.3.6/ruby-3.3.6-ubuntu-24.04-x64.tar.gz"
 mkdir -p /opt/hostedtoolcache/Ruby/3.3.6/x64
@@ -167,7 +179,7 @@ printf -- '---\n:sources:\n- %s\n' 'http://rubygems:2023-06-01T00:00:00Z@orange'
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git"},
 				},
-				Source: "git clone the_repo .\ngit checkout --force 'the_ref'",
+				Source: defaultSource,
 				Deps: `apt-get update && apt-get install -y --no-install-recommends build-essential wget ca-certificates libyaml-dev
 wget -q -O /tmp/ruby.tar.gz "https://github.com/ruby/ruby-builder/releases/download/ruby-3.3.6/ruby-3.3.6-ubuntu-24.04-x64.tar.gz"
 mkdir -p /opt/hostedtoolcache/Ruby/3.3.6/x64
@@ -194,7 +206,7 @@ rm -f /tmp/ruby.tar.gz`,
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git"},
 				},
-				Source:     "git clone the_repo .\ngit checkout --force 'the_ref'",
+				Source:     defaultSource,
 				Deps:       "",
 				Build:      "cd the_dir && gem build *.gemspec",
 				OutputPath: "the_dir/example-1.0.0.gem",
