@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/google/oss-rebuild/internal/httpx"
@@ -156,8 +157,8 @@ func ParseDebianArtifact(artifact string) (ArtifactIdentifier, error) {
 
 // Registry is a debian package registry.
 type Registry interface {
-	ArtifactURL(context.Context, string, string) (string, error)
-	Artifact(context.Context, string, string, string) (io.ReadCloser, error)
+	ArtifactURL(context.Context, string, string, string) (string, error)
+	Artifact(context.Context, string, string, string, string) (io.ReadCloser, error)
 	DSC(context.Context, string, string, string) (string, *control.ControlFile, error)
 	BuildInfo(context.Context, string, string, *Version, string) (string, *control.BuildInfo, error)
 }
@@ -260,7 +261,7 @@ type fileInfoResponse struct {
 	}
 }
 
-func (r HTTPRegistry) ArtifactURL(ctx context.Context, name, artifact string) (string, error) {
+func (r HTTPRegistry) ArtifactURL(ctx context.Context, name, version, artifact string) (string, error) {
 	// To determine the ArtifactURL, there are a few steps. The following is an example of fetching an artifact from the acl package at version 2.3.2-1+b1
 	// First you might need to fetch a list of all versions:
 	// https://snapshot.debian.org/mr/binary/acl/
@@ -278,10 +279,29 @@ func (r HTTPRegistry) ArtifactURL(ctx context.Context, name, artifact string) (s
 	// NOTE: Epochs are used when the source version scheme has changed.
 	// Frequently the epoch is dropped from the version identifier used by the package manager
 	// (when only one or two versions are available for a given distribution, the source version schemes don't need to be disambiguated).
-	// If the artifact doesn't exist under an empty epoch, we try again with epoch "1" which frequently works.
-	// If this proves to be insufficient, we can get it from the .buildinfo file (which is stored at a URL missing the epoch but contains a version identifier that includes the epoch).
-	// We have not added the buildinfo parsing yet to avoid making an extra call to the build info service if possible.
-	for _, epoch := range []string{"", "1"} {
+	// If a version is provided (e.g. from the target version), its epoch is tried first.
+	// Otherwise, we fallback to trying without epoch, and then epoch "1".
+	var epochs []string
+	if version != "" {
+		if v, err := ParseVersion(version); err == nil {
+			if v.Epoch == "0" {
+				v.Epoch = ""
+			}
+			epochs = append(epochs, v.Epoch)
+		}
+	}
+	if len(epochs) == 0 && a.Version.Epoch != "" {
+		if a.Version.Epoch == "0" {
+			a.Version.Epoch = ""
+		}
+		epochs = append(epochs, a.Version.Epoch)
+	}
+	for _, fallback := range []string{"", "1"} {
+		if !slices.Contains(epochs, fallback) {
+			epochs = append(epochs, fallback)
+		}
+	}
+	for _, epoch := range epochs {
 		a.Version.Epoch = epoch
 		guessFileinfoURL := urlx.Copy(snapshotURL)
 		{
@@ -298,14 +318,17 @@ func (r HTTPRegistry) ArtifactURL(ctx context.Context, name, artifact string) (s
 		if err != nil {
 			return "", errors.Wrap(err, "fetching fileinfo")
 		} else if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
 			// That fileinfo doesn't exist, try the next epoch.
 			log.Printf("Fileinfo url not found: %s", guessFileinfoURL.String())
 			continue
 		} else if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
 			return "", errors.Wrap(errors.New(resp.Status), "fetching fileinfo")
 		}
-		defer resp.Body.Close()
-		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		resp.Body.Close()
+		if err != nil {
 			return "", err
 		}
 		// If we succeeded, break out of the loop.
@@ -350,8 +373,8 @@ func (r HTTPRegistry) ArtifactURL(ctx context.Context, name, artifact string) (s
 }
 
 // Artifact returns the package artifact for the given package version.
-func (r HTTPRegistry) Artifact(ctx context.Context, component, name, artifact string) (io.ReadCloser, error) {
-	url, err := r.ArtifactURL(ctx, name, artifact)
+func (r HTTPRegistry) Artifact(ctx context.Context, component, name, version, artifact string) (io.ReadCloser, error) {
+	url, err := r.ArtifactURL(ctx, name, version, artifact)
 	if err != nil {
 		return nil, err
 	}
