@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -43,12 +44,59 @@ func MatchTag(tag, pkg, version string) (strict bool, approx bool) {
 	return
 }
 
-// FindTagMatch searches a repositories tags for a possible version match and returns the commit hash.
-func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err error) {
-	var matches, nearMatches []string
+// tagAliases provides probable tag names for pkg accounting for e.g. npm @scope/, Maven group:artifact.
+func tagAliases(pkg string) []string {
+	aliases := []string{strings.ToLower(pkg)}
+	if i := strings.LastIndexAny(pkg, "/:"); i >= 0 && i+1 < len(pkg) {
+		aliases = append(aliases, strings.ToLower(pkg[i+1:]))
+	}
+	if t, ok := strings.CutPrefix(pkg, "@"); ok {
+		aliases = append(aliases, strings.ToLower(t))
+	}
+	return aliases
+}
+
+// tagResidue is what a tag contains besides the version.
+func tagResidue(tag, version string) string {
+	before, after, found := strings.Cut(tag, version)
+	if !found {
+		return strings.ToLower(tag)
+	}
+	r := strings.ToLower(strings.Trim(before+after, "-_/.@"))
+	return strings.Trim(strings.TrimSuffix(r, "v"), "-_/.@")
+}
+
+// tagRank measures how strongly a tag appears to relate to this package's release.
+func tagRank(tag, version string, aliases []string) int {
+	residue := tagResidue(tag, version)
+	if slices.Contains(aliases, residue) {
+		return 0 // contains package name alias AND version
+	}
+	if residue == "" {
+		return 1 // version alone. correct when the repo holds one package
+	}
+	for _, a := range aliases {
+		if strings.Contains(residue, a) || strings.Contains(a, residue) {
+			return 2 // partial alias match. correct when e.g. monorepo uses lang tag prefix like py-<pkg>-v<version>
+		}
+	}
+	return 3 // names something else
+}
+
+// sortTagMatches orders candidates by tagRank.
+func sortTagMatches(matches []string, pkg, version string) {
+	aliases := tagAliases(pkg)
+	sort.Strings(matches)
+	sort.SliceStable(matches, func(i, j int) bool {
+		return tagRank(matches[i], version, aliases) < tagRank(matches[j], version, aliases)
+	})
+}
+
+func matchingTags(pkg, version string, repo *git.Repository) (matches []string, err error) {
+	var nearMatches []string
 	tags, err := allTags(repo)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	for _, tag := range tags {
 		strict, approx := MatchTag(tag, pkg, version)
@@ -62,21 +110,51 @@ func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err
 		log.Printf("Rejected potential matches [pkg=%s,ver=%s,matches=%v]\n", pkg, version, nearMatches)
 	}
 	if len(matches) > 0 {
-		sort.Strings(matches)
+		sortTagMatches(matches, pkg, version)
 		if len(matches) > 1 {
 			log.Printf("Multiple tag matches [pkg=%s,ver=%s,matches=%v]\n", pkg, version, matches)
 		}
-		ref, err := repo.Tag(matches[0])
+	}
+	return matches, nil
+}
+
+func resolveTagMatch(match string, repo *git.Repository) (string, error) {
+	ref, err := repo.Tag(match)
+	if err != nil {
+		return "", err
+	}
+	if t, err := repo.TagObject(ref.Hash()); err == nil {
+		// Annotated tag. Use the Target pointer as the ref hash.
+		return t.Target.String(), nil
+	}
+	// Lightweight tag. Use the ref hash itself.
+	return ref.Hash().String(), nil
+}
+
+// FindTagMatches searches a repository's tags for possible version matches and returns their commit hashes.
+func FindTagMatches(pkg, version string, repo *git.Repository) (commits []string, err error) {
+	matches, err := matchingTags(pkg, version, repo)
+	if err != nil {
+		return nil, err
+	}
+	for _, match := range matches {
+		commit, err := resolveTagMatch(match, repo)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		if t, err := repo.TagObject(ref.Hash()); err == nil {
-			// Annotated tag. Use the Target pointer as the ref hash.
-			return t.Target.String(), nil
-		} else {
-			// Lightweight tag. Use the ref hash itself.
-			return ref.Hash().String(), nil
-		}
+		commits = append(commits, commit)
+	}
+	return commits, nil
+}
+
+// FindTagMatch searches a repository's tags for a possible version match and returns the first commit hash.
+func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err error) {
+	matches, err := matchingTags(pkg, version, repo)
+	if err != nil {
+		return "", err
+	}
+	if len(matches) > 0 {
+		return resolveTagMatch(matches[0], repo)
 	}
 	return "", nil
 }
