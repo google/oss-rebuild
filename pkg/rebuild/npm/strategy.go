@@ -150,7 +150,9 @@ var toolkit = []*flow.Tool{
 				With: map[string]string{
 					"command": `
 						{{- if ne .With.registryTime ""}}npm_config_registry={{.BuildEnv.TimewarpURLFromString "npm" .With.registryTime}} {{end -}}
-						npm install --force --no-audit`,
+						npm install --force --no-audit
+						{{- /* NOTE: npm 11.3+ drops the registry URL credentials when it rewrites tarball URLs onto the registry host, which timewarp rejects. Fetching tarballs from their original host needs allow-remote as of npm 12. */ -}}
+						{{- if ge (cmpSemver .With.npmVersion "11.3.0") 0}} --replace-registry-host=never --allow-remote=all{{end}}`,
 					"npmVersion": "{{.With.npmVersion}}",
 					"dir":        "{{.Location.Dir}}",
 					"locator":    "{{.With.locator}}",
