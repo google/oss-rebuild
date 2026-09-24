@@ -28,8 +28,8 @@ import (
 
 const (
 	defaultOutputBufferSize = 512 * 1024
-	// defaultWorkDir matches the scratch worker's default working directory.
-	defaultWorkDir = "/home/builder"
+	// DefaultWorkDir matches the scratch worker's default working directory.
+	DefaultWorkDir = "/home/builder"
 	// buildsSubdir is the directory under WorkDir holding per-build state.
 	buildsSubdir = "builds"
 	// defaultBuildTimeout bounds a build when Options.Timeout is unset. The
@@ -64,6 +64,12 @@ type ExitError struct {
 
 func (e *ExitError) Error() string {
 	return fmt.Sprintf("build failed in %s phase with exit code %d", e.Phase, e.Code)
+}
+
+// BuildDir is a build's staging directory under workDir. It outlives the
+// build: out/ holds the artifact, and the agent's tools inspect it.
+func BuildDir(workDir, buildID string) string {
+	return path.Join(workDir, buildsSubdir, buildID)
 }
 
 // buildIDPattern constrains build IDs to docker-name- and path-safe strings
@@ -124,7 +130,7 @@ func newExecutor(config ExecutorConfig) (*executor, error) {
 	if config.GCSClient == nil {
 		return nil, errors.New("GCSClient is required")
 	}
-	workDir := cmp.Or(config.WorkDir, defaultWorkDir)
+	workDir := cmp.Or(config.WorkDir, DefaultWorkDir)
 	if !path.IsAbs(workDir) {
 		return nil, errors.Errorf("WorkDir must be absolute, got %q", workDir)
 	}

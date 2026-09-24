@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/oss-rebuild/pkg/archive"
 )
 
@@ -1094,7 +1095,8 @@ func TestDiff(t *testing.T) {
 					if err := json.Unmarshal([]byte(tc.expectJSONDiff), &expectedNode); err != nil {
 						t.Fatalf("Failed to parse expected JSON: %v", err)
 					}
-					if diff := cmp.Diff(expectedNode, node); diff != "" {
+					// Unwrapped is not serialized, so the JSON fixture cannot carry it.
+					if diff := cmp.Diff(expectedNode, node, cmpopts.IgnoreFields(DiffNode{}, "Unwrapped")); diff != "" {
 						t.Errorf("OutputNode mismatch (-want +got):\n%s", diff)
 					}
 				}

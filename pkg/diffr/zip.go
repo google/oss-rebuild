@@ -106,8 +106,8 @@ func compareZip(ctx compareContext, node *DiffNode, file1, file2 File) (bool, er
 		}
 		if listingDiff != "" {
 			listingNode := DiffNode{
-				Source1:     "file list",
-				Source2:     "file list",
+				Source1:     listingEntry,
+				Source2:     listingEntry,
 				UnifiedDiff: &listingDiff,
 			}
 			node.Details = append(node.Details, listingNode)
