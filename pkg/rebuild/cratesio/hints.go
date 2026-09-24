@@ -23,6 +23,11 @@ var (
 	modernHeaderPattern = regexp.MustCompile(`#.*to registry \(e\.g\., crates\.io\) dependencies\.`)
 	// docExamplesRegex detects the addition of the scrape indicator (Rust 1.67+)
 	docExamplesRegex = regexp.MustCompile(`(?m)^\s*doc-scrape-examples\s*=\s*(true|false)\s*$`)
+	// autoTargetsRegex matches the switch cargo package writes when it inlines
+	// the discovered targets, since Cargo 1.80 (rust-lang/cargo#13713).
+	autoTargetsRegex = regexp.MustCompile(`(?m)^\s*autobins\s*=\s*false\s*$`)
+	// autoLibRegex matches the switch that form gained in Cargo 1.83 (rust-lang/cargo#14591).
+	autoLibRegex = regexp.MustCompile(`(?m)^\s*autolib\s*=\s*false\s*$`)
 )
 
 func packageEditionFloor(cargoTomlText string) string {
@@ -74,16 +79,29 @@ func hasResolverTwo(cargoTomlText string) bool {
 		(manifest.Package.Resolver == "2" || manifest.Workspace.Resolver == "2")
 }
 
+// cargoWrote reports whether re matches the published manifest but not the
+// author's original, which only the packaging cargo produces.
+func cargoWrote(re *regexp.Regexp, published, orig string) bool {
+	return orig != "" && re.MatchString(published) && !re.MatchString(orig)
+}
+
 // detectRustVersionBounds analyzes Cargo.toml for structural patterns that indicate
-// minimum Rust version requirements based on tooling behavior changes.
-func detectRustVersionBounds(cargoTomlText string) (lo, hi string) {
+// minimum Rust version requirements based on tooling behavior changes. origText
+// is the manifest as the author wrote it (Cargo.toml.orig), empty when absent.
+func detectRustVersionBounds(cargoTomlText, origText string) (lo, hi string) {
 	hi = "999" // NOTE: Temporarily set "hi" so it will sort higher than all our candidates
 	// Check patterns from latest to earliest Rust version
+	switch {
+	case cargoWrote(autoLibRegex, cargoTomlText, origText):
+		lo = "1.83.0"
+	case cargoWrote(autoTargetsRegex, cargoTomlText, origText):
+		lo = "1.80.0"
+	}
 	if debugDenormalizedRegex.MatchString(cargoTomlText) {
 		hi = "1.70.0" // After which bools were normalized to ints
 	}
 	if docExamplesRegex.MatchString(cargoTomlText) {
-		lo = "1.67.0" // Before which the property was omitted
+		lo = max("1.67.0", lo) // Before which the property was omitted
 	}
 	if prettyArrayPattern.MatchString(cargoTomlText) {
 		lo = max("1.60.0", lo) // Before which arrays were cuddled
