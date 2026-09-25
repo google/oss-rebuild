@@ -9,6 +9,7 @@ import (
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
+	"github.com/google/oss-rebuild/pkg/rebuild/pypi/sysdeps"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/pkg/errors"
 )
@@ -129,11 +130,12 @@ func (b *SdistBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild
 // PlatformWheelBuild aggregates the options controlling a platform-specific wheel build.
 type PlatformWheelBuild struct {
 	rebuild.Location
-	PythonTag    string    `json:"python_tag,omitempty" yaml:"python_tag,omitempty"`
-	ABITag       string    `json:"abi_tag,omitempty" yaml:"abi_tag,omitempty"`
-	Requirements []string  `json:"requirements" yaml:"requirements"`
-	PlatformTag  string    `json:"platform_tag,omitempty" yaml:"platform_tag,omitempty"`
-	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+	PythonTag    string                         `json:"python_tag,omitempty" yaml:"python_tag,omitempty"`
+	ABITag       string                         `json:"abi_tag,omitempty" yaml:"abi_tag,omitempty"`
+	Requirements []string                       `json:"requirements" yaml:"requirements"`
+	PlatformTag  string                         `json:"platform_tag,omitempty" yaml:"platform_tag,omitempty"`
+	SystemDeps   []sysdeps.DependencyIdentifier `json:"system_deps,omitempty" yaml:"system_deps,omitempty"`
+	RegistryTime time.Time                      `json:"registry_time" yaml:"registry_time,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -151,9 +153,23 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	if !b.RegistryTime.IsZero() {
 		registryTime = b.RegistryTime.Format(time.RFC3339)
 	}
-	distDir := "dist"
-	if b.Location.Dir != "" {
-		distDir = b.Location.Dir + "/dist"
+	distDir := func() string {
+		if b.Location.Dir != "" {
+			return b.Location.Dir + "/dist"
+		}
+		return "dist"
+	}()
+	targetOS := rebuild.MapOS(baseImage)
+	var packagesJSON, unmappableJSON, extractedJSON string
+	if len(b.SystemDeps) > 0 {
+		resolved := sysdeps.DefaultMapper.Map(targetOS, b.SystemDeps)
+		if len(resolved.Packages) > 0 {
+			packagesJSON = flow.MustToJSON(resolved.PackageNames())
+		}
+		if len(resolved.Unmappable) > 0 {
+			unmappableJSON = flow.MustToJSON(resolved.Unmappable)
+		}
+		extractedJSON = flow.MustToJSON(b.SystemDeps)
 	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
@@ -171,6 +187,10 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"pythonTag":    b.PythonTag,
 				"abiTag":       b.ABITag,
 				"venv":         "/deps",
+				"targetOS":     string(targetOS),
+				"packages":     packagesJSON,
+				"unmappable":   unmappableJSON,
+				"extracted":    extractedJSON,
 			},
 		}},
 		Build: []flow.Step{{
@@ -313,8 +333,48 @@ var toolkit = []*flow.Tool{
 		},
 	},
 	{
+		Name: "pypi/install-sysdeps",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				{{- if or .With.packages .With.unmappable .With.extracted -}}
+				echo "[sysdeps] Target OS: {{.With.targetOS}}"
+				{{- if .With.extracted}}
+				echo "[sysdeps] Extracted dependency identifiers:"
+				{{range $id := .With.extracted | fromJSON -}}
+				echo "[sysdeps]   - {{$id.namespace}}:{{$id.name}}{{if $id.provenance}} (from {{$id.provenance}}){{end}}"
+				{{end -}}
+				{{end -}}
+				{{if .With.unmappable -}}
+				echo "[sysdeps] WARNING: The following dependency identifiers could not be mapped to {{.With.targetOS}}:"
+				{{range $id := .With.unmappable | fromJSON -}}
+				echo "[sysdeps]   - {{$id.namespace}}:{{$id.name}}{{if $id.provenance}} (from {{$id.provenance}}){{end}}"
+				{{end -}}
+				{{end -}}
+				{{if .With.packages -}}
+				echo "[sysdeps] Installing candidate system package(s) (fail-open)..."
+				{{range $pkg := .With.packages | fromJSON -}}
+				if {{if eq $.With.targetOS "alpine"}}apk add '{{$pkg}}'{{else if eq $.With.targetOS "almalinux"}}dnf install -y '{{$pkg}}'{{else}}yum install -y '{{$pkg}}'{{end}}; then
+				  echo "[sysdeps]   + OK: {{$pkg}}"
+				else
+				  echo "[sysdeps]   ! INSTALL_FAILED: {{$pkg}}" >&2
+				fi
+				{{end -}}
+				{{end -}}
+				{{end -}}`)[1:],
+		}},
+	},
+	{
 		Name: "pypi/deps/platform-wheel",
 		Steps: []flow.Step{
+			{
+				Uses: "pypi/install-sysdeps",
+				With: map[string]string{
+					"targetOS":   "{{.With.targetOS}}",
+					"packages":   "{{.With.packages}}",
+					"unmappable": "{{.With.unmappable}}",
+					"extracted":  "{{.With.extracted}}",
+				},
+			},
 			{
 				Uses: "pypi/setup-venv/manylinux",
 				With: map[string]string{

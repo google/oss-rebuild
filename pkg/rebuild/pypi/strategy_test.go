@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/pkg/rebuild/pypi/sysdeps"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
@@ -678,6 +679,142 @@ rm -rf the_dir/dist/repaired
 /deps/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_28_x86_64 the_dir/dist/*.whl`,
 				Requires: rebuild.RequiredEnv{
 					BaseImage:  "quay.io/pypa/manylinux_2_28_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithSystemDepsManylinux",
+			&PlatformWheelBuild{
+				Location:    defaultLocation,
+				PythonTag:   "cp310",
+				ABITag:      "cp310",
+				PlatformTag: "manylinux_2_28_x86_64",
+				SystemDeps: []sysdeps.DependencyIdentifier{
+					{Namespace: sysdeps.NamespaceBinary, Name: "dot", Provenance: "setup.py"},
+					{Namespace: sysdeps.NamespaceApt, Name: "graphviz-dev", Provenance: "test.yml"},
+					{Namespace: "unknown_ns", Name: "custom-dep", Provenance: "notes.txt"},
+				},
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `echo "[sysdeps] Target OS: almalinux"
+echo "[sysdeps] Extracted dependency identifiers:"
+echo "[sysdeps]   - bin:dot (from setup.py)"
+echo "[sysdeps]   - apt:graphviz-dev (from test.yml)"
+echo "[sysdeps]   - unknown_ns:custom-dep (from notes.txt)"
+echo "[sysdeps] WARNING: The following dependency identifiers could not be mapped to almalinux:"
+echo "[sysdeps]   - unknown_ns:custom-dep (from notes.txt)"
+echo "[sysdeps] Installing candidate system package(s) (fail-open)..."
+if dnf install -y '/usr/bin/dot'; then
+  echo "[sysdeps]   + OK: /usr/bin/dot"
+else
+  echo "[sysdeps]   ! INSTALL_FAILED: /usr/bin/dot" >&2
+fi
+if dnf install -y 'graphviz-devel'; then
+  echo "[sysdeps]   + OK: graphviz-devel"
+else
+  echo "[sysdeps]   ! INSTALL_FAILED: graphviz-devel" >&2
+fi
+INTERPRETER=""
+if [ -d "/opt/python/cp310-cp310" ]; then
+  INTERPRETER="/opt/python/cp310-cp310/bin/python"
+else
+  for dir in /opt/python/cp310*; do
+    if [ -d "$dir" ]; then
+      INTERPRETER="$dir/bin/python"
+      break
+    fi
+  done
+fi
+if [ -z "$INTERPRETER" ]; then
+  echo "Error: Requested Python tag 'cp310' not found in /opt/python" >&2
+  exit 1
+fi
+$INTERPRETER -m venv /deps
+/deps/bin/pip install build wheel auditwheel`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+if $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/; then
+  rm -f the_dir/dist/*.whl
+  mv the_dir/dist/repaired/*.whl the_dir/dist/
+fi
+rm -rf the_dir/dist/repaired
+/deps/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_28_x86_64 the_dir/dist/*.whl`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux_2_28_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithSystemDepsAlpine",
+			&PlatformWheelBuild{
+				Location:    defaultLocation,
+				PythonTag:   "cp310",
+				ABITag:      "cp310",
+				PlatformTag: "musllinux_1_2_x86_64",
+				SystemDeps: []sysdeps.DependencyIdentifier{
+					{Namespace: sysdeps.NamespaceBinary, Name: "dot"},
+					{Namespace: sysdeps.NamespaceApt, Name: "graphviz-dev"},
+				},
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `echo "[sysdeps] Target OS: alpine"
+echo "[sysdeps] Extracted dependency identifiers:"
+echo "[sysdeps]   - bin:dot"
+echo "[sysdeps]   - apt:graphviz-dev"
+echo "[sysdeps] Installing candidate system package(s) (fail-open)..."
+if apk add 'cmd:dot'; then
+  echo "[sysdeps]   + OK: cmd:dot"
+else
+  echo "[sysdeps]   ! INSTALL_FAILED: cmd:dot" >&2
+fi
+if apk add 'graphviz-dev'; then
+  echo "[sysdeps]   + OK: graphviz-dev"
+else
+  echo "[sysdeps]   ! INSTALL_FAILED: graphviz-dev" >&2
+fi
+INTERPRETER=""
+if [ -d "/opt/python/cp310-cp310" ]; then
+  INTERPRETER="/opt/python/cp310-cp310/bin/python"
+else
+  for dir in /opt/python/cp310*; do
+    if [ -d "$dir" ]; then
+      INTERPRETER="$dir/bin/python"
+      break
+    fi
+  done
+fi
+if [ -z "$INTERPRETER" ]; then
+  echo "Error: Requested Python tag 'cp310' not found in /opt/python" >&2
+  exit 1
+fi
+$INTERPRETER -m venv /deps
+/deps/bin/pip install build wheel auditwheel`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+if $AUDITWHEEL repair the_dir/dist/*.whl --plat musllinux_1_2_x86_64 -w the_dir/dist/repaired/; then
+  rm -f the_dir/dist/*.whl
+  mv the_dir/dist/repaired/*.whl the_dir/dist/
+fi
+rm -rf the_dir/dist/repaired
+/deps/bin/python3 -m wheel tags --remove --platform-tag musllinux_1_2_x86_64 the_dir/dist/*.whl`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/musllinux_1_2_x86_64",
 					SystemDeps: []string{"git"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",

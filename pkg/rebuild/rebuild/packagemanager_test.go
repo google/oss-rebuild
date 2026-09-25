@@ -1,7 +1,7 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package build
+package rebuild
 
 import (
 	"testing"
@@ -79,7 +79,7 @@ func TestGetPackageManagerCommands(t *testing.T) {
 	}{
 		{
 			name: "Alpine",
-			os:   Alpine,
+			os:   OSAlpine,
 			want: PackageManagerCommands{
 				UpdateCmd:   "apk update",
 				InstallCmd:  "apk add",
@@ -88,7 +88,7 @@ func TestGetPackageManagerCommands(t *testing.T) {
 		},
 		{
 			name: "Debian",
-			os:   Debian,
+			os:   OSDebian,
 			want: PackageManagerCommands{
 				UpdateCmd:   "apt update",
 				InstallCmd:  "apt install",
@@ -97,7 +97,7 @@ func TestGetPackageManagerCommands(t *testing.T) {
 		},
 		{
 			name: "Ubuntu",
-			os:   Ubuntu,
+			os:   OSUbuntu,
 			want: PackageManagerCommands{
 				UpdateCmd:   "apt update",
 				InstallCmd:  "apt install",
@@ -106,7 +106,7 @@ func TestGetPackageManagerCommands(t *testing.T) {
 		},
 		{
 			name: "CentOS",
-			os:   CentOS,
+			os:   OSCentOS,
 			want: PackageManagerCommands{
 				UpdateCmd:   "yum update -y",
 				InstallCmd:  "yum install",
@@ -115,7 +115,7 @@ func TestGetPackageManagerCommands(t *testing.T) {
 		},
 		{
 			name: "AlmaLinux",
-			os:   AlmaLinux,
+			os:   OSAlmaLinux,
 			want: PackageManagerCommands{
 				UpdateCmd:   "dnf update -y",
 				InstallCmd:  "dnf install",
@@ -163,118 +163,118 @@ func TestDetectOS(t *testing.T) {
 		{
 			name:      "Alpine latest",
 			baseImage: "alpine:latest",
-			want:      Alpine,
+			want:      OSAlpine,
 		},
 		{
 			name:      "Alpine with version",
 			baseImage: "alpine:3.19",
-			want:      Alpine,
+			want:      OSAlpine,
 		},
 		{
 			name:      "Alpine in compound name",
 			baseImage: "node:18-alpine",
-			want:      Alpine,
+			want:      OSAlpine,
 		},
 		{
 			name:      "Debian latest",
 			baseImage: "debian:latest",
-			want:      Debian,
+			want:      OSDebian,
 		},
 		{
 			name:      "Debian with version",
 			baseImage: "debian:bullseye",
-			want:      Debian,
+			want:      OSDebian,
 		},
 		{
 			name:      "Ubuntu latest",
 			baseImage: "ubuntu:latest",
-			want:      Ubuntu,
+			want:      OSUbuntu,
 		},
 		{
 			name:      "Ubuntu with version",
 			baseImage: "ubuntu:22.04",
-			want:      Ubuntu,
+			want:      OSUbuntu,
 		},
 		{
 			name:      "Ubuntu in compound name",
 			baseImage: "python:3.11-ubuntu",
-			want:      Ubuntu,
+			want:      OSUbuntu,
 		},
 		{
 			name:      "CentOS",
 			baseImage: "centos:7",
-			want:      CentOS,
+			want:      OSCentOS,
 		},
 		{
 			name:      "CentOS latest",
 			baseImage: "centos:latest",
-			want:      CentOS,
+			want:      OSCentOS,
 		},
 		{
 			name:      "RHEL",
 			baseImage: "rhel:8",
-			want:      CentOS,
+			want:      OSCentOS,
 		},
 		{
 			name:      "RHEL UBI",
 			baseImage: "registry.redhat.io/ubi8/rhel",
-			want:      CentOS,
+			want:      OSCentOS,
 		},
 		{
 			name:      "manylinux2014",
 			baseImage: "quay.io/pypa/manylinux2014_x86_64",
-			want:      CentOS,
+			want:      OSCentOS,
 		},
 		{
 			name:      "manylinux_2_28",
 			baseImage: "quay.io/pypa/manylinux_2_28_x86_64",
-			want:      AlmaLinux,
+			want:      OSAlmaLinux,
 		},
 		{
 			name:      "manylinux_2_34",
 			baseImage: "quay.io/pypa/manylinux_2_34_x86_64",
-			want:      AlmaLinux,
+			want:      OSAlmaLinux,
 		},
 		{
 			name:      "musllinux_1_1",
 			baseImage: "quay.io/pypa/musllinux_1_1_x86_64",
-			want:      Alpine,
+			want:      OSAlpine,
 		},
 		{
 			name:      "musllinux_1_2",
 			baseImage: "quay.io/pypa/musllinux_1_2_x86_64",
-			want:      Alpine,
+			want:      OSAlpine,
 		},
 		{
 			name:      "AlmaLinux",
 			baseImage: "docker.io/library/almalinux:8",
-			want:      AlmaLinux,
+			want:      OSAlmaLinux,
 		},
 		{
 			name:      "Unknown image defaults to Alpine",
 			baseImage: "scratch",
-			want:      Alpine,
+			want:      OSAlpine,
 		},
 		{
 			name:      "Random image defaults to Alpine",
 			baseImage: "busybox:latest",
-			want:      Alpine,
+			want:      OSAlpine,
 		},
 		{
 			name:      "Empty string defaults to Alpine",
 			baseImage: "",
-			want:      Alpine,
+			want:      OSAlpine,
 		},
 		{
 			name:      "Case sensitivity test",
 			baseImage: "ALPINE:latest",
-			want:      Alpine,
+			want:      OSAlpine,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := DetectOS(tt.baseImage)
+			got := MapOS(tt.baseImage)
 			if got != tt.want {
 				t.Errorf("DetectOS() = %v, want %v", got, tt.want)
 			}
@@ -289,11 +289,11 @@ func TestOSConstants(t *testing.T) {
 		os   OS
 		want string
 	}{
-		{"Alpine constant", Alpine, "alpine"},
-		{"Debian constant", Debian, "debian"},
-		{"Ubuntu constant", Ubuntu, "ubuntu"},
-		{"CentOS constant", CentOS, "centos"},
-		{"AlmaLinux constant", AlmaLinux, "almalinux"},
+		{"Alpine constant", OSAlpine, "alpine"},
+		{"Debian constant", OSDebian, "debian"},
+		{"Ubuntu constant", OSUbuntu, "ubuntu"},
+		{"CentOS constant", OSCentOS, "centos"},
+		{"AlmaLinux constant", OSAlmaLinux, "almalinux"},
 	}
 
 	for _, tt := range tests {

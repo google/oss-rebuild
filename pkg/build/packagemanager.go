@@ -4,79 +4,27 @@
 package build
 
 import (
-	"slices"
-	"strings"
+	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
 // OS represents a supported operating system/distribution
-type OS string
+type OS = rebuild.OS
 
 const (
-	Alpine OS = "alpine"
-	Debian OS = "debian"
-	Ubuntu OS = "ubuntu"
-	CentOS OS = "centos"
+	Alpine    OS = rebuild.OSAlpine
+	Debian    OS = rebuild.OSDebian
+	Ubuntu    OS = rebuild.OSUbuntu
+	CentOS    OS = rebuild.OSCentOS
+	AlmaLinux OS = rebuild.OSAlmaLinux
 )
 
 // PackageManagerCommands contains the commands needed for package management on a specific OS
-type PackageManagerCommands struct {
-	UpdateCmd   string
-	InstallCmd  string
-	InstallArgs []string
-}
+type PackageManagerCommands = rebuild.PackageManagerCommands
 
-// InstallCommand generates the full package installation command for the given packages
-func (p PackageManagerCommands) InstallCommand(packages []string) string {
-	cmdArgs := slices.Concat([]string{p.InstallCmd}, p.InstallArgs, packages)
-	return strings.Join(cmdArgs, " ")
-}
+var (
+	// GetPackageManagerCommands returns the package manager commands for the given OS
+	GetPackageManagerCommands = rebuild.GetPackageManagerCommands
 
-// osPackageManagers maps operating systems to their package manager commands
-var osPackageManagers = map[OS]PackageManagerCommands{
-	Alpine: {
-		UpdateCmd:  "apk update",
-		InstallCmd: "apk add",
-		// TODO: Add --no-cache
-		InstallArgs: []string{},
-	},
-	Debian: {
-		UpdateCmd:  "apt update",
-		InstallCmd: "apt install",
-		// TODO: Add --no-install-recommends
-		InstallArgs: []string{"-y"},
-	},
-	Ubuntu: {
-		UpdateCmd:   "apt update",
-		InstallCmd:  "apt install",
-		InstallArgs: []string{"-y"},
-	},
-	CentOS: {
-		UpdateCmd:   "yum update -y",
-		InstallCmd:  "yum install",
-		InstallArgs: []string{"-y"},
-	},
-}
-
-// GetPackageManagerCommands returns the package manager commands for the given OS
-func GetPackageManagerCommands(os OS) PackageManagerCommands {
-	if cmd, ok := osPackageManagers[os]; ok {
-		return cmd
-	}
-	return osPackageManagers[Alpine] // Not necessarily accurate but generally a safe assumption
-}
-
-// DetectOS detects the OS from a base image name
-func DetectOS(baseImage string) OS {
-	switch {
-	case strings.Contains(baseImage, "alpine"), strings.Contains(baseImage, "musllinux"), strings.Contains(baseImage, "library/docker"):
-		return Alpine
-	case strings.Contains(baseImage, "debian"):
-		return Debian
-	case strings.Contains(baseImage, "ubuntu"):
-		return Ubuntu
-	case strings.Contains(baseImage, "centos"), strings.Contains(baseImage, "rhel"), strings.Contains(baseImage, "manylinux"), strings.Contains(baseImage, "almalinux"):
-		return CentOS
-	default:
-		return Alpine // safe default
-	}
-}
+	// DetectOS detects the OS from a base image name
+	DetectOS = rebuild.MapOS
+)
