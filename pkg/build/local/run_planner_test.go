@@ -62,7 +62,17 @@ func TestDockerRunPlanner(t *testing.T) {
 				Source: textwrap.Dedent(`
 			mkdir -p /src && cd /src
 			git clone https://github.com/example/test-package .
-			git checkout --force 'v1.0.0'`[1:]),
+			git checkout --force 'v1.0.0'
+			if [ -f .gitmodules ]; then
+			  git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+			  git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+			  git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+			  git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+			  git config --global url."https://".insteadOf "git://" || true
+			  git submodule sync --recursive || true
+			  GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+			  GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+			fi`[1:]),
 				Deps: textwrap.Dedent(`
 			cd /src
 			npm install`[1:]),
@@ -116,7 +126,17 @@ func TestDockerRunPlanner(t *testing.T) {
 				Source: textwrap.Dedent(`
 			mkdir -p /src && cd /src
 			git clone https://github.com/example/test-package .
-			git checkout --force 'v1.0.0'`[1:]),
+			git checkout --force 'v1.0.0'
+			if [ -f .gitmodules ]; then
+			  git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+			  git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+			  git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+			  git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+			  git config --global url."https://".insteadOf "git://" || true
+			  git submodule sync --recursive || true
+			  GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+			  GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+			fi`[1:]),
 				Deps: textwrap.Dedent(`
 			/timewarp -port 8081 &
 			while ! nc -z localhost 8081;do sleep 1;done
