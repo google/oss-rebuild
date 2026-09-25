@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
+	"sync"
 
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/pkg/gcb"
@@ -22,12 +24,39 @@ type MetaAssetStore struct {
 	LogsBucket     string
 	DebugStorage   string
 	Mux            rebuild.RegistryMux
+	gcsClientOnce  sync.Once
+	gcsClient      *gcs.Client
+	gcsClientErr   error
+}
+
+func (m *MetaAssetStore) client(ctx context.Context) (*gcs.Client, error) {
+	m.gcsClientOnce.Do(func() {
+		var gcsOpts []option.ClientOption
+		if opts, ok := ctx.Value(rebuild.GCSClientOptionsID).([]option.ClientOption); ok {
+			gcsOpts = append(gcsOpts, opts...)
+		}
+		m.gcsClient, m.gcsClientErr = gcs.NewClient(context.WithoutCancel(ctx), gcsOpts...)
+	})
+	return m.gcsClient, m.gcsClientErr
 }
 
 func (m *MetaAssetStore) For(ctx context.Context, runID string) (rebuild.ReadOnlyAssetStore, error) {
-	debug, err := rebuild.DebugStoreFromContext(context.WithValue(context.WithValue(ctx, rebuild.RunID, runID), rebuild.DebugStoreID, m.DebugStorage))
-	if err != nil {
-		return nil, errors.Wrap(err, "creating debug asset store")
+	var debug rebuild.AssetStore
+	var err error
+	if strings.HasPrefix(m.DebugStorage, "gs://") {
+		client, err := m.client(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating gcs client")
+		}
+		debug, err = rebuild.NewGCSStoreFromClient(context.WithValue(ctx, rebuild.RunID, runID), client, m.DebugStorage)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating debug asset store")
+		}
+	} else {
+		debug, err = rebuild.DebugStoreFromContext(context.WithValue(context.WithValue(ctx, rebuild.RunID, runID), rebuild.DebugStoreID, m.DebugStorage))
+		if err != nil {
+			return nil, errors.Wrap(err, "creating debug asset store")
+		}
 	}
 	return &assetStore{
 		metaAssetStore: m,
@@ -47,8 +76,9 @@ func (m *assetStore) buildInfo(ctx context.Context, t rebuild.Target) (*rebuild.
 	if err != nil {
 		return nil, errors.Wrap(err, "reading build info")
 	}
+	defer r.Close()
 	bi := new(rebuild.BuildInfo)
-	if json.NewDecoder(r).Decode(bi) != nil {
+	if err := json.NewDecoder(r).Decode(bi); err != nil {
 		return nil, errors.Wrap(err, "parsing build info")
 	}
 	return bi, nil
@@ -70,7 +100,11 @@ func (m *assetStore) Reader(ctx context.Context, a rebuild.Asset) (io.ReadCloser
 		if err != nil {
 			return nil, err
 		}
-		metadata, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, bi.ObliviousID), fmt.Sprintf("gs://%s", m.metaAssetStore.MetadataBucket))
+		client, err := m.metaAssetStore.client(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating gcs client")
+		}
+		metadata, err := rebuild.NewGCSStoreFromClient(context.WithValue(ctx, rebuild.RunID, bi.ObliviousID), client, fmt.Sprintf("gs://%s", m.metaAssetStore.MetadataBucket))
 		if err != nil {
 			return nil, errors.Wrap(err, "creating metadata store")
 		}
@@ -85,11 +119,7 @@ func (m *assetStore) Reader(ctx context.Context, a rebuild.Asset) (io.ReadCloser
 		if bi.BuildID == "" {
 			return nil, errors.New("BuildID is empty, cannot read gcb logs")
 		}
-		var gcsOpts []option.ClientOption
-		if opts, ok := ctx.Value(rebuild.GCSClientOptionsID).([]option.ClientOption); ok {
-			gcsOpts = append(gcsOpts, opts...)
-		}
-		client, err := gcs.NewClient(ctx, gcsOpts...)
+		client, err := m.metaAssetStore.client(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating gcs client")
 		}
