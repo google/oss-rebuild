@@ -40,7 +40,7 @@ func TestBaseImageConfig_SelectFor(t *testing.T) {
 			requires: rebuild.RequiredEnv{
 				BaseImage: "",
 			},
-			want: "docker.io/library/debian:stable-20251103-slim",
+			want: "docker.io/library/debian:testing-20260918-slim",
 		},
 		{
 			name: "ecosystem override used when BaseImage is empty",
@@ -50,7 +50,7 @@ func TestBaseImageConfig_SelectFor(t *testing.T) {
 				},
 			},
 			requires: rebuild.RequiredEnv{},
-			want:     "docker.io/library/debian:stable-20251103-slim",
+			want:     "docker.io/library/debian:testing-20260918-slim",
 		},
 		{
 			name: "global default used when ecosystem not configured and BaseImage is empty",

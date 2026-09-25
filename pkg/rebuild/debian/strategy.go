@@ -163,7 +163,7 @@ func (b *DebootsnapSbuild) ToWorkflow() *rebuild.WorkflowStrategy {
 			{
 				Uses: "debian/deps/install",
 				With: map[string]string{
-					"requirements": flow.MustToJSON([]string{"devscripts", "mmdebstrap", "sbuild"}),
+					"requirements": flow.MustToJSON([]string{"devscripts", "mmdebstrap", "sbuild", "equivs"}),
 				},
 			},
 			{
@@ -306,7 +306,7 @@ var toolkit = []*flow.Tool{
 			// TODO: pin these versions
 			Runs: textwrap.Dedent(`
 				apt -o Acquire::Check-Valid-Until=false update
-				apt install -y devscripts mmdebstrap sbuild`[1:]),
+				apt install -y devscripts mmdebstrap sbuild equivs`[1:]),
 		}},
 	},
 	{
