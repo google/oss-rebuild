@@ -1,0 +1,8 @@
+FROM golang:1.26-alpine AS binary
+ARG DEBUG=false
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="$([ ${DEBUG} = "true" ] || printf '-s -w')" -gcflags="-l=4" ./cmd/diffr
+FROM scratch
+COPY --from=binary /src/diffr /
+ENTRYPOINT ["/diffr"]
