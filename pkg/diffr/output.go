@@ -15,6 +15,7 @@ type DiffNode struct {
 	UnifiedDiff *string    `json:"unified_diff,omitempty"`
 	Comments    []string   `json:"comments,omitempty"`
 	Details     []DiffNode `json:"details,omitempty"` // Recursive nodes
+	Unwrapped   bool       `json:"-"`                 // Decompressed form of the parent, not an archive of its own
 }
 
 // NodeStatus indicates whether a node represents a file only in first archive,
@@ -26,6 +27,8 @@ const (
 	StatusOnlyFirst
 	StatusOnlySecond
 )
+
+const listingEntry = "file list" // synthetic entry carrying an archive's listing diff
 
 // Comment constants for archive entry status (unexported - use Status() for programmatic access)
 const (
