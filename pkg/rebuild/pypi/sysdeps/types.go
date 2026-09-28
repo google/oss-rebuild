@@ -70,6 +70,20 @@ func TargetOSFromPlatformTag(platformTag string) rebuild.OS {
 	}
 }
 
+// DeduplicateIdentifiers deduplicates a slice of DependencyIdentifier by (Namespace, Name), preserving order.
+func DeduplicateIdentifiers(ids []DependencyIdentifier) []DependencyIdentifier {
+	var result []DependencyIdentifier
+	seen := make(map[string]bool)
+	for _, id := range ids {
+		key := string(id.Namespace) + ":" + id.Name
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, id)
+		}
+	}
+	return result
+}
+
 // Mapper translates extracted dependency identifiers into target OS package manager arguments.
 type Mapper interface {
 	Map(targetOS rebuild.OS, ids []DependencyIdentifier) ResolutionResult

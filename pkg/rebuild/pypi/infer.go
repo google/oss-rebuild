@@ -25,6 +25,7 @@ import (
 	"github.com/google/oss-rebuild/internal/versionx"
 	pypiresolver "github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
+	"github.com/google/oss-rebuild/pkg/rebuild/pypi/sysdeps"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
@@ -440,6 +441,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to read upstream artifact")
 	}
 	var reqs []string
+	var sysdepsList []sysdeps.DependencyIdentifier
 	if strings.HasSuffix(a.Filename, ".whl") {
 		zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
 		if err != nil {
@@ -448,6 +450,12 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		reqs, err = inferRequirements(release.Name, version, zr)
 		if err != nil {
 			return nil, err
+		}
+		wheelSysdeps, err := sysdeps.ExtractWheelElfDependencies(zr)
+		if err != nil {
+			log.Println(errors.Wrap(err, "extracting wheel ELF dependencies"))
+		} else {
+			sysdepsList = append(sysdepsList, wheelSysdeps...)
 		}
 	} else if strings.HasSuffix(a.Filename, ".tar.gz") {
 		// For .tar.gz files (source distributions), we don't infer requirements from the archive
@@ -504,6 +512,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			ABITag:       tags.ABI,
 			PlatformTag:  tags.Platform,
 			Requirements: reqs,
+			SystemDeps:   sysdeps.DeduplicateIdentifiers(sysdepsList),
 			RegistryTime: a.UploadTime,
 		}, nil
 	} else {
