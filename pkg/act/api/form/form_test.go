@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,23 +126,28 @@ func TestErrors(t *testing.T) {
 	tests := []struct {
 		name    string
 		call    func() error
-		wantErr error // nil accepts any error
+		wantErr error  // nil accepts any error
+		field   string // quoted in the message, when set
 	}{
-		{"marshal nil pointer", func() error { _, err := Marshal((*wide)(nil)); return err }, ErrInvalidType},
-		{"marshal non-struct", func() error { _, err := Marshal("x"); return err }, ErrInvalidType},
-		{"marshal embedded field", func() error { _, err := Marshal(embedded{}); return err }, ErrUnsupportedField},
-		{"unmarshal nil", func() error { return Unmarshal(nil, nil) }, ErrInvalidType},
-		{"unmarshal nil pointer", func() error { return Unmarshal(nil, (*wide)(nil)) }, ErrInvalidType},
-		{"unmarshal non-pointer", func() error { return Unmarshal(nil, wide{}) }, ErrInvalidType},
-		{"unmarshal non-struct", func() error { return Unmarshal(nil, new(string)) }, ErrInvalidType},
-		{"unmarshal embedded field", func() error { return Unmarshal(nil, &embedded{}) }, ErrUnsupportedField},
-		{"missing required", func() error { return Unmarshal(nil, &wide{}) }, ErrMissingRequired},
-		{"bad json", func() error { return Unmarshal(url.Values{"ecosystem": {"npm"}, "count": {"z"}}, &wide{}) }, nil},
+		{"marshal nil pointer", func() error { _, err := Marshal((*wide)(nil)); return err }, ErrInvalidType, ""},
+		{"marshal non-struct", func() error { _, err := Marshal("x"); return err }, ErrInvalidType, ""},
+		{"marshal embedded field", func() error { _, err := Marshal(embedded{}); return err }, ErrUnsupportedField, "Target"},
+		{"unmarshal nil", func() error { return Unmarshal(nil, nil) }, ErrInvalidType, ""},
+		{"unmarshal nil pointer", func() error { return Unmarshal(nil, (*wide)(nil)) }, ErrInvalidType, ""},
+		{"unmarshal non-pointer", func() error { return Unmarshal(nil, wide{}) }, ErrInvalidType, ""},
+		{"unmarshal non-struct", func() error { return Unmarshal(nil, new(string)) }, ErrInvalidType, ""},
+		{"unmarshal embedded field", func() error { return Unmarshal(nil, &embedded{}) }, ErrUnsupportedField, "Target"},
+		{"missing required", func() error { return Unmarshal(nil, &wide{}) }, ErrMissingRequired, "ecosystem"},
+		{"bad json", func() error { return Unmarshal(url.Values{"ecosystem": {"npm"}, "count": {"z"}}, &wide{}) }, nil, "count"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := tt.call(); err == nil || (tt.wantErr != nil && !errors.Is(err, tt.wantErr)) {
-				t.Errorf("error = %v, want %v", err, tt.wantErr)
+			err := tt.call()
+			if err == nil || (tt.wantErr != nil && !errors.Is(err, tt.wantErr)) {
+				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.field != "" && !strings.Contains(err.Error(), "'"+tt.field+"'") {
+				t.Errorf("error %q does not name field %q", err, tt.field)
 			}
 		})
 	}
