@@ -20,9 +20,22 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Set up Go ${{matrix.go-version}}
+        id: go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{matrix.go-version}}
+          cache: false # never re-saved on a hit, so it goes stale as main moves
+
+      # Each push to main saves a snapshot. Restore by newest applicable prefix.
+      - name: Restore Go caches
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{runner.os}}-${{steps.go.outputs.go-version}}-${{github.run_id}}
+          restore-keys: go-${{runner.os}}-${{steps.go.outputs.go-version}}-
 
       - name: Build
         run: go run ./ci -v build
@@ -41,3 +54,12 @@ jobs:
 
       - name: Check license headers
         run: go run ./ci -v license-check
+
+      - name: Save Go caches
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{steps.cache.outputs.cache-primary-key}}
