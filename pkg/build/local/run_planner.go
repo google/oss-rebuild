@@ -14,6 +14,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+// DockerRunOutputPath is where a docker run plan's build phase leaves the
+// artifact inside the container.
+const DockerRunOutputPath = "/out/rebuild"
+
 // DockerRunPlanner generates Docker run execution plans using existing images
 type DockerRunPlanner struct {
 }
@@ -116,7 +120,7 @@ func (p *DockerRunPlanner) GeneratePlan(ctx context.Context, input rebuild.Input
 	plan := &DockerRunPlan{
 		Image:        image,
 		WorkingDir:   "/workspace",
-		OutputPath:   "/out/rebuild",
+		OutputPath:   DockerRunOutputPath,
 		RequiresAuth: len(opts.Resources.ToolAuthRequired) > 0,
 		Privileged:   instructions.Requires.Privileged,
 	}

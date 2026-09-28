@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
 	"github.com/google/oss-rebuild/pkg/longrunning"
@@ -228,5 +229,103 @@ func TestRunCommandTimeout(t *testing.T) {
 	}
 	if exitCode != 124 {
 		t.Errorf("exitCode = %d, want 124", exitCode)
+	}
+}
+
+// TestDiffOnVM covers the on-VM comparison exec: the script fetches the
+// tools and the upstream artifact when absent, stabilizes both artifacts,
+// then runs diffr --summary on the stabilized forms, and the exit code
+// separates fetch and stabilize failures from diffr's own verdicts.
+func TestDiffOnVM(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		exitCode int
+		auth     bool
+		want     string
+		wantErr  string
+	}{
+		{name: "differ", exitCode: 1, auth: true},
+		{name: "same after stabilization", exitCode: 0, want: "no file-level differences"},
+		{name: "setup failed", exitCode: exitDiffSetupFailed, wantErr: "preparing the comparison on the VM"},
+		{name: "diffr error", exitCode: 127, wantErr: "diffr exited 127"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotReq schema.ScratchExecRequest
+			r := testRunner(&fakeExecutor{})
+			r.PrebuildConfig.Dir = "v1"
+			if tt.auth {
+				r.AuthHeader = func(context.Context) (string, error) { return "Authorization: Bearer tok", nil }
+			}
+			r.Stubs = scratch.Stubs{
+				ExecCreate: func(_ context.Context, req schema.ScratchExecRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+					gotReq = req
+					return &longrunning.Operation[schema.ScratchExecResult]{ID: "diff", Done: true, Result: &schema.ScratchExecResult{ScratchID: "s1", ExitCode: tt.exitCode}}, nil
+				},
+				ExecGet: func(context.Context, schema.GetOperationRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+					return nil, errors.New("unexpected ExecGet")
+				},
+			}
+			got, err := r.diffOnVM(context.Background(), "iter-1", "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz")
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want substring %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("diffOnVM: %v", err)
+			}
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("summary = %q, want substring %q", got, tt.want)
+			}
+			want := `set -eu
+die() { echo "$*"; exit 3; }
+fetch() { [ -e "$1" ] || { wget -q ${AUTH_HEADER:+--header "$AUTH_HEADER"} -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }
+stab() { out=$(/home/builder/tools/stabilize -ecosystem npm -artifact lodash-4.17.21.tgz -infile "$1" -outfile "$2.part" 2>&1) && mv "$2.part" "$2" || die "stabilizing $1 failed: $out"; }
+mkdir -p /home/builder/tools /home/builder/upstream
+fetch /home/builder/tools/diffr https://storage.googleapis.com/test-bootstrap/v1/diffr
+fetch /home/builder/tools/stabilize https://storage.googleapis.com/test-bootstrap/v1/stabilize
+fetch /home/builder/upstream/lodash-4.17.21.tgz https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz
+chmod +x /home/builder/tools/diffr /home/builder/tools/stabilize
+[ -e /home/builder/upstream/lodash-4.17.21.tgz.stabilized ] || stab /home/builder/upstream/lodash-4.17.21.tgz /home/builder/upstream/lodash-4.17.21.tgz.stabilized
+stab /home/builder/builds/iter-1/out/rebuild /home/builder/builds/iter-1/out/rebuild.stabilized
+exec /home/builder/tools/diffr --summary --label rebuild --label upstream /home/builder/builds/iter-1/out/rebuild.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized
+`
+			if diff := cmp.Diff(want, gotReq.Cmd[2]); diff != "" {
+				t.Errorf("script mismatch (-want +got):\n%s", diff)
+			}
+			if _, ok := gotReq.Env["AUTH_HEADER"]; ok != tt.auth {
+				t.Errorf("AUTH_HEADER env set = %v, want %v", ok, tt.auth)
+			}
+			if gotReq.TimeoutSeconds != int(diffTimeout.Seconds()) {
+				t.Errorf("TimeoutSeconds = %d, want %d", gotReq.TimeoutSeconds, int(diffTimeout.Seconds()))
+			}
+		})
+	}
+}
+
+func TestMismatchMessage(t *testing.T) {
+	r := testRunner(&fakeExecutor{})
+	if got := r.mismatchMessage("iter-1", ""); got != "rebuild content mismatch" {
+		t.Errorf("message without summary = %q", got)
+	}
+	got := r.mismatchMessage("iter-1", "within rebuild (vs upstream):\n  differ (1):\n    package/index.js\n")
+	for _, want := range []string{
+		"differ (1):\n    package/index.js",
+		"only in rebuild, only in upstream, and differ",
+		"/home/builder/tools/diffr /home/builder/builds/iter-1/out/rebuild.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized",
+		"/home/builder/tools/stabilize -ecosystem npm -artifact lodash-4.17.21.tgz -infile <file> -outfile <file>.stabilized",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("message lacks %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestDiffScriptRejectsShellCharacters(t *testing.T) {
+	r := testRunner(&fakeExecutor{})
+	r.Target.Artifact = "it's-4.17.21.tgz"
+	if _, err := r.diffScript(r.vmPaths("iter-1"), "https://b/diffr", "https://b/stabilize", "https://r/x.tgz"); err == nil {
+		t.Error("diffScript accepted an artifact name with a quote")
 	}
 }
