@@ -14,37 +14,81 @@ import (
 	"github.com/pkg/errors"
 )
 
-type projectMetadata struct {
+// ProjectMetadata represents the [project] or [tool.poetry] table in pyproject.toml.
+type ProjectMetadata struct {
 	Name    string `toml:"name"`
 	Version string `toml:"version"`
 }
 
-type toolMetadata struct {
-	Poetry projectMetadata `toml:"poetry"`
+// BuildSystem represents the [build-system] table in pyproject.toml.
+type BuildSystem struct {
+	Requires []string `toml:"requires"`
 }
 
-type pyProjectProject struct {
-	Metadata projectMetadata `toml:"project"`
-	Tool     toolMetadata    `toml:"tool"`
+// CibuildwheelHooks represents build hooks in [tool.cibuildwheel] or platform subtables.
+type CibuildwheelHooks struct {
+	BeforeAll   any `toml:"before-all"`
+	BeforeBuild any `toml:"before-build"`
+}
+
+// CibuildwheelOverride represents an entry in [[tool.cibuildwheel.overrides]].
+type CibuildwheelOverride struct {
+	Select      any `toml:"select"`
+	BeforeAll   any `toml:"before-all"`
+	BeforeBuild any `toml:"before-build"`
+}
+
+// CibuildwheelConfig represents the [tool.cibuildwheel] table in pyproject.toml.
+type CibuildwheelConfig struct {
+	BeforeAll   any                    `toml:"before-all"`
+	BeforeBuild any                    `toml:"before-build"`
+	Linux       CibuildwheelHooks      `toml:"linux"`
+	Overrides   []CibuildwheelOverride `toml:"overrides"`
+}
+
+// ToolConfig represents the [tool] table in pyproject.toml.
+type ToolConfig struct {
+	Poetry       ProjectMetadata    `toml:"poetry"`
+	Cibuildwheel CibuildwheelConfig `toml:"cibuildwheel"`
+}
+
+// PyProject represents the structure of a pyproject.toml file.
+type PyProject struct {
+	Project     ProjectMetadata `toml:"project"`
+	BuildSystem BuildSystem     `toml:"build-system"`
+	Tool        ToolConfig      `toml:"tool"`
+}
+
+// ParsePyProject unmarshals pyproject.toml content into a PyProject struct.
+func ParsePyProject(contents string) (PyProject, error) {
+	var pyProject PyProject
+	if err := toml.Unmarshal([]byte(contents), &pyProject); err != nil {
+		return pyProject, errors.Wrap(err, "decoding pyproject.toml")
+	}
+	return pyProject, nil
+}
+
+// ReadPyProject reads and unmarshals a pyproject.toml git object file.
+func ReadPyProject(f *object.File) (PyProject, error) {
+	contents, err := f.Contents()
+	if err != nil {
+		return PyProject{}, errors.Wrap(err, "reading pyproject.toml")
+	}
+	return ParsePyProject(contents)
 }
 
 func verifyPyProjectFile(ctx context.Context, f *object.File, name, version string) (fileVerification, error) {
 	var verificationResult fileVerification
 	verificationResult.foundF = f
-
-	pyprojContents, err := f.Contents()
+	pyProject, err := ReadPyProject(f)
 	if err != nil {
-		return verificationResult, errors.Wrap(err, "Failed to read pyproject.toml")
-	}
-	var pyProject pyProjectProject
-	if err := toml.Unmarshal([]byte(pyprojContents), &pyProject); err != nil {
-		return verificationResult, errors.Wrap(err, "Failed to decode pyproject.toml")
+		return verificationResult, err
 	}
 	foundName := ""
 	foundVersion := ""
-	if pyProject.Metadata.Name != "" {
-		foundName = pyProject.Metadata.Name
-		foundVersion = pyProject.Metadata.Version
+	if pyProject.Project.Name != "" {
+		foundName = pyProject.Project.Name
+		foundVersion = pyProject.Project.Version
 	} else if pyProject.Tool.Poetry.Name != "" {
 		foundName = pyProject.Tool.Poetry.Name
 		foundVersion = pyProject.Tool.Poetry.Version
@@ -74,21 +118,11 @@ func verifyPyProjectFile(ctx context.Context, f *object.File, name, version stri
 func extractPyProjectRequirements(ctx context.Context, f *object.File) ([]string, error) {
 	var reqs []string
 	log.Println("Looking for additional reqs in pyproject.toml")
-	pyprojContents, err := f.Contents()
+	pyProject, err := ReadPyProject(f)
 	if err != nil {
-		return nil, errors.Wrap(err, "Failed to read pyproject.toml")
+		return nil, err
 	}
-	type BuildSystem struct {
-		Requirements []string `toml:"requires"`
-	}
-	type PyProject struct {
-		Build BuildSystem `toml:"build-system"`
-	}
-	var pyProject PyProject
-	if err := toml.Unmarshal([]byte(pyprojContents), &pyProject); err != nil {
-		return nil, errors.Wrap(err, "Failed to decode pyproject.toml")
-	}
-	for _, r := range pyProject.Build.Requirements {
+	for _, r := range pyProject.BuildSystem.Requires {
 		// TODO: Some of these requirements are probably already in rbcfg.Requirements, should we skip
 		// them? To even know which package we're looking at would require parsing the dependency spec.
 		// https://packaging.python.org/en/latest/specifications/dependency-specifiers/#dependency-specifiers
