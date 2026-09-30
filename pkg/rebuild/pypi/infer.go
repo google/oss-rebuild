@@ -307,8 +307,17 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 	// TODO: support different build types.
 	cfg := &PureWheelBuild{}
-	var ref, dir string
 	var a *pypireg.Artifact
+	for _, art := range release.Artifacts {
+		if art.Filename == t.Artifact {
+			a = &art
+			break
+		}
+	}
+	if a == nil {
+		return cfg, errors.Errorf("artifact %s not found in release", t.Artifact)
+	}
+	var ref, dir string
 	lh, ok := hint.(*rebuild.LocationHint)
 	if hint != nil && !ok {
 		return nil, errors.Errorf("unsupported hint type: %T", hint)
@@ -327,16 +336,18 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		}
 		dir = rcfg.Dir
 	}
+	loc := rebuild.Location{Repo: rcfg.URI, Dir: dir, Ref: ref}
+	s, err := inferBuild(ctx, t, mux, rcfg, release, a, loc)
+	if err != nil {
+		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc, Published: a.UploadTime}, Err: err}
+	}
+	return s, nil
+}
 
-	for _, art := range release.Artifacts {
-		if art.Filename == t.Artifact {
-			a = &art
-			break
-		}
-	}
-	if a == nil {
-		return cfg, errors.Errorf("artifact %s not found in release", t.Artifact)
-	}
+// inferBuild chooses the wheel or sdist build for a resolved location.
+func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, rcfg *rebuild.RepoConfig, release *pypireg.Release, a *pypireg.Artifact, loc rebuild.Location) (rebuild.Strategy, error) {
+	name, version := t.Package, t.Version
+	ref, dir := loc.Ref, loc.Dir
 	log.Printf("Downloading artifact: %s", a.URL)
 	r, err := mux.PyPI.Artifact(ctx, name, version, a.Filename)
 	if err != nil {
@@ -354,7 +365,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		}
 		reqs, err = inferRequirements(release.Name, version, zr)
 		if err != nil {
-			return cfg, err
+			return nil, err
 		}
 	} else if strings.HasSuffix(a.Filename, ".tar.gz") {
 		// For .tar.gz files (source distributions), we don't infer requirements from the archive
@@ -365,11 +376,11 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	{
 		commit, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref))
 		if err != nil {
-			return cfg, errors.Wrapf(err, "Failed to get commit object")
+			return nil, errors.Wrapf(err, "Failed to get commit object")
 		}
 		tree, err := commit.Tree()
 		if err != nil {
-			return cfg, errors.Wrapf(err, "Failed to get tree")
+			return nil, errors.Wrapf(err, "Failed to get tree")
 		}
 		newFoundDir, err := pypiresolver.DiscoverBuildDir(ctx, tree, name, version, dir)
 		if err != nil {

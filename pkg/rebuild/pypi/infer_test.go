@@ -7,11 +7,14 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/gitx"
+	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
@@ -330,5 +333,63 @@ func TestPythonTag(t *testing.T) {
 		if got := pythonTag(tc.filename, tc.reqs); got != tc.want {
 			t.Errorf("pythonTag(%q, %v) = %q, want %q", tc.filename, tc.reqs, got, tc.want)
 		}
+	}
+}
+
+func TestInferStrategyLocatedError(t *testing.T) {
+	const releaseURL = "https://pypi.org/pypi/test-package/1.0.0/json"
+	const wheelURL = "https://files.pythonhosted.org/test_package-1.0.0-py3-none-any.whl"
+	release := func(urls string) string {
+		return `{"info":{"name":"test-package","version":"1.0.0"},"urls":[` + urls + `]}`
+	}
+	wheel := `{"filename":"test_package-1.0.0-py3-none-any.whl","url":"` + wheelURL + `","size":9,"upload_time_iso_8601":"2023-01-01T12:00:00.000000Z"}`
+	for _, tc := range []struct {
+		name        string
+		calls       []httpxtest.Call
+		wantLocated bool // the error carries the resolved location
+	}{
+		{
+			name: "artifact missing from the release",
+			calls: []httpxtest.Call{
+				{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(release(""))}},
+			},
+		},
+		{
+			name: "unreadable wheel",
+			calls: []httpxtest.Call{
+				{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(release(wheel))}},
+				{URL: releaseURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(release(wheel))}},
+				{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: httpxtest.Body("not a zip")}},
+			},
+			wantLocated: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: initial-commit
+    files:
+      README.md: |
+        # test-package
+`, nil))
+			ref := repo.Commits["initial-commit"].String()
+			target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "test-package", Version: "1.0.0", Artifact: "test_package-1.0.0-py3-none-any.whl"}
+			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{Calls: tc.calls, URLValidator: httpxtest.NewURLValidator(t)}}}
+			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, URI: "https://github.com/test-org/test-package"}
+			s, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, &rebuild.LocationHint{Location: rebuild.Location{Repo: rcfg.URI, Ref: ref}})
+			if err == nil {
+				t.Fatalf("InferStrategy expected error, got %v", s)
+			}
+			var located *rebuild.InferenceError
+			if errors.As(err, &located) != tc.wantLocated {
+				t.Fatalf("located error = %v, want %v: %v", !tc.wantLocated, tc.wantLocated, err)
+			}
+			if !tc.wantLocated {
+				return
+			}
+			want := rebuild.InferenceErrorDetail{Location: rebuild.Location{Repo: rcfg.URI, Ref: ref}, Published: time.Date(2023, time.January, 1, 12, 0, 0, 0, time.UTC)}
+			if diff := cmp.Diff(want, located.Detail); diff != "" {
+				t.Errorf("located detail diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

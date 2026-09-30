@@ -100,18 +100,12 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}
 		return nil, errors.Errorf("no git ref")
 	}
+	loc := rebuild.Location{Repo: repoConfig.URI, Dir: dir, Ref: ref}
 	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching JDK")
+		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc}, Err: errors.Wrap(err, "fetching JDK")}
 	}
-	return &MavenBuild{
-		Location: rebuild.Location{
-			Repo: repoConfig.URI,
-			Dir:  dir,
-			Ref:  ref,
-		},
-		JDKVersion: jdk,
-	}, nil
+	return &MavenBuild{Location: loc, JDKVersion: jdk}, nil
 }
 
 // findBuildDir is a helper that checks if a given commit contains a valid pom.xml for the package.
