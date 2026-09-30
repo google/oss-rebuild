@@ -107,8 +107,9 @@ resource "google_project_service" "run" {
   service = "run.googleapis.com"
 }
 resource "google_cloud_run_v2_service" "gateway" {
-  name     = "gateway"
-  location = "us-central1"
+  name                = "gateway"
+  location            = "us-central1"
+  deletion_protection = false
   template {
     service_account = google_service_account.gateway.email
     timeout         = "${5 * 60}s" // 5 minutes
@@ -128,8 +129,9 @@ resource "google_cloud_run_v2_service" "gateway" {
   depends_on = [google_project_service.run]
 }
 resource "google_cloud_run_v2_service" "git-cache" {
-  name     = "git-cache"
-  location = "us-central1"
+  name                = "git-cache"
+  location            = "us-central1"
+  deletion_protection = false
   template {
     service_account = google_service_account.git-cache.email
     timeout         = "${60 * 60}s" // 60 minutes
@@ -150,8 +152,9 @@ resource "google_cloud_run_v2_service" "git-cache" {
   depends_on = [google_project_service.run]
 }
 resource "google_cloud_run_v2_service" "inference" {
-  name     = "inference"
-  location = "us-central1"
+  name                = "inference"
+  location            = "us-central1"
+  deletion_protection = false
   template {
     service_account = google_service_account.inference.email
     timeout         = "${14 * 60}s" // 14 minutes
@@ -176,8 +179,9 @@ resource "google_cloud_run_v2_service" "inference" {
   depends_on = [google_project_service.run]
 }
 resource "google_cloud_run_v2_service" "crates-registry" {
-  name     = "crates-registry"
-  location = "us-central1"
+  name                = "crates-registry"
+  location            = "us-central1"
+  deletion_protection = false
   template {
     service_account = google_service_account.crates-registry.email
     timeout         = "${45 * 60}s" // 45 minutes
@@ -214,8 +218,9 @@ resource "google_cloud_run_v2_service" "crates-registry" {
 }
 
 resource "google_cloud_run_v2_service" "orchestrator" {
-  name     = "api"
-  location = "us-central1"
+  name                = "api"
+  location            = "us-central1"
+  deletion_protection = false
   template {
     service_account = google_service_account.orchestrator.email
     timeout         = "${59 * 60}s" // 59 minutes
@@ -264,9 +269,10 @@ resource "google_cloud_run_v2_service" "orchestrator" {
   depends_on = [google_project_service.run, module.prebuild_binaries]
 }
 resource "google_cloud_run_v2_service" "network-analyzer" {
-  count    = var.enable_network_analyzer ? 1 : 0
-  name     = "network-analyzer"
-  location = "us-central1"
+  count               = var.enable_network_analyzer ? 1 : 0
+  name                = "network-analyzer"
+  location            = "us-central1"
+  deletion_protection = false
   template {
     service_account = google_service_account.network-analyzer[0].email
     timeout         = "${59 * 60}s" // 59 minutes
@@ -300,9 +306,10 @@ resource "google_cloud_run_v2_service" "network-analyzer" {
   depends_on = [google_project_service.run]
 }
 resource "google_cloud_run_v2_service" "network-subscriber" {
-  count    = var.enable_network_analyzer ? 1 : 0
-  name     = "network-subscriber"
-  location = "us-central1"
+  count               = var.enable_network_analyzer ? 1 : 0
+  name                = "network-subscriber"
+  location            = "us-central1"
+  deletion_protection = false
   template {
     service_account = google_service_account.network-analyzer[0].email
     timeout         = "${2 * 60}s" // 2 minutes
@@ -325,9 +332,10 @@ resource "google_cloud_run_v2_service" "network-subscriber" {
   depends_on = [google_project_service.run]
 }
 resource "google_cloud_run_v2_service" "system-analyzer" {
-  count    = var.enable_system_analyzer ? 1 : 0
-  name     = "system-analyzer"
-  location = "us-central1"
+  count               = var.enable_system_analyzer ? 1 : 0
+  name                = "system-analyzer"
+  location            = "us-central1"
+  deletion_protection = false
   template {
     service_account = google_service_account.system-analyzer[0].email
     timeout         = "${59 * 60}s" // 59 minutes
@@ -361,9 +369,10 @@ resource "google_cloud_run_v2_service" "system-analyzer" {
   depends_on = [google_project_service.run]
 }
 resource "google_cloud_run_v2_service" "system-subscriber" {
-  count    = var.enable_system_analyzer ? 1 : 0
-  name     = "system-subscriber"
-  location = "us-central1"
+  count               = var.enable_system_analyzer ? 1 : 0
+  name                = "system-subscriber"
+  location            = "us-central1"
+  deletion_protection = false
   template {
     service_account = google_service_account.system-analyzer[0].email
     timeout         = "${2 * 60}s" // 2 minutes
@@ -386,8 +395,9 @@ resource "google_cloud_run_v2_service" "system-subscriber" {
   depends_on = [google_project_service.run]
 }
 resource "google_cloud_run_v2_service" "agent-api" {
-  name     = "agent-api"
-  location = "us-central1"
+  name                = "agent-api"
+  location            = "us-central1"
+  deletion_protection = false
   template {
     service_account = google_service_account.orchestrator.email
     timeout         = "${59 * 60}s" // 59 minutes
