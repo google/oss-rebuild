@@ -152,6 +152,9 @@ func AsStatus(code codes.Code, err error, details ...proto.Message) error {
 	}
 	p := s.Proto()
 	for _, detail := range details {
+		if detail == nil {
+			continue
+		}
 		m, err := anypb.New(detail)
 		if err != nil {
 			log.Printf("Skipping detail which failed to convert: detail=%v,err=%v", detail, err)
