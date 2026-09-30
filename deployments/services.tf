@@ -16,7 +16,7 @@ resource "google_cloudbuild_worker_pool" "private-pool" {
     disk_size_gb = 100
   }
   dynamic "network_config" {
-    for_each = var.enable_vpc ? [1] : []
+    for_each = var.enable_private_pool_peering ? [1] : []
     content {
       peered_network          = google_compute_network.vpc[0].id
       peered_network_ip_range = "/22" # 1k IPs
@@ -33,7 +33,7 @@ resource "google_cloudbuild_worker_pool" "jumbo-pool" {
     disk_size_gb = 500
   }
   dynamic "network_config" {
-    for_each = var.enable_vpc ? [1] : []
+    for_each = var.enable_private_pool_peering ? [1] : []
     content {
       peered_network          = google_compute_network.vpc[0].id
       peered_network_ip_range = "/22" # 1k IPs
