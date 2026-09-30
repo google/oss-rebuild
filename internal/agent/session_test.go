@@ -18,6 +18,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/build/scratch"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 )
 
 type fakeAgent struct {
@@ -26,9 +27,17 @@ type fakeAgent struct {
 	// non-zero, usage advances by it on each Propose to emulate token spend.
 	usage        schema.TokenUsage
 	proposeUsage schema.TokenUsage
+	// proposeErr fails every Propose once proposeOK of them have succeeded.
+	proposeErr error
+	proposeOK  int
+	proposes   int
 }
 
 func (a *fakeAgent) Propose(context.Context, *ProposeOpts) (*schema.StrategyOneOf, error) {
+	a.proposes++
+	if a.proposeErr != nil && a.proposes > a.proposeOK {
+		return nil, a.proposeErr
+	}
 	a.usage = a.usage.Add(a.proposeUsage)
 	return a.strategy, nil
 }
@@ -182,5 +191,39 @@ func TestDoIterationScratchSuccessConfirms(t *testing.T) {
 	}
 	if iter.ID != "confirm-1" || iter.Status != schema.AgentIterationStatusSuccess {
 		t.Errorf("returned iteration = %+v, want the confirmation iteration", iter)
+	}
+}
+
+func TestRunIterationsProposalFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		agent        *fakeAgent
+		wantReason   string
+		wantSummary  string // a prefix
+		wantProposes int
+		wantBuilds   int
+	}{
+		{"a heuristic failure before any build ends the session", &fakeAgent{proposeErr: errors.New("no valid git ref")}, schema.AgentCompleteReasonFailed, "Inference failed: ", 1, 0},
+		{"a transient failure is retried until throttled", &fakeAgent{proposeErr: genai.APIError{Code: 429, Message: "Resource exhausted"}}, schema.AgentCompleteReasonThrottled, "", 3, 0},
+		// Once a build has run the proposal comes from the model and may differ
+		// next time, so a failure spends only its own iteration.
+		{"a failure after a build spends only its iteration", &fakeAgent{strategy: testStrategy(), proposeErr: errors.New("hypothesize: chat error"), proposeOK: 1}, schema.AgentCompleteReasonFailed, "Maximum iterations", 3, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var builds int
+			deps := RunSessionDeps{
+				IterationStub: func(context.Context, schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
+					builds++
+					return &schema.AgentCreateIterationResponse{Iteration: &schema.AgentIteration{Status: schema.AgentIterationStatusFailed}}, nil
+				},
+			}
+			got := runIterations(context.Background(), RunSessionReq{SessionID: "sess", MaxIterations: 3}, 0, tc.agent, deps)
+			if got.StopReason != tc.wantReason || !strings.HasPrefix(got.Summary, tc.wantSummary) {
+				t.Errorf("verdict = %s %q, want %s %q", got.StopReason, got.Summary, tc.wantReason, tc.wantSummary)
+			}
+			if tc.agent.proposes != tc.wantProposes || builds != tc.wantBuilds {
+				t.Errorf("proposes, builds = %d, %d; want %d, %d", tc.agent.proposes, builds, tc.wantProposes, tc.wantBuilds)
+			}
+		})
 	}
 }
