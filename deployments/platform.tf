@@ -451,8 +451,9 @@ resource "google_pubsub_subscription" "system-analyzer-feed" {
 ## Network resources
 
 locals {
-  # Scratch VMs live on the subnet, and peered private pools reach into it.
-  enable_vpc = var.enable_scratch || var.enable_private_pool_peering
+  # Scratch VMs live on the subnet, peered private pools reach into it, and
+  # under internal ingress Cloud Run calls route through it.
+  enable_vpc = var.enable_scratch || var.enable_private_pool_peering || var.enable_internal_ingress
 }
 resource "google_project_service" "servicenetworking" {
   count   = var.enable_private_pool_peering ? 1 : 0
@@ -466,9 +467,12 @@ resource "google_compute_network" "vpc" {
 resource "google_compute_subnetwork" "subnet" {
   count         = local.enable_vpc ? 1 : 0
   name          = "${var.host}-rebuild-subnet"
-  ip_cidr_range = "10.10.1.0/24"
+  ip_cidr_range = "10.10.0.0/20" # Large range supports 20m cleanup latency
   region        = "us-central1"
   network       = google_compute_network.vpc[0].name
+  # Under internal ingress, run.app and Google API traffic must take the
+  # private path to classify as internal.
+  private_ip_google_access = var.enable_internal_ingress
 }
 resource "google_service_networking_connection" "private_service_access" {
   count                   = var.enable_private_pool_peering ? 1 : 0
@@ -501,6 +505,41 @@ resource "google_compute_router_nat" "nat" {
   # Auto-allocate for all IPs
   nat_ip_allocate_option             = "AUTO_ONLY"
   source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+}
+# run.app resolves to public front-end IPs, so with a NAT present that traffic
+# would egress publicly and be classified external at internal-ingress
+# services. A private zone pins run.app to the Private Google Access VIPs,
+# whose route below takes the private path.
+resource "google_project_service" "dns" {
+  count   = var.enable_internal_ingress ? 1 : 0
+  service = "dns.googleapis.com"
+}
+resource "google_dns_managed_zone" "run-app" {
+  count      = var.enable_internal_ingress ? 1 : 0
+  name       = "${var.host}-rebuild-run-app"
+  dns_name   = "run.app."
+  visibility = "private"
+  private_visibility_config {
+    networks {
+      network_url = google_compute_network.vpc[0].id
+    }
+  }
+  depends_on = [google_project_service.dns]
+}
+resource "google_dns_record_set" "run-app-private-vip" {
+  count        = var.enable_internal_ingress ? 1 : 0
+  managed_zone = google_dns_managed_zone.run-app[0].name
+  name         = "*.run.app."
+  type         = "A"
+  ttl          = 300
+  rrdatas      = ["199.36.153.8", "199.36.153.9", "199.36.153.10", "199.36.153.11"]
+}
+resource "google_compute_route" "private-googleapis" {
+  count            = var.enable_internal_ingress ? 1 : 0
+  name             = "${var.host}-rebuild-private-googleapis"
+  network          = google_compute_network.vpc[0].name
+  dest_range       = "199.36.153.8/30"
+  next_hop_gateway = "default-internet-gateway"
 }
 resource "google_compute_firewall" "allow_internal" {
   count   = var.enable_private_pool_peering ? 1 : 0

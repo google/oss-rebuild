@@ -119,6 +119,11 @@ variable "enable_scratch" {
   description = "Whether to deploy scratch VMs for agent-driven iterative builds."
   default     = false
 }
+variable "enable_internal_ingress" {
+  type        = bool
+  description = "Whether to restrict Cloud Run services to internal ingress, routing calls between them through the VPC."
+  default     = false
+}
 variable "build_def_repo" {
   type        = string
   description = "Repository URI containing rebuild build definitions"
