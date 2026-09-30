@@ -114,9 +114,14 @@ resource "google_compute_instance_template" "scratch" {
 resource "google_project_service" "run" {
   service = "run.googleapis.com"
 }
+locals {
+  # Calls from Cloud Run can only reach internal-ingress services if VPC routed.
+  cloud_run_ingress = var.enable_internal_ingress ? "INGRESS_TRAFFIC_INTERNAL_ONLY" : "INGRESS_TRAFFIC_ALL"
+}
 resource "google_cloud_run_v2_service" "gateway" {
   name                = "gateway"
   location            = "us-central1"
+  ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.gateway.email
@@ -139,6 +144,7 @@ resource "google_cloud_run_v2_service" "gateway" {
 resource "google_cloud_run_v2_service" "git-cache" {
   name                = "git-cache"
   location            = "us-central1"
+  ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.git-cache.email
@@ -162,6 +168,7 @@ resource "google_cloud_run_v2_service" "git-cache" {
 resource "google_cloud_run_v2_service" "inference" {
   name                = "inference"
   location            = "us-central1"
+  ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.inference.email
@@ -182,6 +189,16 @@ resource "google_cloud_run_v2_service" "inference" {
         }
       }
     }
+    dynamic "vpc_access" {
+      for_each = var.enable_internal_ingress ? [1] : []
+      content {
+        network_interfaces {
+          network    = google_compute_network.vpc[0].name
+          subnetwork = google_compute_subnetwork.subnet[0].name
+        }
+        egress = "ALL_TRAFFIC"
+      }
+    }
     scaling { max_instance_count = 100 }
     max_instance_request_concurrency = 1
   }
@@ -190,6 +207,7 @@ resource "google_cloud_run_v2_service" "inference" {
 resource "google_cloud_run_v2_service" "crates-registry" {
   name                = "crates-registry"
   location            = "us-central1"
+  ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.crates-registry.email
@@ -221,6 +239,16 @@ resource "google_cloud_run_v2_service" "crates-registry" {
         size_limit = "12Gi"
       }
     }
+    dynamic "vpc_access" {
+      for_each = var.enable_internal_ingress ? [1] : []
+      content {
+        network_interfaces {
+          network    = google_compute_network.vpc[0].name
+          subnetwork = google_compute_subnetwork.subnet[0].name
+        }
+        egress = "ALL_TRAFFIC"
+      }
+    }
     max_instance_request_concurrency = 10
   }
   depends_on = [google_project_service.run]
@@ -229,6 +257,7 @@ resource "google_cloud_run_v2_service" "crates-registry" {
 resource "google_cloud_run_v2_service" "orchestrator" {
   name                = "api"
   location            = "us-central1"
+  ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.orchestrator.email
@@ -274,6 +303,16 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         }
       }
     }
+    dynamic "vpc_access" {
+      for_each = var.enable_internal_ingress ? [1] : []
+      content {
+        network_interfaces {
+          network    = google_compute_network.vpc[0].name
+          subnetwork = google_compute_subnetwork.subnet[0].name
+        }
+        egress = "ALL_TRAFFIC"
+      }
+    }
     max_instance_request_concurrency = 25
   }
   depends_on = [google_project_service.run, module.prebuild_binaries]
@@ -282,6 +321,7 @@ resource "google_cloud_run_v2_service" "network-analyzer" {
   count               = var.enable_network_analyzer ? 1 : 0
   name                = "network-analyzer"
   location            = "us-central1"
+  ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.network-analyzer[0].email
@@ -319,6 +359,7 @@ resource "google_cloud_run_v2_service" "network-subscriber" {
   count               = var.enable_network_analyzer ? 1 : 0
   name                = "network-subscriber"
   location            = "us-central1"
+  ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.network-analyzer[0].email
@@ -337,6 +378,16 @@ resource "google_cloud_run_v2_service" "network-subscriber" {
         }
       }
     }
+    dynamic "vpc_access" {
+      for_each = var.enable_internal_ingress ? [1] : []
+      content {
+        network_interfaces {
+          network    = google_compute_network.vpc[0].name
+          subnetwork = google_compute_subnetwork.subnet[0].name
+        }
+        egress = "ALL_TRAFFIC"
+      }
+    }
     scaling { max_instance_count = 1 }
   }
   depends_on = [google_project_service.run]
@@ -345,6 +396,7 @@ resource "google_cloud_run_v2_service" "system-analyzer" {
   count               = var.enable_system_analyzer ? 1 : 0
   name                = "system-analyzer"
   location            = "us-central1"
+  ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.system-analyzer[0].email
@@ -382,6 +434,7 @@ resource "google_cloud_run_v2_service" "system-subscriber" {
   count               = var.enable_system_analyzer ? 1 : 0
   name                = "system-subscriber"
   location            = "us-central1"
+  ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.system-analyzer[0].email
@@ -400,6 +453,16 @@ resource "google_cloud_run_v2_service" "system-subscriber" {
         }
       }
     }
+    dynamic "vpc_access" {
+      for_each = var.enable_internal_ingress ? [1] : []
+      content {
+        network_interfaces {
+          network    = google_compute_network.vpc[0].name
+          subnetwork = google_compute_subnetwork.subnet[0].name
+        }
+        egress = "ALL_TRAFFIC"
+      }
+    }
     scaling { max_instance_count = 1 }
   }
   depends_on = [google_project_service.run]
@@ -407,6 +470,7 @@ resource "google_cloud_run_v2_service" "system-subscriber" {
 resource "google_cloud_run_v2_service" "agent-api" {
   name                = "agent-api"
   location            = "us-central1"
+  ingress             = local.cloud_run_ingress
   deletion_protection = false
   template {
     service_account = google_service_account.orchestrator.email
@@ -476,6 +540,16 @@ resource "google_cloud_run_v2_job" "agent" {
           }
         }
       }
+      dynamic "vpc_access" {
+        for_each = var.enable_internal_ingress ? [1] : []
+        content {
+          network_interfaces {
+            network    = google_compute_network.vpc[0].name
+            subnetwork = google_compute_subnetwork.subnet[0].name
+          }
+          egress = "ALL_TRAFFIC"
+        }
+      }
     }
   }
   lifecycle {
@@ -502,6 +576,16 @@ resource "google_cloud_run_v2_job" "rebuild-job" {
             cpu    = "1000m"
             memory = "512Mi"
           }
+        }
+      }
+      dynamic "vpc_access" {
+        for_each = var.enable_internal_ingress ? [1] : []
+        content {
+          network_interfaces {
+            network    = google_compute_network.vpc[0].name
+            subnetwork = google_compute_subnetwork.subnet[0].name
+          }
+          egress = "ALL_TRAFFIC"
         }
       }
     }
