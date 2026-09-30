@@ -635,6 +635,19 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 	if len(a.iterHistory) == 0 {
 		return nil, errors.New("proposeAgentInferece needs an previous iteration to work off of")
 	}
+	// Use a fresh chat per iteration. The history carries prior thoughts but
+	// the content of tool calls and results across iterations accumulates too
+	// fast and overflows the model's input.
+	if a.deps.ChatFn != nil {
+		if a.deps.Chat != nil {
+			a.sideUsage = a.sideUsage.Add(sumTokenUsage(a.deps.Chat.Usage(), a.deps.Chat.Model()))
+		}
+		chat, err := a.deps.ChatFn(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "starting chat")
+		}
+		a.deps.Chat = chat
+	}
 	prev := a.execDetails(ctx, a.iterHistory[len(a.iterHistory)-1])
 	thought := thoughtData{
 		BasedOnIteration: len(a.iterHistory) - 1,
