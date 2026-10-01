@@ -128,7 +128,7 @@ func (p *DockerBuildPlanner) GeneratePlan(ctx context.Context, input rebuild.Inp
 
 // generateDockerfile creates a Dockerfile from rebuild instructions and options using templates
 func (p *DockerBuildPlanner) generateDockerfile(input rebuild.Input, instructions rebuild.Instructions, opts build.PlanOptions) (string, error) {
-	baseImage := opts.Resources.BaseImageConfig.SelectFor(input)
+	baseImage := opts.Resources.BaseImageConfig.SelectFor(input, instructions.Requires)
 
 	// Detect OS and get package manager commands
 	os := build.DetectOS(baseImage)

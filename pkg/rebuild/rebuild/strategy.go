@@ -31,6 +31,7 @@ func DirOf(p string) string {
 
 // RequiredEnv describes any required properties about the build environment
 type RequiredEnv struct {
+	BaseImage  string   `json:"base_image,omitempty" yaml:"base_image,omitempty"`
 	SystemDeps []string `json:"system_deps" yaml:"system_deps,omitempty"`
 	// Privileged is true if this build definition requires elevated privileges
 	Privileged bool `json:"privileged,omitempty" yaml:"privileged,omitempty"`

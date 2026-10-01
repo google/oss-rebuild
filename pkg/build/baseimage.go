@@ -10,7 +10,10 @@ type BaseImageConfig struct {
 	Ecosystems map[rebuild.Ecosystem]string `json:"ecosystems"`
 }
 
-func (c BaseImageConfig) SelectFor(input rebuild.Input) string {
+func (c BaseImageConfig) SelectFor(input rebuild.Input, req rebuild.RequiredEnv) string {
+	if req.BaseImage != "" {
+		return req.BaseImage
+	}
 	if img, ok := c.Ecosystems[input.Target.Ecosystem]; ok {
 		return img
 	}
