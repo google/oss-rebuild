@@ -29,6 +29,8 @@ var (
 	versionHTML string
 	//go:embed attempt.gohtml
 	attemptHTML string
+	//go:embed session.gohtml
+	sessionHTML string
 	//go:embed logs.gohtml
 	logsHTML string
 	//go:embed packages.gohtml
@@ -64,6 +66,7 @@ var (
 	PackageTmpl   *template.Template
 	VersionTmpl   *template.Template
 	AttemptTmpl   *template.Template
+	SessionTmpl   *template.Template
 	LogsTmpl      *template.Template
 	PackagesTmpl  *template.Template
 	ResourcesTmpl *template.Template
@@ -81,6 +84,7 @@ func init() {
 	PackageTmpl = template.Must(template.New("package").Parse(headerHTML + packageHTML))
 	VersionTmpl = template.Must(template.New("version").Parse(headerHTML + versionHTML))
 	AttemptTmpl = template.Must(template.New("attempt").Parse(headerHTML + attemptHTML))
+	SessionTmpl = template.Must(template.New("session").Parse(headerHTML + sessionHTML))
 	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
 	PackagesTmpl = template.Must(template.New("packages").Parse(headerHTML + packagesHTML))
 	ResourcesTmpl = template.Must(template.New("resources").Parse(headerHTML + resourcesHTML))

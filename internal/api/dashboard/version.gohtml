@@ -42,7 +42,7 @@
     {{range .Sessions}}
     <div class="session">
         <div class="session-head">
-            <span class="session-id">{{.ID}}</span>
+            <a class="session-id" href="/session/{{.ID}}">{{.ID}}</a>
             {{if eq .StopReason "SUCCESS"}}<span class="status-success">Success</span>
             {{else if .StopReason}}<span class="status-fail">{{.StopReason}}</span>
             {{else if eq .Status "RUNNING"}}<span class="status-running">Running</span>
