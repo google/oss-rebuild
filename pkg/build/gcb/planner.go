@@ -256,6 +256,8 @@ var gcbDockerfileTpl = template.Must(
 			{{- if .UseTimewarp}}
 			 {{- if eq .OS "alpine"}}
 			 {{.PackageManager.InstallCommand (list "curl")}}
+			 {{- else if eq .OS "centos"}}
+			 {{.PackageManager.InstallCommand (list "curl" "nmap-ncat")}}
 			 {{- else}}
 			 {{.PackageManager.UpdateCmd}}
 			 {{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}

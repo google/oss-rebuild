@@ -212,6 +212,31 @@ func TestDetectOS(t *testing.T) {
 			want:      CentOS,
 		},
 		{
+			name:      "manylinux2014",
+			baseImage: "quay.io/pypa/manylinux2014_x86_64",
+			want:      CentOS,
+		},
+		{
+			name:      "manylinux_2_28",
+			baseImage: "quay.io/pypa/manylinux_2_28_x86_64",
+			want:      CentOS,
+		},
+		{
+			name:      "musllinux_1_1",
+			baseImage: "quay.io/pypa/musllinux_1_1_x86_64",
+			want:      Alpine,
+		},
+		{
+			name:      "musllinux_1_2",
+			baseImage: "quay.io/pypa/musllinux_1_2_x86_64",
+			want:      Alpine,
+		},
+		{
+			name:      "AlmaLinux",
+			baseImage: "docker.io/library/almalinux:8",
+			want:      CentOS,
+		},
+		{
 			name:      "Unknown image defaults to Alpine",
 			baseImage: "scratch",
 			want:      Alpine,
