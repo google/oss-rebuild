@@ -18,6 +18,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -41,6 +42,19 @@ func (f *sessionFixtureReader) FetchIterations(context.Context, *rundex.FetchIte
 func TestSessionHandler(t *testing.T) {
 	ctx := context.Background()
 	created := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	execs := db.NewMemoryScratchExecs()
+	if err := execs.Insert(ctx, schema.ScratchExec{
+		ID:         "op-1",
+		ScratchID:  "scr-1",
+		Cmd:        []string{"sh", "-c", "docker build ."},
+		State:      schema.ScratchExecCompleted,
+		OutURI:     "gs://out-bucket/obliv/op-1/out",
+		CreatedAt:  created.Add(time.Minute),
+		StartedAt:  created.Add(time.Minute),
+		FinishedAt: created.Add(2 * time.Minute),
+	}); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
 	deps := &Deps{
 		Sessions: &sessionFixtureReader{
 			session: schema.AgentSession{
@@ -64,6 +78,7 @@ func TestSessionHandler(t *testing.T) {
 				Created:     created,
 			}},
 		},
+		Execs: execs,
 	}
 	got, err := Session(ctx, SessionRequest{ID: "sess-1"}, deps)
 	if err != nil {
@@ -79,6 +94,8 @@ func TestSessionHandler(t *testing.T) {
 		"lodash",
 		"Iteration 3",
 		"build ok",
+		"docker build .",
+		"/session/sess-1/exec/op-1/out",
 		"1K in (40% cached) / 250 out",
 	} {
 		if !strings.Contains(out, want) {

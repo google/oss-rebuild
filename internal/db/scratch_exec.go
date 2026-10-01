@@ -5,6 +5,7 @@ package db
 
 import (
 	"context"
+	"sort"
 
 	"cloud.google.com/go/firestore"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -19,6 +20,9 @@ type ScratchExecs interface {
 	// ListPending returns all execs with State == Pending. Backed by a
 	// single-field index on "state" in Firestore.
 	ListPending(ctx context.Context) ([]schema.ScratchExec, error)
+	// ListByScratch returns every exec dispatched to one scratch, ordered
+	// by CreatedAt.
+	ListByScratch(ctx context.Context, scratchID string) ([]schema.ScratchExec, error)
 }
 
 const scratchExecCollection = "scratch-execs"
@@ -64,6 +68,39 @@ func (f *firestoreScratchExecs) ListPending(ctx context.Context) ([]schema.Scrat
 	return out, nil
 }
 
+func (f *firestoreScratchExecs) ListByScratch(ctx context.Context, scratchID string) ([]schema.ScratchExec, error) {
+	iter := f.client.Collection(scratchExecCollection).
+		Where("scratch_id", "==", scratchID).
+		Documents(ctx)
+	defer iter.Stop()
+	var out []schema.ScratchExec
+	for {
+		snap, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		var r schema.ScratchExec
+		if err := snap.DataTo(&r); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	sortExecsByCreation(out)
+	return out, nil
+}
+
+func sortExecsByCreation(execs []schema.ScratchExec) {
+	sort.Slice(execs, func(i, j int) bool {
+		if !execs[i].CreatedAt.Equal(execs[j].CreatedAt) {
+			return execs[i].CreatedAt.Before(execs[j].CreatedAt)
+		}
+		return execs[i].ID < execs[j].ID
+	})
+}
+
 type memoryScratchExecs struct {
 	*memoryResource[schema.ScratchExec, string]
 }
@@ -86,5 +123,18 @@ func (m *memoryScratchExecs) ListPending(ctx context.Context) ([]schema.ScratchE
 			out = append(out, r)
 		}
 	}
+	return out, nil
+}
+
+func (m *memoryScratchExecs) ListByScratch(ctx context.Context, scratchID string) ([]schema.ScratchExec, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []schema.ScratchExec
+	for _, r := range m.data {
+		if r.ScratchID == scratchID {
+			out = append(out, r)
+		}
+	}
+	sortExecsByCreation(out)
 	return out, nil
 }

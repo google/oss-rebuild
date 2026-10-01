@@ -11,6 +11,7 @@ import (
 	"regexp"
 
 	"cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -89,7 +90,8 @@ type Deps struct {
 	Analytics     Analytics           // serves the snapshot-derived trend views
 	Registry      rebuild.RegistryMux // enumerates published versions for status
 
-	SessionsBucket string // agent chat transcripts, read by the session page
+	SessionsBucket string          // agent chat transcripts, read by the session page
+	Execs          db.ScratchExecs // the session page's exec ledger
 }
 
 type RebuildView struct {
