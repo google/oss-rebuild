@@ -1,0 +1,89 @@
+<!--
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+-->
+
+    <h2>Agent Session</h2>
+    <div class="session">
+        <div class="session-head">
+            <a href="/package/{{.Session.Encoded.Ecosystem}}/{{.Session.Encoded.Package}}/version/{{.Session.Encoded.Version}}"><strong>{{.Session.Target.Ecosystem}}:{{.Session.Target.Package}} {{.Session.Target.Version}}</strong></a>
+            {{if eq .Session.StopReason "SUCCESS"}}<span class="status-success">Success</span>
+            {{else if .Session.StopReason}}<span class="status-fail">{{.Session.StopReason}}</span>
+            {{else if eq .Session.Status "RUNNING"}}<span class="status-running">Running</span>
+            {{else}}<span>{{.Session.Status}}</span>{{end}}
+            <span class="badge">{{if .Session.ExecutionMode}}{{.Session.ExecutionMode}}{{else}}gcb{{end}}</span>
+            <span class="session-meta">{{if .Session.ExecutionName}}hosted{{else}}local{{end}} · {{.Session.Created.Format "2006-01-02 15:04:05"}}</span>
+        </div>
+        {{if .Session.Summary}}<div class="session-summary">{{.Session.Summary}}</div>{{end}}
+        <div class="kv">
+            <div><span class="kv-label">session</span><span class="kv-value mono" title="{{.Session.ID}}">{{.Session.ID}}</span></div>
+            {{if .Session.ScratchID}}<div><span class="kv-label">scratch</span><span class="kv-value mono" title="{{.Session.ScratchID}}">{{.Session.ScratchID}}</span></div>{{end}}
+            {{if .Session.Model}}<div><span class="kv-label">model</span><span class="kv-value">{{.Session.Model}}</span></div>{{end}}
+            <div><span class="kv-label">duration</span><span class="kv-value">{{if .Duration}}{{.Duration}}{{else}}n/a{{end}}</span></div>
+            {{if .Usage}}<div><span class="kv-label">tokens</span><span class="kv-value">{{.Usage}}</span></div>{{end}}
+            {{if .Session.MaxIterations}}<div><span class="kv-label">max iterations</span><span class="kv-value">{{.Session.MaxIterations}}</span></div>{{end}}
+            {{if .Session.RunID}}<div><span class="kv-label">run</span><span class="kv-value mono" title="{{.Session.RunID}}">{{.Session.RunID}}</span></div>{{end}}
+        </div>
+    </div>
+
+    {{range .Warnings}}<p class="hint">Warning: {{.}}</p>{{end}}
+
+    <h3>Trajectory</h3>
+    {{if .Trajectory}}
+    {{range .Trajectory}}
+    <div class="traj-iter">
+        <div class="traj-iter-head">
+            <strong>Iteration {{.Number}}</strong>
+            {{with .Record}}
+            <span class="session-meta">
+                {{.Status}}
+                {{if .Result}} · {{if .Result.BuildSuccess}}build ok{{else}}{{.Result.ErrorMessage}}{{end}}{{end}}
+                {{if .ObliviousID}} · build {{.ObliviousID}}{{end}}
+            </span>
+            {{end}}
+            {{if .RecordUsage}}<span class="session-meta"> · {{.RecordUsage}}</span>{{end}}
+        </div>
+        {{if .RecordStrategy}}
+        <details class="traj-body"><summary>show recorded strategy</summary><pre>{{.RecordStrategy}}</pre></details>
+        {{end}}
+        {{range .Events}}
+        <div class="traj-event kind-{{.Kind}}">
+            <div><span class="traj-kind">{{.Title}}</span>{{if not .At.IsZero}}<span class="traj-time">{{.At.Format "15:04:05"}}</span>{{end}}</div>
+            {{if .Command}}<pre>{{.Command}}</pre>{{end}}
+            {{if .Body}}
+                {{if .Open}}
+                <div class="traj-text">{{.Body}}</div>
+                {{else}}
+                <details class="traj-body"><summary>{{if .Note}}{{.Note}}{{else}}show{{end}}</summary><pre>{{.Body}}</pre></details>
+                {{end}}
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+    {{else}}
+    <p class="hint">No trajectory recorded.</p>
+    {{end}}
+
+    <h3>Scratch execs</h3>
+    {{if .Execs}}
+    <table>
+        <thead><tr><th>Queued</th><th>State</th><th>Exit</th><th>Duration</th><th>Command</th><th>Output</th></tr></thead>
+        <tbody>
+            {{range .Execs}}
+            <tr>
+                <td>{{.Queued}}</td>
+                <td><span class="{{.StateClass}}">{{.State}}</span></td>
+                <td>{{.ExitCode}}</td>
+                <td>{{.Duration}}</td>
+                <td><details class="traj-body"><summary><code>{{printf "%.80s" .CmdLine}}</code></summary><pre>{{.CmdLine}}</pre>{{if .ErrorMsg}}<p class="hint">{{.ErrorMsg}}</p>{{end}}</details></td>
+                <td>{{if .OutPath}}<a href="{{.OutPath}}">raw</a>{{else}}n/a{{end}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="hint">No scratch execs recorded.</p>
+    {{end}}
+</body>
+</html>
