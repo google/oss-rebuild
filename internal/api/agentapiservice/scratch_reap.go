@@ -109,22 +109,14 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		if deps.Syncer != nil {
 			syncPendingFor(ctx, deps, scratch, pending)
 		}
-		// Re-check before the destructive step: an exec dispatched after
-		// the idle snapshot bumps LastUsed, and tearing down its scratch
-		// would orphan it.
+		// Re-read before the destructive step: an exec dispatched since
+		// the listing bumped LastUsed, and a create may have moved on.
 		cur, err := deps.Scratches.Get(ctx, scratch.ID)
 		if err != nil {
 			log.Printf("reap re-check scratch %s: %v", scratch.ID, err)
 			continue
 		}
-		isIdle := false
-		switch cur.State {
-		case schema.ScratchReady:
-			isIdle = cur.LastUsed.Before(idleCutoff)
-		case schema.ScratchStarting, schema.ScratchDeleting:
-			isIdle = cur.Updated.Before(idleCutoff)
-		}
-		if !isIdle {
+		if !db.ScratchIdleSince(cur, idleCutoff) {
 			continue
 		}
 		if err := teardownScratch(ctx, deps, scratch); err != nil {
