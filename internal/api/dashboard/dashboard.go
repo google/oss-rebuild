@@ -88,6 +88,8 @@ type Deps struct {
 	SuccessRegex  *regexp.Regexp
 	Analytics     Analytics           // serves the snapshot-derived trend views
 	Registry      rebuild.RegistryMux // enumerates published versions for status
+
+	SessionsBucket string // agent chat transcripts, read by the session page
 }
 
 type RebuildView struct {

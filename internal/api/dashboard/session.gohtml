@@ -46,6 +46,19 @@
         {{if .RecordStrategy}}
         <details class="traj-body"><summary>show recorded strategy</summary><pre>{{.RecordStrategy}}</pre></details>
         {{end}}
+        {{range .Events}}
+        <div class="traj-event kind-{{.Kind}}">
+            <div><span class="traj-kind">{{.Title}}</span>{{if not .At.IsZero}}<span class="traj-time">{{.At.Format "15:04:05"}}</span>{{end}}</div>
+            {{if .Command}}<pre>{{.Command}}</pre>{{end}}
+            {{if .Body}}
+                {{if .Open}}
+                <div class="traj-text">{{.Body}}</div>
+                {{else}}
+                <details class="traj-body"><summary>{{if .Note}}{{.Note}}{{else}}show{{end}}</summary><pre>{{.Body}}</pre></details>
+                {{end}}
+            {{end}}
+        </div>
+        {{end}}
     </div>
     {{end}}
     {{else}}
