@@ -199,6 +199,9 @@ func main() {
 			RunID:     r.PathValue("runid"),
 		}, nil
 	}, api.HTMLHandler(DashboardInit, dashboard.Logs, dashboard.LogsTmpl)))
+	http.HandleFunc("/session/{id}", api.Translate(func(r *http.Request) (dashboard.SessionRequest, error) {
+		return dashboard.SessionRequest{ID: r.PathValue("id")}, nil
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Session), dashboard.SessionTmpl)))
 	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}/build-logs/raw/", func(w http.ResponseWriter, r *http.Request) {
 		deps, err := DashboardInit(r.Context())
 		if err != nil {
