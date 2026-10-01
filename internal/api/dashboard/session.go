@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -58,16 +60,29 @@ type IterationGroup struct {
 	RecordUsage    string
 }
 
+// ExecView pairs a scratch exec with its pre-formatted display fields.
+type ExecView struct {
+	schema.ScratchExec
+	CmdLine    string
+	Queued     string
+	Duration   string
+	ErrorMsg   string
+	StateClass string // status-success | status-fail | status-running
+	OutPath    string // dashboard route streaming the raw output object
+}
+
 type SessionData struct {
 	Session    SessionView
 	Duration   string
 	Usage      string
 	Trajectory []IterationGroup
+	Execs      []ExecView
 	Warnings   []string
 }
 
 // Session renders one agent session's trajectory: the session record joined
-// with its iteration records and the chat transcript dump.
+// with its iteration records, the chat transcript dump, and the scratch exec
+// ledger.
 func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData, error) {
 	sessions, err := deps.Sessions.FetchSessions(ctx, &rundex.FetchSessionsReq{IDs: []string{req.ID}})
 	if err != nil {
@@ -108,12 +123,31 @@ func Session(ctx context.Context, req SessionRequest, deps *Deps) (*SessionData,
 		}
 		g.RecordUsage = usageString(iters[i].Usage)
 	}
+	// The transcript and the exec ledger live in different stores and
+	// neither load informs the other, so they run together.
+	var (
+		wg            sync.WaitGroup
+		transcriptErr error
+		execs         []schema.ScratchExec
+		execErr       error
+	)
 	if deps.GCSClient != nil && deps.SessionsBucket != "" {
-		if err := loadTranscript(ctx, deps, s.ID, groupFor); err != nil {
-			data.Warnings = append(data.Warnings, fmt.Sprintf("loading transcript: %v", err))
-		}
+		wg.Go(func() { transcriptErr = loadTranscript(ctx, deps, s.ID, groupFor) })
 	} else {
 		data.Warnings = append(data.Warnings, "transcripts not configured: pass -sessions-bucket")
+	}
+	if s.ScratchID != "" && deps.Execs != nil {
+		wg.Go(func() { execs, execErr = deps.Execs.ListByScratch(ctx, s.ScratchID) })
+	}
+	wg.Wait()
+	if transcriptErr != nil {
+		data.Warnings = append(data.Warnings, fmt.Sprintf("loading transcript: %v", transcriptErr))
+	}
+	if execErr != nil {
+		data.Warnings = append(data.Warnings, fmt.Sprintf("loading scratch execs: %v", execErr))
+	}
+	for _, e := range execs {
+		data.Execs = append(data.Execs, newExecView(s.ID, e))
 	}
 	for _, g := range groups {
 		data.Trajectory = append(data.Trajectory, *g)
@@ -131,6 +165,35 @@ func usageString(u *schema.TokenUsage) string {
 		cached = fmt.Sprintf(" (%d%% cached)", int(float64(u.CachedInput)/float64(u.Input)*100+0.5))
 	}
 	return fmt.Sprintf("%s in%s / %s out", humanCount(u.Input), cached, humanCount(u.Output))
+}
+
+func newExecView(sessionID string, e schema.ScratchExec) ExecView {
+	v := ExecView{
+		ScratchExec: e,
+		CmdLine:     strings.Join(e.Cmd, " "),
+		Duration:    "N/A",
+	}
+	if !e.CreatedAt.IsZero() {
+		v.Queued = e.CreatedAt.Format("15:04:05")
+	}
+	if !e.StartedAt.IsZero() && !e.FinishedAt.IsZero() {
+		v.Duration = e.FinishedAt.Sub(e.StartedAt).Round(time.Millisecond).String()
+	}
+	if e.Error != nil {
+		v.ErrorMsg = e.Error.Message
+	}
+	switch {
+	case e.State == schema.ScratchExecPending:
+		v.StateClass = "status-running"
+	case e.State == schema.ScratchExecCompleted && e.ExitCode == 0:
+		v.StateClass = "status-success"
+	default:
+		v.StateClass = "status-fail"
+	}
+	if e.OutURI != "" {
+		v.OutPath = fmt.Sprintf("/session/%s/exec/%s/out", sessionID, e.ID)
+	}
+	return v
 }
 
 // maxTranscriptObjectBytes bounds each transcript object read. Objects
@@ -318,4 +381,46 @@ func responseEvent(r *genai.FunctionResponse, when time.Time) TranscriptEvent {
 	b, _ := json.MarshalIndent(r.Response, "", "  ")
 	e.Body = string(b)
 	return e
+}
+
+// HandleRawExecOutput streams one exec's merged output object. Outside the
+// act/api framework (like HandleRawLogs) since it writes a raw body.
+func HandleRawExecOutput(w http.ResponseWriter, r *http.Request, sessionID, execID string, deps *Deps) {
+	if deps.GCSClient == nil || deps.Execs == nil {
+		http.Error(w, "exec output viewing not configured", http.StatusServiceUnavailable)
+		return
+	}
+	exec, err := deps.Execs.Get(r.Context(), execID)
+	if err != nil {
+		http.Error(w, "exec not found", http.StatusNotFound)
+		return
+	}
+	// The exec is addressed under a session URL, so refuse IDs that
+	// belong to a different session's scratch.
+	sessions, err := deps.Sessions.FetchSessions(r.Context(), &rundex.FetchSessionsReq{IDs: []string{sessionID}})
+	if err != nil || len(sessions) == 0 || sessions[0].ScratchID != exec.ScratchID {
+		http.Error(w, "exec not found for session", http.StatusNotFound)
+		return
+	}
+	rest, ok := strings.CutPrefix(exec.OutURI, "gs://")
+	if !ok {
+		http.Error(w, "no output recorded for exec", http.StatusNotFound)
+		return
+	}
+	bucket, object, ok := strings.Cut(rest, "/")
+	if !ok {
+		http.Error(w, "malformed output URI", http.StatusInternalServerError)
+		return
+	}
+	reader, err := deps.GCSClient.Bucket(bucket).Object(object).NewReader(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read output: %v", err), http.StatusNotFound)
+		return
+	}
+	defer reader.Close()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if _, err := io.Copy(w, reader); err != nil {
+		log.Printf("streaming exec output %s: %v", exec.ID, err)
+	}
 }
