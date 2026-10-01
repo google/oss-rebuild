@@ -36,6 +36,7 @@ var (
 	successRegex    = flag.String("success-regex", "", "Regex to determine if a rebuild is successful based on its message")
 	logsBucket      = flag.String("logs-bucket", "", "GCS bucket containing build logs")
 	rundexURI       = flag.String("rundex", "", "Snapshot database URI to serve rundex reads from (supported schemes: gs, file). If empty, reads Firestore directly")
+	sessionsBucket  = flag.String("sessions-bucket", "", "GCS bucket containing agent session transcripts")
 )
 
 var egressCfg httpegress.Config
@@ -51,11 +52,12 @@ var (
 
 func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 	deps := &dashboard.Deps{
-		LogsBucket:    *logsBucket,
-		Tracked:       tracked,
-		BenchmarkName: benchName,
-		SuccessRegex:  successPat,
-		Registry:      registry,
+		LogsBucket:     *logsBucket,
+		SessionsBucket: *sessionsBucket,
+		Tracked:        tracked,
+		BenchmarkName:  benchName,
+		SuccessRegex:   successPat,
+		Registry:       registry,
 	}
 	if snapReader != nil {
 		deps.Rundex = snapReader
@@ -69,7 +71,7 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 		deps.Rundex = rundexClient
 		deps.Sessions = rundexClient
 	}
-	if *logsBucket != "" {
+	if *logsBucket != "" || *sessionsBucket != "" {
 		storageClient, err := storage.NewClient(ctx)
 		if err != nil {
 			return nil, err
