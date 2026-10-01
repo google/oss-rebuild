@@ -7,6 +7,7 @@ import (
 	"context"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -38,5 +39,34 @@ func TestMemoryScratchExecs_ListPending(t *testing.T) {
 	want := []string{"pending-1", "pending-2"}
 	if diff := cmp.Diff(want, ids); diff != "" {
 		t.Errorf("pending ids (-want +got):\n%s", diff)
+	}
+}
+
+func TestMemoryScratchExecs_ListByScratch(t *testing.T) {
+	ctx := context.Background()
+	execs := NewMemoryScratchExecs()
+
+	mustInsert := func(r schema.ScratchExec) {
+		t.Helper()
+		if err := execs.Insert(ctx, r); err != nil {
+			t.Fatalf("Insert(%s): %v", r.ID, err)
+		}
+	}
+	base := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	mustInsert(schema.ScratchExec{ID: "second", ScratchID: "s-a", State: schema.ScratchExecCompleted, CreatedAt: base.Add(time.Minute)})
+	mustInsert(schema.ScratchExec{ID: "first", ScratchID: "s-a", State: schema.ScratchExecCompleted, CreatedAt: base})
+	mustInsert(schema.ScratchExec{ID: "other-scratch", ScratchID: "s-b", State: schema.ScratchExecPending, CreatedAt: base})
+
+	got, err := execs.ListByScratch(ctx, "s-a")
+	if err != nil {
+		t.Fatalf("ListByScratch: %v", err)
+	}
+	var ids []string
+	for _, r := range got {
+		ids = append(ids, r.ID)
+	}
+	want := []string{"first", "second"}
+	if diff := cmp.Diff(want, ids); diff != "" {
+		t.Errorf("exec ids in creation order (-want +got):\n%s", diff)
 	}
 }
