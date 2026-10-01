@@ -68,7 +68,7 @@ func backfillArtifacts(dataPath string) error {
 		return fmt.Errorf("loading benchmark data: %w", err)
 	}
 	// Set up registry mux with cached HTTP client
-	mux := meta.NewRegistryMux(httpx.NewCachedClient(http.DefaultClient, &cache.CoalescingMemoryCache{}))
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(&httpx.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: rebuild.UserAgent("localbuild")}, &cache.CoalescingMemoryCache{}))
 	// Create rate limiters per ecosystem (matching benchmark defaults)
 	limiters := map[rebuild.Ecosystem]*ratex.BackoffLimiter{
 		rebuild.Debian:   ratex.NewBackoffLimiter(1000*time.Millisecond, time.Minute),
