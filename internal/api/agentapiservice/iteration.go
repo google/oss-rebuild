@@ -10,6 +10,7 @@ import (
 	"log"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/verifier"
@@ -27,6 +28,7 @@ import (
 type AgentCreateIterationDeps struct {
 	Sessions            db.Sessions
 	Iterations          db.Iterations
+	GCSClient           *storage.Client
 	Executor            build.Executor
 	BuildProject        string
 	BuildServiceAccount string
@@ -105,7 +107,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating iteration record"))
 	}
 	// Use GCB executor to plan and execute the build using Target from session
-	store, err := rebuild.NewGCSStore(context.WithValue(ctx, rebuild.RunID, obliviousID), "gs://"+deps.MetadataBucket)
+	store, err := rebuild.NewGCSStoreFromClient(context.WithValue(ctx, rebuild.RunID, obliviousID), deps.GCSClient, "gs://"+deps.MetadataBucket)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "creating GCS store"))
 	}

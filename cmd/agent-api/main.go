@@ -73,18 +73,17 @@ func parseScratchZones() []string {
 // Deps-owned cooldown would be discarded each call.
 var scratchCooldown = agentapiservice.NewZoneCooldown(0)
 
+// Shared, concurrency-safe clients for the *Init funcs to reuse.
+var (
+	firestoreClient *firestore.Client
+	gcsClient       *storage.Client
+)
+
 func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreateIterationDeps, error) {
 	var d agentapiservice.AgentCreateIterationDeps
-	fs, err := firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating firestore client")
-	}
-	d.Sessions = db.NewFirestoreSessions(fs)
-	d.Iterations = db.NewFirestoreIterations(fs)
-	gcsClient, err := storage.NewClient(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating GCS client")
-	}
+	d.Sessions = db.NewFirestoreSessions(firestoreClient)
+	d.Iterations = db.NewFirestoreIterations(firestoreClient)
+	d.GCSClient = gcsClient
 	svc, err := cloudbuild.NewService(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating CloudBuild service")
@@ -142,14 +141,11 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 
 func AgentCompleteInit(ctx context.Context) (*agentapiservice.AgentCompleteDeps, error) {
 	var d agentapiservice.AgentCompleteDeps
-	fs, err := firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating firestore client")
-	}
-	d.Sessions = db.NewFirestoreSessions(fs)
+	d.Sessions = db.NewFirestoreSessions(firestoreClient)
 	if *scratchEnabled {
 		// Enable eager teardown of scratch-mode sessions' VMs.
-		d.Scratches = db.NewFirestoreScratch(fs)
+		d.Scratches = db.NewFirestoreScratch(firestoreClient)
+		var err error
 		d.GCE, err = agentapiservice.NewComputeGCE(ctx, *project)
 		if err != nil {
 			return nil, errors.Wrap(err, "compute client")
@@ -199,10 +195,6 @@ func scratchHealthProbe(workerPort int) agentapiservice.HealthProbe {
 }
 
 func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps, error) {
-	fs, err := firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "firestore client")
-	}
 	gce, err := agentapiservice.NewComputeGCE(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "compute client")
@@ -212,7 +204,7 @@ func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps,
 		return nil, errors.New("--scratch-zones is required when --scratch-enabled")
 	}
 	return &agentapiservice.ScratchCreateDeps{
-		Scratches: db.NewFirestoreScratch(fs),
+		Scratches: db.NewFirestoreScratch(firestoreClient),
 		GCE:       gce,
 		Standard: agentapiservice.ClassConfig{
 			InstanceTemplate: *scratchStandardTmpl,
@@ -232,81 +224,49 @@ func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps,
 }
 
 func ScratchGetInit(ctx context.Context) (*agentapiservice.ScratchGetDeps, error) {
-	fs, err := firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "firestore client")
-	}
-	return &agentapiservice.ScratchGetDeps{Scratches: db.NewFirestoreScratch(fs)}, nil
+	return &agentapiservice.ScratchGetDeps{Scratches: db.NewFirestoreScratch(firestoreClient)}, nil
 }
 
 func ScratchDeleteInit(ctx context.Context) (*agentapiservice.ScratchDeleteDeps, error) {
-	fs, err := firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "firestore client")
-	}
 	gce, err := agentapiservice.NewComputeGCE(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "compute client")
 	}
-	return &agentapiservice.ScratchDeleteDeps{Scratches: db.NewFirestoreScratch(fs), GCE: gce}, nil
+	return &agentapiservice.ScratchDeleteDeps{Scratches: db.NewFirestoreScratch(firestoreClient), GCE: gce}, nil
 }
 
 func ScratchExecCreateInit(ctx context.Context) (*agentapiservice.ScratchExecCreateDeps, error) {
-	fs, err := firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "firestore client")
-	}
-	gcs, err := storage.NewClient(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "storage client")
-	}
-	execs := db.NewFirestoreScratchExecs(fs)
+	execs := db.NewFirestoreScratchExecs(firestoreClient)
 	return &agentapiservice.ScratchExecCreateDeps{
-		Scratches:    db.NewFirestoreScratch(fs),
+		Scratches:    db.NewFirestoreScratch(firestoreClient),
 		Execs:        execs,
 		WorkerDialer: scratchWorkerDialer(ctx, *scratchWorkerPort),
 		OutputBucket: *scratchOutputBucket,
 		OpTimeout:    *scratchOpDeadline,
-		Syncer:       agentapiservice.NewGCSSyncer(gcs, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
+		Syncer:       agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
 	}, nil
 }
 
 func ScratchExecGetInit(ctx context.Context) (*agentapiservice.ScratchExecGetDeps, error) {
-	fs, err := firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "firestore client")
-	}
-	gcs, err := storage.NewClient(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "storage client")
-	}
-	execs := db.NewFirestoreScratchExecs(fs)
+	execs := db.NewFirestoreScratchExecs(firestoreClient)
 	return &agentapiservice.ScratchExecGetDeps{
-		Scratches: db.NewFirestoreScratch(fs),
+		Scratches: db.NewFirestoreScratch(firestoreClient),
 		Execs:     execs,
-		Syncer:    agentapiservice.NewGCSSyncer(gcs, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
+		Syncer:    agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
 	}, nil
 }
 
 func ScratchReapInit(ctx context.Context) (*agentapiservice.ScratchReapDeps, error) {
-	fs, err := firestore.NewClient(ctx, *project)
-	if err != nil {
-		return nil, errors.Wrap(err, "firestore client")
-	}
 	gce, err := agentapiservice.NewComputeGCE(ctx, *project)
 	if err != nil {
 		return nil, errors.Wrap(err, "compute client")
 	}
-	gcs, err := storage.NewClient(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "storage client")
-	}
-	execs := db.NewFirestoreScratchExecs(fs)
+	execs := db.NewFirestoreScratchExecs(firestoreClient)
 	return &agentapiservice.ScratchReapDeps{
-		Scratches:     db.NewFirestoreScratch(fs),
+		Scratches:     db.NewFirestoreScratch(firestoreClient),
 		Execs:         execs,
 		GCE:           gce,
-		Syncer:        agentapiservice.NewGCSSyncer(gcs, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
+		Syncer:        agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchWorkerDialer(ctx, *scratchWorkerPort)),
 		IdleThreshold: *scratchIdleThreshold,
 	}, nil
 }
@@ -314,6 +274,16 @@ func ScratchReapInit(ctx context.Context) (*agentapiservice.ScratchReapDeps, err
 func main() {
 	httpcfg.RegisterFlags(flag.CommandLine)
 	flag.Parse()
+	ctx := context.Background()
+	var err error
+	firestoreClient, err = firestore.NewClient(ctx, *project)
+	if err != nil {
+		log.Fatalln(errors.Wrap(err, "creating firestore client"))
+	}
+	gcsClient, err = storage.NewClient(ctx)
+	if err != nil {
+		log.Fatalln(errors.Wrap(err, "creating GCS client"))
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agent/session/iteration", api.Handler(AgentCreateIterationInit, agentapiservice.AgentCreateIteration))
 	mux.HandleFunc("/agent/session/complete", api.Handler(AgentCompleteInit, agentapiservice.AgentComplete))
