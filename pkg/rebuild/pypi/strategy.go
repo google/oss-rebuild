@@ -173,6 +173,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"pythonTag":    b.PythonTag,
 				"abiTag":       b.ABITag,
 				"venv":         "/deps",
+				"wheelCli":     "/deps/wheel-cli",
 			},
 		}},
 		Build: []flow.Step{{
@@ -181,6 +182,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"dir":        b.Location.Dir,
 				"distDir":    distDir,
 				"locator":    "/deps/bin/",
+				"wheelCli":   "/deps/wheel-cli",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
 				// auditwheel repair --plat requires a single policy tag rather than a compressed
 				// tag set, and the highest tag matches the build container policy.
@@ -301,6 +303,13 @@ var toolkit = []*flow.Tool{
 				Runs: "{{.With.venv}}/bin/pip install build wheel auditwheel",
 			},
 			{
+				// Isolate a modern wheel CLI for re-tagging, before timewarp. The
+				// `wheel tags` subcommand arrived in wheel 0.38.0, while the wheel
+				// pinned by the requirements below must stay what bdist_wheel ran
+				// with, as it stamps its version into the WHEEL file.
+				Runs: "{{.With.venv}}/bin/pip install --target {{.With.wheelCli}} wheel",
+			},
+			{
 				Uses: "pypi/setup-registry",
 				With: map[string]string{
 					"registryTime": "{{.With.registryTime}}",
@@ -350,7 +359,7 @@ var toolkit = []*flow.Tool{
 				rm -rf {{.With.distDir}}/repaired
 				{{end -}}
 				{{if .With.targetPlatformTag -}}
-				{{.With.locator}}python3 -m wheel tags --remove --platform-tag {{.With.targetPlatformTag}} {{.With.distDir}}/*.whl
+				PYTHONPATH={{.With.wheelCli}} {{.With.locator}}python3 -m wheel tags --remove --platform-tag {{.With.targetPlatformTag}} {{.With.distDir}}/*.whl
 				{{- end -}}`)[1:],
 		}},
 	},
