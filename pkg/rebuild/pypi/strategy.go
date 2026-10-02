@@ -181,10 +181,22 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"locator":           "/deps/bin/",
 				"lowestPlatformTag": platform.LowestLibcTagString(b.PlatformTag),
 				"targetPlatformTag": b.PlatformTag,
+				"legacyWheel":       needsLegacyWheel(b.Requirements),
 			},
 		}},
 		OutputDir: distDir,
 	}, nil
+}
+
+// wheel 0.38.0 added the `wheel tags` CLI subcommand.
+const wheelTagsMinVersion = "0.38.0"
+
+// needsLegacyWheel flags builds that resolve a wheel version predating `wheel tags`.
+func needsLegacyWheel(reqs []string) string {
+	if hasCeilingBelow(reqs, "wheel", wheelTagsMinVersion) {
+		return "1"
+	}
+	return ""
 }
 
 // GenerateFor generates the instructions for a PlatformWheelBuild.
@@ -377,7 +389,26 @@ var toolkit = []*flow.Tool{
 				rm -rf {{.With.distDir}}/repaired
 				{{end -}}
 				{{if .With.targetPlatformTag -}}
+				{{if .With.legacyWheel -}}
+				if [ ! -e {{.With.distDir}}/*-{{.With.targetPlatformTag}}.whl ]; then
+				  {{.With.locator}}python3 -m wheel unpack {{.With.distDir}}/*.whl -d {{.With.distDir}}/unpacked
+				  rm -f {{.With.distDir}}/*.whl
+				  for f in {{.With.distDir}}/unpacked/*/*.dist-info/WHEEL; do
+				    prefixes=$(sed -n 's/^Tag: \([^-]*-[^-]*\)-.*/\1/p' "$f" | sort -u)
+				    sed -i '/^Tag: /d; /^$/d' "$f"
+				    for p in $prefixes; do
+				      for plat in $(echo '{{.With.targetPlatformTag}}' | tr '.' '\n' | sort -u); do
+				        echo "Tag: $p-$plat" >> "$f"
+				      done
+				    done
+				    echo "" >> "$f"
+				  done
+				  {{.With.locator}}python3 -m wheel pack {{.With.distDir}}/unpacked/* -d {{.With.distDir}}
+				  rm -rf {{.With.distDir}}/unpacked
+				fi
+				{{- else -}}
 				{{.With.locator}}python3 -m wheel tags --remove --platform-tag {{.With.targetPlatformTag}} {{.With.distDir}}/*.whl
+				{{- end -}}
 				{{- end -}}`)[1:],
 		}},
 	},
