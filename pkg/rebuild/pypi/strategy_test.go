@@ -683,6 +683,121 @@ rm -rf the_dir/dist/repaired
 				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
+		{
+			"LegacyWheel",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp310",
+				ABITag:       "cp310",
+				Requirements: []string{"wheel==0.37.1", "setuptools<=67.7.2"},
+				PlatformTag:  "manylinux_2_17_x86_64",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `INTERPRETER=""
+if [ -d "/opt/python/cp310-cp310" ]; then
+  INTERPRETER="/opt/python/cp310-cp310/bin/python"
+else
+  for dir in /opt/python/cp310*; do
+    if [ -d "$dir" ]; then
+      INTERPRETER="$dir/bin/python"
+      break
+    fi
+  done
+fi
+if [ -z "$INTERPRETER" ]; then
+  echo "Error: Requested Python tag 'cp310' not found in /opt/python" >&2
+  exit 1
+fi
+$INTERPRETER -m venv /deps
+/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install 'wheel==0.37.1'
+/deps/bin/pip install 'setuptools<=67.7.2'`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+if $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/; then
+  rm -f the_dir/dist/*.whl
+  mv the_dir/dist/repaired/*.whl the_dir/dist/
+fi
+rm -rf the_dir/dist/repaired
+if [ ! -e the_dir/dist/*-manylinux_2_17_x86_64.whl ]; then
+  /deps/bin/python3 -m wheel unpack the_dir/dist/*.whl -d the_dir/dist/unpacked
+  rm -f the_dir/dist/*.whl
+  for f in the_dir/dist/unpacked/*/*.dist-info/WHEEL; do
+    prefixes=$(sed -n 's/^Tag: \([^-]*-[^-]*\)-.*/\1/p' "$f" | sort -u)
+    sed -i '/^Tag: /d; /^$/d' "$f"
+    for p in $prefixes; do
+      for plat in $(echo 'manylinux_2_17_x86_64' | tr '.' '\n' | sort -u); do
+        echo "Tag: $p-$plat" >> "$f"
+      done
+    done
+    echo "" >> "$f"
+  done
+  /deps/bin/python3 -m wheel pack the_dir/dist/unpacked/* -d the_dir/dist
+  rm -rf the_dir/dist/unpacked
+fi`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"ModernWheel",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp310",
+				ABITag:       "cp310",
+				Requirements: []string{"wheel==0.38.0", "setuptools<=67.7.2"},
+				PlatformTag:  "manylinux_2_17_x86_64",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `INTERPRETER=""
+if [ -d "/opt/python/cp310-cp310" ]; then
+  INTERPRETER="/opt/python/cp310-cp310/bin/python"
+else
+  for dir in /opt/python/cp310*; do
+    if [ -d "$dir" ]; then
+      INTERPRETER="$dir/bin/python"
+      break
+    fi
+  done
+fi
+if [ -z "$INTERPRETER" ]; then
+  echo "Error: Requested Python tag 'cp310' not found in /opt/python" >&2
+  exit 1
+fi
+$INTERPRETER -m venv /deps
+/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install 'wheel==0.38.0'
+/deps/bin/pip install 'setuptools<=67.7.2'`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+if $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/; then
+  rm -f the_dir/dist/*.whl
+  mv the_dir/dist/repaired/*.whl the_dir/dist/
+fi
+rm -rf the_dir/dist/repaired
+/deps/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_17_x86_64 the_dir/dist/*.whl`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

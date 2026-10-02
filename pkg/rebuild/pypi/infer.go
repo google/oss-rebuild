@@ -491,23 +491,28 @@ var (
 	versionCeilingPat = re.MustCompile(`(<=?|==)\s*([\d.]+)`)
 )
 
+// hasCeilingBelow reports whether reqs constrain pkg to a version below limit.
+func hasCeilingBelow(reqs []string, pkg, limit string) bool {
+	for _, req := range reqs {
+		if !strings.EqualFold(requirementName(req), pkg) {
+			continue
+		}
+		for _, m := range versionCeilingPat.FindAllStringSubmatch(req, -1) {
+			if c := versionx.ApproxCompare(m[2], limit); c < 0 || c == 0 && m[1] == "<" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // inferPythonVersion pins Python 3.11 when the build may import a setuptools
 // older than the ImpImporter fix: any upload predating it, since pip or the
 // backend then resolve a contemporary setuptools whatever the backend, and a
 // later upload only under a setuptools ceiling below the fix.
 func inferPythonVersion(reqs []string, registryTime time.Time) string {
-	if registryTime.Before(setuptoolsImpImporterFixDate) {
+	if registryTime.Before(setuptoolsImpImporterFixDate) || hasCeilingBelow(reqs, "setuptools", setuptoolsImpImporterFixVersion) {
 		return "3.11"
-	}
-	for _, req := range reqs {
-		if !strings.EqualFold(requirementName(req), "setuptools") {
-			continue
-		}
-		for _, m := range versionCeilingPat.FindAllStringSubmatch(req, -1) {
-			if c := versionx.ApproxCompare(m[2], setuptoolsImpImporterFixVersion); c < 0 || c == 0 && m[1] == "<" {
-				return "3.11"
-			}
-		}
 	}
 	return ""
 }
