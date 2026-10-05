@@ -68,7 +68,7 @@ func TestHTTPRegistry_Crate(t *testing.T) {
 			pkg:  "nonexistent-pkg",
 			call: httpxtest.Call{
 				URL:      "https://crates.io/api/v1/crates/nonexistent-pkg",
-				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
+				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404), Body: httpxtest.Body("")},
 			},
 			expectedErr: errors.New("fetching crate metadata: Not Found"),
 		},
@@ -88,6 +88,7 @@ func TestHTTPRegistry_Crate(t *testing.T) {
 				Calls:        []httpxtest.Call{tc.call},
 				URLValidator: httpxtest.NewURLValidator(t),
 			}
+			bodies := trackClose(mockClient.Calls)
 			actual, err := HTTPRegistry{Client: mockClient}.Crate(context.Background(), tc.pkg)
 			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
@@ -99,6 +100,11 @@ func TestHTTPRegistry_Crate(t *testing.T) {
 			}
 			if mockClient.CallCount() != 1 {
 				t.Errorf("Expected 1 call, got %d", mockClient.CallCount())
+			}
+			for _, b := range bodies {
+				if !b.closed {
+					t.Error("response body was not closed")
+				}
 			}
 		})
 	}
@@ -145,7 +151,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 			pkg:     "nonexistent-pkg",
 			version: "1.0.0",
 			call: httpxtest.Call{URL: "https://crates.io/api/v1/crates/nonexistent-pkg/1.0.0",
-				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
+				Response: &http.Response{StatusCode: 404, Status: http.StatusText(404), Body: httpxtest.Body("")},
 			},
 			expectedErr: errors.New("fetching version: Not Found"),
 		},
@@ -165,6 +171,7 @@ func TestHTTPRegistry_Version(t *testing.T) {
 				Calls:        []httpxtest.Call{tc.call},
 				URLValidator: httpxtest.NewURLValidator(t),
 			}
+			bodies := trackClose(mockClient.Calls)
 			actual, err := HTTPRegistry{Client: mockClient}.Version(context.Background(), tc.pkg, tc.version)
 			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
@@ -176,6 +183,11 @@ func TestHTTPRegistry_Version(t *testing.T) {
 			}
 			if mockClient.CallCount() != 1 {
 				t.Errorf("Expected 1 call, got %d", mockClient.CallCount())
+			}
+			for _, b := range bodies {
+				if !b.closed {
+					t.Error("response body was not closed")
+				}
 			}
 		})
 	}
@@ -230,7 +242,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 			calls: []httpxtest.Call{
 				{
 					URL:      "https://crates.io/api/v1/crates/nonexistent-pkg/1.0.0",
-					Response: &http.Response{StatusCode: 404, Status: http.StatusText(404)},
+					Response: &http.Response{StatusCode: 404, Status: http.StatusText(404), Body: httpxtest.Body("")},
 				},
 			},
 			expectedErr: errors.New("fetching version: Not Found"),
@@ -249,7 +261,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 				},
 				{
 					URL:      "https://crates.io/api/v1/crates/serde/1.0.150/download",
-					Response: &http.Response{StatusCode: 500, Status: http.StatusText(500)},
+					Response: &http.Response{StatusCode: 500, Status: http.StatusText(500), Body: httpxtest.Body("")},
 				},
 			},
 			expectedErr: errors.New("fetching artifact: Internal Server Error"),
@@ -261,6 +273,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 				Calls:        tc.calls,
 				URLValidator: httpxtest.NewURLValidator(t),
 			}
+			bodies := trackClose(mockClient.Calls)
 			actual, err := HTTPRegistry{Client: mockClient}.Artifact(context.Background(), tc.pkg, tc.version)
 			if err != nil && tc.expectedErr != nil && err.Error() != tc.expectedErr.Error() {
 				t.Errorf("Error mismatch: got %v, want %v", err, tc.expectedErr)
@@ -273,8 +286,37 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 			if mockClient.CallCount() != len(tc.calls) {
 				t.Errorf("Expected %d calls, got %d", len(tc.calls), mockClient.CallCount())
 			}
+			for _, b := range bodies {
+				// The artifact body is returned to the caller, who owns closing it.
+				if !b.closed && io.ReadCloser(b) != actual {
+					t.Error("response body was not closed")
+				}
+			}
 		})
 	}
+}
+
+type closeTrackingBody struct {
+	io.ReadCloser
+	closed bool
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.closed = true
+	return b.ReadCloser.Close()
+}
+
+// trackClose wraps each call's response body to record whether it is closed.
+func trackClose(calls []httpxtest.Call) []*closeTrackingBody {
+	var bodies []*closeTrackingBody
+	for _, c := range calls {
+		if c.Response != nil && c.Response.Body != nil {
+			b := &closeTrackingBody{ReadCloser: c.Response.Body}
+			c.Response.Body = b
+			bodies = append(bodies, b)
+		}
+	}
+	return bodies
 }
 
 func must[T any](t T, err error) T {
