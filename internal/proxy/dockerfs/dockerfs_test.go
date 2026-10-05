@@ -62,7 +62,7 @@ func TestOpen(t *testing.T) {
 	osTarBytes := makeOpen(t, wantStat, wantContents, "")
 	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
-			{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
+			{Method: "GET", URL: "/containers/abc/archive?path=%2Fetc%2Frelease", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
 	}, Container: "abc"}
@@ -86,7 +86,7 @@ func TestStat(t *testing.T) {
 	want := FileInfo{name: "release", mode: fs.ModePerm, size: 12, modTime: someTime}
 	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
-			{Method: "HEAD", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, want))}},
+			{Method: "HEAD", URL: "/containers/abc/archive?path=%2Fetc%2Frelease", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, want))}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
 	}, Container: "abc"}
@@ -112,7 +112,7 @@ func TestErrorMapping(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := httpxtest.MockClient{
 				Calls: []httpxtest.Call{
-					{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body))}},
+					{Method: "GET", URL: "/containers/abc/archive?path=%2Fetc%2Frelease", Response: &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body))}},
 				},
 				URLValidator: httpxtest.NewURLValidator(t),
 			}
@@ -132,7 +132,7 @@ func TestErrorMapping(t *testing.T) {
 	t.Run("bodyless HEAD response", func(t *testing.T) {
 		c := httpxtest.MockClient{
 			Calls: []httpxtest.Call{
-				{Method: "HEAD", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusNotFound}},
+				{Method: "HEAD", URL: "/containers/abc/archive?path=%2Fetc%2Frelease", Response: &http.Response{StatusCode: http.StatusNotFound}},
 			},
 			URLValidator: httpxtest.NewURLValidator(t),
 		}
@@ -154,7 +154,7 @@ func TestStatHeaderNonURLSafe(t *testing.T) {
 	}
 	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
-			{Method: "HEAD", URL: "/containers/abc/archive?path=/tmp/cache~", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, encoded)}},
+			{Method: "HEAD", URL: "/containers/abc/archive?path=%2Ftmp%2Fcache~", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, encoded)}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
 	}, Container: "abc"}
@@ -171,9 +171,9 @@ func TestOpenAndResolve(t *testing.T) {
 	osTarBytes := makeOpen(t, wantStat, wantContents, "")
 	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
-			{Method: "HEAD", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, symStat))}},
-			{Method: "HEAD", URL: "/containers/abc/archive?path=/os-release", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, wantStat))}},
-			{Method: "GET", URL: "/containers/abc/archive?path=/os-release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
+			{Method: "HEAD", URL: "/containers/abc/archive?path=%2Fetc%2Frelease", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, symStat))}},
+			{Method: "HEAD", URL: "/containers/abc/archive?path=%2Fos-release", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, wantStat))}},
+			{Method: "GET", URL: "/containers/abc/archive?path=%2Fos-release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
 	}, Container: "abc"}
@@ -201,8 +201,8 @@ func TestResolve(t *testing.T) {
 	osTarBytes := makeOpen(t, wantStat, wantContents, "")
 	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
-			{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(symTarBytes))}},
-			{Method: "GET", URL: "/containers/abc/archive?path=/os-release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
+			{Method: "GET", URL: "/containers/abc/archive?path=%2Fetc%2Frelease", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(symTarBytes))}},
+			{Method: "GET", URL: "/containers/abc/archive?path=%2Fos-release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
 	}, Container: "abc"}
@@ -236,9 +236,9 @@ func TestResolveChainedSymlinks(t *testing.T) {
 	targetTar := makeOpen(t, wantStat, wantContents, "")
 	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
-			{Method: "GET", URL: "/containers/abc/archive?path=/etc/pki/tls/certs/ca-bundle.crt", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(sym1Tar))}},
-			{Method: "GET", URL: "/containers/abc/archive?path=/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(sym2Tar))}},
-			{Method: "GET", URL: "/containers/abc/archive?path=/etc/pki/ca-trust/extracted/certs.pem", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(targetTar))}},
+			{Method: "GET", URL: "/containers/abc/archive?path=%2Fetc%2Fpki%2Ftls%2Fcerts%2Fca-bundle.crt", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(sym1Tar))}},
+			{Method: "GET", URL: "/containers/abc/archive?path=%2Fetc%2Fpki%2Fca-trust%2Fextracted%2Fpem%2Ftls-ca-bundle.pem", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(sym2Tar))}},
+			{Method: "GET", URL: "/containers/abc/archive?path=%2Fetc%2Fpki%2Fca-trust%2Fextracted%2Fcerts.pem", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(targetTar))}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
 	}, Container: "abc"}
@@ -258,8 +258,8 @@ func TestWriteFile(t *testing.T) {
 	osTarBytes := makeOpen(t, wantStat, wantContents, "")
 	f := Filesystem{Client: &httpxtest.MockClient{
 		Calls: []httpxtest.Call{
-			{Method: "GET", URL: "/containers/abc/archive?path=/etc/release", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
-			{Method: "PUT", URL: "/containers/abc/archive?path=/etc", Response: &http.Response{StatusCode: http.StatusOK}},
+			{Method: "GET", URL: "/containers/abc/archive?path=%2Fetc%2Frelease", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
+			{Method: "PUT", URL: "/containers/abc/archive?path=%2Fetc", Response: &http.Response{StatusCode: http.StatusOK}},
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
 	}, Container: "abc"}
@@ -278,6 +278,23 @@ func TestWriteFile(t *testing.T) {
 		t.Fatalf("Unexpected Open FileInfo size: want=%d got=%d", wantStat.Size(), fi.Size())
 	}
 	got.Contents = []byte(wantContents + "EXTRA=PROPERTY\n")
+	must1(f.WriteFile(got))
+}
+
+func TestPathQueryEscaping(t *testing.T) {
+	wantContents := "cert-data\n"
+	wantStat := FileInfo{name: "a?b&c#d e+f", mode: fs.ModePerm, size: int64(len(wantContents)), modTime: someTime}
+	osTarBytes := makeOpen(t, wantStat, wantContents, "")
+	f := Filesystem{Client: &httpxtest.MockClient{
+		Calls: []httpxtest.Call{
+			{Method: "HEAD", URL: "/containers/a%2Fb%3Fc/archive?path=%2Fetc%2Fdir+1%2Fa%3Fb%26c%23d+e%2Bf", Response: &http.Response{StatusCode: http.StatusOK, Header: withHeader(statHeader, makeStat(t, wantStat))}},
+			{Method: "GET", URL: "/containers/a%2Fb%3Fc/archive?path=%2Fetc%2Fdir+1%2Fa%3Fb%26c%23d+e%2Bf", Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(osTarBytes))}},
+			{Method: "PUT", URL: "/containers/a%2Fb%3Fc/archive?path=%2Fetc%2Fdir+1", Response: &http.Response{StatusCode: http.StatusOK}},
+		},
+		URLValidator: httpxtest.NewURLValidator(t),
+	}, Container: "a/b?c"}
+	_ = must(f.Stat("/etc/dir 1/a?b&c#d e+f"))
+	got := must(f.Open("/etc/dir 1/a?b&c#d e+f"))
 	must1(f.WriteFile(got))
 }
 
@@ -329,9 +346,9 @@ func TestResponseBodyClosed(t *testing.T) {
 			}
 			body := &trackedResponseBody{Reader: bytes.NewReader(content)}
 			method := map[string]string{"Open": "GET", "Stat": "HEAD", "WriteFile": "PUT"}[tc.operation]
-			url := "/containers/abc/archive?path=/etc/release"
+			url := "/containers/abc/archive?path=%2Fetc%2Frelease"
 			if tc.operation == "WriteFile" {
-				url = "/containers/abc/archive?path=/etc"
+				url = "/containers/abc/archive?path=%2Fetc"
 			}
 			client := &httpxtest.MockClient{
 				Calls:        []httpxtest.Call{{Method: method, URL: url, Response: &http.Response{StatusCode: tc.status, Header: header, Body: body}}},
