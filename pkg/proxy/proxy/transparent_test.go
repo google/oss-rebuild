@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/google/oss-rebuild/pkg/proxy/policy"
@@ -259,6 +260,55 @@ func TestPolicyEndpoint(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProxyTLSShutdownWaitsForConnections(t *testing.T) {
+	// ProxyTLS listens on its own, so reserve a free port for it.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	proxyService := NewTransparentProxyService(NewTransparentProxyServer(false), nil, DisabledMode, TransparentProxyServiceOpts{SkipLogging: true})
+	go proxyService.ProxyTLS(addr)
+	dial := func() net.Conn {
+		for range 100 {
+			if c, err := net.Dial("tcp", addr); err == nil {
+				return c
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("Dial %s failed", addr)
+		return nil
+	}
+	// idle never sends a ClientHello, so its serveTLS stays in flight.
+	idle := dial()
+	defer idle.Close()
+	// serveTLS closes SNI-less handshakes and accepts are FIFO, so once the
+	// probe fails, idle has been accepted.
+	probe := dial()
+	defer probe.Close()
+	probe.SetDeadline(time.Now().Add(3 * time.Second))
+	if err := tls.Client(probe, &tls.Config{InsecureSkipVerify: true}).Handshake(); err == nil {
+		t.Fatal("SNI-less handshake succeeded")
+	}
+	done := make(chan error, 1)
+	go func() { done <- proxyService.Shutdown(context.Background()) }()
+	select {
+	case err := <-done:
+		t.Fatalf("Shutdown returned %v with a connection in flight", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	idle.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Shutdown: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Shutdown did not return after the in-flight connection closed")
 	}
 }
 
