@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"io"
 	"io/fs"
-	"path"
 	"slices"
 	"strings"
 	"time"
@@ -119,7 +118,7 @@ var AllCrateStabilizers = []Stabilizer{
 var StabilizeCargoVCSHash = Stabilizer{
 	Name: "cargo-vcs-hash",
 }.WithFn(TarEntryFn(func(e *archive.TarEntry) {
-	parts := strings.Split(path.Clean(e.Name), "/")
+	parts := strings.Split(e.Name, "/")
 	if len(parts) <= 2 && parts[len(parts)-1] == ".cargo_vcs_info.json" {
 		var vcsInfo map[string]any
 		if err := json.Unmarshal(e.Body, &vcsInfo); err != nil {
