@@ -176,12 +176,14 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Build: []flow.Step{{
 			Uses: "pypi/build/platform-wheel",
 			With: map[string]string{
-				"dir":               b.Location.Dir,
-				"distDir":           distDir,
-				"locator":           "/deps/bin/",
-				"lowestPlatformTag": platform.LowestLibcTagString(b.PlatformTag),
-				"targetPlatformTag": b.PlatformTag,
-				"legacyWheel":       needsLegacyWheel(b.Requirements),
+				"dir":     b.Location.Dir,
+				"distDir": distDir,
+				"locator": "/deps/bin/",
+				// auditwheel repair --plat requires a single policy tag rather than a compressed
+				// tag set, and the highest tag matches the build container policy.
+				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
+				"targetPlatformTag":  b.PlatformTag,
+				"legacyWheel":        needsLegacyWheel(b.Requirements),
 			},
 		}},
 		OutputDir: distDir,
@@ -376,13 +378,13 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
-				{{if .With.lowestPlatformTag -}}
+				{{if .With.highestPlatformTag -}}
 				mkdir -p {{.With.distDir}}/repaired
 				AUDITWHEEL="{{.With.locator}}auditwheel"
 				if [ ! -x "$AUDITWHEEL" ]; then
 				  AUDITWHEEL="auditwheel"
 				fi
-				if $AUDITWHEEL repair {{.With.distDir}}/*.whl --plat {{.With.lowestPlatformTag}} -w {{.With.distDir}}/repaired/; then
+				if $AUDITWHEEL repair {{.With.distDir}}/*.whl --plat {{.With.highestPlatformTag}} -w {{.With.distDir}}/repaired/; then
 				  rm -f {{.With.distDir}}/*.whl
 				  mv {{.With.distDir}}/repaired/*.whl {{.With.distDir}}/
 				fi
