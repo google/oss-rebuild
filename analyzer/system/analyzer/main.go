@@ -145,7 +145,7 @@ func AnalyzerInit(ctx context.Context) (*analyzerservice.AnalyzerDeps, error) {
 		HTTPClient:                 httpClient,
 		Signer:                     signer,
 		Verifier:                   verifier,
-		GCBExecutor:                gcbExecutor,
+		Executor:                   gcbExecutor,
 		ServiceRepo:                serviceLoc,
 		InputAttestationStore:      inputAttestationStore,
 		OutputAnalysisStore:        outputAnalysisStore,

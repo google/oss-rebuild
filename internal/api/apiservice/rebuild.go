@@ -25,7 +25,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/build"
-	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/builddef"
 	"github.com/google/oss-rebuild/pkg/changelog"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
@@ -45,7 +44,7 @@ type RebuildPackageDeps struct {
 	Attempts                   db.Attempts
 	Signer                     *dsse.EnvelopeSigner
 	Verifier                   *dsse.EnvelopeVerifier
-	GCBExecutor                *buildgcb.Executor
+	Executor                   build.Executor
 	PrebuildConfig             rebuild.PrebuildConfig
 	ServiceRepo                rebuild.Location
 	PrebuildRepo               rebuild.Location
@@ -232,7 +231,7 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		Target:   t,
 		Strategy: strategy,
 	}
-	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
+	h, err := deps.Executor.Start(ctx, in, build.Options{
 		BuildID:            obID,
 		Timeout:            timeout,
 		SizeHint:           sizeHint,

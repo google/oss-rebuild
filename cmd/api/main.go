@@ -148,7 +148,7 @@ func RebuildPackageInit(ctx context.Context) (*apiservice.RebuildPackageDeps, er
 		executorConfig.Client = gcb.NewClient(svc)
 	}
 	executorConfig.Planner = buildgcb.NewPlanner(plannerConfig)
-	d.GCBExecutor, err = buildgcb.NewExecutor(executorConfig)
+	d.Executor, err = buildgcb.NewExecutor(executorConfig)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating GCB executor")
 	}

@@ -20,7 +20,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/attestation"
 	"github.com/google/oss-rebuild/pkg/build"
-	buildgcb "github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -39,7 +38,7 @@ type AnalyzerDeps struct {
 	HTTPClient                 httpx.BasicClient
 	Signer                     *dsse.EnvelopeSigner
 	Verifier                   *dsse.EnvelopeVerifier
-	GCBExecutor                *buildgcb.Executor
+	Executor                   build.Executor
 	ServiceRepo                rebuild.Location
 	InputAttestationStore      rebuild.AssetStore
 	OutputAnalysisStore        rebuild.LocatableAssetStore
@@ -222,7 +221,7 @@ func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Ta
 		Target:   t,
 		Strategy: strategy,
 	}
-	h, err := deps.GCBExecutor.Start(ctx, in, build.Options{
+	h, err := deps.Executor.Start(ctx, in, build.Options{
 		BuildID:            obID,
 		Timeout:            timeout,
 		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
