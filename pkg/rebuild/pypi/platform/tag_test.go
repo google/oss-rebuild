@@ -128,7 +128,7 @@ func TestParseCompressedTags(t *testing.T) {
 	}
 }
 
-func TestLowestBaselineTag(t *testing.T) {
+func TestHighestLibcVersionTag(t *testing.T) {
 	tests := []struct {
 		name      string
 		raw       string
@@ -136,10 +136,10 @@ func TestLowestBaselineTag(t *testing.T) {
 		wantMinor int
 	}{
 		{
-			name:      "compressed set with manylinux1",
+			name:      "compressed set with manylinux1 and 2_28",
 			raw:       "manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
-			wantRaw:   "manylinux1_x86_64",
-			wantMinor: 5,
+			wantRaw:   "manylinux_2_28_x86_64",
+			wantMinor: 28,
 		},
 		{
 			name:      "manylinux2014 and 2_17",
@@ -155,9 +155,9 @@ func TestLowestBaselineTag(t *testing.T) {
 		},
 		{
 			name:      "musllinux compressed set",
-			raw:       "musllinux_1_2_x86_64.musllinux_1_1_x86_64",
-			wantRaw:   "musllinux_1_1_x86_64",
-			wantMinor: 1,
+			raw:       "musllinux_1_1_x86_64.musllinux_1_2_x86_64",
+			wantRaw:   "musllinux_1_2_x86_64",
+			wantMinor: 2,
 		},
 	}
 
@@ -165,17 +165,17 @@ func TestLowestBaselineTag(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tags, err := ParsePlatformTags(tt.raw)
 			if err != nil {
-				t.Fatalf("ParseCompressedTags(%q) failed: %v", tt.raw, err)
+				t.Fatalf("ParsePlatformTags(%q) failed: %v", tt.raw, err)
 			}
-			lowest, err := LowestLibcVersionTag(tags)
+			highest, err := HighestLibcVersionTag(tags)
 			if err != nil {
-				t.Fatalf("LowestBaselineTag failed: %v", err)
+				t.Fatalf("HighestLibcVersionTag failed: %v", err)
 			}
-			if lowest.LibcVersion.Minor != tt.wantMinor {
-				t.Errorf("got lowest version minor = %d, want %d", lowest.LibcVersion.Minor, tt.wantMinor)
+			if highest.LibcVersion.Minor != tt.wantMinor {
+				t.Errorf("got highest version minor = %d, want %d", highest.LibcVersion.Minor, tt.wantMinor)
 			}
-			if gotStr := LowestLibcTagString(tt.raw); gotStr != tt.wantRaw {
-				t.Errorf("LowestBaselineTagString(%q) = %q, want %q", tt.raw, gotStr, tt.wantRaw)
+			if gotStr := HighestLibcTagString(tt.raw); gotStr != tt.wantRaw {
+				t.Errorf("HighestLibcTagString(%q) = %q, want %q", tt.raw, gotStr, tt.wantRaw)
 			}
 		})
 	}
@@ -199,14 +199,19 @@ func TestSelectBaseImage(t *testing.T) {
 			wantImage:   ImageManylinux2014X86_64,
 		},
 		{
-			name:        "compressed set with legacy and 2_28 picks lowest baseline 2014 image",
+			name:        "compressed set with legacy and 2_28 picks highest 2_28 image",
 			platformTag: "manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
-			wantImage:   ImageManylinux2014X86_64,
+			wantImage:   ImageManylinux2_28X86_64,
 		},
 		{
-			name:        "manylinux_2_24 selects lower 2014 image",
+			name:        "compressed set with 2014 and 2_28 picks highest 2_28 image",
+			platformTag: "manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64",
+			wantImage:   ImageManylinux2_28X86_64,
+		},
+		{
+			name:        "manylinux_2_24 rounds up to 2_28 image",
 			platformTag: "manylinux_2_24_x86_64",
-			wantImage:   ImageManylinux2014X86_64,
+			wantImage:   ImageManylinux2_28X86_64,
 		},
 		{
 			name:        "manylinux_2_28 returns 2_28 image",
@@ -214,9 +219,9 @@ func TestSelectBaseImage(t *testing.T) {
 			wantImage:   ImageManylinux2_28X86_64,
 		},
 		{
-			name:        "manylinux_2_31 selects lower 2_28 image",
+			name:        "manylinux_2_31 rounds up to 2_34 image",
 			platformTag: "manylinux_2_31_x86_64",
-			wantImage:   ImageManylinux2_28X86_64,
+			wantImage:   ImageManylinux2_34X86_64,
 		},
 		{
 			name:        "manylinux_2_34 returns 2_34 image",
@@ -224,7 +229,7 @@ func TestSelectBaseImage(t *testing.T) {
 			wantImage:   ImageManylinux2_34X86_64,
 		},
 		{
-			name:        "manylinux_2_35 selects lower 2_34 image",
+			name:        "manylinux_2_35 selects 2_34 image",
 			platformTag: "manylinux_2_35_x86_64",
 			wantImage:   ImageManylinux2_34X86_64,
 		},
@@ -239,9 +244,9 @@ func TestSelectBaseImage(t *testing.T) {
 			wantImage:   ImageMusllinux1_2X86_64,
 		},
 		{
-			name:        "musllinux compressed set picks lowest 1_1 image",
-			platformTag: "musllinux_1_2_x86_64.musllinux_1_1_x86_64",
-			wantImage:   ImageMusllinux1_1X86_64,
+			name:        "musllinux compressed set picks highest 1_2 image",
+			platformTag: "musllinux_1_1_x86_64.musllinux_1_2_x86_64",
+			wantImage:   ImageMusllinux1_2X86_64,
 		},
 		{
 			name:        "manylinux_2_4 below minimum returns error",
