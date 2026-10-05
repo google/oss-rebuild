@@ -581,14 +581,14 @@ AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
   AUDITWHEEL="auditwheel"
 fi
-if $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux1_x86_64 -w the_dir/dist/repaired/; then
+if $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/; then
   rm -f the_dir/dist/*.whl
   mv the_dir/dist/repaired/*.whl the_dir/dist/
 fi
 rm -rf the_dir/dist/repaired
 /deps/bin/python3 -m wheel tags --remove --platform-tag manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64 the_dir/dist/*.whl`,
 				Requires: rebuild.RequiredEnv{
-					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					BaseImage:  "quay.io/pypa/manylinux_2_28_x86_64",
 					SystemDeps: []string{"git"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
@@ -837,7 +837,7 @@ func TestPlatformWheelBuild_BaseImage(t *testing.T) {
 		{
 			name:        "compressed tag set with legacy baseline",
 			platformTag: "manylinux1_x86_64.manylinux_2_28_x86_64",
-			want:        "quay.io/pypa/manylinux2014_x86_64",
+			want:        "quay.io/pypa/manylinux_2_28_x86_64",
 		},
 		{
 			name:        "musllinux_1_1",
