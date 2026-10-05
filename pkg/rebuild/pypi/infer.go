@@ -400,8 +400,9 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to read upstream artifact")
 	}
 	var reqs []string
+	var zr *zip.Reader
 	if strings.HasSuffix(a.Filename, ".whl") {
-		zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
+		zr, err = zip.NewReader(bytes.NewReader(body), a.Size)
 		if err != nil {
 			return nil, errors.Wrapf(err, "[INTERNAL] Failed to initialize upstream zip reader")
 		}
@@ -475,6 +476,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			PythonTag:    tags.Python,
 			ABITag:       tags.ABI,
 			PlatformTag:  tags.Platform,
+			BaseImage:    platform.DetectBaseImage(zr),
 			Requirements: reqs,
 			RegistryTime: a.UploadTime,
 		}, nil

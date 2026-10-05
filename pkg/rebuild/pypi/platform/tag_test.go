@@ -4,7 +4,15 @@
 package platform
 
 import (
+	"archive/zip"
+	"bytes"
+	"debug/elf"
+	"encoding/binary"
+	"strings"
 	"testing"
+
+	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 )
 
 func TestParseTag(t *testing.T) {
@@ -296,4 +304,171 @@ func TestSelectBaseImage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDetectBaseImage(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []archive.ZipEntry
+		want    string
+	}{
+		{
+			name: "CentOS 7 manylinux2014 crti and devtoolset-10",
+			entries: []archive.ZipEntry{{
+				FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-311-x86_64-linux-gnu.so"},
+				Body: syntheticELFWithComment(elf.EM_X86_64,
+					"GCC: (GNU) 4.8.5 20150623 (Red Hat 4.8.5-44)",
+					"GCC: (GNU) 10.2.1 20210130 (Red Hat 10.2.1-11)",
+				),
+			}},
+			want: ImageManylinux2014X86_64,
+		},
+		{
+			name: "AlmaLinux 8 manylinux_2_28 crti and gcc-toolset-14",
+			entries: []archive.ZipEntry{{
+				FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-312-x86_64-linux-gnu.so"},
+				Body: syntheticELFWithComment(elf.EM_X86_64,
+					"GCC: (GNU) 14.2.1 20250110 (Red Hat 14.2.1-7)",
+					"GCC: (GNU) 8.5.0 20210514 (Red Hat 8.5.0-22)",
+				),
+			}},
+			want: ImageManylinux2_28X86_64,
+		},
+		{
+			name: "AlmaLinux 8 with gcc-toolset-11 distinguishes from AlmaLinux 9",
+			entries: []archive.ZipEntry{{
+				FileHeader: &zip.FileHeader{Name: "pkg/_ext.abi3.so"},
+				Body: syntheticELFWithComment(elf.EM_X86_64,
+					"GCC: (GNU) 11.2.1 20220127 (Red Hat 11.2.1-9)",
+					"GCC: (GNU) 8.5.0 20210514 (Red Hat 8.5.0-10)",
+				),
+			}},
+			want: ImageManylinux2_28X86_64,
+		},
+		{
+			name: "AlmaLinux 9 manylinux_2_34 crti and gcc-toolset-14",
+			entries: []archive.ZipEntry{{
+				FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-312-x86_64-linux-gnu.so"},
+				Body: syntheticELFWithComment(elf.EM_X86_64,
+					"GCC: (GNU) 11.4.1 20231218 (Red Hat 11.4.1-3)",
+					"GCC: (GNU) 14.2.1 20250110 (Red Hat 14.2.1-7)",
+				),
+			}},
+			want: ImageManylinux2_34X86_64,
+		},
+		{
+			name: "Alpine 3.12 musllinux_1_1",
+			entries: []archive.ZipEntry{{
+				FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-311-x86_64-linux-musl.so"},
+				Body:       syntheticELFWithComment(elf.EM_X86_64, "GCC: (Alpine 9.3.0) 9.3.0"),
+			}},
+			want: ImageMusllinux1_1X86_64,
+		},
+		{
+			name: "Alpine 3.19 musllinux_1_1 with GCC 13.2.1_git2023",
+			entries: []archive.ZipEntry{{
+				FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-311-x86_64-linux-musl.so"},
+				Body:       syntheticELFWithComment(elf.EM_X86_64, "GCC: (Alpine 13.2.1_git20231014) 13.2.1 20231014"),
+			}},
+			want: ImageMusllinux1_1X86_64,
+		},
+		{
+			name: "Alpine 3.20 musllinux_1_2 with GCC 13.2.1_git2024",
+			entries: []archive.ZipEntry{{
+				FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-312-x86_64-linux-musl.so"},
+				Body:       syntheticELFWithComment(elf.EM_X86_64, "GCC: (Alpine 13.2.1_git20240309) 13.2.1 20240309"),
+			}},
+			want: ImageMusllinux1_2X86_64,
+		},
+		{
+			name: "Alpine musllinux_1_2 with GCC 14",
+			entries: []archive.ZipEntry{{
+				FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-312-x86_64-linux-musl.so"},
+				Body:       syntheticELFWithComment(elf.EM_X86_64, "GCC: (Alpine 14.2.0) 14.2.0"),
+			}},
+			want: ImageMusllinux1_2X86_64,
+		},
+		{
+			name: "Extension module preferred over bundled .libs library",
+			entries: []archive.ZipEntry{
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg.libs/libfoo-1234.so.1"},
+					Body:       syntheticELFWithComment(elf.EM_X86_64, "GCC: (GNU) 4.8.5 20150623 (Red Hat 4.8.5-44)"),
+				},
+				{
+					FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-312-x86_64-linux-gnu.so"},
+					Body:       syntheticELFWithComment(elf.EM_X86_64, "GCC: (GNU) 8.5.0 20210514 (Red Hat 8.5.0-22)"),
+				},
+			},
+			want: ImageManylinux2_28X86_64,
+		},
+		{
+			name: "Unrecognized Debian comment returns empty",
+			entries: []archive.ZipEntry{{
+				FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-311-x86_64-linux-gnu.so"},
+				Body:       syntheticELFWithComment(elf.EM_X86_64, "GCC: (Debian 10.2.1-6) 10.2.1 20210110"),
+			}},
+			want: "",
+		},
+		{
+			name: "Non-x86_64 ELF returns empty",
+			entries: []archive.ZipEntry{{
+				FileHeader: &zip.FileHeader{Name: "pkg/_ext.cpython-311-aarch64-linux-gnu.so"},
+				Body:       syntheticELFWithComment(elf.EM_AARCH64, "GCC: (GNU) 8.5.0 20210514 (Red Hat 8.5.0-22)"),
+			}},
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf, err := archivetest.ZipFile(tt.entries)
+			if err != nil {
+				t.Fatalf("ZipFile(): %v", err)
+			}
+			zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+			if err != nil {
+				t.Fatalf("NewReader(): %v", err)
+			}
+			if got := DetectBaseImage(zr); got != tt.want {
+				t.Errorf("DetectBaseImage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func syntheticELFWithComment(machine elf.Machine, comments ...string) []byte {
+	shstrtab := []byte("\x00.shstrtab\x00.comment\x00")
+	commentData := []byte(strings.Join(comments, "\x00") + "\x00")
+	const (
+		ehdrSize = 64
+		shdrSize = 64
+		shnum    = 3
+		dataOff  = ehdrSize + shnum*shdrSize
+	)
+	out := make([]byte, dataOff+len(shstrtab)+len(commentData))
+	copy(out[0:4], "\x7fELF")
+	out[4] = byte(elf.ELFCLASS64)
+	out[5] = byte(elf.ELFDATA2LSB)
+	out[6] = byte(elf.EV_CURRENT)
+	binary.LittleEndian.PutUint16(out[16:18], uint16(elf.ET_DYN))
+	binary.LittleEndian.PutUint16(out[18:20], uint16(machine))
+	binary.LittleEndian.PutUint32(out[20:24], uint32(elf.EV_CURRENT))
+	binary.LittleEndian.PutUint64(out[40:48], ehdrSize)
+	binary.LittleEndian.PutUint16(out[52:54], ehdrSize)
+	binary.LittleEndian.PutUint16(out[58:60], shdrSize)
+	binary.LittleEndian.PutUint16(out[60:62], shnum)
+	binary.LittleEndian.PutUint16(out[62:64], 1)
+	sh1 := out[ehdrSize+shdrSize : ehdrSize+2*shdrSize]
+	binary.LittleEndian.PutUint32(sh1[0:4], 1)
+	binary.LittleEndian.PutUint32(sh1[4:8], uint32(elf.SHT_STRTAB))
+	binary.LittleEndian.PutUint64(sh1[24:32], dataOff)
+	binary.LittleEndian.PutUint64(sh1[32:40], uint64(len(shstrtab)))
+	sh2 := out[ehdrSize+2*shdrSize : ehdrSize+3*shdrSize]
+	binary.LittleEndian.PutUint32(sh2[0:4], 11)
+	binary.LittleEndian.PutUint32(sh2[4:8], uint32(elf.SHT_PROGBITS))
+	binary.LittleEndian.PutUint64(sh2[24:32], uint64(dataOff+len(shstrtab)))
+	binary.LittleEndian.PutUint64(sh2[32:40], uint64(len(commentData)))
+	copy(out[dataOff:], shstrtab)
+	copy(out[dataOff+len(shstrtab):], commentData)
+	return out
 }

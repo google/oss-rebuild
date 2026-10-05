@@ -133,17 +133,27 @@ type PlatformWheelBuild struct {
 	ABITag       string    `json:"abi_tag,omitempty" yaml:"abi_tag,omitempty"`
 	Requirements []string  `json:"requirements" yaml:"requirements"`
 	PlatformTag  string    `json:"platform_tag,omitempty" yaml:"platform_tag,omitempty"`
+	BaseImage    string    `json:"base_image,omitempty" yaml:"base_image,omitempty"`
 	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
 
-func (b *PlatformWheelBuild) BaseImage() (string, error) {
+// selectBaseImage resolves the build container image using a two-tier strategy:
+//  1. If BaseImage is set (inferred from the ELF .comment section of the upstream wheel's
+//     shared objects or explicitly specified in a build definition), use it directly.
+//  2. Otherwise, fall back to deriving the image from PlatformTag via SelectBaseImage
+//     (for wheels whose .comment section was stripped, built on a non-PyPA distro, or when
+//     constructing a strategy from tags alone).
+func (b *PlatformWheelBuild) selectBaseImage() (string, error) {
+	if b.BaseImage != "" {
+		return b.BaseImage, nil
+	}
 	return platform.SelectBaseImage(b.PlatformTag)
 }
 
 func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
-	baseImage, err := b.BaseImage()
+	baseImage, err := b.selectBaseImage()
 	if err != nil {
 		return nil, errors.Wrap(err, "selecting base image")
 	}

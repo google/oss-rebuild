@@ -816,6 +816,7 @@ func TestPlatformWheelBuild_BaseImage(t *testing.T) {
 	tests := []struct {
 		name        string
 		platformTag string
+		baseImage   string
 		want        string
 		wantErr     bool
 	}{
@@ -837,6 +838,12 @@ func TestPlatformWheelBuild_BaseImage(t *testing.T) {
 		{
 			name:        "compressed tag set with legacy baseline",
 			platformTag: "manylinux1_x86_64.manylinux_2_28_x86_64",
+			want:        "quay.io/pypa/manylinux_2_28_x86_64",
+		},
+		{
+			name:        "explicit BaseImage overrides PlatformTag",
+			platformTag: "manylinux2014_x86_64.manylinux_2_17_x86_64",
+			baseImage:   "quay.io/pypa/manylinux_2_28_x86_64",
 			want:        "quay.io/pypa/manylinux_2_28_x86_64",
 		},
 		{
@@ -862,13 +869,13 @@ func TestPlatformWheelBuild_BaseImage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &PlatformWheelBuild{PlatformTag: tt.platformTag}
-			got, err := b.BaseImage()
+			b := &PlatformWheelBuild{PlatformTag: tt.platformTag, BaseImage: tt.baseImage}
+			got, err := b.selectBaseImage()
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("BaseImage() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("selectBaseImage() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if !tt.wantErr && got != tt.want {
-				t.Errorf("BaseImage() = %q, want %q", got, tt.want)
+				t.Errorf("selectBaseImage() = %q, want %q", got, tt.want)
 			}
 		})
 	}
