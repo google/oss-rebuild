@@ -174,10 +174,10 @@ github.com/mattn/go-runewidth v0.0.15 h1:UNAjwbU9l54TA3KzvqLGxwWjHmMgBUVhBiTjelZ
 github.com/mattn/go-runewidth v0.0.15/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/mitchellh/go-wordwrap v1.0.1 h1:TLuKupo69TCn6TQSyGxwI1EblZZEsQ0vMlAFQflz0v0=
 github.com/mitchellh/go-wordwrap v1.0.1/go.mod h1:R62XHJLzvMFRBbcrT7m7WgmE1eOyTSsCt+hzestvNj0=
-github.com/msuozzo/bonsai v0.4.0 h1:WVGqsSctbGcL5ehdCdnckwRxBC3omwsmOtzKH/2tuZw=
-github.com/msuozzo/bonsai v0.4.0/go.mod h1:LDo0Dmp6qaeEoJAG83UuLDHtwHn6H1knSYKqoXMxm4M=
-github.com/msuozzo/bonsai/bonsai-python v0.4.0 h1:spQNWwF6vBL4o8vfC+zoY8iZJfnLue1izNk7FKs0oXo=
-github.com/msuozzo/bonsai/bonsai-python v0.4.0/go.mod h1:yMx1oeH6SQUuru9IhIioteV7cmF7S/UQNp9bDdMSfjs=
+github.com/msuozzo/bonsai v0.4.1 h1:KPcATUNkbjk46XoKv6/NxZKiIS3GfP3kz+xQ7eYE1zQ=
+github.com/msuozzo/bonsai v0.4.1/go.mod h1:LDo0Dmp6qaeEoJAG83UuLDHtwHn6H1knSYKqoXMxm4M=
+github.com/msuozzo/bonsai/bonsai-python v0.4.1 h1:xYBabMOEeGs4fmxzHHU2NzL680T13MFNDuTH6fNP4og=
+github.com/msuozzo/bonsai/bonsai-python v0.4.1/go.mod h1:E7jypZIPIROw3hA+cqELh3u5a0mJTlTvO2Q06KFSe8k=
 github.com/ncruces/go-sqlite3 v0.35.3 h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY=
 github.com/ncruces/go-sqlite3 v0.35.3/go.mod h1:i1rhym/NIiB5xeEfzbN+e24Y+i7NGUpf7C2xZ3Dpwks=
 github.com/ncruces/go-sqlite3-wasm/v3 v3.2.35304 h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=
