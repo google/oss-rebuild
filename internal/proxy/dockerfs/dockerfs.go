@@ -200,22 +200,23 @@ func (fi FileInfo) Sys() any { return fi }
 // Resolve attempts to resolve the symlink of the provided file.
 func (c Filesystem) Resolve(f *File) (*File, error) {
 	log.Printf("Resolve for file: %s", f.Path)
-	s, err := f.Stat()
-	if err != nil {
-		return nil, err
+	// NOTE: 255 is the repetition threshold used by filepath.EvalSymlinks.
+	for range 255 {
+		if f.Metadata.FileInfo().Mode().Type()&fs.ModeSymlink == 0 {
+			return f, nil
+		}
+		linkPath := f.Metadata.Linkname
+		if filepath.IsAbs(linkPath) {
+			linkPath = filepath.Clean(linkPath)
+		} else {
+			linkPath = filepath.Join(filepath.Dir(f.Path), linkPath)
+		}
+		var err error
+		if f, err = c.Open(linkPath); err != nil {
+			return nil, err
+		}
 	}
-	if s.Mode().Type()&fs.ModeSymlink == 0 {
-		return f, nil
-	}
-	linkPath := f.Metadata.Linkname
-	if !filepath.IsAbs(linkPath) {
-		linkPath = filepath.Join(filepath.Dir(f.Path), f.Metadata.Linkname)
-	}
-	newF, err := c.Open(linkPath)
-	if err != nil {
-		return nil, err
-	}
-	return newF, err
+	return nil, errors.New("too many links")
 }
 
 // WriteFile writes the contents of the file back to the Docker container.
