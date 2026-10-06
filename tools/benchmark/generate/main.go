@@ -72,9 +72,10 @@ var cratesioTop2000 = RebuildBenchmark{
 		now := time.Now()
 		ageThreshold := now.Add(-1 * maxAge)
 		crates := make(chan cratesio.Metadata, 100)
-		// Get download-ordered crates from crates.io.
+		// Get download-ordered crates from crates.io. The consumer stops reading
+		// once it has enough packages, leaving this goroutine blocked until exit.
 		go func() {
-			for page := 1; len(ps.Packages) < maxPackages; page++ {
+			for page := 1; ; page++ {
 				url := fmt.Sprintf("https://crates.io/api/v1/crates?page=%d&per_page=100&sort=downloads", page)
 				req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 				if err != nil {
@@ -90,8 +91,14 @@ var cratesioTop2000 = RebuildBenchmark{
 				var ms struct {
 					Metadata []cratesio.Metadata `json:"crates"`
 				}
-				if derr := json.NewDecoder(resp.Body).Decode(&ms); derr != nil {
+				err = json.NewDecoder(resp.Body).Decode(&ms)
+				resp.Body.Close()
+				if err != nil {
 					log.Fatalf("decoding error on download-ordered page %d: %v", page, err)
+				}
+				if len(ms.Metadata) == 0 {
+					close(crates)
+					return
 				}
 				for _, m := range ms.Metadata {
 					crates <- m
