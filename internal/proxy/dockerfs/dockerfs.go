@@ -72,7 +72,7 @@ func (c Filesystem) Open(path string) (*File, error) {
 	if _, err := tr.Next(); err != io.EOF {
 		return nil, fs.ErrInvalid // NOTE: dirs are unsupported.
 	}
-	return &File{path, *hdr, b}, nil
+	return &File{Path: path, Metadata: *hdr, Contents: b}, nil
 }
 
 // Stat returns the FileInfo of a file from a Docker container.
@@ -244,13 +244,24 @@ type File struct {
 	Path     string
 	Metadata tar.Header
 	Contents []byte
+	offset   int
 }
 
 // Stat returns the file's FileInfo.
 func (c File) Stat() (fs.FileInfo, error) { return c.Metadata.FileInfo(), nil }
 
-// Read records the file's contents to the provided buffer.
-func (c File) Read(buf []byte) (int, error) { return copy(buf, c.Contents), nil }
+// Read copies the next bytes from the file into buf.
+func (c *File) Read(buf []byte) (int, error) {
+	if len(buf) == 0 {
+		return 0, nil
+	}
+	if c.offset >= len(c.Contents) {
+		return 0, io.EOF
+	}
+	n := copy(buf, c.Contents[c.offset:])
+	c.offset += n
+	return n, nil
+}
 
 // Close is a no-op.
 func (File) Close() error { return nil }

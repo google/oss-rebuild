@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 )
 
@@ -214,4 +216,38 @@ func must1(err error) {
 func must[T any](t T, err error) T {
 	must1(err)
 	return t
+}
+
+func TestFileRead(t *testing.T) {
+	type readResult struct {
+		N    int
+		Data string
+		Err  error
+	}
+	for _, tc := range []struct {
+		name     string
+		contents string
+		sizes    []int
+		want     []readResult
+	}{
+		{"Chunks", "abcdef", []int{3, 3, 3}, []readResult{{3, "abc", nil}, {3, "def", nil}, {0, "", io.EOF}}},
+		{"Uneven", "abcdef", []int{4, 4, 1}, []readResult{{4, "abcd", nil}, {2, "ef", nil}, {0, "", io.EOF}}},
+		{"Empty", "", []int{3}, []readResult{{0, "", io.EOF}}},
+		{"EmptyBuffer", "abcdef", []int{0, 2, 0, 8, 0, 1}, []readResult{{0, "", nil}, {2, "ab", nil}, {0, "", nil}, {4, "cdef", nil}, {0, "", nil}, {0, "", io.EOF}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &File{Contents: []byte(tc.contents)}
+			for i, size := range tc.sizes {
+				buf := make([]byte, size)
+				n, err := f.Read(buf)
+				got := readResult{n, string(buf[:n]), err}
+				if diff := cmp.Diff(tc.want[i], got, cmp.Comparer(func(a, b error) bool { return a == b })); diff != "" {
+					t.Fatalf("Read %d mismatch (-want +got):\n%s", i, diff)
+				}
+			}
+			if diff := cmp.Diff(tc.contents, string(f.Contents)); diff != "" {
+				t.Errorf("Contents changed (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
