@@ -5,6 +5,7 @@ package scratch
 
 import (
 	"context"
+	"encoding/base64"
 	"slices"
 	"strings"
 	"testing"
@@ -57,11 +58,21 @@ func TestPhaseFailureSurfacesExitError(t *testing.T) {
 		t.Fatalf("got %d exec creates, want 6 (prepare, start, 3 phases, stop)", len(f.createReqs))
 	}
 	prepare, start := f.createReqs[0], f.createReqs[1]
-	// Prepare creates the output mount point and sweeps prior containers.
+	// Prepare creates the output mount point, sweeps prior containers, and
+	// stages the plan's combined script as build.sh from stdin.
 	prepareScript := prepare.Cmd[len(prepare.Cmd)-1]
-	for _, want := range []string{"mkdir -p", "docker rm -f"} {
+	for _, want := range []string{"mkdir -p", "docker rm -f", `cat > "/home/builder/builds/iter-1/build.sh"`} {
 		if !strings.Contains(prepareScript, want) {
 			t.Errorf("prepare script missing %q:\n%s", want, prepareScript)
+		}
+	}
+	if staged, err := base64.StdEncoding.DecodeString(prepare.StdinB64); err != nil {
+		t.Errorf("prepare stdin: %v", err)
+	} else {
+		for _, want := range []string{"set -eux", "apk", "git clone", "npm install"} {
+			if !strings.Contains(string(staged), want) {
+				t.Errorf("staged build.sh missing %q:\n%s", want, staged)
+			}
 		}
 	}
 	// Start launches the idle container with direct docker argv.
@@ -186,10 +197,10 @@ func TestSuccessUploadsAssets(t *testing.T) {
 		}
 		r.Close()
 	}
-	// The fetch script guards existence and size before encoding.
+	// The fetch script guards existence and size before the copy.
 	fetch := f.createReqs[7]
 	script := fetch.Cmd[len(fetch.Cmd)-1]
-	for _, want := range []string{"base64", "wc -c"} {
+	for _, want := range []string{"cat ", "wc -c"} {
 		if !strings.Contains(script, want) {
 			t.Errorf("fetch script missing %q:\n%s", want, script)
 		}

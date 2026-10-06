@@ -95,7 +95,7 @@ func TestBuildDispatchesImageBuildAndRun(t *testing.T) {
 	}
 	// The fetch targets the plan's artifact in the staging directory.
 	fetchScript := f.createReqs[4].Cmd[len(f.createReqs[4].Cmd)-1]
-	for _, want := range []string{"base64", "builds/iter-1/out/lodash-4.17.21.tgz"} {
+	for _, want := range []string{"cat ", "builds/iter-1/out/lodash-4.17.21.tgz"} {
 		if !strings.Contains(fetchScript, want) {
 			t.Errorf("fetch script missing %q:\n%s", want, fetchScript)
 		}
