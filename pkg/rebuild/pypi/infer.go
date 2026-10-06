@@ -207,13 +207,19 @@ func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
 	return reqs, nil
 }
 
+// normalizeName applies PyPA name normalization so that equivalent spellings
+// of a distribution name, like "Flit.Core" and "flit_core", compare equal.
+// https://packaging.python.org/en/latest/specifications/name-normalization/
+func normalizeName(name string) string {
+	return strings.ToLower(distInfoFieldPat.ReplaceAllString(name, "-"))
+}
+
 // Wheel dist-info names use escaped distribution/version components:
 // https://packaging.python.org/en/latest/specifications/binary-distribution-format/#escaping-and-unicode
 // Name comparisons use PyPA name normalization:
 // https://packaging.python.org/en/latest/specifications/name-normalization/
 func normalizeDistInfoName(name string) string {
-	normalized := distInfoFieldPat.ReplaceAllString(name, "-")
-	return strings.ReplaceAll(strings.ToLower(normalized), "-", "_")
+	return strings.ReplaceAll(normalizeName(name), "-", "_")
 }
 
 func normalizeDistInfoVersion(version string) string {
@@ -266,34 +272,68 @@ func hasZipDir(dir string, zr *zip.Reader) bool {
 	return false
 }
 
-// requirementName extracts the distribution name from a PEP 508 requirement,
-// dropping extras, version specifiers and markers, so "setuptools[core]<=67.7.2"
-// yields "setuptools".
+// requirementName extracts the normalized distribution name from a dependency
+// specifier, dropping extras, version specifiers, direct references and
+// markers, so "SetupTools[core]<=67.7.2" yields "setuptools".
+// https://packaging.python.org/en/latest/specifications/dependency-specifiers/#grammar
 func requirementName(req string) string {
-	fields := strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~!;[ \t", r) })
+	fields := strings.FieldsFunc(req, func(r rune) bool { return strings.ContainsRune("=<>~!;[(@ \t", r) })
 	if len(fields) == 0 {
 		return ""
 	}
-	return fields[0]
+	return normalizeName(fields[0])
 }
 
-// hasRequirement reports whether reqs name any of the packages under any specifier.
+// urlMarkerSepPat matches the separator before a direct reference's marker.
+var urlMarkerSepPat = re.MustCompile(`[ \t]+;`)
+
+// requirementMarker returns the environment marker of a dependency specifier,
+// or "" if it has none.
+// NOTE: URLs may contain ';', so the grammar requires whitespace before the
+// marker of a direct reference. Names, extras and versions cannot contain '@'
+// or ';', so an '@' before the first ';' marks a direct reference.
+// https://packaging.python.org/en/latest/specifications/dependency-specifiers/#grammar
+func requirementMarker(req string) string {
+	semi := strings.IndexByte(req, ';')
+	if at := strings.IndexByte(req, '@'); at != -1 && (semi == -1 || at < semi) {
+		loc := urlMarkerSepPat.FindStringIndex(req[at:])
+		if loc == nil {
+			return ""
+		}
+		return strings.TrimSpace(req[at+loc[1]:])
+	}
+	if semi == -1 {
+		return ""
+	}
+	return strings.TrimSpace(req[semi+1:])
+}
+
+// hasRequirement reports whether reqs name any of the packages under any
+// specifier. The names must be normalized.
 func hasRequirement(reqs []string, names ...string) bool {
 	return slices.ContainsFunc(reqs, func(r string) bool { return slices.Contains(names, requirementName(r)) })
 }
 
 // mergeRequirements appends the buildReqs entries whose package does not
 // already appear in reqs, also collapsing repeats within buildReqs itself.
+// Entries of one package with different environment markers are all kept, as
+// each takes effect in a different environment and the installer evaluates
+// them against the build interpreter.
+// https://packaging.python.org/en/latest/specifications/dependency-specifiers/#environment-markers
 func mergeRequirements(reqs, buildReqs []string) []string {
-	existing := make(map[string]bool)
+	pinned := make(map[string]bool)
 	for _, req := range reqs {
-		existing[requirementName(req)] = true
+		pinned[requirementName(req)] = true
 	}
+	seen := make(map[string]bool)
 	for _, newReq := range buildReqs {
-		// Mark as we add so duplicates within buildReqs collapse too.
-		if pkg := requirementName(newReq); pkg != "" && !existing[pkg] {
+		pkg := requirementName(newReq)
+		if pkg == "" || pinned[pkg] {
+			continue
+		}
+		if key := pkg + ";" + requirementMarker(newReq); !seen[key] {
 			reqs = append(reqs, newReq)
-			existing[pkg] = true
+			seen[key] = true
 		}
 	}
 	return reqs
@@ -441,7 +481,7 @@ func inferPythonVersion(reqs []string, registryTime time.Time) string {
 		return "3.11"
 	}
 	for _, req := range reqs {
-		if !strings.EqualFold(requirementName(req), "setuptools") {
+		if requirementName(req) != "setuptools" {
 			continue
 		}
 		for _, m := range versionCeilingPat.FindAllStringSubmatch(req, -1) {
