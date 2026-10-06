@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/api/run/v2"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -123,6 +124,9 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 			session.Updated = time.Now().UTC()
 			if serr := deps.Sessions.Update(ctx, session); serr != nil {
 				log.Printf("terminating session %s after scratch allocation failure: %v", sessionID, serr)
+			}
+			if status.Code(err) == codes.ResourceExhausted {
+				return nil, api.AsStatus(codes.ResourceExhausted, errors.Wrap(err, "allocating scratch"))
 			}
 			return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "allocating scratch"))
 		}
