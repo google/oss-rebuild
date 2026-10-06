@@ -81,13 +81,28 @@ table {
     border-radius: 8px;
     overflow: hidden;
     margin-bottom: 20px;
+    font-variant-numeric: tabular-nums;
 }
 th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
-th { background: var(--fill); color: var(--heading); font-weight: 600; }
+th { background: var(--fill); color: var(--heading); font-weight: 600; font-size: 0.85rem; }
 tr:last-child td { border-bottom: none; }
+tr:hover > td { background: color-mix(in srgb, var(--fill) 60%, transparent); }
+time { white-space: nowrap; }
+/* Lets long unbroken values (wheel names, prerelease versions with commit
+   hashes) break mid-token so the table fits. */
+td.wrap { overflow-wrap: anywhere; }
 
 .status-success { color: var(--accent); font-weight: 600; }
 .status-fail { color: var(--mismatch); font-weight: 600; }
+.status-success, .status-fail, .status-running { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.status-success::before, .status-fail::before, .status-running::before {
+    content: "";
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
 
 /* Preformatted blocks (package & attempt views) */
 pre {
@@ -155,15 +170,16 @@ details.traj-body > summary { cursor: pointer; color: var(--secondary); font-siz
 /* Summary cards. */
 .cards {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 16px;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
 }
 .card {
     background: #fff;
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 20px;
+    box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
 }
 .card-value { font-family: 'Merriweather', serif; font-size: 2rem; color: var(--heading); }
 .card-label { color: var(--secondary); font-size: 0.9rem; margin-top: 4px; }
@@ -205,7 +221,8 @@ details.traj-body > summary { cursor: pointer; color: var(--secondary); font-siz
 .strip .cell:hover { outline: 2px solid var(--heading); outline-offset: 1px; }
 .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; font-size: 0.85rem; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
-.legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; border: 1px solid rgba(0, 0, 0, 0.10); }
+.legend-swatch.state-untried { border-style: dashed; }
 
 /* Tabs (pure CSS via hidden radios). */
 .tabbed { margin-top: 20px; }
@@ -237,6 +254,16 @@ details.traj-body > summary { cursor: pointer; color: var(--secondary); font-siz
     color: var(--heading);
     border-bottom-color: var(--accent);
 }
+#tab-events:focus-visible ~ .tabs label[for="tab-events"],
+#tab-rebuilds:focus-visible ~ .tabs label[for="tab-rebuilds"],
+#tab-sessions:focus-visible ~ .tabs label[for="tab-sessions"],
+#tab-versions:focus-visible ~ .tabs label[for="tab-versions"] {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+/* Link tabs (ecosystem filters) mark the current one server-side. */
+.tabs a.tab:hover { text-decoration: none; }
+.tabs a.active { color: var(--heading); border-bottom-color: var(--accent); }
 
 /* Status badges in the by-version table. */
 .badge {
@@ -248,4 +275,38 @@ details.traj-body > summary { cursor: pointer; color: var(--secondary); font-siz
     color: #fff;
 }
 .badge.state-untried { color: var(--secondary); border: 1px solid var(--border); }
+.badge:not([class*="state-"]) { color: var(--secondary); background: var(--fill); border: 1px solid var(--border); }
 .badge.state-regressed { background: transparent; color: var(--failure); border: 1px solid var(--failure); box-shadow: none; }
+
+/* Shared page furniture: snapshot timestamps, de-emphasized values, magnitude
+   bars, and the definitions behind a "?" marker. A hidden definition is
+   display: none so it adds no scrollable width at the page edge. */
+.asof { color: var(--muted); }
+.muted { color: var(--muted); }
+.bar { background-color: var(--accent); height: 12px; border-radius: 2px; min-width: 1px; }
+.info { display: inline-block; position: relative; margin-left: 5px; width: 1.15em; height: 1.15em; line-height: 1.15em; border-radius: 50%; border: 1px solid var(--border); background: var(--fill); color: var(--muted); font-size: 0.72rem; font-weight: 600; text-align: center; vertical-align: middle; cursor: help; }
+.info::after { content: attr(data-tip); position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); width: max-content; max-width: 22em; padding: 6px 10px; border-radius: 4px; background: var(--heading); color: var(--bg); font-size: 0.8rem; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; display: none; z-index: 1; }
+.info:hover::after, .info:focus-visible::after { display: block; }
+.info:focus-visible { outline-offset: 1px; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+summary:hover { color: var(--heading); }
+
+@media (max-width: 640px) {
+    body { padding: 16px; }
+    /* Wide tables scroll within themselves instead of the page. */
+    table { display: block; overflow-x: auto; }
+    th, td { padding: 8px 10px; }
+    .cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+    .card { padding: 14px 16px; }
+    .card-value { font-size: 1.6rem; }
+}
+
+@media print {
+    body { max-width: none; padding: 0; background: #fff; }
+    header.site nav, .strip-nav, .info, html.navigating::before { display: none; }
+    a { color: inherit; }
+    tr, .card, .session, .traj-event { break-inside: avoid; }
+    pre, .traj-text { max-height: none; overflow: visible; white-space: pre-wrap; }
+}
