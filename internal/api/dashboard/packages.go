@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/ncruces/go-sqlite3"
@@ -17,6 +18,9 @@ import (
 // packagesLimit bounds the /packages listing so the page stays readable.
 // The count cards still cover every package in the selected scope.
 const packagesLimit = 500
+
+// recentBuilds bounds the outcome strip on each /packages row.
+const recentBuilds = 12
 
 var _ api.HandlerFn[PackagesRequest, PackagesData, *Deps] = PackagesPage
 
@@ -39,6 +43,7 @@ type PackageRow struct {
 	LastAttemptedStatus              string
 	LastSucceededAt                  string
 	LastSucceededVersion             string
+	Recent                           []bool // latest build outcomes, oldest first
 	EncodedEcosystem, EncodedPackage string
 }
 
@@ -94,14 +99,15 @@ func PackagesPage(ctx context.Context, req PackagesRequest, deps *Deps) (*Packag
 	if err != nil {
 		return nil, errors.Wrap(err, "counting packages")
 	}
+	listed := `FROM package_stats` + where + `
+		ORDER BY consecutive_failures DESC, attempt_count DESC, ecosystem, package
+		LIMIT ` + strconv.Itoa(packagesLimit)
 	err = forEachRow(deps.Analytics, `
 		SELECT ecosystem, package, ever_built, consecutive_failures,
 			attempt_count, versions_attempted, versions_succeeded,
 			coalesce(last_attempted_time, ''), coalesce(last_attempted_version, ''), coalesce(last_attempted_status, ''),
 			coalesce(last_succeeded_time, ''), coalesce(last_succeeded_version, '')
-		FROM package_stats`+where+`
-		ORDER BY consecutive_failures DESC, attempt_count DESC, ecosystem, package
-		LIMIT `+strconv.Itoa(packagesLimit),
+		`+listed,
 		func(stmt *sqlite3.Stmt) error {
 			p := PackageRow{
 				Ecosystem:            stmt.ColumnText(0),
@@ -128,6 +134,32 @@ func PackagesPage(ctx context.Context, req PackagesRequest, deps *Deps) (*Packag
 		})
 	if err != nil {
 		return nil, errors.Wrap(err, "querying package stats")
+	}
+	byKey := make(map[[2]string]*PackageRow, len(data.Packages))
+	for i := range data.Packages {
+		byKey[[2]string{data.Packages[i].Ecosystem, data.Packages[i].Package}] = &data.Packages[i]
+	}
+	// IN, unlike a join, lets SQLite push the filter into both CompletedBuilds
+	// branches and seek their (ecosystem, package) indexes.
+	err = forEachRow(deps.Analytics, `
+		WITH listed AS (SELECT ecosystem, package `+listed+`),
+		ranked AS (
+			SELECT ecosystem, package, success,
+				row_number() OVER (PARTITION BY ecosystem, package ORDER BY created DESC, run_id DESC) AS rn
+			FROM (`+snapshot.CompletedBuilds+`)
+			WHERE (ecosystem, package) IN listed)
+		SELECT ecosystem, package, success FROM ranked
+		WHERE rn <= `+strconv.Itoa(recentBuilds)+`
+		ORDER BY ecosystem, package, rn DESC`,
+		func(stmt *sqlite3.Stmt) error {
+			// A snapshot refresh between the two queries can list other packages.
+			if p := byKey[[2]string{stmt.ColumnText(0), stmt.ColumnText(1)}]; p != nil {
+				p.Recent = append(p.Recent, stmt.ColumnInt64(2) != 0)
+			}
+			return nil
+		})
+	if err != nil {
+		return nil, errors.Wrap(err, "querying recent builds")
 	}
 	data.Listed = int64(len(data.Packages))
 	return data, nil
