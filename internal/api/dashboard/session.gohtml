@@ -13,7 +13,7 @@
             {{else if eq .Session.Status "RUNNING"}}<span class="status-running">Running</span>
             {{else}}<span>{{.Session.Status}}</span>{{end}}
             <span class="badge">{{if .Session.ExecutionMode}}{{.Session.ExecutionMode}}{{else}}gcb{{end}}</span>
-            <span class="session-meta">{{if .Session.ExecutionName}}hosted{{else}}local{{end}} · {{.Session.Created.Format "2006-01-02 15:04:05"}}</span>
+            <span class="session-meta">{{if .Session.ExecutionName}}hosted{{else}}local{{end}} · {{template "when" .Session.Created}}</span>
         </div>
         {{if .Session.Summary}}<div class="session-summary">{{.Session.Summary}}</div>{{end}}
         <div class="kv">

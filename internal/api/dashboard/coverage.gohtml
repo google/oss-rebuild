@@ -48,19 +48,19 @@
     <tr>
         <td><a href="/coverage?eco={{.Ecosystem}}">{{.Ecosystem}}</a></td>
         {{if .HasScope}}
-        <td>{{.InScope}}</td>
-        <td>{{.Started}}</td>
-        <td>{{.Reproduced}}</td>
+        <td>{{num .InScope}}</td>
+        <td>{{num .Started}}</td>
+        <td>{{num .Reproduced}}</td>
         <td>{{.CoveragePct}}%</td>
         <td>{{.WeightedPct}}%</td>
         {{else}}
         <td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>
         {{end}}
         {{if .HasQueue}}
-        <td>{{.Queued}}</td>
-        <td>{{.InFlight}}</td>
-        <td>{{.NeedsTriage}}</td>
-        <td>{{.Done}}</td>
+        <td>{{num .Queued}}</td>
+        <td>{{num .InFlight}}</td>
+        <td>{{num .NeedsTriage}}</td>
+        <td>{{num .Done}}</td>
         {{else}}
         <td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>
         {{end}}
@@ -73,9 +73,9 @@
 <h3>Packages</h3>
 {{if .HasScope}}
 <div class="cards">
-    <div class="card"><div class="card-value">{{.InScope}}</div><div class="card-label">in scope{{template "def" "Packages the published signals rank, the onboarding goal."}}</div></div>
-    <div class="card"><div class="card-value">{{.Started}}</div><div class="card-label">started{{template "def" "In scope, with a campaign or an attempt."}}</div></div>
-    <div class="card"><div class="card-value">{{.Reproduced}}</div><div class="card-label">reproduced{{template "def" "Started, and attested at the latest version attempted."}}</div></div>
+    <div class="card"><div class="card-value">{{num .InScope}}</div><div class="card-label">in scope{{template "def" "Packages the published signals rank, the onboarding goal."}}</div></div>
+    <div class="card"><div class="card-value">{{num .Started}}</div><div class="card-label">started{{template "def" "In scope, with a campaign or an attempt."}}</div></div>
+    <div class="card"><div class="card-value">{{num .Reproduced}}</div><div class="card-label">reproduced{{template "def" "Started, and attested at the latest version attempted."}}</div></div>
     <div class="card"><div class="card-value">{{.CoveragePct}}%</div><div class="card-label">coverage{{template "def" "Reproduced over in scope."}}</div></div>
     <div class="card"><div class="card-value">{{.WeightedPct}}%</div><div class="card-label">weighted by score{{template "def" "Coverage, weighting each package by its score."}}</div></div>
 </div>
@@ -85,10 +85,10 @@
 <h3>Campaigns{{template "def" "One campaign per package version. Done campaigns are listed under the stage that attested them."}}</h3>
 {{if .HasQueue}}
 <div class="cards">
-    <div class="card"><div class="card-value">{{.Queued}}</div><div class="card-label">queued{{template "def" "Campaigns waiting for dispatch at their next stage."}}</div></div>
-    <div class="card"><div class="card-value">{{.InFlight}}</div><div class="card-label">in flight{{template "def" "Campaigns dispatched and awaiting an outcome."}}</div></div>
-    <div class="card"><div class="card-value">{{.NeedsTriage}}</div><div class="card-label">needs triage{{template "def" "Campaigns whose automated stages are exhausted, awaiting a person."}}</div></div>
-    {{range .DoneByStage}}<div class="card"><div class="card-value">{{.Done}}</div><div class="card-label">done at {{.Stage}}</div></div>
+    <div class="card"><div class="card-value">{{num .Queued}}</div><div class="card-label">queued{{template "def" "Campaigns waiting for dispatch at their next stage."}}</div></div>
+    <div class="card"><div class="card-value">{{num .InFlight}}</div><div class="card-label">in flight{{template "def" "Campaigns dispatched and awaiting an outcome."}}</div></div>
+    <div class="card"><div class="card-value">{{num .NeedsTriage}}</div><div class="card-label">needs triage{{template "def" "Campaigns whose automated stages are exhausted, awaiting a person."}}</div></div>
+    {{range .DoneByStage}}<div class="card"><div class="card-value">{{num .Done}}</div><div class="card-label">done at {{.Stage}}</div></div>
     {{end}}
 </div>
 {{else}}
@@ -110,13 +110,13 @@
     {{range .Weeks}}
     <tr>
         <td>{{.Week}}</td>
-        <td>{{.Attempted}}</td>
-        <td>{{.Reproduced}}</td>
-        <td>{{.Behind}}</td>
+        <td>{{num .Attempted}}</td>
+        <td>{{num .Reproduced}}</td>
+        <td>{{num .Behind}}</td>
         <td>{{.SharePct}}%</td>
         <td class="barcell"><div class="bar" style="width: {{.SharePct}}%"></div></td>
         <td>{{if .HasWeighted}}{{.WeightedPct}}%{{else}}&mdash;{{end}}</td>
-        <td>{{.NewlyBroken}}</td>
+        <td>{{num .NewlyBroken}}</td>
     </tr>
     {{end}}
 </table>
