@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -238,6 +239,99 @@ commits:
 	}
 	if _, err := tempFS.Stat("snapshot-2024-03-01"); err != nil {
 		t.Error("2024-03-01 should exist on filesystem")
+	}
+}
+
+func TestEvictSnapshotsIfNeeded(t *testing.T) {
+	// Loaded snapshots, ordered from least to most recently accessed.
+	names := []string{"2024-01-01", "2024-02-01", "2024-03-01", "2024-04-01"}
+	testCases := []struct {
+		name        string
+		loaded      int      // number of names loaded into the manager
+		keep        []string // snapshots held by the current request
+		wantErr     string
+		wantEvicted []string
+	}{
+		{
+			name:   "under capacity",
+			loaded: 1,
+		},
+		{
+			name:        "evicts least recently used",
+			loaded:      3,
+			wantEvicted: names[:2],
+		},
+		{
+			name:        "skips kept snapshots",
+			loaded:      3,
+			keep:        names[:1],
+			wantEvicted: names[1:3],
+		},
+		{
+			// An over-capacity manager (e.g. after loading snapshots from disk)
+			// can need to evict more snapshots than it allocates.
+			name:        "evicts more than allocated",
+			loaded:      4,
+			keep:        names[3:],
+			wantEvicted: names[:3],
+		},
+		{
+			name:    "insufficient candidates",
+			loaded:  4,
+			keep:    names[2:],
+			wantErr: "insufficient snapshots available to evict: [need=3,available=2]",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := safememfs.New()
+			mgr := NewIndexManager(IndexManagerConfig{
+				Filesystem:            fs,
+				MaxSnapshots:          2,
+				CurrentUpdateInterval: time.Hour,
+			})
+			defer mgr.Close()
+			repos := make(map[string]*managedRepository)
+			for i, name := range names[:tc.loaded] {
+				repo := &managedRepository{
+					key:  RepositoryKey{Type: SnapshotIndex, Name: name},
+					path: "snapshot-" + name,
+				}
+				repo.lastAccess.Store(int64(i + 1))
+				must1(fs.MkdirAll(repo.path, 0755))
+				mgr.repositories.Store(repo.key, repo)
+				repos[name] = repo
+			}
+			var keep []*managedRepository
+			for _, name := range tc.keep {
+				keep = append(keep, repos[name])
+			}
+			toAllocate := []*managedRepository{{
+				key:  RepositoryKey{Type: SnapshotIndex, Name: "2024-05-01"},
+				path: "snapshot-2024-05-01",
+			}}
+			// Bound the eviction retry loop so a capacity check regression fails
+			// instead of hanging.
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+
+			var gotErr string
+			if err := mgr.evictSnapshotsIfNeeded(ctx, toAllocate, keep); err != nil {
+				gotErr = err.Error()
+			}
+			if gotErr != tc.wantErr {
+				t.Errorf("evictSnapshotsIfNeeded() error = %q, want %q", gotErr, tc.wantErr)
+			}
+			for name, repo := range repos {
+				wantEvicted := slices.Contains(tc.wantEvicted, name)
+				if _, ok := mgr.repositories.Load(repo.key); ok == wantEvicted {
+					t.Errorf("%s registered = %v, want %v", name, ok, !wantEvicted)
+				}
+				if _, err := fs.Stat(repo.path); (err == nil) == wantEvicted {
+					t.Errorf("%s on disk = %v, want %v", name, err == nil, !wantEvicted)
+				}
+			}
+		})
 	}
 }
 
