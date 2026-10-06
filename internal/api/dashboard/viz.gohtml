@@ -1,0 +1,32 @@
+{{/*
+ Copyright 2026 Google LLC
+ SPDX-License-Identifier: Apache-2.0
+*/}}
+{{- define "ecocards"}}
+<div class="eco-cards">
+    {{range .}}
+    <section class="card eco-card">
+        <div class="eco-head"><h3>{{.Ecosystem}}</h3><a href="/coverage?eco={{.Ecosystem}}">Coverage</a></div>
+        <div class="figure"><span class="figure-value">{{num .Reproduced}}</span><span class="figure-pct">{{.Pct}}%</span></div>
+        <div class="figure-label">reproduced of {{num .InScope}} in scope</div>
+        {{template "standing" .}}
+        <div class="chart" data-chart="growth" data-src="overview" data-eco="{{.Ecosystem}}" data-label="{{.Ecosystem}} packages reproduced at any version over time"></div>
+        <div class="chart-note">Reproduced at any version, cumulative: {{num .EverBuilt}}</div>
+    </section>
+    {{end}}
+</div>
+{{- end}}
+{{- define "standing"}}
+<div class="segbar" data-title="{{.Ecosystem}}">
+    {{- if .Reproduced}}<span class="seg ok" style="flex-grow: {{.Reproduced}}" data-c="ok" data-v="{{num .Reproduced}}" data-k="reproduced"></span>{{end}}
+    {{- with .Pending}}<span class="seg warn" style="flex-grow: {{.}}" data-c="warn" data-v="{{num .}}" data-k="started, not reproduced"></span>{{end}}
+    {{- with .Unstarted}}<span class="seg none" style="flex-grow: {{.}}" data-c="none" data-v="{{num .}}" data-k="not started"></span>{{end -}}
+</div>
+{{- end}}
+{{- define "standing-legend"}}
+<div class="legend">
+    <span class="legend-item"><i class="swatch ok"></i>Reproduced</span>
+    <span class="legend-item"><i class="swatch warn"></i>Started, not reproduced</span>
+    <span class="legend-item"><i class="swatch none"></i>Not started</span>
+</div>
+{{- end}}

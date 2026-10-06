@@ -66,12 +66,16 @@ type CoverageEco struct {
 	Weeks       []CoverageWeek
 }
 
+// Campaigns counts the ecosystem's campaigns in every state.
+func (e CoverageEco) Campaigns() int64 { return e.Queued + e.InFlight + e.NeedsTriage + e.Done }
+
 type CoverageData struct {
-	Loaded bool
-	AsOf   string
-	Eco    string        // selected tab, empty is the comparison view
-	Ecos   []CoverageEco // one per ecosystem, in name order
-	Detail *CoverageEco  // the selected ecosystem with its weekly trend
+	Loaded   bool
+	AsOf     string
+	Eco      string        // selected tab, empty is the comparison view
+	Ecos     []CoverageEco // one per ecosystem, in name order
+	Detail   *CoverageEco  // the selected ecosystem with its weekly trend
+	Overview *Overview
 }
 
 func coverageWeekFromStmt(stmt *sqlite3.Stmt) CoverageWeek {
@@ -106,6 +110,11 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 	}
 	data.Loaded = true
 	data.AsOf = asOf(deps.Analytics)
+	overview, err := loadOverview(deps.Analytics)
+	if err != nil {
+		return nil, errors.Wrap(err, "loading overview")
+	}
+	data.Overview = overview
 	byEco := map[string]*CoverageEco{}
 	eco := func(name string) *CoverageEco {
 		if byEco[name] == nil {
@@ -115,7 +124,7 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 	}
 	// Ecosystems with attempts but no signals or campaigns still get a tab
 	// for their weekly funnel.
-	err := forEachRow(deps.Analytics, `SELECT DISTINCT ecosystem FROM coverage_weekly`,
+	err = forEachRow(deps.Analytics, `SELECT DISTINCT ecosystem FROM coverage_weekly`,
 		func(stmt *sqlite3.Stmt) error {
 			eco(stmt.ColumnText(0))
 			return nil

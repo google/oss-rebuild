@@ -181,7 +181,7 @@ details.traj-body > summary { cursor: pointer; color: var(--secondary); font-siz
     padding: 20px;
     box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
 }
-.card-value { font-family: 'Merriweather', serif; font-size: 2rem; color: var(--heading); }
+.card-value { font-size: 1.9rem; }
 .card-label { color: var(--secondary); font-size: 0.9rem; margin-top: 4px; }
 
 /* Version status strip. */
@@ -326,3 +326,127 @@ summary:hover { color: var(--heading); }
     tr, .card, .session, .traj-event { break-inside: avoid; }
     pre, .traj-text { max-height: none; overflow: visible; white-space: pre-wrap; }
 }
+
+/* Overview bands: headline figures, part-to-whole bars, and the marks
+   charts.js draws. Series classes set --c, which every mark, swatch, and
+   tooltip key reads. */
+.ok { --c: var(--viz-ok); }
+.warn { --c: var(--viz-warn); }
+.bad { --c: var(--viz-bad); }
+.none { --c: var(--viz-none); }
+.live { --c: var(--viz-live); }
+.muted { --c: var(--muted); }
+.stage-replay { --c: var(--viz-stage-replay); }
+.stage-infer { --c: var(--viz-stage-infer); }
+.stage-agent { --c: var(--viz-stage-agent); }
+
+.eyebrow { display: flex; align-items: center; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+/* Figures stay in the body sans: a serif reads as decoration at display
+   sizes. Proportional digits, since these never stack in a column. */
+.hero-figure, .figure-value, .tile-value, .card-value {
+    font-family: 'Public Sans', system-ui, -apple-system, sans-serif;
+    font-weight: 650;
+    color: var(--heading);
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+}
+.hero-figure { font-size: 3.4rem; margin: 8px 0 6px; }
+.hero-sub { color: var(--secondary); margin-bottom: 18px; }
+.hero-sub b, .chart-sub b { color: var(--heading); }
+.hero {
+    display: grid;
+    grid-template-columns: minmax(260px, 2fr) 3fr;
+    gap: 36px;
+    align-items: start;
+    margin: 24px 0 16px;
+    padding: 26px 28px 20px;
+    background: linear-gradient(120deg, #fff 50%, color-mix(in srgb, var(--viz-ok) 8%, #fff));
+}
+.hero .segbar { height: 18px; }
+.hero .legend { gap: 6px 14px; font-size: 0.82rem; }
+.chart-title { display: flex; align-items: center; font-weight: 600; color: var(--heading); font-size: 0.95rem; margin-bottom: 4px; }
+.chart-sub { color: var(--secondary); font-size: 0.85rem; }
+.chart-note { color: var(--muted); font-size: 0.8rem; }
+
+.eco-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 10px; }
+.eco-card { display: flex; flex-direction: column; gap: 4px; padding: 18px 20px 14px; }
+.eco-head { display: flex; justify-content: space-between; align-items: baseline; }
+.eco-head h3 { margin: 0; font-size: 1rem; }
+.eco-head a { font-size: 0.85rem; }
+.figure { display: flex; align-items: baseline; gap: 10px; margin-top: 4px; }
+.figure-value { font-size: 2.3rem; }
+.figure-pct { font-size: 1.05rem; font-weight: 600; color: var(--secondary); }
+.figure-label { color: var(--muted); font-size: 0.85rem; }
+
+/* Part-to-whole bar: flex-grow carries each count and a 2px surface gap
+   separates the segments. */
+.segbar {
+    display: flex;
+    gap: 2px;
+    height: 12px;
+    margin: 8px 0;
+    border-radius: 4px;
+    overflow: hidden;
+    animation: viz-reveal 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.seg { flex: 1 1 0; min-width: 2px; background: var(--c); transition: filter 0.15s; }
+.seg:hover { filter: brightness(1.12) saturate(1.1); }
+.swatch { display: inline-block; flex: none; width: 12px; height: 12px; border-radius: 3px; background: var(--c); }
+.swatch.none { box-shadow: inset 0 0 0 1px rgba(28, 25, 23, 0.08); }
+.legend .legend-item { color: var(--secondary); }
+
+.band { display: grid; grid-template-columns: 2fr 3fr; gap: 16px; margin: 8px 0 18px; }
+.band-main .hero-figure { font-size: 2.8rem; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin: 8px 0 20px; }
+.tile { padding: 16px 18px 10px; }
+.tile-value { font-size: 1.9rem; margin: 8px 0 10px; }
+.chart-card { padding: 16px 18px 12px; margin-bottom: 14px; }
+.outcomes { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 20px; }
+.outcome-row { display: grid; grid-template-columns: 80px 1fr 64px; align-items: center; gap: 12px; }
+.outcome-row .segbar { height: 16px; margin: 0; }
+.outcome-name { font-weight: 600; color: var(--heading); }
+.outcome-total { text-align: right; color: var(--secondary); font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+    .hero, .band { grid-template-columns: 1fr; }
+    .hero-figure { font-size: 2.8rem; }
+}
+
+.chart svg { display: block; overflow: visible; }
+.chart .rise path { fill: var(--c); }
+.chart path.area { fill: var(--c); fill-opacity: 0.1; }
+.chart path.line { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart circle.dot { fill: var(--c); stroke: #fff; stroke-width: 2; }
+.chart .grid { stroke: var(--viz-grid); }
+.chart .axis { stroke: var(--border); }
+.chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .cap { fill: var(--secondary); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.chart .cross { stroke: var(--secondary); }
+.chart .hl { fill: var(--fill); }
+.enter .rise { transform-box: fill-box; transform-origin: bottom; animation: viz-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.enter .reveal { animation: viz-reveal 1.2s cubic-bezier(0.3, 0.6, 0.2, 1) both; }
+@keyframes viz-reveal { from { clip-path: inset(0 100% 0 0); } }
+@keyframes viz-rise { from { transform: scaleY(0); } }
+@media (prefers-reduced-motion: reduce) {
+    .segbar, .enter .rise, .enter .reveal { animation: none; }
+}
+
+.viz-tip {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 20;
+    min-width: 120px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--heading);
+    color: #fff;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    box-shadow: 0 6px 18px rgba(28, 25, 23, 0.18);
+    pointer-events: none;
+}
+.viz-tip-title { color: #d6d3d1; margin-bottom: 2px; }
+.viz-tip-row { display: flex; align-items: center; gap: 8px; }
+.viz-tip-row b { font-variant-numeric: tabular-nums; }
+.viz-tip-row span { color: #d6d3d1; }
+.viz-tip .key { flex: none; width: 12px; height: 3px; border-radius: 2px; background: var(--c); }

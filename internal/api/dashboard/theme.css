@@ -15,4 +15,16 @@
     --accent: #0f766e;
     --mismatch: #b91c1c;
     --failure: #b45309;
+    /* Chart marks. The status steps pass the dataviz validator's color-vision
+       checks against white, which --accent alone does not (too gray as a
+       fill), and the stage steps are one ordinal teal ramp. */
+    --viz-ok: #0d9488;
+    --viz-warn: #d97706;
+    --viz-bad: #c42020;
+    --viz-none: #e7e5e4;
+    --viz-live: #78716c;
+    --viz-stage-replay: #0b5e57;
+    --viz-stage-infer: #0d9488;
+    --viz-stage-agent: #6cc2b6;
+    --viz-grid: #efedeb;
 }

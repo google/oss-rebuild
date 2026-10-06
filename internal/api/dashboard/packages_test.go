@@ -45,6 +45,8 @@ func TestPackagesPage(t *testing.T) {
 	a := PackageRow{Ecosystem: "npm", Package: "a", EverBuilt: true, Attempts: 2, VersionsAttempted: 2, VersionsSucceeded: 2, LastAttemptedAt: "2026-08-30", LastAttemptedVersion: "1.1", LastAttemptedStatus: "SUCCESS", LastSucceededAt: "2026-08-30", LastSucceededVersion: "1.1", Recent: slices.Repeat([]bool{true}, recentBuilds)}
 	b := PackageRow{Ecosystem: "npm", Package: "b", FailingStreak: 3, Attempts: 3, VersionsAttempted: 1, LastAttemptedAt: "2026-08-31", LastAttemptedVersion: "2.0", LastAttemptedStatus: "FAILURE", Recent: []bool{false, false, false}}
 	c := PackageRow{Ecosystem: "pypi", Package: "c", EverBuilt: true, FailingStreak: 1, Attempts: 4, VersionsAttempted: 2, VersionsSucceeded: 1, LastAttemptedAt: "2026-08-29", LastAttemptedVersion: "0.2", LastAttemptedStatus: "ERROR", LastSucceededAt: "2026-08-28", LastSucceededVersion: "0.1", Recent: []bool{true, true, true, false}}
+	allStreaks := []StreakBucket{{"1", 1}, {"2-3", 1}, {"4-7", 0}, {"8-15", 0}, {"16+", 0}}
+	npmStreaks := []StreakBucket{{"1", 0}, {"2-3", 1}, {"4-7", 0}, {"8-15", 0}, {"16+", 0}}
 	for _, tc := range []struct {
 		name string
 		req  PackagesRequest
@@ -52,17 +54,17 @@ func TestPackagesPage(t *testing.T) {
 	}{
 		{
 			name: "LongestStreakFirst",
-			want: PackagesData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecosystems: []string{"npm", "pypi"}, Total: 3, EverBuilt: 2, NeverBuilt: 1, Failing: 2, Listed: 3, Packages: []PackageRow{b, c, a}},
+			want: PackagesData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecosystems: []string{"npm", "pypi"}, Total: 3, EverBuilt: 2, NeverBuilt: 1, Failing: 2, Listed: 3, Packages: []PackageRow{b, c, a}, Streaks: allStreaks},
 		},
 		{
 			name: "EcosystemTab",
 			req:  PackagesRequest{Eco: "npm"},
-			want: PackagesData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Eco: "npm", Ecosystems: []string{"npm", "pypi"}, Total: 2, EverBuilt: 1, NeverBuilt: 1, Failing: 1, Listed: 2, Packages: []PackageRow{b, a}},
+			want: PackagesData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Eco: "npm", Ecosystems: []string{"npm", "pypi"}, Total: 2, EverBuilt: 1, NeverBuilt: 1, Failing: 1, Listed: 2, Packages: []PackageRow{b, a}, Streaks: npmStreaks},
 		},
 		{
 			name: "UnknownTabFallsBack",
 			req:  PackagesRequest{Eco: "cratesio"},
-			want: PackagesData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecosystems: []string{"npm", "pypi"}, Total: 3, EverBuilt: 2, NeverBuilt: 1, Failing: 2, Listed: 3, Packages: []PackageRow{b, c, a}},
+			want: PackagesData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecosystems: []string{"npm", "pypi"}, Total: 3, EverBuilt: 2, NeverBuilt: 1, Failing: 2, Listed: 3, Packages: []PackageRow{b, c, a}, Streaks: allStreaks},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

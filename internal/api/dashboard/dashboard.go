@@ -46,6 +46,10 @@ var (
 	themeCSS string
 	//go:embed favicon.svg
 	favicon string
+	//go:embed charts.js
+	chartsJS string
+	//go:embed viz.gohtml
+	vizHTML string
 )
 
 // Hardcoded by the page templates, so the package owns the routes.
@@ -53,12 +57,13 @@ const (
 	ThemeCSSPath = "/theme.css"
 	CSSPath      = "/dashboard.css"
 	FaviconPath  = "/favicon.svg"
+	ChartsJSPath = "/charts.js"
 )
 
 // RegisterAssets serves the dashboard's stylesheets and icon, and under the
 // webfonts build tag the embedded font files.
 func RegisterAssets(mux *http.ServeMux) {
-	for route, content := range map[string]string{ThemeCSSPath: themeCSS, CSSPath: css, FaviconPath: favicon} {
+	for route, content := range map[string]string{ThemeCSSPath: themeCSS, CSSPath: css, FaviconPath: favicon, ChartsJSPath: chartsJS} {
 		mux.HandleFunc(route, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(route)))
 			_, _ = io.WriteString(w, content)
@@ -85,6 +90,7 @@ func init() {
 	// font stylesheet; without it the definition is empty and pages render
 	// with system fonts.
 	template.Must(base.Parse(webfontsTmpl))
+	template.Must(base.Parse(vizHTML))
 	page := func(src string) *template.Template {
 		return template.Must(template.Must(base.Clone()).Parse(src))
 	}

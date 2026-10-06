@@ -43,6 +43,7 @@ type IndexData struct {
 	BenchmarkTargets []BenchmarkTarget
 	RecentRebuilds   []RebuildView
 	RecentSessions   []SessionView
+	Overview         *Overview // nil unless the snapshot has signals
 }
 
 // recentSessionLimit bounds the number of agent sessions shown on the landing page.
@@ -127,6 +128,12 @@ func Index(ctx context.Context, _ IndexRequest, deps *Deps) (*IndexData, error) 
 		}
 	}
 	applySuccessRegex(deps.SuccessRegex, rebuilds)
+	if deps.Analytics != nil {
+		data.Overview, err = loadOverview(deps.Analytics)
+		if err != nil {
+			return nil, errors.Wrap(err, "loading overview")
+		}
+	}
 	data.RecentRebuilds = make([]RebuildView, len(rebuilds))
 	for i, rb := range rebuilds {
 		data.RecentRebuilds[i] = NewRebuildView(rb)

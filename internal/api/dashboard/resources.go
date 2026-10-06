@@ -50,7 +50,6 @@ type EcoDaily struct {
 	Attempts       int64
 	Successes      int64
 	SuccessPct     int64
-	AttemptsBarPct int64
 	BuilderMinutes float64
 	Tokens         string
 	VMMinutes      float64
@@ -81,6 +80,9 @@ type ResourcesData struct {
 	Eco         string   // selected tab; empty is the aggregate view
 	Days        []EcoDaily
 	TopPackages []ExpensivePackage
+
+	Window   Activity // every ecosystem, for the total tiles
+	Activity Activity // selected tab, for the daily chart
 }
 
 func ResourcesPage(ctx context.Context, req ResourcesRequest, deps *Deps) (*ResourcesData, error) {
@@ -127,7 +129,6 @@ func ResourcesPage(ctx context.Context, req ResourcesRequest, deps *Deps) (*Reso
 		daily += ` AND ecosystem = '` + data.Eco + `'`
 	}
 	daily += ` GROUP BY day ORDER BY day DESC`
-	var maxAttempts int64 = 1
 	err = forEachRow(a, daily,
 		func(stmt *sqlite3.Stmt) error {
 			d := EcoDaily{
@@ -141,15 +142,25 @@ func ResourcesPage(ctx context.Context, req ResourcesRequest, deps *Deps) (*Reso
 			if d.Attempts > 0 {
 				d.SuccessPct = 100 * d.Successes / d.Attempts
 			}
-			maxAttempts = max(maxAttempts, d.Attempts)
 			data.Days = append(data.Days, d)
 			return nil
 		})
 	if err != nil {
 		return nil, errors.Wrap(err, "querying daily trends")
 	}
-	for i := range data.Days {
-		data.Days[i].AttemptsBarPct = 100 * data.Days[i].Attempts / maxAttempts
+	data.Window, err = loadActivity(a, `day >= `+dayBound)
+	if err != nil {
+		return nil, err
+	}
+	// The charts span the whole window, not just its first active day.
+	data.Window.Start = time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -analyticsWindowDays).Unix()
+	data.Activity = data.Window
+	if data.Eco != "" {
+		data.Activity, err = loadActivity(a, `day >= `+dayBound+` AND ecosystem = '`+data.Eco+`'`)
+		if err != nil {
+			return nil, err
+		}
+		data.Activity.Start = data.Window.Start
 	}
 	var maxCost float64 = 1
 	err = forEachRow(a, `
