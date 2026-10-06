@@ -102,13 +102,40 @@ func TestRequirementName(t *testing.T) {
 		{"setuptools<=67.7.2", "setuptools"},
 		{"setuptools; python_version != '3.3'", "setuptools"},
 		{"setuptools[core]>=61", "setuptools"},
-		{"flit_core==3.7.1", "flit_core"},
+		{"flit_core==3.7.1", "flit-core"},
+		{"Flit.Core==3.7.1", "flit-core"},
 		{"setuptools-scm<6.0", "setuptools-scm"},
+		{"numpy (>=1.13)", "numpy"},
+		{"numpy(>=1.13)", "numpy"},
+		{"pip @ https://example.com/pip.zip", "pip"},
+		{"pip@https://example.com/pip.zip", "pip"},
 		{"", ""},
 	}
 	for _, tt := range tests {
 		if got := requirementName(tt.req); got != tt.want {
 			t.Errorf("requirementName(%q) = %q, want %q", tt.req, got, tt.want)
+		}
+	}
+}
+
+func TestRequirementMarker(t *testing.T) {
+	tests := []struct {
+		req  string
+		want string
+	}{
+		{"numpy", ""},
+		{"numpy==1.14.5", ""},
+		{"numpy==1.14.5; python_version>='3.7'", "python_version>='3.7'"},
+		{"wheel ; sys_platform == 'win32'", "sys_platform == 'win32'"},
+		{"cffi~=1.17; platform_python_implementation != 'PyPy' and python_version < '3.14'", "platform_python_implementation != 'PyPy' and python_version < '3.14'"},
+		{"foo; platform_version == '@'", "platform_version == '@'"},
+		{"pip @ https://example.com/pip.zip;sha1=abc", ""},
+		{"pip @ https://example.com/pip.zip;sha1=abc ; python_version >= '3.8'", "python_version >= '3.8'"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := requirementMarker(tt.req); got != tt.want {
+			t.Errorf("requirementMarker(%q) = %q, want %q", tt.req, got, tt.want)
 		}
 	}
 }
@@ -240,6 +267,64 @@ func TestMergeRequirements(t *testing.T) {
 			reqs:      []string{"cffi==1.15.0"},
 			buildReqs: []string{"cffi[dev]"},
 			want:      []string{"cffi==1.15.0"},
+		},
+		{
+			name: "marker variants are all kept",
+			reqs: []string{},
+			buildReqs: []string{
+				"wheel",
+				"setuptools",
+				"Cython>=0.29.2",
+				"numpy==1.13.3; python_version=='3.5'",
+				"numpy==1.13.3; python_version=='3.6'",
+				"numpy==1.14.5; python_version>='3.7'",
+			},
+			want: []string{
+				"wheel",
+				"setuptools",
+				"Cython>=0.29.2",
+				"numpy==1.13.3; python_version=='3.5'",
+				"numpy==1.13.3; python_version=='3.6'",
+				"numpy==1.14.5; python_version>='3.7'",
+			},
+		},
+		{
+			name: "compound marker variants are all kept",
+			reqs: []string{"setuptools==77.0.3"},
+			buildReqs: []string{
+				"cffi~=1.17; platform_python_implementation != 'PyPy' and python_version < '3.14'",
+				"cffi>=2.0.0b; platform_python_implementation != 'PyPy' and python_version >= '3.14'",
+				"setuptools>=77.0.0",
+			},
+			want: []string{
+				"setuptools==77.0.3",
+				"cffi~=1.17; platform_python_implementation != 'PyPy' and python_version < '3.14'",
+				"cffi>=2.0.0b; platform_python_implementation != 'PyPy' and python_version >= '3.14'",
+			},
+		},
+		{
+			name:      "unconditional and marker variants are both kept",
+			reqs:      []string{},
+			buildReqs: []string{"numpy>=1.13", "numpy==1.14.5; python_version>='3.7'"},
+			want:      []string{"numpy>=1.13", "numpy==1.14.5; python_version>='3.7'"},
+		},
+		{
+			name:      "repeats of one marker collapse",
+			reqs:      []string{},
+			buildReqs: []string{"numpy; python_version>='3.7'", "numpy>=1.14; python_version>='3.7'"},
+			want:      []string{"numpy; python_version>='3.7'"},
+		},
+		{
+			name:      "all marker variants collapse against pin",
+			reqs:      []string{"setuptools<=56.2.0"},
+			buildReqs: []string{"setuptools<60; python_version<'3.6'", "setuptools>=61; python_version>='3.6'"},
+			want:      []string{"setuptools<=56.2.0"},
+		},
+		{
+			name:      "equivalent name spellings collapse",
+			reqs:      []string{"flit_core==3.9.0"},
+			buildReqs: []string{"Flit-Core>=3.2", "setuptools_scm", "SetupTools-SCM"},
+			want:      []string{"flit_core==3.9.0", "setuptools_scm"},
 		},
 	}
 	for _, tc := range tests {
