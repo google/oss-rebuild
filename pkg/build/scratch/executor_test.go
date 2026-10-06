@@ -4,11 +4,13 @@
 package scratch
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"io"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	gcs "cloud.google.com/go/storage"
@@ -227,6 +229,58 @@ func TestExecPollsToTerminal(t *testing.T) {
 	if remaining := f.gets["op1"]; len(remaining) != 0 {
 		t.Errorf("expected all scripted gets consumed, %d remaining", len(remaining))
 	}
+}
+
+// ctxStore commits a writer's bytes on Close only while its context is
+// live, as the GCS writer does.
+type ctxStore struct {
+	rebuild.AssetStore
+	committed [][]byte
+}
+
+func (s *ctxStore) Writer(ctx context.Context, _ rebuild.Asset) (io.WriteCloser, error) {
+	return &ctxWriter{ctx: ctx, store: s}, nil
+}
+
+type ctxWriter struct {
+	ctx   context.Context
+	store *ctxStore
+	buf   bytes.Buffer
+}
+
+func (w *ctxWriter) Write(p []byte) (int, error) { return w.buf.Write(p) }
+
+func (w *ctxWriter) Close() error {
+	if err := w.ctx.Err(); err != nil {
+		return err
+	}
+	w.store.committed = append(w.store.committed, w.buf.Bytes())
+	return nil
+}
+
+func TestUploadStream(t *testing.T) {
+	asset := rebuild.RebuildAsset.For(testTarget)
+	e := &executor{}
+	t.Run("Committed", func(t *testing.T) {
+		store := &ctxStore{}
+		if err := e.uploadStream(context.Background(), store, asset, strings.NewReader("artifact")); err != nil {
+			t.Fatalf("uploadStream: %v", err)
+		}
+		if len(store.committed) != 1 || string(store.committed[0]) != "artifact" {
+			t.Errorf("committed %q, want [artifact]", store.committed)
+		}
+	})
+	t.Run("AbandonedOnReadError", func(t *testing.T) {
+		store := &ctxStore{}
+		r := io.MultiReader(strings.NewReader("partial"), iotest.ErrReader(errors.New("connection reset")))
+		err := e.uploadStream(context.Background(), store, asset, r)
+		if err == nil || !strings.Contains(err.Error(), "writing asset") {
+			t.Fatalf("uploadStream() = %v, want writing asset error", err)
+		}
+		if len(store.committed) != 0 {
+			t.Errorf("partial upload committed %q, want abandoned", store.committed)
+		}
+	})
 }
 
 func TestNewlineFilteringReader(t *testing.T) {

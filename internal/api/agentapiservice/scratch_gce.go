@@ -6,6 +6,7 @@ package agentapiservice
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -77,6 +78,9 @@ type GCE interface {
 	// the API. labels may be nil for ad-hoc instances; pool replenishment
 	// passes pool labels so ListStoppedInstances can find them later.
 	InsertInstanceFromTemplate(ctx context.Context, zone, name, templateURL string, labels map[string]string) (Instance, error)
+	// DeleteInstance removes the VM and waits for the delete to finish. A
+	// VM that no longer exists counts as deleted, so a retried teardown
+	// converges.
 	DeleteInstance(ctx context.Context, zone, name string) error
 	// ListStoppedInstances returns terminated VMs whose labels match every
 	// entry in labels (subset match).
@@ -187,10 +191,19 @@ func (g *computeGCE) StopInstance(ctx context.Context, zone, name string) error 
 
 func (g *computeGCE) DeleteInstance(ctx context.Context, zone, name string) error {
 	op, err := g.svc.Instances.Delete(g.project, zone, name).Context(ctx).Do()
+	if isNotFound(err) {
+		return nil
+	}
 	if err != nil {
 		return errors.Wrap(err, "instances.delete")
 	}
 	return g.waitZoneOp(ctx, zone, op)
+}
+
+// isNotFound reports Compute's 404 for a resource that does not exist.
+func isNotFound(err error) bool {
+	var gerr *googleapi.Error
+	return errors.As(err, &gerr) && gerr.Code == http.StatusNotFound
 }
 
 func (g *computeGCE) waitZoneOp(ctx context.Context, zone string, op *compute.Operation) error {
