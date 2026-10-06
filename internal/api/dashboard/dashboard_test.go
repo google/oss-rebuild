@@ -22,18 +22,22 @@ import (
 func TestRegisterAssets(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterAssets(mux)
-	for path, want := range map[string]string{ThemeCSSPath: "--accent:", CSSPath: ".benchmark-grid"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+	for _, tc := range []struct{ path, contentType, want string }{
+		{ThemeCSSPath, "text/css; charset=utf-8", "--accent:"},
+		{CSSPath, "text/css; charset=utf-8", ".benchmark-grid"},
+		{FaviconPath, "image/svg+xml", "<svg"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
-			t.Errorf("GET %s: got status %d, want %d", path, rec.Code, http.StatusOK)
+			t.Errorf("GET %s: got status %d, want %d", tc.path, rec.Code, http.StatusOK)
 		}
-		if got := rec.Header().Get("Content-Type"); got != "text/css" {
-			t.Errorf("GET %s: got Content-Type %q, want text/css", path, got)
+		if got := rec.Header().Get("Content-Type"); got != tc.contentType {
+			t.Errorf("GET %s: got Content-Type %q, want %q", tc.path, got, tc.contentType)
 		}
-		if !strings.Contains(rec.Body.String(), want) {
-			t.Errorf("GET %s: body does not contain %q; wrong asset served", path, want)
+		if !strings.Contains(rec.Body.String(), tc.want) {
+			t.Errorf("GET %s: body does not contain %q; wrong asset served", tc.path, tc.want)
 		}
 	}
 }

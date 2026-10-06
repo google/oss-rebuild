@@ -7,7 +7,9 @@ import (
 	_ "embed"
 	"html/template"
 	"io"
+	"mime"
 	"net/http"
+	"path"
 	"regexp"
 
 	"cloud.google.com/go/storage"
@@ -42,20 +44,23 @@ var (
 	css string
 	//go:embed theme.css
 	themeCSS string
+	//go:embed favicon.svg
+	favicon string
 )
 
 // Hardcoded by the page templates, so the package owns the routes.
 const (
 	ThemeCSSPath = "/theme.css"
 	CSSPath      = "/dashboard.css"
+	FaviconPath  = "/favicon.svg"
 )
 
-// RegisterAssets serves the dashboard's stylesheets, and under the webfonts
-// build tag the embedded font files.
+// RegisterAssets serves the dashboard's stylesheets and icon, and under the
+// webfonts build tag the embedded font files.
 func RegisterAssets(mux *http.ServeMux) {
-	for path, content := range map[string]string{ThemeCSSPath: themeCSS, CSSPath: css} {
-		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/css")
+	for route, content := range map[string]string{ThemeCSSPath: themeCSS, CSSPath: css, FaviconPath: favicon} {
+		mux.HandleFunc(route, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", mime.TypeByExtension(path.Ext(route)))
 			_, _ = io.WriteString(w, content)
 		})
 	}

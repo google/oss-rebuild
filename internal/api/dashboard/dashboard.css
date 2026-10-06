@@ -31,6 +31,47 @@ a:hover { text-decoration: underline; }
 nav { margin-bottom: 12px; }
 nav a { margin-right: 15px; font-weight: 600; }
 
+/* Site header: brand left, nav right, wrapping to two rows when narrow. */
+header.site {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 28px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+}
+header.site h1 { font-size: 1.1rem; margin: 0; }
+header.site h1 a { display: inline-flex; align-items: center; gap: 10px; color: var(--heading); }
+header.site h1 a:hover { text-decoration: none; }
+.mark { display: block; border-radius: 6px; }
+header.site nav { display: flex; flex-wrap: wrap; gap: 4px 22px; margin: 0; }
+header.site nav a { margin: 0; padding: 3px 0; color: var(--secondary); border-bottom: 2px solid transparent; }
+header.site nav a:hover { color: var(--heading); text-decoration: none; }
+header.site nav a[aria-current="page"] { color: var(--heading); border-bottom-color: var(--accent); }
+
+/* Page-load progress bar, set by the layout script. The delay keeps fast
+   loads from flashing it. */
+html.navigating::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    height: 2px;
+    background: var(--accent);
+    transform-origin: left;
+    animation: navigating 8s cubic-bezier(0.1, 0.6, 0.2, 1) 150ms both;
+}
+@keyframes navigating {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(0.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+    html.navigating::before { animation: none; opacity: 0.6; }
+}
+
 /* Tables (index recent rebuilds, package & attempt views) */
 table {
     width: 100%;
