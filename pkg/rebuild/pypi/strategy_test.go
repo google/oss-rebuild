@@ -333,7 +333,7 @@ func TestPlatformWheelBuild(t *testing.T) {
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel
 /deps/bin/pip install 'req_1'
 /deps/bin/pip install 'req_2'`,
@@ -369,7 +369,7 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel
 /deps/bin/pip install 'req_1<='\''1.2.3'\'''`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
@@ -403,7 +403,7 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
@@ -435,7 +435,7 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel
 export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
@@ -467,7 +467,7 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel`,
 				Build: `/deps/bin/python3 -m build --wheel -n
 mkdir -p dist/repaired
@@ -500,7 +500,7 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
@@ -533,7 +533,7 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp38-cp38/bin/python /opt/python/cp38-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
@@ -565,7 +565,7 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp38-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
@@ -598,7 +598,7 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp38-abi3/bin/python /opt/python/cp38-*/bin/python /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
@@ -632,7 +632,7 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Source:   "git checkout --force 'the_ref'",
 				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
-/deps/bin/pip install build wheel auditwheel
+/deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel`,
 				Build: `/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
