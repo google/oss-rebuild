@@ -272,14 +272,15 @@ func (r *ScratchRunner) toolURL(tool build.ToolType) (string, error) {
 // The tools and the upstream artifact are fetched once per session, each
 // artifact is stabilized beside itself, and diffr runs on the stabilized
 // forms. Inputs are spliced unquoted, so diffScript admits only shellWord
-// values. wget is busybox's: the worker image has no curl.
+// values. wget is busybox's: the worker image has no curl. AUTH_HEADER is
+// the job's bucket credential, so only the tool fetches carry it.
 var diffScriptTpl = template.Must(template.New("diff").Parse(`set -eu
 die() { echo "$*"; exit {{.ExitSetupFailed}}; }
-fetch() { [ -e "$1" ] || { wget -q ${AUTH_HEADER:+--header "$AUTH_HEADER"} -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }
+fetch() { [ -e "$1" ] || { wget -q ${3:+--header "$3"} -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }
 stab() { out=$({{.Stabilize}} --ecosystem {{.Ecosystem}} --artifact {{.Artifact}} --infile "$1" --outfile "$2.part" 2>&1) && mv "$2.part" "$2" || die "stabilizing $1 failed: $out"; }
 mkdir -p {{.Tools}} {{.UpstreamDir}}
-fetch {{.Diffr}} {{.DiffrURL}}
-fetch {{.Stabilize}} {{.StabilizeURL}}
+fetch {{.Diffr}} {{.DiffrURL}} "${AUTH_HEADER:-}"
+fetch {{.Stabilize}} {{.StabilizeURL}} "${AUTH_HEADER:-}"
 fetch {{.Upstream}} {{.UpstreamURL}}
 chmod +x {{.Diffr}} {{.Stabilize}}
 [ -e {{.Upstream}}.stabilized ] || stab {{.Upstream}} {{.Upstream}}.stabilized
