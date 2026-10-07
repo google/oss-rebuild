@@ -15,7 +15,6 @@ import (
 	"github.com/google/oss-rebuild/internal/verifier"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/build"
-	"github.com/google/oss-rebuild/pkg/build/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -28,7 +27,7 @@ import (
 type AgentCreateIterationDeps struct {
 	Sessions            db.Sessions
 	Iterations          db.Iterations
-	GCBExecutor         *gcb.Executor
+	Executor            build.Executor
 	BuildProject        string
 	BuildServiceAccount string
 	MetadataBucket      string
@@ -123,7 +122,7 @@ func AgentCreateIteration(ctx context.Context, req schema.AgentCreateIterationRe
 		Target:   session.Target,
 		Strategy: strategy,
 	}
-	h, err := deps.GCBExecutor.Start(ctx, input, build.Options{
+	h, err := deps.Executor.Start(ctx, input, build.Options{
 		BuildID:            obliviousID,
 		UseTimewarp:        meta.AllRebuilders[input.Target.Ecosystem].UsesTimewarp(input),
 		SaveContainerImage: true,

@@ -121,7 +121,7 @@ func AgentCreateIterationInit(ctx context.Context) (*agentapiservice.AgentCreate
 	if err != nil {
 		return nil, errors.Wrap(err, "creating GCB executor")
 	}
-	d.GCBExecutor = executor
+	d.Executor = executor
 	d.BuildProject = *project
 	d.BuildServiceAccount = *buildRemoteIdentity
 	d.MetadataBucket = *metadataBucket

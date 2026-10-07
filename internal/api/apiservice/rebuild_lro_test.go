@@ -264,7 +264,7 @@ func TestCreateRebuildOpFast(t *testing.T) {
 			}, nil
 		},
 	}
-	d.GCBExecutor = must(buildgcb.NewExecutor(buildgcb.ExecutorConfig{
+	d.Executor = must(buildgcb.NewExecutor(buildgcb.ExecutorConfig{
 		Project:        "foo-project",
 		ServiceAccount: "foo-role",
 		Planner: buildgcb.NewPlanner(buildgcb.PlannerConfig{
