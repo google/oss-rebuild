@@ -171,6 +171,31 @@ func TestParseTranscriptName(t *testing.T) {
 		want: transcriptName{Iter: 4, Time: time.Date(2026, 8, 19, 12, 0, 1, 0, time.UTC), Part: 0, Role: "user"},
 		ok:   true,
 	}, {
+		name: "handoff record",
+		in:   "2/" + when.Format(time.RFC3339Nano) + "-handoff.json",
+		want: transcriptName{Iter: 2, Time: when, Record: "handoff"},
+		ok:   true,
+	}, {
+		name: "handoff review is not a candidate review",
+		in:   "2/" + when.Format(time.RFC3339Nano) + "-handoff-review.json",
+		want: transcriptName{Iter: 2, Time: when, Record: "handoff-review"},
+		ok:   true,
+	}, {
+		name: "formalization attempt",
+		in:   "3/" + when.Format(time.RFC3339Nano) + "-formalize-2.json",
+		want: transcriptName{Iter: 3, Time: when, Record: "formalize", Attempt: 2},
+		ok:   true,
+	}, {
+		name: "candidate review",
+		in:   "3/" + when.Format(time.RFC3339Nano) + "-review.json",
+		want: transcriptName{Iter: 3, Time: when, Record: "review"},
+		ok:   true,
+	}, {
+		name: "give-up",
+		in:   "2/" + when.Format(time.RFC3339Nano) + "-giveup.json",
+		want: transcriptName{Iter: 2, Time: when, Record: "giveup"},
+		ok:   true,
+	}, {
 		name: "non-json object",
 		in:   "2/notes.txt",
 		ok:   false,
@@ -228,6 +253,88 @@ func TestEventsFrom(t *testing.T) {
 	}
 	if !strings.Contains(resp[0].Note, "exit 0") {
 		t.Errorf("response note = %q; want exit code noted", resp[0].Note)
+	}
+}
+
+func TestRecordEvents(t *testing.T) {
+	when := time.Date(2026, 10, 8, 15, 24, 10, 0, time.UTC)
+	for _, tc := range []struct {
+		name   string
+		record string
+		body   string
+		title  string
+		body2  string // a substring of the event's body
+		cmd    string // substring of the event's command, if any
+	}{{
+		name:   "handoff",
+		record: "handoff",
+		body:   `{"handoff":{"summary":"Babel needs the CLDR import.","build_commands":{"deps":"python3 scripts/download_import_cldr.py","build":"python3 -m build --wheel -n"}},"exemplar":{},"trace":[{"tool":"read_logs_end"},{"tool":"check_artifact"}]}`,
+		title:  "handoff · 2 tool calls",
+		body2:  "Babel needs the CLDR import.",
+		cmd:    "deps:\npython3 scripts/download_import_cldr.py\n\nbuild:\npython3 -m build --wheel -n",
+	}, {
+		name:   "handoff review allowed by the model",
+		record: "handoff-review",
+		body:   `{"handoff":{},"review":{"verdict":"allow","violations":[],"declarations":[],"rationale":"The script runs the repository's own import."}}`,
+		title:  "handoff review · allow",
+		body2:  "The script runs the repository's own import.",
+	}, {
+		name:   "candidate review carried from the handoff review",
+		record: "review",
+		body:   `{"carried_from":"2026-10-08T15:24:10.930173Z-handoff-review.json","review":{"verdict":"allow","violations":[],"declarations":[],"rationale":"Same commands."}}`,
+		title:  "candidate review · carried from the handoff review · allow",
+		body2:  "Same commands.",
+	}, {
+		name:   "formalization accepted",
+		record: "formalize",
+		body:   `{"attempt":1,"prompt":"...","response":"{}","strategy":{"flow":{"repo":"https://github.com/python-babel/babel"}}}`,
+		title:  "formalization attempt 1 · accepted",
+		body2:  "\"repo\": \"https://github.com/python-babel/babel\"",
+	}, {
+		name:   "formalization rejected",
+		record: "formalize",
+		body:   `{"attempt":2,"prompt":"...","response":"not json","error":"rejected before any build: decoding the definition: invalid character"}`,
+		title:  "formalization attempt 2 · rejected",
+		body2:  "rejected before any build",
+	}, {
+		name:   "give-up",
+		record: "giveup",
+		body:   `{"reason":"The locale data comes from a CLDR build that is gone."}`,
+		title:  "gave up",
+		body2:  "CLDR build that is gone",
+	}, {
+		name:   "give-up with a mistyped reason",
+		record: "giveup",
+		body:   `{"reason":1}`,
+		title:  "giveup (undecodable)",
+		body2:  `"reason":1`,
+	}, {
+		name:   "handoff with a mistyped summary",
+		record: "handoff",
+		body:   `{"handoff":{"summary":1},"trace":[]}`,
+		title:  "handoff (undecodable)",
+		body2:  `"summary":1`,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			name := transcriptName{Iter: 2, Time: when, Record: tc.record}
+			if tc.record == "formalize" {
+				name.Attempt = map[string]int{"formalization accepted": 1, "formalization rejected": 2}[tc.name]
+			}
+			events := eventsFrom(name, []byte(tc.body))
+			if len(events) != 1 {
+				t.Fatalf("events = %+v, want one", events)
+			}
+			e := events[0]
+			if e.Title != tc.title || !e.At.Equal(when) {
+				t.Errorf("title, time = %q, %v; want %q, %v", e.Title, e.At, tc.title, when)
+			}
+			if !strings.Contains(e.Body, tc.body2) {
+				t.Errorf("body lacks %q:\n%s", tc.body2, e.Body)
+			}
+			if tc.cmd != "" && !strings.Contains(e.Command, tc.cmd) {
+				t.Errorf("command lacks %q:\n%s", tc.cmd, e.Command)
+			}
+		})
 	}
 }
 

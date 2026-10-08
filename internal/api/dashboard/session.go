@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/buildpolicy"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -40,9 +41,9 @@ func (SessionRequest) Validate() error { return nil }
 
 // TranscriptEvent is one rendered entry of the session's trajectory: a
 // prompt, model prose or thought, a tool call, a tool response, the
-// iteration's proposal, a build attempt, or a scratch exec.
+// iteration's proposal, a build attempt, a scratch exec, or a free-form record.
 type TranscriptEvent struct {
-	Kind     string // prompt | model | thought | call | response | proposal | exec | build
+	Kind     string // prompt | model | thought | call | response | proposal | exec | build | handoff | review | formalize | giveup
 	Title    string
 	At       time.Time // zero for the proposal, which anchors its iteration
 	Command  string    // call only: the command argument, shown verbatim
@@ -529,23 +530,43 @@ const maxTranscriptObjectBytes = 2 << 20
 const transcriptReadConcurrency = 16
 
 // transcriptName is the parsed form of one transcript object name,
-// <sessionID>/messages/<iter>/<invokeTime>-<part>-<role>.json or the fixed
-// 0-proposal.json or 0-inference-proposal.json.
+// <sessionID>/messages/<iter>/<invokeTime>-<part>-<role>.json, the fixed
+// 0-proposal.json or 0-inference-proposal.json, or a free-form session's
+// record <stamp>-<record>.json (internal/agent/freeform.go).
 type transcriptName struct {
 	Iter      int
 	Time      time.Time
 	Part      int
 	Role      string
 	Proposal  bool
-	Inference bool // the proposal came from heuristic inference, not the LLM
+	Inference bool   // the proposal came from heuristic inference, not the LLM
+	Record    string // handoff | handoff-review | formalize | review | giveup
+	Attempt   int    // formalize only: which attempt
 }
 
 // transcriptNameRE matches a transcript object name relative to "messages/".
 var transcriptNameRE = regexp.MustCompile(`^(\d+)/(?:0-(inference-)?proposal|(.+)-(\d+)-([a-z]+))\.json$`)
 
+// recordNameRE matches a free-form record's name relative to "messages/".
+// The stamp is spelled out so a record name never reads as a message.
+var recordNameRE = regexp.MustCompile(`^(\d+)/(\d{4}-\d{2}-\d{2}T[0-9:.]+Z)-(handoff-review|handoff|formalize-(\d+)|review|giveup)\.json$`)
+
 // parseTranscriptName parses a transcript object name, reporting ok=false
 // for objects under the prefix that are not transcript messages.
 func parseTranscriptName(name string) (transcriptName, bool) {
+	if m := recordNameRE.FindStringSubmatch(name); m != nil {
+		when, err := time.Parse(time.RFC3339Nano, m[2])
+		if err != nil {
+			return transcriptName{}, false
+		}
+		iter, _ := strconv.Atoi(m[1])
+		n := transcriptName{Iter: iter, Time: when, Record: m[3]}
+		if m[4] != "" {
+			n.Record = "formalize"
+			n.Attempt, _ = strconv.Atoi(m[4])
+		}
+		return n, true
+	}
 	m := transcriptNameRE.FindStringSubmatch(name)
 	if m == nil {
 		return transcriptName{}, false
@@ -635,6 +656,9 @@ func readCapped(ctx context.Context, deps *Deps, object string) ([]byte, error) 
 // eventsFrom renders one transcript object into display events.
 func eventsFrom(name transcriptName, body []byte) []TranscriptEvent {
 	when := name.Time
+	if name.Record != "" {
+		return recordEvents(name, body)
+	}
 	if name.Proposal {
 		var s schema.StrategyOneOf
 		pretty := string(body)
@@ -673,6 +697,118 @@ func eventsFrom(name transcriptName, body []byte) []TranscriptEvent {
 		}
 	}
 	return out
+}
+
+// recordEvents renders a free-form session's record, or its raw body when it
+// does not decode.
+// TODO: Share the record types with internal/agent, which could move them to schema.
+func recordEvents(name transcriptName, body []byte) []TranscriptEvent {
+	when := name.Time
+	undecodable := []TranscriptEvent{{Kind: name.Record, Title: name.Record + " (undecodable)", At: when, Body: string(body), Note: "show raw"}}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return undecodable
+	}
+	switch name.Record {
+	case "handoff":
+		var h struct {
+			Summary  string `json:"summary"`
+			Commands struct {
+				Deps  string `json:"deps"`
+				Build string `json:"build"`
+			} `json:"build_commands"`
+		}
+		var trace []json.RawMessage
+		if json.Unmarshal(raw["handoff"], &h) != nil || json.Unmarshal(raw["trace"], &trace) != nil {
+			return undecodable
+		}
+		return []TranscriptEvent{{
+			Kind:    "handoff",
+			Title:   fmt.Sprintf("handoff · %d tool calls", len(trace)),
+			At:      when,
+			Command: strings.TrimSpace("deps:\n" + h.Commands.Deps + "\n\nbuild:\n" + h.Commands.Build),
+			Body:    h.Summary,
+			Open:    true,
+		}}
+	case "handoff-review", "review":
+		title := "handoff review"
+		if name.Record == "review" {
+			title = "candidate review"
+		}
+		var carried string
+		if json.Unmarshal(raw["carried_from"], &carried) == nil && carried != "" {
+			title += " · carried from the handoff review"
+		}
+		inner := body
+		if r, ok := raw["review"]; ok {
+			inner = r
+		}
+		verdict, text := reviewText(inner)
+		return []TranscriptEvent{{Kind: "review", Title: title + " · " + verdict, At: when, Body: text, Note: "show review"}}
+	case "formalize":
+		var r struct {
+			Response string          `json:"response"`
+			Strategy json.RawMessage `json:"strategy"`
+			Error    string          `json:"error"`
+		}
+		if json.Unmarshal(body, &r) != nil {
+			return undecodable
+		}
+		e := TranscriptEvent{Kind: "formalize", Title: fmt.Sprintf("formalization attempt %d", name.Attempt), At: when}
+		switch {
+		case r.Error != "":
+			e.Title += " · rejected"
+			e.Body = strings.TrimSpace(r.Error + "\n\n" + r.Response)
+			e.Note = "show rejection"
+		case len(r.Strategy) > 0:
+			e.Title += " · accepted"
+			e.Body = prettyJSON(r.Strategy)
+			e.Note = "show definition"
+		default:
+			e.Body = r.Response
+			e.Note = "show response"
+		}
+		return []TranscriptEvent{e}
+	case "giveup":
+		var g struct {
+			Reason string `json:"reason"`
+		}
+		if json.Unmarshal(body, &g) != nil {
+			return undecodable
+		}
+		return []TranscriptEvent{{Kind: "giveup", Title: "gave up", At: when, Body: g.Reason, Open: true}}
+	}
+	return nil
+}
+
+// reviewText renders a filed buildpolicy.Review. It returns the verdict word
+// and a body of the rationale and violations.
+func reviewText(body []byte) (string, string) {
+	var r buildpolicy.Review
+	if err := json.Unmarshal(body, &r); err != nil {
+		return "undecodable", string(body)
+	}
+	var b strings.Builder
+	if r.Rationale != "" {
+		b.WriteString(r.Rationale + "\n")
+	}
+	for _, v := range r.Violations {
+		fmt.Fprintf(&b, "\n%s %s\n  %s\n", v.Rule, v.Why, v.Line)
+	}
+	return r.Verdict, strings.TrimSpace(b.String())
+}
+
+// prettyJSON re-indents a JSON value for display, or returns it as is.
+func prettyJSON(raw json.RawMessage) string {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return string(raw)
+	}
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return string(raw)
+	}
+	return string(b)
 }
 
 func callEvent(c *genai.FunctionCall, when time.Time) TranscriptEvent {
