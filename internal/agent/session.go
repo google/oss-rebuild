@@ -115,8 +115,11 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 	// call below, which re-executes the strategy on GCB as the trusted
 	// confirmation. That server-derived verdict becomes the recorded
 	// iteration and, on success, the session's SuccessIteration.
+	var verified time.Duration // the confirmed build's VM wall time
 	if deps.ScratchRunner != nil {
+		started := time.Now()
 		status, result := deps.ScratchRunner.Run(ctx, fmt.Sprintf("iter-%d", iterNum), s)
+		verified = time.Since(started)
 		if status != schema.AgentIterationStatusSuccess {
 			return localIteration(sessionID, iterNum, s, iterUsage, status, result), nil
 		}
@@ -134,11 +137,14 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 			// NOTE: Check the rewrite since it, too, is authored by the model.
 			if refusal, cerr := agent.Check(ctx, opts, canon); cerr != nil || refusal != "" {
 				log.Printf("Session %s Iteration %d: canonical form refused or unchecked (%v), confirming original", sessionID, iterNum, cerr)
-			} else if st, _ := deps.ScratchRunner.Run(ctx, fmt.Sprintf("iter-%d-canon", iterNum), canon); st == schema.AgentIterationStatusSuccess {
-				log.Printf("Session %s Iteration %d: canonical build re-verified, confirming canonical form", sessionID, iterNum)
-				s = canon
 			} else {
-				log.Printf("Session %s Iteration %d: canonical build did not re-verify (%s), confirming original", sessionID, iterNum, st)
+				started := time.Now()
+				if st, _ := deps.ScratchRunner.Run(ctx, fmt.Sprintf("iter-%d-canon", iterNum), canon); st == schema.AgentIterationStatusSuccess {
+					log.Printf("Session %s Iteration %d: canonical build re-verified, confirming canonical form", sessionID, iterNum)
+					s, verified = canon, time.Since(started)
+				} else {
+					log.Printf("Session %s Iteration %d: canonical build did not re-verify (%s), confirming original", sessionID, iterNum, st)
+				}
 			}
 		}
 		// Charge the canonicalize turn to this iteration.
@@ -150,10 +156,14 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 		defer stop()
 	}
 	// TODO: Should CreateIteration just return the Iteration object?
+	// NOTE: The call takes no deadline of its own. The bound starts once the
+	// build leaves the pool's queue, and the service's request timeout
+	// already ends the call.
 	resp, err := deps.IterationStub(ctx, schema.AgentCreateIterationRequest{
-		SessionID: sessionID,
-		Strategy:  s,
-		Usage:     iterUsage,
+		SessionID:           sessionID,
+		Strategy:            s,
+		Usage:               iterUsage,
+		BuildTimeoutSeconds: int(confirmationTimeout(verified).Seconds()),
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "executing build")
@@ -161,6 +171,24 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 		return nil, errors.New("iteration response is empty")
 	}
 	return resp.Iteration, nil
+}
+
+// A confirmation reruns the VM-verified build behind an image build and a tool
+// fetch, on a start the pool can slow, so it gets a multiple of the VM's time
+// plus an allowance. The median confirmation takes about 1.2 times the VM's
+// time, and the factor leaves room for the slower ones.
+const (
+	confirmationFactor    = 2
+	confirmationAllowance = 10 * time.Minute
+)
+
+// confirmationTimeout sizes the build from its VM wall time, or the service's
+// maximum without a VM build.
+func confirmationTimeout(verified time.Duration) time.Duration {
+	if verified <= 0 {
+		return schema.AgentBuildTimeoutMax
+	}
+	return min(confirmationFactor*verified+confirmationAllowance, schema.AgentBuildTimeoutMax)
 }
 
 // localIteration is an attempt that never reached the service: a failed

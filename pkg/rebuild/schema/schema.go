@@ -548,14 +548,24 @@ type AgentCreateResponse struct {
 // Scratch-mode sessions submit only their confirmation builds here.
 // Local attempts are tracked by the scratch exec ledger alone.
 type AgentCreateIterationRequest struct {
-	SessionID string         `form:",required"`
-	Strategy  *StrategyOneOf `form:",required"`
-	Usage     *TokenUsage    `form:""` // LLM tokens consumed producing this iteration
+	SessionID           string         `form:",required"`
+	Strategy            *StrategyOneOf `form:",required"`
+	Usage               *TokenUsage    `form:""` // LLM tokens consumed producing this iteration
+	BuildTimeoutSeconds int            `form:""` // clamped by the service, 0 for the max
 }
+
+// AgentBuildTimeoutMax bounds an iteration's build. The service blocks on it
+// within one request, and a session has an hour.
+const AgentBuildTimeoutMax = 50 * time.Minute
 
 var _ api.Input = AgentCreateIterationRequest{}
 
-func (AgentCreateIterationRequest) Validate() error { return nil }
+func (r AgentCreateIterationRequest) Validate() error {
+	if r.BuildTimeoutSeconds < 0 {
+		return errors.New("build timeout must not be negative")
+	}
+	return nil
+}
 
 // AgentCreateIterationResponse returns iteration and build IDs
 type AgentCreateIterationResponse struct {
