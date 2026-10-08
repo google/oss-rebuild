@@ -526,6 +526,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			PlatformTag:  tags.Platform,
 			Requirements: reqs,
 			RegistryTime: a.UploadTime,
+			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime),
 		}, nil
 	} else {
 		return &PureWheelBuild{
@@ -541,6 +542,30 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			PythonTag:     pythonTag(a.Filename, reqs),
 		}, nil
 	}
+}
+
+// inferBaseImage returns the build image that cibuildwheel pinned for
+// platformTag when the wheel was uploaded, according to pins. If no pin
+// is known it returns an empty string, selecting the unpinned image at build time.
+func inferBaseImage(pins platform.CibuildwheelPinTable, platformTag string, uploaded time.Time) string {
+	repo, err := platform.SelectBaseImage(platformTag)
+	if err != nil {
+		log.Println(errors.Wrap(err, "Failed to select base image"))
+		return ""
+	}
+	// TODO: The upload time stands in for the build time, which PyPI does not
+	// record. A wheel built well before its upload, such as one that waited
+	// for a release approval, can get the image of a newer cibuildwheel
+	// release. Fingerprints in the wheel could verify the pick, such as the
+	// compiler in .comment, the CPython version in PY_VERSION_HEX and the
+	// auditwheel version in its SBOM.
+	ref, version, ok := pins.ImageAt(repo, uploaded)
+	if !ok {
+		log.Printf("No cibuildwheel pin known for %s at %s, using the unpinned image", repo, uploaded.Format(time.RFC3339))
+		return ""
+	}
+	log.Printf("Using base image %s pinned by cibuildwheel %s", ref, version)
+	return ref
 }
 
 var (
