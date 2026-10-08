@@ -222,11 +222,10 @@ func executeNetworkRebuild(ctx context.Context, deps *AnalyzerDeps, t rebuild.Ta
 		Strategy: strategy,
 	}
 	h, err := deps.Executor.Start(ctx, in, build.Options{
-		BuildID:            obID,
-		Timeout:            timeout,
-		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
-		UseNetworkProxy:    true, // The whole point of the analyzer
-		SaveContainerImage: true,
+		BuildID:         obID,
+		Timeout:         timeout,
+		UseTimewarp:     meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
+		UseNetworkProxy: true, // The whole point of the analyzer
 		Resources: build.Resources{
 			AssetStore:       buildStore,
 			ToolURLs:         toolURLs,
