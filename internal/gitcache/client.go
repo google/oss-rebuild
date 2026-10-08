@@ -66,12 +66,15 @@ func (c Client) GetLinkWithRef(repo string, contains time.Time, ref string) (uri
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
 	var errs []byte
 	switch resp.StatusCode {
 	case http.StatusFound:
 		uri = resp.Header.Get("Location")
 		// FIXME: Figure out why this URL parsing artifact is being reintroduced.
 		return strings.ReplaceAll(uri, "%252F", "%2F"), nil
+	case http.StatusOK:
+		return u.String(), nil
 	case http.StatusBadRequest:
 		errs, err = io.ReadAll(resp.Body)
 		if err != nil {
