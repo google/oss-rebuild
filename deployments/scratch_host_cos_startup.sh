@@ -35,6 +35,11 @@ iptables -w -t nat -C POSTROUTING -s "$GUEST_SUBNET" -o "$HOST_NIC" -j MASQUERAD
     iptables -w -t nat -A POSTROUTING -s "$GUEST_SUBNET" -o "$HOST_NIC" -j MASQUERADE
 iptables -w -C FORWARD -i "$BRIDGE" -j ACCEPT 2>/dev/null || iptables -w -I FORWARD 1 -i "$BRIDGE" -j ACCEPT
 iptables -w -C FORWARD -o "$BRIDGE" -j ACCEPT 2>/dev/null || iptables -w -I FORWARD 1 -o "$BRIDGE" -j ACCEPT
+# Guests need no GCP credentials. Refuse them the metadata server's HTTP API,
+# which NAT would reach as the host. DNS on that address stays open.
+# Inserted at the top, ahead of the accepts.
+iptables -w -C FORWARD -i "$BRIDGE" -d 169.254.169.254 -p tcp --dport 80 -j REJECT 2>/dev/null ||
+    iptables -w -I FORWARD 1 -i "$BRIDGE" -d 169.254.169.254 -p tcp --dport 80 -j REJECT
 # COS drops inbound by default. Open only the broker's port, as the VPC rule does.
 iptables -w -C INPUT -p tcp --dport 8080 -j ACCEPT 2>/dev/null || iptables -w -A INPUT -p tcp --dport 8080 -j ACCEPT
 
