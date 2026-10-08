@@ -120,9 +120,11 @@ func TestExecutorStart(t *testing.T) {
 	}
 
 	opts := build.Options{
-		BuildID:         "test-build-123",
-		UseTimewarp:     false,
-		UseNetworkProxy: false,
+		BuildID:                "test-build-123",
+		UseTimewarp:            false,
+		UseNetworkProxy:        false,
+		SaveContainerImage:     true,
+		SavePostBuildContainer: true,
 		Resources: build.Resources{
 			BaseImageConfig: baseImageConfig,
 		},
@@ -172,6 +174,20 @@ func TestExecutorStart(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("Tag %s not found in %v", expected, gotBuild.Tags)
+		}
+	}
+
+	// Verify the save options reached the plan
+	for _, want := range []string{"docker save img", "docker commit container container-postbuild"} {
+		found := false
+		for _, step := range gotBuild.Steps {
+			if strings.Contains(step.Script, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Step containing %q not found", want)
 		}
 	}
 
