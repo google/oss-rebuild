@@ -571,6 +571,54 @@ commits:
 	f.Close()
 }
 
+func TestNativeClone_WorktreeDefaultBranch(t *testing.T) {
+	if !NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	ctx := context.Background()
+	upstreamDir := t.TempDir()
+	upstreamFS := osfs.New(upstreamDir)
+	upstream, err := gitxtest.CreateRepoFromYAML(`
+commits:
+  - id: initial
+    branch: main
+    message: "Initial commit"
+    files:
+      README.md: "Hello"
+`, &gitxtest.RepositoryOptions{
+		Storer:   filesystem.NewStorage(upstreamFS, cache.NewObjectLRUDefault()),
+		Worktree: upstreamFS,
+	})
+	if err != nil {
+		t.Fatalf("failed to create test repo: %v", err)
+	}
+	// NOTE: gitxtest leaves HEAD on master so repoint it to make main the only branch.
+	if err := upstream.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.Main)); err != nil {
+		t.Fatalf("failed to set HEAD: %v", err)
+	}
+	if err := upstream.Storer.RemoveReference(plumbing.Master); err != nil {
+		t.Fatalf("failed to remove master: %v", err)
+	}
+	repo, err := NativeClone(ctx, memory.NewStorage(), memfs.New(), &git.CloneOptions{URL: "file://" + upstreamDir})
+	if err != nil {
+		t.Fatalf("NativeClone failed: %v", err)
+	}
+	head, err := repo.Storer.Reference(plumbing.HEAD)
+	if err != nil {
+		t.Fatalf("failed to read HEAD: %v", err)
+	}
+	if head.Type() != plumbing.SymbolicReference || head.Target() != plumbing.Main {
+		t.Errorf("HEAD = %v, want symbolic ref to %s", head, plumbing.Main)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	if _, err := wt.Filesystem.Stat("README.md"); err != nil {
+		t.Errorf("README.md not checked out: %v", err)
+	}
+}
+
 func TestNativeClone_FetchAfterClone(t *testing.T) {
 	if !NativeGitAvailable() {
 		t.Skip("native git not available")
