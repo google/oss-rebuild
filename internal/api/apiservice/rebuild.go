@@ -232,14 +232,13 @@ func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.R
 		Strategy: strategy,
 	}
 	h, err := deps.Executor.Start(ctx, in, build.Options{
-		BuildID:            obID,
-		Timeout:            timeout,
-		SizeHint:           sizeHint,
-		UseTimewarp:        meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
-		UseNetworkProxy:    useProxy,
-		UseSyscallMonitor:  useSyscallMonitor,
-		SaveContainerImage: true,
-		RecordTimings:      true,
+		BuildID:           obID,
+		Timeout:           timeout,
+		SizeHint:          sizeHint,
+		UseTimewarp:       meta.AllRebuilders[t.Ecosystem].UsesTimewarp(in),
+		UseNetworkProxy:   useProxy,
+		UseSyscallMonitor: useSyscallMonitor,
+		RecordTimings:     true,
 		Resources: build.Resources{
 			AssetStore:       buildStore,
 			ToolURLs:         toolURLs,
