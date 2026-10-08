@@ -179,6 +179,31 @@ pypi_platform_wheel_build:
 `,
 	},
 	{
+		name: "PlatformWheelBuildWithBuildRoot",
+		strategy: &pypi.PlatformWheelBuild{
+			Location: rebuild.Location{
+				Dir:  "the_dir",
+				Ref:  "the_ref",
+				Repo: "the_repo",
+			},
+			Requirements: []string{"req_a"},
+			PlatformTag:  "manylinux2014_x86_64",
+			BuildRoot:    "/project",
+		},
+		jsonEncoded: `{"pypi_platform_wheel_build":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","requirements":["req_a"],"platform_tag":"manylinux2014_x86_64","registry_time":"0001-01-01T00:00:00Z","build_root":"/project"}}`,
+		yamlEncoded: `
+pypi_platform_wheel_build:
+  location:
+    repo: the_repo
+    ref: the_ref
+    dir: the_dir
+  requirements:
+    - req_a
+  platform_tag: manylinux2014_x86_64
+  build_root: /project
+`,
+	},
+	{
 		name: "CratesioCargoPackage",
 		strategy: &cratesio.CratesIOCargoPackage{
 			Location: rebuild.Location{

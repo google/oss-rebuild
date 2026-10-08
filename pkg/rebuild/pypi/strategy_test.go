@@ -458,6 +458,43 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 			},
 		},
 		{
+			"BuildRoot",
+			&PlatformWheelBuild{
+				Location:    defaultLocation,
+				PythonTag:   "cp310",
+				ABITag:      "cp310",
+				PlatformTag: "manylinux_2_17_x86_64",
+				BuildRoot:   "/project",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install --target /deps/wheel-cli wheel`,
+				Build: `mkdir -p $(dirname /project)
+mkdir /project
+cp -a . /project
+/deps/bin/python3 -m build --wheel -n --outdir the_dir/dist /project/the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/
+rm -rf the_dir/dist/repaired
+PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_17_x86_64 the_dir/dist/*.whl`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux2014_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
 			"WithTimewarp",
 			&PlatformWheelBuild{
 				Location:     defaultLocation,
@@ -835,5 +872,38 @@ rm -rf the_dir/dist/repaired
 PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_17_x86_64 the_dir/dist/*.whl`
 	if diff := cmp.Diff(wantBuild, inst.Build); diff != "" {
 		t.Errorf("GenerateFor() Build diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestValidateBuildRoot(t *testing.T) {
+	tests := []struct {
+		name      string
+		buildRoot string
+		wantErr   bool
+	}{
+		{name: "Unset"},
+		{name: "Cibuildwheel", buildRoot: "/project"},
+		{name: "Nested", buildRoot: "/tmp/build/greenlet"},
+		{name: "AzurePipelines", buildRoot: "/__w/1/s"},
+		{name: "ShellSafePunctuation", buildRoot: "/home/user@host/c++,v2"},
+		{name: "SharesCheckoutPrefix", buildRoot: "/srcdir"},
+		{name: "CIWorkspace", buildRoot: "/opt/buildagent/work/abc"},
+		{name: "DockerWorkdir", buildRoot: "/usr/src/app"},
+		{name: "Relative", buildRoot: "project", wantErr: true},
+		{name: "FilesystemRoot", buildRoot: "/", wantErr: true},
+		{name: "TrailingSlash", buildRoot: "/project/", wantErr: true},
+		{name: "ParentSegment", buildRoot: "/tmp/../project", wantErr: true},
+		{name: "Whitespace", buildRoot: "/my project", wantErr: true},
+		{name: "ShellMetacharacter", buildRoot: "/project;true", wantErr: true},
+		{name: "Checkout", buildRoot: "/src", wantErr: true},
+		{name: "InsideCheckout", buildRoot: "/src/project", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := &PlatformWheelBuild{PlatformTag: "manylinux2014_x86_64", BuildRoot: tt.buildRoot}
+			if _, err := b.ToWorkflow(); (err != nil) != tt.wantErr {
+				t.Errorf("ToWorkflow() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
