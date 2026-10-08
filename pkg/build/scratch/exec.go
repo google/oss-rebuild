@@ -15,6 +15,7 @@
 package scratch
 
 import (
+	"cmp"
 	"context"
 	"io"
 	"log"
@@ -43,6 +44,8 @@ const (
 	// maxConsecutivePollErrs bounds tolerated transient poll failures.
 	maxConsecutivePollErrs = 5
 	killDispatchTimeout    = 30 * time.Second // bounds an abandoned op's kill
+	createHold             = 20 * time.Second // a create's wait for its command
+	createTimeout          = time.Minute      // a detached create, hold included
 )
 
 // Stubs bundles the agent-api scratch exec endpoints.
@@ -70,7 +73,11 @@ func exec(ctx context.Context, stubs Stubs, req schema.ScratchExecRequest, pollI
 	if pollInterval <= 0 {
 		pollInterval = defaultPollInterval
 	}
-	op, err := stubs.ExecCreate(ctx, req)
+	req.WaitSeconds = cmp.Or(req.WaitSeconds, int(createHold.Seconds()))
+	// Detached so a caller that gives up mid-hold still gets the op id its kill needs.
+	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), createTimeout)
+	op, err := stubs.ExecCreate(cctx, req)
+	cancel()
 	if err != nil {
 		return nil, errors.Wrap(err, "creating exec")
 	}

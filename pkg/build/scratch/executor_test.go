@@ -271,6 +271,49 @@ func TestExecCancelDispatchesKill(t *testing.T) {
 	}
 }
 
+func TestExecHoldsCreateOpen(t *testing.T) {
+	f := &fakeStubs{creates: []createFn{respond(completedOp("op1", 0), nil)}}
+	if _, err := Exec(context.Background(), f.stubs(), schema.ScratchExecRequest{
+		ScratchID:      "s1",
+		Cmd:            []string{"true"},
+		TimeoutSeconds: 5,
+	}, time.Millisecond); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if len(f.createReqs) != 1 || f.createReqs[0].WaitSeconds != int(createHold.Seconds()) {
+		t.Errorf("create requests = %+v, want one holding for %s", f.createReqs, createHold)
+	}
+}
+
+func TestExecCancelDuringHoldDispatchesKill(t *testing.T) {
+	pending := &longrunning.Operation[schema.ScratchExecResult]{
+		ID:     "op1",
+		Result: &schema.ScratchExecResult{ScratchID: "s1"},
+	}
+	f := &fakeStubs{}
+	s := f.stubs()
+	ctx, cancel := context.WithCancel(context.Background())
+	s.ExecCreate = func(cctx context.Context, _ schema.ScratchExecRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+		cancel() // give up mid-hold
+		// A real stub aborts its request when its context is cancelled.
+		if err := cctx.Err(); err != nil {
+			return nil, err
+		}
+		return pending, nil
+	}
+	_, err := Exec(ctx, s, schema.ScratchExecRequest{
+		ScratchID:      "s1",
+		Cmd:            []string{"sleep", "30"},
+		TimeoutSeconds: 5,
+	}, time.Millisecond)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Exec err = %v, want context.Canceled", err)
+	}
+	if len(f.kills) != 1 || f.kills[0].ID != "op1" {
+		t.Errorf("kills = %+v, want one for op1", f.kills)
+	}
+}
+
 func TestExecCancelWithoutKillStub(t *testing.T) {
 	pending := &longrunning.Operation[schema.ScratchExecResult]{
 		ID:     "op1",
