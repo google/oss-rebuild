@@ -53,6 +53,19 @@ func TestStabilizeTar(t *testing.T) {
 				{Header: &tar.Header{Name: "foo", Typeflag: tar.TypeReg, Size: 3, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("foo")},
 			},
 		},
+		{
+			test: "duplicate-paths",
+			input: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "m", Typeflag: tar.TypeReg, Size: 1, Mode: 0644}, Body: []byte("1")},
+				{Header: &tar.Header{Name: "m", Typeflag: tar.TypeReg, Size: 1, Mode: 0644}, Body: []byte("2")},
+				{Header: &tar.Header{Name: "m", Typeflag: tar.TypeReg, Size: 1, Mode: 0644}, Body: []byte("3")},
+			},
+			expected: []*archive.TarEntry{
+				{Header: &tar.Header{Name: "m", Typeflag: tar.TypeReg, Size: 1, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("1")},
+				{Header: &tar.Header{Name: "m", Typeflag: tar.TypeReg, Size: 1, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("2")},
+				{Header: &tar.Header{Name: "m", Typeflag: tar.TypeReg, Size: 1, Mode: 0777, ModTime: epoch, AccessTime: epoch, PAXRecords: map[string]string{"atime": "0"}, Format: tar.FormatPAX}, Body: []byte("3")},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.test, func(t *testing.T) {
