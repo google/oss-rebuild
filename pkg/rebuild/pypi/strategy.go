@@ -4,6 +4,8 @@
 package pypi
 
 import (
+	"path"
+	re "regexp"
 	"slices"
 	"strings"
 	"time"
@@ -142,6 +144,11 @@ type PlatformWheelBuild struct {
 	// because the image determines the compiler, CPython builds and auditwheel.
 	// When unset, the latest image of the family matching PlatformTag is used.
 	BaseImage string `json:"base_image,omitempty" yaml:"base_image,omitempty"`
+	// BuildRoot is the absolute path that the repository is built at, such as
+	// "/project" where cibuildwheel mounts it. Compilers record the build path
+	// in debug info, so it has to match the upstream build for the binaries to
+	// match. When unset, the build runs in the checkout.
+	BuildRoot string `json:"build_root,omitempty" yaml:"build_root,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
@@ -156,10 +163,74 @@ func (b *PlatformWheelBuild) resolveBaseImage() (string, error) {
 	return platform.SelectBaseImage(b.PlatformTag)
 }
 
+const (
+	// checkoutDir is where the build planners check out the repository.
+	checkoutDir = "/src"
+	// venvDir is where the dependency steps create the virtual environment.
+	venvDir = "/deps"
+)
+
+// reservedDirs are the directories whose subtrees a build root must not lie
+// in: those the build steps use, the system directories of the build image and
+// the toolchains and interpreters that manylinux images install under /opt.
+// CI agents keep their workspaces elsewhere under /opt and /var, so those stay
+// open. The build step refuses a root that already exists, which catches any
+// other populated directory.
+var reservedDirs = []string{
+	checkoutDir,
+	venvDir,
+	"/bin",
+	"/dev",
+	"/etc",
+	"/lib",
+	"/lib64",
+	"/opt/_internal",
+	"/opt/python",
+	"/opt/rh",
+	"/out",
+	"/proc",
+	"/run",
+	"/sbin",
+	"/sys",
+	"/usr",
+}
+
+// imageDirs are top-level directories that exist in the manylinux and
+// musllinux images, so the build step cannot create them as a build root.
+// Their subdirectories are open.
+var imageDirs = []string{"/home", "/media", "/mnt", "/opt", "/root", "/srv", "/tmp", "/var"}
+
+// buildRootPat matches absolute paths of characters that need no shell quoting.
+var buildRootPat = re.MustCompile(`^(/[A-Za-z0-9._+,@-]+)+$`)
+
+// validateBuildRoot rejects build roots that the checkout cannot be copied to.
+// An empty build root is valid and keeps the build in the checkout.
+func validateBuildRoot(root string) error {
+	switch {
+	case root == "":
+		return nil
+	case !buildRootPat.MatchString(root):
+		return errors.Errorf("build root %q is not an absolute path of letters, digits and '._+,@-'", root)
+	case path.Clean(root) != root:
+		return errors.Errorf("build root %q is not a clean path", root)
+	case slices.Contains(imageDirs, root):
+		return errors.Errorf("build root %q already exists in the build image", root)
+	}
+	for _, dir := range reservedDirs {
+		if root == dir || strings.HasPrefix(root, dir+"/") {
+			return errors.Errorf("build root %q overlaps the build directory %s", root, dir)
+		}
+	}
+	return nil
+}
+
 func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	baseImage, err := b.resolveBaseImage()
 	if err != nil {
 		return nil, errors.Wrap(err, "selecting base image")
+	}
+	if err := validateBuildRoot(b.BuildRoot); err != nil {
+		return nil, errors.Wrap(err, "validating build root")
 	}
 	var registryTime string
 	if !b.RegistryTime.IsZero() {
@@ -190,8 +261,8 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 				"requirements": flow.MustToJSON(b.Requirements),
 				"pythonTag":    b.PythonTag,
 				"abiTag":       b.ABITag,
-				"venv":         "/deps",
-				"wheelCli":     "/deps/wheel-cli",
+				"venv":         venvDir,
+				"wheelCli":     venvDir + "/wheel-cli",
 			},
 		}},
 		Build: []flow.Step{{
@@ -199,8 +270,9 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 			With: map[string]string{
 				"dir":        b.Location.Dir,
 				"distDir":    distDir,
-				"locator":    "/deps/bin/",
-				"wheelCli":   "/deps/wheel-cli",
+				"buildRoot":  b.BuildRoot,
+				"locator":    venvDir + "/bin/",
+				"wheelCli":   venvDir + "/wheel-cli",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
 				// auditwheel repair --plat requires a single policy tag rather than a compressed
 				// tag set, and the highest tag matches the build container policy.
@@ -366,10 +438,21 @@ var toolkit = []*flow.Tool{
 			}},
 	},
 	{
+		// With a build root, the build runs in a copy of the checkout at the root and
+		// writes the wheel to the dist directory of the checkout. The root is created
+		// without -p so that the copy cannot merge into a directory that already
+		// exists in the image.
 		Name: "pypi/build/platform-wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				{{if .With.buildRoot -}}
+				mkdir -p $(dirname {{.With.buildRoot}})
+				mkdir {{.With.buildRoot}}
+				cp -a . {{.With.buildRoot}}
+				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n --outdir {{.With.distDir}} {{.With.buildRoot}}{{if and (ne .With.dir ".") (ne .With.dir "")}}/{{.With.dir}}{{end}}
+				{{else -}}
 				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
+				{{end -}}
 				{{if .With.highestPlatformTag -}}
 				mkdir -p {{.With.distDir}}/repaired
 				AUDITWHEEL="{{.With.locator}}auditwheel"
