@@ -48,6 +48,9 @@ func (c Filesystem) Open(path string) (*File, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "making request")
 	}
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
 	switch resp.StatusCode {
 	case http.StatusOK:
 	case http.StatusNotFound:
@@ -88,6 +91,9 @@ func (c Filesystem) Stat(path string) (*FileInfo, error) {
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		return nil, errors.Wrap(err, "making request")
+	}
+	if resp.Body != nil {
+		defer resp.Body.Close()
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -225,6 +231,9 @@ func (c Filesystem) WriteFile(f *File) error {
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		return errors.Wrap(err, "making request")
+	}
+	if resp.Body != nil {
+		defer resp.Body.Close()
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:

@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 )
 
@@ -214,4 +216,69 @@ func must1(err error) {
 func must[T any](t T, err error) T {
 	must1(err)
 	return t
+}
+
+type trackedResponseBody struct {
+	io.Reader
+	closes int
+}
+
+func (b *trackedResponseBody) Close() error {
+	b.closes++
+	return nil
+}
+
+func TestResponseBodyClosed(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		operation string
+		status    int
+		malformed bool
+		wantError bool
+	}{
+		{"OpenSuccess", "Open", http.StatusOK, false, false},
+		{"OpenNotFound", "Open", http.StatusNotFound, false, true},
+		{"OpenInvalidArchive", "Open", http.StatusOK, true, true},
+		{"StatSuccess", "Stat", http.StatusOK, false, false},
+		{"StatNotFound", "Stat", http.StatusNotFound, false, true},
+		{"StatInvalidHeader", "Stat", http.StatusOK, true, true},
+		{"WriteFileSuccess", "WriteFile", http.StatusOK, false, false},
+		{"WriteFileNotFound", "WriteFile", http.StatusNotFound, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fi := FileInfo{name: "release", mode: fs.ModePerm, size: 1, modTime: someTime}
+			content := makeOpen(t, fi, "x", "")
+			header := withHeader(statHeader, makeStat(t, fi))
+			if tc.malformed {
+				content = []byte("invalid tar")
+				header = withHeader(statHeader, "%")
+			}
+			body := &trackedResponseBody{Reader: bytes.NewReader(content)}
+			method := map[string]string{"Open": "GET", "Stat": "HEAD", "WriteFile": "PUT"}[tc.operation]
+			url := "/containers/abc/archive?path=/etc/release"
+			if tc.operation == "WriteFile" {
+				url = "/containers/abc/archive?path=/etc"
+			}
+			client := &httpxtest.MockClient{
+				Calls:        []httpxtest.Call{{Method: method, URL: url, Response: &http.Response{StatusCode: tc.status, Header: header, Body: body}}},
+				URLValidator: httpxtest.NewURLValidator(t),
+			}
+			f := Filesystem{Client: client, Container: "abc"}
+			var err error
+			switch tc.operation {
+			case "Open":
+				_, err = f.Open("/etc/release")
+			case "Stat":
+				_, err = f.Stat("/etc/release")
+			case "WriteFile":
+				err = f.WriteFile(&File{Path: "/etc/release", Metadata: tar.Header{Name: "release", Mode: 0644}, Contents: []byte("x")})
+			}
+			if got := err != nil; got != tc.wantError {
+				t.Errorf("error = %v, want error: %v", err, tc.wantError)
+			}
+			if diff := cmp.Diff(1, body.closes); diff != "" {
+				t.Errorf("response body closes mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
