@@ -39,6 +39,7 @@ import (
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds all configuration for the infer command.
@@ -54,6 +55,7 @@ type Config struct {
 	BootstrapVersion string
 	GitCacheURL      string
 	MemoryLimit      string
+	Strategy         string
 }
 
 // Validate ensures the configuration is valid.
@@ -214,19 +216,34 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		}
 		stub = api.Local(inferenceservice.Infer, deps)
 	}
-	resp, err := stub(ctx, req)
-	if err != nil {
-		if cfg.Format == "strategy-or-status" {
-			// Surface the error as its Status proto on stdout.
-			// NOTE: Also exit 0 to maintain the json-validity of the output.
-			body, mErr := protojson.Marshal(status.Convert(err).Proto())
-			if mErr != nil {
-				return nil, errors.Wrap(mErr, "encoding inference status")
-			}
-			fmt.Fprintln(deps.IO.Out, string(body))
-			return &act.NoOutput{}, nil
+	var resp *schema.StrategyOneOf
+	if cfg.Strategy != "" {
+		f, err := os.Open(cfg.Strategy)
+		if err != nil {
+			return nil, errors.Wrap(err, "opening strategy file")
 		}
-		return nil, err
+		defer f.Close()
+		resp = &schema.StrategyOneOf{}
+		err = yaml.NewDecoder(f).Decode(resp)
+		if err != nil {
+			return nil, errors.Wrap(err, "reading strategy file")
+		}
+	} else {
+		var err error
+		resp, err = stub(ctx, req)
+		if err != nil {
+			if cfg.Format == "strategy-or-status" {
+				// Surface the error as its Status proto on stdout.
+				// NOTE: Also exit 0 to maintain the json-validity of the output.
+				body, mErr := protojson.Marshal(status.Convert(err).Proto())
+				if mErr != nil {
+					return nil, errors.Wrap(mErr, "encoding inference status")
+				}
+				fmt.Fprintln(deps.IO.Out, string(body))
+				return &act.NoOutput{}, nil
+			}
+			return nil, err
+		}
 	}
 	s, err := resp.Strategy()
 	if err != nil {
@@ -319,7 +336,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 func Command() *cobra.Command {
 	cfg := Config{}
 	cmd := &cobra.Command{
-		Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--repo-hint <repo>] [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps]",
+		Use:   "infer --ecosystem <ecosystem> --package <name> --version <version> [--repo-hint <repo>] [--artifact <name>] [--api <URI>] [--format strategy|dockerfile|debug-steps] [--strategy <path>]",
 		Short: "Run inference",
 		Args:  cobra.NoArgs,
 		RunE: cli.RunE(
@@ -347,5 +364,6 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.BootstrapVersion, "bootstrap-version", "", "the version of bootstrap tools to use")
 	set.StringVar(&cfg.GitCacheURL, "git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
 	set.StringVar(&cfg.MemoryLimit, "memory", "", "soft cap on this process's resident memory (e.g. 20g, 8192m). Implemented via Go's runtime/debug.SetMemoryLimit; lets the GC throttle before huge in-memory git clones (memory.NewStorage) take down the host.")
+	set.StringVar(&cfg.Strategy, "strategy", "", "provide a strategy file to bypass inference")
 	return set
 }
