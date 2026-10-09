@@ -8,8 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sync"
 	"testing"
 
+	"github.com/elazarl/goproxy"
+	"github.com/google/oss-rebuild/pkg/proxy/netlog"
 	"github.com/google/oss-rebuild/pkg/proxy/policy"
 )
 
@@ -252,5 +255,98 @@ func TestPolicyEndpoint(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestHandleUninterceptedConnect covers CONNECTs to ports that are not
+// MITM-intercepted (anything other than 80/443). These bypass the OnRequest
+// hooks, so policy and logging must be applied at the CONNECT/host level.
+func TestHandleUninterceptedConnect(t *testing.T) {
+	allowlist := policy.Policy{
+		AnyOf: []policy.Rule{
+			policy.URLMatchRule{
+				Host:      "allowed.test",
+				HostMatch: policy.FullMatch,
+				Path:      "/",
+				PathMatch: policy.PrefixMatch,
+			},
+		},
+	}
+	tests := []struct {
+		name       string
+		mode       PolicyMode
+		policy     *policy.Policy
+		host       string
+		wantAction goproxy.ConnectAction
+	}{
+		{
+			name:       "enforce rejects non-allowlisted host on non-standard port",
+			mode:       EnforcementMode,
+			policy:     &allowlist,
+			host:       "forbidden.test:9443",
+			wantAction: *goproxy.RejectConnect,
+		},
+		{
+			name:       "enforce allows allowlisted host on non-standard port",
+			mode:       EnforcementMode,
+			policy:     &allowlist,
+			host:       "allowed.test:9443",
+			wantAction: *goproxy.OkConnect,
+		},
+		{
+			name:       "disabled tunnels any host",
+			mode:       DisabledMode,
+			policy:     &allowlist,
+			host:       "forbidden.test:9443",
+			wantAction: *goproxy.OkConnect,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := TransparentProxyService{
+				Mode:       tc.mode,
+				Policy:     tc.policy,
+				mx:         new(sync.Mutex),
+				networkLog: &netlog.NetworkActivityLog{HTTPRequests: []netlog.HTTPRequestLog{}},
+				logNetwork: true,
+			}
+			gotAction, gotHost := svc.HandleUninterceptedConnect(tc.host, nil)
+			if gotAction == nil || gotAction.Action != tc.wantAction.Action {
+				t.Errorf("HandleUninterceptedConnect(%q) action = %v, want %v", tc.host, gotAction, tc.wantAction.Action)
+			}
+			if gotHost != tc.host {
+				t.Errorf("HandleUninterceptedConnect(%q) host = %q, want %q", tc.host, gotHost, tc.host)
+			}
+			// The connection must be recorded regardless of the policy decision,
+			// so the NetworkRebuild network log is complete.
+			reqs := svc.networkLog.HTTPRequests
+			if len(reqs) != 1 {
+				t.Fatalf("network log has %d entries, want 1", len(reqs))
+			}
+			if reqs[0].Method != http.MethodConnect || reqs[0].Host != tc.host {
+				t.Errorf("network log entry = {Method:%q Host:%q}, want {Method:%q Host:%q}", reqs[0].Method, reqs[0].Host, http.MethodConnect, tc.host)
+			}
+		})
+	}
+}
+
+// TestHandleUninterceptedConnectSkipLogging verifies that when logging is
+// disabled no network-log entry is recorded, while policy is still enforced.
+func TestHandleUninterceptedConnectSkipLogging(t *testing.T) {
+	svc := TransparentProxyService{
+		Mode: EnforcementMode,
+		Policy: &policy.Policy{AnyOf: []policy.Rule{
+			policy.URLMatchRule{Host: "allowed.test", HostMatch: policy.FullMatch, Path: "/", PathMatch: policy.PrefixMatch},
+		}},
+		mx:         new(sync.Mutex),
+		networkLog: &netlog.NetworkActivityLog{HTTPRequests: []netlog.HTTPRequestLog{}},
+		logNetwork: false,
+	}
+	action, _ := svc.HandleUninterceptedConnect("forbidden.test:9443", nil)
+	if action == nil || action.Action != goproxy.RejectConnect.Action {
+		t.Errorf("action = %v, want reject", action)
+	}
+	if got := len(svc.networkLog.HTTPRequests); got != 0 {
+		t.Errorf("network log has %d entries, want 0 when logging disabled", got)
 	}
 }

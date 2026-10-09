@@ -73,6 +73,14 @@ func main() {
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 			return proxyService.ApplyNetworkPolicy(req, ctx)
 		})
+	// Enforce policy and record activity for CONNECTs that are not MITM'd
+	// (ports other than 80/443); these bypass the OnRequest hooks above and are
+	// otherwise raw-tunneled without policy enforcement or logging. Registered
+	// after the 80/443 MITM matchers, so it only affects otherwise-raw tunnels.
+	proxyService.Proxy.OnRequest().HandleConnect(goproxy.FuncHttpsHandler(
+		func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+			return proxyService.HandleUninterceptedConnect(host, ctx)
+		}))
 	// Administrative endpoint.
 	go proxyService.ServeAdmin(*ctrlAddr)
 	// Start proxy server endpoints.

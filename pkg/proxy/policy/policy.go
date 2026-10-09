@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 
@@ -108,6 +109,53 @@ func blockedResponse(req *http.Request) (*http.Request, *http.Response) {
 	return req, goproxy.NewResponse(req, goproxy.ContentTypeText, http.StatusForbidden, errorMessage)
 }
 
+// AllowsHost reports whether the policy permits a connection to target, given as
+// "host:port" or "host". It mirrors the anyOf/allOf semantics of Apply but
+// evaluates host matching only.
+//
+// This exists for CONNECT tunnels to ports that are not TLS/HTTP-intercepted
+// (anything other than 80/443). Such a tunnel is forwarded as raw bytes and
+// exposes no HTTP request path, so path-scoped matching cannot apply to it; the
+// conservative choice is to authorize the tunnel only when a rule permits the
+// host. Path-scoped rules continue to be enforced on intercepted HTTP(S)
+// traffic via Apply. As with Apply, an empty policy allows nothing.
+func (p Policy) AllowsHost(target string) bool {
+	host := target
+	if h, _, err := net.SplitHostPort(target); err == nil {
+		host = h
+	}
+	for _, rule := range p.AllOf {
+		if !ruleAllowsHost(rule, host) {
+			return false
+		}
+	}
+	if len(p.AllOf) != 0 && len(p.AnyOf) == 0 {
+		return true
+	}
+	for _, rule := range p.AnyOf {
+		if ruleAllowsHost(rule, host) {
+			return true
+		}
+	}
+	return false
+}
+
+// ruleAllowsHost applies a rule's host matching to host. Rules that cannot
+// decide on host alone do not authorize a raw tunnel; such traffic can still be
+// permitted at the HTTP layer once intercepted.
+func ruleAllowsHost(rule Rule, host string) bool {
+	if hr, ok := rule.(hostMatcher); ok {
+		return hr.AllowsHost(host)
+	}
+	return false
+}
+
+// hostMatcher is implemented by rules that can make an allow decision from the
+// host alone (i.e. without an HTTP request path).
+type hostMatcher interface {
+	AllowsHost(host string) bool
+}
+
 // Rule interface with method to check compliance of incoming http(s) requests.
 type Rule interface {
 	Allows(req *http.Request) bool
@@ -137,32 +185,7 @@ type URLMatchRule struct {
 // The empty string matches any domain.
 func (rule URLMatchRule) Allows(req *http.Request) bool {
 	url := req.URL
-	switch rule.HostMatch {
-	case SuffixMatch:
-		// Special case: match any.
-		if rule.Host == "" {
-			return true
-		}
-
-		// Check for an exact match first (see below).
-		if url.Hostname() == rule.Host {
-			return true
-		}
-
-		// Avoid matching partial domain names and only match full domain parts.
-		// That is, notgoogle.com must not match google.com, but is.google.com matches google.com.
-		host := rule.Host
-		if !strings.HasPrefix(host, ".") {
-			host = "." + host
-		}
-		if !strings.HasSuffix(url.Hostname(), host) {
-			return false
-		}
-	case FullMatch:
-		if url.Hostname() != rule.Host {
-			return false
-		}
-	default:
+	if !rule.AllowsHost(url.Hostname()) {
 		return false
 	}
 
@@ -171,6 +194,37 @@ func (rule URLMatchRule) Allows(req *http.Request) bool {
 		return strings.HasPrefix(url.Path, rule.Path)
 	case FullMatch:
 		return url.Path == rule.Path
+	default:
+		return false
+	}
+}
+
+// AllowsHost reports whether the rule's host matching permits host, ignoring any
+// path constraint. It is used to evaluate raw CONNECT tunnels (see
+// Policy.AllowsHost), which carry no HTTP path; Allows layers the path check on
+// top of this for intercepted HTTP(S) requests.
+func (rule URLMatchRule) AllowsHost(host string) bool {
+	switch rule.HostMatch {
+	case SuffixMatch:
+		// Special case: match any.
+		if rule.Host == "" {
+			return true
+		}
+
+		// Check for an exact match first (see below).
+		if host == rule.Host {
+			return true
+		}
+
+		// Avoid matching partial domain names and only match full domain parts.
+		// That is, notgoogle.com must not match google.com, but is.google.com matches google.com.
+		suffix := rule.Host
+		if !strings.HasPrefix(suffix, ".") {
+			suffix = "." + suffix
+		}
+		return strings.HasSuffix(host, suffix)
+	case FullMatch:
+		return host == rule.Host
 	default:
 		return false
 	}
