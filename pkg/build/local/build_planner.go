@@ -21,8 +21,8 @@ import (
 type dockerBuildContainerArgs struct {
 	rebuild.Instructions
 	BaseImage      string
-	OS             build.OS
-	PackageManager build.PackageManagerCommands
+	OS             rebuild.OS
+	PackageManager rebuild.PackageManagerCommands
 	UseTimewarp    bool
 	TimewarpURL    string
 	TimewarpAuth   bool
@@ -44,7 +44,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			{{- if .UseTimewarp}}
 			 {{- if eq .OS "alpine"}}
 			 {{.PackageManager.InstallCommand (list "curl")}}
-			 {{- else if eq .OS "centos"}}
+			 {{- else if or (eq .OS "centos") (eq .OS "almalinux")}}
 			 {{.PackageManager.InstallCommand (list "curl" "nmap-ncat")}}
 			 {{- else}}
 			 {{.PackageManager.UpdateCmd}}
@@ -133,8 +133,8 @@ func (p *DockerBuildPlanner) generateDockerfile(input rebuild.Input, instruction
 	baseImage := opts.Resources.BaseImageConfig.SelectFor(input, instructions.Requires)
 
 	// Detect OS and get package manager commands
-	os := build.DetectOS(baseImage)
-	pkgMgr := build.GetPackageManagerCommands(os)
+	os := rebuild.MapOS(baseImage)
+	pkgMgr := rebuild.GetPackageManagerCommands(os)
 
 	// Extract tool URLs and auth requirements
 	timewarpURL, timewarpAuth, err := p.getToolURL(build.TimewarpTool, opts)

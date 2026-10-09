@@ -229,6 +229,62 @@ func TestDockerRunPlanner(t *testing.T) {
 			},
 		},
 		{
+			name: "almalinux with timewarp",
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.NPM,
+					Package:   "test-package",
+					Version:   "1.0.0",
+					Artifact:  "test-package-1.0.0.tgz",
+				},
+				Strategy: &rebuild.ManualStrategy{
+					Location: rebuild.Location{
+						Repo: "https://github.com/example/test-package",
+						Ref:  "v1.0.0",
+					},
+					Deps:       "npm install",
+					Build:      "npm pack",
+					OutputPath: "test-package-1.0.0.tgz",
+				},
+			},
+			opts: build.PlanOptions{
+				UseTimewarp: true,
+				Resources: build.Resources{
+					BaseImageConfig: build.BaseImageConfig{
+						Default: "quay.io/pypa/manylinux_2_28_x86_64",
+					},
+					ToolURLs: map[build.ToolType]string{
+						build.TimewarpTool: "https://example.com/timewarp",
+					},
+				},
+			},
+			expected: &DockerRunPlan{
+				Image:      "quay.io/pypa/manylinux_2_28_x86_64",
+				WorkingDir: "/workspace",
+				OutputPath: "/out/rebuild",
+				Setup: textwrap.Dedent(`
+			dnf install -y curl nmap-ncat
+			curl https://example.com/timewarp > /timewarp
+			chmod +x /timewarp
+			dnf update -y
+			dnf install -y git`[1:]),
+				Source: textwrap.Dedent(`
+			mkdir -p /src && cd /src
+			git clone https://github.com/example/test-package .
+			git checkout --force 'v1.0.0'`[1:]),
+				Deps: textwrap.Dedent(`
+			/timewarp -port 8081 &
+			while ! nc -z localhost 8081;do sleep 1;done
+			cd /src
+			npm install`[1:]),
+				Build: textwrap.Dedent(`
+			cd /src
+			npm pack
+			chmod 444 /src/test-package-1.0.0.tgz
+			cp /src/test-package-1.0.0.tgz /out/rebuild`[1:]),
+			},
+		},
+		{
 			name: "error handling",
 			input: rebuild.Input{
 				Target: rebuild.Target{
