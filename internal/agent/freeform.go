@@ -4,24 +4,32 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 	"time"
 
+	"github.com/google/oss-rebuild/pkg/llm"
+	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
+	"google.golang.org/genai"
 )
 
 // Free-form mode: the model iterates in the retained container, where trials
 // are cheap, until check_artifact matches, then hands off its commands. The job
-// proposes them for one fresh build.
+// formalizes them into candidates that each get one fresh build.
 
 const (
-	freeFormToolCalls = 300 // tool calls per turn
-	handoffReminders  = 2   // follow-ups after a turn without a handoff
+	formalizeRetries  = 2     // re-formalizations before proposing the handoff as written
+	traceHead         = 1_000 // bytes kept from the head of a tool output in the formalization prompt
+	traceTail         = 3_000 // bytes kept from its tail
+	freeFormToolCalls = 300   // tool calls per turn
+	handoffReminders  = 2     // follow-ups after a turn without a handoff
 )
 
 // freeFormSession is a model session. Each turn (run, then followUp) returns
@@ -53,20 +61,25 @@ type buildCommands struct {
 	Build string `json:"build"`
 }
 
-// freeForm is a pending handoff, across Propose calls.
+// freeForm is a pending handoff and its candidates, across Propose calls.
 type freeForm struct {
-	handoff  handoff
-	exemplar rebuild.Instructions // the attempt the model worked from
-	proposed bool                 // its commands have been proposed
+	handoff    handoff
+	trace      []toolCall
+	exemplar   rebuild.Instructions // the attempt the model worked from
+	attempts   int                  // formalizations the model answered
+	failures   []string             // each rejected candidate's reason
+	fallback   bool                 // fallbackStrategy has been tried
+	iterations int                  // len(iterHistory) at last proposal
 }
 
 // freeFormDriver runs the free-form mode over the agent's iterations.
 type freeFormDriver struct {
-	a       *defaultAgent
-	runner  *ScratchRunner
-	open    sessionOpener
-	store   func(ctx context.Context, opts *ProposeOpts, name string, v any) // uploadRecord, or a test's fake
-	pending *freeForm                                                        // the handoff being proposed
+	a        *defaultAgent
+	runner   *ScratchRunner
+	open     sessionOpener
+	complete func(ctx context.Context, prompt string) (string, error)         // the formalization's model call
+	store    func(ctx context.Context, opts *ProposeOpts, name string, v any) // uploadRecord, or a test's fake
+	pending  *freeForm                                                        // the handoff being formalized
 }
 
 // sessionOpener starts a session over prev and returns its first prompt.
@@ -74,13 +87,17 @@ type sessionOpener func(ctx context.Context, opts *ProposeOpts, prev *executionD
 
 func newFreeFormDriver(a *defaultAgent, runner *ScratchRunner, open sessionOpener) *freeFormDriver {
 	f := &freeFormDriver{a: a, runner: runner, open: open}
+	f.complete = f.completeJSON
 	f.store = a.uploadRecord
 	return f
 }
 
 // propose continues the pending handoff or starts a session for a new one.
 func (f *freeFormDriver) propose(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {
-	if f.pending != nil {
+	if ff := f.pending; ff != nil {
+		if n := len(f.a.iterHistory); n > ff.iterations {
+			ff.failures = append(ff.failures, iterationFailure(f.a.iterHistory[n-1]))
+		}
 		if s, err := f.nextCandidate(ctx, opts); s != nil || err != nil {
 			return s, err
 		}
@@ -126,7 +143,7 @@ func (f *freeFormDriver) handoffSession(ctx context.Context, opts *ProposeOpts) 
 	}
 	f.a.reinferAfterMove(ctx, opts, &prev.Instructions)
 	f.a.thoughts = append(f.a.thoughts, thoughtData{BasedOnIteration: len(f.a.iterHistory) - 1, Diagnostic: h.Summary, UpdatedScript: h.BuildCommands.Build})
-	f.pending = &freeForm{handoff: h, exemplar: prev.Instructions}
+	f.pending = &freeForm{handoff: h, trace: trace, exemplar: prev.Instructions}
 	f.record(ctx, opts, stamp()+"-handoff.json", handoffRecord{Handoff: h, Exemplar: prev.Instructions, Trace: trace})
 	return nil
 }
@@ -155,15 +172,29 @@ const (
 	handoffEarly   = "check_artifact has not reported a match in this session, so the handoff call was not accepted and the work is not done. " + keepIterating
 )
 
-// nextCandidate proposes the handoff's commands once. It returns nil once the
-// handoff is spent.
+// nextCandidate formalizes while the budget allows, then falls back to the
+// handoff's commands as written. It returns nil once the handoff is spent.
 func (f *freeFormDriver) nextCandidate(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {
 	ff := f.pending
-	if ff.proposed {
-		return nil, nil
+	for ff.attempts < 1+formalizeRetries {
+		if s, err := f.formalize(ctx, opts); s != nil || err != nil {
+			return s, err
+		}
 	}
-	ff.proposed = true
-	return new(schema.NewStrategyOneOf(ff.fallbackStrategy(f.a.loc))), nil
+	if !ff.fallback {
+		ff.fallback, ff.iterations = true, len(f.a.iterHistory)
+		log.Printf("free-form: %d formalizations rejected, proposing the handoff's commands as written", ff.attempts)
+		return new(schema.NewStrategyOneOf(ff.fallbackStrategy(f.a.loc))), nil
+	}
+	return nil, nil
+}
+
+// iterationFailure is what a rejected candidate's iteration reports.
+func iterationFailure(it *schema.AgentIteration) string {
+	if it.Result != nil && it.Result.ErrorMessage != "" {
+		return it.Result.ErrorMessage
+	}
+	return "the build ended " + it.Status
 }
 
 // handoffRecord is the <stamp>-handoff.json transcript object.
@@ -173,7 +204,84 @@ type handoffRecord struct {
 	Trace    []toolCall           `json:"trace"`
 }
 
-// fallbackStrategy is the handoff's commands as written on the exemplar's deps.
+// formalizeRecord is the <stamp>-formalize-<n>.json transcript object.
+type formalizeRecord struct {
+	Attempt  int                   `json:"attempt"`
+	Prompt   string                `json:"prompt"`
+	Response string                `json:"response,omitempty"`
+	Strategy *schema.StrategyOneOf `json:"strategy,omitempty"`
+	Error    string                `json:"error,omitempty"`
+}
+
+// formalize asks the model for the handoff as a WorkflowStrategy. A failed
+// call is an error, and a rejected answer still spends an attempt.
+func (f *freeFormDriver) formalize(ctx context.Context, opts *ProposeOpts) (*schema.StrategyOneOf, error) {
+	ff := f.pending
+	rec := formalizeRecord{Attempt: ff.attempts + 1, Prompt: formalizePrompt(f.a.t, ff)}
+	name := fmt.Sprintf("%s-formalize-%d.json", stamp(), rec.Attempt)
+	defer func() { f.record(ctx, opts, name, rec) }()
+	var err error
+	if rec.Response, err = f.complete(ctx, rec.Prompt); err != nil {
+		err = errors.Wrap(err, "formalizing the handoff")
+		rec.Error = err.Error()
+		return nil, err
+	}
+	ff.attempts++
+	ws, err := decodeWorkflow(rec.Response, f.a.loc, ff.exemplar, f.a.t, f.a.buildEnv())
+	if err != nil {
+		rec.Error = "rejected before any build: " + err.Error()
+		ff.failures = append(ff.failures, rec.Error)
+		return nil, nil
+	}
+	ff.iterations = len(f.a.iterHistory)
+	rec.Strategy = new(schema.NewStrategyOneOf(ws))
+	return rec.Strategy, nil
+}
+
+// completeJSON asks the session model for a JSON answer in one call. Its usage
+// counts as side usage.
+func (f *freeFormDriver) completeJSON(ctx context.Context, prompt string) (string, error) {
+	var out string
+	err := f.a.deps.Retrier.Do(ctx, func() error {
+		text, usage, err := llm.GenerateTextContentWithUsage(ctx, f.a.deps.GenaiClient, cmp.Or(f.a.deps.Model, llm.GeminiPro), &genai.GenerateContentConfig{
+			Temperature:      genai.Ptr[float32](0),
+			MaxOutputTokens:  65536,
+			ResponseMIMEType: "application/json",
+		}, genai.NewPartFromText(prompt))
+		f.a.addSideUsage(usage)
+		out = text
+		return err
+	})
+	return out, err
+}
+
+// decodeWorkflow reads the formalization as a WorkflowStrategy on loc, with
+// the exemplar's image and defaults, and checks that it renders.
+func decodeWorkflow(out string, loc rebuild.Location, exemplar rebuild.Instructions, t rebuild.Target, be rebuild.BuildEnv) (*rebuild.WorkflowStrategy, error) {
+	var ws rebuild.WorkflowStrategy
+	if err := json.Unmarshal([]byte(stripFences(out)), &ws); err != nil {
+		return nil, errors.Wrap(err, "decoding the strategy")
+	}
+	if len(ws.Build) == 0 {
+		return nil, errors.New("the strategy has no build steps")
+	}
+	ws.Location = loc
+	if len(ws.Source) == 0 {
+		ws.Source = []flow.Step{{Uses: "git-checkout"}}
+	}
+	ws.OutputPath, ws.OutputDir = cmp.Or(ws.OutputPath, exemplar.OutputPath), ""
+	ws.Requires.BaseImage, ws.Requires.Privileged = exemplar.Requires.BaseImage, exemplar.Requires.Privileged
+	if ws.Requires.SystemDeps == nil {
+		ws.Requires.SystemDeps = exemplar.Requires.SystemDeps
+	}
+	if _, err := ws.GenerateFor(t, be); err != nil {
+		return nil, errors.Wrap(err, "rendering the strategy")
+	}
+	return &ws, nil
+}
+
+// fallbackStrategy is the handoff's commands as written on the exemplar's
+// deps, for when no formalization verified.
 func (ff *freeForm) fallbackStrategy(loc rebuild.Location) *rebuild.ManualStrategy {
 	deps := ff.exemplar.Deps
 	if d := strings.TrimSpace(ff.handoff.BuildCommands.Deps); d != "" {
@@ -186,6 +294,80 @@ func (ff *freeForm) fallbackStrategy(loc rebuild.Location) *rebuild.ManualStrate
 		Build:      ff.handoff.BuildCommands.Build,
 		OutputPath: ff.exemplar.OutputPath,
 	}
+}
+
+// formalizeShape is the JSON the formalization asks for.
+const formalizeShape = `{"deps": [{"runs": "<shell script>", "needs": ["<system package>"]}], "build": [{"runs": "<shell script>"}], "requires": {"system_deps": ["<system package>"]}, "output_path": "<path relative to /src>"}`
+
+// formalizePrompt asks for ff as a WorkflowStrategy.
+func formalizePrompt(t rebuild.Target, ff *freeForm) string {
+	var b strings.Builder
+	line := func(ss ...string) {
+		for _, s := range ss {
+			b.WriteString(s)
+			b.WriteByte('\n')
+		}
+	}
+	ex, h := ff.exemplar, ff.handoff
+	line(
+		fmt.Sprintf("You are writing oss-rebuild's build definition for %s package %s version %s (artifact %s) from a session in which a model built an artifact that matched upstream.", t.Ecosystem, t.Package, t.Version, t.Artifact),
+		"The definition runs in a fresh container with the source checked out at /src: a deps phase with registry and network access, then a build phase without. Each phase is a list of steps, each step a shell script run in /src with errors fatal. The artifact must end up at output_path, relative to /src.",
+		"",
+		"# The attempt the model started from",
+		"Its deps phase:", "```sh", strings.TrimRight(ex.Deps, "\n"), "```",
+		"Its build phase:", "```sh", strings.TrimRight(ex.Build, "\n"), "```",
+		"output_path: "+ex.OutputPath,
+		"system_deps: "+strings.Join(ex.Requires.SystemDeps, ", "),
+		"",
+		"# What produced the matching artifact",
+		"The model's summary: "+h.Summary,
+		"Its deps commands, run after the attempt's deps phase:", "```sh", strings.TrimRight(h.BuildCommands.Deps, "\n"), "```",
+		"Its build commands:", "```sh", strings.TrimRight(h.BuildCommands.Build, "\n"), "```",
+		"",
+		"# The session's tool calls, in order",
+	)
+	renderTrace(&b, ff.trace)
+	if len(ff.failures) > 0 {
+		line("", "# Rejected definitions", "Earlier definitions from this handoff were run in a fresh container and rejected. Fix what each rejection shows:")
+		for i, f := range ff.failures {
+			line(fmt.Sprintf("## Candidate %d", i+1), "```", f, "```")
+		}
+	}
+	line(
+		"",
+		"# Output",
+		"Reply with one JSON object and nothing else, of exactly this shape:",
+		"```json", formalizeShape, "```",
+		"Rules:",
+		"- \"runs\" is a literal POSIX shell script. No template syntax, no markdown.",
+		"- Keep the attempt's deps commands in their order and append the handoff's. Every command that installs or fetches anything, the registry pin included, goes in deps. The build phase has no network.",
+		"- Do not clone or check out the source: the checkout is done before deps.",
+		"- One step per logical unit (toolchain, registry pin, extra packages, the build), so a later reader sees the structure.",
+		"- \"needs\" lists the system packages a step requires beyond the attempt's. \"system_deps\" is the complete list for the definition.",
+		"- Use the trace to resolve what the handoff's commands assume: a working directory, a source edit, a file the model wrote. A source edit must become a command (sed, patch, a heredoc) in the build phase.",
+	)
+	return b.String()
+}
+
+func renderTrace(b *strings.Builder, trace []toolCall) {
+	for i, c := range trace {
+		fmt.Fprintf(b, "## %d. %s %s\n", i+1, c.Tool, c.argsLine())
+		if c.IsError {
+			b.WriteString("(error result)\n")
+		}
+		out, _ := truncateEnds(c.Output, traceHead, traceTail)
+		fmt.Fprintf(b, "```\n%s\n```\n", strings.TrimRight(out, "\n"))
+	}
+}
+
+func (c toolCall) argsLine() string {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if json.Unmarshal(c.Args, &args) == nil && args.Command != "" {
+		return "$ " + args.Command
+	}
+	return string(c.Args)
 }
 
 // record files v in the iteration's transcript directory, best effort.
