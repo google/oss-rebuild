@@ -127,3 +127,35 @@ func TestFinalTurnNudgePrecedesToolResults(t *testing.T) {
 		t.Errorf("second send carried %d parts (nudged %v), want the tool result alone", n, nudged)
 	}
 }
+
+func TestUnknownToolIsAnsweredInBand(t *testing.T) {
+	ctx := context.Background()
+	tr := &scriptedTransport{responses: []string{
+		`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"read_repo_fil","args":{}}}]},"finishReason":"STOP"}]}`,
+		`{"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]},"finishReason":"STOP"}]}`,
+	}}
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: "test", Backend: genai.BackendGeminiAPI, HTTPClient: &http.Client{Transport: tr}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := &FunctionDefinition{
+		FunctionDeclaration: genai.FunctionDeclaration{Name: "probe"},
+		Function: func(map[string]any) genai.FunctionResponse {
+			return genai.FunctionResponse{Name: "probe", Response: map[string]any{}}
+		},
+	}
+	chat, err := NewChat(ctx, client, "m", nil, &ChatOpts{Tools: []*FunctionDefinition{probe}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := chat.SendMessage(ctx, genai.NewPartFromText("the task"))
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if resp.Parts[0].Text != "done" {
+		t.Errorf("response = %q, want the model's answer after the correction", resp.Parts[0].Text)
+	}
+	if last := tr.requests[1]; !bytes.Contains(last, []byte(`unknown tool \"read_repo_fil\", the tools are probe`)) {
+		t.Errorf("correction turn did not name the unknown tool and the real ones:\n%s", last)
+	}
+}
