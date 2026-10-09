@@ -15,15 +15,19 @@ import (
 )
 
 type staticRegistry struct {
-	crate *reg.Crate
+	crate   *reg.Crate
+	version *reg.CrateVersion
 }
 
 func (r staticRegistry) Crate(context.Context, string) (*reg.Crate, error) {
 	return r.crate, nil
 }
 
-func (staticRegistry) Version(context.Context, string, string) (*reg.CrateVersion, error) {
-	panic("unexpected Version call")
+func (r staticRegistry) Version(context.Context, string, string) (*reg.CrateVersion, error) {
+	if r.version == nil {
+		panic("unexpected Version call")
+	}
+	return r.version, nil
 }
 
 func (staticRegistry) Artifact(context.Context, string, string) (io.ReadCloser, error) {
@@ -50,5 +54,29 @@ func TestGetVersionsOmitsOnlyPrereleases(t *testing.T) {
 	want := []string{"0.14.7+wasi-0.2.4", "1.0.0+build-1", "0.9.0"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("GetVersions() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestInferRepoPrefersVersionRepository(t *testing.T) {
+	target := rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "rand_pcg", Version: "0.1.2", Artifact: "rand_pcg-0.1.2.crate"}
+	for _, tc := range []struct {
+		name, versionRepo, want string
+	}{
+		{"version names the repository of its release", "https://github.com/rust-random/rand", "https://github.com/rust-random/rand"},
+		{"version names none so the crate's is used", "", "https://github.com/rust-random/rngs"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := rebuild.RegistryMux{CratesIO: staticRegistry{
+				crate:   &reg.Crate{Metadata: reg.Metadata{Repository: "https://github.com/rust-random/rngs"}},
+				version: &reg.CrateVersion{Version: reg.Version{Version: "0.1.2", Repository: tc.versionRepo}},
+			}}
+			got, err := Rebuilder{}.InferRepo(context.Background(), target, mux)
+			if err != nil {
+				t.Fatalf("InferRepo() error = %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("InferRepo() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
