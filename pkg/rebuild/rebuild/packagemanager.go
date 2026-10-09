@@ -1,7 +1,7 @@
-// Copyright 2025 Google LLC
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: Apache-2.0
 
-package build
+package rebuild
 
 import (
 	"slices"
@@ -12,10 +12,11 @@ import (
 type OS string
 
 const (
-	Alpine OS = "alpine"
-	Debian OS = "debian"
-	Ubuntu OS = "ubuntu"
-	CentOS OS = "centos"
+	OSAlpine    OS = "alpine"
+	OSDebian    OS = "debian"
+	OSUbuntu    OS = "ubuntu"
+	OSCentOS    OS = "centos"
+	OSAlmaLinux OS = "almalinux"
 )
 
 // PackageManagerCommands contains the commands needed for package management on a specific OS
@@ -33,26 +34,31 @@ func (p PackageManagerCommands) InstallCommand(packages []string) string {
 
 // osPackageManagers maps operating systems to their package manager commands
 var osPackageManagers = map[OS]PackageManagerCommands{
-	Alpine: {
+	OSAlpine: {
 		UpdateCmd:  "apk update",
 		InstallCmd: "apk add",
 		// TODO: Add --no-cache
 		InstallArgs: []string{},
 	},
-	Debian: {
+	OSDebian: {
 		UpdateCmd:  "apt update",
 		InstallCmd: "apt install",
 		// TODO: Add --no-install-recommends
 		InstallArgs: []string{"-y"},
 	},
-	Ubuntu: {
+	OSUbuntu: {
 		UpdateCmd:   "apt update",
 		InstallCmd:  "apt install",
 		InstallArgs: []string{"-y"},
 	},
-	CentOS: {
+	OSCentOS: {
 		UpdateCmd:   "yum update -y",
 		InstallCmd:  "yum install",
+		InstallArgs: []string{"-y"},
+	},
+	OSAlmaLinux: {
+		UpdateCmd:   "dnf update -y",
+		InstallCmd:  "dnf install",
 		InstallArgs: []string{"-y"},
 	},
 }
@@ -62,21 +68,23 @@ func GetPackageManagerCommands(os OS) PackageManagerCommands {
 	if cmd, ok := osPackageManagers[os]; ok {
 		return cmd
 	}
-	return osPackageManagers[Alpine] // Not necessarily accurate but generally a safe assumption
+	return osPackageManagers[OSAlpine] // Not necessarily accurate but generally a safe assumption
 }
 
-// DetectOS detects the OS from a base image name
-func DetectOS(baseImage string) OS {
+// MapOS maps the base image name to an operating system
+func MapOS(baseImage string) OS {
 	switch {
 	case strings.Contains(baseImage, "alpine"), strings.Contains(baseImage, "musllinux"), strings.Contains(baseImage, "library/docker"):
-		return Alpine
+		return OSAlpine
 	case strings.Contains(baseImage, "debian"):
-		return Debian
+		return OSDebian
 	case strings.Contains(baseImage, "ubuntu"):
-		return Ubuntu
-	case strings.Contains(baseImage, "centos"), strings.Contains(baseImage, "rhel"), strings.Contains(baseImage, "manylinux"), strings.Contains(baseImage, "almalinux"):
-		return CentOS
+		return OSUbuntu
+	case strings.Contains(baseImage, "manylinux_2_28"), strings.Contains(baseImage, "manylinux_2_34"), strings.Contains(baseImage, "almalinux"), strings.Contains(baseImage, "fedora"):
+		return OSAlmaLinux
+	case strings.Contains(baseImage, "centos"), strings.Contains(baseImage, "rhel"), strings.Contains(baseImage, "manylinux"):
+		return OSCentOS
 	default:
-		return Alpine // safe default
+		return OSAlpine // safe default
 	}
 }

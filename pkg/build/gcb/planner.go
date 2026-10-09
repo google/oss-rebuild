@@ -230,8 +230,8 @@ spec:
 type gcbContainerArgs struct {
 	rebuild.Instructions
 	BaseImage       string
-	OS              build.OS
-	PackageManager  build.PackageManagerCommands
+	OS              rebuild.OS
+	PackageManager  rebuild.PackageManagerCommands
 	UseTimewarp     bool
 	UseNetworkProxy bool
 	TimewarpURL     string
@@ -256,7 +256,7 @@ var gcbDockerfileTpl = template.Must(
 			{{- if .UseTimewarp}}
 			 {{- if eq .OS "alpine"}}
 			 {{.PackageManager.InstallCommand (list "curl")}}
-			 {{- else if eq .OS "centos"}}
+			 {{- else if or (eq .OS "centos") (eq .OS "almalinux")}}
 			 {{.PackageManager.InstallCommand (list "curl" "nmap-ncat")}}
 			 {{- else}}
 			 {{.PackageManager.UpdateCmd}}
@@ -568,8 +568,8 @@ func (p *Planner) generateDockerfile(instructions rebuild.Instructions, input re
 	// Select base image using the configured selection logic
 	baseImage := opts.Resources.BaseImageConfig.SelectFor(input, instructions.Requires)
 	// Detect OS and get package manager commands
-	os := build.DetectOS(baseImage)
-	pkgMgr := build.GetPackageManagerCommands(os)
+	os := rebuild.MapOS(baseImage)
+	pkgMgr := rebuild.GetPackageManagerCommands(os)
 	// Convert tool URLs and determine auth requirements
 	timewarpURL, timewarpAuth, err := p.getToolURL(build.TimewarpTool, opts)
 	if err != nil {
