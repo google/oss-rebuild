@@ -16,7 +16,9 @@ import (
 	"github.com/google/oss-rebuild/internal/docdb"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/internal/sqlitex"
+	"github.com/google/oss-rebuild/internal/versionx"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 )
@@ -114,11 +116,19 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 	if err != nil {
 		return nil, errors.Wrap(err, "scanning repo metrics")
 	}
-	sigs, err := src.Signals(ctx)
+	campaigns, err := src.Campaigns(ctx, FullScan)
+	if err != nil {
+		return nil, errors.Wrap(err, "scanning campaigns")
+	}
+	sigs, signalsBuiltAt, err := src.Signals(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "reading priority signals")
 	}
-	sigs = pruneSignals(sigs, attempts)
+	// Compute the universe before pruneSignals drops untracked packages.
+	// Coverage shares divide by it, so it has to count every package in the
+	// export, not just the ones we track.
+	universe := signalUniverse(sigs, signalsBuiltAt)
+	sigs = pruneSignals(sigs, attempts, campaigns)
 	docTables := map[string][]json.RawMessage{
 		TableAttempts:        docsOf(attempts),
 		TableRuns:            docsOf(runs),
@@ -127,7 +137,9 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 		TableScratchVMs:      docsOf(scratches),
 		TableScratchExecs:    docsOf(execs),
 		TableRepoMetrics:     docsOf(repoMetrics),
+		TableCampaigns:       docsOf(campaigns),
 		TablePackageSignals:  docsOf(sigs),
+		TableSignalUniverse:  docsOf(universe),
 	}
 	meta := Meta{
 		BuiltAt:       now,
@@ -151,16 +163,48 @@ func Rollup(ctx context.Context, src Source, dest billy.Filesystem, opts Options
 	return &RollupResult{Meta: meta, RowCounts: counts}, nil
 }
 
+// SignalUniverse is one ecosystem's package count and summed score across the
+// whole signals export (the top --top packages by dependents). Coverage shares
+// divide by it. It changes only when a larger export is published.
+type SignalUniverse struct {
+	Ecosystem      string
+	Packages       int
+	ScoreMass      float64
+	SidecarBuiltAt time.Time
+}
+
+// signalUniverse folds the unpruned signal read into one row per ecosystem.
+func signalUniverse(sigs []signals.PackageSignal, builtAt time.Time) []SignalUniverse {
+	idx := make(map[string]int)
+	var out []SignalUniverse
+	for _, s := range sigs {
+		i, ok := idx[s.Ecosystem]
+		if !ok {
+			i = len(out)
+			idx[s.Ecosystem] = i
+			out = append(out, SignalUniverse{Ecosystem: s.Ecosystem, SidecarBuiltAt: builtAt})
+		}
+		out[i].Packages++
+		out[i].ScoreMass += s.Score
+	}
+	return out
+}
+
 // pruneSignals keeps only signals for packages the snapshot itself carries:
-// those with an attempt. The signal exports cover the registry universe, so
-// without this package_signals would scale with the registry rather than
-// with coverage. Presence in this database is the rollup's only notion of a
-// tracked package.
-func pruneSignals(sigs []signals.PackageSignal, attempts []schema.RebuildAttempt) []signals.PackageSignal {
+// those with an attempt or a campaign. The signal export holds every ranked
+// package, tracked or not, so without this package_signals would scale with
+// the export rather than with coverage. Presence in this database is the
+// rollup's only notion of a tracked package.
+// TODO: Reconcile with the campaign and enqueue machinery once a single
+// tracked-set authority exists.
+func pruneSignals(sigs []signals.PackageSignal, attempts []schema.RebuildAttempt, campaigns []scheduler.Campaign) []signals.PackageSignal {
 	type key struct{ eco, pkg string }
 	tracked := make(map[key]bool)
 	for _, a := range attempts {
 		tracked[key{a.Ecosystem, a.Package}] = true
+	}
+	for _, c := range campaigns {
+		tracked[key{c.Ecosystem, c.Package}] = true
 	}
 	var kept []signals.PackageSignal
 	for _, s := range sigs {
@@ -181,12 +225,26 @@ func buildSnapshotDB(path string, docTables map[string][]json.RawMessage, meta M
 	if err != nil {
 		return nil, errors.Wrap(err, "creating database")
 	}
+	if err := registerCollations(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	counts, err := fillSnapshotDB(db, docTables, meta)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
 	return counts, errors.Wrap(db.Close(), "closing database")
+}
+
+// registerCollations registers the version_approx_compare collation the
+// derived queries use to order version strings. Only build connections need
+// it: derived tables are materialized, so readers never re-run the queries.
+func registerCollations(db *sqlite3.Conn) error {
+	err := db.CreateCollation("version_approx_compare", func(a, b []byte) int {
+		return versionx.ApproxCompare(string(a), string(b))
+	})
+	return errors.Wrap(err, "registering version_approx_compare collation")
 }
 
 func fillSnapshotDB(db *sqlite3.Conn, docTables map[string][]json.RawMessage, meta Meta) (map[string]int, error) {

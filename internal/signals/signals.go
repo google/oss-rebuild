@@ -38,6 +38,7 @@ CREATE TABLE package_signals(
 CREATE TABLE version_signals(
 	ecosystem TEXT NOT NULL, package TEXT NOT NULL, version TEXT NOT NULL,
 	dependents INTEGER NOT NULL, prevalence REAL NOT NULL,
+	published TEXT, artifact TEXT,
 	PRIMARY KEY(ecosystem, package, version)) WITHOUT ROWID;
 CREATE INDEX package_signals_score ON package_signals(ecosystem, score);
 CREATE TABLE signal_meta(built_at TEXT, tool_version TEXT);
@@ -76,8 +77,9 @@ func ReadMeta(db *sqlite3.Conn) (Meta, error) {
 
 // Build writes a signal database at path from the priority exports:
 // package rows joined per package via JoinSignals and one
-// version_signals row per version-level prevalence record. Returns
-// per-table row counts.
+// version_signals row per version-level prevalence record, carrying its
+// publication date and artifact name when the export provides them.
+// Returns per-table row counts.
 func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, error) {
 	db, err := sqlite3.Open(path)
 	if err != nil {
@@ -109,7 +111,7 @@ func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, er
 			return nil, errors.Wrap(err, "inserting package signal")
 		}
 	}
-	vstmt, _, err := db.Prepare("INSERT INTO version_signals VALUES(?,?,?,?,?)")
+	vstmt, _, err := db.Prepare("INSERT INTO version_signals VALUES(?,?,?,?,?,?,?)")
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +127,17 @@ func Build(path string, prevs []PrevalenceRecord, meta Meta) (map[string]int, er
 		vstmt.BindText(3, r.Version)
 		vstmt.BindInt64(4, r.Dependents)
 		vstmt.BindFloat(5, r.Prevalence)
+		// Absent metadata is NULL, not a zero time or empty string.
+		if r.Published.IsZero() {
+			vstmt.BindNull(6)
+		} else {
+			vstmt.BindText(6, sqlitex.TimeColumn(r.Published))
+		}
+		if r.Artifact == "" {
+			vstmt.BindNull(7)
+		} else {
+			vstmt.BindText(7, r.Artifact)
+		}
 		if err := vstmt.Exec(); err != nil {
 			return nil, errors.Wrap(err, "inserting version signal")
 		}
@@ -170,6 +183,39 @@ func PackageSignals(db *sqlite3.Conn) ([]PackageSignal, error) {
 	return out, stmt.Err()
 }
 
+// VersionSignal is one ranked version of a package.
+type VersionSignal struct {
+	Version    string
+	Prevalence float64
+	Published  time.Time
+	Artifact   string
+}
+
+// VersionSignals reads a package's ranked versions, empty when none is
+// ranked. Published is zero and Artifact empty where the export carried
+// none.
+func VersionSignals(db *sqlite3.Conn, ecosystem, pkg string) ([]VersionSignal, error) {
+	stmt, _, err := db.Prepare(`SELECT version, prevalence, published, artifact FROM version_signals
+		WHERE ecosystem = ? AND package = ? ORDER BY version`)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	stmt.BindText(1, ecosystem)
+	stmt.BindText(2, pkg)
+	var out []VersionSignal
+	for stmt.Step() {
+		v := VersionSignal{Version: stmt.ColumnText(0), Prevalence: stmt.ColumnFloat(1), Artifact: stmt.ColumnText(3)}
+		if stmt.ColumnType(2) != sqlite3.NULL {
+			if v.Published, err = time.Parse(sqlitex.TimeFormat, stmt.ColumnText(2)); err != nil {
+				return nil, errors.Wrapf(err, "parsing published for %s@%s", pkg, v.Version)
+			}
+		}
+		out = append(out, v)
+	}
+	return out, stmt.Err()
+}
+
 // Fetch downloads the signal database published under dest into dir and
 // returns its local path, refusing a database from a different schema era.
 func Fetch(dest billy.Basic, dir string) (string, error) {
@@ -186,4 +232,34 @@ func Fetch(dest billy.Basic, dir string) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+// TopPackages reads an ecosystem's n highest-scored packages in descending
+// score order (or all when n<0) as the candidate list for coverage expansion.
+// When fewer than n rows are returned, the ranked head is exhausted and
+// widening it requires a larger --top on the prevalence export.
+func TopPackages(db *sqlite3.Conn, ecosystem string, n int) ([]PackageSignal, error) {
+	stmt, _, err := db.Prepare(`SELECT package, dependents, prevalence, score
+		FROM package_signals WHERE ecosystem = ? ORDER BY score DESC, package LIMIT ?`)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	stmt.BindText(1, ecosystem)
+	if n > 0 {
+		stmt.BindInt64(2, int64(n))
+	} else {
+		stmt.BindInt64(2, -1) // no bound
+	}
+	var out []PackageSignal
+	for stmt.Step() {
+		out = append(out, PackageSignal{
+			Ecosystem:  ecosystem,
+			Package:    stmt.ColumnText(0),
+			Dependents: stmt.ColumnInt64(1),
+			Prevalence: stmt.ColumnFloat(2),
+			Score:      stmt.ColumnFloat(3),
+		})
+	}
+	return out, stmt.Err()
 }
