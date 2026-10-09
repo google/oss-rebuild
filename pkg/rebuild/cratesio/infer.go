@@ -326,6 +326,8 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			resp, err := stub(ctx, cratesregistryservice.FindRegistryCommitRequest{
 				LockfileBase64: base64.StdEncoding.EncodeToString(lockContent),
 				PublishedTime:  vmeta.Created.Format(time.RFC3339),
+				Package:        t.Package,
+				Version:        t.Version,
 			})
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to call registry service")
