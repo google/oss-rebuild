@@ -85,19 +85,27 @@ type defaultAgent struct {
 	inferenceFailure string                  // inference failure a toolchain-only first attempt stood in for, shown to the model
 	refusals         []buildpolicy.Violation // shown so the model avoids them
 	reviewer         buildpolicy.Reviewer    // buildpolicy.Run, nil without a client
+	refMoves         []refMove               // set_source_ref calls, in order
+	refMoved         bool                    // deps must be re-inferred
+	reinfer          inferFunc               // inferAt, or a test's fake
 }
 
 func NewDefaultAgent(t rebuild.Target, deps *AgentDeps) *defaultAgent {
 	a := &defaultAgent{t: t, deps: deps, assets: rebuild.NewFilesystemAssetStore(memfs.New())}
-	a.gitTools = llm.GitTools(func() (*git.Repository, string) {
-		return a.repo, a.loc.Ref
-	})
+	a.gitTools = llm.GitTools(a.repoProvider)
+	a.reinfer = a.inferAt
 	if deps != nil && deps.GenaiClient != nil {
 		a.reviewer = func(ctx context.Context, in buildpolicy.ReviewInput) (*buildpolicy.Review, *genai.GenerateContentResponseUsageMetadata, error) {
 			return buildpolicy.Run(ctx, deps.GenaiClient, cmp.Or(deps.Model, llm.GeminiPro), in)
 		}
 	}
 	return a
+}
+
+// repoProvider gives the git tools the repo and the current ref, read live so
+// a ref move applies.
+func (a *defaultAgent) repoProvider() (*git.Repository, string) {
+	return a.repo, a.loc.Ref
 }
 
 func (a *defaultAgent) InitializeFromIteration(ctx context.Context, initialIteration *schema.AgentIteration) error {
@@ -154,7 +162,7 @@ func (a *defaultAgent) logs(ctx context.Context, obliviousID string) (io.ReadClo
 }
 
 func (a *defaultAgent) getTools() []*llm.FunctionDefinition {
-	tools := append(a.gitTools, a.readLogsTool())
+	tools := append(a.gitTools, a.readLogsTool(), a.setSourceRefTool())
 	if a.deps.ScratchRunner != nil {
 		tools = append(tools, a.runOnHostTool(), a.runInContainerTool())
 	}
@@ -588,6 +596,7 @@ func (a *defaultAgent) diagnoseOnly() []string {
 		)
 	}
 	return append(prompt,
+		fmt.Sprintf("The source is %s at %s. If the evidence says the release was cut from a different commit (the published gitHead or .cargo_vcs_info.json sha, a tag, a version-bump commit), call set_source_ref with that commit now; the next attempt is inferred and built from it. Do not plan a checkout in the build script.", a.loc.Repo, a.loc.Ref),
 		"Another LLM will use your diagnosis to propose a fix.",
 	)
 }
@@ -599,7 +608,7 @@ func (a *defaultAgent) outputOnlyScript(outputPath string) []string {
 		"These comments should sufficiently explain to a future reader how you got to this bash script compared to the original script.",
 		"DO NOT include markdown backtics, or ANY formatting besides the raw content of the bash script.",
 		"You SHOULD NOT change the repo in the location. Even if you do, that will be overwritten when we attempt to execute the build again.",
-		"You SHOULD NOT change the ref in the location.",
+		"You SHOULD NOT check out another commit in the script. If the release was cut from a different commit than the ref you were given, that is a diagnosis: call set_source_ref with the commit and the evidence, and the next attempt clones and installs from it. A script that moves the source checkout to another revision, or takes files from one, is refused.",
 		"Write gitHead and similar commit fields from git rev-parse HEAD, never as a typed sha: at the right ref they are the same value, and at the wrong ref the typed one hides that the ref is wrong.",
 		"Forbidden in the script, and a reviewer rejects the build:",
 		"- writing literal content (heredoc, printf, echo, tee, node -e, python -c, a typed hash, date, or version) into any file that ships in the artifact, lockfiles and package metadata included",
@@ -740,6 +749,13 @@ func (a *defaultAgent) historyContext(prev *executionDetails) []string {
 			"```",
 		)
 	}
+	if len(a.refMoves) > 0 {
+		prompt = append(prompt, "", "## Source ref")
+		for _, m := range a.refMoves {
+			prompt = append(prompt, fmt.Sprintf("- moved from %s to %s: %s", m.From, m.To, m.Reason))
+		}
+		prompt = append(prompt, fmt.Sprintf("The source is now %s at %s. The deps phase was re-inferred there.", a.loc.Repo, a.loc.Ref))
+	}
 	if len(a.refusals) > 0 {
 		prompt = append(prompt,
 			"",
@@ -845,6 +861,7 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 			return nil, errors.Wrap(err, "diagnose")
 		}
 	}
+	a.reinferAfterMove(ctx, opts, &prev.Instructions)
 	var rawScript string
 	{ // Implement
 		log.Println("Asking the LLM to hypothesize a fix")
