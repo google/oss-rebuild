@@ -31,6 +31,13 @@ var filesystemEncoder = &rebuild.TargetEncoder{
 	Artifact: rebuild.IdentityTransform,
 }
 
+var firestoreEncoder = &rebuild.TargetEncoder{
+	Package:  rebuild.MapTransform(map[rune]rune{':': '~'}),
+	Version:  rebuild.IdentityTransform,
+	Artifact: rebuild.IdentityTransform,
+}
+
 func init() {
 	rebuild.RegisterEncoder(rebuild.Maven, rebuild.FilesystemTargetEncoding, filesystemEncoder)
+	rebuild.RegisterEncoder(rebuild.Maven, rebuild.FirestoreTargetEncoding, firestoreEncoder)
 }
