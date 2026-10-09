@@ -20,24 +20,19 @@ func isGCSPath(pth string) bool {
 	return strings.HasPrefix(pth, "gs://")
 }
 
-func gcsParts(pth string) (bucket, object string) {
-	bucket, object, _ = gcsx.ParseURL(pth)
-	return bucket, object
-}
-
 func copyFile(ctx context.Context, c *storage.Client, src, dest string) error {
 	var err error
 	var srcR io.ReadCloser
 	if isGCSPath(src) {
-		b, o := gcsParts(src)
-		s, err := c.Bucket(b).IAM().TestPermissions(ctx, []string{"storage.objects.get"})
+		ref := gcsx.MustParseURL(src)
+		s, err := c.Bucket(ref.Bucket).IAM().TestPermissions(ctx, []string{"storage.objects.get"})
 		if err != nil {
 			return err
 		}
 		if len(s) != 1 {
-			return errors.Errorf("insufficient GCS read permissions [bucket=%s]", b)
+			return errors.Errorf("insufficient GCS read permissions [bucket=%s]", ref.Bucket)
 		}
-		srcR, err = c.Bucket(b).Object(o).NewReader(ctx)
+		srcR, err = ref.Handle(c).NewReader(ctx)
 		if err != nil {
 			return err
 		}
@@ -50,17 +45,17 @@ func copyFile(ctx context.Context, c *storage.Client, src, dest string) error {
 	defer srcR.Close()
 	var destW io.WriteCloser
 	if isGCSPath(dest) {
-		b, o := gcsParts(dest)
+		ref := gcsx.MustParseURL(dest)
 		if strings.HasSuffix(dest, "/") {
-			o = path.Join(o, path.Base(src))
+			ref.Object = path.Join(ref.Object, path.Base(src))
 		}
-		destW = c.Bucket(b).Object(o).NewWriter(ctx)
-		s, err := c.Bucket(b).IAM().TestPermissions(ctx, []string{"storage.objects.create"})
+		destW = ref.Handle(c).NewWriter(ctx)
+		s, err := c.Bucket(ref.Bucket).IAM().TestPermissions(ctx, []string{"storage.objects.create"})
 		if err != nil {
 			return err
 		}
 		if len(s) != 1 {
-			return errors.Errorf("insufficient GCS write permissions [bucket=%s]", b)
+			return errors.Errorf("insufficient GCS write permissions [bucket=%s]", ref.Bucket)
 		}
 	} else {
 		pth := dest

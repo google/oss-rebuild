@@ -63,7 +63,7 @@ func (g *gcsBackend) serve(rw http.ResponseWriter, req *http.Request, path strin
 		http.Error(rw, "Internal Error", 500)
 		return
 	}
-	http.Redirect(rw, req, gcsx.MediaURL(g.bucket, path, a.Generation), http.StatusFound)
+	http.Redirect(rw, req, gcsx.Bucket(g.bucket).Object(path).Generation(a.Generation).MediaURL(), http.StatusFound)
 }
 
 func (g *gcsBackend) delete(ctx context.Context, path string) error {

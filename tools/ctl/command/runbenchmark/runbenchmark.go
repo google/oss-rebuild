@@ -155,7 +155,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			return nil, errors.Wrap(err, "Failed to create temp directory")
 		}
 		// TODO: Validate this.
-		prebuildURL := gcsx.VirtualHostedURL(cfg.BootstrapBucket, cfg.BootstrapVersion)
+		prebuildURL := gcsx.Bucket(cfg.BootstrapBucket).Object(cfg.BootstrapVersion).VirtualHostedURL()
 		localCfg := benchrun.LocalExecutionServiceConfig{
 			PrebuildURL: prebuildURL,
 			Store:       store,

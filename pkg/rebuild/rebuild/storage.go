@@ -180,11 +180,11 @@ type GCSStore struct {
 
 func NewGCSStoreFromClient(ctx context.Context, client *gcs.Client, uploadPrefix string) (*GCSStore, error) {
 	s := &GCSStore{gcsClient: client}
-	var err error
-	s.bucket, s.prefix, err = gcsx.ParseURL(uploadPrefix)
+	ref, err := gcsx.ParseURL(uploadPrefix)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing upload prefix")
 	}
+	s.bucket, s.prefix = ref.Bucket, ref.Object
 	{
 		var ok bool
 		s.runID, ok = ctx.Value(RunID).(string)

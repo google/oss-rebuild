@@ -244,7 +244,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	resources := build.Resources{
 		ToolURLs: map[build.ToolType]string{
 			// Ex: https://storage.googleapis.com/google-rebuild-bootstrap-tools/v0.0.0-20251211001310-499b5fb97512/timewarp
-			build.TimewarpTool: gcsx.HTTPURL(cfg.BootstrapBucket, cfg.BootstrapVersion+"/timewarp"),
+			build.TimewarpTool: gcsx.Bucket(cfg.BootstrapBucket).Object(cfg.BootstrapVersion + "/timewarp").HTTPURL(),
 		},
 		BaseImageConfig: build.DefaultBaseImageConfig(),
 	}
