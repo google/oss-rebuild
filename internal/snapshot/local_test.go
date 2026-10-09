@@ -38,8 +38,12 @@ func TestLocalDB(t *testing.T) {
 			t.Fatalf("WriteRebuild(%s): %v", a.Package, err)
 		}
 	}
-	if _, err := ldb.Refresh(); err != nil {
+	counts, err := ldb.Refresh()
+	if err != nil {
 		t.Fatalf("Refresh: %v", err)
+	}
+	if counts[TablePackageStats] != 2 {
+		t.Errorf("package_stats rows = %d, want 2", counts[TablePackageStats])
 	}
 	r := rundex.NewSQLite(q)
 	if runs, err := r.FetchRuns(ctx, rundex.FetchRunsOpts{}); err != nil || len(runs) != 1 {
@@ -72,6 +76,7 @@ func TestLocalDB(t *testing.T) {
 	}
 	assertCount(t, ldb.Conn, "SELECT count(*) FROM attempts", "2")
 	assertCount(t, ldb.Conn, "SELECT count(*) FROM attempts WHERE success", "2")
+	assertCount(t, ldb.Conn, "SELECT ever_built FROM package_stats WHERE package = 'requests'", "1")
 	// The read-only file reader sees the same rows and never creates a
 	// database at a missing path.
 	f, err := rundex.OpenSQLiteFile(path, SchemaVersion)
