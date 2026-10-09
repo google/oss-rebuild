@@ -4,6 +4,8 @@
 package signals
 
 import (
+	"time"
+
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
@@ -36,4 +38,12 @@ type PrevalenceRecord struct {
 	// depended-on package, in (0,1]. Counts are tail heavy enough that a rank
 	// quantile over the ecosystem would crowd every exported row above 0.99.
 	Prevalence float64 `json:"prevalence"`
+	// Artifact and Published carry the version's registry metadata so a
+	// consumer can form a rebuild target and rank by age without a live
+	// registry call. Both are zero on package-level rows. Artifact is set
+	// only for PyPI, where the name is not derivable from the version, and
+	// only when a pure wheel exists. Published is zero when no source
+	// records a time.
+	Artifact  string    `json:"artifact,omitempty"`
+	Published time.Time `json:"published,omitzero"`
 }
