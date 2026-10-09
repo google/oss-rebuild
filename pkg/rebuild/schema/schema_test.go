@@ -103,6 +103,57 @@ pypi_pure_wheel_build:
 `,
 	},
 	{
+		name: "PlatformWheelBuild",
+		strategy: &pypi.PlatformWheelBuild{
+			Location: rebuild.Location{
+				Dir:  "the_dir",
+				Ref:  "the_ref",
+				Repo: "the_repo",
+			},
+			Requirements: []string{"req_a", "req_b"},
+			PlatformTag:  "manylinux_2_17_x86_64",
+		},
+		jsonEncoded: `{"pypi_platform_wheel_build":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","requirements":["req_a","req_b"],"platform_tag":"manylinux_2_17_x86_64","registry_time":"0001-01-01T00:00:00Z"}}`,
+		yamlEncoded: `
+pypi_platform_wheel_build:
+  location:
+    repo: the_repo
+    ref: the_ref
+    dir: the_dir
+  requirements:
+    - req_a
+    - req_b
+  platform_tag: manylinux_2_17_x86_64
+`,
+	},
+	{
+		name: "PlatformWheelBuildWithTags",
+		strategy: &pypi.PlatformWheelBuild{
+			Location: rebuild.Location{
+				Dir:  "the_dir",
+				Ref:  "the_ref",
+				Repo: "the_repo",
+			},
+			PythonTag:    "cp310",
+			ABITag:       "cp310",
+			Requirements: []string{"req_a"},
+			PlatformTag:  "manylinux_2_28_x86_64",
+		},
+		jsonEncoded: `{"pypi_platform_wheel_build":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","python_tag":"cp310","abi_tag":"cp310","requirements":["req_a"],"platform_tag":"manylinux_2_28_x86_64","registry_time":"0001-01-01T00:00:00Z"}}`,
+		yamlEncoded: `
+pypi_platform_wheel_build:
+  location:
+    repo: the_repo
+    ref: the_ref
+    dir: the_dir
+  python_tag: cp310
+  abi_tag: cp310
+  requirements:
+    - req_a
+  platform_tag: manylinux_2_28_x86_64
+`,
+	},
+	{
 		name: "CratesioCargoPackage",
 		strategy: &cratesio.CratesIOCargoPackage{
 			Location: rebuild.Location{
