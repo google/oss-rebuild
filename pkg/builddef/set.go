@@ -37,9 +37,21 @@ func (s *FilesystemBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target
 	r, err := definitions.Reader(ctx, rebuild.BuildDef.For(t))
 	if err != nil {
 		if errors.Is(err, rebuild.ErrAssetNotFound) {
-			return schema.BuildDefinition{}, fs.ErrNotExist
+			// Fallback to package-level definition if version-specific one is not found.
+			t.Version = ""
+			t.Artifact = ""
+			// XXX: Empty version and artifact is maybe unsupported behavior?
+			// The alternative is to abandon the asset store either entirely or in non-specific methods.
+			r, err = definitions.Reader(ctx, rebuild.BuildDef.For(t))
+			if err != nil {
+				if errors.Is(err, rebuild.ErrAssetNotFound) {
+					return schema.BuildDefinition{}, fs.ErrNotExist
+				}
+				return schema.BuildDefinition{}, errors.Wrap(err, "reading package build definition")
+			}
+		} else {
+			return schema.BuildDefinition{}, errors.Wrap(err, "reading build definition")
 		}
-		return schema.BuildDefinition{}, errors.Wrap(err, "reading build definition")
 	}
 	defer r.Close()
 	var defn schema.BuildDefinition
@@ -50,9 +62,19 @@ func (s *FilesystemBuildDefinitionSet) Get(ctx context.Context, t rebuild.Target
 }
 
 func (s *FilesystemBuildDefinitionSet) Path(ctx context.Context, t rebuild.Target) (string, error) {
-	defs := rebuild.NewFilesystemAssetStore(s.fs)
-	url := defs.URL(rebuild.BuildDef.For(t))
-	return url.Path, nil
+	definitions := rebuild.NewFilesystemAssetStore(s.fs)
+	asset := rebuild.BuildDef.For(t)
+	r, err := definitions.Reader(ctx, asset)
+	if err == nil {
+		r.Close()
+		return definitions.URL(asset).Path, nil
+	}
+	if errors.Is(err, rebuild.ErrAssetNotFound) {
+		t.Version = ""
+		t.Artifact = ""
+		return definitions.URL(rebuild.BuildDef.For(t)).Path, nil
+	}
+	return "", errors.Wrap(err, "checking build definition existence")
 }
 
 type GitBuildDefinitionSet struct {
