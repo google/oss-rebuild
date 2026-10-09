@@ -105,10 +105,14 @@ variable "enable_private_build_pool" {
   description = "Whether to create and use a private Cloud Build worker pool for rebuilds"
   default     = false
 }
-variable "enable_vpc" {
+variable "enable_private_pool_peering" {
   type        = bool
-  description = "Whether to create and use VPC infrastructure for private build pools"
+  description = "Whether to peer the private build pools into the VPC, for builds that must reach private addresses in it."
   default     = false
+  validation {
+    condition     = !var.enable_private_pool_peering || var.enable_private_build_pool
+    error_message = "enable_private_pool_peering requires enable_private_build_pool"
+  }
 }
 variable "enable_scratch" {
   type        = bool
