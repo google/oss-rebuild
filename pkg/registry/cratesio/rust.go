@@ -44,6 +44,17 @@ func HasMUSLBuild(version string) (bool, error) {
 	return false, errors.New("no Rust release found")
 }
 
+// EarliestMUSLBuild returns the oldest release that ships a MUSL toolchain.
+func EarliestMUSLBuild() string {
+	earliest := ""
+	for _, r := range releases {
+		if r.MUSLBuild {
+			earliest = r.Version
+		}
+	}
+	return earliest
+}
+
 // List generated with the following script:
 // curl -L https://github.com/rust-lang/rust/raw/9fa33b19f76b5b3173280b7a8e306bf8f6241344/RELEASES.md | rg --replace '$1 $2' -o 'Version (\S+) \(([^)]+)\)' | xargs -n 2 sh -c 'printf "newRelease(\"%s\", \"%s\", %s),\\n" "$0" "$1" $(curl -sILfo /dev/null https://static.rust-lang.org/dist/$1/rust-$0-x86_64-unknown-linux-musl.tar.gz && echo true || echo false)'
 var releases []release = []release{
