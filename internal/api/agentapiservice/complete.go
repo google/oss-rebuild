@@ -51,16 +51,13 @@ func AgentComplete(ctx context.Context, req schema.AgentCompleteRequest, deps *A
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "updating session completion"))
 	}
-	// Eagerly release the session's scratch VM, if any. Best effort: failures
-	// are logged and left to the idle reaper.
+	// Release the session's VM now rather than at the next reap. Best
+	// effort: the reaper is the backstop.
 	if session.ScratchID != "" && deps.Scratches != nil && deps.GCE != nil {
 		if scratch, err := deps.Scratches.Get(ctx, session.ScratchID); err != nil {
 			log.Printf("session %s: fetching scratch %s for teardown: %v", req.SessionID, session.ScratchID, err)
 		} else if scratch.State != schema.ScratchDeleting && scratch.State != schema.ScratchDeleted {
-			if _, err := ScratchDelete(ctx, schema.ScratchDeleteRequest{ScratchID: session.ScratchID}, &ScratchDeleteDeps{
-				Scratches: deps.Scratches,
-				GCE:       deps.GCE,
-			}); err != nil {
+			if err := deleteScratch(ctx, deps.Scratches, deps.GCE, scratch, nil); err != nil {
 				log.Printf("session %s: releasing scratch %s: %v", req.SessionID, session.ScratchID, err)
 			}
 		}
