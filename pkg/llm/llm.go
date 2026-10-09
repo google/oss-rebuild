@@ -96,18 +96,25 @@ func GenerateTextContentWithUsage(ctx context.Context, client *genai.Client, mod
 
 // GenerateTypedContent extracts JSON data from text according to the provided schema.
 func GenerateTypedContent(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, out any, prompt ...*genai.Part) error {
+	_, err := GenerateTypedContentWithUsage(ctx, client, model, config, out, prompt...)
+	return err
+}
+
+// GenerateTypedContentWithUsage is GenerateTypedContent returning the incurred
+// usage, which is reported even on error so consumed tokens can be attributed.
+func GenerateTypedContentWithUsage(ctx context.Context, client *genai.Client, model string, config *genai.GenerateContentConfig, out any, prompt ...*genai.Part) (*genai.GenerateContentResponseUsageMetadata, error) {
 	if config == nil || config.ResponseSchema == nil {
-		return errors.New("generate config must set a schema")
+		return nil, errors.New("generate config must set a schema")
 	}
 	if config.ResponseMIMEType != JSONMIMEType {
-		return errors.New("generate config must set a JSON MIME type")
+		return nil, errors.New("generate config must set a JSON MIME type")
 	}
-	text, err := GenerateTextContent(ctx, client, model, config, prompt...)
+	text, usage, err := GenerateTextContentWithUsage(ctx, client, model, config, prompt...)
 	if err != nil {
-		return err
+		return usage, err
 	}
 	if err := json.Unmarshal([]byte(text), &out); err != nil {
-		return errors.Wrap(err, "parsing JSON response")
+		return usage, errors.Wrap(err, "parsing JSON response")
 	}
-	return nil
+	return usage, nil
 }

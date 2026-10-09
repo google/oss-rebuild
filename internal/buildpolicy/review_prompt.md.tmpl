@@ -1,0 +1,26 @@
+Target: {{.Ecosystem}} {{.Target.Package}} {{.Target.Version}} ({{.Artifact}}), source ref {{.Target.Ref}}
+{{if or .PreviousBuild .PreviousError}}
+The previous attempt's build script:
+```bash
+{{.PreviousBuild}}
+```
+
+The error it produced:
+```
+{{.PreviousError}}
+```
+{{end}}{{if .Transcript}}
+The commands the agent ran in the retained build container and on the build host before its artifact matched upstream, in order. The proposal below is what it handed off as the build; judge the transcript as part of the proposal, since a command there that wrote, copied, or edited shipped content is how the match was made. Reading the upstream artifact under /upstream to compare is expected here; moving any of it into /src is F2.
+```bash
+{{.Transcript}}
+```
+{{end}}
+Proposed deps phase:
+```bash
+{{.Deps}}
+```
+
+Proposed build phase:
+```bash
+{{.Build}}
+```
