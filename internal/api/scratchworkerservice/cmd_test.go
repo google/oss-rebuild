@@ -16,8 +16,11 @@ import (
 	"time"
 )
 
-// Compress kill grace for tests so timeout cases finish quickly.
-func init() { killGrace = 200 * time.Millisecond }
+// Compress kill grace and timeout unit for tests so timeout cases finish quickly.
+func init() {
+	killGrace = 200 * time.Millisecond
+	timeoutUnit = 50 * time.Millisecond
+}
 
 func TestRunCommand_ZeroExit(t *testing.T) {
 	code, err := runCommand(context.Background(),
@@ -152,7 +155,8 @@ func TestRunCommand_LargeStdoutToTempFile(t *testing.T) {
 	}
 	// ~110 MB via dd of zero bytes; stderr suppressed because macOS dd lacks
 	// status=none.
-	const want = int64(110 * 1024 * 1024)
+	const blockSize = 1024 * 1024
+	const want = int64(110 * blockSize)
 	path := filepath.Join(t.TempDir(), "stdout.log")
 	f, err := os.Create(path)
 	if err != nil {
@@ -161,7 +165,7 @@ func TestRunCommand_LargeStdoutToTempFile(t *testing.T) {
 	defer f.Close()
 
 	code, err := runCommand(context.Background(), runSpec{
-		Cmd: []string{"sh", "-c", "dd if=/dev/zero bs=1024 count=" + strconv.Itoa(int(want/1024)) + " 2>/dev/null"},
+		Cmd: []string{"sh", "-c", "dd if=/dev/zero bs=" + strconv.Itoa(blockSize) + " count=" + strconv.Itoa(int(want/blockSize)) + " 2>/dev/null"},
 	}, f, io.Discard)
 	if err != nil || code != 0 {
 		t.Fatalf("(code, err) = (%d, %v); want (0, nil)", code, err)

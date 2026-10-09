@@ -18,6 +18,10 @@ import (
 // process group. Tunable for tests.
 var killGrace = 5 * time.Second
 
+// timeoutUnit is multiplied by TimeoutSeconds to determine the run deadline.
+// Tunable for tests.
+var timeoutUnit = time.Second
+
 // runSpec holds the inputs runCommand needs. Kept package-private as the
 // internal exec runner shape, independent of the wire-level StartRequest.
 type runSpec struct {
@@ -48,7 +52,7 @@ func runCommand(ctx context.Context, spec runSpec, stdout, stderr io.Writer) (ex
 	runCtx := ctx
 	if spec.TimeoutSeconds > 0 {
 		var cancel context.CancelFunc
-		runCtx, cancel = context.WithTimeout(ctx, time.Duration(spec.TimeoutSeconds)*time.Second)
+		runCtx, cancel = context.WithTimeout(ctx, time.Duration(spec.TimeoutSeconds)*timeoutUnit)
 		defer cancel()
 	}
 
