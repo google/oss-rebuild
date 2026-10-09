@@ -70,3 +70,7 @@ func DiffSummary(ctx context.Context, metadata rebuild.LocatableAssetStore, t re
 // DiffSummaryPreamble introduces a DiffSummary to the agent: what the inputs
 // are, how entries are grouped, and that entry paths are archive-relative.
 const DiffSummaryPreamble = `File-level diff summary of the stabilized artifacts, "rebuild" being your rebuild and "upstream" the published artifact. Each archive is a "within <name>:" block grouping its entries as only in rebuild, only in upstream, and differ (present in both with different content), followed by the blocks of any nested archives. Paths are relative to the archive that contains them:`
+
+// MismatchGuidance follows a DiffSummary. It says what a mismatch means and
+// rules out the responses the model reaches for otherwise.
+const MismatchGuidance = `The build produced different bytes, so the build is still wrong: find the tool version, flag, environment, or source ref that explains the difference. Do not write the upstream bytes into the tree, do not download the published artifact, do not edit or rebuild the output archive, and do not edit or delete shipped files to hide the difference. Entries only in rebuild are files your build produced that upstream does not ship, and removing those is a legitimate fix. Entries only in upstream or that differ are upstream content: if the source at this ref cannot produce them, say so and name the paths.`

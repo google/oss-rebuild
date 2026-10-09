@@ -211,6 +211,7 @@ func (r *ScratchRunner) mismatchMessage(runID, diffSummary string) string {
 	}
 	p := r.vmPaths(runID)
 	return msg + "\n\n" + verifier.DiffSummaryPreamble + "\n" + diffSummary +
+		"\n" + verifier.MismatchGuidance +
 		fmt.Sprintf("\nBoth artifacts remain on the VM, stabilized beside the originals. For content-level differences run diffr on the host with run_on_host:\n%s %s.stabilized %s.stabilized\n(--json for machine-readable output). The retained container's /src is the host directory %s, so an artifact you build in the container can be compared the same way at that path once stabilized:\n%s --ecosystem %s --artifact %s --infile <file> --outfile <file>.stabilized\nHost tools cannot read other container paths.",
 			p.diffr, p.rebuild, p.upstream, p.src, p.stabilize, r.Target.Ecosystem, r.Target.Artifact)
 }

@@ -182,6 +182,10 @@ func normalize(r *Review, in ReviewInput) *Review {
 	return r
 }
 
+// Reviewer returns a Review of a build and the model usage it incurred,
+// as Run does once given a client and model.
+type Reviewer func(context.Context, ReviewInput) (*Review, *genai.GenerateContentResponseUsageMetadata, error)
+
 // Run asks model for a review and returns it with the usage incurred, which
 // is reported even on error.
 func Run(ctx context.Context, client *genai.Client, model string, in ReviewInput) (*Review, *genai.GenerateContentResponseUsageMetadata, error) {

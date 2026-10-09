@@ -52,6 +52,9 @@ type Agent interface {
 	// Canonicalize rewrites a verified build toward the form inference
 	// produces (e.g. registry accesses confined to deps phase).
 	Canonicalize(ctx context.Context, opts *ProposeOpts, working *schema.StrategyOneOf) (out *schema.StrategyOneOf, changed bool, err error)
+	// Check judges a verified proposal against the content rule. A refusal
+	// becomes the iteration's error message in place of a build result.
+	Check(ctx context.Context, opts *ProposeOpts, proposal *schema.StrategyOneOf) (refusal string, err error)
 	RecordIteration(*schema.AgentIteration)
 	Usage() schema.TokenUsage // agent's cumulative LLM token consumption
 }
@@ -114,26 +117,23 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 	if deps.ScratchRunner != nil {
 		status, result := deps.ScratchRunner.Run(ctx, fmt.Sprintf("iter-%d", iterNum), s)
 		if status != schema.AgentIterationStatusSuccess {
-			now := time.Now().UTC()
-			// This local-only record is never persisted. The session total
-			// accounts for its tokens and the usage stamp is only for local
-			// visibility.
-			return &schema.AgentIteration{
-				SessionID: sessionID,
-				Number:    iterNum,
-				Strategy:  s,
-				Status:    status,
-				Result:    result,
-				Usage:     iterUsage,
-				Created:   now,
-				Updated:   now,
-			}, nil
+			return localIteration(sessionID, iterNum, s, iterUsage, status, result), nil
+		}
+		// The build matched: judge how before a confirmation is spent on it.
+		if refusal, cerr := agent.Check(ctx, opts, s); cerr != nil {
+			log.Printf("Session %s Iteration %d: check failed (%v), confirming unchecked", sessionID, iterNum, cerr)
+		} else if refusal != "" {
+			log.Printf("Session %s Iteration %d: proposal refused", sessionID, iterNum)
+			return localIteration(sessionID, iterNum, s, agent.Usage().Sub(beforeUsage).OrNil(), iterationStatusRefused, &schema.AgentBuildResult{ErrorMessage: refusal}), nil
 		}
 		log.Printf("Session %s Iteration %d: local build verified; confirming on GCB", sessionID, iterNum)
 		if canon, changed, cerr := agent.Canonicalize(ctx, opts, s); cerr != nil {
 			log.Printf("Session %s Iteration %d: canonicalize failed (%v), confirming original", sessionID, iterNum, cerr)
 		} else if changed {
-			if st, _ := deps.ScratchRunner.Run(ctx, fmt.Sprintf("iter-%d-canon", iterNum), canon); st == schema.AgentIterationStatusSuccess {
+			// NOTE: Check the rewrite since it, too, is authored by the model.
+			if refusal, cerr := agent.Check(ctx, opts, canon); cerr != nil || refusal != "" {
+				log.Printf("Session %s Iteration %d: canonical form refused or unchecked (%v), confirming original", sessionID, iterNum, cerr)
+			} else if st, _ := deps.ScratchRunner.Run(ctx, fmt.Sprintf("iter-%d-canon", iterNum), canon); st == schema.AgentIterationStatusSuccess {
 				log.Printf("Session %s Iteration %d: canonical build re-verified, confirming canonical form", sessionID, iterNum)
 				s = canon
 			} else {
@@ -161,6 +161,30 @@ func doIteration(ctx context.Context, sessionID string, iterNum int, agent Agent
 	}
 	return resp.Iteration, nil
 }
+
+// localIteration is an attempt that never reached the service: a failed
+// scratch build or a refused proposal. It is never persisted.
+func localIteration(sessionID string, iterNum int, s *schema.StrategyOneOf, usage *schema.TokenUsage, status string, result *schema.AgentBuildResult) *schema.AgentIteration {
+	now := time.Now().UTC()
+	return &schema.AgentIteration{
+		SessionID: sessionID,
+		Number:    iterNum,
+		Strategy:  s,
+		Status:    status,
+		Result:    result,
+		Usage:     usage,
+		Created:   now,
+		Updated:   now,
+	}
+}
+
+// iterationStatusRefused marks a proposal the content review turned away. No
+// build ran and the iteration never reaches the service, so the schema
+// defines no such status.
+const iterationStatusRefused = "REFUSED"
+
+// maxRefusals ends a session that keeps proposing content instead of a build.
+const maxRefusals = 3
 
 func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (completeReq *schema.AgentCompleteRequest) {
 	if req.MaxIterations <= 0 {
@@ -221,7 +245,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 
 // runIterations drives the propose/build loop from iterNum until a verdict.
 func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent, deps RunSessionDeps) *schema.AgentCompleteRequest {
-	var transientErrs, buildAttempts int // tracks whether model made real progress or was throttled
+	var transientErrs, buildAttempts, refusals int // tracks whether model made real progress or was throttled
 	for {
 		iterNum++
 		if iterNum > req.MaxIterations {
@@ -258,7 +282,11 @@ func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent,
 			}
 			continue
 		}
-		buildAttempts++
+		if iteration.Status == iterationStatusRefused {
+			refusals++ // no build ran
+		} else {
+			buildAttempts++
+		}
 		log.Printf("%#v", iteration)
 		if iteration != nil && iteration.Result != nil && !iteration.Result.BuildSuccess {
 			log.Printf("Build failed: %s", iteration.Result.ErrorMessage)
@@ -272,6 +300,15 @@ func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent,
 			}
 		case schema.AgentIterationStatusFailed:
 			a.RecordIteration(iteration)
+			continue
+		case iterationStatusRefused:
+			a.RecordIteration(iteration)
+			if refusals >= maxRefusals {
+				return &schema.AgentCompleteRequest{
+					StopReason: schema.AgentCompleteReasonFailed,
+					Summary:    fmt.Sprintf("Refused %d proposals that supplied artifact content instead of building it", refusals),
+				}
+			}
 			continue
 		case schema.AgentIterationStatusError:
 			// Don't record the iteration, we want the last non-error iteration as the basis for the next guess.
