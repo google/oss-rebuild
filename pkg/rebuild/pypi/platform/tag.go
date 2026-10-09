@@ -159,3 +159,18 @@ func LowestLibcVersionTag(tags []Tag) (Tag, error) {
 		return 0
 	}), nil
 }
+
+// LowestLibcTagString parses raw platform tags (which means potentially multiple compressed tags)
+// from a wheel and returns the individual tag with the lowest associated libc version as a string.
+// Returns the input tags if parsing fails.
+func LowestLibcTagString(platformTags string) string {
+	tags, err := ParsePlatformTags(platformTags)
+	if err != nil || len(tags) == 0 {
+		return platformTags
+	}
+	lowest, err := LowestLibcVersionTag(tags)
+	if err != nil {
+		return platformTags
+	}
+	return lowest.Raw
+}

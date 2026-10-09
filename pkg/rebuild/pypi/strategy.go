@@ -8,7 +8,9 @@ import (
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
+	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/pkg/errors"
 )
 
 // PureWheelBuild aggregates the options controlling a wheel build.
@@ -124,6 +126,88 @@ func (b *SdistBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild
 	return b.ToWorkflow().GenerateFor(t, be)
 }
 
+// PlatformWheelBuild aggregates the options controlling a platform-specific wheel build.
+type PlatformWheelBuild struct {
+	rebuild.Location
+	PythonTag    string    `json:"python_tag,omitempty" yaml:"python_tag,omitempty"`
+	ABITag       string    `json:"abi_tag,omitempty" yaml:"abi_tag,omitempty"`
+	Requirements []string  `json:"requirements" yaml:"requirements"`
+	PlatformTag  string    `json:"platform_tag,omitempty" yaml:"platform_tag,omitempty"`
+	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+}
+
+var _ rebuild.Strategy = &PlatformWheelBuild{}
+
+func (b *PlatformWheelBuild) BaseImage() (string, error) {
+	return platform.SelectBaseImage(b.PlatformTag)
+}
+
+func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
+	baseImage, err := b.BaseImage()
+	if err != nil {
+		return nil, errors.Wrap(err, "selecting base image")
+	}
+	var registryTime string
+	if !b.RegistryTime.IsZero() {
+		registryTime = b.RegistryTime.Format(time.RFC3339)
+	}
+	distDir := "dist"
+	if b.Location.Dir != "" {
+		distDir = b.Location.Dir + "/dist"
+	}
+	return &rebuild.WorkflowStrategy{
+		Location: b.Location,
+		Requires: rebuild.RequiredEnv{
+			BaseImage: baseImage,
+		},
+		Source: []flow.Step{{
+			Uses: "git-checkout",
+		}},
+		Deps: []flow.Step{{
+			Uses: "pypi/deps/platform-wheel",
+			With: map[string]string{
+				"registryTime": registryTime,
+				"requirements": flow.MustToJSON(b.Requirements),
+				"pythonTag":    b.PythonTag,
+				"abiTag":       b.ABITag,
+				"venv":         "/deps",
+			},
+		}},
+		Build: []flow.Step{{
+			Uses: "pypi/build/platform-wheel",
+			With: map[string]string{
+				"dir":               b.Location.Dir,
+				"distDir":           distDir,
+				"locator":           "/deps/bin/",
+				"lowestPlatformTag": platform.LowestLibcTagString(b.PlatformTag),
+				"targetPlatformTag": b.PlatformTag,
+				"legacyWheel":       needsLegacyWheel(b.Requirements),
+			},
+		}},
+		OutputDir: distDir,
+	}, nil
+}
+
+// wheel 0.38.0 added the `wheel tags` CLI subcommand.
+const wheelTagsMinVersion = "0.38.0"
+
+// needsLegacyWheel flags builds that resolve a wheel version predating `wheel tags`.
+func needsLegacyWheel(reqs []string) string {
+	if hasCeilingBelow(reqs, "wheel", wheelTagsMinVersion) {
+		return "1"
+	}
+	return ""
+}
+
+// GenerateFor generates the instructions for a PlatformWheelBuild.
+func (b *PlatformWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	wf, err := b.ToWorkflow()
+	if err != nil {
+		return rebuild.Instructions{}, err
+	}
+	return wf.GenerateFor(t, be)
+}
+
 func init() {
 	for _, t := range toolkit {
 		flow.Tools.MustRegister(t)
@@ -142,6 +226,50 @@ var toolkit = []*flow.Tool{
 				{{.With.locator}}python3 -m venv {{.With.path}}
 				{{- end -}}`)[1:],
 			Needs: []string{"python3", "uv"},
+		}},
+	},
+	{
+		Name: "pypi/setup-venv/manylinux",
+		Steps: []flow.Step{{
+			// TODO: Support Python 2.7 (requires virtualenv instead of standard library venv).
+			Runs: textwrap.Dedent(`
+				INTERPRETER=""
+				{{- if .With.pythonTag}}
+				{{- if .With.abiTag}}
+				if [ -d "/opt/python/{{.With.pythonTag}}-{{.With.abiTag}}" ]; then
+				  INTERPRETER="/opt/python/{{.With.pythonTag}}-{{.With.abiTag}}/bin/python"
+				else
+				  for dir in /opt/python/{{.With.pythonTag}}*; do
+				    if [ -d "$dir" ]; then
+				      INTERPRETER="$dir/bin/python"
+				      break
+				    fi
+				  done
+				fi
+				{{- else}}
+				for dir in /opt/python/{{.With.pythonTag}}*; do
+				  if [ -d "$dir" ]; then
+				    INTERPRETER="$dir/bin/python"
+				    break
+				  fi
+				done
+				{{- end}}
+				if [ -z "$INTERPRETER" ]; then
+				  echo "Error: Requested Python tag '{{.With.pythonTag}}' not found in /opt/python" >&2
+				  exit 1
+				fi
+				{{- else}}
+				if [ -d "/opt/python/cp310-cp310" ]; then
+				  INTERPRETER="/opt/python/cp310-cp310/bin/python"
+				else
+				  for dir in /opt/python/*; do
+				    if [ -d "$dir" ]; then
+				      INTERPRETER="$dir/bin/python"
+				    fi
+				  done
+				fi
+				{{- end}}
+				$INTERPRETER -m venv {{.With.path}}`)[1:],
 		}},
 	},
 	{
@@ -197,6 +325,35 @@ var toolkit = []*flow.Tool{
 		},
 	},
 	{
+		Name: "pypi/deps/platform-wheel",
+		Steps: []flow.Step{
+			{
+				Uses: "pypi/setup-venv/manylinux",
+				With: map[string]string{
+					"path":      "{{.With.venv}}",
+					"pythonTag": "{{.With.pythonTag}}",
+					"abiTag":    "{{.With.abiTag}}",
+				},
+			},
+			{
+				Runs: "{{.With.venv}}/bin/pip install build wheel auditwheel",
+			},
+			{
+				Uses: "pypi/setup-registry",
+				With: map[string]string{
+					"registryTime": "{{.With.registryTime}}",
+				},
+			},
+			{
+				Uses: "pypi/install-deps",
+				With: map[string]string{
+					"requirements": "{{.With.requirements}}",
+					"locator":      "{{.With.venv}}/bin/",
+				},
+			},
+		},
+	},
+	{
 		Name: "pypi/build/wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
@@ -213,5 +370,46 @@ var toolkit = []*flow.Tool{
 				Runs: textwrap.Dedent(`
 				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --sdist -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}`)[1:],
 			}},
+	},
+	{
+		Name: "pypi/build/platform-wheel",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
+				{{if .With.lowestPlatformTag -}}
+				mkdir -p {{.With.distDir}}/repaired
+				AUDITWHEEL="{{.With.locator}}auditwheel"
+				if [ ! -x "$AUDITWHEEL" ]; then
+				  AUDITWHEEL="auditwheel"
+				fi
+				if $AUDITWHEEL repair {{.With.distDir}}/*.whl --plat {{.With.lowestPlatformTag}} -w {{.With.distDir}}/repaired/; then
+				  rm -f {{.With.distDir}}/*.whl
+				  mv {{.With.distDir}}/repaired/*.whl {{.With.distDir}}/
+				fi
+				rm -rf {{.With.distDir}}/repaired
+				{{end -}}
+				{{if .With.targetPlatformTag -}}
+				{{if .With.legacyWheel -}}
+				if [ ! -e {{.With.distDir}}/*-{{.With.targetPlatformTag}}.whl ]; then
+				  {{.With.locator}}python3 -m wheel unpack {{.With.distDir}}/*.whl -d {{.With.distDir}}/unpacked
+				  rm -f {{.With.distDir}}/*.whl
+				  for f in {{.With.distDir}}/unpacked/*/*.dist-info/WHEEL; do
+				    prefixes=$(sed -n 's/^Tag: \([^-]*-[^-]*\)-.*/\1/p' "$f" | sort -u)
+				    sed -i '/^Tag: /d; /^$/d' "$f"
+				    for p in $prefixes; do
+				      for plat in $(echo '{{.With.targetPlatformTag}}' | tr '.' '\n' | sort -u); do
+				        echo "Tag: $p-$plat" >> "$f"
+				      done
+				    done
+				    echo "" >> "$f"
+				  done
+				  {{.With.locator}}python3 -m wheel pack {{.With.distDir}}/unpacked/* -d {{.With.distDir}}
+				  rm -rf {{.With.distDir}}/unpacked
+				fi
+				{{- else -}}
+				{{.With.locator}}python3 -m wheel tags --remove --platform-tag {{.With.targetPlatformTag}} {{.With.distDir}}/*.whl
+				{{- end -}}
+				{{- end -}}`)[1:],
+		}},
 	},
 }
