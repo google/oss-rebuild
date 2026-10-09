@@ -105,14 +105,23 @@ variable "enable_private_build_pool" {
   description = "Whether to create and use a private Cloud Build worker pool for rebuilds"
   default     = false
 }
-variable "enable_vpc" {
+variable "enable_private_pool_peering" {
   type        = bool
-  description = "Whether to create and use VPC infrastructure for private build pools"
+  description = "Whether to peer the private build pools into the VPC, for builds that must reach private addresses in it."
   default     = false
+  validation {
+    condition     = !var.enable_private_pool_peering || var.enable_private_build_pool
+    error_message = "enable_private_pool_peering requires enable_private_build_pool"
+  }
 }
 variable "enable_scratch" {
   type        = bool
   description = "Whether to deploy scratch VMs for agent-driven iterative builds."
+  default     = false
+}
+variable "enable_internal_ingress" {
+  type        = bool
+  description = "Whether to restrict Cloud Run services to internal ingress, routing calls between them through the VPC."
   default     = false
 }
 variable "build_def_repo" {
