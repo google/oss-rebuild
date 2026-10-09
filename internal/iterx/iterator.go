@@ -31,3 +31,35 @@ func ToSeq2[T any](it iterish[T], sentinel error) iter.Seq2[T, error] {
 		}
 	}
 }
+
+// FromSlice adapts records already in hand to a Seq2 that never errors.
+func FromSlice[T any](xs []T) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		for _, x := range xs {
+			if !yield(x, nil) {
+				return
+			}
+		}
+	}
+}
+
+// Error is a Seq2 that yields only err, for a source that failed before it
+// could produce anything.
+func Error[T any](err error) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		var zero T
+		yield(zero, err)
+	}
+}
+
+// Collect drains seq into a slice, stopping at the first error.
+func Collect[T any](seq iter.Seq2[T, error]) ([]T, error) {
+	var out []T
+	for x, err := range seq {
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, nil
+}

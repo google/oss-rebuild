@@ -23,8 +23,10 @@ package docdb
 
 import (
 	"encoding/json"
+	"iter"
 	"strings"
 
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 )
@@ -188,27 +190,36 @@ func validateTable(td TableDef) error {
 	return nil
 }
 
-// StoreDocs creates td's doc table, upserts the given documents, and builds
-// its declared indexes.
-func StoreDocs(db *sqlite3.Conn, td TableDef, docs []json.RawMessage) error {
+// StoreDocSeq creates td's doc table, upserts every document docs yields
+// inside one transaction, and builds its declared indexes, returning the
+// row count. Documents stream through, so a table larger than memory costs
+// only its SQLite pages.
+func StoreDocSeq(db *sqlite3.Conn, td TableDef, docs iter.Seq2[json.RawMessage, error]) (int, error) {
 	if err := validateTable(td); err != nil {
-		return err
+		return 0, err
 	}
 	if len(td.Cols) == 0 {
-		return errors.Errorf("table %s is not a doc table", td.Name)
+		return 0, errors.Errorf("table %s is not a doc table", td.Name)
 	}
 	if err := db.Exec(createTableSQL(td)); err != nil {
-		return errors.Wrap(err, "creating table")
+		return 0, errors.Wrap(err, "creating table")
 	}
-	if err := ApplyDocs(db, td, docs); err != nil {
-		return err
+	n, err := applyDocSeq(db, td, docs)
+	if err != nil {
+		return 0, err
 	}
 	for _, idx := range td.Indexes {
 		if err := db.Exec(createIndexSQL(td.Name, idx)); err != nil {
-			return errors.Wrap(err, "creating index")
+			return 0, errors.Wrap(err, "creating index")
 		}
 	}
-	return nil
+	return n, nil
+}
+
+// StoreDocs is StoreDocSeq over documents already in hand.
+func StoreDocs(db *sqlite3.Conn, td TableDef, docs []json.RawMessage) error {
+	_, err := StoreDocSeq(db, td, iterx.FromSlice(docs))
+	return err
 }
 
 // EnsureDocTables creates the doc tables among defs (and their indexes)
@@ -254,23 +265,35 @@ func EnsureDocTables(db *sqlite3.Conn, defs []TableDef) error {
 }
 
 // ApplyDocs upserts documents into td's existing doc table.
-func ApplyDocs(db *sqlite3.Conn, td TableDef, docs []json.RawMessage) (err error) {
+func ApplyDocs(db *sqlite3.Conn, td TableDef, docs []json.RawMessage) error {
+	_, err := applyDocSeq(db, td, iterx.FromSlice(docs))
+	return err
+}
+
+// applyDocSeq upserts every document docs yields inside one transaction,
+// returning how many it applied. A failed document rolls the whole table
+// back, so a partial fill never survives.
+func applyDocSeq(db *sqlite3.Conn, td TableDef, docs iter.Seq2[json.RawMessage, error]) (n int, err error) {
 	stmt, _, err := db.Prepare(docUpsertSQL(td))
 	if err != nil {
-		return errors.Wrap(err, "preparing upsert")
+		return 0, errors.Wrap(err, "preparing upsert")
 	}
 	defer stmt.Close()
 	txn := db.Begin()
 	defer txn.End(&err)
-	for _, d := range docs {
+	for d, derr := range docs {
+		if derr != nil {
+			return 0, derr
+		}
 		if err := stmt.BindText(1, string(d)); err != nil {
-			return errors.Wrap(err, "binding document")
+			return 0, errors.Wrap(err, "binding document")
 		}
 		if err := stmt.Exec(); err != nil {
-			return errors.Wrap(err, "applying document")
+			return 0, errors.Wrap(err, "applying document")
 		}
+		n++
 	}
-	return nil
+	return n, nil
 }
 
 // StoreQuery materializes a derived table from its defining query and builds

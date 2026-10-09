@@ -5,18 +5,21 @@ package rundex
 
 import (
 	"context"
+	"iter"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/ncruces/go-sqlite3"
 )
@@ -30,27 +33,32 @@ type snapshotSource struct {
 	iterations []schema.AgentIteration
 }
 
-func (s *snapshotSource) Attempts(context.Context, time.Time) ([]schema.RebuildAttempt, error) {
-	return s.attempts, nil
+func (s *snapshotSource) Attempts(context.Context, time.Time) iter.Seq2[schema.RebuildAttempt, error] {
+	return iterx.FromSlice(s.attempts)
 }
-func (s *snapshotSource) Runs(context.Context, time.Time) ([]schema.Run, error) { return s.runs, nil }
-func (s *snapshotSource) Sessions(context.Context, time.Time) ([]schema.AgentSession, error) {
-	return s.sessions, nil
+func (s *snapshotSource) Runs(context.Context, time.Time) iter.Seq2[schema.Run, error] {
+	return iterx.FromSlice(s.runs)
 }
-func (s *snapshotSource) Iterations(context.Context, time.Time) ([]schema.AgentIteration, error) {
-	return s.iterations, nil
+func (s *snapshotSource) Sessions(context.Context, time.Time) iter.Seq2[schema.AgentSession, error] {
+	return iterx.FromSlice(s.sessions)
 }
-func (s *snapshotSource) Scratches(context.Context, time.Time) ([]schema.Scratch, error) {
-	return nil, nil
+func (s *snapshotSource) Iterations(context.Context, time.Time) iter.Seq2[schema.AgentIteration, error] {
+	return iterx.FromSlice(s.iterations)
 }
-func (s *snapshotSource) Execs(context.Context, time.Time) ([]schema.ScratchExec, error) {
-	return nil, nil
+func (s *snapshotSource) Scratches(context.Context, time.Time) iter.Seq2[schema.Scratch, error] {
+	return iterx.FromSlice[schema.Scratch](nil)
 }
-func (s *snapshotSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error) {
-	return nil, nil
+func (s *snapshotSource) Execs(context.Context, time.Time) iter.Seq2[schema.ScratchExec, error] {
+	return iterx.FromSlice[schema.ScratchExec](nil)
 }
-func (s *snapshotSource) Signals(context.Context) ([]signals.PackageSignal, error) {
-	return nil, nil
+func (s *snapshotSource) RepoMetrics(context.Context, time.Time) iter.Seq2[schema.RepoMetrics, error] {
+	return iterx.FromSlice[schema.RepoMetrics](nil)
+}
+func (s *snapshotSource) Campaigns(context.Context, time.Time) iter.Seq2[scheduler.Campaign, error] {
+	return iterx.FromSlice[scheduler.Campaign](nil)
+}
+func (s *snapshotSource) Signals(context.Context) (iter.Seq2[signals.PackageSignal, error], time.Time, error) {
+	return iterx.FromSlice[signals.PackageSignal](nil), time.Time{}, nil
 }
 
 func ts(min int) time.Time {

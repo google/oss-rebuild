@@ -5,6 +5,7 @@ package snapshot
 
 import (
 	"context"
+	"iter"
 	"os"
 	"time"
 
@@ -13,26 +14,29 @@ import (
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
 )
 
-// Source is the read side of the snapshot pipelines: each scan yields the
+// Source is the read side of the snapshot pipelines: each scan streams the
 // records written at or after the given watermark, and FullScan yields
-// every record. Scanning is isolated behind this interface so the
-// derivations can be tested with in-memory fixtures. Signals takes no
+// every record. Records arrive as the sequence is consumed, so a scan never
+// holds a collection in memory. Scanning is isolated behind this interface
+// so the derivations can be tested with in-memory fixtures. Signals takes no
 // watermark: the priority exports are rewritten whole at job cadence, so
 // they are rollup-only and have no delta path.
 type Source interface {
-	Attempts(context.Context, time.Time) ([]schema.RebuildAttempt, error)
-	Runs(context.Context, time.Time) ([]schema.Run, error)
-	Sessions(context.Context, time.Time) ([]schema.AgentSession, error)
-	Iterations(context.Context, time.Time) ([]schema.AgentIteration, error)
-	Scratches(context.Context, time.Time) ([]schema.Scratch, error)
-	Execs(context.Context, time.Time) ([]schema.ScratchExec, error)
-	RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error)
-	Signals(context.Context) ([]signals.PackageSignal, error)
+	Attempts(context.Context, time.Time) iter.Seq2[schema.RebuildAttempt, error]
+	Runs(context.Context, time.Time) iter.Seq2[schema.Run, error]
+	Sessions(context.Context, time.Time) iter.Seq2[schema.AgentSession, error]
+	Iterations(context.Context, time.Time) iter.Seq2[schema.AgentIteration, error]
+	Scratches(context.Context, time.Time) iter.Seq2[schema.Scratch, error]
+	Execs(context.Context, time.Time) iter.Seq2[schema.ScratchExec, error]
+	RepoMetrics(context.Context, time.Time) iter.Seq2[schema.RepoMetrics, error]
+	Campaigns(context.Context, time.Time) iter.Seq2[scheduler.Campaign, error]
+	Signals(context.Context) (iter.Seq2[signals.PackageSignal, error], time.Time, error)
 }
 
 // FullScan is the zero watermark: a scan given it reads every record.
@@ -68,21 +72,27 @@ func NewFirestoreSource(ctx context.Context, project string) (*FirestoreSource, 
 // Close releases the underlying Firestore client.
 func (s *FirestoreSource) Close() error { return s.client.Close() }
 
-// scanQuery reads every document of a query into a typed slice.
-func scanQuery[T any](ctx context.Context, q firestore.Query) ([]T, error) {
-	var out []T
-	iter := q.Documents(ctx)
-	for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
-		if err != nil {
-			return nil, errors.Wrap(err, "iterating documents")
+// scanQuery streams every document of a query, decoded into T.
+func scanQuery[T any](ctx context.Context, q firestore.Query) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		var zero T
+		it := q.Documents(ctx)
+		defer it.Stop()
+		for doc, err := range iterx.ToSeq2(it, iterator.Done) {
+			if err != nil {
+				yield(zero, errors.Wrap(err, "iterating documents"))
+				return
+			}
+			var v T
+			if err := doc.DataTo(&v); err != nil {
+				yield(zero, errors.Wrap(err, "decoding document"))
+				return
+			}
+			if !yield(v, nil) {
+				return
+			}
 		}
-		var v T
-		if err := doc.DataTo(&v); err != nil {
-			return nil, errors.Wrap(err, "decoding document")
-		}
-		out = append(out, v)
 	}
-	return out, nil
 }
 
 // sinceQuery bounds q to documents whose clock field is at or after since.
@@ -94,83 +104,111 @@ func sinceQuery(q firestore.Query, clock string, since time.Time) firestore.Quer
 	return q.Where(clock, ">=", since)
 }
 
-func (s *FirestoreSource) Attempts(ctx context.Context, since time.Time) ([]schema.RebuildAttempt, error) {
+func (s *FirestoreSource) Attempts(ctx context.Context, since time.Time) iter.Seq2[schema.RebuildAttempt, error] {
 	return scanQuery[schema.RebuildAttempt](ctx, sinceQuery(s.client.CollectionGroup("attempts").Query, "updated", since))
 }
 
 // Runs bound on created: runs are write-once, so creation time is the only
-// clock they carry.
-func (s *FirestoreSource) Runs(ctx context.Context, since time.Time) ([]schema.Run, error) {
+// clock they carry. NOTE: If runs ever gain mutations they need an updated
+// field, its collection-group index, and this query switched over, or the
+// mutations stay invisible to deltas until the next rollup.
+func (s *FirestoreSource) Runs(ctx context.Context, since time.Time) iter.Seq2[schema.Run, error] {
 	return scanRuns(ctx, sinceQuery(s.client.Collection("runs").Query, "created", since))
 }
 
-// scanRuns reads run documents, recovering the ID from the document ref for
-// historical entries that only carry it there.
-func scanRuns(ctx context.Context, q firestore.Query) ([]schema.Run, error) {
-	var out []schema.Run
-	iter := q.Documents(ctx)
-	for doc, err := range iterx.ToSeq2(iter, iterator.Done) {
-		if err != nil {
-			return nil, errors.Wrap(err, "iterating runs")
+// scanRuns streams run documents, recovering the ID from the document ref
+// for historical entries that only carry it there.
+func scanRuns(ctx context.Context, q firestore.Query) iter.Seq2[schema.Run, error] {
+	return func(yield func(schema.Run, error) bool) {
+		it := q.Documents(ctx)
+		defer it.Stop()
+		for doc, err := range iterx.ToSeq2(it, iterator.Done) {
+			if err != nil {
+				yield(schema.Run{}, errors.Wrap(err, "iterating runs"))
+				return
+			}
+			var r schema.Run
+			if err := doc.DataTo(&r); err != nil {
+				yield(schema.Run{}, errors.Wrap(err, "decoding run"))
+				return
+			}
+			if r.ID == "" {
+				r.ID = doc.Ref.ID
+			}
+			if !yield(r, nil) {
+				return
+			}
 		}
-		var r schema.Run
-		if err := doc.DataTo(&r); err != nil {
-			return nil, errors.Wrap(err, "decoding run")
-		}
-		if r.ID == "" {
-			r.ID = doc.Ref.ID
-		}
-		out = append(out, r)
 	}
-	return out, nil
 }
 
-func (s *FirestoreSource) Sessions(ctx context.Context, since time.Time) ([]schema.AgentSession, error) {
+func (s *FirestoreSource) Sessions(ctx context.Context, since time.Time) iter.Seq2[schema.AgentSession, error] {
 	return scanQuery[schema.AgentSession](ctx, sinceQuery(s.client.Collection("agent_sessions").Query, "updated", since))
 }
 
-func (s *FirestoreSource) Iterations(ctx context.Context, since time.Time) ([]schema.AgentIteration, error) {
+func (s *FirestoreSource) Iterations(ctx context.Context, since time.Time) iter.Seq2[schema.AgentIteration, error] {
 	// Iterations live in agent_sessions/{id}/agent_iterations. A collection
 	// group query gathers them all in one scan (each carries session_id).
 	return scanQuery[schema.AgentIteration](ctx, sinceQuery(s.client.CollectionGroup("agent_iterations").Query, "updated", since))
 }
 
-func (s *FirestoreSource) Scratches(ctx context.Context, since time.Time) ([]schema.Scratch, error) {
+func (s *FirestoreSource) Scratches(ctx context.Context, since time.Time) iter.Seq2[schema.Scratch, error] {
 	return scanQuery[schema.Scratch](ctx, sinceQuery(s.client.Collection("scratch").Query, "updated", since))
 }
 
-func (s *FirestoreSource) Execs(ctx context.Context, since time.Time) ([]schema.ScratchExec, error) {
+func (s *FirestoreSource) Execs(ctx context.Context, since time.Time) iter.Seq2[schema.ScratchExec, error] {
 	return scanQuery[schema.ScratchExec](ctx, sinceQuery(s.client.Collection("scratch-execs").Query, "updated", since))
 }
 
-func (s *FirestoreSource) RepoMetrics(ctx context.Context, since time.Time) ([]schema.RepoMetrics, error) {
+func (s *FirestoreSource) RepoMetrics(ctx context.Context, since time.Time) iter.Seq2[schema.RepoMetrics, error] {
 	return scanQuery[schema.RepoMetrics](ctx, sinceQuery(s.client.Collection("repo_metrics").Query, "updated", since))
 }
 
+func (s *FirestoreSource) Campaigns(ctx context.Context, since time.Time) iter.Seq2[scheduler.Campaign, error] {
+	return scanQuery[scheduler.Campaign](ctx, sinceQuery(s.client.Collection("scheduler_campaigns").Query, "updated", since))
+}
+
 // Signals reads the priority signals from the published signal database.
-func (s *FirestoreSource) Signals(context.Context) ([]signals.PackageSignal, error) {
+func (s *FirestoreSource) Signals(context.Context) (iter.Seq2[signals.PackageSignal, error], time.Time, error) {
 	return readSignals(s.SignalsDB)
 }
 
-// readSignals fetches the published signal database and reads its package
-// rows. A nil filesystem yields no rows.
-func readSignals(dest billy.Filesystem) ([]signals.PackageSignal, error) {
+// readSignals fetches the published signal database and streams its
+// package rows, reporting the publish time its meta records. The fetched
+// copy is removed when ranging over the sequence ends, so callers must range
+// over it. A nil filesystem yields no rows.
+func readSignals(dest billy.Filesystem) (iter.Seq2[signals.PackageSignal, error], time.Time, error) {
 	if dest == nil {
-		return nil, nil
+		return iterx.FromSlice[signals.PackageSignal](nil), time.Time{}, nil
 	}
 	dir, err := os.MkdirTemp("", "signals-fetch-")
 	if err != nil {
-		return nil, errors.Wrap(err, "creating fetch directory")
+		return nil, time.Time{}, errors.Wrap(err, "creating fetch directory")
 	}
-	defer os.RemoveAll(dir)
 	path, err := signals.Fetch(dest, dir)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching signal database")
+		os.RemoveAll(dir)
+		return nil, time.Time{}, errors.Wrap(err, "fetching signal database")
 	}
 	db, err := sqlite3.Open(path)
 	if err != nil {
-		return nil, errors.Wrap(err, "opening signal database")
+		os.RemoveAll(dir)
+		return nil, time.Time{}, errors.Wrap(err, "opening signal database")
 	}
-	defer db.Close()
-	return signals.PackageSignals(db)
+	meta, err := signals.ReadMeta(db)
+	if err != nil {
+		db.Close()
+		os.RemoveAll(dir)
+		return nil, time.Time{}, errors.Wrap(err, "reading signal meta")
+	}
+	rows := func(yield func(signals.PackageSignal, error) bool) {
+		defer os.RemoveAll(dir)
+		defer db.Close()
+		for s, err := range signals.PackageSignals(db) {
+			if !yield(s, err) || err != nil {
+				return
+			}
+		}
+	}
+	return rows, meta.BuiltAt, nil
 }
