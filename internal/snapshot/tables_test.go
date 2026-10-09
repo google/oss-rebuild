@@ -81,6 +81,9 @@ func fill(t *testing.T, src *fakeSource) (*sqlite3.Conn, map[string]int) {
 		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
+	if err := registerCollations(db); err != nil {
+		t.Fatalf("registerCollations: %v", err)
+	}
 	counts, err := fillSnapshotDB(db, map[string][]json.RawMessage{
 		TableAttempts:        docsOf(src.attempts),
 		TableRuns:            docsOf(src.runs),
@@ -242,4 +245,51 @@ func TestEcosystemDaily(t *testing.T) {
 	assertCount(t, db, "SELECT count(*) FROM ecosystem_daily WHERE ecosystem='pypi' AND day='' AND attempts=1 AND successes=0", "1")
 	assertCount(t, db, `SELECT count(*) FROM ecosystem_daily WHERE ecosystem='pypi' AND day='2026-07-02'
 		AND first_time_successes=0 AND successes=1`, "1")
+}
+
+func TestVersionStatsAndTopGaps(t *testing.T) {
+	flakyOK := attempt("pypi", "pkgE", "1.0", "r8", true, schema.RebuildStatusSuccess, at(2*time.Hour))
+	db, _ := fill(t, &fakeSource{attempts: []schema.RebuildAttempt{
+		// pkgA: an old version built, but the numerically-newest (10.0,
+		// which naive lexicographic ordering would rank below 2.0) fails.
+		attempt("pypi", "pkgA", "2.0", "r1", true, schema.RebuildStatusSuccess, at(0)),
+		attempt("pypi", "pkgA", "10.0", "r2", false, schema.RebuildStatusError, at(1*time.Hour)),
+		// pkgB: latest completed without matching upstream.
+		attempt("pypi", "pkgB", "1.0", "r3", false, schema.RebuildStatusFailure, at(0)),
+		// pkgC: latest errored.
+		attempt("pypi", "pkgC", "1.0", "r4", false, schema.RebuildStatusError, at(0)),
+		// pkgD: current, so absent from the gap queue.
+		attempt("pypi", "pkgD", "1.0", "r5", true, schema.RebuildStatusSuccess, at(0)),
+		// pkgE: one artifact with mixed outcomes, so flaky but current.
+		attempt("pypi", "pkgE", "1.0", "r7", false, schema.RebuildStatusError, at(1*time.Hour)),
+		flakyOK,
+	}})
+	assertCount(t, db, `SELECT count(*) FROM version_stats WHERE package='pkgA' AND version='10.0'
+		AND current=0 AND artifacts_attempted=1 AND artifacts_succeeded=0 AND last_status='ERROR'`, "1")
+	assertCount(t, db, "SELECT count(*) FROM version_stats WHERE package='pkgE' AND flaky=1 AND current=1", "1")
+	assertCount(t, db, "SELECT count(*) FROM version_stats WHERE package='pkgD' AND current=1 AND flaky=0", "1")
+	// The version_approx_compare collation picks 10.0 (not 2.0) as pkgA's latest, making
+	// the package stale rather than current.
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgA' AND latest_version='10.0' AND reason='stale'", "1")
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgB' AND reason='mismatch'", "1")
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgC' AND reason='error'", "1")
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package IN ('pkgD','pkgE')", "0")
+}
+
+func TestCoverageWeekly(t *testing.T) {
+	// Week of 2026-06-29: pkgA 1.0 builds. Week of 2026-07-06: 2.0 arrives
+	// and fails, breaking the package.
+	week2 := base.AddDate(0, 0, 7)
+	db, _ := fill(t, &fakeSource{attempts: []schema.RebuildAttempt{
+		attempt("pypi", "pkgA", "1.0", "r1", true, schema.RebuildStatusSuccess, base),
+		attempt("pypi", "pkgA", "2.0", "r2", false, schema.RebuildStatusError, week2),
+	}})
+	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE week='2026-06-29'
+		AND packages_attempted=1 AND packages_current=1 AND packages_stale=0
+		AND coverage=1.0 AND newly_broken=0 AND versions_attempted=1`, "1")
+	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE week='2026-07-06'
+		AND packages_attempted=1 AND packages_current=0 AND packages_stale=1
+		AND packages_ever_built=1 AND newly_broken=1 AND versions_attempted=1`, "1")
+	// The series ends at the week containing the last attempt.
+	assertCount(t, db, "SELECT count(*) FROM coverage_weekly WHERE week > '2026-07-06'", "0")
 }
