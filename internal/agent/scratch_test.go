@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/gcsx/gcsxtest"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
 	"github.com/google/oss-rebuild/pkg/longrunning"
@@ -286,8 +287,8 @@ func TestDiffOnVM(t *testing.T) {
 			}
 			want := `set -eu
 die() { echo "$*"; exit 3; }
-fetch() { [ -e "$1" ] || { wget -q ${3:+--header "$3"} -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }
 stab() { out=$(/home/builder/tools/stabilize --ecosystem npm --artifact lodash-4.17.21.tgz --infile "$1" --outfile "$2.part" 2>&1) && mv "$2.part" "$2" || die "stabilizing $1 failed: $out"; }
+fetch() { [ -e "$1" ] || { wget -q ${3:+--header "$3"} -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }
 mkdir -p /home/builder/tools /home/builder/upstream
 fetch /home/builder/tools/diffr https://storage.googleapis.com/test-bootstrap/v1/diffr "${AUTH_HEADER:-}"
 fetch /home/builder/tools/stabilize https://storage.googleapis.com/test-bootstrap/v1/stabilize "${AUTH_HEADER:-}"
@@ -305,6 +306,55 @@ exec /home/builder/tools/diffr --summary --label rebuild --label upstream /home/
 			}
 			if gotReq.TimeoutSeconds != int(diffTimeout.Seconds()) {
 				t.Errorf("TimeoutSeconds = %d, want %d", gotReq.TimeoutSeconds, int(diffTimeout.Seconds()))
+			}
+		})
+	}
+}
+
+// The staging exec fetches and stabilizes but compares nothing.
+func TestPrepareCompare(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		exitCode int
+		wantErr  string
+	}{
+		{name: "prepared"},
+		{name: "setup failed", exitCode: exitDiffSetupFailed, wantErr: "preparing the comparison on the VM"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotReq schema.ScratchExecRequest
+			r := testRunner(&fakeExecutor{})
+			r.PrebuildConfig.Dir = "v1"
+			r.RegistryClient = &fakeRegistry{}
+			r.Stubs = scratch.Stubs{
+				ExecCreate: func(_ context.Context, req schema.ScratchExecRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+					gotReq = req
+					return &longrunning.Operation[schema.ScratchExecResult]{ID: "prep", Done: true, Result: &schema.ScratchExecResult{ScratchID: "s1", ExitCode: tt.exitCode}}, nil
+				},
+			}
+			err := r.PrepareCompare(context.Background())
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("err = %v, want substring %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("PrepareCompare: %v", err)
+			}
+			want := `set -eu
+die() { echo "$*"; exit 3; }
+stab() { out=$(/home/builder/tools/stabilize --ecosystem npm --artifact lodash-4.17.21.tgz --infile "$1" --outfile "$2.part" 2>&1) && mv "$2.part" "$2" || die "stabilizing $1 failed: $out"; }
+fetch() { [ -e "$1" ] || { wget -q ${3:+--header "$3"} -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }
+mkdir -p /home/builder/tools /home/builder/upstream
+fetch /home/builder/tools/diffr https://storage.googleapis.com/test-bootstrap/v1/diffr "${AUTH_HEADER:-}"
+fetch /home/builder/tools/stabilize https://storage.googleapis.com/test-bootstrap/v1/stabilize "${AUTH_HEADER:-}"
+fetch /home/builder/upstream/lodash-4.17.21.tgz https://registry.example/lodash-4.17.21.tgz
+chmod +x /home/builder/tools/diffr /home/builder/tools/stabilize
+[ -e /home/builder/upstream/lodash-4.17.21.tgz.stabilized ] || stab /home/builder/upstream/lodash-4.17.21.tgz /home/builder/upstream/lodash-4.17.21.tgz.stabilized
+`
+			if diff := cmp.Diff(want, gotReq.Cmd[2]); diff != "" {
+				t.Errorf("script mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -330,10 +380,57 @@ func TestMismatchMessage(t *testing.T) {
 	}
 }
 
-func TestDiffScriptRejectsShellCharacters(t *testing.T) {
+func TestCompareScriptRejectsShellCharacters(t *testing.T) {
 	r := testRunner(&fakeExecutor{})
 	r.Target.Artifact = "it's-4.17.21.tgz"
-	if _, err := r.diffScript(r.vmPaths("iter-1"), "https://b/diffr", "https://b/stabilize", "https://r/x.tgz"); err == nil {
-		t.Error("diffScript accepted an artifact name with a quote")
+	p := r.vmPaths("iter-1")
+	if _, err := r.compareScript(p, "https://r/x.tgz", p.rebuild); err == nil {
+		t.Error("compareScript accepted an artifact name with a quote")
+	}
+}
+
+// The check fetches nothing and sends no prebuild credential.
+func TestCheckArtifact(t *testing.T) {
+	var gotReq schema.ScratchExecRequest
+	r := testRunner(&fakeExecutor{})
+	r.AuthHeader = func(context.Context) (string, error) { return "Authorization: Bearer tok", nil }
+	r.Stubs = scratch.Stubs{
+		ExecCreate: func(_ context.Context, req schema.ScratchExecRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+			gotReq = req
+			return &longrunning.Operation[schema.ScratchExecResult]{ID: "check", Done: true, Result: &schema.ScratchExecResult{ScratchID: "s1", ExitCode: 1, OutURI: "gs://out/check"}}, nil
+		},
+		ExecGet: func(context.Context, schema.GetOperationRequest) (*longrunning.Operation[schema.ScratchExecResult], error) {
+			return nil, errors.New("unexpected ExecGet")
+		},
+	}
+	r.GCSClient = gcsxtest.Client(t, map[string]string{
+		"out/check": "ab cd /home/builder/checks/lodash-4.17.21.tgz.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized\n  differ (1):\n",
+	})
+	code, out, err := r.CheckArtifact(context.Background(), "/home/builder/builds/iter-1/src/lodash-4.17.21.tgz")
+	if err != nil || code != 1 || !strings.HasPrefix(string(out), "ab cd ") {
+		t.Fatalf("CheckArtifact = %d, %q, %v; want diffr's exit and output", code, out, err)
+	}
+	want := `set -eu
+die() { echo "$*"; exit 3; }
+stab() { out=$(/home/builder/tools/stabilize --ecosystem npm --artifact lodash-4.17.21.tgz --infile "$1" --outfile "$2.part" 2>&1) && mv "$2.part" "$2" || die "stabilizing $1 failed: $out"; }
+[ -f /home/builder/builds/iter-1/src/lodash-4.17.21.tgz ] || die "/home/builder/builds/iter-1/src/lodash-4.17.21.tgz: no such file on the VM host"
+for f in /home/builder/upstream/lodash-4.17.21.tgz /home/builder/tools/stabilize /home/builder/tools/diffr; do [ -e $f ] || die "$f is not on the VM; the job stages the upstream artifact and the tools before each session"; done
+[ -e /home/builder/upstream/lodash-4.17.21.tgz.stabilized ] || stab /home/builder/upstream/lodash-4.17.21.tgz /home/builder/upstream/lodash-4.17.21.tgz.stabilized
+mkdir -p /home/builder/checks
+stab /home/builder/builds/iter-1/src/lodash-4.17.21.tgz /home/builder/checks/lodash-4.17.21.tgz.stabilized
+c=$(sha256sum /home/builder/checks/lodash-4.17.21.tgz.stabilized | cut -c1-64)
+u=$(sha256sum /home/builder/upstream/lodash-4.17.21.tgz.stabilized | cut -c1-64)
+echo "$c $u /home/builder/checks/lodash-4.17.21.tgz.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized"
+[ "$c" != "$u" ] || exit 0
+exec /home/builder/tools/diffr --summary --label candidate --label upstream /home/builder/checks/lodash-4.17.21.tgz.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized
+`
+	if diff := cmp.Diff(want, gotReq.Cmd[2]); diff != "" {
+		t.Errorf("script mismatch (-want +got):\n%s", diff)
+	}
+	if _, ok := gotReq.Env["AUTH_HEADER"]; ok || gotReq.TimeoutSeconds != int(diffTimeout.Seconds()) {
+		t.Errorf("env = %v, timeout = %d; want no credential and the comparison timeout", gotReq.Env, gotReq.TimeoutSeconds)
+	}
+	if _, _, err := r.CheckArtifact(context.Background(), "/home/builder/builds/iter-1/src/x;rm -rf /"); err == nil || !strings.Contains(err.Error(), "not a shell word") {
+		t.Errorf("CheckArtifact with shell characters = %v, want a refusal", err)
 	}
 }
