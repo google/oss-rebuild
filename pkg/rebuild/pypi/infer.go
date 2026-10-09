@@ -24,6 +24,8 @@ import (
 	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/internal/versionx"
 	pypiresolver "github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
+	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
+	"github.com/google/oss-rebuild/pkg/rebuild/pypi/sysdeps"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/pkg/errors"
@@ -182,6 +184,47 @@ func FindSourceDist(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
 		}
 	}
 	return nil, fs.ErrNotExist
+}
+
+// FindPlatformWheel returns the first platform-specific wheel artifact from the given version's releases.
+func FindPlatformWheel(artifacts []pypireg.Artifact) (*pypireg.Artifact, error) {
+	for _, r := range artifacts {
+		if strings.HasSuffix(r.Filename, ".whl") && !strings.HasSuffix(r.Filename, "none-any.whl") {
+			if _, err := platform.ParsePlatformTags(extractPlatformTag(r.Filename)); err == nil {
+				return &r, nil
+			}
+		}
+	}
+	return nil, fs.ErrNotExist
+}
+
+// WheelTags contains parsed PEP 427 wheel tags.
+type WheelTags struct {
+	Python   string
+	ABI      string
+	Platform string
+}
+
+// extractWheelTags extracts python tag, abi tag, and platform tag from a wheel filename (PEP 427).
+func extractWheelTags(filename string) WheelTags {
+	if !strings.HasSuffix(filename, ".whl") {
+		return WheelTags{}
+	}
+	stem := strings.TrimSuffix(filename, ".whl")
+	parts := strings.Split(stem, "-")
+	if len(parts) >= 5 {
+		return WheelTags{
+			Python:   parts[len(parts)-3],
+			ABI:      parts[len(parts)-2],
+			Platform: parts[len(parts)-1],
+		}
+	}
+	return WheelTags{}
+}
+
+// extractPlatformTag extracts the platform tag from a wheel filename.
+func extractPlatformTag(filename string) string {
+	return extractWheelTags(filename).Platform
 }
 
 func inferRequirements(name, version string, zr *zip.Reader) ([]string, error) {
@@ -398,6 +441,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to read upstream artifact")
 	}
 	var reqs []string
+	var sysdepsList []sysdeps.DependencyIdentifier
 	if strings.HasSuffix(a.Filename, ".whl") {
 		zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
 		if err != nil {
@@ -406,6 +450,12 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		reqs, err = inferRequirements(release.Name, version, zr)
 		if err != nil {
 			return nil, err
+		}
+		wheelSysdeps, err := sysdeps.ExtractWheelElfDependencies(zr)
+		if err != nil {
+			log.Println(errors.Wrap(err, "extracting wheel ELF dependencies"))
+		} else {
+			sysdepsList = append(sysdepsList, wheelSysdeps...)
 		}
 	} else if strings.HasSuffix(a.Filename, ".tar.gz") {
 		// For .tar.gz files (source distributions), we don't infer requirements from the archive
@@ -435,6 +485,11 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		} else {
 			reqs = mergeRequirements(reqs, buildReqs)
 		}
+		if cibwDeps, err := sysdeps.ExtractCibuildwheelDependencies(ctx, tree, dir); err != nil {
+			log.Println(errors.Wrap(err, "extracting cibuildwheel dependencies"))
+		} else {
+			sysdepsList = append(sysdepsList, cibwDeps...)
+		}
 	}
 	if strings.HasSuffix(a.Filename, ".tar.gz") {
 		return &SdistBuild{
@@ -446,6 +501,24 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			PythonVersion: inferPythonVersion(reqs, a.UploadTime),
 			Requirements:  reqs,
 			RegistryTime:  a.UploadTime,
+		}, nil
+	} else if strings.HasSuffix(a.Filename, ".whl") && !strings.HasSuffix(a.Filename, "none-any.whl") {
+		tags := extractWheelTags(a.Filename)
+		if _, err := platform.ParsePlatformTags(tags.Platform); err != nil {
+			return nil, errors.Wrapf(err, "unsupported platform tag in wheel filename %s", a.Filename)
+		}
+		return &PlatformWheelBuild{
+			Location: rebuild.Location{
+				Repo: rcfg.URI,
+				Dir:  dir,
+				Ref:  ref,
+			},
+			PythonTag:    tags.Python,
+			ABITag:       tags.ABI,
+			PlatformTag:  tags.Platform,
+			Requirements: reqs,
+			SystemDeps:   sysdeps.DeduplicateIdentifiers(sysdepsList),
+			RegistryTime: a.UploadTime,
 		}, nil
 	} else {
 		return &PureWheelBuild{
