@@ -276,6 +276,10 @@ func runIterations(ctx context.Context, req RunSessionReq, iterNum int, a Agent,
 					Summary:    fmt.Sprintf("Session context ended: %v", context.Cause(ctx)),
 				}
 			}
+			var gu gaveUp
+			if errors.As(err, &gu) {
+				return &schema.AgentCompleteRequest{StopReason: schema.AgentCompleteReasonGaveUp, Summary: "Gave up: " + gu.Reason}
+			}
 			if llm.IsTransient(err) {
 				transientErrs++
 				continue

@@ -577,7 +577,7 @@ func jobFreeFormGuidance() []string {
 	return []string{
 		"",
 		"# This attempt",
-		"Read the previous build's log with read_logs_end. Work in the container until check_artifact reports a match, then call handoff with the commands that produced it.",
+		"Read the previous build's log with read_logs_end. Work in the container until check_artifact reports a match, then call handoff with the commands that produced it. If the evidence shows the artifact cannot be produced from the source at the ref, call give_up with that evidence.",
 	}
 }
 
@@ -600,4 +600,4 @@ The content rule. Every byte of the artifact must be produced by the package's o
 
 The source ref. If the evidence shows the release was cut from a different commit than the ref (the published gitHead or .cargo_vcs_info.json sha, a release tag, a version-bump commit), call set_source_ref with that commit and the evidence; the next attempt checks it out and re-infers the dependency phase there, and you may check it out in the container to continue. set_source_ref commits the session to the ref and re-infers the build; it is not a way to look at a ref. To find the commit a release was cut from, use git on the host in builds/<build-id>/src (git log, git diff <ref> -- <paths>, git show <ref>:<path>) against the stabilized upstream contents, then call set_source_ref once with the answer. A git checkout of another commit in the handoff's commands, or files taken from one, is refused.
 
-When check_artifact reports a match, call handoff once with a short summary and build_commands: the minimal command sequence that produced the matching artifact in the container, as two scripts a fresh container runs in /src after the previous attempt's deps phase. deps holds every command that installs or fetches anything (packages, toolchain changes, registry access), build holds the rest, and each is complete on its own: a command the earlier attempt ran and the result still needs belongs in it too. Do not call handoff before a match has been reported.`
+A give_up call, with the evidence that the artifact cannot be produced from the source at the ref, ends the session; a difference you have not explained is not that evidence. When check_artifact reports a match, call handoff once with a short summary and build_commands: the minimal command sequence that produced the matching artifact in the container, as two scripts a fresh container runs in /src after the previous attempt's deps phase. deps holds every command that installs or fetches anything (packages, toolchain changes, registry access), build holds the rest, and each is complete on its own: a command the earlier attempt ran and the result still needs belongs in it too. Do not call handoff before a match has been reported.`
