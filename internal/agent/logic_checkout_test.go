@@ -42,11 +42,11 @@ func TestInitializeFromIterationRejectsInvalidRef(t *testing.T) {
 		t.Fatal(err)
 	}
 	bareDir := filepath.Join(filepath.Dir(repoDir), "repo.git")
-	cmd := exec.Command("git", "clone", "--bare", repoDir, bareDir)
+	cmd := exec.Command("git", "-c", "safe.bareRepository=all", "clone", "--bare", repoDir, bareDir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git clone --bare: %v\n%s", err, out)
 	}
-	cmd = exec.Command("git", "-C", bareDir, "update-server-info")
+	cmd = exec.Command("git", "-c", "safe.bareRepository=all", "-C", bareDir, "update-server-info")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git update-server-info: %v\n%s", err, out)
 	}

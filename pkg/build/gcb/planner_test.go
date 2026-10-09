@@ -70,6 +70,16 @@ RUN sed 's/^ //' <<'EOF' | sh
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+ if [ -f .gitmodules ]; then
+   git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+   git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+   git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+   git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+   git config --global url."https://".insteadOf "git://" || true
+   git submodule sync --recursive || true
+   GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+   GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+ fi
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -273,6 +283,16 @@ RUN sed 's/^ //' <<'EOF' | sh
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+ if [ -f .gitmodules ]; then
+   git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+   git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+   git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+   git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+   git config --global url."https://".insteadOf "git://" || true
+   git submodule sync --recursive || true
+   GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+   GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+ fi
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -329,6 +349,16 @@ RUN sed 's/^ //' <<'EOF' | sh
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+ if [ -f .gitmodules ]; then
+   git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+   git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+   git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+   git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+   git config --global url."https://".insteadOf "git://" || true
+   git submodule sync --recursive || true
+   GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+   GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+ fi
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -385,6 +415,16 @@ RUN sed 's/^ //' <<'EOF' | sh
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+ if [ -f .gitmodules ]; then
+   git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+   git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+   git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+   git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+   git config --global url."https://".insteadOf "git://" || true
+   git submodule sync --recursive || true
+   GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+   GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+ fi
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -442,6 +482,16 @@ RUN sed 's/^ //' <<'EOF' | sh
  mkdir /src && cd /src
  git clone github.com/example .
  git checkout --force 'main'
+ if [ -f .gitmodules ]; then
+   git config --global url."https://github.com/".insteadOf "git@github.com:" || true
+   git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
+   git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
+   git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
+   git config --global url."https://".insteadOf "git://" || true
+   git submodule sync --recursive || true
+   GIT_TERMINAL_PROMPT=0 git submodule update --init || true
+   GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
+ fi
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
