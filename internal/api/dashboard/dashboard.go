@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/rundex"
@@ -44,7 +45,8 @@ const (
 	CSSPath      = "/dashboard.css"
 )
 
-// RegisterAssets serves the dashboard's stylesheets at the paths above.
+// RegisterAssets serves the dashboard's stylesheets, and under the webfonts
+// build tag the embedded font files.
 func RegisterAssets(mux *http.ServeMux) {
 	for path, content := range map[string]string{ThemeCSSPath: themeCSS, CSSPath: css} {
 		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +54,7 @@ func RegisterAssets(mux *http.ServeMux) {
 			_, _ = io.WriteString(w, content)
 		})
 	}
+	registerFonts(mux)
 }
 
 var (
@@ -64,6 +67,13 @@ var (
 )
 
 func init() {
+	// The webfonts build tag supplies the preload links and font faces;
+	// without it both are empty and pages render with system fonts.
+	// TODO: Compose pages with html/template (a base layout with named
+	// blocks) instead of string concatenation, and make this a template
+	// the tag overrides.
+	headerHTML = strings.Replace(headerHTML, "    <!-- webfonts -->\n", fontsHTML, 1)
+	css = fontsCSS + css
 	IndexTmpl = template.Must(template.New("index").Parse(headerHTML + indexHTML))
 	PackageTmpl = template.Must(template.New("package").Parse(headerHTML + packageHTML))
 	VersionTmpl = template.Must(template.New("version").Parse(headerHTML + versionHTML))
@@ -71,6 +81,8 @@ func init() {
 	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
 	ResourcesTmpl = template.Must(template.New("resources").Parse(headerHTML + resourcesHTML))
 }
+
+//go:generate go run fonts/fetch_fonts.go
 
 var packagePathEncoding = rebuild.FilesystemTargetEncoding
 
