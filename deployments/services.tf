@@ -242,6 +242,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--agent-job-name=${google_cloud_run_v2_job.agent.id}",
         "--agent-api-url=${google_cloud_run_v2_service.agent-api.uri}",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
+        "--crates-registry-service-url=${google_cloud_run_v2_service.crates-registry.uri}",
         "--agent-timeout-seconds=3600", // 1 hour
         "--agent-sessions-bucket=${google_storage_bucket.agent-sessions.name}",
         "--agent-metadata-bucket=${google_storage_bucket.agent-metadata.name}",
