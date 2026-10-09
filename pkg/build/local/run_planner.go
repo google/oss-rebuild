@@ -79,6 +79,7 @@ var dockerRunPhaseTpls = template.Must(
 			{{- define "build" -}}
 			cd /src
 			{{.Inst.Build}}
+			[ -e /src/{{.Inst.OutputPath}} ] || ls -la "$(dirname /src/{{.Inst.OutputPath}})"
 			chmod 444 /src/{{.Inst.OutputPath}}
 			cp /src/{{.Inst.OutputPath}} /out/rebuild
 			{{- end -}}
