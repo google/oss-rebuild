@@ -110,13 +110,12 @@ pypi_pure_wheel_build:
 				Ref:  "the_ref",
 				Repo: "the_repo",
 			},
-			RustVersion:       "some_version",
-			ToolchainResolved: true,
+			RustVersion: "some_version",
 			ExplicitLockfile: &cratesio.ExplicitLockfile{
 				LockfileBase64: "lock_base64",
 			},
 		},
-		jsonEncoded: `{"cratesio_cargo_package":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","rust_version":"some_version","toolchain_resolved":true,"explicit_lockfile":{"lockfile_base64":"lock_base64"}}}`,
+		jsonEncoded: `{"cratesio_cargo_package":{"repo":"the_repo","ref":"the_ref","dir":"the_dir","rust_version":"some_version","explicit_lockfile":{"lockfile_base64":"lock_base64"}}}`,
 		yamlEncoded: `
 cratesio_cargo_package:
   location:
@@ -124,7 +123,6 @@ cratesio_cargo_package:
     ref: the_ref
     dir: the_dir
   rust_version: some_version
-  toolchain_resolved: true
   explicit_lockfile:
     lockfile_base64: lock_base64
 `,

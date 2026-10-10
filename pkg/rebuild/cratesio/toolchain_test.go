@@ -55,15 +55,23 @@ func TestFindPinnedStableToolchain(t *testing.T) {
 			},
 		},
 		{
-			name: "partial release is left unchanged",
+			name: "partial release",
 			files: gitxtest.FileContent{
 				"rust-toolchain": "1.84\n",
 			},
+			want: "1.84",
 		},
 		{
-			name: "additional toolchain settings are left unchanged",
+			name: "additional toolchain settings",
 			files: gitxtest.FileContent{
-				"rust-toolchain.toml": "[toolchain]\nchannel = \"1.84.1\"\ncomponents = [\"rustfmt\"]\n",
+				"rust-toolchain.toml": "[toolchain]\nchannel = \"1.84.1\"\ncomponents = [\"rustfmt\"]\ntargets = [\"wasm32-unknown-unknown\"]\nprofile = \"minimal\"\n",
+			},
+			want: "1.84.1",
+		},
+		{
+			name: "custom toolchain path is left unchanged",
+			files: gitxtest.FileContent{
+				"rust-toolchain.toml": "[toolchain]\nchannel = \"1.84.1\"\npath = \"custom\"\n",
 			},
 		},
 		{
@@ -84,8 +92,8 @@ func TestFindPinnedStableToolchain(t *testing.T) {
 			if err != nil {
 				t.Fatalf("findPinnedStableToolchain: %v", err)
 			}
-			if got != tc.want || ok != (tc.want != "") {
-				t.Errorf("findPinnedStableToolchain() = %q, %v; want %q, %v", got, ok, tc.want, tc.want != "")
+			if got != tc.want || ok != (len(tc.files) > 0) {
+				t.Errorf("findPinnedStableToolchain() = %q, %v; want %q, %v", got, ok, tc.want, len(tc.files) > 0)
 			}
 		})
 	}
