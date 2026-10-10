@@ -220,7 +220,7 @@ func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder,
 			return index.NewIndexManagerFromFS(index.IndexManagerConfig{
 				Filesystem:            osfs.New("/tmp/crates-registry-cache"),
 				CurrentUpdateInterval: 6 * time.Hour,
-				MaxSnapshots:          3,
+				MaxSnapshots:          4,
 			})
 		})
 		localCfg.CratesRegistryStub = func(ctx context.Context, req cratesregistryservice.FindRegistryCommitRequest) (*cratesregistryservice.FindRegistryCommitResponse, error) {
