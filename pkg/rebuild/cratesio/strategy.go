@@ -20,11 +20,12 @@ type ExplicitLockfile struct {
 // CratesIOCargoPackage aggregates the options controlling a cargo build of a cratesio package.
 type CratesIOCargoPackage struct {
 	rebuild.Location
-	RustVersion      string            `json:"rust_version" yaml:"rust_version,omitempty"`
-	ExplicitLockfile *ExplicitLockfile `json:"explicit_lockfile" yaml:"explicit_lockfile,omitempty"`
-	ExcludeLockfile  bool              `json:"exclude_lockfile,omitempty" yaml:"exclude_lockfile,omitempty"`
-	RegistryCommit   string            `json:"registry_commit,omitempty" yaml:"registry_commit,omitempty"`
-	PackageNames     []string          `json:"package_names,omitempty" yaml:"package_names,omitempty"`
+	RustVersion       string            `json:"rust_version" yaml:"rust_version,omitempty"`
+	ToolchainResolved bool              `json:"toolchain_resolved,omitempty" yaml:"toolchain_resolved,omitempty"`
+	ExplicitLockfile  *ExplicitLockfile `json:"explicit_lockfile" yaml:"explicit_lockfile,omitempty"`
+	ExcludeLockfile   bool              `json:"exclude_lockfile,omitempty" yaml:"exclude_lockfile,omitempty"`
+	RegistryCommit    string            `json:"registry_commit,omitempty" yaml:"registry_commit,omitempty"`
+	PackageNames      []string          `json:"package_names,omitempty" yaml:"package_names,omitempty"`
 }
 
 var _ rebuild.Strategy = &CratesIOCargoPackage{}
@@ -65,11 +66,12 @@ func (b *CratesIOCargoPackage) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "cargo/build/package",
 			With: map[string]string{
-				"dir":             b.Location.Dir,
-				"rustVersion":     b.RustVersion,
-				"excludeLockfile": fmt.Sprintf("%t", b.ExcludeLockfile),
-				"registryCommit":  b.RegistryCommit,
-				"useGitIndex":     fmt.Sprintf("%t", len(b.PackageNames) > 0),
+				"dir":               b.Location.Dir,
+				"rustVersion":       b.RustVersion,
+				"toolchainResolved": fmt.Sprintf("%t", b.ToolchainResolved),
+				"excludeLockfile":   fmt.Sprintf("%t", b.ExcludeLockfile),
+				"registryCommit":    b.RegistryCommit,
+				"useGitIndex":       fmt.Sprintf("%t", len(b.PackageNames) > 0),
 			},
 		}},
 		OutputDir: "target/package",
@@ -129,9 +131,14 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				export CARGO_TARGET_DIR="$PWD/target"
+				{{if eq .With.toolchainResolved "true" -}}
+				package_dir="$PWD{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}/{{.With.dir}}{{end}}"
+				(cd / && RUSTUP_TOOLCHAIN={{.With.rustVersion}} /root/.cargo/bin/cargo package --manifest-path "$package_dir/Cargo.toml" --no-verify{{if eq .With.excludeLockfile "true"}} --exclude-lockfile{{end}})
+				{{else -}}
 				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
 				/root/.cargo/bin/cargo package --no-verify{{if eq .With.excludeLockfile "true"}} --exclude-lockfile{{end}}
-				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`)[1:],
+				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}
+				{{- end}}`)[1:],
 			Needs: []string{"rustup"},
 		}},
 	},
