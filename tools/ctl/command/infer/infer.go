@@ -173,7 +173,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			mgr, err := index.NewIndexManagerFromFS(index.IndexManagerConfig{
 				Filesystem:            osfs.New("/tmp/crates-registry-cache"),
 				CurrentUpdateInterval: 6 * time.Hour,
-				MaxSnapshots:          3,
+				MaxSnapshots:          4,
 			})
 			if err != nil {
 				return nil, errors.Wrap(err, "creating index manager")
