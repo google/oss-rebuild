@@ -48,6 +48,8 @@ var (
 	autoTargetsRegex = regexp.MustCompile(`(?m)^\s*autobins\s*=\s*false\s*$`)
 	// autoLibRegex matches the switch that form gained in Cargo 1.83 (rust-lang/cargo#14591).
 	autoLibRegex = regexp.MustCompile(`(?m)^\s*autolib\s*=\s*false\s*$`)
+	// binOrExampleRegex matches [[bin]] or [[example]] target sections in Cargo.toml.
+	binOrExampleRegex = regexp.MustCompile(`(?m)^\s*\[\[(bin|example)\]\]`)
 	// resolverOneRegex matches resolver = "1" written by Cargo 1.64+ (#10911/#10961, backported #10970)
 	// when workspace resolver differs from edition-2021 default.
 	resolverOneRegex = regexp.MustCompile(`(?m)^\s*resolver\s*=\s*["']1["']\s*$`)
@@ -121,6 +123,7 @@ type crateProps struct {
 	LockfileVersion int
 	VCSInfo         *reg.CargoVCSInfo
 	DeclaredMSRV    string
+	LatestAtPublish string
 }
 
 type versionRule struct {
@@ -159,6 +162,14 @@ var versionRules = []versionRule{
 	// Cargo 1.85 (#14931) moved [features] before target and [*dependencies] tables.
 	{lo: "1.85.0", when: func(p crateProps) bool { return featuresOrder(p.CargoTOML) < 0 }},
 	{hi: "1.84.1", when: func(p crateProps) bool { return featuresOrder(p.CargoTOML) > 0 }},
+	// Cargo 1.84 (#14774) began including Cargo.lock for library crates.
+	{lo: "1.84.0", when: func(p crateProps) bool {
+		return p.LockfileVersion > 0 && cargoWrote(autoLibRegex, p.CargoTOML, p.OrigTOML) && !binOrExampleRegex.MatchString(p.CargoTOML)
+	}},
+	// Before --exclude-lockfile in Cargo 1.87, Cargo >= 1.84 always included Cargo.lock.
+	{hi: "1.83.0", when: func(p crateProps) bool {
+		return p.LockfileVersion == 0 && p.LatestAtPublish != "" && semver.Cmp(p.LatestAtPublish, "1.87.0") < 0
+	}},
 	// Cargo 1.83 (#14591) began writing autolib = false.
 	{lo: "1.83.0", when: cargoAdded(autoLibRegex)},
 	{hi: "1.82.0", when: origLacks(autoLibRegex)},
@@ -192,6 +203,8 @@ var versionRules = []versionRule{
 	{lo: "1.51.0", when: func(p crateProps) bool { return hasResolverTwo(p.CargoTOML) }},
 	// Cargo 1.47 stabilized Cargo.lock format v3.
 	{lo: "1.47.0", when: func(p crateProps) bool { return p.LockfileVersion == 3 }},
+	// Cargo 1.41 (#7579) introduced Cargo.lock format v2.
+	{lo: "1.41.0", when: func(p crateProps) bool { return p.LockfileVersion == 2 }},
 }
 
 // inferRustVersionBounds analyzes packaged crate properties for structural
