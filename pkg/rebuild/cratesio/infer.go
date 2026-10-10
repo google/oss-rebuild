@@ -307,6 +307,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			vcs = &info
 		}
 	}
+	latestAtPublish, _ := reg.RustVersionAt(vmeta.Created)
 	// Apply structural hints to bound the Rust version.
 	// In the presence of options, (arbitrarily) prefer the latest Rust version in the range.
 	minVer, maxVer := inferRustVersionBounds(crateProps{
@@ -315,6 +316,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		LockfileVersion: lf.FormatVersion,
 		VCSInfo:         vcs,
 		DeclaredMSRV:    declared,
+		LatestAtPublish: latestAtPublish,
 	})
 	if minVer != "" && semver.Cmp(rustVersion, minVer) < 0 {
 		rustVersion = minVer
@@ -325,10 +327,6 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	if sourceChannel, _, err := findPinnedStableToolchain(tree, dir); err != nil {
 		return nil, errors.Wrap(err, "reading repository toolchain")
 	} else if sourceChannel != "" {
-		latestAtPublish, err := reg.RustVersionAt(vmeta.Created)
-		if err != nil {
-			return nil, errors.Wrap(err, "resolving repository toolchain")
-		}
 		if sourceVersion, ok := resolvePinnedToolchain(sourceChannel, latestAtPublish); ok &&
 			(minVer == "" || semver.Cmp(sourceVersion, minVer) >= 0) &&
 			(maxVer == "" || semver.Cmp(sourceVersion, maxVer) <= 0) {

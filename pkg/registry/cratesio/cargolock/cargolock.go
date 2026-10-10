@@ -22,8 +22,7 @@ type Package struct {
 
 // Lockfile represents a parsed Cargo.lock file.
 type Lockfile struct {
-	// FormatVersion is the top-level `version` field of the lock file.
-	// 0 means the version header was absent (implying format v1).
+	// FormatVersion is the Cargo.lock format version (1..4), or 0 for an empty lockfile.
 	FormatVersion int
 	Packages      []Package
 }
@@ -40,6 +39,7 @@ func CratesIOPackages(packages []Package) []Package {
 func ParseLockfile(content string) (Lockfile, error) {
 	var lf Lockfile
 	var current *Package
+	var hasInlineChecksum bool
 	flushPackage := func() {
 		if current != nil && current.Name != "" && current.Version != "" {
 			lf.Packages = append(lf.Packages, *current)
@@ -72,11 +72,20 @@ func ParseLockfile(content string) (Lockfile, error) {
 			current.Version = value
 		} else if value, ok := quotedValue(line, "source"); ok {
 			current.Source = value
+		} else if _, ok := quotedValue(line, "checksum"); ok {
+			hasInlineChecksum = true
 		}
 	}
 	flushPackage()
 	if err := scanner.Err(); err != nil {
 		return Lockfile{}, fmt.Errorf("error parsing lockfile: %w", err)
+	}
+	if lf.FormatVersion == 0 && len(lf.Packages) > 0 {
+		if hasInlineChecksum {
+			lf.FormatVersion = 2
+		} else {
+			lf.FormatVersion = 1
+		}
 	}
 	return lf, nil
 }
