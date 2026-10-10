@@ -113,7 +113,7 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 			log.Printf("Cargo.toml version heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
 		}
 	}
-	return r, err
+	return r, nil
 }
 
 func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte, rcfg *rebuild.RepoConfig) (ref, dir string, err error) {
@@ -552,7 +552,7 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 	tm = make(map[string]string)
 	commitIter, err := repo.Log(&git.LogOptions{
 		Order:      git.LogOrderCommitterTime,
-		PathFilter: func(s string) bool { return s == path },
+		PathFilter: func(s string) bool { return s == path || strings.HasSuffix(s, "Cargo.toml") },
 		All:        true,
 	})
 	if err != nil {
@@ -565,10 +565,11 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 			return err
 		}
 		ct, err := getCargoTOML(t, path)
-		if err != nil {
-			if _, ok := err.(*toml.DecodeError); ok {
-				return nil
-			}
+		if _, ok := err.(*toml.DecodeError); ok {
+			return nil
+		} else if errors.Is(err, object.ErrFileNotFound) {
+			return nil
+		} else if err != nil {
 			return err
 		}
 		if ct.Name != pkg {
@@ -576,12 +577,8 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 			log.Printf("Package name mismatch [expected=%s,actual=%s,path=%s,ref=%s]\n", pkg, ct.Name, path, c.Hash.String())
 			return nil
 		}
-		ver := ct.Version()
-		if ver == "" {
-			return nil
-		}
-		if ver == reg.WorkspaceVersion {
-			// TODO: Add support for workspace versioning.
+		ver, err := cargoPackageVersion(t, path, &ct)
+		if err != nil || ver == "" {
 			return nil
 		}
 		// If any are the same, return nil. (merges would create duplicates.)
@@ -596,7 +593,8 @@ func cargoTOMLSearch(pkg, path string, repo *git.Repository) (tm map[string]stri
 				// TODO: Detect and record file moves.
 				return nil
 			}
-			if ct.Name == pkg && ct.Version() == ver {
+			parentVer, err := cargoPackageVersion(t, path, &ct)
+			if err == nil && ct.Name == pkg && parentVer == ver {
 				foundMatch = true
 			}
 			return nil
