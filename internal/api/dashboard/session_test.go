@@ -58,7 +58,7 @@ func TestSessionHandler(t *testing.T) {
 	}
 	// The chat-less first build. Its iter-1 label materializes iteration 1.
 	for i, e := range []schema.ScratchExec{{
-		Cmd:      []string{"/bin/sh", "-c", "set -eu\nmkdir -p \"/home/builder/builds/iter-1/out\"\ndocker ps -aq --filter name=^rb- | xargs -r docker rm -f"},
+		Cmd:      []string{"/bin/sh", "-c", "set -eu\nmkdir -p \"/home/builder/builds/iter-1/out\"\ncat > \"/home/builder/builds/iter-1/build.sh\"\ndocker ps -aq --filter name=^rb- | xargs -r docker rm -f"},
 		State:    schema.ScratchExecCompleted,
 		ExitCode: 0,
 	}, {
@@ -347,7 +347,7 @@ func detached(cmd string) string {
 // TestClassifyExec pins the argv shape of each emitter execClass tracks.
 func TestClassifyExec(t *testing.T) {
 	const dir = "/home/builder/builds/iter-2"
-	prepare := "set -eu\nmkdir -p \"" + dir + "/out\"\ndocker ps -aq --filter name=^rb- | xargs -r docker rm -f"
+	prepare := "set -eu\nmkdir -p \"" + dir + "/out\"\ncat > \"" + dir + "/build.sh\"\ndocker ps -aq --filter name=^rb- | xargs -r docker rm -f\nrm -rf \"/home/builder/builds\"/*/src && mkdir -p \"" + dir + "/src\""
 	artifact := "set -eu\n[ -f \"" + dir + "/out/lodash-4.17.21.tgz\" ] || exit 44\n[ \"$(wc -c < \"" + dir + "/out/lodash-4.17.21.tgz\")\" -le 536870912 ] || exit 45\nbase64 \"" + dir + "/out/lodash-4.17.21.tgz\""
 	// The stabilize URL's builds/ precedes the build's own paths.
 	diff := strings.Join([]string{
@@ -357,8 +357,8 @@ func TestClassifyExec(t *testing.T) {
 		"mkdir -p /home/builder/tools /home/builder/upstream",
 		"fetch /home/builder/tools/stabilize https://storage.googleapis.com/prebuild/builds/v1/stabilize",
 		"fetch /home/builder/upstream/lodash-4.17.21.tgz https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz",
-		"stab /home/builder/builds/iter-2/out/lodash-4.17.21.tgz /home/builder/builds/iter-2/out/lodash-4.17.21.tgz.stabilized",
-		"exec /home/builder/tools/diffr --summary --label rebuild --label upstream /home/builder/builds/iter-2/out/lodash-4.17.21.tgz.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized",
+		"stab /home/builder/builds/iter-2-canon/out/lodash-4.17.21.tgz /home/builder/builds/iter-2-canon/out/lodash-4.17.21.tgz.stabilized",
+		"exec /home/builder/tools/diffr --summary --label rebuild --label upstream /home/builder/builds/iter-2-canon/out/lodash-4.17.21.tgz.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized",
 		"",
 	}, "\n")
 	container := `c=$(docker ps -aq --filter name=^rb- | head -1); [ -n "$c" ] || { echo 'no build container found; run a build first' >&2; exit 125; }; docker start "$c" >/dev/null; exec docker exec "$c" /bin/sh -c '` + detached("npm ls") + `'`
@@ -393,7 +393,7 @@ func TestClassifyExec(t *testing.T) {
 	}, {
 		name: "diff",
 		cmd:  []string{"/bin/sh", "-c", diff},
-		want: classifiedExec{class: execBuildMachinery, label: "diff", buildID: "iter-2", script: diff},
+		want: classifiedExec{class: execBuildMachinery, label: "diff", buildID: "iter-2-canon", script: diff},
 	}, {
 		name: "run_in_container",
 		cmd:  []string{"/bin/sh", "-c", container},
@@ -451,8 +451,8 @@ func TestComposeTrajectory(t *testing.T) {
 		{ID: "3-host", Cmd: sh(detached("ls builds")), CreatedAt: at(11 * time.Minute)},
 		{ID: "3-container", Cmd: sh("c=$(docker ps -aq --filter name=^rb- | head -1); exec docker exec \"$c\" /bin/sh -c 'ls'"), CreatedAt: at(12 * time.Minute)},
 		{ID: "3-stray", Cmd: sh(detached("cat notes")), CreatedAt: at(13 * time.Minute)},
-		{ID: "3-prepare", Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-3/out\""), CreatedAt: at(20 * time.Minute)},
-		{ID: "3-artifact", Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-3/out/x.tgz\" ] || exit 44"), CreatedAt: at(21 * time.Minute)},
+		{ID: "3c-prepare", Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-3-canon/out\""), CreatedAt: at(20 * time.Minute)},
+		{ID: "3c-artifact", Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-3-canon/out/x.tgz\" ] || exit 44"), CreatedAt: at(21 * time.Minute)},
 	} {
 		e.State = schema.ScratchExecCompleted
 		data.Execs = append(data.Execs, newExecView("sess-1", e))
@@ -474,7 +474,7 @@ func TestComposeTrajectory(t *testing.T) {
 	}
 	want := map[int][]string{
 		1: {"inference proposal", "build iter-1 · mismatch"},
-		3: {"prompt", "run_on_host", "exec · completed · exit 0 · N/A", "build iter-3 · succeeded"},
+		3: {"prompt", "run_on_host", "exec · completed · exit 0 · N/A", "build iter-3-canon · succeeded"},
 	}
 	if diff := cmp.Diff(want, titles); diff != "" {
 		t.Errorf("event titles (-want +got):\n%s", diff)

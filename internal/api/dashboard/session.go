@@ -259,8 +259,8 @@ type BuildAttemptView struct {
 	Steps   []BuildStep
 }
 
-// iterOfBuildID maps build label iter-<n> to iteration n.
-var iterOfBuildID = regexp.MustCompile(`^iter-(\d+)$`)
+// iterOfBuildID maps build labels iter-<n> and iter-<n>-canon to iteration n.
+var iterOfBuildID = regexp.MustCompile(`^iter-(\d+)(?:-canon)?$`)
 
 // composeTrajectory adds the exec ledger to the iteration groups. Machinery
 // collapses into one attempt per build. Keepalives, tool execs the transcript
