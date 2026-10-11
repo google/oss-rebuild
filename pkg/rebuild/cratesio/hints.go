@@ -10,6 +10,26 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+func semverMax(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" || semver.Cmp(a, b) >= 0 {
+		return a
+	}
+	return b
+}
+
+func semverMin(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" || semver.Cmp(a, b) <= 0 {
+		return a
+	}
+	return b
+}
+
 // Compiled regex patterns for detecting Rust version requirements
 // TODO: These should be declarative and paired with semver comparisons.
 var (
@@ -89,41 +109,38 @@ func cargoWrote(re *regexp.Regexp, published, orig string) bool {
 // minimum Rust version requirements based on tooling behavior changes. origText
 // is the manifest as the author wrote it (Cargo.toml.orig), empty when absent.
 func detectRustVersionBounds(cargoTomlText, origText string) (lo, hi string) {
-	hi = "999" // NOTE: Temporarily set "hi" so it will sort higher than all our candidates
+	editionFloor := packageEditionFloor(cargoTomlText)
 	// Check patterns from latest to earliest Rust version
 	if cargoWrote(autoLibRegex, cargoTomlText, origText) {
-		lo = max("1.83.0", lo)
+		lo = semverMax("1.83.0", lo)
 	}
 	if cargoWrote(autoTargetsRegex, cargoTomlText, origText) {
-		lo = max("1.80.0", lo)
+		lo = semverMax("1.80.0", lo)
 	}
 	if debugDenormalizedRegex.MatchString(cargoTomlText) {
-		hi = min("1.70.0", hi) // After which bools were normalized to ints
+		hi = semverMin("1.70.0", hi) // After which bools were normalized to ints
 	}
 	if docExamplesRegex.MatchString(cargoTomlText) {
-		lo = max("1.67.0", lo) // Before which the property was omitted
+		lo = semverMax("1.67.0", lo) // Before which the property was omitted
 	}
 	if prettyArrayPattern.MatchString(cargoTomlText) {
-		lo = max("1.60.0", lo) // Before which arrays were cuddled
+		lo = semverMax("1.60.0", lo) // Before which arrays were cuddled
 	} else if hasInlineMultiElementArray(cargoTomlText) {
-		hi = min("1.59.0", hi) // After which multi-element arrays were pretty-printed
+		hi = semverMin("1.59.0", hi) // After which multi-element arrays were pretty-printed
 	}
 	if modernHeaderPattern.MatchString(cargoTomlText) {
-		lo = max("1.55.0", lo)
+		lo = semverMax("1.55.0", lo)
 	} else {
-		hi = min("1.54.0", hi)
+		hi = semverMin("1.54.0", hi)
 	}
 	if hasResolverTwo(cargoTomlText) {
-		lo = max("1.51.0", lo)
+		lo = semverMax("1.51.0", lo)
 	}
-	if hi == "999" {
+	if editionFloor != "" {
+		lo = semverMax(editionFloor, lo)
+	}
+	if hi != "" && lo != "" && semver.Cmp(hi, lo) < 0 {
 		hi = ""
-	}
-	if editionLo := packageEditionFloor(cargoTomlText); editionLo != "" {
-		lo = max(editionLo, lo)
-		if hi != "" && semver.Cmp(hi, lo) < 0 {
-			hi = ""
-		}
 	}
 	return
 }
