@@ -48,6 +48,14 @@ var (
 	autoTargetsRegex = regexp.MustCompile(`(?m)^\s*autobins\s*=\s*false\s*$`)
 	// autoLibRegex matches the switch that form gained in Cargo 1.83 (rust-lang/cargo#14591).
 	autoLibRegex = regexp.MustCompile(`(?m)^\s*autolib\s*=\s*false\s*$`)
+	// resolverOneRegex matches resolver = "1" written by Cargo 1.64+ (#10911/#10961, backported #10970)
+	// when workspace resolver differs from edition-2021 default.
+	resolverOneRegex = regexp.MustCompile(`(?m)^\s*resolver\s*=\s*["']1["']\s*$`)
+	// resolverTwoRegex matches resolver = "2" in Cargo.toml.
+	resolverTwoRegex = regexp.MustCompile(`(?m)^\s*resolver\s*=\s*["']2["']\s*$`)
+	// featuresSectionRegex and targetOrDepSectionRegex detect section ordering in Cargo.toml.
+	featuresSectionRegex    = regexp.MustCompile(`(?m)^\[features\]\r?$`)
+	targetOrDepSectionRegex = regexp.MustCompile(`(?m)^(\[(lib|(dev-|build-)?dependencies)(\.|\])|\[\[(bin|example|test|bench)\]\])`)
 )
 
 func packageEditionFloor(cargoTomlText string) string {
@@ -116,6 +124,23 @@ func detectRustVersionBounds(cargoTomlText, origText string) (lo, hi string) {
 	}
 	if cargoWrote(autoTargetsRegex, cargoTomlText, origText) {
 		lo = semverMax("1.80.0", lo)
+	}
+	if cargoWrote(resolverOneRegex, cargoTomlText, origText) {
+		lo = semverMax("1.64.0", lo)
+	} else if editionFloor == "1.56.0" && cargoWrote(resolverTwoRegex, cargoTomlText, origText) {
+		// Cargo 1.56..1.63 wrote redundant resolver = "2" on edition = "2021" crates (#10961).
+		lo = semverMax("1.56.0", lo)
+		hi = semverMin("1.63.0", hi)
+	}
+	// Cargo 1.85 (#14931) moved [features] before target tables ([lib], [[bin]], etc.) and [*dependencies].
+	if featIdx := featuresSectionRegex.FindStringIndex(cargoTomlText); featIdx != nil {
+		if otherIdx := targetOrDepSectionRegex.FindStringIndex(cargoTomlText); otherIdx != nil {
+			if featIdx[0] < otherIdx[0] {
+				lo = semverMax("1.85.0", lo)
+			} else {
+				hi = semverMin("1.84.1", hi)
+			}
+		}
 	}
 	if debugDenormalizedRegex.MatchString(cargoTomlText) {
 		hi = semverMin("1.70.0", hi) // After which bools were normalized to ints
