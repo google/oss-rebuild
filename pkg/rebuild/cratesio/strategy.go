@@ -130,7 +130,7 @@ var toolkit = []*flow.Tool{
 			Runs: textwrap.Dedent(`
 				export CARGO_TARGET_DIR="$PWD/target"
 				{{if and (ne .Location.Dir ".") (ne .Location.Dir "")}}(cd {{.With.dir}} && {{end -}}
-				/root/.cargo/bin/cargo package --no-verify{{if eq .With.excludeLockfile "true"}} --exclude-lockfile{{end}}
+				/root/.cargo/bin/cargo +{{.With.rustVersion}} package --no-verify{{if eq .With.excludeLockfile "true"}} --exclude-lockfile{{end}}
 				{{- if and (ne .Location.Dir ".") (ne .Location.Dir "")}}){{end}}`)[1:],
 			Needs: []string{"rustup"},
 		}},
