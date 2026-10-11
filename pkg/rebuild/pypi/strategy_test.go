@@ -11,18 +11,6 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
-const defaultSource = `git checkout --force 'the_ref'
-if [ -f .gitmodules ]; then
-  git config --global url."https://github.com/".insteadOf "git@github.com:" || true
-  git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
-  git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
-  git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
-  git config --global url."https://".insteadOf "git://" || true
-  git submodule sync --recursive || true
-  GIT_TERMINAL_PROMPT=0 git submodule update --init || true
-  GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
-fi`
-
 func TestPureWheelBuild(t *testing.T) {
 	defaultLocation := rebuild.Location{
 		Dir:  "the_dir", // Changed due to directory parsing logic in infer
@@ -42,7 +30,7 @@ func TestPureWheelBuild(t *testing.T) {
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build
 /deps/bin/pip install 'req_1'
@@ -63,7 +51,7 @@ func TestPureWheelBuild(t *testing.T) {
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build
 /deps/bin/pip install 'setuptools<=56.2.0'`,
@@ -83,7 +71,7 @@ func TestPureWheelBuild(t *testing.T) {
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build
 /deps/bin/pip install 'uv-build==0.10.0'`,
@@ -102,7 +90,7 @@ func TestPureWheelBuild(t *testing.T) {
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build
 /deps/bin/pip install 'req_1<='\''1.2.3'\'''`,
@@ -120,7 +108,7 @@ func TestPureWheelBuild(t *testing.T) {
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --wheel -n the_dir",
@@ -138,7 +126,7 @@ func TestPureWheelBuild(t *testing.T) {
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build
 export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple`,
@@ -156,7 +144,7 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple`,
 			},
 			rebuild.Instructions{
 				Location: rebuild.Location{Ref: "the_ref", Repo: "the_repo"},
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --wheel -n",
@@ -174,7 +162,7 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple`,
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/uvx uv venv /deps --seed --python 3.11
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --wheel -n the_dir",
@@ -220,7 +208,7 @@ func TestSourceDistBuild(t *testing.T) {
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build
 /deps/bin/pip install 'req_1'
@@ -242,7 +230,7 @@ func TestSourceDistBuild(t *testing.T) {
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build
 /deps/bin/pip install 'req_1<='\''1.2.3'\'''`,
@@ -260,7 +248,7 @@ func TestSourceDistBuild(t *testing.T) {
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --sdist -n the_dir",
@@ -278,7 +266,7 @@ func TestSourceDistBuild(t *testing.T) {
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build
 export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple`,
@@ -296,7 +284,7 @@ export PIP_INDEX_URL=http://pypi:2006-01-02T03:04:05Z@orange/simple`,
 			},
 			rebuild.Instructions{
 				Location: rebuild.Location{Ref: "the_ref", Repo: "the_repo"},
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/python3 -m venv /deps
 /deps/bin/pip install build`,
 				Build: "/deps/bin/python3 -m build --sdist -n",

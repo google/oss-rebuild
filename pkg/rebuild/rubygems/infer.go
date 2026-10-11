@@ -104,19 +104,31 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 
 	// Locate the gemspec file within the repo tree, unless dir was set explicitly.
 	var gemspec string
-	if dir == "" {
-		if hash, err := rcfg.Repository.ResolveRevision(plumbing.Revision(ref)); err != nil {
-			log.Printf("warning: failed to resolve ref %s for gemspec search: %v", ref, err)
-		} else if commit, err := rcfg.Repository.CommitObject(*hash); err != nil {
-			log.Printf("warning: failed to get commit for ref %s: %v", ref, err)
-		} else if gemspecPath, err := findGemspec(rcfg.Repository, commit, t.Package); err != nil {
-			log.Printf("warning: gemspec search failed for %s: %v", t.Package, err)
-		} else {
-			gemspec = path.Base(gemspecPath)
-			dir = rebuild.DirOf(gemspecPath)
-		}
+	var commitTree *object.Tree
+	if hash, err := rcfg.Repository.ResolveRevision(plumbing.Revision(ref)); err != nil {
+		log.Printf("warning: failed to resolve ref %s for gemspec search: %v", ref, err)
+	} else if commit, err := rcfg.Repository.CommitObject(*hash); err != nil {
+		log.Printf("warning: failed to get commit for ref %s: %v", ref, err)
 	} else {
-		// TODO: Find gemspec when dir hint provided.
+		commitTree, _ = commit.Tree()
+		if dir == "" {
+			if gemspecPath, err := findGemspec(rcfg.Repository, commit, t.Package); err != nil {
+				log.Printf("warning: gemspec search failed for %s: %v", t.Package, err)
+			} else {
+				gemspec = path.Base(gemspecPath)
+				dir = rebuild.DirOf(gemspecPath)
+			}
+		} else {
+			// TODO: Find gemspec when dir hint provided.
+		}
+	}
+
+	var submodules []rebuild.Submodule
+	if lh != nil {
+		submodules = lh.Submodules
+	}
+	if commitTree != nil {
+		submodules = rebuild.MergeSubmodules(submodules, rebuild.Submodules(commitTree, rcfg.URI))
 	}
 
 	// Infer Ruby and RubyGems versions from the upstream gem's metadata.
@@ -152,9 +164,10 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 
 	return &GemBuild{
 		Location: rebuild.Location{
-			Repo: rcfg.URI,
-			Dir:  dir,
-			Ref:  ref,
+			Repo:       rcfg.URI,
+			Dir:        dir,
+			Ref:        ref,
+			Submodules: submodules,
 		},
 		RubyVersion:     rubyVersion,
 		RubygemsVersion: rubygemsVersion,

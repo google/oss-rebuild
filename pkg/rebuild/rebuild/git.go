@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
+	"path"
 	"regexp"
 	"slices"
 	"sort"
@@ -16,11 +18,15 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/iterx"
+	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/pkg/errors"
 )
 
@@ -171,6 +177,9 @@ func allTags(repo *git.Repository) (tags []string, err error) {
 //
 // If rebuild.RepoCacheClientID is present, a Git cache service will be used
 // instead of the remote defined in CloneOptions.URL.
+//
+// NOTE: Inference callers currently disable submodule recursion. Supporting
+// nested submodule discovery only requires cloning submodules here.
 func LoadRepo(ctx context.Context, pkg string, s storage.Storer, fs billy.Filesystem, opt git.CloneOptions) (*gitx.Repo, error) {
 	r, err := gitx.Reuse(ctx, s, fs, &opt)
 	switch err {
@@ -213,4 +222,115 @@ func LoadRepo(ctx context.Context, pkg string, s storage.Storer, fs billy.Filesy
 		return nil, errors.Wrap(err, "using existing")
 	}
 	return r, nil
+}
+
+// resolveSubmoduleURL resolves a submodule URL from .gitmodules against
+// repoURI (when relative) and canonicalizes it to HTTPS.
+func resolveSubmoduleURL(repoURI, rawURL string) string {
+	u := strings.TrimSpace(rawURL)
+	if u == "" {
+		return ""
+	}
+	if (strings.HasPrefix(u, "./") || strings.HasPrefix(u, "../")) && repoURI != "" {
+		if base, err := url.Parse(strings.TrimSuffix(strings.TrimRight(repoURI, "/"), ".git")); err == nil && base.Host != "" {
+			base.Path = path.Clean(path.Join("/", base.Path, u))
+			u = base.String()
+		}
+	}
+	if canon, err := uri.CanonicalizeRepoURI(u); err == nil {
+		return canon
+	}
+	if parsed, err := url.Parse(u); err == nil && parsed.Host != "" && parsed.User != nil {
+		parsed.User = nil
+		parsed.Host = parsed.Hostname()
+		if canon, err := uri.CanonicalizeRepoURI(parsed.String()); err == nil {
+			return canon
+		}
+	}
+	if rest, ok := strings.CutPrefix(u, "git@"); ok {
+		if host, repoPath, ok := strings.Cut(rest, ":"); ok && host != "" && repoPath != "" {
+			if canon, err := uri.CanonicalizeRepoURI("https://" + host + "/" + strings.TrimLeft(repoPath, "/")); err == nil {
+				return canon
+			}
+		}
+	}
+	return u
+}
+
+// Submodules returns the sorted, deduplicated Submodules defined in
+// .gitmodules that exist as submodule gitlinks in tree.
+func Submodules(tree *object.Tree, repoURI string) []Submodule {
+	if tree == nil {
+		return nil
+	}
+	gmFile, err := tree.File(".gitmodules")
+	if err != nil {
+		return nil
+	}
+	contents, err := gmFile.Contents()
+	if err != nil {
+		return nil
+	}
+	modules := config.NewModules()
+	if err := modules.Unmarshal([]byte(contents)); err != nil {
+		return nil
+	}
+	var subs []Submodule
+	for _, sub := range modules.Submodules {
+		p := path.Clean(strings.TrimPrefix(strings.TrimSpace(sub.Path), "./"))
+		if p == "" || p == "." {
+			continue
+		}
+		repo := resolveSubmoduleURL(repoURI, sub.URL)
+		if repo == "" {
+			continue
+		}
+		entry, err := tree.FindEntry(p)
+		if err == nil && entry.Mode == filemode.Submodule {
+			subs = append(subs, Submodule{
+				Repo: repo,
+				Ref:  entry.Hash.String(),
+				Dir:  p,
+			})
+		}
+	}
+	return MergeSubmodules(subs)
+}
+
+// MergeSubmodules returns the sorted, deduplicated union of Submodules across
+// lists keyed by Dir, or nil if none exist. When multiple entries share the
+// same Dir, earlier non-empty Repo and Ref fields take precedence and missing
+// fields are filled from later entries.
+func MergeSubmodules(lists ...[]Submodule) []Submodule {
+	byDir := make(map[string]Submodule)
+	for _, list := range lists {
+		for _, sub := range list {
+			p := path.Clean(strings.TrimPrefix(strings.TrimSpace(sub.Dir), "./"))
+			if p == "" || p == "." {
+				continue
+			}
+			cur, ok := byDir[p]
+			if !ok {
+				cur = Submodule{Dir: p}
+			}
+			if cur.Repo == "" && sub.Repo != "" {
+				cur.Repo = sub.Repo
+			}
+			if cur.Ref == "" && sub.Ref != "" {
+				cur.Ref = sub.Ref
+			}
+			byDir[p] = cur
+		}
+	}
+	if len(byDir) == 0 {
+		return nil
+	}
+	out := make([]Submodule, 0, len(byDir))
+	for _, sub := range byDir {
+		out = append(out, sub)
+	}
+	slices.SortFunc(out, func(a, b Submodule) int {
+		return strings.Compare(a.Dir, b.Dir)
+	})
+	return out
 }

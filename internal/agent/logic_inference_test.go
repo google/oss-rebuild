@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
@@ -31,7 +32,7 @@ func TestToolchainStrategy(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GenerateFor: %v", err)
 			}
-			if inst.Source == "" || inst.Location != loc {
+			if inst.Source == "" || cmp.Diff(loc, inst.Location) != "" {
 				t.Errorf("source = %q at %+v, want a checkout of %+v", inst.Source, inst.Location, loc)
 			}
 			if !holds(inst.Deps, want.deps) {

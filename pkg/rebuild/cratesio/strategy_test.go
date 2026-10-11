@@ -17,17 +17,6 @@ func TestCratesIOCargoPackage(t *testing.T) {
 		Ref:  "the_ref",
 		Repo: "the_repo",
 	}
-	defaultSource := `git checkout --force 'the_ref'
-if [ -f .gitmodules ]; then
-  git config --global url."https://github.com/".insteadOf "git@github.com:" || true
-  git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
-  git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
-  git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
-  git config --global url."https://".insteadOf "git://" || true
-  git submodule sync --recursive || true
-  GIT_TERMINAL_PROMPT=0 git submodule update --init || true
-  GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
-fi`
 	tests := []struct {
 		name     string
 		strategy rebuild.Strategy
@@ -43,7 +32,7 @@ fi`
 			rebuild.BuildEnv{HasRepo: true},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
 # NOTE: Using current crates.io registry`,
 				Build: `export CARGO_TARGET_DIR="$PWD/target"
@@ -64,7 +53,7 @@ fi`
 			rebuild.BuildEnv{HasRepo: true},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.87.0
 # NOTE: Using current crates.io registry`,
 				Build: `export CARGO_TARGET_DIR="$PWD/target"
@@ -90,7 +79,7 @@ fi`
 					Ref:  "the_ref",
 					Repo: "the_repo",
 				},
-				Source: defaultSource,
+				Source: "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
 # NOTE: Using current crates.io registry`,
 				Build: `export CARGO_TARGET_DIR="$PWD/target"
@@ -117,7 +106,7 @@ fi`
 					Ref:  "the_ref",
 					Repo: "the_repo",
 				},
-				Source: defaultSource,
+				Source: "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
 mkdir -p /.cargo
 printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "sparse+http://cargosparse:abc1234@localhost:8081/"\n' > /.cargo/config.toml`,
@@ -141,7 +130,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 			rebuild.BuildEnv{HasRepo: true},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `echo 'lock_base64' | base64 -d > Cargo.lock
 /usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
 # NOTE: Using current crates.io registry`,
@@ -166,7 +155,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 			rebuild.BuildEnv{HasRepo: true},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
 # NOTE: Using current crates.io registry`,
 				Build: `export CARGO_TARGET_DIR="$PWD/target"
@@ -189,7 +178,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 			rebuild.BuildEnv{HasRepo: true},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `echo 'lock_base64' | base64 -d > Cargo.lock
 /usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
 # NOTE: Using current crates.io registry`,
@@ -210,7 +199,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 			rebuild.BuildEnv{HasRepo: true},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.55.0
 # NOTE: Using current crates.io registry`,
 				Build: `export CARGO_TARGET_DIR="$PWD/target"
@@ -232,7 +221,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregist
 			rebuild.BuildEnv{HasRepo: true, TimewarpHost: "localhost:8081"},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.55.0
 mkdir -p /cargo-index
 wget -O - --header "X-Package-Names: serde,tokio" "http://cargogitarchive:abc1234@localhost:8081/index.git.tar" | tar -xf - -C /cargo-index
@@ -258,7 +247,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-lo
 			rebuild.BuildEnv{HasRepo: true, TimewarpHost: "localhost:8081"},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.35.0
 mkdir -p /cargo-index
 wget -O - --header "X-Package-Names: serde,tokio" "http://cargogitarchive:abc1234@localhost:8081/index.git.tar" | tar -xf - -C /cargo-index
@@ -282,7 +271,7 @@ printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-lo
 			rebuild.BuildEnv{HasRepo: true, TimewarpHost: "localhost:8081"},
 			rebuild.Instructions{
 				Location: defaultLocation,
-				Source:   defaultSource,
+				Source:   "git checkout --force 'the_ref'",
 				Deps: `/usr/bin/rustup-init -y --profile minimal --default-toolchain 1.77.0
 mkdir -p /.cargo
 printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "sparse+http://cargosparse:abc1234@localhost:8081/"\n' > /.cargo/config.toml`,

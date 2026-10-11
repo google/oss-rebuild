@@ -69,6 +69,12 @@ func TestRebuildDeps_JSONRoundtrip(t *testing.T) {
 					URI:    "https://github.com/example/repo@main",
 					Digest: common.DigestSet{"sha1": "abc123def456"},
 				},
+				Submodules: []slsa1.ResourceDescriptor{
+					{
+						Name:   "git+https://github.com/example/sub",
+						Digest: common.DigestSet{"sha1": "def456abc123"},
+					},
+				},
 				Images: []slsa1.ResourceDescriptor{
 					{
 						Name:   "docker.io/library/node:18",

@@ -100,7 +100,13 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}
 		return nil, errors.Errorf("no git ref")
 	}
-	loc := rebuild.Location{Repo: repoConfig.URI, Dir: dir, Ref: ref}
+	var submodules []rebuild.Submodule
+	if refCommit, err := repoConfig.Repository.CommitObject(plumbing.NewHash(ref)); err == nil {
+		if tree, err := refCommit.Tree(); err == nil {
+			submodules = rebuild.Submodules(tree, repoConfig.URI)
+		}
+	}
+	loc := rebuild.Location{Repo: repoConfig.URI, Dir: dir, Ref: ref, Submodules: submodules}
 	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
 	if err != nil {
 		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc}, Err: errors.Wrap(err, "fetching JDK")}

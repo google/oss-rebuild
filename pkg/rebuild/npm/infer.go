@@ -249,9 +249,11 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 	var versionOverride string
 	loc := rebuild.Location{Repo: rcfg.URI, Dir: rcfg.Dir}
-	if lh, ok := hint.(*rebuild.LocationHint); hint != nil && !ok {
+	lh, ok := hint.(*rebuild.LocationHint)
+	if hint != nil && !ok {
 		return nil, errors.Errorf("unsupported hint type: %T", hint)
-	} else if lh != nil && lh.Ref != "" {
+	}
+	if lh != nil && lh.Ref != "" {
 		loc.Ref = lh.Ref
 		if lh.Dir != "" {
 			loc.Dir = lh.Dir
@@ -260,6 +262,14 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		loc, versionOverride, err = InferLocation(t, vmeta, rcfg)
 		if err != nil {
 			return nil, err
+		}
+	}
+	if lh != nil {
+		loc.Submodules = lh.Submodules
+	}
+	if c, err := rcfg.Repository.CommitObject(plumbing.NewHash(loc.Ref)); err == nil {
+		if tree, err := c.Tree(); err == nil {
+			loc.Submodules = rebuild.MergeSubmodules(loc.Submodules, rebuild.Submodules(tree, loc.Repo))
 		}
 	}
 	s, err := inferBuild(rcfg, vmeta, loc, npmv, versionOverride, ut)

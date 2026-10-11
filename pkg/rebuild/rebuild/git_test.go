@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 )
 
 func TestMatchTag(t *testing.T) {
@@ -226,4 +227,76 @@ func must[T any](t T, err error) T {
 		panic(err)
 	}
 	return t
+}
+
+func TestResolveSubmoduleURL(t *testing.T) {
+	tests := []struct {
+		repoURI string
+		rawURL  string
+		want    string
+	}{
+		{"https://github.com/org/repo", "https://github.com/eggert/tz.git", "https://github.com/eggert/tz"},
+		{"https://github.com/org/repo", "git@github.com:example/codegen.git", "https://github.com/example/codegen"},
+		{"https://github.com/org/repo", "../rel-repo.git", "https://github.com/org/rel-repo"},
+		{"https://github.com/org/repo", "ssh://git@git.example.org/grp/thing.git", "https://git.example.org/grp/thing.git"},
+		{"https://github.com/org/repo", "", ""},
+	}
+	for _, tt := range tests {
+		if got := resolveSubmoduleURL(tt.repoURI, tt.rawURL); got != tt.want {
+			t.Errorf("resolveSubmoduleURL(%q, %q) = %q, want %q", tt.repoURI, tt.rawURL, got, tt.want)
+		}
+	}
+}
+
+func TestSubmodules(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{
+		ID: "c1",
+		Files: gitxtest.FileContent{
+			".gitmodules": `[submodule "tz"]
+	path = chrono-tz/tz
+	url = https://github.com/eggert/tz.git
+[submodule "stale"]
+	path = deleted/submodule
+	url = https://github.com/example/deleted.git
+[submodule "rel"]
+	path = ./vendor/rel
+	url = ../rel-repo.git
+[submodule "empty"]
+	path = vendor/empty
+	url =
+`,
+		},
+		Submodules: map[string]string{
+			"chrono-tz/tz": sha,
+			"vendor/empty": sha,
+			"vendor/rel":   sha,
+		},
+	}}, nil))
+	tree := must(must(repo.CommitObject(repo.Commits["c1"])).Tree())
+	got := Submodules(tree, "https://github.com/chronotope/chrono-tz")
+	want := []Submodule{
+		{Repo: "https://github.com/eggert/tz", Ref: sha, Dir: "chrono-tz/tz"},
+		{Repo: "https://github.com/chronotope/rel-repo", Ref: sha, Dir: "vendor/rel"},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Submodules() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestMergeSubmodules(t *testing.T) {
+	hint := []Submodule{
+		{Dir: "tools/codegen", Repo: "https://github.com/mirror/codegen"},
+	}
+	discovered := []Submodule{
+		{Dir: "vendor/rel", Repo: "https://github.com/example/rel", Ref: "aaaa"},
+		{Dir: "./tools/codegen", Repo: "https://github.com/example/codegen", Ref: "bbbb"},
+	}
+	want := []Submodule{
+		{Dir: "tools/codegen", Repo: "https://github.com/mirror/codegen", Ref: "bbbb"},
+		{Dir: "vendor/rel", Repo: "https://github.com/example/rel", Ref: "aaaa"},
+	}
+	if diff := cmp.Diff(want, MergeSubmodules(hint, discovered)); diff != "" {
+		t.Errorf("MergeSubmodules() mismatch (-want +got):\n%s", diff)
+	}
 }

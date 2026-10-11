@@ -239,7 +239,16 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			return nil, err
 		}
 	}
-	loc := rebuild.Location{Repo: rcfg.URI, Ref: ref, Dir: dir}
+	var submodules []rebuild.Submodule
+	if lh != nil {
+		submodules = lh.Submodules
+	}
+	if c, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref)); err == nil {
+		if tree, err := c.Tree(); err == nil {
+			submodules = rebuild.MergeSubmodules(submodules, rebuild.Submodules(tree, rcfg.URI))
+		}
+	}
+	loc := rebuild.Location{Repo: rcfg.URI, Ref: ref, Dir: dir, Submodules: submodules}
 	s, err := inferBuild(ctx, t, mux, rcfg, vmeta, b, loc)
 	if err != nil {
 		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc, Published: vmeta.Created}, Err: err}
@@ -386,11 +395,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	excludeLockfile := lockContent == nil && semver.Cmp(rustVersion, "1.87.0") >= 0
 
 	return &CratesIOCargoPackage{
-		Location: rebuild.Location{
-			Repo: rcfg.URI,
-			Ref:  ref,
-			Dir:  dir,
-		},
+		Location:        loc,
 		RustVersion:     rustVersion,
 		ExcludeLockfile: excludeLockfile,
 		RegistryCommit:  indexCommit,

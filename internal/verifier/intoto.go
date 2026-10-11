@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/oss-rebuild/internal/hashext"
 	"github.com/google/oss-rebuild/pkg/attestation"
-	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/in-toto/in-toto-golang/in_toto"
 	"github.com/in-toto/in-toto-golang/in_toto/slsa_provenance/common"
 	"github.com/pkg/errors"
@@ -87,12 +86,12 @@ func makeDigestSet(hs ...hashext.TypedHash) common.DigestSet {
 	return ret
 }
 
-// GitDigestSet returns a DigestSet corresponding to the provided Location's git commit hash.
-func GitDigestSet(loc rebuild.Location) common.DigestSet {
+// GitDigestSet returns a DigestSet corresponding to the provided git commit hash.
+func GitDigestSet(ref string) common.DigestSet {
 	for _, h := range []crypto.Hash{crypto.SHA1, crypto.SHA256} {
 		// Compare hex len to bytes len.
-		if len(loc.Ref) == 2*h.Size() {
-			return common.DigestSet{ToNISTName(h): loc.Ref}
+		if len(ref) == 2*h.Size() {
+			return common.DigestSet{ToNISTName(h): ref}
 		}
 	}
 	panic("unsupported git ref")

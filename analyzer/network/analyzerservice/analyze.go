@@ -335,7 +335,15 @@ func createNetworkAttestations(ctx context.Context, t rebuild.Target, strategy r
 		if inst.Location.Ref != "" {
 			deps.Source = &slsa1.ResourceDescriptor{
 				Name:   "git+" + inst.Location.Repo,
-				Digest: verifier.GitDigestSet(inst.Location),
+				Digest: verifier.GitDigestSet(inst.Location.Ref),
+			}
+		}
+		for _, sub := range inst.Location.Submodules {
+			if sub.Ref != "" {
+				deps.Submodules = append(deps.Submodules, slsa1.ResourceDescriptor{
+					Name:   "git+" + sub.Repo,
+					Digest: verifier.GitDigestSet(sub.Ref),
+				})
 			}
 		}
 	}

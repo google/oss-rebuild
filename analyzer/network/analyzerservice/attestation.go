@@ -31,6 +31,8 @@ type NetworkRebuildDeps struct {
 	AttestationBundle slsa1.ResourceDescriptor
 	// Source points to the source code repository descriptor
 	Source *slsa1.ResourceDescriptor
+	// Submodules contains git submodule repository descriptors used in the build
+	Submodules []slsa1.ResourceDescriptor
 	// Images contains container image descriptors used in the build
 	Images []slsa1.ResourceDescriptor
 }
@@ -42,6 +44,7 @@ func (d NetworkRebuildDeps) MarshalJSON() ([]byte, error) {
 	if d.Source != nil {
 		rd = append(rd, *d.Source)
 	}
+	rd = append(rd, d.Submodules...)
 	rd = append(rd, d.Images...)
 	return json.Marshal(rd)
 }
@@ -54,7 +57,11 @@ func (d *NetworkRebuildDeps) UnmarshalJSON(data []byte) error {
 	}
 	for _, desc := range descriptors {
 		if strings.HasPrefix(desc.Name, "git+") {
-			d.Source = &desc
+			if d.Source == nil {
+				d.Source = &desc
+			} else {
+				d.Submodules = append(d.Submodules, desc)
+			}
 		} else {
 			d.Images = append(d.Images, desc)
 		}

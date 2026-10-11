@@ -81,6 +81,8 @@ type RebuildDeps struct {
 	// Source points to the source code repository descriptor
 	// TODO: This should be mandatory
 	Source *slsa1.ResourceDescriptor
+	// Submodules contains git submodule repository descriptors used in the build
+	Submodules []slsa1.ResourceDescriptor
 	// Images contains container image descriptors used in the build
 	Images []slsa1.ResourceDescriptor
 	// BuildFix contains optional build fix descriptor for known issues
@@ -93,6 +95,7 @@ func (d RebuildDeps) MarshalJSON() ([]byte, error) {
 	if d.Source != nil {
 		rd = append(rd, *d.Source)
 	}
+	rd = append(rd, d.Submodules...)
 	rd = append(rd, d.Images...)
 	if d.BuildFix != nil {
 		rd = append(rd, *d.BuildFix)
@@ -108,7 +111,11 @@ func (d *RebuildDeps) UnmarshalJSON(data []byte) error {
 	}
 	for _, desc := range descriptors {
 		if strings.HasPrefix(desc.Name, "git+") {
-			d.Source = &desc
+			if d.Source == nil {
+				d.Source = &desc
+			} else {
+				d.Submodules = append(d.Submodules, desc)
+			}
 		} else if desc.Name == DependencyBuildFix {
 			d.BuildFix = &desc
 		} else {

@@ -12,18 +12,6 @@ import (
 )
 
 func TestStrategies(t *testing.T) {
-	defaultSource := `git clone https://foo.bar .
-git checkout --force 'ref'
-if [ -f .gitmodules ]; then
-  git config --global url."https://github.com/".insteadOf "git@github.com:" || true
-  git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:" || true
-  git config --global url."https://bitbucket.org/".insteadOf "git@bitbucket.org:" || true
-  git config --global url."https://codeberg.org/".insteadOf "git@codeberg.org:" || true
-  git config --global url."https://".insteadOf "git://" || true
-  git submodule sync --recursive || true
-  GIT_TERMINAL_PROMPT=0 git submodule update --init || true
-  GIT_TERMINAL_PROMPT=0 git submodule foreach --recursive 'git submodule sync || true; GIT_TERMINAL_PROMPT=0 git submodule update --init || true' || true
-fi`
 	tests := []struct {
 		name     string
 		strategy rebuild.Strategy
@@ -49,7 +37,7 @@ fi`
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "wget", "maven"},
 				},
-				Source: defaultSource,
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
 					wget -q -O - "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.1%2B13/OpenJDK11U-jdk_x64_linux_hotspot_11.0.1_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
@@ -80,7 +68,7 @@ fi`
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "wget"},
 				},
-				Source: defaultSource,
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
 					wget -q -O - "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.1%2B13/OpenJDK11U-jdk_x64_linux_hotspot_11.0.1_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],
@@ -112,7 +100,7 @@ fi`
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "wget", "zip"},
 				},
-				Source: defaultSource,
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
 					wget -q -O - "https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.1%2B13/OpenJDK11U-jdk_x64_linux_hotspot_11.0.1_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
@@ -147,7 +135,7 @@ fi`
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "wget", "ca-certificates", "maven"},
 				},
-				Source: defaultSource,
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
                     mkdir -p /opt/jdk
                     wget -q -O - "https://github.com/AdoptOpenJDK/openjdk10-binaries/releases/download/jdk-10.0.2%2B13.1/OpenJDK10U-jdk_x64_linux_hotspot_10.0.2_13.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
@@ -191,7 +179,7 @@ fi`
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "wget", "ca-certificates"},
 				},
-				Source: defaultSource,
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
                     mkdir -p /opt/jdk
                     wget -q -O - "https://github.com/AdoptOpenJDK/openjdk9-binaries/releases/download/jdk-9%2B181/OpenJDK9U-jdk_x64_linux_hotspot_9_181.tar.gz" | tar -xzf - --strip-components=1 -C /opt/jdk
@@ -235,7 +223,7 @@ fi`
 				Requires: rebuild.RequiredEnv{
 					SystemDeps: []string{"git", "wget", "maven"},
 				},
-				Source: defaultSource,
+				Source: "git clone https://foo.bar .\ngit checkout --force 'ref'",
 				Deps: textwrap.Dedent(`
 					mkdir -p /opt/jdk
 					wget -q -O - "http://not-found.invalid/" | tar -xzf - --strip-components=1 -C /opt/jdk`)[1:],

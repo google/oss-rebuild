@@ -15,6 +15,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/memory"
@@ -31,16 +33,17 @@ type RepositoryOptions struct {
 type FileContent map[string]string
 
 type Commit struct {
-	ID      string      `yaml:"id"`
-	Message string      `yaml:"message"`
-	Author  string      `yaml:"author,omitempty"`
-	Parent  string      `yaml:"parent,omitempty"`
-	Parents []string    `yaml:"parents,omitempty"`
-	Branch  string      `yaml:"branch,omitempty"`
-	Tag     string      `yaml:"tag,omitempty"`
-	Tags    []string    `yaml:"tags,omitempty"`
-	Time    time.Time   `yaml:"time,omitempty"`
-	Files   FileContent `yaml:"files"`
+	ID         string            `yaml:"id"`
+	Message    string            `yaml:"message"`
+	Author     string            `yaml:"author,omitempty"`
+	Parent     string            `yaml:"parent,omitempty"`
+	Parents    []string          `yaml:"parents,omitempty"`
+	Branch     string            `yaml:"branch,omitempty"`
+	Tag        string            `yaml:"tag,omitempty"`
+	Tags       []string          `yaml:"tags,omitempty"`
+	Time       time.Time         `yaml:"time,omitempty"`
+	Files      FileContent       `yaml:"files"`
+	Submodules map[string]string `yaml:"submodules,omitempty"`
 }
 
 type GitHistory struct {
@@ -96,6 +99,23 @@ func CreateRepo(commits []Commit, opts *RepositoryOptions) (*Repository, error) 
 		err = createFiles(w, c.Files)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating files")
+		}
+		if len(c.Submodules) > 0 {
+			idx, err := repo.Storer.Index()
+			if err != nil {
+				return nil, errors.Wrap(err, "loading index")
+			}
+			for subPath, sha := range c.Submodules {
+				idx.Remove(subPath)
+				idx.Entries = append(idx.Entries, &index.Entry{
+					Name: subPath,
+					Mode: filemode.Submodule,
+					Hash: plumbing.NewHash(sha),
+				})
+			}
+			if err := repo.Storer.SetIndex(idx); err != nil {
+				return nil, errors.Wrap(err, "updating index")
+			}
 		}
 
 		// Get parent commits
