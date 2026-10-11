@@ -339,6 +339,11 @@ func TestLoadTranscriptOrder(t *testing.T) {
 	}
 }
 
+// detached wraps cmd the way run_on_host does (internal/agent detachOutput).
+func detached(cmd string) string {
+	return "out=$(mktemp); ( " + cmd + "\n) >\"$out\" 2>&1; rc=$?; cat \"$out\"; rm -f \"$out\"; exit $rc"
+}
+
 // TestClassifyExec pins the argv shape of each emitter execClass tracks.
 func TestClassifyExec(t *testing.T) {
 	const dir = "/home/builder/builds/iter-2"
@@ -356,7 +361,7 @@ func TestClassifyExec(t *testing.T) {
 		"exec /home/builder/tools/diffr --summary --label rebuild --label upstream /home/builder/builds/iter-2/out/lodash-4.17.21.tgz.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized",
 		"",
 	}, "\n")
-	container := `c=$(docker ps -aq --filter name=^rb- | head -1); [ -n "$c" ] || { echo 'no build container found; run a build first' >&2; exit 125; }; docker start "$c" >/dev/null; exec docker exec "$c" /bin/sh -c 'npm ls'`
+	container := `c=$(docker ps -aq --filter name=^rb- | head -1); [ -n "$c" ] || { echo 'no build container found; run a build first' >&2; exit 125; }; docker start "$c" >/dev/null; exec docker exec "$c" /bin/sh -c '` + detached("npm ls") + `'`
 	for _, tc := range []struct {
 		name string
 		cmd  []string
@@ -395,7 +400,7 @@ func TestClassifyExec(t *testing.T) {
 		want: classifiedExec{class: execToolContainer, script: container},
 	}, {
 		name: "run_on_host",
-		cmd:  []string{"/bin/sh", "-c", "cat " + dir + "/build.sh"},
+		cmd:  []string{"/bin/sh", "-c", detached("cat " + dir + "/build.sh")},
 		want: classifiedExec{class: execToolHost, script: "cat " + dir + "/build.sh"},
 	}, {
 		name: "bare sh -c",
@@ -443,9 +448,9 @@ func TestComposeTrajectory(t *testing.T) {
 		// Predates every window: ledger only.
 		{ID: "keepalive", Cmd: []string{"/bin/true"}, CreatedAt: at(6 * time.Second)},
 		// Only the host exec without a call renders.
-		{ID: "3-host", Cmd: sh("ls builds"), CreatedAt: at(11 * time.Minute)},
+		{ID: "3-host", Cmd: sh(detached("ls builds")), CreatedAt: at(11 * time.Minute)},
 		{ID: "3-container", Cmd: sh("c=$(docker ps -aq --filter name=^rb- | head -1); exec docker exec \"$c\" /bin/sh -c 'ls'"), CreatedAt: at(12 * time.Minute)},
-		{ID: "3-stray", Cmd: sh("cat notes"), CreatedAt: at(13 * time.Minute)},
+		{ID: "3-stray", Cmd: sh(detached("cat notes")), CreatedAt: at(13 * time.Minute)},
 		{ID: "3-prepare", Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-3/out\""), CreatedAt: at(20 * time.Minute)},
 		{ID: "3-artifact", Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-3/out/x.tgz\" ] || exit 44"), CreatedAt: at(21 * time.Minute)},
 	} {
