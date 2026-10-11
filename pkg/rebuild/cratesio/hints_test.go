@@ -411,6 +411,82 @@ keywords = ["one"]
 			wantLo: "1.55.0", // modernHeader sets lo=1.55; resolver absence is not evidence
 			wantHi: "",
 		},
+		{
+			name: "Cargo 1.85 features before lib lower bound",
+			cargoToml: `# to registry (e.g., crates.io) dependencies.
+[package]
+name = "my-crate"
+autolib = false
+autobins = false
+autoexamples = false
+
+[features]
+default = ["std"]
+std = []
+
+[lib]
+name = "my_crate"
+path = "src/lib.rs"
+`,
+			orig: `[package]
+name = "my-crate"
+`,
+			wantLo: "1.85.0",
+			wantHi: "",
+		},
+		{
+			name: "Cargo <=1.84.1 lib before features upper bound",
+			cargoToml: `# to registry (e.g., crates.io) dependencies.
+[package]
+name = "my-crate"
+autolib = false
+autobins = false
+autoexamples = false
+
+[lib]
+name = "my_crate"
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+`,
+			orig: `[package]
+name = "my-crate"
+`,
+			wantLo: "1.83.0",
+			wantHi: "1.84.1",
+		},
+		{
+			name: "Cargo 1.64 resolver = 1 lower bound",
+			cargoToml: `# to registry (e.g., crates.io) dependencies.
+[package]
+name = "my-crate"
+edition = "2021"
+resolver = "1"
+`,
+			orig: `[package]
+name = "my-crate"
+edition = "2021"
+`,
+			wantLo: "1.64.0",
+			wantHi: "",
+		},
+		{
+			name: "Cargo 1.56..1.63 redundant resolver = 2 on edition 2021",
+			cargoToml: `# to registry (e.g., crates.io) dependencies.
+[package]
+name = "my-crate"
+edition = "2021"
+resolver = "2"
+`,
+			orig: `[package]
+name = "my-crate"
+edition = "2021"
+`,
+			wantLo: "1.56.0",
+			wantHi: "1.63.0",
+		},
 	}
 
 	for _, tt := range tests {
