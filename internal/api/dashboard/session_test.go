@@ -152,9 +152,14 @@ func TestParseTranscriptName(t *testing.T) {
 		want: transcriptName{Iter: 2, Time: when, Part: 1, Role: "model"},
 		ok:   true,
 	}, {
-		name: "proposal",
+		name: "inference proposal",
 		in:   "1/0-inference-proposal.json",
-		want: transcriptName{Iter: 1, Proposal: true},
+		want: transcriptName{Iter: 1, Proposal: true, Inference: true},
+		ok:   true,
+	}, {
+		name: "llm proposal",
+		in:   "3/0-proposal.json",
+		want: transcriptName{Iter: 3, Proposal: true},
 		ok:   true,
 	}, {
 		name: "whole seconds keep parsing despite RFC3339Nano trimming",
