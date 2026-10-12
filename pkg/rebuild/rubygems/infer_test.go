@@ -213,7 +213,7 @@ func TestInferStrategy(t *testing.T) {
 				hint = tc.hintFn(repo.Commits[tc.wantCommitID].String())
 			}
 			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rebuild.RepoConfig{
-				Repo: gitx.Repo{Repository: repo.Repository},
+				Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer},
 				URI:  "https://github.com/test-org/test-gem",
 			}, hint)
 			if tc.wantErr {

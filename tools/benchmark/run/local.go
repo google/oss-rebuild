@@ -131,6 +131,7 @@ func (s *localExecutionService) infer(ctx context.Context, t rebuild.Target, mux
 		return nil, err
 	}
 	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, &gitx.RepositoryOptions{Worktree: memfs.New(), Storer: gitx.NewInMemoryStorer()})
+	defer rcfg.Close()
 	if err != nil {
 		return nil, err
 	}

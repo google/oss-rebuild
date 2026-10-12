@@ -43,14 +43,14 @@ func newTestRepo(t *testing.T) *gitxtest.Repository {
 
 func TestRecordRepoMetrics(t *testing.T) {
 	repo := newTestRepo(t)
-	head, err := repo.Head()
+	head, err := repo.GoGit.Head()
 	if err != nil {
 		t.Fatalf("Head: %v", err)
 	}
 	store := db.NewMemoryRepoMetrics()
 	// The non-canonical ssh alias exercises canonicalization on write.
 	fetched := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
-	rcfg := rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, FetchedAt: fetched}, URI: "git@github.com:Org/Repo.git"}
+	rcfg := rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer, FetchedAt: fetched}, URI: "git@github.com:Org/Repo.git"}
 	if err := recordRepoMetrics(context.Background(), store, rcfg); err != nil {
 		t.Fatalf("recordRepoMetrics: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestRecordRepoMetrics(t *testing.T) {
 func TestRecordRepoMetricsBadURI(t *testing.T) {
 	repo := newTestRepo(t)
 	store := db.NewMemoryRepoMetrics()
-	if err := recordRepoMetrics(context.Background(), store, rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, URI: ""}); err == nil {
+	if err := recordRepoMetrics(context.Background(), store, rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: ""}); err == nil {
 		t.Error("recordRepoMetrics(empty URI) = nil error; want error")
 	}
 }

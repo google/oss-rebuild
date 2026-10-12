@@ -30,12 +30,12 @@ func Test_listRepoFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	head, err := repo.Head()
+	head, err := repo.GoGit.Head()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	tree, err := getRepoTree(repo.Repository, head.Hash().String())
+	tree, err := getRepoTree(repo.GoGit, head.Hash().String())
 	if err != nil {
 		t.Fatal(err)
 	}

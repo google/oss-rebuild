@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/uri"
@@ -27,6 +26,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
@@ -160,10 +160,10 @@ func findGitRef(ctx context.Context, mux rebuild.RegistryMux, pkg, version strin
 	}
 	log.Printf("Version: %s, tag hash: \"%s\"", version, tagHeuristic)
 	if tagHeuristic != "" {
-		_, err = rcfg.Repository.CommitObject(plumbing.NewHash(tagHeuristic))
+		_, err = rcfg.Repository.CommitObject(git2.NewHash(tagHeuristic))
 		if err != nil {
-			switch err {
-			case plumbing.ErrObjectNotFound:
+			switch {
+			case errors.Is(err, git2.ErrObjectNotFound):
 				return "", errors.Errorf("[INTERNAL] Commit ref from tag heuristic not found in repo [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
 			default:
 				return "", errors.Wrapf(err, "Checkout failed [repo=%s,ref=%s]", rcfg.URI, tagHeuristic)
@@ -444,7 +444,7 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if lh != nil {
 		submodules = lh.Submodules
 	}
-	if commit, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref)); err == nil {
+	if commit, err := rcfg.Repository.CommitObject(git2.NewHash(ref)); err == nil {
 		if tree, err := commit.Tree(); err == nil {
 			submodules = rebuild.MergeSubmodules(submodules, rebuild.Submodules(tree, rcfg.URI))
 		}
@@ -487,7 +487,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		reqs = []string{}
 	}
 	submodules := loc.Submodules
-	commit, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref))
+	commit, err := rcfg.Repository.CommitObject(git2.NewHash(ref))
 	if err != nil {
 		return nil, errors.Wrapf(err, "Failed to get commit object")
 	}

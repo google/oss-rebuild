@@ -594,7 +594,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 			}
 			mux := rebuild.RegistryMux{NPM: &reg.HTTPRegistry{Client: &client}}
 			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rebuild.RepoConfig{
-				Repo:   gitx.Repo{Repository: repo.Repository},
+				Repo:   gitx.Repo{Repository: repo.Repository, Storer: repo.Storer},
 				URI:    "https://github.com/test-org/test-package",
 				Dir:    "",
 				RefMap: map[string]string{"1.0.0": repo.Commits["version-bump"].String()},

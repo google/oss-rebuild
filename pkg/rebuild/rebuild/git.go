@@ -6,7 +6,6 @@ package rebuild
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"net/url"
 	"path"
@@ -19,14 +18,12 @@ import (
 	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
-	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/uri"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
@@ -121,7 +118,7 @@ func sortTagMatches(matches []string, pkg, version string) {
 }
 
 // FindTagMatch searches a repositories tags for a possible version match and returns the commit hash.
-func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err error) {
+func FindTagMatch(pkg, version string, repo *git2.Repository) (commit string, err error) {
 	var matches, nearMatches []string
 	tags, err := allTags(repo)
 	if err != nil {
@@ -159,18 +156,16 @@ func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err
 	return "", nil
 }
 
-func allTags(repo *git.Repository) (tags []string, err error) {
+func allTags(repo *git2.Repository) (tags []string, err error) {
 	ri, err := repo.Tags()
 	if err != nil {
 		return nil, err
 	}
-	for ref, err := range iterx.ToSeq2(ri, io.EOF) {
-		if err != nil {
-			return nil, err
-		}
+	err = ri.ForEach(func(ref *git2.Reference) error {
 		tags = append(tags, ref.Name().Short())
-	}
-	return tags, nil
+		return nil
+	})
+	return tags, err
 }
 
 // LoadRepo attempts to either reuse the local or load the remote repo specified in CloneOptions.
@@ -221,6 +216,9 @@ func LoadRepo(ctx context.Context, pkg string, s storage.Storer, fs billy.Filesy
 	default:
 		return nil, errors.Wrap(err, "using existing")
 	}
+	if r.Repository, err = gitx.Open(s); err != nil {
+		return nil, errors.Wrap(err, "opening with go-git2")
+	}
 	return r, nil
 }
 
@@ -259,7 +257,7 @@ func resolveSubmoduleURL(repoURI, rawURL string) string {
 
 // Submodules returns the sorted, deduplicated Submodules defined in
 // .gitmodules that exist as submodule gitlinks in tree.
-func Submodules(tree *object.Tree, repoURI string) []Submodule {
+func Submodules(tree *git2.Tree, repoURI string) []Submodule {
 	if tree == nil {
 		return nil
 	}
@@ -286,7 +284,7 @@ func Submodules(tree *object.Tree, repoURI string) []Submodule {
 			continue
 		}
 		entry, err := tree.FindEntry(p)
-		if err == nil && entry.Mode == filemode.Submodule {
+		if err == nil && entry.Mode == git2.Submodule {
 			subs = append(subs, Submodule{
 				Repo: repo,
 				Ref:  entry.Hash.String(),

@@ -8,6 +8,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -96,8 +98,8 @@ func TestFindBuildGradleDir(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepoFromYAML(tc.repo, nil))
-			head, _ := repo.Head()
-			headCommit, _ := repo.CommitObject(head.Hash())
+			head, _ := repo.Repository.Head()
+			headCommit, _ := repo.Repository.CommitObject(head.Hash())
 			actualDir, err := findBuildGradleDir(headCommit, tc.pkg)
 			if tc.wantErr {
 				if err == nil {
@@ -268,6 +270,7 @@ func TestGradleInfer(t *testing.T) {
 				t.Fatalf("CreateRepoFromYAML() error = %v", err)
 			}
 			repoConfig.Repository = repo.Repository
+			repoConfig.Storer = repo.Storer
 			mockRegistry := &mockMavenRegistry{
 				artifactCoordinates: make(map[artifactCoordinates][]byte),
 				releaseFileError:    tc.jarError,
@@ -299,5 +302,35 @@ func TestGradleInfer(t *testing.T) {
 			}
 
 		})
+	}
+}
+
+func TestGradleInferSubmodules(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{
+		ID:   "initial-commit",
+		Tags: []string{"v1.0.0"},
+		Files: gitxtest.FileContent{
+			"build.gradle": "repositories { mavenCentral() }\n",
+			".gitmodules":  "[submodule \"proto\"]\n\tpath = third_party/proto\n\turl = https://github.com/example/proto.git\n",
+		},
+		Submodules: map[string]string{"third_party/proto": sha},
+	}}, nil))
+	target := rebuild.Target{Package: "com.example:myapp", Version: "1.0.0", Ecosystem: rebuild.Maven}
+	registry := &mockMavenRegistry{artifactCoordinates: make(map[artifactCoordinates][]byte)}
+	addArtifacts(registry, map[string][]*archive.ZipEntry{
+		maven.TypeJar: {{
+			FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+			Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+		}},
+	}, target)
+	rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/example/myapp"}
+	s, err := GradleInfer(t.Context(), target, rebuild.RegistryMux{Maven: registry}, rcfg)
+	if err != nil {
+		t.Fatalf("GradleInfer() error = %v", err)
+	}
+	want := []rebuild.Submodule{{Repo: "https://github.com/example/proto", Ref: sha, Dir: "third_party/proto"}}
+	if diff := cmp.Diff(want, s.(*GradleBuild).Location.Submodules); diff != "" {
+		t.Errorf("GradleInfer() submodules mismatch (-want +got):\n%s", diff)
 	}
 }

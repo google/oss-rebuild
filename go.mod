@@ -91,6 +91,9 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
+	github.com/msuozzo/go-git2 v0.1.0
+	github.com/msuozzo/go-git2/billyfs v0.1.0
+	github.com/msuozzo/go-git2/libgit2 v0.1.10907 // indirect
 	github.com/ncruces/go-sqlite3-wasm/v3 v3.2.35304 // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect

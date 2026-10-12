@@ -309,7 +309,7 @@ func TestFindRegistryResolution(t *testing.T) {
 					t.Fatalf("Failed to create test repo: %v", err)
 				}
 				repos = append(repos, repo)
-				indices = append(indices, repo.Repository)
+				indices = append(indices, repo.GoGit)
 			}
 			got, err := FindRegistryResolution(indices, tt.packages, tt.cratePublished, nil)
 			if err != nil || tt.wantErr {
@@ -373,7 +373,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	}
 
 	unfiltered, err := FindRegistryResolution(
-		[]*git.Repository{current.Repository, snapshot.Repository},
+		[]*git.Repository{current.GoGit, snapshot.GoGit},
 		lockfile.Packages,
 		time.Now(),
 		nil,
@@ -386,7 +386,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 	}
 
 	filtered, err := FindRegistryResolution(
-		[]*git.Repository{current.Repository, snapshot.Repository},
+		[]*git.Repository{current.GoGit, snapshot.GoGit},
 		cargolock.CratesIOPackages(lockfile.Packages),
 		time.Now(),
 		nil,

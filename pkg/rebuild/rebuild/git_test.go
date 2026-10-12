@@ -10,11 +10,13 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
+	"github.com/msuozzo/go-git2"
 )
 
 func TestMatchTag(t *testing.T) {
@@ -133,7 +135,8 @@ func TestSortTagMatches(t *testing.T) {
 }
 
 func TestFindTagMatch(t *testing.T) {
-	repo := must(git.Init(memory.NewStorage(), memfs.New()))
+	repo := must(git.Init(filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault()), memfs.New()))
+	g2 := must(gitxtest.Open(repo.Storer))
 
 	c1 := createCommit(repo, "commit1")
 	c2 := createCommit(repo, "commit2")
@@ -163,7 +166,7 @@ func TestFindTagMatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.pkg+"-"+tt.version, func(t *testing.T) {
-			got, err := FindTagMatch(tt.pkg, tt.version, repo)
+			got, err := FindTagMatch(tt.pkg, tt.version, g2)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("FindTagMatch() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -176,7 +179,8 @@ func TestFindTagMatch(t *testing.T) {
 }
 
 func TestAllTags(t *testing.T) {
-	repo := must(git.Init(memory.NewStorage(), memfs.New()))
+	repo := must(git.Init(filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault()), memfs.New()))
+	g2 := must(gitxtest.Open(repo.Storer))
 
 	c1 := createCommit(repo, "commit1")
 	c2 := createCommit(repo, "commit2")
@@ -187,7 +191,7 @@ func TestAllTags(t *testing.T) {
 
 	want := []string{"v1.0.0", "v1.1.0", "v1.0.0-alpha"}
 
-	got, err := allTags(repo)
+	got, err := allTags(g2)
 	if err != nil {
 		t.Errorf("allTags() error = %v", err)
 	}
@@ -273,7 +277,7 @@ func TestSubmodules(t *testing.T) {
 			"vendor/rel":   sha,
 		},
 	}}, nil))
-	tree := must(must(repo.CommitObject(repo.Commits["c1"])).Tree())
+	tree := must(must(repo.Repository.CommitObject(git2.Hash(repo.Commits["c1"]))).Tree())
 	got := Submodules(tree, "https://github.com/chronotope/chrono-tz")
 	want := []Submodule{
 		{Repo: "https://github.com/eggert/tz", Ref: sha, Dir: "chrono-tz/tz"},

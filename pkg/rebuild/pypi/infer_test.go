@@ -468,7 +468,7 @@ func TestInferStrategyLocatedError(t *testing.T) {
 			ref := repo.Commits["initial-commit"].String()
 			target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "test-package", Version: "1.0.0", Artifact: "test_package-1.0.0-py3-none-any.whl"}
 			mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{Calls: tc.calls, URLValidator: httpxtest.NewURLValidator(t)}}}
-			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, URI: "https://github.com/test-org/test-package"}
+			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/test-org/test-package"}
 			s, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, &rebuild.LocationHint{Location: rebuild.Location{Repo: rcfg.URI, Ref: ref}})
 			if err == nil {
 				t.Fatalf("InferStrategy expected error, got %v", s)
@@ -812,7 +812,7 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
 		},
 		URLValidator: httpxtest.NewURLValidator(t),
 	}}}
-	rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, URI: "https://github.com/pygraphviz/pygraphviz"}
+	rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/pygraphviz/pygraphviz"}
 	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "pygraphviz", Version: "1.14", Artifact: filename}
 	strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
 	if err != nil {

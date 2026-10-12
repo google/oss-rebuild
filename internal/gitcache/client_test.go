@@ -64,14 +64,14 @@ func setupCloneTestServer(t *testing.T, yamlSpec string) Client {
 		}
 		// Repack loose objects into a packfile to match production tarballs
 		// (cached repos are packed, and only packed objects are read lazily).
-		if err := repo.RepackObjects(&git.RepackConfig{}); err != nil {
+		if err := repo.GoGit.RepackObjects(&git.RepackConfig{}); err != nil {
 			return nil, err
 		}
 		// Remove the index to match production behavior (bare clone has no index).
 		if sf, ok := s.(*filesystem.Storage); ok {
 			sf.Filesystem().Remove("index")
 		}
-		return &gitx.Repo{Repository: repo.Repository}, nil
+		return &gitx.Repo{Storer: repo.Storer}, nil
 	}
 	cacheDir := t.TempDir()
 	srv := &Server{backend: &localBackend{baseDir: cacheDir}, cloneFunc: cloneFunc}
@@ -156,7 +156,11 @@ func TestClientClone(t *testing.T) {
 				t.Errorf("FetchedAt = %v, want %v", repo.FetchedAt, entryFetchTime)
 			}
 			// Verify HEAD is resolvable.
-			head, err := repo.Head()
+			g, err := git.Open(repo.Storer, fs)
+			if err != nil {
+				t.Fatalf("git.Open() error = %v", err)
+			}
+			head, err := g.Head()
 			if err != nil {
 				t.Fatalf("Head() error = %v", err)
 			}
@@ -164,7 +168,7 @@ func TestClientClone(t *testing.T) {
 				t.Error("Head() returned zero hash")
 			}
 			// Verify commit history is accessible.
-			iter, err := repo.Log(&git.LogOptions{From: head.Hash()})
+			iter, err := g.Log(&git.LogOptions{From: head.Hash()})
 			if err != nil {
 				t.Fatalf("Log() error = %v", err)
 			}

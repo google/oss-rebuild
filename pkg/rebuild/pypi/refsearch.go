@@ -12,13 +12,12 @@ import (
 	"log"
 	"slices"
 
-	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	pypiresolver "github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/google/oss-rebuild/pkg/vcs/gitscan"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
@@ -32,7 +31,7 @@ func shortHash(h string) string {
 // archiveContentRef matches the pure wheel's file blobs against commit trees:
 // a wheel built from commit C contains C's file contents verbatim, so C's tree
 // shares those blob hashes. Works without a declared version.
-func archiveContentRef(ctx context.Context, mux rebuild.RegistryMux, pkg, version string, release *pypireg.Release, repo *git.Repository) (string, error) {
+func archiveContentRef(ctx context.Context, mux rebuild.RegistryMux, pkg, version string, release *pypireg.Release, repo *git2.Repository) (string, error) {
 	wheel, err := FindPureWheel(release.Artifacts)
 	if err != nil {
 		return "", errors.Wrap(err, "no pure wheel")
@@ -58,16 +57,20 @@ func archiveContentRef(ctx context.Context, mux rebuild.RegistryMux, pkg, versio
 }
 
 // matchArchiveBlobs returns the commit whose tree contains the most of the
-// given blobs, via gitscan.ExactTreeCount, as vetted and tie-broken by
+// given blobs, via gitscan.ReachableTreeCount, as vetted and tie-broken by
 // pickByDeclaredVersion.
-func matchArchiveBlobs(ctx context.Context, hashes []plumbing.Hash, pkg, version string, repo *git.Repository) (string, error) {
-	closest, matched, total, err := gitscan.ExactTreeCount{}.Search(ctx, repo, hashes)
+func matchArchiveBlobs(ctx context.Context, hashes []plumbing.Hash, pkg, version string, repo *git2.Repository) (string, error) {
+	blobs := make([]git2.Hash, len(hashes))
+	for i, h := range hashes {
+		blobs[i] = git2.Hash(h)
+	}
+	closest, matched, total, err := gitscan.ReachableTreeCount{}.Search(ctx, repo, blobs)
 	if err != nil {
 		return "", errors.Wrap(err, "searching trees for blob overlap")
 	}
-	candidates := make([]*object.Commit, 0, len(closest))
+	candidates := make([]*git2.Commit, 0, len(closest))
 	for _, h := range closest {
-		c, err := repo.CommitObject(plumbing.NewHash(h))
+		c, err := repo.CommitObject(git2.NewHash(h))
 		if err != nil {
 			return "", errors.Wrap(err, "resolving best-overlap commit")
 		}
@@ -91,8 +94,8 @@ func matchArchiveBlobs(ctx context.Context, hashes []plumbing.Hash, pkg, version
 // else the earliest neutral one, where the content was introduced, else nil.
 // Spellings are compared under the approximate ordering, since PyPI
 // canonicalizes them.
-func pickByDeclaredVersion(ctx context.Context, candidates []*object.Commit, pkg, version string) *object.Commit {
-	var confirming, neutral []*object.Commit
+func pickByDeclaredVersion(ctx context.Context, candidates []*git2.Commit, pkg, version string) *git2.Commit {
+	var confirming, neutral []*git2.Commit
 	var dir string
 	for _, c := range candidates {
 		var declared, found string
@@ -116,6 +119,6 @@ func pickByDeclaredVersion(ctx context.Context, candidates []*object.Commit, pkg
 	return nil
 }
 
-func byCommitTime(a, b *object.Commit) int {
+func byCommitTime(a, b *git2.Commit) int {
 	return a.Committer.When.Compare(b.Committer.When)
 }

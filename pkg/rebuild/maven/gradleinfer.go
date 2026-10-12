@@ -10,9 +10,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
@@ -44,7 +43,7 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 	if ref == "" {
 		return nil, errors.Errorf("no git ref")
 	}
-	commitObject, err := repoConfig.Repository.CommitObject(plumbing.NewHash(ref))
+	commitObject, err := repoConfig.Repository.CommitObject(git2.NewHash(ref))
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to resolve commit object [repo=%s,ref=%s]", repoConfig.URI, ref)
 	}
@@ -65,7 +64,7 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 }
 
 // inferGradleBuild chooses the JDK and gradle launcher for a resolved location.
-func inferGradleBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, commit *object.Commit, loc rebuild.Location) (rebuild.Strategy, error) {
+func inferGradleBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, commit *git2.Commit, loc rebuild.Location) (rebuild.Strategy, error) {
 	jdk, err := inferOrFallbackToDefaultJDK(ctx, t.Package, t.Version, mux)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching JDK")
@@ -83,7 +82,7 @@ func inferGradleBuild(ctx context.Context, t rebuild.Target, mux rebuild.Registr
 	return &GradleBuild{Location: loc, JDKVersion: jdk, SystemGradle: systemGradle}, nil
 }
 
-func isGradleWrapperPresent(commit *object.Commit) (bool, error) {
+func isGradleWrapperPresent(commit *git2.Commit) (bool, error) {
 	tree, err := commit.Tree()
 	if err != nil {
 		return false, errors.Wrap(err, "getting tree")
@@ -95,14 +94,14 @@ func isGradleWrapperPresent(commit *object.Commit) (bool, error) {
 	return true, nil
 }
 
-func findBuildGradleDir(commit *object.Commit, pkg string) (string, error) {
+func findBuildGradleDir(commit *git2.Commit, pkg string) (string, error) {
 	commitTree, err := commit.Tree()
 	if err != nil {
 		return "", errors.Wrap(err, "fetching commit tree")
 	}
 	var candidateDirs []string
 	minDepth := math.MaxInt
-	err = commitTree.Files().ForEach(func(f *object.File) error {
+	err = commitTree.Files().ForEach(func(f *git2.File) error {
 		// Skip files in gradle/, src/, or any subdirectory containing src/.
 		// gradle directory often contains wrapper scripts and other configuration files.
 		// https://docs.gradle.org/current/userguide/gradle_directories.html

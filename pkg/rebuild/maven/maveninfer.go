@@ -11,10 +11,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
@@ -34,10 +32,10 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	}
 	var dir, ref string
 	var found bool
-	var commit *object.Commit
+	var commit *git2.Commit
 	var msg string
 	if tagGuess != "" {
-		commit, err = repoConfig.Repository.CommitObject(plumbing.NewHash(tagGuess))
+		commit, err = repoConfig.Repository.CommitObject(git2.NewHash(tagGuess))
 		if err != nil {
 			return nil, errors.Wrapf(err, "[INTERNAL] Failed to get commit from tag [repo=%s,ref=%s]", repoConfig.URI, tagGuess)
 		}
@@ -70,18 +68,18 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 				log.Printf("git log heuristic found no matches [pkg=%s,ver=%s]\n", name, version)
 			}
 		}
-		commit, err = repoConfig.Repository.CommitObject(plumbing.NewHash(pomXMLGuess))
+		commit, err = repoConfig.Repository.CommitObject(git2.NewHash(pomXMLGuess))
 		if err == nil {
 			if dir, found, msg = findBuildDir(commit, t); found {
 				ref = pomXMLGuess
 			}
 			log.Printf("using git log heuristic: %s", msg)
-		} else if !errors.Is(err, plumbing.ErrObjectNotFound) {
+		} else if !errors.Is(err, git2.ErrObjectNotFound) {
 			return nil, errors.Wrapf(err, "[INTERNAL] Failed ref resolve from git log [repo=%s,ref=%s]", repoConfig.URI, pomXMLGuess)
 		}
 	}
 	// 3. Source Jar Heuristic
-	var sourceJarGuess *object.Commit
+	var sourceJarGuess *git2.Commit
 	if !found {
 		sourceJarGuess, err = findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
 		if err != nil {
@@ -101,7 +99,7 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		return nil, errors.Errorf("no git ref")
 	}
 	var submodules []rebuild.Submodule
-	if refCommit, err := repoConfig.Repository.CommitObject(plumbing.NewHash(ref)); err == nil {
+	if refCommit, err := repoConfig.Repository.CommitObject(git2.NewHash(ref)); err == nil {
 		if tree, err := refCommit.Tree(); err == nil {
 			submodules = rebuild.Submodules(tree, repoConfig.URI)
 		}
@@ -117,7 +115,7 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 // findBuildDir is a helper that checks if a given commit contains a valid pom.xml for the package.
 // It returns the directory containing the pom.xml ("" for the repo root), whether one was found,
 // and a summary. If no valid pom.xml is found, the summary indicates the failure reason.
-func findBuildDir(commit *object.Commit, t rebuild.Target) (dir string, found bool, summary string) {
+func findBuildDir(commit *git2.Commit, t rebuild.Target) (dir string, found bool, summary string) {
 	pomXML, foundPkgPath, err := findPomXML(commit, t.Package)
 	if err != nil {
 		return "", false, fmt.Sprintf("could not find a pom.xml for the package in ref %s", commit.Hash.String()[:9])
@@ -131,14 +129,14 @@ func findBuildDir(commit *object.Commit, t rebuild.Target) (dir string, found bo
 	}
 }
 
-func findPomXML(commit *object.Commit, pkg string) (*PomXML, string, error) {
+func findPomXML(commit *git2.Commit, pkg string) (*PomXML, string, error) {
 	commitTree, err := commit.Tree()
 	if err != nil {
 		return nil, "", errors.Wrap(err, "fetching commit tree")
 	}
 	var names []string
 	var pomXMLs []PomXML
-	err = commitTree.Files().ForEach(func(f *object.File) error {
+	err = commitTree.Files().ForEach(func(f *git2.File) error {
 		// Per Maven conventions, skip non-"pom.xml" files and those inside a `src` directory (unlikely to contain metadata).
 		// Reference: https://maven.apache.org/guides/introduction/introduction-to-the-standard-directory-layout.html
 		// Note: This will miss pom files, with name other than "pom.xml", whose paths are explicitly passed during build via "-f".
@@ -168,18 +166,21 @@ func findPomXML(commit *object.Commit, pkg string) (*PomXML, string, error) {
 	return nil, "", errors.Errorf("pom.xml heuristic found no matches")
 }
 
-func pomXMLSearch(name, pomXMLPath string, repo *git.Repository) (tm map[string]string, err error) {
+func pomXMLSearch(name, pomXMLPath string, repo *git2.Repository) (tm map[string]string, err error) {
 	tm = make(map[string]string)
-	commitIter, err := repo.Log(&git.LogOptions{
-		Order:      git.LogOrderCommitterTime,
-		PathFilter: func(s string) bool { return s == pomXMLPath },
-		All:        true,
+	if pomXMLPath == "" {
+		return tm, nil // no path matches
+	}
+	commitIter, err := repo.Log(&git2.LogOptions{
+		Order:    git2.LogOrderCommitterTime,
+		FileName: &pomXMLPath,
+		All:      true,
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "searching for commits touching pom.xml")
 	}
 	duplicates := make(map[string]string)
-	err = commitIter.ForEach(func(c *object.Commit) error {
+	err = commitIter.ForEach(func(c *git2.Commit) error {
 		t, err := c.Tree()
 		if err != nil {
 			return errors.Wrapf(err, "fetching tree")
@@ -187,7 +188,7 @@ func pomXMLSearch(name, pomXMLPath string, repo *git.Repository) (tm map[string]
 		pomXML, err := getPomXML(t, pomXMLPath)
 		if _, ok := err.(*xml.SyntaxError); ok {
 			return nil // unable to parse
-		} else if errors.Is(err, object.ErrFileNotFound) {
+		} else if errors.Is(err, git2.ErrFileNotFound) {
 			return nil // file deleted at this commit
 		} else if err != nil {
 			return errors.Wrapf(err, "fetching pom.xml")
@@ -203,7 +204,7 @@ func pomXMLSearch(name, pomXMLPath string, repo *git.Repository) (tm map[string]
 		}
 		// If any are the same, return nil. (merges would create duplicates.)
 		var foundMatch bool
-		err = c.Parents().ForEach(func(c *object.Commit) error {
+		err = c.Parents().ForEach(func(c *git2.Commit) error {
 			t, err := c.Tree()
 			if err != nil {
 				return errors.Wrapf(err, "fetching tree")
@@ -243,7 +244,7 @@ func pomXMLSearch(name, pomXMLPath string, repo *git.Repository) (tm map[string]
 	return tm, err
 }
 
-func getPomXML(tree *object.Tree, path string) (pomXML PomXML, err error) {
+func getPomXML(tree *git2.Tree, path string) (pomXML PomXML, err error) {
 	f, err := tree.File(path)
 	if err != nil {
 		return pomXML, err

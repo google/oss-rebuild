@@ -11,8 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/internal/versionx"
+	"github.com/msuozzo/go-git2"
 )
 
 // FindDeclaredVersion returns the version a build file declares for pkg and
@@ -20,7 +20,7 @@ import (
 // searched first, "" meaning the whole tree, and a miss there falls back to
 // the whole tree, so the package is found wherever it has lived. Both are ""
 // when no build file names pkg with a version.
-func FindDeclaredVersion(ctx context.Context, tree *object.Tree, dir, pkg string) (version, foundDir string) {
+func FindDeclaredVersion(ctx context.Context, tree *git2.Tree, dir, pkg string) (version, foundDir string) {
 	for _, d := range slices.Compact([]string{dir, ""}) {
 		verified, err := verifyBuildFiles(ctx, tree, d, pkg, "")
 		if err != nil {

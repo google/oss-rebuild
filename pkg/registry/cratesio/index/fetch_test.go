@@ -254,7 +254,7 @@ commits:
 			if branchRef.Hash().IsZero() {
 				t.Errorf("Branch %s points to zero hash", tt.wantBranchName)
 			}
-			origBranchRef := must(testRepo.Reference(expectedBranch, false))
+			origBranchRef := must(testRepo.GoGit.Reference(expectedBranch, false))
 			if diff := cmp.Diff(origBranchRef.Hash().String(), branchRef.Hash().String()); diff != "" {
 				t.Errorf("Branch HEAD mismatch (-want +got):\n%s", diff)
 			}
@@ -296,7 +296,7 @@ commits:
 	cloneFS := memfs.New()
 	must1(fetcher.Fetch(ctx, cloneFS))
 	// Add new file to the upstream
-	wt := must(upstream.Worktree())
+	wt := must(upstream.GoGit.Worktree())
 	fname := "se/rd/serde"
 	f := must(wt.Filesystem.Create(fname))
 	must(io.WriteString(f, `{"name":"serde","vers":"1.0.0","deps":[],"cksum":"mar1...","features":{},"yanked":false}`))

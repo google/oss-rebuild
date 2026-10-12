@@ -15,11 +15,14 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/msuozzo/go-git2"
+	"github.com/msuozzo/go-git2/billyfs"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -51,8 +54,19 @@ type GitHistory struct {
 }
 
 type Repository struct {
-	*git.Repository
-	Commits map[string]plumbing.Hash
+	*git2.Repository                 // reads Storer, nil unless filesystem-backed
+	GoGit            *git.Repository // builds the fixture, and serves the tests that write or fetch
+	Storer           storage.Storer  // the object store the fixture wrote
+	Commits          map[string]plumbing.Hash
+}
+
+// Open opens a go-git2 repository over a filesystem-backed storer.
+func Open(s storage.Storer) (*git2.Repository, error) {
+	fss, ok := s.(*filesystem.Storage)
+	if !ok {
+		return nil, errors.Errorf("unsupported storer %T", s)
+	}
+	return git2.Open(billyfs.New(fss.Filesystem()))
 }
 
 func CreateRepoFromYAML(content string, opts *RepositoryOptions) (*Repository, error) {
@@ -69,11 +83,10 @@ func CreateRepo(commits []Commit, opts *RepositoryOptions) (*Repository, error) 
 	var repo Repository
 	var err error
 	// Create a new repository in memory
-	var s storage.Storer
 	if opts != nil && opts.Storer != nil {
-		s = opts.Storer
+		repo.Storer = opts.Storer
 	} else {
-		s = memory.NewStorage()
+		repo.Storer = filesystem.NewStorage(memfs.New(), cache.NewObjectLRUDefault())
 	}
 	var wfs billy.Filesystem
 	if opts != nil && opts.Worktree != nil {
@@ -81,12 +94,12 @@ func CreateRepo(commits []Commit, opts *RepositoryOptions) (*Repository, error) 
 	} else {
 		wfs = memfs.New()
 	}
-	repo.Repository, err = git.Init(s, wfs)
+	repo.GoGit, err = git.Init(repo.Storer, wfs)
 	if err != nil {
 		return nil, errors.Wrap(err, "initializing repo")
 	}
 
-	w, err := repo.Worktree()
+	w, err := repo.GoGit.Worktree()
 	if err != nil {
 		return nil, errors.Wrap(err, "accessing worktree")
 	}
@@ -146,8 +159,8 @@ func CreateRepo(commits []Commit, opts *RepositoryOptions) (*Repository, error) 
 
 		// Create or update branch
 		if c.Branch != "" {
-			if _, err := repo.Branch(c.Branch); err == git.ErrBranchNotFound {
-				if err := repo.CreateBranch(&config.Branch{Name: c.Branch}); err != nil {
+			if _, err := repo.GoGit.Branch(c.Branch); err == git.ErrBranchNotFound {
+				if err := repo.GoGit.CreateBranch(&config.Branch{Name: c.Branch}); err != nil {
 					return nil, errors.Wrap(err, "creating branch")
 				}
 			} else if err != nil {
@@ -166,13 +179,15 @@ func CreateRepo(commits []Commit, opts *RepositoryOptions) (*Repository, error) 
 			tags = append(tags, c.Tag)
 		}
 		for _, tagName := range tags {
-			_, err := repo.CreateTag(tagName, commitHash, nil)
+			_, err := repo.GoGit.CreateTag(tagName, commitHash, nil)
 			if err != nil {
 				return nil, errors.Wrap(err, "create tags")
 			}
 		}
 	}
 
+	// NOTE: Non-filesystem storage fails here and leaves Repository nil.
+	repo.Repository, _ = Open(repo.Storer)
 	return &repo, nil
 }
 
