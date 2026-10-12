@@ -29,6 +29,7 @@ import (
 type StrategyOneOf struct {
 	LocationHint         *rebuild.LocationHint          `json:"rebuild_location_hint,omitempty" yaml:"rebuild_location_hint,omitempty"`
 	PureWheelBuild       *pypi.PureWheelBuild           `json:"pypi_pure_wheel_build,omitempty" yaml:"pypi_pure_wheel_build,omitempty"`
+	PlatformWheelBuild   *pypi.PlatformWheelBuild       `json:"pypi_platform_wheel_build,omitempty" yaml:"pypi_platform_wheel_build,omitempty"`
 	PyPISdistBuild       *pypi.SdistBuild               `json:"pypi_sdist_build,omitempty" yaml:"pypi_sdist_build,omitempty"`
 	NPMPackBuild         *npm.NPMPackBuild              `json:"npm_pack_build,omitempty" yaml:"npm_pack_build,omitempty"`
 	NPMCustomBuild       *npm.NPMCustomBuild            `json:"npm_custom_build,omitempty" yaml:"npm_custom_build,omitempty"`
@@ -52,6 +53,8 @@ func NewStrategyOneOf(s rebuild.Strategy) StrategyOneOf {
 		oneof.LocationHint = t
 	case *pypi.PureWheelBuild:
 		oneof.PureWheelBuild = t
+	case *pypi.PlatformWheelBuild:
+		oneof.PlatformWheelBuild = t
 	case *pypi.SdistBuild:
 		oneof.PyPISdistBuild = t
 	case *maven.MavenBuild:
@@ -94,6 +97,10 @@ func (oneof *StrategyOneOf) Strategy() (rebuild.Strategy, error) {
 		if oneof.PureWheelBuild != nil {
 			num++
 			s = oneof.PureWheelBuild
+		}
+		if oneof.PlatformWheelBuild != nil {
+			num++
+			s = oneof.PlatformWheelBuild
 		}
 		if oneof.PyPISdistBuild != nil {
 			num++

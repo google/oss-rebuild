@@ -144,12 +144,21 @@ func ParsePlatformTags(platformTags string) ([]Tag, error) {
 	return tags, nil
 }
 
-// LowestLibcVersionTag returns the tag with the lowest libc version from a list of tags.
-func LowestLibcVersionTag(tags []Tag) (Tag, error) {
+// HighestLibcVersionTag returns the tag with the highest libc version from a list of tags.
+//
+// In PyPA build containers, the AUDITWHEEL_PLAT environment variable defaults to the
+// container's own policy (such as manylinux_2_28_x86_64). When auditwheel repairs a wheel
+// whose compiled shared objects only reference symbols from an older libc version (such as
+// <= GLIBC_2.17), auditwheel prepends the older satisfied policy tags to the target policy
+// tag, producing a compressed tag set like
+// manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64. The lowest tag in a
+// compressed set therefore only reflects the post-compilation ELF symbol floor, whereas the
+// highest tag identifies the policy of the container image in which the wheel was built.
+func HighestLibcVersionTag(tags []Tag) (Tag, error) {
 	if len(tags) == 0 {
 		return Tag{}, errors.New("no tags provided")
 	}
-	return slices.MinFunc(tags, func(a, b Tag) int {
+	return slices.MaxFunc(tags, func(a, b Tag) int {
 		if a.LibcVersion.Less(b.LibcVersion) {
 			return -1
 		}
@@ -158,4 +167,22 @@ func LowestLibcVersionTag(tags []Tag) (Tag, error) {
 		}
 		return 0
 	}), nil
+}
+
+// HighestLibcTagString parses raw platform tags (potentially multiple dot-compressed tags)
+// from a wheel and returns the individual tag with the highest associated libc version.
+//
+// This tag is passed to auditwheel repair --plat, which only accepts a single policy name
+// supported by the build container's libc before wheel tags restores the full compressed tag
+// string. Returns the input tags unchanged if parsing fails.
+func HighestLibcTagString(platformTags string) string {
+	tags, err := ParsePlatformTags(platformTags)
+	if err != nil || len(tags) == 0 {
+		return platformTags
+	}
+	highest, err := HighestLibcVersionTag(tags)
+	if err != nil {
+		return platformTags
+	}
+	return highest.Raw
 }
