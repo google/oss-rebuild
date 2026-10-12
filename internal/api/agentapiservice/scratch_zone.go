@@ -73,6 +73,10 @@ func (c *ZoneCooldown) active(zones []string) []string {
 // DefaultZoneCooldownTTL is how long a zone is skipped after a stockout.
 const DefaultZoneCooldownTTL = 5 * time.Minute
 
+// errCapacity reports that every candidate zone refused the instance for
+// stock or quota, so no zone will take it until something frees up.
+var errCapacity = errors.New("all zones exhausted")
+
 // insertWithFallthrough creates an instance in the first zone that
 // accepts it, marking stockout failures in cooldown and continuing.
 // Non-stockout errors (auth, invalid template, ctx cancel, network)
@@ -106,5 +110,5 @@ func insertWithFallthrough(
 		}
 		return Instance{}, z, err
 	}
-	return Instance{}, "", errors.Wrap(lastErr, "all zones exhausted")
+	return Instance{}, "", errors.Wrap(errCapacity, lastErr.Error())
 }
