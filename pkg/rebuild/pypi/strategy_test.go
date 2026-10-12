@@ -342,10 +342,7 @@ AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
   AUDITWHEEL="auditwheel"
 fi
-if ! $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/; then
-  echo "Error: auditwheel repair failed." >&2
-  exit 1
-fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/
 rm -f the_dir/dist/*.whl
 mv the_dir/dist/repaired/*.whl the_dir/dist/
 rm -rf the_dir/dist/repaired
@@ -379,10 +376,7 @@ AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
   AUDITWHEEL="auditwheel"
 fi
-if ! $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/; then
-  echo "Error: auditwheel repair failed." >&2
-  exit 1
-fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/
 rm -f the_dir/dist/*.whl
 mv the_dir/dist/repaired/*.whl the_dir/dist/
 rm -rf the_dir/dist/repaired
@@ -414,10 +408,7 @@ AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
   AUDITWHEEL="auditwheel"
 fi
-if ! $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/; then
-  echo "Error: auditwheel repair failed." >&2
-  exit 1
-fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/
 rm -f the_dir/dist/*.whl
 mv the_dir/dist/repaired/*.whl the_dir/dist/
 rm -rf the_dir/dist/repaired
@@ -449,10 +440,7 @@ AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
   AUDITWHEEL="auditwheel"
 fi
-if ! $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/; then
-  echo "Error: auditwheel repair failed." >&2
-  exit 1
-fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/
 rm -f the_dir/dist/*.whl
 mv the_dir/dist/repaired/*.whl the_dir/dist/
 rm -rf the_dir/dist/repaired
@@ -482,10 +470,7 @@ AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
   AUDITWHEEL="auditwheel"
 fi
-if ! $AUDITWHEEL repair dist/*.whl --plat manylinux_2_17_x86_64 -w dist/repaired/; then
-  echo "Error: auditwheel repair failed." >&2
-  exit 1
-fi
+$AUDITWHEEL repair dist/*.whl --plat manylinux_2_17_x86_64 -w dist/repaired/
 rm -f dist/*.whl
 mv dist/repaired/*.whl dist/
 rm -rf dist/repaired
@@ -517,10 +502,7 @@ AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
   AUDITWHEEL="auditwheel"
 fi
-if ! $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/; then
-  echo "Error: auditwheel repair failed." >&2
-  exit 1
-fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/
 rm -f the_dir/dist/*.whl
 mv the_dir/dist/repaired/*.whl the_dir/dist/
 rm -rf the_dir/dist/repaired
@@ -552,10 +534,7 @@ AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
   AUDITWHEEL="auditwheel"
 fi
-if ! $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/; then
-  echo "Error: auditwheel repair failed." >&2
-  exit 1
-fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/
 rm -f the_dir/dist/*.whl
 mv the_dir/dist/repaired/*.whl the_dir/dist/
 rm -rf the_dir/dist/repaired
@@ -586,10 +565,7 @@ AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
   AUDITWHEEL="auditwheel"
 fi
-if ! $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/; then
-  echo "Error: auditwheel repair failed." >&2
-  exit 1
-fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/
 rm -f the_dir/dist/*.whl
 mv the_dir/dist/repaired/*.whl the_dir/dist/
 rm -rf the_dir/dist/repaired
@@ -621,10 +597,7 @@ AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
   AUDITWHEEL="auditwheel"
 fi
-if ! $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/; then
-  echo "Error: auditwheel repair failed." >&2
-  exit 1
-fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/
 rm -f the_dir/dist/*.whl
 mv the_dir/dist/repaired/*.whl the_dir/dist/
 rm -rf the_dir/dist/repaired
