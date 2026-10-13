@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/pkg/archive"
+	"github.com/pkg/errors"
 )
 
 var zipFormats = []archive.Format{archive.ZipFormat}
@@ -105,8 +106,12 @@ var StableZipMisc = Stabilizer{
 }))
 
 // StabilizeZip strips volatile metadata and rewrites the provided archive in a standard form.
-func StabilizeZip(zr *zip.Reader, zw *zip.Writer, ctx *StabilizationContext) error {
-	defer zw.Close()
+func StabilizeZip(zr *zip.Reader, zw *zip.Writer, ctx *StabilizationContext) (retErr error) {
+	defer func() {
+		if err := zw.Close(); retErr == nil && err != nil {
+			retErr = errors.Wrap(err, "finalizing zip")
+		}
+	}()
 	mr := archive.NewMutableReader(zr)
 	// TODO: This ordering is inefficient as it lacks reuse for entryCtx
 	for _, s := range ctx.Stabilizers {
