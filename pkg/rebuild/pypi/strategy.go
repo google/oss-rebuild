@@ -67,9 +67,9 @@ func (b *PureWheelBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (reb
 }
 
 // needsVenvOnPath flags backends that find their binary on PATH rather than
-// beside the interpreter, as uv_build does via shutil.which.
+// beside the interpreter, such as uv_build, meson, and ninja/cmake.
 func needsVenvOnPath(reqs []string) string {
-	if hasRequirement(reqs, "uv-build") {
+	if hasRequirement(reqs, "uv-build", "meson-python", "scikit-build-core") {
 		return "1"
 	}
 	return ""
@@ -176,9 +176,10 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Build: []flow.Step{{
 			Uses: "pypi/build/platform-wheel",
 			With: map[string]string{
-				"dir":     b.Location.Dir,
-				"distDir": distDir,
-				"locator": "/deps/bin/",
+				"dir":        b.Location.Dir,
+				"distDir":    distDir,
+				"locator":    "/deps/bin/",
+				"venvOnPath": needsVenvOnPath(b.Requirements),
 				// auditwheel repair --plat requires a single policy tag rather than a compressed
 				// tag set, and the highest tag matches the build container policy.
 				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
@@ -334,7 +335,7 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/platform-wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
-				{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
+				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
 				{{if .With.highestPlatformTag -}}
 				mkdir -p {{.With.distDir}}/repaired
 				AUDITWHEEL="{{.With.locator}}auditwheel"

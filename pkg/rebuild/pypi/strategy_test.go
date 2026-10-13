@@ -684,3 +684,58 @@ func TestPlatformWheelBuild_BaseImage(t *testing.T) {
 		})
 	}
 }
+
+func TestNeedsVenvOnPath(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		reqs []string
+		want string
+	}{
+		{"UVBuild", []string{"uv-build==0.10.0"}, "1"},
+		{"MesonPython", []string{"meson-python>=0.15.0"}, "1"},
+		{"ScikitBuildCore", []string{"scikit-build-core==0.10.7"}, "1"},
+		{"SetuptoolsOnly", []string{"setuptools>=61", "wheel"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := needsVenvOnPath(tc.reqs); got != tc.want {
+				t.Errorf("needsVenvOnPath(%v) = %q, want %q", tc.reqs, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPlatformWheelBuildVenvOnPath(t *testing.T) {
+	loc := rebuild.Location{
+		Dir:  "the_dir",
+		Ref:  "the_ref",
+		Repo: "the_repo",
+	}
+	s := &PlatformWheelBuild{
+		Location:     loc,
+		PythonTag:    "cp311",
+		ABITag:       "cp311",
+		Requirements: []string{"meson-python>=0.15.0", "ninja"},
+		PlatformTag:  "manylinux_2_17_x86_64",
+	}
+	inst, err := s.GenerateFor(
+		rebuild.Target{Ecosystem: rebuild.PyPI, Package: "the_package", Version: "the_version", Artifact: "the_artifact"},
+		rebuild.BuildEnv{HasRepo: true, TimewarpHost: "orange"},
+	)
+	if err != nil {
+		t.Fatalf("GenerateFor() failed unexpectedly: %v", err)
+	}
+	wantBuild := `PATH=/deps/bin/:$PATH /deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_17_x86_64 -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/
+rm -rf the_dir/dist/repaired
+/deps/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_17_x86_64 the_dir/dist/*.whl`
+	if diff := cmp.Diff(wantBuild, inst.Build); diff != "" {
+		t.Errorf("GenerateFor() Build diff (-want +got):\n%s", diff)
+	}
+}

@@ -356,6 +356,14 @@ func hasRequirement(reqs []string, names ...string) bool {
 	return slices.ContainsFunc(reqs, func(r string) bool { return slices.Contains(names, requirementName(r)) })
 }
 
+// implicitRequirements returns implicit build tools required by any of the detected requirements (e.g. meson-python needs "ninja" but packages don't always declare it).
+func implicitRequirements(reqs []string) []string {
+	if hasRequirement(reqs, "meson-python", "scikit-build-core") {
+		return []string{"ninja"}
+	}
+	return nil
+}
+
 // mergeRequirements appends the buildReqs entries whose package does not
 // already appear in reqs, also collapsing repeats within buildReqs itself.
 // Entries of one package with different environment markers are all kept, as
@@ -477,6 +485,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		} else {
 			reqs = mergeRequirements(reqs, buildReqs)
 		}
+		reqs = mergeRequirements(reqs, implicitRequirements(reqs))
 	}
 	if strings.HasSuffix(a.Filename, ".tar.gz") {
 		return &SdistBuild{
@@ -573,6 +582,8 @@ var poetryPat = re.MustCompile(`^Generator: poetry ([\d\.]+)`)
 var poetryCorePat = re.MustCompile(`^Generator: poetry-core ([\d\.]+)`)
 var pdmBackendPat = re.MustCompile(`^Generator: pdm-backend \(([\d\.]+)\)`)
 var uvBuildPat = re.MustCompile(`^Generator: uv ([\d\.]+)`)
+var mesonPat = re.MustCompile(`^Generator: meson(?: \(?([\d\.]+)\)?)?\s*$`)
+var scikitBuildCorePat = re.MustCompile(`^Generator: scikit-build-core \(?([\d\.]+)\)?`)
 
 // getGenerator returns the pins identifying the wheel's build backend from its
 // Generator line. bdist_wheel names the wheel packaging tool, not setuptools,
@@ -605,6 +616,13 @@ func getGenerator(wheel, metadata []byte) (reqs []string, err error) {
 				return []string{"pdm-backend==" + string(matches[1])}, nil
 			} else if matches := uvBuildPat.FindSubmatch(line); matches != nil {
 				return []string{"uv-build==" + string(matches[1])}, nil
+			} else if matches := mesonPat.FindSubmatch(line); matches != nil {
+				if ver := string(matches[1]); ver != "" {
+					return []string{"meson-python==" + ver}, nil
+				}
+				return []string{}, nil
+			} else if matches := scikitBuildCorePat.FindSubmatch(line); matches != nil {
+				return []string{"scikit-build-core==" + string(matches[1])}, nil
 			} else {
 				return nil, errors.Errorf("unsupported generator: %s", value)
 			}
