@@ -26,7 +26,7 @@ import (
 
 var (
 	boundaryPatternTpl     = `(^|[^\d])%s([^\d]|$)`
-	continuationPatternTpl = `%s[\.-]?(beta|dev|rc|alpha|preview|canary)`
+	continuationPatternTpl = `(?i)%s[._-]?(beta|dev|rc|alpha|pre|canary|post)`
 )
 
 // MatchTag evaluates whether the given tag is likely to refer to a package version.
@@ -36,9 +36,14 @@ func MatchTag(tag, pkg, version string) (strict bool, approx bool) {
 
 // tagMatcher returns MatchTag for pkg and version, compiling its patterns once.
 func tagMatcher(pkg, version string) func(tag string) (strict, approx bool) {
-	escapedVersion := regexp.QuoteMeta(version)
-	boundaryRE := regexp.MustCompile(fmt.Sprintf(boundaryPatternTpl, escapedVersion))
-	continuationRE := regexp.MustCompile(fmt.Sprintf(continuationPatternTpl, escapedVersion))
+	spellings := versionSpellings(version)
+	quoted := make([]string, len(spellings))
+	for i, s := range spellings {
+		quoted[i] = regexp.QuoteMeta(s)
+	}
+	anySpelling := "(?:" + strings.Join(quoted, "|") + ")"
+	boundaryRE := regexp.MustCompile(fmt.Sprintf(boundaryPatternTpl, anySpelling))
+	continuationRE := regexp.MustCompile(fmt.Sprintf(continuationPatternTpl, anySpelling))
 	var org string
 	if slash := strings.IndexByte(pkg, '/'); slash != -1 {
 		org = pkg[:slash]
@@ -46,9 +51,18 @@ func tagMatcher(pkg, version string) func(tag string) (strict, approx bool) {
 	return func(tag string) (strict, approx bool) {
 		containsOrgButNotPkg := org != "" && strings.Contains(tag, org) && !strings.Contains(tag, pkg)
 		strict = boundaryRE.MatchString(tag) && !continuationRE.MatchString(tag) && !containsOrgButNotPkg
-		approx = strings.Contains(tag, version)
+		approx = slices.ContainsFunc(spellings, func(s string) bool { return strings.Contains(tag, s) })
 		return
 	}
+}
+
+// versionSpellings returns version and, if it has dots, its underscore form
+// used by repositories with CVS or SVN heritage (e.g. rel_2_0_52 for 2.0.52).
+func versionSpellings(version string) []string {
+	if under := strings.ReplaceAll(version, ".", "_"); under != version {
+		return []string{version, under}
+	}
+	return []string{version}
 }
 
 // tagAliases provides probable tag names for pkg accounting for e.g. npm @scope/, Maven group:artifact.
@@ -65,12 +79,13 @@ func tagAliases(pkg string) []string {
 
 // tagResidue is what a tag contains besides the version.
 func tagResidue(tag, version string) string {
-	before, after, found := strings.Cut(tag, version)
-	if !found {
-		return strings.ToLower(tag)
+	for _, spelling := range versionSpellings(version) {
+		if before, after, found := strings.Cut(tag, spelling); found {
+			r := strings.ToLower(strings.Trim(before+after, "-_/.@"))
+			return strings.Trim(strings.TrimSuffix(r, "v"), "-_/.@")
+		}
 	}
-	r := strings.ToLower(strings.Trim(before+after, "-_/.@"))
-	return strings.Trim(strings.TrimSuffix(r, "v"), "-_/.@")
+	return strings.ToLower(tag)
 }
 
 // tagRank measures how strongly a tag appears to relate to this package's release.
