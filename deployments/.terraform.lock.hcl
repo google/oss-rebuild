@@ -5,6 +5,15 @@ provider "registry.opentofu.org/hashicorp/google" {
   version     = "7.3.0"
   constraints = "~> 7.0"
   hashes = [
+    "h1:4OKbujV+LxiwaMizX0/gg5d7Tl+QzKzdtKpLcJKYcRo=",
+    "h1:BoL7gz0J1024m8biUzC+zud4+RRUEEg3EgeOGsf2WEw=",
+    "h1:C2Q+l3/v4jzSozGUDLCKxnij10FypUkMeykBNBOvnvI=",
+    "h1:FccLozdZipaRmVYjYUNspNge5eWNAnjD54leaZhldU0=",
+    "h1:OX4qdfEvjeCUpgqmqbJ9oYu1j3mwTuMBg+joEfduB78=",
+    "h1:Tr2fT8yYdACcerTlWQiDLtSD3ewpouFnZ4V6oooZ0e4=",
+    "h1:eKRMKzC/lacI0rlwyqIFkiNiUmvFJ73JhILFYaqZDOs=",
+    "h1:hCLUbdmm6jQ3Y/intDOhLRk+pDFToKSVPAPD3Dms2qg=",
+    "h1:m/ijwXxcuPV1R8eBsqjM9nU7RN3RV7JeLTM+SwR+ohs=",
     "h1:u9xZo2+/jqJT1+lU6zHAIV8luBtN7xx0Ih1vdbZ89/A=",
     "zh:017502879c62576fab2798c9f5f0aeded553e117c1e9c912c2cd0db9909b4e4c",
     "zh:0635dfc4c9e897cc6e18271e5abb1db8f520fa3cf30ac851ba4185f4c515f518",
