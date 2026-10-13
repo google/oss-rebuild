@@ -68,6 +68,7 @@ func (Rebuilder) Published(ctx context.Context, t rebuild.Target, mux rebuild.Re
 //	  - the home page, on a known repo host
 //	  - a link named in commonRepoLinks, on a known repo host
 //	  - a link named in commonRepoLinks, on any host
+//	other mentions named after the package, release then project
 //	other mentions, release then project:
 //	  - a link under any other name, on a known repo host
 //	  - the first repository cited in the description
@@ -83,7 +84,7 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 		return "", errors.Wrap(err, "fetching pypi metadata")
 	}
 	infos = append(infos, project.Info)
-	for _, pick := range []func(pypireg.Info) string{repoFromSourceLinks, repoFromOtherLinks} {
+	for _, pick := range []func(pypireg.Info) string{repoFromSourceLinks, repoNamedAfter(t.Package), repoFromOtherLinks} {
 		for _, info := range infos {
 			if repo := pick(info); repo != "" {
 				return uri.CanonicalizeRepoURI(repo)
@@ -120,12 +121,32 @@ func repoFromSourceLinks(info pypireg.Info) string {
 // repoFromOtherLinks picks a known repo host linked under any other name, else
 // the first one cited in the description.
 func repoFromOtherLinks(info pypireg.Info) string {
-	for _, name := range slices.Sorted(maps.Keys(info.ProjectURLs)) {
-		if repo := uri.FindCommonRepo(info.ProjectURLs[name]); repo != "" {
-			return repo
-		}
+	if repos := otherRepoLinks(info); len(repos) != 0 {
+		return repos[0]
 	}
-	return uri.FindCommonRepo(info.Description)
+	return ""
+}
+
+// repoNamedAfter returns a picker for the first of otherRepoLinks named after pkg.
+func repoNamedAfter(pkg string) func(pypireg.Info) string {
+	return func(info pypireg.Info) string {
+		for _, repo := range otherRepoLinks(info) {
+			if normalizeName(strings.TrimSuffix(path.Base(repo), ".git")) == normalizeName(pkg) {
+				return repo
+			}
+		}
+		return ""
+	}
+}
+
+// otherRepoLinks lists the repos on a known host linked under any other name,
+// then those cited in the description.
+func otherRepoLinks(info pypireg.Info) []string {
+	var repos []string
+	for _, name := range slices.Sorted(maps.Keys(info.ProjectURLs)) {
+		repos = append(repos, uri.FindCommonRepos(info.ProjectURLs[name])...)
+	}
+	return append(repos, uri.FindCommonRepos(info.Description)...)
 }
 
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, ropt *gitx.RepositoryOptions) (r rebuild.RepoConfig, err error) {
