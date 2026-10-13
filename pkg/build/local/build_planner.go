@@ -29,6 +29,7 @@ type dockerBuildContainerArgs struct {
 }
 
 // dockerBuildDockerfileTpl generates Dockerfiles for local Docker builds
+// NOTE: RPM images install netcat by path since it is packaged as nc on EL6 and nmap-ncat on EL7+.
 // NOTE: Layer mappings must be kept in sync with dockerfileLayers.
 var dockerBuildDockerfileTpl = template.Must(
 	template.New("docker build dockerfile").Funcs(template.FuncMap{
@@ -45,7 +46,7 @@ var dockerBuildDockerfileTpl = template.Must(
 			 {{- if eq .OS "alpine"}}
 			 {{.PackageManager.InstallCommand (list "curl")}}
 			 {{- else if eq .OS "centos"}}
-			 {{.PackageManager.InstallCommand (list "curl" "nmap-ncat")}}
+			 {{.PackageManager.InstallCommand (list "curl" "/usr/bin/nc")}}
 			 {{- else}}
 			 {{.PackageManager.UpdateCmd}}
 			 {{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}

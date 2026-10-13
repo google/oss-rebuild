@@ -75,3 +75,34 @@ func TestDockerBuildPlannerLayers(t *testing.T) {
 		})
 	}
 }
+
+func TestDockerBuildPlannerRPMTimewarp(t *testing.T) {
+	planner := NewDockerBuildPlanner()
+	opts := build.PlanOptions{
+		UseTimewarp: true,
+		Resources: build.Resources{
+			BaseImageConfig: build.BaseImageConfig{
+				Default: "quay.io/pypa/manylinux2014_x86_64",
+			},
+			ToolURLs: map[build.ToolType]string{
+				build.TimewarpTool: "https://example.com/timewarp",
+			},
+		},
+	}
+	input := rebuild.Input{
+		Target: rebuild.Target{Ecosystem: rebuild.PyPI, Package: "test-package", Version: "1.0.0", Artifact: "test_package-1.0.0.whl"},
+		Strategy: &rebuild.ManualStrategy{
+			Location:   rebuild.Location{Repo: "https://github.com/example/test-package", Ref: "v1.0.0"},
+			Deps:       "pip install .",
+			Build:      "python setup.py bdist_wheel",
+			OutputPath: "dist/test_package-1.0.0.whl",
+		},
+	}
+	plan, err := planner.GeneratePlan(context.Background(), input, opts)
+	if err != nil {
+		t.Fatalf("GeneratePlan failed: %v", err)
+	}
+	if !strings.Contains(plan.Dockerfile, "yum install -y 'curl' '/usr/bin/nc'\n") {
+		t.Errorf("Dockerfile missing netcat bootstrap for RPM image:\n%s", plan.Dockerfile)
+	}
+}

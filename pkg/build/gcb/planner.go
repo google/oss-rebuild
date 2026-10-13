@@ -241,6 +241,7 @@ type gcbContainerArgs struct {
 }
 
 // gcbDockerfileTpl generates Dockerfiles for use in GCB
+// NOTE: RPM images install netcat by path since it is packaged as nc on EL6 and nmap-ncat on EL7+.
 // NOTE: Layer mappings must be kept in sync with dockerfileLayers.
 var gcbDockerfileTpl = template.Must(
 	template.New("gcb dockerfile").Funcs(template.FuncMap{
@@ -257,7 +258,7 @@ var gcbDockerfileTpl = template.Must(
 			 {{- if eq .OS "alpine"}}
 			 {{.PackageManager.InstallCommand (list "curl")}}
 			 {{- else if eq .OS "centos"}}
-			 {{.PackageManager.InstallCommand (list "curl" "nmap-ncat")}}
+			 {{.PackageManager.InstallCommand (list "curl" "/usr/bin/nc")}}
 			 {{- else}}
 			 {{.PackageManager.UpdateCmd}}
 			 {{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}

@@ -37,6 +37,7 @@ type dockerRunScriptArgs struct {
 // timewarp path, each phase re-enters /src) so they compose into a single
 // shell via CombinedScript without semantic drift. curl reads the auth
 // header from a config heredoc: set -x prints argv, not heredoc bodies.
+// NOTE: RPM images install netcat by path since it is packaged as nc on EL6 and nmap-ncat on EL7+.
 var dockerRunPhaseTpls = template.Must(
 	template.New("docker run phases").Funcs(template.FuncMap{
 		"list": func(items ...string) []string { return items },
@@ -47,7 +48,7 @@ var dockerRunPhaseTpls = template.Must(
 			{{- if eq .OS "alpine"}}
 			{{.PackageManager.InstallCommand (list "curl")}}
 			{{- else if eq .OS "centos"}}
-			{{.PackageManager.InstallCommand (list "curl" "nmap-ncat")}}
+			{{.PackageManager.InstallCommand (list "curl" "/usr/bin/nc")}}
 			{{- else}}
 			{{.PackageManager.UpdateCmd}}
 			{{.PackageManager.InstallCommand (list "curl" "netcat-openbsd")}}
