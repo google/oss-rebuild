@@ -114,15 +114,17 @@ func TestWorkflowStrategy_GenerateFor(t *testing.T) {
 				}},
 			},
 			wantErr:     true,
-			errContains: "must provide exactly one of 'runs' or 'uses'",
+			errContains: "both 'runs' and 'uses'",
 		},
 		{
-			name: "invalid_step_neither_runs_nor_uses",
+			// A blank phase renders as no phase.
+			name: "empty_step_is_no_phase",
 			strategy: WorkflowStrategy{
-				Source: []flow.Step{{}},
+				Source:     []flow.Step{{}},
+				Build:      []flow.Step{{Runs: "npm pack"}},
+				OutputPath: "pkg.tgz",
 			},
-			wantErr:     true,
-			errContains: "must provide exactly one of 'runs' or 'uses'",
+			want: Instructions{Build: "npm pack", OutputPath: "pkg.tgz"},
 		},
 		{
 			name: "unknown_uses_command",

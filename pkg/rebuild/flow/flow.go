@@ -67,8 +67,13 @@ func (step Step) Resolve(with map[string]string, data Data) (Fragment, error) {
 	// NOTE: This is costly-but-not-significant at the expected scale.
 	dataAndWith := joinMaps(data, map[string]any{"With": with})
 	switch {
-	case hasRuns == hasUses:
-		return Fragment{}, errors.New("must provide exactly one of 'runs' or 'uses'")
+	case hasRuns && hasUses:
+		return Fragment{}, errors.New("a step may not provide both 'runs' and 'uses'")
+	case !hasRuns && !hasUses: // empty step
+		if len(step.With) > 0 {
+			return Fragment{}, errors.New("'with' requires 'uses'")
+		}
+		return Fragment{Needs: step.Needs}, nil
 	case hasRuns:
 		buf := bytes.NewBuffer(nil)
 		if err := resolveTemplate(buf, step.Runs, dataAndWith); err != nil {
