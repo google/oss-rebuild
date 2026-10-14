@@ -35,3 +35,9 @@ type Plan struct {
 func (p *Plan) timingStep() int {
 	return slices.IndexFunc(p.Steps, func(s *cloudbuild.BuildStep) bool { return s.Id == timingStepID })
 }
+
+// runSentinel reports whether the main step maps a failed docker run to the
+// allowed runFailureExitCode.
+func (p *Plan) runSentinel() bool {
+	return len(p.Steps) > 0 && slices.Contains(p.Steps[0].AllowExitCodes, runFailureExitCode)
+}
