@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
+	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -133,6 +134,7 @@ type PlatformWheelBuild struct {
 	ABITag       string    `json:"abi_tag,omitempty" yaml:"abi_tag,omitempty"`
 	Requirements []string  `json:"requirements" yaml:"requirements"`
 	PlatformTag  string    `json:"platform_tag,omitempty" yaml:"platform_tag,omitempty"`
+	SystemDeps   []string  `json:"system_deps,omitempty" yaml:"system_deps,omitempty"`
 	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
 }
 
@@ -155,6 +157,7 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	if b.Location.Dir != "" {
 		distDir = b.Location.Dir + "/dist"
 	}
+	installCmd := build.GetPackageManagerCommands(build.DetectOS(baseImage)).InstallCommand([]string{`"$pkg"`})
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Requires: rebuild.RequiredEnv{
@@ -168,6 +171,8 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 			With: map[string]string{
 				"registryTime": registryTime,
 				"requirements": flow.MustToJSON(b.Requirements),
+				"systemDeps":   flow.MustToJSON(b.SystemDeps),
+				"installCmd":   installCmd,
 				"pythonTag":    b.PythonTag,
 				"abiTag":       b.ABITag,
 				"venv":         "/deps",
@@ -285,8 +290,27 @@ var toolkit = []*flow.Tool{
 		},
 	},
 	{
+		Name: "pypi/install-sysdeps",
+		Steps: []flow.Step{{
+			Runs: textwrap.Dedent(`
+				{{- $pkgs := .With.systemDeps | fromJSON -}}
+				{{- if $pkgs -}}
+				for pkg in{{range $pkg := $pkgs}} '{{regexReplace $pkg "'" "'\\''"}}'{{end}}; do
+				  {{.With.installCmd}} || true
+				done
+				{{- end -}}`)[1:],
+		}},
+	},
+	{
 		Name: "pypi/deps/platform-wheel",
 		Steps: []flow.Step{
+			{
+				Uses: "pypi/install-sysdeps",
+				With: map[string]string{
+					"installCmd": "{{.With.installCmd}}",
+					"systemDeps": "{{.With.systemDeps}}",
+				},
+			},
 			{
 				Uses: "pypi/setup-venv/manylinux",
 				With: map[string]string{

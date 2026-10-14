@@ -609,6 +609,78 @@ rm -rf the_dir/dist/repaired
 				OutputPath: "the_dir/dist/the_artifact",
 			},
 		},
+		{
+			"WithSystemDepsManylinux",
+			&PlatformWheelBuild{
+				Location:    defaultLocation,
+				PythonTag:   "cp310",
+				ABITag:      "cp310",
+				PlatformTag: "manylinux_2_28_x86_64",
+				SystemDeps:  []string{"/usr/bin/dot", "graphviz-devel"},
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for pkg in '/usr/bin/dot' 'graphviz-devel'; do
+  yum install -y "$pkg" || true
+done
+for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel auditwheel`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/
+rm -rf the_dir/dist/repaired
+/deps/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_28_x86_64 the_dir/dist/*.whl`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux_2_28_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"WithSystemDepsAlpine",
+			&PlatformWheelBuild{
+				Location:    defaultLocation,
+				PythonTag:   "cp310",
+				ABITag:      "cp310",
+				PlatformTag: "musllinux_1_2_x86_64",
+				SystemDeps:  []string{"cmd:dot", "graphviz-dev"},
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for pkg in 'cmd:dot' 'graphviz-dev'; do
+  apk add "$pkg" || true
+done
+for py in /opt/python/cp310-cp310/bin/python /opt/python/cp310-*/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel auditwheel`,
+				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat musllinux_1_2_x86_64 -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/
+rm -rf the_dir/dist/repaired
+/deps/bin/python3 -m wheel tags --remove --platform-tag musllinux_1_2_x86_64 the_dir/dist/*.whl`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/musllinux_1_2_x86_64",
+					SystemDeps: []string{"git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
