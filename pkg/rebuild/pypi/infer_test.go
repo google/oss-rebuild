@@ -78,6 +78,11 @@ func TestInferRequirements(t *testing.T) {
 		{"flit generator takes no setuptools", "Wheel-Version: 1.0\nGenerator: flit 3.9.0\n", "Metadata-Version: 2.1\nName: x\n", []string{"flit_core==3.9.0", "flit==3.9.0"}},
 		{"pdm-backend generator pins pdm-backend", "Wheel-Version: 1.0\nGenerator: pdm-backend (2.4.4)\n", modern, []string{"pdm-backend==2.4.4"}},
 		{"uv generator pins uv-build", "Wheel-Version: 1.0\nGenerator: uv 0.10.0\n", modern, []string{"uv-build==0.10.0"}},
+		{"meson generator without version", "Wheel-Version: 1.0\nGenerator: meson\n", modern, []string{}},
+		{"meson generator with parenthesized version", "Wheel-Version: 1.0\nGenerator: meson (0.17.1)\n", modern, []string{"meson-python==0.17.1"}},
+		{"meson generator with bare version", "Wheel-Version: 1.0\nGenerator: meson 0.17.1\n", modern, []string{"meson-python==0.17.1"}},
+		{"scikit-build-core generator with parenthesized version", "Wheel-Version: 1.0\nGenerator: scikit-build-core (0.10.7)\n", modern, []string{"scikit-build-core==0.10.7"}},
+		{"scikit-build-core generator with bare version", "Wheel-Version: 1.0\nGenerator: scikit-build-core 0.11.6\n", modern, []string{"scikit-build-core==0.11.6"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -590,6 +595,37 @@ func TestExtractWheelTags(t *testing.T) {
 			got := extractWheelTags(tt.filename)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("extractWheelTags(%q) diff (-want +got):\n%s", tt.filename, diff)
+			}
+		})
+	}
+}
+
+func TestBackendRequirements(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		reqs []string
+		want []string
+	}{
+		{
+			name: "MesonPythonAddsNinja",
+			reqs: []string{"meson-python>=0.15.0", "Cython>=3.0.4"},
+			want: []string{"ninja"},
+		},
+		{
+			name: "ScikitBuildCoreAddsNinja",
+			reqs: []string{"scikit-build-core==0.10.7"},
+			want: []string{"ninja"},
+		},
+		{
+			name: "SetuptoolsDoesNotAddNinja",
+			reqs: []string{"setuptools>=61", "wheel"},
+			want: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := implicitRequirements(tc.reqs)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("backendRequirements(%v) diff (-want +got):\n%s", tc.reqs, diff)
 			}
 		})
 	}
