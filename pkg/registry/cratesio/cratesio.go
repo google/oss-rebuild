@@ -39,6 +39,7 @@ type Version struct {
 	Version      string    `json:"num"`
 	RustVersion  string    `json:"rust_version"`
 	DownloadPath string    `json:"dl_path"`
+	Repository   string    `json:"repository"`
 	Created      time.Time `json:"created_at"`
 	Updated      time.Time `json:"updated_at"`
 	Yanked       bool      `json:"yanked"`

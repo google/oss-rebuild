@@ -65,6 +65,13 @@ func lockfileRustVersionFloor(formatVersion int) string {
 }
 
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
+	vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
+	if err != nil {
+		return "", err
+	}
+	if vmeta.Repository != "" {
+		return uri.CanonicalizeRepoURI(vmeta.Repository)
+	}
 	pmeta, err := mux.CratesIO.Crate(ctx, t.Package)
 	if err != nil {
 		return "", err
