@@ -13,6 +13,7 @@ import (
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
@@ -32,7 +33,8 @@ type Source interface {
 	Scratches(context.Context, time.Time) ([]schema.Scratch, error)
 	Execs(context.Context, time.Time) ([]schema.ScratchExec, error)
 	RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error)
-	Signals(context.Context) ([]signals.PackageSignal, error)
+	Campaigns(context.Context, time.Time) ([]scheduler.Campaign, error)
+	Signals(context.Context) ([]signals.PackageSignal, time.Time, error)
 }
 
 // FullScan is the zero watermark: a scan given it reads every record.
@@ -147,30 +149,40 @@ func (s *FirestoreSource) RepoMetrics(ctx context.Context, since time.Time) ([]s
 	return scanQuery[schema.RepoMetrics](ctx, sinceQuery(s.client.Collection("repo_metrics").Query, "updated", since))
 }
 
+func (s *FirestoreSource) Campaigns(ctx context.Context, since time.Time) ([]scheduler.Campaign, error) {
+	return scanQuery[scheduler.Campaign](ctx, sinceQuery(s.client.Collection("scheduler_campaigns").Query, "updated", since))
+}
+
 // Signals reads the priority signals from the published signal database.
-func (s *FirestoreSource) Signals(context.Context) ([]signals.PackageSignal, error) {
+func (s *FirestoreSource) Signals(context.Context) ([]signals.PackageSignal, time.Time, error) {
 	return readSignals(s.SignalsDB)
 }
 
 // readSignals fetches the published signal database and reads its package
-// rows. A nil filesystem yields no rows.
-func readSignals(dest billy.Filesystem) ([]signals.PackageSignal, error) {
+// rows plus the publish time its meta records. A nil filesystem yields no
+// rows.
+func readSignals(dest billy.Filesystem) ([]signals.PackageSignal, time.Time, error) {
 	if dest == nil {
-		return nil, nil
+		return nil, time.Time{}, nil
 	}
 	dir, err := os.MkdirTemp("", "signals-fetch-")
 	if err != nil {
-		return nil, errors.Wrap(err, "creating fetch directory")
+		return nil, time.Time{}, errors.Wrap(err, "creating fetch directory")
 	}
 	defer os.RemoveAll(dir)
 	path, err := signals.Fetch(dest, dir)
 	if err != nil {
-		return nil, errors.Wrap(err, "fetching signal database")
+		return nil, time.Time{}, errors.Wrap(err, "fetching signal database")
 	}
 	db, err := sqlite3.Open(path)
 	if err != nil {
-		return nil, errors.Wrap(err, "opening signal database")
+		return nil, time.Time{}, errors.Wrap(err, "opening signal database")
 	}
 	defer db.Close()
-	return signals.PackageSignals(db)
+	meta, err := signals.ReadMeta(db)
+	if err != nil {
+		return nil, time.Time{}, errors.Wrap(err, "reading signal meta")
+	}
+	rows, err := signals.PackageSignals(db)
+	return rows, meta.BuiltAt, err
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/google/oss-rebuild/tools/benchmark"
 	"github.com/ncruces/go-sqlite3"
 )
@@ -49,8 +50,11 @@ func (s *snapshotSource) Execs(context.Context, time.Time) ([]schema.ScratchExec
 func (s *snapshotSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error) {
 	return nil, nil
 }
-func (s *snapshotSource) Signals(context.Context) ([]signals.PackageSignal, error) {
+func (s *snapshotSource) Campaigns(context.Context, time.Time) ([]scheduler.Campaign, error) {
 	return nil, nil
+}
+func (s *snapshotSource) Signals(context.Context) ([]signals.PackageSignal, time.Time, error) {
+	return nil, time.Time{}, nil
 }
 
 func ts(min int) time.Time {

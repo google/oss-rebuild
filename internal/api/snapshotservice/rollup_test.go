@@ -14,6 +14,7 @@ import (
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -37,7 +38,12 @@ func (f *fakeSource) Execs(context.Context, time.Time) ([]schema.ScratchExec, er
 func (f *fakeSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error) {
 	return nil, nil
 }
-func (f *fakeSource) Signals(context.Context) ([]signals.PackageSignal, error) { return nil, nil }
+func (f *fakeSource) Campaigns(context.Context, time.Time) ([]scheduler.Campaign, error) {
+	return nil, nil
+}
+func (f *fakeSource) Signals(context.Context) ([]signals.PackageSignal, time.Time, error) {
+	return nil, time.Time{}, nil
+}
 
 func TestRollupUnconfigured(t *testing.T) {
 	_, err := Rollup(context.Background(), RollupRequest{}, &RollupDeps{})
@@ -63,6 +69,9 @@ func TestRollupWritesSnapshot(t *testing.T) {
 	}
 	if resp.RowCounts[snapshot.TableAttempts] != 1 {
 		t.Errorf("attempts count = %d, want 1", resp.RowCounts[snapshot.TableAttempts])
+	}
+	if resp.RowCounts[snapshot.TablePackageStats] != 1 {
+		t.Errorf("package_stats count = %d, want 1", resp.RowCounts[snapshot.TablePackageStats])
 	}
 	if resp.SchemaVersion != snapshot.SchemaVersion {
 		t.Errorf("schema version = %d, want %d", resp.SchemaVersion, snapshot.SchemaVersion)
