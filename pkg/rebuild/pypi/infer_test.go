@@ -640,6 +640,7 @@ var testPins = platform.CibuildwheelPinTable{
 	{
 		Version:   "2.0.0",
 		Published: time.Date(2021, time.July, 1, 0, 0, 0, 0, time.UTC),
+		Commit:    testCommit("4"),
 		Images: map[string]platform.PinnedImage{
 			platform.ImageManylinux2014X86_64: {Tag: "2021-06-01-expired"},
 		},
@@ -647,6 +648,7 @@ var testPins = platform.CibuildwheelPinTable{
 	{
 		Version:   "2.16.2",
 		Published: time.Date(2023, time.October, 10, 0, 0, 0, 0, time.UTC),
+		Commit:    testCommit("5"),
 		Images: map[string]platform.PinnedImage{
 			platform.ImageManylinux2014X86_64: {Tag: "2023-10-03-72cdc42", Digest: testDigest("a")},
 			platform.ImageManylinux2_28X86_64: {Tag: "2023-10-03-72cdc42", Digest: testDigest("b")},
@@ -656,6 +658,7 @@ var testPins = platform.CibuildwheelPinTable{
 	{
 		Version:   "3.4.0",
 		Published: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC),
+		Commit:    testCommit("6"),
 		Images: map[string]platform.PinnedImage{
 			platform.ImageManylinux2014X86_64: {Tag: "2026.03.01-1", Digest: testDigest("d")},
 			platform.ImageManylinux2_28X86_64: {Tag: "2026.03.01-1", Digest: testDigest("e")},
@@ -665,6 +668,7 @@ var testPins = platform.CibuildwheelPinTable{
 	{
 		Version:   "2.23.4",
 		Published: time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
+		Commit:    testCommit("7"),
 		Images: map[string]platform.PinnedImage{
 			platform.ImageManylinux2014X86_64: {Tag: "2026.02.20-1", Digest: testDigest("1")},
 			platform.ImageManylinux2_28X86_64: {Tag: "2026.02.20-1", Digest: testDigest("2")},
@@ -678,10 +682,16 @@ func testDigest(c string) string {
 	return "sha256:" + strings.Repeat(c, 64)
 }
 
+// testCommit returns a well-formed commit hash made of the character c.
+func testCommit(c string) string {
+	return strings.Repeat(c, 40)
+}
+
 func TestInferBaseImage(t *testing.T) {
 	tests := []struct {
 		name        string
 		platformTag string
+		cibwVersion string
 		uploaded    time.Time
 		want        string
 	}{
@@ -706,6 +716,30 @@ func TestInferBaseImage(t *testing.T) {
 			want:        "quay.io/pypa/musllinux_1_1_x86_64:2023-10-03-72cdc42@" + testDigest("c"),
 		},
 		{
+			name:        "ConfigVersion",
+			platformTag: "manylinux2014_x86_64",
+			cibwVersion: "2.16.2",
+			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/manylinux2014_x86_64:2023-10-03-72cdc42@" + testDigest("a"),
+		},
+		{
+			// A version newer than the pin table falls back to the upload time.
+			name:        "UnknownConfigVersion",
+			platformTag: "musllinux_1_2_x86_64",
+			cibwVersion: "9.9.9",
+			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/musllinux_1_2_x86_64:2026.03.01-1@" + testDigest("f"),
+		},
+		{
+			// A version that does not pin the repository falls back to the
+			// upload time, which selects the highest version that does.
+			name:        "ConfigVersionWithoutRepository",
+			platformTag: "musllinux_1_1_x86_64",
+			cibwVersion: "3.4.0",
+			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/musllinux_1_1_x86_64:2023-10-03-72cdc42@" + testDigest("c"),
+		},
+		{
 			name:        "ExpiredPin",
 			platformTag: "manylinux2014_x86_64",
 			uploaded:    time.Date(2021, time.August, 1, 0, 0, 0, 0, time.UTC),
@@ -726,8 +760,8 @@ func TestInferBaseImage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := inferBaseImage(testPins, tt.platformTag, tt.uploaded); got != tt.want {
-				t.Errorf("inferBaseImage(%q, %v) = %q, want %q", tt.platformTag, tt.uploaded, got, tt.want)
+			if got := inferBaseImage(testPins, tt.platformTag, tt.cibwVersion, tt.uploaded); got != tt.want {
+				t.Errorf("inferBaseImage(%q, %q, %v) = %q, want %q", tt.platformTag, tt.cibwVersion, tt.uploaded, got, tt.want)
 			}
 		})
 	}
