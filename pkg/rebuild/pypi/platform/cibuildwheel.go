@@ -4,6 +4,7 @@
 package platform
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/semver"
@@ -17,6 +18,8 @@ type CibuildwheelRelease struct {
 	Version string
 	// Published is when the release was uploaded to PyPI.
 	Published time.Time
+	// Commit is the hash of the commit that the release tag points to.
+	Commit string
 	// Images maps the supported image repositories that the release pins to
 	// the pinned images.
 	Images map[string]PinnedImage
@@ -63,6 +66,53 @@ func (p CibuildwheelPinTable) ImageAt(repo string, t time.Time) (ref, version st
 		return "", "", false
 	}
 	return img.reference(repo), best.Version, true
+}
+
+// Image returns the digest-pinned reference to the repo image that
+// cibuildwheel version pins. ok is false if the version is unknown, does not
+// pin repo or if the digest of the pin is unknown.
+func (p CibuildwheelPinTable) Image(repo, version string) (ref string, ok bool) {
+	for _, rel := range p {
+		if rel.Version != version {
+			continue
+		}
+		img, pinned := rel.Images[repo]
+		if !pinned || img.Digest == "" {
+			return "", false
+		}
+		return img.reference(repo), true
+	}
+	return "", false
+}
+
+// VersionTaggedAt returns the cibuildwheel version whose release tag points to
+// commit, a full commit hash. ok is false if no release in the table is tagged
+// at commit.
+func (p CibuildwheelPinTable) VersionTaggedAt(commit string) (version string, ok bool) {
+	for _, rel := range p {
+		if rel.Commit == commit {
+			return rel.Version, true
+		}
+	}
+	return "", false
+}
+
+// LatestInSeries returns the highest cibuildwheel version of the "major.minor"
+// series that was published at or before t. cibuildwheel moves the floating
+// minor tag of its action, such as v2.16, to each release of the series, so
+// this is the version that a step using the tag ran at t. ok is false if no
+// release of the series had been published by t.
+func (p CibuildwheelPinTable) LatestInSeries(series string, t time.Time) (version string, ok bool) {
+	prefix := series + "."
+	for _, rel := range p {
+		if !strings.HasPrefix(rel.Version, prefix) || rel.Published.After(t) {
+			continue
+		}
+		if version == "" || semver.Cmp(rel.Version, version) > 0 {
+			version = rel.Version
+		}
+	}
+	return version, version != ""
 }
 
 // reference returns the reference to the image in repo. The digest takes
