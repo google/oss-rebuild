@@ -139,6 +139,11 @@ variable "scratch_disk_gb" {
   description = "Boot/pd-ssd disk size for scratch VMs. Sized to hold build containers and clones which is small enough that concurrency is CPU-bound, not SSD-quota-bound."
   default     = 100
 }
+variable "enable_internal_ingress" {
+  type        = bool
+  description = "Whether to restrict Cloud Run services to internal ingress, routing calls between them through the VPC."
+  default     = false
+}
 variable "build_def_repo" {
   type        = string
   description = "Repository URI containing rebuild build definitions"
