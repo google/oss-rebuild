@@ -79,3 +79,17 @@ func (t Target) ArchiveType() archive.Format {
 		return archive.UnknownFormat
 	}
 }
+
+// SizeHint describes the amount of resources (disk, ram, cpu) a rebuild is expected to utilize.
+type SizeHint string
+
+const (
+	// UnspecifiedSize is the zero value for SizeHint.
+	UnspecifiedSize SizeHint = ""
+	// ShrimpSize hints that the build is expected to use minimal resources
+	// and can be accommodated on smaller, standard workers.
+	ShrimpSize SizeHint = "SHRIMP"
+	// JumboSize hints that the build is resource-intensive and requires
+	// allocation to larger, high-capacity workers.
+	JumboSize SizeHint = "JUMBO"
+)
