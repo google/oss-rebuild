@@ -27,7 +27,11 @@ type PackageManagerCommands struct {
 
 // InstallCommand generates the full package installation command for the given packages
 func (p PackageManagerCommands) InstallCommand(packages []string) string {
-	cmdArgs := slices.Concat([]string{p.InstallCmd}, p.InstallArgs, packages)
+	quoted := make([]string, len(packages))
+	for i, pkg := range packages {
+		quoted[i] = "'" + strings.ReplaceAll(pkg, "'", `'\''`) + "'"
+	}
+	cmdArgs := slices.Concat([]string{p.InstallCmd}, p.InstallArgs, quoted)
 	return strings.Join(cmdArgs, " ")
 }
 

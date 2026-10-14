@@ -21,7 +21,7 @@ func TestPackageManagerCommands_InstallCommand(t *testing.T) {
 				InstallArgs: []string{},
 			},
 			packages: []string{"curl"},
-			want:     "apk add curl",
+			want:     "apk add 'curl'",
 		},
 		{
 			name: "Alpine with multiple packages",
@@ -30,7 +30,7 @@ func TestPackageManagerCommands_InstallCommand(t *testing.T) {
 				InstallArgs: []string{},
 			},
 			packages: []string{"curl", "wget", "git"},
-			want:     "apk add curl wget git",
+			want:     "apk add 'curl' 'wget' 'git'",
 		},
 		{
 			name: "Ubuntu with packages",
@@ -39,7 +39,7 @@ func TestPackageManagerCommands_InstallCommand(t *testing.T) {
 				InstallArgs: []string{"-y"},
 			},
 			packages: []string{"python3", "python3-pip"},
-			want:     "apt install -y python3 python3-pip",
+			want:     "apt install -y 'python3' 'python3-pip'",
 		},
 		{
 			name: "Empty package list",
@@ -57,7 +57,16 @@ func TestPackageManagerCommands_InstallCommand(t *testing.T) {
 				InstallArgs: []string{},
 			},
 			packages: []string{"vim"},
-			want:     "pacman -S vim",
+			want:     "pacman -S 'vim'",
+		},
+		{
+			name: "Special characters and single quotes",
+			cmd: PackageManagerCommands{
+				InstallCmd:  "yum install",
+				InstallArgs: []string{"-y"},
+			},
+			packages: []string{"libcgraph.so.6()(64bit)", "pkg's"},
+			want:     `yum install -y 'libcgraph.so.6()(64bit)' 'pkg'\''s'`,
 		},
 	}
 

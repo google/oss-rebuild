@@ -63,7 +63,7 @@ func TestMakeDockerfile(t *testing.T) {
 FROM docker.io/library/alpine:3.19
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- apk add git make
+ apk add 'git' 'make'
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -180,7 +180,7 @@ ENTRYPOINT ["/bin/sh","/build"]
 FROM docker.io/library/alpine:3.19
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- apk add make
+ apk add 'make'
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -263,10 +263,10 @@ ENTRYPOINT ["/bin/sh","/build"]
 FROM docker.io/library/alpine:3.19
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
- apk add curl
+ apk add 'curl'
  curl https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
- apk add git make
+ apk add 'git' 'make'
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -319,10 +319,10 @@ ENTRYPOINT ["/bin/sh","/build"]
 FROM docker.io/library/alpine:3.19
 RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
  set -eux
- apk add curl
+ apk add 'curl'
  curl -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
- apk add git make
+ apk add 'git' 'make'
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -375,10 +375,10 @@ FROM docker.io/library/debian:stable-20251103-slim
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
  apt update
- apt install -y curl netcat-openbsd
+ apt install -y 'curl' 'netcat-openbsd'
  curl https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
- apt install -y git make
+ apt install -y 'git' 'make'
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux
@@ -432,10 +432,10 @@ FROM docker.io/library/debian:stable-20251103-slim
 RUN --mount=type=secret,id=auth_header sed 's/^ //' <<'EOF' | sh
  set -eux
  apt update
- apt install -y curl netcat-openbsd
+ apt install -y 'curl' 'netcat-openbsd'
  curl -H @/run/secrets/auth_header https://my-bucket.storage.googleapis.com/timewarp > timewarp
  chmod +x timewarp
- apt install -y git make
+ apt install -y 'git' 'make'
 EOF
 RUN sed 's/^ //' <<'EOF' | sh
  set -eux

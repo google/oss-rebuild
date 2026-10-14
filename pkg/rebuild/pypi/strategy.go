@@ -133,6 +133,7 @@ type PlatformWheelBuild struct {
 	ABITag       string    `json:"abi_tag,omitempty" yaml:"abi_tag,omitempty"`
 	Requirements []string  `json:"requirements" yaml:"requirements"`
 	PlatformTag  string    `json:"platform_tag,omitempty" yaml:"platform_tag,omitempty"`
+	SystemDeps   []string  `json:"system_deps,omitempty" yaml:"system_deps,omitempty"`
 	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
 }
 
@@ -158,7 +159,8 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Requires: rebuild.RequiredEnv{
-			BaseImage: baseImage,
+			BaseImage:  baseImage,
+			SystemDeps: b.SystemDeps,
 		},
 		Source: []flow.Step{{
 			Uses: "git-checkout",
