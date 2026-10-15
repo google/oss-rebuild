@@ -233,6 +233,63 @@ func TestDockerRunPlanner(t *testing.T) {
 			},
 		},
 		{
+			name: "rpm image with timewarp",
+			input: rebuild.Input{
+				Target: rebuild.Target{
+					Ecosystem: rebuild.PyPI,
+					Package:   "test-package",
+					Version:   "1.0.0",
+					Artifact:  "test_package-1.0.0.whl",
+				},
+				Strategy: &rebuild.ManualStrategy{
+					Location: rebuild.Location{
+						Repo: "https://github.com/example/test-package",
+						Ref:  "v1.0.0",
+					},
+					Deps:       "pip install .",
+					Build:      "python setup.py bdist_wheel",
+					OutputPath: "dist/test_package-1.0.0.whl",
+				},
+			},
+			opts: build.PlanOptions{
+				UseTimewarp: true,
+				Resources: build.Resources{
+					BaseImageConfig: build.BaseImageConfig{
+						Default: "quay.io/pypa/manylinux2014_x86_64",
+					},
+					ToolURLs: map[build.ToolType]string{
+						build.TimewarpTool: "https://example.com/timewarp",
+					},
+				},
+			},
+			expected: &DockerRunPlan{
+				Image:      "quay.io/pypa/manylinux2014_x86_64",
+				WorkingDir: "/workspace",
+				OutputPath: "/out/rebuild",
+				Setup: textwrap.Dedent(`
+			yum install -y 'curl' '/usr/bin/nc'
+			curl https://example.com/timewarp > /timewarp
+			chmod +x /timewarp
+			yum update -y
+			yum install -y 'git'`[1:]),
+				Source: textwrap.Dedent(`
+			mkdir -p /src && cd /src
+			git clone https://github.com/example/test-package .
+			git checkout --force 'v1.0.0'`[1:]),
+				Deps: textwrap.Dedent(`
+			/timewarp -port 8080 &
+			while ! nc -z localhost 8080;do sleep 1;done
+			cd /src
+			pip install .`[1:]),
+				Build: textwrap.Dedent(`
+			cd /src
+			python setup.py bdist_wheel
+			[ -e /src/dist/test_package-1.0.0.whl ] || ls -la "$(dirname /src/dist/test_package-1.0.0.whl)"
+			chmod 444 /src/dist/test_package-1.0.0.whl
+			cp /src/dist/test_package-1.0.0.whl /out/rebuild`[1:]),
+			},
+		},
+		{
 			name: "error handling",
 			input: rebuild.Input{
 				Target: rebuild.Target{
