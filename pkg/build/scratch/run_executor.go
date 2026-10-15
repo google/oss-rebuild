@@ -5,6 +5,7 @@ package scratch
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"path"
 	"time"
@@ -39,6 +40,21 @@ var _ build.Executor = (*DockerRunExecutor)(nil)
 // ArtifactPath is where a docker run build leaves its artifact on the VM.
 func ArtifactPath(workDir, buildID string) string {
 	return path.Join(BuildDir(workDir, buildID), "out", path.Base(local.DockerRunOutputPath))
+}
+
+// SourcePath is where a docker run build's source tree lives on the VM: the
+// host side of the container's /src bind mount. It outlives the container,
+// until the next build's prepare sweep.
+func SourcePath(workDir, buildID string) string {
+	return path.Join(BuildDir(workDir, buildID), "src")
+}
+
+// prepareSourceMount removes every earlier build's source tree under workDir
+// and creates this build's. Like the containers, the trees are retained until
+// the next build, and a checkout with its dependency trees is the bulk of a
+// build's footprint.
+func prepareSourceMount(workDir, buildID string) string {
+	return fmt.Sprintf("rm -rf %q/*/src && mkdir -p %q", path.Join(workDir, buildsSubdir), SourcePath(workDir, buildID))
 }
 
 // NewDockerRunExecutor creates a scratch docker run executor from config.
@@ -78,12 +94,13 @@ func (e *DockerRunExecutor) Start(ctx context.Context, input rebuild.Input, opts
 func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle, plan *local.DockerRunPlan, t rebuild.Target, opts build.Options, timeout time.Duration) (*rebuild.BuildTimings, error) {
 	dir := BuildDir(e.workDir, handle.id)
 	container := "rb-" + handle.id
-	if err := e.prepareBuild(ctx, dir, "build.sh", []byte(plan.CombinedScript())); err != nil {
+	if err := e.prepareBuild(ctx, dir, "build.sh", []byte(plan.CombinedScript()), prepareSourceMount(e.workDir, handle.id)); err != nil {
 		return nil, err
 	}
 	argOpts := local.RunArgsOpts{
 		ContainerName:   container,
 		OutputMountSrc:  dir + "/out",
+		SourceMountSrc:  SourcePath(e.workDir, handle.id),
 		Remove:          !e.retainContainer,
 		AllowPrivileged: e.allowPrivileged,
 	}
