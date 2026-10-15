@@ -13,6 +13,7 @@ import (
 	"github.com/google/oss-rebuild/internal/docdb"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/ncruces/go-sqlite3"
 )
 
@@ -122,7 +123,9 @@ func TestSaturatedDocumentFillsEveryColumn(t *testing.T) {
 		"scratch_vms":      saturated[schema.Scratch](),
 		"scratch_execs":    saturated[schema.ScratchExec](),
 		"repo_metrics":     saturated[schema.RepoMetrics](),
+		"campaigns":        saturated[scheduler.Campaign](),
 		"package_signals":  saturated[signals.PackageSignal](),
+		"signal_universe":  saturated[SignalUniverse](),
 	}
 	db, err := sqlite3.Open(":memory:")
 	if err != nil {
@@ -194,7 +197,9 @@ func TestSkeletonDocumentsKeepGuardedColumnsDefined(t *testing.T) {
 		"scratch_vms":      `{"id":"sc1"}`,
 		"scratch_execs":    `{"id":"e1"}`,
 		"repo_metrics":     `{"uri":"u"}`,
+		"campaigns":        `{"Ecosystem":"pypi","Package":"p","Version":"1","Artifact":"a.whl"}`,
 		"package_signals":  `{"Ecosystem":"pypi","Package":"p"}`,
+		"signal_universe":  `{"Ecosystem":"pypi"}`,
 	}
 	db, err := sqlite3.Open(":memory:")
 	if err != nil {
