@@ -37,6 +37,11 @@ func TestMatchTag(t *testing.T) {
 		{"mypackage-1.0.0", "org/mypackage", "1.0.0", true, true},
 		{"org/otherpackage-1.0.0", "org/mypackage", "1.0.0", false, true}, // org-but-not-package special case
 		{"otherpackage-1.0.0", "org/mypackage", "1.0.0", true, true},
+		{"rel_2_0_52", "sqlalchemy", "2.0.52", true, true},
+		{"rel_1_0_0_beta1", "mypackage", "1.0.0", false, true},
+		{"commons-lang-3.10-RC1", "org.apache.commons:commons-lang3", "3.10", false, true},
+		{"0.4pre", "mypackage", "0.4", false, true},
+		{"1.0.0.post1", "mypackage", "1.0.0", false, true},
 	}
 
 	for _, tt := range tests {
@@ -106,6 +111,13 @@ func TestSortTagMatches(t *testing.T) {
 			version: "1.0.0",
 			want:    []string{"mypackage/v1.0.0", "unrelated-1.0.0"},
 		},
+		{
+			name:    "underscore version tag strips version residue",
+			matches: []string{"rel_2_0_52", "v2_0_52"},
+			pkg:     "sqlalchemy",
+			version: "2.0.52",
+			want:    []string{"v2_0_52", "rel_2_0_52"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -128,6 +140,9 @@ func TestFindTagMatch(t *testing.T) {
 	createLightweightTag(repo, "v1.0.0", c1)
 	createLightweightTag(repo, "v1.1.0", c2)
 	createAnnotatedTag(repo, "v1.0.0-alpha", c3)
+	createLightweightTag(repo, "rel_2_0_5", c1)
+	createLightweightTag(repo, "rel_2_0_52", c2)
+	createLightweightTag(repo, "rel_1_1_0", c3)
 
 	tests := []struct {
 		pkg     string
@@ -139,6 +154,8 @@ func TestFindTagMatch(t *testing.T) {
 		{"mypackage", "1.1.0", c2, false},
 		{"otherpackage", "1.0.0", c1, false},
 		{"otherpackage", "1.0.0-alpha", c3, false},
+		{"sqlalchemy", "2.0.52", c2, false},
+		{"sqlalchemy", "2.0.5", c1, false},
 		{"mypackage", "2.0.0", "", false}, // No match
 		// TODO: Add error test cases.
 	}
