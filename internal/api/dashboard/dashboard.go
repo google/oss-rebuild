@@ -11,6 +11,7 @@ import (
 	"regexp"
 
 	"cloud.google.com/go/storage"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -28,6 +29,8 @@ var (
 	versionHTML string
 	//go:embed attempt.gohtml
 	attemptHTML string
+	//go:embed session.gohtml
+	sessionHTML string
 	//go:embed logs.gohtml
 	logsHTML string
 	//go:embed resources.gohtml
@@ -59,6 +62,7 @@ var (
 	PackageTmpl   *template.Template
 	VersionTmpl   *template.Template
 	AttemptTmpl   *template.Template
+	SessionTmpl   *template.Template
 	LogsTmpl      *template.Template
 	ResourcesTmpl *template.Template
 )
@@ -68,6 +72,7 @@ func init() {
 	PackageTmpl = template.Must(template.New("package").Parse(headerHTML + packageHTML))
 	VersionTmpl = template.Must(template.New("version").Parse(headerHTML + versionHTML))
 	AttemptTmpl = template.Must(template.New("attempt").Parse(headerHTML + attemptHTML))
+	SessionTmpl = template.Must(template.New("session").Parse(headerHTML + sessionHTML))
 	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
 	ResourcesTmpl = template.Must(template.New("resources").Parse(headerHTML + resourcesHTML))
 }
@@ -84,6 +89,9 @@ type Deps struct {
 	SuccessRegex  *regexp.Regexp
 	Analytics     Analytics           // serves the snapshot-derived trend views
 	Registry      rebuild.RegistryMux // enumerates published versions for status
+
+	SessionsBucket string          // agent chat transcripts, read by the session page
+	Execs          db.ScratchExecs // the session page's exec ledger
 }
 
 type RebuildView struct {
