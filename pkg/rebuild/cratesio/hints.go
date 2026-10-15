@@ -30,8 +30,7 @@ func semverMin(a, b string) string {
 	return b
 }
 
-// Compiled regex patterns for detecting Rust version requirements
-// TODO: These should be declarative and paired with semver comparisons.
+// Compiled regex patterns for detecting Rust version requirements.
 var (
 	// debugDenormalizedRegex detects debug = bool (Rust 1.71+ normalized boolean debug to integer)
 	debugDenormalizedRegex = regexp.MustCompile(`(?m)^\s*debug\s*=\s*(true|false)\s*$`)
@@ -113,59 +112,96 @@ func cargoWrote(re *regexp.Regexp, published, orig string) bool {
 	return orig != "" && re.MatchString(published) && !re.MatchString(orig)
 }
 
-// detectRustVersionBounds analyzes Cargo.toml for structural patterns that indicate
-// minimum Rust version requirements based on tooling behavior changes. origText
-// is the manifest as the author wrote it (Cargo.toml.orig), empty when absent.
-func detectRustVersionBounds(cargoTomlText, origText string) (lo, hi string) {
-	editionFloor := packageEditionFloor(cargoTomlText)
-	// Check patterns from latest to earliest Rust version
-	if cargoWrote(autoLibRegex, cargoTomlText, origText) {
-		lo = semverMax("1.83.0", lo)
+// crateProps holds the packaged crate properties used to bound the Rust
+// toolchain version that produced the artifact.
+type crateProps struct {
+	CargoTOML       string
+	OrigTOML        string
+	LockfileVersion int
+	DeclaredMSRV    string
+}
+
+type versionRule struct {
+	lo, hi string
+	when   func(p crateProps) bool
+}
+
+func hasManifest(re *regexp.Regexp) func(p crateProps) bool {
+	return func(p crateProps) bool { return re.MatchString(p.CargoTOML) }
+}
+
+func cargoAdded(re *regexp.Regexp) func(p crateProps) bool {
+	return func(p crateProps) bool { return cargoWrote(re, p.CargoTOML, p.OrigTOML) }
+}
+
+// featuresOrder returns -1 if [features] precedes target/dependency tables,
+// +1 if it follows them, or 0 if both are not present.
+func featuresOrder(cargoTomlText string) int {
+	featIdx := featuresSectionRegex.FindStringIndex(cargoTomlText)
+	otherIdx := targetOrDepSectionRegex.FindStringIndex(cargoTomlText)
+	if featIdx == nil || otherIdx == nil {
+		return 0
 	}
-	if cargoWrote(autoTargetsRegex, cargoTomlText, origText) {
-		lo = semverMax("1.80.0", lo)
+	if featIdx[0] < otherIdx[0] {
+		return -1
 	}
-	if cargoWrote(resolverOneRegex, cargoTomlText, origText) {
-		lo = semverMax("1.64.0", lo)
-	} else if editionFloor == "1.56.0" && cargoWrote(resolverTwoRegex, cargoTomlText, origText) {
-		// Cargo 1.56..1.63 wrote redundant resolver = "2" on edition = "2021" crates (#10961).
-		lo = semverMax("1.56.0", lo)
-		hi = semverMin("1.63.0", hi)
-	}
-	// Cargo 1.85 (#14931) moved [features] before target tables ([lib], [[bin]], etc.) and [*dependencies].
-	if featIdx := featuresSectionRegex.FindStringIndex(cargoTomlText); featIdx != nil {
-		if otherIdx := targetOrDepSectionRegex.FindStringIndex(cargoTomlText); otherIdx != nil {
-			if featIdx[0] < otherIdx[0] {
-				lo = semverMax("1.85.0", lo)
-			} else {
-				hi = semverMin("1.84.1", hi)
-			}
+	return 1
+}
+
+// versionRules bounds the Cargo version that packaged the crate.
+var versionRules = []versionRule{
+	// Cargo 1.85 (#14931) moved [features] before target and [*dependencies] tables.
+	{lo: "1.85.0", when: func(p crateProps) bool { return featuresOrder(p.CargoTOML) < 0 }},
+	{hi: "1.84.1", when: func(p crateProps) bool { return featuresOrder(p.CargoTOML) > 0 }},
+	// Cargo 1.83 (#14591) began writing autolib = false.
+	{lo: "1.83.0", when: cargoAdded(autoLibRegex)},
+	// Cargo 1.80 (#13713) began writing autobins = false and inlining discovered targets.
+	{lo: "1.80.0", when: cargoAdded(autoTargetsRegex)},
+	// Cargo 1.78 stabilized Cargo.lock format v4.
+	{lo: "1.78.0", when: func(p crateProps) bool { return p.LockfileVersion == 4 }},
+	// Cargo 1.71 normalized boolean profile debug settings to integers.
+	{hi: "1.70.0", when: hasManifest(debugDenormalizedRegex)},
+	// Cargo 1.67 added doc-scrape-examples to target sections.
+	{lo: "1.67.0", when: hasManifest(docExamplesRegex)},
+	// Cargo 1.64 (#10911/#10970) began writing resolver = "1" when workspace resolver differs.
+	{lo: "1.64.0", when: cargoAdded(resolverOneRegex)},
+	// Cargo 1.56..1.63 wrote redundant resolver = "2" on edition = "2021" crates (#10961).
+	{lo: "1.56.0", hi: "1.63.0", when: func(p crateProps) bool {
+		return packageEditionFloor(p.CargoTOML) == "1.56.0" && cargoWrote(resolverTwoRegex, p.CargoTOML, p.OrigTOML)
+	}},
+	// Cargo 1.60 began multi-line pretty-printing multi-element arrays.
+	{lo: "1.60.0", when: hasManifest(prettyArrayPattern)},
+	{hi: "1.59.0", when: func(p crateProps) bool {
+		return !prettyArrayPattern.MatchString(p.CargoTOML) && hasInlineMultiElementArray(p.CargoTOML)
+	}},
+	// Cargo 1.55 updated the generated Cargo.toml header comment.
+	{lo: "1.55.0", when: hasManifest(modernHeaderPattern)},
+	{hi: "1.54.0", when: func(p crateProps) bool { return !modernHeaderPattern.MatchString(p.CargoTOML) }},
+	// Cargo 1.51 stabilized resolver = "2".
+	{lo: "1.51.0", when: func(p crateProps) bool { return hasResolverTwo(p.CargoTOML) }},
+	// Cargo 1.47 stabilized Cargo.lock format v3.
+	{lo: "1.47.0", when: func(p crateProps) bool { return p.LockfileVersion == 3 }},
+}
+
+// inferRustVersionBounds analyzes packaged crate properties for structural
+// patterns that bound the Rust toolchain version used to package the crate.
+func inferRustVersionBounds(p crateProps) (lo, hi string) {
+	lo = semverMax(p.DeclaredMSRV, packageEditionFloor(p.CargoTOML))
+	for _, r := range versionRules {
+		if r.when(p) {
+			lo = semverMax(r.lo, lo)
+			hi = semverMin(r.hi, hi)
 		}
-	}
-	if debugDenormalizedRegex.MatchString(cargoTomlText) {
-		hi = semverMin("1.70.0", hi) // After which bools were normalized to ints
-	}
-	if docExamplesRegex.MatchString(cargoTomlText) {
-		lo = semverMax("1.67.0", lo) // Before which the property was omitted
-	}
-	if prettyArrayPattern.MatchString(cargoTomlText) {
-		lo = semverMax("1.60.0", lo) // Before which arrays were cuddled
-	} else if hasInlineMultiElementArray(cargoTomlText) {
-		hi = semverMin("1.59.0", hi) // After which multi-element arrays were pretty-printed
-	}
-	if modernHeaderPattern.MatchString(cargoTomlText) {
-		lo = semverMax("1.55.0", lo)
-	} else {
-		hi = semverMin("1.54.0", hi)
-	}
-	if hasResolverTwo(cargoTomlText) {
-		lo = semverMax("1.51.0", lo)
-	}
-	if editionFloor != "" {
-		lo = semverMax(editionFloor, lo)
 	}
 	if hi != "" && lo != "" && semver.Cmp(hi, lo) < 0 {
 		hi = ""
 	}
-	return
+	return lo, hi
+}
+
+// detectRustVersionBounds analyzes Cargo.toml for structural patterns that indicate
+// minimum Rust version requirements based on tooling behavior changes. origText
+// is the manifest as the author wrote it (Cargo.toml.orig), empty when absent.
+func detectRustVersionBounds(cargoTomlText, origText string) (lo, hi string) {
+	return inferRustVersionBounds(crateProps{CargoTOML: cargoTomlText, OrigTOML: origText})
 }

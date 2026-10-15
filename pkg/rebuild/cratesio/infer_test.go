@@ -1374,8 +1374,8 @@ func TestLockfileRustVersionFloor(t *testing.T) {
 		{formatVersion: 3, want: "1.47.0"},
 		{formatVersion: 4, want: "1.78.0"},
 	} {
-		if got := lockfileRustVersionFloor(tc.formatVersion); got != tc.want {
-			t.Errorf("lockfileRustVersionFloor(%d) = %q, want %q", tc.formatVersion, got, tc.want)
+		if got, _ := inferRustVersionBounds(crateProps{LockfileVersion: tc.formatVersion}); got != tc.want {
+			t.Errorf("inferRustVersionBounds(LockfileVersion=%d) lo = %q, want %q", tc.formatVersion, got, tc.want)
 		}
 	}
 }
