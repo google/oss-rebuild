@@ -646,6 +646,12 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
         version = "1.14"
         [build-system]
         requires = ["setuptools>=61"]
+        [[tool.cibuildwheel.overrides]]
+        select = "*-manylinux*"
+        before-all = "dnf install -y graphviz-devel"
+        [[tool.cibuildwheel.overrides]]
+        select = "*-musllinux*"
+        before-all = "apk add graphviz-dev"
 `, nil))
 	extELF := createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0", "libcdt.so.5"}, "")
 	distInfoDir := expectedDistInfoDir(pkgName, version)
@@ -658,6 +664,7 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
 			name:        "ManylinuxWheel",
 			platformTag: "manylinux_2_28_x86_64",
 			wantSysDeps: []string{
+				"graphviz-devel",
 				"libcgraph.so.6()(64bit)",
 				"/usr/lib64/libcgraph.so",
 				"libcdt.so.5()(64bit)",
@@ -668,6 +675,7 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
 			name:        "MusllinuxWheel",
 			platformTag: "musllinux_1_2_x86_64",
 			wantSysDeps: []string{
+				"graphviz-dev",
 				"so:libcgraph.so.6",
 				"pc:libcgraph",
 				"cgraph-dev",

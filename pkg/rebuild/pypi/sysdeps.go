@@ -182,18 +182,24 @@ func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error
 		elfFile.Close()
 	}
 	var deps []string
-	seen := make(map[string]bool)
 	for _, raw := range rawCandidates {
 		soname := unbundledSoname(raw)
 		if soname == "" || internalLibs[soname] || isStandardLibrary(soname) {
 			continue
 		}
-		for _, dep := range formatLibraryDeps(soname, libc) {
-			if !seen[dep] {
-				seen[dep] = true
-				deps = append(deps, dep)
-			}
+		deps = append(deps, formatLibraryDeps(soname, libc)...)
+	}
+	return deduplicateSystemDeps(deps), nil
+}
+
+func deduplicateSystemDeps(deps []string) []string {
+	var out []string
+	seen := make(map[string]bool, len(deps))
+	for _, dep := range deps {
+		if !seen[dep] {
+			seen[dep] = true
+			out = append(out, dep)
 		}
 	}
-	return deps, nil
+	return out
 }
