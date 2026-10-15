@@ -10,6 +10,26 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+func semverMax(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" || semver.Cmp(a, b) >= 0 {
+		return a
+	}
+	return b
+}
+
+func semverMin(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" || semver.Cmp(a, b) <= 0 {
+		return a
+	}
+	return b
+}
+
 // Compiled regex patterns for detecting Rust version requirements
 // TODO: These should be declarative and paired with semver comparisons.
 var (
@@ -28,6 +48,14 @@ var (
 	autoTargetsRegex = regexp.MustCompile(`(?m)^\s*autobins\s*=\s*false\s*$`)
 	// autoLibRegex matches the switch that form gained in Cargo 1.83 (rust-lang/cargo#14591).
 	autoLibRegex = regexp.MustCompile(`(?m)^\s*autolib\s*=\s*false\s*$`)
+	// resolverOneRegex matches resolver = "1" written by Cargo 1.64+ (#10911/#10961, backported #10970)
+	// when workspace resolver differs from edition-2021 default.
+	resolverOneRegex = regexp.MustCompile(`(?m)^\s*resolver\s*=\s*["']1["']\s*$`)
+	// resolverTwoRegex matches resolver = "2" in Cargo.toml.
+	resolverTwoRegex = regexp.MustCompile(`(?m)^\s*resolver\s*=\s*["']2["']\s*$`)
+	// featuresSectionRegex and targetOrDepSectionRegex detect section ordering in Cargo.toml.
+	featuresSectionRegex    = regexp.MustCompile(`(?m)^\[features\]\r?$`)
+	targetOrDepSectionRegex = regexp.MustCompile(`(?m)^(\[(lib|(dev-|build-)?dependencies)(\.|\])|\[\[(bin|example|test|bench)\]\])`)
 )
 
 func packageEditionFloor(cargoTomlText string) string {
@@ -89,41 +117,55 @@ func cargoWrote(re *regexp.Regexp, published, orig string) bool {
 // minimum Rust version requirements based on tooling behavior changes. origText
 // is the manifest as the author wrote it (Cargo.toml.orig), empty when absent.
 func detectRustVersionBounds(cargoTomlText, origText string) (lo, hi string) {
-	hi = "999" // NOTE: Temporarily set "hi" so it will sort higher than all our candidates
+	editionFloor := packageEditionFloor(cargoTomlText)
 	// Check patterns from latest to earliest Rust version
 	if cargoWrote(autoLibRegex, cargoTomlText, origText) {
-		lo = max("1.83.0", lo)
+		lo = semverMax("1.83.0", lo)
 	}
 	if cargoWrote(autoTargetsRegex, cargoTomlText, origText) {
-		lo = max("1.80.0", lo)
+		lo = semverMax("1.80.0", lo)
+	}
+	if cargoWrote(resolverOneRegex, cargoTomlText, origText) {
+		lo = semverMax("1.64.0", lo)
+	} else if editionFloor == "1.56.0" && cargoWrote(resolverTwoRegex, cargoTomlText, origText) {
+		// Cargo 1.56..1.63 wrote redundant resolver = "2" on edition = "2021" crates (#10961).
+		lo = semverMax("1.56.0", lo)
+		hi = semverMin("1.63.0", hi)
+	}
+	// Cargo 1.85 (#14931) moved [features] before target tables ([lib], [[bin]], etc.) and [*dependencies].
+	if featIdx := featuresSectionRegex.FindStringIndex(cargoTomlText); featIdx != nil {
+		if otherIdx := targetOrDepSectionRegex.FindStringIndex(cargoTomlText); otherIdx != nil {
+			if featIdx[0] < otherIdx[0] {
+				lo = semverMax("1.85.0", lo)
+			} else {
+				hi = semverMin("1.84.1", hi)
+			}
+		}
 	}
 	if debugDenormalizedRegex.MatchString(cargoTomlText) {
-		hi = min("1.70.0", hi) // After which bools were normalized to ints
+		hi = semverMin("1.70.0", hi) // After which bools were normalized to ints
 	}
 	if docExamplesRegex.MatchString(cargoTomlText) {
-		lo = max("1.67.0", lo) // Before which the property was omitted
+		lo = semverMax("1.67.0", lo) // Before which the property was omitted
 	}
 	if prettyArrayPattern.MatchString(cargoTomlText) {
-		lo = max("1.60.0", lo) // Before which arrays were cuddled
+		lo = semverMax("1.60.0", lo) // Before which arrays were cuddled
 	} else if hasInlineMultiElementArray(cargoTomlText) {
-		hi = min("1.59.0", hi) // After which multi-element arrays were pretty-printed
+		hi = semverMin("1.59.0", hi) // After which multi-element arrays were pretty-printed
 	}
 	if modernHeaderPattern.MatchString(cargoTomlText) {
-		lo = max("1.55.0", lo)
+		lo = semverMax("1.55.0", lo)
 	} else {
-		hi = min("1.54.0", hi)
+		hi = semverMin("1.54.0", hi)
 	}
 	if hasResolverTwo(cargoTomlText) {
-		lo = max("1.51.0", lo)
+		lo = semverMax("1.51.0", lo)
 	}
-	if hi == "999" {
+	if editionFloor != "" {
+		lo = semverMax(editionFloor, lo)
+	}
+	if hi != "" && lo != "" && semver.Cmp(hi, lo) < 0 {
 		hi = ""
-	}
-	if editionLo := packageEditionFloor(cargoTomlText); editionLo != "" {
-		lo = max(editionLo, lo)
-		if hi != "" && semver.Cmp(hi, lo) < 0 {
-			hi = ""
-		}
 	}
 	return
 }
