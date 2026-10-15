@@ -58,7 +58,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				OutputPath: "/out/rebuild",
 				Setup: textwrap.Dedent(`
 			apk update
-			apk add npm git`[1:]),
+			apk add 'npm' 'git'`[1:]),
 				Source: textwrap.Dedent(`
 			mkdir -p /src && cd /src
 			git clone https://github.com/example/test-package .
@@ -109,11 +109,11 @@ func TestDockerRunPlanner(t *testing.T) {
 				WorkingDir: "/workspace",
 				OutputPath: "/out/rebuild",
 				Setup: textwrap.Dedent(`
-			apk add curl
+			apk add 'curl'
 			curl https://example.com/timewarp > /timewarp
 			chmod +x /timewarp
 			apk update
-			apk add git`[1:]),
+			apk add 'git'`[1:]),
 				Source: textwrap.Dedent(`
 			mkdir -p /src && cd /src
 			git clone https://github.com/example/test-package .
@@ -164,7 +164,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				WorkingDir: "/workspace",
 				OutputPath: "/out/rebuild",
 				Setup: textwrap.Dedent(`
-			apk add curl
+			apk add 'curl'
 			curl https://example.com/timewarp > /timewarp
 			chmod +x /timewarp
 			apk update
@@ -214,7 +214,7 @@ func TestDockerRunPlanner(t *testing.T) {
 				OutputPath:   "/out/rebuild",
 				RequiresAuth: true,
 				Setup: textwrap.Dedent(`
-			apk add curl
+			apk add 'curl'
 			curl -K - https://example.com/timewarp > /timewarp <<EOF
 			header = "$AUTH_HEADER"
 			EOF

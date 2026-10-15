@@ -18,6 +18,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/rubygems"
+	"github.com/google/oss-rebuild/pkg/rebuild/target"
 	debreg "github.com/google/oss-rebuild/pkg/registry/debian"
 	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/pkg/errors"
@@ -270,17 +271,17 @@ const (
 )
 
 // SizeHint describes the amount of resources (disk, ram, cpu) a rebuild is expected to utilize.
-type SizeHint string
+type SizeHint = target.SizeHint
 
 const (
 	// UnspecifiedSize is the zero value for SizeHint.
-	UnspecifiedSize SizeHint = ""
+	UnspecifiedSize = target.UnspecifiedSize
 	// ShrimpSize hints that the build is expected to use minimal resources
 	// and can be accommodated on smaller, standard workers.
-	ShrimpSize SizeHint = "SHRIMP"
+	ShrimpSize = target.ShrimpSize
 	// JumboSize hints that the build is resource-intensive and requires
 	// allocation to larger, high-capacity workers.
-	JumboSize SizeHint = "JUMBO"
+	JumboSize = target.JumboSize
 )
 
 var _ api.Input = RebuildPackageRequest{}

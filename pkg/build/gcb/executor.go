@@ -20,7 +20,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/gcb"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/rebuild/target"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/grpc/codes"
@@ -129,7 +129,7 @@ func (e *Executor) Start(ctx context.Context, input rebuild.Input, opts build.Op
 	var gcbBuild *cloudbuild.Build
 	{
 		var pool *cloudbuild.PoolOption
-		if opts.SizeHint == schema.JumboSize && e.jumboPool != nil {
+		if opts.SizeHint == target.JumboSize && e.jumboPool != nil {
 			pool = &cloudbuild.PoolOption{
 				Name: e.jumboPool.Name,
 			}
