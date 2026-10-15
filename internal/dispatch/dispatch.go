@@ -529,6 +529,9 @@ func (d *Dispatcher) outcome(ctx context.Context, c scheduler.Campaign) (outcome
 			return "", scheduler.Spend{}, false, false
 		}
 		spend := scheduler.Spend{SessionSeconds: spanSeconds(s.Created, s.Updated), Tokens: sessionTokens(s.Usage)}
+		if scheduler.IsOversize(s.Summary) {
+			return scheduler.OutcomeOversize, spend, false, true
+		}
 		return scheduler.ClassifySession(s.StopReason), spend, false, true
 	}
 	a, err := d.Attempts.Get(ctx, db.AttemptKey{Target: c.Target(), RunID: c.LastRunID})

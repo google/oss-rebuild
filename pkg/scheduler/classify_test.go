@@ -36,6 +36,7 @@ func TestClassifyRebuild(t *testing.T) {
 		{"InferenceCapacity", schema.RebuildStatusError, "getting strategy: fetching inference version: rpc error: code = ResourceExhausted desc = resource exhausted", OutcomeTransient},
 		{"Cancelled", schema.RebuildStatusCancelled, "context canceled", OutcomeTransient},
 		{"GenericError", schema.RebuildStatusError, "no such package", OutcomeFailure},
+		{"Oversize", schema.RebuildStatusError, "getting strategy: fetching inference: rpc error: code = FailedPrecondition desc = failed to infer strategy: clone failed [repo=https://github.com/org/big]: using repo cache: tar extract error: repository exceeds the size limit: https://github.com/org/big, fetch cut off at 4096 MiB", OutcomeOversize},
 		// Inference failures carry an Internal status code but describe the package.
 		{"InferenceInternal", schema.RebuildStatusError, "fetching inference: rpc error: code = Internal desc = failed to infer strategy: no git repo", OutcomeFailure},
 		// Recurs for repos whose inference exceeds the request deadline.

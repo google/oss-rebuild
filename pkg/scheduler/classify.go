@@ -46,15 +46,31 @@ func IsCapacityRejection(message string) bool {
 	return false
 }
 
+// oversizeSignatures mark a stage that refused the repository for its size.
+var oversizeSignatures = []string{"repository exceeds the size limit"}
+
+// IsOversize reports whether an attempt or session message says the
+// repository was refused for its size.
+func IsOversize(message string) bool {
+	msg := strings.ToLower(message)
+	for _, s := range oversizeSignatures {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // cachedSignatures mark an attempt that found an attestation already published.
 var cachedSignatures = []string{"alreadyexists", "already exists"}
 
 // ClassifyRebuild maps a rebuild attempt's status and message onto an
 // Outcome. Successes and attempts that found an existing attestation are
-// Attested. Cancellations and known infrastructure failures are Transient.
-// Everything else, notably a content mismatch, is a Failure. Attempts that
-// predate the status field carry only a message, so an unspecified status
-// with an empty message is Attested.
+// Attested. Cancellations and known infrastructure failures are Transient. A
+// repository refused for its size is Oversize. Everything else, notably a
+// content mismatch, is a Failure. Attempts that predate the status field
+// carry only a message, so an unspecified status with an empty message is
+// Attested.
 func ClassifyRebuild(status schema.RebuildStatus, message string) Outcome {
 	msg := strings.ToLower(message)
 	for _, s := range cachedSignatures {
@@ -71,6 +87,9 @@ func ClassifyRebuild(status schema.RebuildStatus, message string) Outcome {
 		if message == "" {
 			return OutcomeAttested
 		}
+	}
+	if IsOversize(msg) {
+		return OutcomeOversize
 	}
 	for _, s := range transientBuildSignatures {
 		if strings.Contains(msg, s) {

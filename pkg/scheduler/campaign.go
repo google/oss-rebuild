@@ -47,6 +47,7 @@ const (
 	OutcomeAttested  Outcome = "ATTESTED"  // reproduced, an attestation exists
 	OutcomeTransient Outcome = "TRANSIENT" // throttle or infra flake, retry same stage
 	OutcomeFailure   Outcome = "FAILURE"   // ran and failed, escalate
+	OutcomeOversize  Outcome = "OVERSIZE"  // the repository exceeds the stage's size limit, triage
 )
 
 // State tracks where a campaign sits in the dispatch workflow.
