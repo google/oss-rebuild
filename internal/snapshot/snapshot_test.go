@@ -5,6 +5,7 @@ package snapshot
 
 import (
 	"context"
+	"iter"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -12,10 +13,12 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/ncruces/go-sqlite3"
 )
 
@@ -30,31 +33,39 @@ type fakeSource struct {
 	scratches   []schema.Scratch
 	execs       []schema.ScratchExec
 	repoMetrics []schema.RepoMetrics
+	campaigns   []scheduler.Campaign
 	signals     []signals.PackageSignal
+	signalsAt   time.Time
+	universe    []SignalUniverse
 }
 
-func (f *fakeSource) Attempts(_ context.Context, since time.Time) ([]schema.RebuildAttempt, error) {
+func (f *fakeSource) Attempts(_ context.Context, since time.Time) iter.Seq2[schema.RebuildAttempt, error] {
 	f.since = append(f.since, since)
-	return f.attempts, nil
+	return iterx.FromSlice(f.attempts)
 }
-func (f *fakeSource) Runs(context.Context, time.Time) ([]schema.Run, error) { return f.runs, nil }
-func (f *fakeSource) Sessions(context.Context, time.Time) ([]schema.AgentSession, error) {
-	return f.sessions, nil
+func (f *fakeSource) Runs(context.Context, time.Time) iter.Seq2[schema.Run, error] {
+	return iterx.FromSlice(f.runs)
 }
-func (f *fakeSource) Iterations(context.Context, time.Time) ([]schema.AgentIteration, error) {
-	return f.iterations, nil
+func (f *fakeSource) Sessions(context.Context, time.Time) iter.Seq2[schema.AgentSession, error] {
+	return iterx.FromSlice(f.sessions)
 }
-func (f *fakeSource) Scratches(context.Context, time.Time) ([]schema.Scratch, error) {
-	return f.scratches, nil
+func (f *fakeSource) Iterations(context.Context, time.Time) iter.Seq2[schema.AgentIteration, error] {
+	return iterx.FromSlice(f.iterations)
 }
-func (f *fakeSource) Execs(context.Context, time.Time) ([]schema.ScratchExec, error) {
-	return f.execs, nil
+func (f *fakeSource) Scratches(context.Context, time.Time) iter.Seq2[schema.Scratch, error] {
+	return iterx.FromSlice(f.scratches)
 }
-func (f *fakeSource) RepoMetrics(context.Context, time.Time) ([]schema.RepoMetrics, error) {
-	return f.repoMetrics, nil
+func (f *fakeSource) Execs(context.Context, time.Time) iter.Seq2[schema.ScratchExec, error] {
+	return iterx.FromSlice(f.execs)
 }
-func (f *fakeSource) Signals(context.Context) ([]signals.PackageSignal, error) {
-	return f.signals, nil
+func (f *fakeSource) RepoMetrics(context.Context, time.Time) iter.Seq2[schema.RepoMetrics, error] {
+	return iterx.FromSlice(f.repoMetrics)
+}
+func (f *fakeSource) Campaigns(context.Context, time.Time) iter.Seq2[scheduler.Campaign, error] {
+	return iterx.FromSlice(f.campaigns)
+}
+func (f *fakeSource) Signals(context.Context) (iter.Seq2[signals.PackageSignal, error], time.Time, error) {
+	return iterx.FromSlice(f.signals), f.signalsAt, nil
 }
 
 // openPublished fetches the snapshot database dest holds and opens it.
@@ -207,8 +218,12 @@ func TestRollupPrunesSignalsToTrackedPackages(t *testing.T) {
 		attempts: []schema.RebuildAttempt{
 			attempt("pypi", "pkgA", "1.0", "r1", true, schema.RebuildStatusSuccess, at(0)),
 		},
+		campaigns: []scheduler.Campaign{
+			{Ecosystem: "npm", Package: "pkgQ", Version: "1.0", Artifact: "a.tgz", Updated: at(0)},
+		},
 		signals: []signals.PackageSignal{
 			{Ecosystem: "pypi", Package: "pkgA", Score: 0.9},   // attempted
+			{Ecosystem: "npm", Package: "pkgQ", Score: 0.8},    // only enqueued
 			{Ecosystem: "pypi", Package: "famous", Score: 1.0}, // untracked
 		},
 	}
@@ -217,11 +232,11 @@ func TestRollupPrunesSignalsToTrackedPackages(t *testing.T) {
 		t.Fatalf("Rollup: %v", err)
 	}
 	// The exports cover the registry universe. Only the packages this
-	// database carries keep their signals.
-	if got := res.RowCounts[TablePackageSignals]; got != 1 {
-		t.Errorf("package_signals count = %d, want 1", got)
+	// database carries (an attempt or a campaign) keep their signals.
+	if got := res.RowCounts[TablePackageSignals]; got != 2 {
+		t.Errorf("package_signals count = %d, want 2", got)
 	}
 	db := openPublished(t, dest)
 	assertCount(t, db, "SELECT count(*) FROM package_signals WHERE package='famous'", "0")
-	assertCount(t, db, "SELECT count(*) FROM package_signals WHERE package='pkgA' AND score=0.9", "1")
+	assertCount(t, db, "SELECT count(*) FROM package_signals WHERE package='pkgQ' AND score=0.8", "1")
 }
