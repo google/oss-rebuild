@@ -4,6 +4,8 @@
 package signals
 
 import (
+	"time"
+
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 )
 
@@ -35,5 +37,7 @@ type PrevalenceRecord struct {
 	// Prevalence is Dependents on a log scale relative to the ecosystem's most
 	// depended-on package, in (0,1]. Counts are tail heavy enough that a rank
 	// quantile over the ecosystem would crowd every exported row above 0.99.
-	Prevalence float64 `json:"prevalence"`
+	Prevalence float64   `json:"prevalence"`
+	Artifact   string    `json:"artifact,omitempty"` // PyPI version rows only: the pure wheel's filename, empty when there is none. Other ecosystems derive the artifact from the version.
+	Published  time.Time `json:"published,omitzero"` // version rows only: the publication time, zero when no source records one
 }
