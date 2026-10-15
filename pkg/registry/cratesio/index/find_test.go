@@ -227,6 +227,60 @@ func TestFindRegistryResolution(t *testing.T) {
 			wantCommit:     "initial-commit",
 		},
 		{
+			name: "skip newest repo when all commits are after publish time",
+			repoYAMLs: []string{
+				// Newer index whose earliest commit is after cratePublished
+				`commits:
+  - id: future-commit
+    time: 2024-05-02T12:00:00Z
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"abc123","features":{},"yanked":false}
+`,
+				// Older snapshot containing a commit at or before cratePublished
+				`commits:
+  - id: snapshot-commit
+    time: 2024-05-01T08:00:00Z
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"abc123","features":{},"yanked":false}
+`,
+			},
+			packages: []cargolock.Package{
+				{Name: "serde", Version: "1.0.193"},
+			},
+			cratePublished: time.Date(2024, 5, 1, 12, 0, 0, 0, time.UTC),
+			wantRepoIndex:  1,
+			wantCommit:     "snapshot-commit",
+		},
+		{
+			name: "post-publish grace window picks up sibling version committed after publish",
+			repoYAMLs: []string{
+				`commits:
+  - id: initial-commit
+    time: 2024-05-01T11:55:00Z
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"abc123","features":{},"yanked":false}
+  - id: sibling-commit
+    parent: initial-commit
+    time: 2024-05-01T12:05:00Z
+    files:
+      se/rd/serde: |
+        {"name":"serde","vers":"1.0.193","deps":[],"cksum":"abc123","features":{},"yanked":false}
+      se/rd/serde_derive: |
+        {"name":"serde_derive","vers":"1.0.193","deps":[],"cksum":"def456","features":{},"yanked":false}
+`,
+			},
+			packages: []cargolock.Package{
+				{Name: "serde", Version: "1.0.193"},
+				{Name: "serde_derive", Version: "1.0.193"},
+			},
+			cratePublished: time.Date(2024, 5, 1, 12, 0, 0, 0, time.UTC),
+			wantRepoIndex:  0,
+			wantCommit:     "sibling-commit",
+		},
+		{
 			name: "empty packages is an error",
 			repoYAMLs: []string{
 				`commits:

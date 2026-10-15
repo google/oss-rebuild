@@ -919,7 +919,7 @@ version = 3
 			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-11-07T00:00:00Z","rust_version":"1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
-					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":""}`)},
 					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
 				}
 			},
@@ -954,7 +954,7 @@ version = 3
 			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-11-07T00:00:00Z","rust_version":"1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
-					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":""}`)},
 					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
 				}
 			},
@@ -985,7 +985,7 @@ version = 3
 			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-11-07T00:00:00Z","rust_version":"1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
-					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":""}`)},
 					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
 				}
 			},
@@ -1020,7 +1020,7 @@ version = 3
 			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2025-08-01T00:00:00Z"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
-					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":""}`)},
 					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
 				}
 			},
@@ -1055,7 +1055,7 @@ version = 3
 			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-09-30T00:00:00Z","rust_version":"1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
-					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":""}`)},
 					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
 				}
 			},
@@ -1083,7 +1083,7 @@ version = 3
 			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-11-07T00:00:00Z","rust_version":"1.61.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
-					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":""}`)},
 					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
 				}
 			},
@@ -1111,7 +1111,7 @@ version = 3
 			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2024-05-20T00:00:00Z","rust_version":"1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
-					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":""}`)},
 					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
 					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.lock"}, Body: []byte("version = 4\n")},
 				}
@@ -1168,7 +1168,7 @@ version = 3
 			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-11-07T00:00:00Z","rust_version":"1.35.0"}}`,
 			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
 				return []archive.TarEntry{
-					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":""}`)},
 					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
 				}
 			},
@@ -1207,6 +1207,34 @@ version = 3
 						Ref:  repo.Commits["version-bump"].String(),
 					},
 					RustVersion: "1.35.0",
+				}
+			},
+		},
+		{
+			name: "cargo_vcs_info without path_in_vcs caps at 1.56.1",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2022-01-15T00:00:00Z"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"}}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML)},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "",
+					},
+					RustVersion: "1.56.1",
 				}
 			},
 		},
@@ -1374,8 +1402,8 @@ func TestLockfileRustVersionFloor(t *testing.T) {
 		{formatVersion: 3, want: "1.47.0"},
 		{formatVersion: 4, want: "1.78.0"},
 	} {
-		if got := lockfileRustVersionFloor(tc.formatVersion); got != tc.want {
-			t.Errorf("lockfileRustVersionFloor(%d) = %q, want %q", tc.formatVersion, got, tc.want)
+		if got, _ := inferRustVersionBounds(crateProps{LockfileVersion: tc.formatVersion}); got != tc.want {
+			t.Errorf("inferRustVersionBounds(LockfileVersion=%d) lo = %q, want %q", tc.formatVersion, got, tc.want)
 		}
 	}
 }
@@ -1491,6 +1519,39 @@ func TestFindAndValidateCargoTOMLStripsManifestBOM(t *testing.T) {
 	}
 	if want := "member/Cargo.toml"; got != want {
 		t.Errorf("findAndValidateCargoTOML = %q, want %q", got, want)
+	}
+}
+
+func TestCargoTOMLSearchWorkspaceVersionBump(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: initial
+    files:
+      Cargo.toml: |
+        [workspace]
+        members = ["crates/member"]
+
+        [workspace.package]
+        version = "0.1.0"
+      crates/member/Cargo.toml: |
+        [package]
+        name = "member"
+        version.workspace = true
+  - id: release
+    parent: initial
+    files:
+      Cargo.toml: |
+        [workspace]
+        members = ["crates/member"]
+
+        [workspace.package]
+        version = "0.2.0"
+`, nil))
+	tm, err := cargoTOMLSearch("member", "crates/member/Cargo.toml", repo.Repository)
+	if err != nil {
+		t.Fatalf("cargoTOMLSearch: %v", err)
+	}
+	if got, want := tm["0.2.0"], repo.Commits["release"].String(); got != want {
+		t.Errorf("cargoTOMLSearch[\"0.2.0\"] = %q, want %q", got, want)
 	}
 }
 
