@@ -134,6 +134,10 @@ func cargoAdded(re *regexp.Regexp) func(p crateProps) bool {
 	return func(p crateProps) bool { return cargoWrote(re, p.CargoTOML, p.OrigTOML) }
 }
 
+func cargoLacks(re *regexp.Regexp) func(p crateProps) bool {
+	return func(p crateProps) bool { return p.OrigTOML != "" && !re.MatchString(p.CargoTOML) }
+}
+
 // featuresOrder returns -1 if [features] precedes target/dependency tables,
 // +1 if it follows them, or 0 if both are not present.
 func featuresOrder(cargoTomlText string) int {
@@ -155,8 +159,10 @@ var versionRules = []versionRule{
 	{hi: "1.84.1", when: func(p crateProps) bool { return p.OrigTOML != "" && featuresOrder(p.CargoTOML) > 0 }},
 	// Cargo 1.83 (#14591) began writing autolib = false.
 	{lo: "1.83.0", when: cargoAdded(autoLibRegex)},
+	{hi: "1.82.0", when: cargoLacks(autoLibRegex)},
 	// Cargo 1.80 (#13713) began writing autobins = false and inlining discovered targets.
 	{lo: "1.80.0", when: cargoAdded(autoTargetsRegex)},
+	{hi: "1.79.0", when: cargoLacks(autoTargetsRegex)},
 	// Cargo 1.78 stabilized Cargo.lock format v4.
 	{lo: "1.78.0", when: func(p crateProps) bool { return p.LockfileVersion == 4 }},
 	// Cargo 1.71 normalized boolean profile debug settings to integers.

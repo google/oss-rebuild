@@ -43,7 +43,7 @@ name = "windows_x86_64_gnu"
 build = "build.rs"
 `,
 			wantLo: "1.80.0", // Cargo 1.80 began inlining discovered targets
-			wantHi: "",
+			wantHi: "1.82.0", // No autolib = false
 		},
 		{
 			name: "Explicit Targets Form With Autolib",
@@ -80,7 +80,7 @@ name = "regex"
 autobins = false
 `,
 			wantLo: "1.56.0", // The author wrote the switch, so it does not date cargo
-			wantHi: "",
+			wantHi: "1.82.0",
 		},
 		{
 			name: "Hand-Written Switch Beside Cargo's",
@@ -99,7 +99,7 @@ name = "regex"
 autotests = false
 `,
 			wantLo: "1.80.0", // autobins is cargo's even though autotests is the author's
-			wantHi: "",
+			wantHi: "1.82.0",
 		},
 		{
 			name: "Target Switches Without An Original",
@@ -470,7 +470,7 @@ name = "my-crate"
 edition = "2021"
 `,
 			wantLo: "1.64.0",
-			wantHi: "",
+			wantHi: "1.79.0",
 		},
 		{
 			name: "Cargo 1.56..1.63 redundant resolver = 2 on edition 2021",
