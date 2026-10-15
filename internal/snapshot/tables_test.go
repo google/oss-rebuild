@@ -5,13 +5,17 @@ package snapshot
 
 import (
 	"encoding/json"
+	"iter"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/iterx"
+	"github.com/google/oss-rebuild/internal/signals"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/ncruces/go-sqlite3"
 )
 
@@ -33,6 +37,30 @@ func attempt(eco, pkg, ver, runID string, success bool, status schema.RebuildSta
 }
 
 func durPtr(d time.Duration) *time.Duration { return &d }
+
+// agentSession builds a completed session for a target, whose iterations
+// carry the artifact the build phase attempts under.
+func agentSession(id, runID string, eco rebuild.Ecosystem, pkg, ver string, created time.Time) schema.AgentSession {
+	return schema.AgentSession{
+		ID:      id,
+		RunID:   runID,
+		Target:  rebuild.Target{Ecosystem: eco, Package: pkg, Version: ver, Artifact: ver + ".whl"},
+		Status:  schema.AgentSessionStatusCompleted,
+		Created: created,
+	}
+}
+
+func agentIteration(sessionID string, number int, status string, created time.Time) schema.AgentIteration {
+	return schema.AgentIteration{
+		ID:          created.Format(time.RFC3339Nano),
+		SessionID:   sessionID,
+		Number:      number,
+		ObliviousID: sessionID + "-" + strconv.Itoa(number),
+		Status:      status,
+		Created:     created,
+		Updated:     created,
+	}
+}
 
 // measuredAttempt builds a successful attempt carrying build phase timings
 // and measured Costs.
@@ -73,6 +101,11 @@ func assertCount(t *testing.T, db *sqlite3.Conn, sql string, want string) {
 	}
 }
 
+// fixture serves records already in hand as a doc table producer.
+func fixture[T any](xs []T) func() iter.Seq2[json.RawMessage, error] {
+	return func() iter.Seq2[json.RawMessage, error] { return docSeq(iterx.FromSlice(xs)) }
+}
+
 // fill builds an in-memory snapshot database from source fixtures.
 func fill(t *testing.T, src *fakeSource) (*sqlite3.Conn, map[string]int) {
 	t.Helper()
@@ -84,15 +117,17 @@ func fill(t *testing.T, src *fakeSource) (*sqlite3.Conn, map[string]int) {
 	if err := registerCollations(db); err != nil {
 		t.Fatalf("registerCollations: %v", err)
 	}
-	counts, err := fillSnapshotDB(db, map[string][]json.RawMessage{
-		TableAttempts:        docsOf(src.attempts),
-		TableRuns:            docsOf(src.runs),
-		TableAgentSessions:   docsOf(src.sessions),
-		TableAgentIterations: docsOf(src.iterations),
-		TableScratchVMs:      docsOf(src.scratches),
-		TableScratchExecs:    docsOf(src.execs),
-		TableRepoMetrics:     docsOf(src.repoMetrics),
-		TablePackageSignals:  docsOf(src.signals),
+	counts, err := fillSnapshotDB(db, docProducers{
+		TableAttempts:        fixture(src.attempts),
+		TableRuns:            fixture(src.runs),
+		TableAgentSessions:   fixture(src.sessions),
+		TableAgentIterations: fixture(src.iterations),
+		TableScratchVMs:      fixture(src.scratches),
+		TableScratchExecs:    fixture([]schema.ScratchExec(nil)),
+		TableRepoMetrics:     fixture(src.repoMetrics),
+		TableCampaigns:       fixture(src.campaigns),
+		TablePackageSignals:  fixture(src.signals),
+		TableSignalUniverse:  fixture(src.universe),
 	}, Meta{BuiltAt: at(time.Hour)})
 	if err != nil {
 		t.Fatalf("fillSnapshotDB: %v", err)
@@ -123,11 +158,6 @@ func TestFillSnapshotDB(t *testing.T) {
 		scratches: []schema.Scratch{
 			{ID: "sc1", MachineClass: schema.MachineClassStandard, State: schema.ScratchDeleted, Created: at(0), Updated: at(10 * time.Minute)},
 		},
-		execs: []schema.ScratchExec{
-			{ID: "e1", ScratchID: "sc1", Cmd: []string{"go", "build"}, State: schema.ScratchExecCompleted,
-				CreatedAt: at(0), StartedAt: at(time.Minute), FinishedAt: at(2 * time.Minute), Updated: at(2 * time.Minute)},
-			{ID: "e2", ScratchID: "sc1", State: schema.ScratchExecLost, CreatedAt: at(0), FinishedAt: at(time.Minute), Updated: at(time.Minute)},
-		},
 		repoMetrics: []schema.RepoMetrics{
 			{URI: "https://github.com/example/pkgA", Bytes: 4096, Commits: 12},
 		},
@@ -148,10 +178,6 @@ func TestFillSnapshotDB(t *testing.T) {
 	assertCount(t, db, "SELECT count(*) FROM scratch_vms WHERE scratch_id='sc1' AND vm_seconds=600.0", "1")
 	assertCount(t, db, `SELECT count(*) FROM repo_metrics
 		WHERE uri='https://github.com/example/pkgA' AND bytes=4096 AND commits=12`, "1")
-	// The exec span derives from the worker clocks. A lost exec never
-	// started, so its span is unmeasured rather than zero.
-	assertCount(t, db, "SELECT count(*) FROM scratch_execs WHERE exec_id='e1' AND scratch_id='sc1' AND exec_seconds=60.0", "1")
-	assertCount(t, db, "SELECT count(*) FROM scratch_execs WHERE exec_id='e2' AND state='lost' AND exec_seconds IS NULL", "1")
 	// Derived tables materialize and join on shared keys, with counts
 	// reported (2 attempt + 1 session + 1 scratch observations).
 	if counts[TableCostObservations] != 4 {
@@ -249,47 +275,207 @@ func TestEcosystemDaily(t *testing.T) {
 
 func TestVersionStatsAndTopGaps(t *testing.T) {
 	flakyOK := attempt("pypi", "pkgE", "1.0", "r8", true, schema.RebuildStatusSuccess, at(2*time.Hour))
-	db, _ := fill(t, &fakeSource{attempts: []schema.RebuildAttempt{
-		// pkgA: an old version built, but the numerically-newest (10.0,
-		// which naive lexicographic ordering would rank below 2.0) fails.
-		attempt("pypi", "pkgA", "2.0", "r1", true, schema.RebuildStatusSuccess, at(0)),
-		attempt("pypi", "pkgA", "10.0", "r2", false, schema.RebuildStatusError, at(1*time.Hour)),
-		// pkgB: latest completed without matching upstream.
-		attempt("pypi", "pkgB", "1.0", "r3", false, schema.RebuildStatusFailure, at(0)),
-		// pkgC: latest errored.
-		attempt("pypi", "pkgC", "1.0", "r4", false, schema.RebuildStatusError, at(0)),
-		// pkgD: current, so absent from the gap queue.
-		attempt("pypi", "pkgD", "1.0", "r5", true, schema.RebuildStatusSuccess, at(0)),
-		// pkgE: one artifact with mixed outcomes, so flaky but current.
-		attempt("pypi", "pkgE", "1.0", "r7", false, schema.RebuildStatusError, at(1*time.Hour)),
-		flakyOK,
-	}})
+	db, _ := fill(t, &fakeSource{
+		attempts: []schema.RebuildAttempt{
+			// pkgA: an old version built, but the numerically-newest (10.0,
+			// which naive lexicographic ordering would rank below 2.0) fails.
+			attempt("pypi", "pkgA", "2.0", "r1", true, schema.RebuildStatusSuccess, at(0)),
+			attempt("pypi", "pkgA", "10.0", "r2", false, schema.RebuildStatusError, at(1*time.Hour)),
+			// pkgB: latest completed without matching upstream.
+			attempt("pypi", "pkgB", "1.0", "r3", false, schema.RebuildStatusFailure, at(0)),
+			// pkgC: latest errored.
+			attempt("pypi", "pkgC", "1.0", "r4", false, schema.RebuildStatusError, at(0)),
+			// pkgD: current, so absent from the gap queue.
+			attempt("pypi", "pkgD", "1.0", "r5", true, schema.RebuildStatusSuccess, at(0)),
+			// pkgE: one artifact with mixed outcomes, so flaky but current.
+			attempt("pypi", "pkgE", "1.0", "r7", false, schema.RebuildStatusError, at(1*time.Hour)),
+			flakyOK,
+		},
+		campaigns: []scheduler.Campaign{{
+			Ecosystem: "pypi", Package: "pkgA", Version: "10.0", Artifact: "10.0.whl",
+			Stage: scheduler.StageInfer, State: scheduler.StateQueued,
+			Score: 0.75, Published: at(30 * time.Minute), Updated: at(time.Hour),
+		}},
+		signals: []signals.PackageSignal{
+			{Ecosystem: "pypi", Package: "pkgA", Dependents: 120, Prevalence: 1.0, Score: 0.75},
+			{Ecosystem: "pypi", Package: "pkgC", Dependents: 5, Prevalence: 0.5, Score: 0.25},
+		},
+	})
 	assertCount(t, db, `SELECT count(*) FROM version_stats WHERE package='pkgA' AND version='10.0'
 		AND current=0 AND artifacts_attempted=1 AND artifacts_succeeded=0 AND last_status='ERROR'`, "1")
 	assertCount(t, db, "SELECT count(*) FROM version_stats WHERE package='pkgE' AND flaky=1 AND current=1", "1")
 	assertCount(t, db, "SELECT count(*) FROM version_stats WHERE package='pkgD' AND current=1 AND flaky=0", "1")
+	// published_at flows from the campaign document to the enqueued version
+	// and stays NULL elsewhere.
+	assertCount(t, db, `SELECT count(*) FROM version_stats WHERE package='pkgA' AND version='10.0'
+		AND published_at='2026-07-01T12:30:00.000Z'`, "1")
+	assertCount(t, db, "SELECT count(*) FROM version_stats WHERE published_at IS NOT NULL", "1")
 	// The version_approx_compare collation picks 10.0 (not 2.0) as pkgA's
 	// latest, making the package stale rather than current.
 	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgA' AND latest_version='10.0' AND reason='stale'", "1")
 	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgB' AND reason='mismatch'", "1")
 	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgC' AND reason='error'", "1")
 	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package IN ('pkgD','pkgE')", "0")
+	// Signaled gaps carry their score and dependents. An unsignaled gap
+	// reads zero and sorts by attempts.
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgA' AND score=0.75 AND dependents=120", "1")
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgC' AND score=0.25 AND dependents=5", "1")
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgB' AND score=0.0 AND dependents=0", "1")
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE score_percentile != 0.0", "0")
+}
+
+func TestAgentConfirmedBuilds(t *testing.T) {
+	day2 := base.AddDate(0, 0, 1)
+	db, _ := fill(t, &fakeSource{
+		attempts: []schema.RebuildAttempt{
+			// pkgA: the build phase failed, then the agent won.
+			attempt("pypi", "pkgA", "1.0", "r1", false, schema.RebuildStatusFailure, at(0)),
+			// pkgC: the build phase failed and the agent never confirmed.
+			attempt("pypi", "pkgC", "1.0", "r3", false, schema.RebuildStatusFailure, at(0)),
+			// pkgD: the same artifact both failed and succeeded in the build
+			// phase, which is what flaky reports.
+			attempt("pypi", "pkgD", "1.0", "r4", false, schema.RebuildStatusFailure, at(0)),
+			attempt("pypi", "pkgD", "1.0", "r5", true, schema.RebuildStatusSuccess, at(time.Hour)),
+		},
+		sessions: []schema.AgentSession{
+			agentSession("s1", "r1", "pypi", "pkgA", "1.0", at(time.Hour)),
+			// pkgB was never attempted by the build phase at all.
+			agentSession("s2", "r2", "pypi", "pkgB", "1.0", day2),
+			agentSession("s3", "r3", "pypi", "pkgC", "1.0", at(time.Hour)),
+		},
+		iterations: []schema.AgentIteration{
+			agentIteration("s1", 1, schema.AgentIterationStatusFailed, at(time.Hour)),
+			agentIteration("s1", 2, schema.AgentIterationStatusSuccess, at(2*time.Hour)),
+			agentIteration("s2", 1, schema.AgentIterationStatusSuccess, day2),
+			agentIteration("s3", 1, schema.AgentIterationStatusFailed, at(time.Hour)),
+			agentIteration("s3", 2, schema.AgentIterationStatusBuilding, at(2*time.Hour)),
+		},
+	})
+	// The agent's confirmation makes the version current. Only the
+	// successful iteration counts, so attempts is the build-phase failure
+	// plus the one confirmation, and the agent carries no executor version.
+	assertCount(t, db, `SELECT count(*) FROM version_stats WHERE package='pkgA' AND version='1.0'
+		AND current=1 AND attempts=2 AND artifacts_attempted=1 AND artifacts_succeeded=1
+		AND last_status='SUCCESS' AND first_succeeded_at='2026-07-01T14:00:00.000Z'
+		AND first_success_mechanism='agent' AND first_success_executor IS NULL`, "1")
+	assertCount(t, db, "SELECT count(*) FROM version_stats WHERE package='pkgA' AND flaky=0", "1")
+	assertCount(t, db, "SELECT count(*) FROM version_stats WHERE package='pkgD' AND flaky=1 AND current=1", "1")
+	// A target the build phase never attempted appears on the agent's row alone.
+	assertCount(t, db, `SELECT count(*) FROM version_stats WHERE package='pkgB' AND version='1.0'
+		AND current=1 AND attempts=1 AND first_success_mechanism='agent'`, "1")
+	// Failed and in-flight iterations contribute nothing.
+	assertCount(t, db, `SELECT count(*) FROM version_stats WHERE package='pkgC'
+		AND current=0 AND attempts=1 AND artifacts_succeeded=0 AND last_status='FAILURE'`, "1")
+	// Rescued packages leave the gap queue. pkgC stays.
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package IN ('pkgA','pkgB','pkgD')", "0")
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgC'", "1")
+	// package_stats credits the agent's success to the session's run.
+	assertCount(t, db, `SELECT count(*) FROM package_stats WHERE package='pkgA' AND ever_built=1
+		AND consecutive_failures=0 AND attempt_count=2 AND versions_succeeded=1
+		AND last_succeeded_run_id='r1' AND last_attempted_status='SUCCESS'`, "1")
+	assertCount(t, db, "SELECT count(*) FROM package_stats WHERE package='pkgC' AND ever_built=0 AND consecutive_failures=1", "1")
+	// The confirmation counts on its own day, pkgB's first success falling
+	// on the day the agent ran rather than the day the build phase did.
+	assertCount(t, db, `SELECT count(*) FROM ecosystem_daily WHERE day='2026-07-01'
+		AND attempts=5 AND successes=2 AND first_time_successes=2`, "1")
+	assertCount(t, db, `SELECT count(*) FROM ecosystem_daily WHERE day='2026-07-02'
+		AND attempts=1 AND successes=1 AND first_time_successes=1`, "1")
+	// Coverage counts the rescued packages as built.
+	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE week='2026-06-29'
+		AND packages_attempted=4 AND packages_ever_built=3 AND packages_current=3`, "1")
 }
 
 func TestCoverageWeekly(t *testing.T) {
-	// Week of 2026-06-29: pkgA 1.0 builds. Week of 2026-07-06: 2.0 arrives
-	// and fails, breaking the package.
+	// Week of 2026-06-29: pkgA 1.0 builds and pkgB 1.0 fails. Week of
+	// 2026-07-06: pkgA 2.0 arrives and fails, breaking the package. Both
+	// 1.0s were published the day before their attempts, and pkgC 1.0 was
+	// published and enqueued that week but never attempted.
 	week2 := base.AddDate(0, 0, 7)
-	db, _ := fill(t, &fakeSource{attempts: []schema.RebuildAttempt{
-		attempt("pypi", "pkgA", "1.0", "r1", true, schema.RebuildStatusSuccess, base),
-		attempt("pypi", "pkgA", "2.0", "r2", false, schema.RebuildStatusError, week2),
-	}})
-	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE week='2026-06-29'
-		AND packages_attempted=1 AND packages_current=1 AND packages_stale=0
-		AND coverage=1.0 AND newly_broken=0 AND versions_attempted=1`, "1")
+	db, _ := fill(t, &fakeSource{
+		attempts: []schema.RebuildAttempt{
+			attempt("pypi", "pkgA", "1.0", "r1", true, schema.RebuildStatusSuccess, base),
+			attempt("pypi", "pkgB", "1.0", "r2", false, schema.RebuildStatusFailure, base),
+			attempt("pypi", "pkgA", "2.0", "r3", false, schema.RebuildStatusError, week2),
+			// A package name shared with another ecosystem: both are counted.
+			attempt("npm", "pkgA", "3.0", "r4", true, schema.RebuildStatusSuccess, base),
+		},
+		campaigns: []scheduler.Campaign{
+			{Ecosystem: "pypi", Package: "pkgA", Version: "1.0", Artifact: "1.0.whl",
+				Published: at(-24 * time.Hour), Updated: base},
+			{Ecosystem: "pypi", Package: "pkgB", Version: "1.0", Artifact: "1.0.whl",
+				Published: at(-24 * time.Hour), Updated: base},
+			{Ecosystem: "pypi", Package: "pkgC", Version: "1.0", Artifact: "1.0.whl",
+				Published: base, Updated: base},
+		},
+		signals: []signals.PackageSignal{
+			{Ecosystem: "pypi", Package: "pkgA", Score: 0.75},
+			{Ecosystem: "pypi", Package: "pkgB", Score: 0.25},
+		},
+	})
+	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE ecosystem='pypi' AND week='2026-06-29'
+		AND packages_attempted=2 AND packages_current=1 AND packages_stale=0
+		AND coverage=0.5 AND newly_broken=0 AND versions_attempted=2`, "1")
+	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE ecosystem='npm' AND week='2026-06-29'
+		AND packages_attempted=1 AND packages_current=1`, "1")
 	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE week='2026-07-06'
-		AND packages_attempted=1 AND packages_current=0 AND packages_stale=1
+		AND packages_attempted=2 AND packages_current=0 AND packages_stale=1
 		AND packages_ever_built=1 AND newly_broken=1 AND versions_attempted=1`, "1")
+	// weighted_coverage weights pkgA's success by its 0.75 score against the
+	// 1.0 total signal mass.
+	assertCount(t, db, "SELECT count(*) FROM coverage_weekly WHERE week='2026-06-29' AND weighted_coverage=0.75", "1")
+	assertCount(t, db, "SELECT count(*) FROM coverage_weekly WHERE week='2026-07-06' AND weighted_coverage=0.0", "1")
+	// Three versions enqueued in week one. pkgA built 24h later. pkgB failed
+	// and pkgC was never attempted, so both count in the cohort but not in
+	// the latency percentiles.
+	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE week='2026-06-29'
+		AND versions_published=3 AND fresh_p50_hours=24.0 AND fresh_p95_hours=24.0 AND round(fresh_72h_pct, 3)=0.333`, "1")
+	assertCount(t, db, "SELECT count(*) FROM coverage_weekly WHERE week='2026-07-06' AND versions_published=0", "1")
 	// The series ends at the week containing the last attempt.
 	assertCount(t, db, "SELECT count(*) FROM coverage_weekly WHERE week > '2026-07-06'", "0")
+}
+
+func TestPackageStats(t *testing.T) {
+	db, _ := fill(t, &fakeSource{attempts: []schema.RebuildAttempt{
+		// pkgA: fail, success (v1), then two failures on v2, so the last success is v1.
+		attempt("pypi", "pkgA", "1.0", "r1", false, schema.RebuildStatusFailure, at(0)),
+		attempt("pypi", "pkgA", "1.0", "r2", true, schema.RebuildStatusSuccess, at(1*time.Hour)),
+		attempt("pypi", "pkgA", "2.0", "r3", false, schema.RebuildStatusFailure, at(2*time.Hour)),
+		attempt("pypi", "pkgA", "2.0", "r4", false, schema.RebuildStatusError, at(3*time.Hour)),
+		// pkgB: never succeeded. Its running attempt is ignored entirely.
+		attempt("pypi", "pkgB", "1.0", "r5", false, schema.RebuildStatusFailure, at(0)),
+		attempt("pypi", "pkgB", "1.0", "r6", false, schema.RebuildStatusError, at(1*time.Hour)),
+		attempt("pypi", "pkgB", "2.0", "r7", false, schema.RebuildStatusRunning, at(4*time.Hour)),
+	}})
+	assertCount(t, db, `SELECT count(*) FROM package_stats WHERE package='pkgA' AND ever_built=1
+		AND consecutive_failures=2 AND attempt_count=4 AND versions_attempted=2 AND versions_succeeded=1
+		AND last_attempted_run_id='r4' AND last_attempted_status='ERROR'
+		AND last_succeeded_run_id='r2' AND last_succeeded_version='1.0'`, "1")
+	assertCount(t, db, `SELECT count(*) FROM package_stats WHERE package='pkgB' AND ever_built=0
+		AND attempt_count=2 AND consecutive_failures=2 AND last_succeeded_time IS NULL`, "1")
+}
+
+func TestSignalCoverage(t *testing.T) {
+	db, _ := fill(t, &fakeSource{
+		attempts: []schema.RebuildAttempt{
+			attempt("pypi", "pkgA", "1.0", "r1", true, schema.RebuildStatusSuccess, at(0)),
+			attempt("pypi", "pkgB", "1.0", "r2", false, schema.RebuildStatusFailure, at(0)),
+		},
+		// pkgC is enqueued but never attempted: tracked mass, not current.
+		campaigns: []scheduler.Campaign{{Ecosystem: "pypi", Package: "pkgC", Version: "1.0", Artifact: "1.0.whl", Updated: at(0)}},
+		signals: []signals.PackageSignal{
+			{Ecosystem: "pypi", Package: "pkgA", Score: 0.5},
+			{Ecosystem: "pypi", Package: "pkgB", Score: 0.25},
+			{Ecosystem: "pypi", Package: "pkgC", Score: 0.25},
+		},
+		universe: []SignalUniverse{{Ecosystem: "pypi", Packages: 100, ScoreMass: 10.0, SidecarBuiltAt: at(0)}},
+	})
+	// The share divides by the pre-pruning universe mass: covering 3 of 100
+	// ranked packages with one current reads as 5% of the mass, not as the
+	// flattering 50% of the tracked slice.
+	assertCount(t, db, `SELECT count(*) FROM signal_coverage WHERE ecosystem='pypi'
+		AND universe_packages=100 AND universe_mass=10.0
+		AND tracked_packages=3 AND tracked_mass=1.0
+		AND current_packages=1 AND current_mass=0.5
+		AND covered_mass_share=0.05
+		AND sidecar_built_at='2026-07-01T12:00:00.000Z'`, "1")
 }
