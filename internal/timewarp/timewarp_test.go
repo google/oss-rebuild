@@ -367,6 +367,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			name:      "pypi simple project request - successful time warp",
 			url:       "http://localhost:8081/simple/some-package/",
 			basicAuth: "pypi:2022-01-01T00:00:00Z",
+			headers:   map[string]string{"Accept": "application/vnd.pypi.simple.v1+json"},
 			client: &httpxtest.MockClient{
 				Calls: []httpxtest.Call{
 					{
@@ -440,6 +441,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			name:      "pypi simple project request - timewarp but no available files",
 			url:       "http://localhost:8081/simple/some-other-package/",
 			basicAuth: "pypi:2022-01-01T00:00:00Z",
+			headers:   map[string]string{"Accept": "application/vnd.pypi.simple.v1+json"},
 			client: &httpxtest.MockClient{
 				Calls: []httpxtest.Call{
 					{
@@ -476,6 +478,67 @@ func TestHandler_ServeHTTP(t *testing.T) {
 					"files": [],
 					"versions": []
 				}`)),
+			},
+		},
+		{
+			name:      "pypi simple project request - html for legacy client",
+			url:       "http://localhost:8081/simple/some-package/",
+			basicAuth: "pypi:2022-01-01T00:00:00Z",
+			headers:   map[string]string{"Accept": "text/html"},
+			client: &httpxtest.MockClient{
+				Calls: []httpxtest.Call{
+					{
+						Method: "GET",
+						URL:    "https://pypi.org/simple/some-package/",
+						Response: &http.Response{
+							StatusCode: http.StatusOK,
+							Header: http.Header{
+								"Content-Type": []string{"application/vnd.pypi.simple.v1+json"},
+							},
+							Body: io.NopCloser(bytes.NewBufferString(`{
+								"name": "some-package",
+								"files": [
+									{
+										"filename": "some-package-0.9.0.tar.gz",
+										"url": "https://files.example/some-package-0.9.0.tar.gz",
+										"hashes": {"sha256": "aaaa"},
+										"upload-time": "2021-01-01T00:00:00.123456Z",
+										"yanked": "broken <release>"
+									},
+									{
+										"filename": "some-package-1.0.0-py3-none-any.whl",
+										"url": "https://files.example/some-package-1.0.0-py3-none-any.whl",
+										"hashes": {"sha256": "bbbb"},
+										"requires-python": ">=3.6",
+										"upload-time": "2021-06-02T00:00:00.123456Z",
+										"yanked": true
+									},
+									{
+										"filename": "some-package-2.0.0.tar.gz",
+										"url": "https://files.example/some-package-2.0.0.tar.gz",
+										"hashes": {"sha256": "cccc"},
+										"upload-time": "2022-06-01T00:00:00.123456Z",
+										"yanked": false
+									}
+								],
+								"versions": ["0.9.0", "1.0.0", "2.0.0"]
+							}`)),
+						},
+					},
+				},
+				URLValidator: httpxtest.NewURLValidator(t),
+			},
+			want: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"text/html"},
+				},
+				Body: io.NopCloser(bytes.NewBufferString(`<!DOCTYPE html>
+<html><body>
+<a href="https://files.example/some-package-0.9.0.tar.gz#sha256=aaaa" data-yanked="broken &lt;release&gt;">some-package-0.9.0.tar.gz</a><br>
+<a href="https://files.example/some-package-1.0.0-py3-none-any.whl#sha256=bbbb" data-requires-python="&gt;=3.6" data-yanked="">some-package-1.0.0-py3-none-any.whl</a><br>
+</body></html>
+`)),
 			},
 		},
 		{

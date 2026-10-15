@@ -184,6 +184,7 @@ func TestTimewarpPyPIClientVersions(t *testing.T) {
 		image       string
 		description string
 	}{
+		{"python:3.6-alpine", "pip ~21"},
 		{"python:3.7-alpine", "pip ~20"},
 		{"python:3.9-alpine", "pip ~22"},
 		{"python:3.11-alpine", "pip ~24"},
@@ -389,6 +390,41 @@ func TestTimewarpPyPIPackageNotYetPublished(t *testing.T) {
 	// Expected: pip reports the package missing (any of these phrasings).
 	if !(strings.Contains(combined, "Could not find a version") && strings.Contains(combined, "No matching distribution")) {
 		t.Errorf("Expected pip to report missing package; got:\nstdout: %s\nstderr: %s", stdout, stderr)
+	}
+}
+
+// TestTimewarpPyPILegacyRequiresPython verifies that the HTML simple index
+// served to pip<22.2 carries data-requires-python. pip's legacy resolver does
+// not backtrack, so it must skip incompatible releases by the link alone.
+func TestTimewarpPyPILegacyRequiresPython(t *testing.T) {
+	checkDockerAvailable(t)
+	port, cleanup := startTimewarpServer(t)
+	t.Cleanup(cleanup)
+	// The latest requests at this time, 2.28.1, requires Python>=3.7.
+	timestamp := "2023-01-01T00:00:00Z"
+	expectedVersion := "2.27.1"
+	indexURL := fmt.Sprintf("http://pypi:%s@%s:%d/simple", timestamp, dockerHostAddr, port)
+	tempDir := t.TempDir()
+	dockerArgs := []string{
+		"run",
+		"--rm",
+		"--add-host=host.docker.internal:host-gateway",
+		"--user", getUserID(),
+		"-v", fmt.Sprintf("%s:/workspace", tempDir),
+		"-w", "/workspace",
+		"-e", "HOME=/workspace",
+		"-e", fmt.Sprintf("PIP_INDEX_URL=%s", indexURL),
+		"-e", fmt.Sprintf("PIP_TRUSTED_HOST=%s", dockerHostAddr),
+		"python:3.6-alpine",
+		"sh", "-c",
+		"pip install --no-cache-dir --use-deprecated=legacy-resolver requests && pip show requests",
+	}
+	stdout, stderr, err := runDockerCommand(t, dockerArgs...)
+	if err != nil {
+		t.Fatalf("Docker command failed: %v\nStderr: %s", err, stderr)
+	}
+	if !strings.Contains(stdout, "\nVersion: "+expectedVersion+"\n") {
+		t.Errorf("Expected requests %s; got:\n%s", expectedVersion, stdout)
 	}
 }
 

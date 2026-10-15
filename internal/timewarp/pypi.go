@@ -11,7 +11,6 @@ import (
 	"log"
 	"net/http"
 	"path"
-	"sort"
 	"strings"
 	"time"
 
@@ -22,24 +21,25 @@ import (
 // handlePyPI handles time-warped requests for the PyPI registry.
 func (h Handler) handlePyPI(rw http.ResponseWriter, r *http.Request, t *time.Time) error {
 	parts := strings.Split(strings.Trim(path.Clean(r.URL.Path), "/"), "/")
-	isSimple := false
 	switch {
 	// Reference: https://warehouse.pypa.io/api-reference/json.html
 	case len(parts) == 3 && parts[0] == "pypi" && parts[2] == "json": // /pypi/{pkg}/json
 	case len(parts) == 2 && parts[0] == "simple": // /simple/{pkg}/ (path.Clean removes trailing slash)
-		isSimple = true
 	default:
 		http.Redirect(rw, r, r.URL.String(), http.StatusFound)
 		return nil
 	}
-	renderHTML := isSimple && wantsSimpleHTML(r.Header.Get("Accept"))
 	nr, _ := http.NewRequest(r.Method, r.URL.String(), r.Body)
 	nr.Header = r.Header.Clone()
 	// Remove the basic auth header set with the timewarp params.
 	nr.Header.Del("Authorization")
 	// Let the HTTP client negotiate encoding rather than forwarding the upstream caller's preference.
 	nr.Header.Del("Accept-Encoding")
-	if isSimple && nr.Header.Get("Accept") != "" {
+	var renderHTML bool
+	if parts[0] == "simple" {
+		// Only the PEP 691 JSON response has upload times. Like pypi.org, serve
+		// PEP 503 HTML to clients that do not request JSON (e.g. pip<22.2).
+		renderHTML = !strings.Contains(nr.Header.Get("Accept"), "+json")
 		nr.Header.Set("Accept", "application/vnd.pypi.simple.v1+json")
 	}
 	resp, err := h.Client.Do(nr)
@@ -77,11 +77,9 @@ func (h Handler) handlePyPI(rw http.ResponseWriter, r *http.Request, t *time.Tim
 		}
 	}
 	if renderHTML {
-		rw.Header().Del("Content-Length")
-		rw.Header().Del("ETag")
-		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := renderPyPISimpleHTML(rw, obj); err != nil {
-			return herror{errors.Wrap(err, "rendering simple html response"), http.StatusBadGateway}
+		rw.Header().Set("Content-Type", "text/html")
+		if _, err := io.WriteString(rw, simpleHTML(obj)); err != nil {
+			return herror{errors.Wrap(err, "serializing response"), http.StatusBadGateway}
 		}
 		return nil
 	}
@@ -91,78 +89,36 @@ func (h Handler) handlePyPI(rw http.ResponseWriter, r *http.Request, t *time.Tim
 	return nil
 }
 
-// wantsSimpleHTML reports whether a PyPI Simple API client requested an HTML
-// response rather than PEP 691 JSON. Clients such as pip older than 22.2 send
-// Accept headers requesting text/html or application/vnd.pypi.simple.v1+html.
-func wantsSimpleHTML(accept string) bool {
-	if accept == "" {
-		return false
-	}
-	if strings.Contains(accept, "application/vnd.pypi.simple.v1+json") || strings.Contains(accept, "application/json") {
-		return false
-	}
-	return strings.Contains(accept, "text/html") || strings.Contains(accept, "application/vnd.pypi.simple.v1+html")
-}
-
-// renderPyPISimpleHTML renders a warped PyPI Simple API response as a PEP 503 HTML page.
-func renderPyPISimpleHTML(w io.Writer, obj map[string]any) error {
+// simpleHTML renders a PEP 691 JSON project page as a PEP 503 HTML page.
+func simpleHTML(obj map[string]any) string {
 	var b strings.Builder
-	b.WriteString("<!DOCTYPE html><html><body>")
+	b.WriteString("<!DOCTYPE html>\n<html><body>\n")
 	files, _ := obj["files"].([]any)
-	for _, fileAny := range files {
-		file, ok := fileAny.(map[string]any)
-		if !ok {
-			continue
-		}
-		filename, _ := file["filename"].(string)
-		if filename == "" {
-			continue
-		}
+	for _, f := range files {
+		file, _ := f.(map[string]any)
 		href, _ := file["url"].(string)
-		if href == "" {
-			href = filename
-		}
-		if hashes, ok := file["hashes"].(map[string]any); ok {
-			if frag := simpleHashFragment(hashes); frag != "" {
-				href += "#" + frag
-			}
+		hashes, _ := file["hashes"].(map[string]any)
+		if sha256, ok := hashes["sha256"].(string); ok {
+			href += "#sha256=" + sha256
 		}
 		fmt.Fprintf(&b, `<a href="%s"`, html.EscapeString(href))
-		if reqPy, ok := file["requires-python"].(string); ok && reqPy != "" {
-			fmt.Fprintf(&b, ` data-requires-python="%s"`, html.EscapeString(reqPy))
+		if rp, ok := file["requires-python"].(string); ok {
+			fmt.Fprintf(&b, ` data-requires-python="%s"`, html.EscapeString(rp))
 		}
-		switch yanked := file["yanked"].(type) {
+		// PEP 691 "yanked" is either a bool or a non-empty reason string.
+		switch y := file["yanked"].(type) {
+		case string:
+			fmt.Fprintf(&b, ` data-yanked="%s"`, html.EscapeString(y))
 		case bool:
-			if yanked {
+			if y {
 				b.WriteString(` data-yanked=""`)
 			}
-		case string:
-			if yanked != "" {
-				fmt.Fprintf(&b, ` data-yanked="%s"`, html.EscapeString(yanked))
-			}
 		}
-		fmt.Fprintf(&b, ">%s</a><br/>", html.EscapeString(filename))
+		filename, _ := file["filename"].(string)
+		fmt.Fprintf(&b, ">%s</a><br>\n", html.EscapeString(filename))
 	}
-	b.WriteString("</body></html>")
-	_, err := io.WriteString(w, b.String())
-	return err
-}
-
-func simpleHashFragment(hashes map[string]any) string {
-	if sha256, ok := hashes["sha256"].(string); ok && sha256 != "" {
-		return "sha256=" + sha256
-	}
-	keys := make([]string, 0, len(hashes))
-	for k := range hashes {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		if val, ok := hashes[k].(string); ok && val != "" {
-			return k + "=" + val
-		}
-	}
-	return ""
+	b.WriteString("</body></html>\n")
+	return b.String()
 }
 
 // timeWarpPyPIProjectRequest modifies the provided JSON-like map to exclude all content after "at".
