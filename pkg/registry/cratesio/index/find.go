@@ -50,13 +50,18 @@ func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargoloc
 		}
 	}
 	var lastResult, bestResult *searchResult
+	var firstErr error
 	// Search each index in order until found
 	for i, index := range indices {
 		result, err := findCommitWithVersions(index, internalPackages, cratePublished, cfg)
 		if err != nil {
-			if i > 0 && err == errNoMatches {
-				// Edge case: For multi-index searches, subsequent indices may lack matches:
-				// Repo 0 @ last commit = 1, Repo 1 @ first commit = 0
+			if firstErr == nil {
+				firstErr = err
+			}
+			if (err == errNoMatches || err == errNoCommitsBeforePublish) && (i+1 < len(indices) || bestResult != nil) {
+				// Edge case: For multi-index searches, a newer index may start after
+				// cratePublished (e.g. on a mid-day snapshot cutoff date) or an older
+				// index may lack matches.
 				continue
 			}
 			return nil, errors.Wrap(err, "searching index")
@@ -75,6 +80,12 @@ func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargoloc
 			break
 		}
 		lastResult = result
+	}
+	if bestResult == nil {
+		if firstErr != nil {
+			return nil, errors.Wrap(firstErr, "searching index")
+		}
+		return nil, errors.Wrap(errNoMatches, "searching index")
 	}
 	// Convert to public API format
 	return &RegistryResolution{
@@ -111,7 +122,10 @@ func EntryPath(name string) string {
 	}
 }
 
-var errNoMatches = errors.New("no packages found at publish time")
+var (
+	errNoMatches              = errors.New("no packages found at publish time")
+	errNoCommitsBeforePublish = errors.New("no commits found before publish time")
+)
 
 func findCommitWithVersions(repo *git.Repository, packages []internalPackage, published time.Time, cfg *FindConfig) (*searchResult, error) {
 	blobHashes := make(map[string]plumbing.Hash)
@@ -172,22 +186,48 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 	// Analyze the very first commit to establish the baseline number of matches.
 	firstCommit, err := commitIter.Next()
 	if err == io.EOF {
-		return nil, errors.New("no commits found before publish time")
+		return nil, errNoCommitsBeforePublish
 	} else if err != nil {
 		return nil, err
 	}
 	maxFound := matchesFor(firstCommit)
+	if maxFound < len(packages) {
+		// crates.io updates the sparse index synchronously on publish while the git
+		// index exporter commits asynchronously seconds to minutes later. If a
+		// sibling crate in Cargo.lock was published moments before this crate, allow
+		// a short post-publish window so we can still find the earliest commit that
+		// contains all locked versions.
+		until := published.Add(2 * time.Hour)
+		afterIter, err := repo.Log(&git.LogOptions{Until: &until})
+		if err == nil {
+			afterCommit, nextErr := afterIter.Next()
+			afterIter.Close()
+			if nextErr == nil {
+				if afterFound := matchesFor(afterCommit); afterFound > maxFound {
+					firstCommit = afterCommit
+					maxFound = afterFound
+					commitIter.Close()
+					commitIter, err = repo.Log(&git.LogOptions{From: firstCommit.Hash})
+					if err != nil {
+						return nil, err
+					}
+					defer commitIter.Close()
+					_, _ = commitIter.Next()
+				}
+			}
+		}
+	}
 	if maxFound == 0 {
 		return nil, errNoMatches
 	}
 	// These variables will define the time window for the fine-grained search.
 	upperBoundCommit := firstCommit
+	oldestCommit := firstCommit
+	foundDrop := false
 	// Scan backwards through commits, analyzing one commit per ~24-hour window
 	// until we find a drop in the number of matches.
 	day := 24 * time.Hour
 	nextCheckTime := firstCommit.Committer.When.Add(-day)
-	oldestCommit := firstCommit
-	foundDrop := false
 	for c, err := range iterx.ToSeq2(commitIter, io.EOF) {
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over daily commits")
