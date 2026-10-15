@@ -31,6 +31,11 @@ var (
 
 // MatchTag evaluates whether the given tag is likely to refer to a package version.
 func MatchTag(tag, pkg, version string) (strict bool, approx bool) {
+	return tagMatcher(pkg, version)(tag)
+}
+
+// tagMatcher returns MatchTag for pkg and version, compiling its patterns once.
+func tagMatcher(pkg, version string) func(tag string) (strict, approx bool) {
 	escapedVersion := regexp.QuoteMeta(version)
 	boundaryRE := regexp.MustCompile(fmt.Sprintf(boundaryPatternTpl, escapedVersion))
 	continuationRE := regexp.MustCompile(fmt.Sprintf(continuationPatternTpl, escapedVersion))
@@ -38,10 +43,12 @@ func MatchTag(tag, pkg, version string) (strict bool, approx bool) {
 	if slash := strings.IndexByte(pkg, '/'); slash != -1 {
 		org = pkg[:slash]
 	}
-	containsOrgButNotPkg := org != "" && strings.Contains(tag, org) && !strings.Contains(tag, pkg)
-	strict = boundaryRE.MatchString(tag) && !continuationRE.MatchString(tag) && !containsOrgButNotPkg
-	approx = strings.Contains(tag, version)
-	return
+	return func(tag string) (strict, approx bool) {
+		containsOrgButNotPkg := org != "" && strings.Contains(tag, org) && !strings.Contains(tag, pkg)
+		strict = boundaryRE.MatchString(tag) && !continuationRE.MatchString(tag) && !containsOrgButNotPkg
+		approx = strings.Contains(tag, version)
+		return
+	}
 }
 
 // tagAliases provides probable tag names for pkg accounting for e.g. npm @scope/, Maven group:artifact.
@@ -99,8 +106,9 @@ func FindTagMatch(pkg, version string, repo *git.Repository) (commit string, err
 	if err != nil {
 		return "", err
 	}
+	match := tagMatcher(pkg, version)
 	for _, tag := range tags {
-		strict, approx := MatchTag(tag, pkg, version)
+		strict, approx := match(tag)
 		if strict {
 			matches = append(matches, tag)
 		} else if approx {
