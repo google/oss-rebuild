@@ -51,19 +51,6 @@ func getCargoTOML(tree *object.Tree, path string) (ct reg.CargoTOML, err error) 
 	return ct, toml.Unmarshal([]byte(p), &ct)
 }
 
-// lockfileRustVersionFloor returns the earliest Cargo release that preserves
-// an explicit lockfile format version. Cargo writes v1 and v2 without a header.
-func lockfileRustVersionFloor(formatVersion int) string {
-	switch formatVersion {
-	case 3:
-		return "1.47.0"
-	case 4:
-		return "1.78.0"
-	default:
-		return ""
-	}
-}
-
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
 	if err != nil {
@@ -292,16 +279,9 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	// rust_version is the crate's minimum supported Rust version, not
 	// necessarily the toolchain used to publish it.
 	declared := vmeta.RustVersion
-	if declared != "" {
-		if strings.Count(declared, ".") == 1 {
-			declared += ".0"
-		}
-		if semver.Cmp(rustVersion, declared) < 0 {
-			rustVersion = declared
-		}
+	if declared != "" && strings.Count(declared, ".") == 1 {
+		declared += ".0"
 	}
-	// Apply structural hints to ensure minimum Rust version requirements are met
-	// In the presence of options, (arbitrarily) prefer the latest Rust version in the range
 	topLevel := t.Package + "-" + vmeta.Version.Version
 	cargoTomlText, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.toml")
 	if err != nil {
@@ -309,31 +289,48 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	}
 	// Cargo.toml.orig is the manifest as the author wrote it. Old crates have none.
 	origText, _ := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.toml.orig")
-	minVer, maxVer := detectRustVersionBounds(string(cargoTomlText), string(origText))
+	lockContent, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.lock")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream Cargo.lock")
+	}
+	var lf cargolock.Lockfile
+	if lockContent != nil {
+		lf, err = cargolock.ParseLockfile(string(lockContent))
+		if err != nil {
+			return nil, errors.Wrap(err, "[INTERNAL] failed to parse Cargo.lock")
+		}
+	}
+	// Apply structural hints to bound the Rust version.
+	// In the presence of options, (arbitrarily) prefer the latest Rust version in the range.
+	minVer, maxVer := inferRustVersionBounds(crateProps{
+		CargoTOML:       string(cargoTomlText),
+		OrigTOML:        string(origText),
+		LockfileVersion: lf.FormatVersion,
+		DeclaredMSRV:    declared,
+	})
 	if minVer != "" && semver.Cmp(rustVersion, minVer) < 0 {
 		rustVersion = minVer
 	}
 	if maxVer != "" && semver.Cmp(rustVersion, maxVer) > 0 {
 		rustVersion = maxVer
 	}
-	lockContent, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/Cargo.lock")
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, errors.Wrapf(err, "[INTERNAL] Failed to extract upstream Cargo.lock")
+	if sourceChannel, _, err := findPinnedStableToolchain(tree, dir); err != nil {
+		return nil, errors.Wrap(err, "reading repository toolchain")
+	} else if sourceChannel != "" {
+		latestAtPublish, err := reg.RustVersionAt(vmeta.Created)
+		if err != nil {
+			return nil, errors.Wrap(err, "resolving repository toolchain")
+		}
+		if sourceVersion, ok := resolvePinnedToolchain(sourceChannel, latestAtPublish); ok &&
+			(minVer == "" || semver.Cmp(sourceVersion, minVer) >= 0) &&
+			(maxVer == "" || semver.Cmp(sourceVersion, maxVer) <= 0) {
+			rustVersion = sourceVersion
+		}
 	}
 	// Extract package names from Cargo.lock for git-based index support
 	var indexCommit string
-	var lockfileLo string
 	var packageNames []string
 	if lockContent != nil && semver.Cmp(rustVersion, "1.34.0") >= 0 {
-		lf, err := cargolock.ParseLockfile(string(lockContent))
-		if err != nil {
-			return nil, errors.Wrap(err, "[INTERNAL] failed to parse Cargo.lock")
-		}
-		// Use lock file format version to refine the Rust version lower bound.
-		lockfileLo = lockfileRustVersionFloor(lf.FormatVersion)
-		if lockfileLo != "" && semver.Cmp(rustVersion, lockfileLo) < 0 {
-			rustVersion = lockfileLo
-		}
 		registryPackages := cargolock.CratesIOPackages(lf.Packages)
 		if len(registryPackages) > 0 {
 			// Registry search is only usable in builds that support the local or sparse registry protocols.
@@ -365,21 +362,6 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			packageNames = append(packageNames, pkgName)
 		}
 		slices.Sort(packageNames)
-	}
-	if sourceChannel, _, err := findPinnedStableToolchain(tree, dir); err != nil {
-		return nil, errors.Wrap(err, "reading repository toolchain")
-	} else if sourceChannel != "" {
-		latestAtPublish, err := reg.RustVersionAt(vmeta.Created)
-		if err != nil {
-			return nil, errors.Wrap(err, "resolving repository toolchain")
-		}
-		if sourceVersion, ok := resolvePinnedToolchain(sourceChannel, latestAtPublish); ok &&
-			(declared == "" || semver.Cmp(sourceVersion, declared) >= 0) &&
-			(minVer == "" || semver.Cmp(sourceVersion, minVer) >= 0) &&
-			(maxVer == "" || semver.Cmp(sourceVersion, maxVer) <= 0) &&
-			(lockfileLo == "" || semver.Cmp(sourceVersion, lockfileLo) >= 0) {
-			rustVersion = sourceVersion
-		}
 	}
 	// TODO: This should be moved to build-time since strategies are intended to be, at least notionally, distro-independent.
 	hasMUSLBuild, err := reg.HasMUSLBuild(rustVersion)
