@@ -5,6 +5,8 @@ package timewarp
 
 import (
 	"encoding/json"
+	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -33,10 +35,11 @@ func (h Handler) handlePyPI(rw http.ResponseWriter, r *http.Request, t *time.Tim
 	nr.Header.Del("Authorization")
 	// Let the HTTP client negotiate encoding rather than forwarding the upstream caller's preference.
 	nr.Header.Del("Accept-Encoding")
-	if a := nr.Header.Get("Accept"); strings.Contains(a, "application/vnd.pypi.simple.v1+html") {
-		if !strings.Contains(a, "application/vnd.pypi.simple.v1+json") {
-			return herror{errors.Errorf("unsupported Accept header: %s", a), http.StatusBadGateway}
-		}
+	var renderHTML bool
+	if parts[0] == "simple" {
+		// Only the PEP 691 JSON response has upload times. Like pypi.org, serve
+		// PEP 503 HTML to clients that do not request JSON (e.g. pip<22.2).
+		renderHTML = !strings.Contains(nr.Header.Get("Accept"), "+json")
 		nr.Header.Set("Accept", "application/vnd.pypi.simple.v1+json")
 	}
 	resp, err := h.Client.Do(nr)
@@ -73,10 +76,49 @@ func (h Handler) handlePyPI(rw http.ResponseWriter, r *http.Request, t *time.Tim
 			return herror{errors.Wrap(err, "warping response"), http.StatusBadGateway}
 		}
 	}
+	if renderHTML {
+		rw.Header().Set("Content-Type", "text/html")
+		if _, err := io.WriteString(rw, simpleHTML(obj)); err != nil {
+			return herror{errors.Wrap(err, "serializing response"), http.StatusBadGateway}
+		}
+		return nil
+	}
 	if err := json.NewEncoder(rw).Encode(obj); err != nil {
 		return herror{errors.Wrap(err, "serializing response"), http.StatusBadGateway}
 	}
 	return nil
+}
+
+// simpleHTML renders a PEP 691 JSON project page as a PEP 503 HTML page.
+func simpleHTML(obj map[string]any) string {
+	var b strings.Builder
+	b.WriteString("<!DOCTYPE html>\n<html><body>\n")
+	files, _ := obj["files"].([]any)
+	for _, f := range files {
+		file, _ := f.(map[string]any)
+		href, _ := file["url"].(string)
+		hashes, _ := file["hashes"].(map[string]any)
+		if sha256, ok := hashes["sha256"].(string); ok {
+			href += "#sha256=" + sha256
+		}
+		fmt.Fprintf(&b, `<a href="%s"`, html.EscapeString(href))
+		if rp, ok := file["requires-python"].(string); ok {
+			fmt.Fprintf(&b, ` data-requires-python="%s"`, html.EscapeString(rp))
+		}
+		// PEP 691 "yanked" is either a bool or a non-empty reason string.
+		switch y := file["yanked"].(type) {
+		case string:
+			fmt.Fprintf(&b, ` data-yanked="%s"`, html.EscapeString(y))
+		case bool:
+			if y {
+				b.WriteString(` data-yanked=""`)
+			}
+		}
+		filename, _ := file["filename"].(string)
+		fmt.Fprintf(&b, ">%s</a><br>\n", html.EscapeString(filename))
+	}
+	b.WriteString("</body></html>\n")
+	return b.String()
 }
 
 // timeWarpPyPIProjectRequest modifies the provided JSON-like map to exclude all content after "at".
