@@ -89,6 +89,26 @@ pre {
 .session-meta { color: var(--muted); font-size: 0.85rem; }
 .session-summary { margin: 6px 0; color: var(--body); }
 .session table { margin-top: 8px; }
+/* Compact label-over-value facts inside a session card. */
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, max-content)); gap: 8px 32px; margin-top: 10px; }
+.kv-label { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.kv-value { display: block; font-size: 0.95rem; color: var(--body); }
+/* Ellipsized render only: the full id stays in the DOM for select/copy and
+   in the title for hover. */
+.kv-value.mono { font-family: ui-monospace, monospace; font-size: 0.85rem; max-width: 22ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Session trajectory. */
+.traj-iter { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; background: #fff; }
+.traj-iter-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.traj-event { border-left: 3px solid var(--border); padding: 4px 10px; margin: 8px 0; }
+.traj-event.kind-model { border-left-color: var(--accent); }
+.traj-event.kind-call, .traj-event.kind-proposal { border-left-color: var(--heading); }
+.traj-event.kind-thought, .traj-event.kind-prompt { border-left-color: var(--muted); }
+.traj-event.kind-exec { border-left-color: var(--secondary); }
+.traj-kind { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--secondary); margin-right: 8px; }
+.traj-time { color: var(--muted); font-size: 0.8rem; }
+.traj-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 500px; overflow: auto; }
+details.traj-body > summary { cursor: pointer; color: var(--secondary); font-size: 0.85rem; }
 
 /* Summary cards. */
 .cards {
