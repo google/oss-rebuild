@@ -15,9 +15,11 @@ import (
 	"strconv"
 	"time"
 
+	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/api/dashboard"
 	"github.com/google/oss-rebuild/internal/billyx"
+	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/internal/rundex"
 	"github.com/google/oss-rebuild/internal/snapshot"
@@ -26,6 +28,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/tools/benchmark"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -36,6 +39,7 @@ var (
 	successRegex    = flag.String("success-regex", "", "Regex to determine if a rebuild is successful based on its message")
 	logsBucket      = flag.String("logs-bucket", "", "GCS bucket containing build logs")
 	rundexURI       = flag.String("rundex", "", "Snapshot database URI to serve rundex reads from (supported schemes: gs, file). If empty, reads Firestore directly")
+	sessionsBucket  = flag.String("sessions-bucket", "", "GCS bucket containing agent session transcripts")
 )
 
 var egressCfg httpegress.Config
@@ -44,20 +48,27 @@ var (
 	successPat *regexp.Regexp
 	tracked    feed.TrackedPackageIndex
 	benchName  string
-	registry   rebuild.RegistryMux // built once at startup
-	snapReader *rundex.SQLite      // process-level snapshot reader when -rundex is set
-	snapCache  dashboard.Analytics // the snapshot cache, backing the trend views
+	registry   rebuild.RegistryMux   // built once at startup
+	snapReader *rundex.SQLite        // process-level snapshot reader when -rundex is set
+	snapCache  dashboard.Analytics   // the snapshot cache, backing the trend views
+	snapReady  = make(chan struct{}) // closed once snapReader and snapCache are set
 )
 
 func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 	deps := &dashboard.Deps{
-		LogsBucket:    *logsBucket,
-		Tracked:       tracked,
-		BenchmarkName: benchName,
-		SuccessRegex:  successPat,
-		Registry:      registry,
+		LogsBucket:     *logsBucket,
+		SessionsBucket: *sessionsBucket,
+		Tracked:        tracked,
+		BenchmarkName:  benchName,
+		SuccessRegex:   successPat,
+		Registry:       registry,
 	}
-	if snapReader != nil {
+	if *rundexURI != "" {
+		select {
+		case <-snapReady:
+		case <-ctx.Done():
+			return nil, errors.Wrap(ctx.Err(), "awaiting snapshot hydration")
+		}
 		deps.Rundex = snapReader
 		deps.Sessions = snapReader
 		deps.Analytics = snapCache
@@ -69,13 +80,18 @@ func DashboardInit(ctx context.Context) (*dashboard.Deps, error) {
 		deps.Rundex = rundexClient
 		deps.Sessions = rundexClient
 	}
-	if *logsBucket != "" {
+	if *logsBucket != "" || *sessionsBucket != "" {
 		storageClient, err := storage.NewClient(ctx)
 		if err != nil {
 			return nil, err
 		}
 		deps.GCSClient = storageClient
 	}
+	fsClient, err := firestore.NewClient(ctx, *project)
+	if err != nil {
+		return nil, err
+	}
+	deps.Execs = db.NewFirestoreScratchExecs(fsClient)
 	return deps, nil
 }
 
@@ -86,19 +102,24 @@ func main() {
 		log.Fatal("Must provide -project (or -rundex to serve from a snapshot)")
 	}
 	if *rundexURI != "" {
-		ctx := context.Background()
-		dest, err := billyx.NewResolver().DirFS(ctx, *rundexURI)
-		if err != nil {
-			log.Fatalf("Failed to resolve snapshot %s: %v", *rundexURI, err)
-		}
-		cache, err := snapshot.OpenCache(ctx, dest, 30*time.Second)
-		if err != nil {
-			log.Fatalf("Failed to open snapshot %s: %v", *rundexURI, err)
-		}
-		defer cache.Close()
-		snapCache = cache
-		snapReader = rundex.NewSQLite(cache)
-		log.Printf("Serving rundex reads from %s (fresh through %s)", *rundexURI, cache.Freshness().Format(time.RFC3339))
+		// Hydration downloads the full snapshot base, so it runs behind the
+		// listener: Cloud Run's startup probe needs the port bound promptly.
+		// Requests gate on snapReady until the cache is served.
+		go func() {
+			ctx := context.Background()
+			dest, err := billyx.NewResolver().DirFS(ctx, *rundexURI)
+			if err != nil {
+				log.Fatalf("Failed to resolve snapshot %s: %v", *rundexURI, err)
+			}
+			cache, err := snapshot.OpenCache(ctx, dest, 30*time.Second)
+			if err != nil {
+				log.Fatalf("Failed to open snapshot %s: %v", *rundexURI, err)
+			}
+			snapCache = cache
+			snapReader = rundex.NewSQLite(cache)
+			close(snapReady)
+			log.Printf("Serving rundex reads from %s (fresh through %s)", *rundexURI, cache.Freshness().Format(time.RFC3339))
+		}()
 	}
 	if *logsBucket == "" {
 		log.Printf("Warning: -logs-bucket not provided, log viewing will be unavailable")
@@ -115,8 +136,10 @@ func main() {
 		log.Fatalf("Failed to create egress client: %v", err)
 	}
 	registry = meta.NewRegistryMux(egressClient)
-	if (*bench != "") == (*trackedPackages != "") {
-		log.Fatalf("Must provide exactly one of -bench or -tracked-packages")
+	// Without a tracked set the index omits its status grid and recent-rebuild
+	// list, which suits a deployment that serves the whole snapshot.
+	if *bench != "" && *trackedPackages != "" {
+		log.Fatalf("Provide at most one of -bench or -tracked-packages")
 	}
 	if *bench != "" {
 		set, err := benchmark.ReadBenchmark(*bench)
@@ -150,6 +173,7 @@ func main() {
 	http.HandleFunc("/resources", api.Translate(func(r *http.Request) (dashboard.ResourcesRequest, error) {
 		return dashboard.ResourcesRequest{Eco: r.URL.Query().Get("eco")}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.ResourcesPage), dashboard.ResourcesTmpl)))
+	http.HandleFunc("/coverage", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.CoveragePage), dashboard.CoverageTmpl))
 	http.HandleFunc("/package/{ecosystem}/{package}", api.Translate(func(r *http.Request) (dashboard.PackageRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), "", "").Decode()
 		// TODO: Make this param and field name more precise.
@@ -169,6 +193,7 @@ func main() {
 			Version:   t.Version,
 		}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Version), dashboard.VersionTmpl)))
+	http.HandleFunc("/packages", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.PackagesPage), dashboard.PackagesTmpl))
 	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}", api.Translate(func(r *http.Request) (dashboard.AttemptRequest, error) {
 		t := encoding.New(
 			rebuild.Ecosystem(r.PathValue("ecosystem")),
@@ -199,6 +224,17 @@ func main() {
 			RunID:     r.PathValue("runid"),
 		}, nil
 	}, api.HTMLHandler(DashboardInit, dashboard.Logs, dashboard.LogsTmpl)))
+	http.HandleFunc("/session/{id}", api.Translate(func(r *http.Request) (dashboard.SessionRequest, error) {
+		return dashboard.SessionRequest{ID: r.PathValue("id")}, nil
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Session), dashboard.SessionTmpl)))
+	http.HandleFunc("/session/{id}/exec/{execid}/out", func(w http.ResponseWriter, r *http.Request) {
+		deps, err := DashboardInit(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		dashboard.HandleRawExecOutput(w, r, r.PathValue("id"), r.PathValue("execid"), deps)
+	})
 	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}/build-logs/raw/", func(w http.ResponseWriter, r *http.Request) {
 		deps, err := DashboardInit(r.Context())
 		if err != nil {

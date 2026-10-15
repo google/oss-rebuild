@@ -26,6 +26,7 @@ import (
 	"github.com/google/oss-rebuild/tools/ctl/command/runone"
 	"github.com/google/oss-rebuild/tools/ctl/command/scratch"
 	"github.com/google/oss-rebuild/tools/ctl/command/settrackedpackages"
+	"github.com/google/oss-rebuild/tools/ctl/command/snapshot"
 	"github.com/google/oss-rebuild/tools/ctl/command/sysgraph"
 	"github.com/google/oss-rebuild/tools/ctl/command/tui"
 	"github.com/google/oss-rebuild/tools/ctl/command/viewsession"
@@ -66,6 +67,8 @@ func init() {
 	rootCmd.AddCommand(migrate.Command())
 	rootCmd.AddCommand(settrackedpackages.Command())
 	rootCmd.AddCommand(gettrackedpackages.Command())
+	// Rollup snapshots
+	rootCmd.AddCommand(snapshot.Command())
 	// Sysgraph tools
 	rootCmd.AddCommand(sysgraph.Command())
 }
