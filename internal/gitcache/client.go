@@ -34,6 +34,29 @@ type Client struct {
 	*url.URL
 	// DefaultFreshness is the freshness bound to use if none is provided.
 	DefaultFreshness time.Time
+	// MaxBytes cuts a clone off with a gitx.RepoTooLargeError once the cached
+	// archive reaches it. 0 fetches whatever the cache serves.
+	MaxBytes int64
+}
+
+// cappedReader hands out at most left bytes and then fails with err, so
+// a fetch stops at the caller's budget instead of at the archive's end.
+type cappedReader struct {
+	r    io.Reader
+	left int64
+	err  error
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		return 0, c.err
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
 }
 
 // GetLink returns a GCS link to the cached repo resource.
@@ -126,7 +149,11 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 	}
 	// NOTE: The repo's FetchedAt reflects the served cache entry's fetch time.
 	fetchedAt, _ := http.ParseTime(resp.Header.Get("Last-Modified"))
-	gr, err := gzip.NewReader(resp.Body)
+	var body io.Reader = resp.Body
+	if c.MaxBytes > 0 {
+		body = &cappedReader{r: resp.Body, left: c.MaxBytes, err: &gitx.RepoTooLargeError{URL: opt.URL, Limit: c.MaxBytes}}
+	}
+	gr, err := gzip.NewReader(body)
 	if err != nil {
 		return nil, errors.Wrap(err, "gzip read error")
 	}

@@ -29,6 +29,7 @@ var (
 	gitCacheURL       = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
 	cratesRegistryURL = flag.String("crates-registry-service-url", "", "if provided, the crates registry service to use for Rust crate index resolution")
 	project           = flag.String("project", "", "if provided, the GCP project whose Firestore holds repo_metrics records")
+	maxRepoBytes      = flag.Int64("max-repo-bytes", 0, "git-cache fetch budget in bytes (0 = no limit)")
 	port              = flag.Int("port", 8080, "port on which to serve")
 )
 
@@ -61,7 +62,7 @@ func InferInit(ctx context.Context) (*inferenceservice.InferDeps, error) {
 		if err != nil {
 			return nil, errors.Wrap(err, "parsing git cache URL")
 		}
-		d.GitCache = &gitcache.Client{IDClient: c, APIClient: sc, URL: u}
+		d.GitCache = &gitcache.Client{IDClient: c, APIClient: sc, URL: u, MaxBytes: *maxRepoBytes}
 	}
 	d.RepoOptF = func() *gitx.RepositoryOptions {
 		return &gitx.RepositoryOptions{
