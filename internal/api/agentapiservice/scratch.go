@@ -30,19 +30,20 @@ type ClassConfig struct {
 	Slots            int    // guests a host of the class runs
 }
 
-// selectClass returns the host class serving a machine class. Jumbo is
-// optional and standard required.
-func selectClass(class schema.MachineClass, standard ClassConfig, jumbo *ClassConfig) (ClassConfig, error) {
+// selectClass returns the class a request runs on and its host config. A
+// jumbo request runs on standard where there is no jumbo class, as a JUMBO
+// build runs on the private pool without a jumbo pool.
+func selectClass(class schema.MachineClass, standard ClassConfig, jumbo *ClassConfig) (schema.MachineClass, ClassConfig, error) {
 	switch class {
 	case schema.MachineClassStandard:
-		return standard, nil
+		return class, standard, nil
 	case schema.MachineClassJumbo:
 		if jumbo == nil {
-			return ClassConfig{}, errors.Errorf("machine_class %q not configured", class)
+			return schema.MachineClassStandard, standard, nil
 		}
-		return *jumbo, nil
+		return class, *jumbo, nil
 	default:
-		return ClassConfig{}, errors.Errorf("unknown machine_class %q", class)
+		return "", ClassConfig{}, errors.Errorf("unknown machine_class %q", class)
 	}
 }
 
@@ -51,7 +52,7 @@ type ScratchCreateDeps struct {
 	Scratches         db.Scratch
 	GCE               GCE
 	Standard          ClassConfig   // required, and serves micro too
-	Jumbo             *ClassConfig  // optional. nil refuses jumbo
+	Jumbo             *ClassConfig  // nil runs jumbo on Standard
 	Hosts             *HostClient   // required
 	HostHealthTimeout time.Duration // new host wait. Zero means 10m
 	// Zones is the ordered list of GCE zones to try for instance
@@ -89,7 +90,7 @@ type ScratchDeleteDeps struct {
 // its guest, and mark it Ready. A failure after the insert cleans up with
 // deleteScratch.
 func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *ScratchCreateDeps) (*schema.Scratch, error) {
-	class, err := selectClass(req.MachineClass, deps.Standard, deps.Jumbo)
+	machineClass, class, err := selectClass(req.MachineClass, deps.Standard, deps.Jumbo)
 	if err != nil {
 		return nil, api.AsStatus(codes.InvalidArgument, err)
 	}
@@ -101,7 +102,7 @@ func ScratchCreate(ctx context.Context, req schema.ScratchCreateRequest, deps *S
 		ID:           scratchID,
 		BuildID:      req.BuildID,
 		ObliviousID:  obliviousID,
-		MachineClass: req.MachineClass,
+		MachineClass: machineClass,
 		State:        schema.ScratchStarting,
 		Created:      now,
 		Updated:      now,

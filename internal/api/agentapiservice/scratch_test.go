@@ -190,14 +190,23 @@ func TestScratchCreate_UnknownMachineClass(t *testing.T) {
 	}
 }
 
-func TestScratchCreate_JumboNotConfigured(t *testing.T) {
-	deps := newCreateDeps(NewMemoryGCE(), newFakeHosts(), db.NewMemoryScratch(), nil)
+func TestScratchCreate_JumboWithoutJumboClassUsesStandard(t *testing.T) {
+	gce := NewMemoryGCE()
+	hosts := newFakeHosts()
+	seedHost(gce, hosts, "us-central1-a", "h-std", "10.0.0.1", 6)
+	deps := newCreateDeps(gce, hosts, db.NewMemoryScratch(), func() string { return "sS" })
 	deps.Jumbo = nil
-	_, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+	got, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
 		BuildID: "b", MachineClass: schema.MachineClassJumbo,
 	}, deps)
-	if status.Code(err) != codes.InvalidArgument {
-		t.Errorf("code = %s; want InvalidArgument. err=%v", status.Code(err), err)
+	if err != nil {
+		t.Fatalf("ScratchCreate: %v", err)
+	}
+	if got.Host != "h-std" {
+		t.Errorf("Host = %q; want the standard host h-std", got.Host)
+	}
+	if got.MachineClass != schema.MachineClassStandard {
+		t.Errorf("MachineClass = %q; want the standard class it ran on", got.MachineClass)
 	}
 }
 
