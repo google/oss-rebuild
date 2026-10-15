@@ -7,6 +7,7 @@ import (
 	"regexp"
 
 	"github.com/google/oss-rebuild/internal/semver"
+	reg "github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -118,6 +119,7 @@ type crateProps struct {
 	CargoTOML       string
 	OrigTOML        string
 	LockfileVersion int
+	VCSInfo         *reg.CargoVCSInfo
 	DeclaredMSRV    string
 }
 
@@ -180,6 +182,9 @@ var versionRules = []versionRule{
 	{hi: "1.59.0", when: func(p crateProps) bool {
 		return !prettyArrayPattern.MatchString(p.CargoTOML) && hasInlineMultiElementArray(p.CargoTOML)
 	}},
+	// Cargo 1.57 (#9932) added path_in_vcs to .cargo_vcs_info.json.
+	{lo: "1.57.0", when: func(p crateProps) bool { return p.VCSInfo != nil && p.VCSInfo.Dir != nil }},
+	{hi: "1.56.1", when: func(p crateProps) bool { return p.VCSInfo != nil && p.VCSInfo.Dir == nil }},
 	// Cargo 1.55 updated the generated Cargo.toml header comment.
 	{lo: "1.55.0", when: hasManifest(modernHeaderPattern)},
 	{hi: "1.54.0", when: func(p crateProps) bool { return !modernHeaderPattern.MatchString(p.CargoTOML) }},

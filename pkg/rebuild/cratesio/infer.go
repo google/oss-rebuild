@@ -291,12 +291,20 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			return nil, errors.Wrap(err, "[INTERNAL] failed to parse Cargo.lock")
 		}
 	}
+	var vcs *reg.CargoVCSInfo
+	if vcsBytes, err := getFileFromCrate(bytes.NewReader(b), topLevel+"/.cargo_vcs_info.json"); err == nil {
+		var info reg.CargoVCSInfo
+		if json.Unmarshal(vcsBytes, &info) == nil {
+			vcs = &info
+		}
+	}
 	// Apply structural hints to bound the Rust version.
 	// In the presence of options, (arbitrarily) prefer the latest Rust version in the range.
 	minVer, maxVer := inferRustVersionBounds(crateProps{
 		CargoTOML:       string(cargoTomlText),
 		OrigTOML:        string(origText),
 		LockfileVersion: lf.FormatVersion,
+		VCSInfo:         vcs,
 		DeclaredMSRV:    declared,
 	})
 	if minVer != "" && semver.Cmp(rustVersion, minVer) < 0 {
