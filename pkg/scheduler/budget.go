@@ -4,6 +4,7 @@
 package scheduler
 
 import (
+	"net/url"
 	"time"
 )
 
@@ -35,6 +36,11 @@ func (b *Budget) Add(s Spend) {
 
 // BudgetScopeGlobal is the ledger scope covering all spend.
 const BudgetScopeGlobal = "global"
+
+// BudgetScopeEcosystem is the ledger scope covering one ecosystem's spend.
+func BudgetScopeEcosystem(ecosystem string) string {
+	return "eco!" + url.PathEscape(ecosystem)
+}
 
 // Expired reports whether the period beginning at PeriodStart has elapsed.
 // period <= 0 never expires.

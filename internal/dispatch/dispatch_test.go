@@ -371,31 +371,46 @@ func TestCaps(t *testing.T) {
 	}
 }
 
-// TestCharge covers spend accounting: completions land on the global ledger and
-// on the local copy that dispatch caps read, and an elapsed period resets the
-// ledger before new spend lands on it.
+// TestCharge checks all three ledgers, that the ecosystem ledger shares the
+// global period, and that an elapsed period resets a ledger before new spend
+// lands.
 func TestCharge(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	d := &Dispatcher{Config: Config{Period: 24 * time.Hour}, Now: now, Budgets: db.NewMemoryBudgets()}
-	var local scheduler.Budget
-	d.charge(ctx, &local, scheduler.Spend{BuildSeconds: 100})
-	d.charge(ctx, &local, scheduler.Spend{SessionSeconds: 50, Tokens: 7})
+	c := scheduler.Campaign{Ecosystem: "npm", Package: "p", Version: "1.0.0"}
+	// A pass at now opens the period, and a later pass first charges npm.
+	if _, err := d.rolledOverBudget(ctx); err != nil {
+		t.Fatal(err)
+	}
+	d.Now = now.Add(3 * time.Hour)
+	local, err := d.rolledOverBudget(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.charge(ctx, &local, c, scheduler.Spend{BuildSeconds: 100})
+	d.charge(ctx, &local, c, scheduler.Spend{SessionSeconds: 50, Tokens: 7})
 
 	if local.BuildSeconds != 100 || local.SessionSeconds != 50 {
 		t.Errorf("local copy = %+v, want 100 build / 50 session", local)
 	}
-	b, err := d.Budgets.Get(ctx, scheduler.BudgetScopeGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b.Scope != scheduler.BudgetScopeGlobal || b.BuildSeconds != 100 || b.SessionSeconds != 50 || b.Tokens != 7 {
-		t.Errorf("ledger = %+v, want the global scope with 100 build / 50 session / 7 tokens", b)
+	for _, scope := range []string{scheduler.BudgetScopeGlobal, scheduler.BudgetScopeEcosystem("npm")} {
+		b, err := d.Budgets.Get(ctx, scope)
+		if err != nil {
+			t.Fatalf("reading %s ledger: %v", scope, err)
+		}
+		if b.Scope != scope || !b.PeriodStart.Equal(now) || b.BuildSeconds != 100 || b.SessionSeconds != 50 || b.Tokens != 7 {
+			t.Errorf("%s ledger = %+v, want scope stamped, the period from %v, and 100 build / 50 session / 7 tokens", scope, b, now)
+		}
 	}
 	t.Run("ElapsedPeriodResetsBeforeCharging", func(t *testing.T) {
 		d.Now = now.Add(25 * time.Hour)
-		d.charge(ctx, new(scheduler.Budget), scheduler.Spend{BuildSeconds: 5})
-		b, err := d.Budgets.Get(ctx, scheduler.BudgetScopeGlobal)
+		local, err := d.rolledOverBudget(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.charge(ctx, &local, c, scheduler.Spend{BuildSeconds: 5})
+		b, err := d.Budgets.Get(ctx, scheduler.BudgetScopeEcosystem("npm"))
 		if err != nil {
 			t.Fatal(err)
 		}
