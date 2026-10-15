@@ -461,6 +461,11 @@ func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.S
 			},
 		},
 	)
+	var tooLarge *gitx.RepoTooLargeError
+	if errors.As(err, &tooLarge) {
+		// The repository was located, so a model repository hint cannot help.
+		return nil, err
+	}
 	// A failure that resolved the source has its repository, so a model
 	// repository hint cannot help it.
 	if _, located := api.DetailOf[rebuild.InferenceErrorDetail](err); err != nil && !located {
