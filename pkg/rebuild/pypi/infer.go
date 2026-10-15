@@ -448,8 +448,9 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to read upstream artifact")
 	}
 	var reqs []string
+	var zr *zip.Reader
 	if strings.HasSuffix(a.Filename, ".whl") {
-		zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
+		zr, err = zip.NewReader(bytes.NewReader(body), a.Size)
 		if err != nil {
 			return nil, errors.Wrapf(err, "[INTERNAL] Failed to initialize upstream zip reader")
 		}
@@ -463,30 +464,28 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		reqs = []string{}
 	}
 	// Extract pyproject.toml requirements.
-	{
-		commit, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref))
-		if err != nil {
-			return nil, errors.Wrapf(err, "Failed to get commit object")
-		}
-		tree, err := commit.Tree()
-		if err != nil {
-			return nil, errors.Wrapf(err, "Failed to get tree")
-		}
-		newFoundDir, err := pypiresolver.DiscoverBuildDir(ctx, tree, name, version, dir)
-		if err != nil {
-			log.Println(errors.Wrap(err, "Failed to discover build dir."))
-		} else {
-			// NOTE - This should NOT overwrite the hint dir if one exists, but utilize it and return it again
-			//   Test "pyproject.toml - Detect package with dir hint" showcases this
-			dir = newFoundDir
-		}
-		if buildReqs, err := pypiresolver.ExtractRequirements(ctx, tree, dir); err != nil {
-			log.Println(errors.Wrap(err, "Failed to extract reqs from build files."))
-		} else {
-			reqs = mergeRequirements(reqs, buildReqs)
-		}
-		reqs = mergeRequirements(reqs, implicitRequirements(reqs))
+	commit, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref))
+	if err != nil {
+		return nil, errors.Wrapf(err, "Failed to get commit object")
 	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return nil, errors.Wrapf(err, "Failed to get tree")
+	}
+	newFoundDir, err := pypiresolver.DiscoverBuildDir(ctx, tree, name, version, dir)
+	if err != nil {
+		log.Println(errors.Wrap(err, "Failed to discover build dir."))
+	} else {
+		// NOTE - This should NOT overwrite the hint dir if one exists, but utilize it and return it again
+		//   Test "pyproject.toml - Detect package with dir hint" showcases this
+		dir = newFoundDir
+	}
+	if buildReqs, err := pypiresolver.ExtractRequirements(ctx, tree, dir); err != nil {
+		log.Println(errors.Wrap(err, "Failed to extract reqs from build files."))
+	} else {
+		reqs = mergeRequirements(reqs, buildReqs)
+	}
+	reqs = mergeRequirements(reqs, implicitRequirements(reqs))
 	if strings.HasSuffix(a.Filename, ".tar.gz") {
 		return &SdistBuild{
 			Location: rebuild.Location{
@@ -500,8 +499,24 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}, nil
 	} else if strings.HasSuffix(a.Filename, ".whl") && !strings.HasSuffix(a.Filename, "none-any.whl") {
 		tags := extractWheelTags(a.Filename)
-		if _, err := platform.ParsePlatformTags(tags.Platform); err != nil {
+		parsedTags, err := platform.ParsePlatformTags(tags.Platform)
+		if err != nil {
 			return nil, errors.Wrapf(err, "unsupported platform tag in wheel filename %s", a.Filename)
+		}
+		highest, err := platform.HighestLibcVersionTag(parsedTags)
+		if err != nil {
+			return nil, errors.Wrapf(err, "determining target libc for wheel %s", a.Filename)
+		}
+		var sysDeps []string
+		if cibwDeps, err := extractCibuildwheelDependencies(tree, dir, highest.LibcImpl); err != nil {
+			log.Println(errors.Wrap(err, "extracting cibuildwheel dependencies"))
+		} else {
+			sysDeps = append(sysDeps, cibwDeps...)
+		}
+		if elfDeps, err := inferELFSystemDeps(zr, highest.LibcImpl); err != nil {
+			log.Println(errors.Wrap(err, "extracting ELF system deps from wheel"))
+		} else {
+			sysDeps = deduplicateSystemDeps(append(sysDeps, elfDeps...))
 		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
@@ -513,6 +528,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			ABITag:       tags.ABI,
 			PlatformTag:  tags.Platform,
 			Requirements: reqs,
+			SystemDeps:   sysDeps,
 			RegistryTime: a.UploadTime,
 		}, nil
 	} else {

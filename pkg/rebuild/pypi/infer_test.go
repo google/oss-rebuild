@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -626,6 +628,114 @@ func TestBackendRequirements(t *testing.T) {
 			got := implicitRequirements(tc.reqs)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("backendRequirements(%v) diff (-want +got):\n%s", tc.reqs, diff)
+			}
+		})
+	}
+}
+
+func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
+	pkgName := "pygraphviz"
+	version := "1.14"
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: release-commit
+    tag: v1.14
+    files:
+      pyproject.toml: |
+        [project]
+        name = "pygraphviz"
+        version = "1.14"
+        [build-system]
+        requires = ["setuptools>=61"]
+        [[tool.cibuildwheel.overrides]]
+        select = "*-manylinux*"
+        before-all = "dnf install -y graphviz-devel"
+        [[tool.cibuildwheel.overrides]]
+        select = "*-musllinux*"
+        before-all = "apk add graphviz-dev"
+`, nil))
+	extELF := createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0", "libcdt.so.5"}, "")
+	distInfoDir := expectedDistInfoDir(pkgName, version)
+	tests := []struct {
+		name        string
+		platformTag string
+		wantSysDeps []string
+	}{
+		{
+			name:        "ManylinuxWheel",
+			platformTag: "manylinux_2_28_x86_64",
+			wantSysDeps: []string{
+				"graphviz-devel",
+				"libcgraph.so.6()(64bit)",
+				"/usr/lib64/libcgraph.so",
+				"libcdt.so.5()(64bit)",
+				"/usr/lib64/libcdt.so",
+			},
+		},
+		{
+			name:        "MusllinuxWheel",
+			platformTag: "musllinux_1_2_x86_64",
+			wantSysDeps: []string{
+				"graphviz-dev",
+				"so:libcgraph.so.6",
+				"pc:libcgraph",
+				"cgraph-dev",
+				"so:libcdt.so.5",
+				"pc:libcdt",
+				"cdt-dev",
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			filename := fmt.Sprintf("%s-%s-cp310-cp310-%s.whl", pkgName, version, tc.platformTag)
+			wheelEntries := []archive.ZipEntry{
+				{FileHeader: &zip.FileHeader{Name: distInfoDir + "/WHEEL"}, Body: []byte("Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: cp310-cp310-" + tc.platformTag + "\n")},
+				{FileHeader: &zip.FileHeader{Name: distInfoDir + "/METADATA"}, Body: []byte("Metadata-Version: 2.1\nName: pygraphviz\nVersion: 1.14\nLicense-File: LICENSE\n")},
+				{FileHeader: &zip.FileHeader{Name: "pygraphviz/_graphviz.cpython-310-x86_64-linux-gnu.so"}, Body: extELF},
+			}
+			wheelBuf := must(archivetest.ZipFile(wheelEntries))
+			releaseJSON := fmt.Sprintf(`{"info":{"name":%q,"version":%q},"urls":[{"filename":%q,"url":"https://files.pythonhosted.org/%s","size":%d,"upload_time_iso_8601":"2024-06-01T12:00:00Z"}]}`, pkgName, version, filename, filename, wheelBuf.Len())
+			mux := rebuild.RegistryMux{
+				PyPI: pypireg.HTTPRegistry{
+					Client: &httpxtest.MockClient{
+						Calls: []httpxtest.Call{
+							{
+								URL:      fmt.Sprintf("https://pypi.org/pypi/%s/%s/json", pkgName, version),
+								Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)},
+							},
+							{
+								URL:      fmt.Sprintf("https://pypi.org/pypi/%s/%s/json", pkgName, version),
+								Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)},
+							},
+							{
+								URL:      fmt.Sprintf("https://files.pythonhosted.org/%s", filename),
+								Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))},
+							},
+						},
+						URLValidator: httpxtest.NewURLValidator(t),
+					},
+				},
+			}
+			rcfg := &rebuild.RepoConfig{
+				URI:  "https://github.com/pygraphviz/pygraphviz",
+				Repo: gitx.Repo{Repository: repo.Repository},
+			}
+			target := rebuild.Target{
+				Ecosystem: rebuild.PyPI,
+				Package:   pkgName,
+				Version:   version,
+				Artifact:  filename,
+			}
+			strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
+			if err != nil {
+				t.Fatalf("InferStrategy() unexpected error: %v", err)
+			}
+			pwBuild, ok := strat.(*PlatformWheelBuild)
+			if !ok {
+				t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
+			}
+			if diff := cmp.Diff(tc.wantSysDeps, pwBuild.SystemDeps); diff != "" {
+				t.Errorf("PlatformWheelBuild.SystemDeps diff (-want +got):\n%s", diff)
 			}
 		})
 	}
