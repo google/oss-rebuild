@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/dispatch"
@@ -29,6 +30,7 @@ import (
 type dispatchConfig struct {
 	Project string
 	API     string
+	Rolling time.Duration
 	Pass    dispatch.Config
 }
 
@@ -64,12 +66,25 @@ func dispatchHandler(ctx context.Context, cfg dispatchConfig, deps *Deps) (*act.
 	}
 	list := func(ctx context.Context) ([]scheduler.Campaign, error) { return db.ListActiveCampaigns(ctx, fire) }
 	inflight := func(ctx context.Context) ([]scheduler.Campaign, error) { return db.ListInFlightCampaigns(ctx, fire) }
-	report, err := d.Run(ctx, list, inflight)
-	if err != nil {
-		return nil, err
+	for {
+		if report, err := d.Run(ctx, list, inflight); err != nil {
+			if cfg.Rolling == 0 {
+				return nil, err
+			}
+			// A failed pass under --rolling is reported, not fatal.
+			fmt.Fprintf(deps.IO.Err, "pass failed: %v\n", err)
+		} else {
+			fmt.Fprintln(deps.IO.Out, report)
+			if cfg.Rolling == 0 {
+				return &act.NoOutput{}, nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(cfg.Rolling):
+		}
 	}
-	fmt.Fprintln(deps.IO.Out, report)
-	return &act.NoOutput{}, nil
 }
 
 // apiClient builds an HTTP client (Cloud Run-authorized when the endpoint is
@@ -101,6 +116,7 @@ func dispatchCommand() *cobra.Command {
 	set := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
 	set.StringVar(&cfg.Project, "project", "", "GCP project holding the onboarding Firestore data")
 	set.StringVar(&cfg.API, "api", "", "OSS Rebuild API endpoint URI")
+	set.DurationVar(&cfg.Rolling, "rolling", 0, "keep dispatching at this interval until interrupted. 0 runs a single pass")
 	p := &cfg.Pass
 	set.IntVar(&p.Batch, "batch", p.Batch, "max dispatches this pass; 0 = unbounded")
 	set.IntVar(&p.MaxAgent, "max-agent", p.MaxAgent, "max agent-stage dispatches this pass; 0 = unbounded")
