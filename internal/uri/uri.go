@@ -85,15 +85,36 @@ func CanonicalizeRepoURI(uri string) (string, error) {
 	return u.String(), nil
 }
 
-// FindCommonRepo attempts to find something that looks like a repo in the text. It will return empty string when no repo is found.
-func FindCommonRepo(text string) string {
+// FindCommonRepos returns every repo found in text, ordered by host as in
+// commonRepos and by position within each host, without duplicates.
+func FindCommonRepos(text string) []string {
+	var repos []string
 	for _, pattern := range commonRepos {
-		if repo := pattern.FindString(text); repo != "" {
+		for _, repo := range pattern.FindAllString(text, -1) {
 			if pattern == gitlabRE {
 				repo = trimGitLabRoute(repo)
 			}
-			return repo
+			if !slices.Contains(repos, repo) {
+				repos = append(repos, repo)
+			}
 		}
 	}
+	return repos
+}
+
+// FindCommonRepo attempts to find something that looks like a repo in the text. It will return empty string when no repo is found.
+func FindCommonRepo(text string) string {
+	if repos := FindCommonRepos(text); len(repos) != 0 {
+		return repos[0]
+	}
 	return ""
+}
+
+// RepoName returns the last path segment of a repo without any ".git" suffix.
+func RepoName(repo string) string {
+	segments := strings.FieldsFunc(repo, func(r rune) bool { return r == '/' || r == ':' })
+	if len(segments) == 0 {
+		return ""
+	}
+	return strings.TrimSuffix(segments[len(segments)-1], ".git")
 }

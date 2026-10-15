@@ -54,6 +54,7 @@ var distInfoFieldPat = re.MustCompile(`[-_.]+`)
 //	  - a link named in commonRepoLinks, on a known repo host
 //	  - a link named in commonRepoLinks, on any host
 //	other mentions, release then project:
+//	  - the first repository named after the package
 //	  - the first repository cited in the description
 //	  - a link under any other name, on a known repo host, sponsors excluded
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
@@ -68,12 +69,24 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 		return "", errors.Wrap(err, "fetching pypi metadata")
 	}
 	infos = append(infos, project.Info)
-	for _, pick := range []func(pypireg.Info) string{repoFromSourceLinks, repoFromOtherLinks} {
-		for _, info := range infos {
-			if repo := pick(info); repo != "" {
-				return uri.CanonicalizeRepoURI(repo)
-			}
+	for _, info := range infos {
+		if repo := repoFromSourceLinks(info); repo != "" {
+			return uri.CanonicalizeRepoURI(repo)
 		}
+	}
+	var candidates []string
+	for _, info := range infos {
+		candidates = append(candidates, otherLinkCandidates(info)...)
+	}
+	// NOTE: Descriptions often cite other projects, such as an upstream commit,
+	// so a repository named after the package beats the first one mentioned.
+	if i := slices.IndexFunc(candidates, func(repo string) bool {
+		return normalizeName(uri.RepoName(repo)) == normalizeName(t.Package)
+	}); i != -1 {
+		return uri.CanonicalizeRepoURI(candidates[i])
+	}
+	if len(candidates) != 0 {
+		return uri.CanonicalizeRepoURI(candidates[0])
 	}
 	return "", errors.New("no git repo")
 }
@@ -102,23 +115,31 @@ func repoFromSourceLinks(info pypireg.Info) string {
 	return ""
 }
 
-// repoFromOtherLinks picks the first known repo host cited in the description,
-// else one linked under any other name.
-func repoFromOtherLinks(info pypireg.Info) string {
-	r := uri.FindCommonRepo(info.Description)
-	// TODO: Maybe revisit this sponsors logic?
-	if r != "" && !strings.Contains(r, "sponsors") {
-		return r
+// otherLinkCandidates returns repositories cited in the description followed by
+// repositories linked under non-source project URL names, with sponsor links
+// excluded.
+func otherLinkCandidates(info pypireg.Info) []string {
+	var candidates []string
+	for _, r := range uri.FindCommonRepos(info.Description) {
+		if !strings.Contains(r, "sponsors") {
+			candidates = append(candidates, r)
+		}
 	}
-	for _, url := range info.ProjectURLs {
+	keys := make([]string, 0, len(info.ProjectURLs))
+	for k := range info.ProjectURLs {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		url := info.ProjectURLs[k]
 		if strings.Contains(url, "sponsors") {
 			continue
 		}
 		if repo := uri.FindCommonRepo(url); repo != "" {
-			return repo
+			candidates = append(candidates, repo)
 		}
 	}
-	return ""
+	return candidates
 }
 
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, ropt *gitx.RepositoryOptions) (r rebuild.RepoConfig, err error) {
