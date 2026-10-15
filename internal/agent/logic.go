@@ -35,6 +35,20 @@ import (
 
 const uploadBytesLimit = 100_000
 
+// Tool output shown to the model. A shell result keeps its first and last
+// bytes so one verbose command cannot crowd the exchange: at ~4 bytes per
+// token, a 40-call budget of 16KB results is ~160k tokens.
+const (
+	toolOutputHead = 4_000
+	toolOutputTail = 12_000
+	logsTailLimit  = 32_000 // read_logs_end keeps the tail alone, its value is the end of the log
+	maxToolTurns   = 100    //  bounds the tool calls in one iteration, after which model is told to answer directly
+)
+
+// inferenceTimeout bounds heuristic inference, like the inference service's 14
+// minute request timeout.
+const inferenceTimeout = 15 * time.Minute
+
 func locationFromStrategyOneOf(oneof *schema.StrategyOneOf) (*rebuild.Location, error) {
 	s, err := oneof.Strategy()
 	if err != nil {
@@ -138,7 +152,7 @@ func (a *defaultAgent) readLogsTool() *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
 			Name:        "read_logs_end",
-			Description: "Read tail of the logs from the previous build. If the logs are large, they may be truncated providing only the tail.",
+			Description: fmt.Sprintf("Read the tail of the previous build's log: the last %dKB, with a marker for what was cut before it.", logsTailLimit/1000),
 			Parameters: &genai.Schema{
 				Type:       genai.TypeObject,
 				Properties: map[string]*genai.Schema{},
@@ -163,8 +177,8 @@ func (a *defaultAgent) readLogsTool() *llm.FunctionDefinition {
 					},
 				}
 			}
-			if len(logs) > uploadBytesLimit {
-				logs = "...(truncated)..." + logs[len(logs)-uploadBytesLimit:]
+			if len(logs) > logsTailLimit {
+				logs = fmt.Sprintf("...[%d earlier bytes omitted]...\n", len(logs)-logsTailLimit) + logs[len(logs)-logsTailLimit:]
 			}
 			return genai.FunctionResponse{
 				Name: "read_logs_end", // Name must match the FunctionDeclaration
@@ -213,7 +227,7 @@ func (a *defaultAgent) runOnHostTool() *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
 			Name:        "run_on_host",
-			Description: "Run a shell command on the build VM host (interpreted by /bin/sh -c). The host is minimal: docker, busybox coreutils and wget only, with no language runtimes. Use run_in_container for anything needing the build environment. Use the host to inspect docker images and containers and to retain or analyze files from previous build attempts e.g. ./builds/<build-id>/ containing the attempt's build.sh and out/ directory. After a content mismatch the upstream artifact, the stabilized form of both artifacts, and the diffr and stabilize tools are left on the host at the paths the mismatch report gives. The stabilize tool takes -enable-passes and -disable-passes to apply a subset of verification's stabilizers. The most recent build's container is retained as rb-<build-id> and can be identified with `docker ps -a --filter name=rb-` but all prior build containers are removed once the next build is triggered. Returns the merged stdout/stderr (truncated to the tail if large) and the exit code.",
+			Description: "Run a shell command on the build VM host (interpreted by /bin/sh -c). The host is minimal: docker, busybox coreutils and wget only, with no language runtimes. Use run_in_container for anything needing the build environment. Use the host to inspect docker images and containers and to retain or analyze files from previous build attempts e.g. ./builds/<build-id>/ containing the attempt's build.sh and out/ directory. After a content mismatch the upstream artifact, the stabilized form of both artifacts, and the diffr and stabilize tools are left on the host at the paths the mismatch report gives. The stabilize tool takes -enable-passes and -disable-passes to apply a subset of verification's stabilizers. The most recent build's container is retained as rb-<build-id> and can be identified with `docker ps -a --filter name=rb-` but all prior build containers are removed once the next build is triggered. Returns the merged stdout/stderr (a large output keeps only its head and tail, omitted_bytes counts the cut) and the exit code.",
 			Parameters:  shellCommandParams(),
 			Response:    shellCommandResponse(),
 		},
@@ -227,7 +241,7 @@ func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
 	return &llm.FunctionDefinition{
 		FunctionDeclaration: genai.FunctionDeclaration{
 			Name:        "run_in_container",
-			Description: "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' so working directory and shell environment will carry across calls while filesystem changes will not. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (truncated to the tail if large) and the exit code.",
+			Description: "Run a shell command inside the retained build container (rb-<build-id>), which carries the build's toolchain, source tree, and output from the most recent attempt. Use it to analyze the build environment, inspect intermediate state, or test a fix in the real build environment before proposing a new build. Each call is an independent 'bin/sh -c' starting in /src (the host directory ./builds/<build-id>/src): the working directory and shell environment reset between calls, filesystem changes persist. Requires a prior build attempt (exits 125 otherwise). Returns the merged stdout/stderr (a large output keeps only its head and tail, omitted_bytes counts the cut) and the exit code.",
 			Parameters:  shellCommandParams(),
 			Response:    shellCommandResponse(),
 		},
@@ -239,30 +253,40 @@ func (a *defaultAgent) runInContainerTool() *llm.FunctionDefinition {
 
 // runShell dispatches a shell command to the scratch VM for tool `name`. When
 // wrap is non-nil the raw command is transformed before dispatch (e.g. to exec
-// it inside the build container). It normalizes the timeout, truncates large
-// output to its tail, and shapes the response the LLM expects.
+// it inside the build container). It normalizes the timeout, cuts large
+// output to its ends, and shapes the response the LLM expects.
+// NOTE: The runner fetches the last uploadBytesLimit bytes, so the head of a
+// still larger output is the head of that window.
 func (a *defaultAgent) runShell(name string, args map[string]any, wrap func(string) string) genai.FunctionResponse {
 	command, _ := args["command"].(string)
 	if command == "" {
-		return shellResponse(name, "", 0, "command is required")
+		return shellResponse(name, "", 0, "command is required", 0)
 	}
 	timeout, terr := shellTimeout(args)
 	if terr != "" {
-		return shellResponse(name, "", 0, terr)
+		return shellResponse(name, "", 0, terr, 0)
 	}
-	script := command
+	script := detachOutput(command)
 	if wrap != nil {
-		script = wrap(command)
+		script = wrap(script)
 	}
 	exitCode, output, err := a.deps.ScratchRunner.RunCommand(context.Background(), script, timeout)
-	if len(output) > uploadBytesLimit {
-		output = "...(truncated)..." + output[len(output)-uploadBytesLimit:]
-	}
+	output, omitted := truncateEnds(output, toolOutputHead, toolOutputTail)
 	errStr := ""
 	if err != nil {
 		errStr = err.Error()
 	}
-	return shellResponse(name, output, exitCode, errStr)
+	return shellResponse(name, output, exitCode, errStr, omitted)
+}
+
+// truncateEnds keeps the first head and last tail bytes of s with a marker
+// for the cut between them, returning how many bytes it omitted.
+func truncateEnds(s string, head, tail int) (string, int) {
+	if len(s) <= head+tail {
+		return s, 0
+	}
+	omitted := len(s) - head - tail
+	return s[:head] + fmt.Sprintf("\n...[%d bytes omitted, narrow the output with head, tail, or grep]...\n", omitted) + s[len(s)-tail:], omitted
 }
 
 // shellTimeout reads the optional timeout_seconds arg, clamping to
@@ -287,10 +311,10 @@ func shellTimeout(args map[string]any) (int, string) {
 
 // shellResponse shapes a run_on_host / run_in_container FunctionResponse. Name
 // must match the FunctionDeclaration.
-func shellResponse(name, output string, exitCode int, errStr string) genai.FunctionResponse {
+func shellResponse(name, output string, exitCode int, errStr string, omitted int) genai.FunctionResponse {
 	return genai.FunctionResponse{
 		Name:     name,
-		Response: map[string]any{"output": output, "exit_code": exitCode, "error": errStr},
+		Response: map[string]any{"output": output, "exit_code": exitCode, "error": errStr, "omitted_bytes": omitted},
 	}
 }
 
@@ -309,11 +333,19 @@ func shellCommandResponse() *genai.Schema {
 	return &genai.Schema{
 		Type: genai.TypeObject,
 		Properties: map[string]*genai.Schema{
-			"output":    {Type: genai.TypeString, Description: "The merged stdout/stderr of the command"},
-			"exit_code": {Type: genai.TypeInteger, Description: "The command's exit code"},
-			"error":     {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
+			"output":        {Type: genai.TypeString, Description: "The merged stdout/stderr of the command"},
+			"exit_code":     {Type: genai.TypeInteger, Description: "The command's exit code"},
+			"error":         {Type: genai.TypeString, Description: "The error running the command, if it could not be executed"},
+			"omitted_bytes": {Type: genai.TypeInteger, Description: "Bytes cut from the middle of a large output, 0 when the output is complete"},
 		},
 	}
+}
+
+// detachOutput sends the command's output to a file and replays it once the
+// command's own shell exits. Notably, this means a process left in the
+// background (e.g. timewarp) won't hold the call's pipe open indefinitely.
+func detachOutput(command string) string {
+	return "out=$(mktemp); ( " + command + "\n) >\"$out\" 2>&1; rc=$?; cat \"$out\"; rm -f \"$out\"; exit $rc"
 }
 
 // dockerExecInContainerScript wraps command to run inside the retained build
@@ -503,6 +535,8 @@ func (a *defaultAgent) diagnoseOnly() []string {
 	if a.deps.ScratchRunner != nil {
 		prompt = append(prompt,
 			"You can also use the run_on_host tool to run diagnostic shell commands on the build VM host (e.g. inspect docker images or examine files left by previous build attempts), and the run_in_container tool to run commands inside the retained build container with the build's own toolchain.",
+			"Where things are: the source checkout is at /src inside the retained container, where each call starts, and that same tree is the host directory ./builds/<build-id>/src, so a file you produce in the container is readable by host tools like diffr at that path. Host tools cannot read other container paths. The previous attempt's build script and output are under ./builds/<build-id>/ on the host. After a content mismatch the error message names where the upstream artifact and diffr sit on the host.",
+			fmt.Sprintf("Read the build log with read_logs_end before exploring, keep tool output small with head, tail, grep, and wc rather than printing whole files or trees (a result keeps only its first %dKB and last %dKB), and aim to reach a diagnosis in under 20 tool calls. The exchange ends after %d.", toolOutputHead/1000, toolOutputTail/1000, maxToolTurns),
 		)
 	}
 	return append(prompt,
@@ -710,6 +744,19 @@ func (a *defaultAgent) proposeAgentInference(ctx context.Context, opts *ProposeO
 	if len(a.iterHistory) == 0 {
 		return nil, errors.New("proposeAgentInferece needs an previous iteration to work off of")
 	}
+	// Use a fresh chat per iteration. The history carries prior thoughts but
+	// the content of tool calls and results across iterations accumulates too
+	// fast and overflows the model's input.
+	if a.deps.ChatFn != nil {
+		if a.deps.Chat != nil {
+			a.sideUsage = a.sideUsage.Add(sumTokenUsage(a.deps.Chat.Usage(), a.deps.Chat.Model()))
+		}
+		chat, err := a.deps.ChatFn(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "starting chat")
+		}
+		a.deps.Chat = chat
+	}
 	prev := a.execDetails(ctx, a.iterHistory[len(a.iterHistory)-1])
 	thought := thoughtData{
 		BasedOnIteration: len(a.iterHistory) - 1,
@@ -783,8 +830,21 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 	var err error
 	record := "0-proposal.json"
 	if len(a.iterHistory) == 0 {
-		// For the first iteration, use our regular inference logic.
-		s, err = a.proposeHeuristicInference(ctx)
+		// For the first iteration, use our regular inference logic. It walks git
+		// history without consulting its context, so the call is abandoned rather
+		// than interrupted. The abandoned call still writes s and err.
+		ictx, cancel := context.WithTimeoutCause(ctx, inferenceTimeout, errors.Wrapf(context.DeadlineExceeded, "inference ran past %s", inferenceTimeout))
+		defer cancel()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			s, err = a.proposeHeuristicInference(ictx)
+		}()
+		select {
+		case <-done:
+		case <-ictx.Done():
+			return nil, context.Cause(ictx)
+		}
 		record = "0-inference-proposal.json"
 	} else {
 		s, err = a.proposeAgentInference(ctx, opts)
@@ -795,6 +855,86 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 		a.uploadProposalRecord(ctx, opts, record, s)
 	}
 	return s, err
+}
+
+// Canonicalize rewrites a build that already reproduces upstream toward the
+// form inference produces, with registry access confined to the deps phase.
+// The GCB confirmation runs the phases in isolation, so a registry call in
+// the build phase fails there though the combined-shell scratch build
+// tolerates it.
+func (a *defaultAgent) Canonicalize(ctx context.Context, opts *ProposeOpts, working *schema.StrategyOneOf) (out *schema.StrategyOneOf, changed bool, err error) {
+	s, err := working.Strategy()
+	if err != nil {
+		return working, false, errors.Wrap(err, "reading working strategy")
+	}
+	ms, ok := s.(*rebuild.ManualStrategy)
+	if !ok {
+		return working, false, nil // already a typed, inference-shaped strategy
+	}
+	// Registry access goes through the timewarp host.
+	marker := a.buildEnv().TimewarpHost
+	if marker == "" || !strings.Contains(ms.Build, marker) {
+		return working, false, nil // no registry access in the build phase
+	}
+	// A fresh chat, as each proposal gets: fold the diagnose chat's tokens
+	// into the side total first so they are not lost when it is replaced.
+	if a.deps.ChatFn != nil {
+		if a.deps.Chat != nil {
+			a.sideUsage = a.sideUsage.Add(sumTokenUsage(a.deps.Chat.Usage(), a.deps.Chat.Model()))
+		}
+		chat, err := a.deps.ChatFn(ctx)
+		if err != nil {
+			return working, false, errors.Wrap(err, "starting canonicalize chat")
+		}
+		a.deps.Chat = chat
+	}
+	prompt := []string{
+		"You are refining a build definition that already reproduces the upstream artifact byte-for-byte.",
+		"It runs as two sequential phases. The deps phase has registry and network access. The build phase does not: it only compiles what deps fetched.",
+		"Rewrite the two phases so that every registry or network access happens in the deps phase and none remains in the build phase. Do not change what is built or the produced artifact. It must still reproduce upstream.",
+		"Preserve execution order. The phases run in sequence, deps then build, as one command sequence, and the order of installs and setup steps is often load-bearing. A command you move into the deps phase must keep its position relative to the others: append it after the existing deps commands, never before them, and never reorder one install ahead of another.",
+		"Current deps phase:", ms.Deps,
+		"Current build phase:", ms.Build,
+		"Output the new deps phase, then a line containing only ===BUILD===, then the new build phase. Emit only the two scripts: no markdown fences, no commentary.",
+	}
+	raw, err := a.generate(ctx, prompt, opts)
+	if err != nil {
+		return working, false, errors.Wrap(err, "canonicalize generate")
+	}
+	deps, build, ok := splitCanonical(raw)
+	if !ok {
+		return working, false, errors.New("canonicalize output missing ===BUILD=== separator")
+	}
+	return new(schema.NewStrategyOneOf(&rebuild.ManualStrategy{
+		Location:   ms.Location,
+		Requires:   ms.Requires,
+		Deps:       deps,
+		Build:      build,
+		OutputPath: ms.OutputPath,
+	})), true, nil
+}
+
+// splitCanonical parses Canonicalize's two-script output on the ===BUILD===
+// separator, stripping any code fences the model added around each script.
+func splitCanonical(out string) (deps, build string, ok bool) {
+	const sep = "===BUILD==="
+	i := strings.Index(out, sep)
+	if i < 0 {
+		return "", "", false
+	}
+	return stripFences(out[:i]), stripFences(out[i+len(sep):]), true
+}
+
+func stripFences(s string) string {
+	s = strings.TrimSpace(s)
+	for _, p := range []string{"```bash", "```shell", "```sh", "```"} {
+		if strings.HasPrefix(s, p) {
+			s = strings.TrimPrefix(s, p)
+			break
+		}
+	}
+	s = strings.TrimSuffix(strings.TrimSpace(s), "```")
+	return strings.TrimSpace(s)
 }
 
 // uploadProposalRecord records an iteration's proposed strategy in its

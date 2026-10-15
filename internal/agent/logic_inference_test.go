@@ -4,11 +4,14 @@
 package agent
 
 import (
+	"context"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/pkg/errors"
 )
 
 func TestToolchainStrategy(t *testing.T) {
@@ -59,5 +62,20 @@ func TestHistoryContextNamesInferenceFailure(t *testing.T) {
 	}
 	if strings.Contains(strings.Join((&defaultAgent{}).historyContext(nil), "\n"), "## Inference") {
 		t.Error("inference section present without a failure")
+	}
+}
+
+// hungClient ignores its request's context, as a history scan does.
+type hungClient struct{}
+
+func (hungClient) Do(*http.Request) (*http.Response, error) { select {} }
+
+func TestProposeAbandonsHungInference(t *testing.T) {
+	a := NewDefaultAgent(testTarget, &AgentDeps{RegistryClient: hungClient{}})
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cause := errors.New("terminated signal received")
+	cancel(cause)
+	if _, err := a.Propose(ctx, nil); !errors.Is(err, cause) {
+		t.Fatalf("err = %v, want the cancellation cause", err)
 	}
 }
