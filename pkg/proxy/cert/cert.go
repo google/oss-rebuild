@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"log"
 	"math/big"
 	"time"
@@ -62,23 +63,46 @@ func ToPEM(cert *x509.Certificate) []byte {
 	return b.Bytes()
 }
 
-// ToJKS generates a Java KeyStore with the provided certificate.
-func ToJKS(cert *x509.Certificate) ([]byte, error) {
-	certBytes := ToPEM(cert)
+// ToJKS generates a Java KeyStore containing the provided certificates.
+func ToJKS(certs ...*x509.Certificate) ([]byte, error) {
 	f := keystore.New()
-	err := f.SetTrustedCertificateEntry("proxy", keystore.TrustedCertificateEntry{
-		CreationTime: time.Now(),
-		Certificate: keystore.Certificate{
-			Type:    "X509",
-			Content: certBytes,
-		},
-	})
-	if err != nil {
-		return nil, err
+	count := 0
+	for _, c := range certs {
+		if c == nil {
+			continue
+		}
+		alias := "proxy"
+		if count > 0 {
+			alias = fmt.Sprintf("ca-%d", count)
+		}
+		count++
+		err := f.SetTrustedCertificateEntry(alias, keystore.TrustedCertificateEntry{
+			CreationTime: time.Now(),
+			Certificate: keystore.Certificate{
+				Type:    "X.509",
+				Content: c.Raw,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	jksBuf := new(bytes.Buffer)
 	if err := f.Store(jksBuf, []byte{}); err != nil {
 		return nil, err
 	}
 	return jksBuf.Bytes(), nil
+}
+
+// PEMToJKS parses all PEM certificates in the provided bundle and writes them to a Java KeyStore.
+func PEMToJKS(pemBundle []byte) ([]byte, error) {
+	var certs []*x509.Certificate
+	for block, rest := pem.Decode(pemBundle); block != nil; block, rest = pem.Decode(rest) {
+		if block.Type == "CERTIFICATE" {
+			if c, err := x509.ParseCertificate(block.Bytes); err == nil {
+				certs = append(certs, c)
+			}
+		}
+	}
+	return ToJKS(certs...)
 }
