@@ -106,6 +106,7 @@ func dispatchCommand() *cobra.Command {
 	set.IntVar(&p.MaxAgent, "max-agent", p.MaxAgent, "max agent-stage dispatches this pass; 0 = unbounded")
 	set.IntVar(&p.AgentIterations, "agent-iterations", p.AgentIterations, "max agent iterations per session")
 	set.StringVar(&p.AgentModel, "agent-model", "", "Gemini model id for agent sessions; empty uses the agent's default")
+	set.StringVar(&p.EvalModels, "eval-models", "", "comma-separated Gemini model ids, round-robined across agent launches within a run; overrides --agent-model. For A/B comparison from one saturating loop")
 	set.IntVar(&p.Workers, "workers", p.Workers, "concurrent observations and launches within a pass")
 	set.IntVar(&p.BuildRate, "build-rate", p.BuildRate, "build launches per minute; 0 launches as fast as the workers allow")
 	set.DurationVar(&p.Window, "window", 0, "stop launching this long after the pass starts; 0 launches everything approved")
