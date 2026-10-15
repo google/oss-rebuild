@@ -6,13 +6,18 @@ package gcb
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
+	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/gcb/gcbtest"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 )
 
 func TestStepSection(t *testing.T) {
@@ -145,4 +150,27 @@ func TestToErrorReadsFailureInfo(t *testing.T) {
 	if got, want := ToError(b).Error(), "GCB build timeout: "; got != want {
 		t.Errorf("ToError() = %q, want %q", got, want)
 	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestWaitForOperationRetriesConnReset(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		mock := &httpxtest.MockClient{
+			Calls: []httpxtest.Call{
+				{Error: syscall.ECONNRESET},
+				{Response: &http.Response{StatusCode: http.StatusOK, Body: httpxtest.Body(`{"done": true}`)}},
+			},
+			SkipURLValidation: true,
+		}
+		svc, err := cloudbuild.NewService(t.Context(), option.WithHTTPClient(&http.Client{Transport: roundTripFunc(mock.Do)}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewClient(svc).WaitForOperation(t.Context(), &cloudbuild.Operation{Name: "operations/build-id"}); err != nil {
+			t.Fatalf("WaitForOperation() error = %v", err)
+		}
+	})
 }

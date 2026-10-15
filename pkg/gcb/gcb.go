@@ -175,14 +175,15 @@ func (c *clientImpl) WaitForOperation(ctx context.Context, op *cloudbuild.Operat
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-time.After(c.pollInterval):
-			var err error
-			op, err = c.operations().Get(op.Name).Context(ctx).Do()
+			// Do returns a nil operation on error, so only replace op once the poll succeeds.
+			next, err := c.operations().Get(op.Name).Context(ctx).Do()
 			if errors.Is(err, syscall.ECONNRESET) { // Retry-able error
 				continue
 			}
 			if err != nil {
 				return nil, errors.Wrap(err, "fetching operation")
 			}
+			op = next
 		}
 	}
 	return op, nil
