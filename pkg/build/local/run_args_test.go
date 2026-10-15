@@ -38,6 +38,16 @@ func TestComposeDockerStartArgs(t *testing.T) {
 			want: []string{"run", "--detach", "--name", "b1", "-v", "/tmp/oss-rebuild-b1:/out", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "sleep", "infinity"},
 		},
 		{
+			name: "source mount",
+			plan: runArgsTestPlan(),
+			opts: RunArgsOpts{
+				ContainerName:  "b1",
+				OutputMountSrc: "/tmp/b1/out",
+				SourceMountSrc: "/tmp/b1/src",
+			},
+			want: []string{"run", "--detach", "--name", "b1", "-v", "/tmp/b1/out:/out", "-v", "/tmp/b1/src:/src", "-w", "/workspace", "--ulimit", "core=0", "alpine:3.19", "sleep", "infinity"},
+		},
+		{
 			name: "inline auth",
 			plan: runArgsTestPlan(),
 			opts: RunArgsOpts{
