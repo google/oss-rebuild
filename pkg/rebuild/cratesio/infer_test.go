@@ -1374,8 +1374,8 @@ func TestLockfileRustVersionFloor(t *testing.T) {
 		{formatVersion: 3, want: "1.47.0"},
 		{formatVersion: 4, want: "1.78.0"},
 	} {
-		if got := lockfileRustVersionFloor(tc.formatVersion); got != tc.want {
-			t.Errorf("lockfileRustVersionFloor(%d) = %q, want %q", tc.formatVersion, got, tc.want)
+		if got, _ := inferRustVersionBounds(crateProps{LockfileVersion: tc.formatVersion}); got != tc.want {
+			t.Errorf("inferRustVersionBounds(LockfileVersion=%d) lo = %q, want %q", tc.formatVersion, got, tc.want)
 		}
 	}
 }
@@ -1491,6 +1491,39 @@ func TestFindAndValidateCargoTOMLStripsManifestBOM(t *testing.T) {
 	}
 	if want := "member/Cargo.toml"; got != want {
 		t.Errorf("findAndValidateCargoTOML = %q, want %q", got, want)
+	}
+}
+
+func TestCargoTOMLSearchWorkspaceVersionBump(t *testing.T) {
+	repo := must(gitxtest.CreateRepoFromYAML(`commits:
+  - id: initial
+    files:
+      Cargo.toml: |
+        [workspace]
+        members = ["crates/member"]
+
+        [workspace.package]
+        version = "0.1.0"
+      crates/member/Cargo.toml: |
+        [package]
+        name = "member"
+        version.workspace = true
+  - id: release
+    parent: initial
+    files:
+      Cargo.toml: |
+        [workspace]
+        members = ["crates/member"]
+
+        [workspace.package]
+        version = "0.2.0"
+`, nil))
+	tm, err := cargoTOMLSearch("member", "crates/member/Cargo.toml", repo.Repository)
+	if err != nil {
+		t.Fatalf("cargoTOMLSearch: %v", err)
+	}
+	if got, want := tm["0.2.0"], repo.Commits["release"].String(); got != want {
+		t.Errorf("cargoTOMLSearch[\"0.2.0\"] = %q, want %q", got, want)
 	}
 }
 
