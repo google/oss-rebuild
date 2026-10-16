@@ -6,6 +6,7 @@ package cratesregistryservice
 import (
 	"context"
 	"encoding/base64"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -57,14 +58,15 @@ type FindRegistryCommitDeps struct {
 // FindRegistryCommit finds a registry commit hash based on a Cargo.lock file and publish time
 func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps *FindRegistryCommitDeps) (*FindRegistryCommitResponse, error) {
 	// Validate request
-	publishedTime, err := time.Parse(time.RFC3339, req.PublishedTime)
-	if err != nil {
-		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "failed to parse published_time"))
-	}
 	lockfileData, err := base64.StdEncoding.DecodeString(req.LockfileBase64)
 	if err != nil {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "failed to decode lockfile"))
 	}
+	publishedTime, err := time.Parse(time.RFC3339, req.PublishedTime)
+	if err != nil {
+		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "failed to parse published_time"))
+	}
+	// Parse Cargo.lock content
 	packages, err := cargolock.Parse(string(lockfileData))
 	if err != nil {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.Wrap(err, "failed to parse Cargo.lock"))
@@ -85,7 +87,7 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 		needsCurrent = true
 	} else {
 		mostRecentSnapshotDate := relevantSnapshots[0]
-		needsCurrent = req.PublishedTime > mostRecentSnapshotDate
+		needsCurrent = publishedTime.Format("2006-01-02") >= mostRecentSnapshotDate
 	}
 	// Build list of repositories in newest-to-oldest order
 	var keys []index.RepositoryKey
@@ -140,32 +142,38 @@ func FindRegistryCommit(ctx context.Context, req FindRegistryCommitRequest, deps
 	}, nil
 }
 
-// getRelevantSnapshots determines which snapshots are relevant based on publish date
+const (
+	// Maximum number of preceding snapshots to include before publish date.
+	// A request searches at most maxPrecedingSnapshots+1 snapshot indices (up to
+	// maxPrecedingSnapshots before publishDate plus the next snapshot after),
+	// which must fit within the index manager's MaxSnapshots limit so a single
+	// lookup never evicts its own inputs.
+	maxPrecedingSnapshots = 3
+)
+
+// getRelevantSnapshots determines which snapshots are relevant based on publish date.
 // Snapshots are referred to by their end date so we include:
-// 1. [If present] The snapshot where [publish-buffer, publish] contains the end date
-// 2. [If present] The snapshot where [startDate, endDate] "contains" the publish date (where startDate is the previous snapshot)
+// 1. Up to maxPrecedingSnapshots snapshots ending on or before publish date
+// 2. [If present] The next snapshot that ends strictly after publish date
 func getRelevantSnapshots(snapshots []string, publishDate time.Time) []string {
-	var relevant []string
-	buffer := 14 * 24 * time.Hour // 14 day buffer
-	// Find the first snapshot before and the first after publishDate.
-	// Since snapshots are sorted chronologically, we can process them in order.
-	var beforeSnapshot, afterSnapshot string
-	published := publishDate.Format("2006-01-02")
+	searchEnd := publishDate.Format("2006-01-02")
+	var before []string
+	var after string
 	for _, snapshotEnd := range snapshots {
-		if snapshotEnd < published {
-			beforeSnapshot = snapshotEnd
-		} else {
-			afterSnapshot = snapshotEnd
+		if snapshotEnd > searchEnd {
+			after = snapshotEnd
 			break
 		}
+		before = append(before, snapshotEnd)
 	}
-	// If present, add the first snapshot after publish date
-	if afterSnapshot != "" {
-		relevant = append(relevant, afterSnapshot)
+	if len(before) > maxPrecedingSnapshots {
+		before = before[len(before)-maxPrecedingSnapshots:]
 	}
-	// If present, add the before snapshot provided it's within the buffer
-	if beforeSnapshot != "" && beforeSnapshot > publishDate.Add(-buffer).Format("2006-01-02") {
-		relevant = append(relevant, beforeSnapshot)
+	relevant := slices.Clone(before)
+	if after != "" {
+		relevant = append(relevant, after)
 	}
+	// Reverse to get newest-to-oldest order
+	slices.Reverse(relevant)
 	return relevant
 }

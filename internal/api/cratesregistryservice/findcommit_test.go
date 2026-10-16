@@ -6,7 +6,9 @@ package cratesregistryservice
 import (
 	"context"
 	"encoding/base64"
+	"slices"
 	"testing"
+	"time"
 )
 
 func TestFindRegistryCommitWithoutRegistryPackages(t *testing.T) {
@@ -25,5 +27,31 @@ version = "1.0.0"
 	}
 	if response.CommitHash != "" {
 		t.Errorf("FindRegistryCommit() commit = %q, want empty", response.CommitHash)
+	}
+}
+
+func TestGetRelevantSnapshots(t *testing.T) {
+	snapshots := []string{
+		"2022-03-02",
+		"2022-07-02",
+		"2022-10-16",
+		"2023-03-10",
+		"2023-08-19",
+		"2024-02-17",
+		"2024-08-17",
+	}
+	pub, err := time.Parse(time.RFC3339, "2024-05-01T12:00:00Z")
+	if err != nil {
+		t.Fatalf("time.Parse() error = %v", err)
+	}
+	got := getRelevantSnapshots(snapshots, pub)
+	want := []string{
+		"2024-08-17",
+		"2024-02-17",
+		"2023-08-19",
+		"2023-03-10",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("getRelevantSnapshots() = %v, want %v", got, want)
 	}
 }
