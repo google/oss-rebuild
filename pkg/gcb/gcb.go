@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/google/oss-rebuild/internal/gcsx"
 	"github.com/pkg/errors"
 	"google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -175,17 +177,26 @@ func (c *clientImpl) WaitForOperation(ctx context.Context, op *cloudbuild.Operat
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-time.After(c.pollInterval):
-			var err error
-			op, err = c.operations().Get(op.Name).Context(ctx).Do()
-			if errors.Is(err, syscall.ECONNRESET) { // Retry-able error
-				continue
-			}
-			if err != nil {
+			next, err := c.operations().Get(op.Name).Context(ctx).Do()
+			if err == nil {
+				op = next
+			} else if !retryablePollError(err) {
 				return nil, errors.Wrap(err, "fetching operation")
 			}
 		}
 	}
 	return op, nil
+}
+
+// retryablePollError reports whether an operation poll failed while the build kept running.
+func retryablePollError(err error) bool {
+	var gerr *googleapi.Error
+	if errors.As(err, &gerr) {
+		// NOTE: Concurrent builds' polls share the caller's get quota, and polls
+		// can 503 during incidents the build does not see.
+		return gerr.Code == http.StatusTooManyRequests || gerr.Code == http.StatusServiceUnavailable
+	}
+	return errors.Is(err, syscall.ECONNRESET)
 }
 
 func (c *clientImpl) operations() *cloudbuild.OperationsService {

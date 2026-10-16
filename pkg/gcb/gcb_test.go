@@ -6,13 +6,17 @@ package gcb
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/google/oss-rebuild/pkg/gcb/gcbtest"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 )
 
 func TestStepSection(t *testing.T) {
@@ -146,3 +150,48 @@ func TestToErrorReadsFailureInfo(t *testing.T) {
 		t.Errorf("ToError() = %q, want %q", got, want)
 	}
 }
+
+func TestWaitForOperationRidesOutFailedPolls(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int   // the first poll's response status
+		err    error // or the first poll's transport error
+	}{
+		{"ConnectionReset", 0, syscall.ECONNRESET},
+		{"RateLimited", http.StatusTooManyRequests, nil},
+		{"Unavailable", http.StatusServiceUnavailable, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var polls int
+			hc := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				polls++
+				if polls == 1 && tc.err != nil {
+					return nil, tc.err
+				}
+				rec := httptest.NewRecorder()
+				if polls == 1 {
+					rec.WriteHeader(tc.status)
+				} else {
+					rec.WriteString(`{"name":"operations/op","done":true}`)
+				}
+				return rec.Result(), nil
+			})}
+			svc, err := cloudbuild.NewService(context.Background(), option.WithEndpoint("http://gcb.test"), option.WithHTTPClient(hc))
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := &clientImpl{service: svc, pollInterval: time.Millisecond}
+			op, err := c.WaitForOperation(context.Background(), &cloudbuild.Operation{Name: "operations/op"})
+			if err != nil {
+				t.Fatalf("WaitForOperation: %v", err)
+			}
+			if !op.Done || polls != 2 {
+				t.Errorf("op.Done = %v after %d polls, want done after 2", op.Done, polls)
+			}
+		})
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
