@@ -312,6 +312,11 @@ resource "google_cloud_run_v2_service_iam_member" "api-and-inference-call-gatewa
   ])
   member = each.key
 }
+resource "google_pubsub_topic_iam_member" "orchestrator-queues-builds" {
+  topic  = google_pubsub_topic.build-tasks.id
+  role   = "roles/pubsub.publisher"
+  member = google_service_account.orchestrator.member
+}
 resource "google_pubsub_subscription_iam_member" "orchestrator-pulls-builds" {
   subscription = google_pubsub_subscription.build-workers.id
   role         = "roles/pubsub.subscriber"

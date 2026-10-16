@@ -5,15 +5,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"path"
+	"sync"
 
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
+	"cloud.google.com/go/pubsub/v2"
 	"cloud.google.com/go/storage"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -72,6 +75,7 @@ var (
 	agentLogsBucket       = flag.String("agent-logs-bucket", "", "GCS bucket for agent build logs")
 	agentTimeoutSeconds   = flag.Int("agent-timeout-seconds", 3600, "Seconds to allow agent to run")
 	rebuildJobName        = flag.String("rebuild-job-name", "", "Name of the pre-created Cloud Run Job for rebuilds")
+	buildTopic            = flag.String("build-topic", "", "Pub/Sub topic the build workers pull extended rebuilds from. Empty runs each extended rebuild as a rebuild job execution")
 	analyticsURI          = flag.String("analytics-uri", "", "URI for snapshots (supported schemes: gs, file). Empty disables the /snapshot endpoints")
 	signalsDBURI          = flag.String("signals-db-uri", "", "URI the signal database publishes under, ingested at rollup and consulted by feed admission (supported schemes: gs, file). Empty skips signal ingest and refuses feed admission")
 	port                  = flag.Int("port", 8080, "port on which to serve")
@@ -276,8 +280,32 @@ func CreateRebuildOpInit(ctx context.Context) (*apiservice.CreateRebuildOpDeps, 
 		}
 		return deps, nil
 	}
+	if *buildTopic != "" {
+		publisher, err := buildPublisher()
+		if err != nil {
+			return nil, err
+		}
+		d.Enqueue = func(ctx context.Context, task apiservice.BuildTask) error {
+			b, err := json.Marshal(task)
+			if err != nil {
+				return err
+			}
+			_, err = publisher.Publish(ctx, &pubsub.Message{Data: b}).Get(ctx)
+			return err
+		}
+	}
 	return &d, nil
 }
+
+// buildPublisher is process-wide because Deps are built per request and a
+// publisher batches across requests.
+var buildPublisher = sync.OnceValues(func() (*pubsub.Publisher, error) {
+	client, err := pubsub.NewClient(context.Background(), *project)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating pubsub client")
+	}
+	return client.Publisher(*buildTopic), nil
+})
 
 func GetRebuildOpInit(ctx context.Context) (*apiservice.GetRebuildOpDeps, error) {
 	var d apiservice.GetRebuildOpDeps
