@@ -509,6 +509,19 @@ resource "google_compute_router_nat" "nat" {
   # Auto-allocate for all IPs
   nat_ip_allocate_option             = "AUTO_ONLY"
   source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+  # A host masquerades all its guests behind one address. Dynamic allocation
+  # grows ports too slowly for a package install and drops packets when it
+  # can't keep up. This allocation floor covers the observed host bursts.
+  enable_dynamic_port_allocation      = true
+  enable_endpoint_independent_mapping = false # dynamic allocation needs it off
+  min_ports_per_vm                    = 4096
+  max_ports_per_vm                    = 16384
+  tcp_time_wait_timeout_sec           = 30 # a short TIME_WAIT frees ports sooner
+  # Port exhaustion otherwise shows only as connection timeouts in builds.
+  log_config {
+    enable = true
+    filter = "ERRORS_ONLY"
+  }
 }
 # run.app resolves to public front-end IPs, so with a NAT present that traffic
 # would egress publicly and be classified external at internal-ingress
