@@ -50,6 +50,13 @@ func ListActiveCampaigns(ctx context.Context, c *firestore.Client) ([]scheduler.
 	return collectCampaigns(q.Documents(ctx))
 }
 
+// ListInFlightCampaigns returns only the in-flight campaigns, for a refill
+// pass that keeps the queued set from the run's first listing.
+func ListInFlightCampaigns(ctx context.Context, c *firestore.Client) ([]scheduler.Campaign, error) {
+	q := c.Collection(campaignsCollection).Where("state", "==", string(scheduler.StateInFlight))
+	return collectCampaigns(q.Documents(ctx))
+}
+
 func collectCampaigns(it *firestore.DocumentIterator) ([]scheduler.Campaign, error) {
 	defer it.Stop()
 	var out []scheduler.Campaign

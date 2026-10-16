@@ -63,7 +63,8 @@ func dispatchHandler(ctx context.Context, cfg dispatchConfig, deps *Deps) (*act.
 		Config:    cfg.Pass,
 	}
 	list := func(ctx context.Context) ([]scheduler.Campaign, error) { return db.ListActiveCampaigns(ctx, fire) }
-	report, err := d.Once(ctx, list)
+	inflight := func(ctx context.Context) ([]scheduler.Campaign, error) { return db.ListInFlightCampaigns(ctx, fire) }
+	report, err := d.Run(ctx, list, inflight)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +109,7 @@ func dispatchCommand() *cobra.Command {
 	set.IntVar(&p.Workers, "workers", p.Workers, "concurrent observations and launches within a pass")
 	set.IntVar(&p.BuildRate, "build-rate", p.BuildRate, "build launches per minute; 0 launches as fast as the workers allow")
 	set.DurationVar(&p.Window, "window", 0, "stop launching this long after the pass starts; 0 launches everything approved")
+	set.DurationVar(&p.Refill, "refill", 0, "re-observe and refill this often until --window closes; 0 runs one pass")
 	set.DurationVar(&p.BuildTimeCap, "build-time-cap", 0, "build execution time cap per period; 0 = uncapped")
 	set.DurationVar(&p.SessionTimeCap, "session-time-cap", 0, "agent session time cap per period; 0 = uncapped")
 	set.DurationVar(&p.Period, "period", p.Period, "budget period length")

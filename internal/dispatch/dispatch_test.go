@@ -378,3 +378,62 @@ func TestRequestConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestRunRefillsUntilTheWindowCloses(t *testing.T) {
+	ctx := context.Background()
+	seed := []scheduler.Campaign{queued("a", scheduler.StageInfer), queued("b", scheduler.StageInfer), queued("c", scheduler.StageInfer)}
+	for _, tc := range []struct {
+		name         string
+		cfg          Config
+		wantPasses   int // at least
+		wantDispatch int
+	}{
+		{"OnePassWithoutRefill", Config{Batch: 1, Workers: 1, Window: 200 * time.Millisecond}, 1, 1},
+		{"RefillRunsPassesUntilTheWindowCloses", Config{Batch: 1, Workers: 1, Window: 300 * time.Millisecond, Refill: 20 * time.Millisecond}, 3, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newTestDispatcher(tc.cfg, &fakeAPI{})
+			for _, c := range seed {
+				if err := d.Campaigns.Upsert(ctx, c); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// A live listing, as the API's Firestore one is, so each pass
+			// sees what the previous ones dispatched.
+			list := func(ctx context.Context) ([]scheduler.Campaign, error) {
+				var out []scheduler.Campaign
+				for _, c := range seed {
+					got, err := d.Campaigns.Get(ctx, c.Target())
+					if err != nil {
+						return nil, err
+					}
+					out = append(out, got)
+				}
+				return out, nil
+			}
+			inflight := func(ctx context.Context) ([]scheduler.Campaign, error) {
+				all, err := list(ctx)
+				if err != nil {
+					return nil, err
+				}
+				var out []scheduler.Campaign
+				for _, c := range all {
+					if c.State == scheduler.StateInFlight {
+						out = append(out, c)
+					}
+				}
+				return out, nil
+			}
+			report, err := d.Run(ctx, list, inflight)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Passes < tc.wantPasses || report.Dispatched != tc.wantDispatch {
+				t.Errorf("passes %d dispatched %d, want at least %d passes and %d dispatched", report.Passes, report.Dispatched, tc.wantPasses, tc.wantDispatch)
+			}
+			if d.Config.Window != tc.cfg.Window {
+				t.Errorf("window left at %s, want %s restored", d.Config.Window, tc.cfg.Window)
+			}
+		})
+	}
+}
