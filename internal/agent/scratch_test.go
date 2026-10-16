@@ -281,7 +281,7 @@ func TestDiffOnVM(t *testing.T) {
 			want := `set -eu
 die() { echo "$*"; exit 3; }
 fetch() { [ -e "$1" ] || { wget -q ${AUTH_HEADER:+--header "$AUTH_HEADER"} -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }
-stab() { out=$(/home/builder/tools/stabilize -ecosystem npm -artifact lodash-4.17.21.tgz -infile "$1" -outfile "$2.part" 2>&1) && mv "$2.part" "$2" || die "stabilizing $1 failed: $out"; }
+stab() { out=$(/home/builder/tools/stabilize --ecosystem npm --artifact lodash-4.17.21.tgz --infile "$1" --outfile "$2.part" 2>&1) && mv "$2.part" "$2" || die "stabilizing $1 failed: $out"; }
 mkdir -p /home/builder/tools /home/builder/upstream
 fetch /home/builder/tools/diffr https://storage.googleapis.com/test-bootstrap/v1/diffr
 fetch /home/builder/tools/stabilize https://storage.googleapis.com/test-bootstrap/v1/stabilize
@@ -314,7 +314,7 @@ func TestMismatchMessage(t *testing.T) {
 		"differ (1):\n    package/index.js",
 		"only in rebuild, only in upstream, and differ",
 		"/home/builder/tools/diffr /home/builder/builds/iter-1/out/rebuild.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized",
-		"/home/builder/tools/stabilize -ecosystem npm -artifact lodash-4.17.21.tgz -infile <file> -outfile <file>.stabilized",
+		"/home/builder/tools/stabilize --ecosystem npm --artifact lodash-4.17.21.tgz --infile <file> --outfile <file>.stabilized",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("message lacks %q:\n%s", want, got)
