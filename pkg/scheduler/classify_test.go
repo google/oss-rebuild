@@ -61,6 +61,7 @@ func TestClassifySession(t *testing.T) {
 		{"Throttled", schema.AgentCompleteReasonThrottled, OutcomeTransient},
 		{"Failed", schema.AgentCompleteReasonFailed, OutcomeFailure},
 		{"Error", schema.AgentCompleteReasonError, OutcomeFailure},
+		{"GaveUp", schema.AgentCompleteReasonGaveUp, OutcomeGaveUp},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if diff := cmp.Diff(tc.want, ClassifySession(tc.reason)); diff != "" {

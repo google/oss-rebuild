@@ -101,13 +101,15 @@ func ClassifyRebuild(status schema.RebuildStatus, message string) Outcome {
 
 // ClassifySession maps an agent session's stop reason onto an Outcome. Only
 // SUCCESS, which the agent reports after a confirmed build, is Attested.
-// THROTTLED is Transient. Anything else is a Failure.
+// THROTTLED is Transient. GAVE_UP is GaveUp. Anything else is a Failure.
 func ClassifySession(stopReason string) Outcome {
 	switch stopReason {
 	case schema.AgentCompleteReasonSuccess:
 		return OutcomeAttested
 	case schema.AgentCompleteReasonThrottled:
 		return OutcomeTransient
+	case schema.AgentCompleteReasonGaveUp:
+		return OutcomeGaveUp
 	default:
 		return OutcomeFailure
 	}
