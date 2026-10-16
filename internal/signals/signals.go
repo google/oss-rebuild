@@ -233,3 +233,31 @@ func Fetch(dest billy.Basic, dir string) (string, error) {
 	}
 	return path, nil
 }
+
+// TopPackages reads an ecosystem's n highest-scored packages in descending
+// score order, or all of them when n <= 0.
+func TopPackages(db *sqlite3.Conn, ecosystem string, n int) ([]PackageSignal, error) {
+	stmt, _, err := db.Prepare(`SELECT package, dependents, prevalence, score
+		FROM package_signals WHERE ecosystem = ? ORDER BY score DESC, package LIMIT ?`)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+	stmt.BindText(1, ecosystem)
+	if n > 0 {
+		stmt.BindInt64(2, int64(n))
+	} else {
+		stmt.BindInt64(2, -1) // no bound
+	}
+	var out []PackageSignal
+	for stmt.Step() {
+		out = append(out, PackageSignal{
+			Ecosystem:  ecosystem,
+			Package:    stmt.ColumnText(0),
+			Dependents: stmt.ColumnInt64(1),
+			Prevalence: stmt.ColumnFloat(2),
+			Score:      stmt.ColumnFloat(3),
+		})
+	}
+	return out, stmt.Err()
+}
