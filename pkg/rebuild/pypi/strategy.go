@@ -135,16 +135,27 @@ type PlatformWheelBuild struct {
 	PlatformTag  string    `json:"platform_tag,omitempty" yaml:"platform_tag,omitempty"`
 	SystemDeps   []string  `json:"system_deps,omitempty" yaml:"system_deps,omitempty"`
 	RegistryTime time.Time `json:"registry_time" yaml:"registry_time,omitempty"`
+	// BaseImage is the build image, used verbatim when set. It should be pinned by
+	// digest, as in "quay.io/pypa/musllinux_1_2_x86_64:2026.03.20-1@sha256:<digest>",
+	// because the image determines the compiler, CPython builds and auditwheel.
+	// When unset, the latest image of the family matching PlatformTag is used.
+	BaseImage string `json:"base_image,omitempty" yaml:"base_image,omitempty"`
 }
 
 var _ rebuild.Strategy = &PlatformWheelBuild{}
 
-func (b *PlatformWheelBuild) BaseImage() (string, error) {
+func (b *PlatformWheelBuild) resolveBaseImage() (string, error) {
+	if b.PlatformTag == "" {
+		return "", errors.New("platform tag is required")
+	}
+	if b.BaseImage != "" {
+		return b.BaseImage, nil
+	}
 	return platform.SelectBaseImage(b.PlatformTag)
 }
 
 func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
-	baseImage, err := b.BaseImage()
+	baseImage, err := b.resolveBaseImage()
 	if err != nil {
 		return nil, errors.Wrap(err, "selecting base image")
 	}
