@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/buildpolicy"
@@ -875,5 +876,41 @@ func TestArtifactCheckReportsTheClosest(t *testing.T) {
 	k.note(schema.AgentCandidate{Path: "b", Entries: 1})
 	if got := k.note(schema.AgentCandidate{Path: "c", Entries: 3}); !strings.Contains(got, "1 differing entries (b)") {
 		t.Errorf("note after a farther candidate = %q, want b to stay closest", got)
+	}
+}
+
+func TestFreeFormWindDownNotice(t *testing.T) {
+	h := freeFormTestAgent(t, []string{
+		modelCalls("check_artifact", `{"path":"/src/a.tgz"}`),
+		modelCalls("give_up", `{"reason":"out of time","closest":"/src/a.tgz"}`),
+		modelSays("Done."),
+	}, formalized)
+	h.checks = []checkResult{vmMismatch}
+	h.a.ff.windDown = time.Now().Add(-time.Second)
+	dir, _ := url.Parse("gs://sessions/s1/messages/2")
+	if _, err := h.a.Propose(context.Background(), &ProposeOpts{ChatUploadURL: dir}); !errors.As(err, new(gaveUp)) {
+		t.Fatalf("Propose = %v, want the model's give-up", err)
+	}
+	var noticed bool
+	for _, b := range h.records {
+		noticed = noticed || bytes.Contains(b, []byte("time budget is spent"))
+	}
+	if !noticed {
+		t.Error("no tool reply past the wind-down carried the notice")
+	}
+}
+
+// Past the grace, the job gives up for the model and files the record.
+func TestFreeFormWindDownEndsTheTurn(t *testing.T) {
+	h := freeFormTestAgent(t, []string{modelSays("still working")}, formalized)
+	h.a.ff.windDown = time.Now().Add(-windDownGrace - time.Second)
+	dir, _ := url.Parse("gs://sessions/s1/messages/2")
+	_, err := h.a.Propose(context.Background(), &ProposeOpts{ChatUploadURL: dir})
+	var gu gaveUp
+	if !errors.As(err, &gu) || gu.Reason != timeRanOut {
+		t.Fatalf("Propose = %v, want the job's give-up", err)
+	}
+	if r := h.record(t, "-giveup.json"); !bytes.Contains(r["reason"], []byte("ran out")) {
+		t.Errorf("give-up record = %v", r)
 	}
 }

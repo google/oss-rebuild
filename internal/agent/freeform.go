@@ -29,11 +29,12 @@ import (
 // The handoff and each candidate are judged by the content rule before a build.
 
 const (
-	formalizeRetries  = 2     // re-formalizations before proposing the handoff as written
-	traceHead         = 1_000 // bytes kept from the head of a tool output in the formalization prompt
-	traceTail         = 3_000 // bytes kept from its tail
-	freeFormToolCalls = 300   // tool calls per turn
-	handoffReminders  = 2     // follow-ups after a turn without a handoff, and after a refused one
+	formalizeRetries  = 2                // re-formalizations before proposing the handoff as written
+	traceHead         = 1_000            // bytes kept from the head of a tool output in the formalization prompt
+	traceTail         = 3_000            // bytes kept from its tail
+	freeFormToolCalls = 300              // tool calls per turn
+	handoffReminders  = 2                // follow-ups after a turn without a handoff, and after a refused one
+	windDownGrace     = 10 * time.Minute // past windDown until the job ends it
 	maxEndRefusals    = 2
 )
 
@@ -87,6 +88,7 @@ type freeFormDriver struct {
 	store    func(ctx context.Context, opts *ProposeOpts, name string, v any) // uploadRecord, or a test's fake
 	pending  *freeForm                                                        // the handoff being formalized
 	checked  *schema.StrategyOneOf                                            // judged already, so check passes it
+	windDown time.Time                                                        // past it, the model is told to finish
 }
 
 // sessionOpener starts a session over prev and returns its first prompt.
@@ -224,6 +226,8 @@ func handoffReminder(trace []toolCall) string {
 
 // Wind-down and reminder texts.
 const (
+	windDownNotice = "The session's time budget is spent. Finish now: call handoff if check_artifact has reported a match, otherwise call give_up with your closest candidate. The job ends the session in a few minutes either way."
+	timeRanOut     = "The session's time budget ran out before a match."
 	keepIterating  = "Keep iterating in the container: run the build, call check_artifact on the result, and repeat until it reports a match, then call handoff with the commands that produced it. If you cannot get closer, call give_up with your closest candidate."
 	handoffMatched = "You ended without calling handoff after check_artifact reported a match. Call handoff now with the commands that produced the matching artifact: deps for every command that installed or fetched anything, build for the rest."
 	handoffNoMatch = "You ended without calling handoff, and check_artifact has not reported a match in this session, so the work is not done. " + keepIterating
