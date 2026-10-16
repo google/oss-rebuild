@@ -200,7 +200,7 @@ resource "google_cloud_run_v2_service" "inference" {
         egress = "ALL_TRAFFIC"
       }
     }
-    scaling { max_instance_count = 100 }
+    scaling { max_instance_count = 160 }
     max_instance_request_concurrency = 1
   }
   depends_on = [google_project_service.run]
