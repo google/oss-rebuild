@@ -426,7 +426,16 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		}
 		dir = rcfg.Dir
 	}
-	loc := rebuild.Location{Repo: rcfg.URI, Dir: dir, Ref: ref}
+	var submodules []rebuild.Submodule
+	if lh != nil {
+		submodules = lh.Submodules
+	}
+	if commit, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref)); err == nil {
+		if tree, err := commit.Tree(); err == nil {
+			submodules = rebuild.MergeSubmodules(submodules, rebuild.Submodules(tree, rcfg.URI))
+		}
+	}
+	loc := rebuild.Location{Repo: rcfg.URI, Dir: dir, Ref: ref, Submodules: submodules}
 	s, err := inferBuild(ctx, t, mux, rcfg, release, a, loc)
 	if err != nil {
 		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc, Published: a.UploadTime}, Err: err}
@@ -462,6 +471,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		// We'll get them from pyproject.toml below
 		reqs = []string{}
 	}
+	submodules := loc.Submodules
 	// Extract pyproject.toml requirements.
 	{
 		commit, err := rcfg.Repository.CommitObject(plumbing.NewHash(ref))
@@ -490,9 +500,10 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	if strings.HasSuffix(a.Filename, ".tar.gz") {
 		return &SdistBuild{
 			Location: rebuild.Location{
-				Repo: rcfg.URI,
-				Dir:  dir,
-				Ref:  ref,
+				Repo:       rcfg.URI,
+				Dir:        dir,
+				Ref:        ref,
+				Submodules: submodules,
 			},
 			PythonVersion: inferPythonVersion(reqs, a.UploadTime),
 			Requirements:  reqs,
@@ -505,9 +516,10 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
-				Repo: rcfg.URI,
-				Dir:  dir,
-				Ref:  ref,
+				Repo:       rcfg.URI,
+				Dir:        dir,
+				Ref:        ref,
+				Submodules: submodules,
 			},
 			PythonTag:    tags.Python,
 			ABITag:       tags.ABI,
@@ -518,9 +530,10 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	} else {
 		return &PureWheelBuild{
 			Location: rebuild.Location{
-				Repo: rcfg.URI,
-				Dir:  dir,
-				Ref:  ref,
+				Repo:       rcfg.URI,
+				Dir:        dir,
+				Ref:        ref,
+				Submodules: submodules,
 			},
 			PythonVersion: inferPythonVersion(reqs, a.UploadTime),
 			Requirements:  reqs,

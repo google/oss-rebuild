@@ -52,7 +52,11 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to find build.gradle directory [repo=%s,ref=%s]", repoConfig.URI, ref)
 	}
-	loc := rebuild.Location{Repo: repoConfig.URI, Dir: buildGradleDir, Ref: ref}
+	var submodules []rebuild.Submodule
+	if tree, err := commitObject.Tree(); err == nil {
+		submodules = rebuild.Submodules(tree, repoConfig.URI)
+	}
+	loc := rebuild.Location{Repo: repoConfig.URI, Dir: buildGradleDir, Ref: ref, Submodules: submodules}
 	s, err := inferGradleBuild(ctx, t, mux, commitObject, loc)
 	if err != nil {
 		return nil, &rebuild.InferenceError{Detail: rebuild.InferenceErrorDetail{Location: loc}, Err: err}

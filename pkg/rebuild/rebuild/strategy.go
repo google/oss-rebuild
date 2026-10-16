@@ -11,13 +11,23 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Submodule defines a Git submodule checked out within a Location, specifying
+// the Git repository, a reference (like a commit hash), and the checkout
+// directory relative to the parent repository root.
+type Submodule struct {
+	Repo string `json:"repo" yaml:"repo"`
+	Ref  string `json:"ref" yaml:"ref"`
+	Dir  string `json:"dir" yaml:"dir,omitempty"`
+}
+
 // Location defines the source code to be used for a rebuild, specifying the Git
 // repository, a reference (like a commit hash or tag), and an optional
 // subdirectory for executing the build and/or for expected output.
 type Location struct {
-	Repo string `json:"repo" yaml:"repo"`
-	Ref  string `json:"ref" yaml:"ref"`
-	Dir  string `json:"dir" yaml:"dir,omitempty"`
+	Repo       string      `json:"repo" yaml:"repo"`
+	Ref        string      `json:"ref" yaml:"ref"`
+	Dir        string      `json:"dir" yaml:"dir,omitempty"`
+	Submodules []Submodule `json:"submodules,omitempty" yaml:"submodules,omitempty"`
 }
 
 // DirOf returns the directory containing the repo-relative file path p for use

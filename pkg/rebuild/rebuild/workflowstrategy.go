@@ -92,7 +92,11 @@ func init() {
 				{{ if not .BuildEnv.HasRepo -}}
 				git clone {{ if eq .With.crlf "true" }}-c core.autocrlf=true {{ end }}{{.Location.Repo}} .
 				{{ end -}}
-				git checkout --force '{{.Location.Ref}}'`)[1:],
+				git checkout --force '{{.Location.Ref}}'
+				{{- range .Location.Submodules }}
+				GIT_TERMINAL_PROMPT=0 git clone {{.Repo}} '{{.Dir}}'
+				git -C '{{.Dir}}' checkout --force '{{.Ref}}'
+				{{- end }}`)[1:],
 			Needs: []string{"git"},
 		}},
 	})

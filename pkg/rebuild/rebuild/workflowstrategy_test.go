@@ -324,6 +324,24 @@ func TestBuiltinCommand_GitCheckout(t *testing.T) {
 			with:     map[string]string{"crlf": "true"},
 			want:     "git clone -c core.autocrlf=true https://github.com/test/repo .\ngit checkout --force 'deadbeef'",
 		},
+		{
+			name: "fresh_checkout_submodules",
+			location: Location{
+				Repo: "https://github.com/test/repo",
+				Ref:  "deadbeef",
+				Submodules: []Submodule{
+					{Repo: "https://github.com/madler/zlib", Ref: "1111111111111111111111111111111111111111", Dir: "src/zlib"},
+					{Repo: "https://github.com/example/foo", Ref: "2222222222222222222222222222222222222222", Dir: "vendor/foo"},
+				},
+			},
+			buildEnv: BuildEnv{HasRepo: false},
+			want: `git clone https://github.com/test/repo .
+git checkout --force 'deadbeef'
+GIT_TERMINAL_PROMPT=0 git clone https://github.com/madler/zlib 'src/zlib'
+git -C 'src/zlib' checkout --force '1111111111111111111111111111111111111111'
+GIT_TERMINAL_PROMPT=0 git clone https://github.com/example/foo 'vendor/foo'
+git -C 'vendor/foo' checkout --force '2222222222222222222222222222222222222222'`,
+		},
 	}
 
 	for _, tt := range tests {

@@ -64,7 +64,9 @@ func TestCreateAttestations(t *testing.T) {
 			orDie(w.Close())
 		}
 		inputStrategy := &rebuild.LocationHint{Location: rebuild.Location{Repo: "http://github.com/foo/bar", Ref: "0beec7b5ea3f0fdbc95d0dd47f3c5bc275da8a33"}}
-		strategy := &rebuild.ManualStrategy{Location: inputStrategy.Location, Deps: "echo deps", Build: "echo build", Requires: rebuild.RequiredEnv{SystemDeps: []string{"git"}}, OutputPath: "foo/bar"}
+		strategyLoc := inputStrategy.Location
+		strategyLoc.Submodules = []rebuild.Submodule{{Repo: "https://github.com/foo/sub", Ref: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", Dir: "sub"}}
+		strategy := &rebuild.ManualStrategy{Location: strategyLoc, Deps: "echo deps", Build: "echo build", Requires: rebuild.RequiredEnv{SystemDeps: []string{"git"}}, OutputPath: "foo/bar"}
 		defn := schema.BuildDefinition{StrategyOneOf: new(schema.NewStrategyOneOf(inputStrategy))}
 		serviceLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202501010000-feeddeadbeef00"}
 		prebuildLoc := rebuild.Location{Repo: "https://github.com/google/oss-rebuild", Ref: "v0.0.0-202401010000-feeddeadbeef99"}
@@ -195,6 +197,12 @@ func TestCreateAttestations(t *testing.T) {
         },
         {
           "digest": {
+            "sha1": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+          },
+          "name": "git+https://github.com/foo/sub"
+        },
+        {
+          "digest": {
             "sha256": "abcd"
           },
           "name": "gcr.io/foo/bar"
@@ -217,7 +225,7 @@ func TestCreateAttestations(t *testing.T) {
       "byproducts": [
         {
           "name": "build.json",
-          "content": "eyJtYW51YWwiOnsicmVwbyI6Imh0dHA6Ly9naXRodWIuY29tL2Zvby9iYXIiLCJyZWYiOiIwYmVlYzdiNWVhM2YwZmRiYzk1ZDBkZDQ3ZjNjNWJjMjc1ZGE4YTMzIiwiZGlyIjoiIiwiZGVwcyI6ImVjaG8gZGVwcyIsImJ1aWxkIjoiZWNobyBidWlsZCIsInJlcXVpcmVzIjp7InN5c3RlbV9kZXBzIjpbImdpdCJdfSwib3V0cHV0X3BhdGgiOiJmb28vYmFyIn19"
+          "content": "eyJtYW51YWwiOnsicmVwbyI6Imh0dHA6Ly9naXRodWIuY29tL2Zvby9iYXIiLCJyZWYiOiIwYmVlYzdiNWVhM2YwZmRiYzk1ZDBkZDQ3ZjNjNWJjMjc1ZGE4YTMzIiwiZGlyIjoiIiwic3VibW9kdWxlcyI6W3sicmVwbyI6Imh0dHBzOi8vZ2l0aHViLmNvbS9mb28vc3ViIiwicmVmIjoiZGVhZGJlZWZkZWFkYmVlZmRlYWRiZWVmZGVhZGJlZWZkZWFkYmVlZiIsImRpciI6InN1YiJ9XSwiZGVwcyI6ImVjaG8gZGVwcyIsImJ1aWxkIjoiZWNobyBidWlsZCIsInJlcXVpcmVzIjp7InN5c3RlbV9kZXBzIjpbImdpdCJdfSwib3V0cHV0X3BhdGgiOiJmb28vYmFyIn19"
         },
         {
           "name": "Dockerfile",
