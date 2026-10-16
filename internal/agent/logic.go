@@ -440,6 +440,7 @@ func (a *defaultAgent) proposeInferenceWithAIAssist(ctx context.Context, initial
 			HTTPClient:         a.deps.RegistryClient,
 			GitCache:           a.deps.GitCache,
 			CratesRegistryStub: a.deps.CratesRegistryStub,
+			CratesCache:        a.deps.CratesCache,
 			RepoOptF: func() *gitx.RepositoryOptions {
 				return &gitx.RepositoryOptions{
 					Worktree: wt,
@@ -513,6 +514,7 @@ func (a *defaultAgent) proposeHeuristicInference(ctx context.Context) (*schema.S
 			HTTPClient:         a.deps.RegistryClient,
 			GitCache:           a.deps.GitCache,
 			CratesRegistryStub: a.deps.CratesRegistryStub,
+			CratesCache:        a.deps.CratesCache,
 			RepoOptF: func() *gitx.RepositoryOptions {
 				return &gitx.RepositoryOptions{
 					Worktree: wt,

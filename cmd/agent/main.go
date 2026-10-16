@@ -158,6 +158,7 @@ func main() {
 		gitCache = &gitcache.Client{IDClient: idc, APIClient: apic, URL: u, MaxBytes: *maxRepoBytes}
 	}
 	var cratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	var cratesCache *cratesregistryservice.Cache
 	if *cratesRegistryURL != "" {
 		u, err := url.Parse(*cratesRegistryURL)
 		if err != nil {
@@ -168,6 +169,7 @@ func main() {
 			log.Fatal("Failed to create crates registry id client: ", err)
 		}
 		cratesRegistryStub = api.Stub[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse](c, u.JoinPath("resolve"))
+		cratesCache = cratesregistryservice.NewCache(c, u)
 	}
 	target := rebuild.Target{Ecosystem: rebuild.Ecosystem(*targetEcosystem), Package: *targetPackage, Version: *targetVersion, Artifact: *targetArtifact}
 	deps := agent.RunSessionDeps{
@@ -183,6 +185,7 @@ func main() {
 		Model:              *model,
 		GitCache:           gitCache,
 		CratesRegistryStub: cratesRegistryStub,
+		CratesCache:        cratesCache,
 	}
 	if mode == schema.AgentExecutionModeScratch {
 		stubs := scratch.Stubs{

@@ -40,6 +40,7 @@ type AgentDeps struct {
 	GitCache           *gitcache.Client  // When set, inference repo clones go through the git-cache.
 	Retrier            ratex.Retrier     // Paces and retries the auxiliary model calls. Zero value calls once.
 	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	CratesCache        *cratesregistryservice.Cache // Inference's crates.io metadata.
 }
 
 type ProposeOpts struct {
@@ -77,6 +78,7 @@ type RunSessionDeps struct {
 	Model              string            // Gemini model id for the session's calls. Empty selects llm.GeminiPro.
 	GitCache           *gitcache.Client  // When set, iteration inference repo clones go through the git-cache.
 	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
+	CratesCache        *cratesregistryservice.Cache // Inference's crates.io metadata.
 }
 
 // transcriptOpts names iteration iterNum's transcript directory, or nothing
@@ -189,6 +191,7 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		GitCache:           deps.GitCache,
 		Retrier:            deps.Retrier,
 		CratesRegistryStub: deps.CratesRegistryStub,
+		CratesCache:        deps.CratesCache,
 	})
 	// Stamp the session's LLM token spend onto whatever completion we return.
 	defer func() {
