@@ -179,7 +179,8 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 				return nil, errors.Wrap(err, "creating index manager")
 			}
 			deps := &cratesregistryservice.FindRegistryCommitDeps{
-				IndexManager: mgr,
+				IndexManager:  mgr,
+				ListSnapshots: index.ListAvailableSnapshots,
 			}
 			regstub = api.Local(cratesregistryservice.FindRegistryCommit, deps)
 		}

@@ -228,7 +228,7 @@ func handleLocal(ctx context.Context, cfg Config, deps *Deps, enc *json.Encoder,
 			if err != nil {
 				return nil, errors.Wrap(err, "creating crates index manager")
 			}
-			return cratesregistryservice.FindRegistryCommit(ctx, req, &cratesregistryservice.FindRegistryCommitDeps{IndexManager: mgr})
+			return cratesregistryservice.FindRegistryCommit(ctx, req, &cratesregistryservice.FindRegistryCommitDeps{IndexManager: mgr, ListSnapshots: index.ListAvailableSnapshots})
 		}
 	}
 	executor := benchrun.NewLocalExecutionService(localCfg)

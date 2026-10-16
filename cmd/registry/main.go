@@ -37,6 +37,9 @@ var (
 
 var indexManager *index.IndexManager
 
+// snapshots caches the archive's snapshot listing across requests.
+var snapshots = &index.SnapshotList{TTL: time.Hour, List: index.ListAvailableSnapshots}
+
 // crates is the latest crates.io dump, nil until the first one loads.
 var crates atomic.Pointer[dump.Index]
 
@@ -119,7 +122,7 @@ func init() {
 }
 
 func FindRegistryCommitInit(ctx context.Context) (*cratesregistryservice.FindRegistryCommitDeps, error) {
-	return &cratesregistryservice.FindRegistryCommitDeps{IndexManager: indexManager}, nil
+	return &cratesregistryservice.FindRegistryCommitDeps{IndexManager: indexManager, ListSnapshots: snapshots.Get}, nil
 }
 
 // serveDump loads the crates.io dump and serves /crate and /version from it.
