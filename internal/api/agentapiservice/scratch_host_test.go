@@ -369,7 +369,7 @@ func TestAdmissible(t *testing.T) {
 func TestRetire_LosesToAConcurrentLabelWrite(t *testing.T) {
 	gce := NewMemoryGCE()
 	now := time.Now().UTC()
-	gce.SeedRunning("z", "h1", hostLabels(schema.MachineClassStandard), "10.0.0.1", now)
+	gce.SeedRunning("z", "h1", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now)
 	host, err := gce.GetInstance(context.Background(), "z", "h1")
 	if err != nil {
 		t.Fatalf("GetInstance: %v", err)
@@ -391,16 +391,45 @@ func TestRetire_LosesToAConcurrentLabelWrite(t *testing.T) {
 	}
 }
 
+func TestScratchCreate_DrainsHostsOfAnEarlierTemplate(t *testing.T) {
+	gce := NewMemoryGCE()
+	hosts := newFakeHosts()
+	// Minted from a replaced template: it has room but is no longer seen.
+	prev := hostLabels(schema.MachineClassStandard, "projects/p/global/instanceTemplates/scratch-host-standard-prev")
+	gce.SeedRunning("us-central1-a", "h-prev", prev, "10.0.0.1", time.Now().UTC())
+	hosts.AddHost("h-prev", 6)
+	hosts.AutoProvision(6)
+	got, err := ScratchCreate(context.Background(), schema.ScratchCreateRequest{
+		BuildID: "b", MachineClass: schema.MachineClassStandard,
+	}, newCreateDeps(gce, hosts, db.NewMemoryScratch(), func() string { return "sD" }))
+	if err != nil {
+		t.Fatalf("ScratchCreate: %v", err)
+	}
+	if !strings.HasPrefix(got.Host, "scratch-host-") {
+		t.Errorf("Host = %q; want a freshly created host", got.Host)
+	}
+	if log := strings.Join(hosts.Log(), " "); strings.Contains(log, "h-prev") {
+		t.Errorf("host log = %v; want the earlier template's host never contacted", hosts.Log())
+	}
+	inst, err := gce.GetInstance(context.Background(), got.Zone, got.Host)
+	if err != nil {
+		t.Fatalf("GetInstance: %v", err)
+	}
+	if got, want := inst.Labels[hostLabelTemplateKey], "scratch-host-standard"; got != want {
+		t.Errorf("new host template label = %q, want %q", got, want)
+	}
+}
+
 func TestScratchCreate_FallsThroughToAColdHost(t *testing.T) {
 	gce := NewMemoryGCE()
 	hosts := newFakeHosts()
 	now := time.Now().UTC()
 	// Full, past its cutoff, retired: the create pays for a fresh host.
-	gce.SeedRunning("us-central1-a", "h-full", hostLabels(schema.MachineClassStandard), "10.0.0.1", now)
+	gce.SeedRunning("us-central1-a", "h-full", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now)
 	hosts.AddHost("h-full", 0)
-	gce.SeedRunning("us-central1-a", "h-old", hostLabels(schema.MachineClassStandard), "10.0.0.2", now.Add(-24*time.Hour))
+	gce.SeedRunning("us-central1-a", "h-old", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.2", now.Add(-24*time.Hour))
 	hosts.AddHost("h-old", 6)
-	retired := hostLabels(schema.MachineClassStandard)
+	retired := hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate)
 	retired[hostLabelRetiredKey] = "1"
 	gce.SeedRunning("us-central1-a", "h-retired", retired, "10.0.0.3", now)
 	hosts.AddHost("h-retired", 6)

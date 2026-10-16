@@ -57,7 +57,7 @@ func TestSweepHosts_DestroysOrphanGuests(t *testing.T) {
 	gce := NewMemoryGCE()
 	hosts := newFakeHosts()
 	scratches := db.NewMemoryScratch()
-	gce.SeedRunning("us-central1-a", "h1", hostLabels(schema.MachineClassStandard), "10.0.0.1", now)
+	gce.SeedRunning("us-central1-a", "h1", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now)
 	hosts.AddHost("h1", 6)
 	hosts.SeedGuest("h1", "live", now.Add(-time.Minute))
 	hosts.SeedGuest("h1", "vanished", now.Add(-time.Hour))
@@ -91,7 +91,7 @@ func TestSweepHosts_LeavesGuestsWhenTheStoreIsUnreadable(t *testing.T) {
 	now := time.Now().UTC()
 	gce := NewMemoryGCE()
 	hosts := newFakeHosts()
-	gce.SeedRunning("us-central1-a", "h1", hostLabels(schema.MachineClassStandard), "10.0.0.1", now)
+	gce.SeedRunning("us-central1-a", "h1", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now)
 	hosts.AddHost("h1", 6)
 	hosts.SeedGuest("h1", "s1", now.Add(-time.Hour))
 	deps := reapHostDeps(gce, hosts, faultingScratches{err: errors.New("firestore boom")})
@@ -108,10 +108,10 @@ func TestSweepHosts_ReapsAnEmptyIdleHost(t *testing.T) {
 	now := time.Now().UTC()
 	gce := NewMemoryGCE()
 	hosts := newFakeHosts()
-	gce.SeedRunning("us-central1-a", "h-idle", hostLabels(schema.MachineClassStandard), "10.0.0.1", now.Add(-2*time.Hour))
+	gce.SeedRunning("us-central1-a", "h-idle", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now.Add(-2*time.Hour))
 	hosts.AddHost("h-idle", 6)
 	// Empty but younger than the threshold: it stays.
-	gce.SeedRunning("us-central1-a", "h-young", hostLabels(schema.MachineClassStandard), "10.0.0.2", now.Add(-time.Minute))
+	gce.SeedRunning("us-central1-a", "h-young", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.2", now.Add(-time.Minute))
 	hosts.AddHost("h-young", 6)
 	hosts.SeedGuest("h-young", "recent", now.Add(-time.Minute))
 	if err := hosts.client().Delete(context.Background(), Instance{Name: "h-young"}, "recent"); err != nil {
@@ -136,7 +136,7 @@ func TestSweepHosts_EmptiedByItsOwnSweepIsReapedInTheSamePass(t *testing.T) {
 	now := time.Now().UTC()
 	gce := NewMemoryGCE()
 	hosts := newFakeHosts()
-	gce.SeedRunning("us-central1-a", "h1", hostLabels(schema.MachineClassStandard), "10.0.0.1", now.Add(-2*time.Hour))
+	gce.SeedRunning("us-central1-a", "h1", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now.Add(-2*time.Hour))
 	hosts.AddHost("h1", 6)
 	hosts.SeedGuest("h1", "orphan", now.Add(-2*time.Hour))
 	swept, reaped := sweepHosts(context.Background(), reapHostDeps(gce, hosts, db.NewMemoryScratch()), now)
@@ -150,7 +150,7 @@ func TestSweepHosts_RetiresAnUnreachableHost(t *testing.T) {
 		now := time.Now().UTC()
 		gce := NewMemoryGCE()
 		hosts := newFakeHosts()
-		gce.SeedRunning("us-central1-a", "h-down", hostLabels(schema.MachineClassStandard), "10.0.0.1", now)
+		gce.SeedRunning("us-central1-a", "h-down", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now)
 		hosts.AddHost("h-down", 6)
 		hosts.SeedGuest("h-down", "stranded", now.Add(-time.Minute))
 		// A down host answers nothing, guests included.
@@ -187,7 +187,7 @@ func TestSweepHosts_WaitsOutEachOutageOnItsOwn(t *testing.T) {
 		now := time.Now().UTC()
 		gce := NewMemoryGCE()
 		hosts := newFakeHosts()
-		gce.SeedRunning("us-central1-a", "h-flaky", hostLabels(schema.MachineClassStandard), "10.0.0.1", now)
+		gce.SeedRunning("us-central1-a", "h-flaky", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now)
 		hosts.AddHost("h-flaky", 6)
 		deps := reapHostDeps(gce, hosts, db.NewMemoryScratch())
 		down := func(err error) { hosts.FailHealthz("h-flaky", err); hosts.FailGuests("h-flaky", err) }
@@ -212,7 +212,7 @@ func TestSweepHosts_LeavesAHostThatTookASessionDuringRetirement(t *testing.T) {
 	now := time.Now().UTC()
 	gce := NewMemoryGCE()
 	hosts := newFakeHosts()
-	gce.SeedRunning("us-central1-a", "h1", hostLabels(schema.MachineClassStandard), "10.0.0.1", now.Add(-2*time.Hour))
+	gce.SeedRunning("us-central1-a", "h1", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now.Add(-2*time.Hour))
 	hosts.AddHost("h1", 6)
 	// The fake admits a session between the sweep's two Guests calls, which
 	// the re-check after retirement must catch.
@@ -236,7 +236,7 @@ func TestSweepHosts_LeavesAHostThatTookASessionDuringRetirement(t *testing.T) {
 
 func TestSweepHosts_DisabledWithoutHosts(t *testing.T) {
 	gce := NewMemoryGCE()
-	gce.SeedRunning("us-central1-a", "h1", hostLabels(schema.MachineClassStandard), "10.0.0.1", time.Now().UTC())
+	gce.SeedRunning("us-central1-a", "h1", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", time.Now().UTC())
 	deps := reapHostDeps(gce, nil, db.NewMemoryScratch())
 	if swept, reaped := sweepHosts(context.Background(), deps, time.Now().UTC()); swept != 0 || reaped != 0 {
 		t.Errorf("swept, reaped = %d, %d; want the host half of the pass disabled", swept, reaped)

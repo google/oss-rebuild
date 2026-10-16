@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"time"
 
@@ -24,19 +25,25 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Host labels. purpose and class select admission candidates. A retired
-// host leaves the candidate set but stays visible to the reaper.
+// Host labels. purpose, class, and template select admission candidates,
+// so a deploy that replaces the template drains the old hosts. A retired host
+// leaves the candidate set too. The reaper still sees both.
 const (
-	hostLabelPurposeKey = "purpose"
-	hostLabelPurposeVal = "scratch-host"
-	hostLabelClassKey   = "scratch_class"
-	hostLabelRetiredKey = "scratch_retired"
+	hostLabelPurposeKey  = "purpose"
+	hostLabelPurposeVal  = "scratch-host"
+	hostLabelClassKey    = "scratch_class"
+	hostLabelTemplateKey = "scratch_template"
+	hostLabelRetiredKey  = "scratch_retired"
 )
 
-func hostLabels(class schema.MachineClass) map[string]string {
+func hostLabels(class schema.MachineClass, template string) map[string]string {
+	// Label values hold 63 characters, and the deploy suffix ends template
+	// names, so keep the tail.
+	name := path.Base(template)
 	return map[string]string{
-		hostLabelPurposeKey: hostLabelPurposeVal,
-		hostLabelClassKey:   string(class),
+		hostLabelPurposeKey:  hostLabelPurposeVal,
+		hostLabelClassKey:    string(class),
+		hostLabelTemplateKey: name[max(0, len(name)-63):],
 	}
 }
 
