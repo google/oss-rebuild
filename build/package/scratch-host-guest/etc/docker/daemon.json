@@ -1,4 +1,5 @@
 {
   "data-root": "/scratch/docker",
-  "features": { "containerd-snapshotter": true }
+  "features": { "containerd-snapshotter": true },
+  "registry-mirrors": ["https://mirror.gcr.io"]
 }

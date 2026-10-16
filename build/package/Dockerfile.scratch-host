@@ -64,8 +64,8 @@ RUN <<EOF
  rm -rf /var/lib/apt/lists/*
 EOF
 # docker-ce from Docker's repo, to track its releases. Docker and containerd
-# keep their data on the scratch disk (daemon.json, config.toml). wget is
-# what the job's scratch scripts fetch with.
+# keep their data on the scratch disk (daemon.json, config.toml), and Docker
+# Hub pulls go through mirror.gcr.io.
 ARG DOCKER_APT_SUITE=trixie
 RUN <<EOF
  set -eux
