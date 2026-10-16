@@ -12,18 +12,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/cargolock"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
 
 // RegistryResolution represents the point in registry history where a Cargo.lock can be best reconstructed.
 type RegistryResolution struct {
 	// CommitHash is the git commit hash of the optimal registry state
-	CommitHash plumbing.Hash
+	CommitHash git2.Hash
 	// CommitTime is when this registry state was committed
 	CommitTime time.Time
 }
@@ -37,7 +35,7 @@ type FindConfig struct {
 // FindRegistryResolution searches across multiple sequential registry indices for the earliest possible state a registry resolution could have taken place.
 // Indices should be ordered from newest to oldest (e.g., current index first, then previous snapshot(s)).
 // An optional config parameter can be provided to control logging and other behaviors.
-func FindRegistryResolution(indices []*git.Repository, lockfileCrates []cargolock.Package, cratePublished time.Time, cfg *FindConfig) (*RegistryResolution, error) {
+func FindRegistryResolution(indices []*git2.Repository, lockfileCrates []cargolock.Package, cratePublished time.Time, cfg *FindConfig) (*RegistryResolution, error) {
 	if len(lockfileCrates) == 0 {
 		return nil, errors.New("no crates to resolve")
 	}
@@ -102,9 +100,9 @@ type internalPackage struct {
 }
 
 type searchResult struct {
-	ResolutionCommit *object.Commit
+	ResolutionCommit *git2.Commit
 	ResolvableCrates int
-	PriorCommit      *object.Commit
+	PriorCommit      *git2.Commit
 }
 
 // EntryPath computes the crates registry path for a crate
@@ -127,39 +125,28 @@ var (
 	errNoCommitsBeforePublish = errors.New("no commits found before publish time")
 )
 
-func findCommitWithVersions(repo *git.Repository, packages []internalPackage, published time.Time, cfg *FindConfig) (*searchResult, error) {
-	blobHashes := make(map[string]plumbing.Hash)
+func findCommitWithVersions(repo *git2.Repository, packages []internalPackage, published time.Time, cfg *FindConfig) (*searchResult, error) {
+	blobHashes := make(map[string]git2.Hash)
 	present := make(map[string]map[string]bool)
 	packagesByPath := make(map[string][]internalPackage)
 	for _, pkg := range packages {
 		packagesByPath[pkg.Path] = append(packagesByPath[pkg.Path], pkg)
 	}
-	matchesFor := func(commit *object.Commit) int {
-		tree, err := commit.Tree()
-		if err != nil {
-			return 0
-		}
+	var content []byte
+	matchesFor := func(commit *git2.Commit) int {
 		var found int
 		for path, pathPackages := range packagesByPath {
-			entry, err := tree.FindEntry(path)
+			// NOTE: Commit.File finds path without decoding the root tree.
+			f, err := commit.File(path)
 			if err != nil {
 				continue
 			}
-			if entry.Hash != blobHashes[path] {
-				blob, err := repo.BlobObject(entry.Hash)
+			if f.Hash != blobHashes[path] {
+				content, err = repo.ReadBlob(f.Hash, content[:0])
 				if err != nil {
 					continue
 				}
-				reader, err := blob.Reader()
-				if err != nil {
-					continue
-				}
-				content, err := io.ReadAll(reader)
-				reader.Close()
-				if err != nil {
-					continue
-				}
-				blobHashes[path] = entry.Hash
+				blobHashes[path] = f.Hash
 				present[path] = make(map[string]bool, len(pathPackages))
 				for _, pkg := range pathPackages {
 					present[path][pkg.Version] = bytes.Contains(content, []byte(`"vers":"`+pkg.Version+`"`))
@@ -178,7 +165,7 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 	}
 	// Get a single iterator for the entire history up to the publish time.
 	// The default order is reverse chronological, which is what we want.
-	commitIter, err := repo.Log(&git.LogOptions{Until: &published})
+	commitIter, err := repo.Log(&git2.LogOptions{Until: &published})
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +185,7 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 		// a short post-publish window so we can still find the earliest commit that
 		// contains all locked versions.
 		until := published.Add(2 * time.Hour)
-		afterIter, err := repo.Log(&git.LogOptions{Until: &until})
+		afterIter, err := repo.Log(&git2.LogOptions{Until: &until})
 		if err == nil {
 			afterCommit, nextErr := afterIter.Next()
 			afterIter.Close()
@@ -207,7 +194,7 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 					firstCommit = afterCommit
 					maxFound = afterFound
 					commitIter.Close()
-					commitIter, err = repo.Log(&git.LogOptions{From: firstCommit.Hash})
+					commitIter, err = repo.Log(&git2.LogOptions{From: firstCommit.Hash})
 					if err != nil {
 						return nil, err
 					}
@@ -252,12 +239,12 @@ func findCommitWithVersions(repo *git.Repository, packages []internalPackage, pu
 		}, nil
 	}
 	// Scan backwards through that day's commits again to find the exact drop
-	commitIter, err = repo.Log(&git.LogOptions{From: upperBoundCommit.Hash})
+	commitIter, err = repo.Log(&git2.LogOptions{From: upperBoundCommit.Hash})
 	if err != nil {
 		return nil, fmt.Errorf("failed to iterate commits: %w", err)
 	}
 	defer commitIter.Close()
-	var lastCommit *object.Commit
+	var lastCommit *git2.Commit
 	for commit, err := range iterx.ToSeq2(commitIter, io.EOF) {
 		if err != nil {
 			return nil, errors.Wrap(err, "iterating over commits")

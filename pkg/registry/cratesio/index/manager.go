@@ -23,6 +23,8 @@ import (
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/pipe"
 	"github.com/google/oss-rebuild/internal/syncx"
+	"github.com/msuozzo/go-git2"
+	"github.com/msuozzo/go-git2/billyfs"
 	"github.com/pkg/errors"
 )
 
@@ -381,9 +383,8 @@ func (m *IndexManager) createRepositoryHandle(repo *managedRepository) (*Reposit
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to chroot to repo")
 	}
-	// NOTE: Create a separate object cache for each handle since it is not threadsafe
-	storer := filesystem.NewStorage(repoFs, cache.NewObjectLRUDefault())
-	gitRepo, err := git.Open(storer, nil)
+	// NOTE: One Repository per handle, since go-git2 serves one call at a time.
+	gitRepo, err := git2.Open(billyfs.New(repoFs))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to open repository")
 	}
@@ -391,6 +392,7 @@ func (m *IndexManager) createRepositoryHandle(repo *managedRepository) (*Reposit
 		Repository: gitRepo,
 		key:        repo.key,
 		release: func() {
+			gitRepo.Close()
 			repo.rwMutex.RUnlock()
 		},
 	}, nil
@@ -534,9 +536,9 @@ func (m *IndexManager) getRepositoryPath(key RepositoryKey) string {
 	}
 }
 
-// RepositoryHandle wraps a *git.Repository with centralized cleanup
+// RepositoryHandle wraps a *git2.Repository with centralized cleanup
 type RepositoryHandle struct {
-	*git.Repository
+	*git2.Repository
 	key         RepositoryKey
 	release     func()
 	releaseOnce sync.Once
