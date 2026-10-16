@@ -7,7 +7,8 @@ require (
 	cloud.google.com/go/cloudtasks v1.13.6
 	cloud.google.com/go/firestore v1.18.0
 	cloud.google.com/go/kms v1.21.2
-	cloud.google.com/go/storage v1.50.0
+	cloud.google.com/go/pubsub/v2 v2.0.0
+	cloud.google.com/go/storage v1.53.0
 	github.com/cheggaaa/pb v1.0.29
 	github.com/cilium/tetragon/api v1.5.0
 	github.com/elazarl/goproxy v1.9.2
@@ -43,8 +44,12 @@ require (
 )
 
 require (
+	go.opencensus.io v0.24.0 // indirect
+)
+
+require (
 	cel.dev/expr v0.24.0 // indirect
-	cloud.google.com/go v0.120.0 // indirect
+	cloud.google.com/go v0.121.1 // indirect
 	cloud.google.com/go/auth v0.16.2 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.7.0 // indirect

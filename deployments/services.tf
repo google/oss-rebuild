@@ -709,6 +709,58 @@ resource "google_cloud_run_v2_job" "rebuild-job" {
   depends_on = [google_project_service.run]
 }
 
+# Build workers run queued extended rebuilds, which skips a job execution's
+# minute of startup. The pool covers the dispatch build cap (130 if unset) plus
+# one spare. A deploy restarts the workers, so it reruns their in-flight
+# rebuilds.
+locals {
+  builds_per_worker = 40
+  build_workers     = ceil(tonumber(lookup(var.onboard_dispatch_params, "max_inflight_builds", "130")) / local.builds_per_worker) + 1
+}
+
+resource "google_cloud_run_v2_worker_pool" "build-worker" {
+  name                = "build-worker"
+  location            = "us-central1"
+  deletion_protection = false
+  launch_stage        = "BETA"
+  scaling {
+    manual_instance_count = local.build_workers
+  }
+  template {
+    service_account = google_service_account.orchestrator.email
+    containers {
+      image = data.google_artifact_registry_docker_image.build-worker.self_link
+      args = [
+        "--project=${var.project}",
+        "--subscription=${google_pubsub_subscription.build-workers.name}",
+        "--builds-per-worker=${local.builds_per_worker}",
+      ]
+      resources {
+        limits = {
+          cpu    = "2000m"
+          memory = "4Gi"
+        }
+      }
+    }
+    dynamic "vpc_access" {
+      for_each = var.enable_internal_ingress ? [1] : []
+      content {
+        network_interfaces {
+          network    = google_compute_network.vpc[0].name
+          subnetwork = google_compute_subnetwork.subnet[0].name
+        }
+        egress = "ALL_TRAFFIC"
+      }
+    }
+  }
+  lifecycle {
+    ignore_changes = [
+      launch_stage,
+    ]
+  }
+  depends_on = [google_project_service.run]
+}
+
 # The hourly snapshot rollup scans every Firestore collection into SQLite.
 resource "google_cloud_run_v2_job" "snapshot-rollup" {
   name                = "snapshot-rollup"

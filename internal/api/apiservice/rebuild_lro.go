@@ -94,6 +94,14 @@ type CreateRebuildOpDeps struct {
 	DepsFunc   func(context.Context, *schema.RebuildDepsConfig) (*RebuildPackageDeps, error)
 }
 
+// BuildTask is an extended rebuild queued for a build worker: what a rebuild
+// job execution receives through its environment.
+type BuildTask struct {
+	OpID    string                       `json:"op_id"`
+	Request schema.RebuildPackageRequest `json:"request"`
+	Deps    schema.RebuildDepsConfig     `json:"deps"`
+}
+
 type RunJobFunc func(ctx context.Context, name string, req *run.GoogleCloudRunV2RunJobRequest) (*run.GoogleLongrunningOperation, error)
 
 // GetRebuildOpDeps contains dependencies for getting a rebuild operation.
