@@ -291,7 +291,7 @@ resource "google_firestore_index" "attempts-run-id" {
   depends_on = [google_firestore_database.default]
 }
 
-# Used by rundex.LatestTrackedPackages and rundex.FetchRebuilds (with executors/runs filters)
+# Used by rundex.LatestAttemptPerPackage and rundex.FetchRebuilds (with executors/runs filters)
 resource "google_firestore_index" "attempts-ecosystem-package" {
   collection  = "attempts"
   query_scope = "COLLECTION_GROUP"

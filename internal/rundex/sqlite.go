@@ -14,7 +14,6 @@ import (
 
 	"github.com/google/oss-rebuild/internal/docdb"
 	"github.com/google/oss-rebuild/internal/sqlitex"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/ncruces/go-sqlite3"
@@ -174,12 +173,12 @@ func (s *SQLite) FetchRebuilds(ctx context.Context, req *FetchRebuildRequest) ([
 		c.in("run_id", req.Runs)
 	}
 	sql := "SELECT raw FROM attempts" + c.clause() + " ORDER BY created DESC"
-	// The bench/tracked filters run client-side in filterRebuilds, so a
+	// The bench and package filters run client-side in filterRebuilds, so a
 	// pre-filter LIMIT would drop rows they keep. The pending, prefix, and
 	// pattern filters are also client-side, but LIMIT applies over them
 	// anyway to match the Firestore reader, which limits server-side before
 	// those same filters.
-	if req.Limit > 0 && req.Bench == nil && req.Tracked == nil {
+	if req.Limit > 0 && req.Bench == nil && req.Packages == nil {
 		sql += " LIMIT " + strconv.Itoa(req.Limit)
 	}
 	attempts, err := queryRaw[schema.RebuildAttempt](s.q, sql, c.args)
@@ -235,9 +234,9 @@ func (s *SQLite) FetchAttempt(ctx context.Context, target rebuild.Target, runID 
 	return Rebuild{RebuildAttempt: attempts[0]}, nil
 }
 
-// LatestTrackedPackages fetches the most recent completed rebuild result for
-// each tracked package.
-func (s *SQLite) LatestTrackedPackages(ctx context.Context, tracked feed.TrackedPackageIndex) ([]Rebuild, error) {
+// LatestAttemptPerPackage fetches the most recent completed rebuild result
+// for each package.
+func (s *SQLite) LatestAttemptPerPackage(ctx context.Context, index PackageIndex) ([]Rebuild, error) {
 	sql := `SELECT raw FROM (
 		SELECT raw, ecosystem, package,
 			ROW_NUMBER() OVER (PARTITION BY ecosystem, package ORDER BY created DESC) rn
@@ -249,7 +248,7 @@ func (s *SQLite) LatestTrackedPackages(ctx context.Context, tracked feed.Tracked
 	}
 	var res []Rebuild
 	for _, a := range attempts {
-		if pkgs, ok := tracked[rebuild.Ecosystem(a.Ecosystem)]; ok && pkgs[a.Package] {
+		if pkgs, ok := index[rebuild.Ecosystem(a.Ecosystem)]; ok && pkgs[a.Package] {
 			res = append(res, Rebuild{RebuildAttempt: a})
 		}
 	}

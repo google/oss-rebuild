@@ -13,7 +13,6 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/rundex"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
@@ -104,7 +103,7 @@ type Deps struct {
 	Sessions      rundex.SessionReader
 	GCSClient     *storage.Client
 	LogsBucket    string
-	Tracked       feed.TrackedPackageIndex
+	Benchmark     rundex.PackageIndex
 	BenchmarkName string
 	SuccessRegex  *regexp.Regexp
 	Analytics     Analytics           // serves the snapshot-derived trend views

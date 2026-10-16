@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/pipe"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/tools/benchmark"
@@ -75,11 +74,14 @@ type FetchRebuildOpts struct {
 	IncludePending bool
 }
 
+// PackageIndex is a set of package names per ecosystem.
+type PackageIndex map[rebuild.Ecosystem]map[string]bool
+
 // FetchRebuildRequest describes which Rebuild results you would like to fetch from firestore.
 type FetchRebuildRequest struct {
 	Target           *rebuild.Target
 	Bench            *benchmark.PackageSet
-	Tracked          feed.TrackedPackageIndex
+	Packages         PackageIndex
 	Executors        []string
 	Runs             []string
 	Opts             FetchRebuildOpts
@@ -115,7 +117,7 @@ type Reader interface {
 	RecentRebuilds(context.Context) ([]Rebuild, error)
 	RecentEcosystemRebuilds(context.Context, rebuild.Ecosystem) ([]Rebuild, error)
 	RecentPackageRebuilds(context.Context, rebuild.Ecosystem, string) ([]Rebuild, error)
-	LatestTrackedPackages(context.Context, feed.TrackedPackageIndex) ([]Rebuild, error)
+	LatestAttemptPerPackage(context.Context, PackageIndex) ([]Rebuild, error)
 }
 
 // TOOD: Move SessionReader into Reader when more impls exist.
@@ -253,9 +255,9 @@ func filterRebuilds(all <-chan Rebuild, req *FetchRebuildRequest) []Rebuild {
 			}
 		})
 	}
-	if req.Tracked != nil {
+	if req.Packages != nil {
 		p = p.Do(func(in Rebuild, out chan<- Rebuild) {
-			if pkgs, ok := req.Tracked[rebuild.Ecosystem(in.Ecosystem)]; ok && pkgs[in.Package] {
+			if pkgs, ok := req.Packages[rebuild.Ecosystem(in.Ecosystem)]; ok && pkgs[in.Package] {
 				out <- in
 			}
 		})
