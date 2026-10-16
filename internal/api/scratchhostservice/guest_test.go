@@ -58,7 +58,7 @@ func TestQEMUArgv(t *testing.T) {
 		"qemu-system-x86_64",
 		"-M", "microvm,acpi=on,rtc=on",
 		"-enable-kvm",
-		"-cpu", "host",
+		"-cpu", "host,-avx512f,-avx512dq,-avx512ifma,-avx512pf,-avx512er,-avx512cd,-avx512bw,-avx512vl,-avx512vbmi,-avx512vbmi2,-avx512vnni,-avx512bitalg,-avx512-vpopcntdq,-avx512-4vnniw,-avx512-4fmaps,-avx512-vp2intersect,-avx512-fp16,-avx512-bf16",
 		"-smp", "4",
 		"-m", "8192",
 		"-nodefaults",

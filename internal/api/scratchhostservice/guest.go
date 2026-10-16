@@ -97,6 +97,14 @@ func kernelCmdline(cfg GuestConfig, n GuestNet) string {
 	}, " ")
 }
 
+// avx512Flags is every AVX-512 flag QEMU knows. Dropping avx512f alone
+// still advertises the rest.
+var avx512Flags = []string{
+	"avx512f", "avx512dq", "avx512ifma", "avx512pf", "avx512er", "avx512cd", "avx512bw", "avx512vl",
+	"avx512vbmi", "avx512vbmi2", "avx512vnni", "avx512bitalg", "avx512-vpopcntdq",
+	"avx512-4vnniw", "avx512-4fmaps", "avx512-vp2intersect", "avx512-fp16", "avx512-bf16",
+}
+
 // qemuArgv builds the QEMU invocation. QEMU stays in the foreground: the
 // broker reads guest liveness from its child process.
 func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet) []string {
@@ -104,7 +112,9 @@ func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet) []string {
 		bin,
 		"-M", "microvm,acpi=on,rtc=on",
 		"-enable-kvm",
-		"-cpu", "host",
+		// NOTE: AVX-512 enlarges signal frames past some old binaries' thread
+		// stacks (node < 12.4 on musl crashes).
+		"-cpu", "host,-" + strings.Join(avx512Flags, ",-"),
 		"-smp", strconv.Itoa(cfg.VCPU),
 		"-m", strconv.Itoa(cfg.MemMB),
 		"-nodefaults",
