@@ -35,6 +35,7 @@ func TestSetSourceRef(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { repo.Close() })
 	first, second := repo.Commits["first"].String(), repo.Commits["second"].String()
 	for _, tc := range []struct {
 		name    string
@@ -50,7 +51,7 @@ func TestSetSourceRef(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := NewDefaultAgent(rebuild.Target{Package: "fixture"}, &AgentDeps{})
-			a.repo = repo.GoGit
+			a.repo = repo.Repository
 			a.loc = rebuild.Location{Repo: "https://example.com/repo", Ref: second}
 			got, err := a.setSourceRef(tc.ref, tc.reason)
 			if tc.wantErr != "" {

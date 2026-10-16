@@ -7,16 +7,13 @@ import (
 	"context"
 	"strings"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/filemode"
-	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 	"google.golang.org/genai"
 )
 
 // RepoProvider is a function that returns the current git repository and reference.
-type RepoProvider func() (repo *git.Repository, ref string)
+type RepoProvider func() (repo *git2.Repository, ref string)
 
 // GitTools returns a list of git-related function definitions for use by the
 // LLM. The returned function definitions will fetch the current git state from
@@ -116,10 +113,9 @@ func GitTools(rp RepoProvider) []*FunctionDefinition {
 	}
 }
 
-func getRepoTree(r *git.Repository, commitHash string) (*object.Tree, error) {
+func getRepoTree(r *git2.Repository, commitHash string) (*git2.Tree, error) {
 	// Get the commit object
-	hash := plumbing.NewHash(commitHash)
-	commit, err := r.CommitObject(hash)
+	commit, err := r.CommitObject(git2.NewHash(commitHash))
 	if err != nil {
 		return nil, errors.Wrap(err, "getting commit object")
 	}
@@ -131,7 +127,7 @@ func getRepoTree(r *git.Repository, commitHash string) (*object.Tree, error) {
 	return tree, nil
 }
 
-func getRepoFile(tree *object.Tree, path string) (string, error) {
+func getRepoFile(tree *git2.Tree, path string) (string, error) {
 	ent, err := tree.FindEntry(path)
 	if err != nil {
 		return "", err
@@ -146,18 +142,18 @@ func getRepoFile(tree *object.Tree, path string) (string, error) {
 	return f.Contents()
 }
 
-func listRepoFiles(tree *object.Tree, path string) ([]string, error) {
-	path = strings.TrimSuffix(path, "/") // go-git doesn't like trailing slashes
+func listRepoFiles(tree *git2.Tree, path string) ([]string, error) {
+	path = strings.TrimSuffix(path, "/") // tree paths take no trailing slash
 	if path == "" {
 		path = "."
 	}
-	var pathTree *object.Tree
+	var pathTree *git2.Tree
 	if path != "." {
 		ent, err := tree.FindEntry(path)
 		if err != nil {
 			return nil, err
 		}
-		if ent.Mode != filemode.Dir {
+		if ent.Mode != git2.Dir {
 			return nil, errors.New("path does not refer to a dir")
 		}
 		pathTree, err = tree.Tree(path)
