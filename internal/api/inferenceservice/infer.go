@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/cache"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
@@ -110,7 +111,8 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	if deps.CratesRegistryStub != nil {
 		ctx = context.WithValue(ctx, rebuild.CratesRegistryStubID, deps.CratesRegistryStub)
 	}
-	mux := meta.NewRegistryMux(deps.HTTPClient)
+	// Cache regiwtry metadata for repo and strategy inference accesses.
+	mux := meta.NewRegistryMux(httpx.NewCachedClient(deps.HTTPClient, &cache.CoalescingMemoryCache{}))
 	var s rebuild.Strategy
 	t := rebuild.Target{
 		Ecosystem: req.Ecosystem,
