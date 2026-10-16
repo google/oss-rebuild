@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"regexp"
 	"slices"
 	"strconv"
@@ -91,7 +92,7 @@ func (n *guestNet) running() []*fakeGuest {
 func (n *guestNet) up(addr string, cred GuestCredential) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.booted[addr] = kernelCmdline(GuestConfig{}, GuestNet{}, cred)
+	n.booted[addr] = kernelCmdline(GuestConfig{}, GuestNet{IPs: []netip.Addr{netip.MustParseAddr(addr)}}, 0, cred)
 }
 
 func (n *guestNet) setRun(run guestCmd)  { n.mu.Lock(); n.run = run; n.mu.Unlock() }

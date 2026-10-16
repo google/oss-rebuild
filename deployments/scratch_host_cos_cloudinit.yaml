@@ -39,7 +39,7 @@ write_files:
       ExecStartPre=-/usr/bin/docker pull ${host_image}
       # Ensure a previous attempt didn't leave our container name claimed.
       ExecStartPre=-/usr/bin/docker rm -f scratch-host
-      # The startup script sizes the guest to the host.
+      # The startup script sizes the slots and guests to the host.
       EnvironmentFile=/var/lib/scratch-host/host.env
       # The shell expands $(hostname), the instance name, into the audience,
       # which systemd cannot. The host directory mounts at its own path,
@@ -52,6 +52,7 @@ write_files:
           ${host_image} \
           --caller-sa=${caller_sa} \
           --audience="${audience}" \
+          --guest-slots=$SLOTS \
           --guest-vcpu=$GUEST_VCPU \
           --guest-mem-mb=$GUEST_MEM_MB \
           --guest-mtu=$MTU \

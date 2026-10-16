@@ -32,8 +32,9 @@ var (
 	goldenDir = flag.String("golden-dir", "/var/lib/scratch-host/golden", "directory holding vmlinuz, initrd.img, rootfs.raw and scratch.raw")
 	execDir   = flag.String("exec-dir", "/var/lib/scratch-host/execs", "parent of per-session exec ledger directories: op capture files")
 
-	guestVCPU    = flag.Int("guest-vcpu", 4, "vCPUs for the guest")
-	guestMemMB   = flag.Int("guest-mem-mb", 12288, "memory for the guest, in MB")
+	guestSlots   = flag.Int("guest-slots", 1, "guests the host runs at once")
+	guestVCPU    = flag.Int("guest-vcpu", 4, "vCPUs for each guest")
+	guestMemMB   = flag.Int("guest-mem-mb", 12288, "memory for each guest, in MB")
 	guestMTU     = flag.Int("guest-mtu", 1460, "guest MTU, at most the host NIC's")
 	guestDNS     = flag.String("guest-dns", "169.254.169.254", "resolver written into the guest")
 	guestWorkdir = flag.String("guest-workdir", "/home/builder", "default cwd for execs")
@@ -69,7 +70,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("parsing --guest-subnet: %v", err)
 	}
-	guestNet, err := scratchhostservice.GuestNetFor(subnet)
+	guestNet, err := scratchhostservice.GuestNetFor(subnet, *guestSlots)
 	if err != nil {
 		log.Fatalf("--guest-subnet: %v", err)
 	}
@@ -86,7 +87,7 @@ func main() {
 	if err := os.MkdirAll(*execDir, 0o755); err != nil {
 		log.Fatalf("creating %s: %v", *execDir, err)
 	}
-	host := scratchhostservice.NewHost(time.Now())
+	host := scratchhostservice.NewHost(time.Now(), *guestSlots)
 	channels := scratchhostservice.NewChannelCache(dialer)
 	guestDeps := &scratchhostservice.GuestDeps{
 		Host: host,

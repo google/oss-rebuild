@@ -14,7 +14,7 @@ set -euxo pipefail
 HOST_DIR=/var/lib/scratch-host
 mkdir -p "$HOST_DIR"
 
-# The broker owns the guest tap, this script the bridge. The guest's subnet
+# The broker owns the guest taps, this script the bridge. The guests' subnet
 # is host-only and egresses through NAT.
 BRIDGE=mvmbr0
 GUEST_SUBNET='${guest_subnet}'
@@ -40,18 +40,25 @@ iptables -w -C FORWARD -o "$BRIDGE" -j ACCEPT 2>/dev/null || iptables -w -I FORW
 # Inserted at the top, ahead of the accepts.
 iptables -w -C FORWARD -i "$BRIDGE" -d 169.254.169.254 -p tcp --dport 80 -j REJECT 2>/dev/null ||
     iptables -w -I FORWARD 1 -i "$BRIDGE" -d 169.254.169.254 -p tcp --dport 80 -j REJECT
+# Drop guest-to-guest traffic routed through the host, ahead of the accepts.
+iptables -w -C FORWARD -i "$BRIDGE" -o "$BRIDGE" -j DROP 2>/dev/null ||
+    iptables -w -I FORWARD 1 -i "$BRIDGE" -o "$BRIDGE" -j DROP
 # COS drops inbound by default. Open only the broker's port, as the VPC rule does.
 iptables -w -C INPUT -p tcp --dport 8080 -j ACCEPT 2>/dev/null || iptables -w -A INPUT -p tcp --dport 8080 -j ACCEPT
+# Guests may not open connections to the host, even to its sshd and broker.
+iptables -w -C INPUT -i "$BRIDGE" -m conntrack --ctstate NEW -j DROP 2>/dev/null ||
+    iptables -w -I INPUT 1 -i "$BRIDGE" -m conntrack --ctstate NEW -j DROP
 
-# The guest gets every vCPU and all memory but a reserve for COS, docker,
-# the broker and QEMU.
+# 4-vCPU guests, two per four host vCPUs, as the scratch fleet's CPU traces
+# support. Memory less a reserve is split evenly, never overcommitted.
 HOST_RESERVE_MB=2048
-GUEST_VCPU="$(nproc)"
-GUEST_MEM_MB=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 - HOST_RESERVE_MB ))
+GUEST_VCPU=4
+SLOTS=$(( $(nproc) * 2 / GUEST_VCPU ))
+GUEST_MEM_MB=$(( ($(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 - HOST_RESERVE_MB) / SLOTS ))
 
 # The broker's unit reads the guest shape and MTU from here. The MTU must
 # match the bridge.
-printf 'MTU=%s\nGUEST_VCPU=%s\nGUEST_MEM_MB=%s\n' "$MTU" "$GUEST_VCPU" "$GUEST_MEM_MB" > "$HOST_DIR/host.env"
+printf 'MTU=%s\nSLOTS=%s\nGUEST_VCPU=%s\nGUEST_MEM_MB=%s\n' "$MTU" "$SLOTS" "$GUEST_VCPU" "$GUEST_MEM_MB" > "$HOST_DIR/host.env"
 
 # On tmpfs, so the marker is only ever true for the boot that wrote it.
 touch /run/scratch-host-ready

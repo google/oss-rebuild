@@ -22,8 +22,9 @@ func createOverlay(ctx context.Context, exec execx.CommandExecutor, bin, path, b
 	return run(ctx, exec, bin, "create", "-q", "-f", "qcow2", "-F", "raw", "-b", backing, path)
 }
 
-// ensureTap creates tap if needed and attaches it to bridge at mtu. The
-// startup script owns the bridge.
+// ensureTap creates tap if needed and attaches it to bridge at mtu as an
+// isolated port, so its guest reaches only the host. The startup script
+// owns the bridge.
 func ensureTap(ctx context.Context, exec execx.CommandExecutor, tap, bridge string, mtu int) error {
 	if err := run(ctx, exec, "ip", "link", "show", tap); err != nil {
 		if err := run(ctx, exec, "ip", "tuntap", "add", "dev", tap, "mode", "tap"); err != nil {
@@ -33,6 +34,7 @@ func ensureTap(ctx context.Context, exec execx.CommandExecutor, tap, bridge stri
 	for _, args := range [][]string{
 		{"link", "set", tap, "mtu", strconv.Itoa(mtu)},
 		{"link", "set", tap, "master", bridge},
+		{"link", "set", tap, "type", "bridge_slave", "isolated", "on"},
 		{"link", "set", tap, "up"},
 	} {
 		if err := run(ctx, exec, "ip", args...); err != nil {

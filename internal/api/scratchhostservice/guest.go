@@ -22,39 +22,45 @@ type Guest struct {
 	Since     time.Time `json:"since,omitzero"`
 }
 
-// GuestList answers RouteList.
+// GuestList answers RouteList, one entry per occupied slot.
 type GuestList struct {
 	Guests     []Guest   `json:"guests"`
+	Slots      int       `json:"slots"`                // how many guests the host runs at once
 	LastServed time.Time `json:"last_served,omitzero"` // last guest op, or else startup
 }
 
-// Names for the host's one guest.
-const (
-	guestTap  = "mvmtap0"
-	guestMAC  = "52:54:00:12:34:56" // QEMU's default MAC
-	guestName = "guest"
-)
+// guestName is every guest's hostname: guests never see each other.
+const guestName = "guest"
 
-// GuestNet places the guest on the host-only bridge: the host takes the
-// subnet's first address and routes for the guest, which takes the next.
+// guestTap and guestMAC name slot i's interface on either side. 52:54:00 is
+// QEMU's MAC prefix.
+func guestTap(i int) string { return "mvmtap" + strconv.Itoa(i) }
+func guestMAC(i int) string { return fmt.Sprintf("52:54:00:12:34:%02x", i) }
+
+// GuestNet places guests on the host-only bridge: the host takes the
+// subnet's first address and routes for them, and slot i's guest takes
+// IPs[i].
 type GuestNet struct {
 	Prefix  netip.Prefix
 	Gateway netip.Addr
-	IP      netip.Addr
+	IPs     []netip.Addr
 }
 
-// GuestNetFor derives the addresses from subnet, refusing one too small.
-func GuestNetFor(subnet netip.Prefix) (GuestNet, error) {
+// GuestNetFor derives the addresses for slots guests from subnet, refusing
+// one too small.
+func GuestNetFor(subnet netip.Prefix, slots int) (GuestNet, error) {
 	if !subnet.IsValid() {
 		return GuestNet{}, errors.New("guest subnet not configured")
 	}
 	p := subnet.Masked()
-	gw := p.Addr().Next()
-	ip := gw.Next()
-	if !p.Contains(ip) {
-		return GuestNet{}, errors.Errorf("guest subnet %s has no room for a gateway and a guest", subnet)
+	n := GuestNet{Prefix: p, Gateway: p.Addr().Next()}
+	for ip := n.Gateway; len(n.IPs) < slots; {
+		if ip = ip.Next(); !p.Contains(ip) {
+			return GuestNet{}, errors.Errorf("guest subnet %s has no room for a gateway and %d guests", subnet, slots)
+		}
+		n.IPs = append(n.IPs, ip)
 	}
-	return GuestNet{Prefix: p, Gateway: gw, IP: ip}, nil
+	return n, nil
 }
 
 // GuestConfig is the guest shape.
@@ -69,7 +75,7 @@ type GuestConfig struct {
 
 // Layout locates the golden images and the guest's state on the host.
 type Layout struct {
-	GuestDir string // overlays and console log
+	GuestDir string // per-slot overlays and console logs
 	ExecsDir string // per-session exec ledgers
 	Kernel   string
 	Initrd   string
@@ -77,9 +83,10 @@ type Layout struct {
 	Scratch  string // read-only image
 }
 
-func (l Layout) overlay() string { return path.Join(l.GuestDir, "root.qcow2") }
-func (l Layout) scratch() string { return path.Join(l.GuestDir, "scratch.qcow2") }
-func (l Layout) console() string { return path.Join(l.GuestDir, "console.log") }
+func (l Layout) slotDir(i int) string { return path.Join(l.GuestDir, strconv.Itoa(i)) }
+func (l Layout) overlay(i int) string { return path.Join(l.slotDir(i), "root.qcow2") }
+func (l Layout) scratch(i int) string { return path.Join(l.slotDir(i), "scratch.qcow2") }
+func (l Layout) console(i int) string { return path.Join(l.slotDir(i), "console.log") }
 
 func (l Layout) execDir(scratchID string) string { return path.Join(l.ExecsDir, scratchID) }
 
@@ -87,7 +94,7 @@ func (l Layout) execDir(scratchID string) string { return path.Join(l.ExecsDir, 
 // travel there because the shared rootfs is read-only. The credential in it
 // is safe in the guest's world-readable /proc/cmdline: the broker's public
 // key, and a host key that only this boot uses.
-func kernelCmdline(cfg GuestConfig, n GuestNet, cred GuestCredential) string {
+func kernelCmdline(cfg GuestConfig, n GuestNet, slot int, cred GuestCredential) string {
 	enc := base64.StdEncoding.EncodeToString
 	return strings.Join([]string{
 		// See https://docs.kernel.org/admin-guide/kernel-parameters.html.
@@ -101,7 +108,7 @@ func kernelCmdline(cfg GuestConfig, n GuestNet, cred GuestCredential) string {
 		"i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd",
 		// Keep the eth0 name microvm-net configures.
 		"net.ifnames=0",
-		fmt.Sprintf("mvm_ip=%s mvm_gw=%s mvm_prefix=%d", n.IP, n.Gateway, n.Prefix.Bits()),
+		fmt.Sprintf("mvm_ip=%s mvm_gw=%s mvm_prefix=%d", n.IPs[slot], n.Gateway, n.Prefix.Bits()),
 		fmt.Sprintf("mvm_mtu=%d mvm_dns=%s mvm_name=%s", cfg.MTU, cfg.DNS, guestName),
 		// base64, since a parameter cannot hold spaces.
 		"mvm_ssh_authorized_key=" + enc(cred.AuthorizedKey),
@@ -119,7 +126,7 @@ var avx512Flags = []string{
 
 // qemuArgv builds the QEMU invocation. QEMU stays in the foreground: the
 // broker reads guest liveness from its child process.
-func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet, cred GuestCredential) []string {
+func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet, slot int, cred GuestCredential) []string {
 	return []string{
 		bin,
 		"-M", "microvm,acpi=on,rtc=on",
@@ -136,14 +143,14 @@ func qemuArgv(bin string, cfg GuestConfig, l Layout, n GuestNet, cred GuestCrede
 		"-display", "none",
 		"-kernel", l.Kernel,
 		"-initrd", l.Initrd,
-		"-append", kernelCmdline(cfg, n, cred),
-		"-drive", "id=root,file=" + l.overlay() + ",format=qcow2,if=none,cache=none,aio=native",
+		"-append", kernelCmdline(cfg, n, slot, cred),
+		"-drive", "id=root,file=" + l.overlay(slot) + ",format=qcow2,if=none,cache=none,aio=native",
 		"-device", "virtio-blk-device,drive=root",
-		"-drive", "id=scratch,file=" + l.scratch() + ",format=qcow2,if=none,cache=none,aio=native",
+		"-drive", "id=scratch,file=" + l.scratch(slot) + ",format=qcow2,if=none,cache=none,aio=native",
 		"-device", "virtio-blk-device,drive=scratch",
-		"-netdev", "tap,id=net0,ifname=" + guestTap + ",script=no,downscript=no,vhost=on",
-		"-device", "virtio-net-device,netdev=net0,mac=" + guestMAC,
+		"-netdev", "tap,id=net0,ifname=" + guestTap(slot) + ",script=no,downscript=no,vhost=on",
+		"-device", "virtio-net-device,netdev=net0,mac=" + guestMAC(slot),
 		"-device", "virtio-rng-device",
-		"-serial", "file:" + l.console(),
+		"-serial", "file:" + l.console(slot),
 	}
 }
