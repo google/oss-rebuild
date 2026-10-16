@@ -147,6 +147,17 @@ func TestPass(t *testing.T) {
 			wantSum: Summary{Observed: 1},
 		},
 		{
+			// The agent refused the repository for its size, so the campaign
+			// goes to triage rather than absorbing retries.
+			name:     "OversizeSessionTriages",
+			campaign: inflight("p", scheduler.StageAgent, time.Minute),
+			session:  &schema.AgentSession{ID: "session-0", Status: schema.AgentSessionStatusCompleted, StopReason: schema.AgentCompleteReasonFailed, Summary: "Inference failed: repository exceeds the size limit: https://github.com/org/big at 512 MiB, limit 512 MiB"},
+			want: with(inflight("p", scheduler.StageAgent, time.Minute), func(c *scheduler.Campaign) {
+				c.State, c.Outcome, c.TriageReason, c.Updated = scheduler.StateNeedsTriage, scheduler.OutcomeOversize, "repository exceeds size limit", testNow
+			}),
+			wantSum: Summary{Observed: 1},
+		},
+		{
 			// A launch the API refused must not leave a phantom dispatch to
 			// time out.
 			name:     "FailedLaunchReturnsClaim",
