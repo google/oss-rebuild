@@ -71,7 +71,7 @@ func TestScratchReap_IdleReapedFreshPreserved(t *testing.T) {
 	now := time.Now().UTC()
 
 	zone := "us-central1-a"
-	gce.SeedRunning(zone, "h1", hostLabels(schema.MachineClassStandard), "10.0.0.1", now)
+	gce.SeedRunning(zone, "h1", hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), "10.0.0.1", now)
 	hosts.AddHost("h1", 6)
 	stale := schema.Scratch{
 		ID: "stale", State: schema.ScratchReady, Zone: zone, Host: "h1",

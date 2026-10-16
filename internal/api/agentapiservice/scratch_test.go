@@ -65,7 +65,7 @@ func newCreateDeps(gce GCE, hosts *fakeHosts, scratches db.Scratch, idGen func()
 
 // seedHost registers a running, admissible host in both fakes.
 func seedHost(gce *MemoryGCE, hosts *fakeHosts, zone, name, ip string, capacity int) {
-	gce.SeedRunning(zone, name, hostLabels(schema.MachineClassStandard), ip, time.Now().UTC())
+	gce.SeedRunning(zone, name, hostLabels(schema.MachineClassStandard, testStandard().InstanceTemplate), ip, time.Now().UTC())
 	hosts.AddHost(name, capacity)
 }
 
