@@ -73,7 +73,12 @@ func executionFromOp(op *run.GoogleLongrunningOperation) (string, error) {
 func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *AgentCreateDeps) (*schema.AgentCreateResponse, error) {
 	executionMode := req.ExecutionMode
 	if executionMode == "" {
+		// Iterations run on the session's own VM where the deployment has
+		// them, keeping the shared build pool for confirmations.
 		executionMode = schema.AgentExecutionModeGCB
+		if deps.ScratchCreateStub != nil {
+			executionMode = schema.AgentExecutionModeScratch
+		}
 	}
 	if executionMode == schema.AgentExecutionModeScratch && deps.ScratchCreateStub == nil {
 		return nil, api.AsStatus(codes.FailedPrecondition, errors.New("scratch execution mode is not configured"))
