@@ -80,3 +80,15 @@ func TestInferRepoPrefersVersionRepository(t *testing.T) {
 		})
 	}
 }
+
+func TestUpstreamURLNeedsNoLookup(t *testing.T) {
+	// staticRegistry panics on a Version call.
+	mux := rebuild.RegistryMux{CratesIO: staticRegistry{}}
+	got, err := Rebuilder{}.UpstreamURL(context.Background(), rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "serde", Version: "1.0.150"}, mux)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "https://crates.io/api/v1/crates/serde/1.0.150/download"; got != want {
+		t.Errorf("UpstreamURL() = %q, want %q", got, want)
+	}
+}
