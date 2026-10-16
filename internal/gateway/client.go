@@ -32,11 +32,13 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	q := u.Query()
 	q.Add("uri", req.URL.String())
 	u.RawQuery = q.Encode()
-	c.IDClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+	// Copy the client since requests share it.
+	idc := *c.IDClient
+	idc.CheckRedirect = func(*http.Request, []*http.Request) error {
 		// Never follow redirect since the successful response will be a 302.
 		return http.ErrUseLastResponse
 	}
-	resp, err := c.IDClient.Get(u.String())
+	resp, err := idc.Get(u.String())
 	if err != nil {
 		return nil, err
 	}

@@ -23,30 +23,32 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy, ropt *gitx.RepositoryOptions) (rebuild.Strategy, rebuild.RepoConfig, error) {
+// doInfer sets release once it holds memory for the repository.
+func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy, ropt *gitx.RepositoryOptions, deps *InferDeps, release *func()) (s rebuild.Strategy, rcfg rebuild.RepoConfig, err error) {
 	var repo string
 	if lh, ok := hint.(*rebuild.LocationHint); ok && lh != nil {
-		var err error
 		repo, err = uri.CanonicalizeRepoURI(lh.Location.Repo)
 		if err != nil {
 			return nil, rebuild.RepoConfig{}, errors.Wrap(err, "canonicalizing repo hint")
 		}
 	} else {
-		var err error
 		repo, err = rebuilder.InferRepo(ctx, t, mux)
 		if err != nil {
 			return nil, rebuild.RepoConfig{}, err
 		}
 	}
-	rcfg, err := rebuilder.CloneRepo(ctx, t, repo, ropt)
+	if *release, err = reserveMemory(ctx, deps, rebuilder, t, mux, repo); err != nil {
+		return nil, rebuild.RepoConfig{}, err
+	}
+	rcfg, err = rebuilder.CloneRepo(ctx, t, repo, ropt)
 	if err != nil {
 		return nil, rebuild.RepoConfig{}, err
 	}
-	strategy, err := rebuilder.InferStrategy(ctx, t, mux, &rcfg, hint)
+	s, err = rebuilder.InferStrategy(ctx, t, mux, &rcfg, hint)
 	if err != nil {
 		return nil, rcfg, err
 	}
-	return strategy, rcfg, nil
+	return s, rcfg, nil
 }
 
 type InferDeps struct {
@@ -55,6 +57,7 @@ type InferDeps struct {
 	RepoOptF           func() *gitx.RepositoryOptions
 	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 	RepoMetrics        db.RepoMetrics // optional. when nil, repos are not measured on clone
+	Memory             *Memory        // optional. when nil, requests load without reserving memory
 }
 
 // recordRepoMetrics measures rcfg and upserts its repo_metrics record keyed
@@ -124,7 +127,10 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	if !ok {
 		return nil, api.AsStatus(codes.InvalidArgument, errors.New("unsupported ecosystem"))
 	}
-	s, rcfg, err := doInfer(ctx, rebuilder, t, mux, req.LocationHint(), repoOpt)
+	// Deferring a closure releases memory doInfer took before it panicked.
+	release := func() {}
+	defer func() { release() }()
+	s, rcfg, err := doInfer(ctx, rebuilder, t, mux, req.LocationHint(), repoOpt, deps, &release)
 	// TODO: Move before doInfer so we record metrics even when inference fails.
 	if deps.RepoMetrics != nil && rcfg.Repository != nil {
 		if err := recordRepoMetrics(ctx, deps.RepoMetrics, rcfg); err != nil {
@@ -137,6 +143,10 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 		var tooLarge *gitx.RepoTooLargeError
 		if errors.As(err, &tooLarge) {
 			return nil, api.AsStatus(codes.FailedPrecondition, err)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			// A request that found no memory in time can retry.
+			return nil, api.AsStatus(codes.DeadlineExceeded, err)
 		}
 		var located *rebuild.InferenceError
 		if errors.As(err, &located) {
