@@ -15,8 +15,6 @@ import (
 	"github.com/google/oss-rebuild/internal/urlx"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/analyzer"
-	"github.com/google/oss-rebuild/pkg/feed"
-	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
 )
 
@@ -33,7 +31,6 @@ func EnqueueInit(ctx context.Context) (*analyzerservice.EnqueueDeps, error) {
 		return nil, errors.Wrap(err, "creating task queue")
 	}
 	return &analyzerservice.EnqueueDeps{
-		Tracker:  feed.TrackerFromFunc(func(schema.TargetEvent) (bool, error) { return true, nil }),
 		Analyzer: urlx.MustParse(*analyzerURL),
 		Queue:    queue,
 	}, nil

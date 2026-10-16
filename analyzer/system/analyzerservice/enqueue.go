@@ -9,22 +9,18 @@ import (
 
 	"github.com/google/oss-rebuild/internal/taskqueue"
 	"github.com/google/oss-rebuild/pkg/act/api"
-	"github.com/google/oss-rebuild/pkg/feed"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
-	"github.com/pkg/errors"
 )
 
 type EnqueueDeps struct {
-	Tracker  feed.Tracker
+	Skip     func(schema.TargetEvent) bool // drops events the analyzer ignores
 	Analyzer *url.URL
 	Queue    taskqueue.Queue
 }
 
 // Enqueue sends an event to be analyzed.
 func Enqueue(ctx context.Context, e schema.TargetEvent, deps *EnqueueDeps) (*api.NoOutput, error) {
-	if tracked, err := deps.Tracker.IsTracked(e); err != nil {
-		return nil, errors.Wrap(err, "checking if tracked")
-	} else if !tracked {
+	if deps.Skip != nil && deps.Skip(e) {
 		return nil, nil
 	}
 	msg := schema.AnalyzeRebuildRequest{
