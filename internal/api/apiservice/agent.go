@@ -186,6 +186,7 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		if executionMode == schema.AgentExecutionModeScratch {
 			args = append(args,
 				"--execution-mode="+string(schema.AgentExecutionModeScratch),
+				"--freeform",
 				"--scratch-id="+session.ScratchID,
 				"--prebuild-bucket="+deps.PrebuildConfig.Bucket,
 				"--prebuild-dir="+deps.PrebuildConfig.Dir,
