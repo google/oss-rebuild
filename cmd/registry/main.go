@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-git/go-billy/v5/osfs"
@@ -19,6 +20,7 @@ import (
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/pkg/act/api"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio/dump"
 	"github.com/google/oss-rebuild/pkg/registry/cratesio/index"
 	"github.com/pkg/errors"
 	"google.golang.org/api/idtoken"
@@ -34,6 +36,42 @@ var (
 )
 
 var indexManager *index.IndexManager
+
+// crates is the latest crates.io dump, nil until the first one loads.
+var crates atomic.Pointer[dump.Index]
+
+// dumpCheck paces checks for a new crates.io dump, which is published daily.
+const dumpCheck = time.Hour
+
+// loadDumps keeps crates on the latest published dump.
+func loadDumps(ctx context.Context) {
+	for {
+		latest, err := dump.Latest(ctx, http.DefaultClient)
+		if err != nil {
+			log.Printf("checking for a crates.io dump: %v", err)
+		} else if cur := crates.Load(); cur == nil || cur.ETag != latest {
+			// Two dumps do not fit beside the index clones this service holds
+			// in memory, so lookups go live while the new one loads.
+			crates.Store(nil)
+			start := time.Now()
+			if x, err := dump.Fetch(ctx, http.DefaultClient); err != nil {
+				log.Printf("loading the crates.io dump: %v", err)
+			} else {
+				crates.Store(x)
+				log.Printf("loaded crates.io dump %s in %s", x.ETag, time.Since(start).Round(time.Second))
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(dumpCheck):
+		}
+	}
+}
+
+func MetadataInit(context.Context) (*cratesregistryservice.MetadataDeps, error) {
+	return &cratesregistryservice.MetadataDeps{Dump: crates.Load()}, nil
+}
 
 func init() {
 	flag.Parse()
@@ -84,10 +122,19 @@ func FindRegistryCommitInit(ctx context.Context) (*cratesregistryservice.FindReg
 	return &cratesregistryservice.FindRegistryCommitDeps{IndexManager: indexManager}, nil
 }
 
+// serveDump loads the crates.io dump and serves /crate and /version from it.
+// While it is off, callers read crate metadata from crates.io.
+const serveDump = true
+
 func main() {
 	// Register the handler
 	http.HandleFunc("/resolve", api.Handler(FindRegistryCommitInit, cratesregistryservice.FindRegistryCommit))
 	http.Handle("/readyz", httpegress.ReadyHandler(http.DefaultClient))
+	if serveDump {
+		http.HandleFunc("/crate", api.Handler(MetadataInit, cratesregistryservice.Crate))
+		http.HandleFunc("/version", api.Handler(MetadataInit, cratesregistryservice.Version))
+		go loadDumps(context.Background())
+	}
 	log.Printf("Registry service listening on :%d\n", *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalf("Server failed: %v", err)
