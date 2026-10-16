@@ -34,6 +34,18 @@ var transientBuildSignatures = append([]string{
 // status the client sees.
 var capacitySignatures = []string{"no available instance", "resource exhausted"}
 
+// IsCapacityRejection reports whether an attempt's message says a service had
+// no room for it.
+func IsCapacityRejection(message string) bool {
+	msg := strings.ToLower(message)
+	for _, s := range capacitySignatures {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // cachedSignatures mark an attempt that found an attestation already published.
 var cachedSignatures = []string{"alreadyexists", "already exists"}
 
