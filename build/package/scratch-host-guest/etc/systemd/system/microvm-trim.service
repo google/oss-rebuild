@@ -1,0 +1,6 @@
+[Unit]
+Description=Trim the file cache so the balloon can return it
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/microvm-trim

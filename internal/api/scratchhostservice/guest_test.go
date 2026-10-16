@@ -78,6 +78,7 @@ func TestQEMUArgv(t *testing.T) {
 		"-netdev", "tap,id=net0,ifname=mvmtap1,script=no,downscript=no,vhost=on",
 		"-device", "virtio-net-device,netdev=net0,mac=52:54:00:12:34:01",
 		"-device", "virtio-rng-device",
+		"-device", "virtio-balloon-device,free-page-reporting=on",
 		"-serial", "file:/var/lib/scratch-host/guest/1/console.log",
 	}
 	if diff := cmp.Diff(want, qemuArgv("qemu-system-x86_64", cfg, l, guestNet, 1, GuestCredential{AuthorizedKey: []byte("ssh-ed25519 AAAA"), HostKey: []byte("key")})); diff != "" {
