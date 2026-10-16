@@ -117,7 +117,7 @@ func TestGetPackageManagerCommands(t *testing.T) {
 			name: "CentOS",
 			os:   CentOS,
 			want: PackageManagerCommands{
-				UpdateCmd:   "yum update -y",
+				UpdateCmd:   "yum makecache",
 				InstallCmd:  "yum install",
 				InstallArgs: []string{"-y"},
 			},

@@ -270,7 +270,7 @@ func TestDockerRunPlanner(t *testing.T) {
 			yum install -y 'curl' '/usr/bin/nc'
 			curl https://example.com/timewarp > /timewarp
 			chmod +x /timewarp
-			yum update -y
+			yum makecache
 			yum install -y 'git'`[1:]),
 				Source: textwrap.Dedent(`
 			mkdir -p /src && cd /src

@@ -55,7 +55,10 @@ var osPackageManagers = map[OS]PackageManagerCommands{
 		InstallArgs: []string{"-y"},
 	},
 	CentOS: {
-		UpdateCmd:   "yum update -y",
+		// NOTE: Unlike apt and apk, "yum update" upgrades the installed packages,
+		// which replaces the compiler and libraries that the base image provides.
+		// makecache only refreshes the package metadata.
+		UpdateCmd:   "yum makecache",
 		InstallCmd:  "yum install",
 		InstallArgs: []string{"-y"},
 	},
