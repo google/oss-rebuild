@@ -34,6 +34,7 @@ func newTestDispatcher(cfg dispatchConfig, f *fakeAPI) *dispatcher {
 	return &dispatcher{
 		io:        cli.IO{Out: io.Discard, Err: io.Discard},
 		campaigns: db.NewMemoryCampaigns(),
+		budgets:   db.NewMemoryBudgets(),
 		attempts:  db.NewMemoryAttempts(),
 		sessions:  db.NewMemorySessions(),
 		create: func(ctx context.Context, r schema.RebuildPackageRequest) (*longrunning.Operation[schema.Verdict], error) {
@@ -161,7 +162,7 @@ func TestPass(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if diff := cmp.Diff(tc.wantSum, d.pass(ctx, []scheduler.Campaign{tc.campaign})); diff != "" {
+			if diff := cmp.Diff(tc.wantSum, d.pass(ctx, []scheduler.Campaign{tc.campaign}, new(scheduler.Budget))); diff != "" {
 				t.Errorf("pass summary mismatch (-want +got):\n%s", diff)
 			}
 			got, err := d.campaigns.Get(ctx, target)
@@ -192,11 +193,93 @@ func TestPass(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if diff := cmp.Diff(passSummary{Dispatched: 1, AgentDispatched: 1}, d.pass(ctx, active)); diff != "" {
+		if diff := cmp.Diff(passSummary{Dispatched: 1, AgentDispatched: 1}, d.pass(ctx, active, new(scheduler.Budget))); diff != "" {
 			t.Errorf("pass summary mismatch (-want +got):\n%s", diff)
 		}
 		if len(f.agents) != 1 {
 			t.Errorf("agent launches = %d, want 1", len(f.agents))
+		}
+	})
+	t.Run("CompletionChargesBudget", func(t *testing.T) {
+		var f fakeAPI
+		d := newTestDispatcher(cfg, &f)
+		c := inflight("p", scheduler.StageInfer, time.Minute)
+		if err := d.campaigns.Upsert(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+		a := schema.RebuildAttempt{Ecosystem: "npm", Package: "p", Version: "1.0.0", Artifact: "p-1.0.0.tgz", RunID: "run-0",
+			Status: schema.RebuildStatusSuccess, Costs: &schema.AttemptCosts{BuilderSeconds: 90}}
+		if err := d.attempts.Upsert(ctx, a); err != nil {
+			t.Fatal(err)
+		}
+		var budget scheduler.Budget
+		d.pass(ctx, []scheduler.Campaign{c}, &budget)
+		ledger, err := d.budgets.Get(ctx, scheduler.BudgetScopeGlobal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if budget.BuildSeconds != 90 || ledger.BuildSeconds != 90 {
+			t.Errorf("build seconds local/ledger = %d/%d, want 90/90", budget.BuildSeconds, ledger.BuildSeconds)
+		}
+	})
+}
+
+// TestCaps covers how a pass bounds itself: the per-pass caps, the room left
+// under the in-flight caps, and a spent period time cap admitting nothing.
+func TestCaps(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		cfg              dispatchConfig
+		budget           scheduler.Budget
+		builds, sessions int
+		want             scheduler.Caps
+	}{
+		{name: "Unbounded"},
+		{name: "PerPass", cfg: dispatchConfig{Batch: 10, MaxAgent: 2}, want: scheduler.Caps{Batch: 10, Agent: 2}},
+		{name: "InflightRoom", cfg: dispatchConfig{MaxInflightBuilds: 5, MaxInflightSessions: 3}, builds: 2, sessions: 1, want: scheduler.Caps{Build: 3, Agent: 2}},
+		{name: "InflightFull", cfg: dispatchConfig{MaxInflightBuilds: 5, MaxInflightSessions: 3}, builds: 5, sessions: 4, want: scheduler.Caps{Build: scheduler.CapNone, Agent: scheduler.CapNone}},
+		{name: "TighterAgentCapWins", cfg: dispatchConfig{MaxAgent: 5, MaxInflightSessions: 3}, sessions: 1, want: scheduler.Caps{Agent: 2}},
+		{name: "SpentTimeCap", cfg: dispatchConfig{Batch: 10, BuildTimeCap: time.Hour, SessionTimeCap: time.Hour}, budget: scheduler.Budget{BuildSeconds: 3600, SessionSeconds: 1800}, want: scheduler.Caps{Batch: 10, Build: scheduler.CapNone}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := &dispatcher{cfg: tc.cfg}
+			if diff := cmp.Diff(tc.want, d.caps(tc.budget, tc.builds, tc.sessions)); diff != "" {
+				t.Errorf("caps mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestCharge covers spend accounting: completions land on the global ledger and
+// on the local copy that dispatch caps read, and an elapsed period resets the
+// ledger before new spend lands on it.
+func TestCharge(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	d := &dispatcher{cfg: dispatchConfig{Period: 24 * time.Hour}, now: now, budgets: db.NewMemoryBudgets()}
+	var local scheduler.Budget
+	d.charge(ctx, &local, scheduler.Spend{BuildSeconds: 100})
+	d.charge(ctx, &local, scheduler.Spend{SessionSeconds: 50, Tokens: 7})
+
+	if local.BuildSeconds != 100 || local.SessionSeconds != 50 {
+		t.Errorf("local copy = %+v, want 100 build / 50 session", local)
+	}
+	b, err := d.budgets.Get(ctx, scheduler.BudgetScopeGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Scope != scheduler.BudgetScopeGlobal || b.BuildSeconds != 100 || b.SessionSeconds != 50 || b.Tokens != 7 {
+		t.Errorf("ledger = %+v, want the global scope with 100 build / 50 session / 7 tokens", b)
+	}
+	t.Run("ElapsedPeriodResetsBeforeCharging", func(t *testing.T) {
+		d.now = now.Add(25 * time.Hour)
+		d.charge(ctx, new(scheduler.Budget), scheduler.Spend{BuildSeconds: 5})
+		b, err := d.budgets.Get(ctx, scheduler.BudgetScopeGlobal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b.BuildSeconds != 5 || !b.PeriodStart.Equal(d.now) {
+			t.Errorf("rolled-over ledger = %+v, want only the fresh 5 build seconds", b)
 		}
 	})
 }
