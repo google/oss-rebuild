@@ -17,8 +17,10 @@ func coverageFixture(t *testing.T) memAnalytics {
 	return newMemAnalytics(t,
 		`CREATE TABLE coverage_weekly (ecosystem TEXT, week TEXT, packages_attempted INT, packages_current INT, packages_stale INT, coverage REAL, weighted_coverage REAL, newly_broken INT)`,
 		`INSERT INTO coverage_weekly VALUES ('npm', '2026-08-24', 10, 6, 2, 0.6, 0.75, 1), ('npm', '2026-08-31', 12, 9, 1, 0.75, 0.9, 0), ('maven', '2026-08-31', 4, 4, 0, 1.0, NULL, 0)`,
-		`CREATE TABLE signal_coverage (ecosystem TEXT, universe_packages INT, universe_mass REAL, tracked_packages INT, tracked_mass REAL, current_packages INT, current_mass REAL, covered_mass_share REAL, sidecar_built_at TEXT)`,
-		`INSERT INTO signal_coverage VALUES ('npm', 300, 100.0, 12, 3.0, 9, 2.5, 0.025, ''), ('pypi', 4000, 100.0, 0, 0.0, 0, 0.0, 0.0, '')`,
+		`CREATE TABLE signal_coverage (ecosystem TEXT, universe_packages INT, universe_mass REAL, tracked_packages INT, tracked_mass REAL, attempted_packages INT, attempted_mass REAL, current_packages INT, current_mass REAL, retrying_packages INT, in_flight_packages INT, queued_packages INT, covered_mass_share REAL, sidecar_built_at TEXT)`,
+		`INSERT INTO signal_coverage VALUES ('npm', 300, 100.0, 13, 3.0, 11, 2.8, 9, 2.5, 1, 1, 1, 0.025, ''), ('pypi', 4000, 100.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, 0, 0, 0.0, '')`,
+		`CREATE TABLE snapshot_meta (built_at TEXT, watermark TEXT, source_project TEXT, tool_version TEXT)`,
+		`INSERT INTO snapshot_meta VALUES ('2026-08-31T23:02:00.000Z', '2026-08-31T23:00:00.000Z', '', '')`,
 		`CREATE TABLE campaigns (ecosystem TEXT, package TEXT, version TEXT, artifact TEXT, state TEXT, stage TEXT, last_session TEXT)`,
 		`INSERT INTO campaigns VALUES ('npm', 'a', '1', 'a.tgz', 'DONE', 'replay', ''), ('npm', 'b', '1', 'b.tgz', 'DONE', 'agent', 's-llm'), ('npm', 'c', '1', 'c.tgz', 'QUEUED', 'infer', ''), ('npm', 'd', '1', 'd.tgz', 'NEEDS_TRIAGE', 'agent', ''), ('npm', 'e', '1', 'e.tgz', 'INFLIGHT', 'replay', ''), ('npm', 'f', '1', 'f.tgz', 'DONE', 'agent', 's-inf')`,
 		`CREATE TABLE agent_sessions (session_id TEXT, agent_win_kind TEXT)`,
@@ -35,13 +37,14 @@ func coverageFixture(t *testing.T) memAnalytics {
 
 // coverageOverview is the band coverageFixture yields.
 var coverageOverview = &Overview{
-	AsOf: "2026-09-01 00:00:00 UTC", InScope: 4300, Started: 12, Reproduced: 9,
+	AsOf:  "2026-08-31 23:00:00 UTC",
+	Total: EcoBand{Ecosystem: "All ecosystems", InScope: 13, Attempted: 11, Reproduced: 9, Retrying: 1, InFlight: 1, Queued: 1},
 	Ecos: []EcoBand{
-		{Ecosystem: "npm", InScope: 300, Started: 12, Reproduced: 9, EverBuilt: 2, Growth: [][2]int64{
+		{Ecosystem: "npm", InScope: 13, Attempted: 11, Reproduced: 9, Retrying: 1, InFlight: 1, Queued: 1, EverBuilt: 2, Growth: [][2]int64{
 			{time.Date(2026, 8, 30, 10, 0, 0, 0, time.UTC).Unix(), 1},
 			{time.Date(2026, 8, 30, 11, 0, 0, 0, time.UTC).Unix(), 2},
 		}},
-		{Ecosystem: "pypi", InScope: 4000},
+		{Ecosystem: "pypi"},
 	},
 	Activity: Activity{Start: time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC).Unix(), End: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC).Unix(), Days: []DayStat{
 		{Day: "2026-08-30", Attempts: 4, Succeeded: 2, Failed: 2, Tokens: 100, BuilderHours: 2, VMHours: 0.5},
@@ -51,7 +54,7 @@ var coverageOverview = &Overview{
 
 func TestCoveragePage(t *testing.T) {
 	npm := CoverageEco{
-		Ecosystem: "npm", HasScope: true, InScope: 300, Started: 12, Reproduced: 9, CoveragePct: 3, WeightedPct: 2,
+		Ecosystem: "npm", HasScope: true, InScope: 13, Attempted: 11, Reproduced: 9, SuccessPct: 81, WeightedPct: 89,
 		HasQueue: true, Queued: 1, InFlight: 1, Done: 3, NeedsTriage: 1,
 		DoneByStage: []StageDone{{Stage: scheduler.StageReplay, Done: 1}, {Stage: scheduler.StageInfer}, {Stage: scheduler.StageAgent, Done: 2, LLMDone: 1}},
 	}
@@ -60,7 +63,7 @@ func TestCoveragePage(t *testing.T) {
 		{Week: "2026-08-24", Attempted: 10, Reproduced: 6, Behind: 2, SharePct: 60, WeightedPct: 75, HasWeighted: true, NewlyBroken: 1},
 	}
 	maven := CoverageEco{Ecosystem: "maven"}
-	pypi := CoverageEco{Ecosystem: "pypi", HasScope: true, InScope: 4000}
+	pypi := CoverageEco{Ecosystem: "pypi", HasScope: true}
 	for _, tc := range []struct {
 		name string
 		req  CoverageRequest

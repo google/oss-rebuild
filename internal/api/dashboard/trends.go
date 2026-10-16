@@ -53,17 +53,15 @@ func (d StageDone) InferenceDone() int64 { return d.Done - d.LLMDone }
 // LLM-diagnose wins. Only the agent stage runs both.
 func (d StageDone) SplitsWins() bool { return d.Stage == scheduler.StageAgent }
 
-// CoverageEco is one ecosystem's standing against the packages in scope and
-// the state of its onboarding queue. A package is in scope when the
-// published signals rank it, started once a campaign or an attempt has
-// touched it, and reproduced when its latest attempted version is attested.
+// CoverageEco is one ecosystem's standing, counted as EcoBand counts it, and
+// the state of its onboarding queue.
 type CoverageEco struct {
 	Ecosystem   string
 	HasScope    bool // false until the ecosystem's signals are published
 	InScope     int64
-	Started     int64
+	Attempted   int64
 	Reproduced  int64
-	CoveragePct int64 // Reproduced over InScope
+	SuccessPct  int64 // Reproduced over Attempted
 	WeightedPct int64 // the same, weighting each package by its score
 	HasQueue    bool  // false until the ecosystem has campaigns
 	Queued      int64 // campaigns, which count package versions
@@ -141,16 +139,18 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 		return nil, errors.Wrap(err, "querying ecosystems")
 	}
 	err = forEachRow(deps.Analytics, `
-		SELECT ecosystem, universe_packages, tracked_packages, current_packages, covered_mass_share
+		SELECT ecosystem, tracked_packages, attempted_packages, current_packages, attempted_mass, current_mass
 		FROM signal_coverage`,
 		func(stmt *sqlite3.Stmt) error {
 			e := eco(stmt.ColumnText(0))
 			e.HasScope = true
-			e.InScope, e.Started, e.Reproduced = stmt.ColumnInt64(1), stmt.ColumnInt64(2), stmt.ColumnInt64(3)
-			if e.InScope > 0 {
-				e.CoveragePct = 100 * e.Reproduced / e.InScope
+			e.InScope, e.Attempted, e.Reproduced = stmt.ColumnInt64(1), stmt.ColumnInt64(2), stmt.ColumnInt64(3)
+			if e.Attempted > 0 {
+				e.SuccessPct = 100 * e.Reproduced / e.Attempted
 			}
-			e.WeightedPct = int64(100 * stmt.ColumnFloat(4))
+			if mass := stmt.ColumnFloat(4); mass > 0 {
+				e.WeightedPct = int64(100 * stmt.ColumnFloat(5) / mass)
+			}
 			return nil
 		})
 	if err != nil {

@@ -15,7 +15,7 @@
 <p>No analytics snapshot loaded. Start the dashboard with
 <code>-rundex=&lt;gs://…|file://…&gt;</code>.</p>
 {{else}}
-<p class="asof">Snapshot as of {{.AsOf}}</p>
+<p class="asof">{{with .Overview}}Package counts from the rollup at {{.AsOf}}. {{end}}Campaign counts as of {{.AsOf}}.</p>
 <div class="tabs">
     <a class="tab{{if not .Eco}} active{{end}}" href="/coverage">All</a>
     {{$sel := .Eco}}
@@ -65,11 +65,11 @@
     </tr>
     <tr>
         <th>Ecosystem</th>
-        <th>In scope{{template "def" "Packages the published signals rank, the onboarding goal."}}</th>
-        <th>Started{{template "def" "In scope, with a campaign or an attempt."}}</th>
-        <th>Reproduced{{template "def" "Started, and attested at the latest version attempted."}}</th>
-        <th>Coverage{{template "def" "Reproduced over in scope."}}</th>
-        <th>Weighted{{template "def" "Coverage, weighting each package by its score."}}</th>
+        <th>In scope{{template "def" "Ranked packages with a campaign or an attempt."}}</th>
+        <th>Attempted{{template "def" "In scope, with a completed build at any version."}}</th>
+        <th>Reproduced{{template "def" "Attested at the latest version attempted."}}</th>
+        <th>Success{{template "def" "Reproduced over attempted. A failure being retried counts against it until a retry succeeds."}}</th>
+        <th>Weighted{{template "def" "Success, weighting each package by its score."}}</th>
         <th>Queued{{template "def" "Campaigns waiting for dispatch at their next stage."}}</th>
         <th>In flight{{template "def" "Campaigns dispatched and awaiting an outcome."}}</th>
         <th>Needs triage{{template "def" "Campaigns whose automated stages are exhausted, awaiting a person."}}</th>
@@ -80,9 +80,9 @@
         <td><a href="/coverage?eco={{.Ecosystem}}">{{.Ecosystem}}</a></td>
         {{if .HasScope}}
         <td>{{num .InScope}}</td>
-        <td>{{num .Started}}</td>
+        <td>{{num .Attempted}}</td>
         <td>{{num .Reproduced}}</td>
-        <td>{{.CoveragePct}}%</td>
+        <td>{{.SuccessPct}}%</td>
         <td>{{.WeightedPct}}%</td>
         {{else}}
         <td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td>
@@ -104,11 +104,11 @@
 <h3>Packages</h3>
 {{if .HasScope}}
 <div class="cards">
-    <div class="card"><div class="card-value">{{num .InScope}}</div><div class="card-label">in scope{{template "def" "Packages the published signals rank, the onboarding goal."}}</div></div>
-    <div class="card"><div class="card-value">{{num .Started}}</div><div class="card-label">started{{template "def" "In scope, with a campaign or an attempt."}}</div></div>
-    <div class="card"><div class="card-value">{{num .Reproduced}}</div><div class="card-label">reproduced{{template "def" "Started, and attested at the latest version attempted."}}</div></div>
-    <div class="card"><div class="card-value">{{.CoveragePct}}%</div><div class="card-label">coverage{{template "def" "Reproduced over in scope."}}</div></div>
-    <div class="card"><div class="card-value">{{.WeightedPct}}%</div><div class="card-label">weighted by score{{template "def" "Coverage, weighting each package by its score."}}</div></div>
+    <div class="card"><div class="card-value">{{num .InScope}}</div><div class="card-label">in scope{{template "def" "Ranked packages with a campaign or an attempt."}}</div></div>
+    <div class="card"><div class="card-value">{{num .Attempted}}</div><div class="card-label">attempted{{template "def" "In scope, with a completed build at any version."}}</div></div>
+    <div class="card"><div class="card-value">{{num .Reproduced}}</div><div class="card-label">reproduced{{template "def" "Attested at the latest version attempted."}}</div></div>
+    <div class="card"><div class="card-value">{{.SuccessPct}}%</div><div class="card-label">success{{template "def" "Reproduced over attempted. A failure being retried counts against it until a retry succeeds."}}</div></div>
+    <div class="card"><div class="card-value">{{.WeightedPct}}%</div><div class="card-label">weighted by score{{template "def" "Success, weighting each package by its score."}}</div></div>
 </div>
 {{else}}
 <p>No published signals for {{.Ecosystem}}, so there is no scope to measure against.</p>

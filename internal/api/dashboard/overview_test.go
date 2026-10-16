@@ -13,7 +13,7 @@ import (
 
 func TestOverviewNoSignals(t *testing.T) {
 	a := newMemAnalytics(t,
-		`CREATE TABLE signal_coverage (ecosystem TEXT, universe_packages INT, universe_mass REAL, tracked_packages INT, tracked_mass REAL, current_packages INT, current_mass REAL, covered_mass_share REAL, sidecar_built_at TEXT)`,
+		`CREATE TABLE signal_coverage (ecosystem TEXT, universe_packages INT, universe_mass REAL, tracked_packages INT, tracked_mass REAL, attempted_packages INT, attempted_mass REAL, current_packages INT, current_mass REAL, retrying_packages INT, in_flight_packages INT, queued_packages INT, covered_mass_share REAL, sidecar_built_at TEXT)`,
 		`CREATE TABLE package_stats (ecosystem TEXT, package TEXT, ever_built INT)`,
 	)
 	got, err := loadOverview(a)
@@ -43,7 +43,7 @@ func TestIndexRendersOverview(t *testing.T) {
 	if err := IndexTmpl.Execute(&buf, &IndexData{Overview: coverageOverview}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`data-chart="columns"`, `data-eco="npm"`, `id="overview-activity"`, `style="flex-grow: 9"`} {
+	for _, want := range []string{`data-chart="columns"`, `data-eco="npm"`, `id="overview-activity"`, `style="flex-grow: 9"`, `data-k="not reproduced"`, `data-k="not reproduced, retrying"`, `data-k="in flight"`, `data-k="queued"`} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("rendered index lacks %s", want)
 		}
