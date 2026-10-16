@@ -132,6 +132,10 @@ func Infer(ctx context.Context, req schema.InferenceRequest, deps *InferDeps) (*
 	if err != nil {
 		log.Printf("No inference for [pkg=%s, version=%v]: %v\n", req.Package, req.Version, err)
 		err = errors.Wrap(err, "failed to infer strategy")
+		var tooLarge *gitx.RepoTooLargeError
+		if errors.As(err, &tooLarge) {
+			return nil, api.AsStatus(codes.FailedPrecondition, err)
+		}
 		var located *rebuild.InferenceError
 		if errors.As(err, &located) {
 			// The caller can still check out the source the inference reached.

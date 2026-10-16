@@ -65,6 +65,7 @@ var (
 	agentAPIURL           = flag.String("agent-api-url", "", "URL of the agent API service")
 	gitCacheURL           = flag.String("git-cache-url", "", "URL of the git-cache service, forwarded to agent jobs so inference routes clones through it")
 	cratesRegistryURL     = flag.String("crates-registry-service-url", "", "URL of the crates registry service, forwarded to agent jobs so inference can resolve crate index commits")
+	agentMaxRepoBytes     = flag.Int64("agent-max-repo-bytes", 0, "git-cache fetch budget in bytes forwarded to agent jobs (0 = no limit)")
 	agentSessionsBucket   = flag.String("agent-sessions-bucket", "", "GCS bucket for agent session data")
 	agentMetadataBucket   = flag.String("agent-metadata-bucket", "", "GCS bucket for agent build metadata")
 	agentLogsBucket       = flag.String("agent-logs-bucket", "", "GCS bucket for agent build logs")
@@ -331,6 +332,7 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 	d.AgentAPIURL = *agentAPIURL
 	d.GitCacheURL = *gitCacheURL
 	d.CratesRegistryURL = *cratesRegistryURL
+	d.AgentMaxRepoBytes = *agentMaxRepoBytes
 	d.AgentTimeoutSeconds = *agentTimeoutSeconds
 	d.SessionsBucket = *agentSessionsBucket
 	d.MetadataBucket = *agentMetadataBucket

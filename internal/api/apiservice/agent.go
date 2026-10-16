@@ -36,6 +36,7 @@ type AgentCreateDeps struct {
 	AgentAPIURL         string
 	GitCacheURL         string
 	CratesRegistryURL   string // Forwarded to agent jobs so inference can resolve crates.io index commits.
+	AgentMaxRepoBytes   int64  // Forwarded to agent jobs as their git-cache fetch budget. 0 sets no limit.
 	AgentTimeoutSeconds int
 	SessionsBucket      string
 	MetadataBucket      string
@@ -166,6 +167,9 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		}
 		if deps.CratesRegistryURL != "" {
 			args = append(args, "--crates-registry-service-url="+deps.CratesRegistryURL)
+		}
+		if deps.AgentMaxRepoBytes > 0 {
+			args = append(args, fmt.Sprintf("--max-repo-bytes=%d", deps.AgentMaxRepoBytes))
 		}
 		if req.Model != "" {
 			args = append(args, "--model="+req.Model)

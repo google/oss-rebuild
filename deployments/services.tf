@@ -181,6 +181,7 @@ resource "google_cloud_run_v2_service" "inference" {
         "--host=${var.host}",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
         "--crates-registry-service-url=${google_cloud_run_v2_service.crates-registry.uri}",
+        "--max-repo-bytes=${4 * 1024 * 1024 * 1024}", // 4 GiB, under the 4.7 GiB the 16G instance has held
       ]
       resources {
         limits = {
@@ -286,7 +287,8 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--agent-api-url=${google_cloud_run_v2_service.agent-api.uri}",
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
         "--crates-registry-service-url=${google_cloud_run_v2_service.crates-registry.uri}",
-        "--agent-timeout-seconds=3600", // 1 hour
+        "--agent-timeout-seconds=3600",                 // 1 hour
+        "--agent-max-repo-bytes=${1024 * 1024 * 1024}", // 1 GiB. An 830 MiB repository peaked at 1.9 GB in a local in-process inference
         "--agent-sessions-bucket=${google_storage_bucket.agent-sessions.name}",
         "--agent-metadata-bucket=${google_storage_bucket.agent-metadata.name}",
         "--agent-logs-bucket=${google_storage_bucket.agent-logs.name}",
