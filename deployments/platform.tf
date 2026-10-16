@@ -628,6 +628,29 @@ resource "google_cloud_scheduler_job" "snapshot-rollup" {
   depends_on = [google_project_service.cloudscheduler]
 }
 
+# Runs onboarding dispatch inside the API, against its own rebuild and agent
+# handlers. Overlapping runs are safe.
+resource "google_cloud_scheduler_job" "onboard-dispatch" {
+  count            = var.onboard_dispatch_schedule != "" ? 1 : 0
+  name             = "${var.host}-onboard-dispatch"
+  schedule         = var.onboard_dispatch_schedule
+  region           = "us-central1"
+  attempt_deadline = "1800s" # a pass launches agent sessions synchronously
+  http_target {
+    uri         = "${google_cloud_run_v2_service.orchestrator.uri}/onboard/dispatch"
+    http_method = "POST"
+    headers = {
+      "Content-Type" = "application/x-www-form-urlencoded"
+    }
+    body = base64encode(join("&", [for k, v in var.onboard_dispatch_params : "${urlencode(k)}=${urlencode(v)}"]))
+    oidc_token {
+      service_account_email = google_service_account.cron.email
+      audience              = google_cloud_run_v2_service.orchestrator.uri
+    }
+  }
+  depends_on = [google_project_service.cloudscheduler]
+}
+
 resource "google_cloud_scheduler_job" "scratch-reap" {
   count    = var.enable_scratch ? 1 : 0
   name     = "${var.host}-scratch-reap"

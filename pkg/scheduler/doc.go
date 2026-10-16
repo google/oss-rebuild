@@ -9,6 +9,7 @@
 // and session time is metered against a per-period Budget ledger, since fixed
 // build concurrency makes time, not cost, the scarce resource.
 //
-// This package holds only pure types and functions. The commands that drive
-// the queue live in tools/ctl/command/onboard.
+// This package holds only pure types and functions. The dispatch pass lives
+// in internal/dispatch and the commands that drive the queue in
+// tools/ctl/command/onboard.
 package scheduler
