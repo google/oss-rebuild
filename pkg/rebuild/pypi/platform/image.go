@@ -5,6 +5,9 @@ package platform
 
 import "github.com/pkg/errors"
 
+// The PyPA build image repositories that SelectBaseImage returns.
+// NOTE: gen_cibuildwheel_images.go lists these by name to generate the
+// cibuildwheel pin table. Keep its supportedRepos in sync.
 const (
 	ImageManylinux2014X86_64 = "quay.io/pypa/manylinux2014_x86_64"
 	ImageManylinux2_28X86_64 = "quay.io/pypa/manylinux_2_28_x86_64"

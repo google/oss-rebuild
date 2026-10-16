@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/google/oss-rebuild/internal/httpx/httpxtest"
 	"github.com/google/oss-rebuild/pkg/archive"
 	"github.com/google/oss-rebuild/pkg/archive/archivetest"
+	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 )
@@ -626,6 +628,106 @@ func TestBackendRequirements(t *testing.T) {
 			got := implicitRequirements(tc.reqs)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("backendRequirements(%v) diff (-want +got):\n%s", tc.reqs, diff)
+			}
+		})
+	}
+}
+
+// testPins is a cibuildwheel pin table with the shapes that inference has to
+// handle: a pin whose tag expired before its digest was recorded, and a
+// maintenance release of an older major version published after a newer one.
+var testPins = platform.CibuildwheelPinTable{
+	{
+		Version:   "2.0.0",
+		Published: time.Date(2021, time.July, 1, 0, 0, 0, 0, time.UTC),
+		Images: map[string]platform.PinnedImage{
+			platform.ImageManylinux2014X86_64: {Tag: "2021-06-01-expired"},
+		},
+	},
+	{
+		Version:   "2.16.2",
+		Published: time.Date(2023, time.October, 10, 0, 0, 0, 0, time.UTC),
+		Images: map[string]platform.PinnedImage{
+			platform.ImageManylinux2014X86_64: {Tag: "2023-10-03-72cdc42", Digest: testDigest("a")},
+			platform.ImageManylinux2_28X86_64: {Tag: "2023-10-03-72cdc42", Digest: testDigest("b")},
+			platform.ImageMusllinux1_1X86_64:  {Tag: "2023-10-03-72cdc42", Digest: testDigest("c")},
+		},
+	},
+	{
+		Version:   "3.4.0",
+		Published: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC),
+		Images: map[string]platform.PinnedImage{
+			platform.ImageManylinux2014X86_64: {Tag: "2026.03.01-1", Digest: testDigest("d")},
+			platform.ImageManylinux2_28X86_64: {Tag: "2026.03.01-1", Digest: testDigest("e")},
+			platform.ImageMusllinux1_2X86_64:  {Tag: "2026.03.01-1", Digest: testDigest("f")},
+		},
+	},
+	{
+		Version:   "2.23.4",
+		Published: time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
+		Images: map[string]platform.PinnedImage{
+			platform.ImageManylinux2014X86_64: {Tag: "2026.02.20-1", Digest: testDigest("1")},
+			platform.ImageManylinux2_28X86_64: {Tag: "2026.02.20-1", Digest: testDigest("2")},
+			platform.ImageMusllinux1_2X86_64:  {Tag: "2026.02.20-1", Digest: testDigest("3")},
+		},
+	},
+}
+
+// testDigest returns a well-formed digest made of the character c.
+func testDigest(c string) string {
+	return "sha256:" + strings.Repeat(c, 64)
+}
+
+func TestInferBaseImage(t *testing.T) {
+	tests := []struct {
+		name        string
+		platformTag string
+		uploaded    time.Time
+		want        string
+	}{
+		{
+			name:        "Musllinux",
+			platformTag: "musllinux_1_2_x86_64",
+			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/musllinux_1_2_x86_64:2026.03.01-1@" + testDigest("f"),
+		},
+		{
+			// 2.23.4 was published after 3.4.0 but an unpinned install
+			// resolves to the highest version, which pins the newer images.
+			name:        "CompressedTagSetAfterMaintenanceRelease",
+			platformTag: "manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+			uploaded:    time.Date(2026, time.March, 20, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/manylinux_2_28_x86_64:2026.03.01-1@" + testDigest("e"),
+		},
+		{
+			name:        "DroppedRepository",
+			platformTag: "musllinux_1_1_x86_64",
+			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+			want:        "quay.io/pypa/musllinux_1_1_x86_64:2023-10-03-72cdc42@" + testDigest("c"),
+		},
+		{
+			name:        "ExpiredPin",
+			platformTag: "manylinux2014_x86_64",
+			uploaded:    time.Date(2021, time.August, 1, 0, 0, 0, 0, time.UTC),
+			want:        "",
+		},
+		{
+			name:        "BeforeFirstPin",
+			platformTag: "manylinux2014_x86_64",
+			uploaded:    time.Date(2019, time.January, 1, 0, 0, 0, 0, time.UTC),
+			want:        "",
+		},
+		{
+			name:        "UnsupportedArchitecture",
+			platformTag: "manylinux2014_aarch64",
+			uploaded:    time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC),
+			want:        "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := inferBaseImage(testPins, tt.platformTag, tt.uploaded); got != tt.want {
+				t.Errorf("inferBaseImage(%q, %v) = %q, want %q", tt.platformTag, tt.uploaded, got, tt.want)
 			}
 		})
 	}
