@@ -44,6 +44,20 @@ var commonRepoLinks = []string{
 
 var distInfoFieldPat = re.MustCompile(`[-_.]+`)
 
+// Published returns when t's artifact was uploaded to the registry.
+func (Rebuilder) Published(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (time.Time, error) {
+	release, err := mux.PyPI.Release(ctx, t.Package, t.Version)
+	if err != nil {
+		return time.Time{}, errors.Wrap(err, "fetching release metadata")
+	}
+	for _, a := range release.Artifacts {
+		if a.Filename == t.Artifact {
+			return a.UploadTime, nil
+		}
+	}
+	return time.Time{}, errors.Errorf("artifact %s not found in release", t.Artifact)
+}
+
 // InferRepo reads the repository from the links the release was published
 // with, falling back to the project's current links, which follow its newest
 // release. A link named as a source at either level beats a repository scraped

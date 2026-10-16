@@ -6,6 +6,7 @@ package rebuild
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/google/oss-rebuild/internal/gitx"
 )
@@ -16,6 +17,11 @@ type RepoConfig struct {
 	URI       string
 	Dir       string
 	RefMap    map[string]string
+}
+
+// Publisher is a Rebuilder whose registry records when an artifact was published.
+type Publisher interface {
+	Published(context.Context, Target, RegistryMux) (time.Time, error)
 }
 
 // Rebuilder defines the operations used to rebuild an ecosystem's packages.

@@ -37,6 +37,19 @@ func getPackageJSON(tree *object.Tree, path string) (pkgJSON npmreg.PackageJSON,
 	return pkgJSON, json.Unmarshal([]byte(p), &pkgJSON)
 }
 
+// Published returns when t's version was uploaded to the registry.
+func (Rebuilder) Published(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (time.Time, error) {
+	pmeta, err := mux.NPM.Package(ctx, t.Package)
+	if err != nil {
+		return time.Time{}, errors.Wrap(err, "fetching package metadata")
+	}
+	ut, ok := pmeta.UploadTimes[t.Version]
+	if !ok {
+		return time.Time{}, errors.Errorf("no upload time for %s", t.Version)
+	}
+	return ut, nil
+}
+
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	vmeta, err := mux.NPM.Version(ctx, t.Package, t.Version)
 	if err != nil {

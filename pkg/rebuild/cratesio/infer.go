@@ -51,6 +51,15 @@ func getCargoTOML(tree *object.Tree, path string) (ct reg.CargoTOML, err error) 
 	return ct, toml.Unmarshal([]byte(p), &ct)
 }
 
+// Published returns when t's version was published to the registry.
+func (Rebuilder) Published(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (time.Time, error) {
+	vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
+	if err != nil {
+		return time.Time{}, errors.Wrap(err, "fetching version metadata")
+	}
+	return vmeta.Created, nil
+}
+
 func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (string, error) {
 	vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
 	if err != nil {
