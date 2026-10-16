@@ -208,14 +208,7 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 			version: "1.0.150",
 			calls: []httpxtest.Call{
 				{
-					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
-					Response: &http.Response{
-						StatusCode: 200,
-						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
-					},
-				},
-				{
-					URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
+					URL: "https://static.crates.io/crates/serde/serde-1.0.150.crate",
 					Response: &http.Response{
 						StatusCode: 200,
 						Body:       httpxtest.Body("This is the artifact content"),
@@ -225,46 +218,27 @@ func TestHTTPRegistry_Artifact(t *testing.T) {
 			expectedReadCloser: httpxtest.Body("This is the artifact content"),
 		},
 		{
-			name:    "Version Fetch Error",
-			pkg:     "serde",
-			version: "1.0.150",
-			calls: []httpxtest.Call{
-				{
-					URL:   "https://crates.io/api/v1/crates/serde/1.0.150",
-					Error: errors.New("network error"),
-				},
-			},
-		},
-		{
-			name:    "Version Fetch Error Status",
-			pkg:     "nonexistent-pkg",
-			version: "1.0.0",
-			calls: []httpxtest.Call{
-				{
-					URL:      "https://crates.io/api/v1/crates/nonexistent-pkg/1.0.0",
-					Response: &http.Response{StatusCode: 404, Status: http.StatusText(404), Body: httpxtest.Body("")},
-				},
-			},
-			expectedErr: errors.New("fetching version: Not Found"),
-		},
-		{
 			name:    "Artifact Fetch Error",
 			pkg:     "serde",
 			version: "1.0.150",
 			calls: []httpxtest.Call{
 				{
-					URL: "https://crates.io/api/v1/crates/serde/1.0.150",
-					Response: &http.Response{
-						StatusCode: 200,
-						Body:       httpxtest.Body(`{"version":{"num":"1.0.150", "dl_path":"/api/v1/crates/serde/1.0.150/download"}}`),
-					},
-				},
-				{
-					URL:      "https://crates.io/api/v1/crates/serde/1.0.150/download",
-					Response: &http.Response{StatusCode: 500, Status: http.StatusText(500), Body: httpxtest.Body("")},
+					URL:   "https://static.crates.io/crates/serde/serde-1.0.150.crate",
+					Error: errors.New("network error"),
 				},
 			},
-			expectedErr: errors.New("fetching artifact: Internal Server Error"),
+		},
+		{
+			name:    "Artifact Fetch Error Status",
+			pkg:     "nonexistent-pkg",
+			version: "1.0.0",
+			calls: []httpxtest.Call{
+				{
+					URL:      "https://static.crates.io/crates/nonexistent-pkg/nonexistent-pkg-1.0.0.crate",
+					Response: &http.Response{StatusCode: 403, Status: http.StatusText(403), Body: httpxtest.Body("")},
+				},
+			},
+			expectedErr: errors.New("fetching artifact: Forbidden"),
 		},
 	}
 	for _, tc := range testCases {

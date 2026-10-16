@@ -1329,14 +1329,7 @@ version = 3
 						},
 					},
 					{
-						URL: "https://crates.io/api/v1/crates/serde/1.0.150",
-						Response: &http.Response{
-							StatusCode: 200,
-							Body:       io.NopCloser(bytes.NewReader([]byte(tc.metadata))),
-						},
-					},
-					{
-						URL: "https://crates.io/api/v1/crates/serde/1.0.150/download",
+						URL: "https://static.crates.io/crates/serde/serde-1.0.150.crate",
 						Response: &http.Response{
 							StatusCode: 200,
 							Body:       io.NopCloser(must(archivetest.TgzFile(files))),
