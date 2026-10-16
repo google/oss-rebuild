@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -56,6 +57,12 @@ func (s *chatSession) followUp(ctx context.Context, prompt string) (json.RawMess
 // a handoff.
 func (s *chatSession) turn(ctx context.Context, prompt string) (json.RawMessage, []toolCall, error) {
 	s.handoff = nil
+	parent := ctx
+	if w := s.a.ff.windDown; !w.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, w.Add(windDownGrace))
+		defer cancel()
+	}
 	var err error
 	for content, cerr := range s.chat.SendMessageStream(ctx, genai.NewPartFromText(prompt)) {
 		if cerr != nil {
@@ -69,6 +76,11 @@ func (s *chatSession) turn(ctx context.Context, prompt string) (json.RawMessage,
 		s.giveUp = nil
 		s.a.ff.record(ctx, s.opts, stamp()+"-giveup.json", giveUpRecord{giveUpArgs: *g, JobClosest: s.check.closest})
 		return nil, s.trace, gaveUp{Reason: g.Reason, Closest: s.check.closest}
+	}
+	// The wind-down ended the turn: the job gives up for the model.
+	if ctx.Err() != nil && parent.Err() == nil {
+		s.a.ff.record(parent, s.opts, stamp()+"-giveup.json", giveUpRecord{giveUpArgs: giveUpArgs{Reason: timeRanOut}, JobClosest: s.check.closest})
+		return nil, s.trace, gaveUp{Reason: timeRanOut, Closest: s.check.closest}
 	}
 	if err != nil {
 		return nil, s.trace, errors.Wrap(err, "running the free-form chat")
@@ -132,6 +144,12 @@ func (s *chatSession) tracing(defs []*llm.FunctionDefinition) []*llm.FunctionDef
 		wrapped := *def
 		wrapped.Function = func(ctx context.Context, args map[string]any) genai.FunctionResponse {
 			resp := fn(ctx, args)
+			if w := s.a.ff.windDown; !w.IsZero() && time.Now().After(w) {
+				if resp.Response == nil {
+					resp.Response = map[string]any{}
+				}
+				resp.Response["notice"] = windDownNotice
+			}
 			argsJSON, _ := json.Marshal(args)
 			respJSON, _ := json.Marshal(resp.Response)
 			s.trace = append(s.trace, traced(name, string(argsJSON), string(respJSON), nil))

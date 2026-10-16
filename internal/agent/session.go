@@ -307,6 +307,11 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 			cfg := *config
 			return llm.NewChat(ctx, deps.Client, cmp.Or(deps.Model, llm.GeminiPro), llm.WithSystemPrompt(&cfg, genai.NewPartFromText(system)), &llm.ChatOpts{Tools: tools, MaxToolIterations: freeFormToolCalls, Retrier: deps.Retrier})
 		})
+		// A free-form turn can run past the budget that gates iterations, so it
+		// winds down at the same point.
+		if req.IterationBudget > 0 {
+			a.ff.windDown = time.Now().Add(req.IterationBudget)
+		}
 	}
 	if req.InitialIteration != nil {
 		err := a.InitializeFromIteration(ctx, req.InitialIteration)
