@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
@@ -59,6 +60,7 @@ var (
 	prebuildDir    = flag.String("prebuild-dir", "", "Prefix within the prebuild bucket under which tools are stored")
 	prebuildAuth   = flag.Bool("prebuild-auth", false, "Whether to authenticate requests to the prebuild tools bucket")
 	freeForm       = flag.Bool("freeform", false, "The model works in the retained container until the artifact matches, then the job formalizes the commands into a build (scratch execution mode only)")
+	seed           = flag.String("seed", "", "JSON AgentSeed: another version's outcome the session starts from")
 	singleEnv      = flag.Bool("single-env", false, "Run the agent entirely in the build container: mount the tools, upstream artifact, and prior attempts in the container and withdraw the host shell tool")
 )
 
@@ -196,6 +198,12 @@ func main() {
 		GitCache:           gitCache,
 		CratesRegistryStub: cratesRegistryStub,
 		CratesCache:        cratesCache,
+	}
+	if *seed != "" {
+		deps.Seed = new(schema.AgentSeed)
+		if err := json.Unmarshal([]byte(*seed), deps.Seed); err != nil {
+			log.Fatal("parsing seed: ", err)
+		}
 	}
 	if mode == schema.AgentExecutionModeScratch {
 		stubs := scratch.Stubs{

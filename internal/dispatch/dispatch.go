@@ -158,15 +158,16 @@ func (r Request) Config() (Config, error) {
 // Dispatcher holds one pass's dependencies. Per-campaign failures are
 // reported to Err.
 type Dispatcher struct {
-	Err       io.Writer
-	Campaigns db.Campaigns
-	Budgets   db.Budgets
-	Attempts  db.Attempts
-	Sessions  db.Sessions
-	Create    api.StubFn[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]]
-	Agent     api.StubFn[schema.AgentCreateRequest, schema.AgentCreateResponse]
-	Config    Config
-	Now       time.Time
+	Err        io.Writer
+	Campaigns  db.Campaigns
+	Budgets    db.Budgets
+	Attempts   db.Attempts
+	Sessions   db.Sessions
+	Iterations db.Iterations // seeds agents from sibling versions
+	Create     api.StubFn[schema.RebuildPackageRequest, longrunning.Operation[schema.Verdict]]
+	Agent      api.StubFn[schema.AgentCreateRequest, schema.AgentCreateResponse]
+	Config     Config
+	Now        time.Time
 
 	agents    int        // agent launches this run, counted across refills so EvalModels rotate evenly
 	mu        sync.Mutex // guards state the pass's workers share
@@ -708,13 +709,23 @@ func (d *Dispatcher) start(ctx context.Context, c scheduler.Campaign, model stri
 		})
 		return "", err
 	case scheduler.StageAgent:
-		resp, err := d.Agent(ctx, schema.AgentCreateRequest{
+		req := schema.AgentCreateRequest{
 			Target:                 c.Target(),
 			RunID:                  c.LastRunID,
 			MaxIterations:          d.Config.AgentIterations,
 			IterationBudgetSeconds: int(d.Config.AgentIterationBudget.Seconds()),
 			Model:                  model,
-		})
+		}
+		if d.Iterations != nil {
+			seed, err := d.seedFor(ctx, c.Target())
+			if err != nil {
+				fmt.Fprintf(d.errw(), "seeding %s: %v\n", scheduler.TargetID(c.Target()), err)
+			} else if seed != nil {
+				req.Context = &schema.AgentContext{Seed: seed}
+				req.MaxIterations++ // the seed's build counts as one
+			}
+		}
+		resp, err := d.Agent(ctx, req)
 		if err != nil {
 			return "", err
 		}

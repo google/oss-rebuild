@@ -65,6 +65,8 @@ type AgentDeps struct {
 	Retrier            ratex.Retrier     // Paces and retries the auxiliary model calls. Zero value calls once.
 	CratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 	CratesCache        *cratesregistryservice.Cache // Inference's crates.io metadata.
+	Seed               *schema.AgentSeed            // A sibling version's winning build, tried after the inference attempt.
+	SeedOrigin         *schema.StrategyOneOf        // The inference proposal the seed's session started from.
 }
 
 type ProposeOpts struct {
@@ -119,6 +121,7 @@ type RunSessionDeps struct {
 	CratesCache        *cratesregistryservice.Cache // Inference's crates.io metadata.
 	FreeForm           bool                         // Free-form mode. Needs ScratchRunner.
 	Now                func() time.Time             // Budget clock. Nil uses time.Now.
+	Seed               *schema.AgentSeed            // A sibling version's winning build to start from.
 }
 
 // transcriptOpts names iteration iterNum's transcript directory, or nothing
@@ -288,7 +291,11 @@ func doSession(ctx context.Context, req RunSessionReq, deps RunSessionDeps) (com
 		Retrier:            deps.Retrier,
 		CratesRegistryStub: deps.CratesRegistryStub,
 		CratesCache:        deps.CratesCache,
+		Seed:               deps.Seed,
 	})
+	if deps.Seed != nil && deps.Seed.Strategy != nil {
+		a.deps.SeedOrigin = readSeedOrigin(ctx, deps.GCSClient, deps.SessionsBucket, deps.Seed.Session)
+	}
 	if deps.ScratchRunner != nil {
 		a.deps.Shell = deps.ScratchRunner
 		a.deps.BuildEnv = local.DockerRunBuildEnv()

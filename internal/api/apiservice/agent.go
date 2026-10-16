@@ -183,6 +183,14 @@ func AgentCreate(ctx context.Context, req schema.AgentCreateRequest, deps *Agent
 		if req.IterationBudgetSeconds > 0 {
 			args = append(args, fmt.Sprintf("--iteration-budget=%ds", req.IterationBudgetSeconds))
 		}
+		if req.Context != nil && req.Context.Seed != nil {
+			b, err := json.Marshal(req.Context.Seed)
+			if err != nil {
+				releaseScratch()
+				return nil, api.AsStatus(codes.Internal, errors.Wrap(err, "encoding seed"))
+			}
+			args = append(args, "--seed="+string(b))
+		}
 		if executionMode == schema.AgentExecutionModeScratch {
 			args = append(args,
 				"--execution-mode="+string(schema.AgentExecutionModeScratch),

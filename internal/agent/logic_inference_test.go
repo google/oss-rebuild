@@ -58,12 +58,12 @@ func TestToolchainStrategy(t *testing.T) {
 }
 
 func TestHistoryContextNamesInferenceFailure(t *testing.T) {
-	a := &defaultAgent{inferenceFailure: "rust version unsupported in MUSL builds"}
+	a := &defaultAgent{deps: &AgentDeps{}, inferenceFailure: "rust version unsupported in MUSL builds"}
 	prompt := strings.Join(a.historyContext(nil), "\n")
 	if !strings.Contains(prompt, "## Inference") || !strings.Contains(prompt, "rust version unsupported in MUSL builds") {
 		t.Errorf("prompt lacks the inference section:\n%s", prompt)
 	}
-	if strings.Contains(strings.Join((&defaultAgent{}).historyContext(nil), "\n"), "## Inference") {
+	if strings.Contains(strings.Join((&defaultAgent{deps: &AgentDeps{}}).historyContext(nil), "\n"), "## Inference") {
 		t.Error("inference section present without a failure")
 	}
 }

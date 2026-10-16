@@ -537,7 +537,16 @@ func (r AgentCreateRequest) Validate() error {
 
 // AgentContext provides context for agent execution
 type AgentContext struct {
-	PriorSessions []string `json:"prior_sessions,omitempty"`
+	PriorSessions []string   `json:"prior_sessions,omitempty"`
+	Seed          *AgentSeed `json:"seed,omitempty"`
+}
+
+// AgentSeed is the confirmed build of a session that reproduced another
+// version of the same package, offered to a session as a starting point.
+type AgentSeed struct {
+	Version  string         `json:"version"`
+	Session  string         `json:"session"`
+	Strategy *StrategyOneOf `json:"strategy,omitempty"`
 }
 
 // AgentToolCall records one diagnosis tool call, written best effort to the
