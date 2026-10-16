@@ -29,39 +29,39 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var (
-	errNoTap = errors.New(`Device "mvmtap0" does not exist`)
-)
-
-// testDeps returns GuestDeps over a mock executor. The mock records
-// commands, runs the guest until stopped, answers ip(8) tap queries and
-// creates the overlays qemu-img would. Each guest comes up on a guestNet
-// while its QEMU runs and echoes its commands' argv. Tests that read the
-// clock run in a synctest bubble.
+// testDeps is testDepsN for a single-slot host.
 func testDeps(t *testing.T) (*GuestDeps, *execx.MockCommandExecutor) {
 	t.Helper()
+	return testDepsN(t, 1)
+}
+
+// testDepsN returns GuestDeps for a host of slots slots over a mock
+// executor. The mock records commands, runs guests until stopped, answers
+// ip(8) tap queries and creates the overlays qemu-img would. Each guest
+// comes up on a guestNet while its QEMU runs and echoes its commands'
+// argv. Tests that read the clock run in a synctest bubble.
+func testDepsN(t *testing.T, slots int) (*GuestDeps, *execx.MockCommandExecutor) {
+	t.Helper()
 	root := t.TempDir()
-	guestNet, err := GuestNetFor(netip.MustParsePrefix("10.200.0.0/24"))
+	guestNet, err := GuestNetFor(netip.MustParsePrefix("10.200.0.0/24"), slots)
 	if err != nil {
 		t.Fatalf("GuestNetFor: %v", err)
 	}
 	mock := execx.NewMockCommandExecutor()
-	var (
-		mu  sync.Mutex
-		tap bool
-	)
+	var mu sync.Mutex
+	taps := map[string]bool{}
 	mock.SetExecuteFunc(func(_ context.Context, _ execx.CommandOptions, name string, args ...string) error {
 		mu.Lock()
 		defer mu.Unlock()
-		switch strings.Join(append([]string{name}, args...), " ") {
-		case "ip link show mvmtap0":
-			if !tap {
-				return errNoTap
+		switch line := strings.Join(append([]string{name}, args...), " "); {
+		case strings.HasPrefix(line, "ip link show "):
+			if !taps[args[2]] {
+				return errors.Errorf("Device %q does not exist", args[2])
 			}
-		case "ip tuntap add dev mvmtap0 mode tap":
-			tap = true
-		case "ip link del mvmtap0":
-			tap = false
+		case strings.HasPrefix(line, "ip tuntap add dev "):
+			taps[args[3]] = true
+		case strings.HasPrefix(line, "ip link del "):
+			delete(taps, args[2])
 		}
 		if name == "qemu-img" {
 			return os.WriteFile(args[len(args)-1], nil, 0o644)
@@ -69,7 +69,7 @@ func testDeps(t *testing.T) (*GuestDeps, *execx.MockCommandExecutor) {
 		return nil
 	})
 	deps := &GuestDeps{
-		Host: NewHost(time.Now()),
+		Host: NewHost(time.Now(), slots),
 		Config: Config{
 			Layout: Layout{
 				GuestDir: filepath.Join(root, "guest"),
@@ -90,11 +90,13 @@ func testDeps(t *testing.T) (*GuestDeps, *execx.MockCommandExecutor) {
 	guestsOn(t, deps)
 	t.Cleanup(func() {
 		deps.Host.mu.Lock()
-		p, stop := deps.Host.proc, deps.Host.stop
+		slots := slices.Clone(deps.Host.slots)
 		deps.Host.mu.Unlock()
-		if p != nil {
-			stop()
-			<-p.Done()
+		for _, s := range slots {
+			if s.proc != nil {
+				s.stop()
+				<-s.proc.Done()
+			}
 		}
 	})
 	return deps, mock
@@ -114,19 +116,21 @@ func commands(mock *execx.MockCommandExecutor) []string {
 	return out
 }
 
-// bootCommands is what one boot into an empty slot issues.
-func bootCommands(deps *GuestDeps) []string {
+// bootCommands is what booting an empty slot i issues.
+func bootCommands(deps *GuestDeps, i int) []string {
 	cfg := deps.Config
 	l := cfg.Layout
+	tap := guestTap(i)
 	return []string{
-		"qemu-img create -q -f qcow2 -F raw -b /golden/rootfs.raw " + l.overlay(),
-		"qemu-img create -q -f qcow2 -F raw -b /golden/scratch.raw " + l.scratch(),
-		"ip link show mvmtap0",
-		"ip tuntap add dev mvmtap0 mode tap",
-		"ip link set mvmtap0 mtu 1460",
-		"ip link set mvmtap0 master mvmbr0",
-		"ip link set mvmtap0 up",
-		keyParam.ReplaceAllString(strings.Join(qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net, GuestCredential{}), " "), "$1=*"),
+		"qemu-img create -q -f qcow2 -F raw -b /golden/rootfs.raw " + l.overlay(i),
+		"qemu-img create -q -f qcow2 -F raw -b /golden/scratch.raw " + l.scratch(i),
+		"ip link show " + tap,
+		"ip tuntap add dev " + tap + " mode tap",
+		"ip link set " + tap + " mtu 1460",
+		"ip link set " + tap + " master mvmbr0",
+		"ip link set " + tap + " type bridge_slave isolated on",
+		"ip link set " + tap + " up",
+		keyParam.ReplaceAllString(strings.Join(qemuArgv(cfg.QEMUBin, cfg.Guest, l, cfg.Net, i, GuestCredential{}), " "), "$1=*"),
 	}
 }
 
@@ -143,10 +147,10 @@ func guestProc(t *testing.T, deps *GuestDeps) execx.Handle {
 	t.Helper()
 	deps.Host.mu.Lock()
 	defer deps.Host.mu.Unlock()
-	if deps.Host.proc == nil {
+	if deps.Host.slots[0].proc == nil {
 		t.Fatal("no guest process in the slot")
 	}
-	return deps.Host.proc
+	return deps.Host.slots[0].proc
 }
 
 func running(h execx.Handle) bool {
@@ -206,7 +210,7 @@ func killGuest(t *testing.T, deps *GuestDeps) {
 }
 
 func guestDirExists(deps *GuestDeps) bool {
-	_, err := os.Stat(deps.Config.Layout.GuestDir)
+	_, err := os.Stat(deps.Config.Layout.slotDir(0))
 	return err == nil
 }
 
@@ -218,7 +222,7 @@ func TestGuestAdmit_BootsInOrder(t *testing.T) {
 			t.Errorf("guest mismatch (-want +got):\n%s", diff)
 		}
 		// Disks, tap, then the guest with the pinned argv.
-		want := bootCommands(deps)
+		want := bootCommands(deps, 0)
 		if diff := cmp.Diff(want, commands(mock)); diff != "" {
 			t.Errorf("boot commands mismatch (-want +got):\n%s", diff)
 		}
@@ -294,7 +298,7 @@ func TestGuestAdmit_BootFailureLeavesNoSlotHeld(t *testing.T) {
 		t.Fatalf("Admit with a guest that cannot start = %v; want Internal", err)
 	}
 	// Everything the failed boot created is torn down again.
-	want := append(bootCommands(deps), "ip link show mvmtap0", "ip link del mvmtap0")
+	want := append(bootCommands(deps, 0), "ip link show mvmtap0", "ip link del mvmtap0")
 	if diff := cmp.Diff(want, commands(mock)); diff != "" {
 		t.Errorf("commands mismatch (-want +got):\n%s", diff)
 	}
@@ -314,7 +318,7 @@ func TestGuestAdmit_ReclaimsADeadGuestsSlot(t *testing.T) {
 	mock.Reset()
 	b := admit(t, deps, "scratch-b")
 	// The dead guest's tap is reused, so only the tuntap add drops out.
-	want := slices.DeleteFunc(bootCommands(deps), func(c string) bool { return strings.HasPrefix(c, "ip tuntap add") })
+	want := slices.DeleteFunc(bootCommands(deps, 0), func(c string) bool { return strings.HasPrefix(c, "ip tuntap add") })
 	if diff := cmp.Diff(want, commands(mock)); diff != "" {
 		t.Errorf("reboot commands mismatch (-want +got):\n%s", diff)
 	}
@@ -564,3 +568,71 @@ func TestGuestRoutes_OverTheWire(t *testing.T) {
 
 // errOf drops a stub's result.
 func errOf[T any](_ *T, err error) error { return err }
+
+func TestGuestAdmit_FillsEverySlotThenRefuses(t *testing.T) {
+	deps, _ := testDepsN(t, 2)
+	ctx := context.Background()
+	a, b := admit(t, deps, "scratch-a"), admit(t, deps, "scratch-b")
+	if a.IP != "10.200.0.2" || b.IP != "10.200.0.3" {
+		t.Errorf("guest IPs = %s, %s; want one address per slot", a.IP, b.IP)
+	}
+	list, err := Guests(ctx, ListRequest{}, deps)
+	if err != nil || len(list.Guests) != 2 || list.Slots != 2 {
+		t.Errorf("Guests = %+v, %v; want both guests of 2 slots", list, err)
+	}
+	if _, err := GuestAdmit(ctx, AdmitRequest{ScratchID: "scratch-c"}, deps); status.Code(err) != codes.ResourceExhausted {
+		t.Errorf("third GuestAdmit = %v; want ResourceExhausted", err)
+	}
+	// A freed slot takes the next session, under the freed slot's names.
+	if _, err := GuestDelete(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); err != nil {
+		t.Fatalf("GuestDelete: %v", err)
+	}
+	if c := admit(t, deps, "scratch-c"); c.IP != a.IP {
+		t.Errorf("scratch-c IP = %s; want the freed slot's %s", c.IP, a.IP)
+	}
+}
+
+func TestGuestDelete_LeavesOtherSlotsRunning(t *testing.T) {
+	deps, mock := testDepsN(t, 2)
+	ctx := context.Background()
+	admit(t, deps, "scratch-a")
+	admit(t, deps, "scratch-b")
+	mock.Reset()
+	if _, err := GuestDelete(ctx, GuestRequest{ScratchID: "scratch-a"}, deps); err != nil {
+		t.Fatalf("GuestDelete: %v", err)
+	}
+	if diff := cmp.Diff([]string{"ip link show mvmtap0", "ip link del mvmtap0"}, commands(mock)); diff != "" {
+		t.Errorf("delete commands (-want +got):\n%s", diff)
+	}
+	deps.Host.mu.Lock()
+	other := deps.Host.slots[1]
+	deps.Host.mu.Unlock()
+	if other.guest == nil || other.guest.ScratchID != "scratch-b" || !running(other.proc) {
+		t.Errorf("slot 1 = %+v; want scratch-b still running", other.guest)
+	}
+	if _, err := os.Stat(deps.Config.Layout.slotDir(1)); err != nil {
+		t.Errorf("slot 1 dir: %v; want it kept", err)
+	}
+	if guestDirExists(deps) {
+		t.Error("slot 0 dir survived its guest's delete")
+	}
+}
+
+func TestGuestHealth_OneGuestExitingLeavesTheOther(t *testing.T) {
+	deps, _ := testDepsN(t, 2)
+	ctx := context.Background()
+	admit(t, deps, "scratch-a")
+	admit(t, deps, "scratch-b")
+	killGuest(t, deps) // the last guest started: scratch-b
+	if _, err := GuestHealth(ctx, GuestRequest{ScratchID: "scratch-b"}, deps); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("GuestHealth(scratch-b) = %v; want FailedPrecondition for its exit", err)
+	}
+	list, err := Guests(ctx, ListRequest{}, deps)
+	if err != nil || len(list.Guests) != 1 || list.Guests[0].ScratchID != "scratch-a" {
+		t.Errorf("Guests = %+v, %v; want scratch-a alone", list, err)
+	}
+	// The dead guest's slot is free for the next session.
+	if c := admit(t, deps, "scratch-c"); c.IP != "10.200.0.3" {
+		t.Errorf("scratch-c IP = %s; want the exited guest's slot", c.IP)
+	}
+}
