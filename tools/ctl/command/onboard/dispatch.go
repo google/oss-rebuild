@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -24,6 +25,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 type dispatchConfig struct {
@@ -33,6 +35,7 @@ type dispatchConfig struct {
 	MaxAgent            int
 	AgentIterations     int
 	AgentModel          string
+	Workers             int
 	BuildTimeCap        time.Duration
 	SessionTimeCap      time.Duration
 	Period              time.Duration
@@ -50,6 +53,9 @@ func (c dispatchConfig) Validate() error {
 	}
 	if c.API == "" {
 		return errors.New("api is required")
+	}
+	if c.Workers < 1 {
+		return errors.New("workers must be positive")
 	}
 	return nil
 }
@@ -70,27 +76,53 @@ type dispatcher struct {
 	agent     api.StubFn[schema.AgentCreateRequest, schema.AgentCreateResponse]
 	cfg       dispatchConfig
 	now       time.Time
+	mu        sync.Mutex // guards state the pass's workers share
 }
 
+// passSummary is what one pass saw and did.
 type passSummary struct {
-	Observed, Dispatched, AgentDispatched int
+	QueuedInfer, QueuedAgent              int // as of the start of the pass
+	InflightBuilds, InflightSessions      int // including the pass's own dispatches
+	Observed                              int
+	Approved, Dispatched, AgentDispatched int
 }
 
 // pass observes every in-flight campaign, then dispatches the queued ones
 // that fit under the caps. A campaign observed back into the queue is
 // eligible again in the same pass. The caps count what is still in flight
-// after observation.
+// after observation. Both phases fan out across Workers.
 func (d *dispatcher) pass(ctx context.Context, active []scheduler.Campaign, budget *scheduler.Budget) passSummary {
 	var sum passSummary
+	for _, c := range active {
+		if c.State != scheduler.StateQueued {
+			continue
+		}
+		if c.Stage == scheduler.StageAgent {
+			sum.QueuedAgent++
+		} else {
+			sum.QueuedInfer++
+		}
+	}
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(d.cfg.Workers)
+	for i := range active {
+		if active[i].State != scheduler.StateInFlight {
+			continue
+		}
+		g.Go(func() error {
+			if next, ok := d.observe(gctx, active[i], budget); ok {
+				active[i] = next
+				d.mu.Lock()
+				sum.Observed++
+				d.mu.Unlock()
+			}
+			return nil
+		})
+	}
+	g.Wait()
 	var queued []scheduler.Campaign
 	var inflightBuilds, inflightSessions int
 	for _, c := range active {
-		if c.State == scheduler.StateInFlight {
-			if next, ok := d.observe(ctx, c, budget); ok {
-				sum.Observed++
-				c = next
-			}
-		}
 		switch {
 		case c.State == scheduler.StateQueued:
 			queued = append(queued, c)
@@ -101,19 +133,33 @@ func (d *dispatcher) pass(ctx context.Context, active []scheduler.Campaign, budg
 			inflightBuilds++
 		}
 	}
+	// Selection reserves slots up front, so a failed launch idles its slot
+	// until the next pass retries it.
 	caps := d.caps(*budget, inflightBuilds, inflightSessions)
-	for _, c := range scheduler.Select(queued, caps, d.now, d.cfg.FreshnessK, d.cfg.FreshnessTauHours) {
-		if err := d.launch(ctx, c); err != nil {
-			if !errors.Is(err, errConflict) {
-				fmt.Fprintf(d.io.Err, "dispatch %s (%s): %v\n", scheduler.TargetID(c.Target()), c.Stage, err)
+	selected := scheduler.Select(queued, caps, d.now, d.cfg.FreshnessK, d.cfg.FreshnessTauHours)
+	sum.Approved = len(selected)
+	g, gctx = errgroup.WithContext(ctx)
+	g.SetLimit(d.cfg.Workers)
+	for _, c := range selected {
+		g.Go(func() error {
+			if err := d.launch(gctx, c); err != nil {
+				if !errors.Is(err, errConflict) {
+					fmt.Fprintf(d.io.Err, "dispatch %s (%s): %v\n", scheduler.TargetID(c.Target()), c.Stage, err)
+				}
+				return nil
 			}
-			continue
-		}
-		sum.Dispatched++
-		if c.Stage == scheduler.StageAgent {
-			sum.AgentDispatched++
-		}
+			d.mu.Lock()
+			sum.Dispatched++
+			if c.Stage == scheduler.StageAgent {
+				sum.AgentDispatched++
+			}
+			d.mu.Unlock()
+			return nil
+		})
 	}
+	g.Wait()
+	sum.InflightBuilds = inflightBuilds + sum.Dispatched - sum.AgentDispatched
+	sum.InflightSessions = inflightSessions + sum.AgentDispatched
 	return sum
 }
 
@@ -274,7 +320,9 @@ func (d *dispatcher) mutateBudget(ctx context.Context, scope string, fn func(*sc
 // charge records one completion's spend on the global ledger and on the local
 // copy that dispatch caps read.
 func (d *dispatcher) charge(ctx context.Context, budget *scheduler.Budget, s scheduler.Spend) {
+	d.mu.Lock()
 	budget.Add(s)
+	d.mu.Unlock()
 	_, err := d.mutateBudget(ctx, scheduler.BudgetScopeGlobal, func(b *scheduler.Budget) {
 		if b.Scope == "" || b.Expired(d.now, d.cfg.Period) {
 			*b = scheduler.Budget{Scope: scheduler.BudgetScopeGlobal, PeriodStart: d.now}
@@ -396,9 +444,9 @@ func dispatchHandler(ctx context.Context, cfg dispatchConfig, deps *Deps) (*act.
 		return nil, errors.Wrap(err, "listing campaigns")
 	}
 	sum := d.pass(ctx, active, &budget)
-	fmt.Fprintf(deps.IO.Out, "dispatch: observed %d, dispatched %d (%d agent); period spend: %s build, %s session\n",
-		sum.Observed, sum.Dispatched, sum.AgentDispatched,
-		time.Duration(budget.BuildSeconds)*time.Second, time.Duration(budget.SessionSeconds)*time.Second)
+	fmt.Fprintf(deps.IO.Out, "pass: queued infer=%d agent=%d | inflight builds=%d sessions=%d | observed %d | dispatched %d (%d agent; approved %d) | spend %s build, %s session, %d tokens\n",
+		sum.QueuedInfer, sum.QueuedAgent, sum.InflightBuilds, sum.InflightSessions, sum.Observed, sum.Dispatched, sum.AgentDispatched, sum.Approved,
+		time.Duration(budget.BuildSeconds)*time.Second, time.Duration(budget.SessionSeconds)*time.Second, budget.Tokens)
 	return &act.NoOutput{}, nil
 }
 
@@ -435,6 +483,7 @@ func dispatchCommand() *cobra.Command {
 	set.IntVar(&cfg.MaxAgent, "max-agent", 5, "max agent-stage dispatches this pass; 0 = unbounded")
 	set.IntVar(&cfg.AgentIterations, "agent-iterations", 5, "max agent iterations per session")
 	set.StringVar(&cfg.AgentModel, "agent-model", "", "Gemini model id for agent sessions; empty uses the agent's default")
+	set.IntVar(&cfg.Workers, "workers", 12, "concurrent observations and launches within a pass")
 	set.DurationVar(&cfg.BuildTimeCap, "build-time-cap", 0, "build execution time cap per period; 0 = uncapped")
 	set.DurationVar(&cfg.SessionTimeCap, "session-time-cap", 0, "agent session time cap per period; 0 = uncapped")
 	set.DurationVar(&cfg.Period, "period", 24*time.Hour, "budget period length")
