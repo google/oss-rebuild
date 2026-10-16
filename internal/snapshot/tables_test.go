@@ -464,23 +464,38 @@ func TestSignalCoverage(t *testing.T) {
 		attempts: []schema.RebuildAttempt{
 			attempt("pypi", "pkgA", "1.0", "r1", true, schema.RebuildStatusSuccess, at(0)),
 			attempt("pypi", "pkgB", "1.0", "r2", false, schema.RebuildStatusFailure, at(0)),
+			attempt("pypi", "pkgD", "1.0", "r3", false, schema.RebuildStatusFailure, at(0)),
 		},
-		// pkgC is enqueued but never attempted: tracked mass, not current.
-		campaigns: []scheduler.Campaign{{Ecosystem: "pypi", Package: "pkgC", Version: "1.0", Artifact: "1.0.whl", Updated: at(0)}},
+		campaigns: []scheduler.Campaign{
+			// pkgA is current, so a queued newer version leaves it current.
+			{Ecosystem: "pypi", Package: "pkgA", Version: "2.0", Artifact: "2.0.whl", State: scheduler.StateQueued, Updated: at(0)},
+			// pkgB failed and is dispatched again: retrying.
+			{Ecosystem: "pypi", Package: "pkgB", Version: "1.0", Artifact: "1.0.whl", State: scheduler.StateInFlight, Updated: at(0)},
+			// pkgC is enqueued, never attempted: tracked mass, queued.
+			{Ecosystem: "pypi", Package: "pkgC", Version: "1.0", Artifact: "1.0.whl", State: scheduler.StateQueued, Updated: at(0)},
+			// pkgD failed and waits on a person: attempted, not retrying.
+			{Ecosystem: "pypi", Package: "pkgD", Version: "1.0", Artifact: "1.0.whl", State: scheduler.StateNeedsTriage, Updated: at(0)},
+			// pkgE is dispatched but has no completed build yet: in flight.
+			{Ecosystem: "pypi", Package: "pkgE", Version: "1.0", Artifact: "1.0.whl", State: scheduler.StateInFlight, Updated: at(0)},
+		},
 		signals: []signals.PackageSignal{
 			{Ecosystem: "pypi", Package: "pkgA", Score: 0.5},
 			{Ecosystem: "pypi", Package: "pkgB", Score: 0.25},
 			{Ecosystem: "pypi", Package: "pkgC", Score: 0.25},
+			{Ecosystem: "pypi", Package: "pkgD", Score: 0.0},
+			{Ecosystem: "pypi", Package: "pkgE", Score: 0.0},
 		},
 		universe: []SignalUniverse{{Ecosystem: "pypi", Packages: 100, ScoreMass: 10.0, SidecarBuiltAt: at(0)}},
 	})
-	// The share divides by the pre-pruning universe mass: covering 3 of 100
+	// The share divides by the pre-pruning universe mass: covering 5 of 100
 	// ranked packages with one current reads as 5% of the mass, not as the
 	// flattering 50% of the tracked slice.
 	assertCount(t, db, `SELECT count(*) FROM signal_coverage WHERE ecosystem='pypi'
 		AND universe_packages=100 AND universe_mass=10.0
-		AND tracked_packages=3 AND tracked_mass=1.0
+		AND tracked_packages=5 AND tracked_mass=1.0
+		AND attempted_packages=3 AND attempted_mass=0.75
 		AND current_packages=1 AND current_mass=0.5
+		AND retrying_packages=1 AND in_flight_packages=1 AND queued_packages=1
 		AND covered_mass_share=0.05
 		AND sidecar_built_at='2026-07-01T12:00:00.000Z'`, "1")
 }
