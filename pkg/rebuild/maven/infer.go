@@ -11,8 +11,10 @@ import (
 	"io"
 	"log"
 	"math"
+	"net/http"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -45,13 +47,75 @@ func (Rebuilder) InferRepo(ctx context.Context, t rebuild.Target, mux rebuild.Re
 	if err != nil {
 		return "", err
 	}
-	for pom.SCMURL == "" && pom.Parent.ArtifactID != "" {
-		pom, err = ResolveParentPom(ctx, pom, mux)
+	// The scm URL is often a web viewer or retired host, so the connections
+	// are candidates too. A parent's scm stands in only when the POM has none,
+	// since org parents such as org.apache:apache name their own repositories.
+	scm := pom
+	for !scm.hasSCM() && scm.Parent.ArtifactID != "" {
+		scm, err = ResolveParentPom(ctx, scm, mux)
 		if err != nil {
 			return "", errors.Errorf("failed to resolve parent POM for %s: %v", t.Package, err)
 		}
 	}
-	return uri.CanonicalizeRepoURI(pom.Repo())
+	candidates := []string{scm.SCMURL, scm.SCMConnection, scm.SCMDeveloperConnection, scm.Repo()}
+	for i, c := range candidates {
+		candidates[i] = pom.Interpolate(c)
+	}
+	for _, c := range candidates {
+		if uri.FindCommonRepo(c) != "" {
+			return uri.CanonicalizeRepoURI(c)
+		}
+	}
+	for _, c := range candidates {
+		if repo := apacheMirror(ctx, c); repo != "" {
+			return repo, nil
+		}
+	}
+	return uri.CanonicalizeRepoURI(candidates[len(candidates)-1])
+}
+
+var (
+	apacheGitRE = regexp.MustCompile(`(?i)(?:gitbox|git-wip-us|git)\.apache\.org/repos/asf(?:\?p=|/)([\w.-]+?)(?:\.git)?(?:[;/?#]|$)`)
+	apacheSVNRE = regexp.MustCompile(`(?i)svn\.apache\.org/(?:repos/asf|viewvc)/([^?#]+)`)
+)
+
+// apacheMirror maps an Apache git or Subversion URL to the project's GitHub
+// mirror, checking that the mirror exists since Subversion paths only
+// suggest its name: commons/proper/logging/trunk is apache/commons-logging.
+func apacheMirror(ctx context.Context, u string) string {
+	var names []string
+	if m := apacheGitRE.FindStringSubmatch(u); m != nil {
+		names = []string{m[1]}
+	} else if m := apacheSVNRE.FindStringSubmatch(u); m != nil && !strings.Contains(m[1], "${") {
+		var segs []string
+		for _, s := range strings.Split(m[1], "/") {
+			if s == "trunk" || s == "tags" || s == "branches" {
+				break
+			}
+			if s != "" && s != "proper" && s != "jakarta" {
+				segs = append(segs, s)
+			}
+		}
+		if len(segs) > 0 {
+			names = slices.Compact([]string{strings.Join(segs, "-"), segs[len(segs)-1]})
+		}
+	}
+	for _, name := range names {
+		repo := "https://github.com/apache/" + strings.ToLower(name)
+		req, err := http.NewRequest(http.MethodHead, repo, nil)
+		if err != nil {
+			continue
+		}
+		resp, err := rebuild.DoContext(ctx, req)
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return repo
+		}
+	}
+	return ""
 }
 
 func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string, ropt *gitx.RepositoryOptions) (r rebuild.RepoConfig, err error) {
