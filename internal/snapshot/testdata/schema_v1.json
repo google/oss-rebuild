@@ -142,11 +142,16 @@
   "ecosystem_daily": {
     "attempts": "",
     "builder_seconds": "",
+    "cached_input_tokens": "",
     "day": "",
     "distinct_pkgs_attempted": "",
     "ecosystem": "TEXT",
     "errors": "",
     "first_time_successes": "",
+    "first_version_successes": "",
+    "inference_seconds": "",
+    "input_tokens": "",
+    "output_tokens": "",
     "scratch_vm_seconds": "",
     "successes": "",
     "tokens": ""
@@ -176,6 +181,25 @@
     "package": "TEXT",
     "versions_attempted": "",
     "versions_succeeded": ""
+  },
+  "popularity_tiers": {
+    "ecosystem": "TEXT",
+    "in_flight": "",
+    "not_reproduced": "",
+    "packages": "",
+    "queued": "",
+    "reproduced": "",
+    "retrying": "",
+    "tier": ""
+  },
+  "release_cohorts": {
+    "ecosystem": "TEXT",
+    "in_flight": "",
+    "not_reproduced": "",
+    "queued": "",
+    "release_year": "",
+    "reproduced": "",
+    "retrying": ""
   },
   "repo_metrics": {
     "bytes": "INTEGER",

@@ -5,6 +5,7 @@ package snapshot
 
 import (
 	"encoding/json"
+	"fmt"
 	"iter"
 	"strconv"
 	"testing"
@@ -243,13 +244,14 @@ func TestEcosystemDaily(t *testing.T) {
 	day1 := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
 	day2 := time.Date(2026, 7, 2, 8, 0, 0, 0, time.UTC)
 	costed := attempt("pypi", "p1", "1.0", "r1", true, schema.RebuildStatusSuccess, day1)
-	costed.Costs = &schema.AttemptCosts{BuilderSeconds: 120}
+	costed.Costs = &schema.AttemptCosts{BuilderSeconds: 120, InferenceSeconds: 30}
 	db, _ := fill(t, &fakeSource{
 		attempts: []schema.RebuildAttempt{
 			// Day 1, pypi: two attempts, one first-time success, one error.
 			costed,
 			attempt("pypi", "p2", "1.0", "r2", false, schema.RebuildStatusError, day1),
-			// Day 2, pypi: p1 succeeds again (NOT a first-time success).
+			// Day 2, pypi: p1 succeeds again at a new version, a first
+			// success for the version but not for the package.
 			attempt("pypi", "p1", "1.1", "r3", true, schema.RebuildStatusSuccess, day2),
 			// Running attempt ignored.
 			attempt("pypi", "p3", "1.0", "r4", false, schema.RebuildStatusRunning, day1),
@@ -262,7 +264,7 @@ func TestEcosystemDaily(t *testing.T) {
 				ID:        "s1",
 				ScratchID: "sc1",
 				Target:    rebuild.Target{Ecosystem: "pypi", Package: "p1"},
-				Usage:     &schema.TokenUsage{Input: 600, Output: 400},
+				Usage:     &schema.TokenUsage{Input: 600, CachedInput: 200, Output: 400},
 				Created:   day1,
 			},
 		},
@@ -272,10 +274,12 @@ func TestEcosystemDaily(t *testing.T) {
 	})
 	assertCount(t, db, `SELECT count(*) FROM ecosystem_daily WHERE ecosystem='pypi' AND day='2026-07-01'
 		AND attempts=2 AND successes=1 AND errors=1 AND distinct_pkgs_attempted=2
-		AND first_time_successes=1 AND tokens=1000 AND builder_seconds=120.0 AND scratch_vm_seconds=3600.0`, "1")
+		AND first_time_successes=1 AND tokens=1000 AND builder_seconds=120.0 AND scratch_vm_seconds=3600.0
+		AND inference_seconds=30.0 AND input_tokens=600 AND cached_input_tokens=200 AND output_tokens=400
+		AND first_version_successes=1`, "1")
 	assertCount(t, db, "SELECT count(*) FROM ecosystem_daily WHERE ecosystem='pypi' AND day='' AND attempts=1 AND successes=0", "1")
 	assertCount(t, db, `SELECT count(*) FROM ecosystem_daily WHERE ecosystem='pypi' AND day='2026-07-02'
-		AND first_time_successes=0 AND successes=1`, "1")
+		AND first_time_successes=0 AND first_version_successes=1 AND successes=1`, "1")
 }
 
 func TestVersionStatsAndTopGaps(t *testing.T) {
@@ -498,4 +502,43 @@ func TestSignalCoverage(t *testing.T) {
 		AND retrying_packages=1 AND in_flight_packages=1 AND queued_packages=1
 		AND covered_mass_share=0.05
 		AND sidecar_built_at='2026-07-01T12:00:00.000Z'`, "1")
+}
+
+func TestPopularityTiersAndReleaseCohorts(t *testing.T) {
+	year := func(y int) time.Time { return time.Date(y, 3, 1, 0, 0, 0, 0, time.UTC) }
+	// 101 tracked packages, so the last one falls outside the top 100.
+	var sigs []signals.PackageSignal
+	for i := range 101 {
+		sigs = append(sigs, signals.PackageSignal{Ecosystem: "pypi", Package: fmt.Sprintf("p%03d", i), Score: 1 - float64(i)/1000})
+	}
+	db, _ := fill(t, &fakeSource{
+		attempts: []schema.RebuildAttempt{
+			attempt("pypi", "p000", "1.0", "r1", true, schema.RebuildStatusSuccess, at(0)),
+			attempt("pypi", "p001", "1.0", "r2", false, schema.RebuildStatusFailure, at(0)),
+			attempt("pypi", "p100", "1.0", "r3", false, schema.RebuildStatusFailure, at(0)),
+		},
+		campaigns: []scheduler.Campaign{
+			// Reproduced, released 2020.
+			{Ecosystem: "pypi", Package: "p000", Version: "1.0", Artifact: "1.0.whl", State: scheduler.StateDone, Published: year(2020), Updated: at(0)},
+			// Failed and waiting on a person: not reproduced, released 2024.
+			{Ecosystem: "pypi", Package: "p001", Version: "1.0", Artifact: "1.0.whl", State: scheduler.StateNeedsTriage, Published: year(2024), Updated: at(0)},
+			// Never attempted: in flight and queued, released 2025.
+			{Ecosystem: "pypi", Package: "p002", Version: "1.0", Artifact: "1.0.whl", State: scheduler.StateInFlight, Published: year(2025), Updated: at(0)},
+			{Ecosystem: "pypi", Package: "p003", Version: "1.0", Artifact: "1.0.whl", State: scheduler.StateQueued, Published: year(2025), Updated: at(0)},
+			// The 101st failed and is queued again: retrying, released 2024.
+			{Ecosystem: "pypi", Package: "p100", Version: "1.0", Artifact: "1.0.whl", State: scheduler.StateQueued, Published: year(2024), Updated: at(0)},
+			// Untracked packages count in no cohort.
+			{Ecosystem: "pypi", Package: "unranked", Version: "1.0", Artifact: "1.0.whl", State: scheduler.StateQueued, Published: year(2025), Updated: at(0)},
+		},
+		signals:  sigs,
+		universe: []SignalUniverse{{Ecosystem: "pypi", Packages: 101, ScoreMass: 50.0, SidecarBuiltAt: at(0)}},
+	})
+	assertCount(t, db, `SELECT count(*) FROM popularity_tiers WHERE ecosystem='pypi' AND tier=100
+		AND packages=100 AND reproduced=1 AND not_reproduced=1 AND retrying=0 AND in_flight=1 AND queued=1`, "1")
+	for _, tier := range []string{"1000", "10000"} {
+		assertCount(t, db, `SELECT count(*) FROM popularity_tiers WHERE ecosystem='pypi' AND tier=`+tier+`
+			AND packages=101 AND reproduced=1 AND not_reproduced=1 AND retrying=1 AND in_flight=1 AND queued=1`, "1")
+	}
+	assertCount(t, db, `SELECT group_concat(release_year || ':' || reproduced || not_reproduced || retrying || in_flight || queued, ' ')
+		FROM (SELECT * FROM release_cohorts WHERE ecosystem='pypi' ORDER BY release_year)`, "2020:10000 2024:01100 2025:00011")
 }
