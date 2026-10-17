@@ -4,8 +4,10 @@
 package rubygems
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"path"
 	"regexp"
@@ -90,6 +92,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		return nil, errors.Errorf("unsupported hint type: %T", hint)
 	}
 
+	// The upstream gem supplies the publisher's RubyGems version and, when no
+	// tag names the version, the contents that locate its commit.
+	gem, gemErr := fetchGem(ctx, t, mux)
 	if lh != nil && lh.Ref != "" {
 		ref = lh.Ref
 		if lh.Dir != "" {
@@ -103,10 +108,15 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 		if err != nil {
 			return cfg, errors.Wrapf(err, "[INTERNAL] tag heuristic error")
 		}
-		if tagHeuristic == "" {
+		ref = tagHeuristic
+		if ref == "" && gemErr == nil {
+			if ref, err = archiveContentRef(ctx, gem, t.Package, t.Version, rcfg.Repository); err != nil {
+				log.Printf("archive-content search for %s@%s: %v", t.Package, t.Version, err)
+			}
+		}
+		if ref == "" {
 			return cfg, errors.New("no git ref found")
 		}
-		ref = tagHeuristic
 		dir = rcfg.Dir
 	}
 
@@ -141,7 +151,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 
 	// Infer Ruby and RubyGems versions from the upstream gem's metadata.
 	var rubyVersion, rubygemsVersion string
-	if spec, err := parseUpstreamGemSpec(ctx, t, mux); err != nil {
+	if gemErr != nil {
+		log.Printf("warning: %v", gemErr)
+	} else if spec, err := registry.ParseGemSpec(bytes.NewReader(gem)); err != nil {
 		log.Printf("warning: failed to extract gem spec from %s@%s: %v", t.Package, t.Version, err)
 	} else if rgv := spec.RubygemsVersion; rgv == "" {
 		log.Printf("warning: rubygems_version not found in gem spec for %s@%s", t.Package, t.Version)
@@ -223,13 +235,12 @@ func findGemspec(repo *git2.Repository, c *git2.Commit, pkg string) (gemspecPath
 	return grs[0].FileName, nil
 }
 
-// parseUpstreamGemSpec downloads the upstream .gem file and parses its
-// embedded gem specification.
-func parseUpstreamGemSpec(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (*registry.GemSpec, error) {
+func fetchGem(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) ([]byte, error) {
 	rc, err := mux.RubyGems.Artifact(ctx, t.Package, t.Version)
 	if err != nil {
-		return nil, errors.Wrap(err, "downloading gem")
+		return nil, errors.Wrapf(err, "downloading gem %s@%s", t.Package, t.Version)
 	}
 	defer rc.Close()
-	return registry.ParseGemSpec(rc)
+	b, err := io.ReadAll(rc)
+	return b, errors.Wrapf(err, "reading gem %s@%s", t.Package, t.Version)
 }
