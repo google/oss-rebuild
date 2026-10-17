@@ -425,6 +425,11 @@ resource "google_storage_bucket_iam_member" "agent-manages-sessions" {
   role   = "roles/storage.objectCreator"
   member = google_service_account.agent-job.member
 }
+resource "google_storage_bucket_iam_member" "agent-reads-sessions" {
+  bucket = google_storage_bucket.agent-sessions.name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.agent-job.member
+}
 resource "google_storage_bucket_iam_member" "agent-reads-metadata" {
   bucket = google_storage_bucket.agent-metadata.name
   role   = "roles/storage.objectViewer"
