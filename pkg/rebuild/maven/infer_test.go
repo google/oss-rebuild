@@ -161,6 +161,30 @@ func TestJDKVersionInference(t *testing.T) {
 	}
 }
 
+func TestReadUpstreamJar(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, e := range []*archive.ZipEntry{
+		{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\r\nCreated-By: Apache Maven 3.5.4\r\nBuild-Jdk: 1.8.0_181\r\n\r\nName: x\r\nBuild-Jdk: 99\r\n")},
+		{FileHeader: &zip.FileHeader{Name: "META-INF/maven/foo/bar/pom.xml"}, Body: []byte("<project>\r\n</project>\r\n")},
+	} {
+		if err := e.WriteTo(zw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	mux := rebuild.RegistryMux{Maven: &mockMavenRegistry{artifactCoordinates: map[artifactCoordinates][]byte{{"foo:bar", "1.0", maven.TypeJar}: buf.Bytes()}}}
+	got, err := readUpstreamJar(context.Background(), "foo:bar", "1.0", mux)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (upstreamJar{JDK: "1.8.0_181", Maven: "3.5.4", CRLF: true}); got != want {
+		t.Errorf("readUpstreamJar() = %+v, want %+v", got, want)
+	}
+}
+
 func TestJDKFor(t *testing.T) {
 	for _, tc := range []struct{ name, raw, want string }{
 		{"ExactUpdate", "1.8.0_181", "8u181"},
