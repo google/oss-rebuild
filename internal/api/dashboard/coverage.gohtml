@@ -53,6 +53,75 @@
     </div>
 </section>
 {{end}}
+{{with .Tiers}}
+<section class="card chart-card">
+    <div class="chart-title">Popularity tiers{{template "def" "Reproduced over attempted among each ecosystem's top tracked packages by score. A tier larger than the ecosystem holds all of its packages."}}</div>
+    <div class="tier-tiles">
+        {{range .}}
+        <div class="tier-tile">
+            <h3>{{.Ecosystem}}</h3>
+            {{range .Tiers}}
+            <div class="tier-row{{if lt .Pct 80}} weak{{end}}">
+                <span class="tier-label">{{.Label}}</span>
+                {{template "standing" .}}
+                <b>{{.Pct}}%</b>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+    {{template "standing-legend"}}
+</section>
+{{end}}
+{{with .Releases}}{{if .Ecos}}
+<section class="card chart-card">
+    <div class="chart-head">
+        <div class="chart-title">Release cohorts{{template "def" "Reproduced over attempted for the tracked packages' enqueued versions, by the year each was published."}}</div>
+        <div class="chart-switch" data-switch="release-chart" role="group" aria-label="Release cohort form">
+            <button type="button" data-form="releaselines" aria-pressed="true">With volume</button>
+            <button type="button" data-form="releaseshare" aria-pressed="false">Volume share</button>
+        </div>
+    </div>
+    <div class="chart" id="release-chart" data-chart="releaselines" data-src="releases" data-label="Reproduced rate by release year, by ecosystem"></div>
+    <div class="chart-note">With volume: the line is the rate on a 50&ndash;100% scale over each year's version count. Volume share: each column stacks a year's attempted versions to 100%, so its reproduced part is the rate. Counts are square-root scaled on one scale across ecosystems, and faded marks have fewer than 30 attempted.</div>
+    <script type="application/json" id="releases">{{.}}</script>
+</section>
+{{end}}{{end}}
+{{with .Spend}}{{if .Ecos}}
+<section class="card chart-card">
+    <div class="chart-title">Resources{{template "def" "Core-hours convert each resource to n2 vCPU-hours at list price: a build-worker hour is about 15, an inference request-hour about 7.7 (an upper bound, since instances serve concurrent requests), an agent guest hour 4, and a million LLM tokens about 15 fresh input, 1.5 cached input or 77 output."}}</div>
+    <div class="chart-sub">Core-hours by ecosystem, {{.From}} to {{.To}}</div>
+    <table class="spend">
+        <tr>
+            <th></th>
+            <th>Share{{template "def" "Of every ecosystem's core-hours."}}</th>
+            <th>What it went to</th>
+            <th>Per new version{{template "def" "Core-hours per version reproduced for the first time."}}</th>
+        </tr>
+        {{range .Ecos}}
+        <tr>
+            <td>{{.Ecosystem}}</td>
+            <td>{{.Share}}%</td>
+            <td class="barcell">
+                <div class="segbar" data-title="{{.Ecosystem}}, {{printf "%.0f" .Total}} core-hours">
+                    {{- if .Builder}}<span class="seg cost-builder" style="flex-grow: {{printf "%.2f" .Builder}}" data-c="cost-builder" data-v="{{printf "%.0f" .Builder}} core-h" data-k="build workers"></span>{{end}}
+                    {{- if .Inference}}<span class="seg cost-infer" style="flex-grow: {{printf "%.2f" .Inference}}" data-c="cost-infer" data-v="{{printf "%.0f" .Inference}} core-h" data-k="inference"></span>{{end}}
+                    {{- if .Guests}}<span class="seg cost-guest" style="flex-grow: {{printf "%.2f" .Guests}}" data-c="cost-guest" data-v="{{printf "%.0f" .Guests}} core-h" data-k="agent guests"></span>{{end}}
+                    {{- if .LLM}}<span class="seg cost-llm" style="flex-grow: {{printf "%.2f" .LLM}}" data-c="cost-llm" data-v="{{printf "%.0f" .LLM}} core-h" data-k="LLM tokens"></span>{{end -}}
+                </div>
+            </td>
+            <td>{{with .PerVersion}}{{.}} core-h{{else}}&mdash;{{end}}</td>
+        </tr>
+        {{end}}
+    </table>
+    <div class="legend">
+        <span class="legend-item"><i class="swatch cost-builder"></i>Build workers</span>
+        <span class="legend-item"><i class="swatch cost-infer"></i>Inference</span>
+        <span class="legend-item"><i class="swatch cost-guest"></i>Agent guests</span>
+        <span class="legend-item"><i class="swatch cost-llm"></i>LLM tokens</span>
+    </div>
+</section>
+{{end}}{{end}}
 {{if not .Detail}}
 {{if not .Ecos}}
 <p>No attempts, signals, or campaigns in the snapshot.</p>

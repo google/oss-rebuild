@@ -17,7 +17,7 @@
 </div>
 {{- end}}
 {{- define "standing"}}
-<div class="segbar" data-title="{{.Ecosystem}}">
+<div class="segbar" data-title="{{.Title}}">
     {{- if .Reproduced}}<span class="seg ok" style="flex-grow: {{.Reproduced}}" data-c="ok" data-v="{{num .Reproduced}}" data-k="reproduced"></span>{{end}}
     {{- with .NotReproduced}}<span class="seg warn" style="flex-grow: {{.}}" data-c="warn" data-v="{{num .}}" data-k="not reproduced"></span>{{end}}
     {{- if .Retrying}}<span class="seg retry" style="flex-grow: {{.Retrying}}" data-c="retry" data-v="{{num .Retrying}}" data-k="not reproduced, retrying"></span>{{end}}

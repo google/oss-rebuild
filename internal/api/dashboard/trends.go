@@ -82,6 +82,9 @@ type CoverageData struct {
 	Ecos     []CoverageEco // one per ecosystem, in name order
 	Detail   *CoverageEco  // the selected ecosystem with its weekly trend
 	Overview *Overview
+	Tiers    []EcoTiers // popularity tiers, by ecosystem
+	Releases *Releases  // release cohorts, nil if none enqueued
+	Spend    *Spend     // resource mix, nil without spend
 }
 
 func coverageWeekFromStmt(stmt *sqlite3.Stmt) CoverageWeek {
@@ -121,6 +124,15 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 		return nil, errors.Wrap(err, "loading overview")
 	}
 	data.Overview = overview
+	if data.Tiers, err = loadTiers(deps.Analytics); err != nil {
+		return nil, err
+	}
+	if data.Releases, err = loadReleases(deps.Analytics); err != nil {
+		return nil, err
+	}
+	if data.Spend, err = loadSpend(deps.Analytics); err != nil {
+		return nil, err
+	}
 	byEco := map[string]*CoverageEco{}
 	eco := func(name string) *CoverageEco {
 		if byEco[name] == nil {
@@ -217,6 +229,15 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 			})
 		if err != nil {
 			return nil, errors.Wrap(err, "querying coverage")
+		}
+		// An ecosystem tab shows only its own cohorts. Spend shares stay
+		// shares of every ecosystem's spend.
+		data.Tiers = onlyEco(data.Tiers, req.Eco, func(t EcoTiers) string { return t.Ecosystem })
+		if data.Releases != nil {
+			data.Releases.Ecos = onlyEco(data.Releases.Ecos, req.Eco, func(r EcoReleases) string { return r.Ecosystem })
+		}
+		if data.Spend != nil {
+			data.Spend.Ecos = onlyEco(data.Spend.Ecos, req.Eco, func(s EcoSpend) string { return s.Ecosystem })
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(byEco)) {
