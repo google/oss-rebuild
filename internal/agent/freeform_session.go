@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,7 +30,7 @@ func (a *defaultAgent) openFreeForm(ctx context.Context, opts *ProposeOpts, prev
 		return nil, "", errors.Wrap(err, "starting the free-form chat")
 	}
 	s.chat = chat
-	prompt := strings.Join(append(a.historyContext(prev), jobFreeFormGuidance()...), "\n")
+	prompt := strings.Join(slices.Concat(a.historyContext(prev), a.ecosystemExpertise(), jobFreeFormGuidance()), "\n")
 	return s, prompt, nil
 }
 

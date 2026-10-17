@@ -717,7 +717,13 @@ func (a *defaultAgent) ecosystemExpertise() []string {
 	// TODO: Actually implement this
 	switch a.t.Ecosystem {
 	case rebuild.Maven:
-		return []string{}
+		return []string{
+			"",
+			"# Maven",
+			"The upstream jar's META-INF/MANIFEST.MF records its build: Build-Jdk, Build-Jdk-Spec, or a JDK version in Created-By, and in older jars \"Created-By: Apache Maven X\". Class files and module-info.class change with the exact JDK release and with the plugin versions a Maven release defaults to, so match both before suspecting the source. JDKs are Temurin and AdoptOpenJDK tarballs. Maven releases are at https://repo1.maven.org/maven2/org/apache/maven/apache-maven/<version>/apache-maven-<version>-bin.tar.gz.",
+			"META-INF/maven/<groupId>/<artifactId>/pom.xml is a copy of the source pom.xml. CRLF there with LF in the repository means the publisher checked out with CRLF line endings (git clone -c core.autocrlf=true).",
+			"Build only the module that produces the artifact, from the reactor root with -pl <module> -am when it depends on sibling modules. -Dmaven.test.skip=true also skips compiling tests, which -DskipTests does not.",
+		}
 	case rebuild.Debian:
 		return []string{}
 	case rebuild.OCI:
