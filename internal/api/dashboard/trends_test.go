@@ -139,9 +139,27 @@ func TestCoverageRendersCohorts(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A tier past the ecosystem's size reads All N, and a weak tier is marked.
-	for _, want := range []string{`>Top 100<`, `>All 300<`, `tier-row weak`, `data-chart="releaselines"`, `data-form="releaseshare"`, `id="releases"`, `cost-llm`, `>69%<`, `10.8 core-h`} {
+	for _, want := range []string{`>Top 100<`, `>All 300<`, `tier-row weak`, `data-chart="releases"`, `id="releases"`, `cost-llm`, `>69%<`, `10.8 core-h`} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("rendered coverage lacks %s", want)
+		}
+	}
+}
+
+func TestTierLabel(t *testing.T) {
+	for _, tc := range []struct {
+		tier TierBand
+		want string
+	}{
+		{TierBand{Tier: 100, Packages: 100}, "Top 100"},
+		{TierBand{Tier: 1000, Packages: 1000}, "Top 1k"},
+		{TierBand{Tier: 10000, Packages: 5000}, "All 5k"},
+		{TierBand{Tier: 10000, Packages: 3973}, "All 4k"},
+		{TierBand{Tier: 10000, Packages: 1250}, "All 1.3k"},
+		{TierBand{Tier: 1000, Packages: 300}, "All 300"},
+	} {
+		if got := tc.tier.Label(); got != tc.want {
+			t.Errorf("Label() of %d of top %d = %q, want %q", tc.tier.Packages, tc.tier.Tier, got, tc.want)
 		}
 	}
 }
