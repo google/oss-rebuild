@@ -457,8 +457,9 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		return nil, errors.Wrapf(err, "[INTERNAL] Failed to read upstream artifact")
 	}
 	var reqs []string
+	var zr *zip.Reader
 	if strings.HasSuffix(a.Filename, ".whl") {
-		zr, err := zip.NewReader(bytes.NewReader(body), a.Size)
+		zr, err = zip.NewReader(bytes.NewReader(body), a.Size)
 		if err != nil {
 			return nil, errors.Wrapf(err, "[INTERNAL] Failed to initialize upstream zip reader")
 		}
@@ -511,8 +512,17 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		}, nil
 	} else if strings.HasSuffix(a.Filename, ".whl") && !strings.HasSuffix(a.Filename, "none-any.whl") {
 		tags := extractWheelTags(a.Filename)
-		if _, err := platform.ParsePlatformTags(tags.Platform); err != nil {
+		parsedTags, err := platform.ParsePlatformTags(tags.Platform)
+		if err != nil {
 			return nil, errors.Wrapf(err, "unsupported platform tag in wheel filename %s", a.Filename)
+		}
+		highest, err := platform.HighestLibcVersionTag(parsedTags)
+		if err != nil {
+			return nil, errors.Wrapf(err, "determining target libc for wheel %s", a.Filename)
+		}
+		sysDeps, err := inferELFSystemDeps(zr, highest.LibcImpl)
+		if err != nil {
+			log.Println(errors.Wrap(err, "extracting ELF system deps from wheel"))
 		}
 		return &PlatformWheelBuild{
 			Location: rebuild.Location{
@@ -525,6 +535,7 @@ func inferBuild(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 			ABITag:       tags.ABI,
 			PlatformTag:  tags.Platform,
 			Requirements: reqs,
+			SystemDeps:   sysDeps,
 			RegistryTime: a.UploadTime,
 			BaseImage:    inferBaseImage(platform.CibuildwheelPins, tags.Platform, a.UploadTime),
 		}, nil
