@@ -104,6 +104,11 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 }
 
+// buildToolRank breaks ties at equal depth: a JVM build file outranks a
+// package.json or build.xml beside it, which usually serve tooling rather than
+// the release.
+var buildToolRank = map[string]int{mavenBuildTool: 0, gradleBuildTool: 1, sbtBuildTool: 2, millBuildTool: 3, leiningenBuildTool: 4, antBuildTool: 5, ivyBuildTool: 6, npmBuildTool: 7}
+
 // inferBuildTool scans the repository for build tool indicators and returns the most probable build tool.
 // It checks for the presence of "pom.xml" (Maven) and "gradlew" (Gradle) files, prioritizing the tool found in the shallowest directory.
 // The build tool located in the directory closest to the repository root is chosen, as it likely represents the primary build system.
@@ -118,7 +123,7 @@ func inferBuildTool(commit *git2.Commit) (string, error) {
 	}
 	err = fileIter.ForEach(func(f *git2.File) error {
 		currentDepth := strings.Count(f.Name, "/")
-		if currentDepth >= minDepth {
+		if currentDepth > minDepth {
 			// No need to check deeper files if we already have a shallower candidate
 			return nil
 		}
@@ -157,7 +162,7 @@ func inferBuildTool(commit *git2.Commit) (string, error) {
 		case fileName == "build.sc" || fileName == "build.mill":
 			identifiedTool = millBuildTool
 		}
-		if identifiedTool != "" {
+		if identifiedTool != "" && (currentDepth < minDepth || buildToolRank[identifiedTool] < buildToolRank[bestBuildTool]) {
 			bestBuildTool = identifiedTool
 			minDepth = currentDepth
 		}

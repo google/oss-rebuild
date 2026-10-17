@@ -342,6 +342,18 @@ func TestBuildToolInference(t *testing.T) {
 			expectedBuildTool: mavenBuildTool,
 		},
 		{
+			name: "maven over package.json at the same depth",
+			repo: `
+            commits:
+              - id: initial-commit
+                files:
+                  package.json: |
+                      {}
+                  pom.xml: |
+                      <project></project>`,
+			expectedBuildTool: mavenBuildTool,
+		},
+		{
 			name: "sbt build file",
 			repo: `
             commits:
