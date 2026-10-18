@@ -249,9 +249,10 @@ resource "google_cloud_run_v2_job_iam_member" "cron-runs-snapshot-rollup" {
   member   = google_service_account.cron.member
 }
 resource "google_cloud_run_v2_service_iam_member" "orchestrator-calls-inference" {
-  location = google_cloud_run_v2_service.inference.location
-  project  = google_cloud_run_v2_service.inference.project
-  name     = google_cloud_run_v2_service.inference.name
+  for_each = google_cloud_run_v2_service.inference
+  location = each.value.location
+  project  = each.value.project
+  name     = each.value.name
   role     = "roles/run.invoker"
   member   = google_service_account.orchestrator.member
 }
