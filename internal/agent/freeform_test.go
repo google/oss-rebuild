@@ -213,7 +213,7 @@ func TestFreeFormProposeFormalizesTheHandoff(t *testing.T) {
 		t.Fatalf("%d model calls, want 4: three tool calls and the answer", n)
 	}
 	first := h.model.request(0)
-	for _, want := range []string{"call handoff once", `"name":"check_artifact"`, `"name":"handoff"`, `"name":"give_up"`, `"name":"run_in_container"`, "Work in the container until check_artifact reports a match, then call handoff"} {
+	for _, want := range []string{"call handoff once", "chain the commands with echo separators", `"name":"check_artifact"`, `"name":"handoff"`, `"name":"give_up"`, `"name":"run_in_container"`, "Work in the container until check_artifact reports a match, then call handoff"} {
 		if !strings.Contains(first, want) {
 			t.Errorf("the first model request lacks %q", want)
 		}
