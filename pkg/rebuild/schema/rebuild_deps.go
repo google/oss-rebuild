@@ -20,6 +20,7 @@ type RebuildDepsConfig struct {
 	Host                       string `json:"host"`
 	FirestoreProject           string `json:"firestore_project"`
 	InferenceURL               string `json:"inference_url"`
+	JumboInferenceURL          string `json:"jumbo_inference_url"` // empty sends every inference to InferenceURL
 	SigningKeyVersion          string `json:"signing_key_version"`
 	PublishForLocalServiceRepo bool   `json:"publish_for_local_service_repo"`
 	OverwriteAttestations      bool   `json:"overwrite_attestations"` // TODO: deprecate and remove

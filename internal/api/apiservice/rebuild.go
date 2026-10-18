@@ -56,7 +56,9 @@ type RebuildPackageDeps struct {
 	RemoteMetadataStoreBuilder func(ctx context.Context, uuid string) (rebuild.LocatableAssetStore, error)
 	OverwriteAttestations      bool // TODO: Remove in favor of req.OverwriteMode
 	InferStub                  api.StubFn[schema.InferenceRequest, schema.StrategyOneOf]
+	JumboInferStub             api.StubFn[schema.InferenceRequest, schema.StrategyOneOf] // takes JUMBO/too-large inferences, nil sends everything to InferStub
 	InferVersionStub           api.StubFn[schema.VersionRequest, schema.VersionResponse] // resolves inference /version for provenance
+	JumboInferVersionStub      api.StubFn[schema.VersionRequest, schema.VersionResponse] // resolves jumbo inference /version for provenance
 }
 
 type repoEntry struct {
@@ -90,7 +92,7 @@ func (r *resolution) Provenance() *schema.StrategyProvenance {
 }
 
 // getStrategy determines which strategy we should execute. If a build def repo was used, that data will be included as repoEntry.
-func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target, fromRepo bool) (*resolution, error) {
+func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target, fromRepo bool, hint schema.SizeHint) (*resolution, error) {
 	var strategy rebuild.Strategy
 	var entry *repoEntry
 	var inference *schema.InferenceRun
@@ -153,15 +155,11 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 	}
 	var inferTime time.Duration
 	if strategy == nil {
-		// Resolve the inference service's version out-of-band before the call.
-		// A rollout landing between the two calls can misattribute the
-		// version. Rollouts are rare and the window is narrow.
-		vr, err := deps.InferVersionStub(ctx, schema.VersionRequest{})
-		if err != nil {
-			return nil, errors.Wrap(err, "fetching inference version")
-		}
+		var version string
+		standardStub := withVersion(deps.InferStub, deps.InferVersionStub, &version)
+		jumboStub := withVersion(deps.JumboInferStub, deps.JumboInferVersionStub, &version)
 		inferStart := time.Now()
-		s, err := deps.InferStub(ctx, ireq)
+		s, err := infer(ctx, standardStub, jumboStub, ireq, hint)
 		if err != nil {
 			// TODO: Surface better error than Internal.
 			return nil, errors.Wrap(err, "fetching inference")
@@ -171,9 +169,49 @@ func getStrategy(ctx context.Context, deps *RebuildPackageDeps, t rebuild.Target
 		if err != nil {
 			return nil, errors.Wrap(err, "reading strategy")
 		}
-		inference = &schema.InferenceRun{Version: vr.Version}
+		inference = &schema.InferenceRun{Version: version}
 	}
 	return &resolution{Strategy: strategy, Entry: entry, Inference: inference, InferTime: inferTime}, nil
+}
+
+// withVersion stores a service's version in version before each call to it. A
+// rollout between the two can misattribute it. A nil infer stays nil.
+func withVersion(infer api.StubFn[schema.InferenceRequest, schema.StrategyOneOf], ver api.StubFn[schema.VersionRequest, schema.VersionResponse], version *string) api.StubFn[schema.InferenceRequest, schema.StrategyOneOf] {
+	if infer == nil {
+		return nil
+	}
+	return func(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+		vr, err := ver(ctx, schema.VersionRequest{})
+		if err != nil {
+			return nil, errors.Wrap(err, "fetching version")
+		}
+		*version = vr.Version
+		return infer(ctx, req)
+	}
+}
+
+// infer sends a JUMBO-hinted inference to the jumbo service. Others go to the
+// standard service, and to jumbo if refused for size. A nil jumboStub sends
+// everything to the standard service.
+func infer(ctx context.Context, standardStub, jumboStub api.StubFn[schema.InferenceRequest, schema.StrategyOneOf], req schema.InferenceRequest, hint schema.SizeHint) (*schema.StrategyOneOf, error) {
+	if jumboStub == nil {
+		return standardStub(ctx, req)
+	}
+	if hint == schema.JumboSize {
+		return jumboStub(ctx, req)
+	}
+	s, err := standardStub(ctx, req)
+	if err != nil && refusedForSize(err) {
+		log.Printf("inferring %s@%s on the jumbo service: %v", req.Package, req.Version, err)
+		return jumboStub(ctx, req)
+	}
+	return s, err
+}
+
+// refusedForSize reports a refusal of a repository over the fetch budget.
+func refusedForSize(err error) bool {
+	d, ok := api.DetailOf[rebuild.InferenceErrorDetail](err)
+	return ok && d.Kind == rebuild.FailureOversize
 }
 
 func buildAndAttest(ctx context.Context, deps *RebuildPackageDeps, mux rebuild.RegistryMux, a verifier.Attestor, t rebuild.Target, strategy rebuild.Strategy, entry *repoEntry, sizeHint schema.SizeHint, useProxy bool, useSyscallMonitor bool, timeout time.Duration, mode schema.OverwriteMode) (timings *rebuild.BuildTimings, err error) {
@@ -371,7 +409,7 @@ func rebuildPackage(ctx context.Context, req schema.RebuildPackageRequest, deps 
 		// NOTE: This ensures racing rebuilds won't result in multiple attestations being written.
 		a.AllowOverwrite = false
 	}
-	res, err := getStrategy(ctx, deps, t, req.UseRepoDefinition)
+	res, err := getStrategy(ctx, deps, t, req.UseRepoDefinition, req.SizeHint)
 	if err != nil {
 		v.Message = errors.Wrap(err, "getting strategy").Error()
 		return &v, nil
