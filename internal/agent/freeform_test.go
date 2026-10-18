@@ -267,6 +267,36 @@ func TestFreeFormProposeFormalizesTheHandoff(t *testing.T) {
 	}
 }
 
+// User contents stay plain, without usage.
+func TestFreeFormModelRecordsCarryUsage(t *testing.T) {
+	withUsage := strings.TrimSuffix(trial, "}") + `,"usageMetadata":{"promptTokenCount":1200,"cachedContentTokenCount":1100,"thoughtsTokenCount":40}}`
+	h := freeFormTestAgent(t, []string{withUsage, check, handoffCall, done}, formalized)
+	h.propose(t)
+	var first, prompt map[string]json.RawMessage
+	for name, b := range h.records {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		switch {
+		case strings.HasSuffix(name, "-2-model.json"):
+			first = m
+		case strings.HasSuffix(name, "-1-user.json"):
+			prompt = m
+		}
+	}
+	var u genai.GenerateContentResponseUsageMetadata
+	if err := json.Unmarshal(first["usageMetadata"], &u); err != nil || u.PromptTokenCount != 1200 || u.CachedContentTokenCount != 1100 || u.ThoughtsTokenCount != 40 {
+		t.Errorf("first model record usage = %s (%v), want the call's usage", first["usageMetadata"], err)
+	}
+	if !bytes.Contains(first["parts"], []byte(`"run_in_container"`)) || string(first["role"]) != `"model"` {
+		t.Errorf("first model record = %v, want the content's fields alongside the usage", first)
+	}
+	if _, ok := prompt["usageMetadata"]; ok || prompt["parts"] == nil {
+		t.Errorf("prompt record = %v, want a plain content", prompt)
+	}
+}
+
 func TestFreeFormRetriesThenFallsBackThenStartsOver(t *testing.T) {
 	h := freeFormTestAgent(t, append(append([]string{}, freeFormScript...), freeFormScript...), formalized, formalized, formalized, formalized)
 	h.propose(t)

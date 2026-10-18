@@ -151,9 +151,7 @@ func (cm *Chat) SendMessageStream(ctx context.Context, parts ...*genai.Part) ite
 				yield(nil, errors.Wrap(err, "sending message"))
 				return
 			}
-			if resp.UsageMetadata != nil {
-				cm.usage = append(cm.usage, resp.UsageMetadata)
-			}
+			cm.usage = append(cm.usage, resp.UsageMetadata)
 			if len(resp.Candidates) == 0 || resp.Candidates[0] == nil || resp.Candidates[0].Content == nil {
 				feedback := "received nil or empty candidates/content"
 				if resp.PromptFeedback != nil {
@@ -238,9 +236,19 @@ func (cm *Chat) History() []*genai.Content {
 	return cm.session.History( /*curated=*/ false)
 }
 
-// Usage returns the usage metadata accumulated so far.
+// Usage returns the usage metadata accumulated so far, one entry per
+// response and nil where a response carried none.
 func (cm *Chat) Usage() []*genai.GenerateContentResponseUsageMetadata {
 	return cm.usage
+}
+
+// LastUsage returns the usage of the most recent response, nil before the
+// first or when it carried none.
+func (cm *Chat) LastUsage() *genai.GenerateContentResponseUsageMetadata {
+	if len(cm.usage) == 0 {
+		return nil
+	}
+	return cm.usage[len(cm.usage)-1]
 }
 
 // Model returns the model name backing this chat.
