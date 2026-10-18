@@ -25,14 +25,14 @@
 //
 // # Fill Budgets
 //
-// A fill stops at a time and size budget. One over its size budget fails with
-// 413.
+// A fill stops at a time and size budget. One past its time budget answers 504
+// (ErrFillTimeout), and one over its size budget 413 (gitx.RepoTooLargeError).
 //
 // # Failed Fills
 //
 // A fill over its size budget, or the third failure in a row, makes refills
-// fail fast for a day with 413 or 422. A fill the remote rate-limits gets 429
-// with Retry-After and does not count.
+// fail fast for a day with 413 or 422 (ErrGaveUp). A fill the remote
+// rate-limits gets 429 with Retry-After and does not count.
 //
 // # Concurrent Fills
 //

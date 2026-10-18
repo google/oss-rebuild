@@ -127,13 +127,26 @@ func (c Client) getLink(ctx context.Context, repo string, contains time.Time, re
 		limit, _ := strconv.ParseInt(resp.Header.Get(sizeLimitHeader), 10, 64)
 		return uri, 0, &gitx.RepoTooLargeError{URL: repo, Limit: limit}
 	}
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
-	// Waiting out a remote's rate limit would only ask it again.
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return uri, 0, errors.Wrap(gitx.ErrRateLimited, strings.TrimSpace(string(body)))
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
+	body := strings.TrimSpace(string(b))
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests:
+		// Waiting out a remote's rate limit would only ask it again.
+		return uri, 0, errors.Wrap(gitx.ErrRateLimited, body)
+	case http.StatusUnprocessableEntity:
+		return uri, 0, errors.Wrap(ErrGaveUp, body)
+	case http.StatusGatewayTimeout:
+		return uri, 0, ErrFillTimeout // the body only repeats it
 	}
-	return uri, 0, errors.Errorf("making cache request: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	return uri, 0, errors.Errorf("making cache request: %s: %s", resp.Status, body)
 }
+
+// ErrGaveUp reports an entry whose fills kept failing, which the cache does
+// not fill again for a while.
+var ErrGaveUp = errors.New("cache gave up filling the entry")
+
+// ErrFillTimeout reports a fill that ran past the cache's time budget.
+var ErrFillTimeout = errors.New("fill ran past its time budget")
 
 type fillingError struct {
 	retryAfter time.Duration

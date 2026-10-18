@@ -41,7 +41,6 @@ var thresholdFudgeFactor = 24 * time.Hour
 // budget, checked every sizePollInterval.
 var (
 	fillTimeout      = 55 * time.Minute
-	errFillTimeout   = errors.New("fill ran past its time budget")
 	sizePollInterval = 5 * time.Second
 )
 
@@ -161,7 +160,7 @@ func (s *Server) HandleGet(rw http.ResponseWriter, httpReq *http.Request) {
 		defer release()
 		// Another fill may have finished between the check and the lease.
 		if mtime, err := s.backend.exists(held, p); err != nil || mtime.IsZero() || mtime.Before(threshold) {
-			fctx, cancel := context.WithTimeoutCause(held, fillTimeout, errFillTimeout)
+			fctx, cancel := context.WithTimeoutCause(held, fillTimeout, ErrFillTimeout)
 			defer cancel()
 			if err := s.fill(fctx, u, req.Ref, p, !mtime.IsZero()); err != nil {
 				log.Printf("Failed to populate cache: %v\n", err)
@@ -182,9 +181,12 @@ func (s *Server) HandleGet(rw http.ResponseWriter, httpReq *http.Request) {
 					http.Error(rw, "Fill failed: "+err.Error(), 500)
 				default:
 					// The previous entry stays for the next fill to refresh from.
-					if f := s.recordFailure(ctx, p, err); f.blocking() {
+					switch f := s.recordFailure(ctx, p, err); {
+					case f.blocking():
 						f.respond(rw, u)
-					} else {
+					case errors.Is(err, ErrFillTimeout):
+						http.Error(rw, err.Error(), http.StatusGatewayTimeout)
+					default:
 						http.Error(rw, "Fill failed: "+err.Error(), 500)
 					}
 				}
