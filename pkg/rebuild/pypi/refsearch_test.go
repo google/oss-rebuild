@@ -174,6 +174,17 @@ func TestMatchArchiveBlobs(t *testing.T) {
 			version: "2.0.0",
 			want:    "s1",
 		},
+		{
+			// The window excludes content committed long before the release.
+			name: "silent tie, earliest within the publish window",
+			commits: []gitxtest.Commit{
+				{ID: "s1", Time: time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC), Files: gitxtest.FileContent{"pyproject.toml": "[project]\nname = \"acme\"\ndynamic = [\"version\"]\n", "acme/core.py": coreV2, "acme/util.py": util}},
+				{ID: "s2", Time: day(1), Parent: "s1", Files: gitxtest.FileContent{"README.md": "doc change\n"}},
+			},
+			version:  "2.0.0",
+			uploaded: day(2),
+			want:     "s2",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepo(tc.commits, nil))

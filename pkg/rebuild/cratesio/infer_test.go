@@ -14,6 +14,7 @@ import (
 	"path"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
@@ -93,6 +94,7 @@ func TestInferStrategy(t *testing.T) {
 		wantNoRef        string // commit a NO_REF error is located at
 		registryResponse *cratesregistryservice.FindRegistryCommitResponse
 		wantPublishTime  string
+		searchHistory    bool // leave RefMap unset, so InferStrategy searches the manifest history
 	}{
 		{
 			name: "ref from cargo_vcs_info",
@@ -1300,6 +1302,54 @@ version = 3
 				}
 			},
 		},
+		{
+			name: "manifest search finds a declaration shortly before the publish time",
+			repo: `commits:
+  - id: stale-declaration
+    time: 2020-01-01T00:00:00Z
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+  - id: before-publish
+    parent: stale-declaration
+    time: 2023-05-01T00:00:00Z
+    files:
+      README.md: "docs\n"
+`,
+			metadata:      `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2020-02-01T00:00:00Z","rust_version": "1.35.0"}}`,
+			files:         []archive.TarEntry{{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)}},
+			searchHistory: true,
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location:    rebuild.Location{Repo: "https://github.com/serde-rs/serde", Ref: repo.Commits["stale-declaration"].String()},
+					RustVersion: "1.40.0",
+				}
+			},
+		},
+		{
+			name: "manifest search leaves out a declaration long before the publish time",
+			repo: `commits:
+  - id: stale-declaration
+    time: 2020-01-01T00:00:00Z
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+  - id: before-publish
+    parent: stale-declaration
+    time: 2023-05-01T00:00:00Z
+    files:
+      README.md: "docs\n"
+`,
+			metadata:      `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2023-06-01T00:00:00Z","rust_version": "1.35.0"}}`,
+			files:         []archive.TarEntry{{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(pre150CargoTOML)}},
+			searchHistory: true,
+			wantErr:       true,
+			wantNoRef:     "before-publish",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -1341,12 +1391,14 @@ version = 3
 				},
 				URLValidator: httpxtest.NewURLValidator(t),
 			}}}
-			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rebuild.RepoConfig{
-				Repo:   gitx.Repo{Repository: repo.Repository, Storer: repo.Storer},
-				URI:    "https://github.com/serde-rs/serde",
-				Dir:    "",
-				RefMap: map[string]string{"1.0.150": repo.Commits["version-bump"].String()},
-			}, hint)
+			rcfg := &rebuild.RepoConfig{
+				Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer},
+				URI:  "https://github.com/serde-rs/serde",
+			}
+			if !tc.searchHistory {
+				rcfg.RefMap = map[string]string{"1.0.150": repo.Commits["version-bump"].String()}
+			}
+			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, rcfg, hint)
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)
@@ -1608,7 +1660,7 @@ func TestCargoTOMLSearchWorkspaceVersionBump(t *testing.T) {
         [workspace.package]
         version = "0.2.0"
 `, nil))
-	tm, err := cargoTOMLSearch("member", "crates/member/Cargo.toml", repo.Repository)
+	tm, err := cargoTOMLSearch("member", "crates/member/Cargo.toml", repo.Repository, time.Time{})
 	if err != nil {
 		t.Fatalf("cargoTOMLSearch: %v", err)
 	}

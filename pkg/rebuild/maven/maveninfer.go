@@ -10,6 +10,7 @@ import (
 	"log"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/msuozzo/go-git2"
@@ -17,7 +18,7 @@ import (
 )
 
 // MavenInfer attempts to find the correct git ref and build directory for a given Maven target.
-func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig) (rebuild.Strategy, error) {
+func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig, published time.Time) (rebuild.Strategy, error) {
 	// Try heuristics in order - tag, git log, source jar.
 	// Commit is selected by first successful heuristic.
 	// If a heuristic finds a commit but cannot find a matching POM, it falls through to the next heuristic.
@@ -59,7 +60,7 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 		if err != nil {
 			log.Printf("cannot build ref map manifest heuristic: %s", err)
 		} else {
-			refMap, err := pomXMLSearch(t.Package, pkgPath, repoConfig.Repository)
+			refMap, err := pomXMLSearch(t.Package, pkgPath, repoConfig.Repository, published)
 			if err != nil {
 				log.Printf("git log heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, repoConfig.URI, err.Error())
 			}
@@ -81,7 +82,7 @@ func MavenInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, 
 	// 3. Source Jar Heuristic
 	var sourceJarGuess *git2.Commit
 	if !found {
-		sourceJarGuess, err = findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
+		sourceJarGuess, err = findClosestCommitToSource(ctx, t, mux, repoConfig.Repository, published)
 		if err != nil {
 			log.Printf("source jar heuristic failed: %s", err)
 		}
@@ -166,15 +167,20 @@ func findPomXML(commit *git2.Commit, pkg string) (*PomXML, string, error) {
 	return nil, "", errors.Errorf("pom.xml heuristic found no matches")
 }
 
-func pomXMLSearch(name, pomXMLPath string, repo *git2.Repository) (tm map[string]string, err error) {
+// pomXMLSearch maps each version the pom.xml at pomXMLPath declares to the
+// commit that declared it, within published's search window.
+func pomXMLSearch(name, pomXMLPath string, repo *git2.Repository, published time.Time) (tm map[string]string, err error) {
 	tm = make(map[string]string)
 	if pomXMLPath == "" {
 		return tm, nil // no path matches
 	}
+	since, until := rebuild.SearchWindow(published)
 	commitIter, err := repo.Log(&git2.LogOptions{
 		Order:    git2.LogOrderCommitterTime,
 		FileName: &pomXMLPath,
 		All:      true,
+		Since:    since,
+		Until:    until,
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "searching for commits touching pom.xml")

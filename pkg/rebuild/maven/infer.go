@@ -13,6 +13,7 @@ import (
 	"math"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -82,17 +83,21 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	if err != nil {
 		return nil, errors.Wrapf(err, "inferring build tool")
 	}
+	loc := rebuild.Location{Repo: repoConfig.URI, Dir: repoConfig.Dir}
+	published := releaseTime(ctx, t, mux)
 	switch buildTool {
 	case mavenBuildTool:
-		mavenStrategy, err := MavenInfer(ctx, t, mux, repoConfig)
+		mavenStrategy, err := MavenInfer(ctx, t, mux, repoConfig, published)
 		if err != nil {
-			return nil, errors.Wrap(withFallbackRef(ctx, err, t, mux, repoConfig), "inferring Maven strategy")
+			err = rebuild.ErrorWithFallbackRef(err, repoConfig.Repository, loc, published)
+			return nil, errors.Wrap(err, "inferring Maven strategy")
 		}
 		return mavenStrategy, nil
 	case gradleBuildTool:
-		gradleStrategy, err := GradleInfer(ctx, t, mux, repoConfig)
+		gradleStrategy, err := GradleInfer(ctx, t, mux, repoConfig, published)
 		if err != nil {
-			return nil, errors.Wrap(withFallbackRef(ctx, err, t, mux, repoConfig), "inferring Gradle strategy")
+			err = rebuild.ErrorWithFallbackRef(err, repoConfig.Repository, loc, published)
+			return nil, errors.Wrap(err, "inferring Gradle strategy")
 		}
 		return gradleStrategy, nil
 	case sbtBuildTool, antBuildTool, ivyBuildTool, leiningenBuildTool, npmBuildTool, millBuildTool:
@@ -102,18 +107,14 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 	}
 }
 
-// withFallbackRef locates a no-ref err at a fallback commit. Only then does it
-// ask Central for the publish time, and a time Central doesn't give leaves
-// the fallback unbounded.
-func withFallbackRef(ctx context.Context, err error, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig) error {
-	if !errors.Is(err, rebuild.ErrNoRef) && !errors.Is(err, rebuild.ErrNoValidRef) {
-		return err
+// releaseTime returns t's publish time, or zero when Central doesn't give one,
+// which leaves the search window and fallback ref unbounded.
+func releaseTime(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) time.Time {
+	published, err := mux.Maven.ReleaseTime(ctx, t.Package, t.Version)
+	if err != nil {
+		log.Printf("publish time unknown [pkg=%s,version=%s]: %v", t.Package, t.Version, err)
 	}
-	published, terr := mux.Maven.ReleaseTime(ctx, t.Package, t.Version)
-	if terr != nil {
-		log.Printf("publish time unknown [pkg=%s,version=%s]: %v", t.Package, t.Version, terr)
-	}
-	return rebuild.ErrorWithFallbackRef(err, repoConfig.Repository, rebuild.Location{Repo: repoConfig.URI, Dir: repoConfig.Dir}, published)
+	return published
 }
 
 // inferBuildTool scans the repository for build tool indicators and returns the most probable build tool.
@@ -317,8 +318,9 @@ func getClassFileMajorVersion(classBytes []byte) (int, error) {
 	return int(majorVersion), nil
 }
 
-// findClosestCommitToSource attempts to find the git commit that best matches the contents of a source JAR.
-func findClosestCommitToSource(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repo *git2.Repository) (*git2.Commit, error) {
+// findClosestCommitToSource attempts to find the git commit that best matches the contents of a source JAR,
+// within the search window of published.
+func findClosestCommitToSource(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repo *git2.Repository, published time.Time) (*git2.Commit, error) {
 	sourceJar, err := mux.Maven.ReleaseFile(ctx, t.Package, t.Version, maven.TypeSources)
 	if err != nil {
 		return nil, err
@@ -340,8 +342,8 @@ func findClosestCommitToSource(ctx context.Context, t rebuild.Target, mux rebuil
 	for i, h := range hashes {
 		blobs[i] = git2.Hash(h)
 	}
-	searchStrategy := gitscan.ReachableTreeCount{}
-	closest, matched, total, err := searchStrategy.Search(ctx, repo, blobs)
+	since, until := rebuild.SearchWindow(published)
+	closest, matched, total, err := gitscan.ReachableTreeCount{Since: since, Until: until}.Search(ctx, repo, blobs)
 	if err != nil {
 		return nil, errors.Wrap(err, "searching for matching commit based on source jar")
 	}

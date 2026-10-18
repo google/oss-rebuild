@@ -92,14 +92,15 @@ func archiveBlobs(name string, body []byte) ([]plumbing.Hash, error) {
 }
 
 // matchArchiveBlobs returns the commit whose tree contains the most of the
-// given blobs, via gitscan.ReachableTreeCount, as vetted and tie-broken by
-// pickByDeclaredVersion for an archive uploaded at uploaded.
+// given blobs, via gitscan.ReachableTreeCount within the search window of
+// uploaded, as vetted and tie-broken by pickByDeclaredVersion.
 func matchArchiveBlobs(ctx context.Context, hashes []plumbing.Hash, pkg, version string, uploaded time.Time, repo *git2.Repository) (string, error) {
 	blobs := make([]git2.Hash, len(hashes))
 	for i, h := range hashes {
 		blobs[i] = git2.Hash(h)
 	}
-	closest, matched, total, err := gitscan.ReachableTreeCount{}.Search(ctx, repo, blobs)
+	since, until := rebuild.SearchWindow(uploaded)
+	closest, matched, total, err := gitscan.ReachableTreeCount{Since: since, Until: until}.Search(ctx, repo, blobs)
 	if err != nil {
 		return "", errors.Wrap(err, "searching trees for blob overlap")
 	}

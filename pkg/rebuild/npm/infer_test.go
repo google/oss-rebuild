@@ -256,6 +256,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 		wantErr         bool
 		wantLocated     bool   // the error carries the resolved location
 		wantNoRef       string // commit a NO_REF error is located at
+		searchHistory   bool   // leave RefMap unset, so InferStrategy searches the package.json history
 	}{
 		{
 			name:    "NPMPackBuild - ref from gitHead",
@@ -558,6 +559,55 @@ func TestInferStrategy_NPM(t *testing.T) {
 			wantErr:         true,
 			wantLocated:     true,
 		},
+		{
+			name:    "package.json search finds a declaration shortly before the publish time",
+			pkg:     "test-package",
+			version: "1.0.0",
+			repoYAML: `commits:
+  - id: stale-declaration
+    time: 2020-01-01T00:00:00Z
+    files:
+      package.json: |
+        {"name": "test-package", "version": "1.0.0"}
+  - id: before-publish
+    parent: stale-declaration
+    time: 2023-05-01T00:00:00Z
+    files:
+      README.md: "docs\n"
+`,
+			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"8.1.2","dist":{"tarball":"url7"}}`,
+			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2020-02-01T00:00:00.000Z"}}`,
+			searchHistory:   true,
+			wantCommitID:    "stale-declaration",
+			wantStrategyFn: func(commitID string) rebuild.Strategy {
+				return &NPMPackBuild{
+					Location:   rebuild.Location{Repo: "https://github.com/test-org/test-package", Ref: commitID},
+					NPMVersion: "8.1.2",
+				}
+			},
+		},
+		{
+			name:    "package.json search leaves out a declaration long before the publish time",
+			pkg:     "test-package",
+			version: "1.0.0",
+			repoYAML: `commits:
+  - id: stale-declaration
+    time: 2020-01-01T00:00:00Z
+    files:
+      package.json: |
+        {"name": "test-package", "version": "1.0.0"}
+  - id: before-publish
+    parent: stale-declaration
+    time: 2023-05-01T00:00:00Z
+    files:
+      README.md: "docs\n"
+`,
+			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"8.1.2","dist":{"tarball":"url8"}}`,
+			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-06-01T00:00:00.000Z"}}`,
+			searchHistory:   true,
+			wantErr:         true,
+			wantNoRef:       "before-publish",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -595,12 +645,14 @@ func TestInferStrategy_NPM(t *testing.T) {
 				})
 			}
 			mux := rebuild.RegistryMux{NPM: &reg.HTTPRegistry{Client: &client}}
-			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, &rebuild.RepoConfig{
-				Repo:   gitx.Repo{Repository: repo.Repository, Storer: repo.Storer},
-				URI:    "https://github.com/test-org/test-package",
-				Dir:    "",
-				RefMap: map[string]string{"1.0.0": repo.Commits["version-bump"].String()},
-			}, tc.locationHint)
+			rcfg := &rebuild.RepoConfig{
+				Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer},
+				URI:  "https://github.com/test-org/test-package",
+			}
+			if !tc.searchHistory {
+				rcfg.RefMap = map[string]string{"1.0.0": repo.Commits["version-bump"].String()}
+			}
+			s, err := Rebuilder{}.InferStrategy(ctx, target, mux, rcfg, tc.locationHint)
 			if tc.wantErr {
 				if err == nil {
 					t.Errorf("InferStrategy expected error, got %v", s)

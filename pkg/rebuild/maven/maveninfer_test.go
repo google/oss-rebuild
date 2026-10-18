@@ -276,7 +276,8 @@ func TestMavenInfer(t *testing.T) {
 		jarError       error // every registry file fetch fails with this
 		expectedCommit string
 		wantErr        bool
-		wantLocated    bool // the error carries the resolved location
+		wantLocated    bool      // the error carries the resolved location
+		published      time.Time // bounds the version searches, zero for none
 	}{
 		{
 			name: "git log heuristic (with pkg and version match)",
@@ -566,6 +567,132 @@ func TestMavenInfer(t *testing.T) {
 			wantErr:     true,
 			wantLocated: true,
 		},
+		{
+			name: "git log heuristic finds a declaration shortly before the publish time",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: stale-declaration
+                time: 2020-01-01T00:00:00Z
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>bar</artifactId>
+                        <version>1.0.0</version>
+                    </project>
+                  src/App.java: |
+                    a
+              - id: before-publish
+                parent: stale-declaration
+                time: 2023-05-01T00:00:00Z
+                files:
+                  src/App.java: |
+                    b`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeSources: {{
+					FileHeader: &zip.FileHeader{Name: "App.java"},
+					Body:       []byte("c\n"),
+				}},
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			published:      time.Date(2020, 2, 1, 0, 0, 0, 0, time.UTC),
+			expectedCommit: "stale-declaration",
+		},
+		{
+			name: "git log heuristic leaves out a declaration long before the publish time",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: stale-declaration
+                time: 2020-01-01T00:00:00Z
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>bar</artifactId>
+                        <version>1.0.0</version>
+                    </project>
+                  src/App.java: |
+                    a
+              - id: before-publish
+                parent: stale-declaration
+                time: 2023-05-01T00:00:00Z
+                files:
+                  src/App.java: |
+                    b`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeSources: {{
+					FileHeader: &zip.FileHeader{Name: "App.java"},
+					Body:       []byte("c\n"),
+				}},
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			published: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
+			wantErr:   true,
+		},
+		{
+			name: "source jar heuristic leaves out a matching tree long before the publish time",
+			target: rebuild.Target{
+				Ecosystem: "Maven",
+				Package:   "foo:bar",
+				Version:   "1.0.0",
+			},
+			repo: `
+            commits:
+              - id: stale-declaration
+                time: 2020-01-01T00:00:00Z
+                files:
+                  pom.xml: |
+                    <project>
+                        <modelVersion>4.0.0</modelVersion>
+                        <groupId>foo</groupId>
+                        <artifactId>bar</artifactId>
+                        <version>0.0.0-dev</version>
+                    </project>
+                  src/App.java: |
+                    a
+              - id: before-publish
+                parent: stale-declaration
+                time: 2023-05-01T00:00:00Z
+                files:
+                  src/App.java: |
+                    b`,
+			zipEntries: map[string][]*archive.ZipEntry{
+				maven.TypeSources: {{
+					FileHeader: &zip.FileHeader{Name: "App.java"},
+					Body:       []byte("a\n"),
+				}},
+				maven.TypeJar: {
+					{
+						FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"},
+						Body:       []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n"),
+					},
+				},
+			},
+			published: time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC),
+			wantErr:   true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -584,7 +711,7 @@ func TestMavenInfer(t *testing.T) {
 			mockMux := rebuild.RegistryMux{
 				Maven: mockRegistry,
 			}
-			got, err := MavenInfer(context.Background(), tc.target, mockMux, repoConfig)
+			got, err := MavenInfer(context.Background(), tc.target, mockMux, repoConfig, tc.published)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("MavenInfer() = %v, want error", got)
@@ -663,6 +790,81 @@ func TestInferStrategyFallsBackToLastCommitByPublish(t *testing.T) {
 			}
 			if !errors.Is(err, rebuild.ErrNoRef) {
 				t.Errorf("InferStrategy() error = %v, want an ErrNoRef", err)
+			}
+		})
+	}
+}
+
+func TestInferStrategyBoundsSearchesByReleaseTime(t *testing.T) {
+	// Each repo's only match for 1.0.0 is from 2020, years before a 2023 release.
+	mavenRepo := `commits:
+  - id: stale
+    time: 2020-01-01T00:00:00Z
+    files:
+      pom.xml: |
+        <project><groupId>foo</groupId><artifactId>bar</artifactId><version>1.0.0</version></project>
+  - id: before-publish
+    parent: stale
+    time: 2023-05-01T00:00:00Z
+    files:
+      README.md: b
+`
+	gradleRepo := `commits:
+  - id: stale
+    time: 2020-01-01T00:00:00Z
+    files:
+      build.gradle: |
+        group=foo
+      src/main/java/App.java: |
+        public class App {}
+  - id: before-publish
+    parent: stale
+    time: 2023-05-01T00:00:00Z
+    files:
+      src/main/java/App.java: |
+        class App {}
+`
+	artifacts := map[string][]*archive.ZipEntry{
+		maven.TypeJar:     {{FileHeader: &zip.FileHeader{Name: "META-INF/MANIFEST.MF"}, Body: []byte("Manifest-Version: 1.0\nBuild-Jdk: 11.0.1\n")}},
+		maven.TypeSources: {{FileHeader: &zip.FileHeader{Name: "src/main/java/App.java"}, Body: []byte("public class App {}\n")}},
+	}
+	release := time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name      string
+		repo      string
+		published time.Time // Central's release time, zero for none
+		want      string    // commit inferred, "" for none
+	}{
+		{"MavenUnbounded", mavenRepo, time.Time{}, "stale"},
+		{"MavenReleaseTimeLeavesOutStale", mavenRepo, release, ""},
+		{"GradleUnbounded", gradleRepo, time.Time{}, "stale"},
+		{"GradleReleaseTimeLeavesOutStale", gradleRepo, release, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := must(gitxtest.CreateRepoFromYAML(tc.repo, nil))
+			target := rebuild.Target{Ecosystem: rebuild.Maven, Package: "foo:bar", Version: "1.0.0"}
+			reg := &mockMavenRegistry{artifactCoordinates: map[artifactCoordinates][]byte{}, published: tc.published}
+			addArtifacts(reg, artifacts, target)
+			rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository, Storer: repo.Storer}, URI: "https://github.com/foo/bar"}
+			s, err := Rebuilder{}.InferStrategy(context.Background(), target, rebuild.RegistryMux{Maven: reg}, rcfg, nil)
+			if tc.want == "" {
+				if !errors.Is(err, rebuild.ErrNoRef) {
+					t.Errorf("InferStrategy() = %v, %v, want an ErrNoRef", s, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("InferStrategy() error = %v", err)
+			}
+			var ref string
+			switch s := s.(type) {
+			case *MavenBuild:
+				ref = s.Location.Ref
+			case *GradleBuild:
+				ref = s.Location.Ref
+			}
+			if want := repo.Commits[tc.want].String(); ref != want {
+				t.Errorf("InferStrategy() ref = %s, want %s (%s)", ref, want, tc.want)
 			}
 		})
 	}

@@ -13,6 +13,17 @@ import (
 	"github.com/pkg/errors"
 )
 
+func TestSearchWindow(t *testing.T) {
+	if since, until := SearchWindow(time.Time{}); since != nil || until != nil {
+		t.Errorf("SearchWindow(zero) = %v, %v, want both open", since, until)
+	}
+	published := time.Date(2023, 6, 1, 0, 0, 0, 0, time.UTC)
+	since, until := SearchWindow(published)
+	if since == nil || !since.Equal(published.Add(-searchLookback)) || until == nil || !until.Equal(published.Add(searchSlack)) {
+		t.Errorf("SearchWindow(%v) = %v, %v, want lookback and slack around it", published, since, until)
+	}
+}
+
 func TestErrorWithFallbackRef(t *testing.T) {
 	repo, err := gitxtest.CreateRepoFromYAML(`commits:
   - id: old

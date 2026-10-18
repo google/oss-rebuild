@@ -9,6 +9,7 @@ import (
 	"math"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/msuozzo/go-git2"
@@ -19,7 +20,7 @@ import (
 // Reference: https://docs.gradle.org/current/userguide/compatibility.html
 const gradleVersion = "8.14.3"
 
-func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig) (rebuild.Strategy, error) {
+func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux, repoConfig *rebuild.RepoConfig, published time.Time) (rebuild.Strategy, error) {
 	var ref string
 	// 1. Tag Heuristic
 	tagGuess, err := rebuild.FindTagMatch(t.Package, t.Version, repoConfig.Repository)
@@ -32,7 +33,7 @@ func GradleInfer(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux,
 	}
 	// 2. Source Jar Heuristic
 	if ref == "" {
-		sourceJarGuess, err := findClosestCommitToSource(ctx, t, mux, repoConfig.Repository)
+		sourceJarGuess, err := findClosestCommitToSource(ctx, t, mux, repoConfig.Repository, published)
 		if err != nil {
 			log.Printf("source jar heuristic failed: %s", err)
 		} else if sourceJarGuess != nil {

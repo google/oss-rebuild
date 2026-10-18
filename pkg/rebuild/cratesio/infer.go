@@ -101,14 +101,30 @@ func (Rebuilder) CloneRepo(ctx context.Context, t rebuild.Target, repoURI string
 		r.RefMap = make(map[string]string)
 		err = nil
 	} else {
+		// InferStrategy runs the version search, bounded by the publish time.
 		r.Dir = rebuild.DirOf(pkgPath)
-		// Do version heuristic search.
-		r.RefMap, err = cargoTOMLSearch(t.Package, pkgPath, r.Repository)
-		if err != nil {
-			log.Printf("Cargo.toml version heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, r.URI, err.Error())
-		}
 	}
 	return r, nil
+}
+
+func cargoTOMLRefMap(t rebuild.Target, rcfg *rebuild.RepoConfig, published time.Time) map[string]string {
+	head, err := rcfg.Repository.Head()
+	if err != nil {
+		return nil
+	}
+	c, err := rcfg.Repository.CommitObject(head.Hash())
+	if err != nil {
+		return nil
+	}
+	_, pkgPath, err := findCargoTOML(rcfg.Repository, c, t.Package)
+	if err != nil {
+		return nil
+	}
+	tm, err := cargoTOMLSearch(t.Package, pkgPath, rcfg.Repository, published)
+	if err != nil {
+		log.Printf("Cargo.toml version heuristic failed [pkg=%s,repo=%s]: %s\n", t.Package, rcfg.URI, err.Error())
+	}
+	return tm
 }
 
 func inferRefAndDir(t rebuild.Target, vmeta *reg.CrateVersion, crateBytes []byte, rcfg *rebuild.RepoConfig) (ref, dir string, err error) {
@@ -229,6 +245,9 @@ func (Rebuilder) InferStrategy(ctx context.Context, t rebuild.Target, mux rebuil
 			dir = rcfg.Dir
 		}
 	} else {
+		if rcfg.RefMap == nil {
+			rcfg.RefMap = cargoTOMLRefMap(t, rcfg, vmeta.Created)
+		}
 		ref, dir, err = inferRefAndDir(t, vmeta, b, rcfg)
 		if err != nil {
 			return nil, rebuild.ErrorWithFallbackRef(err, rcfg.Repository, rebuild.Location{Repo: rcfg.URI, Dir: rcfg.Dir}, vmeta.Created)
@@ -544,15 +563,20 @@ func findCargoTOML(repo *git2.Repository, c *git2.Commit, pkg string) (*reg.Carg
 	return nil, "", errors.Errorf("Cargo.toml heuristic found no matches")
 }
 
-func cargoTOMLSearch(pkg, path string, repo *git2.Repository) (tm map[string]string, err error) {
+// cargoTOMLSearch maps each version the Cargo.toml at path declares to the
+// commit that declared it, within published's search window.
+func cargoTOMLSearch(pkg, path string, repo *git2.Repository, published time.Time) (tm map[string]string, err error) {
 	tm = make(map[string]string)
 	if path == "" {
 		return tm, nil // no path matches
 	}
+	since, until := rebuild.SearchWindow(published)
 	commitIter, err := repo.Log(&git2.LogOptions{
 		Order:      git2.LogOrderCommitterTime,
 		PathFilter: func(s string) bool { return s == path || strings.HasSuffix(s, "Cargo.toml") },
 		All:        true,
+		Since:      since,
+		Until:      until,
 	})
 	if err != nil {
 		return nil, err

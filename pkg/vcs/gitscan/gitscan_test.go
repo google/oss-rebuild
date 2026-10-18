@@ -7,7 +7,10 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
@@ -81,6 +84,78 @@ commits:
 	}
 	if len(closest) != 0 || matched != 0 || total != 1 {
 		t.Errorf("Search = %v, %d/%d; want no commits, 0/1", closest, matched, total)
+	}
+}
+
+func TestReachableTreeCountStopsWithContext(t *testing.T) {
+	repo, err := gitxtest.CreateRepoFromYAML(`commits:
+  - id: release
+    files:
+      lib.py: "released"
+`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, _ := repo.Repository.Head()
+	c, _ := repo.Repository.CommitObject(head.Hash())
+	f, err := c.File("lib.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, _, err := (ReachableTreeCount{}).Search(ctx, repo.Repository, []git2.Hash{git2.Hash(f.Hash)}); !errors.Is(err, context.Canceled) {
+		t.Errorf("Search(cancelled) error = %v, want context.Canceled", err)
+	}
+}
+
+func TestReachableTreeCountWindow(t *testing.T) {
+	repo, err := gitxtest.CreateRepoFromYAML(`commits:
+  - id: early
+    time: 2023-01-01T00:00:00Z
+    files:
+      a.txt: early
+  - id: mid
+    parent: early
+    time: 2023-06-01T00:00:00Z
+    files:
+      a.txt: mid
+  - id: late
+    parent: mid
+    time: 2024-01-01T00:00:00Z
+    files:
+      a.txt: late
+`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := func(s string) git2.Hash { return git2.Hash(plumbing.ComputeHash(plumbing.BlobObject, []byte(s))) }
+	hashes := []git2.Hash{blob("early"), blob("mid"), blob("late")}
+	since, until := time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC), time.Date(2023, 9, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name         string
+		since, until *time.Time
+		want         []string // commit ids, each matching one file
+	}{
+		{"Unbounded", nil, nil, []string{"early", "mid", "late"}},
+		{"SinceLeavesOutEarlier", &since, nil, []string{"mid", "late"}},
+		{"UntilLeavesOutLater", nil, &until, []string{"early", "mid"}},
+		{"BothLeaveTheWindow", &since, &until, []string{"mid"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			closest, matched, total, err := ReachableTreeCount{Since: tc.since, Until: tc.until}.Search(context.Background(), repo.Repository, hashes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []string
+			for _, id := range tc.want {
+				want = append(want, repo.Commits[id].String())
+			}
+			slices.Sort(want)
+			if !slices.Equal(closest, want) || matched != 1 || total != 3 {
+				t.Errorf("Search = %v, %d/%d; want %v, 1/3", closest, matched, total, want)
+			}
+		})
 	}
 }
 
