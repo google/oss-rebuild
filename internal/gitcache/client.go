@@ -161,7 +161,7 @@ func (c Client) Size(ctx context.Context, repo string) (int64, error) {
 		return 0, errors.Wrap(err, "querying git cache")
 	}
 	if c.MaxBytes > 0 && size > c.MaxBytes {
-		return 0, &gitx.RepoTooLargeError{URL: repo, Limit: c.MaxBytes}
+		return 0, &gitx.RepoTooLargeError{URL: repo, Limit: c.MaxBytes, Size: size}
 	}
 	return size, nil
 }
@@ -205,6 +205,10 @@ func (c Client) Clone(ctx context.Context, s storage.Storer, fs billy.Filesystem
 	fetchedAt, _ := http.ParseTime(resp.Header.Get("Last-Modified"))
 	var body io.Reader = resp.Body
 	if c.MaxBytes > 0 {
+		// A declared length over budget is refused before any of it is read.
+		if resp.ContentLength > c.MaxBytes {
+			return nil, &gitx.RepoTooLargeError{URL: opt.URL, Limit: c.MaxBytes, Size: resp.ContentLength}
+		}
 		body = &cappedReader{r: resp.Body, left: c.MaxBytes, err: &gitx.RepoTooLargeError{URL: opt.URL, Limit: c.MaxBytes}}
 	}
 	gr, err := gzip.NewReader(body)
