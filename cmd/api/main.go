@@ -362,6 +362,8 @@ func AgentCreateInit(ctx context.Context) (*apiservice.AgentCreateDeps, error) {
 	d.GitCacheURL = *gitCacheURL
 	d.CratesRegistryURL = *cratesRegistryURL
 	d.AgentMaxRepoBytes = *agentMaxRepoBytes
+	d.InferenceURL = *inferenceURL
+	d.JumboInferenceURL = *jumboInferenceURL
 	d.AgentTimeoutSeconds = *agentTimeoutSeconds
 	d.SessionsBucket = *agentSessionsBucket
 	d.MetadataBucket = *agentMetadataBucket

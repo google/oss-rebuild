@@ -18,10 +18,12 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/api/cratesregistryservice"
+	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/httpegress"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/build/scratch"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -42,6 +44,9 @@ var (
 	gitCacheURL       = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
 	maxRepoBytes      = flag.Int64("max-repo-bytes", 0, "git-cache fetch budget in bytes (0 = no limit)")
 	cratesRegistryURL = flag.String("crates-registry-service-url", "", "if provided, the crates registry service that resolves crate index commits for inference")
+	inferenceURL      = flag.String("inference-url", "", "if provided, the inference service a scratch-mode session infers on, rather than in the job")
+	jumboInferenceURL = flag.String("jumbo-inference-url", "", "the inference service for large repositories, if configured")
+	jumbo             = flag.Bool("jumbo", false, "send the session's inferences to the jumbo inference service")
 	sessionsBucket    = flag.String("sessions-bucket", "", "GCS bucket for session data")
 	metadataBucket    = flag.String("metadata-bucket", "", "GCS bucket for build metadata")
 	logsBucket        = flag.String("logs-bucket", "", "GCS bucket for build logs")
@@ -232,7 +237,17 @@ func main() {
 				return "Authorization: Bearer " + t.AccessToken, nil
 			}
 		}
+		if *inferenceURL != "" {
+			deps.Inference = &inferenceservice.Router{Standard: inferStub(ctx, *inferenceURL)}
+			if *jumboInferenceURL != "" {
+				deps.Inference.Jumbo = inferStub(ctx, *jumboInferenceURL)
+			}
+			if *jumbo {
+				deps.Size = schema.JumboSize
+			}
+		}
 		executor, err := scratch.NewDockerRunExecutor(scratch.DockerRunExecutorConfig{
+			Planner: &local.DockerRunPlanner{HasRepo: deps.Inference != nil}, // Remote inference copies the repo to the VM for builds to borrow.
 			ExecutorConfig: scratch.ExecutorConfig{
 				ScratchID:      *scratchID,
 				Stubs:          stubs,
@@ -273,4 +288,16 @@ func main() {
 	}
 	log.Printf("Agent running for session %s (execution mode %s), target: %+v", req.SessionID, mode, req.Target)
 	agent.RunSession(ctx, req, deps)
+}
+
+func inferStub(ctx context.Context, rawURL string) api.StubFn[schema.InferenceRequest, schema.StrategyOneOf] {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		log.Fatalf("parsing inference URL %s: %v", rawURL, err)
+	}
+	client, err := idtoken.NewClient(ctx, rawURL)
+	if err != nil {
+		log.Fatalf("creating inference client for %s: %v", rawURL, err)
+	}
+	return api.StubFromHandler(client, u.JoinPath("infer"), inferenceservice.Infer)
 }

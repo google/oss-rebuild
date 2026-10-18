@@ -7,6 +7,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/db"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -40,6 +41,27 @@ func TestAgentCreateMachineClass(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("scratch MachineClass = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAgentJobArgsForInference(t *testing.T) {
+	deps := AgentCreateDeps{InferenceURL: "https://inf", JumboInferenceURL: "https://inf-jumbo"}
+	for _, tc := range []struct {
+		name  string
+		class schema.MachineClass
+		deps  AgentCreateDeps
+		want  []string
+	}{
+		{name: "InfersInJob", class: schema.MachineClassStandard},
+		{name: "Standard", class: schema.MachineClassStandard, deps: deps, want: []string{"--inference-url=https://inf", "--jumbo-inference-url=https://inf-jumbo"}},
+		{name: "Jumbo", class: schema.MachineClassJumbo, deps: deps, want: []string{"--inference-url=https://inf", "--jumbo-inference-url=https://inf-jumbo", "--jumbo"}},
+		{name: "JumboWithoutJumboService", class: schema.MachineClassJumbo, deps: AgentCreateDeps{InferenceURL: "https://inf"}, want: []string{"--inference-url=https://inf"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if diff := cmp.Diff(tc.want, inferenceArgs(tc.class, &tc.deps)); diff != "" {
+				t.Errorf("inferenceArgs() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

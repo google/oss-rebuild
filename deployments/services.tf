@@ -371,7 +371,7 @@ resource "google_cloud_run_v2_service" "orchestrator" {
         "--git-cache-url=${google_cloud_run_v2_service.git-cache.uri}",
         "--crates-registry-service-url=${google_cloud_run_v2_service.crates-registry.uri}",
         "--agent-timeout-seconds=3600",                 // 1 hour
-        "--agent-max-repo-bytes=${1024 * 1024 * 1024}", // 1 GiB. An 830 MiB repository peaked at 1.9 GB in a local in-process inference
+        "--agent-max-repo-bytes=${1024 * 1024 * 1024}", // 1 GiB, for in-job inference
         "--agent-sessions-bucket=${google_storage_bucket.agent-sessions.name}",
         "--agent-metadata-bucket=${google_storage_bucket.agent-metadata.name}",
         "--agent-logs-bucket=${google_storage_bucket.agent-logs.name}",
@@ -676,10 +676,12 @@ resource "google_cloud_run_v2_job" "agent" {
       max_retries     = 0
       containers {
         image = data.google_artifact_registry_docker_image.agent.self_link
+        # Holds the chat and tool calls. Scratch-mode sessions infer on the
+        # inference services, so no repository sits in its memory.
         resources {
           limits = {
-            cpu    = "2000m"
-            memory = "8G"
+            cpu    = "1000m"
+            memory = "2Gi"
           }
         }
       }
