@@ -683,6 +683,11 @@ func (d *Dispatcher) launch(ctx context.Context, c scheduler.Campaign, model str
 	return nil
 }
 
+// inferBuildTimeout keeps a hung build from holding a slot for the 23h
+// default. An hour is empirical: infer builds take minutes, and the slowest
+// successful ones still finish within it.
+const inferBuildTimeout = time.Hour
+
 // start calls the API for the campaign's stage. Agent dispatches run under
 // model and return the session id the outcome is later read from.
 func (d *Dispatcher) start(ctx context.Context, c scheduler.Campaign, model string) (string, error) {
@@ -695,6 +700,7 @@ func (d *Dispatcher) start(ctx context.Context, c scheduler.Campaign, model stri
 			Artifact:      c.Artifact,
 			ID:            c.LastRunID,
 			ExecutionHint: schema.ExtendedExecution,
+			BuildTimeout:  inferBuildTimeout,
 		})
 		return "", err
 	case scheduler.StageAgent:
