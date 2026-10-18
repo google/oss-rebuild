@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/pkg/llm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -80,6 +81,44 @@ func TestProposeAbandonsHungInference(t *testing.T) {
 	cancel(cause)
 	if _, err := a.Propose(ctx, nil); !errors.Is(err, cause) {
 		t.Fatalf("err = %v, want the cancellation cause", err)
+	}
+}
+
+func TestInferWithRetries(t *testing.T) {
+	transient := errors.New("getting AI repo hint: empty response content")
+	for _, tc := range []struct {
+		name      string
+		errs      []error // one per attempt, nil succeeds
+		cancel    bool
+		delay     time.Duration
+		wantCalls int
+		wantErr   bool
+	}{
+		{name: "succeeds after a transient failure", errs: []error{transient, nil}, wantCalls: 2},
+		{name: "gives up after the last attempt", errs: []error{transient, transient, transient, nil}, wantCalls: inferenceAttempts, wantErr: true},
+		{name: "oversize is not retried", errs: []error{&gitx.RepoTooLargeError{URL: "https://github.com/org/repo", Limit: 1}, nil}, wantCalls: 1, wantErr: true},
+		{name: "stops waiting when the context ends", errs: []error{transient, nil}, cancel: true, delay: time.Hour, wantCalls: 1, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.cancel {
+				cancel()
+			}
+			var calls int
+			infer := func(context.Context) (*schema.StrategyOneOf, error) {
+				err := tc.errs[calls]
+				calls++
+				if err != nil {
+					return nil, err
+				}
+				return &schema.StrategyOneOf{}, nil
+			}
+			_, err := inferWithRetries(ctx, infer, tc.delay)
+			if calls != tc.wantCalls || (err != nil) != tc.wantErr {
+				t.Errorf("inferWithRetries() made %d calls with err %v, want %d calls and error %v", calls, err, tc.wantCalls, tc.wantErr)
+			}
+		})
 	}
 }
 

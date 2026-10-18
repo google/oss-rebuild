@@ -1064,7 +1064,7 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 		}
 		ch := make(chan proposal, 1) // buffered so an abandoned call's send never blocks
 		go func() {
-			s, err := withPanicRecovered(ictx, a.proposeHeuristicInference)
+			s, err := inferWithRetries(ictx, a.proposeHeuristicInference, inferenceRetryDelay)
 			ch <- proposal{s, err}
 		}()
 		select {
@@ -1322,4 +1322,30 @@ func withPanicRecovered(ctx context.Context, infer func(context.Context) (*schem
 		}
 	}()
 	return infer(ctx)
+}
+
+// Inference for a first iteration runs up to inferenceAttempts times,
+// inferenceRetryDelay apart. A failed repo hint, a cache or network error, or a
+// busy service can pass on another try.
+const (
+	inferenceAttempts   = 3
+	inferenceRetryDelay = 10 * time.Second
+)
+
+// inferWithRetries runs infer until it succeeds, fails in a way another
+// attempt would repeat, runs out of attempts, or ctx ends.
+func inferWithRetries(ctx context.Context, infer func(context.Context) (*schema.StrategyOneOf, error), delay time.Duration) (*schema.StrategyOneOf, error) {
+	for attempt := 1; ; attempt++ {
+		s, err := withPanicRecovered(ctx, infer)
+		var tooLarge *gitx.RepoTooLargeError
+		if err == nil || attempt == inferenceAttempts || errors.As(err, &tooLarge) {
+			return s, err
+		}
+		log.Printf("Inference attempt %d of %d failed, retrying: %v", attempt, inferenceAttempts, err)
+		select {
+		case <-ctx.Done():
+			return s, err
+		case <-time.After(delay):
+		}
+	}
 }
