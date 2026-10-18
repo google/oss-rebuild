@@ -23,15 +23,10 @@
 // The repo cache is stored as a gzipped tar archive of the .git/ directory
 // from an empty checkout of the upstream repo.
 //
-// # Data Races
+// # Concurrent Fills
 //
-// Racing requests for the same resource will write and return different copies
-// of the repo but these are expected to be ~identical and, given the storage
-// backend's write semantics, subsequent requests will converge to return the
-// latest version of the archive.
-//
-// The current behavior could be improved by coalescing like requests and
-// blocking on a single writer.
+// A lease beside the entry lets one request at a time fill it. Others get 503
+// with Retry-After.
 //
 // # Cache Lifecycle
 //

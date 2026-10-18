@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,10 @@ var thresholdFudgeFactor = 24 * time.Hour
 
 // sizeHeader carries the bytes of the archive a redirect points to.
 const sizeHeader = "Git-Cache-Size"
+
+// fillRetryAfter is the Retry-After for an entry being filled. Waiting in
+// place would hold an instance for each of a monorepo's many packages.
+const fillRetryAfter = 10 * time.Second
 
 // Server provides HTTP handling for the git cache.
 type Server struct {
@@ -101,20 +106,43 @@ func (s *Server) HandleGet(rw http.ResponseWriter, httpReq *http.Request) {
 		needsPopulate = true
 	}
 	if needsPopulate {
-		if err := s.populateCache(ctx, u, req.Ref, p); err != nil {
-			log.Printf("Failed to populate cache: %v\n", err)
-			if errors.Is(err, transport.ErrAuthenticationRequired) {
-				http.Error(rw, err.Error(), 400)
-			} else {
-				if err := s.backend.delete(ctx, p); err != nil {
-					log.Printf("Issue cleaning up failed write: %v\n", err)
-				}
-				http.Error(rw, "Internal Error", 500)
+		held, release, err := s.backend.lease(ctx, p)
+		if err != nil {
+			if !errors.Is(err, errLeaseHeld) {
+				log.Printf("Failed to lease the fill of %s: %v\n", p, err)
 			}
+			respondFilling(rw)
 			return
+		}
+		defer release()
+		// Another fill may have finished between the check and the lease.
+		if mtime, err := s.backend.exists(held, p); err != nil || mtime.IsZero() || mtime.Before(threshold) {
+			if err := s.populateCache(held, u, req.Ref, p); err != nil {
+				log.Printf("Failed to populate cache: %v\n", err)
+				switch {
+				case errors.Is(err, transport.ErrAuthenticationRequired):
+					http.Error(rw, err.Error(), 400)
+				case errors.Is(context.Cause(held), errLeaseLost):
+					// The entry is now the new holder's to write.
+					respondFilling(rw)
+				default:
+					if err := s.backend.delete(ctx, p); err != nil {
+						log.Printf("Issue cleaning up failed write: %v\n", err)
+					}
+					http.Error(rw, "Internal Error", 500)
+				}
+				return
+			}
 		}
 	}
 	s.backend.serve(rw, httpReq, p)
+}
+
+// respondFilling answers a request for an entry another request fills, or
+// whose lease could not be taken.
+func respondFilling(rw http.ResponseWriter) {
+	rw.Header().Set("Retry-After", strconv.Itoa(int(fillRetryAfter.Seconds())))
+	http.Error(rw, "Entry is being filled", http.StatusServiceUnavailable)
 }
 
 // nilCache is a no-op cache for git objects.
