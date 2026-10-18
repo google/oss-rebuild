@@ -15,10 +15,44 @@ import (
 // RepoProvider is a function that returns the current git repository and reference.
 type RepoProvider func() (repo *git2.Repository, ref string)
 
+// RepoReader serves the repository tools. Each read is of the reference current
+// at the call, which can move during a session.
+type RepoReader interface {
+	ReadFile(ctx context.Context, path string) (string, error)
+	// ListFiles returns the entries of the directory at path, "" being the
+	// root. Directories end with a slash.
+	ListFiles(ctx context.Context, path string) ([]string, error)
+}
+
 // GitTools returns a list of git-related function definitions for use by the
 // LLM. The returned function definitions will fetch the current git state from
 // the RepoProvider at time of use by the LLM.
 func GitTools(rp RepoProvider) []*FunctionDefinition {
+	return RepoTools(git2Reader(rp))
+}
+
+type git2Reader RepoProvider
+
+func (rp git2Reader) ReadFile(_ context.Context, path string) (string, error) {
+	repo, ref := rp()
+	tr, err := getRepoTree(repo, ref)
+	if err != nil {
+		return "", err
+	}
+	return getRepoFile(tr, path)
+}
+
+func (rp git2Reader) ListFiles(_ context.Context, path string) ([]string, error) {
+	repo, ref := rp()
+	tr, err := getRepoTree(repo, ref)
+	if err != nil {
+		return nil, err
+	}
+	return listRepoFiles(tr, path)
+}
+
+// RepoTools defines read_repo_file and list_repo_files over r.
+func RepoTools(r RepoReader) []*FunctionDefinition {
 	return []*FunctionDefinition{
 		{
 			FunctionDeclaration: genai.FunctionDeclaration{
@@ -39,17 +73,12 @@ func GitTools(rp RepoProvider) []*FunctionDefinition {
 					},
 				},
 			},
-			Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
-				repo, ref := rp()
-				path := args["path"].(string)
-				var content, errStr string
-				if tr, err := getRepoTree(repo, ref); err != nil {
+			Function: func(ctx context.Context, args map[string]any) genai.FunctionResponse {
+				path, _ := args["path"].(string)
+				var errStr string
+				content, err := r.ReadFile(ctx, path)
+				if err != nil {
 					errStr = err.Error()
-				} else {
-					content, err = getRepoFile(tr, path)
-					if err != nil {
-						errStr = err.Error()
-					}
 				}
 				return genai.FunctionResponse{
 					Name: "read_repo_file", // Name must match the FunctionDeclaration
@@ -79,8 +108,7 @@ func GitTools(rp RepoProvider) []*FunctionDefinition {
 					},
 				},
 			},
-			Function: func(_ context.Context, args map[string]any) genai.FunctionResponse {
-				repo, ref := rp()
+			Function: func(ctx context.Context, args map[string]any) genai.FunctionResponse {
 				var path string
 				if patharg, ok := args["path"]; ok {
 					if p, ok := patharg.(string); ok {
@@ -89,13 +117,9 @@ func GitTools(rp RepoProvider) []*FunctionDefinition {
 					// TODO: Handle case where path exists but is not a string?
 				}
 				var errStr string
-				var content []string
-				if tr, err := getRepoTree(repo, ref); err != nil {
+				content, err := r.ListFiles(ctx, path)
+				if err != nil {
 					errStr = err.Error()
-				} else {
-					if content, err = listRepoFiles(tr, path); err != nil {
-						errStr = err.Error()
-					}
 				}
 				entries := make([]string, 0, len(content))
 				for _, entry := range content {
