@@ -113,8 +113,9 @@ func main() {
 			QEMUBin:    *qemuBin,
 			QEMUImgBin: *qemuImgBin,
 		},
-		Exec:         execx.NewRealCommandExecutor(),
-		ChannelCache: channels,
+		Exec:           execx.NewRealCommandExecutor(),
+		ChannelCache:   channels,
+		MemAvailableMB: scratchhostservice.MemAvailableMB,
 	}
 	guestInit := func(context.Context) (*scratchhostservice.GuestDeps, error) { return guestDeps, nil }
 	mw := idauth.Middleware(idauth.NewGoogleValidator(*callerSA, *audience))

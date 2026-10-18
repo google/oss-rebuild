@@ -62,7 +62,10 @@ locals {
   scratch_guest_vcpus = { standard = 4, jumbo = 4 }
   # Guest vCPUs each class's host runs per vCPU of its own. Guests sit mostly
   # idle, so a host can carry more guest vCPUs than it has.
-  scratch_cpu_overcommit = { standard = 2, jumbo = 2 }
+  scratch_cpu_overcommit = { standard = 4, jumbo = 2 }
+  # How far each class's guests may grow past an even share of host memory.
+  # Standard guests use little of theirs, so standard hosts run twice as many.
+  scratch_mem_overcommit = { standard = 2, jumbo = 1 }
   # Unused guest slots each class keeps ready, so bursts start without a boot.
   scratch_idle_guests = { standard = 24, jumbo = 0 }
   # Each class's host vCPUs, from its machine type's name (e.g. n2-standard-16 has 16).
@@ -114,9 +117,10 @@ resource "google_compute_instance_template" "scratch-host" {
       guest_subnet = local.scratch_guest_subnet
     })
     startup-script = templatefile("${path.module}/scratch_host_cos_startup.sh", {
-      guest_subnet = local.scratch_guest_subnet
-      slots        = local.scratch_host_slots[each.key]
-      guest_vcpu   = local.scratch_guest_vcpus[each.key]
+      guest_subnet   = local.scratch_guest_subnet
+      slots          = local.scratch_host_slots[each.key]
+      guest_vcpu     = local.scratch_guest_vcpus[each.key]
+      mem_overcommit = local.scratch_mem_overcommit[each.key]
     })
   }
 
