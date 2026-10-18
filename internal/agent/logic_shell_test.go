@@ -67,6 +67,7 @@ func TestDockerExecInContainerScript(t *testing.T) {
 		`docker ps -aq --filter name=^rb-`,
 		`exit 125`,
 		`docker start "$c"`,
+		`/timewarp -port 8080`,
 		`exec docker exec -w /src "$c" /bin/sh -c '`,
 	} {
 		if !strings.Contains(s, want) {
