@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/api/inferenceservice"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/llm"
+	"github.com/google/oss-rebuild/pkg/rebuild/npm"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/pkg/errors"
@@ -158,5 +160,74 @@ func TestWithPanicRecovered(t *testing.T) {
 	// A panic is a defect in the session, not a provider condition.
 	if llm.IsTransient(err) {
 		t.Error("panic error reads as transient")
+	}
+}
+
+func TestServiceInference(t *testing.T) {
+	located := api.AsStatus(codes.Internal, errors.New("no build inferred"), api.AsDetail(rebuild.InferenceErrorDetail{
+		Location: rebuild.Location{Repo: "https://github.com/org/p", Ref: "abc"},
+	}))
+	oversize := api.AsStatus(codes.FailedPrecondition, errors.New("repository exceeds the size limit: https://github.com/org/p, archive is 9000 MiB, limit 7168 MiB"), api.AsDetail(rebuild.InferenceErrorDetail{Kind: rebuild.FailureOversize}))
+	for _, tc := range []struct {
+		name      string
+		size      schema.SizeHint
+		infer     error
+		wantErr   bool
+		wantSeed  bool
+		wantJumbo bool
+	}{
+		{name: "Inferred", wantSeed: true},
+		{name: "Jumbo", size: schema.JumboSize, wantSeed: true, wantJumbo: true},
+		{name: "LocatedFailureFallsBackToToolchain", infer: located, wantSeed: true},
+		// The standard refusal goes to jumbo, and no repo hint helps a located repo.
+		{name: "OversizeIsFinal", infer: oversize, wantErr: true, wantJumbo: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var seeded []string
+			var jumbo bool
+			infer := func(_ context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+				if tc.infer != nil {
+					return nil, tc.infer
+				}
+				return new(schema.NewStrategyOneOf(&npm.NPMPackBuild{Location: rebuild.Location{Repo: "https://github.com/org/p", Ref: "abc"}})), nil
+			}
+			router := &inferenceservice.Router{Standard: infer, Jumbo: func(ctx context.Context, req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+				jumbo = true
+				return infer(ctx, req)
+			}}
+			a := NewDefaultAgent(testTarget, &AgentDeps{
+				Inference: router,
+				Size:      tc.size,
+				SeedRepo: func(_ context.Context, repo string) error {
+					seeded = append(seeded, repo)
+					return nil
+				},
+			})
+			s, err := a.proposeHeuristicInference(context.Background())
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("proposeHeuristicInference() = %v, %v, want error %t", s, err, tc.wantErr)
+			}
+			if jumbo != tc.wantJumbo {
+				t.Errorf("used the jumbo service = %t, want %t", jumbo, tc.wantJumbo)
+			}
+			if tc.wantSeed != (len(seeded) == 1 && seeded[0] == "https://github.com/org/p") {
+				t.Errorf("seeded %v, want seeded %t with the inferred repository", seeded, tc.wantSeed)
+			}
+			if !tc.wantErr && (a.loc.Repo != "https://github.com/org/p" || a.repo != nil) {
+				t.Errorf("loc = %+v, repo held = %t, want the inferred location and no repository in the job", a.loc, a.repo != nil)
+			}
+		})
+	}
+}
+
+func TestInferenceTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		size schema.SizeHint
+		want time.Duration
+	}{{schema.UnspecifiedSize, inferenceTimeout}, {schema.JumboSize, jumboInferenceTimeout}} {
+		a := NewDefaultAgent(testTarget, &AgentDeps{Size: tc.size})
+		if got := a.inferenceTimeout(); got != tc.want {
+			t.Errorf("size=%q: inferenceTimeout() = %v, want %v", tc.size, got, tc.want)
+		}
 	}
 }

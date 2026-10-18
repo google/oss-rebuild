@@ -203,6 +203,8 @@ const (
 	ScratchLabelRestore        ScratchLabel = "restore"         // the free-form source tree reset after a refusal
 	ScratchLabelReadback       ScratchLabel = "readback"        // a timed-out tool call's output replay
 	ScratchLabelCtl            ScratchLabel = "ctl"             // an operator's ctl scratch exec
+	ScratchLabelGit            ScratchLabel = "git"             // git on the guest checkout for the repo tools and set_source_ref
+	ScratchLabelSeed           ScratchLabel = "seed"            // staging of the seed repository on the VM
 )
 
 const (

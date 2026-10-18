@@ -51,6 +51,46 @@ func (rp git2Reader) ListFiles(_ context.Context, path string) ([]string, error)
 	return listRepoFiles(tr, path)
 }
 
+// GitCommandReader reads a repository the process doesn't hold by running git.
+type GitCommandReader struct {
+	Git func(ctx context.Context, args ...string) (string, error)
+	Ref func() string // read live, so a ref move applies
+}
+
+// ReadFile implements RepoReader.
+func (r GitCommandReader) ReadFile(ctx context.Context, path string) (string, error) {
+	return r.Git(ctx, "show", r.Ref()+":"+strings.TrimPrefix(path, "/"))
+}
+
+// ListFiles implements RepoReader.
+func (r GitCommandReader) ListFiles(ctx context.Context, path string) ([]string, error) {
+	tree := r.Ref()
+	if p := strings.Trim(path, "/"); p != "" && p != "." {
+		tree += ":" + p
+	}
+	out, err := r.Git(ctx, "ls-tree", tree)
+	if err != nil {
+		return nil, err
+	}
+	return parseLsTree(out), nil
+}
+
+// parseLsTree returns ls-tree's names, with a slash after each directory.
+func parseLsTree(out string) []string {
+	var names []string
+	for line := range strings.Lines(out) {
+		meta, name, ok := strings.Cut(strings.TrimRight(line, "\n"), "\t")
+		if !ok {
+			continue
+		}
+		if f := strings.Fields(meta); len(f) == 3 && f[1] == "tree" {
+			name += "/"
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
 // RepoTools defines read_repo_file and list_repo_files over r.
 func RepoTools(r RepoReader) []*FunctionDefinition {
 	return []*FunctionDefinition{

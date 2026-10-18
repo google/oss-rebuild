@@ -308,6 +308,22 @@ func TestGetToolsWithdrawsHostShellInSingleEnv(t *testing.T) {
 
 // fakeShell answers every command with a scripted result, keeping the
 // scripts it was dispatched.
+func TestGuestGit(t *testing.T) {
+	ctx := context.Background()
+	sh := &fakeShell{result: CommandResult{Output: "content"}}
+	a := NewDefaultAgent(testTarget, &AgentDeps{Shell: sh})
+	if got, err := a.guestGit(ctx, "show", "abc:README.md"); err != nil || got != "content" {
+		t.Errorf("guestGit() = %q, %v", got, err)
+	}
+	if got := sh.scripts[0]; !strings.Contains(got, "abc:README.md") || !strings.Contains(got, "docker exec") {
+		t.Errorf("guestGit ran %q, want git show in the build container", got)
+	}
+	sh.result = CommandResult{ExitCode: 128, Output: "fatal: path 'x' does not exist"}
+	if _, err := a.guestGit(ctx, "show", "abc:x"); err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("guestGit of a missing path = %v, want git's error", err)
+	}
+}
+
 type fakeShell struct {
 	scripts []string
 	result  CommandResult
