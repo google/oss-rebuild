@@ -145,6 +145,21 @@ func TestHandler(t *testing.T) {
 	}
 }
 
+type SecretRequest struct {
+	Foo string            `form:"foo"`
+	Env map[string]string `form:"env" act:"nolog"`
+}
+
+func TestLoggable(t *testing.T) {
+	req := SecretRequest{Foo: "visible", Env: map[string]string{"AUTH_HEADER": "Bearer s3cr3t"}}
+	if got, want := loggable(req), (SecretRequest{Foo: "visible"}); !reflect.DeepEqual(got, want) {
+		t.Errorf("loggable = %+v, want %+v", got, want)
+	}
+	if req.Env["AUTH_HEADER"] != "Bearer s3cr3t" {
+		t.Errorf("request Env = %v after loggable, want the credential kept", req.Env)
+	}
+}
+
 // Test for AsStatus with comprehensive table-driven tests
 func TestAsStatus(t *testing.T) {
 	tests := []struct {

@@ -193,7 +193,7 @@ type ScratchExecRequest struct {
 	ScratchID      string            `form:"scratch_id,required"`
 	Cmd            []string          `form:"cmd,required"`
 	Cwd            string            `form:"cwd"`
-	Env            map[string]string `form:"env"`
+	Env            map[string]string `form:"env" act:"nolog"` // may hold sensitive values, e.g. creds
 	StdinB64       string            `form:"stdin_b64"`
 	TimeoutSeconds int               `form:"timeout_seconds"`
 	WaitSeconds    int               `form:"wait_seconds"`

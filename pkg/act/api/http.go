@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -265,12 +266,29 @@ func decodeRequest[I act.Input](rw http.ResponseWriter, r *http.Request) (I, boo
 		writeStatusError(rw, AsStatus(codes.InvalidArgument, errors.Wrap(err, "parsing request")))
 		return req, false
 	}
-	log.Printf("received request: %+v", req)
+	log.Printf("received request: %+v", loggable(req))
 	if err := req.Validate(); err != nil {
 		writeStatusError(rw, AsStatus(codes.InvalidArgument, errors.Wrap(err, "validating request")))
 		return req, false
 	}
 	return req, true
+}
+
+// loggable returns req with its top-level act:"nolog" fields zeroed, for the
+// request log. A secret inside a nested struct needs its whole field tagged.
+func loggable[T any](req T) T {
+	v := reflect.ValueOf(req)
+	if v.Kind() != reflect.Struct {
+		return req
+	}
+	out := reflect.New(v.Type()).Elem()
+	out.Set(v)
+	for i := range v.NumField() {
+		if v.Type().Field(i).Tag.Get("act") == "nolog" && out.Field(i).CanSet() {
+			out.Field(i).SetZero()
+		}
+	}
+	return out.Interface().(T)
 }
 
 // writeStatusError translates err into an HTTP error response with a
