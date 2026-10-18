@@ -189,6 +189,15 @@ resource "google_cloud_run_v2_service" "inference" {
           memory = "32G"
         }
       }
+      # /readyz fails open after 60s, inside this probe's 180s budget.
+      startup_probe {
+        http_get {
+          path = "/readyz"
+        }
+        period_seconds    = 2
+        timeout_seconds   = 2
+        failure_threshold = 90
+      }
     }
     dynamic "vpc_access" {
       for_each = var.enable_internal_ingress ? [1] : []
@@ -230,6 +239,15 @@ resource "google_cloud_run_v2_service" "crates-registry" {
       volume_mounts {
         name       = "cache"
         mount_path = "/cache"
+      }
+      # /readyz fails open after 60s, inside this probe's 180s budget.
+      startup_probe {
+        http_get {
+          path = "/readyz"
+        }
+        period_seconds    = 2
+        timeout_seconds   = 2
+        failure_threshold = 90
       }
     }
     // At their current size, this should be enough to host the current index (1.5G) as well as ~16 snapshots (~.5G)
@@ -303,6 +321,15 @@ resource "google_cloud_run_v2_service" "orchestrator" {
           cpu    = "1000m"
           memory = "2G"
         }
+      }
+      # /readyz fails open after 60s, inside this probe's 180s budget.
+      startup_probe {
+        http_get {
+          path = "/readyz"
+        }
+        period_seconds    = 2
+        timeout_seconds   = 2
+        failure_threshold = 90
       }
     }
     dynamic "vpc_access" {
@@ -505,6 +532,15 @@ resource "google_cloud_run_v2_service" "agent-api" {
           cpu    = "1000m"
           memory = "4G" // Artifact comparisons hold both artifacts unpacked in memory.
         }
+      }
+      # /readyz fails open after 60s, inside this probe's 180s budget.
+      startup_probe {
+        http_get {
+          path = "/readyz"
+        }
+        period_seconds    = 2
+        timeout_seconds   = 2
+        failure_threshold = 90
       }
     }
     # When scratch is enabled, agent-api reaches worker VMs on private

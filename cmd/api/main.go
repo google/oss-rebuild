@@ -439,6 +439,7 @@ func main() {
 	http.HandleFunc("/onboard/dispatch", api.Handler(DispatchInit, apiservice.Dispatch))
 	http.HandleFunc("/snapshot/rollup", api.Handler(SnapshotRollupInit, snapshotservice.Rollup))
 	http.HandleFunc("/snapshot/delta", api.Handler(SnapshotDeltaInit, snapshotservice.Delta))
+	http.Handle("/readyz", httpegress.ReadyHandler(http.DefaultClient))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		log.Fatalln(err)
 	}

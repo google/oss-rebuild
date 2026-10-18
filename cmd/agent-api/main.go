@@ -299,6 +299,7 @@ func main() {
 		mux.HandleFunc("/scratch/reap", api.Handler(ScratchReapInit, agentapiservice.ScratchReap))
 	}
 
+	mux.Handle("/readyz", httpegress.ReadyHandler(http.DefaultClient))
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), mux); err != nil {
 		log.Fatalln(err)
 	}

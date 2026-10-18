@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -111,6 +112,7 @@ func main() {
 	// the process ten seconds later.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
+	httpegress.AwaitReady(ctx, http.DefaultClient)
 	// Create HTTP client for the agent API
 	client, err := idtoken.NewClient(ctx, *agentAPIURL)
 	if err != nil {
