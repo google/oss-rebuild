@@ -28,6 +28,11 @@
 // A fill stops at a time and size budget. One over its size budget fails with
 // 413.
 //
+// # Failed Fills
+//
+// A fill over its size budget, or the third failure in a row, makes refills
+// fail fast for a day with 413 or 422.
+//
 // # Concurrent Fills
 //
 // A lease beside the entry lets one request at a time fill it. Others get 503

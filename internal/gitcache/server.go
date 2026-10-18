@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -49,6 +50,14 @@ const sizeLimitHeader = "Git-Cache-Size-Limit"
 
 // sizeHeader carries the bytes of the archive a redirect points to.
 const sizeHeader = "Git-Cache-Size"
+
+// A fill that fails failLimit times in a row, or once for size, blocks refills
+// for failExpiry, after which the repository or budget may have changed.
+const (
+	failLimit      = 3
+	failExpiry     = 24 * time.Hour
+	failuresSuffix = ".failures"
+)
 
 // fillRetryAfter is the Retry-After for an entry being filled. Waiting in
 // place would hold an instance for each of a monorepo's many packages.
@@ -131,6 +140,12 @@ func (s *Server) HandleGet(rw http.ResponseWriter, httpReq *http.Request) {
 		needsPopulate = true
 	}
 	if needsPopulate {
+		if f, err := s.failures(ctx, p); err != nil {
+			log.Printf("Failed to read the fill failures of %s: %v\n", p, err)
+		} else if f.blocking() {
+			f.respond(rw, u)
+			return
+		}
 		held, release, err := s.backend.lease(ctx, p)
 		if err != nil {
 			if !errors.Is(err, errLeaseHeld) {
@@ -146,21 +161,29 @@ func (s *Server) HandleGet(rw http.ResponseWriter, httpReq *http.Request) {
 			defer cancel()
 			if err := s.fill(fctx, u, req.Ref, p, !mtime.IsZero()); err != nil {
 				log.Printf("Failed to populate cache: %v\n", err)
-				var tooLarge *gitx.RepoTooLargeError
 				switch {
 				case errors.Is(err, transport.ErrAuthenticationRequired):
 					http.Error(rw, err.Error(), 400)
 				case errors.Is(context.Cause(held), errLeaseLost):
 					// The entry is now the new holder's to write.
 					respondFilling(rw)
-				case errors.As(err, &tooLarge):
-					rw.Header().Set(sizeLimitHeader, strconv.FormatInt(tooLarge.Limit, 10))
-					http.Error(rw, err.Error(), http.StatusRequestEntityTooLarge)
+				case ctx.Err() != nil:
+					// The request ended, which says nothing of the repository.
+				case errors.Is(err, transport.ErrRepositoryNotFound), errors.Is(err, git.ErrBranchNotFound):
+					// Cheap to repeat, and the repository or ref may yet appear.
+					http.Error(rw, "Fill failed: "+err.Error(), 500)
 				default:
 					// The previous entry stays for the next fill to refresh from.
-					http.Error(rw, "Fill failed: "+err.Error(), 500)
+					if f := s.recordFailure(ctx, p, err); f.blocking() {
+						f.respond(rw, u)
+					} else {
+						http.Error(rw, "Fill failed: "+err.Error(), 500)
+					}
 				}
 				return
+			}
+			if err := s.backend.delete(ctx, p+failuresSuffix); err != nil {
+				log.Printf("Failed to clear the fill failures of %s: %v\n", p, err)
 			}
 		}
 	}
@@ -540,4 +563,77 @@ func dirBytes(dir string) int64 {
 		return nil
 	})
 	return n
+}
+
+// fillFailures records an entry's consecutive failed fills.
+type fillFailures struct {
+	Count int
+	Last  string // the last failure
+	Limit int64  // exceeded fill budget, or 0
+	until time.Time
+}
+
+// blocking reports whether requests should fail rather than fill again.
+func (f fillFailures) blocking() bool { return f.Count >= failLimit || f.Limit > 0 }
+
+// respond answers a request for an entry that blocks refills. A 422 omits the
+// last failure: callers would retry one that reads as a network error.
+func (f fillFailures) respond(rw http.ResponseWriter, repo string) {
+	if f.Limit > 0 {
+		rw.Header().Set(sizeLimitHeader, strconv.FormatInt(f.Limit, 10))
+		http.Error(rw, f.Last, http.StatusRequestEntityTooLarge)
+		return
+	}
+	http.Error(rw, fmt.Sprintf("fills of %s failed %d times in a row, not filling again before %s", repo, f.Count, f.until.UTC().Format(time.RFC3339)), http.StatusUnprocessableEntity)
+}
+
+// failures reads the entry's failure record, ignoring one failExpiry old.
+func (s *Server) failures(ctx context.Context, p string) (fillFailures, error) {
+	var f fillFailures
+	mtime, err := s.backend.exists(ctx, p+failuresSuffix)
+	if err != nil || mtime.IsZero() || time.Since(mtime) >= failExpiry {
+		return f, err
+	}
+	r, err := s.backend.reader(ctx, p+failuresSuffix)
+	if err != nil {
+		return f, err
+	}
+	defer r.Close()
+	err = json.NewDecoder(r).Decode(&f)
+	f.until = mtime.Add(failExpiry)
+	return f, err
+}
+
+// recordFailure counts a failed fill of the entry at p and returns the
+// updated record. It records even once the request has ended.
+func (s *Server) recordFailure(ctx context.Context, p string, cause error) fillFailures {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	f, err := s.failures(ctx, p)
+	if err != nil {
+		log.Printf("Failed to read the fill failures of %s: %v\n", p, err)
+	}
+	f.Count++
+	f.Last = cause.Error()
+	f.until = time.Now().Add(failExpiry)
+	f.Limit = 0
+	if tooLarge := (*gitx.RepoTooLargeError)(nil); errors.As(cause, &tooLarge) {
+		f.Limit = tooLarge.Limit
+	}
+	b, err := json.Marshal(f)
+	if err == nil {
+		var w io.WriteCloser
+		if w, err = s.backend.writer(ctx, p+failuresSuffix); err == nil {
+			if _, err = w.Write(b); err == nil {
+				err = w.Close()
+			} else {
+				cancel() // abandons the partial write
+				w.Close()
+			}
+		}
+	}
+	if err != nil {
+		log.Printf("Failed to record a fill failure of %s: %v\n", p, err)
+	}
+	return f
 }
