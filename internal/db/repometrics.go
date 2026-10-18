@@ -4,9 +4,12 @@
 package db
 
 import (
+	"context"
+	"errors"
 	"net/url"
 
 	"cloud.google.com/go/firestore"
+	"github.com/google/oss-rebuild/internal/uri"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 )
 
@@ -32,4 +35,21 @@ func NewFirestoreRepoMetrics(c *firestore.Client) RepoMetrics {
 // NewMemoryRepoMetrics returns an in-memory RepoMetrics store for tests.
 func NewMemoryRepoMetrics() RepoMetrics {
 	return &memoryResource[schema.RepoMetrics, string]{data: map[string]schema.RepoMetrics{}, pathFor: repoMetricsPath, pathForKey: repoMetricsKey}
+}
+
+// FetchRepoBytes reads the recorded packed size of the repository at repo,
+// which need not be canonical. An unmeasured repository reads 0.
+func FetchRepoBytes(ctx context.Context, store RepoMetrics, repo string) (int64, error) {
+	canonical, err := uri.CanonicalizeRepoURI(repo)
+	if err != nil {
+		return 0, err
+	}
+	m, err := store.Get(ctx, canonical)
+	if errors.Is(err, ErrNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return m.Bytes, nil
 }
