@@ -30,6 +30,8 @@ type cacheBackend interface {
 	// writer returns a WriteCloser for writing data to the cache entry.
 	// The caller must call Close to finalize the write.
 	writer(ctx context.Context, path string) (io.WriteCloser, error)
+	// reader returns the cache entry's contents.
+	reader(ctx context.Context, path string) (io.ReadCloser, error)
 	// serve serves the cached content to the response writer.
 	serve(rw http.ResponseWriter, req *http.Request, path string)
 	// delete removes the cache entry.
@@ -123,6 +125,10 @@ func (g *gcsBackend) exists(ctx context.Context, path string) (time.Time, error)
 		return time.Time{}, err
 	}
 	return a.Updated, nil
+}
+
+func (g *gcsBackend) reader(ctx context.Context, path string) (io.ReadCloser, error) {
+	return g.client.Bucket(g.bucket).Object(path).NewReader(ctx)
 }
 
 func (g *gcsBackend) writer(ctx context.Context, path string) (io.WriteCloser, error) {
@@ -226,6 +232,10 @@ func (w *atomicFileWriter) Close() error {
 		return errors.Wrap(err, "renaming temp file to final path")
 	}
 	return nil
+}
+
+func (l *localBackend) reader(ctx context.Context, path string) (io.ReadCloser, error) {
+	return os.Open(filepath.Join(l.baseDir, path))
 }
 
 func (l *localBackend) writer(ctx context.Context, path string) (io.WriteCloser, error) {
