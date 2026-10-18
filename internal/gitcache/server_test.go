@@ -8,11 +8,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -564,4 +567,51 @@ commits:
 	if !foundHEAD {
 		t.Error("archive does not contain HEAD file")
 	}
+}
+
+func TestSplitPacks(t *testing.T) {
+	if !gitx.NativeGitAvailable() {
+		t.Skip("native git not available")
+	}
+	src, bare := t.TempDir(), filepath.Join(t.TempDir(), "repo.git")
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	git("init", "-q", src)
+	// Incompressible files, so the clone's single pack outgrows the limit.
+	for i := range 4 {
+		b := make([]byte, 600<<10)
+		rand.Read(b)
+		if err := os.WriteFile(filepath.Join(src, fmt.Sprintf("f%d", i)), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("-C", src, "add", ".")
+	git("-C", src, "commit", "-q", "-m", "files")
+	// --no-local packs the objects, as a clone over the network does.
+	git("clone", "-q", "--bare", "--no-local", src, bare)
+	orig := maxPackBytes
+	maxPackBytes = 1 << 20 // git's smallest pack limit
+	defer func() { maxPackBytes = orig }()
+	if err := splitPacks(context.Background(), bare); err != nil {
+		t.Fatalf("splitPacks: %v", err)
+	}
+	packs, err := filepath.Glob(filepath.Join(bare, "objects", "pack", "*.pack"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packs) < 2 {
+		t.Errorf("packs = %d, want the clone split into several", len(packs))
+	}
+	for _, p := range packs {
+		if fi, err := os.Stat(p); err != nil || fi.Size() > maxPackBytes {
+			t.Errorf("pack %s: %v, size over %d", p, err, maxPackBytes)
+		}
+	}
+	git("--git-dir="+bare, "fsck", "--strict", "--no-progress")
 }

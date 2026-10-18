@@ -7,11 +7,13 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -178,6 +180,9 @@ func (s *Server) populateCache(ctx context.Context, repo, ref string, cachePath 
 		return errors.Wrapf(err, "failure cloning %s", repo)
 	}
 	log.Println("Clone successful")
+	if err := splitPacks(ctx, tmpDir); err != nil {
+		return errors.Wrapf(err, "splitting packs of %s", repo)
+	}
 	w, err := s.backend.writer(ctx, cachePath)
 	if err != nil {
 		return errors.Wrapf(err, "failure opening cache writer for %s", cachePath)
@@ -191,6 +196,36 @@ func (s *Server) populateCache(ctx context.Context, repo, ref string, cachePath 
 	}
 	if err := w.Close(); err != nil {
 		return errors.Wrapf(err, "failure finalizing cache write for %s", cachePath)
+	}
+	return nil
+}
+
+// maxPackBytes bounds each cached pack. Readers built on a 32-bit libgit2
+// cannot reach an object past 4 GiB into a pack, and 2 GiB also keeps every
+// offset within a signed 32-bit int.
+var maxPackBytes int64 = 2 << 30
+
+// splitPacks repacks dir into packs of at most maxPackBytes when any pack is
+// larger. Without native git it leaves the packs as cloned.
+func splitPacks(ctx context.Context, dir string) error {
+	packs, err := filepath.Glob(filepath.Join(dir, "objects", "pack", "*.pack"))
+	if err != nil {
+		return err
+	}
+	over := false
+	for _, p := range packs {
+		if fi, err := os.Stat(p); err == nil && fi.Size() > maxPackBytes {
+			over = true
+		}
+	}
+	if !over || !gitx.NativeGitAvailable() {
+		return nil
+	}
+	// Without -f, existing deltas are reused, so this mostly copies objects.
+	// -n skips the dumb-HTTP files a clone doesn't have.
+	cmd := exec.CommandContext(ctx, "git", "--git-dir="+dir, "repack", "-a", "-d", "-n", "-q", fmt.Sprintf("--max-pack-size=%d", maxPackBytes))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return errors.Wrapf(err, "repacking: %s", out)
 	}
 	return nil
 }
