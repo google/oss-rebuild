@@ -31,6 +31,7 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
 	"github.com/google/oss-rebuild/pkg/rebuild/stability"
+	"github.com/google/oss-rebuild/pkg/scheduler"
 	"github.com/google/oss-rebuild/pkg/stabilize"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -198,14 +199,35 @@ func infer(ctx context.Context, standardStub, jumboStub api.StubFn[schema.Infere
 		return standardStub(ctx, req)
 	}
 	if hint == schema.JumboSize {
-		return jumboStub(ctx, req)
+		return inferJumbo(ctx, jumboStub, req)
 	}
 	s, err := standardStub(ctx, req)
 	if err != nil && refusedForSize(err) {
 		log.Printf("inferring %s@%s on the jumbo service: %v", req.Package, req.Version, err)
-		return jumboStub(ctx, req)
+		return inferJumbo(ctx, jumboStub, req)
 	}
 	return s, err
+}
+
+// jumboRetryDelay paces asks of a full jumbo service. Room takes a new
+// instance's cold start or a running inference's finish, so asking sooner only
+// adds rejections.
+var jumboRetryDelay = 20 * time.Second
+
+// inferJumbo retries while the jumbo service is full. Each instance takes one
+// request, so a burst of large repositories can exceed them.
+func inferJumbo(ctx context.Context, jumboStub api.StubFn[schema.InferenceRequest, schema.StrategyOneOf], req schema.InferenceRequest) (*schema.StrategyOneOf, error) {
+	for {
+		s, err := jumboStub(ctx, req)
+		if err == nil || !scheduler.IsCapacityRejection(err.Error()) {
+			return s, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, errors.Wrapf(context.Cause(ctx), "waiting for room on the jumbo service: %v", err)
+		case <-time.After(jumboRetryDelay):
+		}
+	}
 }
 
 // refusedForSize reports a refusal of a repository over the fetch budget.
