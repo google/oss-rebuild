@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/google/oss-rebuild/pkg/build"
@@ -35,6 +36,13 @@ type DockerRunExecutor struct {
 	planner build.Planner[*local.DockerRunPlan]
 }
 
+// SeedRepoPath is the bare repository on the VM that a session seeds from the
+// git cache, so builds clone its repository without refetching it.
+func SeedRepoPath(workDir string) string { return path.Join(workDir, "seed", "repo.git") }
+
+// ContainerSeedRepoPath is the seed repository's path inside a build container.
+const ContainerSeedRepoPath = "/seed/repo.git"
+
 var _ build.Executor = (*DockerRunExecutor)(nil)
 
 // ArtifactPath is where a docker run build leaves its artifact on the VM.
@@ -55,6 +63,14 @@ func SourcePath(workDir, buildID string) string {
 // build's footprint.
 func prepareSourceMount(workDir, buildID string) string {
 	return fmt.Sprintf("rm -rf %q/*/src && mkdir -p %q", path.Join(workDir, buildsSubdir), SourcePath(workDir, buildID))
+}
+
+// seedCloneScript clones repo into dir without a checkout, using the VM's git.
+// It copies the objects the seed holds and fetches only the rest, and the clone
+// keeps no link to the seed. Without a seed it clones in full.
+func seedCloneScript(seed, repo, dir string) string {
+	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+	return fmt.Sprintf("git clone --quiet --no-checkout --reference-if-able %s --dissociate -- %s %s", q(seed), q(repo), q(dir))
 }
 
 // NewDockerRunExecutor creates a scratch docker run executor from config.
@@ -98,6 +114,10 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 	if e.singleEnv {
 		prep = append(prep, fmt.Sprintf("mkdir -p %q %q", ToolsDir(e.workDir), UpstreamDir(e.workDir)))
 	}
+	if plan.RepoURL != "" {
+		// The mount needs a source even before the session seeds it.
+		prep = append(prep, fmt.Sprintf("mkdir -p %q", SeedRepoPath(e.workDir)))
+	}
 	if err := e.prepareBuild(ctx, dir, "build.sh", []byte(plan.CombinedScript()), prep...); err != nil {
 		return nil, err
 	}
@@ -110,6 +130,9 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 	}
 	if e.singleEnv {
 		argOpts.ReadOnlyMounts = singleEnvMounts(e.workDir)
+	}
+	if plan.RepoURL != "" {
+		argOpts.ReadOnlyMounts = append(argOpts.ReadOnlyMounts, local.Mount{HostPath: SeedRepoPath(e.workDir), ContainerPath: ContainerSeedRepoPath})
 	}
 	if plan.Privileged && !e.allowPrivileged {
 		log.Println("Warning: plan requested privileged execution but this executor does not allow privileged builds.")
@@ -136,10 +159,21 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 	elapsed := rebuild.BuildTimings{}
 	slots := map[rebuild.BuildPhase]**time.Duration{rebuild.PhaseSetup: &elapsed.Setup, rebuild.PhaseSource: &elapsed.Source, rebuild.PhaseDeps: &elapsed.Deps, rebuild.PhaseBuild: &elapsed.Build}
 	remaining := timeout
+	type step struct {
+		phase rebuild.BuildPhase
+		cmd   []string
+	}
+	var steps []step
+	if plan.RepoURL != "" {
+		// The plan leaves the clone to the executor, which runs it on the VM
+		// as the first step of sourcing.
+		steps = append(steps, step{rebuild.PhaseSource, []string{"/bin/sh", "-c", seedCloneScript(SeedRepoPath(e.workDir), plan.RepoURL, SourcePath(e.workDir, handle.id))}})
+	}
 	for _, ph := range plan.Phases() {
-		op, err := e.phaseExec(ctx, handle, schema.ScratchExecRequest{
-			Cmd: append([]string{"docker"}, local.ComposeDockerExecArgs(container, ph)...),
-		}, &remaining)
+		steps = append(steps, step{ph.Name, append([]string{"docker"}, local.ComposeDockerExecArgs(container, ph)...)})
+	}
+	for _, st := range steps {
+		op, err := e.phaseExec(ctx, handle, schema.ScratchExecRequest{Cmd: st.cmd}, &remaining)
 		if err == nil {
 			phaseOps = append(phaseOps, op)
 		}
@@ -149,10 +183,14 @@ func (e *DockerRunExecutor) runBuild(ctx context.Context, handle *scratchHandle,
 		// failing phase is usually measured. Blind finalization leaves them
 		// zero and the phase unmeasured.
 		if op != nil && op.Result != nil && !op.Result.StartedAt.IsZero() && !op.Result.FinishedAt.IsZero() {
-			*slots[ph.Name] = new(op.Result.FinishedAt.Sub(op.Result.StartedAt))
+			d := op.Result.FinishedAt.Sub(op.Result.StartedAt)
+			if prev := *slots[st.phase]; prev != nil {
+				d += *prev // the clone and the source phase share a slot
+			}
+			*slots[st.phase] = &d
 		}
-		if buildErr = phaseOutcome(string(ph.Name), op, err); buildErr != nil {
-			elapsed.FailedIn = ph.Name
+		if buildErr = phaseOutcome(string(st.phase), op, err); buildErr != nil {
+			elapsed.FailedIn = st.phase
 			// Best effort: name the failing command in the agent-facing error.
 			var ee *ExitError
 			if errors.As(buildErr, &ee) {

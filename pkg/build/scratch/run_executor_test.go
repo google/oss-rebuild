@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gcsx/gcsxtest"
+	"github.com/google/oss-rebuild/pkg/build/local"
 	"github.com/google/oss-rebuild/pkg/longrunning"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
@@ -416,5 +417,48 @@ func TestSingleEnvOffByDefault(t *testing.T) {
 		if slices.Contains(start.Cmd, unwanted) {
 			t.Errorf("default build should not mount %q: %v", unwanted, start.Cmd)
 		}
+	}
+}
+
+func TestHasRepoPlan(t *testing.T) {
+	for _, seed := range []bool{true, false} {
+		execs := []int{0, 0, 0, 0}
+		if seed {
+			execs = append(execs, 0) // the clone
+		}
+		f := &fakeStubs{creates: runCreates(execs...)}
+		config := DockerRunExecutorConfig{ExecutorConfig: testExecutorConfig(f)}
+		if seed {
+			config.Planner = &local.DockerRunPlanner{HasRepo: true}
+		}
+		e, err := NewDockerRunExecutor(config)
+		if err != nil {
+			t.Fatalf("NewDockerRunExecutor: %v", err)
+		}
+		_ = awaitBuild(t, e, testOptions())
+		prepare, start, next := f.createReqs[0], f.createReqs[1], f.createReqs[2]
+		mount := "/home/builder/seed/repo.git:" + ContainerSeedRepoPath + ":ro"
+		if got := slices.Contains(start.Cmd, mount); got != seed {
+			t.Errorf("seed=%t: start cmd mounts %q = %t: %v", seed, mount, got, start.Cmd)
+		}
+		if got := strings.Contains(prepare.Cmd[len(prepare.Cmd)-1], `mkdir -p "/home/builder/seed/repo.git"`); got != seed {
+			t.Errorf("seed=%t: prepare creates the seed directory = %t", seed, got)
+		}
+		// The VM clones the source before the container's phases, copying
+		// what the seed holds.
+		clone := next.Cmd[len(next.Cmd)-1]
+		want := "git clone --quiet --no-checkout --reference-if-able '/home/builder/seed/repo.git' --dissociate -- 'https://github.com/lodash/lodash' '" + SourcePath(e.workDir, "iter-1") + "'"
+		if got := next.Cmd[0] == "/bin/sh" && clone == want; got != seed {
+			t.Errorf("seed=%t: third exec clones on the VM = %t: %v", seed, got, next.Cmd)
+		}
+		if seed {
+			source := strings.Join(f.createReqs[4].Cmd, " ")
+			if !strings.Contains(source, `chown -R "$(id -u):$(id -g)" /src`) || strings.Contains(source, "git clone") {
+				t.Errorf("source phase = %q, want it to take the clone and skip its own", source)
+			}
+		}
+	}
+	if got := seedCloneScript("/s", "https://x/it's", "/d"); !strings.Contains(got, `'https://x/it'\''s'`) {
+		t.Errorf("seedCloneScript = %q, want the repo single-quoted", got)
 	}
 }

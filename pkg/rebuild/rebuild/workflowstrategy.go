@@ -94,6 +94,8 @@ func init() {
 			Runs: textwrap.Dedent(`
 				{{ if not .BuildEnv.HasRepo -}}
 				git clone {{ if eq .With.crlf "true" }}-c core.autocrlf=true {{ end }}{{.Location.Repo}} .
+				{{ else if eq .With.crlf "true" -}}
+				git config core.autocrlf true
 				{{ end -}}
 				git checkout --force '{{.Location.Ref}}'
 				{{- range .Location.Submodules }}

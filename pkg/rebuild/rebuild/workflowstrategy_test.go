@@ -328,6 +328,16 @@ func TestBuiltinCommand_GitCheckout(t *testing.T) {
 			want:     "git checkout --force '0000'",
 		},
 		{
+			name: "provided_repo_crlf",
+			location: Location{
+				Repo: "https://github.com/test/repo",
+				Ref:  "deadbeef",
+			},
+			buildEnv: BuildEnv{HasRepo: true},
+			with:     map[string]string{"crlf": "true"},
+			want:     "git config core.autocrlf true\ngit checkout --force 'deadbeef'",
+		},
+		{
 			name: "fresh_checkout_crlf",
 			location: Location{
 				Repo: "https://github.com/test/repo",

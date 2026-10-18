@@ -32,6 +32,9 @@ type DockerRunPlan struct {
 	RequiresAuth bool
 	// Indicates whether to run the container in privileged mode
 	Privileged bool
+	// RepoURL, set by a planner with HasRepo, is the strategy's repository
+	// URL, which the executor clones into /src before the phases run.
+	RepoURL string
 }
 
 // Phase is one sequentially executed script of a DockerRunPlan. Phase scripts
