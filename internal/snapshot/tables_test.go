@@ -542,3 +542,27 @@ func TestPopularityTiersAndReleaseCohorts(t *testing.T) {
 	assertCount(t, db, `SELECT group_concat(release_year || ':' || reproduced || not_reproduced || retrying || in_flight || queued, ' ')
 		FROM (SELECT * FROM release_cohorts WHERE ecosystem='pypi' ORDER BY release_year)`, "2020:10000 2024:01100 2025:00011")
 }
+
+func TestAgentWinKind(t *testing.T) {
+	session := func(id string, count int, success, wonBy string) schema.AgentSession {
+		return schema.AgentSession{ID: id, Status: schema.AgentSessionStatusCompleted, IterationCount: count, SuccessIteration: success, WonBy: wonBy}
+	}
+	db, _ := fill(t, &fakeSource{sessions: []schema.AgentSession{
+		// A scratch-mode session records one iteration whoever won, so won_by
+		// decides when it is set.
+		session("agent", 1, "it", schema.AgentWonByAgent),
+		session("seed", 1, "it", schema.AgentWonBySeed),
+		// Sessions from before won_by fall back to the winning iteration.
+		session("old-seed", 1, "it", ""),
+		session("old-loop", 3, "it", ""),
+		session("failed", 2, "", ""),
+	}})
+	for id, want := range map[string]string{"agent": "llm-diagnose", "seed": "inference-rescue", "old-seed": "inference-rescue", "old-loop": "llm-diagnose", "failed": "NULL"} {
+		if got := queryText(t, db, "SELECT coalesce(agent_win_kind, 'NULL') FROM agent_sessions WHERE session_id='"+id+"'"); got != want {
+			t.Errorf("agent_win_kind of %s = %s, want %s", id, got, want)
+		}
+	}
+	if got := queryText(t, db, "SELECT won_by FROM agent_sessions WHERE session_id='seed'"); got != schema.AgentWonBySeed {
+		t.Errorf("won_by = %s, want %s", got, schema.AgentWonBySeed)
+	}
+}
