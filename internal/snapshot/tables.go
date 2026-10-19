@@ -567,19 +567,6 @@ func Tables() []docdb.TableDef {
 				{Name: "success_iteration", Type: "TEXT", Expr: docdb.Raw("$.SuccessIteration")},
 				{Name: "iteration_count", Type: "INTEGER", Expr: docdb.Raw("$.IterationCount")},
 				{Name: "won_by", Type: "TEXT", Expr: docdb.Raw("$.WonBy")}, // what proposed the winning strategy, empty before it was recorded
-				// agent_win_kind is what won an attested session: llm-diagnose
-				// when won_by names the agent, else inference-rescue. NULL if
-				// not attested.
-				// NOTE: A session from before won_by falls back to its
-				// IterationCount, where 1 is the inference seed and later ones
-				// LLM proposals. A scratch-mode session records one iteration
-				// whoever won, so an older one always reads inference-rescue.
-				{Name: "agent_win_kind", Type: "TEXT",
-					Expr: "CASE WHEN nullif(" + docdb.Raw("$.SuccessIteration") + ", '') IS NULL THEN NULL" +
-						" WHEN " + docdb.Raw("$.WonBy") + " = 'agent' THEN 'llm-diagnose'" +
-						" WHEN nullif(" + docdb.Raw("$.WonBy") + ", '') IS NOT NULL THEN 'inference-rescue'" +
-						" WHEN " + docdb.Raw("$.IterationCount") + " >= 2 THEN 'llm-diagnose'" +
-						" ELSE 'inference-rescue' END"},
 				{Name: "input_tokens", Type: "INTEGER", Expr: docdb.Raw("$.Usage.input")},
 				{Name: "cached_input_tokens", Type: "INTEGER", Expr: docdb.Raw("$.Usage.cached_input")},
 				{Name: "output_tokens", Type: "INTEGER", Expr: docdb.Raw("$.Usage.output")},

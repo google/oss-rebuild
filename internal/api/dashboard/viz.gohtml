@@ -54,7 +54,7 @@
 {{- end}}
 {{- define "progress-legend"}}
 <div class="legend">
-    <span class="legend-item"><i class="swatch stage-infer"></i>Attested by inference{{template "def" "Inference or a replay reproduced it, including an agent session's seed build."}}</span>
+    <span class="legend-item"><i class="swatch stage-infer"></i>Attested by inference{{template "def" "Inference, a replay, or a sibling version's strategy reproduced it, including as an agent session's first build."}}</span>
     <span class="legend-item"><i class="swatch stage-agent"></i>Attested by the agent{{template "def" "A build the agent proposed or handed off reproduced it."}}</span>
     <span class="legend-item"><i class="swatch warn"></i>Needs triage</span>
     <span class="legend-item"><i class="swatch live"></i>In flight</span>

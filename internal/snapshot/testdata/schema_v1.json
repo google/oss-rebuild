@@ -15,7 +15,6 @@
     "updated": "TEXT"
   },
   "agent_sessions": {
-    "agent_win_kind": "TEXT",
     "artifact": "TEXT",
     "cached_input_tokens": "INTEGER",
     "created": "TEXT",

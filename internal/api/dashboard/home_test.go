@@ -62,8 +62,8 @@ func TestLoadHome(t *testing.T) {
 		}},
 		Activity: coverageOverview.Activity,
 		Campaigns: []CoverageEco{{
-			Ecosystem: "npm", HasQueue: true, Queued: 1, InFlight: 1, NeedsTriage: 3, Done: 3,
-			DoneByStage: []StageDone{{Stage: scheduler.StageReplay, Done: 1}, {Stage: scheduler.StageInfer}, {Stage: scheduler.StageAgent, Done: 2, LLMDone: 1}},
+			Ecosystem: "npm", HasQueue: true, Queued: 1, InFlight: 1, NeedsTriage: 3, Done: 4,
+			DoneByStage: []StageDone{{Stage: scheduler.StageReplay, Done: 1}, {Stage: scheduler.StageInfer}, {Stage: scheduler.StageAgent, Done: 3, LLMDone: 1}},
 		}},
 		Attention: []SessionView{NewSessionView(gaveUp)},
 		GaveUp:    1,
@@ -110,9 +110,9 @@ func TestIndexRendersHome(t *testing.T) {
 		`href="/coverage?eco=npm"`, `<span>All 300</span>`, `class="warn" style="width: 50.0%"`, `&ndash;`,
 		`data-chart="columns"`, `data-k="needs triage"`, `style="width: 100.0%"`,
 		`href="/session/s-d1"`, `The lockfile is untracked.`, `<b>1</b> packages with a give-up`,
-		// The replay and the inference-won agent session are inference's,
-		// the flow strategy the agent's.
-		`data-v="2" data-k="attested by inference"`, `data-v="1" data-k="attested by the agent"`,
+		// The replay, the inference-won, and the seed-won agent sessions are
+		// inference's, the flow strategy the agent's.
+		`data-v="3" data-k="attested by inference"`, `data-v="1" data-k="attested by the agent"`,
 	} {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("rendered index lacks %s", want)

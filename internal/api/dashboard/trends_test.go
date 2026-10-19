@@ -25,9 +25,14 @@ func coverageFixture(t *testing.T) memAnalytics {
 		`CREATE TABLE snapshot_meta (built_at TEXT, watermark TEXT, source_project TEXT, tool_version TEXT)`,
 		`INSERT INTO snapshot_meta VALUES ('2026-08-31T23:02:00.000Z', '2026-08-31T23:00:00.000Z', '', '')`,
 		`CREATE TABLE campaigns (ecosystem TEXT, package TEXT, version TEXT, artifact TEXT, state TEXT, stage TEXT, last_session TEXT)`,
-		`INSERT INTO campaigns VALUES ('npm', 'a', '1', 'a.tgz', 'DONE', 'replay', ''), ('npm', 'b', '1', 'b.tgz', 'DONE', 'agent', 's-llm'), ('npm', 'c', '1', 'c.tgz', 'QUEUED', 'infer', ''), ('npm', 'd', '1', 'd.tgz', 'NEEDS_TRIAGE', 'agent', ''), ('npm', 'e', '1', 'e.tgz', 'INFLIGHT', 'replay', ''), ('npm', 'f', '1', 'f.tgz', 'DONE', 'agent', 's-inf')`,
-		`CREATE TABLE agent_sessions (session_id TEXT, agent_win_kind TEXT)`,
-		`INSERT INTO agent_sessions VALUES ('s-llm', 'llm-diagnose'), ('s-inf', 'inference-rescue')`,
+		`INSERT INTO campaigns VALUES ('npm', 'a', '1', 'a.tgz', 'DONE', 'replay', ''), ('npm', 'b', '1', 'b.tgz', 'DONE', 'agent', 's-llm'), ('npm', 'c', '1', 'c.tgz', 'QUEUED', 'infer', ''), ('npm', 'd', '1', 'd.tgz', 'NEEDS_TRIAGE', 'agent', ''), ('npm', 'e', '1', 'e.tgz', 'INFLIGHT', 'replay', ''), ('npm', 'f', '1', 'f.tgz', 'DONE', 'agent', 's-inf'), ('npm', 'g', '1', 'g.tgz', 'DONE', 'agent', 's-seed')`,
+		// s-llm and s-inf predate WonBy and won at their first iteration, so
+		// the strategy that won tells them apart. s-seed records that a
+		// sibling version's seed won it, though the seed is a flow strategy.
+		`CREATE TABLE agent_sessions (session_id TEXT, won_by TEXT)`,
+		`INSERT INTO agent_sessions VALUES ('s-llm', ''), ('s-inf', ''), ('s-seed', 'seed')`,
+		`CREATE TABLE agent_iterations (session_id TEXT, number INT, status TEXT, raw TEXT)`,
+		`INSERT INTO agent_iterations VALUES ('s-llm', 1, 'SUCCESS', '{"Strategy": {"flow": {}}}'), ('s-inf', 1, 'SUCCESS', '{"Strategy": {"npm_pack_build": {}}}'), ('s-seed', 1, 'SUCCESS', '{"Strategy": {"flow": {}}}')`,
 		`CREATE TABLE package_stats (ecosystem TEXT, package TEXT, ever_built INT)`,
 		`INSERT INTO package_stats VALUES ('npm', 'a', 1), ('npm', 'b', 0), ('npm', 'c', 1)`,
 		// a's later version does not move its first reproduction.
@@ -77,8 +82,8 @@ var coverageOverview = &Overview{
 func TestCoveragePage(t *testing.T) {
 	npm := CoverageEco{
 		Ecosystem: "npm", HasScope: true, InScope: 13, Attempted: 11, Reproduced: 9, SuccessPct: 81, WeightedPct: 89,
-		HasQueue: true, Queued: 1, InFlight: 1, Done: 3, NeedsTriage: 1,
-		DoneByStage: []StageDone{{Stage: scheduler.StageReplay, Done: 1}, {Stage: scheduler.StageInfer}, {Stage: scheduler.StageAgent, Done: 2, LLMDone: 1}},
+		HasQueue: true, Queued: 1, InFlight: 1, Done: 4, NeedsTriage: 1,
+		DoneByStage: []StageDone{{Stage: scheduler.StageReplay, Done: 1}, {Stage: scheduler.StageInfer}, {Stage: scheduler.StageAgent, Done: 3, LLMDone: 1}},
 	}
 	maven := CoverageEco{Ecosystem: "maven"}
 	pypi := CoverageEco{Ecosystem: "pypi", HasScope: true}

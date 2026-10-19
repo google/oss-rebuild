@@ -174,12 +174,9 @@ func TestFillSnapshotDB(t *testing.T) {
 	// Unset time columns are NULL, set ones use the uniform UTC encoding.
 	assertCount(t, db, "SELECT count(*) FROM attempts WHERE started IS NULL", "2")
 	assertCount(t, db, "SELECT count(*) FROM attempts WHERE created='2026-07-01T12:00:00.000Z'", "2")
-	// Session target and token columns extract from the document.
+	// Session target, iteration, and token columns extract from the document.
 	assertCount(t, db, `SELECT count(*) FROM agent_sessions WHERE session_id='s1'
-		AND ecosystem='pypi' AND package='pkgA' AND input_tokens=100`, "1")
-	// An attested session won at iteration 1 is inference-rescue.
-	assertCount(t, db, `SELECT count(*) FROM agent_sessions WHERE session_id='s1'
-		AND iteration_count=1 AND agent_win_kind='inference-rescue'`, "1")
+		AND ecosystem='pypi' AND package='pkgA' AND iteration_count=1 AND input_tokens=100`, "1")
 	// Scratch lifetime derives in SQL.
 	assertCount(t, db, "SELECT count(*) FROM scratch_vms WHERE scratch_id='sc1' AND vm_seconds=600.0", "1")
 	assertCount(t, db, `SELECT count(*) FROM repo_metrics
@@ -543,25 +540,10 @@ func TestPopularityTiersAndReleaseCohorts(t *testing.T) {
 		FROM (SELECT * FROM release_cohorts WHERE ecosystem='pypi' ORDER BY release_year)`, "2020:10000 2024:01100 2025:00011")
 }
 
-func TestAgentWinKind(t *testing.T) {
-	session := func(id string, count int, success, wonBy string) schema.AgentSession {
-		return schema.AgentSession{ID: id, Status: schema.AgentSessionStatusCompleted, IterationCount: count, SuccessIteration: success, WonBy: wonBy}
-	}
+func TestWonBy(t *testing.T) {
 	db, _ := fill(t, &fakeSource{sessions: []schema.AgentSession{
-		// A scratch-mode session records one iteration whoever won, so won_by
-		// decides when it is set.
-		session("agent", 1, "it", schema.AgentWonByAgent),
-		session("seed", 1, "it", schema.AgentWonBySeed),
-		// Sessions from before won_by fall back to the winning iteration.
-		session("old-seed", 1, "it", ""),
-		session("old-loop", 3, "it", ""),
-		session("failed", 2, "", ""),
+		{ID: "seed", Status: schema.AgentSessionStatusCompleted, IterationCount: 1, SuccessIteration: "it", WonBy: schema.AgentWonBySeed},
 	}})
-	for id, want := range map[string]string{"agent": "llm-diagnose", "seed": "inference-rescue", "old-seed": "inference-rescue", "old-loop": "llm-diagnose", "failed": "NULL"} {
-		if got := queryText(t, db, "SELECT coalesce(agent_win_kind, 'NULL') FROM agent_sessions WHERE session_id='"+id+"'"); got != want {
-			t.Errorf("agent_win_kind of %s = %s, want %s", id, got, want)
-		}
-	}
 	if got := queryText(t, db, "SELECT won_by FROM agent_sessions WHERE session_id='seed'"); got != schema.AgentWonBySeed {
 		t.Errorf("won_by = %s, want %s", got, schema.AgentWonBySeed)
 	}

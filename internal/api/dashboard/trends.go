@@ -26,14 +26,15 @@ func (CoverageRequest) Validate() error { return nil }
 type StageDone struct {
 	Stage   scheduler.Stage
 	Done    int64
-	LLMDone int64 // agent wins at iteration 2 or later
+	LLMDone int64 // the part of Done attested with a strategy the agent proposed or handed off
 }
 
-// InferenceDone is the part of Done won at the agent's iteration 1.
+// InferenceDone counts the rest of Done, attested with a strategy from
+// inference or a sibling version's seed.
 func (d StageDone) InferenceDone() int64 { return d.Done - d.LLMDone }
 
-// SplitsWins reports whether the stage distinguishes inference-rescue from
-// LLM-diagnose wins. Only the agent stage runs both.
+// SplitsWins reports whether the stage splits Done between inference and the
+// agent. Only the agent stage runs both.
 func (d StageDone) SplitsWins() bool { return d.Stage == scheduler.StageAgent }
 
 // CoverageEco is one ecosystem's standing, counted as EcoBand counts it, and
@@ -67,7 +68,7 @@ func (e CoverageEco) Diagnosed() int64 {
 }
 
 // Inferred counts the done campaigns no LLM build reproduced: replays,
-// inference, and agent sessions whose seed build from inference won.
+// inference, and agent sessions won by inference or a sibling's seed.
 func (e CoverageEco) Inferred() int64 { return e.Done - e.Diagnosed() }
 
 type CoverageData struct {
@@ -176,13 +177,23 @@ func CoveragePage(ctx context.Context, req CoverageRequest, deps *Deps) (*Covera
 // by the stage that attested them, keyed by ecosystem.
 func loadCampaigns(a Analytics) (map[string]*CoverageEco, error) {
 	byEco := map[string]*CoverageEco{}
-	// agent_win_kind splits a stage's done count into inference-rescue and
-	// llm-diagnose. session_id is unique, so the LEFT JOIN keeps count(*).
+	// The last column counts the campaigns the agent stage attested with a
+	// strategy the agent proposed or handed off, as the session's WonBy
+	// records. The CASE reads a session only for a campaign the agent stage
+	// attested, since a session's record is large.
+	// NOTE: A session from before WonBy counts when it reproduced after its
+	// first iteration or with a flow or manual strategy, which inference
+	// never writes.
 	err := forEachRow(a, `
 		SELECT c.ecosystem, c.state, c.stage, count(*),
-			sum(CASE WHEN s.agent_win_kind = 'llm-diagnose' THEN 1 ELSE 0 END)
+			sum(CASE WHEN c.state = 'DONE' AND c.stage = 'agent' AND coalesce(
+				(SELECT nullif(s.won_by, '') FROM agent_sessions s WHERE s.session_id = c.last_session),
+				CASE WHEN EXISTS (
+					SELECT 1 FROM agent_iterations i
+					WHERE i.session_id = c.last_session AND i.status = 'SUCCESS' AND (i.number >= 2
+						OR json_extract(i.raw, '$.Strategy.flow') IS NOT NULL
+						OR json_extract(i.raw, '$.Strategy.manual') IS NOT NULL)) THEN 'agent' END) = 'agent' THEN 1 ELSE 0 END)
 		FROM campaigns c
-		LEFT JOIN agent_sessions s ON s.session_id = c.last_session
 		GROUP BY 1, 2, 3`,
 		func(stmt *sqlite3.Stmt) error {
 			name := stmt.ColumnText(0)

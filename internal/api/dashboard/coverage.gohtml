@@ -122,7 +122,7 @@
     <div class="card"><div class="card-value">{{num .Queued}}</div><div class="card-label">queued{{template "def" "Campaigns waiting for dispatch at their next stage."}}</div></div>
     <div class="card"><div class="card-value">{{num .InFlight}}</div><div class="card-label">in flight{{template "def" "Campaigns dispatched and awaiting an outcome."}}</div></div>
     <div class="card"><div class="card-value">{{num .NeedsTriage}}</div><div class="card-label">needs triage{{template "def" "Campaigns whose automated stages are exhausted, awaiting a person."}}</div></div>
-    {{range .DoneByStage}}<div class="card"><div class="card-value">{{num .Done}}</div><div class="card-label">done at {{.Stage}}{{if .SplitsWins}} ({{num .InferenceDone}} inference · {{num .LLMDone}} diagnosed){{template "def" "Inference: attested on the agent's iteration-1 seed strategy. Diagnosed: a later LLM-proposed iteration won."}}{{end}}</div></div>
+    {{range .DoneByStage}}<div class="card"><div class="card-value">{{num .Done}}</div><div class="card-label">done at {{.Stage}}{{if .SplitsWins}} ({{num .InferenceDone}} inference · {{num .LLMDone}} diagnosed){{template "def" "Inference: the session's seed build from inference reproduced it. Diagnosed: a build the LLM proposed or handed off reproduced it."}}{{end}}</div></div>
     {{end}}
 </div>
 {{else}}
