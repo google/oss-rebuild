@@ -33,6 +33,15 @@ func (t TierBand) Pct() int64 {
 	return 0
 }
 
+// Share is Reproduced over every package in the tier, in percent. Unlike Pct
+// it counts the packages not yet attempted, so it is the tier's coverage.
+func (t TierBand) Share() float64 {
+	if t.Packages == 0 {
+		return 0
+	}
+	return 100 * float64(t.Reproduced) / float64(t.Packages)
+}
+
 // Label names the tier by its rank cutoff, or by its size when it holds the
 // whole ecosystem.
 func (t TierBand) Label() string {

@@ -21,8 +21,8 @@ func TestLoadSnapshotFrame(t *testing.T) {
 			('npm', 'a', '1', '2026-08-29T10:00:00Z'), ('npm', 'a', '2', '2026-08-30T10:00:00Z'),
 			('npm', 'b', '1', '2026-08-30T11:00:00Z'), ('npm', 'c', '1', NULL),
 			('pypi', 'a', '1', '2026-08-31T09:00:00Z')`,
-		`CREATE TABLE popularity_tiers (ecosystem TEXT, tier INT, packages INT, reproduced INT)`,
-		`INSERT INTO popularity_tiers VALUES ('npm', 100, 100, 90), ('npm', 1000, 1000, 900), ('pypi', 1000, 1000, 700)`,
+		`CREATE TABLE popularity_tiers (ecosystem TEXT, tier INT, packages INT, reproduced INT, not_reproduced INT, retrying INT, in_flight INT, queued INT)`,
+		`INSERT INTO popularity_tiers VALUES ('npm', 100, 100, 90, 10, 0, 0, 0), ('npm', 1000, 1000, 900, 100, 0, 0, 0), ('pypi', 1000, 1000, 700, 300, 0, 0, 0)`,
 		`CREATE TABLE ecosystem_daily (day TEXT, ecosystem TEXT, attempts INT)`,
 		`INSERT INTO ecosystem_daily VALUES ('2026-08-01', 'npm', 99), ('2026-08-31', 'npm', 5), ('2026-09-01', 'npm', 1200), ('2026-09-01', 'pypi', 34)`,
 	)

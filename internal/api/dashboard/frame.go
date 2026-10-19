@@ -102,47 +102,29 @@ func loadSnapshotFrame(a Analytics) (Frame, error) {
 	if f.AsOf, err = rolledUpAt(a); err != nil {
 		return f, err
 	}
-	cumulative := func(sql string) (int64, []int64, error) {
-		var total int64
-		var ys []int64
-		err := forEachRow(a, sql, func(stmt *sqlite3.Stmt) error {
-			total += stmt.ColumnInt64(1)
-			ys = append(ys, total)
-			return nil
-		})
-		return total, ys, err
-	}
-	versions, vs, err := cumulative(`
-		SELECT substr(first_succeeded_at, 1, 10), count(*) FROM version_stats
-		WHERE first_succeeded_at IS NOT NULL GROUP BY 1 ORDER BY 1`)
+	r, err := loadReproduced(a)
 	if err != nil {
-		return f, errors.Wrap(err, "querying reproduced versions")
+		return f, err
 	}
-	f.Sections[homeSection].Figure, f.Sections[homeSection].Unit, f.Sections[homeSection].Spark = groupDigits(versions), "versions", sparkLine(vs)
-	packages, ps, err := cumulative(`
-		WITH firsts AS (
-			SELECT min(first_succeeded_at) AS t FROM version_stats
-			WHERE first_succeeded_at IS NOT NULL GROUP BY ecosystem, package)
-		SELECT substr(t, 1, 10), count(*) FROM firsts GROUP BY 1 ORDER BY 1`)
-	if err != nil {
-		return f, errors.Wrap(err, "querying reproduced packages")
+	counts := func(steps [][2]int64) []int64 {
+		ys := make([]int64, len(steps))
+		for i, s := range steps {
+			ys[i] = s[1]
+		}
+		return ys
 	}
-	f.Sections[packagesSection].Figure, f.Sections[packagesSection].Unit, f.Sections[packagesSection].Spark = groupDigits(packages), "packages", sparkLine(ps)
-	var top, reproduced int64
-	var shares []float64
-	err = forEachRow(a, `SELECT packages, reproduced FROM popularity_tiers WHERE tier = 1000 ORDER BY ecosystem`,
-		func(stmt *sqlite3.Stmt) error {
-			n, r := stmt.ColumnInt64(0), stmt.ColumnInt64(1)
-			top, reproduced = top+n, reproduced+r
-			shares = append(shares, float64(r)/float64(max(n, 1)))
-			return nil
-		})
-	if err != nil {
-		return f, errors.Wrap(err, "querying the top tier")
-	}
-	if top > 0 {
-		f.Sections[coverageSection].Figure = fmt.Sprintf("%.1f%%", 100*float64(reproduced)/float64(top))
-		f.Sections[coverageSection].Unit, f.Sections[coverageSection].Spark, f.Sections[coverageSection].Bars = "top 1k", sparkBars(shares, 1), true
+	total := r.Total()
+	f.Sections[homeSection].Figure, f.Sections[homeSection].Unit, f.Sections[homeSection].Spark = groupDigits(total.Versions), "versions", sparkLine(counts(r.Versions))
+	f.Sections[packagesSection].Figure, f.Sections[packagesSection].Unit, f.Sections[packagesSection].Spark = groupDigits(total.Packages), "packages", sparkLine(counts(r.Packages))
+	if top := r.Top(); top.Packages > 0 {
+		var shares []float64
+		for _, e := range r.Ecos {
+			if t := e.Top(); t.Packages > 0 {
+				shares = append(shares, t.Share())
+			}
+		}
+		f.Sections[coverageSection].Figure = fmt.Sprintf("%.1f%%", top.Share())
+		f.Sections[coverageSection].Unit, f.Sections[coverageSection].Spark, f.Sections[coverageSection].Bars = "top 1k", sparkBars(shares, 100), true
 	}
 	fresh := a.Freshness().UTC()
 	today := fresh.Format(time.DateOnly)
