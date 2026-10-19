@@ -169,14 +169,17 @@ func main() {
 	encoding := rebuild.FilesystemTargetEncoding
 
 	dashboard.RegisterAssets(http.DefaultServeMux)
+	// The top-level pages read only the snapshot, so their data is computed
+	// once per snapshot version.
+	pages := &dashboard.SnapshotPages{}
 	http.HandleFunc("/favicon.ico", func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusNoContent)
 	})
-	http.HandleFunc("/{$}", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.Index)), dashboard.IndexTmpl))
+	http.HandleFunc("/{$}", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.PerSnapshot(pages, dashboard.Index))), dashboard.IndexTmpl))
 	http.HandleFunc("/resources", api.Translate(func(r *http.Request) (dashboard.ResourcesRequest, error) {
 		return dashboard.ResourcesRequest{Eco: r.URL.Query().Get("eco")}, nil
-	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.ResourcesPage)), dashboard.ResourcesTmpl)))
-	http.HandleFunc("/coverage", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.CoveragePage)), dashboard.CoverageTmpl))
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.PerSnapshot(pages, dashboard.ResourcesPage))), dashboard.ResourcesTmpl)))
+	http.HandleFunc("/coverage", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.PerSnapshot(pages, dashboard.CoveragePage))), dashboard.CoverageTmpl))
 	http.HandleFunc("/package/{ecosystem}/{package}", api.Translate(func(r *http.Request) (dashboard.PackageRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), "", "").Decode()
 		return dashboard.PackageRequest{
@@ -192,7 +195,7 @@ func main() {
 			Version:   t.Version,
 		}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.Version)), dashboard.VersionTmpl)))
-	http.HandleFunc("/packages", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.PackagesPage)), dashboard.PackagesTmpl))
+	http.HandleFunc("/packages", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.PerSnapshot(pages, dashboard.PackagesPage))), dashboard.PackagesTmpl))
 	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}", api.Translate(func(r *http.Request) (dashboard.AttemptRequest, error) {
 		t := encoding.New(
 			rebuild.Ecosystem(r.PathValue("ecosystem")),
@@ -258,6 +261,9 @@ func main() {
 		}
 		dashboard.HandleRawLogs(w, r, req, deps)
 	})
+	if *rundexURI != "" {
+		go pages.Warm(context.Background(), DashboardInit)
+	}
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Starting dashboard on %s\n", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
