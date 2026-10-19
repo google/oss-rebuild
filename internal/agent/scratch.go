@@ -209,7 +209,7 @@ func (r *ScratchRunner) mismatchMessage(runID, diffSummary string) string {
 	}
 	p := r.vmPaths(runID)
 	return msg + "\n\n" + verifier.DiffSummaryPreamble + "\n" + diffSummary +
-		fmt.Sprintf("\nBoth artifacts remain on the VM, stabilized beside the originals. For content-level differences run diffr on the host with run_on_host:\n%s %s.stabilized %s.stabilized\n(--json for machine-readable output). To compare an artifact you build yourself, stabilize it first:\n%s -ecosystem %s -artifact %s -infile <file> -outfile <file>.stabilized",
+		fmt.Sprintf("\nBoth artifacts remain on the VM, stabilized beside the originals. For content-level differences run diffr on the host with run_on_host:\n%s %s.stabilized %s.stabilized\n(--json for machine-readable output). To compare an artifact you build yourself, stabilize it first:\n%s --ecosystem %s --artifact %s --infile <file> --outfile <file>.stabilized",
 			p.diffr, p.rebuild, p.upstream, p.stabilize, r.Target.Ecosystem, r.Target.Artifact)
 }
 
@@ -276,7 +276,7 @@ func (r *ScratchRunner) toolURL(tool build.ToolType) (string, error) {
 var diffScriptTpl = template.Must(template.New("diff").Parse(`set -eu
 die() { echo "$*"; exit {{.ExitSetupFailed}}; }
 fetch() { [ -e "$1" ] || { wget -q ${AUTH_HEADER:+--header "$AUTH_HEADER"} -O "$1.part" "$2" && mv "$1.part" "$1"; } || die "fetching $2 failed"; }
-stab() { out=$({{.Stabilize}} -ecosystem {{.Ecosystem}} -artifact {{.Artifact}} -infile "$1" -outfile "$2.part" 2>&1) && mv "$2.part" "$2" || die "stabilizing $1 failed: $out"; }
+stab() { out=$({{.Stabilize}} --ecosystem {{.Ecosystem}} --artifact {{.Artifact}} --infile "$1" --outfile "$2.part" 2>&1) && mv "$2.part" "$2" || die "stabilizing $1 failed: $out"; }
 mkdir -p {{.Tools}} {{.UpstreamDir}}
 fetch {{.Diffr}} {{.DiffrURL}}
 fetch {{.Stabilize}} {{.StabilizeURL}}
