@@ -503,7 +503,7 @@ resource "google_cloud_run_v2_service" "agent-api" {
       resources {
         limits = {
           cpu    = "1000m"
-          memory = "1G"
+          memory = "4G" // Artifact comparisons hold both artifacts unpacked in memory.
         }
       }
     }
