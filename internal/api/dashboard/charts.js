@@ -311,11 +311,13 @@
   }
 
   // series: measures over time against an alert threshold. Data is {Start,
-  // End, Step, Fmt, Threshold: {Value, Above}, Series: [{Label, Class, Kind,
-  // Points: [[t, v]]}]}. Areas draw under lines and dashed guides. A gap
-  // over twice the usual spacing breaks a line. With several group lines the
-  // first, the highest, is named at its peak. The threshold is a dashed line
-  // with its alerting side shaded.
+  // End, Step, Fmt, Threshold: {Value, Above}, EndLabels, Series: [{Label,
+  // Class, Kind, Points: [[t, v]]}]}. Areas draw under lines and dashed
+  // guides. A gap over twice the usual spacing breaks a line. With several
+  // group lines the first, the highest, is named at its peak. EndLabels
+  // names every series past its last point instead. The threshold is a
+  // dashed line with its alerting side shaded. A step of a day or more reads
+  // out days rather than hours.
   function series(el, data) {
     const t0 = data.Start;
     const t1 = Math.max(data.End, t0 + 1);
@@ -324,7 +326,9 @@
       : v => (Math.abs(v) >= 100 ? compact.format(v) : String(+v.toPrecision(2)));
     const th = data.Threshold;
     const all = (data.Series || []).filter(sr => sr.Points && sr.Points.length);
-    const c = frame(el, +el.dataset.h || 140, {t: 8, r: 6, b: 22, l: 42});
+    // End labels take a right margin of about 7px a character.
+    const named = data.EndLabels ? Math.max(0, ...all.map(sr => sr.Label.length)) * 7 + 12 : 0;
+    const c = frame(el, +el.dataset.h || 140, {t: 8, r: 6 + named, b: 22, l: 42});
     const {g, iw, ih} = c;
     const ymax = yAxis(c, Math.max(1e-9, ...all.flatMap(sr => sr.Points.map(p => p[1])), th ? th.Value * 1.15 : 0), fmt);
     const x = t => ((t - t0) / (t1 - t0)) * iw;
@@ -355,7 +359,16 @@
     }
     if (th) hline(c, 'thresh', y(th.Value));
     const groups = all.filter(sr => sr.Class === 'group');
-    if (groups.length > 1) {
+    if (data.EndLabels) {
+      // Each label sits past its line's end, at least 13px from the one above.
+      let at = -Infinity;
+      all.map(sr => [sr.Label, y(sr.Points[sr.Points.length - 1][1]) + 4])
+        .sort((a, b) => a[1] - b[1])
+        .forEach(([label, ly]) => {
+          at = Math.max(ly, at + 13);
+          text(g, {class: 'cap', x: iw + 8, y: at}, label);
+        });
+    } else if (groups.length > 1) {
       const pk = groups[0].Points.reduce((a, p) => (p[1] > a[1] ? p : a));
       const px = x(pk[0]);
       text(g, {class: 'cap', x: px, y: Math.max(10, y(pk[1]) - 6), 'text-anchor': px > iw * 0.75 ? 'end' : px < iw * 0.25 ? 'start' : 'middle'}, groups[0].Label);
@@ -381,7 +394,7 @@
         .map(([sr, p]) => [sr.Class, fmt(p[1]), sr.Label]);
       if (th) rows.push(['bad', fmt(th.Value), 'threshold']);
       attr(c.cur, {x1: px, x2: px});
-      return [hour(Math.round(t / 60) * 60), rows];
+      return [data.Step >= DAY ? day(Math.round(t / DAY) * DAY) : hour(Math.round(t / 60) * 60), rows];
     };
     return c;
   }
