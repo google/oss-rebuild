@@ -4,20 +4,19 @@
 */ -}}
 {{- define "rebuildRow"}}
 <li class="row is-{{.Tone}}">
-    {{- $attempt := printf "/attempt/%s/%s/%s/%s/%s" .Encoded.Ecosystem .Encoded.Package .Encoded.Version .Encoded.Artifact .RunID}}
     <div class="row-head">
-        <span class="pip {{.Tone}}" role="img" aria-label="{{if .Success}}reproduced{{else if eq .Tone "live"}}running{{else}}failed{{end}}"></span>
+        <span class="pip {{.Tone}}" role="img" aria-label="{{.Outcome}}"></span>
         <span class="tag row-kind">rebuild</span>
         <a class="row-name row-pkg" href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}">{{.Package}}</a>
         <a class="row-ver" href="/package/{{.Encoded.Ecosystem}}/{{.Encoded.Package}}/version/{{.Encoded.Version}}">{{.Version}}</a>
         {{- with variant .Artifact .Version}}<span class="row-var">{{.}}</span>{{end}}
         <span class="tag row-pkg">{{.Ecosystem}}</span>
-        <a class="row-end" href="{{$attempt}}"><span class="row-outcome tone-{{.Tone}}">{{if .Success}}reproduced{{else if eq .Tone "live"}}running{{else}}failed{{end}}</span>{{template "when" .Created}}</a>
+        <a class="row-end" href="{{.Href}}"><span class="row-outcome tone-{{.Tone}}">{{.Outcome}}</span>{{template "when" .Created}}</a>
     </div>
     {{- if eq .Tone "bad"}}
     <div class="row-sub">
         {{- with stage .Message}}<span class="stage">{{.}}</span>{{end}}
-        <a class="cause" href="{{$attempt}}" title="{{.Message}}">{{cause .Message}}</a>
+        <a class="cause" href="{{.Href}}" title="{{.Message}}">{{cause .Message}}</a>
     </div>
     {{- end}}
 </li>

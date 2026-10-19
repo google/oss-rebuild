@@ -193,6 +193,32 @@ func TestSessionViewOutcome(t *testing.T) {
 	}
 }
 
+func TestRebuildViewOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		attempt       schema.RebuildAttempt
+		outcome, tone string
+	}{
+		{"Success", schema.RebuildAttempt{Status: schema.RebuildStatusSuccess, Success: true}, "reproduced", "ok"},
+		{"Running", schema.RebuildAttempt{Status: schema.RebuildStatusRunning}, "running", "live"},
+		{"Error", schema.RebuildAttempt{Status: schema.RebuildStatusError}, "failed", "bad"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := NewRebuildView(rundex.Rebuild{RebuildAttempt: tc.attempt})
+			if got := v.Outcome(); got != tc.outcome {
+				t.Errorf("Outcome() = %q, want %q", got, tc.outcome)
+			}
+			if got := v.Tone(); got != tc.tone {
+				t.Errorf("Tone() = %q, want %q", got, tc.tone)
+			}
+		})
+	}
+	v := NewRebuildView(rundex.Rebuild{RebuildAttempt: schema.RebuildAttempt{Ecosystem: "npm", Package: "a", Version: "1.0.0", Artifact: "a-1.0.0.tgz", RunID: "run1"}})
+	if got, want := v.Href(), "/attempt/npm/a/1.0.0/a-1.0.0.tgz/run1"; got != want {
+		t.Errorf("Href() = %q, want %q", got, want)
+	}
+}
+
 func TestPackageHandler(t *testing.T) {
 	// Timeline: session@t0, rebuild@t1, session@t2 — expect most-recent-first
 	// with attempts and sessions intermingled.
