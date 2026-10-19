@@ -21,6 +21,7 @@
        checks against white, which --accent alone does not (too gray as a
        fill), and the stage steps are one ordinal teal ramp. */
     --viz-ok: #0d9488;
+    --viz-ok-deep: #0b5e57; /* a second reproduced count beside --viz-ok */
     --viz-warn: #d97706;
     --viz-bad: #c42020;
     --viz-none: #e7e5e4;

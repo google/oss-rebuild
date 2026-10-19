@@ -89,8 +89,10 @@ func loadActivity(a Analytics, where string) (Activity, error) {
 	return act, nil
 }
 
-// Overview backs the home and coverage pages' header band. Its figures are
-// derived, so AsOf is the rollup watermark.
+// Overview backs the coverage page's header band: each ecosystem's standing
+// across its packages in scope, how it got there, and the build activity
+// behind it. Every figure comes from derived tables, so AsOf is the watermark
+// of the rollup that materialized them.
 type Overview struct {
 	AsOf     string
 	Total    EcoBand // all ecosystems in one band
