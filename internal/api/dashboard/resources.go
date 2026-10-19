@@ -39,21 +39,10 @@ func humanCount(n int) string {
 }
 
 type ResourcesRequest struct {
-	Eco string // ecosystem tab for the daily table; empty aggregates every ecosystem
+	Eco string // ecosystem tab for the daily chart; empty aggregates every ecosystem
 }
 
 func (ResourcesRequest) Validate() error { return nil }
-
-// EcoDaily is one ecosystem-day in the trends table.
-type EcoDaily struct {
-	Day            string
-	Attempts       int64
-	Successes      int64
-	SuccessPct     int64
-	BuilderMinutes float64
-	Tokens         string
-	VMMinutes      float64
-}
 
 // ExpensivePackage is one row of the most-expensive-packages table, costed
 // by summed builder time over the window.
@@ -78,7 +67,6 @@ type ResourcesData struct {
 
 	Ecosystems  []string // tab labels, from the window's data
 	Eco         string   // selected tab; empty is the aggregate view
-	Days        []EcoDaily
 	TopPackages []ExpensivePackage
 
 	Window   Activity // every ecosystem, for the total tiles
@@ -121,32 +109,6 @@ func ResourcesPage(ctx context.Context, req ResourcesRequest, deps *Deps) (*Reso
 	// membership check also makes the interpolation below safe.
 	if slices.Contains(data.Ecosystems, req.Eco) {
 		data.Eco = req.Eco
-	}
-	daily := `
-		SELECT day, sum(attempts), sum(successes), sum(builder_seconds), sum(tokens), sum(scratch_vm_seconds)
-		FROM ecosystem_daily WHERE day >= ` + dayBound
-	if data.Eco != "" {
-		daily += ` AND ecosystem = '` + data.Eco + `'`
-	}
-	daily += ` GROUP BY day ORDER BY day DESC`
-	err = forEachRow(a, daily,
-		func(stmt *sqlite3.Stmt) error {
-			d := EcoDaily{
-				Day:            stmt.ColumnText(0),
-				Attempts:       stmt.ColumnInt64(1),
-				Successes:      stmt.ColumnInt64(2),
-				BuilderMinutes: stmt.ColumnFloat(3) / 60,
-				Tokens:         humanCount(int(stmt.ColumnInt64(4))),
-				VMMinutes:      stmt.ColumnFloat(5) / 60,
-			}
-			if d.Attempts > 0 {
-				d.SuccessPct = 100 * d.Successes / d.Attempts
-			}
-			data.Days = append(data.Days, d)
-			return nil
-		})
-	if err != nil {
-		return nil, errors.Wrap(err, "querying daily trends")
 	}
 	data.Window, err = loadActivity(a, `day >= `+dayBound)
 	if err != nil {

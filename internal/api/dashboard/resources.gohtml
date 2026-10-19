@@ -5,7 +5,6 @@
 -->
 
 <style>
-    .barcell { width: 30%; min-width: 150px; }
     .cost-bar .bar { height: 6px; margin-top: 4px; }
 </style>
 
@@ -32,7 +31,7 @@
     {{range .Ecosystems}}<a class="tab{{if eq . $sel}} active{{end}}" href="/resources?eco={{.}}">{{.}}</a>
     {{end}}
 </div>
-{{if not .Days}}
+{{if not .Activity.Days}}
 <p>No attempts recorded in the window.</p>
 {{else}}
 <section class="card chart-card">
@@ -43,28 +42,6 @@
     </div>
 </section>
 <script type="application/json" id="activity">{{.Activity}}</script>
-<table>
-    <tr>
-        <th>Day</th>
-        <th>Attempts</th>
-        <th>Successes</th>
-        <th>Success %</th>
-        <th>Builder min</th>
-        <th>Tokens</th>
-        <th>VM min</th>
-    </tr>
-    {{range .Days}}
-    <tr>
-        <td>{{.Day}}</td>
-        <td>{{num .Attempts}}</td>
-        <td>{{num .Successes}}</td>
-        <td>{{.SuccessPct}}%</td>
-        <td>{{printf "%.1f" .BuilderMinutes}}</td>
-        <td>{{.Tokens}}</td>
-        <td>{{printf "%.1f" .VMMinutes}}</td>
-    </tr>
-    {{end}}
-</table>
 {{end}}
 
 <h3>Most expensive packages</h3>
