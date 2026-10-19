@@ -37,6 +37,7 @@ type fakeAgent struct {
 	refusal    string                   // if set, Check refuses with it
 	refused    *schema.StrategyOneOf    // if set, the only strategy Check refuses
 	checkErr   error                    // if set, Check fails with it
+	proposedBy string                   // what ProposedBy reports
 	checks     int
 }
 
@@ -70,6 +71,8 @@ func (a *fakeAgent) Check(_ context.Context, _ *ProposeOpts, s *schema.StrategyO
 func (a *fakeAgent) RecordIteration(i *schema.AgentIteration) { a.recorded = append(a.recorded, i) }
 
 func (a *fakeAgent) Usage() schema.TokenUsage { return a.usage }
+
+func (a *fakeAgent) ProposedBy() string { return a.proposedBy }
 
 func TestDoIterationScratchFailureIsLocalOnly(t *testing.T) {
 	runner := testRunner(&fakeExecutor{result: build.Result{Error: &scratch.ExitError{Code: 7}}})
@@ -414,6 +417,19 @@ func TestRunIterationsStopsAfterRepeatedRefusals(t *testing.T) {
 		if it.Status != iterationStatusRefused || it.Result == nil || it.Result.ErrorMessage != a.refusal {
 			t.Errorf("recorded iteration is not a refusal: %+v", it)
 		}
+	}
+}
+
+func TestRunIterationsReportsTheWinner(t *testing.T) {
+	a := &fakeAgent{strategy: testStrategy(), proposedBy: schema.AgentWonBySeed}
+	deps := RunSessionDeps{
+		IterationStub: func(context.Context, schema.AgentCreateIterationRequest) (*schema.AgentCreateIterationResponse, error) {
+			return &schema.AgentCreateIterationResponse{Iteration: &schema.AgentIteration{ID: "it", Status: schema.AgentIterationStatusSuccess}}, nil
+		},
+	}
+	done := runIterations(context.Background(), RunSessionReq{SessionID: "sess", MaxIterations: 3}, 0, a, deps)
+	if done.StopReason != schema.AgentCompleteReasonSuccess || done.SuccessIterationID != "it" || done.WonBy != schema.AgentWonBySeed {
+		t.Errorf("completion = %+v, want SUCCESS at it won by the seed", done)
 	}
 }
 

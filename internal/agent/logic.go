@@ -94,8 +94,9 @@ type defaultAgent struct {
 	reinfer          inferFunc               // inferAt, or a test's fake
 	ff               *freeFormDriver         // nil outside free-form mode
 	newChat          chatMaker
-	seedTried        bool // seed relocation was attempted
-	seedBuilt        bool // the seed's build ran
+	seedTried        bool   // seed relocation was attempted
+	seedBuilt        bool   // the seed's build ran
+	proposedBy       string // what proposed the last strategy, an AgentWonBy value
 }
 
 // chatMaker starts a session-model chat with a system prompt and tools.
@@ -1089,13 +1090,15 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 		case <-ictx.Done():
 			return nil, context.Cause(ictx)
 		}
-		record = "0-inference-proposal.json"
+		record, a.proposedBy = "0-inference-proposal.json", schema.AgentWonByInference
 	} else if seed := a.seedProposal(); seed != nil {
-		s, record = seed, seedProposalRecord
+		s, record, a.proposedBy = seed, seedProposalRecord, schema.AgentWonBySeed
 	} else if a.ff != nil {
 		s, err = a.ff.propose(ctx, opts)
+		a.proposedBy = schema.AgentWonByAgent
 	} else {
 		s, err = a.proposeAgentInference(ctx, opts)
+		a.proposedBy = schema.AgentWonByAgent
 	}
 	if err == nil {
 		// The strategy the executor runs is otherwise recoverable only from
@@ -1317,6 +1320,8 @@ func (a *defaultAgent) addSideUsage(m *genai.GenerateContentResponseUsageMetadat
 	}
 	a.sideUsage = a.sideUsage.Add(tokenUsageFromMetadata(m, cmp.Or(a.deps.Model, llm.GeminiPro)))
 }
+
+func (a *defaultAgent) ProposedBy() string { return a.proposedBy }
 
 // Usage returns the agent's cumulative LLM token consumption: the main chat's
 // tally plus side calls made outside it.

@@ -38,6 +38,9 @@ func AgentComplete(ctx context.Context, req schema.AgentCompleteRequest, deps *A
 		if req.SuccessIterationID != "" {
 			s.SuccessIteration = req.SuccessIterationID
 		}
+		if req.WonBy != "" {
+			s.WonBy = req.WonBy
+		}
 		if req.Summary != "" {
 			s.Summary = req.Summary
 		}
