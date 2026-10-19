@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -512,6 +513,36 @@ func TestCacheFailedRehydrate(t *testing.T) {
 	}
 	if names := files(); len(names) != 1 || names[0] != "base.db" {
 		t.Errorf("cache dir after recovery = %v, want only base.db", names)
+	}
+}
+
+func TestCacheSweepsOrphans(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	// A finished child's pid stands in for a killed dashboard's.
+	child := exec.Command("true")
+	must1(child.Run())
+	dead := filepath.Join(tmp, fmt.Sprintf("%s%d-1", cacheDirPrefix, child.Process.Pid))
+	live := filepath.Join(tmp, fmt.Sprintf("%s%d-2", cacheDirPrefix, os.Getpid()))
+	legacy := filepath.Join(tmp, cacheDirPrefix+"12345")
+	for _, dir := range []string{dead, live, legacy} {
+		must1(os.MkdirAll(dir, 0o700))
+		must1(os.WriteFile(filepath.Join(dir, "base.db"), []byte("copy"), 0o600))
+	}
+	dest := testDest(t)
+	up := Upstream{FS: dest, Object: "probe.db.gz", Deltas: "deltas", Defs: []TableDef{probeTable}, Schema: 1, Watermark: probeWatermark}
+	buildBase(t, dest, up.Object, probes(1, dt(0)), dt(0), 1)
+	c := must(OpenCache(context.Background(), up, time.Hour))
+	// Only the exited owner's copy goes. A live owner's stays, and so does a
+	// directory whose name carries no owner.
+	for dir, want := range map[string]bool{dead: false, live: true, legacy: true, c.dir: true} {
+		if _, err := os.Stat(dir); (err == nil) != want {
+			t.Errorf("%s exists = %v, want %v", filepath.Base(dir), err == nil, want)
+		}
+	}
+	must1(c.Close())
+	if _, err := os.Stat(c.dir); err == nil {
+		t.Error("Close left the cache directory")
 	}
 }
 
