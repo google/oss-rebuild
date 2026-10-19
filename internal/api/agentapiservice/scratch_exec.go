@@ -517,6 +517,11 @@ func outObjectFor(obliviousID, opID string) string {
 	return obliviousID + "/" + opID + "/out"
 }
 
+// partObjectFor names one pull's part object under parts/, where a lifecycle rule deletes orphans.
+func partObjectFor(obliviousID, opID string, offset int64) string {
+	return "parts/" + obliviousID + "/" + opID + "/" + strconv.FormatInt(offset, 10)
+}
+
 // outURIFor returns the gs:// URI agents see in ExecResult.OutURI.
 func outURIFor(bucket, obliviousID, opID string) string {
 	return "gs://" + bucket + "/" + outObjectFor(obliviousID, opID)
@@ -532,8 +537,8 @@ func outURIFor(bucket, obliviousID, opID string) string {
 //     compose returns 412 and we bail. The next poll picks up.
 //
 // The part is deleted on success, failure, and precondition loss. Broker
-// crashes between part write and compose leave orphans; a parts/
-// lifecycle rule is the deploy-side backstop.
+// crashes between part write and compose leave orphans, which the parts/
+// lifecycle rule sweeps.
 //
 // It returns the number of bytes it appended, zero when it lost a race or
 // had nothing to add.
@@ -544,7 +549,7 @@ func (s *gcsSyncer) pullOutput(ctx context.Context, client httpx.BasicClient, ba
 	// Part name keys on start offset only: concurrent same-offset pulls
 	// collide on DoesNotExist and dedup. End offset isn't stable (the
 	// worker may Stat more bytes than we saw in /status).
-	partName := mainName + "/parts/" + strconv.FormatInt(currentSize, 10)
+	partName := partObjectFor(obliviousID, opID, currentSize)
 	main := s.gcs.Bucket(s.bucket).Object(mainName)
 	part := s.gcs.Bucket(s.bucket).Object(partName)
 
