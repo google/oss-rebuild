@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -171,13 +170,9 @@ func main() {
 	http.HandleFunc("/coverage", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.CoveragePage)), dashboard.CoverageTmpl))
 	http.HandleFunc("/package/{ecosystem}/{package}", api.Translate(func(r *http.Request) (dashboard.PackageRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), "", "").Decode()
-		// TODO: Make this param and field name more precise.
-		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 		return dashboard.PackageRequest{
 			Ecosystem: string(t.Ecosystem),
 			Package:   t.Package,
-			Offset:    offset,
-			Expanded:  r.URL.Query().Get("expanded") != "",
 		}, nil
 	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.Package)), dashboard.PackageTmpl)))
 	http.HandleFunc("/package/{ecosystem}/{package}/version/{version}", api.Translate(func(r *http.Request) (dashboard.VersionRequest, error) {

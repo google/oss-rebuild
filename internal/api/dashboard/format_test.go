@@ -49,6 +49,24 @@ func TestSince(t *testing.T) {
 	}
 }
 
+func TestDay(t *testing.T) {
+	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	if got := day(now, time.Date(2026, 8, 20, 23, 0, 0, 0, time.UTC)); got != "Aug 20" {
+		t.Errorf("day() = %q, want %q", got, "Aug 20")
+	}
+	if got := day(now, time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC)); got != "Dec 31, 2025" {
+		t.Errorf("day() = %q, want %q", got, "Dec 31, 2025")
+	}
+}
+
+func TestPlural(t *testing.T) {
+	for n, want := range map[int]string{0: "0 rebuilds", 1: "1 rebuild", 22: "22 rebuilds"} {
+		if got := plural(n, "rebuild"); got != want {
+			t.Errorf("plural(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
 func TestFailure(t *testing.T) {
 	for _, tc := range []struct {
 		name, msg, stage, cause string
