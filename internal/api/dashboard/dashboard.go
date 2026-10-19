@@ -34,6 +34,8 @@ var (
 	attemptHTML string
 	//go:embed session.gohtml
 	sessionHTML string
+	//go:embed transcript.gohtml
+	transcriptHTML string
 	//go:embed logs.gohtml
 	logsHTML string
 	//go:embed packages.gohtml
@@ -77,15 +79,18 @@ func RegisterAssets(mux *http.ServeMux) {
 }
 
 var (
-	IndexTmpl     *template.Template
-	PackageTmpl   *template.Template
-	VersionTmpl   *template.Template
-	AttemptTmpl   *template.Template
-	SessionTmpl   *template.Template
-	LogsTmpl      *template.Template
-	PackagesTmpl  *template.Template
-	ResourcesTmpl *template.Template
-	CoverageTmpl  *template.Template
+	IndexTmpl   *template.Template
+	PackageTmpl *template.Template
+	VersionTmpl *template.Template
+	AttemptTmpl *template.Template
+	SessionTmpl *template.Template
+	// TranscriptTmpl renders a session's full transcript and exec ledger,
+	// from the same data as SessionTmpl.
+	TranscriptTmpl *template.Template
+	LogsTmpl       *template.Template
+	PackagesTmpl   *template.Template
+	ResourcesTmpl  *template.Template
+	CoverageTmpl   *template.Template
 )
 
 func init() {
@@ -104,6 +109,7 @@ func init() {
 	VersionTmpl = page(versionHTML)
 	AttemptTmpl = page(attemptHTML)
 	SessionTmpl = page(sessionHTML)
+	TranscriptTmpl = page(transcriptHTML)
 	LogsTmpl = template.Must(template.New("logs").Parse(logsHTML))
 	PackagesTmpl = page(packagesHTML)
 	ResourcesTmpl = page(resourcesHTML)

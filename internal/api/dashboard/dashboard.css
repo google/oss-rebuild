@@ -273,6 +273,7 @@ details.traj-body > summary { cursor: pointer; color: var(--secondary); font-siz
 .verdict-box { grid-column: 5 / span 7; min-width: 0; padding: 3px 10px; border-radius: 5px; background: var(--fill); color: var(--secondary); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .callrow { display: grid; grid-template-columns: 62px 104px minmax(0, 1fr) 92px; gap: 10px; align-items: baseline; padding: 3px 0; border-top: 1px solid var(--border); font-size: 0.78rem; }
 .callrow > .mono, .callrow .tool { color: var(--muted); }
+.callrow > a.mono:hover { color: var(--accent); }
 .callrow .tool { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .callrow code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--body); }
 .callrow .res { text-align: right; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -324,9 +325,8 @@ details.pop[open] > summary.cell { box-shadow: 0 0 0 2px var(--heading); }
 .pop-code { margin: 3px 0 0; padding: 6px 8px; border-radius: 5px; background: var(--fill); font-size: 0.72rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pop-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding-top: 8px; border-top: 1px solid var(--viz-grid); color: var(--muted); font-size: 0.75rem; }
 .pop-foot a, .pop-foot .linkish { flex: none; }
-details.transcript { margin-top: 24px; }
-details.transcript > summary { cursor: pointer; }
-details.transcript > summary h2 { display: inline; margin: 0; }
+.page-links { margin: 0; color: var(--muted); font-size: 0.85rem; }
+.traj-event:target { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 
 @media (max-width: 760px) {
     .card.figs { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 0; }

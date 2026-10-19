@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html/template"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -110,30 +111,46 @@ func TestSessionHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Session: %v", err)
 	}
-	var buf bytes.Buffer
-	if err := SessionTmpl.Execute(&buf, got); err != nil {
-		t.Fatalf("Execute: %v", err)
+	render := func(tmpl *template.Template) string {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, got); err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+		return buf.String()
 	}
-	out := buf.String()
-	for _, want := range []string{
-		"sess-1",
-		"lodash",
-		"Iteration 1",
-		"Iteration 3",
-		"build ok",
-		"docker build .",
-		"/session/sess-1/exec/op-1/out",
-		"1K in (40% cached) / 250 out",
-		"exec · tool/run_on_host · completed · exit 0", // trajectory event in iteration 3
-		// One attempt under iteration 1, named by its failing phase.
-		"build iter-1 · phase/build exit 7",
-		"npm install",
-		// The job build is the first candidate and failed in setup.
-		`<span class="chg" title="iter-1">Job build iter-1</span>`,
-		`<span class="cell st-failed">✕</span>`,
+	for _, page := range []struct {
+		name  string
+		tmpl  *template.Template
+		wants []string
+	}{
+		{"session", SessionTmpl, []string{
+			"sess-1",
+			"lodash",
+			"1K in (40% cached) / 250 out",
+			// The job build is the first candidate and failed in setup.
+			`<span class="chg" title="iter-1">Job build iter-1</span>`,
+			`<span class="cell st-failed">✕</span>`,
+			`<a href="/session/sess-1/transcript">Full transcript</a>`,
+		}},
+		{"transcript", TranscriptTmpl, []string{
+			"lodash",
+			"Iteration 1",
+			"Iteration 3",
+			"build ok",
+			"docker build .",
+			"/session/sess-1/exec/op-1/out",
+			"exec · tool/run_on_host · completed · exit 0", // trajectory event in iteration 3
+			// One attempt under iteration 1, named by its failing phase.
+			"build iter-1 · phase/build exit 7",
+			"npm install",
+		}},
 	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("rendered page missing %q", want)
+		out := render(page.tmpl)
+		for _, want := range page.wants {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s page missing %q", page.name, want)
+			}
 		}
 	}
 	var iters []int
