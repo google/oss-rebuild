@@ -80,6 +80,7 @@ type ExecView struct {
 }
 
 type SessionData struct {
+	Frame
 	Session    SessionView
 	Duration   string
 	Usage      string

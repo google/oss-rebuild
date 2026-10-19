@@ -164,11 +164,11 @@ func main() {
 	http.HandleFunc("/favicon.ico", func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusNoContent)
 	})
-	http.HandleFunc("/{$}", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Index), dashboard.IndexTmpl))
+	http.HandleFunc("/{$}", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.Index)), dashboard.IndexTmpl))
 	http.HandleFunc("/resources", api.Translate(func(r *http.Request) (dashboard.ResourcesRequest, error) {
 		return dashboard.ResourcesRequest{Eco: r.URL.Query().Get("eco")}, nil
-	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.ResourcesPage), dashboard.ResourcesTmpl)))
-	http.HandleFunc("/coverage", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.CoveragePage), dashboard.CoverageTmpl))
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.ResourcesPage)), dashboard.ResourcesTmpl)))
+	http.HandleFunc("/coverage", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.CoveragePage)), dashboard.CoverageTmpl))
 	http.HandleFunc("/package/{ecosystem}/{package}", api.Translate(func(r *http.Request) (dashboard.PackageRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), "", "").Decode()
 		// TODO: Make this param and field name more precise.
@@ -179,7 +179,7 @@ func main() {
 			Offset:    offset,
 			Expanded:  r.URL.Query().Get("expanded") != "",
 		}, nil
-	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Package), dashboard.PackageTmpl)))
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.Package)), dashboard.PackageTmpl)))
 	http.HandleFunc("/package/{ecosystem}/{package}/version/{version}", api.Translate(func(r *http.Request) (dashboard.VersionRequest, error) {
 		t := encoding.New(rebuild.Ecosystem(r.PathValue("ecosystem")), r.PathValue("package"), r.PathValue("version"), "").Decode()
 		return dashboard.VersionRequest{
@@ -187,8 +187,8 @@ func main() {
 			Package:   t.Package,
 			Version:   t.Version,
 		}, nil
-	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Version), dashboard.VersionTmpl)))
-	http.HandleFunc("/packages", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.PackagesPage), dashboard.PackagesTmpl))
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.Version)), dashboard.VersionTmpl)))
+	http.HandleFunc("/packages", api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.PackagesPage)), dashboard.PackagesTmpl))
 	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}", api.Translate(func(r *http.Request) (dashboard.AttemptRequest, error) {
 		t := encoding.New(
 			rebuild.Ecosystem(r.PathValue("ecosystem")),
@@ -203,7 +203,7 @@ func main() {
 			Artifact:  t.Artifact,
 			RunID:     r.PathValue("runid"),
 		}, nil
-	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Attempt), dashboard.AttemptTmpl)))
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.Attempt)), dashboard.AttemptTmpl)))
 	http.HandleFunc("/attempt/{ecosystem}/{package}/{version}/{artifact}/{runid}/build-logs/", api.Translate(func(r *http.Request) (dashboard.LogsRequest, error) {
 		t := encoding.New(
 			rebuild.Ecosystem(r.PathValue("ecosystem")),
@@ -221,7 +221,7 @@ func main() {
 	}, api.HTMLHandler(DashboardInit, dashboard.Logs, dashboard.LogsTmpl)))
 	http.HandleFunc("/session/{id}", api.Translate(func(r *http.Request) (dashboard.SessionRequest, error) {
 		return dashboard.SessionRequest{ID: r.PathValue("id")}, nil
-	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Session), dashboard.SessionTmpl)))
+	}, api.HTMLHandler(DashboardInit, api.WithTimeout(30*time.Second, dashboard.Framed(dashboard.Session)), dashboard.SessionTmpl)))
 	http.HandleFunc("/session/{id}/exec/{execid}/out", func(w http.ResponseWriter, r *http.Request) {
 		deps, err := DashboardInit(r.Context())
 		if err != nil {
