@@ -454,6 +454,14 @@ func finalFromStatus(exec schema.ScratchExec, status *scratchworkerservice.ExecS
 		final.FinishedAt = now
 	}
 	switch {
+	case status.OutputCapped:
+		// Output cap: terminal like a timeout. ResourceExhausted keeps callers
+		// from reporting it as a deadline.
+		final.State = schema.ScratchExecTimedOut
+		final.Error = &schema.Status{
+			Code:    int(codes.ResourceExhausted),
+			Message: errors.Errorf("output exceeded %d bytes", status.TotalBytes).Error(),
+		}
 	case status.TimedOut:
 		// Worker-enforced timeout: command was killed at its deadline.
 		// We observed the kill exit (typically 124) and partial output
