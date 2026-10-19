@@ -253,6 +253,30 @@ func TestSyncer_FinalFromStatus(t *testing.T) {
 			},
 		},
 		{
+			// Terminal like a timeout, with its own code.
+			name: "OutputCapped",
+			status: scratchworkerservice.ExecStatus{
+				Done:         true,
+				OutputCapped: true,
+				TotalBytes:   256 << 20,
+				StartedAt:    workerStart,
+				FinishedAt:   workerFinish,
+			},
+			want: schema.ScratchExec{
+				ID:         "op1",
+				ScratchID:  "s1",
+				State:      schema.ScratchExecTimedOut,
+				CreatedAt:  created,
+				StartedAt:  workerStart,
+				FinishedAt: workerFinish,
+				Updated:    brokerNow,
+				Error: &schema.Status{
+					Code:    int(codes.ResourceExhausted),
+					Message: "output exceeded 268435456 bytes",
+				},
+			},
+		},
+		{
 			name: "InfraErrorIsLost",
 			status: scratchworkerservice.ExecStatus{
 				Done:       true,

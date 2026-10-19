@@ -161,6 +161,7 @@ func TestPhaseOutcome(t *testing.T) {
 		{name: "Success", op: completedOp("p", 0), check: func(err error) bool { return err == nil }},
 		{name: "DispatchErrorPropagates", err: context.Canceled, check: func(err error) bool { return errors.Is(err, context.Canceled) }},
 		{name: "TimeoutMapsToDeadlineExceeded", op: failedOp("p", codes.DeadlineExceeded, "command exceeded TimeoutSeconds"), check: func(err error) bool { return errors.Is(err, context.DeadlineExceeded) }},
+		{name: "OutputCapMapsToErrOutputCapped", op: failedOp("p", codes.ResourceExhausted, "output exceeded 268435456 bytes"), check: func(err error) bool { return errors.Is(err, ErrOutputCapped) }},
 		{name: "LostIsInfraError", op: failedOp("p", codes.Unavailable, "worker dispatch failed"), check: isInfra},
 		{name: "NonzeroExitIsExitError", op: completedOp("p", 42), check: func(err error) bool {
 			var exitErr *ExitError

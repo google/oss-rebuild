@@ -119,6 +119,12 @@ func TestRunClassification(t *testing.T) {
 			wantMsg:    "timed out",
 		},
 		{
+			name:       "output cap is failed",
+			executor:   &fakeExecutor{result: build.Result{Error: errors.Wrap(scratch.ErrOutputCapped, "build phase: output exceeded 268435456 bytes")}},
+			wantStatus: schema.AgentIterationStatusFailed,
+			wantMsg:    "output cap",
+		},
+		{
 			name:       "missing artifact is failed",
 			executor:   &fakeExecutor{result: build.Result{Error: scratch.ErrNoArtifact}},
 			wantStatus: schema.AgentIterationStatusFailed,

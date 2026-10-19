@@ -25,6 +25,7 @@ var (
 	audience         = flag.String("audience", "", "expected ID-token audience (e.g. https://builder/<vm-name>)")
 	workdir          = flag.String("workdir", "/home/builder", "default cwd for execs")
 	tempDir          = flag.String("temp-dir", "", "temp directory for exec stdout/stderr capture; empty = OS default")
+	maxOutputBytes   = flag.Int64("max-output-bytes", 256<<20, "per-exec cap on captured stdout+stderr, past which output is dropped and the exec is killed; 0 = unbounded")
 	dockerSocketPath = flag.String("docker-socket", "/var/run/docker.sock", "path probed by /stat for Docker daemon presence")
 	diskPaths        = flag.String("disk-paths", "", "comma-separated mount paths reported by /stat")
 	listen           = flag.String("listen", ":8080", "listen address")
@@ -55,9 +56,10 @@ func main() {
 
 	store = scratchworkerservice.NewExecStore()
 	execDeps = &scratchworkerservice.ExecDeps{
-		Store:   store,
-		TempDir: *tempDir,
-		Workdir: *workdir,
+		Store:          store,
+		TempDir:        *tempDir,
+		Workdir:        *workdir,
+		MaxOutputBytes: *maxOutputBytes,
 	}
 	statusDeps = &scratchworkerservice.StatusDeps{Store: store}
 	outputDeps = &scratchworkerservice.OutputDeps{Store: store}

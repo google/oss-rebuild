@@ -12,13 +12,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
 
-// Compress kill grace and timeout unit for tests so timeout cases finish quickly.
+// Compress kill grace, wait delay and timeout unit for tests so timeout cases finish quickly.
 func init() {
 	killGrace = 200 * time.Millisecond
+	waitDelay = 100 * time.Millisecond
 	timeoutUnit = 50 * time.Millisecond
 }
 
@@ -130,6 +132,29 @@ func TestRunCommand_ContextCancel(t *testing.T) {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("err = %v; want NOT context.DeadlineExceeded (caller cancel)", err)
+	}
+}
+
+func TestRunCommand_BackgroundChildHoldsPipe(t *testing.T) {
+	// The background sleep inherits the stdout pipe and outlives sh.
+	var out bytes.Buffer
+	start := time.Now()
+	code, err := runCommand(context.Background(),
+		runSpec{Cmd: []string{"sh", "-c", "sleep 5 & echo hi $!"}}, &out, &out)
+	elapsed := time.Since(start)
+	if f := strings.Fields(out.String()); len(f) == 2 {
+		if pid, err := strconv.Atoi(f[1]); err == nil {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	}
+	if err != nil || code != 0 {
+		t.Fatalf("(code, err) = (%d, %v); want (0, nil)", code, err)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("elapsed = %v; want < 2s", elapsed)
+	}
+	if got := out.String(); !strings.HasPrefix(got, "hi ") {
+		t.Errorf("stdout = %q; want prefix %q", got, "hi ")
 	}
 }
 
