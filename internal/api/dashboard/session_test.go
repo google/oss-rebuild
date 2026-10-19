@@ -128,6 +128,9 @@ func TestSessionHandler(t *testing.T) {
 		// One attempt under iteration 1, named by its failing phase.
 		"build iter-1 · phase/build exit 7",
 		"npm install",
+		// The job build is the first candidate and failed in setup.
+		`<span class="chg" title="iter-1">Job build iter-1</span>`,
+		`<span class="cell st-failed">✕</span>`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered page missing %q", want)
@@ -229,7 +232,7 @@ func TestEventsFrom(t *testing.T) {
 			{"functionCall": {"name": "run_in_container", "args": {"command": "pip install foo", "timeout_seconds": 300}}}
 		]
 	}`)
-	events := eventsFrom(name, body)
+	events := eventsFrom(name, "2/stamp-0-model.json", body)
 	var kinds []string
 	for _, e := range events {
 		kinds = append(kinds, e.Kind)
@@ -240,11 +243,14 @@ func TestEventsFrom(t *testing.T) {
 	if events[2].Command != "pip install foo" {
 		t.Errorf("call command = %q; want %q", events[2].Command, "pip install foo")
 	}
+	if events[2].object != "2/stamp-0-model.json" || events[2].call != 0 {
+		t.Errorf("call key = %q, %d; want the object and the first call", events[2].object, events[2].call)
+	}
 	if !strings.Contains(events[2].Title, "timeout 300s") {
 		t.Errorf("call title = %q; want timeout noted", events[2].Title)
 	}
 
-	resp := eventsFrom(transcriptName{Iter: 2, Role: "user"}, []byte(`{
+	resp := eventsFrom(transcriptName{Iter: 2, Role: "user"}, "2/stamp-1-user.json", []byte(`{
 		"role": "user",
 		"parts": [{"functionResponse": {"name": "run_in_container", "response": {"output": "done", "exit_code": 0}}}]
 	}`))
@@ -320,7 +326,7 @@ func TestRecordEvents(t *testing.T) {
 			if tc.record == "formalize" {
 				name.Attempt = map[string]int{"formalization accepted": 1, "formalization rejected": 2}[tc.name]
 			}
-			events := eventsFrom(name, []byte(tc.body))
+			events := eventsFrom(name, "", []byte(tc.body))
 			if len(events) != 1 {
 				t.Fatalf("events = %+v, want one", events)
 			}
@@ -456,22 +462,11 @@ func detached(cmd string) string {
 	return "( " + cmd + "\n) >" + out + " 2>&1; rc=$?; { rm -f " + out + "; cat; } <" + out + "; exit $rc"
 }
 
-// TestClassifyExec routes each label: a build's steps by their build, the
-// tools and the session's own execs by kind, and an unknown or missing label
-// as such.
+// TestClassifyExec classifies execs by their labels, whatever the argv
+// looks like, and refuses labels the page does not know.
 func TestClassifyExec(t *testing.T) {
 	const dir = "/home/builder/builds/iter-2"
-	sh := func(script string) []string { return []string{"/bin/sh", "-c", script} }
-	artifact := "set -eu\n[ -f \"" + dir + "/out/x.tgz\" ] || exit 44"
-	// The stabilize URL's builds/ precedes the build's own paths.
-	compare := strings.Join([]string{
-		"set -eu",
-		"fetch /home/builder/tools/stabilize https://storage.googleapis.com/prebuild/builds/v1/stabilize",
-		"stab /home/builder/builds/iter-2-canon/out/x.tgz /home/builder/builds/iter-2-canon/out/x.tgz.stabilized",
-		"exec /home/builder/tools/diffr --summary --label rebuild --label upstream /home/builder/builds/iter-2-canon/out/x.tgz.stabilized /home/builder/upstream/x.tgz.stabilized",
-	}, "\n")
 	restore := `c=$(docker ps -aq --filter name=^rb- | head -1); exec docker exec "$c" /bin/sh -c 'cd /src && git checkout --force v1 && git clean -fd'`
-	check := "set -eu\ndie() { exit 3; }\nexec diffr a b"
 	for _, tc := range []struct {
 		name string
 		exec schema.ScratchExec
@@ -489,28 +484,23 @@ func TestClassifyExec(t *testing.T) {
 		ok:   true,
 	}, {
 		name: "build step by its script's build directory",
-		exec: schema.ScratchExec{Cmd: sh(artifact), Label: schema.ScratchLabelArtifact},
-		want: classifiedExec{class: execBuildMachinery, label: "artifact", buildID: "iter-2", script: artifact},
-		ok:   true,
-	}, {
-		name: "comparison by the last build directory in its script",
-		exec: schema.ScratchExec{Cmd: sh(compare), Label: schema.ScratchLabelCompare},
-		want: classifiedExec{class: execBuildMachinery, label: "compare", buildID: "iter-2-canon", script: compare},
+		exec: schema.ScratchExec{Cmd: []string{"/bin/sh", "-c", "set -eu\n[ -f \"" + dir + "/out/x.tgz\" ] || exit 44"}, Label: schema.ScratchLabelArtifact},
+		want: classifiedExec{class: execBuildMachinery, label: "artifact", buildID: "iter-2", script: "set -eu\n[ -f \"" + dir + "/out/x.tgz\" ] || exit 44"},
 		ok:   true,
 	}, {
 		name: "session exec outside any build",
-		exec: schema.ScratchExec{Cmd: sh(restore), Label: schema.ScratchLabelRestore},
+		exec: schema.ScratchExec{Cmd: []string{"/bin/sh", "-c", restore}, Label: schema.ScratchLabelRestore},
 		want: classifiedExec{class: execOther, label: "restore", script: restore},
 		ok:   true,
 	}, {
-		name: "host tool, unwrapped from its output envelope",
-		exec: schema.ScratchExec{Cmd: sh(detached("cat " + dir + "/build.sh")), Label: schema.ToolLabel("run_on_host")},
+		name: "host tool, whatever the envelope",
+		exec: schema.ScratchExec{Cmd: []string{"/bin/sh", "-c", detached("cat " + dir + "/build.sh")}, Label: schema.ToolLabel("run_on_host")},
 		want: classifiedExec{class: execToolHost, label: "tool/run_on_host", script: "cat " + dir + "/build.sh"},
 		ok:   true,
 	}, {
-		name: "check_artifact",
-		exec: schema.ScratchExec{Cmd: sh(check), Label: schema.ToolLabel("check_artifact")},
-		want: classifiedExec{class: execToolCheck, label: "tool/check_artifact", script: check},
+		name: "check_artifact without the diffr flag",
+		exec: schema.ScratchExec{Cmd: []string{"/bin/sh", "-c", "set -eu\ndie() { exit 3; }\nexec diffr a b"}, Label: schema.ToolLabel("check_artifact")},
+		want: classifiedExec{class: execToolCheck, label: "tool/check_artifact", script: "set -eu\ndie() { exit 3; }\nexec diffr a b"},
 		ok:   true,
 	}, {
 		name: "unknown tool",
@@ -518,8 +508,8 @@ func TestClassifyExec(t *testing.T) {
 		want: classifiedExec{class: execOther, label: "tool/run_elsewhere", script: "ls"},
 	}, {
 		name: "unknown label",
-		exec: schema.ScratchExec{Cmd: sh("wget x.tar"), Label: "warmup"},
-		want: classifiedExec{class: execOther, label: "warmup", script: "wget x.tar"},
+		exec: schema.ScratchExec{Cmd: []string{"/bin/sh", "-c", "wget seed.tar"}, Label: "seed"},
+		want: classifiedExec{class: execOther, label: "seed", script: "wget seed.tar"},
 	}, {
 		name: "no label",
 		exec: schema.ScratchExec{Cmd: []string{"/bin/true"}},
@@ -531,6 +521,34 @@ func TestClassifyExec(t *testing.T) {
 				t.Errorf("classifyExec(%+v)\n got %+v, %v\nwant %+v, %v", tc.exec, got, ok, tc.want, tc.ok)
 			}
 		})
+	}
+}
+
+// TestApplyPurposes joins the session's purposes to its calls by transcript
+// object and call index, and reports a purpose it does not know.
+func TestApplyPurposes(t *testing.T) {
+	groups := map[int]*IterationGroup{2: {Number: 2, Events: []TranscriptEvent{
+		{Kind: "call", Tool: "run_in_container", Command: "npm ci", object: "2/a-1-model.json", call: 0},
+		{Kind: "response", Tool: "run_in_container"},
+		{Kind: "call", Tool: "run_in_container", Command: "npm pack", object: "2/a-3-model.json", call: 1},
+		{Kind: "call", Tool: "run_on_host", Command: "ls", object: "2/a-5-model.json", call: 0},
+	}}}
+	if warnings := applyPurposes(groups, nil); warnings != nil {
+		t.Errorf("applyPurposes(nil) = %v; want no warnings", warnings)
+	}
+	warnings := applyPurposes(groups, &schema.SessionPurposes{Calls: []schema.CallPurpose{
+		{Object: "2/a-1-model.json", Call: 0, Purpose: schema.PurposeDeps},
+		{Object: "2/a-3-model.json", Call: 1, Purpose: "repackage"},
+	}})
+	var got []schema.Purpose
+	for _, e := range groups[2].Events {
+		got = append(got, e.Purpose)
+	}
+	if diff := cmp.Diff([]schema.Purpose{"deps", "", "repackage", ""}, got); diff != "" {
+		t.Errorf("purposes (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{`unknown call purpose "repackage"`}, warnings); diff != "" {
+		t.Errorf("warnings (-want +got):\n%s", diff)
 	}
 }
 
@@ -569,7 +587,7 @@ func TestComposeTrajectory(t *testing.T) {
 		// A dispatch outside any build renders as an exec, as does one with
 		// a label the page does not know.
 		{ID: "3-restore", Label: schema.ScratchLabelRestore, Cmd: sh("exec docker exec c /bin/sh -c 'git checkout --force v1'"), CreatedAt: at(14 * time.Minute)},
-		{ID: "3-warmup", Label: "warmup", Cmd: sh("wget -O - https://example/x.tar | tar -x"), CreatedAt: at(15 * time.Minute)},
+		{ID: "3-seed", Label: "seed", Cmd: sh("wget -O - https://example/seed.tar | tar -x"), CreatedAt: at(15 * time.Minute)},
 		{ID: "3c-prepare", Label: schema.ScratchLabelPrepare, Cmd: sh("set -eu\nmkdir -p \"/home/builder/builds/iter-3-canon/out\""), CreatedAt: at(20 * time.Minute)},
 		{ID: "3c-artifact", Label: schema.ScratchLabelArtifact, Cmd: sh("set -eu\n[ -f \"/home/builder/builds/iter-3-canon/out/x.tgz\" ] || exit 44"), CreatedAt: at(21 * time.Minute)},
 		// Unlabeled: reported, and shown as is.
@@ -595,12 +613,12 @@ func TestComposeTrajectory(t *testing.T) {
 	}
 	want := map[int][]string{
 		1: {"inference proposal", "build iter-1 · mismatch"},
-		3: {"prompt", "run_on_host", "exec · restore · completed · exit 0 · N/A", "exec · warmup · completed · exit 0 · N/A", "exec · completed · exit 0 · N/A", "build iter-3-canon · succeeded"},
+		3: {"prompt", "run_on_host", "exec · restore · completed · exit 0 · N/A", "exec · seed · completed · exit 0 · N/A", "exec · completed · exit 0 · N/A", "build iter-3-canon · succeeded"},
 	}
 	if diff := cmp.Diff(want, titles); diff != "" {
 		t.Errorf("event titles (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]string{"1 exec without a label", `unknown exec label "warmup"`}, data.Warnings); diff != "" {
+	if diff := cmp.Diff([]string{"1 exec without a label", `unknown exec label "seed"`}, data.Warnings); diff != "" {
 		t.Errorf("warnings (-want +got):\n%s", diff)
 	}
 	var labels []string

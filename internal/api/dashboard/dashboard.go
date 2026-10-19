@@ -204,6 +204,25 @@ func (v SessionView) Tone() string {
 	return "bad"
 }
 
+// Verdict sorts how the session ended: reproduced, gave up, timed out, hit
+// a resource limit, or ended in an error. Failures split on the summaries
+// internal/agent and the reaper write.
+func (v SessionView) Verdict() string {
+	switch s := v.Summary; {
+	case v.StopReason == "":
+		return "running"
+	case v.StopReason == schema.AgentCompleteReasonSuccess:
+		return "reproduced"
+	case v.StopReason == schema.AgentCompleteReasonGaveUp:
+		return "gave up"
+	case v.StopReason == schema.AgentCompleteReasonThrottled, strings.HasPrefix(s, "Maximum iterations"), strings.Contains(s, "ResourceExhausted"):
+		return "resource limit"
+	case strings.HasPrefix(s, "Iteration budget"), strings.Contains(s, "inference ran past"), strings.Contains(s, "exceeded its timeout"):
+		return "timed out"
+	}
+	return "error"
+}
+
 // Reason is the model's own words for a give-up or the error behind a failure.
 func (v SessionView) Reason() string {
 	switch v.StopReason {
