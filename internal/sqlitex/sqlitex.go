@@ -9,6 +9,7 @@ package sqlitex
 
 import (
 	"compress/gzip"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -60,6 +61,30 @@ func CheckVersion(db *sqlite3.Conn, want int) error {
 	if err != nil {
 		return err
 	}
+	return matchVersion(got, want)
+}
+
+// CheckPublishedVersion is CheckVersion for a Publish stream. It reads only
+// the header, so a reader can refuse a database before unpacking it.
+func CheckPublishedVersion(r io.Reader, want int) error {
+	gz, err := gzip.NewReader(r)
+	if err != nil {
+		return errors.Wrap(err, "opening gzip stream")
+	}
+	defer gz.Close()
+	// The header is the file's first 100 bytes, and user_version is the
+	// big-endian 32-bit integer at offset 60.
+	var h [100]byte
+	if _, err := io.ReadFull(gz, h[:]); err != nil {
+		return errors.Wrap(err, "reading database header")
+	}
+	if string(h[:16]) != "SQLite format 3\x00" {
+		return errors.New("not a SQLite database")
+	}
+	return matchVersion(int(int32(binary.BigEndian.Uint32(h[60:64]))), want)
+}
+
+func matchVersion(got, want int) error {
 	if got != want {
 		return errors.Errorf("database is schema v%d, this binary reads v%d", got, want)
 	}
@@ -100,6 +125,11 @@ func Fetch(fs billy.Basic, name, dest string) error {
 		return errors.Wrapf(err, "opening %s", name)
 	}
 	defer r.Close()
+	return Unpack(r, dest)
+}
+
+// Unpack gunzips a published database stream into a local file at dest.
+func Unpack(r io.Reader, dest string) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
 		return errors.Wrap(err, "opening gzip stream")

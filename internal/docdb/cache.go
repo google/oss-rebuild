@@ -6,8 +6,10 @@ package docdb
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -54,7 +56,6 @@ type Cache struct {
 
 	mu         sync.Mutex
 	db         *sqlite3.Conn
-	dbPath     string
 	watermark  time.Time
 	baseTag    string
 	refusedTag string // base tag already downloaded and refused on schema
@@ -87,7 +88,7 @@ func (c *Cache) Query(f func(*sqlite3.Conn) error) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.db == nil {
-		return errors.New("cache is closed")
+		return errors.New("cache has no local copy")
 	}
 	return f(c.db)
 }
@@ -138,9 +139,8 @@ func (c *Cache) refreshLoop(ctx context.Context) {
 	}
 }
 
-// sync converges the local copy on the upstream.
-// It rehydrates when the base object has been replaced and otherwise applies
-// new delta segments in place.
+// sync converges the local copy on the upstream. It rehydrates when the
+// base object has been replaced, then applies new delta segments in place.
 func (c *Cache) sync() error {
 	info, err := c.up.FS.Stat(c.up.Object)
 	if err != nil {
@@ -150,15 +150,20 @@ func (c *Cache) sync() error {
 	// rewrite within the filesystem's timestamp resolution goes unseen.
 	tag := fmt.Sprintf("%d:%d", info.ModTime().UnixNano(), info.Size())
 	c.mu.Lock()
-	baseTag, refusedTag, after, watermark := c.baseTag, c.refusedTag, c.applied, c.watermark
+	baseTag, refusedTag := c.baseTag, c.refusedTag
 	c.mu.Unlock()
 	if refusedTag != "" && tag == refusedTag {
 		// Already downloaded and refused. Skip until it changes again.
 		return nil
 	}
 	if tag != baseTag {
-		return c.hydrate(tag)
+		if err := c.hydrate(tag); err != nil {
+			return err
+		}
 	}
+	c.mu.Lock()
+	after, watermark := c.applied, c.watermark
+	c.mu.Unlock()
 	// NOTE: Fetch before taking query lock.
 	segs, err := fetchNewSegments(c.up.FS, c.up.Deltas, after, watermark)
 	if err != nil {
@@ -178,67 +183,88 @@ func (c *Cache) sync() error {
 	return nil
 }
 
-// hydrate downloads the base object at tag, verifies its schema era, replays
-// segments past its watermark, and swaps the result in.
-func (c *Cache) hydrate(tag string) (err error) {
-	f, err := os.CreateTemp(c.dir, "base-*.db")
-	if err != nil {
-		return errors.Wrap(err, "creating local copy")
-	}
-	path := f.Name()
-	f.Close()
-	defer func() {
-		if err != nil {
-			os.Remove(path)
-		}
-	}()
-	if err := sqlitex.Fetch(c.up.FS, c.up.Object, path); err != nil {
+// hydrate replaces the local copy with the base at tag. It downloads and
+// era-checks the compressed base while the old copy serves, then drops the
+// old copy before unpacking, so two never coexist. Queries wait out the swap.
+func (c *Cache) hydrate(tag string) error {
+	staged := filepath.Join(c.dir, "base.db.gz")
+	defer os.Remove(staged)
+	if err := download(c.up.FS, c.up.Object, staged); err != nil {
 		return err
 	}
-	db, err := sqlite3.Open(path)
+	f, err := os.Open(staged)
 	if err != nil {
-		return errors.Wrap(err, "opening database")
+		return err
 	}
-	// The copy is a temp file rebuilt from the base on any fault, so skip
-	// fsync, which would dominate segment replay.
-	if err := db.Exec("PRAGMA synchronous=OFF; PRAGMA journal_mode=MEMORY"); err != nil {
-		db.Close()
-		return errors.Wrap(err, "configuring local copy")
-	}
-	if err := sqlitex.CheckVersion(db, c.up.Schema); err != nil {
-		db.Close()
+	err = sqlitex.CheckPublishedVersion(f, c.up.Schema)
+	f.Close()
+	if err != nil {
 		c.mu.Lock()
 		c.refusedTag = tag
 		c.mu.Unlock()
 		return err
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.db != nil {
+		c.db.Close()
+	}
+	// Until the new copy opens, there is nothing to serve. The cleared tag
+	// makes the next sync retry.
+	c.db, c.watermark, c.baseTag, c.applied = nil, time.Time{}, "", ""
+	path := filepath.Join(c.dir, "base.db")
+	db, watermark, err := c.unpack(staged, path)
+	if err != nil {
+		os.Remove(path)
+		return err
+	}
+	c.db, c.watermark, c.baseTag, c.refusedTag = db, watermark, tag, ""
+	return nil
+}
+
+func (c *Cache) unpack(staged, path string) (*sqlite3.Conn, time.Time, error) {
+	f, err := os.Open(staged)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	defer f.Close()
+	if err := sqlitex.Unpack(f, path); err != nil {
+		return nil, time.Time{}, err
+	}
+	db, err := sqlite3.Open(path)
+	if err != nil {
+		return nil, time.Time{}, errors.Wrap(err, "opening database")
+	}
+	// The copy is a temp file rebuilt from the base on any fault, so skip
+	// fsync, which would dominate segment replay.
+	if err := db.Exec("PRAGMA synchronous=OFF; PRAGMA journal_mode=MEMORY"); err != nil {
+		db.Close()
+		return nil, time.Time{}, errors.Wrap(err, "configuring local copy")
+	}
 	watermark, err := c.up.Watermark(db)
 	if err != nil {
 		db.Close()
-		return errors.Wrap(err, "reading watermark")
+		return nil, time.Time{}, errors.Wrap(err, "reading watermark")
 	}
-	segs, err := fetchNewSegments(c.up.FS, c.up.Deltas, "", watermark)
+	return db, watermark, nil
+}
+
+// download copies the object fs holds under name, as stored, to path.
+func download(fs billy.Basic, name, path string) error {
+	r, err := fs.Open(name)
 	if err != nil {
-		db.Close()
+		return errors.Wrapf(err, "opening %s", name)
+	}
+	defer r.Close()
+	f, err := os.Create(path)
+	if err != nil {
 		return err
 	}
-	applied := ""
-	for _, s := range segs {
-		if err := applyRecords(db, c.up.Defs, s.recs); err != nil {
-			db.Close()
-			return errors.Wrapf(err, "applying %s", s.name)
-		}
-		applied = s.name
+	if _, err := io.Copy(f, r); err != nil {
+		f.Close()
+		return errors.Wrapf(err, "downloading %s", name)
 	}
-	c.mu.Lock()
-	old, oldPath := c.db, c.dbPath
-	c.db, c.dbPath, c.watermark, c.baseTag, c.applied, c.refusedTag = db, path, watermark, tag, applied, ""
-	c.mu.Unlock()
-	if old != nil {
-		old.Close()
-		os.Remove(oldPath)
-	}
-	return nil
+	return f.Close()
 }
 
 // segment is one fetched delta segment, parsed and ready to apply.

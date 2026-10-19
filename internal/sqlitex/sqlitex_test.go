@@ -4,12 +4,15 @@
 package sqlitex
 
 import (
+	"compress/gzip"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/util"
+	"github.com/google/oss-rebuild/pkg/archive/archivetest"
 	"github.com/ncruces/go-sqlite3"
 )
 
@@ -88,5 +91,53 @@ func TestPublishFetchRoundTrip(t *testing.T) {
 	}
 	if err := Fetch(fs, "pub/missing.db.gz", fetched); err == nil {
 		t.Error("Fetch of a missing object succeeded")
+	}
+}
+
+func TestCheckPublishedVersion(t *testing.T) {
+	built := filepath.Join(t.TempDir(), "built.db")
+	db, err := sqlite3.Open(built)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE t(x)"); err != nil {
+		t.Fatalf("fill: %v", err)
+	}
+	if err := SetVersion(db, 3); err != nil {
+		t.Fatalf("SetVersion: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	fs := memfs.New()
+	if err := Publish(fs, "probe.db.gz", built); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	text, err := archivetest.GzFile([]byte(strings.Repeat("not a database, but longer than one header", 4)), gzip.Header{})
+	if err != nil {
+		t.Fatalf("gzip: %v", err)
+	}
+	if err := util.WriteFile(fs, "text.gz", text.Bytes(), 0o644); err != nil {
+		t.Fatalf("writing text.gz: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		want int
+		ok   bool
+	}{
+		{"probe.db.gz", 3, true},
+		{"probe.db.gz", 2, false},
+		{"probe.db.gz", 4, false},
+		{"text.gz", 3, false},
+	} {
+		f, err := fs.Open(tc.name)
+		if err != nil {
+			t.Fatalf("open %s: %v", tc.name, err)
+		}
+		err = CheckPublishedVersion(f, tc.want)
+		f.Close()
+		if (err == nil) != tc.ok {
+			t.Errorf("CheckPublishedVersion(%s, %d) = %v, want ok=%v", tc.name, tc.want, err, tc.ok)
+		}
 	}
 }

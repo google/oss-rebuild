@@ -10,11 +10,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-billy/v5/util"
 	"github.com/google/oss-rebuild/internal/iterx"
 	"github.com/google/oss-rebuild/internal/sqlitex"
 	"github.com/ncruces/go-sqlite3"
@@ -351,6 +355,163 @@ func TestCache(t *testing.T) {
 		if _, err := OpenCache(ctx, other, time.Hour); err == nil {
 			t.Errorf("OpenCache accepted a v%d base for a v%d reader", era, up.Schema)
 		}
+	}
+}
+
+// probes returns n probe documents with compressible bodies, so a base's
+// unpacked size dwarfs its compressed one.
+func probes(n int, when time.Time) []json.RawMessage {
+	docs := make([]json.RawMessage, n)
+	for i := range docs {
+		docs[i] = probe(fmt.Sprintf("k%d", i), strings.Repeat("x", 2000), when)
+	}
+	return docs
+}
+
+func TestCacheSwapHoldsOneCopy(t *testing.T) {
+	ctx := context.Background()
+	dest := testDest(t)
+	up := Upstream{FS: dest, Object: "probe.db.gz", Deltas: "deltas", Defs: []TableDef{probeTable}, Schema: 1, Watermark: probeWatermark}
+	now := dt(0)
+	buildBase(t, dest, up.Object, probes(2000, now), now, 1)
+	c := must(OpenCache(ctx, up, time.Hour))
+	defer c.Close()
+	dirBytes := func() int64 {
+		var total int64
+		entries, _ := os.ReadDir(c.dir)
+		for _, e := range entries {
+			if info, err := e.Info(); err == nil {
+				total += info.Size()
+			}
+		}
+		return total
+	}
+	copySize := dirBytes()
+	// While the base is replaced, one goroutine queries in a loop and
+	// another totals the cache directory's bytes.
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	var failed atomic.Int64
+	var peak int64
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if err := c.Query(func(db *sqlite3.Conn) error { return db.Exec("SELECT count(*) FROM gen_probe") }); err != nil {
+				failed.Add(1)
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			peak = max(peak, dirBytes())
+		}
+	}()
+	later := now.Add(time.Hour)
+	buildBase(t, dest, up.Object, probes(2001, later), later, 1)
+	must1(c.sync())
+	close(stop)
+	wg.Wait()
+	// Queries wait out the swap rather than failing.
+	if n := failed.Load(); n > 0 {
+		t.Errorf("%d queries failed during the swap", n)
+	}
+	var got string
+	must1(c.Query(func(db *sqlite3.Conn) error {
+		got = queryText(t, db, "SELECT count(*) FROM gen_probe")
+		return nil
+	}))
+	if got != "2001" {
+		t.Errorf("after swap = %s, want 2001", got)
+	}
+	// The dir holds one copy plus the compressed download, never two copies.
+	if peak > copySize*3/2 {
+		t.Errorf("cache dir peaked at %d bytes, want under 1.5 copies of %d", peak, copySize)
+	}
+}
+
+// failingOpen fails every Open of name, standing in for a failed download.
+type failingOpen struct {
+	billy.Filesystem
+	name string
+}
+
+func (f failingOpen) Open(name string) (billy.File, error) {
+	if name == f.name {
+		return nil, errors.New("download failed")
+	}
+	return f.Filesystem.Open(name)
+}
+
+func TestCacheFailedRehydrate(t *testing.T) {
+	ctx := context.Background()
+	dest := testDest(t)
+	up := Upstream{FS: dest, Object: "probe.db.gz", Deltas: "deltas", Defs: []TableDef{probeTable}, Schema: 1, Watermark: probeWatermark}
+	now := dt(0)
+	buildBase(t, dest, up.Object, probes(10, now), now, 1)
+	c := must(OpenCache(ctx, up, time.Hour))
+	defer c.Close()
+	count := func() (string, error) {
+		var got string
+		err := c.Query(func(db *sqlite3.Conn) error {
+			got = queryText(t, db, "SELECT count(*) FROM gen_probe")
+			return nil
+		})
+		return got, err
+	}
+	files := func() []string {
+		var names []string
+		for _, e := range must(os.ReadDir(c.dir)) {
+			names = append(names, e.Name())
+		}
+		return names
+	}
+	// A failed download keeps the current copy, and the next sync retries.
+	buildBase(t, dest, up.Object, probes(20, now), now, 1)
+	c.up.FS = failingOpen{dest, up.Object}
+	if err := c.sync(); err == nil {
+		t.Error("sync succeeded through a failed download")
+	}
+	if got, err := count(); err != nil || got != "10" {
+		t.Errorf("after failed download = (%s, %v), want the current copy's 10", got, err)
+	}
+	c.up.FS = dest
+	must1(c.sync())
+	if got, err := count(); err != nil || got != "20" {
+		t.Errorf("after retry = (%s, %v), want 20", got, err)
+	}
+	// A truncated base fails after the old copy is dropped, leaving nothing on
+	// disk. Queries error until the next good base restores service.
+	buildBase(t, dest, up.Object, probes(30, now), now, 1)
+	full := must(util.ReadFile(dest, up.Object))
+	must1(util.WriteFile(dest, up.Object, full[:len(full)/2], 0o644))
+	if err := c.sync(); err == nil {
+		t.Error("sync succeeded on a truncated base")
+	}
+	if _, err := count(); err == nil {
+		t.Error("query succeeded with no local copy")
+	}
+	if names := files(); len(names) != 0 {
+		t.Errorf("cache dir after failed unpack = %v, want empty", names)
+	}
+	buildBase(t, dest, up.Object, probes(40, now), now, 1)
+	must1(c.sync())
+	if got, err := count(); err != nil || got != "40" {
+		t.Errorf("after recovery = (%s, %v), want 40", got, err)
+	}
+	if names := files(); len(names) != 1 || names[0] != "base.db" {
+		t.Errorf("cache dir after recovery = %v, want only base.db", names)
 	}
 }
 
