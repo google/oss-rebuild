@@ -24,7 +24,7 @@
 {{$campaigns := false}}{{range .Ecos}}{{if and .HasQueue (or (not $.Eco) (eq .Ecosystem $.Eco))}}{{$campaigns = true}}{{end}}{{end}}
 {{if $campaigns}}
 <section class="card outcomes">
-    <div class="chart-title">Campaign outcomes{{template "def" "One campaign per package version. Attested campaigns are split by the stage that attested them."}}</div>
+    <div class="chart-title">Rebuild progress{{template "def" "One campaign per package version the scheduler took on. Attested campaigns are split by the stage that attested them."}}</div>
     {{range .Ecos}}{{if and .HasQueue (or (not $.Eco) (eq .Ecosystem $.Eco))}}
     <div class="outcome-row">
         <div class="outcome-name">{{.Ecosystem}}</div>

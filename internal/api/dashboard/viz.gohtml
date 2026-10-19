@@ -43,6 +43,24 @@
     {{- if .Queued}}<span class="seg none" style="flex-grow: {{.Queued}}" data-c="none" data-v="{{num .Queued}}" data-k="queued"></span>{{end -}}
 </div>
 {{- end}}
+{{- define "progress"}}
+<div class="segbar" data-title="{{.Ecosystem}} campaigns">
+    {{- with .Inferred}}<span class="seg stage-infer" style="flex-grow: {{.}}" data-c="stage-infer" data-v="{{num .}}" data-k="attested by inference"></span>{{end}}
+    {{- with .Diagnosed}}<span class="seg stage-agent" style="flex-grow: {{.}}" data-c="stage-agent" data-v="{{num .}}" data-k="attested by the agent"></span>{{end}}
+    {{- if .NeedsTriage}}<span class="seg warn" style="flex-grow: {{.NeedsTriage}}" data-c="warn" data-v="{{num .NeedsTriage}}" data-k="needs triage"></span>{{end}}
+    {{- if .InFlight}}<span class="seg live" style="flex-grow: {{.InFlight}}" data-c="live" data-v="{{num .InFlight}}" data-k="in flight"></span>{{end}}
+    {{- if .Queued}}<span class="seg none" style="flex-grow: {{.Queued}}" data-c="none" data-v="{{num .Queued}}" data-k="queued"></span>{{end -}}
+</div>
+{{- end}}
+{{- define "progress-legend"}}
+<div class="legend">
+    <span class="legend-item"><i class="swatch stage-infer"></i>Attested by inference{{template "def" "Inference or a replay reproduced it, including an agent session's seed build."}}</span>
+    <span class="legend-item"><i class="swatch stage-agent"></i>Attested by the agent{{template "def" "A build the agent proposed or handed off reproduced it."}}</span>
+    <span class="legend-item"><i class="swatch warn"></i>Needs triage</span>
+    <span class="legend-item"><i class="swatch live"></i>In flight</span>
+    <span class="legend-item"><i class="swatch none"></i>Queued</span>
+</div>
+{{- end}}
 {{- define "campaigns-legend"}}
 <div class="legend">
     <span class="legend-item"><i class="swatch stage-replay"></i>Attested at replay</span>

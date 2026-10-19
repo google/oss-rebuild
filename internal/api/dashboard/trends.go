@@ -57,6 +57,19 @@ type CoverageEco struct {
 // Campaigns counts the ecosystem's campaigns in every state.
 func (e CoverageEco) Campaigns() int64 { return e.Queued + e.InFlight + e.NeedsTriage + e.Done }
 
+// Diagnosed counts the done campaigns an agent's own build reproduced.
+func (e CoverageEco) Diagnosed() int64 {
+	var n int64
+	for _, d := range e.DoneByStage {
+		n += d.LLMDone
+	}
+	return n
+}
+
+// Inferred counts the done campaigns no LLM build reproduced: replays,
+// inference, and agent sessions whose seed build from inference won.
+func (e CoverageEco) Inferred() int64 { return e.Done - e.Diagnosed() }
+
 type CoverageData struct {
 	Frame
 	Loaded   bool
