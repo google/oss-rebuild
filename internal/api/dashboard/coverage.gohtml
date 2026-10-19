@@ -1,4 +1,3 @@
-{{define "def"}}<span class="info" tabindex="0" data-tip="{{.}}">?</span>{{end}}
 {{define "content"}}
 <!--
  Copyright 2026 Google LLC
@@ -29,23 +28,11 @@
     {{range .Ecos}}{{if and .HasQueue (or (not $.Eco) (eq .Ecosystem $.Eco))}}
     <div class="outcome-row">
         <div class="outcome-name">{{.Ecosystem}}</div>
-        <div class="segbar" data-title="{{.Ecosystem}} campaigns">
-            {{- range .DoneByStage}}{{if .Done}}<span class="seg stage-{{.Stage}}" style="flex-grow: {{.Done}}" data-c="stage-{{.Stage}}" data-v="{{num .Done}}" data-k="attested at {{.Stage}}"></span>{{end}}{{end}}
-            {{- if .NeedsTriage}}<span class="seg warn" style="flex-grow: {{.NeedsTriage}}" data-c="warn" data-v="{{num .NeedsTriage}}" data-k="needs triage"></span>{{end}}
-            {{- if .InFlight}}<span class="seg live" style="flex-grow: {{.InFlight}}" data-c="live" data-v="{{num .InFlight}}" data-k="in flight"></span>{{end}}
-            {{- if .Queued}}<span class="seg none" style="flex-grow: {{.Queued}}" data-c="none" data-v="{{num .Queued}}" data-k="queued"></span>{{end -}}
-        </div>
+        {{template "campaigns" .}}
         <div class="outcome-total">{{num .Campaigns}}</div>
     </div>
     {{end}}{{end}}
-    <div class="legend">
-        <span class="legend-item"><i class="swatch stage-replay"></i>Attested at replay</span>
-        <span class="legend-item"><i class="swatch stage-infer"></i>Attested at infer</span>
-        <span class="legend-item"><i class="swatch stage-agent"></i>Attested at agent</span>
-        <span class="legend-item"><i class="swatch warn"></i>Needs triage</span>
-        <span class="legend-item"><i class="swatch live"></i>In flight</span>
-        <span class="legend-item"><i class="swatch none"></i>Queued</span>
-    </div>
+    {{template "campaigns-legend"}}
 </section>
 {{end}}
 {{with .Tiers}}
