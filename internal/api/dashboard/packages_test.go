@@ -40,13 +40,16 @@ func packagesFixture(t *testing.T) memAnalytics {
 		`INSERT INTO agent_iterations VALUES ('s1', 'SUCCESS', '2026-08-28T10:00:00Z'), ('s1', 'FAILURE', '2026-08-28T09:00:00Z')`,
 		// CompletedBuilds reads inference time too.
 		`ALTER TABLE attempts ADD COLUMN cost_inference_seconds REAL`,
+		`ALTER TABLE attempts ADD COLUMN message TEXT`,
+		`UPDATE attempts SET message = 'getting strategy: no git repo' WHERE package = 'b' AND run_id = 'r3'`,
+		`UPDATE attempts SET message = 'executing rebuild: context deadline exceeded' WHERE package = 'c' AND run_id = 'r3'`,
 	)
 }
 
 func TestPackagesPage(t *testing.T) {
-	a := PackageRow{Ecosystem: "npm", Package: "a", EverBuilt: true, Attempts: 2, VersionsAttempted: 2, VersionsSucceeded: 2, LastAttemptedAt: "2026-08-30", LastAttemptedVersion: "1.1", LastAttemptedStatus: "SUCCESS", LastSucceededAt: "2026-08-30", LastSucceededVersion: "1.1", Recent: slices.Repeat([]bool{true}, recentBuilds)}
-	b := PackageRow{Ecosystem: "npm", Package: "b", FailingStreak: 3, Attempts: 3, VersionsAttempted: 1, LastAttemptedAt: "2026-08-31", LastAttemptedVersion: "2.0", LastAttemptedStatus: "FAILURE", Recent: []bool{false, false, false}}
-	c := PackageRow{Ecosystem: "pypi", Package: "c", EverBuilt: true, FailingStreak: 1, Attempts: 4, VersionsAttempted: 2, VersionsSucceeded: 1, LastAttemptedAt: "2026-08-29", LastAttemptedVersion: "0.2", LastAttemptedStatus: "ERROR", LastSucceededAt: "2026-08-28", LastSucceededVersion: "0.1", Recent: []bool{true, true, true, false}}
+	a := PackageRow{Ecosystem: "npm", Package: "a", EverBuilt: true, Attempts: 2, VersionsAttempted: 2, VersionsSucceeded: 2, LastAttemptedAt: "2026-08-30", LastAttemptedVersion: "1.1", LastSucceededAt: "2026-08-30", LastSucceededVersion: "1.1", Recent: slices.Repeat([]bool{true}, recentBuilds)}
+	b := PackageRow{Ecosystem: "npm", Package: "b", FailingStreak: 3, Attempts: 3, VersionsAttempted: 1, LastAttemptedAt: "2026-08-31", LastAttemptedVersion: "2.0", LastFailure: "getting strategy: no git repo", Recent: []bool{false, false, false}}
+	c := PackageRow{Ecosystem: "pypi", Package: "c", EverBuilt: true, FailingStreak: 1, Attempts: 4, VersionsAttempted: 2, VersionsSucceeded: 1, LastAttemptedAt: "2026-08-29", LastAttemptedVersion: "0.2", LastFailure: "executing rebuild: context deadline exceeded", LastSucceededAt: "2026-08-28", LastSucceededVersion: "0.1", Recent: []bool{true, true, true, false}}
 	allStreaks := []StreakBucket{{"1", 1}, {"2-3", 1}, {"4-7", 0}, {"8-15", 0}, {"16+", 0}}
 	npmStreaks := []StreakBucket{{"1", 0}, {"2-3", 1}, {"4-7", 0}, {"8-15", 0}, {"16+", 0}}
 	for _, tc := range []struct {

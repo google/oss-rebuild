@@ -40,7 +40,7 @@ type PackageRow struct {
 	VersionsSucceeded                int64
 	LastAttemptedAt                  string
 	LastAttemptedVersion             string
-	LastAttemptedStatus              string
+	LastFailure                      string // the latest attempt's message while the streak runs
 	LastSucceededAt                  string
 	LastSucceededVersion             string
 	Recent                           []bool // latest build outcomes, oldest first
@@ -137,7 +137,7 @@ func PackagesPage(ctx context.Context, req PackagesRequest, deps *Deps) (*Packag
 	err = forEachRow(deps.Analytics, `
 		SELECT ecosystem, package, ever_built, consecutive_failures,
 			attempt_count, versions_attempted, versions_succeeded,
-			coalesce(last_attempted_time, ''), coalesce(last_attempted_version, ''), coalesce(last_attempted_status, ''),
+			coalesce(last_attempted_time, ''), coalesce(last_attempted_version, ''),
 			coalesce(last_succeeded_time, ''), coalesce(last_succeeded_version, '')
 		`+listed,
 		func(stmt *sqlite3.Stmt) error {
@@ -151,9 +151,8 @@ func PackagesPage(ctx context.Context, req PackagesRequest, deps *Deps) (*Packag
 				VersionsSucceeded:    stmt.ColumnInt64(6),
 				LastAttemptedAt:      stmt.ColumnText(7),
 				LastAttemptedVersion: stmt.ColumnText(8),
-				LastAttemptedStatus:  stmt.ColumnText(9),
-				LastSucceededAt:      stmt.ColumnText(10),
-				LastSucceededVersion: stmt.ColumnText(11),
+				LastSucceededAt:      stmt.ColumnText(9),
+				LastSucceededVersion: stmt.ColumnText(10),
 			}
 			for _, ts := range []*string{&p.LastAttemptedAt, &p.LastSucceededAt} {
 				if len(*ts) >= len("2006-01-02") {
@@ -192,6 +191,25 @@ func PackagesPage(ctx context.Context, req PackagesRequest, deps *Deps) (*Packag
 		})
 	if err != nil {
 		return nil, errors.Wrap(err, "querying recent builds")
+	}
+	// CompletedBuilds carries no messages, so the failure comes from the
+	// attempts alone. A later agent success ends the streak and hides it.
+	err = forEachRow(deps.Analytics, `
+		WITH listed AS (SELECT ecosystem, package `+listed+`)
+		SELECT ecosystem, package, message FROM (
+			SELECT ecosystem, package, message, success,
+				row_number() OVER (PARTITION BY ecosystem, package ORDER BY created DESC, run_id DESC) AS rn
+			FROM `+snapshot.TableAttempts+`
+			WHERE status != 'RUNNING' AND (ecosystem, package) IN listed)
+		WHERE rn = 1 AND NOT success`,
+		func(stmt *sqlite3.Stmt) error {
+			if p := byKey[[2]string{stmt.ColumnText(0), stmt.ColumnText(1)}]; p != nil && p.FailingStreak > 0 {
+				p.LastFailure = stmt.ColumnText(2)
+			}
+			return nil
+		})
+	if err != nil {
+		return nil, errors.Wrap(err, "querying latest failures")
 	}
 	data.Listed = int64(len(data.Packages))
 	return data, nil

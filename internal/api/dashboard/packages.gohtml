@@ -7,7 +7,16 @@
 
 <style>
     .showing { color: var(--muted); font-size: 0.9rem; margin: 0 0 8px; }
-    .streak { color: var(--mismatch); font-weight: 600; }
+    .pkg-stats { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+    .pkg-sub { padding-left: 0; }
+    .why { flex: 1 1 18em; display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .streak { flex: none; width: 9em; text-align: right; color: var(--mismatch); font-size: 0.85rem; font-weight: 600; }
+    @media (max-width: 640px) {
+        .pkg-head, .pkg-sub { flex-wrap: wrap; }
+        .pkg-stats { order: 1; flex-basis: 100%; margin-left: 0; }
+        .streak { width: auto; margin-left: auto; }
+        .pkg-sub .row-end { flex-shrink: 1; white-space: normal; text-align: right; }
+    }
 </style>
 <h2>Packages</h2>
 {{if not .Loaded}}
@@ -45,33 +54,23 @@
 {{if not .Packages}}
 <p>No packages recorded in the snapshot.</p>
 {{else}}
-<p class="showing">Showing {{num .Listed}} of {{num .Total}}, longest failing streak first.</p>
-<table>
-    <tr>
-        {{if not .Eco}}<th>Ecosystem</th>{{end}}
-        <th>Package</th>
-        <th>Built{{template "def" "Reproduced at least one version."}}</th>
-        <th>Versions built{{template "def" "Versions reproduced over versions attempted."}}</th>
-        <th>Attempts</th>
-        <th>Recent builds{{template "def" "Latest completed builds, oldest first. Successes rise above the line and failures drop below it."}}</th>
-        <th>Failing streak{{template "def" "Completed attempts since the last success, on any version."}}</th>
-        <th>Last success</th>
-        <th>Last attempt</th>
-    </tr>
-    {{range .Packages}}
-    <tr>
-        {{if not $.Eco}}<td>{{.Ecosystem}}</td>{{end}}
-        <td><a href="/package/{{.EncodedEcosystem}}/{{.EncodedPackage}}">{{.Package}}</a></td>
-        <td>{{if .EverBuilt}}<span class="status-success">yes</span>{{else}}<span class="muted">no</span>{{end}}</td>
-        <td>{{.VersionsSucceeded}} / {{.VersionsAttempted}}</td>
-        <td>{{num .Attempts}}</td>
-        <td><span class="beads">{{range .Recent}}<i{{if .}} class="ok"{{end}}></i>{{end}}</span></td>
-        <td>{{if .FailingStreak}}<span class="streak">{{.FailingStreak}}</span>{{else}}<span class="muted">0</span>{{end}}</td>
-        <td class="wrap">{{if .LastSucceededAt}}{{.LastSucceededAt}} <span class="muted">{{.LastSucceededVersion}}</span>{{else}}<span class="muted">&mdash;</span>{{end}}</td>
-        <td class="wrap">{{.LastAttemptedAt}} <span class="muted">{{.LastAttemptedVersion}} {{.LastAttemptedStatus}}</span></td>
-    </tr>
-    {{end}}
-</table>
+<p class="showing">Showing {{num .Listed}} of {{num .Total}}, longest failing streak first.{{template "def" "The bars are the latest completed builds, oldest first. Successes rise above the line and failures drop below it. The streak counts completed builds since the last success, on any version."}}</p>
+<ul class="rows">
+    {{- range .Packages}}
+    <li class="row">
+        <div class="row-head pkg-head">
+            <a class="row-name" href="/package/{{.EncodedEcosystem}}/{{.EncodedPackage}}">{{.Package}}</a>
+            {{- if not $.Eco}}<span class="tag">{{.Ecosystem}}</span>{{end}}
+            <span class="pkg-stats">{{.VersionsSucceeded}} of {{.VersionsAttempted}} versions built · {{num .Attempts}} attempts<span class="beads">{{range .Recent}}<i{{if .}} class="ok"{{end}}></i>{{end}}</span></span>
+            <span class="streak">{{if .FailingStreak}}{{.FailingStreak}} failed in a row{{end}}</span>
+        </div>
+        <div class="row-sub pkg-sub">
+            {{- with .LastFailure}}<span class="why">{{with stage .}}<span class="stage">{{.}}</span>{{end}}<span class="cause" title="{{.}}" tabindex="0">{{cause .}}</span></span>{{end}}
+            <span class="row-end">{{if .LastSucceededVersion}}built {{.LastSucceededVersion}} on {{.LastSucceededAt}} · {{end}}tried {{.LastAttemptedVersion}} on {{.LastAttemptedAt}}</span>
+        </div>
+    </li>
+    {{- end}}
+</ul>
 {{end}}
 {{end}}
 {{end}}
