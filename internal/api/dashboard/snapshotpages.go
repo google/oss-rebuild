@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -44,17 +46,19 @@ type pageRequest interface {
 
 // PerSnapshot serves h's data from pages, computing it once per snapshot
 // version. A request that finds its data stale is served that until Warm
-// refreshes it. Without a snapshot h runs on every request. Register every
-// page before Warm starts.
-func PerSnapshot[I pageRequest, O any](pages *SnapshotPages, h api.HandlerFn[I, O, *Deps]) api.HandlerFn[I, O, *Deps] {
-	p := &snapshotPage[I, O]{h: h, data: map[I]snapshotData[O]{}}
+// refreshes it. Without a snapshot h runs on every request. tabs, when set,
+// lists the requests a page's default view links to, which Warm computes
+// with it. Register every page before Warm starts.
+func PerSnapshot[I pageRequest, O any](pages *SnapshotPages, h api.HandlerFn[I, O, *Deps], tabs func(*O) []I) api.HandlerFn[I, O, *Deps] {
+	p := &snapshotPage[I, O]{h: h, tabs: tabs, data: map[I]snapshotData[O]{}}
 	pages.pages = append(pages.pages, p)
 	return p.serve
 }
 
 // Warm recomputes the data that predates the current snapshot version until
 // ctx ends, so the requests after a snapshot update find their pages current.
-// It computes every page's default request up front. It needs a snapshot.
+// It computes every page's default request and its tabs up front. It needs
+// a snapshot.
 func (s *SnapshotPages) Warm(ctx context.Context, depsFn func(context.Context) (*Deps, error)) {
 	deps, err := depsFn(ctx)
 	if err != nil {
@@ -77,6 +81,7 @@ func (s *SnapshotPages) Warm(ctx context.Context, depsFn func(context.Context) (
 
 type snapshotPage[I pageRequest, O any] struct {
 	h     api.HandlerFn[I, O, *Deps]
+	tabs  func(*O) []I
 	group singleflight.Group
 	mu    sync.Mutex
 	data  map[I]snapshotData[O]
@@ -142,23 +147,18 @@ func (p *snapshotPage[I, O]) warmOne(ctx context.Context, req I, deps *Deps) {
 	}
 }
 
-// warm refreshes the default request when it has no data and every request
-// whose data predates the snapshot, one at a time.
+// warm refreshes the default request, its tabs, and every request whose
+// data predates the snapshot, one at a time. A refresh skips current data.
 func (p *snapshotPage[I, O]) warm(ctx context.Context, deps *Deps) {
-	fresh := deps.Analytics.Freshness()
-	var stale []I
 	var zero I
+	p.warmOne(ctx, zero, deps)
 	p.mu.Lock()
-	if _, ok := p.data[zero]; !ok {
-		stale = append(stale, zero)
-	}
-	for req, d := range p.data {
-		if !d.fresh.Equal(fresh) {
-			stale = append(stale, req)
-		}
+	reqs := slices.Collect(maps.Keys(p.data))
+	if d, ok := p.data[zero]; ok && p.tabs != nil {
+		reqs = append(reqs, p.tabs(d.page)...)
 	}
 	p.mu.Unlock()
-	for _, req := range stale {
+	for _, req := range reqs {
 		p.warmOne(ctx, req, deps)
 	}
 }

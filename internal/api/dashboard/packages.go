@@ -83,6 +83,15 @@ func encodePackagePath(eco, pkg string) (string, string) {
 	return string(et.Ecosystem), et.Package
 }
 
+// Tabs lists the packages page's ecosystem tabs.
+func (d *PackagesData) Tabs() []PackagesRequest {
+	var out []PackagesRequest
+	for _, e := range d.Ecosystems {
+		out = append(out, PackagesRequest{Eco: e})
+	}
+	return out
+}
+
 func PackagesPage(ctx context.Context, req PackagesRequest, deps *Deps) (*PackagesData, error) {
 	data := &PackagesData{}
 	if deps.Analytics == nil {

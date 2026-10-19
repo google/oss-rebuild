@@ -59,7 +59,7 @@ func TestPerSnapshotComputesOncePerVersion(t *testing.T) {
 	a := &versionedAnalytics{fresh: time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)}
 	deps := &Deps{Analytics: a}
 	h, runs := countingPage(nil)
-	serve := PerSnapshot(&SnapshotPages{}, h)
+	serve := PerSnapshot(&SnapshotPages{}, h, nil)
 	first, err := serve(ctx, testPageReq{}, deps)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +90,7 @@ func TestPerSnapshotDoesNotKeepErrors(t *testing.T) {
 	var fail atomic.Bool
 	fail.Store(true)
 	h, runs := countingPage(&fail)
-	serve := PerSnapshot(&SnapshotPages{}, h)
+	serve := PerSnapshot(&SnapshotPages{}, h, nil)
 	if _, err := serve(ctx, testPageReq{}, deps); err == nil {
 		t.Fatal("serve succeeded through a failing query")
 	}
@@ -102,7 +102,7 @@ func TestPerSnapshotDoesNotKeepErrors(t *testing.T) {
 
 func TestPerSnapshotWithoutSnapshotComputesEachTime(t *testing.T) {
 	h, runs := countingPage(nil)
-	serve := PerSnapshot(&SnapshotPages{}, h)
+	serve := PerSnapshot(&SnapshotPages{}, h, nil)
 	for range 2 {
 		if _, err := serve(context.Background(), testPageReq{}, &Deps{}); err != nil {
 			t.Fatal(err)
@@ -119,7 +119,7 @@ func TestSnapshotPagesWarm(t *testing.T) {
 	deps := &Deps{Analytics: a}
 	pages := &SnapshotPages{}
 	h, runs := countingPage(nil)
-	serve := PerSnapshot(pages, h)
+	serve := PerSnapshot(pages, h, nil)
 	warm := func() {
 		for _, p := range pages.pages {
 			p.warm(ctx, deps)
@@ -145,5 +145,25 @@ func TestSnapshotPagesWarm(t *testing.T) {
 	}
 	if got, _ := serve(ctx, testPageReq{}, deps); got.Run <= 2 {
 		t.Errorf("serve after the warm = run %d, want one on the new version", got.Run)
+	}
+}
+
+func TestSnapshotPagesWarmTabs(t *testing.T) {
+	ctx := context.Background()
+	deps := &Deps{Analytics: &versionedAnalytics{}}
+	pages := &SnapshotPages{}
+	var seen sync.Map
+	h := func(_ context.Context, req testPageReq, _ *Deps) (*testPage, error) {
+		seen.Store(req.Eco, true)
+		return &testPage{}, nil
+	}
+	PerSnapshot(pages, h, func(*testPage) []testPageReq { return []testPageReq{{Eco: "npm"}, {Eco: "pypi"}} })
+	for _, p := range pages.pages {
+		p.warm(ctx, deps)
+	}
+	for _, eco := range []string{"", "npm", "pypi"} {
+		if _, ok := seen.Load(eco); !ok {
+			t.Errorf("warm skipped tab %q", eco)
+		}
 	}
 }
