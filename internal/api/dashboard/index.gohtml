@@ -71,7 +71,7 @@
         {{- with .Campaigns}}
         <section class="card">
             <div class="panel-head">
-                <span class="eyebrow">Rebuild progress{{template "def" "One campaign per package version the scheduler took on. Attested campaigns are split by whether inference or the agent attested them."}}</span>
+                <span class="eyebrow">Rebuild progress{{template "def" "Package versions taken on for rebuilding. Attested versions are split by whether inference or the agent attested them."}}</span>
                 <span class="chart-note">versions taken on, by where each stands</span>
             </div>
             <div class="outcomes">
@@ -91,7 +91,7 @@
     {{- with .Attention}}
     <section class="card attention">
         <div class="panel-head">
-            <span class="eyebrow">Needs attention{{template "def" "Package versions the agent gave up on whose campaigns await triage, highest campaign score first, one per package."}}</span>
+            <span class="eyebrow">Needs attention{{template "def" "Package versions the agent gave up on that await triage, highest score first, one per package."}}</span>
             <span class="chart-note"><b>{{num $home.GaveUp}}</b> packages with a give-up awaiting triage &middot; <a href="/packages">All packages</a></span>
         </div>
         <ul class="rows">

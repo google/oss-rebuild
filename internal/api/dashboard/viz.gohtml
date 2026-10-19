@@ -36,7 +36,7 @@
 </div>
 {{- end}}
 {{- define "campaigns"}}
-<div class="segbar" data-title="{{.Ecosystem}} campaigns">
+<div class="segbar" data-title="{{.Ecosystem}} package versions">
     {{- range .DoneByStage}}{{if .Done}}<span class="seg stage-{{.Stage}}" style="flex-grow: {{.Done}}" data-c="stage-{{.Stage}}" data-v="{{num .Done}}" data-k="attested at {{.Stage}}"></span>{{end}}{{end}}
     {{- if .NeedsTriage}}<span class="seg warn" style="flex-grow: {{.NeedsTriage}}" data-c="warn" data-v="{{num .NeedsTriage}}" data-k="needs triage"></span>{{end}}
     {{- if .InFlight}}<span class="seg live" style="flex-grow: {{.InFlight}}" data-c="live" data-v="{{num .InFlight}}" data-k="in flight"></span>{{end}}
@@ -44,7 +44,7 @@
 </div>
 {{- end}}
 {{- define "progress"}}
-<div class="segbar" data-title="{{.Ecosystem}} campaigns">
+<div class="segbar" data-title="{{.Ecosystem}} package versions">
     {{- with .Inferred}}<span class="seg stage-infer" style="flex-grow: {{.}}" data-c="stage-infer" data-v="{{num .}}" data-k="attested by inference"></span>{{end}}
     {{- with .Diagnosed}}<span class="seg stage-agent" style="flex-grow: {{.}}" data-c="stage-agent" data-v="{{num .}}" data-k="attested by the agent"></span>{{end}}
     {{- if .NeedsTriage}}<span class="seg warn" style="flex-grow: {{.NeedsTriage}}" data-c="warn" data-v="{{num .NeedsTriage}}" data-k="needs triage"></span>{{end}}

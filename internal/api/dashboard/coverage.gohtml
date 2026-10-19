@@ -9,7 +9,7 @@
 <p>No analytics snapshot loaded. Start the dashboard with
 <code>-rundex=&lt;gs://…|file://…&gt;</code>.</p>
 {{else}}
-<p class="asof">{{with .Overview}}Package counts from the rollup at {{.AsOf}}. {{end}}Campaign counts as of {{.AsOf}}.</p>
+<p class="asof">{{with .Overview}}Package counts from the rollup at {{.AsOf}}. {{end}}Rebuild progress as of {{.AsOf}}.</p>
 <div class="tabs">
     <a class="tab{{if not .Eco}} active{{end}}" href="/coverage">All</a>
     {{$sel := .Eco}}
@@ -24,7 +24,7 @@
 {{$campaigns := false}}{{range .Ecos}}{{if and .HasQueue (or (not $.Eco) (eq .Ecosystem $.Eco))}}{{$campaigns = true}}{{end}}{{end}}
 {{if $campaigns}}
 <section class="card outcomes">
-    <div class="chart-title">Rebuild progress{{template "def" "One campaign per package version the scheduler took on. Attested campaigns are split by the stage that attested them."}}</div>
+    <div class="chart-title">Rebuild progress{{template "def" "Package versions taken on for rebuilding, by where each stands. Attested versions are split by the stage that attested them."}}</div>
     {{range .Ecos}}{{if and .HasQueue (or (not $.Eco) (eq .Ecosystem $.Eco))}}
     <div class="outcome-row">
         <div class="outcome-name">{{.Ecosystem}}</div>
@@ -100,14 +100,14 @@
 {{end}}{{end}}
 {{if not .Detail}}
 {{if not .Ecos}}
-<p>No attempts, signals, or campaigns in the snapshot.</p>
+<p>No attempts, signals, or rebuild progress in the snapshot.</p>
 {{end}}
 {{else}}
 {{with .Detail}}
 <h3>Packages</h3>
 {{if .HasScope}}
 <div class="cards">
-    <div class="card"><div class="card-value">{{num .InScope}}</div><div class="card-label">in scope{{template "def" "Ranked packages with a campaign or an attempt."}}</div></div>
+    <div class="card"><div class="card-value">{{num .InScope}}</div><div class="card-label">in scope{{template "def" "Ranked packages that were attempted or have a version taken on for rebuilding."}}</div></div>
     <div class="card"><div class="card-value">{{num .Attempted}}</div><div class="card-label">attempted{{template "def" "In scope, with a completed build at any version."}}</div></div>
     <div class="card"><div class="card-value">{{num .Reproduced}}</div><div class="card-label">reproduced{{template "def" "Attested at the latest version attempted."}}</div></div>
     <div class="card"><div class="card-value">{{.SuccessPct}}%</div><div class="card-label">success{{template "def" "Reproduced over attempted. A failure being retried counts against it until a retry succeeds."}}</div></div>
@@ -116,17 +116,17 @@
 {{else}}
 <p>No published signals for {{.Ecosystem}}, so there is no scope to measure against.</p>
 {{end}}
-<h3>Campaigns{{template "def" "One campaign per package version. Done campaigns are listed under the stage that attested them."}}</h3>
+<h3>Rebuild progress{{template "def" "Package versions taken on for rebuilding. Attested versions are listed under the stage that attested them."}}</h3>
 {{if .HasQueue}}
 <div class="cards">
-    <div class="card"><div class="card-value">{{num .Queued}}</div><div class="card-label">queued{{template "def" "Campaigns waiting for dispatch at their next stage."}}</div></div>
-    <div class="card"><div class="card-value">{{num .InFlight}}</div><div class="card-label">in flight{{template "def" "Campaigns dispatched and awaiting an outcome."}}</div></div>
-    <div class="card"><div class="card-value">{{num .NeedsTriage}}</div><div class="card-label">needs triage{{template "def" "Campaigns whose automated stages are exhausted, awaiting a person."}}</div></div>
+    <div class="card"><div class="card-value">{{num .Queued}}</div><div class="card-label">queued{{template "def" "Package versions waiting for dispatch at their next stage."}}</div></div>
+    <div class="card"><div class="card-value">{{num .InFlight}}</div><div class="card-label">in flight{{template "def" "Package versions dispatched and awaiting an outcome."}}</div></div>
+    <div class="card"><div class="card-value">{{num .NeedsTriage}}</div><div class="card-label">needs triage{{template "def" "Package versions whose automated stages are exhausted, awaiting a person."}}</div></div>
     {{range .DoneByStage}}<div class="card"><div class="card-value">{{num .Done}}</div><div class="card-label">done at {{.Stage}}{{if .SplitsWins}} ({{num .InferenceDone}} inference · {{num .LLMDone}} diagnosed){{template "def" "Inference: the session's seed build from inference reproduced it. Diagnosed: a build the LLM proposed or handed off reproduced it."}}{{end}}</div></div>
     {{end}}
 </div>
 {{else}}
-<p>No campaigns for {{.Ecosystem}}.</p>
+<p>No package versions taken on for {{.Ecosystem}}.</p>
 {{end}}
 {{end}}
 {{end}}
