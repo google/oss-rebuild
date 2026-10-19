@@ -8,9 +8,8 @@
 // SHA-256 digests below are the source of truth, and a download that does
 // not match its digest is discarded.
 //
-// Both faces are licensed under the SIL Open Font License 1.1:
+// The face is licensed under the SIL Open Font License 1.1:
 // https://github.com/google/fonts/blob/main/ofl/publicsans/OFL.txt
-// https://github.com/google/fonts/blob/main/ofl/merriweather/OFL.txt
 //
 // Run: go generate ./internal/api/dashboard
 //
@@ -38,11 +37,6 @@ var fonts = []struct{ name, url, sha256 string }{
 		"public-sans-latin.woff2",
 		"https://fonts.gstatic.com/s/publicsans/v21/ijwRs572Xtc6ZYQws9YVwnNGfJ7QwOk1.woff2",
 		"c1b6da516e0062e9c2f341b3a51dd2d621d946da72f06c6cfe05fd9d2dd8622d",
-	},
-	{
-		"merriweather-700-latin.woff2",
-		"https://fonts.gstatic.com/s/merriweather/v33/u-4D0qyriQwlOrhSvowK_l5UcA6zuSYEqOzpPe3HOZJ5eX1WtLaQwmYiScCmDxhtNOKl8yDrOSAaFF31CPDaYKfF.woff2",
-		"a7e8678fe035f7e2f7e3ffed8915cb234713b19f61f76a65d1bc74223da1db2e",
 	},
 }
 
