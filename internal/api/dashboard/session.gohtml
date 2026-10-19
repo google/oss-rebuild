@@ -12,7 +12,6 @@
             <span class="outcome tone-{{$s.Tone}}">{{$s.Outcome}}</span>
             <span class="session-meta mono" title="{{$s.ID}}">{{printf "%.13s" $s.ID}} · {{if $s.ExecutionMode}}{{$s.ExecutionMode}}{{else}}gcb{{end}}{{with $s.Model}} · {{.}}{{end}} · {{template "when" $s.Created}}</span>
         </div>
-        {{with $s.Summary}}<p class="session-summary">{{.}}</p>{{end}}
     </div>
 
     {{range .Warnings}}<p class="hint">Warning: {{.}}</p>{{end}}
@@ -34,14 +33,17 @@
     </section>
     {{end}}{{end}}
 
-    {{if .Candidates}}
     <section class="card cands">
-        <div class="cands-head"><span class="eyebrow">Candidates</span><span><button type="button" class="linkish" data-drawers="open">Expand all calls</button><button type="button" class="linkish" data-drawers="close">Collapse</button></span></div>
+        <div class="cands-head"><span class="eyebrow">Candidates</span>{{if or .Candidates .Lead}}<span><button type="button" class="linkish" data-drawers="open">Expand all calls</button><button type="button" class="linkish" data-drawers="close">Collapse</button></span>{{end}}</div>
+        {{- if .Candidates}}
         <div class="cand-grid cand-cols" aria-hidden="true"><span></span><span>Started</span><span>What changed</span><span class="r">Calls after</span><span class="stages">{{range .StageNames}}<span>{{.}}</span>{{end}}</span><span class="r">Time</span></div>
+        {{- else}}
+        <p class="hint">No candidate was built.</p>
+        {{- end}}
         {{with .Lead}}
         <div class="cand">
             <input type="checkbox" class="drawer-toggle" id="drawer-0" hidden>
-            <div class="cand-grid"><label class="row-hit" for="drawer-0"><span></span><span></span><span class="chg">Before the first candidate</span><span class="calls-toggle">{{len .}}</span></label></div>
+            <div class="cand-grid"><label class="row-hit" for="drawer-0"><span></span><span></span><span class="chg">{{if $.Candidates}}Before the first candidate{{else}}Tool calls{{end}}</span><span class="calls-toggle">{{len .}}</span></label></div>
             <div class="drawer">{{range .}}{{template "callrow" .}}{{end}}</div>
         </div>
         {{end}}
@@ -112,6 +114,7 @@
             </div>
         </div>
         {{end}}
+        {{- if .Candidates}}
         <div class="legend cand-legend">
             <span class="legend-item"><span class="cell st-ok">✓</span>passed</span>
             <span class="legend-item"><span class="cell st-reused">✓</span>reused</span>
@@ -122,6 +125,7 @@
             <span class="legend-item"><span class="cell st-none">–</span>not reached</span>
             <span class="legend-item"><span class="cell notch"></span>opens the compare or review details</span>
         </div>
+        {{- end}}
     </section>
     <script>
         // Drawers and popouts are native toggles. This wires the controls that
@@ -145,7 +149,6 @@
             for (const d of document.querySelectorAll('details.pop[open]')) if (!d.contains(e.target)) d.removeAttribute('open');
         });
     </script>
-    {{end}}
 
     <details class="transcript">
         <summary><h2>Transcript</h2></summary>
