@@ -42,6 +42,7 @@ type Config struct {
 	Artifact       string
 	RetrySession   string
 	AgentIteration int
+	Model          string
 	// Scratch execution. When ScratchID is set, iteration builds run on the
 	// named pre-provisioned scratch VM instead of GCB. The VM is managed
 	// separately (ctl scratch start/stop).
@@ -190,6 +191,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		MetadataBucket: cfg.MetadataBucket,
 		LogsBucket:     cfg.LogsBucket,
 		Retrier:        agent.NewRetrier(),
+		Model:          cfg.Model,
 	}
 	// Optional scratch execution against a pre-provisioned VM. When ScratchID
 	// is empty, iteration builds stay on GCB (unchanged behavior).
@@ -286,6 +288,7 @@ func flagSet(name string, cfg *Config) *flag.FlagSet {
 	set.StringVar(&cfg.Artifact, "artifact", "", "the artifact name")
 	set.StringVar(&cfg.RetrySession, "retry-session", "", "the session to retry")
 	set.IntVar(&cfg.AgentIteration, "agent-iterations", 3, "maximum number of agent iterations before giving up")
+	set.StringVar(&cfg.Model, "model", "", "Gemini model id for the session; empty selects the built-in default")
 	set.StringVar(&cfg.ScratchID, "scratch-id", "", "if provided, run iteration builds on this pre-provisioned scratch VM instead of GCB")
 	set.StringVar(&cfg.PrebuildBucket, "prebuild-bucket", "", "gcs bucket from which prebuilt build tools (e.g. timewarp) are fetched (scratch mode)")
 	set.StringVar(&cfg.PrebuildDir, "prebuild-dir", "", "prefix within the prebuild bucket under which tools are stored (scratch mode)")
