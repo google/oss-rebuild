@@ -116,6 +116,7 @@ func main() {
 		Exec:           execx.NewRealCommandExecutor(),
 		ChannelCache:   channels,
 		MemAvailableMB: scratchhostservice.MemAvailableMB,
+		LoadAverage:    scratchhostservice.LoadAverage,
 	}
 	guestInit := func(context.Context) (*scratchhostservice.GuestDeps, error) { return guestDeps, nil }
 	mw := idauth.Middleware(idauth.NewGoogleValidator(*callerSA, *audience))
