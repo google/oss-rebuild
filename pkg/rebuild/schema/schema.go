@@ -579,11 +579,19 @@ const (
 	AgentCompleteReasonGaveUp    = "GAVE_UP" // judged unbuildable at the ref
 )
 
+// AgentWonBy values indicate what proposed the strategy that a successful session built.
+const (
+	AgentWonByInference = "inference" // the first proposal, from inference with or without an LLM's repo hint
+	AgentWonBySeed      = "seed"      // a sibling version's winning strategy
+	AgentWonByAgent     = "agent"     // the LLM's own proposal or handoff
+)
+
 // AgentCompleteRequest finalizes session with results
 type AgentCompleteRequest struct {
 	SessionID          string      `form:",required"`
 	StopReason         string      `form:",required"`
 	SuccessIterationID string      `form:""`
+	WonBy              string      `form:""` // on success, an AgentWonBy value
 	Summary            string      `form:""`
 	Usage              *TokenUsage `form:""` // total LLM tokens consumed across the session
 }
@@ -616,6 +624,7 @@ type AgentSession struct {
 	Updated          time.Time          `firestore:"updated,omitempty"`
 	StopReason       string             `firestore:"stop_reason,omitempty"`
 	SuccessIteration string             `firestore:"success_iteration,omitempty"`
+	WonBy            string             `firestore:"won_by,omitempty"` // on success, an AgentWonBy value
 	Summary          string             `firestore:"summary,omitempty"`
 }
 
