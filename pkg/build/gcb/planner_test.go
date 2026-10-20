@@ -916,7 +916,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 							-ctrl_addr=:3127 \
 							-docker_addr=:3130 \
 							-docker_socket=/var/run/docker.sock \
-							-docker_truststore_env_vars=PIP_CERT,CURL_CA_BUNDLE,NODE_EXTRA_CA_CERTS,CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE,NIX_SSL_CERT_FILE \
+							-docker_truststore_env_vars=PIP_CERT,CURL_CA_BUNDLE,NODE_EXTRA_CA_CERTS,CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE,NIX_SSL_CERT_FILE,SSL_CERT_FILE \
 							-docker_network=container:build \
 							-docker_java_truststore=true"
 					'
@@ -948,7 +948,7 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					SYSGRAPH_PID=$(docker inspect -f '{{.State.Pid}}' sysgraph)
 					PROXY_PID=$(docker inspect -f '{{.State.Pid}}' proxy)
 					`)[1:] + policyBlock() + textwrap.Dedent(`
-					cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs --mount=type=secret,id=PROXYCERT,env=PIP_CERT --mount=type=secret,id=PROXYCERT,env=CURL_CA_BUNDLE --mount=type=secret,id=PROXYCERT,env=NODE_EXTRA_CA_CERTS --mount=type=secret,id=PROXYCERT,env=CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE --mount=type=secret,id=PROXYCERT,env=NIX_SSL_CERT_FILE|" > /Dockerfile
+					cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs --mount=type=secret,id=PROXYCERT,env=PIP_CERT --mount=type=secret,id=PROXYCERT,env=CURL_CA_BUNDLE --mount=type=secret,id=PROXYCERT,env=NODE_EXTRA_CA_CERTS --mount=type=secret,id=PROXYCERT,env=CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE --mount=type=secret,id=PROXYCERT,env=NIX_SSL_CERT_FILE --mount=type=secret,id=PROXYCERT,env=SSL_CERT_FILE|" > /Dockerfile
 					`)[1:] + dockerfile + "\nEOS" + textwrap.Dedent(`
 
 					docker cp /Dockerfile build:/Dockerfile
