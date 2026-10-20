@@ -7,9 +7,9 @@
 <head>
     <meta charset="UTF-8">
     <title>Logs for {{.Target.Ecosystem}}:{{.Target.Package}} {{.Target.Version}}</title>
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="{{asset "/favicon.svg"}}" type="image/svg+xml">
     <!-- Standalone page (no shared header): take the palette only. -->
-    <link rel="stylesheet" href="/theme.css">
+    <link rel="stylesheet" href="{{asset "/theme.css"}}">
     <style>
         * { box-sizing: border-box; }
         body { margin: 0; padding: 10px; font-family: monospace; background: var(--bg); color: var(--body); }

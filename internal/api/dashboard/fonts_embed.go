@@ -7,7 +7,6 @@ package dashboard
 
 import (
 	_ "embed"
-	"io"
 	"net/http"
 )
 
@@ -21,7 +20,7 @@ var publicSansWoff2 []byte
 // webfontsTmpl fills the layout's webfonts slot: preload the embedded
 // face and pull in its stylesheet.
 const webfontsTmpl = `{{define "webfonts"}}    <link rel="preload" href="/fonts/public-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="/fonts.css">
+    <link rel="stylesheet" href="{{asset "/fonts.css"}}">
 {{end}}`
 
 // fontsCSS is served as /fonts.css and declares the embedded latin
@@ -39,13 +38,12 @@ const fontsCSS = `@font-face {
 
 `
 
+// The face's stylesheet is linked and served like the other assets.
+func init() { assets["/fonts.css"] = newAsset(fontsCSS) }
+
 // registerFonts serves the embedded face. Fonts are immutable: a face
 // change ships under a new path.
 func registerFonts(mux *http.ServeMux) {
-	mux.HandleFunc("/fonts.css", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/css")
-		_, _ = io.WriteString(w, fontsCSS)
-	})
 	mux.HandleFunc("/fonts/public-sans-latin.woff2", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "font/woff2")
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")

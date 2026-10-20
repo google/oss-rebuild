@@ -43,6 +43,30 @@ func TestRegisterAssets(t *testing.T) {
 	}
 }
 
+func TestAssetsCacheAtTheirVersion(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterAssets(mux)
+	var page strings.Builder
+	if err := PackagesTmpl.Execute(&page, &PackagesData{}); err != nil {
+		t.Fatal(err)
+	}
+	link := assetURL(CSSPath)
+	if !strings.Contains(page.String(), `href="`+link+`"`) {
+		t.Fatalf("page does not link %s", link)
+	}
+	for _, tc := range []struct{ url, cache string }{
+		{link, "public, max-age=31536000, immutable"},
+		{CSSPath, ""},
+		{CSSPath + "?v=0", ""},
+	} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.url, nil))
+		if got := rec.Header().Get("Cache-Control"); got != tc.cache {
+			t.Errorf("GET %s: got Cache-Control %q, want %q", tc.url, got, tc.cache)
+		}
+	}
+}
+
 func TestApplySuccessRegex(t *testing.T) {
 	tests := []struct {
 		name         string
