@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -54,6 +55,7 @@ type Cache struct {
 	dir      string
 	stop     context.CancelFunc
 	done     chan struct{}
+	fresh    atomic.Pointer[time.Time] // Freshness, read without mu
 
 	mu         sync.Mutex
 	db         *sqlite3.Conn
@@ -101,15 +103,25 @@ func (c *Cache) Query(f func(*sqlite3.Conn) error) error {
 
 // Freshness returns the time through which the served data is complete.
 // This is the base watermark and is advanced by applied delta segments.
+// It does not wait on queries or refreshes. Through a rehydration, and
+// after one fails, it reports the last copy opened.
 func (c *Cache) Freshness() time.Time {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	if t := c.fresh.Load(); t != nil {
+		return *t
+	}
+	return time.Time{}
+}
+
+// publishFreshness sets what Freshness reports to the current copy's
+// watermark, advanced by its newest applied segment. mu must be held.
+func (c *Cache) publishFreshness() {
+	t := c.watermark
 	if c.applied != "" {
-		if t, err := SegmentTime(c.applied); err == nil {
-			return t
+		if st, err := SegmentTime(c.applied); err == nil {
+			t = st
 		}
 	}
-	return c.watermark
+	c.fresh.Store(&t)
 }
 
 // Close stops refreshing, flushes in-flight refresh, and removes local data.
@@ -203,6 +215,7 @@ func (c *Cache) sync() error {
 		err := applyRecords(c.db, c.up.Defs, s.recs)
 		if err == nil {
 			c.applied = s.name
+			c.publishFreshness()
 		}
 		c.mu.Unlock()
 		if err != nil {
@@ -248,6 +261,7 @@ func (c *Cache) hydrate(tag string) error {
 		return err
 	}
 	c.db, c.watermark, c.baseTag, c.refusedTag = db, watermark, tag, ""
+	c.publishFreshness()
 	return nil
 }
 
