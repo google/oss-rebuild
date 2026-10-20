@@ -5,6 +5,7 @@ package gitcache
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -192,5 +193,20 @@ func TestClientClone(t *testing.T) {
 				f.Close()
 			}
 		})
+	}
+}
+
+func TestClientCloneRefusesOversize(t *testing.T) {
+	client := setupCloneTestServer(t, testRepoYAML)
+	// The fixture gzips down to a few hundred bytes, so the budget sits
+	// below anything that could hold a packfile.
+	client.MaxBytes = 64
+	_, err := client.Clone(context.Background(), gitx.NewInMemoryStorer(), memfs.New(), &git.CloneOptions{URL: "https://github.com/org/repo", NoCheckout: true})
+	var tooLarge *gitx.RepoTooLargeError
+	if !errors.As(err, &tooLarge) {
+		t.Fatalf("Clone() error = %v, want a RepoTooLargeError", err)
+	}
+	if tooLarge.URL != "https://github.com/org/repo" || tooLarge.Limit != 64 {
+		t.Errorf("RepoTooLargeError = %+v, want the clone URL and the 64-byte budget", *tooLarge)
 	}
 }

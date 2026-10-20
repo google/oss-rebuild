@@ -34,6 +34,7 @@ var (
 	sessionID         = flag.String("session-id", "", "Session ID for this agent run")
 	agentAPIURL       = flag.String("agent-api-url", "", "URL of the agent API service")
 	gitCacheURL       = flag.String("git-cache-url", "", "if provided, the git-cache service to use to fetch repos")
+	maxRepoBytes      = flag.Int64("max-repo-bytes", 0, "git-cache fetch budget in bytes (0 = no limit)")
 	cratesRegistryURL = flag.String("crates-registry-service-url", "", "if provided, the crates registry service that resolves crate index commits for inference")
 	sessionsBucket    = flag.String("sessions-bucket", "", "GCS bucket for session data")
 	metadataBucket    = flag.String("metadata-bucket", "", "GCS bucket for build metadata")
@@ -146,7 +147,7 @@ func main() {
 		if err != nil {
 			log.Fatal("Failed to parse git cache URL: ", err)
 		}
-		gitCache = &gitcache.Client{IDClient: idc, APIClient: apic, URL: u}
+		gitCache = &gitcache.Client{IDClient: idc, APIClient: apic, URL: u, MaxBytes: *maxRepoBytes}
 	}
 	var cratesRegistryStub api.StubFn[cratesregistryservice.FindRegistryCommitRequest, cratesregistryservice.FindRegistryCommitResponse]
 	if *cratesRegistryURL != "" {
