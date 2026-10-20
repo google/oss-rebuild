@@ -10,7 +10,7 @@ require (
 	cloud.google.com/go/storage v1.50.0
 	github.com/cheggaaa/pb v1.0.29
 	github.com/cilium/tetragon/api v1.5.0
-	github.com/elazarl/goproxy v1.7.2
+	github.com/elazarl/goproxy v1.9.2
 	github.com/fatih/color v1.18.0
 	github.com/gdamore/tcell/v2 v2.7.4
 	github.com/go-git/go-billy/v5 v5.9.0

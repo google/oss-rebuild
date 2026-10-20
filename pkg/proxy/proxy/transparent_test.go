@@ -4,12 +4,19 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
 
+	"github.com/google/oss-rebuild/pkg/proxy/cert"
 	"github.com/google/oss-rebuild/pkg/proxy/policy"
 )
 
@@ -252,5 +259,53 @@ func TestPolicyEndpoint(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestServeTLS(t *testing.T) {
+	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "ok")
+	}))
+	defer upstream.Close()
+	ca := cert.GenerateCA()
+	ConfigureGoproxyCA(ca)
+	p := NewTransparentProxyServer(false)
+	// The httptest cert covers example.com, so dial upstream for it.
+	p.Tr = upstream.Client().Transport.(*http.Transport).Clone()
+	p.Tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return new(net.Dialer).DialContext(ctx, network, upstream.Listener.Addr().String())
+	}
+	proxyService := NewTransparentProxyService(p, ca, DisabledMode, TransparentProxyServiceOpts{SkipLogging: true})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		if c, err := ln.Accept(); err == nil {
+			proxyService.serveTLS(c)
+		}
+	}()
+	roots := x509.NewCertPool()
+	roots.AddCert(ca.Leaf)
+	conn, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{ServerName: "example.com", RootCAs: roots})
+	if err != nil {
+		t.Fatalf("TLS handshake through proxy: %v", err)
+	}
+	defer conn.Close()
+	req, err := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := req.Write(conn); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if body, err := io.ReadAll(resp.Body); err != nil || string(body) != "ok" {
+		t.Errorf("body = %q, %v, want %q", body, err, "ok")
 	}
 }
