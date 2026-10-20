@@ -106,6 +106,19 @@ func TestWorkflowStrategy_GenerateFor(t *testing.T) {
 			errContains: "only one",
 		},
 		{
+			name: "invalid_dir",
+			strategy: WorkflowStrategy{
+				Location: Location{
+					Repo: "https://github.com/test/repo",
+					Ref:  "main",
+					Dir:  "$(id)",
+				},
+				Build: []flow.Step{{Runs: "cd {{.Location.Dir}} && npm pack"}},
+			},
+			wantErr:     true,
+			errContains: "invalid dir",
+		},
+		{
 			name: "invalid_step_both_runs_and_uses",
 			strategy: WorkflowStrategy{
 				Source: []flow.Step{{
