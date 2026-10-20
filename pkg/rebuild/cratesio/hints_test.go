@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestDetectRustVersionBounds(t *testing.T) {
+func TestInferRustVersionBounds(t *testing.T) {
 	tests := []struct {
 		name      string
 		cargoToml string
@@ -491,12 +491,12 @@ edition = "2021"
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotLo, gotHi := detectRustVersionBounds(tt.cargoToml, tt.orig)
+			gotLo, gotHi := inferRustVersionBounds(crateProps{CargoTOML: tt.cargoToml, OrigTOML: tt.orig})
 			if gotLo != tt.wantLo {
-				t.Errorf("detectRustVersionBounds() gotLo = %v, want %v", gotLo, tt.wantLo)
+				t.Errorf("inferRustVersionBounds() gotLo = %v, want %v", gotLo, tt.wantLo)
 			}
 			if gotHi != tt.wantHi {
-				t.Errorf("detectRustVersionBounds() gotHi = %v, want %v", gotHi, tt.wantHi)
+				t.Errorf("inferRustVersionBounds() gotHi = %v, want %v", gotHi, tt.wantHi)
 			}
 		})
 	}
