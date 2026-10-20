@@ -430,7 +430,7 @@ func (r *ScratchRunner) RunCommand(ctx context.Context, command string, timeoutS
 	}
 	if op.Error != nil {
 		if op.Error.Code == int(codes.DeadlineExceeded) {
-			return op.Result.ExitCode, string(out), errors.Errorf("command timed out after %ds", timeoutSeconds)
+			return op.Result.ExitCode, string(out), commandTimeout(timeoutSeconds)
 		}
 		return 0, string(out), errors.New(op.Error.Message)
 	}
