@@ -11,6 +11,7 @@ import (
 	"io"
 	"path"
 	re "regexp"
+	"slices"
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
@@ -23,73 +24,64 @@ var (
 	// sharedLibNamePat matches shared object filenames (.so or .so.<numeric-version>).
 	sharedLibNamePat = re.MustCompile(`\.so(?:\.\d+)*$`)
 	// auditwheel inserts an 8+ character hex hash right before the first dot in
-	// the grafted shared library filename.
+	// the grafted shared library filename (e.g. libcgraph-17278668.so.6.0.0 -> libcgraph.so.6.0.0).
 	auditwheelHashPat = re.MustCompile(`^([^.]+)-[0-9a-fA-F]{8,}\.`)
-	// auditwheel names grafted files after the resolved symlink target (such as
-	// libcgraph-17278668.so.6.0.0), whereas package manager shared object name
-	// (SONAME) provides use the major version (libcgraph.so.6).
+	// auditwheel names grafted files after the resolved symlink target, whereas
+	// package managers index the SONAME, which carries only the major version (e.g. libcgraph.so.6.0.0 -> libcgraph.so.6).
 	sonameFullVersionPat = re.MustCompile(`^(.+\.so\.\d+)\.\d+\.\d+$`)
+	// Core C/C++/Fortran and GCC runtime libraries pre-installed in PyPA manylinux
+	// and musllinux build containers that should not be installed as external packages.
+	// NOTE: This intentionally omits non-core PEP 513/599 allowlisted libraries
+	// such as libGL and libX11 so their development headers are still installed
+	// when an extension links against them.
+	builtinLibraries = []string{
+		"ld64.so.1",
+		"ld64.so.2",
+		"linux-vdso.so.1",
+		"libc.so.6",
+		"libm.so.6",
+		"libmvec.so.1",
+		"libpthread.so.0",
+		"libdl.so.2",
+		"librt.so.1",
+		"libutil.so.1",
+		"libresolv.so.2",
+		"libnsl.so.1",
+		"libcrypt.so.1",
+		"libcrypt.so.2",
+		"libanl.so.1",
+		"libBrokenLocale.so.1",
+		"libcidn.so.1",
+		"libmemusage.so",
+		"libpcprofile.so",
+		"libSegFault.so",
+		"libthread_db.so.1",
+		"libatomic.so.1",
+		"libstdc++.so.6",
+		"libgcc_s.so.1",
+		"libgomp.so.1",
+		"libquadmath.so.0",
+		"libgfortran.so.3",
+		"libgfortran.so.4",
+		"libgfortran.so.5",
+	}
+	builtinLibPrefixes = []string{"ld-linux", "ld-musl-", "libc.musl-", "libnss_", "libpython"}
 )
 
-// Core C/C++ and GCC runtime libraries pre-installed in PyPA manylinux and
-// musllinux build containers that should not be installed as external packages.
-// NOTE: This intentionally omits non-core PEP 513/599 allowlisted libraries
-// such as libGL and libX11 so their development headers are still installed
-// when an extension links against them.
-var standardLibraries = map[string]bool{
-	"ld64.so.1":            true,
-	"ld64.so.2":            true,
-	"linux-vdso.so.1":      true,
-	"libc.so.6":            true,
-	"libm.so.6":            true,
-	"libmvec.so.1":         true,
-	"libpthread.so.0":      true,
-	"libdl.so.2":           true,
-	"librt.so.1":           true,
-	"libutil.so.1":         true,
-	"libresolv.so.2":       true,
-	"libnsl.so.1":          true,
-	"libcrypt.so.1":        true,
-	"libcrypt.so.2":        true,
-	"libanl.so.1":          true,
-	"libBrokenLocale.so.1": true,
-	"libcidn.so.1":         true,
-	"libmemusage.so":       true,
-	"libpcprofile.so":      true,
-	"libSegFault.so":       true,
-	"libthread_db.so.1":    true,
-	"libatomic.so.1":       true,
-	"libstdc++.so.6":       true,
-	"libgcc_s.so.1":        true,
-	"libgomp.so.1":         true,
-	"libquadmath.so.0":     true,
-}
-
-func isStandardLibrary(soname string) bool {
-	if standardLibraries[soname] {
-		return true
-	}
-	for _, prefix := range []string{"ld-linux", "ld-musl-", "libc.musl-", "libnss_", "libpython"} {
-		if strings.HasPrefix(soname, prefix) {
-			return true
-		}
-	}
-	return false
+func isBuiltinLibrary(soname string) bool {
+	return slices.Contains(builtinLibraries, soname) ||
+		slices.ContainsFunc(builtinLibPrefixes, func(p string) bool { return strings.HasPrefix(soname, p) })
 }
 
 // libraryStem extracts the C library stem from a SONAME (e.g. "libcgraph.so.6" -> "cgraph").
 func libraryStem(soname string) string {
-	if !strings.HasPrefix(soname, "lib") {
+	if !strings.HasPrefix(soname, "lib") || strings.Contains(soname, ".cpython-") || strings.Contains(soname, ".pypy") || strings.HasSuffix(soname, ".abi3.so") {
 		return ""
 	}
-	if strings.Contains(soname, ".cpython-") || strings.Contains(soname, ".pypy") || strings.HasSuffix(soname, ".abi3.so") {
-		return ""
+	if idx := strings.LastIndex(soname, ".so"); idx > 3 {
+		return soname[3:idx]
 	}
-	idx := strings.LastIndex(soname, ".so")
-	if idx <= 3 {
-		return ""
-	}
-	return soname[3:idx]
+	return ""
 }
 
 func isBundledLibPath(p string) bool {
@@ -108,8 +100,8 @@ func unbundledSoname(name string) string {
 // package manager specifiers for the target libc family.
 // NOTE: Glibc specifiers assume a 64-bit target architecture, matching
 // platform.SelectBaseImage which currently supports x86_64. Musl development
-// package specifiers use pc:lib<stem> and <stem>-dev as best-effort heuristics
-// because apk does not index arbitrary header or linker symlink file paths.
+// package specifiers use pc:lib<stem> because apk does not index arbitrary
+// header or linker symlink file paths.
 func formatLibraryDeps(soname string, libc platform.LibcImpl) []string {
 	stem := libraryStem(soname)
 	if stem == "" {
@@ -117,7 +109,7 @@ func formatLibraryDeps(soname string, libc platform.LibcImpl) []string {
 	}
 	switch libc {
 	case platform.Musl:
-		return []string{"so:" + soname, "pc:lib" + stem, stem + "-dev"}
+		return []string{"so:" + soname, "pc:lib" + stem}
 	case platform.Glibc:
 		return []string{soname + "()(64bit)", "/usr/lib64/lib" + stem + ".so"}
 	default:
@@ -132,21 +124,11 @@ func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error
 	var rawCandidates []string
 	internalLibs := make(map[string]bool)
 	for _, f := range zr.File {
-		if f.FileInfo().IsDir() {
+		if f.FileInfo().IsDir() || f.UncompressedSize64 > maxELFFileSize {
 			continue
 		}
 		baseName := path.Base(f.Name)
 		if !sharedLibNamePat.MatchString(strings.ToLower(baseName)) {
-			continue
-		}
-		bundled := isBundledLibPath(f.Name)
-		if !bundled {
-			internalLibs[unbundledSoname(baseName)] = true
-		}
-		if f.UncompressedSize64 > maxELFFileSize {
-			if bundled {
-				rawCandidates = append(rawCandidates, baseName)
-			}
 			continue
 		}
 		rc, err := f.Open()
@@ -158,42 +140,40 @@ func inferELFSystemDeps(zr *zip.Reader, libc platform.LibcImpl) ([]string, error
 		if err != nil {
 			return nil, errors.Wrapf(err, "reading %s in wheel", f.Name)
 		}
-		elfFile, err := elf.NewFile(bytes.NewReader(data))
+		ef, err := elf.NewFile(bytes.NewReader(data))
 		if err != nil {
-			if bundled {
-				rawCandidates = append(rawCandidates, baseName)
-			}
 			continue
 		}
-		sonames, err := elfFile.DynString(elf.DT_SONAME)
-		hasSoname := err == nil && len(sonames) > 0 && sonames[0] != ""
-		if bundled {
-			if hasSoname {
-				rawCandidates = append(rawCandidates, sonames[0])
-			} else {
-				rawCandidates = append(rawCandidates, baseName)
-			}
-		} else if hasSoname {
-			internalLibs[unbundledSoname(sonames[0])] = true
+		cand := baseName
+		if sonames, err := ef.DynString(elf.DT_SONAME); err == nil && len(sonames) > 0 && sonames[0] != "" {
+			cand = sonames[0]
 		}
-		if imported, err := elfFile.ImportedLibraries(); err == nil {
+		if isBundledLibPath(f.Name) {
+			rawCandidates = append(rawCandidates, cand)
+		} else {
+			internalLibs[unbundledSoname(baseName)] = true
+			internalLibs[unbundledSoname(cand)] = true
+		}
+		if imported, err := ef.ImportedLibraries(); err == nil {
 			rawCandidates = append(rawCandidates, imported...)
 		}
-		elfFile.Close()
 	}
 	var deps []string
-	seen := make(map[string]bool)
 	for _, raw := range rawCandidates {
 		soname := unbundledSoname(raw)
-		if soname == "" || internalLibs[soname] || isStandardLibrary(soname) {
+		if soname == "" || internalLibs[soname] || isBuiltinLibrary(soname) {
 			continue
 		}
-		for _, dep := range formatLibraryDeps(soname, libc) {
-			if !seen[dep] {
-				seen[dep] = true
-				deps = append(deps, dep)
-			}
-		}
+		deps = appendUnique(deps, formatLibraryDeps(soname, libc)...)
 	}
 	return deps, nil
+}
+
+func appendUnique(dst []string, src ...string) []string {
+	for _, s := range src {
+		if !slices.Contains(dst, s) {
+			dst = append(dst, s)
+		}
+	}
+	return dst
 }

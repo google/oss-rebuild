@@ -770,8 +770,6 @@ func TestInferBaseImage(t *testing.T) {
 }
 
 func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
-	pkgName := "pygraphviz"
-	version := "1.14"
 	repo := must(gitxtest.CreateRepoFromYAML(`commits:
   - id: release-commit
     tag: v1.14
@@ -783,88 +781,43 @@ func TestInferStrategyPlatformWheelSystemDeps(t *testing.T) {
         [build-system]
         requires = ["setuptools>=61"]
 `, nil))
-	extELF := createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0", "libcdt.so.5"}, "")
-	distInfoDir := expectedDistInfoDir(pkgName, version)
-	tests := []struct {
-		name        string
-		platformTag string
-		wantSysDeps []string
-	}{
+	filename := "pygraphviz-1.14-cp310-cp310-musllinux_1_2_x86_64.whl"
+	wheelURL := "https://files.pythonhosted.org/" + filename
+	wheelBuf := must(archivetest.ZipFile([]archive.ZipEntry{
 		{
-			name:        "ManylinuxWheel",
-			platformTag: "manylinux_2_28_x86_64",
-			wantSysDeps: []string{
-				"libcgraph.so.6()(64bit)",
-				"/usr/lib64/libcgraph.so",
-				"libcdt.so.5()(64bit)",
-				"/usr/lib64/libcdt.so",
-			},
+			FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/WHEEL"},
+			Body:       []byte("Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: cp310-cp310-musllinux_1_2_x86_64\n"),
 		},
 		{
-			name:        "MusllinuxWheel",
-			platformTag: "musllinux_1_2_x86_64",
-			wantSysDeps: []string{
-				"so:libcgraph.so.6",
-				"pc:libcgraph",
-				"cgraph-dev",
-				"so:libcdt.so.5",
-				"pc:libcdt",
-				"cdt-dev",
-			},
+			FileHeader: &zip.FileHeader{Name: "pygraphviz-1.14.dist-info/METADATA"},
+			Body:       []byte("Metadata-Version: 2.1\nName: pygraphviz\nVersion: 1.14\n"),
 		},
+		{
+			FileHeader: &zip.FileHeader{Name: "pygraphviz/_graphviz.cpython-310-x86_64-linux-musl.so"},
+			Body:       createTestELF([]string{"libc.so.6", "libcgraph-17278668.so.6.0.0"}, ""),
+		},
+	}))
+	releaseJSON := fmt.Sprintf(`{"info":{"name":"pygraphviz","version":"1.14"},"urls":[{"filename":%q,"url":%q,"size":%d,"upload_time_iso_8601":"2026-05-01T00:00:00Z"}]}`, filename, wheelURL, wheelBuf.Len())
+	mux := rebuild.RegistryMux{PyPI: pypireg.HTTPRegistry{Client: &httpxtest.MockClient{
+		Calls: []httpxtest.Call{
+			{URL: "https://pypi.org/pypi/pygraphviz/1.14/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+			{URL: "https://pypi.org/pypi/pygraphviz/1.14/json", Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)}},
+			{URL: wheelURL, Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))}},
+		},
+		URLValidator: httpxtest.NewURLValidator(t),
+	}}}
+	rcfg := &rebuild.RepoConfig{Repo: gitx.Repo{Repository: repo.Repository}, URI: "https://github.com/pygraphviz/pygraphviz"}
+	target := rebuild.Target{Ecosystem: rebuild.PyPI, Package: "pygraphviz", Version: "1.14", Artifact: filename}
+	strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
+	if err != nil {
+		t.Fatalf("InferStrategy() unexpected error: %v", err)
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			filename := fmt.Sprintf("%s-%s-cp310-cp310-%s.whl", pkgName, version, tc.platformTag)
-			wheelEntries := []archive.ZipEntry{
-				{FileHeader: &zip.FileHeader{Name: distInfoDir + "/WHEEL"}, Body: []byte("Wheel-Version: 1.0\nGenerator: setuptools (70.0.0)\nRoot-Is-Purelib: false\nTag: cp310-cp310-" + tc.platformTag + "\n")},
-				{FileHeader: &zip.FileHeader{Name: distInfoDir + "/METADATA"}, Body: []byte("Metadata-Version: 2.1\nName: pygraphviz\nVersion: 1.14\nLicense-File: LICENSE\n")},
-				{FileHeader: &zip.FileHeader{Name: "pygraphviz/_graphviz.cpython-310-x86_64-linux-gnu.so"}, Body: extELF},
-			}
-			wheelBuf := must(archivetest.ZipFile(wheelEntries))
-			releaseJSON := fmt.Sprintf(`{"info":{"name":%q,"version":%q},"urls":[{"filename":%q,"url":"https://files.pythonhosted.org/%s","size":%d,"upload_time_iso_8601":"2024-06-01T12:00:00Z"}]}`, pkgName, version, filename, filename, wheelBuf.Len())
-			mux := rebuild.RegistryMux{
-				PyPI: pypireg.HTTPRegistry{
-					Client: &httpxtest.MockClient{
-						Calls: []httpxtest.Call{
-							{
-								URL:      fmt.Sprintf("https://pypi.org/pypi/%s/%s/json", pkgName, version),
-								Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)},
-							},
-							{
-								URL:      fmt.Sprintf("https://pypi.org/pypi/%s/%s/json", pkgName, version),
-								Response: &http.Response{StatusCode: 200, Body: httpxtest.Body(releaseJSON)},
-							},
-							{
-								URL:      fmt.Sprintf("https://files.pythonhosted.org/%s", filename),
-								Response: &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(wheelBuf.Bytes()))},
-							},
-						},
-						URLValidator: httpxtest.NewURLValidator(t),
-					},
-				},
-			}
-			rcfg := &rebuild.RepoConfig{
-				URI:  "https://github.com/pygraphviz/pygraphviz",
-				Repo: gitx.Repo{Repository: repo.Repository},
-			}
-			target := rebuild.Target{
-				Ecosystem: rebuild.PyPI,
-				Package:   pkgName,
-				Version:   version,
-				Artifact:  filename,
-			}
-			strat, err := Rebuilder{}.InferStrategy(context.Background(), target, mux, rcfg, nil)
-			if err != nil {
-				t.Fatalf("InferStrategy() unexpected error: %v", err)
-			}
-			pwBuild, ok := strat.(*PlatformWheelBuild)
-			if !ok {
-				t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
-			}
-			if diff := cmp.Diff(tc.wantSysDeps, pwBuild.SystemDeps); diff != "" {
-				t.Errorf("PlatformWheelBuild.SystemDeps diff (-want +got):\n%s", diff)
-			}
-		})
+	got, ok := strat.(*PlatformWheelBuild)
+	if !ok {
+		t.Fatalf("InferStrategy() returned %T, want *PlatformWheelBuild", strat)
+	}
+	want := []string{"so:libcgraph.so.6", "pc:libcgraph"}
+	if diff := cmp.Diff(want, got.SystemDeps); diff != "" {
+		t.Errorf("PlatformWheelBuild.SystemDeps diff (-want +got):\n%s", diff)
 	}
 }

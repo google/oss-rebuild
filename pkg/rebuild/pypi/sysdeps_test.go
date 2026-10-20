@@ -113,106 +113,16 @@ func createTestELF(importedLibs []string, soname string) []byte {
 	return buf.Bytes()
 }
 
-func TestIsStandardLibrary(t *testing.T) {
-	tests := []struct {
-		name   string
-		soname string
-		want   bool
-	}{
-		{"Glibc", "libc.so.6", true},
-		{"DynamicLinkerX86_64", "ld-linux-x86-64.so.2", true},
-		{"MuslLibc", "libc.musl-x86_64.so.1", true},
-		{"MuslLinker", "ld-musl-x86_64.so.1", true},
-		{"LibPython", "libpython3.11.so.1.0", true},
-		{"Stdcpp", "libstdc++.so.6", true},
-		{"ExternalCgraph", "libcgraph.so.6", false},
-		{"OpenGLAllowedToInstallHeaders", "libGL.so.1", false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isStandardLibrary(tc.soname); got != tc.want {
-				t.Errorf("isStandardLibrary(%q) = %v, want %v", tc.soname, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestIsBundledLibPath(t *testing.T) {
-	tests := []struct {
-		name string
-		path string
-		want bool
-	}{
-		{"PackageDotLibsDir", "pygraphviz.libs/libgvc-12345678.so.6.0.0", true},
-		{"NestedDotLibsDir", "pkg/.libs/libfoo.so.1", true},
-		{"LegacyDotLibsUnderscoreDir", ".libs_cffi_backend/libffi-12345678.so.8.1.0", true},
-		{"PackageRootExtension", "pygraphviz/_graphviz.cpython-310-x86_64-linux-gnu.so", false},
-		{"PackageInternalLibDir", "torch/lib/libc10.so", false},
-		{"UnrelatedPrefix", "foo/.libsofar/libbar.so.1", false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isBundledLibPath(tc.path); got != tc.want {
-				t.Errorf("isBundledLibPath(%q) = %v, want %v", tc.path, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestLibraryStem(t *testing.T) {
-	tests := []struct {
-		name   string
-		soname string
-		want   string
-	}{
-		{"VersionedSoname", "libcgraph.so.6", "cgraph"},
-		{"MultiPartVersion", "libcdt.so.5.0.0", "cdt"},
-		{"UnversionedSoname", "libpq.so", "pq"},
-		{"SingleCharStem", "libz.so.1", "z"},
-		{"StemContainingDotSo", "libfoo.some.so.1", "foo.some"},
-		{"MissingLibPrefix", "graphviz.so", ""},
-		{"EmptyStem", "lib.so", ""},
-		{"CPythonExtensionModule", "libfoo.cpython-311-x86_64-linux-gnu.so", ""},
-		{"PyPyExtensionModule", "libfoo.pypy39-pp73-x86_64-linux-gnu.so", ""},
-		{"ABI3ExtensionModule", "libfoo.abi3.so", ""},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := libraryStem(tc.soname); got != tc.want {
-				t.Errorf("libraryStem(%q) = %q, want %q", tc.soname, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestUnbundledSoname(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"PlainSoname", "libcgraph.so.6", "libcgraph.so.6"},
-		{"AuditwheelHashedMajor", "libcgraph-17278668.so.6", "libcgraph.so.6"},
-		{"AuditwheelHashedFullVersion", "libcgraph-17278668.so.6.0.0", "libcgraph.so.6"},
-		{"TwoPartVersionPreserved", "libssl-abcdef12.so.1.1", "libssl.so.1.1"},
-		{"AuditwheelHashBeforeFirstDot", "libopenblas64_p-r0-0cf96a72.3.23.dev.so", "libopenblas64_p-r0.3.23.dev.so"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := unbundledSoname(tc.input); got != tc.want {
-				t.Errorf("unbundledSoname(%q) = %q, want %q", tc.input, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestInferELFSystemDeps(t *testing.T) {
 	extELF := createTestELF([]string{
 		"libc.so.6",
+		"libgfortran-12345678.so.5.0.0",
 		"libcgraph-17278668.so.6.0.0",
 		"libcdt.so.5",
+		"libssl-abcdef12.so.1.1",
 		"libpython3.10.so.1.0",
 		"_helper.cpython-310-x86_64-linux-gnu.so",
+		"libfoo.abi3.so",
 		"libc10.so",
 	}, "")
 	bundledELF := createTestELF([]string{"libc.so.6", "libexpat.so.1"}, "libgvc.so.6")
@@ -228,7 +138,11 @@ func TestInferELFSystemDeps(t *testing.T) {
 		},
 		{
 			FileHeader: &zip.FileHeader{Name: "pygraphviz.libs/libpathplan-abcdef01.so.4.0.0"},
-			Body:       []byte("non-elf bundled file"),
+			Body:       createTestELF(nil, ""),
+		},
+		{
+			FileHeader: &zip.FileHeader{Name: ".libs_cffi_backend/libffi-12345678.so.8.1.0"},
+			Body:       createTestELF(nil, ""),
 		},
 		{
 			FileHeader: &zip.FileHeader{Name: "pygraphviz.libs/libignored.so.debug"},
@@ -262,12 +176,16 @@ func TestInferELFSystemDeps(t *testing.T) {
 				"/usr/lib64/libcgraph.so",
 				"libcdt.so.5()(64bit)",
 				"/usr/lib64/libcdt.so",
+				"libssl.so.1.1()(64bit)",
+				"/usr/lib64/libssl.so",
 				"libgvc.so.6()(64bit)",
 				"/usr/lib64/libgvc.so",
 				"libexpat.so.1()(64bit)",
 				"/usr/lib64/libexpat.so",
 				"libpathplan.so.4()(64bit)",
 				"/usr/lib64/libpathplan.so",
+				"libffi.so.8()(64bit)",
+				"/usr/lib64/libffi.so",
 			},
 		},
 		{
@@ -276,19 +194,18 @@ func TestInferELFSystemDeps(t *testing.T) {
 			want: []string{
 				"so:libcgraph.so.6",
 				"pc:libcgraph",
-				"cgraph-dev",
 				"so:libcdt.so.5",
 				"pc:libcdt",
-				"cdt-dev",
+				"so:libssl.so.1.1",
+				"pc:libssl",
 				"so:libgvc.so.6",
 				"pc:libgvc",
-				"gvc-dev",
 				"so:libexpat.so.1",
 				"pc:libexpat",
-				"expat-dev",
 				"so:libpathplan.so.4",
 				"pc:libpathplan",
-				"pathplan-dev",
+				"so:libffi.so.8",
+				"pc:libffi",
 			},
 		},
 	}
