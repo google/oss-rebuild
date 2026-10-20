@@ -41,15 +41,17 @@ type PinnedImage struct {
 type CibuildwheelPinTable []CibuildwheelRelease
 
 // ImageAt returns the digest-pinned reference to the repo image that the
-// highest cibuildwheel version published at or before t pins.
+// highest matching cibuildwheel release pins, along with that release's
+// version.
 //
-// Releases that do not pin repo are skipped, and the highest version that
-// still pins it is used. ok is false if no release pins repo or if the digest of the
-// selected pin is unknown.
-func (p CibuildwheelPinTable) ImageAt(repo string, t time.Time) (ref, version string, ok bool) {
+// When specs are given (each an exact version like "2.16.2", a minor series
+// like "2.16", or a release tag commit hash), only releases matching at least
+// one spec are considered. When no specs are given, any release published at
+// or before t is considered.
+func (p CibuildwheelPinTable) ImageAt(repo string, t time.Time, specs ...string) (ref, version string, ok bool) {
 	var best *CibuildwheelRelease
 	for i, rel := range p {
-		if _, pinned := rel.Images[repo]; !pinned || rel.Published.After(t) {
+		if _, pinned := rel.Images[repo]; !pinned || !rel.matches(t, specs) {
 			continue
 		}
 		if best == nil || semver.Cmp(rel.Version, best.Version) > 0 {
@@ -68,51 +70,23 @@ func (p CibuildwheelPinTable) ImageAt(repo string, t time.Time) (ref, version st
 	return img.reference(repo), best.Version, true
 }
 
-// Image returns the digest-pinned reference to the repo image that
-// cibuildwheel version pins. ok is false if the version is unknown, does not
-// pin repo or if the digest of the pin is unknown.
-func (p CibuildwheelPinTable) Image(repo, version string) (ref string, ok bool) {
-	for _, rel := range p {
-		if rel.Version != version {
-			continue
-		}
-		img, pinned := rel.Images[repo]
-		if !pinned || img.Digest == "" {
-			return "", false
-		}
-		return img.reference(repo), true
+// matches reports whether r satisfies any spec in specs at time t, or whether r
+// was published at or before t when specs is empty.
+func (r CibuildwheelRelease) matches(t time.Time, specs []string) bool {
+	if len(specs) == 0 {
+		return !r.Published.After(t)
 	}
-	return "", false
-}
-
-// VersionTaggedAt returns the cibuildwheel version whose release tag points to
-// commit, a full commit hash. ok is false if no release in the table is tagged
-// at commit.
-func (p CibuildwheelPinTable) VersionTaggedAt(commit string) (version string, ok bool) {
-	for _, rel := range p {
-		if rel.Commit == commit {
-			return rel.Version, true
+	for _, spec := range specs {
+		switch {
+		case r.Version == spec, r.Commit == spec:
+			return true
+		case strings.Count(spec, ".") == 1 && strings.HasPrefix(r.Version, spec+"."):
+			if !r.Published.After(t) {
+				return true
+			}
 		}
 	}
-	return "", false
-}
-
-// LatestInSeries returns the highest cibuildwheel version of the "major.minor"
-// series that was published at or before t. cibuildwheel moves the floating
-// minor tag of its action, such as v2.16, to each release of the series, so
-// this is the version that a step using the tag ran at t. ok is false if no
-// release of the series had been published by t.
-func (p CibuildwheelPinTable) LatestInSeries(series string, t time.Time) (version string, ok bool) {
-	prefix := series + "."
-	for _, rel := range p {
-		if !strings.HasPrefix(rel.Version, prefix) || rel.Published.After(t) {
-			continue
-		}
-		if version == "" || semver.Cmp(rel.Version, version) > 0 {
-			version = rel.Version
-		}
-	}
-	return version, version != ""
+	return false
 }
 
 // reference returns the reference to the image in repo. The digest takes

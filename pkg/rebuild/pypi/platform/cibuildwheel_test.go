@@ -16,10 +16,12 @@ import (
 func TestCibuildwheelPinTable_ImageAt(t *testing.T) {
 	day := func(d int) time.Time { return time.Date(2025, time.January, d, 0, 0, 0, 0, time.UTC) }
 	digest := func(c string) string { return "sha256:" + strings.Repeat(c, 64) }
+	commit := func(c string) string { return strings.Repeat(c, 40) }
 	pins := CibuildwheelPinTable{
 		{
 			Version:   "1.0.0",
 			Published: day(1),
+			Commit:    commit("1"),
 			Images: map[string]PinnedImage{
 				ImageManylinux2014X86_64: {Tag: "t1", Digest: digest("1")},
 				ImageMusllinux1_1X86_64:  {Tag: "m1", Digest: digest("2")},
@@ -28,6 +30,7 @@ func TestCibuildwheelPinTable_ImageAt(t *testing.T) {
 		{
 			Version:   "1.1.0",
 			Published: day(3),
+			Commit:    commit("2"),
 			Images: map[string]PinnedImage{
 				ImageManylinux2014X86_64: {Tag: "expired"},
 			},
@@ -35,6 +38,7 @@ func TestCibuildwheelPinTable_ImageAt(t *testing.T) {
 		{
 			Version:   "2.0.0",
 			Published: day(10),
+			Commit:    commit("3"),
 			Images: map[string]PinnedImage{
 				ImageManylinux2014X86_64: {Tag: "t2", Digest: digest("3")},
 				ImageMusllinux1_1X86_64:  {Tag: "m2", Digest: digest("4")},
@@ -43,6 +47,7 @@ func TestCibuildwheelPinTable_ImageAt(t *testing.T) {
 		{
 			Version:   "3.0.0",
 			Published: day(20),
+			Commit:    commit("4"),
 			Images: map[string]PinnedImage{
 				ImageManylinux2014X86_64: {Digest: digest("5")},
 				ImageManylinux2_34X86_64: {Tag: "n3", Digest: digest("6")},
@@ -51,6 +56,7 @@ func TestCibuildwheelPinTable_ImageAt(t *testing.T) {
 		{
 			Version:   "2.0.1",
 			Published: day(22),
+			Commit:    commit("5"),
 			Images: map[string]PinnedImage{
 				ImageManylinux2014X86_64: {Tag: "t21", Digest: digest("7")},
 				ImageMusllinux1_1X86_64:  {Tag: "m21", Digest: digest("8")},
@@ -62,10 +68,11 @@ func TestCibuildwheelPinTable_ImageAt(t *testing.T) {
 		OK           bool
 	}
 	tests := []struct {
-		name string
-		repo string
-		t    time.Time
-		want result
+		name  string
+		repo  string
+		t     time.Time
+		specs []string
+		want  result
 	}{
 		{
 			name: "BeforeFirstRelease",
@@ -121,185 +128,76 @@ func TestCibuildwheelPinTable_ImageAt(t *testing.T) {
 			t:    day(25),
 			want: result{},
 		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var got result
-			got.Ref, got.Version, got.OK = pins.ImageAt(tc.repo, tc.t)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("ImageAt(%q, %v) returned diff (-want +got):\n%s", tc.repo, tc.t, diff)
-			}
-		})
-	}
-}
-
-func TestCibuildwheelPinTable_Image(t *testing.T) {
-	digest := "sha256:" + strings.Repeat("1", 64)
-	pins := CibuildwheelPinTable{
 		{
-			Version: "1.0.0",
-			Images: map[string]PinnedImage{
-				ImageManylinux2014X86_64: {Tag: "expired"},
-			},
+			name:  "ExactVersionSpec",
+			repo:  ImageManylinux2014X86_64,
+			t:     day(25),
+			specs: []string{"2.0.0"},
+			want:  result{Ref: ImageManylinux2014X86_64 + ":t2@" + digest("3"), Version: "2.0.0", OK: true},
 		},
 		{
-			Version: "2.0.0",
-			Images: map[string]PinnedImage{
-				ImageManylinux2014X86_64: {Tag: "t2", Digest: digest},
-			},
-		},
-	}
-	type result struct {
-		Ref string
-		OK  bool
-	}
-	tests := []struct {
-		name    string
-		repo    string
-		version string
-		want    result
-	}{
-		{
-			name:    "KnownVersion",
-			repo:    ImageManylinux2014X86_64,
-			version: "2.0.0",
-			want:    result{Ref: ImageManylinux2014X86_64 + ":t2@" + digest, OK: true},
+			name:  "CommitSpec",
+			repo:  ImageManylinux2014X86_64,
+			t:     day(25),
+			specs: []string{commit("3")},
+			want:  result{Ref: ImageManylinux2014X86_64 + ":t2@" + digest("3"), Version: "2.0.0", OK: true},
 		},
 		{
-			name:    "UnknownVersion",
-			repo:    ImageManylinux2014X86_64,
-			version: "3.0.0",
-			want:    result{},
+			name:  "MinorSeriesSpecAtUploadTime",
+			repo:  ImageManylinux2014X86_64,
+			t:     day(15),
+			specs: []string{"2.0"},
+			want:  result{Ref: ImageManylinux2014X86_64 + ":t2@" + digest("3"), Version: "2.0.0", OK: true},
 		},
 		{
-			name:    "RepoNotPinned",
-			repo:    ImageMusllinux1_2X86_64,
-			version: "2.0.0",
-			want:    result{},
+			name:  "MinorSeriesSpecBeforeFirstRelease",
+			repo:  ImageManylinux2014X86_64,
+			t:     day(5),
+			specs: []string{"2.0"},
+			want:  result{},
 		},
 		{
-			name:    "ExpiredPin",
-			repo:    ImageManylinux2014X86_64,
-			version: "1.0.0",
-			want:    result{},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var got result
-			got.Ref, got.OK = pins.Image(tc.repo, tc.version)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("Image(%q, %q) returned diff (-want +got):\n%s", tc.repo, tc.version, diff)
-			}
-		})
-	}
-}
-
-func TestCibuildwheelPinTable_VersionTaggedAt(t *testing.T) {
-	commit := func(c string) string { return strings.Repeat(c, 40) }
-	pins := CibuildwheelPinTable{
-		{Version: "1.0.0", Commit: commit("1")},
-		{Version: "2.0.0", Commit: commit("2")},
-	}
-	type result struct {
-		Version string
-		OK      bool
-	}
-	tests := []struct {
-		name   string
-		commit string
-		want   result
-	}{
-		{
-			name:   "TaggedCommit",
-			commit: commit("2"),
-			want:   result{Version: "2.0.0", OK: true},
+			name:  "MinorSeriesSpecIncludesLaterPatch",
+			repo:  ImageManylinux2014X86_64,
+			t:     day(25),
+			specs: []string{"2.0"},
+			want:  result{Ref: ImageManylinux2014X86_64 + ":t21@" + digest("7"), Version: "2.0.1", OK: true},
 		},
 		{
-			name:   "UntaggedCommit",
-			commit: commit("3"),
-			want:   result{},
+			name:  "ExpiredSpecHasNoFallback",
+			repo:  ImageManylinux2014X86_64,
+			t:     day(25),
+			specs: []string{"1.1.0"},
+			want:  result{},
+		},
+		{
+			name:  "MultipleSpecsPicksHighest",
+			repo:  ImageManylinux2014X86_64,
+			t:     day(25),
+			specs: []string{"1.0.0", commit("3"), "untagged"},
+			want:  result{Ref: ImageManylinux2014X86_64 + ":t2@" + digest("3"), Version: "2.0.0", OK: true},
+		},
+		{
+			name:  "MultipleSpecsSkipsUnpinnedRepo",
+			repo:  ImageMusllinux1_1X86_64,
+			t:     day(25),
+			specs: []string{"1.0.0", "3.0.0"},
+			want:  result{Ref: ImageMusllinux1_1X86_64 + ":m1@" + digest("2"), Version: "1.0.0", OK: true},
+		},
+		{
+			name:  "SpecWithoutRepoFails",
+			repo:  ImageMusllinux1_1X86_64,
+			t:     day(25),
+			specs: []string{"3.0.0"},
+			want:  result{},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var got result
-			got.Version, got.OK = pins.VersionTaggedAt(tc.commit)
+			got.Ref, got.Version, got.OK = pins.ImageAt(tc.repo, tc.t, tc.specs...)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("VersionTaggedAt(%q) returned diff (-want +got):\n%s", tc.commit, diff)
-			}
-		})
-	}
-}
-
-func TestCibuildwheelPinTable_LatestInSeries(t *testing.T) {
-	day := func(d int) time.Time { return time.Date(2025, time.January, d, 0, 0, 0, 0, time.UTC) }
-	pins := CibuildwheelPinTable{
-		{Version: "2.16.0", Published: day(1)},
-		{Version: "2.16.2", Published: day(5)},
-		{Version: "2.17.0", Published: day(7)},
-		{Version: "2.16.3", Published: day(9)},
-		{Version: "2.1.0", Published: day(11)},
-	}
-	type result struct {
-		Version string
-		OK      bool
-	}
-	tests := []struct {
-		name   string
-		series string
-		t      time.Time
-		want   result
-	}{
-		{
-			name:   "BeforeFirstRelease",
-			series: "2.16",
-			t:      day(0),
-			want:   result{},
-		},
-		{
-			name:   "AtPublishTime",
-			series: "2.16",
-			t:      day(1),
-			want:   result{Version: "2.16.0", OK: true},
-		},
-		{
-			name:   "LatestPatch",
-			series: "2.16",
-			t:      day(6),
-			want:   result{Version: "2.16.2", OK: true},
-		},
-		{
-			name:   "IgnoresNewerSeries",
-			series: "2.16",
-			t:      day(8),
-			want:   result{Version: "2.16.2", OK: true},
-		},
-		{
-			name:   "MaintenanceReleaseAfterNewerSeries",
-			series: "2.16",
-			t:      day(10),
-			want:   result{Version: "2.16.3", OK: true},
-		},
-		{
-			name:   "SeriesIsNotAPrefix",
-			series: "2.1",
-			t:      day(10),
-			want:   result{},
-		},
-		{
-			name:   "UnknownSeries",
-			series: "3.0",
-			t:      day(10),
-			want:   result{},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var got result
-			got.Version, got.OK = pins.LatestInSeries(tc.series, tc.t)
-			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("LatestInSeries(%q, %v) returned diff (-want +got):\n%s", tc.series, tc.t, diff)
+				t.Errorf("ImageAt(%q, %v, %v) returned diff (-want +got):\n%s", tc.repo, tc.t, tc.specs, diff)
 			}
 		})
 	}

@@ -5,19 +5,16 @@ package pypi
 
 import (
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/internal/textwrap"
 )
 
-func TestCibuildwheelVersions(t *testing.T) {
+func TestCibuildwheelSpecs(t *testing.T) {
 	tests := []struct {
 		name     string
 		workflow string
-		// uploaded only matters for floating tags.
-		uploaded time.Time
 		want     []string
 	}{
 		{
@@ -31,44 +28,13 @@ func TestCibuildwheelVersions(t *testing.T) {
 			want: []string{"2.16.2"},
 		},
 		{
-			name: "ActionBranch",
-			workflow: `
-				jobs:
-				  wheels:
-				    steps:
-				      - uses: pypa/cibuildwheel@main`,
-			want: nil,
-		},
-		{
 			name: "ActionMinorTag",
 			workflow: `
 				jobs:
 				  wheels:
 				    steps:
 				      - uses: pypa/cibuildwheel@v2.16`,
-			uploaded: time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC),
-			want:     []string{"2.16.2"},
-		},
-		{
-			name: "ActionMinorTagBeforeSeries",
-			workflow: `
-				jobs:
-				  wheels:
-				    steps:
-				      - uses: pypa/cibuildwheel@v2.16`,
-			uploaded: time.Date(2023, time.January, 1, 0, 0, 0, 0, time.UTC),
-			want:     nil,
-		},
-		{
-			// NOTE: cibuildwheel publishes no major tags.
-			name: "ActionMajorTag",
-			workflow: `
-				jobs:
-				  wheels:
-				    steps:
-				      - uses: pypa/cibuildwheel@v2`,
-			uploaded: time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC),
-			want:     nil,
+			want: []string{"2.16"},
 		},
 		{
 			name: "ActionCommit",
@@ -77,64 +43,22 @@ func TestCibuildwheelVersions(t *testing.T) {
 				  wheels:
 				    steps:
 				      - uses: pypa/cibuildwheel@` + testCommit("5") + ` # v2.16.2`,
-			want: []string{"2.16.2"},
+			want: []string{testCommit("5")},
 		},
 		{
-			name: "UntaggedActionCommit",
+			name: "ActionBranchOrMajorOrPreReleaseTagIgnored",
 			workflow: `
 				jobs:
 				  wheels:
 				    steps:
-				      - uses: pypa/cibuildwheel@0123456789abcdef0123456789abcdef01234567`,
+				      - uses: pypa/cibuildwheel@main
+				      - uses: pypa/cibuildwheel@release/2.16
+				      - uses: pypa/cibuildwheel@v2
+				      - uses: pypa/cibuildwheel@v2.16.0b1`,
 			want: nil,
 		},
 		{
-			name: "PipRequirement",
-			workflow: `
-				jobs:
-				  wheels:
-				    steps:
-				      - run: python -m pip install cibuildwheel==2.16.2`,
-			want: []string{"2.16.2"},
-		},
-		{
-			name: "PipxRun",
-			workflow: `
-				jobs:
-				  wheels:
-				    steps:
-				      - run: pipx run cibuildwheel==2.16.2 --output-dir wheelhouse`,
-			want: []string{"2.16.2"},
-		},
-		{
-			name: "QuotedRequirementWithExtras",
-			workflow: `
-				jobs:
-				  wheels:
-				    steps:
-				      - run: python -m pip install "cibuildwheel[uv] == 3.1.0"`,
-			want: []string{"3.1.0"},
-		},
-		{
-			name: "RangeRequirement",
-			workflow: `
-				jobs:
-				  wheels:
-				    steps:
-				      - run: python -m pip install "cibuildwheel>=2.16,<3"`,
-			want: nil,
-		},
-		{
-			name: "PreReleaseRequirement",
-			workflow: `
-				jobs:
-				  wheels:
-				    steps:
-				      - run: python -m pip install cibuildwheel==3.0.0b1`,
-			want: nil,
-		},
-		{
-			name: "MultipleVersions",
+			name: "PipAndPipxRequirementsAcrossJobs",
 			workflow: `
 				jobs:
 				  wheels:
@@ -143,9 +67,20 @@ func TestCibuildwheelVersions(t *testing.T) {
 				  sdist:
 				    steps:
 				      - run: |
-				          pip install cibuildwheel==2.16.2
-				          pipx run cibuildwheel==2.0.0`,
-			want: []string{"2.16.2", "2.0.0", "1.12.0"},
+				          python -m pip install "cibuildwheel[uv] == 3.1.0"
+				          pipx run cibuildwheel==2.16.2 --output-dir wheelhouse`,
+			want: []string{"3.1.0", "2.16.2", "1.12.0"},
+		},
+		{
+			name: "RangeAndPreReleaseIgnored",
+			workflow: `
+				jobs:
+				  wheels:
+				    steps:
+				      - run: |
+				          pip install "cibuildwheel>=2.16,<3"
+				          pip install cibuildwheel==3.0.0b1`,
+			want: nil,
 		},
 		{
 			name: "CommentedOut",
@@ -165,15 +100,15 @@ func TestCibuildwheelVersions(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := cibuildwheelVersions([]byte(textwrap.Dedent(tc.workflow)), testPins, tc.uploaded)
+			got := cibuildwheelSpecs([]byte(textwrap.Dedent(tc.workflow)))
 			if diff := cmp.Diff(tc.want, got); diff != "" {
-				t.Errorf("cibuildwheelVersions() returned diff (-want +got):\n%s", diff)
+				t.Errorf("cibuildwheelSpecs() returned diff (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-func TestExtractCibuildwheelVersion(t *testing.T) {
+func TestExtractCibuildwheelSpecs(t *testing.T) {
 	wheels := textwrap.Dedent(`
 		jobs:
 		  wheels:
@@ -182,45 +117,38 @@ func TestExtractCibuildwheelVersion(t *testing.T) {
 	tests := []struct {
 		name  string
 		files gitxtest.FileContent
-		want  string
+		want  []string
 	}{
 		{
-			// NOTE: 2.3.1 sorts above 2.16.2 as a string.
-			name: "HighestAcrossWorkflows",
+			name: "AcrossWorkflows",
 			files: gitxtest.FileContent{
 				".github/workflows/test.yaml": textwrap.Dedent(`
 					jobs:
 					  test:
 					    steps:
 					      - run: pip install cibuildwheel==2.3.1`),
-				".github/workflows/wheels.yml": wheels,
+				".github/workflows/wheels.yml":         wheels,
+				".github/workflows/wheels.yml.bak":     wheels,
+				".github/workflows/nested/wheels.yaml": wheels,
 			},
-			want: "2.16.2",
-		},
-		{
-			name: "IgnoresNonWorkflowFiles",
-			files: gitxtest.FileContent{
-				".github/workflows/wheels.yml.disabled": wheels,
-				".github/workflows/nested/wheels.yml":   wheels,
-			},
-			want: "",
+			want: []string{"2.3.1", "2.16.2"},
 		},
 		{
 			name:  "NoWorkflows",
 			files: gitxtest.FileContent{"README.md": "# test-package\n"},
-			want:  "",
+			want:  nil,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: tc.files}}, nil))
 			commit := must(repo.CommitObject(repo.Commits["initial-commit"]))
-			got, err := extractCibuildwheelVersion(must(commit.Tree()), testPins, time.Time{})
+			got, err := extractCibuildwheelSpecs(must(commit.Tree()))
 			if err != nil {
-				t.Fatalf("extractCibuildwheelVersion() returned error: %v", err)
+				t.Fatalf("extractCibuildwheelSpecs() returned error: %v", err)
 			}
-			if got != tc.want {
-				t.Errorf("extractCibuildwheelVersion() = %q, want %q", got, tc.want)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("extractCibuildwheelSpecs() diff (-want +got):\n%s", diff)
 			}
 		})
 	}
