@@ -20,11 +20,6 @@ type ProjectMetadata struct {
 	Version string `toml:"version"`
 }
 
-// BuildSystem represents the [build-system] table in pyproject.toml.
-type BuildSystem struct {
-	Requires []string `toml:"requires"`
-}
-
 // CibuildwheelHooks represents build hooks in [tool.cibuildwheel] or platform subtables.
 type CibuildwheelHooks struct {
 	BeforeAll   any `toml:"before-all"`
@@ -33,39 +28,27 @@ type CibuildwheelHooks struct {
 
 // CibuildwheelOverride represents an entry in [[tool.cibuildwheel.overrides]].
 type CibuildwheelOverride struct {
-	Select      any `toml:"select"`
-	BeforeAll   any `toml:"before-all"`
-	BeforeBuild any `toml:"before-build"`
+	Select any `toml:"select"`
+	CibuildwheelHooks
 }
 
 // CibuildwheelConfig represents the [tool.cibuildwheel] table in pyproject.toml.
 type CibuildwheelConfig struct {
-	BeforeAll   any                    `toml:"before-all"`
-	BeforeBuild any                    `toml:"before-build"`
-	Linux       CibuildwheelHooks      `toml:"linux"`
-	Overrides   []CibuildwheelOverride `toml:"overrides"`
-}
-
-// ToolConfig represents the [tool] table in pyproject.toml.
-type ToolConfig struct {
-	Poetry       ProjectMetadata    `toml:"poetry"`
-	Cibuildwheel CibuildwheelConfig `toml:"cibuildwheel"`
+	CibuildwheelHooks
+	Linux     CibuildwheelHooks      `toml:"linux"`
+	Overrides []CibuildwheelOverride `toml:"overrides"`
 }
 
 // PyProject represents the structure of a pyproject.toml file.
 type PyProject struct {
 	Project     ProjectMetadata `toml:"project"`
-	BuildSystem BuildSystem     `toml:"build-system"`
-	Tool        ToolConfig      `toml:"tool"`
-}
-
-// ParsePyProject unmarshals pyproject.toml content into a PyProject struct.
-func ParsePyProject(contents string) (PyProject, error) {
-	var pyProject PyProject
-	if err := toml.Unmarshal([]byte(contents), &pyProject); err != nil {
-		return pyProject, errors.Wrap(err, "decoding pyproject.toml")
-	}
-	return pyProject, nil
+	BuildSystem struct {
+		Requires []string `toml:"requires"`
+	} `toml:"build-system"`
+	Tool struct {
+		Poetry       ProjectMetadata    `toml:"poetry"`
+		Cibuildwheel CibuildwheelConfig `toml:"cibuildwheel"`
+	} `toml:"tool"`
 }
 
 // ReadPyProject reads and unmarshals a pyproject.toml git object file.
@@ -74,7 +57,11 @@ func ReadPyProject(f *object.File) (PyProject, error) {
 	if err != nil {
 		return PyProject{}, errors.Wrap(err, "reading pyproject.toml")
 	}
-	return ParsePyProject(contents)
+	var pyProject PyProject
+	if err := toml.Unmarshal([]byte(contents), &pyProject); err != nil {
+		return PyProject{}, errors.Wrap(err, "decoding pyproject.toml")
+	}
+	return pyProject, nil
 }
 
 func verifyPyProjectFile(ctx context.Context, f *object.File, name, version string) (fileVerification, error) {

@@ -156,157 +156,172 @@ func TestExtractCibuildwheelSpecs(t *testing.T) {
 }
 
 func TestExtractCibuildwheelDependencies(t *testing.T) {
+	hooks := textwrap.Dedent(`
+		[tool.cibuildwheel]
+		before-all = "yum install -y libffi-devel"
+		before-build = ["dnf install -y zlib-devel"]
+		[tool.cibuildwheel.linux]
+		before-all = "apk add --no-cache graphviz-dev"`)
 	tests := []struct {
 		name      string
 		searchDir string
 		libc      platform.LibcImpl
-		repoYAML  string
+		files     gitxtest.FileContent
 		want      []string
 	}{
 		{
-			name:      "TopLevelAndLinuxHooksGlibc",
-			searchDir: "",
-			libc:      platform.Glibc,
-			repoYAML: `
-commits:
-  - id: initial-commit
-    files:
-      pyproject.toml: |
-        [project]
-        name = "example"
-        version = "1.0.0"
-
-        [tool.cibuildwheel]
-        before-all = "yum install -y libffi-devel"
-        before-build = ["dnf install -y zlib-devel"]
-
-        [tool.cibuildwheel.linux]
-        before-all = "apk add --no-cache graphviz-dev"
-`,
-			want: []string{"libffi-devel", "zlib-devel"},
+			name:  "TopLevelAndLinuxHooksGlibc",
+			libc:  platform.Glibc,
+			files: gitxtest.FileContent{"pyproject.toml": hooks},
+			want:  []string{"libffi-devel", "zlib-devel"},
 		},
 		{
-			name:      "TopLevelAndLinuxHooksMusl",
-			searchDir: "",
-			libc:      platform.Musl,
-			repoYAML: `
-commits:
-  - id: initial-commit
-    files:
-      pyproject.toml: |
-        [project]
-        name = "example"
-        version = "1.0.0"
-
-        [tool.cibuildwheel]
-        before-all = "yum install -y libffi-devel"
-        before-build = ["dnf install -y zlib-devel"]
-
-        [tool.cibuildwheel.linux]
-        before-all = "apk add --no-cache graphviz-dev"
-`,
-			want: []string{"graphviz-dev"},
+			name:  "TopLevelAndLinuxHooksMusl",
+			libc:  platform.Musl,
+			files: gitxtest.FileContent{"pyproject.toml": hooks},
+			want:  []string{"graphviz-dev"},
 		},
 		{
-			name:      "OverridesFilteringManylinuxTarget",
-			searchDir: "",
-			libc:      platform.Glibc,
-			repoYAML: `
-commits:
-  - id: initial-commit
-    files:
-      pyproject.toml: |
-        [[tool.cibuildwheel.overrides]]
-        select = "*-macosx* *-manylinux*"
-        before-all = "dnf install -y gd-devel cairo-devel"
-
-        [[tool.cibuildwheel.overrides]]
-        select = "*-musllinux*"
-        before-all = "dnf install -y musl-only-should-be-skipped"
-
-        [[tool.cibuildwheel.overrides]]
-        select = "*-manylinux_aarch64"
-        before-all = "dnf install -y aarch64-only-should-be-skipped"
-
-        [[tool.cibuildwheel.overrides]]
-        select = "*-macosx*"
-        before-all = "yum install -y should-not-be-extracted"
-
-        [[tool.cibuildwheel.overrides]]
-        select = ["*-win_amd64", "*-win32"]
-        before-all = "dnf install -y windows-ignored"
-`,
+			name: "OverridesFilteringManylinuxTarget",
+			libc: platform.Glibc,
+			files: gitxtest.FileContent{
+				"pyproject.toml": textwrap.Dedent(`
+					[[tool.cibuildwheel.overrides]]
+					select = "*-macosx* *-manylinux*"
+					before-all = "dnf install -y gd-devel cairo-devel"
+					[[tool.cibuildwheel.overrides]]
+					select = "*-musllinux*"
+					before-all = "dnf install -y musl-only-should-be-skipped"
+					[[tool.cibuildwheel.overrides]]
+					select = "*-manylinux_aarch64"
+					before-all = "dnf install -y aarch64-only-should-be-skipped"
+					[[tool.cibuildwheel.overrides]]
+					select = "*-macosx*"
+					before-all = "yum install -y should-not-be-extracted"
+					[[tool.cibuildwheel.overrides]]
+					select = ["*-win*", "*-android*"]
+					before-all = "dnf install -y windows-and-android-ignored"`),
+			},
 			want: []string{"gd-devel", "cairo-devel"},
 		},
 		{
-			name:      "OverridesFilteringMusllinuxTarget",
-			searchDir: "",
-			libc:      platform.Musl,
-			repoYAML: `
-commits:
-  - id: initial-commit
-    files:
-      pyproject.toml: |
-        [[tool.cibuildwheel.overrides]]
-        select = "*-macosx* *-manylinux*"
-        before-all = "apk add manylinux-only-should-be-skipped"
-
-        [[tool.cibuildwheel.overrides]]
-        select = "*-musllinux* *-manylinux_i686"
-        before-all = "apk add gd-dev cairo-dev"
-
-        [[tool.cibuildwheel.overrides]]
-        select = "*-macosx*"
-        before-all = "apk add should-not-be-extracted"
-`,
+			name: "OverridesFilteringMusllinuxTarget",
+			libc: platform.Musl,
+			files: gitxtest.FileContent{
+				"pyproject.toml": textwrap.Dedent(`
+					[[tool.cibuildwheel.overrides]]
+					select = "*-macosx* *-manylinux*"
+					before-all = "apk add manylinux-only-should-be-skipped"
+					[[tool.cibuildwheel.overrides]]
+					select = "*-musllinux* *-manylinux_i686"
+					before-all = "apk add gd-dev cairo-dev"
+					[[tool.cibuildwheel.overrides]]
+					select = "*-macosx*"
+					before-all = "apk add should-not-be-extracted"`),
+			},
 			want: []string{"gd-dev", "cairo-dev"},
 		},
 		{
 			name:      "SubdirectorySearch",
 			searchDir: "python",
 			libc:      platform.Glibc,
-			repoYAML: `
-commits:
-  - id: initial-commit
-    files:
-      pyproject.toml: |
-        [tool.cibuildwheel.linux]
-        before-all = "yum install -y openssl-devel"
-      python/pyproject.toml: |
-        [project]
-        name = "subpkg"
-        version = "0.1.0"
-        [tool.cibuildwheel]
-        before-build = "yum install -y curl-devel"
-`,
+			files: gitxtest.FileContent{
+				"pyproject.toml": textwrap.Dedent(`
+					[tool.cibuildwheel.linux]
+					before-all = "yum install -y openssl-devel"`),
+				"python/pyproject.toml": textwrap.Dedent(`
+					[tool.cibuildwheel]
+					before-build = "yum install -y curl-devel"`),
+			},
 			want: []string{"curl-devel"},
 		},
 		{
-			name:      "NoPyprojectToml",
-			searchDir: "",
-			libc:      platform.Glibc,
-			repoYAML: `
-commits:
-  - id: initial-commit
-    files:
-      setup.py: |
-        from setuptools import setup
-        setup(name="legacy", version="0.1.0")
-`,
-			want: nil,
+			name:  "NoPyprojectToml",
+			libc:  platform.Glibc,
+			files: gitxtest.FileContent{"setup.py": "from setuptools import setup\nsetup(name='legacy', version='0.1.0')\n"},
+			want:  nil,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := must(gitxtest.CreateRepoFromYAML(tc.repoYAML, nil))
+			repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: tc.files}}, nil))
 			commit := must(repo.CommitObject(repo.Commits["initial-commit"]))
-			tree := must(commit.Tree())
-			got, err := extractCibuildwheelDependencies(tree, tc.searchDir, tc.libc)
+			got, err := extractCibuildwheelDependencies(must(commit.Tree()), tc.searchDir, tc.libc)
 			if err != nil {
 				t.Fatalf("extractCibuildwheelDependencies() unexpected error: %v", err)
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("extractCibuildwheelDependencies() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestParsePackageManagerCommands(t *testing.T) {
+	tests := []struct {
+		name   string
+		script string
+		libc   platform.LibcImpl
+		want   []string
+	}{
+		{
+			name:   "YumAndMicrodnfWithValueFlags",
+			script: "yum -y --enablerepo=epel install --repo epel --disableexcludes all graphviz-devel && microdnf install -y zlib-devel",
+			libc:   platform.Glibc,
+			want:   []string{"graphviz-devel", "zlib-devel"},
+		},
+		{
+			name: "DnfChainedWithLineContinuationsAndBuildSteps",
+			script: `dnf install -y gcc gcc-c++ \
+				expat-devel zlib-devel \
+				gd-devel cairo-devel pango-devel && \
+				curl -L https://example.com/src.tar.gz -o /tmp/src.tar.gz && \
+				make install`,
+			libc: platform.Glibc,
+			want: []string{"gcc", "gcc-c++", "expat-devel", "zlib-devel", "gd-devel", "cairo-devel", "pango-devel"},
+		},
+		{
+			name:   "ApkAddWithVirtualFlagAndVersionPin",
+			script: "apk --no-cache add --virtual .build-deps graphviz-dev=14.1.5-r0 'cairo-dev>=1.18' pango-dev@edge !ignored-pkg",
+			libc:   platform.Musl,
+			want:   []string{"graphviz-dev", "cairo-dev", "pango-dev"},
+		},
+		{
+			name:   "FiltersByTargetLibc",
+			script: "yum install -y graphviz-devel || apk add --no-cache graphviz-dev",
+			libc:   platform.Musl,
+			want:   []string{"graphviz-dev"},
+		},
+		{
+			name:   "InlineIfThenElifConditional",
+			script: "if command -v yum; then yum install -y foo-devel; elif command -v apk; then apk add foo-dev; fi",
+			libc:   platform.Glibc,
+			want:   []string{"foo-devel"},
+		},
+		{
+			name:   "BraceGroupNegationNiceAndBackground",
+			script: "{ ! nice -n 10 yum install -y brace-devel; } && yum install -y bg-devel & wait",
+			libc:   platform.Glibc,
+			want:   []string{"brace-devel", "bg-devel"},
+		},
+		{
+			name:   "SkipsVariablesLocalFilesQuotedSpacesAndComments",
+			script: "yum install -y $EXTRA_PKGS /tmp/custom.rpm ./local.rpm 'bad >= 1.0' valid-devel # comment with yum install fake-pkg",
+			libc:   platform.Glibc,
+			want:   []string{"valid-devel"},
+		},
+		{
+			name:   "SkipsRedirectionsAndTolerantFlag",
+			script: "yum -t install -y foo >/dev/null 2>&1 && yum install -y bar > out.log",
+			libc:   platform.Glibc,
+			want:   []string{"foo", "bar"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parsePackageManagerCommands(tc.script, tc.libc)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("parsePackageManagerCommands() diff (-want +got):\n%s", diff)
 			}
 		})
 	}

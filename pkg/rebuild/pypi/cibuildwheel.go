@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/parsing"
 	"github.com/google/oss-rebuild/pkg/rebuild/pypi/platform"
+	"github.com/google/shlex"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
@@ -87,132 +88,189 @@ func cibuildwheelSpecs(workflow []byte) []string {
 	return specs
 }
 
-// extractCibuildwheelDependencies extracts system dependencies from [tool.cibuildwheel] and subkeys in pyproject.toml in searchDir.
+// extractCibuildwheelDependencies extracts system dependencies from
+// [tool.cibuildwheel] hooks and overrides in pyproject.toml under searchDir.
 func extractCibuildwheelDependencies(tree *object.Tree, searchDir string, libc platform.LibcImpl) ([]string, error) {
-	if tree == nil {
-		return nil, nil
-	}
-	if searchDir == "" {
-		searchDir = "."
-	}
 	pyprojPath := path.Clean(path.Join(searchDir, "pyproject.toml"))
 	f, err := tree.File(pyprojPath)
 	if errors.Is(err, object.ErrFileNotFound) {
 		return nil, nil
-	}
-	if err != nil {
+	} else if err != nil {
 		return nil, errors.Wrapf(err, "finding %s", pyprojPath)
 	}
 	pyProject, err := parsing.ReadPyProject(f)
 	if err != nil {
 		return nil, errors.Wrapf(err, "reading %s", pyprojPath)
 	}
-	return extractCibuildwheelFromConfig(pyProject.Tool.Cibuildwheel, libc), nil
-}
-
-// extractCibuildwheelFromConfig extracts the relevant parts of the cibuildwheel config from the pyproject.toml file.
-//
-// The relevant keys are taken from https://cibuildwheel.pypa.io/en/stable/configuration/#configuration-file
-// for all keys that contain install scripts and are not specific to a non-linux platform.
-func extractCibuildwheelFromConfig(cfg parsing.CibuildwheelConfig, libc platform.LibcImpl) []string {
-	var scripts []string
-	// The cibuildwheel TOML spec allows these fields to be either single strings or arrays of strings.
-	scripts = append(scripts, extractStringOrSlice(cfg.BeforeAll)...)
-	scripts = append(scripts, extractStringOrSlice(cfg.BeforeBuild)...)
-	scripts = append(scripts, extractStringOrSlice(cfg.Linux.BeforeAll)...)
-	scripts = append(scripts, extractStringOrSlice(cfg.Linux.BeforeBuild)...)
+	cfg := pyProject.Tool.Cibuildwheel
+	// NOTE: In cibuildwheel, matching overrides replace base and linux hooks by
+	// default unless inherit is configured. Taking the union across all matching
+	// sections is a conservative over-approximation.
+	scripts := slices.Concat(
+		tomlStrings(cfg.BeforeAll),
+		tomlStrings(cfg.BeforeBuild),
+		tomlStrings(cfg.Linux.BeforeAll),
+		tomlStrings(cfg.Linux.BeforeBuild),
+	)
 	for _, ov := range cfg.Overrides {
 		if overrideAppliesToTarget(ov.Select, libc) {
-			scripts = append(scripts, extractStringOrSlice(ov.BeforeAll)...)
-			scripts = append(scripts, extractStringOrSlice(ov.BeforeBuild)...)
+			scripts = append(scripts, tomlStrings(ov.BeforeAll)...)
+			scripts = append(scripts, tomlStrings(ov.BeforeBuild)...)
 		}
 	}
 	var deps []string
 	for _, script := range scripts {
 		deps = appendUnique(deps, parsePackageManagerCommands(script, libc)...)
 	}
-	return deps
+	return deps, nil
 }
 
-// extractStringOrSlice extracts data from an individual string or a slice of data that can be cast to a string.
-//
-// The result is always a string slice.
-// A single string will be returned as a 1-element slice.
-// A slice of strings will be returned as is.
-// A slice of other data will be returned as a slice of all elements that could be cast to a
-// nonempty string (after trimming whitespace) in the original order. All elements that could not be
-// cast are discarded.
-func extractStringOrSlice(v any) []string {
-	switch val := v.(type) {
+func tomlStrings(v any) (out []string) {
+	switch v := v.(type) {
 	case string:
-		if strings.TrimSpace(val) != "" {
-			return []string{val}
-		}
+		return []string{v}
 	case []any:
-		var out []string
-		for _, item := range val {
-			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+		for _, item := range v {
+			if s, ok := item.(string); ok {
 				out = append(out, s)
 			}
 		}
-		return out
-	case []string:
-		var out []string
-		for _, s := range val {
-			if strings.TrimSpace(s) != "" {
-				out = append(out, s)
-			}
-		}
-		return out
 	}
-	return nil
+	return out
 }
 
 func overrideAppliesToTarget(selectVal any, libc platform.LibcImpl) bool {
-	selectors := extractStringOrSlice(selectVal)
-	if len(selectors) == 0 {
+	selectors := tomlStrings(selectVal)
+	return len(selectors) == 0 || slices.ContainsFunc(selectors, func(sel string) bool {
+		return slices.ContainsFunc(strings.Fields(strings.ToLower(sel)), func(pat string) bool {
+			return selectorPatternApplies(pat, libc)
+		})
+	})
+}
+
+var (
+	nonLinuxTokens = []string{"macos", "win", "ios", "android", "pyodide"}
+	nonX8664Tokens = []string{"i686", "aarch64", "arm64", "armv7l", "ppc64le", "s390x", "riscv64"}
+)
+
+// selectorPatternApplies checks whether a cibuildwheel select glob (such as
+// "*-manylinux*" or "cp310-manylinux_x86_64") can match an x86_64 Linux target
+// with the given libc, using substring checks without consulting the Python tag.
+func selectorPatternApplies(pat string, libc platform.LibcImpl) bool {
+	contains := func(sub string) bool { return strings.Contains(pat, sub) }
+	if slices.ContainsFunc(nonLinuxTokens, contains) {
+		return false
+	}
+	if !contains("x86_64") && !contains("amd64") && slices.ContainsFunc(nonX8664Tokens, contains) {
+		return false
+	}
+	switch libc {
+	case platform.Glibc:
+		return !contains("musllinux") || contains("manylinux")
+	case platform.Musl:
+		return !contains("manylinux") || contains("musllinux")
+	default:
 		return true
 	}
-	for _, sel := range selectors {
-		for _, pat := range strings.Fields(strings.ToLower(sel)) {
-			if selectorPatternApplies(pat, libc) {
-				return true
+}
+
+type pkgManager struct {
+	libc       platform.LibcImpl
+	subcmd     string
+	valueFlags []string
+}
+
+var (
+	lineContinuationPat = re.MustCompile(`\\\r?\n`)
+	shellCommentPat     = re.MustCompile(`(?m)(?:^|[\s;])#.*$`)
+	shellCommandSepPat  = re.MustCompile(`[\r\n;&|()]+`)
+	shellRedirectPat    = re.MustCompile(`^\d*[<>]+`)
+	rpmPkgManager       = pkgManager{
+		libc:   platform.Glibc,
+		subcmd: "install",
+		valueFlags: []string{
+			"-c", "--config", "-e", "--errorlevel", "-d", "--debuglevel", "--installroot",
+			"--enablerepo", "--disablerepo", "--repo", "--repoid", "--exclude", "-x",
+			"--disableexcludes", "--setopt", "--releasever", "--forcearch",
+			"--repofrompath", "--enableplugin", "--disableplugin",
+		},
+	}
+	pkgManagers = map[string]pkgManager{
+		"yum":      rpmPkgManager,
+		"dnf":      rpmPkgManager,
+		"microdnf": rpmPkgManager,
+		"apk": {
+			libc:   platform.Musl,
+			subcmd: "add",
+			valueFlags: []string{
+				"-t", "--virtual", "-p", "--root", "-X", "--repository", "--keys-dir",
+				"--repositories-file", "--arch", "--cache-dir", "--wait",
+			},
+		},
+	}
+)
+
+// parsePackageManagerCommands extracts system package names from a shell script
+// for the target libc (yum/dnf/microdnf install on glibc, apk add on musl).
+func parsePackageManagerCommands(script string, libc platform.LibcImpl) []string {
+	cleaned := shellCommentPat.ReplaceAllString(lineContinuationPat.ReplaceAllString(script, " "), "")
+	var deps []string
+	for _, segment := range shellCommandSepPat.Split(cleaned, -1) {
+		tokens, err := shlex.Split(segment)
+		if err != nil {
+			tokens = strings.Fields(segment)
+		}
+		pmIdx := slices.IndexFunc(tokens, func(t string) bool {
+			_, ok := pkgManagers[path.Base(t)]
+			return ok
+		})
+		if pmIdx < 0 {
+			continue
+		}
+		pm := pkgManagers[path.Base(tokens[pmIdx])]
+		if pm.libc != libc {
+			continue
+		}
+		seenSubcmd := false
+		for i := pmIdx + 1; i < len(tokens); i++ {
+			arg := tokens[i]
+			if shellRedirectPat.MatchString(arg) {
+				if shellRedirectPat.ReplaceAllString(arg, "") == "" {
+					i++
+				}
+				continue
+			}
+			if strings.HasPrefix(arg, "-") {
+				if slices.Contains(pm.valueFlags, arg) && i+1 < len(tokens) {
+					i++
+				}
+				continue
+			}
+			if !seenSubcmd {
+				seenSubcmd = arg == pm.subcmd
+				continue
+			}
+			if pkg := cleanPackageToken(arg); pkg != "" {
+				deps = appendUnique(deps, pkg)
 			}
 		}
 	}
-	return false
+	return deps
 }
 
-func selectorPatternApplies(pat string, libc platform.LibcImpl) bool {
-	if isNonLinuxPlatformSelector(pat) || isNonX8664ArchSelector(pat) {
-		return false
+func cleanPackageToken(tok string) string {
+	if strings.Contains(tok, "/") {
+		return ""
 	}
-	if libc == platform.Glibc && strings.Contains(pat, "musllinux") && !strings.Contains(pat, "manylinux") {
-		return false
+	switch path.Ext(tok) {
+	case ".rpm", ".deb", ".apk":
+		return ""
 	}
-	if libc == platform.Musl && strings.Contains(pat, "manylinux") && !strings.Contains(pat, "musllinux") {
-		return false
+	if idx := strings.IndexAny(tok, "=<>~@"); idx > 0 {
+		tok = tok[:idx]
 	}
-	return true
-}
-
-func isNonLinuxPlatformSelector(pat string) bool {
-	for _, nonLinux := range []string{"macos", "macosx", "win32", "win_amd64", "win_arm64", "windows", "-ios", "ios_", "pyodide"} {
-		if strings.Contains(pat, nonLinux) {
-			return true
-		}
+	if strings.ContainsAny(tok, "$`<>();&|*{}! \t") {
+		return ""
 	}
-	return false
-}
-
-func isNonX8664ArchSelector(pat string) bool {
-	if strings.Contains(pat, "x86_64") || strings.Contains(pat, "amd64") {
-		return false
-	}
-	for _, arch := range []string{"i686", "aarch64", "arm64", "armv7l", "ppc64le", "s390x", "riscv64"} {
-		if strings.Contains(pat, arch) {
-			return true
-		}
-	}
-	return false
+	return tok
 }
