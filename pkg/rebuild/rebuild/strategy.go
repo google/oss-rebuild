@@ -5,8 +5,12 @@ package rebuild
 
 import (
 	"fmt"
+	"io/fs"
 	"path"
+	"regexp"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/pkg/errors"
 )
@@ -28,6 +32,27 @@ type Location struct {
 	Ref        string      `json:"ref" yaml:"ref"`
 	Dir        string      `json:"dir" yaml:"dir,omitempty"`
 	Submodules []Submodule `json:"submodules,omitempty" yaml:"submodules,omitempty"`
+}
+
+// dirPattern admits only characters that reflect a "normal" dir.
+// TODO: Quote dirs in build script templates and admit any quotable dir.
+var dirPattern = regexp.MustCompile(`^[\w.@+][\w.@+/-]*$`)
+
+// Validate rejects directories that could escape the checkout or alter the
+// build script they're interpolated into. Dirs come from registry metadata and
+// repo trees, both controlled by the package author.
+func (l Location) Validate() error {
+	if l.Dir != "" && (!fs.ValidPath(l.Dir) || !dirPattern.MatchString(l.Dir)) {
+		return errors.Errorf("invalid dir: %q", l.Dir)
+	}
+	for _, s := range l.Submodules {
+		// Submodule dirs are only interpolated single-quoted and real ones contain
+		// spaces and parentheses, so only quotes and control characters are unsafe.
+		if !fs.ValidPath(s.Dir) || strings.ContainsFunc(s.Dir, func(r rune) bool { return r == '\'' || unicode.IsControl(r) }) {
+			return errors.Errorf("invalid submodule dir: %q", s.Dir)
+		}
+	}
+	return nil
 }
 
 // DirOf returns the directory containing the repo-relative file path p for use
