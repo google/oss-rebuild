@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/msuozzo/bonsai"
 	py "github.com/msuozzo/bonsai/bonsai-python"
 	"github.com/msuozzo/go-git2"
@@ -280,7 +281,7 @@ func verifySetupPyFile(ctx context.Context, f *git2.File, name, version string) 
 		if !ok || foundName.kind != pyString {
 			continue
 		}
-		editDist := minEditDistance(normalizeName(name), normalizeName(foundName.str))
+		editDist := minEditDistance(pypireg.NormalizedName(name), pypireg.NormalizedName(foundName.str))
 		if editDist >= closest {
 			continue
 		}

@@ -4,9 +4,7 @@
 package parsing
 
 import (
-	re "regexp"
 	"sort"
-	"strings"
 
 	"github.com/msuozzo/go-git2"
 )
@@ -88,10 +86,4 @@ func sortVerifications(verifications []fileVerification) []fileVerification {
 	})
 
 	return verifications
-}
-
-func normalizeName(name string) string {
-	// Normalizes a package name according to PEP 503.
-	normalized := re.MustCompile(`[-_.]+`).ReplaceAllString(name, "-")
-	return strings.ToLower(normalized)
 }

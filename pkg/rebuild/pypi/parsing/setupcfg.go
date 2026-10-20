@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/oss-rebuild/pkg/ini"
+	pypireg "github.com/google/oss-rebuild/pkg/registry/pypi"
 	"github.com/msuozzo/go-git2"
 	"github.com/pkg/errors"
 )
@@ -61,7 +62,7 @@ func verifySetupCfgFile(ctx context.Context, f *git2.File, name, version string)
 	}
 
 	if fn {
-		editDist := minEditDistance(normalizeName(name), normalizeName(foundName))
+		editDist := minEditDistance(pypireg.NormalizedName(name), pypireg.NormalizedName(foundName))
 		verificationResult.levDistance = editDist
 
 		if editDist == 0 {

@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/httpx"
@@ -19,6 +21,16 @@ import (
 )
 
 var registryURL = urlx.MustParse("https://pypi.org")
+
+var nameSeparators = regexp.MustCompile(`[-_.]+`)
+
+// NormalizedName returns a project name as PEP 503 normalizes it, "lowercased
+// with all runs of the characters ., -, or _ replaced with a single -
+// character", under which "Flit.Core" and "flit_core" are the same project.
+// https://peps.python.org/pep-0503/#normalized-names
+func NormalizedName(name string) string {
+	return strings.ToLower(nameSeparators.ReplaceAllString(name, "-"))
+}
 
 // Project describes a single PyPi project with multiple releases.
 type Project struct {
