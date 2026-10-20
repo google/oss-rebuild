@@ -1238,6 +1238,65 @@ version = 3
 				}
 			},
 		},
+		{
+			name: "library with Cargo.lock raises floor to 1.84.0",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2025-01-12T00:00:00Z"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":""}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML + "\n[package]\nname = \"serde\"\nversion = \"1.0.150\"\nautolib = false\nautobins = false\nautoexamples = false\n")},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml.orig"}, Body: []byte("[package]\nname = \"serde\"\nversion = \"1.0.150\"\n")},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.lock"}, Body: []byte("version = 3\n")},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "",
+					},
+					RustVersion: "1.84.0",
+				}
+			},
+		},
+		{
+			name: "library without Cargo.lock before 1.87 caps at 1.83.0",
+			repo: `commits:
+  - id: version-bump
+    files:
+      Cargo.toml: |
+        [package]
+        name = "serde"
+        version = "1.0.150"
+`,
+			metadata: `{"version":{"num":"1.0.150","dl_path":"/api/v1/crates/serde/1.0.150/download","created_at":"2025-03-01T00:00:00Z"}}`,
+			filesFn: func(repo *gitxtest.Repository) []archive.TarEntry {
+				return []archive.TarEntry{
+					{Header: &tar.Header{Name: "serde-1.0.150/.cargo_vcs_info.json"}, Body: []byte(`{"git":{"sha1":"` + repo.Commits["version-bump"].String() + `"},"path_in_vcs":""}`)},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml"}, Body: []byte(post150CargoTOML + "\n[package]\nname = \"serde\"\nversion = \"1.0.150\"\nautolib = false\nautobins = false\nautoexamples = false\n")},
+					{Header: &tar.Header{Name: "serde-1.0.150/Cargo.toml.orig"}, Body: []byte("[package]\nname = \"serde\"\nversion = \"1.0.150\"\n")},
+				}
+			},
+			wantFn: func(repo *gitxtest.Repository) rebuild.Strategy {
+				return &CratesIOCargoPackage{
+					Location: rebuild.Location{
+						Repo: "https://github.com/serde-rs/serde",
+						Ref:  repo.Commits["version-bump"].String(),
+						Dir:  "",
+					},
+					RustVersion: "1.83.0",
+				}
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -1398,9 +1457,11 @@ func TestLockfileRustVersionFloor(t *testing.T) {
 		want          string
 	}{
 		{formatVersion: 0, want: ""},
-		{formatVersion: 2, want: ""},
+		{formatVersion: 1, want: ""},
+		{formatVersion: 2, want: "1.41.0"},
 		{formatVersion: 3, want: "1.47.0"},
 		{formatVersion: 4, want: "1.78.0"},
+		{formatVersion: 5, want: "1.78.0"},
 	} {
 		if got, _ := inferRustVersionBounds(crateProps{LockfileVersion: tc.formatVersion}); got != tc.want {
 			t.Errorf("inferRustVersionBounds(LockfileVersion=%d) lo = %q, want %q", tc.formatVersion, got, tc.want)
