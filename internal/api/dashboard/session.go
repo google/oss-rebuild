@@ -219,7 +219,7 @@ func classifyExec(cmd []string) classifiedExec {
 		case strings.HasPrefix(script, "set -eu\ndie() {"):
 			c.label = "diff"
 		default:
-			return classifiedExec{class: execToolHost, script: script}
+			return classifiedExec{class: execToolHost, script: hostToolCommand(script)}
 		}
 		if m := buildsDirPattern.FindAllStringSubmatch(script, -1); m != nil {
 			c.buildID = m[len(m)-1][1]
@@ -227,6 +227,17 @@ func classifyExec(cmd []string) classifiedExec {
 		return c
 	}
 	return classifiedExec{class: execOther, script: strings.Join(cmd, " ")}
+}
+
+// hostToolCommand unwraps the model's command from run_on_host's output
+// envelope (internal/agent detachOutput). Other scripts return as is.
+func hostToolCommand(script string) string {
+	if body, ok := strings.CutPrefix(script, "( "); ok {
+		if i := strings.LastIndex(body, "\n) >/tmp/.rb-tool-"); i >= 0 {
+			return body[:i]
+		}
+	}
+	return script
 }
 
 // BuildStep is one machinery dispatch of a build attempt.
