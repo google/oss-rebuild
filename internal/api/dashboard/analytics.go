@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 )
@@ -76,18 +75,4 @@ const asOfLayout = "2006-01-02 15:04:05 MST"
 // asOf formats an Analytics' freshness for page footers.
 func asOf(a Analytics) string {
 	return a.Freshness().Format(asOfLayout)
-}
-
-// rolledUpAt formats the last rollup's watermark. Deltas advance only the doc
-// tables, so a derived figure is as old as this, not as asOf.
-func rolledUpAt(a Analytics) (string, error) {
-	var m snapshot.Meta
-	err := a.Query(func(db *sqlite3.Conn) (err error) {
-		m, err = snapshot.ReadMeta(db)
-		return err
-	})
-	if err != nil {
-		return "", errors.Wrap(err, "reading the rollup watermark")
-	}
-	return m.Watermark.Format(asOfLayout), nil
 }

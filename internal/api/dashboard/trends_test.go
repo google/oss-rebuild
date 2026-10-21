@@ -19,8 +19,6 @@ import (
 
 func coverageFixture(t *testing.T) memAnalytics {
 	return newMemAnalytics(t,
-		`CREATE TABLE coverage_weekly (ecosystem TEXT, week TEXT, packages_attempted INT, packages_current INT, packages_stale INT, coverage REAL, weighted_coverage REAL, newly_broken INT)`,
-		`INSERT INTO coverage_weekly VALUES ('npm', '2026-08-24', 10, 6, 2, 0.6, 0.75, 1), ('npm', '2026-08-31', 12, 9, 1, 0.75, 0.9, 0), ('maven', '2026-08-31', 4, 4, 0, 1.0, NULL, 0)`,
 		`CREATE TABLE signal_coverage (ecosystem TEXT, universe_packages INT, universe_mass REAL, tracked_packages INT, tracked_mass REAL, attempted_packages INT, attempted_mass REAL, current_packages INT, current_mass REAL, retrying_packages INT, in_flight_packages INT, queued_packages INT, covered_mass_share REAL, sidecar_built_at TEXT)`,
 		`INSERT INTO signal_coverage VALUES ('npm', 300, 100.0, 13, 3.0, 11, 2.8, 9, 2.5, 1, 1, 1, 0.025, ''), ('pypi', 4000, 100.0, 0, 0.0, 0, 0.0, 0, 0.0, 0, 0, 0, 0.0, '')`,
 		`CREATE TABLE snapshot_meta (built_at TEXT, watermark TEXT, source_project TEXT, tool_version TEXT)`,
@@ -70,7 +68,6 @@ var (
 
 // coverageOverview is the band coverageFixture yields.
 var coverageOverview = &Overview{
-	AsOf:  "2026-08-31 23:00:00 UTC",
 	Total: EcoBand{Ecosystem: "All ecosystems", InScope: 13, Attempted: 11, Reproduced: 9, Retrying: 1, InFlight: 1, Queued: 1},
 	Ecos: []EcoBand{
 		{Ecosystem: "npm", InScope: 13, Attempted: 11, Reproduced: 9, Retrying: 1, InFlight: 1, Queued: 1, EverBuilt: 2, Growth: [][2]int64{
@@ -91,7 +88,6 @@ func TestCoveragePage(t *testing.T) {
 		HasQueue: true, Queued: 1, InFlight: 1, Done: 4, NeedsTriage: 1,
 		DoneByStage: []StageDone{{Stage: scheduler.StageReplay, Done: 1}, {Stage: scheduler.StageInfer}, {Stage: scheduler.StageAgent, Done: 3, LLMDone: 1}},
 	}
-	maven := CoverageEco{Ecosystem: "maven"}
 	pypi := CoverageEco{Ecosystem: "pypi", HasScope: true}
 	for _, tc := range []struct {
 		name string
@@ -100,7 +96,7 @@ func TestCoveragePage(t *testing.T) {
 	}{
 		{
 			name: "Comparison",
-			want: CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecos: []CoverageEco{maven, npm, pypi}, Overview: coverageOverview,
+			want: CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecos: []CoverageEco{npm, pypi}, Overview: coverageOverview,
 				Tiers: []EcoTiers{npmTiers, pypiTiers}, Releases: &Releases{Years: releaseYears, Ecos: []EcoReleases{npmReleases, pypiReleases}}, Spend: coverageSpend(mavenSpend, npmSpend)},
 		},
 		{
@@ -109,14 +105,14 @@ func TestCoveragePage(t *testing.T) {
 			want: func() CoverageData {
 				detail := npm
 				// npm's tab keeps its cohorts and its share of all spend.
-				return CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Eco: "npm", Ecos: []CoverageEco{maven, detail, pypi}, Detail: &detail, Overview: coverageOverview,
+				return CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Eco: "npm", Ecos: []CoverageEco{detail, pypi}, Detail: &detail, Overview: coverageOverview,
 					Tiers: []EcoTiers{npmTiers}, Releases: &Releases{Years: releaseYears, Ecos: []EcoReleases{npmReleases}}, Spend: coverageSpend(npmSpend)}
 			}(),
 		},
 		{
 			name: "UnknownTabFallsBack",
 			req:  CoverageRequest{Eco: "cratesio"},
-			want: CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecos: []CoverageEco{maven, npm, pypi}, Overview: coverageOverview,
+			want: CoverageData{Loaded: true, AsOf: "2026-09-01 00:00:00 UTC", Ecos: []CoverageEco{npm, pypi}, Overview: coverageOverview,
 				Tiers: []EcoTiers{npmTiers, pypiTiers}, Releases: &Releases{Years: releaseYears, Ecos: []EcoReleases{npmReleases, pypiReleases}}, Spend: coverageSpend(mavenSpend, npmSpend)},
 		},
 	} {

@@ -27,7 +27,7 @@ type Section struct {
 // Frame is what the layout shows around every page's content.
 type Frame struct {
 	Sections []Section // nil renders the sections without figures
-	AsOf     string    // the snapshot's rollup watermark
+	AsOf     string    // the snapshot's freshness
 }
 
 const (
@@ -98,10 +98,7 @@ func loadFrame(ctx context.Context, snapshot api.HandlerFn[frameRequest, Frame, 
 
 func loadSnapshotFrame(a Analytics) (Frame, error) {
 	f := Frame{Sections: append([]Section(nil), sections...)}
-	var err error
-	if f.AsOf, err = rolledUpAt(a); err != nil {
-		return f, err
-	}
+	f.AsOf = asOf(a)
 	r, err := loadReproduced(a)
 	if err != nil {
 		return f, err

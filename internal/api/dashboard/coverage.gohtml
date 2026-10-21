@@ -9,7 +9,7 @@
 <p>No analytics snapshot loaded. Start the dashboard with
 <code>-rundex=&lt;gs://…|file://…&gt;</code>.</p>
 {{else}}
-<p class="asof">{{with .Overview}}Package counts from the rollup at {{.AsOf}}. {{end}}Rebuild progress as of {{.AsOf}}.</p>
+<p class="asof">Rebuild progress as of {{.AsOf}}.</p>
 <div class="tabs">
     <a class="tab{{if not .Eco}} active{{end}}" href="/coverage">All</a>
     {{$sel := .Eco}}

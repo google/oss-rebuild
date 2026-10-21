@@ -149,9 +149,8 @@ func loadCoverage(a Analytics) (*CoverageData, error) {
 		}
 		return byEco[name]
 	}
-	// Ecosystems with attempts but no signals or campaigns still get a tab
-	// for their weekly funnel.
-	err = forEachRow(a, `SELECT DISTINCT ecosystem FROM coverage_weekly`,
+	// Ecosystems with attempts but no signals or campaigns still get a tab.
+	err = forEachRow(a, `SELECT DISTINCT ecosystem FROM version_stats`,
 		func(stmt *sqlite3.Stmt) error {
 			eco(stmt.ColumnText(0))
 			return nil
