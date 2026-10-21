@@ -464,6 +464,66 @@ LEFT JOIN ranked la ON la.ecosystem = g.ecosystem AND la.package = g.package AND
 LEFT JOIN ranked_ok ls ON ls.ecosystem = g.ecosystem AND ls.package = g.package AND ls.rn = 1
 ORDER BY 1, 2`
 
+// The scopes below let a delta refresh the derived tables keyed by package
+// or by source row in proportion to its size. The rows its documents reach
+// are deleted and re-derived with the doc tables narrowed to what those rows
+// read. The other derived tables re-derive whole, except coverage_weekly,
+// which waits for the whole build.
+// ecosystem_daily is among the whole ones. Its rows are per day, and a day
+// holds a large share of the completed builds, so a scope would save little.
+// touched_<table> holds the keys of the documents a delta applied.
+
+// touchedAttempt selects the attempts a delta applied.
+const touchedAttempt = `(ecosystem, package, version, artifact, run_id) IN (SELECT ecosystem, package, version, artifact, run_id FROM touched_attempts)`
+
+// touchedScratchesKey selects the scratches whose cost rows a delta reaches,
+// which are the scratches it applied and those its sessions link, since a
+// scratch's target comes through its session.
+const touchedScratchesKey = `
+SELECT scratch_id FROM touched_scratch_vms
+UNION SELECT scratch_id FROM main.agent_sessions
+	WHERE scratch_id IS NOT NULL AND session_id IN (SELECT session_id FROM touched_agent_sessions)`
+
+// costObservationsScope keys cost_observations by its source row.
+var costObservationsScope = docdb.Scope{
+	Keys: []docdb.Key{{Name: "scratches", Query: touchedScratchesKey}},
+	// The attempt arm names the package first, for the index the delete
+	// seeks by.
+	Rows: `(source = '` + ObservationSourceAttempt + `' AND (ecosystem, package) IN (SELECT ecosystem, package FROM touched_attempts) AND ` + touchedAttempt + `)
+		OR (source = '` + ObservationSourceSession + `' AND session_id IN (SELECT session_id FROM touched_agent_sessions))
+		OR (source = '` + ObservationSourceScratch + `' AND scratch_id IN (SELECT scratch_id FROM touched_scratches))`,
+	Views: []docdb.View{
+		{Table: TableAttempts, Query: "SELECT * FROM main.attempts WHERE " + touchedAttempt},
+		{Table: TableAgentSessions, Query: `SELECT * FROM main.agent_sessions
+			WHERE session_id IN (SELECT session_id FROM touched_agent_sessions) OR scratch_id IN (SELECT scratch_id FROM touched_scratches)`},
+		{Table: TableScratchVMs, Query: "SELECT * FROM main.scratch_vms WHERE scratch_id IN (SELECT scratch_id FROM touched_scratches)"},
+	},
+}
+
+// touchedPackagesKey selects the packages whose completed builds, sessions
+// or campaigns a delta applied.
+const touchedPackagesKey = `
+SELECT ecosystem, package FROM touched_attempts
+UNION SELECT ecosystem, package FROM main.agent_sessions
+	WHERE session_id IN (SELECT session_id FROM touched_agent_sessions UNION SELECT session_id FROM touched_agent_iterations)
+UNION SELECT ecosystem, package FROM touched_campaigns`
+
+const inTouchedPackages = `(ecosystem, package) IN (SELECT ecosystem, package FROM touched_packages)`
+
+// packageScope keys version_stats and package_stats by package. Every CTE of
+// theirs groups or partitions within one, so a package's rows derive from
+// its own documents alone.
+var packageScope = docdb.Scope{
+	Keys: []docdb.Key{{Name: "packages", Query: touchedPackagesKey}},
+	Rows: inTouchedPackages,
+	Views: []docdb.View{
+		{Table: TableAttempts, Query: "SELECT * FROM main.attempts WHERE " + inTouchedPackages},
+		{Table: TableAgentSessions, Query: "SELECT * FROM main.agent_sessions WHERE " + inTouchedPackages},
+		{Table: TableAgentIterations, Query: "SELECT * FROM main.agent_iterations WHERE session_id IN (SELECT session_id FROM main.agent_sessions WHERE " + inTouchedPackages + ")"},
+		{Table: TableCampaigns, Query: "SELECT * FROM main.campaigns WHERE " + inTouchedPackages},
+	},
+}
+
 // Tables is the registry of snapshot tables and the single declaration of
 // the snapshot schema, in build order: doc tables first, then the derived
 // tables that query them. Nothing about an entity exists outside its raw
@@ -574,7 +634,7 @@ func Tables() []docdb.TableDef {
 				{Name: "model", Type: "TEXT", Expr: docdb.Raw("$.Usage.model")},
 				{Name: "created", Type: "TEXT", Expr: docdb.RawTime("$.Created"), Stored: true},
 			},
-			Indexes: [][]string{{"ecosystem", "package", "version"}, {"created"}},
+			Indexes: [][]string{{"ecosystem", "package", "version"}, {"created"}, {"scratch_id"}},
 		},
 		{
 			Name: TableAgentIterations,
@@ -714,14 +774,16 @@ func Tables() []docdb.TableDef {
 				{Name: "sidecar_built_at", Type: "TEXT", Expr: docdb.RawTime("$.SidecarBuiltAt")},
 			},
 		},
-		{Name: TableCostObservations, Query: costObservationsQuery, Indexes: [][]string{{"ecosystem", "package"}, {"source"}, {"timestamp"}}},
-		{Name: TableVersionStats, Query: versionStatsQuery, Indexes: [][]string{{"ecosystem", "package", "version"}, {"last_attempted_at"}}},
+		{Name: TableCostObservations, Query: costObservationsQuery, Scope: &costObservationsScope, Indexes: [][]string{{"ecosystem", "package"}, {"source"}, {"timestamp"}}},
+		{Name: TableVersionStats, Query: versionStatsQuery, Scope: &packageScope, Indexes: [][]string{{"ecosystem", "package", "version"}, {"last_attempted_at"}}},
 		{Name: TableEcosystemDaily, Query: ecosystemDailyQuery, Indexes: [][]string{{"ecosystem", "day"}}},
-		{Name: TableCoverageWeekly, Query: coverageWeeklyQuery, Indexes: [][]string{{"ecosystem", "week"}}},
+		// coverage_weekly folds every week against every version, which only
+		// the whole build affords, and a week's figures can wait for it.
+		{Name: TableCoverageWeekly, Query: coverageWeeklyQuery, Scope: docdb.Unrefreshed, Indexes: [][]string{{"ecosystem", "week"}}},
 		{Name: TableTopGaps, Query: topGapsQuery, Indexes: [][]string{{"ecosystem"}}},
 		{Name: TableSignalCoverage, Query: signalCoverageQuery},
 		{Name: TablePopularityTiers, Query: popularityTiersQuery, Indexes: [][]string{{"ecosystem"}}},
 		{Name: TableReleaseCohorts, Query: releaseCohortsQuery, Indexes: [][]string{{"ecosystem"}}},
-		{Name: TablePackageStats, Query: packageStatsQuery, Indexes: [][]string{{"ecosystem", "package"}}},
+		{Name: TablePackageStats, Query: packageStatsQuery, Scope: &packageScope, Indexes: [][]string{{"ecosystem", "package"}}},
 	}
 }
