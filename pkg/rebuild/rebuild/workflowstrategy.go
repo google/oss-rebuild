@@ -34,6 +34,9 @@ var _ Strategy = &WorkflowStrategy{}
 
 // GenerateFor generates the instructions for a WorkflowStrategy.
 func (s *WorkflowStrategy) GenerateFor(t Target, be BuildEnv) (Instructions, error) {
+	if err := s.Location.Validate(); err != nil {
+		return Instructions{}, err
+	}
 	var outputPath string
 	if (s.OutputDir != "") && (s.OutputPath != "") {
 		return Instructions{}, errors.New("only one of OutputPath and OutputDir may be provided")
