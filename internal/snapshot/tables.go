@@ -540,6 +540,8 @@ func Tables() []docdb.TableDef {
 						" THEN round((julianday(updated) - julianday(created)) * 86400.0, 3) ELSE 0.0 END"},
 			},
 		},
+		// TODO: Remove at the next SchemaVersion bump. Rollup leaves this
+		// table empty and it remains only to preserve the v1 shape.
 		{
 			Name: TableScratchExecs,
 			Cols: []docdb.Col{

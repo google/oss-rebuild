@@ -123,7 +123,7 @@ func fill(t *testing.T, src *fakeSource) (*sqlite3.Conn, map[string]int) {
 		TableAgentSessions:   fixture(src.sessions),
 		TableAgentIterations: fixture(src.iterations),
 		TableScratchVMs:      fixture(src.scratches),
-		TableScratchExecs:    fixture(src.execs),
+		TableScratchExecs:    fixture([]schema.ScratchExec(nil)),
 		TableRepoMetrics:     fixture(src.repoMetrics),
 		TableCampaigns:       fixture(src.campaigns),
 		TablePackageSignals:  fixture(src.signals),
@@ -158,11 +158,6 @@ func TestFillSnapshotDB(t *testing.T) {
 		scratches: []schema.Scratch{
 			{ID: "sc1", MachineClass: schema.MachineClassStandard, State: schema.ScratchDeleted, Created: at(0), Updated: at(10 * time.Minute)},
 		},
-		execs: []schema.ScratchExec{
-			{ID: "e1", ScratchID: "sc1", Cmd: []string{"go", "build"}, State: schema.ScratchExecCompleted,
-				CreatedAt: at(0), StartedAt: at(time.Minute), FinishedAt: at(2 * time.Minute), Updated: at(2 * time.Minute)},
-			{ID: "e2", ScratchID: "sc1", State: schema.ScratchExecLost, CreatedAt: at(0), FinishedAt: at(time.Minute), Updated: at(time.Minute)},
-		},
 		repoMetrics: []schema.RepoMetrics{
 			{URI: "https://github.com/example/pkgA", Bytes: 4096, Commits: 12},
 		},
@@ -183,10 +178,6 @@ func TestFillSnapshotDB(t *testing.T) {
 	assertCount(t, db, "SELECT count(*) FROM scratch_vms WHERE scratch_id='sc1' AND vm_seconds=600.0", "1")
 	assertCount(t, db, `SELECT count(*) FROM repo_metrics
 		WHERE uri='https://github.com/example/pkgA' AND bytes=4096 AND commits=12`, "1")
-	// The exec span derives from the worker clocks. A lost exec never
-	// started, so its span is unmeasured rather than zero.
-	assertCount(t, db, "SELECT count(*) FROM scratch_execs WHERE exec_id='e1' AND scratch_id='sc1' AND exec_seconds=60.0", "1")
-	assertCount(t, db, "SELECT count(*) FROM scratch_execs WHERE exec_id='e2' AND state='lost' AND exec_seconds IS NULL", "1")
 	// Derived tables materialize and join on shared keys, with counts
 	// reported (2 attempt + 1 session + 1 scratch observations).
 	if counts[TableCostObservations] != 4 {

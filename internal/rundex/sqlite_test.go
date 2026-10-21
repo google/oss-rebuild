@@ -48,9 +48,6 @@ func (s *snapshotSource) Iterations(context.Context, time.Time) iter.Seq2[schema
 func (s *snapshotSource) Scratches(context.Context, time.Time) iter.Seq2[schema.Scratch, error] {
 	return iterx.FromSlice[schema.Scratch](nil)
 }
-func (s *snapshotSource) Execs(context.Context, time.Time) iter.Seq2[schema.ScratchExec, error] {
-	return iterx.FromSlice[schema.ScratchExec](nil)
-}
 func (s *snapshotSource) RepoMetrics(context.Context, time.Time) iter.Seq2[schema.RepoMetrics, error] {
 	return iterx.FromSlice[schema.RepoMetrics](nil)
 }
