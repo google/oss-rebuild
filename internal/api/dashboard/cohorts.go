@@ -5,9 +5,11 @@ package dashboard
 
 import (
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/google/oss-rebuild/internal/snapshot"
 	"github.com/ncruces/go-sqlite3"
 	"github.com/pkg/errors"
 )
@@ -181,10 +183,26 @@ const (
 	builderCoreHPerSecond = 0.012 / 60 / coreHourUSD
 	inferCoreHPerSecond   = (4*0.000018 + 16*0.000002) / coreHourUSD
 	guestCoreHPerSecond   = 4.0 / 3600
-	inputCoreHPerToken    = 0.75e-6 / coreHourUSD
-	cachedCoreHPerToken   = 0.075e-6 / coreHourUSD
-	outputCoreHPerToken   = 3.75e-6 / coreHourUSD
 )
+
+// tokenUSD is a model's list price per token.
+type tokenUSD struct{ input, cached, output float64 }
+
+// tokenPrices holds the agent models' prices. A model not listed is priced
+// as gemini-3.7-flash.
+var tokenPrices = map[string]tokenUSD{
+	"gemini-3.7-flash": {input: 0.75e-6, cached: 0.075e-6, output: 3.75e-6},
+	"gemini-4-argon":   {input: 2e-6, cached: 0.1e-6, output: 10e-6},
+}
+
+// llmCoreHours is model's token usage in core-hours. input includes cached.
+func llmCoreHours(model string, input, cached, output float64) float64 {
+	p, ok := tokenPrices[model]
+	if !ok {
+		p = tokenPrices["gemini-3.7-flash"]
+	}
+	return ((input-cached)*p.input + cached*p.cached + output*p.output) / coreHourUSD
+}
 
 // EcoSpend is what an ecosystem spent over the spend window in core-hours,
 // and the versions it reproduced for the first time.
@@ -218,21 +236,18 @@ func loadSpend(a Analytics) (*Spend, error) {
 	err := forEachRow(a, `
 		WITH bounds AS (SELECT max(day) AS last FROM ecosystem_daily WHERE day != '')
 		SELECT ecosystem, date(last, '-`+strconv.Itoa(spendDays-1)+` days'), last,
-			sum(builder_seconds), sum(inference_seconds), sum(scratch_vm_seconds),
-			sum(input_tokens), sum(cached_input_tokens), sum(output_tokens), sum(first_version_successes)
+			sum(builder_seconds), sum(inference_seconds), sum(scratch_vm_seconds), sum(first_version_successes)
 		FROM ecosystem_daily, bounds
 		WHERE day != '' AND day >= date(last, '-`+strconv.Itoa(spendDays-1)+` days')
 		GROUP BY 1 ORDER BY 1`,
 		func(stmt *sqlite3.Stmt) error {
 			s.From, s.To = stmt.ColumnText(1), stmt.ColumnText(2)
-			input, cached := stmt.ColumnFloat(6), stmt.ColumnFloat(7)
 			s.Ecos = append(s.Ecos, EcoSpend{
 				Ecosystem:   stmt.ColumnText(0),
 				Builder:     stmt.ColumnFloat(3) * builderCoreHPerSecond,
 				Inference:   stmt.ColumnFloat(4) * inferCoreHPerSecond,
 				Guests:      stmt.ColumnFloat(5) * guestCoreHPerSecond,
-				LLM:         (input-cached)*inputCoreHPerToken + cached*cachedCoreHPerToken + stmt.ColumnFloat(8)*outputCoreHPerToken,
-				NewVersions: stmt.ColumnInt64(9),
+				NewVersions: stmt.ColumnInt64(6),
 			})
 			return nil
 		})
@@ -241,6 +256,24 @@ func loadSpend(a Analytics) (*Spend, error) {
 	}
 	if len(s.Ecos) == 0 {
 		return nil, nil
+	}
+	// Tokens are priced per model, which ecosystem_daily does not keep.
+	err = forEachRow(a, `
+		WITH bounds AS (SELECT max(day) AS last FROM ecosystem_daily WHERE day != '')
+		SELECT ecosystem, model, sum(input_tokens), sum(cached_input_tokens), sum(output_tokens)
+		FROM cost_observations, bounds
+		WHERE source = '`+snapshot.ObservationSourceSession+`'
+			AND timestamp >= date(last, '-`+strconv.Itoa(spendDays-1)+` days') AND timestamp < date(last, '+1 day')
+		GROUP BY 1, 2`,
+		func(stmt *sqlite3.Stmt) error {
+			eco := stmt.ColumnText(0)
+			if i := slices.IndexFunc(s.Ecos, func(e EcoSpend) bool { return e.Ecosystem == eco }); i >= 0 {
+				s.Ecos[i].LLM += llmCoreHours(stmt.ColumnText(1), stmt.ColumnFloat(2), stmt.ColumnFloat(3), stmt.ColumnFloat(4))
+			}
+			return nil
+		})
+	if err != nil {
+		return nil, errors.Wrap(err, "querying token spend")
 	}
 	var all float64
 	for _, e := range s.Ecos {
