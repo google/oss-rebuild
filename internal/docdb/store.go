@@ -35,9 +35,10 @@ import (
 // real columns extracted from each written document, an implicit raw column
 // holding the document, and optionally GenCols computed from raw) or a
 // derived table (Query set: a SELECT over the database's other tables,
-// materialized by StoreQuery). Indexes lists the column sets to index after
-// load. A real column named updated becomes the upsert guard clock, and
-// without one replays are last-write-wins.
+// materialized by StoreQuery and, after a segment applies, re-derived
+// within its Scope or whole without one). Indexes lists the column sets to
+// index after load. A real column named updated becomes the upsert guard
+// clock, and without one replays are last-write-wins.
 // NOTE: Names and expressions are trusted SQL fragments. They should be
 // exclusively sourced from compile-time registries.
 type TableDef struct {
@@ -47,6 +48,7 @@ type TableDef struct {
 	GenCols []GenCol
 	Query   string
 	Indexes [][]string
+	Scope   *Scope
 }
 
 // Col is a real column of a doc table, extracted from the bound document by
@@ -165,6 +167,9 @@ func validateTable(td TableDef) error {
 	}
 	if td.Query != "" && (len(td.PK) > 0 || len(td.GenCols) > 0) {
 		return errors.Errorf("table %s: derived tables take neither primary keys nor generated columns", td.Name)
+	}
+	if td.Scope != nil && (td.Query == "" || td.Scope.Rows == "") {
+		return errors.Errorf("table %s: a scope selects a derived table's rows", td.Name)
 	}
 	if len(td.Cols) > 0 && len(td.PK) == 0 {
 		return errors.Errorf("table %s: doc tables require a primary key", td.Name)

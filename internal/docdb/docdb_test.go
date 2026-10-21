@@ -642,3 +642,74 @@ func TestCacheReplaysSegmentsInOrder(t *testing.T) {
 		t.Errorf("freshness = %v, want the last segment", c.Freshness())
 	}
 }
+
+func TestScopedDerive(t *testing.T) {
+	dest := testDest(t)
+	// key_lengths is keyed by the document key, which a rewrite cannot
+	// change, so a touched document reaches exactly its own row.
+	// message_counts has no scope and re-derives whole.
+	scoped := TableDef{
+		Name:  "key_lengths",
+		Query: "SELECT key, length(message) AS n FROM gen_probe",
+		Scope: &Scope{
+			Keys:  []Key{{Name: "keys", Query: "SELECT key FROM touched_gen_probe"}},
+			Rows:  "key IN (SELECT key FROM touched_keys)",
+			Views: []View{{Table: probeTable.Name, Query: "SELECT * FROM main.gen_probe WHERE key IN (SELECT key FROM touched_keys)"}},
+		},
+		Indexes: [][]string{{"key"}},
+	}
+	whole := TableDef{Name: "message_counts", Query: "SELECT message, count(*) AS n FROM gen_probe GROUP BY 1"}
+	defs := []TableDef{probeTable, scoped, whole}
+	db := newDB(t)
+	must1(StoreDocs(db, probeTable, []json.RawMessage{probe("k1", "hello", dt(0)), probe("k2", "hi", dt(0))}))
+	must1(ApplyDocs(db, probeTable, nil))
+	if counts := must(Derive(db, defs)); counts["key_lengths"] != 2 || counts["message_counts"] != 2 {
+		t.Fatalf("Derive counts = %v", counts)
+	}
+	// A segment rewrites k1, adds k3, and replays k2 unchanged.
+	name := must(WriteSegment(dest, "deltas", dt(time.Hour), defs, map[string][]json.RawMessage{
+		probeTable.Name: {probe("k1", "goodbye", dt(time.Minute)), probe("k3", "hey", dt(time.Minute)), probe("k2", "hi", dt(0))},
+	}))
+	must1(ApplySegment(db, dest, defs, name))
+	assertCount(t, db, "SELECT n FROM key_lengths WHERE key='k1'", "7")
+	assertCount(t, db, "SELECT n FROM key_lengths WHERE key='k3'", "3")
+	assertCount(t, db, "SELECT count(*) FROM key_lengths", "3")
+	assertCount(t, db, "SELECT count(*) FROM message_counts WHERE message='goodbye' AND n=1", "1")
+	assertCount(t, db, "SELECT count(*) FROM message_counts WHERE message='hello'", "0")
+	// The scoped refresh equals a whole derive, and leaves nothing in the
+	// temp schema behind.
+	must1(db.Exec("ALTER TABLE key_lengths RENAME TO inc_key_lengths; DROP INDEX idx_key_lengths_key"))
+	must(Derive(db, []TableDef{scoped}))
+	assertCount(t, db, "SELECT count(*) FROM (SELECT * FROM key_lengths EXCEPT SELECT * FROM inc_key_lengths)", "0")
+	assertCount(t, db, "SELECT count(*) FROM (SELECT * FROM inc_key_lengths EXCEPT SELECT * FROM key_lengths)", "0")
+	assertCount(t, db, "SELECT count(*) FROM temp.sqlite_schema", "0")
+	// A refresh that fails rolls the documents back with it: a scope with a
+	// bad predicate, and a table built by an earlier definition, without a
+	// column this one derives, so the copy stays as it was until it is
+	// replaced by one built from this definition.
+	bad := must(WriteSegment(dest, "deltas", dt(2*time.Hour), defs, map[string][]json.RawMessage{
+		probeTable.Name: {probe("k4", "late", dt(2*time.Hour))},
+	}))
+	broken := scoped
+	broken.Scope = &Scope{Rows: "no_such_column = 1"}
+	wider := scoped
+	wider.Query = "SELECT key, length(message) AS n, message FROM gen_probe"
+	for name, td := range map[string]TableDef{"broken scope": broken, "older shape": wider} {
+		if err := ApplySegment(db, dest, []TableDef{probeTable, td}, bad); err == nil {
+			t.Fatalf("%s: expected the apply to fail", name)
+		}
+		assertCount(t, db, "SELECT count(*) FROM gen_probe WHERE key='k4'", "0")
+		assertCount(t, db, "SELECT count(*) FROM gen_probe", "3")
+		assertCount(t, db, "SELECT count(*) FROM key_lengths", "3")
+		assertCount(t, db, "SELECT count(*) FROM temp.sqlite_schema", "0")
+	}
+	// A scope needs a derived table and a row predicate.
+	for name, td := range map[string]TableDef{
+		"doc-scope":  {Name: "t", Cols: []Col{{"key", "TEXT", Doc("$.Key")}}, PK: []string{"key"}, Scope: &Scope{Rows: "1"}},
+		"empty-rows": {Name: "t", Query: "SELECT 1", Scope: &Scope{}},
+	} {
+		if err := validateTable(td); err == nil {
+			t.Errorf("%s: expected validation error", name)
+		}
+	}
+}

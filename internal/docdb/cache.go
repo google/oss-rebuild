@@ -33,9 +33,11 @@ const fetchParallelism = 16
 
 // Upstream names the published database a Cache follows: the filesystem
 // holding it, its gzip base object, the prefix its delta segments land
-// under, the doc tables those segments replay into, and the schema era
-// this binary reads. Watermark reads the time through which the base is
-// complete, which is where segment replay resumes.
+// under, the tables those segments replay into and re-derive, and the
+// schema era this binary reads. Watermark reads the time through which the
+// base is complete, which is where segment replay resumes. Init, when set,
+// prepares each opened copy's connection (collations the derived queries
+// need).
 type Upstream struct {
 	FS        billy.Filesystem
 	Object    string
@@ -43,6 +45,7 @@ type Upstream struct {
 	Defs      []TableDef
 	Schema    int
 	Watermark func(*sqlite3.Conn) (time.Time, error)
+	Init      func(*sqlite3.Conn) error
 }
 
 // Cache serves an updated local copy of an upstream database. Contents are
@@ -210,18 +213,16 @@ func (c *Cache) sync() error {
 	if err != nil {
 		return err
 	}
-	for _, s := range segs {
-		c.mu.Lock()
-		err := applyRecords(c.db, c.up.Defs, s.recs)
-		if err == nil {
-			c.applied = s.name
-			c.publishFreshness()
-		}
-		c.mu.Unlock()
-		if err != nil {
-			return errors.Wrapf(err, "applying %s", s.name)
-		}
+	if len(segs) == 0 {
+		return nil
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := applySegments(c.db, c.up.Defs, segs); err != nil {
+		return errors.Wrap(err, "applying segments")
+	}
+	c.applied = segs[len(segs)-1].name
+	c.publishFreshness()
 	return nil
 }
 
@@ -283,6 +284,12 @@ func (c *Cache) unpack(staged, path string) (*sqlite3.Conn, time.Time, error) {
 	if err := db.Exec("PRAGMA synchronous=OFF; PRAGMA journal_mode=MEMORY"); err != nil {
 		db.Close()
 		return nil, time.Time{}, errors.Wrap(err, "configuring local copy")
+	}
+	if c.up.Init != nil {
+		if err := c.up.Init(db); err != nil {
+			db.Close()
+			return nil, time.Time{}, err
+		}
 	}
 	watermark, err := c.up.Watermark(db)
 	if err != nil {

@@ -40,14 +40,16 @@ var (
 // under dest, refreshed in the background every interval until closed. It
 // binds the docdb cache to this schema era: the versioned object and delta
 // names, the table registry, the highest version this binary understands,
-// and the meta row that carries the base watermark.
+// the meta row that carries the base watermark, and the collation the
+// derived queries re-run after each delta.
 func OpenCache(ctx context.Context, dest billy.Filesystem, interval time.Duration) (*docdb.Cache, error) {
 	watermark := func(db *sqlite3.Conn) (time.Time, error) {
 		m, err := ReadMeta(db)
 		return m.Watermark, err
 	}
 	return docdb.OpenCache(ctx, docdb.Upstream{
-		FS: dest, Object: Object, Deltas: DeltaPrefix, Defs: Tables(), Schema: SchemaVersion, Watermark: watermark,
+		FS: dest, Object: Object, Deltas: DeltaPrefix, Defs: Tables(), Schema: SchemaVersion,
+		Watermark: watermark, Init: registerCollations,
 	}, interval)
 }
 
@@ -288,8 +290,8 @@ func buildSnapshotDB(path string, producers docProducers, meta Meta) (map[string
 }
 
 // registerCollations registers the version_approx_compare collation the
-// derived queries use to order version strings. Only build connections need
-// it: derived tables are materialized, so readers never re-run the queries.
+// derived queries use to order version strings. Connections that build or
+// refresh the derived tables need it. Readers do not.
 func registerCollations(db *sqlite3.Conn) error {
 	err := db.CreateCollation("version_approx_compare", func(a, b []byte) int {
 		return versionx.ApproxCompare(string(a), string(b))
@@ -330,23 +332,8 @@ func fillSnapshotDB(db *sqlite3.Conn, producers docProducers, meta Meta) (map[st
 }
 
 // refreshDerived drops and rematerializes every derived table from the doc
-// rows currently in db, in registry order so a derived table may build on
-// an earlier one. Idempotent, so it serves both the one-shot snapshot build
-// and in-place refresh of a locally written database.
+// rows currently in db. Idempotent, so it serves both the one-shot snapshot
+// build and in-place refresh of a locally written database.
 func refreshDerived(db *sqlite3.Conn) (map[string]int, error) {
-	counts := make(map[string]int)
-	for _, td := range Tables() {
-		if td.Query == "" {
-			continue
-		}
-		if err := db.Exec("DROP TABLE IF EXISTS " + td.Name); err != nil {
-			return nil, errors.Wrapf(err, "dropping %s", td.Name)
-		}
-		n, err := docdb.StoreQuery(db, td)
-		if err != nil {
-			return nil, errors.Wrapf(err, "materializing %s", td.Name)
-		}
-		counts[td.Name] = n
-	}
-	return counts, nil
+	return docdb.Derive(db, Tables())
 }
