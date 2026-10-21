@@ -527,7 +527,7 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Location:    defaultLocation,
 				PythonTag:   "cp310",
 				ABITag:      "cp310",
-				PlatformTag: "manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64",
+				PlatformTag: "manylinux_2_28_x86_64.manylinux_2_5_x86_64.manylinux1_x86_64",
 			},
 			rebuild.Instructions{
 				Location: defaultLocation,
@@ -546,7 +546,8 @@ $AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_28_x86_64 -w the_dir/di
 rm -f the_dir/dist/*.whl
 mv the_dir/dist/repaired/*.whl the_dir/dist/
 rm -rf the_dir/dist/repaired
-PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-tag manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64 the_dir/dist/*.whl`,
+PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_28_x86_64.manylinux_2_5_x86_64.manylinux1_x86_64 the_dir/dist/*.whl
+mv the_dir/dist/*.whl the_dir/dist/the_artifact`,
 				Requires: rebuild.RequiredEnv{
 					BaseImage:  "quay.io/pypa/manylinux_2_28_x86_64",
 					SystemDeps: []string{"git"},
