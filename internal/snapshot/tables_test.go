@@ -38,6 +38,30 @@ func attempt(eco, pkg, ver, runID string, success bool, status schema.RebuildSta
 
 func durPtr(d time.Duration) *time.Duration { return &d }
 
+// agentSession builds a completed session for a target, whose iterations
+// carry the artifact the build phase attempts under.
+func agentSession(id, runID string, eco rebuild.Ecosystem, pkg, ver string, created time.Time) schema.AgentSession {
+	return schema.AgentSession{
+		ID:      id,
+		RunID:   runID,
+		Target:  rebuild.Target{Ecosystem: eco, Package: pkg, Version: ver, Artifact: ver + ".whl"},
+		Status:  schema.AgentSessionStatusCompleted,
+		Created: created,
+	}
+}
+
+func agentIteration(sessionID string, number int, status string, created time.Time) schema.AgentIteration {
+	return schema.AgentIteration{
+		ID:          created.Format(time.RFC3339Nano),
+		SessionID:   sessionID,
+		Number:      number,
+		ObliviousID: sessionID + "-" + strconv.Itoa(number),
+		Status:      status,
+		Created:     created,
+		Updated:     created,
+	}
+}
+
 // measuredAttempt builds a successful attempt carrying build phase timings
 // and measured Costs.
 func measuredAttempt(eco, pkg, ver, runID string, buildSec, depsSec float64) schema.RebuildAttempt {
@@ -307,6 +331,67 @@ func TestVersionStatsAndTopGaps(t *testing.T) {
 	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgC' AND score=0.25 AND dependents=5", "1")
 	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgB' AND score=0.0 AND dependents=0", "1")
 	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE score_percentile != 0.0", "0")
+}
+
+func TestAgentConfirmedBuilds(t *testing.T) {
+	day2 := base.AddDate(0, 0, 1)
+	db, _ := fill(t, &fakeSource{
+		attempts: []schema.RebuildAttempt{
+			// pkgA: the build phase failed, then the agent won.
+			attempt("pypi", "pkgA", "1.0", "r1", false, schema.RebuildStatusFailure, at(0)),
+			// pkgC: the build phase failed and the agent never confirmed.
+			attempt("pypi", "pkgC", "1.0", "r3", false, schema.RebuildStatusFailure, at(0)),
+			// pkgD: the same artifact both failed and succeeded in the build
+			// phase, which is what flaky reports.
+			attempt("pypi", "pkgD", "1.0", "r4", false, schema.RebuildStatusFailure, at(0)),
+			attempt("pypi", "pkgD", "1.0", "r5", true, schema.RebuildStatusSuccess, at(time.Hour)),
+		},
+		sessions: []schema.AgentSession{
+			agentSession("s1", "r1", "pypi", "pkgA", "1.0", at(time.Hour)),
+			// pkgB was never attempted by the build phase at all.
+			agentSession("s2", "r2", "pypi", "pkgB", "1.0", day2),
+			agentSession("s3", "r3", "pypi", "pkgC", "1.0", at(time.Hour)),
+		},
+		iterations: []schema.AgentIteration{
+			agentIteration("s1", 1, schema.AgentIterationStatusFailed, at(time.Hour)),
+			agentIteration("s1", 2, schema.AgentIterationStatusSuccess, at(2*time.Hour)),
+			agentIteration("s2", 1, schema.AgentIterationStatusSuccess, day2),
+			agentIteration("s3", 1, schema.AgentIterationStatusFailed, at(time.Hour)),
+			agentIteration("s3", 2, schema.AgentIterationStatusBuilding, at(2*time.Hour)),
+		},
+	})
+	// The agent's confirmation makes the version current. Only the
+	// successful iteration counts, so attempts is the build-phase failure
+	// plus the one confirmation, and the agent carries no executor version.
+	assertCount(t, db, `SELECT count(*) FROM version_stats WHERE package='pkgA' AND version='1.0'
+		AND current=1 AND attempts=2 AND artifacts_attempted=1 AND artifacts_succeeded=1
+		AND last_status='SUCCESS' AND first_succeeded_at='2026-07-01T14:00:00.000Z'
+		AND first_success_mechanism='agent' AND first_success_executor IS NULL`, "1")
+	assertCount(t, db, "SELECT count(*) FROM version_stats WHERE package='pkgA' AND flaky=0", "1")
+	assertCount(t, db, "SELECT count(*) FROM version_stats WHERE package='pkgD' AND flaky=1 AND current=1", "1")
+	// A target the build phase never attempted appears on the agent's row alone.
+	assertCount(t, db, `SELECT count(*) FROM version_stats WHERE package='pkgB' AND version='1.0'
+		AND current=1 AND attempts=1 AND first_success_mechanism='agent'`, "1")
+	// Failed and in-flight iterations contribute nothing.
+	assertCount(t, db, `SELECT count(*) FROM version_stats WHERE package='pkgC'
+		AND current=0 AND attempts=1 AND artifacts_succeeded=0 AND last_status='FAILURE'`, "1")
+	// Rescued packages leave the gap queue. pkgC stays.
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package IN ('pkgA','pkgB','pkgD')", "0")
+	assertCount(t, db, "SELECT count(*) FROM top_gaps WHERE package='pkgC'", "1")
+	// package_stats credits the agent's success to the session's run.
+	assertCount(t, db, `SELECT count(*) FROM package_stats WHERE package='pkgA' AND ever_built=1
+		AND consecutive_failures=0 AND attempt_count=2 AND versions_succeeded=1
+		AND last_succeeded_run_id='r1' AND last_attempted_status='SUCCESS'`, "1")
+	assertCount(t, db, "SELECT count(*) FROM package_stats WHERE package='pkgC' AND ever_built=0 AND consecutive_failures=1", "1")
+	// The confirmation counts on its own day, pkgB's first success falling
+	// on the day the agent ran rather than the day the build phase did.
+	assertCount(t, db, `SELECT count(*) FROM ecosystem_daily WHERE day='2026-07-01'
+		AND attempts=5 AND successes=2 AND first_time_successes=2`, "1")
+	assertCount(t, db, `SELECT count(*) FROM ecosystem_daily WHERE day='2026-07-02'
+		AND attempts=1 AND successes=1 AND first_time_successes=1`, "1")
+	// Coverage counts the rescued packages as built.
+	assertCount(t, db, `SELECT count(*) FROM coverage_weekly WHERE week='2026-06-29'
+		AND packages_attempted=4 AND packages_ever_built=3 AND packages_current=3`, "1")
 }
 
 func TestCoverageWeekly(t *testing.T) {
