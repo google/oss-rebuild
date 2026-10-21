@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/oss-rebuild/internal/ratex"
 	"google.golang.org/genai"
 )
 
@@ -206,5 +208,41 @@ func TestFinalTurnForbidsToolCalls(t *testing.T) {
 	// Each session swap must carry the whole history.
 	if h := chat.History(); len(h) != 8 || h[0].Parts[0].Text != "the task" {
 		t.Errorf("history has %d contents starting %+v, want 8 opening with the prompt", len(h), h[0].Parts[0])
+	}
+}
+
+// heldTransport holds the first request until its context ends, as an endpoint
+// holding a request does, and answers the rest.
+type heldTransport struct{ calls int }
+
+func (t *heldTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if t.calls++; t.calls == 1 {
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	}
+	return &http.Response{
+		StatusCode: 200,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]},"finishReason":"STOP"}]}`)),
+	}, nil
+}
+
+func TestSendResendsARequestHeldPastTheClientTimeout(t *testing.T) {
+	ctx := context.Background()
+	tr := &heldTransport{}
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: "test", Backend: genai.BackendGeminiAPI, HTTPClient: &http.Client{Transport: tr}, HTTPOptions: genai.HTTPOptions{Timeout: genai.Ptr(20 * time.Millisecond)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retrier := ratex.Retrier{Limiter: ratex.NewBackoffLimiter(time.Nanosecond, time.Millisecond), Attempts: 3, Retryable: IsTransient}
+	chat, err := NewChat(ctx, client, "m", nil, &ChatOpts{Retrier: retrier})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chat.SendMessage(ctx, genai.NewPartFromText("the task")); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if tr.calls != 2 {
+		t.Errorf("%d requests, want the held one cut and one resend", tr.calls)
 	}
 }
