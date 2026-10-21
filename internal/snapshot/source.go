@@ -44,9 +44,8 @@ var FullScan time.Time
 
 // FirestoreSource scans a project's Firestore, reusing the same collection and
 // collection-group access patterns as internal/rundex.
-// TODO: Full scans outlive Firestore's ~15m query lifetime at scale. Move to
-// incremental rollups from the previous database, with rarer full scans,
-// potentially via BigQuery.
+// TODO: Move to incremental rollups from the previous database once a full
+// scan outgrows the job's deadline.
 type FirestoreSource struct {
 	client *firestore.Client
 	// SignalsDB is the filesystem the signal database publishes under.
@@ -72,13 +71,15 @@ func NewFirestoreSource(ctx context.Context, project string) (*FirestoreSource, 
 // Close releases the underlying Firestore client.
 func (s *FirestoreSource) Close() error { return s.client.Close() }
 
+// pageSize bounds one Firestore query, which Firestore ends once it runs
+// past ~60s ("Query timed out").
+const pageSize = 10000
+
 // scanQuery streams every document of a query, decoded into T.
 func scanQuery[T any](ctx context.Context, q firestore.Query) iter.Seq2[T, error] {
 	return func(yield func(T, error) bool) {
 		var zero T
-		it := q.Documents(ctx)
-		defer it.Stop()
-		for doc, err := range iterx.ToSeq2(it, iterator.Done) {
+		for doc, err := range pagedQuery(ctx, q) {
 			if err != nil {
 				yield(zero, errors.Wrap(err, "iterating documents"))
 				return
@@ -95,13 +96,58 @@ func scanQuery[T any](ctx context.Context, q firestore.Query) iter.Seq2[T, error
 	}
 }
 
+// pagedQuery streams q, ordered by sinceQuery, pageSize documents at a time.
+func pagedQuery(ctx context.Context, q firestore.Query) iter.Seq2[*firestore.DocumentSnapshot, error] {
+	return pages(pageSize, func(after *firestore.DocumentSnapshot) iter.Seq2[*firestore.DocumentSnapshot, error] {
+		pq := q.Limit(pageSize)
+		if after != nil {
+			pq = pq.StartAfter(after)
+		}
+		return func(yield func(*firestore.DocumentSnapshot, error) bool) {
+			it := pq.Documents(ctx)
+			defer it.Stop()
+			for doc, err := range iterx.ToSeq2(it, iterator.Done) {
+				if !yield(doc, err) || err != nil {
+					return
+				}
+			}
+		}
+	})
+}
+
+// pages drives run page after page, passing each page's last document as
+// the cursor for the next, until a page comes back short.
+func pages(size int, run func(after *firestore.DocumentSnapshot) iter.Seq2[*firestore.DocumentSnapshot, error]) iter.Seq2[*firestore.DocumentSnapshot, error] {
+	return func(yield func(*firestore.DocumentSnapshot, error) bool) {
+		var last *firestore.DocumentSnapshot
+		for {
+			n := 0
+			for doc, err := range run(last) {
+				if err != nil {
+					yield(nil, err)
+					return
+				}
+				if !yield(doc, nil) {
+					return
+				}
+				last, n = doc, n+1
+			}
+			if n < size {
+				return
+			}
+		}
+	}
+}
+
 // sinceQuery bounds q to documents whose clock field is at or after since.
-// A zero since deliberately leaves the query unfiltered.
+// A zero since deliberately leaves the query unfiltered. The result is
+// ordered for paging. A document rewritten mid-scan only moves forward, so
+// it may repeat (the upsert absorbs it) but is never skipped.
 func sinceQuery(q firestore.Query, clock string, since time.Time) firestore.Query {
 	if since.IsZero() {
-		return q
+		return q.OrderBy(firestore.DocumentID, firestore.Asc)
 	}
-	return q.Where(clock, ">=", since)
+	return q.Where(clock, ">=", since).OrderBy(clock, firestore.Asc).OrderBy(firestore.DocumentID, firestore.Asc)
 }
 
 func (s *FirestoreSource) Attempts(ctx context.Context, since time.Time) iter.Seq2[schema.RebuildAttempt, error] {
@@ -120,9 +166,7 @@ func (s *FirestoreSource) Runs(ctx context.Context, since time.Time) iter.Seq2[s
 // for historical entries that only carry it there.
 func scanRuns(ctx context.Context, q firestore.Query) iter.Seq2[schema.Run, error] {
 	return func(yield func(schema.Run, error) bool) {
-		it := q.Documents(ctx)
-		defer it.Stop()
-		for doc, err := range iterx.ToSeq2(it, iterator.Done) {
+		for doc, err := range pagedQuery(ctx, q) {
 			if err != nil {
 				yield(schema.Run{}, errors.Wrap(err, "iterating runs"))
 				return
