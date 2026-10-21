@@ -19,17 +19,33 @@ import (
 	reg "github.com/google/oss-rebuild/pkg/registry/npm"
 )
 
-func TestPickNodeVersion(t *testing.T) {
+func TestPickNodeRelease(t *testing.T) {
 	tests := []struct {
 		name        string
+		npmVersion  string
 		nodeVersion string
+		published   time.Time
 		want        string
 		wantErr     bool
 	}{
 		{
-			name:        "empty version returns default",
-			nodeVersion: "",
-			want:        "10.17.0",
+			name: "missing version before the table uses the earliest release",
+			want: "10.16.0",
+		},
+		{
+			name:      "missing version uses the newest LTS release at the publish time",
+			published: must(time.Parse(time.DateOnly, "2023-10-07")),
+			want:      "20.8.0",
+		},
+		{
+			name:      "missing version skips the current line",
+			published: must(time.Parse(time.DateOnly, "2020-11-01")),
+			want:      "14.15.0",
+		},
+		{
+			name:       "lerna user agent names the node",
+			npmVersion: "lerna/3.22.1/node@v16.20.0+x64 (darwin)",
+			want:       "16.20.0",
 		},
 		{
 			name:        "exact version match",
@@ -75,42 +91,98 @@ func TestPickNodeVersion(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := PickNodeVersion(&reg.NPMVersion{NodeVersion: tt.nodeVersion})
+			got, err := PickNodeRelease(&reg.NPMVersion{NPMVersion: tt.npmVersion, NodeVersion: tt.nodeVersion}, tt.published)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("PickNodeVersion() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("PickNodeRelease() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if tt.wantErr {
 				return
 			}
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("PickNodeVersion() mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(tt.want, got.Version.String()); diff != "" {
+				t.Errorf("PickNodeRelease() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
 func TestPickNPMVersion(t *testing.T) {
+	published := must(time.Parse(time.DateOnly, "2023-10-07"))
 	tests := []struct {
-		name       string
-		npmVersion string
-		want       string
-		wantErr    bool
+		name        string
+		npmVersion  string
+		nodeVersion string
+		published   time.Time
+		want        string
+		wantErr     bool
 	}{
 		{
-			name:       "empty version returns error",
-			npmVersion: "",
-			wantErr:    true,
-		},
-		{
-			name:       "invalid semver returns error",
-			npmVersion: "not.a.version",
-			wantErr:    true,
-		},
-		{
-			name:       "prerelease version returns error",
+			name:       "prerelease version maps to its release",
 			npmVersion: "6.0.0-beta.1",
-			wantErr:    true,
+			want:       "6.0.0",
+		},
+		{
+			name:       "next prerelease maps to its release",
+			npmVersion: "6.12.0-next.0",
+			want:       "6.12.0",
+		},
+		{
+			name:       "unpublished 6.9.1 upgrades to 6.9.2",
+			npmVersion: "6.9.1-next.0",
+			want:       "6.9.2",
+		},
+		{
+			name:       "canary prerelease applies the npm 5 upgrade",
+			npmVersion: "5.5.1-canary.5",
+			want:       "5.6.0",
+		},
+		{
+			name:       "prerelease below 5.x upgrades to 5.0.4",
+			npmVersion: "1.1.0-beta-4",
+			want:       "5.0.4",
+		},
+		{
+			name:       "user agent without a node uses the publish time",
+			npmVersion: "ethers-dist@0.0.1",
+			published:  published,
+			want:       "10.1.0",
+		},
+		{
+			name:       "lerna user agent uses the npm bundled with its node",
+			npmVersion: "lerna/3.22.1/node@v16.20.0+x64 (darwin)",
+			want:       "8.19.4",
+		},
+		{
+			name:        "lerna user agent takes precedence over the node version field",
+			npmVersion:  "lerna/4.11.5/node@v26.8.1+arm64 (darwin)",
+			nodeVersion: "12.22.12",
+			want:        "11.19.0",
+		},
+		{
+			name:        "missing npm version uses the npm bundled with its node",
+			nodeVersion: "18.5.0",
+			want:        "8.12.1",
+		},
+		{
+			name:        "missing npm version with node above the table uses the newest npm",
+			nodeVersion: "99.0.0",
+			want:        reg.UnofficialNodeReleases[0].NPM.String(),
+		},
+		{
+			name:        "missing npm version with invalid node version returns error",
+			nodeVersion: "not.a.version",
+			published:   published,
+			wantErr:     true,
+		},
+		{
+			name:      "missing npm and node versions use the publish time",
+			published: must(time.Parse(time.DateOnly, "2020-11-01")),
+			want:      "6.14.8",
+		},
+		{
+			name:      "publish time before the table uses the earliest release",
+			published: must(time.Parse(time.DateOnly, "2018-07-29")),
+			want:      "6.9.0",
 		},
 		{
 			name:       "build tag version returns error",
@@ -155,7 +227,7 @@ func TestPickNPMVersion(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := PickNPMVersion(&reg.NPMVersion{NPMVersion: tt.npmVersion})
+			got, err := PickNPMVersion(&reg.NPMVersion{NPMVersion: tt.npmVersion, NodeVersion: tt.nodeVersion}, tt.published)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("PickNPMVersion() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -210,6 +282,32 @@ func TestInferStrategy_NPM(t *testing.T) {
 						Dir:  "",
 					},
 					NPMVersion: "8.1.2",
+				}
+			},
+		},
+		{
+			name:    "NPMPackBuild - npm version from publish time",
+			pkg:     "test-package",
+			version: "1.0.0",
+			repoYAML: `commits:
+  - id: initial-commit
+  - id: version-bump
+    parent: initial-commit
+    files:
+      package.json: |
+        {"name": "test-package", "version": "1.0.0"}
+`,
+			versionMetadata: `{"name":"test-package","version":"1.0.0","dist":{"tarball":"url1"},"gitHead":"INSERT_COMMIT_ID"}`, // No _npmVersion
+			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-10-07T12:00:00.000Z"}}`,
+			wantCommitID:    "version-bump",
+			wantStrategyFn: func(commitID string) rebuild.Strategy {
+				return &NPMPackBuild{
+					Location: rebuild.Location{
+						Repo: "https://github.com/test-org/test-package",
+						Ref:  commitID,
+						Dir:  "",
+					},
+					NPMVersion: "10.1.0",
 				}
 			},
 		},
@@ -278,7 +376,7 @@ func TestInferStrategy_NPM(t *testing.T) {
       package.json: |
         {"name": "test-package", "version": "1.0.0", "scripts": {"build": "tsc"}}
 `,
-			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"8.2.0","nodeVersion": "16.13.0", "dist":{"tarball":"url4"},"gitHead":"INSERT_COMMIT_ID"}`,
+			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"8.2.0","dist":{"tarball":"url4"},"gitHead":"INSERT_COMMIT_ID"}`,
 			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-02-10T10:00:00.000Z"}}`,
 			wantCommitID:    "version-bump",
 			wantStrategyFn: func(commitID string) rebuild.Strategy {
@@ -289,7 +387,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 						Dir:  "",
 					},
 					NPMVersion:        "8.2.0",
-					NodeVersion:       "10.17.0",
+					NodeVersion:       "18.14.0",
 					Command:           "build",
 					RegistryTime:      must(time.Parse(time.RFC3339, "2023-02-10T10:00:00.000Z")),
 					PrepackRemoveDeps: true,
@@ -308,7 +406,7 @@ func TestInferStrategy_NPM(t *testing.T) {
       package.json: |
         {"name": "test-package", "version": "1.0.0", "scripts": {"prepare": "npm run compile"}}
 `,
-			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"9.0.0","nodeVersion": "18.0.0", "dist":{"tarball":"url5"},"gitHead":"INSERT_COMMIT_ID"}`,
+			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"9.0.0","dist":{"tarball":"url5"},"gitHead":"INSERT_COMMIT_ID"}`,
 			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-03-01T11:00:00.000Z"}}`,
 			wantCommitID:    "version-bump",
 			wantStrategyFn: func(commitID string) rebuild.Strategy {
@@ -319,7 +417,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 						Dir:  "",
 					},
 					NPMVersion:   "9.0.0",
-					NodeVersion:  "10.17.0",
+					NodeVersion:  "18.14.2",
 					RegistryTime: must(time.Parse(time.RFC3339, "2023-03-01T11:00:00.000Z")),
 				}
 			},
@@ -336,7 +434,7 @@ func TestInferStrategy_NPM(t *testing.T) {
       package.json: |
         {"name": "test-package", "version": "1.0.0", "scripts": {"build": "tsc"}}
 `,
-			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"6.2.0","nodeVersion": "16.13.0", "dist":{"tarball":"url4"},"gitHead":"INSERT_COMMIT_ID"}`,
+			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"6.2.0","dist":{"tarball":"url4"},"gitHead":"INSERT_COMMIT_ID"}`,
 			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-02-10T10:00:00.000Z"}}`,
 			wantCommitID:    "version-bump",
 			wantStrategyFn: func(commitID string) rebuild.Strategy {
@@ -347,7 +445,7 @@ func TestInferStrategy_NPM(t *testing.T) {
 						Dir:  "",
 					},
 					NPMVersion:        "6.2.0",
-					NodeVersion:       "10.17.0",
+					NodeVersion:       "18.14.0",
 					Command:           "build",
 					RegistryTime:      must(time.Parse(time.RFC3339, "2023-02-10T10:00:00.000Z")),
 					PrepackRemoveDeps: true,
@@ -435,6 +533,24 @@ func TestInferStrategy_NPM(t *testing.T) {
         {"name": "test-package", "version": "1.0.0", "scripts": {"build": "tsc"}}
 `,
 			versionMetadata: `{"name":"test-package","version":"1.0.0","_npmVersion":"8.2.0","_nodeVersion":"bogus","dist":{"tarball":"url6"},"gitHead":"INSERT_COMMIT_ID"}`,
+			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-01-01T12:00:00.000Z"}}`,
+			wantCommitID:    "version-bump",
+			wantErr:         true,
+			wantLocated:     true,
+		},
+		{
+			name:    "located error when the npm version is unusable",
+			pkg:     "test-package",
+			version: "1.0.0",
+			repoYAML: `commits:
+  - id: initial-commit
+  - id: version-bump
+    parent: initial-commit
+    files:
+      package.json: |
+        {"name": "test-package", "version": "1.0.0"}
+`,
+			versionMetadata: `{"name":"test-package","version":"1.0.0","_nodeVersion":"bogus","dist":{"tarball":"url6"},"gitHead":"INSERT_COMMIT_ID"}`, // No _npmVersion
 			packageMetadata: `{"name":"test-package","time":{"1.0.0":"2023-01-01T12:00:00.000Z"}}`,
 			wantCommitID:    "version-bump",
 			wantErr:         true,
