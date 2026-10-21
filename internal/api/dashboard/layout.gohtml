@@ -9,8 +9,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OSS Rebuild Dashboard</title>
-    <!-- webfonts -->
-    <link rel="stylesheet" href="/theme.css">
+{{template "webfonts"}}    <link rel="stylesheet" href="/theme.css">
     <link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
@@ -21,3 +20,5 @@
         <a href="/packages">Packages</a>
     </nav>
     <h1>OSS Rebuild Dashboard</h1>
+{{block "content" .}}{{end}}</body>
+</html>
