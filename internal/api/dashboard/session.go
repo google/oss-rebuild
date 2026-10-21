@@ -38,7 +38,7 @@ func (SessionRequest) Validate() error { return nil }
 
 // TranscriptEvent is one rendered entry of the session's trajectory: a
 // prompt, model prose or thought, a tool call, a tool response, the
-// first-iteration inference proposal, a build attempt, or a scratch exec.
+// iteration's proposal, a build attempt, or a scratch exec.
 type TranscriptEvent struct {
 	Kind     string // prompt | model | thought | call | response | proposal | exec | build
 	Title    string
@@ -477,17 +477,18 @@ const transcriptReadConcurrency = 16
 
 // transcriptName is the parsed form of one transcript object name,
 // <sessionID>/messages/<iter>/<invokeTime>-<part>-<role>.json or the fixed
-// <sessionID>/messages/<iter>/0-inference-proposal.json.
+// 0-proposal.json or 0-inference-proposal.json.
 type transcriptName struct {
-	Iter     int
-	Time     time.Time
-	Part     int
-	Role     string
-	Proposal bool
+	Iter      int
+	Time      time.Time
+	Part      int
+	Role      string
+	Proposal  bool
+	Inference bool // the proposal came from heuristic inference, not the LLM
 }
 
 // transcriptNameRE matches a transcript object name relative to "messages/".
-var transcriptNameRE = regexp.MustCompile(`^(\d+)/(?:0-inference-proposal|(.+)-(\d+)-([a-z]+))\.json$`)
+var transcriptNameRE = regexp.MustCompile(`^(\d+)/(?:0-(inference-)?proposal|(.+)-(\d+)-([a-z]+))\.json$`)
 
 // parseTranscriptName parses a transcript object name, reporting ok=false
 // for objects under the prefix that are not transcript messages.
@@ -497,17 +498,17 @@ func parseTranscriptName(name string) (transcriptName, bool) {
 		return transcriptName{}, false
 	}
 	iter, _ := strconv.Atoi(m[1])
-	if m[2] == "" {
-		return transcriptName{Iter: iter, Proposal: true}, true
+	if m[3] == "" {
+		return transcriptName{Iter: iter, Proposal: true, Inference: m[2] != ""}, true
 	}
 	// RFC3339Nano strips trailing zeros, so lexicographic order of the
 	// prefix is not chronological. Callers must sort on the parsed time.
-	when, err := time.Parse(time.RFC3339Nano, m[2])
+	when, err := time.Parse(time.RFC3339Nano, m[3])
 	if err != nil {
 		return transcriptName{}, false
 	}
-	part, _ := strconv.Atoi(m[3])
-	return transcriptName{Iter: iter, Time: when, Part: part, Role: m[4]}, true
+	part, _ := strconv.Atoi(m[4])
+	return transcriptName{Iter: iter, Time: when, Part: part, Role: m[5]}, true
 }
 
 // loadTranscript lists the session's chat dump and appends the decoded
@@ -589,7 +590,11 @@ func eventsFrom(name transcriptName, body []byte) []TranscriptEvent {
 				pretty = string(b)
 			}
 		}
-		return []TranscriptEvent{{Kind: "proposal", Title: "inference proposal", Body: pretty, Note: "show strategy"}}
+		title := "proposed build"
+		if name.Inference {
+			title = "inference proposal"
+		}
+		return []TranscriptEvent{{Kind: "proposal", Title: title, Body: pretty, Note: "show strategy"}}
 	}
 	var content genai.Content
 	if err := json.Unmarshal(body, &content); err != nil {
