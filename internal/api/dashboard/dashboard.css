@@ -104,6 +104,7 @@ pre {
 .traj-event.kind-model { border-left-color: var(--accent); }
 .traj-event.kind-call, .traj-event.kind-proposal { border-left-color: var(--heading); }
 .traj-event.kind-thought, .traj-event.kind-prompt { border-left-color: var(--muted); }
+.traj-event.kind-exec { border-left-color: var(--secondary); }
 .traj-kind { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--secondary); margin-right: 8px; }
 .traj-time { color: var(--muted); font-size: 0.8rem; }
 .traj-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 500px; overflow: auto; }
