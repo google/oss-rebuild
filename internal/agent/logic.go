@@ -46,6 +46,10 @@ const (
 	maxToolTurns   = 100    //  bounds the tool calls in one iteration, after which model is told to answer directly
 )
 
+// inferenceTimeout bounds heuristic inference, like the inference service's 14
+// minute request timeout.
+const inferenceTimeout = 15 * time.Minute
+
 func locationFromStrategyOneOf(oneof *schema.StrategyOneOf) (*rebuild.Location, error) {
 	s, err := oneof.Strategy()
 	if err != nil {
@@ -859,8 +863,27 @@ func (a *defaultAgent) Propose(ctx context.Context, opts *ProposeOpts) (*schema.
 	var err error
 	record := "0-proposal.json"
 	if len(a.iterHistory) == 0 {
-		// For the first iteration, use our regular inference logic.
-		s, err = a.proposeHeuristicInference(ctx)
+		// For the first iteration, use our regular inference logic. It walks git
+		// history without consulting its context, so the call is abandoned rather
+		// than interrupted.
+		// NOTE: An abandoned call still sets a.repo, a.loc and a.inferenceFailure.
+		ictx, cancel := context.WithTimeoutCause(ctx, inferenceTimeout, errors.Wrapf(context.DeadlineExceeded, "inference ran past %s", inferenceTimeout))
+		defer cancel()
+		type proposal struct {
+			s   *schema.StrategyOneOf
+			err error
+		}
+		ch := make(chan proposal, 1) // buffered so an abandoned call's send never blocks
+		go func() {
+			s, err := a.proposeHeuristicInference(ictx)
+			ch <- proposal{s, err}
+		}()
+		select {
+		case p := <-ch:
+			s, err = p.s, p.err
+		case <-ictx.Done():
+			return nil, context.Cause(ictx)
+		}
 		record = "0-inference-proposal.json"
 	} else {
 		s, err = a.proposeAgentInference(ctx, opts)
