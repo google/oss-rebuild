@@ -94,9 +94,6 @@ func PickNodeVersion(meta *npmreg.NPMVersion) (string, error) {
 	}
 	var best npmreg.NodeRelease
 	for _, r := range npmreg.UnofficialNodeReleases {
-		if !r.HasMUSL {
-			continue
-		}
 		if cmp := r.Version.Compare(nv); cmp == 0 {
 			return r.Version.String(), nil
 		} else if cmp < 0 {
