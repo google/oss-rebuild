@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/oss-rebuild/internal/execx"
 	"github.com/google/oss-rebuild/pkg/build"
 	"github.com/google/oss-rebuild/pkg/build/timing"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
@@ -44,9 +45,9 @@ type buildTestCase struct {
 	input            rebuild.Input
 	options          build.Options
 	maxParallel      int
-	executeFunc      func(ctx context.Context, opts CommandOptions, name string, args ...string) error
+	executeFunc      func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error
 	lookPathFunc     func(file string) (string, error)
-	expectedCommands []MockCommand
+	expectedCommands []execx.MockCommand
 	expectedError    string
 	expectSuccess    bool
 	retainContainer  bool
@@ -78,7 +79,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 			},
 			maxParallel: 2,
 			executeFunc: successExecuteFake,
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name:  "docker",
 					Args:  []string{"buildx", "build", "-t", "test-build-123", "-"},
@@ -121,7 +122,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 			},
 			maxParallel: 1,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			executeFunc: func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				if opts.Output != nil {
 					if len(args) > 0 && args[0] == "build" {
 						opts.Output.Write([]byte("Successfully built image\n"))
@@ -131,7 +132,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				}
 				return nil
 			},
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name:  "docker",
 					Args:  []string{"buildx", "build", "-t", "test-build-nosave", "-"},
@@ -187,13 +188,13 @@ func TestDockerBuildExecutor(t *testing.T) {
 				BuildID: "test-build-789",
 			},
 			maxParallel: 1,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			executeFunc: func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				if len(args) > 0 && args[0] == "buildx" {
 					return errors.New("docker build failed: exit status 1")
 				}
 				return nil
 			},
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name:  "docker",
 					Args:  []string{"buildx", "build", "-t", "test-build-789", "-"},
@@ -220,13 +221,13 @@ func TestDockerBuildExecutor(t *testing.T) {
 				BuildID: "test-build-run-fail",
 			},
 			maxParallel: 1,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			executeFunc: func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				if len(args) > 0 && args[0] == "run" {
 					return errors.New("container exited with code 1")
 				}
 				return nil
 			},
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name:  "docker",
 					Args:  []string{"buildx", "build", "-t", "test-build-run-fail", "-"},
@@ -268,7 +269,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 			maxParallel:     1,
 			retainContainer: true,
 			executeFunc:     successExecuteFake,
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name:  "docker",
 					Args:  []string{"buildx", "build", "-t", "test-build-retain-container", "-"},
@@ -312,7 +313,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 			},
 			maxParallel: 1,
 			executeFunc: successExecuteFake,
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name:  "docker",
 					Args:  []string{"buildx", "build", "-t", "test-build-context", "-f-", "/path/to/local/context"},
@@ -353,7 +354,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 			maxParallel: 1,
 			retainImage: true,
 			executeFunc: successExecuteFake,
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name:  "docker",
 					Args:  []string{"buildx", "build", "-t", "test-build-retain-image", "-"},
@@ -392,7 +393,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				},
 			},
 			maxParallel: 1,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			executeFunc: func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				if opts.Output != nil {
 					if len(args) > 0 && args[0] == "build" {
 						opts.Output.Write([]byte("Successfully built image\n"))
@@ -402,7 +403,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				}
 				return nil
 			},
-			expectedCommands: []MockCommand{
+			expectedCommands: []execx.MockCommand{
 				{
 					Name:  "docker",
 					Args:  []string{"buildx", "build", "-t", "test-build-postbuild", "-"},
@@ -469,7 +470,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 				Timeout: 50 * time.Millisecond,
 			},
 			maxParallel: 1,
-			executeFunc: func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			executeFunc: func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				select {
 				case <-time.After(100 * time.Millisecond):
 					return nil
@@ -484,7 +485,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup mock command executor
-			cmdExecutor := NewMockCommandExecutor()
+			cmdExecutor := execx.NewMockCommandExecutor()
 			if tc.executeFunc != nil {
 				cmdExecutor.SetExecuteFunc(tc.executeFunc)
 			}
@@ -582,7 +583,7 @@ func TestDockerBuildExecutor(t *testing.T) {
 }
 
 // successExecuteFake is a fake implementation of Execute that always succeeds.
-var successExecuteFake = func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+var successExecuteFake = func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 	if opts.Output != nil {
 		if len(args) > 0 && args[0] == "build" {
 			opts.Output.Write([]byte("Successfully built image\n"))
@@ -595,14 +596,14 @@ var successExecuteFake = func(ctx context.Context, opts CommandOptions, name str
 
 func TestDockerBuildExecutorConcurrency(t *testing.T) {
 	maxParallel := 2
-	cmdExecutor := NewMockCommandExecutor()
+	cmdExecutor := execx.NewMockCommandExecutor()
 
 	// Setup slow execution to test concurrency
 	var activeBuilds int32
 	var maxActiveBuilds int32
 	var mu sync.Mutex
 
-	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+	cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 		mu.Lock()
 		activeBuilds++
 		if activeBuilds > maxActiveBuilds {
@@ -694,7 +695,7 @@ func TestDockerBuildExecutorConfig(t *testing.T) {
 	executor, err := NewDockerBuildExecutor(DockerBuildExecutorConfig{
 		MaxParallel:     3,
 		OutputDir:       "/custom/output",
-		CommandExecutor: NewMockCommandExecutor(),
+		CommandExecutor: execx.NewMockCommandExecutor(),
 	})
 	if err != nil {
 		t.Fatalf("Failed to create executor with config: %v", err)
@@ -760,8 +761,8 @@ func TestDockerBuildExecutorTimings(t *testing.T) {
 			histLine := func(at time.Time, createdBy string) string {
 				return `{"Comment":"buildkit.dockerfile.v0","CreatedAt":"` + at.Format(time.RFC3339) + `","CreatedBy":"` + createdBy + `","ID":"<missing>","Size":"0"}` + "\n"
 			}
-			cmdExecutor := NewMockCommandExecutor()
-			cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts CommandOptions, name string, args ...string) error {
+			cmdExecutor := execx.NewMockCommandExecutor()
+			cmdExecutor.SetExecuteFunc(func(ctx context.Context, opts execx.CommandOptions, name string, args ...string) error {
 				if len(args) == 0 || opts.Output == nil {
 					return nil
 				}
