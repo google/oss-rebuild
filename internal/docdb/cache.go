@@ -236,11 +236,13 @@ func (c *Cache) sync() error {
 	if len(segs) == 0 {
 		return nil
 	}
+	start := time.Now()
 	if err := applySegments(c.writer, c.up.Defs, segs); err != nil {
 		return errors.Wrap(err, "applying segments")
 	}
 	c.applied = segs[len(segs)-1].name
 	c.publishFreshness()
+	log.Printf("docdb cache: applied %d segments through %s in %s", len(segs), c.applied, time.Since(start).Round(time.Millisecond))
 	c.checkpoint()
 	return nil
 }
