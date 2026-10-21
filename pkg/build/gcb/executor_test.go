@@ -105,7 +105,7 @@ func TestExecutorStart(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 			Requires: rebuild.RequiredEnv{
 				SystemDeps: []string{"git", "node", "npm"},
 			},
@@ -292,7 +292,7 @@ func TestExecutorWithSyscallMonitor(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 			Requires: rebuild.RequiredEnv{
 				SystemDeps: []string{"git", "node", "npm"},
 			},
@@ -406,7 +406,7 @@ func TestExecutorAssetUpload(t *testing.T) {
 			Artifact:  "test-package-1.0.0.tgz",
 		},
 		Strategy: &rebuild.ManualStrategy{
-			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+			Location: rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 			Requires: rebuild.RequiredEnv{
 				SystemDeps: []string{"git", "node", "npm"},
 			},
@@ -566,7 +566,7 @@ func TestGCBExecutorFailedBuild(t *testing.T) {
 			input := rebuild.Input{
 				Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-package", Version: "1.0.0", Artifact: "test-package-1.0.0.tgz"},
 				Strategy: &rebuild.ManualStrategy{
-					Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 					Requires:   rebuild.RequiredEnv{SystemDeps: []string{"git", "node", "npm"}},
 					Deps:       "npm install",
 					Build:      "npm run build",
@@ -734,7 +734,7 @@ func TestExecutorTimings(t *testing.T) {
 			input := rebuild.Input{
 				Target: rebuild.Target{Ecosystem: rebuild.NPM, Package: "test-package", Version: "1.0.0", Artifact: "test-package-1.0.0.tgz"},
 				Strategy: &rebuild.ManualStrategy{
-					Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "/src"},
+					Location:   rebuild.Location{Repo: "github.com/example", Ref: "main", Dir: "src"},
 					Requires:   rebuild.RequiredEnv{SystemDeps: []string{"git", "node", "npm"}},
 					Deps:       "npm install",
 					Build:      "npm run build",

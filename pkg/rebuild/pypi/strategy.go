@@ -46,7 +46,7 @@ func (b *PureWheelBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "pypi/build/wheel",
 			With: map[string]string{
-				"dir":        b.Location.Dir,
+				"dir":        "{{.Location.Dir}}",
 				"locator":    "/deps/bin/",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
 				"pythonTag":  b.PythonTag,
@@ -107,7 +107,7 @@ func (b *SdistBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		Build: []flow.Step{{
 			Uses: "pypi/build/sdist",
 			With: map[string]string{
-				"dir":        b.Location.Dir,
+				"dir":        "{{.Location.Dir}}",
 				"locator":    "/deps/bin/",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
 			},
@@ -190,8 +190,8 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Build: []flow.Step{{
 			Uses: "pypi/build/platform-wheel",
 			With: map[string]string{
-				"dir":        b.Location.Dir,
-				"distDir":    distDir,
+				"dir":        "{{.Location.Dir}}",
+				"distDir":    "{{if .Location.Dir}}{{.Location.Dir}}/{{end}}dist",
 				"locator":    "/deps/bin/",
 				"wheelCli":   "/deps/wheel-cli",
 				"venvOnPath": needsVenvOnPath(b.Requirements),
