@@ -136,8 +136,10 @@ func main() {
 		log.Fatalf("Failed to create egress client: %v", err)
 	}
 	registry = meta.NewRegistryMux(egressClient)
-	if (*bench != "") == (*trackedPackages != "") {
-		log.Fatalf("Must provide exactly one of -bench or -tracked-packages")
+	// Without a tracked set the index omits its status grid and recent-rebuild
+	// list, which suits a deployment that serves the whole snapshot.
+	if *bench != "" && *trackedPackages != "" {
+		log.Fatalf("Provide at most one of -bench or -tracked-packages")
 	}
 	if *bench != "" {
 		set, err := benchmark.ReadBenchmark(*bench)
