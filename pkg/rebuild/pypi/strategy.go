@@ -4,6 +4,9 @@
 package pypi
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
@@ -167,6 +170,11 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 	if b.Location.Dir != "" {
 		distDir = b.Location.Dir + "/dist"
 	}
+	abi3Pythons := abi3Interpreters(b.PythonTag, b.ABITag, b.Requirements)
+	var pyLimitedAPI string
+	if abi3Pythons != "" {
+		pyLimitedAPI = b.PythonTag
+	}
 	return &rebuild.WorkflowStrategy{
 		Location: b.Location,
 		Requires: rebuild.RequiredEnv{
@@ -179,22 +187,24 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		Deps: []flow.Step{{
 			Uses: "pypi/deps/platform-wheel",
 			With: map[string]string{
-				"registryTime": registryTime,
-				"requirements": flow.MustToJSON(b.Requirements),
-				"pythonTag":    b.PythonTag,
-				"abiTag":       b.ABITag,
-				"venv":         "/deps",
-				"wheelCli":     "/deps/wheel-cli",
+				"registryTime":     registryTime,
+				"requirements":     flow.MustToJSON(b.Requirements),
+				"pythonTag":        b.PythonTag,
+				"abiTag":           b.ABITag,
+				"abi3Interpreters": abi3Pythons,
+				"venv":             "/deps",
+				"wheelCli":         "/deps/wheel-cli",
 			},
 		}},
 		Build: []flow.Step{{
 			Uses: "pypi/build/platform-wheel",
 			With: map[string]string{
-				"dir":        b.Location.Dir,
-				"distDir":    distDir,
-				"locator":    "/deps/bin/",
-				"wheelCli":   "/deps/wheel-cli",
-				"venvOnPath": needsVenvOnPath(b.Requirements),
+				"dir":          b.Location.Dir,
+				"distDir":      distDir,
+				"locator":      "/deps/bin/",
+				"wheelCli":     "/deps/wheel-cli",
+				"venvOnPath":   needsVenvOnPath(b.Requirements),
+				"pyLimitedAPI": pyLimitedAPI,
 				// auditwheel repair --plat requires a single policy tag rather than a compressed
 				// tag set, and the highest tag matches the build container policy.
 				"highestPlatformTag": platform.HighestLibcTagString(b.PlatformTag),
@@ -203,6 +213,57 @@ func (b *PlatformWheelBuild) ToWorkflow() (*rebuild.WorkflowStrategy, error) {
 		}},
 		OutputDir: distDir,
 	}, nil
+}
+
+// setuptools releases that dropped support for older CPython minors:
+// - setuptools 59.7.0 requires Python >= 3.7
+// - setuptools 68.1.0 requires Python >= 3.8
+// - setuptools 75.4.0 requires Python >= 3.9 (75.3.x is the 3.8 backport line)
+// - setuptools 83.0.0 requires Python >= 3.10
+//
+// NOTE: This table must be extended whenever setuptools drops another CPython
+// minor. maxABI3CPythonMinor bounds the interpreters listed by abi3Interpreters.
+const (
+	setuptoolsDropPy36Version = "59.7.0"
+	setuptoolsDropPy37Version = "68.1.0"
+	setuptoolsDropPy38Version = "75.4.0"
+	setuptoolsDropPy39Version = "83.0.0"
+	maxABI3CPythonMinor       = 14
+)
+
+// abi3Interpreters returns the space-separated /opt/python interpreters able
+// to build an abi3 wheel, in ascending minor order. The pythonTag of an abi3
+// wheel names its Py_LIMITED_API floor rather than the build interpreter, so
+// the list starts at the higher of that floor and the oldest Python that the
+// setuptools lower bound in reqs supports. Free-threaded builds are excluded as
+// they cannot target the limited API. Returns "" for non-abi3 wheels.
+func abi3Interpreters(pythonTag, abiTag string, reqs []string) string {
+	if abiTag != "abi3" || !strings.HasPrefix(pythonTag, "cp3") {
+		return ""
+	}
+	minMinor, err := strconv.Atoi(strings.TrimPrefix(pythonTag, "cp3"))
+	if err != nil || minMinor < 2 || minMinor > maxABI3CPythonMinor {
+		return ""
+	}
+	switch {
+	case hasFloorAtLeast(reqs, "setuptools", setuptoolsDropPy39Version):
+		minMinor = max(minMinor, 10)
+	case hasFloorAtLeast(reqs, "setuptools", setuptoolsDropPy38Version):
+		minMinor = max(minMinor, 9)
+	case hasFloorAtLeast(reqs, "setuptools", setuptoolsDropPy37Version):
+		minMinor = max(minMinor, 8)
+	case hasFloorAtLeast(reqs, "setuptools", setuptoolsDropPy36Version):
+		minMinor = max(minMinor, 7)
+	}
+	var pythons []string
+	for minor := minMinor; minor <= maxABI3CPythonMinor; minor++ {
+		if minor <= 7 {
+			pythons = append(pythons, fmt.Sprintf("/opt/python/cp3%d-cp3%dm/bin/python", minor, minor))
+		} else {
+			pythons = append(pythons, fmt.Sprintf("/opt/python/cp3%d-cp3%d/bin/python", minor, minor))
+		}
+	}
+	return strings.Join(pythons, " ")
 }
 
 // GenerateFor generates the instructions for a PlatformWheelBuild.
@@ -240,9 +301,11 @@ var toolkit = []*flow.Tool{
 			// TODO: Support Python 2.7 (requires virtualenv instead of standard library venv).
 			Runs: textwrap.Dedent(`
 				for py in
+				{{- if .With.abi3Interpreters}} {{.With.abi3Interpreters}}{{else -}}
 				{{- if and .With.pythonTag .With.abiTag}} /opt/python/{{.With.pythonTag}}-{{.With.abiTag}}/bin/python{{end -}}
 				{{- if .With.pythonTag}} /opt/python/{{.With.pythonTag}}-*/bin/python{{end -}}
 				{{- if or (not .With.pythonTag) (eq .With.abiTag "abi3")}} /opt/python/cp3*/bin/python{{end -}}
+				{{- end -}}
 				; do [ -x "$py" ] && break; done
 				"$py" -m venv {{.With.path}}`)[1:],
 		}},
@@ -305,9 +368,10 @@ var toolkit = []*flow.Tool{
 			{
 				Uses: "pypi/setup-venv/manylinux",
 				With: map[string]string{
-					"path":      "{{.With.venv}}",
-					"pythonTag": "{{.With.pythonTag}}",
-					"abiTag":    "{{.With.abiTag}}",
+					"path":             "{{.With.venv}}",
+					"pythonTag":        "{{.With.pythonTag}}",
+					"abiTag":           "{{.With.abiTag}}",
+					"abi3Interpreters": "{{.With.abi3Interpreters}}",
 				},
 			},
 			{
@@ -361,6 +425,9 @@ var toolkit = []*flow.Tool{
 		Name: "pypi/build/platform-wheel",
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
+				{{- if .With.pyLimitedAPI -}}
+				printf '[bdist_wheel]\npy_limited_api = {{.With.pyLimitedAPI}}\n' > "$HOME/.pydistutils.cfg"
+				{{end -}}
 				{{if .With.venvOnPath}}PATH={{.With.locator}}:$PATH {{end}}{{.With.locator}}python3 -m build --wheel -n{{if and (ne .With.dir ".") (ne .With.dir "")}} {{.With.dir}}{{end}}
 				{{if .With.highestPlatformTag -}}
 				mkdir -p {{.With.distDir}}/repaired

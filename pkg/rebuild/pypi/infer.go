@@ -592,7 +592,27 @@ var (
 	setuptoolsImpImporterFixDate    = time.Date(2023, time.January, 20, 0, 0, 0, 0, time.UTC)
 	// Upper bounds within a PEP 440 version specifier.
 	versionCeilingPat = re.MustCompile(`(<=?|==)\s*([\d.]+)`)
+	// Lower bounds within a PEP 440 version specifier.
+	versionFloorPat = re.MustCompile(`(===|==|~=|>=?)\s*([\d.]+)`)
 )
+
+// hasFloorAtLeast reports whether reqs constrain pkg to a version at or above
+// limit. pkg must be normalized.
+// NOTE: Environment marker values are quoted, so versionFloorPat cannot match
+// a comparison inside a marker.
+func hasFloorAtLeast(reqs []string, pkg, limit string) bool {
+	for _, req := range reqs {
+		if requirementName(req) != pkg {
+			continue
+		}
+		for _, m := range versionFloorPat.FindAllStringSubmatch(req, -1) {
+			if versionx.ApproxCompare(m[2], limit) >= 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // inferPythonVersion pins Python 3.11 when the build may import a setuptools
 // older than the ImpImporter fix: any upload predating it, since pip or the

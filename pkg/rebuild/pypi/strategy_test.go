@@ -630,11 +630,12 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 			rebuild.Instructions{
 				Location: defaultLocation,
 				Source:   "git checkout --force 'the_ref'",
-				Deps: `for py in /opt/python/cp38-abi3/bin/python /opt/python/cp38-*/bin/python /opt/python/cp3*/bin/python; do [ -x "$py" ] && break; done
+				Deps: `for py in /opt/python/cp38-cp38/bin/python /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python; do [ -x "$py" ] && break; done
 "$py" -m venv /deps
 /deps/bin/pip install build wheel
 /deps/bin/pip install --target /deps/wheel-cli wheel`,
-				Build: `/deps/bin/python3 -m build --wheel -n the_dir
+				Build: `printf '[bdist_wheel]\npy_limited_api = cp38\n' > "$HOME/.pydistutils.cfg"
+/deps/bin/python3 -m build --wheel -n the_dir
 mkdir -p the_dir/dist/repaired
 AUDITWHEEL="/deps/bin/auditwheel"
 if [ ! -x "$AUDITWHEEL" ]; then
@@ -682,6 +683,42 @@ PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-t
 				Requires: rebuild.RequiredEnv{
 					BaseImage:  "quay.io/pypa/manylinux_2_28_x86_64",
 					SystemDeps: []string{"/usr/bin/dot", "graphviz-devel", "git"},
+				},
+				OutputPath: "the_dir/dist/the_artifact",
+			},
+		},
+		{
+			"ABI3WithSetuptoolsFloor",
+			&PlatformWheelBuild{
+				Location:     defaultLocation,
+				PythonTag:    "cp38",
+				ABITag:       "abi3",
+				Requirements: []string{"setuptools==80.9.0"},
+				PlatformTag:  "manylinux_2_34_x86_64",
+			},
+			rebuild.Instructions{
+				Location: defaultLocation,
+				Source:   "git checkout --force 'the_ref'",
+				Deps: `for py in /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python; do [ -x "$py" ] && break; done
+"$py" -m venv /deps
+/deps/bin/pip install build wheel
+/deps/bin/pip install --target /deps/wheel-cli wheel
+/deps/bin/pip install 'setuptools==80.9.0'`,
+				Build: `printf '[bdist_wheel]\npy_limited_api = cp38\n' > "$HOME/.pydistutils.cfg"
+/deps/bin/python3 -m build --wheel -n the_dir
+mkdir -p the_dir/dist/repaired
+AUDITWHEEL="/deps/bin/auditwheel"
+if [ ! -x "$AUDITWHEEL" ]; then
+  AUDITWHEEL="auditwheel"
+fi
+$AUDITWHEEL repair the_dir/dist/*.whl --plat manylinux_2_34_x86_64 -w the_dir/dist/repaired/
+rm -f the_dir/dist/*.whl
+mv the_dir/dist/repaired/*.whl the_dir/dist/
+rm -rf the_dir/dist/repaired
+PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_34_x86_64 the_dir/dist/*.whl`,
+				Requires: rebuild.RequiredEnv{
+					BaseImage:  "quay.io/pypa/manylinux_2_34_x86_64",
+					SystemDeps: []string{"git"},
 				},
 				OutputPath: "the_dir/dist/the_artifact",
 			},
@@ -834,5 +871,149 @@ rm -rf the_dir/dist/repaired
 PYTHONPATH=/deps/wheel-cli /deps/bin/python3 -m wheel tags --remove --platform-tag manylinux_2_17_x86_64 the_dir/dist/*.whl`
 	if diff := cmp.Diff(wantBuild, inst.Build); diff != "" {
 		t.Errorf("GenerateFor() Build diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestABI3Interpreters(t *testing.T) {
+	tests := []struct {
+		name      string
+		pythonTag string
+		abiTag    string
+		reqs      []string
+		want      string
+	}{
+		{
+			name:      "Cp36WithSetuptools75StartsAtCp38",
+			pythonTag: "cp36",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools==75.3.3"},
+			want:      "/opt/python/cp38-cp38/bin/python /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp36WithSetuptoolsCeilingStartsAtCp36m",
+			pythonTag: "cp36",
+			abiTag:    "abi3",
+			reqs:      []string{"wheel==0.37.1", "setuptools<=67.7.2"},
+			want:      "/opt/python/cp36-cp36m/bin/python /opt/python/cp37-cp37m/bin/python /opt/python/cp38-cp38/bin/python /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp36WithOldSetuptoolsCeilingStartsAtCp36m",
+			pythonTag: "cp36",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools<=56.2.0"},
+			want:      "/opt/python/cp36-cp36m/bin/python /opt/python/cp37-cp37m/bin/python /opt/python/cp38-cp38/bin/python /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp36WithUnpinnedSetuptoolsStartsAtCp36m",
+			pythonTag: "cp36",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools"},
+			want:      "/opt/python/cp36-cp36m/bin/python /opt/python/cp37-cp37m/bin/python /opt/python/cp38-cp38/bin/python /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp36WithSetuptoolsLowerBoundStartsAtCp37",
+			pythonTag: "cp36",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools>=61.0"},
+			want:      "/opt/python/cp37-cp37m/bin/python /opt/python/cp38-cp38/bin/python /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp36WithSetuptoolsCompatibleReleaseStartsAtCp39",
+			pythonTag: "cp36",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools~=75.4.0"},
+			want:      "/opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp36WithMarkerComparisonStartsAtCp36m",
+			pythonTag: "cp36",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools>=40; python_version >= \"3.9\""},
+			want:      "/opt/python/cp36-cp36m/bin/python /opt/python/cp37-cp37m/bin/python /opt/python/cp38-cp38/bin/python /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp37WithSetuptoolsCeilingStartsAtCp37m",
+			pythonTag: "cp37",
+			abiTag:    "abi3",
+			reqs:      []string{"wheel==0.42.0", "setuptools<=67.7.2"},
+			want:      "/opt/python/cp37-cp37m/bin/python /opt/python/cp38-cp38/bin/python /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp37WithSetuptools82StartsAtCp39",
+			pythonTag: "cp37",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools==82.0.1"},
+			want:      "/opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp38WithSetuptools753StartsAtCp38",
+			pythonTag: "cp38",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools==75.3.3"},
+			want:      "/opt/python/cp38-cp38/bin/python /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp38WithSetuptools754StartsAtCp39",
+			pythonTag: "cp38",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools==75.4.0"},
+			want:      "/opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp38WithSetuptools80StartsAtCp39",
+			pythonTag: "cp38",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools==80.9.0", "wheel"},
+			want:      "/opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp38WithSetuptools84StartsAtCp310",
+			pythonTag: "cp38",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools==84.0.0"},
+			want:      "/opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp38WithoutSetuptoolsStartsAtCp38",
+			pythonTag: "cp38",
+			abiTag:    "abi3",
+			reqs:      []string{"maturin==1.7.0"},
+			want:      "/opt/python/cp38-cp38/bin/python /opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp39WithSetuptools82StartsAtCp39",
+			pythonTag: "cp39",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools==82.0.1"},
+			want:      "/opt/python/cp39-cp39/bin/python /opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp39WithSetuptools84StartsAtCp310",
+			pythonTag: "cp39",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools==84.0.0"},
+			want:      "/opt/python/cp310-cp310/bin/python /opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "Cp311StartsAtCp311",
+			pythonTag: "cp311",
+			abiTag:    "abi3",
+			reqs:      []string{"setuptools==80.9.0"},
+			want:      "/opt/python/cp311-cp311/bin/python /opt/python/cp312-cp312/bin/python /opt/python/cp313-cp313/bin/python /opt/python/cp314-cp314/bin/python",
+		},
+		{
+			name:      "NonABI3ReturnsEmpty",
+			pythonTag: "cp38",
+			abiTag:    "cp38",
+			reqs:      []string{"setuptools==80.9.0"},
+			want:      "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := abi3Interpreters(tc.pythonTag, tc.abiTag, tc.reqs); got != tc.want {
+				t.Errorf("abi3Interpreters(%q, %q, %v) = %q, want %q", tc.pythonTag, tc.abiTag, tc.reqs, got, tc.want)
+			}
+		})
 	}
 }
