@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"time"
 
@@ -26,8 +27,8 @@ import (
 )
 
 // Host labels. purpose, class, and template select admission candidates,
-// so a deploy that replaces the template drains the old hosts. A retired host
-// leaves the candidate set too. The reaper still sees both.
+// so a deploy that replaces a class's templates drains the old hosts. A
+// retired host leaves the candidate set too. The reaper still sees both.
 const (
 	hostLabelPurposeKey  = "purpose"
 	hostLabelPurposeVal  = "scratch-host"
@@ -36,15 +37,39 @@ const (
 	hostLabelRetiredKey  = "scratch_retired"
 )
 
+// hostLabels returns the labels for a class's host created from template.
 func hostLabels(class schema.MachineClass, template string) map[string]string {
-	// Label values hold 63 characters, and the deploy suffix ends template
-	// names, so keep the tail.
-	name := path.Base(template)
+	labels := classLabels(class)
+	labels[hostLabelTemplateKey] = templateLabel(template)
+	return labels
+}
+
+// classLabels selects every host of a class, whichever template minted it.
+func classLabels(class schema.MachineClass) map[string]string {
 	return map[string]string{
-		hostLabelPurposeKey:  hostLabelPurposeVal,
-		hostLabelClassKey:    string(class),
-		hostLabelTemplateKey: name[max(0, len(name)-63):],
+		hostLabelPurposeKey: hostLabelPurposeVal,
+		hostLabelClassKey:   string(class),
 	}
+}
+
+// templateLabel is the template label value of a host minted from template.
+// Label values hold 63 characters, and the deploy suffix ends template
+// names, so keep the tail.
+func templateLabel(template string) string {
+	name := path.Base(template)
+	return name[max(0, len(name)-63):]
+}
+
+// fromTemplates keeps the hosts minted from one of templates, which drops
+// those of an earlier deploy's templates.
+func fromTemplates(hosts []Instance, templates []string) []Instance {
+	var out []Instance
+	for _, h := range hosts {
+		if slices.ContainsFunc(templates, func(t string) bool { return h.Labels[hostLabelTemplateKey] == templateLabel(t) }) {
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 // hostMaxAge is how long a host takes new sessions. It sets how fast a

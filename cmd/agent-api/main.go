@@ -47,8 +47,8 @@ var (
 	// Scratch flags. Gated by --scratch-enabled.
 	scratchEnabled       = flag.Bool("scratch-enabled", false, "register the scratch routes")
 	scratchZones         = flag.String("scratch-zones", "", "comma-separated, ordered list of GCE zones to try for scratch hosts (required when scratch enabled); first listed is preferred, later zones used only on stockout fallthrough")
-	scratchStandardTmpl  = flag.String("scratch-host-standard-template", "", "GCE instance template URL for hosts serving the standard machine class (required when scratch enabled)")
-	scratchJumboTmpl     = flag.String("scratch-host-jumbo-template", "", "GCE instance template URL for hosts serving the jumbo machine class (optional)")
+	scratchStandardTmpl  = flag.String("scratch-host-standard-template", "", "comma-separated GCE instance template URLs for hosts serving the standard machine class, in preference order: a later one is used only when every zone is out of the earlier ones (required when scratch enabled)")
+	scratchJumboTmpl     = flag.String("scratch-host-jumbo-template", "", "comma-separated GCE instance template URLs for hosts serving the jumbo machine class, ordered as for the standard class (optional)")
 	scratchStandardIdle  = flag.Int("scratch-host-standard-idle-guests", 0, "guests /scratch/topup keeps room for on standard-class hosts beyond current demand. Zero turns the top-up off")
 	scratchStandardSlots = flag.Int("scratch-host-standard-slots", 0, "guests each standard-class host runs, as its startup script sizes it. The top-up counts them on hosts still booting")
 	scratchOutputBucket  = flag.String("scratch-output-bucket", "", "GCS bucket the broker writes exec output into (required when --scratch-enabled)")
@@ -59,10 +59,10 @@ var (
 
 var httpcfg = httpegress.Config{}
 
-// parseScratchZones splits --scratch-zones on commas, trimming whitespace
-// and dropping empty entries.
-func parseScratchZones() []string {
-	parts := strings.Split(*scratchZones, ",")
+// commaList splits a comma-separated flag value on commas, trimming
+// whitespace and dropping empty entries.
+func commaList(s string) []string {
+	parts := strings.Split(s, ",")
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
 		if p = strings.TrimSpace(p); p != "" {
@@ -191,7 +191,7 @@ func scratchJumbo() *agentapiservice.ClassConfig {
 	if *scratchJumboTmpl == "" {
 		return nil
 	}
-	return &agentapiservice.ClassConfig{InstanceTemplate: *scratchJumboTmpl}
+	return &agentapiservice.ClassConfig{InstanceTemplates: commaList(*scratchJumboTmpl)}
 }
 
 func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps, error) {
@@ -199,20 +199,21 @@ func ScratchCreateInit(ctx context.Context) (*agentapiservice.ScratchCreateDeps,
 	if err != nil {
 		return nil, errors.Wrap(err, "compute client")
 	}
-	zones := parseScratchZones()
+	zones := commaList(*scratchZones)
 	if len(zones) == 0 {
 		return nil, errors.New("--scratch-zones is required when --scratch-enabled")
 	}
-	if *scratchStandardTmpl == "" {
+	standard := commaList(*scratchStandardTmpl)
+	if len(standard) == 0 {
 		return nil, errors.New("--scratch-host-standard-template is required when --scratch-enabled")
 	}
 	return &agentapiservice.ScratchCreateDeps{
 		Scratches: db.NewFirestoreScratch(firestoreClient),
 		GCE:       gce,
 		Standard: agentapiservice.ClassConfig{
-			InstanceTemplate: *scratchStandardTmpl,
-			Headroom:         *scratchStandardIdle,
-			Slots:            *scratchStandardSlots,
+			InstanceTemplates: standard,
+			Headroom:          *scratchStandardIdle,
+			Slots:             *scratchStandardSlots,
 		},
 		Jumbo:    scratchJumbo(),
 		Hosts:    scratchHosts(ctx),
@@ -280,7 +281,7 @@ func ScratchReapInit(ctx context.Context) (*agentapiservice.ScratchReapDeps, err
 		Syncer:        agentapiservice.NewGCSSyncer(gcsClient, *scratchOutputBucket, execs, scratchHostDialer(ctx, *scratchHostPort)),
 		IdleThreshold: *scratchIdleThreshold,
 		Hosts:         scratchHosts(ctx),
-		Zones:         parseScratchZones(),
+		Zones:         commaList(*scratchZones),
 	}, nil
 }
 

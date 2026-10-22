@@ -23,11 +23,13 @@ import (
 )
 
 // ClassConfig is the per-machine-class scratch host shape used by
-// ScratchCreate.
+// ScratchCreate. A class names a host template per machine family, in
+// preference order. A later template mints a host only when every zone
+// refuses the earlier ones, and hosts from any of them admit the class.
 type ClassConfig struct {
-	InstanceTemplate string // full name of the host template
-	Headroom         int    // free slots ScratchTopUp keeps on the class's hosts
-	Slots            int    // guests a host of the class runs
+	InstanceTemplates []string // full names of the host templates, in preference order
+	Headroom          int      // free slots ScratchTopUp keeps on the class's hosts
+	Slots             int      // guests a host of the class runs
 }
 
 // selectClass returns the class a request runs on and its host config. A
@@ -260,9 +262,9 @@ func pollHealthy(ctx context.Context, timeout, interval time.Duration, probe fun
 // A create never waits on a host another create is minting. Bursts land on
 // the headroom ScratchTopUp keeps instead.
 func admitAnywhere(ctx context.Context, deps *ScratchCreateDeps, scratch *schema.Scratch, class ClassConfig) (Instance, error) {
-	labels := hostLabels(scratch.MachineClass, class.InstanceTemplate)
 	now := time.Now().UTC()
-	listed := slices.DeleteFunc(listHosts(ctx, deps.GCE, deps.Zones, labels), func(h Instance) bool { return !admissible(h, now, hostMaxAge) })
+	listed := fromTemplates(listHosts(ctx, deps.GCE, deps.Zones, classLabels(scratch.MachineClass)), class.InstanceTemplates)
+	listed = slices.DeleteFunc(listed, func(h Instance) bool { return !admissible(h, now, hostMaxAge) })
 	// NOTE: Filling in listing order lets later hosts empty out for the reaper.
 	for host, list := range guests(ctx, deps.Hosts, listed) {
 		if len(list.Guests) >= list.Slots {
@@ -277,7 +279,7 @@ func admitAnywhere(ctx context.Context, deps *ScratchCreateDeps, scratch *schema
 		}
 		log.Printf("scratch %s: admit on %s: %v", scratch.ID, host.Name, err)
 	}
-	host, err := mint(ctx, deps, class, labels)
+	host, err := mint(ctx, deps, scratch.MachineClass, class)
 	if err != nil {
 		return Instance{}, err
 	}
@@ -292,8 +294,8 @@ func admitAnywhere(ctx context.Context, deps *ScratchCreateDeps, scratch *schema
 
 // mint creates a host VM and polls its health endpoint until it can take
 // guests. A host that never can is deleted rather than left for the reaper.
-func mint(ctx context.Context, deps *ScratchCreateDeps, class ClassConfig, labels map[string]string) (Instance, error) {
-	host, err := insertHost(ctx, deps, class, labels)
+func mint(ctx context.Context, deps *ScratchCreateDeps, machineClass schema.MachineClass, class ClassConfig) (Instance, error) {
+	host, err := insertHost(ctx, deps, machineClass, class)
 	if err != nil {
 		return Instance{}, err
 	}
@@ -310,9 +312,9 @@ func mint(ctx context.Context, deps *ScratchCreateDeps, class ClassConfig, label
 
 // insertHost creates a host VM and returns before the host can take guests.
 // It deletes the VM if the insert fails partway.
-func insertHost(ctx context.Context, deps *ScratchCreateDeps, class ClassConfig, labels map[string]string) (Instance, error) {
+func insertHost(ctx context.Context, deps *ScratchCreateDeps, machineClass schema.MachineClass, class ClassConfig) (Instance, error) {
 	name := fmt.Sprintf("scratch-host-%s", uuid.New().String()[:8])
-	host, zone, err := insertWithFallthrough(ctx, deps.GCE, deps.Zones, deps.Cooldown, name, class.InstanceTemplate, labels)
+	host, zone, err := insertWithFallthrough(ctx, deps.GCE, deps.Zones, deps.Cooldown, name, machineClass, class.InstanceTemplates)
 	if err != nil {
 		if zone != "" {
 			// Proactively delete a host that exists but is unusable.

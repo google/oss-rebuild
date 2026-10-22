@@ -37,12 +37,12 @@ func ScratchTopUp(ctx context.Context, _ ScratchTopUpRequest, deps *ScratchCreat
 		if class.Headroom == 0 || class.Slots == 0 {
 			continue
 		}
-		labels := hostLabels(mc, class.InstanceTemplate)
-		free := freeSlots(ctx, deps.Hosts, listHosts(ctx, deps.GCE, deps.Zones, labels), time.Now().UTC(), class.Slots)
+		listed := fromTemplates(listHosts(ctx, deps.GCE, deps.Zones, classLabels(mc)), class.InstanceTemplates)
+		free := freeSlots(ctx, deps.Hosts, listed, time.Now().UTC(), class.Slots)
 		need := max(0, (class.Headroom-free+class.Slots-1)/class.Slots)
 		var minted atomic.Int64
 		runConcurrently(ctx, make([]struct{}, need), need, func(ctx context.Context, _ struct{}) {
-			if _, err := insertHost(ctx, deps, class, labels); err != nil {
+			if _, err := insertHost(ctx, deps, mc, class); err != nil {
 				log.Printf("top-up %s: %v", mc, err)
 				return
 			}
