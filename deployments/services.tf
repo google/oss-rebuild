@@ -58,6 +58,14 @@ locals {
     { standard = var.scratch_machine_type },
     var.scratch_jumbo_machine_type != "" ? { jumbo = var.scratch_jumbo_machine_type } : {},
   )
+  scratch_host_templates = merge(
+    { for class, shape in local.scratch_host_classes : class => { class = class, machine_type = shape } },
+    # The same shape on C2 for stockouts. C2 has only standard shapes, 4 GB per
+    # vCPU, so a highmem class, whose guests need more, skips it.
+    { for class, shape in local.scratch_host_classes : "${class}-c2" => { class = class, machine_type = replace(shape, "/^[a-z0-9]+-/", "c2-") } if strcontains(shape, "-standard-") && !startswith(shape, "c2-") },
+  )
+  # Each class's template keys in the order agent-api tries them.
+  scratch_class_templates = { for class in keys(local.scratch_host_classes) : class => [for k in [class, "${class}-c2"] : k if contains(keys(local.scratch_host_templates), k)] }
   # vCPUs each class's guest microVMs get.
   scratch_guest_vcpus = { standard = 4, jumbo = 4 }
   # Guest vCPUs each class's host runs per vCPU of its own. Guests sit mostly
@@ -76,9 +84,9 @@ locals {
   scratch_guest_subnet = "10.200.0.0/24"
 }
 resource "google_compute_instance_template" "scratch-host" {
-  for_each     = var.enable_scratch ? local.scratch_host_classes : {}
+  for_each     = var.enable_scratch ? local.scratch_host_templates : {}
   name_prefix  = "${var.host}-scratch-host-${each.key}-"
-  machine_type = each.value
+  machine_type = each.value.machine_type
   region       = "us-central1"
 
   advanced_machine_features {
@@ -107,7 +115,7 @@ resource "google_compute_instance_template" "scratch-host" {
   }
 
   tags   = ["scratch-host"]
-  labels = { purpose = "scratch-host", scratch_class = each.key }
+  labels = { purpose = "scratch-host", scratch_class = each.value.class }
 
   metadata = {
     user-data = templatefile("${path.module}/scratch_host_cos_cloudinit.yaml", {
@@ -118,9 +126,9 @@ resource "google_compute_instance_template" "scratch-host" {
     })
     startup-script = templatefile("${path.module}/scratch_host_cos_startup.sh", {
       guest_subnet   = local.scratch_guest_subnet
-      slots          = local.scratch_host_slots[each.key]
-      guest_vcpu     = local.scratch_guest_vcpus[each.key]
-      mem_overcommit = local.scratch_mem_overcommit[each.key]
+      slots          = local.scratch_host_slots[each.value.class]
+      guest_vcpu     = local.scratch_guest_vcpus[each.value.class]
+      mem_overcommit = local.scratch_mem_overcommit[each.value.class]
     })
   }
 
@@ -548,13 +556,13 @@ resource "google_cloud_run_v2_service" "agent-api" {
         ] : [], var.enable_scratch ? concat([
           "--scratch-enabled=true",
           "--scratch-zones=${join(",", data.google_compute_zones.scratch[0].names)}",
-          "--scratch-host-standard-template=${google_compute_instance_template.scratch-host["standard"].self_link}",
+          "--scratch-host-standard-template=${join(",", [for k in local.scratch_class_templates["standard"] : google_compute_instance_template.scratch-host[k].self_link])}",
           "--scratch-host-standard-idle-guests=${local.scratch_idle_guests["standard"]}",
           "--scratch-host-standard-slots=${local.scratch_host_slots["standard"]}",
           "--scratch-host-port=8080",
           "--scratch-output-bucket=${google_storage_bucket.scratch-output[0].name}",
           ], contains(keys(local.scratch_host_classes), "jumbo") ? [
-          "--scratch-host-jumbo-template=${google_compute_instance_template.scratch-host["jumbo"].self_link}",
+          "--scratch-host-jumbo-template=${join(",", [for k in local.scratch_class_templates["jumbo"] : google_compute_instance_template.scratch-host[k].self_link])}",
       ] : []) : [])
       resources {
         limits = {
