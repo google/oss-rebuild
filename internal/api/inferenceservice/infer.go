@@ -18,20 +18,60 @@ import (
 	"github.com/google/oss-rebuild/pkg/rebuild/meta"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
 	"github.com/google/oss-rebuild/pkg/rebuild/schema"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 )
 
+type cratesIOVersionCache struct {
+	cratesio.Registry
+	name    string
+	version string
+	value   *cratesio.CrateVersion
+}
+
+func (c cratesIOVersionCache) Version(ctx context.Context, name, version string) (*cratesio.CrateVersion, error) {
+	if name == c.name && version == c.version {
+		return c.value, nil
+	}
+	return c.Registry.Version(ctx, name, version)
+}
+
+func withCratesIOFreshness(ctx context.Context, t rebuild.Target, mux rebuild.RegistryMux) (context.Context, rebuild.RegistryMux, error) {
+	if t.Ecosystem != rebuild.CratesIO {
+		return ctx, mux, nil
+	}
+	cache, ok := ctx.Value(rebuild.RepoCacheClientID).(*gitcache.Client)
+	if !ok || cache == nil {
+		return ctx, mux, nil
+	}
+	vmeta, err := mux.CratesIO.Version(ctx, t.Package, t.Version)
+	if err != nil {
+		return ctx, mux, errors.Wrap(err, "getting crates.io version freshness")
+	}
+	if vmeta == nil {
+		return ctx, mux, errors.New("getting crates.io version freshness: empty version metadata")
+	}
+	cacheCopy := *cache
+	cacheCopy.DefaultFreshness = vmeta.Created
+	ctx = context.WithValue(ctx, rebuild.RepoCacheClientID, &cacheCopy)
+	mux.CratesIO = cratesIOVersionCache{Registry: mux.CratesIO, name: t.Package, version: t.Version, value: vmeta}
+	return ctx, mux, nil
+}
+
 func doInfer(ctx context.Context, rebuilder rebuild.Rebuilder, t rebuild.Target, mux rebuild.RegistryMux, hint rebuild.Strategy, ropt *gitx.RepositoryOptions) (rebuild.Strategy, rebuild.RepoConfig, error) {
+	var err error
+	ctx, mux, err = withCratesIOFreshness(ctx, t, mux)
+	if err != nil {
+		return nil, rebuild.RepoConfig{}, err
+	}
 	var repo string
 	if lh, ok := hint.(*rebuild.LocationHint); ok && lh != nil {
-		var err error
 		repo, err = uri.CanonicalizeRepoURI(lh.Location.Repo)
 		if err != nil {
 			return nil, rebuild.RepoConfig{}, errors.Wrap(err, "canonicalizing repo hint")
 		}
 	} else {
-		var err error
 		repo, err = rebuilder.InferRepo(ctx, t, mux)
 		if err != nil {
 			return nil, rebuild.RepoConfig{}, err

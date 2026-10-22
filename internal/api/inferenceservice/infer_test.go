@@ -5,15 +5,87 @@ package inferenceservice
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/oss-rebuild/internal/db"
+	"github.com/google/oss-rebuild/internal/gitcache"
 	"github.com/google/oss-rebuild/internal/gitx"
 	"github.com/google/oss-rebuild/internal/gitx/gitxtest"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/google/oss-rebuild/pkg/registry/cratesio"
 )
+
+type cratesIORegistryStub struct {
+	cratesio.Registry
+	version      *cratesio.CrateVersion
+	versionCalls int
+}
+
+func (r *cratesIORegistryStub) Version(context.Context, string, string) (*cratesio.CrateVersion, error) {
+	r.versionCalls++
+	return r.version, nil
+}
+
+func (r *cratesIORegistryStub) Crate(context.Context, string) (*cratesio.Crate, error) {
+	return nil, nil
+}
+
+func (r *cratesIORegistryStub) Artifact(context.Context, string, string) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+func TestWithCratesIOFreshness(t *testing.T) {
+	created := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	registry := &cratesIORegistryStub{version: &cratesio.CrateVersion{Version: cratesio.Version{Created: created}}}
+	original := &gitcache.Client{
+		IDClient:         &http.Client{},
+		APIClient:        &http.Client{},
+		URL:              &url.URL{},
+		DefaultFreshness: created.Add(-time.Hour),
+	}
+	ctx := context.WithValue(context.Background(), rebuild.RepoCacheClientID, original)
+	mux := rebuild.RegistryMux{CratesIO: registry}
+	target := rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "demo", Version: "1.0.1"}
+
+	gotCtx, gotMux, err := withCratesIOFreshness(ctx, target, mux)
+	if err != nil {
+		t.Fatalf("withCratesIOFreshness() error = %v", err)
+	}
+	gotCache, ok := gotCtx.Value(rebuild.RepoCacheClientID).(*gitcache.Client)
+	if !ok || gotCache == original {
+		t.Fatal("withCratesIOFreshness() did not copy the cache client")
+	}
+	if !gotCache.DefaultFreshness.Equal(created) {
+		t.Errorf("DefaultFreshness = %v, want %v", gotCache.DefaultFreshness, created)
+	}
+	if !original.DefaultFreshness.Equal(created.Add(-time.Hour)) {
+		t.Errorf("original DefaultFreshness changed to %v", original.DefaultFreshness)
+	}
+	gotVersion, err := gotMux.CratesIO.Version(context.Background(), target.Package, target.Version)
+	if err != nil {
+		t.Fatalf("cached Version() error = %v", err)
+	}
+	if gotVersion != registry.version || registry.versionCalls != 1 {
+		t.Errorf("cached Version() = %p, calls = %d; want %p, 1", gotVersion, registry.versionCalls, registry.version)
+	}
+}
+
+func TestWithCratesIOFreshnessWithoutCacheIsNoop(t *testing.T) {
+	registry := &cratesIORegistryStub{}
+	target := rebuild.Target{Ecosystem: rebuild.CratesIO, Package: "demo", Version: "1.0.1"}
+	ctx, mux, err := withCratesIOFreshness(context.Background(), target, rebuild.RegistryMux{CratesIO: registry})
+	if err != nil {
+		t.Fatalf("withCratesIOFreshness() error = %v", err)
+	}
+	if ctx.Value(rebuild.RepoCacheClientID) != nil || mux.CratesIO != registry || registry.versionCalls != 0 {
+		t.Error("withCratesIOFreshness() changed context or registry without a cache client")
+	}
+}
 
 const twoCommitRepo = `
 commits:
