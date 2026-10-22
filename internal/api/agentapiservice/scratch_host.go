@@ -161,32 +161,42 @@ func olderThan(t, now time.Time, d time.Duration) bool {
 	return t.IsZero() || now.Sub(t) > d
 }
 
-// retiredAt returns when a host was retired, false if it was not.
-func retiredAt(host Instance) (time.Time, bool) {
-	stamp, ok := host.Labels[hostLabelRetiredKey]
+// stampAt returns the time a host's key label holds, false if it is unset.
+func stampAt(host Instance, key string) (time.Time, bool) {
+	stamp, ok := host.Labels[key]
 	if !ok {
 		return time.Time{}, false
 	}
 	unix, err := strconv.ParseInt(stamp, 10, 64)
 	if err != nil {
-		// An unreadable stamp counts as retired forever, which can only hasten
+		// An unreadable stamp reads as long past, which can only hasten
 		// collection.
 		return time.Time{}, true
 	}
 	return time.Unix(unix, 0).UTC(), true
 }
 
-// retire stamps a host out of the candidate set. The fingerprint makes a
-// concurrent label write win, and the next pass retries.
+// retire stamps a host out of the candidate set.
 func retire(ctx context.Context, gce GCE, host Instance, now time.Time) error {
+	return stamp(ctx, gce, host, now, hostLabelRetiredKey)
+}
+
+// stamp sets each of keys that host lacks to now, in one label write. The
+// fingerprint makes a concurrent label write win, and the next pass retries.
+func stamp(ctx context.Context, gce GCE, host Instance, now time.Time, keys ...string) error {
 	labels := maps.Clone(host.Labels)
 	if labels == nil {
 		labels = map[string]string{}
 	}
-	if _, done := labels[hostLabelRetiredKey]; done {
+	n := len(labels)
+	for _, key := range keys {
+		if _, ok := labels[key]; !ok {
+			labels[key] = fmt.Sprint(now.UTC().Unix())
+		}
+	}
+	if len(labels) == n {
 		return nil
 	}
-	labels[hostLabelRetiredKey] = fmt.Sprint(now.UTC().Unix())
 	return gce.SetLabels(ctx, host.Zone, host.Name, labels, host.LabelFingerprint)
 }
 
