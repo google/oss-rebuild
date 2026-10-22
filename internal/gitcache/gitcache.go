@@ -25,14 +25,15 @@
 //
 // # Fill Budgets
 //
-// A fill stops at a time and size budget. One past its time budget answers 504
-// (ErrFillTimeout), and one over its size budget 413 (gitx.RepoTooLargeError).
+// A fill stops at a time and memory budget. One past its time budget answers
+// 504 (ErrFillTimeout), and one that runs the instance short of memory 413
+// (gitx.RepoTooLargeError).
 //
 // # Failed Fills
 //
-// A fill over its size budget, or the third failure in a row, makes refills
-// fail fast for a day with 413 or 422 (ErrGaveUp). A fill the remote
-// rate-limits gets 429 with Retry-After and does not count.
+// A fill that runs the instance short of memory, or the third failure in a
+// row, makes refills fail fast for a day with 413 or 422 (ErrGaveUp). A fill
+// the remote rate-limits gets 429 with Retry-After and does not count.
 //
 // # Concurrent Fills
 //
@@ -88,7 +89,7 @@ func NewServer(ctx context.Context, cacheStr string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{backend: backend, cloneFunc: gitx.Clone}
+	s := &Server{backend: backend, cloneFunc: gitx.Clone, memAvailable: memAvailable}
 	switch total, err := MemTotal(); {
 	case err != nil:
 		log.Printf("no fill budget: %v", err)
@@ -100,25 +101,33 @@ func NewServer(ctx context.Context, cacheStr string) (*Server, error) {
 	return s, nil
 }
 
-// A fill stages its repository in memory, so it may use the memory beyond
-// fillMemoryReserve. The budget covers a pack split's or repack's second
-// copy, since watchSize counts it.
+// A fill stages its repository in memory beside the git processes working on
+// it, whose heaps grow with the repository's object count. It may draw the
+// instance's available memory down to fillMemoryReserve, which covers the
+// server and what a fill allocates between two checks.
 const fillMemoryReserve = 2 << 30
 
 // MemTotal reads the total memory from /proc/meminfo. On Cloud Run, that is
 // the container's memory limit.
-func MemTotal() (int64, error) {
+func MemTotal() (int64, error) { return meminfo("MemTotal") }
+
+// memAvailable reads the memory the instance can still allocate. Files staged
+// in Cloud Run's in-memory filesystem count against it.
+func memAvailable() (int64, error) { return meminfo("MemAvailable") }
+
+// meminfo reads a field of /proc/meminfo in bytes.
+func meminfo(field string) (int64, error) {
 	b, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
 		return 0, err
 	}
 	for line := range strings.Lines(string(b)) {
-		if rest, ok := strings.CutPrefix(line, "MemTotal:"); ok {
+		if rest, ok := strings.CutPrefix(line, field+":"); ok {
 			kb, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimSpace(rest), " kB"), 10, 64)
-			return kb << 10, errors.Wrap(err, "parsing MemTotal")
+			return kb << 10, errors.Wrapf(err, "parsing %s", field)
 		}
 	}
-	return 0, errors.New("no MemTotal in /proc/meminfo")
+	return 0, errors.Errorf("no %s in /proc/meminfo", field)
 }
 
 // newBackend creates a cacheBackend from the given cache location string.
