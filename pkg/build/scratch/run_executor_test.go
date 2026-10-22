@@ -61,7 +61,7 @@ func TestPhaseFailureSurfacesExitError(t *testing.T) {
 	// Prepare creates the output mount point, stages the plan's combined
 	// script as build.sh from stdin, and removes prior containers.
 	prepareScript := prepare.Cmd[len(prepare.Cmd)-1]
-	for _, want := range []string{"mkdir -p", "docker rm -f", `cat > "/home/builder/builds/iter-1/build.sh"`} {
+	for _, want := range []string{"mkdir -p", "docker rm -f", `rm -rf "/home/builder/builds"/*/src && mkdir -p "/home/builder/builds/iter-1/src"`, `cat > "/home/builder/builds/iter-1/build.sh"`} {
 		if !strings.Contains(prepareScript, want) {
 			t.Errorf("prepare script missing %q:\n%s", want, prepareScript)
 		}
@@ -83,7 +83,7 @@ func TestPhaseFailureSurfacesExitError(t *testing.T) {
 	if start.Cmd[0] != "docker" || start.Cmd[1] != "run" {
 		t.Errorf("start cmd = %v, want docker run argv", start.Cmd)
 	}
-	for _, want := range []string{"--detach", "--rm", "rb-iter-1", "sleep", "infinity"} {
+	for _, want := range []string{"--detach", "--rm", "rb-iter-1", "/home/builder/builds/iter-1/src:/src", "sleep", "infinity"} {
 		if !slices.Contains(start.Cmd, want) {
 			t.Errorf("start cmd missing %q: %v", want, start.Cmd)
 		}

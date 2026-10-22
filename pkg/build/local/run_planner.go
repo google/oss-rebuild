@@ -18,6 +18,9 @@ import (
 // artifact inside the container.
 const DockerRunOutputPath = "/out/rebuild"
 
+// DockerRunSourcePath is where the phase scripts check out and build the source.
+const DockerRunSourcePath = "/src"
+
 // DockerRunPlanner generates Docker run execution plans using existing images
 type DockerRunPlanner struct {
 }

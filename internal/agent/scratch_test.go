@@ -315,6 +315,7 @@ func TestMismatchMessage(t *testing.T) {
 		"only in rebuild, only in upstream, and differ",
 		"/home/builder/tools/diffr /home/builder/builds/iter-1/out/rebuild.stabilized /home/builder/upstream/lodash-4.17.21.tgz.stabilized",
 		"/home/builder/tools/stabilize --ecosystem npm --artifact lodash-4.17.21.tgz --infile <file> --outfile <file>.stabilized",
+		"/src is the host directory /home/builder/builds/iter-1/src",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("message lacks %q:\n%s", want, got)

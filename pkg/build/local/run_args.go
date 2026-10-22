@@ -30,6 +30,10 @@ type RunArgsOpts struct {
 	// OutputMountSrc is the docker-host directory mounted at the plan's
 	// output directory.
 	OutputMountSrc string
+	// SourceMountSrc, when set, is the docker-host directory mounted at the
+	// source tree (DockerRunSourcePath), so what the build leaves there is
+	// readable from the host and outlives the container.
+	SourceMountSrc string
 	// Remove adds --rm: the daemon removes the container once it exits. In
 	// the start/exec composition the container only exits when its idle init
 	// stops.
@@ -51,6 +55,9 @@ type RunArgsOpts struct {
 func composeContainerArgs(plan *DockerRunPlan, opts RunArgsOpts) []string {
 	args := []string{"--name", opts.ContainerName}
 	args = append(args, "-v", fmt.Sprintf("%s:%s", opts.OutputMountSrc, path.Dir(plan.OutputPath)))
+	if opts.SourceMountSrc != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:%s", opts.SourceMountSrc, DockerRunSourcePath))
+	}
 	if plan.WorkingDir != "" {
 		args = append(args, "-w", plan.WorkingDir)
 	}
