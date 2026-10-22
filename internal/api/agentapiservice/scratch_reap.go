@@ -23,8 +23,9 @@ func (ScratchReapRequest) Validate() error { return nil }
 
 // ScratchReapResponse reports the counts from a single reap cycle.
 type ScratchReapResponse struct {
-	ScratchesReaped int `json:"scratches_reaped"`
-	OpsFinalized    int `json:"ops_finalized"`
+	ScratchesReaped   int `json:"scratches_reaped"`
+	OpsFinalized      int `json:"ops_finalized"`
+	SessionsFinalized int `json:"sessions_finalized"`
 }
 
 // opDeadlineGrace pads each op's worker-enforced timeout to allow for
@@ -32,18 +33,24 @@ type ScratchReapResponse struct {
 // the op as expired.
 const opDeadlineGrace = 10 * time.Minute
 
+// sessionDeadlineGrace pads a session's own timeout before the reaper declares
+// it dead: a session cannot outlive its execution's timeout, so no heartbeat
+// for longer than that plus this slack means the execution is gone.
+const sessionDeadlineGrace = 15 * time.Minute
+
 // ScratchReapDeps wires the reaper.
 type ScratchReapDeps struct {
 	Scratches db.Scratch
 	Execs     db.ScratchExecs
 	GCE       GCE
-	// Syncer (optional) is invoked for every pending op on an idle
-	// scratch BEFORE teardown, and for expired ops during the sweep, so
-	// we capture the worker's final status while it's still reachable.
-	// nil disables; affected ops get finalized blind instead.
+	Sessions  db.Sessions
+	// Syncer (optional) pulls a pending op's final status from its worker
+	// before the scratch is torn down or the op declared expired. nil
+	// finalizes such ops blind.
 	Syncer Syncer
-	// IdleThreshold: ready scratches with no in-deadline pending exec
-	// and LastUsed older than this get torn down.
+	Zones  []string // zones a VM may sit in when its record has none (see deleteScratch)
+	// IdleThreshold is how long a scratch may go without a write before
+	// the reaper takes it (see db.ScratchIdleSince).
 	IdleThreshold time.Duration // default: 30m
 }
 
@@ -63,14 +70,19 @@ func deadlineFor(exec schema.ScratchExec) time.Time {
 	return exec.CreatedAt.Add(time.Duration(exec.TimeoutSeconds)*time.Second + opDeadlineGrace)
 }
 
-// ScratchReap deletes idle scratches and finalizes obsolete ops.
-// A pending op inside its deadline exempts its scratch from idle teardown,
-// so raising the exec timeout — not the idle threshold — is how longer
-// executions are accommodated. Ops bound to a no-longer-Ready scratch are
-// marked Lost and expired ops are pulled through the worker for their real
-// final status before falling back to a blind TimedOut. Best-effort: each
-// item's failure is logged and the loop continues so a single bad row
-// can't block the rest.
+// ScratchReap moves records that stopped making progress to a terminal
+// state. Each sweep is best-effort per item: a failure is logged and the
+// pass goes on.
+//
+//	sweep          candidate                                    outcome
+//	idle scratch   ready, LastUsed past IdleThreshold           VM and record deleted
+//	stuck scratch  starting or deleting, no write for as long   VM and record deleted
+//	pending exec   past its deadline, or its scratch gone       TimedOut or Lost
+//	dead session   RUNNING, no write for timeout plus grace     VM deleted, COMPLETED/ERROR
+//
+// A pending exec inside its deadline keeps its scratch up, so a longer
+// execution needs a longer exec timeout rather than a longer idle
+// threshold. Idle and stuck scratches come from one listing.
 func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDeps) (*ScratchReapResponse, error) {
 	now := time.Now().UTC()
 	idleCutoff := now.Add(-deps.idleThreshold())
@@ -94,9 +106,8 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 			busy[exec.ScratchID] = true
 		}
 	}
-	// Reap idle, non-busy scratches. Before tearing down each one, try
-	// to sync any pending ops on it so we capture exit codes while the
-	// worker is still reachable.
+	// Pending ops on a scratch are synced before its teardown so exit
+	// codes are captured while the worker is still reachable.
 	idle, err := deps.Scratches.ListIdleSince(ctx, idleCutoff)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, pkgerrors.Wrap(err, "list idle scratches"))
@@ -109,35 +120,25 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		if deps.Syncer != nil {
 			syncPendingFor(ctx, deps, scratch, pending)
 		}
-		// Re-check before the destructive step: an exec dispatched after
-		// the idle snapshot bumps LastUsed, and tearing down its scratch
-		// would orphan it.
+		// Re-read before the destructive step: an exec dispatched since
+		// the listing bumped LastUsed, and a create may have moved on.
 		cur, err := deps.Scratches.Get(ctx, scratch.ID)
 		if err != nil {
 			log.Printf("reap re-check scratch %s: %v", scratch.ID, err)
 			continue
 		}
-		isIdle := false
-		switch cur.State {
-		case schema.ScratchReady:
-			isIdle = cur.LastUsed.Before(idleCutoff)
-		case schema.ScratchStarting, schema.ScratchDeleting:
-			isIdle = cur.Updated.Before(idleCutoff)
-		}
-		if !isIdle {
+		if !db.ScratchIdleSince(cur, idleCutoff) {
 			continue
 		}
-		if err := teardownScratch(ctx, deps, scratch); err != nil {
+		if err := deleteScratch(ctx, deps.Scratches, deps.GCE, cur, deps.Zones); err != nil {
 			log.Printf("reap teardown scratch %s: %v", scratch.ID, err)
 			continue
 		}
 		scratchesReaped++
 	}
-	// Sweep pending ops. Mark ops Lost whose scratch is gone and finalize
-	// expired ones. Re-list rather than reuse the earlier snapshot: the
-	// pre-teardown sync may have finalized ops, and Execs.Update is a
-	// full-record overwrite that would clobber those records with a stale
-	// Pending base.
+	// Sweep pending ops. Re-list rather than reuse the snapshot: the
+	// pre-teardown sync may have finalized some, and Execs.Update is a
+	// full-record overwrite that would put them back to Pending.
 	pending, err = deps.Execs.ListPending(ctx)
 	if err != nil {
 		return nil, api.AsStatus(codes.Internal, pkgerrors.Wrap(err, "list pending execs"))
@@ -158,7 +159,63 @@ func ScratchReap(ctx context.Context, _ ScratchReapRequest, deps *ScratchReapDep
 		}
 		opsFinalized++
 	}
-	return &ScratchReapResponse{ScratchesReaped: scratchesReaped, OpsFinalized: opsFinalized}, nil
+	sessionsFinalized := finalizeDeadSessions(ctx, deps, now)
+	return &ScratchReapResponse{
+		ScratchesReaped:   scratchesReaped,
+		OpsFinalized:      opsFinalized,
+		SessionsFinalized: sessionsFinalized,
+	}, nil
+}
+
+// finalizeDeadSessions closes sessions whose execution can no longer be
+// running and tears down the VM each still holds, VM first so a failed
+// close cannot strand it.
+func finalizeDeadSessions(ctx context.Context, deps *ScratchReapDeps, now time.Time) int {
+	sessions, err := deps.Sessions.ListNonTerminal(ctx)
+	if err != nil {
+		log.Printf("reap list non-terminal sessions: %v", err)
+		return 0
+	}
+	var n int
+	for _, s := range sessions {
+		if s.TimeoutSeconds <= 0 {
+			continue // no bound to declare it dead against
+		}
+		if now.Before(s.Updated.Add(time.Duration(s.TimeoutSeconds)*time.Second + sessionDeadlineGrace)) {
+			continue
+		}
+		if s.ScratchID != "" {
+			sc, err := deps.Scratches.Get(ctx, s.ScratchID)
+			if err != nil {
+				log.Printf("reap finalize session %s: get scratch %s: %v", s.ID, s.ScratchID, err)
+			} else if sc.State != schema.ScratchDeleting && sc.State != schema.ScratchDeleted {
+				if err := deleteScratch(ctx, deps.Scratches, deps.GCE, sc, deps.Zones); err != nil {
+					log.Printf("reap finalize session %s: teardown scratch %s: %v", s.ID, s.ScratchID, err)
+				}
+			}
+		}
+		var finalized bool
+		err := deps.Sessions.Mutate(ctx, s.ID, func(cur *schema.AgentSession) (bool, error) {
+			// A completion that raced the listing keeps its own stop reason.
+			finalized = cur.Status == schema.AgentSessionStatusInitializing || cur.Status == schema.AgentSessionStatusRunning
+			if !finalized {
+				return false, nil
+			}
+			cur.Status = schema.AgentSessionStatusCompleted
+			cur.StopReason = schema.AgentCompleteReasonError
+			cur.Summary = "reaper: session exceeded its timeout without reporting completion"
+			cur.Updated = now
+			return true, nil
+		})
+		if err != nil {
+			log.Printf("reap finalize session %s: %v", s.ID, err)
+			continue
+		}
+		if finalized {
+			n++
+		}
+	}
+	return n
 }
 
 // syncPendingFor invokes Syncer for each pending op on scratch. Each op
@@ -223,23 +280,4 @@ func terminalStateFor(ctx context.Context, deps *ScratchReapDeps, exec schema.Sc
 		}
 	}
 	return schema.ScratchExecPending, nil
-}
-
-// teardownScratch mirrors ScratchDelete's GCE + state flow. Records
-// persist with state=Deleted for audit.
-func teardownScratch(ctx context.Context, deps *ScratchReapDeps, scratch schema.Scratch) error {
-	if scratch.State != schema.ScratchDeleting {
-		if err := deps.Scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleting); err != nil {
-			return pkgerrors.Wrap(err, "scratches update state deleting")
-		}
-	}
-	if scratch.VMName != "" {
-		if err := deps.GCE.DeleteInstance(ctx, scratch.Zone, scratch.VMName); err != nil {
-			log.Printf("reap DeleteInstance(%s): %v", scratch.VMName, err)
-		}
-	}
-	if err := deps.Scratches.UpdateState(ctx, scratch.ID, schema.ScratchDeleted); err != nil {
-		return pkgerrors.Wrap(err, "scratches update state deleted")
-	}
-	return nil
 }
