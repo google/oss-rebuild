@@ -14,6 +14,7 @@ import (
 	gcs "cloud.google.com/go/storage"
 	"github.com/google/oss-rebuild/internal/agent"
 	"github.com/google/oss-rebuild/internal/db"
+	"github.com/google/oss-rebuild/internal/httpx"
 	"github.com/google/oss-rebuild/pkg/act"
 	"github.com/google/oss-rebuild/pkg/act/api"
 	"github.com/google/oss-rebuild/pkg/act/cli"
@@ -181,6 +182,8 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 	// Create agent API client stubs
 	iterationStub := api.Stub[schema.AgentCreateIterationRequest, schema.AgentCreateIterationResponse](client, baseURL.JoinPath("agent/session/iteration"))
 	completeStub := api.Stub[schema.AgentCompleteRequest, schema.AgentCompleteResponse](client, baseURL.JoinPath("agent/session/complete"))
+	// Registries (e.g. crates.io) refuse anonymous clients, so add user agent.
+	regclient := &httpx.WithUserAgent{BasicClient: http.DefaultClient, UserAgent: rebuild.UserAgent("localbuild")}
 	runDeps := agent.RunSessionDeps{
 		Client:         aiClient,
 		IterationStub:  iterationStub,
@@ -190,6 +193,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 		MetadataBucket: cfg.MetadataBucket,
 		LogsBucket:     cfg.LogsBucket,
 		Retrier:        agent.NewRetrier(),
+		RegistryClient: regclient,
 	}
 	// Optional scratch execution against a pre-provisioned VM. When ScratchID
 	// is empty, iteration builds stay on GCB (unchanged behavior).
@@ -237,7 +241,7 @@ func Handler(ctx context.Context, cfg Config, deps *Deps) (*act.NoOutput, error)
 			ScratchID:      cfg.ScratchID,
 			Stubs:          stubs,
 			GCSClient:      gcsClient,
-			RegistryClient: http.DefaultClient,
+			RegistryClient: regclient,
 			PrebuildConfig: rebuild.PrebuildConfig{Bucket: cfg.PrebuildBucket, Dir: cfg.PrebuildDir, Auth: cfg.PrebuildAuth},
 			AuthHeader:     authHeader,
 			BuildTimeout:   cfg.BuildTimeout,
