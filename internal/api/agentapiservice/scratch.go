@@ -253,6 +253,33 @@ func waitHealthy(ctx context.Context, deps *ScratchCreateDeps, ip string) error 
 	}
 }
 
+// probeTimeout bounds one health probe, so a blackholed target costs one
+// interval rather than the kernel's connect retries.
+const probeTimeout = 10 * time.Second
+
+// pollHealthy calls probe until it succeeds or timeout elapses.
+func pollHealthy(ctx context.Context, timeout, interval time.Duration, probe func(context.Context) error) error {
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	try := func() error {
+		ctx, cancel := context.WithTimeout(probeCtx, probeTimeout)
+		defer cancel()
+		return probe(ctx)
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		if err := try(); err == nil {
+			return nil
+		}
+		select {
+		case <-probeCtx.Done():
+			return probeCtx.Err()
+		case <-t.C:
+		}
+	}
+}
+
 func mintID(gen func() string) string {
 	if gen != nil {
 		return gen()
