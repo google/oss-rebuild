@@ -916,19 +916,26 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 							-ctrl_addr=:3127 \
 							-docker_addr=:3130 \
 							-docker_socket=/var/run/docker.sock \
-							-docker_truststore_env_vars=PIP_CERT,CURL_CA_BUNDLE,NODE_EXTRA_CA_CERTS,CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE,NIX_SSL_CERT_FILE \
+							-docker_truststore_env_vars=PIP_CERT,CURL_CA_BUNDLE,NODE_EXTRA_CA_CERTS,CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE,NIX_SSL_CERT_FILE,SSL_CERT_FILE \
 							-docker_network=container:build \
 							-docker_java_truststore=true"
 					'
 					proxyIP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' proxy)
+					dnsIP=$(getent ahostsv4 169.254.169.254)
+					dnsIP=${dnsIP%% *}
 					docker network connect cloudbuild proxy
-					docker run --detach --name=build --network=proxynet --entrypoint=/bin/sh gcr.io/cloud-builders/docker -c 'sleep infinity'
+					docker run --detach --name=build --network=proxynet --dns="$dnsIP" --entrypoint=/bin/sh gcr.io/cloud-builders/docker -c 'sleep infinity'
 					docker exec --privileged build /bin/sh -euxc '
 						iptables -t nat -A OUTPUT -p tcp --dport 3128 -j ACCEPT
 						iptables -t nat -A OUTPUT -p tcp --dport 3129 -j ACCEPT
 						iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner '$uid' -j ACCEPT
 						iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination '$proxyIP':3128
 						iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':3129
+						iptables -A OUTPUT -o lo -j ACCEPT
+						iptables -A OUTPUT -d '$proxyIP' -j ACCEPT
+						iptables -A OUTPUT -d '$dnsIP' -p udp --dport 53 -j ACCEPT
+						iptables -A OUTPUT -d '$dnsIP' -p tcp --dport 53 -j ACCEPT
+						iptables -A OUTPUT -j REJECT
 					'
 					mkdir -p /workspace/tetragon/
 					export TID=$(docker run --name=tetragon --detach --pid=host --cgroupns=host --privileged -v=/workspace/tetragon/:/workspace/tetragon/ -v=/sys/kernel/btf/vmlinux:/var/lib/tetragon/btf quay.io/cilium/tetragon:v1.4.1 /usr/bin/tetragon --tracing-policy-dir=/workspace/tetragon/ --server-address=unix:///workspace/tetragon/tetragon.sock --rb-size=10M --rb-queue-size=10M --event-queue-size=10000000)
@@ -941,14 +948,15 @@ func TestGCBPlannerBuildScriptWithSysgraph(t *testing.T) {
 					SYSGRAPH_PID=$(docker inspect -f '{{.State.Pid}}' sysgraph)
 					PROXY_PID=$(docker inspect -f '{{.State.Pid}}' proxy)
 					`)[1:] + policyBlock() + textwrap.Dedent(`
-					cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs --mount=type=secret,id=PROXYCERT,env=PIP_CERT --mount=type=secret,id=PROXYCERT,env=CURL_CA_BUNDLE --mount=type=secret,id=PROXYCERT,env=NODE_EXTRA_CA_CERTS --mount=type=secret,id=PROXYCERT,env=CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE --mount=type=secret,id=PROXYCERT,env=NIX_SSL_CERT_FILE|" > /Dockerfile
+					cat <<'EOS' | sed "s|^RUN|RUN --mount=type=bind,from=certs,dst=/etc/ssl/certs --mount=type=secret,id=PROXYCERT,env=PIP_CERT --mount=type=secret,id=PROXYCERT,env=CURL_CA_BUNDLE --mount=type=secret,id=PROXYCERT,env=NODE_EXTRA_CA_CERTS --mount=type=secret,id=PROXYCERT,env=CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE --mount=type=secret,id=PROXYCERT,env=NIX_SSL_CERT_FILE --mount=type=secret,id=PROXYCERT,env=SSL_CERT_FILE|" > /Dockerfile
 					`)[1:] + dockerfile + "\nEOS" + textwrap.Dedent(`
 
 					docker cp /Dockerfile build:/Dockerfile
 					docker exec build /bin/sh -euxc '
 						curl http://proxy:3127/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
 						export DOCKER_HOST=tcp://proxy:3130 PROXYCERT=/etc/ssl/certs/proxy.crt
-						docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
+						printf "[dns]\nnameservers = [\"%s\"]\n" '$dnsIP' > /buildkitd.toml
+						docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build --buildkitd-config /buildkitd.toml
 						cat /Dockerfile | docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT --load --tag=img -
 						docker run --name=container img
 					'
@@ -1207,4 +1215,26 @@ func TestGCBPlannerLayers(t *testing.T) {
 			t.Error("run sentinel present without RecordTimings")
 		}
 	})
+}
+
+func TestGCBPlannerProxyDNSServer(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		config string
+		want   string
+	}{
+		{name: "Default", config: "", want: "getent ahostsv4 169.254.169.254)"},
+		{name: "Configured", config: "8.8.8.8", want: "getent ahostsv4 8.8.8.8)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewPlanner(PlannerConfig{DNSServer: tc.config})
+			script, err := p.generateProxyBuildScript(rebuild.Target{Ecosystem: rebuild.NPM, Package: "p", Version: "1", Artifact: "p.tgz"}, "FROM alpine", rebuild.RequiredEnv{}, build.PlanOptions{UseNetworkProxy: true})
+			if err != nil {
+				t.Fatalf("generateProxyBuildScript: %v", err)
+			}
+			if !strings.Contains(script, tc.want) {
+				t.Errorf("script lacks %q", tc.want)
+			}
+		})
+	}
 }
