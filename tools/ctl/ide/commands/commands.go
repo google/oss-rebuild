@@ -275,7 +275,11 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 			Short: "generate stabilizers from diff",
 			Func: func(ctx context.Context, example rundex.Rebuild) {
 				// Generate the path exclusion stabilizers.
-				var customStabs []stabilize.CustomStabilizerEntry
+				type exclusion struct {
+					entry string
+					stab  stabilize.CustomStabilizerEntry
+				}
+				var exclusions []exclusion
 				{
 					if _, err := butler.Fetch(ctx, example.RunID, rebuild.DebugUpstreamAsset.For(example.Target())); err != nil {
 						log.Println(errors.Wrap(err, "downloading upstream"))
@@ -321,24 +325,27 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 					if err == nil {
 						left, diff, right = collectDiffPaths(&root)
 					}
-					exclusionStab := func(path, reason string) stabilize.CustomStabilizerEntry {
-						return stabilize.CustomStabilizerEntry{
-							Config: stabilize.CustomStabilizerConfigOneOf{
-								ExcludePath: &stabilize.ExcludePath{
-									Paths: []string{path},
+					newExclusion := func(entry, reason string) exclusion {
+						return exclusion{
+							entry: entry,
+							stab: stabilize.CustomStabilizerEntry{
+								Config: stabilize.CustomStabilizerConfigOneOf{
+									ExcludePath: &stabilize.ExcludePath{
+										Paths: []string{glob.QuoteMeta(entry)},
+									},
 								},
+								Reason: reason,
 							},
-							Reason: reason,
 						}
 					}
 					for _, p := range left {
-						customStabs = append(customStabs, exclusionStab(p, "Found in rebuild.\nFIXME: Explain why it's safe to ignore."))
+						exclusions = append(exclusions, newExclusion(p, "Found in rebuild.\nFIXME: Explain why it's safe to ignore."))
 					}
 					for _, p := range diff {
-						customStabs = append(customStabs, exclusionStab(p, "Found in both.\nFIXME: Explain why it's safe to ignore."))
+						exclusions = append(exclusions, newExclusion(p, "Found in both.\nFIXME: Explain why it's safe to ignore."))
 					}
 					for _, p := range right {
-						customStabs = append(customStabs, exclusionStab(p, "Found in Upstream.\nFIXME: Explain why it's safe to ignore."))
+						exclusions = append(exclusions, newExclusion(p, "Found in Upstream.\nFIXME: Explain why it's safe to ignore."))
 					}
 				}
 				buildDefAsset := rebuild.BuildDef.For(example.Target())
@@ -363,16 +370,16 @@ func NewRebuildCmds(app *tview.Application, executor build.Executor, prebuildCon
 					}
 				}
 				// Add the exclusions.
-				for _, s := range customStabs {
+				for _, e := range exclusions {
 					matchesExisting := false
 					for pattern := range existing {
-						if match, err := glob.Match(pattern, s.Config.ExcludePath.Paths[0]); err == nil && match {
+						if match, err := glob.Match(pattern, e.entry); err == nil && match {
 							matchesExisting = true
 							break
 						}
 					}
 					if !matchesExisting {
-						currentDef.CustomStabilizers = append(currentDef.CustomStabilizers, s)
+						currentDef.CustomStabilizers = append(currentDef.CustomStabilizers, e.stab)
 					}
 				}
 				// Write the strategy and open for editing.

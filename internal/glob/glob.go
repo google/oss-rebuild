@@ -55,6 +55,22 @@ func Match(pattern, name string) (bool, error) {
 	return true, nil
 }
 
+// QuoteMeta returns a pattern that matches exactly the literal name under Match.
+func QuoteMeta(name string) string {
+	var b strings.Builder
+	// NOTE: Iterate bytes rather than runes so that names with invalid UTF-8
+	// are preserved verbatim. All metacharacters are ASCII.
+	for i := 0; i < len(name); i++ {
+		// Escaping every '*' also guarantees that the result never contains
+		// "**", so Match always delegates it to path.Match.
+		if strings.IndexByte(`*?[\`, name[i]) != -1 {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(name[i])
+	}
+	return b.String()
+}
+
 func validateGlobstarPattern(pattern string) error {
 	// Only one ** may be present
 	count := strings.Count(pattern, "**")

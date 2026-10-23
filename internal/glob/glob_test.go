@@ -84,3 +84,34 @@ func TestMatch(t *testing.T) {
 		}
 	}
 }
+
+func TestQuoteMeta(t *testing.T) {
+	tests := []struct {
+		name       string
+		entry      string
+		lookalikes []string
+	}{
+		{"PlainName", "package/index.js", []string{"package/index.jsx"}},
+		{"CharacterClass", "package/pages/[id].js", []string{"package/pages/i.js", "package/pages/d.js"}},
+		{"UnterminatedCharacterClass", "package/[id", []string{"package/i"}},
+		{"Star", "a/*.js", []string{"a/b.js"}},
+		{"QuestionMark", "a?c", []string{"abc"}},
+		{"Backslash", `a\b`, []string{"ab"}},
+		{"GlobstarSegment", "a/**/b", []string{"a/b", "a/c/b"}},
+		{"GlobstarWithinSegment", "a**b", []string{"axyb"}},
+		{"GlobstarOnly", "**", []string{"", "a/b"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pattern := QuoteMeta(tc.entry)
+			if match, err := Match(pattern, tc.entry); err != nil || !match {
+				t.Errorf("Match(%q, %q) = %v, %v, want true, nil", pattern, tc.entry, match, err)
+			}
+			for _, l := range tc.lookalikes {
+				if match, err := Match(pattern, l); err != nil || match {
+					t.Errorf("Match(%q, %q) = %v, %v, want false, nil", pattern, l, match, err)
+				}
+			}
+		})
+	}
+}
