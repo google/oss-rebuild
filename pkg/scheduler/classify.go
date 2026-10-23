@@ -108,6 +108,8 @@ func ClassifySession(stopReason string) Outcome {
 		return OutcomeAttested
 	case schema.AgentCompleteReasonThrottled:
 		return OutcomeTransient
+	case schema.AgentCompleteReasonGaveUp:
+		return OutcomeGaveUp
 	default:
 		return OutcomeFailure
 	}

@@ -43,6 +43,14 @@ func TestTick(t *testing.T) {
 				TriageReason: "repository exceeds size limit", Updated: now},
 		},
 		{
+			name:       "GaveUpNeedsTriage",
+			in:         Campaign{Stage: StageAgent, State: StateInFlight},
+			outcome:    OutcomeGaveUp,
+			maxRetries: 3,
+			want: Campaign{Stage: StageAgent, State: StateNeedsTriage, Outcome: OutcomeGaveUp,
+				TriageReason: "agent gave up with its closest build", Updated: now},
+		},
+		{
 			// Nothing more expensive exists above the agent stage.
 			name:       "AgentFailureNeedsTriage",
 			in:         Campaign{Stage: StageAgent, State: StateInFlight},
