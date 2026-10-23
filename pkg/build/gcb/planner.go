@@ -5,6 +5,7 @@ package gcb
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"log"
@@ -388,6 +389,11 @@ var gcbStandardBuildTpl = template.Must(
 //     network which joins both the same network AND the same network
 //     namespace. So we use the proxy to enforce that all new containers use
 //     the "container:build" network.
+//   - Egress: The build's namespace rejects all output but loopback, the
+//     proxy, and DNS to the configured resolver, so HTTP(S) through the proxy
+//     is the only other way out. Docker's embedded resolver forwards from this
+//     namespace (--dns points it there) and buildkit replaces it in RUN steps
+//     (its [dns] config points those there).
 //   - User setup: We use the iptables' owner module feature of redirecting
 //     traffic based on the UID of the originating process. To do so here,
 //     though, we need a user/uid that's shared across the proxy and build
@@ -440,18 +446,25 @@ var gcbProxyBuildTpl = template.Must(
 					-docker_java_truststore=true"
 			'
 			proxyIP=$(docker inspect -f '{{printf "%s" "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"}}' proxy)
+			dnsIP=$(getent ahostsv4 {{.DNSServer}})
+			dnsIP=${dnsIP%% *}
 			docker network connect cloudbuild proxy
 			{{- /* NOTE: File-based mounting does not appear to work here so use an env var. */ -}}
 			{{- if .TimewarpAuth}}
 			(printf 'HEADER='; cat /tmp/auth_header) > /tmp/envfile
 			{{- end}}
-			docker run --detach --name=build --network=proxynet --entrypoint=/bin/sh {{if .TimewarpAuth}}--env-file /tmp/envfile {{end}}gcr.io/cloud-builders/docker -c 'sleep infinity'
+			docker run --detach --name=build --network=proxynet --dns="$dnsIP" --entrypoint=/bin/sh {{if .TimewarpAuth}}--env-file /tmp/envfile {{end}}gcr.io/cloud-builders/docker -c 'sleep infinity'
 			docker exec --privileged build /bin/sh -euxc '
 				iptables -t nat -A OUTPUT -p tcp --dport {{.HTTPPort}} -j ACCEPT
 				iptables -t nat -A OUTPUT -p tcp --dport {{.TLSPort}} -j ACCEPT
 				iptables -t nat -A OUTPUT -p tcp -m owner --uid-owner '$uid' -j ACCEPT
 				iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination '$proxyIP':{{.HTTPPort}}
 				iptables -t nat -A OUTPUT -p tcp --dport 443 -j DNAT --to-destination '$proxyIP':{{.TLSPort}}
+				iptables -A OUTPUT -o lo -j ACCEPT
+				iptables -A OUTPUT -d '$proxyIP' -j ACCEPT
+				iptables -A OUTPUT -d '$dnsIP' -p udp --dport 53 -j ACCEPT
+				iptables -A OUTPUT -d '$dnsIP' -p tcp --dport 53 -j ACCEPT
+				iptables -A OUTPUT -j REJECT
 			'
 			{{- if .UseSyscallMonitor}}
 			mkdir -p /workspace/tetragon/
@@ -487,7 +500,8 @@ var gcbProxyBuildTpl = template.Must(
 			docker exec build /bin/sh -euxc '
 				curl http://proxy:{{.CtrlPort}}/cert | tee /etc/ssl/certs/proxy.crt >> /etc/ssl/certs/ca-certificates.crt
 				export DOCKER_HOST=tcp://proxy:{{.DockerPort}} PROXYCERT=/etc/ssl/certs/proxy.crt{{if .TimewarpAuth}} HEADER{{end}}
-				docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build
+				printf "[dns]\nnameservers = [\"%s\"]\n" '$dnsIP' > /buildkitd.toml
+				docker buildx create --name proxied --bootstrap --driver docker-container --driver-opt network=container:build --buildkitd-config /buildkitd.toml
 				cat /Dockerfile | docker buildx build --builder proxied --build-context certs=/etc/ssl/certs --secret id=PROXYCERT {{if .TimewarpAuth}}--secret id=auth_header,env=HEADER {{end}}--load --tag=img -
 				docker run {{if .Privileged}}--privileged -e DOCKER_HOST {{end}}--name=container img{{if .RunExitCode}} || { exit {{.RunExitCode}}; } 2>/dev/null{{end}}
 			'
@@ -514,7 +528,14 @@ type Planner struct {
 	timewarpHost    string
 	hasRepo         bool
 	allowPrivileged bool
+	dnsServer       string
 }
+
+// NOTE: 169.254.169.254 is the GCE metadata server, which is also each VM's
+// DNS resolver. In a GCB step, metadata.google.internal instead resolves to
+// GCB's step metadata server on the cloudbuild network, which serves no DNS.
+// See https://cloud.google.com/compute/docs/internal-dns.
+const metadataIP = "169.254.169.254"
 
 // NewPlanner creates a new GCB planner with the given configuration
 func NewPlanner(config PlannerConfig) *Planner {
@@ -523,6 +544,7 @@ func NewPlanner(config PlannerConfig) *Planner {
 		timewarpHost:    "localhost:8080", // Internal default
 		hasRepo:         false,            // Repository needs to be cloned in container
 		allowPrivileged: config.AllowPrivileged,
+		dnsServer:       cmp.Or(config.DNSServer, metadataIP),
 	}
 }
 
@@ -530,6 +552,7 @@ func NewPlanner(config PlannerConfig) *Planner {
 type PlannerConfig struct {
 	ServiceAccount  string
 	AllowPrivileged bool
+	DNSServer       string // the one resolver proxy builds may reach
 }
 
 // GeneratePlan implements Planner[*Plan]
@@ -778,6 +801,7 @@ func (p *Planner) generateProxyBuildScript(target rebuild.Target, dockerfile str
 		"ProxyAuth":            proxyAuth,
 		"ServiceAccountEmail":  serviceAccountEmail,
 		"User":                 "proxyu",
+		"DNSServer":            p.dnsServer,
 		"HTTPPort":             "3128",
 		"TLSPort":              "3129",
 		"CtrlPort":             "3127",
