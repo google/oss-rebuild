@@ -576,6 +576,7 @@ const (
 	AgentCompleteReasonFailed    = "FAILED"
 	AgentCompleteReasonError     = "ERROR"
 	AgentCompleteReasonThrottled = "THROTTLED"
+	AgentCompleteReasonGaveUp    = "GAVE_UP" // judged unbuildable at the ref
 )
 
 // AgentCompleteRequest finalizes session with results

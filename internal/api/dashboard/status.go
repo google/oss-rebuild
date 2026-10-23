@@ -170,7 +170,7 @@ func classifyVersion(vs *VersionStatus, attempts []rundex.Rebuild, sessions []sc
 		case s.StopReason == schema.AgentCompleteReasonSuccess:
 			verified = true
 			agent = AgentFixed
-		case s.StopReason == schema.AgentCompleteReasonFailed || s.StopReason == schema.AgentCompleteReasonError:
+		case s.StopReason == schema.AgentCompleteReasonFailed || s.StopReason == schema.AgentCompleteReasonError || s.StopReason == schema.AgentCompleteReasonGaveUp:
 			failed = true
 			if agent == AgentNone {
 				agent = AgentFailed

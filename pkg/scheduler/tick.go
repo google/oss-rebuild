@@ -38,6 +38,9 @@ func Tick(c Campaign, outcome Outcome, maxRetries int, now time.Time) Campaign {
 	case OutcomeOversize:
 		c.State = StateNeedsTriage
 		c.TriageReason = "repository exceeds size limit"
+	case OutcomeGaveUp:
+		c.State = StateNeedsTriage
+		c.TriageReason = "agent gave up with its closest build"
 	}
 	return c
 }
