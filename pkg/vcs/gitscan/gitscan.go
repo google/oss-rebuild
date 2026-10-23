@@ -193,6 +193,9 @@ func (s ExactTreeCount) Search(ctx context.Context, r *git.Repository, hashes []
 	files := make(map[plumbing.Hash]int)
 	var i int
 	for _, h := range hashes {
+		if _, ok := files[h]; ok {
+			continue // a repeated blob counts once
+		}
 		_, err = r.BlobObject(h)
 		if err == plumbing.ErrObjectNotFound {
 			// Skip files not present in repo.
