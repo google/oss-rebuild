@@ -766,3 +766,52 @@ func TestInferBaseImage(t *testing.T) {
 		})
 	}
 }
+
+func TestInferBuildRoot(t *testing.T) {
+	repo := must(gitxtest.CreateRepo([]gitxtest.Commit{{ID: "initial-commit", Files: gitxtest.FileContent{"src/module.c": "int answer = 42;\n"}}}, nil))
+	tree := must(must(repo.CommitObject(repo.Commits["initial-commit"])).Tree())
+	tests := []struct {
+		name   string
+		module []byte
+		want   string
+	}{
+		{
+			name:   "DebugInfo",
+			module: elfWithUnits(compileUnit{Name: "src/module.c", CompDir: "/tmp/build/pkg"}),
+			want:   "/tmp/build/pkg",
+		},
+		{
+			name:   "Stripped",
+			module: elfWithUnits(),
+			want:   "",
+		},
+		{
+			name:   "UnmatchedDebugInfo",
+			module: elfWithUnits(compileUnit{Name: "build/__native.c", CompDir: "/project"}),
+			want:   "",
+		},
+		{
+			name:   "UnusableRoot",
+			module: elfWithUnits(compileUnit{Name: "src/module.c", CompDir: "/home/runner/my project"}),
+			want:   "",
+		},
+		{
+			name:   "CheckoutRoot",
+			module: elfWithUnits(compileUnit{Name: "src/module.c", CompDir: "/src"}),
+			want:   "",
+		},
+		{
+			name:   "MalformedModule",
+			module: []byte("\x7fELF\x02\x01"),
+			want:   "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			zr := readWheel(t, zipEntry("pkg/module.cpython-312-x86_64-linux-gnu.so", string(tt.module)))
+			if got := inferBuildRoot(zr, tree); got != tt.want {
+				t.Errorf("inferBuildRoot() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
