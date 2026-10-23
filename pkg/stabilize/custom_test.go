@@ -139,6 +139,36 @@ func TestReplacePattern_Validate(t *testing.T) {
 			errMsg:  "no path provided",
 		},
 		{
+			name: "invalid path glob",
+			rp: ReplacePattern{
+				Paths:   []string{"["},
+				Pattern: "pattern",
+				Replace: "replace",
+			},
+			wantErr: true,
+			errMsg:  `invalid path "["`,
+		},
+		{
+			name: "invalid globstar prefix",
+			rp: ReplacePattern{
+				Paths:   []string{"[/**"},
+				Pattern: "pattern",
+				Replace: "replace",
+			},
+			wantErr: true,
+			errMsg:  `invalid path "[/**"`,
+		},
+		{
+			name: "invalid globstar suffix",
+			rp: ReplacePattern{
+				Paths:   []string{"**/["},
+				Pattern: "pattern",
+				Replace: "replace",
+			},
+			wantErr: true,
+			errMsg:  `invalid path "**/["`,
+		},
+		{
 			name: "invalid pattern",
 			rp: ReplacePattern{
 				Paths:   []string{"test/path"},
@@ -190,6 +220,30 @@ func TestExcludePath_Validate(t *testing.T) {
 			wantErr: true,
 			errMsg:  "no path provided",
 		},
+		{
+			name: "invalid path glob",
+			ep: ExcludePath{
+				Paths: []string{"["},
+			},
+			wantErr: true,
+			errMsg:  `invalid path "["`,
+		},
+		{
+			name: "invalid globstar prefix",
+			ep: ExcludePath{
+				Paths: []string{"[/**"},
+			},
+			wantErr: true,
+			errMsg:  `invalid path "[/**"`,
+		},
+		{
+			name: "invalid globstar suffix",
+			ep: ExcludePath{
+				Paths: []string{"**/["},
+			},
+			wantErr: true,
+			errMsg:  `invalid path "**/["`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -198,8 +252,8 @@ func TestExcludePath_Validate(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Validate() expected error, got nil")
 				}
-				if tt.errMsg != "" && err.Error() != tt.errMsg {
-					t.Errorf("Validate() error = %v, want %v", err.Error(), tt.errMsg)
+				if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("Validate() error = %v, should contain %v", err.Error(), tt.errMsg)
 				}
 			} else {
 				if err != nil {
@@ -316,6 +370,47 @@ func TestExcludePath_Stabilizer(t *testing.T) {
 				}
 			} else if reflect.TypeOf(fn) != reflect.TypeOf(tt.wantFunc) {
 				t.Errorf("Stabilizer() impl type = %T, want %T", fn, tt.wantFunc)
+			}
+		})
+	}
+}
+
+func TestExcludePath_Stabilizer_Filter(t *testing.T) {
+	tarEntryA := &archive.TarEntry{Header: &tar.Header{Name: "test/a.txt"}}
+	tarEntryB := &archive.TarEntry{Header: &tar.Header{Name: "other/b.txt"}}
+	zipEntryA := &archive.MutableZipFile{FileHeader: zip.FileHeader{Name: "test/a.txt"}}
+	zipEntryB := &archive.MutableZipFile{FileHeader: zip.FileHeader{Name: "other/b.txt"}}
+	tests := []struct {
+		name    string
+		paths   []string
+		wantTar []*archive.TarEntry
+		wantZip []*archive.MutableZipFile
+	}{
+		{
+			name:    "matching glob excludes entry",
+			paths:   []string{"test/*.txt"},
+			wantTar: []*archive.TarEntry{tarEntryB},
+			wantZip: []*archive.MutableZipFile{zipEntryB},
+		},
+		{
+			name:    "malformed glob keeps all entries",
+			paths:   []string{"["},
+			wantTar: []*archive.TarEntry{tarEntryA, tarEntryB},
+			wantZip: []*archive.MutableZipFile{zipEntryA, zipEntryB},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := (&ExcludePath{Paths: tt.paths}).Stabilizer("test")
+			ta := &archive.TarArchive{Files: []*archive.TarEntry{tarEntryA, tarEntryB}}
+			s.FnFor(NewContext(archive.TarFormat)).(TarArchiveFn)(ta)
+			if !reflect.DeepEqual(ta.Files, tt.wantTar) {
+				t.Errorf("tar Files = %v, want %v", ta.Files, tt.wantTar)
+			}
+			mzr := &archive.MutableZipReader{File: []*archive.MutableZipFile{zipEntryA, zipEntryB}}
+			s.FnFor(NewContext(archive.ZipFormat)).(ZipArchiveFn)(mzr)
+			if !reflect.DeepEqual(mzr.File, tt.wantZip) {
+				t.Errorf("zip File = %v, want %v", mzr.File, tt.wantZip)
 			}
 		})
 	}

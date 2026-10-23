@@ -67,8 +67,13 @@ func TestMatch(t *testing.T) {
 		{"a/[a]**", "", false, true},
 		{"a/**/c/**/d", "a/b/c/d", false, true},
 		{"a/**/c/**/d", "a/b/c/b/d", false, true},
+		{"[/**", "", false, true},
+		{"**/[", "", false, true},
 	}
 	for _, test := range tests {
+		if err := Validate(test.pattern); (err != nil) != test.hasError {
+			t.Errorf("Validate(%q) error = %v, hasError = %v", test.pattern, err, test.hasError)
+		}
 		result, err := Match(test.pattern, test.path)
 
 		if (err != nil) != test.hasError {

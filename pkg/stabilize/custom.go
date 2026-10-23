@@ -117,6 +117,11 @@ func (rp *ReplacePattern) Validate() error {
 	if slices.Contains(rp.Paths, "") {
 		return errors.New("invalid path")
 	}
+	for _, p := range rp.Paths {
+		if err := glob.Validate(p); err != nil {
+			return errors.Wrapf(err, "invalid path %q", p)
+		}
+	}
 	if _, err := regexp.Compile(rp.Pattern); err != nil {
 		return errors.Wrap(err, "bad pattern")
 	}
@@ -176,6 +181,11 @@ func (ep *ExcludePath) Validate() error {
 	if slices.Contains(ep.Paths, "") {
 		return errors.New("invalid path")
 	}
+	for _, p := range ep.Paths {
+		if err := glob.Validate(p); err != nil {
+			return errors.Wrapf(err, "invalid path %q", p)
+		}
+	}
 	return nil
 }
 
@@ -184,7 +194,7 @@ func (ep *ExcludePath) Stabilizer(name string) Stabilizer {
 	tarfn := TarArchiveFn(func(ta *archive.TarArchive) {
 		var files []*archive.TarEntry
 		for _, f := range ta.Files {
-			if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
+			if match, err := multiMatch(ep.Paths, f.Name); err == nil && match {
 				continue
 			}
 			files = append(files, f)
@@ -199,7 +209,7 @@ func (ep *ExcludePath) Stabilizer(name string) Stabilizer {
 		archive.ZipFormat: ZipArchiveFn(func(mzr *archive.MutableZipReader) {
 			var files []*archive.MutableZipFile
 			for _, f := range mzr.File {
-				if match, err := multiMatch(ep.Paths, f.Name); err != nil || match {
+				if match, err := multiMatch(ep.Paths, f.Name); err == nil && match {
 					continue
 				}
 				files = append(files, f)
