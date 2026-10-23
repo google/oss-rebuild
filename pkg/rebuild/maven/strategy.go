@@ -6,11 +6,13 @@ package maven
 import (
 	"log"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/google/oss-rebuild/internal/textwrap"
 	"github.com/google/oss-rebuild/pkg/rebuild/flow"
 	"github.com/google/oss-rebuild/pkg/rebuild/rebuild"
+	"github.com/pkg/errors"
 )
 
 type MavenBuild struct {
@@ -90,7 +92,7 @@ func (b *GradleBuild) ToWorkflow() *rebuild.WorkflowStrategy {
 		deps = append(deps, flow.Step{
 			Uses: "maven/setup-gradle",
 			With: map[string]string{
-				"version": gradleVersion,
+				"version": b.SystemGradle,
 			},
 		})
 	}
@@ -141,7 +143,18 @@ type GradleBuild struct {
 
 var _ rebuild.Strategy = &GradleBuild{}
 
+// gradleDistributionVersion matches release, release candidate and milestone
+// versions published at https://services.gradle.org/distributions/ (listed at
+// https://services.gradle.org/versions/all), e.g. 8.14.3, 7.6, 8.0-rc-1 and
+// 8.0-milestone-1. Nightly snapshots and pre-1.0 previews are not accepted.
+var gradleDistributionVersion = regexp.MustCompile(`^\d+\.\d+(\.\d+)?(-(rc|milestone)-\d+)?$`)
+
 func (b *GradleBuild) GenerateFor(t rebuild.Target, be rebuild.BuildEnv) (rebuild.Instructions, error) {
+	// NOTE: SystemGradle is interpolated unquoted into the maven/setup-gradle
+	// download URL and shell commands.
+	if b.SystemGradle != "" && !gradleDistributionVersion.MatchString(b.SystemGradle) {
+		return rebuild.Instructions{}, errors.Errorf("invalid system Gradle version %q", b.SystemGradle)
+	}
 	return b.ToWorkflow().GenerateFor(t, be)
 }
 
