@@ -111,12 +111,12 @@ var toolkit = []*flow.Tool{
 		Steps: []flow.Step{{
 			Runs: textwrap.Dedent(`
 				{{- $cfg := "config"}}{{if ge (cmpSemver .With.rustVersion "1.39.0") 0}}{{$cfg = "config.toml"}}{{end}}
-				{{- if and (eq .With.useGitIndex "true") (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
+				{{- if and (eq .With.useGitIndex "true") (ne .With.registryCommit "") -}}
 				mkdir -p /cargo-index
 				wget -O - --header "X-Package-Names: {{.With.packageNames}}" "{{.BuildEnv.TimewarpURLFromString "cargogitarchive" .With.registryCommit}}index.git.tar" | tar -xf - -C /cargo-index
 				mkdir -p /.cargo
 				printf '[source.crates-io]\nreplace-with = "timewarp-local"\n[source.timewarp-local]\nregistry = "file:///cargo-index"\n' > /.cargo/{{$cfg}}
-				{{- else if and (ne .TimewarpHost "") (ne .With.registryCommit "") -}}
+				{{- else if ne .With.registryCommit "" -}}
 				mkdir -p /.cargo
 				printf '[source.crates-io]\nreplace-with = "timewarp"\n[source.timewarp]\nregistry = "{{.BuildEnv.TimewarpURLFromString "cargosparse" .With.registryCommit}}"\n' > /.cargo/{{$cfg}}
 				{{- else -}}
